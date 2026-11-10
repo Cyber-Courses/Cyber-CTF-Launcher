@@ -7,7 +7,7 @@ import { must } from "@/components/test-support";
 // The worker and fallback tests run no ELK: the worker is a stub speaking elk-api's message
 // protocol, and the main-thread ELK is a stand-in. Both answer with a canned layout that says
 // where it was laid out. Time is fake and moved by hand, so the ready / layout timeouts race
-// nothing real. One test runs the real ELK, on the main thread (the no-worker path).
+// nothing real. One test runs the real ELK, on the main thread: the no-worker path.
 
 type Graph = { id: string; children?: { id: string }[] };
 type Laid = { by?: string; children?: { y?: number }[] };
@@ -119,7 +119,7 @@ async function workerCreated() {
 }
 
 let warn: MockInstance<typeof console.warn>;
-const warned = () => warn.mock.calls.map((c) => String(c[0]));
+const warned = () => warn.mock.calls.map((c) => c.map(String).join(" "));
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -140,7 +140,7 @@ describe("elkEngine", () => {
     const elkEngine = await engineWith(undefined, { realElk: true });
     await laysOut(elkEngine, undefined);
     expect(elkEngine()).toBe(elkEngine());
-    expect(warned()).toEqual([expect.stringContaining("main thread (no Web Worker here)")]);
+    expect(warned()).toEqual([expect.stringContaining("main thread: no Web Worker here")]);
   });
 
   it("runs ELK in the worker once it says it is ready in time", async () => {
@@ -154,7 +154,8 @@ describe("elkEngine", () => {
     await laysOut(elkEngine, "worker", { tick: true });
     expect(created).toHaveLength(1);
     expect(created[0]).toMatch(/elk\.worker\.ts/);
-    expect(warned()).toEqual(["network diagram: ELK runs in a web worker"]);
+    // A worker is the normal case: nothing to warn of (the console has it at debug).
+    expect(warned()).toEqual([]);
     expect(sessionStorage.getItem(MAIN_THREAD_KEY)).toBeNull();
   });
 
@@ -169,7 +170,7 @@ describe("elkEngine", () => {
     await engine;
     await laysOut(elkEngine, "main thread");
     expect(terminate).toHaveBeenCalled();
-    expect(warned()).toEqual([expect.stringContaining("main thread (the layout worker did not start)")]);
+    expect(warned()).toEqual([expect.stringContaining("main thread: the layout worker did not start")]);
     expect(sessionStorage.getItem(MAIN_THREAD_KEY)).toBe("1");
 
     // A later page in the session doesn't try the worker again, so doesn't wait for it.
@@ -187,10 +188,10 @@ describe("elkEngine", () => {
     await vi.advanceTimersByTimeAsync(0);
     await engine;
     await laysOut(elkEngine, "main thread");
-    expect(warned()[0]).toContain("main thread (the layout worker failed to load)");
+    expect(warned()[0]).toContain("main thread: the layout worker failed to load");
     sessionStorage.clear();
     await laysOut(await engineWith(RefusedWorker), "main thread");
-    expect(warned()[1]).toContain("main thread (SecurityError)");
+    expect(warned()[1]).toContain("main thread: SecurityError");
   });
 
   it("gives up a started worker that stops answering, for this layout and the next", async () => {
@@ -202,14 +203,15 @@ describe("elkEngine", () => {
     const engine = await started;
     const out = engine.layout(graph());
     await vi.advanceTimersByTimeAsync(LAYOUT_MS - 1);
-    expect(warned()).toEqual(["network diagram: ELK runs in a web worker"]);
+    // A worker is the normal case: nothing to warn of (the console has it at debug).
+    expect(warned()).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(((await out) as Laid).by).toBe("main thread");
     const sent = posted;
     await laysOut(() => Promise.resolve(engine), "main thread");
     await laysOut(elkEngine, "main thread");
     expect(posted).toBe(sent);
-    expect(warned()).toEqual(["network diagram: ELK runs in a web worker", expect.stringContaining("main thread (the layout worker stopped answering)")]);
+    expect(warned()).toEqual([expect.stringContaining("main thread: the layout worker stopped answering")]);
     expect(sessionStorage.getItem(MAIN_THREAD_KEY)).toBe("1");
   });
 

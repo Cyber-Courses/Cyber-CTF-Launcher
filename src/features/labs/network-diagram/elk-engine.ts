@@ -1,6 +1,7 @@
 import type { ELK, ElkNode } from "elkjs/lib/elk-api";
 import { isReady } from "@/features/labs/network-diagram/elk-ready";
 import { readSession, writeSession } from "@/lib/local-store";
+import { warn } from "@/lib/failure";
 
 // ELK (~1.4 MB) is loaded on the first layout, not with the app. In a browser it runs in a Web
 // Worker (elk.worker.ts, a same-origin script the CSP allows), off the main thread. Without
@@ -73,7 +74,7 @@ async function inWorker(): Promise<ELK> {
 /** The main-thread engine, remembered for the session. */
 function mainThread(why: string): Promise<Engine> {
   remember();
-  console.warn(`network diagram: ELK runs on the main thread (${why})`);
+  warn("network diagram: ELK runs on the main thread")(why);
   return inline();
 }
 
@@ -111,7 +112,7 @@ async function create(): Promise<Engine> {
   if (remembered()) return mainThread("the layout worker didn't start earlier in this session");
   try {
     const elk = await inWorker();
-    console.warn("network diagram: ELK runs in a web worker");
+    console.debug("network diagram: ELK runs in a web worker");
     return bounded(elk);
   } catch (e) {
     return mainThread(e instanceof Error ? e.message : String(e));

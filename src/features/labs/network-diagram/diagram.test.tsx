@@ -247,7 +247,8 @@ describe("NetworkDiagram", () => {
     await settle();
     spy.mockRestore();
     expect(screen.getByText("api")).toBeTruthy();
-    expect(warn).toHaveBeenCalledWith("network diagram layout failed", expect.any(Error));
+    // Through `warn`, so a release build's log file has it too (the console alone, it didn't).
+    expect(warn).toHaveBeenCalledWith("laying out the network diagram:", expect.any(Error));
   });
 
   it("waits for React Flow's measurements before laying out", async () => {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Background, BackgroundVariant, ReactFlow, useEdgesState, useNodesInitialized, useNodesState, useReactFlow, type Edge, type Node } from "@xyflow/react";
 import { cn } from "@/lib/utils";
+import { warn } from "@/lib/failure";
 import { edgeTypes } from "@/features/labs/network-diagram/edges";
 import { frameLayout } from "@/features/labs/network-diagram/frame";
 import { layout } from "@/features/labs/network-diagram/layout";
@@ -60,7 +61,8 @@ function useElkLayout(topo: Topology, setNodes: (nodes: Node[]) => void, setEdge
         setReady(true);
       })
       .catch((e: unknown) => {
-        console.warn("network diagram layout failed", e);
+        // Kept drawn as it is; logged, also in a release build's log file.
+        warn("laying out the network diagram")(e);
         if (live) setReady(true);
       });
     return () => {
