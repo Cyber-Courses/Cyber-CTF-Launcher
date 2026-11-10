@@ -205,7 +205,10 @@ pub fn marked_host(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(HOST_MARKER)).ok().map(|id| id.trim().to_string())
 }
 
-/// `proxmox_jump` for a saved host id.
+/// The node login SSH goes through first to reach saved host `id`'s labs (a Proxmox node whose lab
+/// bridge is internal to it), the launcher's key (`identity`, `public`) authorized there first
+/// unless the host signs in with an API token. None for another kind of host, or a bridge the
+/// launcher reaches directly.
 pub async fn proxmox_jump_for_host(dirs: &AppDirs, id: &str, identity: &Path, public: &str) -> Result<Option<String>> {
     let host = load_host(dirs, id)?;
     if host.provider != Provider::Proxmox {

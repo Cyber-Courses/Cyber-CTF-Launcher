@@ -1,12 +1,11 @@
 //! A VM lab on a Proxmox server through the Isothrum runner: the run manifest Isoloom writes
-//! beside its Terraform module (`.isoloom[-<n>]/proxmox/run.json`), behind the same switch as the
-//! container labs on this machine ([`super::chosen`]).
+//! beside its Terraform module (`.isoloom[-<n>]/proxmox/run.json`).
 //!
 //! What stays the launcher's: the run's name (`cyberctf-<lab id>`), the server's profile turned
 //! into the module's variables (`lab::host_vars`: the params, the password or API token as the
 //! connection slot), the node when the profile names none (the server's first, as the profile's
 //! Test connection picks it), the node login SSH goes through first when the lab bridge is
-//! internal to the node ([`server::proxmox_jump_for_host`], with the runner's key, which is the
+//! internal to the node ([`crate::runtime::server::proxmox_jump_for_host`], with the runner's key, which is the
 //! launcher's own: both live in the app data folder), and the words the player reads.
 //! The runner keeps the Terraform state, the run's slot on the server, and the applied params a
 //! destroy replays.

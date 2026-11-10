@@ -35,16 +35,11 @@ pub fn legacy_attack_box_names(project: &str) -> [String; 3] {
     LEGACY_ATTACK_BOX_SUFFIXES.map(|s| format!("{project}{s}"))
 }
 
-/// The host ports picked at the lab's first start, pinned over the ephemeral ones Isoloom's
-/// Compose file asks for (Docker picks a new ephemeral port each time a container starts, so a
-/// resumed lab moved to another address). In the lab folder, outside the generated files.
+/// Upgrade only: the host ports an older version pinned at a container lab's first start, in the
+/// lab folder. Nothing writes it now (the runner pins ports in its own state); a lab an older
+/// version started may still have it, and its Compose project is read with it.
 pub(super) const PORTS_FILE: &str = ".cyberctf-ports.yml";
 
-/// A `docker compose -p <project> -f <the lab's Compose file> [-f .cyberctf-ports.yml] <rest...>`
-/// argv (the file Isoloom generated, under the lab's output folder, and its pinned ports).
-/// Without that file (a lab upgraded or re-instanced while its containers run), the project
-/// alone: Compose finds its containers by their labels, so `ps`, `stop`, `start` and `down`
-/// still reach them, where a missing `-f` made every one of them fail.
 /// `--context <name>` when the lab in `dir` was pinned to a Docker engine at launch, else nothing:
 /// the launcher's own docker/compose calls for the lab then go to that engine (the runner pins its
 /// calls through `EngineProcesses`). The flag takes precedence over the current context.
@@ -55,6 +50,12 @@ pub(super) fn context_prefix(dir: &Path) -> Vec<String> {
     }
 }
 
+/// A `docker compose -p <project> -f <the lab's Compose file> [-f .cyberctf-ports.yml] <rest...>`
+/// argv (the file Isoloom generated, under the lab's output folder, and the ports an older version
+/// pinned), after the lab's Docker context. Without that file (a lab upgraded or re-instanced
+/// while its containers run), the project alone: Compose finds its containers by their labels,
+/// so `ps`, `stop`, `start` and `down` still reach them, where a missing `-f` made every one of
+/// them fail.
 fn args(dir: &Path, project: &str, rest: &[&str]) -> Vec<String> {
     let file = crate::runtime::lab::compose_file(dir);
     let mut a = context_prefix(dir);

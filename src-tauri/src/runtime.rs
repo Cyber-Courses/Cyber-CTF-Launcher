@@ -1,6 +1,6 @@
 //! Lab runtimes. A lab is a directory under `<app data>/labs/<lab id>/` with an `isoloom.yml`
-//! at its root; the files of the target it runs on are generated under its `.isoloom/` (see
-//! `lab`). The UI only ever passes a lab id and a runtime; paths and commands are built here.
+//! at its root; the files of the target it runs on are generated under its instance's
+//! `.isoloom-<n>/` (`.isoloom/` for a lab with no instance; see `lab`). The UI only ever passes a lab id and a runtime; paths and commands are built here.
 //!
 //! - `launch`: starting a lab, here or on a server host.
 //! - `cloud_services`: cloud-services labs, a Terraform module of the lab's own applied into the
