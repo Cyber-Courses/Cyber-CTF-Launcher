@@ -133,13 +133,16 @@ impl Code {
             Code::OfflineReady { detail } => {
                 format!("Cyber CTF can't be reached ({detail}). This lab is installed here, so it can start offline, without saving progress.")
             }
-            Code::PortInUse { port, holder: Some(holder) } => {
-                format!("Host port {port} is already in use on this machine, held by {holder}. Stop it, then start the lab again.")
-            }
-            Code::PortInUse { port, holder: None } => {
-                format!(
+            Code::PortInUse { port, holder } => {
+                let clash = format!(
                     "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again."
-                )
+                );
+                // What holds it, as the lab page says it under the error (`labs.failure.portHeldBy`):
+                // the catalogue has one form, the holder its own line.
+                match holder {
+                    Some(holder) => format!("{clash} Held by {holder}. Stop it, then start the lab again."),
+                    None => clash,
+                }
             }
             Code::DockerNotRunning => {
                 "Docker isn't running. Start your container engine (Docker Desktop, or the docker service on Linux), then start the lab again.".into()
@@ -313,7 +316,7 @@ mod tests {
                 json!({
                     "code": "portInUse",
                     "args": { "port": 8080, "holder": "nginx (pid 4123)" },
-                    "message": "Host port 8080 is already in use on this machine, held by nginx (pid 4123). Stop it, then start the lab again."
+                    "message": "Host port 8080 is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again. Held by nginx (pid 4123). Stop it, then start the lab again."
                 }),
             ),
         ];
@@ -330,10 +333,14 @@ mod tests {
     }
 
     /// Each code's English message is said twice: here (the log, a worker's ✗ line) and in the
-    /// webview's catalog (`errors.codes.*`, what the English UI shows). They must agree.
+    /// webview's catalog (`errors.codes.*`, what the English UI shows). They must agree, for every
+    /// form of every code ([`form`]). A port clash with its holder is the catalogue's sentence,
+    /// then the holder's line the lab page shows under it (`labs.failure.portHeldBy`): the
+    /// catalogue has no holder form of its own.
     #[test]
     fn every_code_says_what_the_english_catalog_says() {
         let catalog: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/errors.json")).unwrap();
+        let labs: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/labs.json")).unwrap();
         for code in sample_codes().into_iter().filter(|c| *c != Code::Other) {
             let wire = serde_json::to_value(Wire { code: code.clone(), message: String::new() }).unwrap();
             let entry = &catalog["codes"][wire["code"].as_str().unwrap()];
@@ -344,8 +351,59 @@ mod tests {
                 let value = value.as_str().map_or_else(|| value.to_string(), str::to_string);
                 text = text.replace(&format!("{{{name}}}"), &value);
             }
+            if let Code::PortInUse { holder: Some(holder), .. } = &code {
+                let held = labs["failure"]["portHeldBy"].as_str().unwrap().replace("{holder}", holder);
+                text = format!("{text} {held}");
+            }
             assert_eq!(code.message(), text, "{wire}");
         }
+    }
+
+    /// Which form of a code `code` is: its variant, a port clash told with or without its holder.
+    /// No wildcard: a new variant doesn't compile here until it has a form, and then
+    /// [`every_form_has_a_sample`] fails until [`sample_codes`] has one.
+    fn form(code: &Code) -> usize {
+        match code {
+            Code::Other => 0,
+            Code::SignedOut => 1,
+            Code::SessionExpired => 2,
+            Code::LoginTimeout { .. } => 3,
+            Code::NoBrowser => 4,
+            Code::AlreadyInProgress => 5,
+            Code::NoPasswordStored => 6,
+            Code::PortInUse { holder: None, .. } => 7,
+            Code::PortInUse { holder: Some(_), .. } => 8,
+            Code::SignInCancelled => 9,
+            Code::SignInDenied => 10,
+            Code::SignInCodeUnavailable => 11,
+            Code::Unreachable { .. } => 12,
+            Code::OfflineReady { .. } => 13,
+            Code::DockerNotRunning => 14,
+            Code::DockerDenied { .. } => 15,
+            Code::DockerDeniedWindows { .. } => 16,
+            Code::ReapNoHost => 17,
+            Code::ReapLabGone { .. } => 18,
+            Code::ReapAccount { .. } => 19,
+            Code::ReapDestroy { .. } => 20,
+            Code::ReapTimedOut { .. } => 21,
+            Code::PlacementLockedHost { .. } => 22,
+            Code::PlacementLockedAccount { .. } => 23,
+            Code::LabRunningHere => 24,
+            Code::LabRunningOn { .. } => 25,
+            Code::HostHasLabs { .. } => 26,
+            Code::ToolMissing { .. } => 27,
+            Code::CommandFailed { .. } => 28,
+            Code::TurnedOffByPolicy { .. } => 29,
+        }
+    }
+
+    /// How many forms [`form`] tells apart.
+    const FORMS: usize = 30;
+
+    #[test]
+    fn every_form_has_a_sample() {
+        let covered: std::collections::BTreeSet<usize> = sample_codes().iter().map(form).collect();
+        assert_eq!(covered, (0..FORMS).collect(), "a form of a code without a sample in sample_codes");
     }
 
     fn sample_codes() -> Vec<Code> {
@@ -356,11 +414,14 @@ mod tests {
             Code::LoginTimeout { minutes: 5 },
             Code::NoBrowser,
             Code::SignInCancelled,
+            Code::SignInDenied,
+            Code::SignInCodeUnavailable,
             Code::Unreachable { detail: "API unreachable: timed out".into() },
             Code::OfflineReady { detail: "API unreachable: timed out".into() },
             Code::AlreadyInProgress,
             Code::NoPasswordStored,
             Code::PortInUse { port: 443, holder: None },
+            Code::PortInUse { port: 8000, holder: Some("nginx (pid 4123)".into()) },
             Code::DockerNotRunning,
             Code::DockerDenied { user: "player".into() },
             Code::DockerDeniedWindows { user: "Ada Lovelace".into() },
@@ -377,6 +438,7 @@ mod tests {
             Code::ReapTimedOut { minutes: 35 },
             Code::ToolMissing { tool: "terraform".into() },
             Code::CommandFailed { command: "vagrant up".into(), stderr: "locked".into() },
+            Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() },
         ]
     }
 
