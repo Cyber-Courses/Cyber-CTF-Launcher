@@ -89,6 +89,31 @@ fn an_internal_symlink_is_recreated_a_tree_escaping_one_is_not() {
     std::fs::remove_dir_all(dest).unwrap();
 }
 
+#[cfg(unix)]
+#[test]
+fn a_chain_of_links_reading_as_internal_but_resolving_outside_is_left_out() {
+    // Regression: `sub/a -> ..` and `b -> sub/a/../secret` each read as inside the tree by their
+    // path (`sub/a/..` is `sub`), so both were recreated, and `b` resolved to a file beside the lab:
+    // a lab's tree, built into its image and mounted in its machines, could read the app's data.
+    let mut builder = tarball_with_dir("sub");
+    for (at, target) in [("lab-abc/sub/a", ".."), ("lab-abc/b", "sub/a/../secret"), ("lab-abc/ok", "sub/a/sub")] {
+        let mut link = tar::Header::new_gnu();
+        link.set_entry_type(tar::EntryType::Symlink);
+        link.set_size(0);
+        builder.append_link(&mut link, at, target).unwrap();
+    }
+    let gz = builder.into_inner().unwrap().finish().unwrap();
+    let outside = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("secret"), "s").unwrap();
+    let dest = outside.join("lab");
+    extract(&gz, &dest).unwrap();
+    assert!(dest.join("sub/a").is_symlink(), "an internal link is kept");
+    assert!(std::fs::symlink_metadata(dest.join("b")).is_err(), "the chain to the secret is left out");
+    assert!(dest.join("ok").is_dir(), "a chain that stays inside is kept");
+    std::fs::remove_dir_all(outside).unwrap();
+}
+
 #[test]
 fn rejects_path_traversal_in_archives() {
     let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));

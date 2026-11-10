@@ -16,6 +16,7 @@ pub(super) fn extract(tarball: &[u8], dest: &Path) -> Result<()> {
 fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(tarball));
     let mut unpacked: u64 = 0;
+    let mut links = crate::platform::tree_link::TreeLinks::default();
     for entry in archive.entries()? {
         let mut entry = entry?;
         let kind = entry.header().entry_type();
@@ -48,10 +49,9 @@ fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
         let target = dest.join(&relative);
         if is_symlink {
             // A lab may rely on an internal symlink (e.g. client/src/contracts -> ../../contracts):
-            // recreated when it stays inside the tree, so a link can never point outside the
-            // extracted lab.
-            #[cfg(unix)]
-            crate::platform::tree_link::recreate_within_tree(&relative, &entry.link_name()?.unwrap_or_default(), &target)?;
+            // recreated once the tree is in place, when it stays inside it, so a link can never
+            // point outside the extracted lab.
+            links.push(&relative, &entry.link_name()?.unwrap_or_default());
         } else if kind.is_dir() {
             std::fs::create_dir_all(&target)?;
         } else {
@@ -61,6 +61,7 @@ fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
             entry.unpack(&target)?;
         }
     }
+    links.recreate(dest)?;
     Ok(())
 }
 

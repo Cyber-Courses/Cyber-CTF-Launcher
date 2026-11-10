@@ -80,11 +80,14 @@ pub fn parse(text: &str) -> Result<Spec> {
 /// (`.isoloom`, `.git`, `.vagrant`). Used to install a lab imported from a local directory, and in
 /// tests to stage a corpus lab. Copied in Rust, not with `cp -R`, so it runs on Windows too.
 pub(crate) fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
-    copy_tree_rooted(src, dst, src)
+    let mut links = crate::platform::tree_link::TreeLinks::default();
+    copy_tree_rooted(src, dst, src, &mut links)?;
+    links.recreate(dst)
 }
 
-/// [`copy_tree`], carrying the tree root so a symlink's target can be judged against it.
-fn copy_tree_rooted(src: &Path, dst: &Path, root: &Path) -> std::io::Result<()> {
+/// [`copy_tree`], carrying the tree root so a symlink's path can be judged against it, and the
+/// links found, recreated once the whole copy is in place.
+fn copy_tree_rooted(src: &Path, dst: &Path, root: &Path, links: &mut crate::platform::tree_link::TreeLinks) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -98,14 +101,11 @@ fn copy_tree_rooted(src: &Path, dst: &Path, root: &Path) -> std::io::Result<()> 
             // An internal symlink a lab relies on (e.g. client/src/contracts -> ../../contracts),
             // recreated as the GitHub-tarball install does: never one pointing outside the copy.
             let rel = from.strip_prefix(root).unwrap_or(from.as_path());
-            #[cfg(unix)]
-            crate::platform::tree_link::recreate_within_tree(rel, &std::fs::read_link(&from)?, &to)?;
-            #[cfg(not(unix))]
-            log::debug!("{}: a symlink, left out off Unix", rel.display());
+            links.push(rel, &std::fs::read_link(&from)?);
             continue;
         }
         if kind.is_dir() {
-            copy_tree_rooted(&from, &to, root)?;
+            copy_tree_rooted(&from, &to, root, links)?;
         } else {
             std::fs::copy(&from, &to)?;
         }

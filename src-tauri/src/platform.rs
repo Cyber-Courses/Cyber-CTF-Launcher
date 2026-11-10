@@ -25,7 +25,6 @@ pub mod redact;
 pub mod remembered;
 pub mod root_script;
 pub mod sys;
-#[cfg(any(unix, test))]
 pub mod tree_link;
 pub mod unwind;
 
