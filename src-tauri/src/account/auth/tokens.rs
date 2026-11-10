@@ -49,18 +49,21 @@ struct Profile {
 /// over TLS, so its signature is not re-verified here; it is never used for
 /// authorization (the API verifies the access token itself).
 fn id_token_profile(id_token: &str) -> Profile {
-    let claims = id_token.split('.').nth(1).and_then(|p| URL_SAFE_NO_PAD.decode(p).ok()).and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
-    let Some(c) = claims else { return Profile::default() };
+    let Some(c) = jwt_claims(id_token) else { return Profile::default() };
     let string = |name: &str| c.get(name).and_then(|v| v.as_str()).map(str::to_string);
     Profile { name: string("name"), email: string("email"), picture: string("picture").filter(|url| url.starts_with("https://")) }
 }
 
-/// A string claim of a JWT's payload (unverified: used to tell accounts apart locally, never
-/// for authorization). None for an opaque token.
-pub(super) fn jwt_claim(token: &str, name: &str) -> Option<String> {
+/// A JWT's payload, its claims (unverified: read for display and to tell accounts apart locally,
+/// never for authorization). None for an opaque token.
+fn jwt_claims(token: &str) -> Option<serde_json::Value> {
     let payload = token.split('.').nth(1)?;
-    let claims: serde_json::Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).ok()?).ok()?;
-    claims.get(name)?.as_str().map(str::to_string)
+    serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).ok()?).ok()
+}
+
+/// A string claim of a JWT's payload (see [`jwt_claims`]).
+pub(super) fn jwt_claim(token: &str, name: &str) -> Option<String> {
+    jwt_claims(token)?.get(name)?.as_str().map(str::to_string)
 }
 
 pub(super) async fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse> {
