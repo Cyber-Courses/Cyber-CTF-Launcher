@@ -226,10 +226,7 @@ fn agent_prompt(handle: &AppHandle) -> std::sync::Arc<account::agent::PromptLaun
 /// The background agent's system notification (a website launch started on this machine).
 fn agent_notify(handle: &AppHandle) -> std::sync::Arc<account::agent::Notify> {
     let handle = handle.clone();
-    std::sync::Arc::new(move |title: &str, body: &str| {
-        use tauri_plugin_notification::NotificationExt;
-        let _ = handle.notification().builder().title(title).body(body).show();
-    })
+    std::sync::Arc::new(move |title: &str, body: &str| notify(&handle, title, body))
 }
 
 /// How the background agent ends a lab's deploy workers before it stops the lab.
@@ -247,18 +244,26 @@ fn spawn_reaper(app: AppHandle) {
         let app = app.clone();
         async move {
             let dirs = platform::AppDirs::from(&app);
-            let report = move |title: &str, body: &str| reap_notify(&app, title, body);
+            let report = move |title: &str, body: &str| notify(&app, title, body);
             Box::pin(runtime::reap_expired_labs(&dirs, &report)).await;
         }
     }));
 }
 
-/// A system notification for the auto-stop reaper, when the app has the notification plugin (not
-/// in unit tests). The reaper's domain logic stays tauri-free and reaches the player through this.
-fn reap_notify(app: &AppHandle, title: &str, body: &str) {
+/// A system notification, when the app has the notification plugin (not in unit tests): what the
+/// agent and the auto-stop reaper, tauri-free, reach the player through. One that can't be shown
+/// is logged, since it may be the only word that a cloud lab was stopped, or failed to stop.
+fn notify(app: &AppHandle, title: &str, body: &str) {
     use tauri_plugin_notification::NotificationExt;
     if app.try_state::<tauri_plugin_notification::Notification<AppRuntime>>().is_some() {
-        let _ = app.notification().builder().title(title).body(body).show();
+        shown(title, app.notification().builder().title(title).body(body).show());
+    }
+}
+
+/// Logs a notification titled `title` that couldn't be shown.
+fn shown<E: std::fmt::Display>(title: &str, result: std::result::Result<(), E>) {
+    if let Err(e) = result {
+        log::warn!("the notification \"{title}\" couldn't be shown: {e}");
     }
 }
 
@@ -319,6 +324,19 @@ mod tests {
     }
 
     use super::worker_job;
+
+    #[test]
+    fn a_notification_that_cant_be_shown_is_logged() {
+        // Regression: both notification helpers dropped show()'s error, one of them telling the
+        // player a cloud lab was auto-stopped, or failed to stop.
+        crate::testing::logs::take_warnings();
+        super::shown("Lab stopped", Ok::<(), String>(()));
+        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0]);
+        super::shown("Lab stopped", Err("no notification center"));
+        assert_eq!(crate::testing::logs::take_warnings(), ["the notification \"Lab stopped\" couldn't be shown: no notification center"]);
+        // Without the plugin (unit tests): nothing to show, nothing to fail.
+        super::notify(crate::testing::test_app::TestApp::new().handle(), "Lab stopped", "body");
+    }
 
     #[tokio::test]
     async fn a_panicking_pass_never_ends_the_loop() {
