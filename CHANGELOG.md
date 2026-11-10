@@ -154,6 +154,9 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A lab's "ready" notification names where it runs.** A lab launched from the website on a
+  server or a cloud account was announced as "now running on this machine"; it now names the
+  server or account.
 - **A launch on a cloud account the launcher can't read says its budget wasn't checked.** An
   account missing from the saved hosts, or a `server.json` that couldn't be read, passed the
   monthly budget check as under budget, without a word; the launch log now says the budget wasn't

@@ -214,9 +214,14 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     if let Err(e) = report_running(deps.dirs(), session_id, &launch.lab_id, host.as_deref(), url.as_deref()).await {
         return Err(undo_start(deps.dirs(), &launch.lab_id, launch.runtime, present, e).await);
     }
-    // A lab launched from the website just started here: let the player know on this machine.
-    (deps.notify)("Lab running", "A lab launched from the website is now running on this machine.");
+    // A lab launched from the website just started: let the player know on this machine.
+    (deps.notify)("Lab running", &running_notice(&request));
     Ok(())
+}
+
+/// The notification's text once the lab of `request` runs, naming where it runs.
+fn running_notice(request: &LaunchRequest) -> String {
+    format!("A lab launched from the website is now running on {}.", request.place_name())
 }
 
 /// Picks up and runs every pending launch aimed at this agent. A failed read of them is logged;

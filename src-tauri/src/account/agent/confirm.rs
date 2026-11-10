@@ -40,6 +40,13 @@ pub struct LaunchRequest {
     expires_at_ms: u64,
 }
 
+impl LaunchRequest {
+    /// Where it runs, as the player reads it: this machine, or the server's or account's name.
+    pub(super) fn place_name(&self) -> &str {
+        if self.place == LaunchPlace::Here { "this machine" } else { &self.target }
+    }
+}
+
 /// Where a website launch would run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -127,8 +134,7 @@ pub(super) async fn confirm_here(deps: &Deps, request: &LaunchRequest) -> Result
     if ask(deps, request).await {
         return Ok(());
     }
-    let where_ = if request.place == LaunchPlace::Here { "this machine".to_string() } else { request.target.clone() };
-    Err(Error::Refused(format!("{} wasn't approved on this machine, so it didn't start on {where_}.", request.lab_name)))
+    Err(Error::Refused(format!("{} wasn't approved on this machine, so it didn't start on {}.", request.lab_name, request.place_name())))
 }
 
 #[cfg(test)]
@@ -172,11 +178,15 @@ mod tests {
         let az = t.host("az1", "azure", json!({}));
         let pve = t.host("pve1", "proxmox", json!({}));
         let claim = claim_of(id);
-        for (host, place, target) in
-            [(None, LaunchPlace::Here, ""), (Some(pve.as_str()), LaunchPlace::Server, "Host pve1"), (Some(az.as_str()), LaunchPlace::Cloud, "Host az1")]
-        {
+        for (host, place, target, on) in [
+            (None, LaunchPlace::Here, "", "this machine"),
+            (Some(pve.as_str()), LaunchPlace::Server, "Host pve1", "Host pve1"),
+            (Some(az.as_str()), LaunchPlace::Cloud, "Host az1", "Host az1"),
+        ] {
             let request = launch_request(&dirs, "s-1", &claim.launch, host).await.unwrap();
             assert_eq!((request.place, request.target.as_str()), (place, target));
+            // Regression: the notification once it runs said "on this machine" wherever it ran.
+            assert_eq!(super::super::running_notice(&request), format!("A lab launched from the website is now running on {on}."));
             assert_eq!((request.lab_name.as_str(), request.privileged), ("Web Shop", true), "the privileged machine is said");
             assert_eq!((request.repository.as_str(), request.commit.as_str()), ("CyberCTF/web", COMMIT));
         }
