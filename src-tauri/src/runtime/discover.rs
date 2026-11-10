@@ -39,20 +39,15 @@ pub(crate) fn lab_ids_from_docker_projects(out: &str) -> Vec<String> {
     ids.into_iter().collect()
 }
 
-/// The `name:` of an isoloom.yml: the prefix of the lab's VM names.
+/// The `name:` of an isoloom.yml, the prefix of the lab's VM names, as a YAML parser reads it
+/// (Isoloom's, so the VM names', quoting and comments included). Only that key is read: the scan
+/// is polled, and the rest of the spec isn't validated.
 pub(crate) fn isoloom_name(yaml: &str) -> Option<String> {
-    yaml.lines().find_map(|l| {
-        let v = l.strip_prefix("name:")?.trim();
-        // As the YAML parser (and so the VM names) reads it: a quoted value whole, a bare one up
-        // to a comment.
-        let v = if let Some(q @ ('"' | '\'')) = v.chars().next() {
-            v[1..].split(q).next().unwrap_or_default()
-        } else {
-            let cut = [" #", "\t#"].iter().filter_map(|m| v.find(m)).min().unwrap_or(v.len());
-            v[..cut].trim()
-        };
-        (!v.is_empty()).then(|| v.to_string())
-    })
+    #[derive(serde::Deserialize)]
+    struct Named {
+        name: Option<String>,
+    }
+    serde_yaml_ng::from_str::<Named>(yaml).ok()?.name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty())
 }
 
 /// Installed labs by the name their VMs carry: the lab's name as its instance on this machine
@@ -79,8 +74,9 @@ pub(crate) fn lab_names(labs_dir: &Path) -> HashMap<String, String> {
 }
 
 /// The `<lab>` of a lab's VM names (`<lab> · <machine>`): its name as this instance
-/// (`<name>-<instance>`, the name `lab::instanced` gives it), or the plain `name:` of a lab with
-/// no instance. Read from the spec's `name:` line, not the whole spec: the scan is polled.
+/// (`<name>-<instance>`, the name Isoloom's `instance::apply` gives it), or the plain `name:`
+/// of a lab with no instance. Read from the spec's `name:` alone, not the whole spec: the scan is
+/// polled.
 fn vm_name_prefix(dir: &Path) -> Option<String> {
     let name = isoloom_name(&std::fs::read_to_string(dir.join("isoloom.yml")).ok()?)?;
     Some(match super::lab::instance(dir) {
@@ -467,7 +463,7 @@ mod tests {
     fn isoloom_name_takes_the_top_level_key_only() {
         // A commented-out or indented `name:` (a machine's, a tool's) is not the lab's.
         assert_eq!(super::isoloom_name("# name: old\nmachines:\n  name: web\nname: minilab\n").as_deref(), Some("minilab"));
-        assert_eq!(super::isoloom_name("name:minilab\n").as_deref(), Some("minilab"), "no space after the colon");
+        assert_eq!(super::isoloom_name("name:minilab\n"), None, "no space after the colon: no key, as YAML reads it");
         assert_eq!(super::isoloom_name("name: 'minilab'\n").as_deref(), Some("minilab"));
         assert_eq!(super::isoloom_name("name:   \n").as_deref(), None, "blank");
         assert_eq!(super::isoloom_name("namespace: x\nname_old: y\n"), None, "other keys starting with name");
