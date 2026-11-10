@@ -17,9 +17,12 @@ const pageHandlers = () => ({
 });
 
 /** The page of `lab` for a signed-in player on an x86_64 machine, Docker running and VirtualBox
- *  ready, `props` over it: its handlers, to assert on (unless `props` brings its own). */
+ *  ready, `props` over it: its handlers, to assert on (unless `props` brings its own), and how to
+ *  take it down. */
 export function renderLabPage(lab: Lab, props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
   const handlers = pageHandlers();
-  render(<LabDetail lab={lab} busy={false} logs={[]} times={[]} loggedIn hostArch="x86_64" readyVms={["virtualbox"]} dockerRunning {...handlers} {...props} />);
-  return handlers;
+  const { unmount } = render(
+    <LabDetail lab={lab} busy={false} logs={[]} times={[]} loggedIn hostArch="x86_64" readyVms={["virtualbox"]} dockerRunning {...handlers} {...props} />,
+  );
+  return { ...handlers, unmount };
 }

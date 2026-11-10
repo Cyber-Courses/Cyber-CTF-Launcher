@@ -190,6 +190,14 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   they kept the colours they opened with when the appearance changed in Settings. Each window now
   opens in the main window's theme and follows a change made in another window, its page and the
   theme of what the system still draws for it (the taskbar's, its dialogs').
+- **A VM lab's page no longer says it can't read the lab while the lab's own start, attack box or
+  set-up is under way.** Vagrant refuses to read a VM's state while it boots and provisions it,
+  for minutes, and the page's status poll, after a minute of retries, showed a red "Couldn't read
+  the state of" the lab with Vagrant's `MachineActionLockedError`, though the start carried on
+  (VirtualBox, QEMU, Hyper-V alike). With the runner reporting such a run as starting (or as last
+  read, while the attack box is added) without asking Vagrant, the read succeeds; and a read that
+  fails while one of the lab's own operations runs is no longer shown as a failure, the
+  operation's progress being what the page shows then.
 - **A long step of a server's VM test no longer looks frozen.** The ESXi test's upload of its
   VM sat for many minutes on one line with no sign of life: the OVF Tool redraws its progress
   (`Disk progress: 8%`) in place, which the runner never passed on as a line. With the runner

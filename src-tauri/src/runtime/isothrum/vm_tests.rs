@@ -38,7 +38,11 @@ impl Fixture {
 
 /// The fake Vagrant's answer to `call`.
 fn answer(states: &Mutex<BTreeMap<String, String>>, call: &Call) -> Reply {
-    let mut s = locked(states);
+    vagrant(&mut locked(states), call)
+}
+
+/// The fake Vagrant's answer to `call`, from the VMs' `states`.
+fn vagrant(s: &mut BTreeMap<String, String>, call: &Call) -> Reply {
     let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
     let set = |s: &mut BTreeMap<String, String>, vms: &[&str], state: &str| vms.iter().for_each(|vm| drop(s.insert((*vm).to_owned(), state.to_owned())));
     match (call.program.as_str(), args.as_slice()) {
@@ -46,11 +50,11 @@ fn answer(states: &Mutex<BTreeMap<String, String>>, call: &Call) -> Reply {
             Reply::ok(&VMS.iter().map(|vm| format!("1,{vm},state,{}", s.get(*vm).map_or("not_created", String::as_str))).collect::<Vec<_>>().join("\n"))
         }
         ("vagrant", ["up", "--provider", _]) => {
-            set(&mut s, &VMS, "running");
+            set(s, &VMS, "running");
             Reply::ok(&format!("==> web: Machine booted and ready!\nflag {}", call.env("CTF_FLAG_MAIN").unwrap_or("none")))
         }
         ("vagrant", ["up", "--no-provision", "--provider", _, vms @ ..] | ["up", vms @ .., "--no-provision"]) => {
-            set(&mut s, vms, "running");
+            set(s, vms, "running");
             Reply::ok("")
         }
         // Every running VM, or the ones named (a pause suspends only the lab's own VMs).
@@ -72,6 +76,66 @@ fn answer(states: &Mutex<BTreeMap<String, String>>, call: &Call) -> Reply {
         ("vagrant", ["ssh-config", vm]) => Reply::ok(&format!("Host {vm}\n  HostName 172.16.1.53\n  User vagrant\n")),
         _ => Reply::ok(""),
     }
+}
+
+/// The VMs' states, and until when the start's `vagrant up` holds their locks (booting and
+/// provisioning them).
+#[derive(Default)]
+struct Provisioning {
+    states: BTreeMap<String, String>,
+    held_until: Option<tokio::time::Instant>,
+}
+
+/// How long the start's `vagrant up` takes.
+const UP_TAKES: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// The fake Vagrant's answer to `call`, refusing `vagrant status` as Vagrant does while the
+/// start's `vagrant up` provisions the VMs (`MachineActionLockedError`).
+fn provisioning(model: &Mutex<Provisioning>, call: &Call) -> Reply {
+    let mut m = locked(model);
+    let held = m.held_until.is_some_and(|until| tokio::time::Instant::now() < until);
+    match call.args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        ["status", ..] if held => {
+            let mut refused = Reply::fail(1, "");
+            refused.stdout = vec![
+                "1794331884,,ui,error,An action 'read_state' was attempted on the machine 'web'%!(VAGRANT_COMMA)\\nbut another process is already executing an action on the machine.".into(),
+                "1794331884,,error-exit,Vagrant::Errors::MachineActionLockedError,An action 'read_state' was attempted on the machine 'web'".into(),
+            ];
+            refused
+        }
+        ["up", "--provider", _] => {
+            m.held_until = Some(tokio::time::Instant::now() + UP_TAKES);
+            let mut up = vagrant(&mut m.states, call);
+            up.delay = UP_TAKES;
+            up
+        }
+        _ => vagrant(&mut m.states, call),
+    }
+}
+
+/// Regression: the lab page polls the lab's status from the app while its start runs in the
+/// deploy worker, another process. Two minutes into the start's provisioning, Vagrant refused the
+/// status read (the start's `vagrant up` held the VMs' locks), the runner's retries ran out, and
+/// the page showed "Couldn't read the state of" the lab. The read now says it isn't running yet,
+/// as the start's own progress does.
+#[tokio::test(start_paused = true)]
+async fn the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_process() {
+    let f: Scripted<Provisioning> = Scripted::answered_by(Home::new("-vm-busy", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), provisioning);
+    // The deploy worker's runner, which starts the lab, and the app's, which the page reads it through.
+    let worker = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    let app = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    let page = async {
+        tokio::time::sleep(std::time::Duration::from_secs(148)).await;
+        app.status().await
+    };
+    let mut log = |_| {};
+    let (started, read) = tokio::join!(worker.up(Inputs { values: &[], default_ports: true }, Some("virtualbox"), &mut log), page);
+    started.unwrap();
+    let read = read.unwrap();
+    assert!(!read.running, "not up yet");
+    assert!(matches!(read.place, Some(Place::LocalVm)));
+    // Once the start is done, the page reads it running.
+    assert!(app.status().await.unwrap().running);
 }
 
 #[tokio::test]

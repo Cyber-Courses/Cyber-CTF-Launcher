@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab } from "@/features/labs/use-labs";
 import type { LabMachine, LabStatus } from "@/lib/tauri";
-import { installTauri } from "@/test/tauri";
+import { installTauri, rejectWith } from "@/test/tauri";
+import { refreshStatus } from "@/features/labs/lab-store";
+import type { CommandError } from "@/lib/errors";
 import { flush as flushUi } from "@/test/ui";
 import { VMS_HERE, containerMachine, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
@@ -156,6 +158,30 @@ describe("LabDetail", () => {
     await flush();
     expect(screen.getAllByText(/Starting/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/DC01/).length).toBeGreaterThan(0);
+  });
+
+  it("doesn't call a status read that failed during the lab's own start a failure, and does once it's over", async () => {
+    // As Vagrant refused the read while the start provisioned the VMs, before the runner reported
+    // such a run as starting.
+    const refused: CommandError = {
+      code: "commandFailed",
+      args: { command: "lab step status", stderr: "Vagrant::Errors::MachineActionLockedError" },
+      message: "`lab step status` failed: Vagrant::Errors::MachineActionLockedError",
+    };
+    installTauri({ ...idle, lab_status: () => rejectWith(refused) });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await refreshStatus(vmLab);
+    const starting = status({ running: false, machines: [], place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null });
+    const page = renderDetail({ lab: vmLab, busy: true, status: starting, logs: ["==> web: Running provisioner: provision/database.sh"], times: [1] });
+    await flush();
+    expect(screen.getAllByText(/Starting/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Couldn’t read the state/)).toBeNull();
+    // With no operation of its own in flight, a read that fails is said.
+    page.unmount();
+    renderDetail({ lab: vmLab, status: starting });
+    await flush();
+    expect(screen.getByText("Couldn’t read the state of GOAD Light")).toBeTruthy();
+    vi.restoreAllMocks();
   });
 
   it("offers to run a broken VM setup again", async () => {

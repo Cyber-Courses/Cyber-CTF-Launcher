@@ -91,7 +91,10 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
   // Dismissed for this failure only: the next one shows again.
   const failure = s.failure && s.failedOp ? { op: s.failedOp, message: s.failure, key: `${s.failedOp}|${String(s.startedAt ?? "")}|${s.failure}` } : null;
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const statusError = useLabState("statusErrors")[p.lab.id];
+  // A read that failed while the lab's own operation runs isn't the lab's state: the operation's
+  // progress is, and its own failure says what went wrong. The next read after it says the rest.
+  const readError = useLabState("statusErrors")[p.lab.id];
+  const statusError = s.deploying ? undefined : readError;
   return (
     <>
       {failure && failure.key !== dismissed && (
