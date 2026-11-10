@@ -221,10 +221,10 @@ pub fn preview(spec: &Spec) -> Option<Preview> {
     })
 }
 
-/// [`Preview`] of a lab at a commit: the installed copy when it is that commit, else its
-/// `isoloom.yml` from GitHub (CyberCTF repositories at a full SHA only).
-pub async fn preview_at(dirs: &AppDirs, lab_id: &str, repository: &str, commit: &str) -> Result<Option<Preview>> {
-    Ok(preview(&lab::spec_at(dirs, lab_id, repository, commit).await?))
+/// [`Preview`] of a lab at its `source`'s commit ([`lab::spec_at`]): the installed copy when it is
+/// that commit, else its `isoloom.yml` from GitHub.
+pub async fn preview_at(dirs: &AppDirs, lab_id: &str, source: lab::Source<'_>) -> Result<Option<Preview>> {
+    Ok(preview(&lab::spec_at(dirs, lab_id, source).await?))
 }
 
 #[cfg(test)]

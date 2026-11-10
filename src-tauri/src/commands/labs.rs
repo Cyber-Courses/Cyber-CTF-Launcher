@@ -138,7 +138,7 @@ pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<
 /// and what it exposes, from its spec at the catalogue's pinned commit. None for other labs.
 #[tauri::command]
 pub async fn lab_cloud_preview(app: AppHandle, id: String, repository: String, commit: String) -> Result<Option<cloud_services::Preview>> {
-    cloud_services::preview_at(&AppDirs::from(&app), &id, &repository, &commit).await
+    cloud_services::preview_at(&AppDirs::from(&app), &id, labs::source(&repository, &commit)).await
 }
 
 /// A lab's minimum-to-run system requirements (CPU, memory, disk), as a lightest-to-heaviest
@@ -146,7 +146,7 @@ pub async fn lab_cloud_preview(app: AppHandle, id: String, repository: String, c
 /// with no machines of its own (cloud services).
 #[tauri::command]
 pub async fn lab_requirements(app: AppHandle, id: String, repository: String, commit: String) -> Result<Option<lab::Requirements>> {
-    let spec = lab::spec_at(&AppDirs::from(&app), &id, &repository, &commit).await?;
+    let spec = lab::spec_at(&AppDirs::from(&app), &id, labs::source(&repository, &commit)).await?;
     Ok(lab::requirements(&spec))
 }
 
@@ -169,7 +169,7 @@ pub async fn lab_default_place(
     source: LabSource,
     preferred: Option<Provider>,
 ) -> Result<start_place::StartPlace> {
-    start_place::default_place(&AppDirs::from(&app), &id, runtime, (&source.repository, &source.commit), preferred).await
+    start_place::default_place(&AppDirs::from(&app), &id, runtime, labs::source(&source.repository, &source.commit), preferred).await
 }
 
 /// Every way lab `id`, declared `runtime`, can start ([`lab::run_options`]): per form, the
@@ -177,7 +177,7 @@ pub async fn lab_default_place(
 /// its launch path's badge, and where Isoloom refuses it. What the launch picker offers.
 #[tauri::command]
 pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, repository: String, commit: String) -> Result<lab::RunOptions> {
-    let lab = lab::lab_at(&AppDirs::from(&app), &id, &repository, &commit).await?;
+    let lab = lab::lab_at(&AppDirs::from(&app), &id, labs::source(&repository, &commit)).await?;
     Ok(lab::run_options(&lab, runtime))
 }
 

@@ -105,7 +105,7 @@ pub(super) async fn await_answer(rx: oneshot::Receiver<bool>, wait: Duration) ->
 /// machine). The policy is applied first: a launch it refuses is never asked about.
 pub(super) async fn launch_request(dirs: &AppDirs, session_id: &str, launch: &Launch, host: Option<&str>) -> Result<LaunchRequest> {
     let Launch { lab_id, repository, commit, runtime, .. } = launch.clone();
-    let spec = crate::runtime::lab::spec_at(dirs, &lab_id, &repository, &commit).await?;
+    let spec = crate::runtime::lab::spec_at(dirs, &lab_id, crate::labs::source(&repository, &commit)).await?;
     let privileged = crate::runtime::lab::is_privileged(&spec);
     crate::runtime::policy_allows(dirs, runtime, host, || Ok(privileged))?;
     let (place, target) = match host {

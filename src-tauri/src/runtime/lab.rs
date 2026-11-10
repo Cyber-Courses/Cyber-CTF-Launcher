@@ -282,27 +282,38 @@ pub fn requirements(spec: &Spec) -> Option<Requirements> {
     Some(Requirements { min: (*sizes.first()?).into(), max: (*sizes.last()?).into() })
 }
 
-/// A lab's spec at a commit ([`lab_at`]'s, as the launcher reads it).
-pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: &str, commit: &str) -> Result<Spec> {
-    Ok(lab_at(dirs, lab_id, repository, commit).await?.spec())
+/// Where a lab is published: a GitHub `repository` at a `commit`, and the caller's rule for which
+/// of them may be fetched (`check`, asked before anything is): the runtime fetches what it is
+/// handed, the layer above knows which sources are the catalogue's.
+#[derive(Clone, Copy)]
+pub struct Source<'a> {
+    pub repository: &'a str,
+    pub commit: &'a str,
+    pub check: fn(&str, &str) -> Result<()>,
 }
 
-/// A lab as its author wrote it at a commit: the installed copy when it is that commit, else its
-/// `isoloom.yml` fetched from GitHub (CyberCTF repositories at a full SHA only), once per
+/// A lab's spec at a commit ([`lab_at`]'s, as the launcher reads it).
+pub async fn spec_at(dirs: &crate::platform::AppDirs, lab_id: &str, source: Source<'_>) -> Result<Spec> {
+    Ok(lab_at(dirs, lab_id, source).await?.spec())
+}
+
+/// A lab as its author wrote it at its `source`'s commit: the installed copy when it is that
+/// commit, else its `isoloom.yml` fetched from GitHub (a source its `check` allows), once per
 /// repository and commit for the app's session. The one way the launcher reads a catalogue lab's
 /// spec before it is installed: a lab page's requirements, its run options and its start place
 /// read it once between them.
-pub async fn lab_at(dirs: &crate::platform::AppDirs, lab_id: &str, repository: &str, commit: &str) -> Result<Lab> {
-    lab_at_with(dirs, lab_id, repository, commit, fetch_spec).await
+pub async fn lab_at(dirs: &crate::platform::AppDirs, lab_id: &str, source: Source<'_>) -> Result<Lab> {
+    lab_at_with(dirs, lab_id, source, fetch_spec).await
 }
 
 /// [`lab_at`], a spec not read yet fetched from its URL by `fetch`.
-async fn lab_at_with<F>(dirs: &crate::platform::AppDirs, lab_id: &str, repository: &str, commit: &str, fetch: impl FnOnce(String) -> F) -> Result<Lab>
+async fn lab_at_with<F>(dirs: &crate::platform::AppDirs, lab_id: &str, source: Source<'_>, fetch: impl FnOnce(String) -> F) -> Result<Lab>
 where
     F: Future<Output = Result<String>>,
 {
+    let Source { repository, commit, check } = source;
     crate::runtime::paths::validate_id(lab_id)?;
-    crate::labs::validate_source(repository, commit)?;
+    check(repository, commit)?;
     if let Ok(dir) = crate::runtime::paths::lab_dir(dirs, lab_id)
         && std::fs::read_to_string(dir.join(".cyberctf-commit")).is_ok_and(|c| c.trim() == commit)
         && let Ok(Ok(text)) = overlay::spec_text(&dir)
@@ -410,6 +421,20 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    /// `CyberCTF/cached` at `commit`, any source allowed.
+    fn cached(commit: &str) -> Source<'_> {
+        Source { repository: "CyberCTF/cached", commit, check: |_, _| Ok(()) }
+    }
+
+    #[tokio::test]
+    async fn a_source_its_check_refuses_is_never_fetched() {
+        let t = crate::testing::test_app::TestApp::new();
+        let refused = Source { check: |r, _| Err(Error::Invalid(format!("refusing {r}"))), ..cached("3333333333333333333333333333333333333333") };
+        let fetch = |url: String| async move { panic!("fetched {url}") };
+        let err = lab_at_with(&t.dirs(), "cached", refused, fetch).await.unwrap_err();
+        assert_eq!(err.to_string(), "refusing CyberCTF/cached");
+    }
+
     #[tokio::test]
     async fn a_spec_not_installed_is_fetched_once_per_commit() {
         // Regression: a lab page's requirements, its servers and its start place each downloaded
@@ -423,16 +448,16 @@ mod tests {
         };
         let commit = "1111111111111111111111111111111111111111";
         for _ in 0..3 {
-            let lab = lab_at_with(&t.dirs(), "cached", "CyberCTF/cached", commit, fetch).await.unwrap();
+            let lab = lab_at_with(&t.dirs(), "cached", cached(commit), fetch).await.unwrap();
             assert_eq!(lab.spec().name, "t");
         }
         assert_eq!(fetches.load(std::sync::atomic::Ordering::SeqCst), 1);
         // A failed fetch is not remembered: the next read tries again.
         let other = "2222222222222222222222222222222222222222";
         let failing = |_: String| async { Err(Error::Invalid("couldn't read the lab's spec: HTTP 503".into())) };
-        assert!(lab_at_with(&t.dirs(), "cached", "CyberCTF/cached", other, failing).await.is_err());
+        assert!(lab_at_with(&t.dirs(), "cached", cached(other), failing).await.is_err());
         let ok = |_: String| async { Ok(SPEC.to_owned()) };
-        assert!(lab_at_with(&t.dirs(), "cached", "CyberCTF/cached", other, ok).await.is_ok());
+        assert!(lab_at_with(&t.dirs(), "cached", cached(other), ok).await.is_ok());
     }
 
     #[test]

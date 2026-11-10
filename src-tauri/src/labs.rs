@@ -55,6 +55,12 @@ pub(crate) struct Placement<'a> {
     pub docker_context: Option<&'a str>,
 }
 
+/// A catalogue lab's source: `repository` at `commit`, fetched only when [`validate_source`] allows
+/// it (a CyberCTF repository at a full SHA).
+pub(crate) fn source<'a>(repository: &'a str, commit: &'a str) -> crate::runtime::lab::Source<'a> {
+    crate::runtime::lab::Source { repository, commit, check: validate_source }
+}
+
 /// Only CyberCTF repositories at a full commit SHA are downloaded; the API
 /// enforces the same rule when labs are published.
 pub(crate) fn validate_source(repository: &str, commit: &str) -> Result<()> {

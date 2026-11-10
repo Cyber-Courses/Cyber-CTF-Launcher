@@ -43,7 +43,15 @@ async fn place(t: &TestApp, id: &str, runtime: Runtime, ready: &[Provider]) -> S
 /// [`place`], the player preferring hypervisor `preferred`.
 async fn preferring(t: &TestApp, id: &str, runtime: Runtime, ready: &[Provider], preferred: Option<Provider>) -> StartPlace {
     let ready = ready.to_vec();
-    Box::pin(default_place_with(&t.dirs(), (id, runtime), ("CyberCTF/lab", SHA), preferred, async move || ready)).await.unwrap()
+    Box::pin(default_place_with(
+        &t.dirs(),
+        (id, runtime),
+        lab::Source { repository: "CyberCTF/lab", commit: SHA, check: |_, _| Ok(()) },
+        preferred,
+        async move || ready,
+    ))
+    .await
+    .unwrap()
 }
 
 /// On saved server `id`.
@@ -157,7 +165,14 @@ async fn a_lab_last_on_a_server_is_an_error_when_the_saved_servers_cant_be_read(
     record_run(t.data(), "ad", Some(&pve), "proxmox", "absent");
     std::fs::write(t.data().join("server.json"), "{ not json").unwrap();
     let ready = vec![Provider::Virtualbox];
-    let place = Box::pin(default_place_with(&t.dirs(), ("ad", Runtime::Vm), ("CyberCTF/lab", SHA), None, async move || ready)).await;
+    let place = Box::pin(default_place_with(
+        &t.dirs(),
+        ("ad", Runtime::Vm),
+        lab::Source { repository: "CyberCTF/lab", commit: SHA, check: |_, _| Ok(()) },
+        None,
+        async move || ready,
+    ))
+    .await;
     assert!(place.is_err(), "{place:?}");
 }
 

@@ -35,23 +35,17 @@ pub struct StartPlace {
 }
 
 /// Where lab `lab_id`, declared `runtime`, starts with no place picked (see the module's rule),
-/// from its spec at `repository`@`commit`; `preferred` is the player's hypervisor of choice.
-pub(crate) async fn default_place(
-    dirs: &AppDirs,
-    lab_id: &str,
-    runtime: Runtime,
-    (repository, commit): (&str, &str),
-    preferred: Option<Provider>,
-) -> Result<StartPlace> {
+/// from its spec at its `source`; `preferred` is the player's hypervisor of choice.
+pub(crate) async fn default_place(dirs: &AppDirs, lab_id: &str, runtime: Runtime, source: lab::Source<'_>, preferred: Option<Provider>) -> Result<StartPlace> {
     // Boxed: the lab's spec is held across the hypervisors' probe, which makes the future large.
-    Box::pin(default_place_with(dirs, (lab_id, runtime), (repository, commit), preferred, super::providers::ready_here)).await
+    Box::pin(default_place_with(dirs, (lab_id, runtime), source, preferred, super::providers::ready_here)).await
 }
 
 /// [`default_place`], the hypervisors ready here read by `ready` (only when the rule needs them).
 async fn default_place_with<F>(
     dirs: &AppDirs,
     (lab_id, runtime): (&str, Runtime),
-    (repository, commit): (&str, &str),
+    source: lab::Source<'_>,
     preferred: Option<Provider>,
     ready: impl FnOnce() -> F,
 ) -> Result<StartPlace>
@@ -66,7 +60,7 @@ where
     if last.is_none() && runtime != Runtime::Vm {
         return Ok(StartPlace::default());
     }
-    let lab = lab::lab_at(dirs, lab_id, repository, commit).await?;
+    let lab = lab::lab_at(dirs, lab_id, source).await?;
     let options = lab::run_options(&lab, runtime);
     let last = match last {
         Some(run) => last_place(dirs, run, runtime, &options)?,
