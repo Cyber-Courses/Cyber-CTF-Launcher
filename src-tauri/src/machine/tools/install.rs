@@ -40,6 +40,28 @@ pub enum Dependency {
     Hyperv,
 }
 
+#[cfg(any(target_os = "linux", test))]
+impl Dependency {
+    /// Its name, as a message names it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Dependency::Docker => "Docker",
+            Dependency::Vagrant => "Vagrant",
+            Dependency::Terraform => "Terraform",
+            Dependency::Virtualbox => "VirtualBox",
+            Dependency::Qemu => "QEMU",
+            Dependency::Utm => "UTM",
+            Dependency::Libvirt => "libvirt",
+            Dependency::Awscli => "the AWS CLI",
+            Dependency::Azurecli => "the Azure CLI",
+            Dependency::Gcloud => "the Google Cloud CLI",
+            Dependency::Wsl => "WSL 2",
+            Dependency::VmwareUtility => "the Vagrant VMware Utility",
+            Dependency::Hyperv => "Hyper-V",
+        }
+    }
+}
+
 #[cfg(test)]
 impl Dependency {
     /// Every tool the app installs.
@@ -199,9 +221,17 @@ pub(super) fn root(script: String) -> Step {
 /// The install steps on Linux: apt and the vendors' apt repositories, as root through pkexec.
 #[cfg(target_os = "linux")]
 fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
+    linux_plan_with(dep, apt_here())
+}
+
+/// [`linux_plan`] on a machine with apt (`apt`) or without.
+#[cfg(target_os = "linux")]
+fn linux_plan_with(dep: Dependency, apt: bool) -> Result<Vec<Step>> {
     Ok(match dep {
         Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
         Dependency::Hyperv => return Err(Error::Invalid("Hyper-V is only available on Windows.".into())),
+        Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
+        _ if !apt => return Err(without_apt(dep)),
         Dependency::Docker => vec![root(docker_script(crate::platform::exec::login_name().as_deref()))],
         Dependency::Vagrant => vec![root("apt-get update && apt-get install -y vagrant".into())],
         // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
@@ -209,7 +239,6 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Virtualbox => vec![root(virtualbox_script())],
         Dependency::Qemu => vec![root("apt-get update && apt-get install -y qemu-system qemu-utils".into())],
         Dependency::Libvirt => vec![root("apt-get update && apt-get install -y libvirt-daemon-system virt-manager".into())],
-        Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
         // Cloud CLIs: AWS CLI v2 from Amazon's signed bundle, in a private temporary directory;
         // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.
         Dependency::Awscli => vec![root(awscli_script())],
@@ -217,6 +246,20 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Gcloud => vec![root(gcloud_script())],
         Dependency::VmwareUtility => vec![root(vmware_utility_script())],
     })
+}
+
+/// Whether apt is on this machine: every Linux install goes through it (and the vendors' apt
+/// repositories), so a distribution without it (Fedora, openSUSE, Arch) can't install from here yet.
+#[cfg(target_os = "linux")]
+fn apt_here() -> bool {
+    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("apt-get").is_file()))
+}
+
+/// What an install of `dep` says on a Linux distribution without apt: the guided setup doesn't
+/// install there yet, so the player installs it themselves; instead of an apt command that fails.
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn without_apt(dep: Dependency) -> Error {
+    Error::Invalid(format!("This distribution isn't supported by the guided setup yet (it has no apt): install {} yourself, then re-check.", dep.name()))
 }
 
 /// The ordered install steps for a dependency on this OS.
@@ -381,6 +424,24 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_distribution_without_apt_is_told_to_install_it_itself_before_anything_runs() {
+        // Regression: Fedora, openSUSE and Arch got `apt-get: not found` from a pkexec prompt.
+        for dep in [Dependency::Vagrant, Dependency::Virtualbox, Dependency::Libvirt, Dependency::Qemu, Dependency::Docker] {
+            let err = linux_plan_with(dep, false).err().unwrap_or_else(|| panic!("{dep:?} refused"));
+            assert_eq!(err.to_string(), without_apt(dep).to_string());
+            assert!(linux_plan_with(dep, true).is_ok(), "{dep:?}");
+        }
+        assert!(linux_plan_with(Dependency::Utm, false).err().is_some_and(|e| e.to_string().contains("only available on macOS")));
+    }
+
+    #[test]
+    fn without_apt_the_install_says_the_distribution_isnt_supported_yet_and_what_to_install() {
+        let err = without_apt(Dependency::Virtualbox).to_string();
+        assert_eq!(err, "This distribution isn't supported by the guided setup yet (it has no apt): install VirtualBox yourself, then re-check.");
     }
 
     #[test]
