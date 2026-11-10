@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 mod record;
 
 use record::parse_box_list;
-pub use record::{Owned, OwnedBox, OwnedImage, load};
+pub use record::{Owned, OwnedBox, OwnedImage, listed_boxes, load};
 
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;

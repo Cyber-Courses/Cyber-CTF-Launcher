@@ -58,9 +58,18 @@ pub fn load(store: &Path) -> std::io::Result<Owned> {
     }
 }
 
-/// `vagrant box list` lines: `generic/debian12   (virtualbox, 202510.26.0, (amd64))`.
+/// A box as one line of `vagrant box list` names it: the box version for its provider, and its
+/// architecture when the listing names one (`amd64`, `arm64`; older Vagrants don't).
+#[derive(Debug, PartialEq, Eq)]
+pub struct ListedBox {
+    pub owned: OwnedBox,
+    pub arch: Option<String>,
+}
+
+/// `vagrant box list` lines: `generic/debian12   (virtualbox, 202510.26.0, (amd64))`. A line of
+/// another shape (`There are no installed boxes!`) is skipped. The one reader of that listing.
 #[must_use]
-pub fn parse_box_list(out: &str) -> BTreeSet<OwnedBox> {
+pub fn listed_boxes(out: &str) -> Vec<ListedBox> {
     out.lines()
         .filter_map(|line| {
             let (name, rest) = line.trim().split_once(char::is_whitespace)?;
@@ -68,14 +77,28 @@ pub fn parse_box_list(out: &str) -> BTreeSet<OwnedBox> {
             let mut fields = inner.split(',').map(|f| f.trim().trim_end_matches(')'));
             let provider = fields.next().filter(|p| !p.is_empty())?;
             let version = fields.next().filter(|v| !v.is_empty())?;
-            Some(OwnedBox { name: name.to_owned(), provider: provider.to_owned(), version: version.to_owned() })
+            let arch = fields.next().map(|a| a.trim_start_matches('(')).filter(|a| !a.is_empty()).map(str::to_owned);
+            Some(ListedBox { owned: OwnedBox { name: name.to_owned(), provider: provider.to_owned(), version: version.to_owned() }, arch })
         })
         .collect()
+}
+
+/// The box versions in a `vagrant box list` (see [`listed_boxes`]), whatever their architecture.
+#[must_use]
+pub fn parse_box_list(out: &str) -> BTreeSet<OwnedBox> {
+    listed_boxes(out).into_iter().map(|b| b.owned).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_listed_box_keeps_its_architecture() {
+        let out = "generic/debian12   (virtualbox, 202510.26.0, (amd64))\r\ngeneric/alpine319\t(libvirt, 4.3.12)\n";
+        let arch: Vec<(String, Option<String>)> = listed_boxes(out).into_iter().map(|b| (b.owned.name, b.arch)).collect();
+        assert_eq!(arch, [("generic/debian12".to_owned(), Some("amd64".to_owned())), ("generic/alpine319".to_owned(), None)]);
+    }
 
     #[test]
     fn box_listings_read_as_name_provider_and_version() {

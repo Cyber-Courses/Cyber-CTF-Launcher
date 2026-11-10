@@ -93,14 +93,9 @@ pub(super) async fn pick_box(p: Provider, arm: bool) -> (&'static str, bool) {
 /// architecture in the listing counts for any).
 fn box_listed(list: &str, name: &str, provider: &str, arm: bool) -> bool {
     let arch = if arm { "arm64" } else { "amd64" };
-    // Lines look like: `bento/debian-12   (virtualbox, 202510.26.0, (amd64))`
-    list.lines().any(|l| {
-        let mut parts = l.splitn(2, char::is_whitespace);
-        let listed = parts.next().unwrap_or("");
-        let rest = parts.next().unwrap_or("");
-        listed == name
-            && rest.contains(&format!("({provider},"))
-            && (!rest.contains("(amd64)") && !rest.contains("(arm64)") || rest.contains(&format!("({arch})")))
+    crate::machine::storage::owned::listed_boxes(list).iter().any(|b| {
+        let other_cpu = matches!(b.arch.as_deref(), Some(a @ ("amd64" | "arm64")) if a != arch);
+        b.owned.name == name && b.owned.provider == provider && !other_cpu
     })
 }
 
