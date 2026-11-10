@@ -12,6 +12,7 @@ mod flag_contract;
 mod per_machine;
 mod replace;
 mod servers;
+mod setup;
 pub(crate) mod support;
 mod vm;
 

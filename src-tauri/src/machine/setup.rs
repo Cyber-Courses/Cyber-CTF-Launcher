@@ -14,7 +14,7 @@ mod plan;
 pub(crate) mod shapes;
 
 #[cfg(test)]
-pub(crate) use plan::{Plan, SetupPath, Wanted, plan};
+pub(crate) use plan::{Plan, SetupPath, Step, Wanted, plan};
 
 use serde::Serialize;
 use ts_rs::TS;

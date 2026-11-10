@@ -68,6 +68,19 @@ host's knobs its scenario is skipped, saying which ones it needs.
 | `proxmox-lab` | a VM lab on Proxmox: up, status, checks over SSH through the node, down  |
 | `esxi-lab`    | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down |
 
+## Bare-machine tier (the test rig only)
+
+The launcher's guided machine setup on a fresh, bare Windows or Linux guest, end to end and
+without a window: `integration_tests::setup::the_guided_setup_readies_this_machine`. It installs
+what the setup window would (the same plan, `machine::setup`, through the same functions as the
+window's commands), one action at a time with its own log, then checks each wanted tool ready by
+the machine report, runs the Docker and VM self-tests and starts and stops an example lab. It
+installs real tools as an administrator, so it is not in `scripts/integration-tests.sh`: the test
+rig's `setup` suite runs it from the built test binary, pass after pass (a pass ends at WSL's
+restart or the docker group's new login), and gives its knobs (`CYBERCTF_TEST_SETUP_PATHS`,
+`_HYPERVISORS`, `_REPORT`, `_LOGS`, `_LAB`; the test's module documentation says each). Without
+them it returns at once.
+
 ## Not here yet
 
 - The attack box on a server: `box-*` on Proxmox, once a test host is back (a lab on ESXi has

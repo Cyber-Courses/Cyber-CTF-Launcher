@@ -70,8 +70,9 @@ fn vmware_utility_marker() -> std::path::PathBuf {
 /// [`VMWARE_UTILITY_PORT`] (what the plugin talks to, whatever installed it), else installed or
 /// not by [`vmware_utility_marker`].
 pub async fn vmware_utility() -> UtilityState {
-    // Unit tests read the one they set, never this machine's.
-    if cfg!(test) {
+    // Unit tests read the one they set, never this machine's; the guided setup's integration test
+    // (its report knob set: `integration_tests::setup`) reads this machine's, as the app does.
+    if cfg!(test) && std::env::var_os("CYBERCTF_TEST_SETUP_REPORT").is_none() {
         return fake_utility::state();
     }
     probe_vmware_utility().await
