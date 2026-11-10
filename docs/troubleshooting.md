@@ -65,6 +65,11 @@ and the proxy. A lab you already installed and started before can still start: t
 - **"Auto-stop couldn't destroy …"**: the message says why. If the launcher can no longer reach
   the lab's account or files, remove the lab's resources in the cloud console so they stop
   billing.
+- **"Lab … couldn't be handed over to the Isothrum runner"**: a cloud or Proxmox lab an older
+  version of the launcher started with its own Terraform, which the runner takes over at start.
+  Until it does, the launcher can't remove that lab: Stop and the auto-stop leave it running, and
+  a cloud lab keeps billing. Delete its resources in the cloud console (or its VMs on the Proxmox
+  server); the launcher tries the hand-over again every few minutes while it is open.
 
 ## Installing tools
 

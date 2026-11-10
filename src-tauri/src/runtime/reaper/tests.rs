@@ -41,3 +41,14 @@ async fn a_sweep_of_a_fresh_app_destroys_nothing_and_records_nothing() {
     reap_expired_labs(&t.dirs(), &|_: &str, _: &str| {}).await;
     assert!(failed_last_time(&t.data().join(REAP_ERRORS)).is_empty());
 }
+
+#[test]
+fn a_deployment_the_runner_cant_take_is_said_to_need_removing_by_hand() {
+    // Regression: the player was told Stop and the auto-stop would still remove it, though the
+    // launcher no longer runs Terraform itself: it kept billing.
+    let m = handover_message("web", Provider::Aws, &"its lab isn't installed any more");
+    assert!(m.contains("the launcher can't remove it") && m.contains("delete its resources in your AWS console"), "{m}");
+    assert!(!m.contains("still remove it"), "{m}");
+    let pve = handover_message("web", Provider::Proxmox, &"the runner refused it");
+    assert!(pve.contains("delete its VMs on the Proxmox server") && !pve.contains("costing"), "{pve}");
+}

@@ -1,6 +1,6 @@
-//! Labs the launcher started on its own Terraform path, handed to the Isothrum runner once it is
-//! the lab engine (risk R17): a player's running Proxmox or cloud lab stays destroyable by the
-//! runner's `down` and its reaper, one code path, after the switch.
+//! Labs the launcher started on its own Terraform path before the Isothrum runner ran them, handed
+//! to the runner (risk R17): a player's running Proxmox or cloud lab is then destroyed by the
+//! runner's `down` and its reaper, the one code path that destroys labs.
 //!
 //! Each deployment (`<app data>/deployments/<lab id>/<target>/`, a state that still holds
 //! resources) becomes run `cyberctf-<lab id>` of the manifest its lab runs from now (generated
@@ -11,8 +11,10 @@
 //!
 //! Only what the runner runs is handed over (the caller says which). A deployment it can't take
 //! (its lab gone, the runner refusing) stays where it was, said once per new reason
-//! (`import-error`), and the launcher's own path keeps stopping and reaping it
-//! ([`left_on_launcher`]); another deployment of a lab the runner already runs stays there too.
+//! (`import-error`) and tried again at the next pass. The launcher no longer runs Terraform
+//! itself, so meanwhile nothing removes it: the player is told to remove it by hand
+//! (`reaper::handover_message`, `status::left_awaiting_hand_over`). Another deployment of a lab
+//! the runner already runs stays there too.
 
 mod record;
 

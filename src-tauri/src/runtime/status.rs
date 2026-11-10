@@ -8,8 +8,9 @@ use crate::platform::AppDirs;
 
 use super::host::{self, Host};
 use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm};
+use super::providers::Provider;
 use super::{LabStatus, Place, Runtime, attack_machine, docker, isothrum, server};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     // Where it runs, in the form it was started in (a container lab run as one VM per machine
@@ -105,18 +106,41 @@ pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
 }
 
 /// The host a deployment of lab `id` on the launcher's own Terraform path is on, while one still
-/// holds resources: one the runner hasn't taken over yet (`isothrum::import`), which only that
-/// path stops. Named by the host its state records, else by the lab's marker. A deployment or
-/// state that can't be read is an error, never "nothing up": a missed one is a billable leftover.
+/// holds resources: one the runner hasn't taken over yet (`isothrum::import`). The launcher no
+/// longer runs Terraform itself, so nothing in it removes such a deployment until the runner
+/// takes it over ([`left_awaiting_hand_over`]). Named by the host its state records, else by the
+/// lab's marker. A deployment or state that can't be read is an error, never "nothing up": a
+/// missed one is a billable leftover.
 fn awaiting_hand_over(dirs: &AppDirs, id: &str) -> Result<Option<String>> {
+    Ok(deployment_awaiting_hand_over(dirs, id)?.and_then(|(host, _)| host))
+}
+
+/// [`awaiting_hand_over`], with the provider of the deployment's state folder.
+fn deployment_awaiting_hand_over(dirs: &AppDirs, id: &str) -> Result<Option<(Option<String>, Option<Provider>)>> {
     let base = dirs.data()?;
-    for (_, state) in super::paths::deployment_states(base, id)? {
+    for (target, state) in super::paths::deployment_states(base, id)? {
         if super::terraform::deployed(&state)? {
             let marked = || lab_dir(dirs, id).ok().and_then(|dir| server::marked_host(&dir)).filter(|h| !h.is_empty());
-            return Ok(super::paths::recorded_host(&state).or_else(marked));
+            return Ok(Some((super::paths::recorded_host(&state).or_else(marked), server::terraform_provider(&target))));
         }
     }
     Ok(None)
+}
+
+/// After a Stop of lab `id`, the deployment of the launcher's own Terraform path it leaves up (one
+/// the runner hasn't taken over yet: nothing in the launcher removes it), said as an error that
+/// tells the player how to remove it by hand. None when there is none.
+pub(crate) fn left_awaiting_hand_over(dirs: &AppDirs, id: &str) -> Result<Option<Error>> {
+    let Some((host, provider)) = deployment_awaiting_hand_over(dirs, id)? else { return Ok(None) };
+    let place = match &host {
+        Some(h) => server::host_name(dirs, h)?.unwrap_or_else(|| h.clone()),
+        None => "a server or cloud account".into(),
+    };
+    let by_hand = provider.map(super::reaper::remove_by_hand).unwrap_or_default();
+    Ok(Some(Error::Invalid(format!(
+        "Part of this lab is still up on {place}: a deployment from an earlier version of the launcher that the Isothrum runner hasn't taken over, which the launcher can't remove. {by_hand} {}",
+        super::reaper::RETRIED
+    ))))
 }
 
 /// Refuses to replace lab `id`'s folder (`dir`), with a new version or a re-import, while

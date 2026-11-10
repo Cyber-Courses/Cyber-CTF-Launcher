@@ -13,7 +13,9 @@
 //!
 //! Labs a player started on the launcher's own Terraform path before the runner existed are
 //! handed to the runner first ([`hand_to_runner`]), so one code path — the runner's `down` and
-//! this sweep — destroys every cloud lab.
+//! this sweep — destroys every cloud lab. The launcher no longer runs Terraform itself: a
+//! deployment the runner can't take is removed by nothing here, so the player is told to remove
+//! it by hand ([`handover_message`]), and the hand-over is tried again at every sweep.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -102,8 +104,9 @@ pub fn last_failure(dirs: &AppDirs, id: &str) -> Option<Wire> {
 
 /// Hands the labs a player started on the launcher's own Terraform path (before the runner) to the
 /// Isothrum runner ([`isothrum::import_all`]): at the start of every sweep (so at app start, and
-/// before the runner's reaper looks). A lab that can't be handed over stays the launcher's,
-/// stopped and reaped as before, and the player is told why once per new reason.
+/// before the runner's reaper looks). A lab that can't be handed over stays where it is, which
+/// neither Stop nor the auto-stop can remove until a later sweep hands it over: the player is
+/// told why, and how to remove it by hand, once per new reason.
 pub(super) async fn hand_to_runner(dirs: &AppDirs, report: &Report) {
     let Ok(base) = dirs.data() else { return };
     let runner = match isothrum::import_runner(base) {
@@ -132,9 +135,23 @@ pub(super) async fn hand_to_runner(dirs: &AppDirs, report: &Report) {
 /// What the player is told about lab `id`'s deployment on `provider` the runner couldn't take.
 fn handover_message(id: &str, provider: Provider, why: &impl std::fmt::Display) -> String {
     let place = if provider.is_cloud() { format!("your {} account", provider.label()) } else { "your Proxmox server".into() };
+    let costs = if provider.is_cloud() { ", and it keeps costing" } else { "" };
     format!(
-        "Lab {id}, running in {place}, couldn't be handed over to the Isothrum runner: {why}. It stays with the launcher's own engine until you stop it, so Stop and the auto-stop still remove it."
+        "Lab {id}, running in {place}, couldn't be handed over to the Isothrum runner: {why}. Until it is, the launcher can't remove it: Stop and the auto-stop leave it running{costs}. {} {RETRIED}",
+        remove_by_hand(provider)
     )
+}
+
+/// How the hand-over of a deployment the runner couldn't take is tried again.
+pub(super) const RETRIED: &str = "The hand-over is tried again every few minutes while the app is open.";
+
+/// What the player does to remove by hand a deployment on `provider` the launcher can't remove.
+pub(super) fn remove_by_hand(provider: Provider) -> String {
+    if provider.is_cloud() {
+        format!("To stop it now, delete its resources in your {} console.", provider.label())
+    } else {
+        "To stop it now, delete its VMs on the Proxmox server.".into()
+    }
 }
 
 #[cfg(test)]
