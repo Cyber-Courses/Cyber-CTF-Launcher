@@ -143,7 +143,8 @@ export function useLabDetail(p: LabDetailProps) {
   const box = useShownBox(useLabAttackBox(lab.id, s, runtime), removing(s));
   const [check, clearCheck] = useLabCheck(lab.id, runtime, { running: s.running, downCount: s.down.length });
   const tools = useLabTools(lab.id, s.running && !s.isCloud, runtime);
-  const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn);
+  // An imported lab's challenges are its own `.ctf/objectives.json`'s, read with the lab: none from the backend.
+  const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn, !lab.imported);
   const restart = () => restartTarget(status, run.hosts, runtime, run.runOn, run.localVm);
   const { resetting, reset } = useLabReset(p.onStop, p.onStart, restart, clearCheck);
   const startOn = (target: RunTarget) => void p.onStart(target);

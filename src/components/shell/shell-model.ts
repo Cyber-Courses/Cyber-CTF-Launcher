@@ -3,6 +3,7 @@ import type { ActiveOperation, LabStatus, Provider, SystemReport } from "@/lib/t
 import { engineName } from "@/features/machine/setup-steps/engines";
 import { providerName } from "@/features/machine/hypervisors";
 import { prettyLabId } from "@/lib/format";
+import { isImportedId } from "@/features/labs/imported-labs";
 
 // The app shell's pure logic: the screens and their order, the breadcrumb, the header's engine
 // line, which labs the sidebar lists as running and the keyboard shortcuts.
@@ -55,7 +56,8 @@ export type ActiveLab = SidebarLab & { op: ActiveOperation | null };
  * the scan: the scan counts any VM a lab left behind (a half-started VM lab), so the sidebar said
  * "Running" while the Overview, from the same statuses, counted one lab fewer. A lab `labs`
  * doesn't list (the catalogue couldn't be loaded) is still listed, by its id made readable, with
- * no slug to open: a running lab must not vanish with the catalogue.
+ * no slug to open: a running lab must not vanish with the catalogue. An imported lab's opens by its
+ * id, its page's slug, before the list of imported labs has it.
  */
 export function activeLabs(
   labs: SidebarLab[],
@@ -70,7 +72,8 @@ export function activeLabs(
   const unlisted = [...new Set([...deploying, ...ops.keys(), ...runningIds])]
     .filter((id) => !listed.has(id) && active(id))
     .sort()
-    .map((id): SidebarLab => ({ id, slug: "", title: prettyLabId(id), category: "" }));
+    // An imported lab not read yet (just imported) opens by its id, its page's slug.
+    .map((id): SidebarLab => ({ id, slug: isImportedId(id) ? id : "", title: prettyLabId(id), category: "" }));
   return [...labs.filter((l) => active(l.id)), ...unlisted].map((l) => ({
     ...l,
     op: ops.get(l.id) ?? (deploying.has(l.id) ? { labId: l.id, op: "launch" as const, machine: null, step: null } : null),

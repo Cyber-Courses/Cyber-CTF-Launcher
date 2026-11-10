@@ -10,6 +10,7 @@ import { filterLabs, NO_FILTERS, type LabFilters } from "@/features/labs/lab-fil
 import { LabsFilterBar } from "@/features/labs/labs-filter-bar";
 import { LabListSkeleton, LabsCatalogue, LabsHeader, SignInBanner, UnlistedRunning, type RowContext } from "@/features/labs/labs-list";
 import { runningUnlisted } from "@/features/labs/lab-row-state";
+import { ImportedLabs } from "@/features/labs/imported-labs-list";
 import { OpenLab, OpenLabLoading, useDetailTitle, useOpenLab } from "@/features/labs/open-lab";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
@@ -81,60 +82,35 @@ type ViewProps = LabsProps & { onRetry: () => void };
  *  filters, the saved servers and the hypervisors ready here. */
 function useLabsScreen({ loggedIn, report, openLab, onDetailChange }: ViewProps) {
   const catalogue = useLabs(loggedIn);
-  const { labs, completed } = catalogue;
+  const { labs, imported, completed } = catalogue;
   const statuses: Statuses = catalogue.statuses;
   const servers = useSavedHosts().hosts;
   const actions = useLabActions(catalogue.refreshStatus, servers);
   // Deploys running in the backend (started from another window or before a reload), for the rows' dots.
   const deploying = useDeployingLabs();
-  const [detailSlug, setDetailSlug] = useOpenLab(openLab, labs);
+  // A lab page opens on a catalogue lab or an imported one (each read on its own).
+  const openable = useMemo(() => (labs || imported ? [...(labs ?? []), ...(imported ?? [])] : null), [labs, imported]);
+  const [detailSlug, setDetailSlug] = useOpenLab(openLab, openable);
   const [filters, setFilters] = useState<LabFilters>(NO_FILTERS);
   // Local hypervisors ready for a lab VM (Vagrant + hypervisor), the Settings default first.
   const readyVms = useMemo(() => (report ? preferredFirst(report.readyHypervisors, getVmProvider()) : []), [report]);
   const shown = useFilteredLabs(labs, filters, statuses, completed);
-  const detail = labs && detailSlug ? labs.find((l) => l.slug === detailSlug) : undefined;
+  const detail = openable && detailSlug ? openable.find((l) => l.slug === detailSlug) : undefined;
   useDetailTitle(detail?.title ?? null, onDetailChange);
   return { ...catalogue, statuses, actions, deploying, detailSlug, setDetailSlug, filters, setFilters, servers, readyVms, shown, detail };
 }
 
-function LabsView(props: ViewProps) {
-  const { loggedIn, authReady = true, onLogin, hostArch, report, onRetry } = props;
-  const v = useLabsScreen(props);
-  const { labs, statuses, actions, detail, setDetailSlug } = v;
-  // Stable, for the memoized rows (see RowContext).
+/** The rows' context: the screen's state and its stable handlers (the rows are memoized). */
+function useRowContext(v: ReturnType<typeof useLabsScreen>, { loggedIn, onLogin, hostArch, report }: ViewProps): RowContext {
+  const { actions, setDetailSlug } = v;
   const onOpen = useStableCallback((lab: Lab) => {
     setDetailSlug(lab.slug);
   });
   const onStop = useStableCallback((lab: Lab) => void actions.stop(lab));
   const onResume = useStableCallback((lab: Lab) => void actions.resume(lab));
   const login = useStableCallback(() => onLogin?.() ?? Promise.resolve(false));
-
-  if (v.error) return <LabsUnreachable statuses={statuses} scanned={v.scanned} labs={labs} onRetry={onRetry} />;
-  if (v.detailSlug && !detail && !labs) return <OpenLabLoading />;
-  if (detail) {
-    return (
-      <OpenLab
-        // Its own state per lab (a pending action, an open remove dialog, the attack box's
-        // auto-start): opening another lab from the sidebar or palette must not inherit it.
-        key={detail.id}
-        lab={detail}
-        status={statuses[detail.id]}
-        actions={actions}
-        loggedIn={loggedIn}
-        onLogin={onLogin}
-        hostArch={hostArch}
-        readyVms={v.readyVms}
-        report={report}
-        ready={authReady && (!detail.runtime || v.probed.has(detail.id))}
-        onBack={() => {
-          setDetailSlug(null);
-        }}
-      />
-    );
-  }
-
-  const ctx: RowContext = {
-    statuses,
+  return {
+    statuses: v.statuses,
     runs: actions.runs,
     completed: v.completed,
     deploying: v.deploying,
@@ -149,11 +125,47 @@ function LabsView(props: ViewProps) {
     onStop,
     onResume,
   };
+}
+
+function LabsView(props: ViewProps) {
+  const { loggedIn, authReady = true, onLogin, hostArch, report, onRetry } = props;
+  const v = useLabsScreen(props);
+  const { labs, statuses, actions, detail, setDetailSlug } = v;
+  const ctx = useRowContext(v, props);
+
+  // An imported lab's page needs no catalogue: it opens while the catalogue can't be read too.
+  if (v.error && !detail?.imported)
+    return <LabsUnreachable statuses={statuses} scanned={v.scanned} labs={labs} imported={v.imported} ctx={ctx} onRetry={onRetry} />;
+  if (v.detailSlug && !detail && !labs) return <OpenLabLoading />;
+  if (detail) {
+    return (
+      <OpenLab
+        // Its own state per lab (a pending action, an open remove dialog, the attack box's
+        // auto-start): opening another lab from the sidebar or palette must not inherit it.
+        key={detail.id}
+        lab={detail}
+        status={statuses[detail.id]}
+        actions={actions}
+        loggedIn={loggedIn}
+        // An imported lab runs without Cyber CTF: its page never asks to sign in.
+        onLogin={detail.imported ? undefined : onLogin}
+        hostArch={hostArch}
+        readyVms={v.readyVms}
+        report={report}
+        ready={authReady && (!detail.runtime || v.probed.has(detail.id))}
+        onBack={() => {
+          setDetailSlug(null);
+        }}
+      />
+    );
+  }
+
   // The catalogue stops at LIST_SCREEN; a lab's page (above) takes the shell's full width.
   return (
     <div className={cn("space-y-5", LIST_SCREEN)}>
       <LabsHeader labs={labs} completed={v.completed} isRunning={(l) => isRunning(statuses, l)} loggedIn={loggedIn} />
       {!loggedIn && authReady && onLogin && <SignInBanner onLogin={onLogin} />}
+      <ImportedLabs labs={v.imported} ctx={ctx} />
       <LabsFilterBar
         filters={v.filters}
         onChange={(patch) => {
@@ -166,12 +178,29 @@ function LabsView(props: ViewProps) {
 }
 
 /** The catalogue couldn't be loaded: the labs running here still run, listed (by the catalogue
- *  last loaded, else by id), above the error and its Retry. */
-function LabsUnreachable({ statuses, scanned, labs, onRetry }: { statuses: Statuses; scanned: Set<string>; labs: Lab[] | null; onRetry: () => void }) {
+ *  last loaded, else by id), and the imported labs, which need no catalogue, still open, above the
+ *  error and its Retry. */
+function LabsUnreachable({
+  statuses,
+  scanned,
+  labs,
+  imported,
+  ctx,
+  onRetry,
+}: {
+  statuses: Statuses;
+  scanned: Set<string>;
+  labs: Lab[] | null;
+  imported: Lab[] | null;
+  ctx: RowContext;
+  onRetry: () => void;
+}) {
   const t = useT();
+  const importedIds = new Set((imported ?? []).map((l) => l.id));
   return (
     <div className={cn("space-y-5", LIST_SCREEN)}>
-      <UnlistedRunning ids={runningUnlisted(null, statuses, scanned)} labs={labs} />
+      <UnlistedRunning ids={runningUnlisted(null, statuses, scanned).filter((id) => !importedIds.has(id))} labs={labs} />
+      <ImportedLabs labs={imported} ctx={ctx} />
       <EmptyState
         icon="alert"
         title={t("labs.list.unreachableTitle")}

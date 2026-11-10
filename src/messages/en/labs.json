@@ -217,7 +217,8 @@
       "one": "{count} lab",
       "other": "{count} labs"
     },
-    "allLabs": "All labs"
+    "allLabs": "All labs",
+    "imported": "Imported from a folder"
   },
   "attackBox": {
     "network": "Network",
@@ -335,6 +336,8 @@
     "allMachines": "All machines",
     "rerunHint": "Run the lab's setup again (vagrant provision)",
     "signInToRun": "Sign in to run labs on this machine.",
+    "importAgainHint": "This lab starts from its folder: import the folder again to start it.",
+    "ctfUnreadable": "{file} can't be read: {error}",
     "removeTitle": "Remove {title}?",
     "remove": "Remove",
     "removeBody": "Its machines and your attack box are deleted, with everything changed or saved on them. The next start rebuilds the lab from scratch.",
@@ -367,11 +370,16 @@
   },
   "objectives": {
     "title": "Objectives",
+    "count": {
+      "one": "{count} objective",
+      "other": "{count} objectives"
+    },
     "required": "{solved}/{total} required",
     "progress": "Required challenges solved",
     "completed": "Completed",
     "completedNote": "Lab completed: every required challenge is solved.",
     "signIn": "Sign in to submit answers and track your progress.",
+    "readOnly": "Read only: this lab isn't published, so answers aren't checked here. Progress is tracked for published labs.",
     "optional": "optional",
     "guided": "guided",
     "solved": "Solved",

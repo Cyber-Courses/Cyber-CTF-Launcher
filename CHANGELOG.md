@@ -8,6 +8,18 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **A lab page for a lab imported from a folder, built from what the folder defines.** An
+  imported lab (`local-<name>`) is listed under **Imported from a folder** on the Labs screen, and
+  its entry under **Running** in the sidebar, its row on the Overview and the command palette open
+  its page, which none of them did. The page reads the lab's own `.ctf/` folder from the installed
+  copy: `metadata.json` gives the title, description, difficulty, category and capabilities (else
+  the title is the spec's name and the rest is left out, with no empty slots), and
+  `objectives.json` the objectives, shown read only with a note that progress is tracked for
+  published labs (no section without it). A file that can't be read is named on the page with
+  why. Without `.ctf/`, the page is the lab itself: its state, deployment, network, where it runs,
+  the attack box, and Stop, Open in browser and the shell. Nothing on it is asked of Cyber CTF,
+  which doesn't know the lab, and it never asks to sign in; a stopped one starts again by
+  importing its folder again.
 - **Two ways to get VMware's OVF Tool for ESXi, and a third to use one already downloaded.** The
   ESXi setup's OVF Tool row links to VMware Fusion (macOS) or Workstation (x64 Windows and Linux),
   both free and shipping the tool, and to the standalone download. **Use a downloaded OVF Tool…**

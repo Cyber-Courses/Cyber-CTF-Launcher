@@ -38,7 +38,7 @@ type HomeProps = {
 /** The labs as the Overview shows them: the catalogue, what runs and deploys, what to jump back
  *  into, and the actions on them. */
 function useOverviewLabs(loggedIn: boolean) {
-  const { labs, error, retry, statuses, scanned, completed, refreshStatus } = useLabs(loggedIn);
+  const { labs, imported, error, retry, statuses, scanned, completed, refreshStatus } = useLabs(loggedIn);
   const servers = useSavedHosts().hosts;
   const actions = useLabActions(refreshStatus, servers);
   const ops = useActiveOperations();
@@ -46,6 +46,10 @@ function useOverviewLabs(loggedIn: boolean) {
   const deploying = useDeployingLabs();
   const all = labs ?? [];
   const running = labsRunning(all, statuses);
+  // Running here but not in the catalogue: an imported lab (its page opens like any lab's), or any
+  // lab while the catalogue couldn't be loaded (listed by id).
+  const unlisted = runningUnlisted(labs, statuses, scanned);
+  const importedRunning = (imported ?? []).filter((l) => unlisted.includes(l.id));
   return {
     labs,
     error,
@@ -56,8 +60,8 @@ function useOverviewLabs(loggedIn: boolean) {
     deploying,
     servers,
     running,
-    // Running here but not in the catalogue (it couldn't be loaded): still listed, by id.
-    unlisted: runningUnlisted(labs, statuses, scanned),
+    importedRunning,
+    unlisted: unlisted.filter((id) => !importedRunning.some((l) => l.id === id)),
     labContainers: labContainerCount(running, statuses),
     activeOps: [...ops.values()],
     recent: recentLabs(all, statuses, getLastRun),
@@ -153,7 +157,7 @@ export function HomeScreen({ report, checkError = null, onRetryCheck, auth, onNa
   const ctx = useRowContext(o, { report, loggedIn, onLogin, openLab });
   // The memoized row itself, no wrapper: a metrics tick re-renders the screen, not its rows.
   const labRow = (lab: Lab) => <LabRow key={lab.id} {...catalogueRowProps(lab, ctx)} />;
-  const runningCount = o.running.length + o.unlisted.length;
+  const runningCount = o.running.length + o.importedRunning.length + o.unlisted.length;
   const browse = () => {
     onNavigate("labs");
   };
@@ -168,6 +172,7 @@ export function HomeScreen({ report, checkError = null, onRetryCheck, auth, onNa
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <RunningPanel running={runningCount} containers={o.labContainers}>
           {o.running.map(labRow)}
+          {o.importedRunning.map(labRow)}
           {o.unlisted.map((id) => (
             <UnlistedRunningRow key={id} id={id} imported={o.labs !== null} />
           ))}

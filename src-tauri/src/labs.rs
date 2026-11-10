@@ -13,6 +13,8 @@ use crate::error::{Error, Result};
 use crate::runtime::{self, Runtime, providers::Provider};
 
 mod archive;
+pub(crate) mod ctf;
+pub(crate) mod imported;
 mod launch_env;
 mod offline;
 
@@ -400,7 +402,7 @@ pub(crate) fn local_id(src: &Path) -> Result<String> {
     let slug: String = base.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c.to_ascii_lowercase() } else { '-' }).collect();
     let slug = slug.trim_matches('-');
     let slug = if slug.is_empty() { "lab" } else { slug };
-    let id = format!("local-{}", &slug[..slug.len().min(56)]);
+    let id = format!("{}{}", imported::PREFIX, &slug[..slug.len().min(56)]);
     runtime::validate_id(&id)?;
     Ok(id)
 }

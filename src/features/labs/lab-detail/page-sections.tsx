@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { Shuffle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NoticePanel } from "@/components/ui/notice-panel";
 import { StatusDot } from "@/components/ui/status-pill";
 import { HealthBanner } from "@/features/labs/lab-health";
+import { ImportLab } from "@/features/labs/import-lab";
 import { CloudNotePanel, CloudPanel } from "@/features/labs/cloud-panel";
 import { DeploymentPanel } from "@/features/labs/lab-detail/deployment-panel";
 import { HeaderActions } from "@/features/labs/lab-detail/header-actions";
@@ -18,6 +20,7 @@ import { useLabState } from "@/features/labs/lab-store";
 import { StartLabButton } from "@/features/labs/lab-detail/start-lab-button";
 import type { LabDetailProps, LabPage } from "@/features/labs/lab-detail/use-lab-detail";
 import { ObjectivesLoading, ObjectivesPanel } from "@/features/labs/objectives/objectives-panel";
+import { ReadOnlyObjectives } from "@/features/labs/objectives/read-only-objectives";
 import { useStartAfterSignIn } from "@/features/labs/lab-detail/use-start-after-sign-in";
 import { useT } from "@/lib/i18n";
 
@@ -29,6 +32,9 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
   const t = useT();
   const { s, acting, act } = page;
   const afterSignIn = useStartAfterSignIn(page, p);
+  // An imported lab starts from its folder, which only an import names: import it again (signed
+  // in or not: it runs without Cyber CTF).
+  if (p.lab.imported && (mode === "start" || mode === "failed" || mode === "signIn")) return <ImportLab hint={t("labs.detail.importAgainHint")} />;
   if (mode === "start" || mode === "failed")
     return (
       <>
@@ -84,9 +90,11 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
   );
 }
 
-/** Under the header: the last operation's failure, a shell that failed to open, and the health
- *  banner (a container went down: say so, check it, offer a clean restart). */
+/** Under the header: the last operation's failure, an imported lab's `.ctf/` file that can't be
+ *  read, a shell that failed to open, and the health banner (a container went down: say so,
+ *  check it, offer a clean restart). */
 export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetailProps }) {
+  const t = useT();
   const { s, shell, act } = page;
   // Dismissed for this failure only: the next one shows again.
   const failure = s.failure && s.failedOp ? { op: s.failedOp, message: s.failure, key: `${s.failedOp}|${String(s.startedAt ?? "")}|${s.failure}` } : null;
@@ -115,6 +123,11 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
       )}
       {statusError !== undefined && <StatusReadNotice title={p.lab.title} error={statusError} />}
       {p.status?.reapError && <ReapFailedNotice title={p.lab.title} error={p.status.reapError} />}
+      {p.lab.imported?.problems.map((problem) => (
+        <NoticePanel key={problem.file} tone="warn">
+          {t("labs.detail.ctfUnreadable", { file: problem.file, error: problem.error })}
+        </NoticePanel>
+      ))}
       {shell.error && (
         <p className="-mt-2 flex items-center gap-2 text-[0.75rem] text-muted-foreground">
           <StatusDot tone="fail" /> {shell.error}
@@ -126,9 +139,14 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           check={page.check}
           busy={p.busy}
           resetting={page.resetting}
-          onReset={() => {
-            void page.reset();
-          }}
+          // Reset starts the lab again from the catalogue: an imported lab isn't in it.
+          onReset={
+            p.lab.imported
+              ? undefined
+              : () => {
+                  void page.reset();
+                }
+          }
           onResume={s.canRepair && p.onResume ? () => void act("resume") : undefined}
         />
       )}
@@ -194,10 +212,12 @@ export function LabPanels({ page, props: p, meta, network = true }: { page: LabP
   );
 }
 
-/** The lab's challenges once read (the lab's question while they load). */
+/** The lab's challenges once read (the lab's question while they load). An imported lab's are
+ *  its `.ctf/objectives.json`'s, to read only, and there are none without that file. */
 export function LabObjectives({ page, props: p }: { page: LabPage; props: LabDetailProps }) {
   const { objectives } = page;
   const { lab } = p;
+  if (lab.imported) return lab.imported.objectives ? <ReadOnlyObjectives challenges={lab.imported.objectives} /> : null;
   if (objectives.state.kind === "loading") return lab.question ? <ObjectivesLoading question={lab.question} /> : null;
   if (objectives.state.kind !== "ready") return null;
   return (

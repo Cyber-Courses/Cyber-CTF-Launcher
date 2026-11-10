@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiQuery, type Provider, type Runtime } from "@/lib/tauri";
+import { apiQuery, type LabChallenge, type LabFileProblem, type Provider, type Runtime } from "@/lib/tauri";
 import { catalogueFor, refreshStatus, setCatalogue, useLabState } from "@/features/labs/lab-store";
 import { useLabPolling } from "@/features/labs/lab-polling";
+import { useImportedLabs } from "@/features/labs/imported-labs";
 import type { T } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
 import { ignore } from "@/lib/failure";
@@ -34,6 +35,10 @@ export interface Lab {
   runtime: LabRuntimeInfo | null;
   /** Skills the lab exercises (from the capabilities it targets), for grouping. */
   skills: { id: string; name: string }[];
+  /** A lab imported from a folder (no catalogue entry, see imported-labs): its challenges as its
+   *  `.ctf/objectives.json` lists them (null without one), and the files of its `.ctf/` that
+   *  can't be read. Absent for a catalogue lab. */
+  imported?: { objectives: LabChallenge[] | null; problems: LabFileProblem[] };
 }
 
 /** The catalogue loaded for `reloadKey` (on mount, the one the store last loaded for it; none
@@ -90,7 +95,8 @@ function useCatalogue(reloadKey: unknown) {
 const NONE_COMPLETED = new Set<string>();
 
 /**
- * Loads the published labs from CyberBackend and tracks each lab's local runtime status
+ * Loads the published labs from CyberBackend (and the labs imported from a folder, `imported`,
+ * which it doesn't list) and tracks each lab's local runtime status
  * (running / machines / url). Shared by the Labs screen and the Home dashboard so both
  * reflect the same state (the statuses live in lab-store). `reloadKey` re-fetches the
  * catalogue when it changes; the one loaded for it before (this session) shows meanwhile, never
@@ -109,7 +115,10 @@ export function useLabs(reloadKey: unknown = 0) {
   const probed = useLabState("probed");
   // One poll for the window, however many screens use this (see lab-polling).
   useLabPolling(labs);
-  return { labs, error, retry, statuses, scanned, completed, refreshStatus, probed };
+  // The labs imported from a folder: no catalogue lists them, their statuses polled the same way.
+  const imported = useImportedLabs();
+  useLabPolling(imported);
+  return { labs, imported, error, retry, statuses, scanned, completed, refreshStatus, probed };
 }
 
 const DIFFICULTY_KEYS: Partial<Record<number, "easy" | "medium" | "hard">> = { 1: "easy", 2: "medium", 3: "hard" };

@@ -33,9 +33,10 @@ type Loaded = { labId: string; challenges: Challenge[] | null | "unavailable" };
 type Progress = { key: string; progress: LabProgress | null };
 
 /** The lab's challenges, kept with the lab they were read for (undefined while loading). */
-function useChallenges(labId: string, question: string | null, title: string) {
+function useChallenges(labId: string, question: string | null, title: string, enabled: boolean) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     loadObjectives(labId)
       .then((objectives) => {
@@ -49,7 +50,7 @@ function useChallenges(labId: string, question: string | null, title: string) {
     return () => {
       alive = false;
     };
-  }, [labId, question, title]);
+  }, [labId, question, title, enabled]);
   return loaded?.labId === labId ? loaded.challenges : undefined;
 }
 
@@ -102,12 +103,13 @@ export function objectivesState(
  * Loads a lab's challenges and the player's progress, and wraps the two mutations. Progress is
  * updated in place from each answer, then read again from the backend after a correct one.
  * Each answer is kept with the lab (and sign-in) it was read for, so a page switching labs
- * never shows the previous lab's.
+ * never shows the previous lab's. Not `enabled` (a lab the backend doesn't know: one imported from
+ * a folder), nothing is asked of the backend and the objectives stay loading.
  */
-export function useObjectives(labId: string, question: string | null, title: string, loggedIn: boolean) {
-  const challenges = useChallenges(labId, question, title);
+export function useObjectives(labId: string, question: string | null, title: string, loggedIn: boolean, enabled = true) {
+  const challenges = useChallenges(labId, question, title, enabled);
   const progressKey = progressKeyOf(labId, loggedIn);
-  const { stored, setStored, refresh } = useStoredProgress(labId, loggedIn);
+  const { stored, setStored, refresh } = useStoredProgress(labId, loggedIn && enabled);
   const list = useMemo(() => (Array.isArray(challenges) ? challenges : []), [challenges]);
   const progress = (stored?.key === progressKey ? stored.progress : null) ?? emptyProgress(list);
 

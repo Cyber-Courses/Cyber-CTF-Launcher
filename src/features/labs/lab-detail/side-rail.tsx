@@ -70,7 +70,7 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
           <DetailsPanel status={status} place={page.place} meta={meta} cost={cost} provision={provisionControl(page, busy)} />
         </Dimmed>
       )}
-      {!p.loggedIn && <p className="px-1 text-[0.75rem] text-muted-foreground">{t("labs.detail.signInToRun")}</p>}
+      {!p.loggedIn && !lab.imported && <p className="px-1 text-[0.75rem] text-muted-foreground">{t("labs.detail.signInToRun")}</p>}
     </aside>
   );
 }

@@ -217,7 +217,8 @@
       "one": "{count} 件のラボ",
       "other": "{count} 件のラボ"
     },
-    "allLabs": "すべてのラボ"
+    "allLabs": "すべてのラボ",
+    "imported": "フォルダーからインポート"
   },
   "attackBox": {
     "network": "ネットワーク",
@@ -335,6 +336,8 @@
     "allMachines": "すべてのマシン",
     "rerunHint": "ラボのセットアップを再実行します（vagrant provision）",
     "signInToRun": "このマシンでラボを実行するにはサインインしてください。",
+    "importAgainHint": "このラボはフォルダーから起動します。起動するにはフォルダーをもう一度インポートしてください。",
+    "ctfUnreadable": "{file} を読み込めません：{error}",
     "removeTitle": "{title} を削除しますか？",
     "remove": "削除",
     "removeBody": "ラボのマシンとアタックボックスが、変更・保存した内容ごと削除されます。次回の起動時にラボは一から再構築されます。",
@@ -367,11 +370,16 @@
   },
   "objectives": {
     "title": "目標",
+    "count": {
+      "one": "{count} 件の目標",
+      "other": "{count} 件の目標"
+    },
     "required": "必須 {solved}/{total}",
     "progress": "解決した必須チャレンジ",
     "completed": "完了",
     "completedNote": "ラボ完了：必須チャレンジをすべて解決しました。",
     "signIn": "回答を送信して進捗を記録するにはサインインしてください。",
+    "readOnly": "閲覧のみ：このラボは公開されていないため、ここでは回答を確認しません。進捗は公開済みのラボで記録されます。",
     "optional": "任意",
     "guided": "ガイド付き",
     "solved": "解決済み",

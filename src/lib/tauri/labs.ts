@@ -5,8 +5,11 @@ import type {
   Badge,
   CloudPreview,
   AttackStatus,
+  ImportedLab,
+  LabChallenge,
   LabCheck,
   LabCheckResult,
+  LabFileProblem,
   LabInterface,
   LabMachine,
   LabNetwork,
@@ -42,8 +45,11 @@ export type {
   Badge,
   CloudPreview,
   AttackStatus,
+  ImportedLab,
+  LabChallenge,
   LabCheck,
   LabCheckResult,
+  LabFileProblem,
   LabInterface,
   LabMachine,
   LabNetwork,
@@ -149,6 +155,10 @@ export const labLaunch = ({ offline = false, perMachineVm = false, ...launch }: 
  *  catalogue and the backend); the deploy's log is streamed to `onLog`. The lab then appears in
  *  the running labs by its derived `local-<name>` id, driven by the ordinary lifecycle commands. */
 export const labLaunchLocal = (path: string, onLog: (line: string) => void) => invokeStreaming("lab_launch_local", { path }, onLog);
+
+/** The labs imported from a folder installed here, each with what its own `.ctf/` folder says of
+ *  it (title, description, category, difficulty, challenges) and which of those files can't be read. */
+export const importedLabs = () => invoke<ImportedLab[]>("imported_labs");
 
 /** The lab ids currently starting or stopping in the backend. Read on load to rehydrate the
  *  "starting" state after a window reload, which loses the in-memory deploy store. */

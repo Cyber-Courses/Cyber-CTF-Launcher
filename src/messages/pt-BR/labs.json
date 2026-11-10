@@ -217,7 +217,8 @@
       "one": "{count} lab",
       "other": "{count} labs"
     },
-    "allLabs": "Todos os labs"
+    "allLabs": "Todos os labs",
+    "imported": "Importados de uma pasta"
   },
   "attackBox": {
     "network": "Rede",
@@ -335,6 +336,8 @@
     "allMachines": "Todas as máquinas",
     "rerunHint": "Rodar a configuração do lab de novo (vagrant provision)",
     "signInToRun": "Entre para rodar labs nesta máquina.",
+    "importAgainHint": "Este lab é iniciado a partir da pasta dele: importe a pasta de novo para iniciá-lo.",
+    "ctfUnreadable": "Não é possível ler {file}: {error}",
     "removeTitle": "Remover {title}?",
     "remove": "Remover",
     "removeBody": "As máquinas dele e sua attack box são apagadas, com tudo o que foi alterado ou salvo nelas. A próxima inicialização reconstrói o lab do zero.",
@@ -367,11 +370,16 @@
   },
   "objectives": {
     "title": "Objetivos",
+    "count": {
+      "one": "{count} objetivo",
+      "other": "{count} objetivos"
+    },
     "required": "{solved}/{total} obrigatórios",
     "progress": "Desafios obrigatórios resolvidos",
     "completed": "Concluído",
     "completedNote": "Lab concluído: todos os desafios obrigatórios foram resolvidos.",
     "signIn": "Entre para enviar respostas e acompanhar seu progresso.",
+    "readOnly": "Somente leitura: este lab não está publicado, então as respostas não são verificadas aqui. O progresso é registrado nos labs publicados.",
     "optional": "opcional",
     "guided": "guiado",
     "solved": "Resolvido",

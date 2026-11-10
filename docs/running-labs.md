@@ -1,7 +1,8 @@
 # Running labs
 
 How the launcher runs a lab, wherever it runs: the forms a lab takes in each place, the files
-that say where a lab is, the attack box, and the accounts and servers it reaches.
+that say where a lab is, the attack box, the labs imported from a folder, and the accounts and
+servers it reaches.
 
 A lab describes itself once, in an `isoloom.yml`. For each place the launcher asks
 [Isoloom](https://www.isoloom.com) to generate that place's files (`lab::prepare`, into the lab's
@@ -67,6 +68,32 @@ the checks run from that seat run from the box; taking the box out brings the la
 back. Without one, the box is `attackbox` on the lab's first network (or the one the player
 picks). Isoloom and Isothrum know nothing of the attack box: the launcher composes their general
 features (`.cyberctf-overlay.yml`, update, retire, the console).
+
+## Labs imported from a folder
+
+**Labs > Import a lab** runs a lab that isn't published: pick a folder with an `isoloom.yml`, and
+the launcher copies it into `<app data>/labs/local-<name>/` (`name` is the spec's) and starts it as
+containers on this machine, without Cyber CTF (no sign-in, no flags, no progress saved). It is
+listed under **Imported from a folder** on the Labs screen, under **Running** in the sidebar and on
+the Overview, and each opens its lab page.
+
+No catalogue entry describes it, so its page shows what the lab's own `.ctf/` folder defines, read
+from the installed copy (the one the run uses), each file on its own:
+
+| File                   | On the page                                                                                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.ctf/metadata.json`   | the title, description, difficulty (1 to 3), category and capabilities (as tags); without it, the title is the spec's `name` and the rest is left out |
+| `.ctf/objectives.json` | the objectives (`{ "objectives": [...] }`): each one's title, prompt and guided steps, to read only; without it, no objectives section                |
+
+The objectives are read only: progress and answers are checked and kept by Cyber CTF for
+published labs, so an imported lab's page says so instead of offering an answer field. The
+answers (`check`, `dev`) and the hint texts never leave the core. A file that is there but can't
+be read (not JSON, a missing `title`, a difficulty out of range, a key used twice) is named on the
+page with why ("metadata.json can't be read: …"); the other file is still read.
+
+Without a `.ctf/` folder the page is the lab itself: its name, state, deployment steps and log,
+network diagram, where it runs, the attack box, and Stop, Open in browser and the shell. A stopped
+imported lab starts again by importing its folder again, which picks up any change made to it.
 
 ## Accounts and servers
 

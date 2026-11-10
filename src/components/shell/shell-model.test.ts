@@ -89,6 +89,14 @@ describe("activeLabs", () => {
     expect(out[0].op).toBe(op);
   });
 
+  it("opens an imported lab the list doesn't have yet by its id", () => {
+    const out = activeLabs([], new Set(["local-invoice-portal-api"]), new Map(), new Set(["lab-invoice"]), {});
+    expect(out.map((l) => [l.id, l.slug])).toEqual([
+      ["lab-invoice", ""],
+      ["local-invoice-portal-api", "local-invoice-portal-api"],
+    ]);
+  });
+
   it("lets a lab's own status overrule the workload scan", () => {
     const out = activeLabs(labs, new Set(), new Map(), new Set(["a", "d"]), { a: status(false), d: status(true) });
     expect(out.map((l) => l.id)).toEqual(["d"]);

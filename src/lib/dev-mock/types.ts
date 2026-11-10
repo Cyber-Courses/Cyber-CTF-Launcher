@@ -12,6 +12,7 @@ import type {
   GcpBillingAccount,
   GcpOrganization,
   HostCapacity,
+  ImportedLab,
   InstalledTool,
   LabCheck,
   LabRequirements,
@@ -65,6 +66,7 @@ type Answers = {
   active_operations: ActiveOperation[];
   lab_deploy_log: string;
   lab_tools: LabTool[];
+  imported_labs: ImportedLab[];
   lab_check: LabCheck;
   managed_settings: ManagedSettings;
 };

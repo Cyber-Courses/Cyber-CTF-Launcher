@@ -59,6 +59,13 @@ pub async fn lab_launch_local(app: AppHandle, path: String, logs: Channel<String
     deploy_worker::run_job(&app, job, logs).await
 }
 
+/// The labs imported from a folder installed here, each with what its own `.ctf/` folder says
+/// of it (see [`labs::imported`]): their lab page's, since no catalogue lists them.
+#[tauri::command]
+pub async fn imported_labs(app: AppHandle) -> Result<Vec<labs::imported::Imported>> {
+    labs::imported::list(&AppDirs::from(&app))
+}
+
 /// The labs a deploy worker is running an operation on.
 #[tauri::command]
 pub async fn deploying_labs(app: AppHandle) -> Vec<String> {
@@ -324,7 +331,7 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 mod tests {
     use super::{AttachPick, LabSource, check_image, lines, valid_machine_name};
     use super::{
-        attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_cloud_preview, lab_default_place, lab_launch,
+        attack_box_attach, attack_box_detach, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_cloud_preview, lab_default_place, lab_launch,
         lab_launch_local, lab_park, lab_provision, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools, running_labs,
     };
     use crate::platform::exec::fake::Tools;
@@ -344,6 +351,19 @@ mod tests {
 
     fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()))
+    }
+
+    #[tokio::test]
+    async fn imported_labs_are_the_local_ones_with_what_their_ctf_folder_defines() {
+        let t = TestApp::new();
+        t.lab("66d71cbf-9b4e-4a78-b3cf-8208227a96b2", &[("isoloom.yml", SPEC)]);
+        t.lab("local-t", &[("isoloom.yml", SPEC), (".ctf/metadata.json", r#"{ "title": "Supplier portal API" }"#), (".ctf/objectives.json", "[]")]);
+        let labs = imported_labs(t.handle().clone()).await.unwrap();
+        let [lab] = labs.as_slice() else { panic!("{labs:?}") };
+        assert_eq!((lab.id.as_str(), lab.name.as_str()), ("local-t", "t"));
+        assert_eq!(lab.metadata.as_ref().map(|m| m.title.as_str()), Some("Supplier portal API"));
+        assert_eq!(lab.objectives, None);
+        assert_eq!(lab.problems.iter().map(|p| (p.file.as_str(), p.error.as_str())).collect::<Vec<_>>(), [("objectives.json", "not a JSON object")]);
     }
 
     #[tokio::test]

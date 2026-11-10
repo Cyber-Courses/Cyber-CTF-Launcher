@@ -65,7 +65,8 @@ export function HealthBanner({
   check: CheckState;
   busy: boolean;
   resetting: boolean;
-  onReset: () => void;
+  /** Stops and starts the lab again (none: it can't start again from here). */
+  onReset?: () => void;
   /** Where the backend can (its `repair` control): bring the down machines back as they are (no rebuild),
    *  before reaching for Reset. */
   onResume?: () => void;
@@ -83,17 +84,19 @@ export function HealthBanner({
           <Play className="size-3.5" /> {t("labs.health.startThem")}
         </Button>
       )}
-      <Button variant="outline" size="sm" onClick={onReset} disabled={busy || resetting}>
-        {resetting ? (
-          <>
-            <Spinner className="size-3.5" /> {t("labs.health.resetting")}
-          </>
-        ) : (
-          <>
-            <RotateCcw className="size-3.5" /> {t("labs.health.reset")}
-          </>
-        )}
-      </Button>
+      {onReset && (
+        <Button variant="outline" size="sm" onClick={onReset} disabled={busy || resetting}>
+          {resetting ? (
+            <>
+              <Spinner className="size-3.5" /> {t("labs.health.resetting")}
+            </>
+          ) : (
+            <>
+              <RotateCcw className="size-3.5" /> {t("labs.health.reset")}
+            </>
+          )}
+        </Button>
+      )}
     </div>
   );
 }

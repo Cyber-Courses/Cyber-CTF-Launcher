@@ -62,7 +62,8 @@ export function LabDetail(props: LabDetailProps) {
           <LabPanels page={page} props={props} meta={meta} network={!above} />
           {placement === "bottom" && deploy}
           <LabObjectives page={page} props={props} />
-          <LabBrief labId={lab.id} />
+          {/* The brief is the catalogue's: an imported lab has none. */}
+          {!lab.imported && <LabBrief labId={lab.id} />}
         </div>
 
         <LabSideRail page={page} props={props} meta={meta} cost={cost} />

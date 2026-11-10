@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiQuery, machineWorkloads, type ActiveOperation } from "@/lib/tauri";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { useLabState } from "@/features/labs/lab-store";
+import { useImportedLabs } from "@/features/labs/imported-labs";
 import { usePolled } from "@/lib/use-poll";
 import { activeLabs, type SidebarLab } from "@/components/shell/shell-model";
 import { warn } from "@/lib/failure";
@@ -12,7 +13,7 @@ const WORKLOADS_POLL_MS = 8000;
 
 /**
  * The lab list behind the sidebar and the command palette (a light one, to jump straight to a
- * lab), loaded again on sign-in changes, and the labs running or starting right now, shown as
+ * lab), loaded again on sign-in changes, with the labs imported from a folder after it, and the labs running or starting right now, shown as
  * their own sidebar entries so one is a click away wherever you are. Deploys come from the
  * backend (so they survive a reload); the running set is polled from this machine's workloads.
  */
@@ -51,7 +52,13 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
   // When this light list couldn't be read (offline), the catalogue a screen loaded since (its
   // Retry) stands in, so the entries and the palette come back with it.
   const catalogue = useLabState("catalogue");
-  const list = useMemo(() => (labs.length > 0 ? labs : (catalogue?.labs ?? labs)), [labs, catalogue]);
+  const catalogued = labs.length > 0 ? labs : (catalogue?.labs ?? labs);
+  // The labs imported from a folder, which no catalogue lists: by their own title, to their page.
+  const imported = useImportedLabs(enabled);
+  const list = useMemo(
+    () => [...catalogued, ...(imported ?? []).map(({ id, slug, title, category }): SidebarLab => ({ id, slug, title, category }))],
+    [catalogued, imported],
+  );
 
   // The same list object until one of its inputs changes, so the sidebar's entries don't re-render.
   const active = useMemo(() => activeLabs(list, deploying, ops, runningIds, statuses), [list, deploying, ops, runningIds, statuses]);

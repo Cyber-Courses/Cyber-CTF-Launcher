@@ -59,7 +59,8 @@ export function HeaderLead({ lab, state: s, status, place = null }: { lab: Lab; 
         {difficultyLabel(t, lab.difficulty)}
       </LevelBadge>,
     );
-  strip.push(<span key="cat">{lab.category}</span>);
+  // An imported lab without a category has none: no empty slot.
+  if (lab.category) strip.push(<span key="cat">{lab.category}</span>);
 
   return (
     <div className="space-y-2.5">

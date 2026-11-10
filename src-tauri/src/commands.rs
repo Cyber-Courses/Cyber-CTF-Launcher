@@ -71,6 +71,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         machine::install_vagrant_plugin,
         machine::ovftool_place,
         labs::lab_launch,
+        labs::imported_labs,
         labs::lab_launch_local,
         labs::lab_stop,
         labs::lab_park,
