@@ -99,4 +99,14 @@ describe("where a path stands", () => {
     expect(stepDone("vagrant", ready({ vmProviders: [noPlugin] } as Partial<SystemReport>), none, null)).toBe(false);
     expect(stepDone("attack", fresh(), none, null)).toBe(true);
   });
+
+  it("reads a step done for the hypervisor picked in the flow, else the core's", () => {
+    const libvirt = { provider: "libvirt", remote: false, hypervisor: true, available: false, plugin: "vagrant-libvirt", pluginInstalled: false, reason: null };
+    const virtualbox = { provider: "virtualbox", remote: false, hypervisor: true, available: true, plugin: null, pluginInstalled: true, reason: null };
+    const both = ready({ vmProviders: [libvirt, virtualbox] } as Partial<SystemReport>);
+    expect(both.setup.hypervisor).toBe("libvirt");
+    expect(stepDone("vagrant", both, none, null)).toBe(false);
+    expect(stepDone("vagrant", both, none, "virtualbox")).toBe(true);
+    expect(stepDone("vagrant", both, none, "libvirt")).toBe(false);
+  });
 });

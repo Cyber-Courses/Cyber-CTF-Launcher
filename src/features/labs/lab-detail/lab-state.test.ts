@@ -225,6 +225,9 @@ describe("restartTarget", () => {
   });
   it("starts a VM lab here as its own VMs, and a container lab on its engine", () => {
     expect(restartTarget(status({ place: "local_vm", provider: "virtualbox" }), hosts, "VM", here, null)).toEqual({ kind: "local", provider: "virtualbox" });
+    // A status naming no hypervisor of this machine: the VM lab's own VMs, on the backend's pick.
+    expect(restartTarget(status({ place: "local_vm", provider: null }), hosts, "VM", here, "qemu")).toEqual({ kind: "local" });
+    expect(restartTarget(status({ place: "local_vm", provider: "vmware_esxi" }), hosts, "VM", here, "qemu")).toEqual({ kind: "local" });
     expect(restartTarget(status({ place: "container", provider: "docker" }), hosts, "DOCKER", { kind: "host", id: "h1" }, "virtualbox")).toEqual({
       kind: "local",
     });
