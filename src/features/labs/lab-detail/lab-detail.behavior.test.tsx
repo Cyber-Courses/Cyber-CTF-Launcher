@@ -187,6 +187,15 @@ describe("LabDetail: starting", () => {
     expect(getLocalVmForm()).toBe("vm");
   });
 
+  it("reads the lab's run options and the saved servers once for the page and its picker", async () => {
+    // Regression: Where it runs and the launch picker each read both, and a failed read was told twice.
+    const calls = installTauri({ ...quiet, lab_run_options: () => runOptions({ vms: [path("virtualbox")] }) });
+    renderDetail({ lab: vmLab, status: stopped, readyVms: ["virtualbox"] });
+    await flush();
+    expect(commands(calls).filter((c) => c === "lab_run_options")).toHaveLength(1);
+    expect(commands(calls).filter((c) => c === "server_list")).toHaveLength(1);
+  });
+
   it("sends Containers to a ports step, and Back returns to the places", async () => {
     installTauri(quiet);
     const { user } = await clickStart({ readyVms: ["virtualbox"] });

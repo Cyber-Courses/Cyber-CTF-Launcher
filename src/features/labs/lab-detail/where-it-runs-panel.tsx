@@ -6,9 +6,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-pill";
 import { runPlaces } from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { labRequirements, type LabRequirements, type Provider } from "@/lib/tauri";
-import { useSavedHosts } from "@/features/servers/use-server-list";
-import { useLabRunOptions } from "@/features/labs/use-lab-answer";
+import { labRequirements, type LabRequirements, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useT, type MessageKey, type T } from "@/lib/i18n";
 import { warn } from "@/lib/failure";
@@ -85,6 +83,8 @@ export function WhereItRunsPanel({
   runtime,
   hostArch,
   readyVms,
+  hosts,
+  options,
   native,
   emulates,
   isDocker,
@@ -96,6 +96,10 @@ export function WhereItRunsPanel({
   hostArch: string;
   /** The local hypervisors ready on this machine, so "VM here" reads as ready, not "install one". */
   readyVms: Provider[];
+  /** The saved servers and cloud accounts, and the lab's run options (null while they load): the
+   *  page's own reads, which the launch picker shows too. */
+  hosts: ServerHost[];
+  options: LabRunOptions | null;
   native: boolean;
   emulates: boolean;
   isDocker: boolean;
@@ -105,8 +109,6 @@ export function WhereItRunsPanel({
 }) {
   const t = useT();
   const requirements = useLabRequirements(labId, runtime);
-  const { hosts } = useSavedHosts();
-  const options = useLabRunOptions(labId, runtime);
   return (
     <Panel>
       <PanelHeader title={t("labs.detail.whereItRuns")} meta={meta} />
