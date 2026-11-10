@@ -160,6 +160,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   Vagrant command landing then was refused ("another process is already executing an action on
   the machine") and the start failed. The count now reads Vagrant's index as it is, and skips a
   record whose lab folder is gone.
+- **A Google Cloud account that can't launch no longer passes Test or reads as signed in.** The
+  setup and Test checked gcloud's own sign-in, while every launch first checks the
+  application-default sign-in Terraform uses: when that one ran out alone, Test passed and the
+  setup said "signed in as …", but each launch was refused with "sign in again". Test's first
+  check and the setup now ask what a launch asks, on AWS too.
 - **A damaged record of the tools Cyber CTF installed is no longer erased.** A record that
   couldn't be read counted as no tools, and the next install or removal saved that over it, so
   Cleanup stopped offering every tool recorded before. It is now left as it is and logged, and a

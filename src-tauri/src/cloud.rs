@@ -9,6 +9,7 @@ use tokio::sync::oneshot;
 
 use crate::error::{Code, Error, Result};
 use crate::platform::exec::{run_cli, stream};
+use crate::runtime::server::sign_in::{AWS_WHO_AM_I, sign_in_question};
 
 /// Civil (year, month, day) for a Unix timestamp, UTC (Howard Hinnant's algorithm). Used to
 /// build Cost Explorer date ranges without a date-crate dependency.
@@ -113,7 +114,8 @@ fn non_empty(out: &str) -> Option<String> {
 /// if any, so the cloud setup can show "signed in as …" and offer using the CLI instead of
 /// pasting keys. None when the CLI is missing or that profile has no usable credentials.
 pub async fn aws_cli_identity(profile: Option<String>) -> Option<String> {
-    let args = with_profile(vec!["sts", "get-caller-identity", "--query", "Arn", "--output", "text"], profile.as_deref());
+    // The question a launch asks (see `sign_in_question`), which answers with the identity.
+    let args = with_profile(AWS_WHO_AM_I.to_vec(), profile.as_deref());
     run_cli("aws", &args).await.ok().as_deref().and_then(non_empty)
 }
 
@@ -243,10 +245,14 @@ fn parse_oci_config(text: &str) -> OciConfig {
 /// `projects list` is empty or the Resource Manager API is off, so the UI can show "signed in".
 /// An account whose sign-in expired (Workspace reauthentication) still shows as active in
 /// `auth list` while every call fails: it counts as signed out, so the UI offers to sign in
-/// again instead of showing an empty billing list.
+/// again instead of showing an empty billing list. So does one whose application-default
+/// sign-in, the one Terraform uses, ran out on its own: a launch asks for that one first (see
+/// `sign_in_question`), and would be refused.
 pub async fn gcp_account() -> Option<String> {
     let email = run_cli("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).await.ok().as_deref().and_then(non_empty)?;
     run_cli("gcloud", &["auth", "print-access-token", "--quiet"]).await.ok()?;
+    let (program, question) = sign_in_question("gcp")?;
+    run_cli(program, question).await.ok()?;
     Some(email)
 }
 
@@ -340,6 +346,21 @@ mod tests {
         assert_eq!(seen.lock().unwrap()[0], "$ aws login --profile labs");
         // Nothing to cancel any more: a no-op.
         cloud_login_cancel();
+    }
+
+    #[tokio::test]
+    async fn an_expired_application_default_sign_in_reads_as_signed_out() {
+        // Regression: the setup asked only for the CLI's own token and said "signed in as …",
+        // while every launch asks for the application-default one Terraform uses, and was
+        // refused with "sign in again".
+        let tools = Tools::new(|_, args| match args {
+            ["auth", "list", ..] => ok("ada@example.com\n"),
+            ["auth", "print-access-token", ..] => ok("ya29.token\n"),
+            ["auth", "application-default", "print-access-token"] => fail("Reauthentication failed. cannot prompt during non-interactive execution."),
+            _ => None,
+        });
+        assert_eq!(gcp_account().await, None);
+        assert!(tools.called("gcloud auth application-default print-access-token"), "{:?}", tools.calls());
     }
 
     #[tokio::test]

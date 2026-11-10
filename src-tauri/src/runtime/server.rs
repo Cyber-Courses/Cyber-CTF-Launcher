@@ -31,6 +31,7 @@ pub(crate) mod profile;
 mod reachability;
 pub(crate) mod secrets;
 pub(crate) mod setup;
+pub(crate) mod sign_in;
 pub(crate) mod store;
 
 // What the rest of the app uses, at the paths it always had. The globs carry each command's

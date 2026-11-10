@@ -21,6 +21,7 @@ use super::{errors, progress, regenerate, view};
 use crate::error::{Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::paths::lab_dir_in;
+use crate::runtime::server::sign_in::sign_in_question;
 use crate::runtime::{LabStatus, Place, Runtime, lab};
 
 /// The account environment names the launcher passes to the module as **parameters** (not
@@ -125,20 +126,6 @@ impl CloudPlace {
     }
 }
 
-/// The question that tells whether `cloud`'s sign-in still holds, asked of its CLI: who AWS's
-/// credentials are, an Azure CLI token, Google's application-default token (what its Terraform
-/// provider uses), Oracle's regions (through `~/.oci/config`). `DigitalOcean` and Linode sign in
-/// with a stored API token, which doesn't run out: none.
-fn sign_in_question(cloud: &str) -> Option<(&'static str, &'static [&'static str])> {
-    Some(match cloud {
-        "aws" => ("aws", &["sts", "get-caller-identity", "--output", "text"]),
-        "azure" => ("az", &["account", "get-access-token", "--output", "none"]),
-        "gcp" => ("gcloud", &["auth", "application-default", "print-access-token"]),
-        "oci" => ("oci", &["iam", "region", "list", "--output", "json"]),
-        _ => return None,
-    })
-}
-
 /// How long the sign-in question may take.
 const SIGN_IN_WAIT: Duration = Duration::from_secs(30);
 
@@ -169,9 +156,10 @@ impl CloudRun {
     }
 
     /// Refuses a change while the account's sign-in has run out, before anything runs: the
-    /// cloud's CLI asked for what its Terraform provider signs in with ([`sign_in_question`]),
-    /// with the account's environment. Any other failure of the question (no such CLI here, the
-    /// network) is left to the change itself, which says what is wrong.
+    /// cloud's CLI asked for what its Terraform provider signs in with ([`sign_in_question`], as
+    /// the account's Test and the setup ask it), with the account's environment. Any other
+    /// failure of the question (no such CLI here, the network) is left to the change itself,
+    /// which says what is wrong.
     pub(crate) async fn signed_in(&self, place: &CloudPlace) -> Result<()> {
         let Some((program, args)) = sign_in_question(&self.cloud) else { return Ok(()) };
         let mut env = place.tf_env.clone();

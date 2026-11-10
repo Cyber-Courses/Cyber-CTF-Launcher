@@ -9,6 +9,7 @@ use super::budget::{budget_unverifiable_message, month_to_date_cost};
 use super::checks::{Check, TestResult};
 use super::contract::terraform_env;
 use super::profile::HostProfile;
+use super::sign_in::{AWS_WHO_AM_I, sign_in_question};
 use crate::error::{Error, Result};
 
 /// The program and arguments of an aws subcommand the way this host connects: the host CLI
@@ -207,8 +208,8 @@ pub(super) async fn test_aws(h: &HostProfile, password: &str) -> TestResult {
     let env = terraform_env(h, password);
     let mut checks: Vec<Check> = Vec::new();
 
-    // 1) Credentials.
-    let identity = aws_cmd(h, &env, &["sts", "get-caller-identity", "--query", "Arn", "--output", "text"]).await;
+    // 1) Credentials: the question a launch asks (see `sign_in_question`).
+    let identity = aws_cmd(h, &env, &AWS_WHO_AM_I).await;
     let arn = match aws_credentials(identity).settle(&mut checks, started) {
         Ok(arn) => arn,
         Err(done) => return done,
@@ -323,11 +324,33 @@ fn gcp_billing(r: Result<String>) -> First<()> {
     }
 }
 
-/// GCP: `gcloud billing accounts describe` confirms gcloud is signed in and can see the billing
-/// account the labs project is linked to. (No cheap VM-create dry-run like AWS.)
+/// GCP's sign-in as a launch asks for it ([`sign_in_question`]): the application-default token
+/// its Terraform provider signs in with, or why there is none.
+fn gcp_sign_in(r: Result<String>) -> First<()> {
+    match r {
+        Ok(_) => First::Pass(Check::ok("Sign-in", "Signed in for Terraform (application-default credentials)."), ()),
+        Err(Error::CommandFailed { stderr, .. }) => First::Refused(Check::fail(
+            "Sign-in",
+            format!(
+                "Terraform's sign-in to Google Cloud (application-default credentials) has expired or is missing. Sign in again. ({})",
+                last_line(&stderr).trim()
+            ),
+        )),
+        Err(e) => First::Unreachable(Check::fail("gcloud CLI", format!("Couldn't run the gcloud CLI: {e}"))),
+    }
+}
+
+/// GCP: the sign-in a launch asks for first, then `gcloud billing accounts describe` confirms
+/// gcloud is signed in and can see the billing account the labs project is linked to. (No cheap
+/// VM-create dry-run like AWS.)
 pub(super) async fn test_gcp(h: &HostProfile) -> TestResult {
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();
+    if let Some((program, question)) = sign_in_question("gcp")
+        && let Err(done) = gcp_sign_in(run_cli(program, question).await).settle(&mut checks, started)
+    {
+        return done;
+    }
     let args = ["billing", "accounts", "describe", h.cloud_account().unwrap_or_default(), "--format", "value(displayName)"];
     if let Err(done) = gcp_billing(run_cli("gcloud", &args).await).settle(&mut checks, started) {
         return done;
@@ -712,6 +735,30 @@ mod tests {
         assert_eq!(quota_check(Some(full), "standarddalsv6family", "s", "r").state, CheckState::Fail);
         assert_eq!(quota_check(None, "standarddalsv6family", "s", "r").state, CheckState::Warn);
         assert_eq!(quota_check(Some(usage), "otherfamily", "s", "r").state, CheckState::Warn);
+    }
+
+    #[tokio::test]
+    async fn the_gcp_test_asks_for_the_sign_in_a_launch_needs_first() {
+        // Regression: Test passed on the CLI's own sign-in while every launch was refused because
+        // the application-default sign-in Terraform uses had run out.
+        let tools = Tools::rules(&[
+            ("auth application-default print-access-token", fail("ERROR: (gcloud.auth.application-default.print-access-token) Reauthentication failed.")),
+            ("billing accounts describe", ok("Main\n")),
+            ("terraform version", ok("Terraform v1.9")),
+        ]);
+        let result = test_gcp(&profile(Provider::Gcp)).await;
+        assert!(!result.ok);
+        assert_eq!(result.checks.iter().map(|c| (c.name.as_str(), c.state)).collect::<Vec<_>>(), [("Sign-in", CheckState::Fail)]);
+        assert!(result.checks[0].detail.contains("Reauthentication failed."), "{}", result.checks[0].detail);
+        assert!(!tools.called("billing"), "{:?}", tools.calls());
+        let _tools = Tools::rules(&[
+            ("auth application-default print-access-token", ok("ya29.token\n")),
+            ("billing accounts describe", ok("Main\n")),
+            ("terraform version", ok("Terraform v1.9")),
+        ]);
+        let result = test_gcp(&profile(Provider::Gcp)).await;
+        assert!(result.ok, "{:?}", result.checks);
+        assert_eq!(result.checks.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Sign-in", "Billing account", "Terraform"]);
     }
 
     #[test]
