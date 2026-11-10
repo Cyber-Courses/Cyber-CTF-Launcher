@@ -112,63 +112,84 @@ fn run_options_on(lab: &Lab, runtime: Runtime, host: &str) -> RunOptions {
 fn generated(lab: &Lab, runtime: Runtime, host: &str) -> RunOptions {
     let spec = lab.spec();
     let emulated = !emulated_arches(&spec, host).is_empty();
-    let has = |t: Target| isoloom_spec::effective(&spec).contains(&t);
-    let tiers = tiers::run_tiers();
-    let path = |target: Target, provider: Option<Provider>| {
-        let variant = provider.map(|p| p.id().to_owned());
-        let tier = tiers.iter().find(|t| t.target == target.id() && t.variant == variant);
-        let badge = tiers::badge_or_beta(tier, &format!("{}/{}", target.id(), variant.as_deref().unwrap_or("-")));
-        RunPath { provider, target: target.id().to_owned(), variant, badge, evidence: tier.map(|t| t.evidence.clone()).unwrap_or_default() }
-    };
-    let mut out = RunOptions::default();
-    // Each of `providers` the lab runs on as `target` (Isoloom's refusal on that provider aside).
-    let on = |target: Target, providers: &[Provider], out: &mut Vec<RunPath>, refused: &mut Vec<Refusal>| {
-        if !has(target) {
-            return;
-        }
-        for p in providers {
-            match lab::refusal_on(lab, target, *p) {
-                Some(reason) => refused.push(Refusal::by_isoloom(Some(*p), target.id().to_owned(), reason)),
-                None => out.push(path(target, Some(*p))),
-            }
-        }
-    };
     let local: Vec<Provider> = Provider::ALL.into_iter().filter(|p| !p.is_remote()).collect();
     let docker_vm_local: Vec<Provider> = local.iter().copied().filter(|p| variants(Target::DockerVm).contains(&p.id())).collect();
     // The lab's own VMs here: on an emulator only, when they are built for another CPU.
     let vm_local: Vec<Provider> = local.iter().copied().filter(|p| !emulated || p.is_emulator()).collect();
-    let clouds = |target: Target| -> Vec<Provider> { Provider::CLOUDS.into_iter().filter(|c| variants(target).contains(&c.id())).collect() };
-    let mut refused = Vec::new();
+    let mut paths = Paths { lab, targets: isoloom_spec::effective(&spec), tiers: tiers::run_tiers(), refused: Vec::new() };
+    let mut out = RunOptions { emulated, ..RunOptions::default() };
     match runtime {
         Runtime::Docker => {
-            out.docker = if has(Target::Docker) { on_docker(lab, path(Target::Docker, None), &mut refused) } else { None };
-            on(Target::DockerVm, &docker_vm_local, &mut out.docker_vm, &mut refused);
-            on(Target::Vagrant, &vm_local, &mut out.vms, &mut refused);
-            on(Target::DockerVm, &Provider::SERVERS, &mut out.servers, &mut refused);
-            on(Target::CloudDocker, &clouds(Target::CloudDocker), &mut out.cloud_docker, &mut refused);
-            on(Target::CloudVm, &clouds(Target::CloudVm), &mut out.cloud_vm, &mut refused);
+            out.docker = paths.has(Target::Docker).then(|| on_docker(lab, paths.path(Target::Docker, None), &mut paths.refused)).flatten();
+            paths.on(Target::DockerVm, &docker_vm_local, &mut out.docker_vm);
+            paths.on(Target::Vagrant, &vm_local, &mut out.vms);
+            paths.on(Target::DockerVm, &Provider::SERVERS, &mut out.servers);
+            paths.on(Target::CloudDocker, &clouds(Target::CloudDocker), &mut out.cloud_docker);
+            paths.on(Target::CloudVm, &clouds(Target::CloudVm), &mut out.cloud_vm);
         }
         Runtime::Vm => {
-            on(Target::Vagrant, &vm_local, &mut out.vms, &mut refused);
-            on(Target::Vagrant, &[Provider::VmwareEsxi], &mut out.servers, &mut refused);
-            if has(Target::Proxmox) {
-                // Proxmox's own target has one form: no provider of its own in the evidence.
-                match lab::refusal_on(lab, Target::Proxmox, Provider::Proxmox) {
-                    Some(reason) => refused.push(Refusal::by_isoloom(Some(Provider::Proxmox), Target::Proxmox.id().to_owned(), reason)),
-                    None => out.servers.push(RunPath { provider: Some(Provider::Proxmox), ..path(Target::Proxmox, None) }),
-                }
-            }
-            on(Target::CloudVm, &clouds(Target::CloudVm), &mut out.cloud_vm, &mut refused);
+            paths.on(Target::Vagrant, &vm_local, &mut out.vms);
+            paths.on(Target::Vagrant, &[Provider::VmwareEsxi], &mut out.servers);
+            // Proxmox's own target has one form: no provider of its own in the evidence.
+            paths.offer(Target::Proxmox, Provider::Proxmox, None, &mut out.servers);
+            paths.on(Target::CloudVm, &clouds(Target::CloudVm), &mut out.cloud_vm);
         }
         Runtime::Cloud => {
             if let Some(cloud) = spec.cloud.as_ref().map(|c| crate::runtime::cloud_services::provider(c.provider)) {
-                on(Target::CloudServices, &[cloud], &mut out.cloud_services, &mut refused);
+                paths.on(Target::CloudServices, &[cloud], &mut out.cloud_services);
             }
         }
     }
-    out.refused = refused;
-    out.emulated = emulated;
+    out.refused = paths.refused;
     out
+}
+
+/// The clouds Isoloom generates `target` for.
+fn clouds(target: Target) -> Vec<Provider> {
+    Provider::CLOUDS.into_iter().filter(|c| variants(target).contains(&c.id())).collect()
+}
+
+/// Builds a lab's launch paths: the targets its spec generates, each path's badge from Isoloom's
+/// tiers, and what Isoloom refuses on a provider (`refused`).
+struct Paths<'a> {
+    lab: &'a Lab,
+    targets: Vec<Target>,
+    tiers: Vec<tiers::RunTier>,
+    refused: Vec<Refusal>,
+}
+
+impl Paths<'_> {
+    /// Whether the lab's spec generates `target`.
+    fn has(&self, target: Target) -> bool {
+        self.targets.contains(&target)
+    }
+
+    /// The path of `target` on `provider`, with the badge Isoloom's tiers give it there.
+    fn path(&self, target: Target, provider: Option<Provider>) -> RunPath {
+        let variant = provider.map(|p| p.id().to_owned());
+        let tier = self.tiers.iter().find(|t| t.target == target.id() && t.variant == variant);
+        let badge = tiers::badge_or_beta(tier, &format!("{}/{}", target.id(), variant.as_deref().unwrap_or("-")));
+        RunPath { provider, target: target.id().to_owned(), variant, badge, evidence: tier.map(|t| t.evidence.clone()).unwrap_or_default() }
+    }
+
+    /// Each of `providers` the lab runs on as `target`, into `out` ([`Paths::offer`]).
+    fn on(&mut self, target: Target, providers: &[Provider], out: &mut Vec<RunPath>) {
+        for p in providers {
+            self.offer(target, *p, Some(*p), out);
+        }
+    }
+
+    /// The lab as `target` on `provider` (its badge read as `tier`'s), into `out`, unless the spec
+    /// doesn't generate `target` or Isoloom refuses it there: then its reason goes in `refused`.
+    fn offer(&mut self, target: Target, provider: Provider, tier: Option<Provider>, out: &mut Vec<RunPath>) {
+        if !self.has(target) {
+            return;
+        }
+        match lab::refusal_on(self.lab, target, provider) {
+            Some(reason) => self.refused.push(Refusal::by_isoloom(Some(provider), target.id().to_owned(), reason)),
+            None => out.push(RunPath { provider: Some(provider), ..self.path(target, tier) }),
+        }
+    }
 }
 
 /// `options` with the ways `policy` turns off moved to its refusals, naming the setting (what
