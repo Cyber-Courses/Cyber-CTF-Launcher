@@ -76,6 +76,19 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   (`aws login`, `az login`, …) and changes nothing, where Terraform used to fail halfway and leave
   part of the lab behind. A failure that says the same reads the same way.
 
+- **Docker installs on Kali and the other Debian derivatives.** A distribution built on Ubuntu or
+  Debian (Mint, LMDE, …) gets Docker's repository for the release it is built on. Where Docker's
+  repository has no packages for the release (Kali's rolling one, Devuan's, a Debian or Ubuntu
+  newer than Docker serves yet), the distribution's own Docker is installed instead: `docker.io`
+  and its Compose, from the distribution's signed archive. The player joins the `docker` group
+  either way.
+- **Hyper-V can be turned on from the setup.** It used to be a link to Microsoft's guide. The
+  setup turns the feature on through Windows' own servicing tool, after the UAC prompt, and asks
+  for the restart that starts it; on Windows Home, which has no Hyper-V, it says so first.
+- **A new AWS account starts on the AWS CLI's browser sign-in** (`aws login`). An AWS CLI older
+  than 2.32, which doesn't have it, is named with where to update it; a profile already signed in
+  and access keys still work.
+
 ### Removed
 
 - **The attack VM box in Settings.** It chose the Vagrant box of a lab's own attack VM; the
@@ -96,6 +109,19 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   it keeps the system's shadow and thin border, on Linux a hairline draws its edge. Close goes
   through the same check as the system's button: with a lab deploying, the launcher still asks
   first. A crash screen has the header too, so a crashed window can still be moved and closed.
+- **On a Linux without apt, an install says to install the tool by hand.** On Fedora, openSUSE
+  or Arch the setup used to ask for the password, then fail with `apt-get: not found`; it now
+  stops before anything runs.
+- **libvirt's install brings what the vagrant-libvirt plugin builds against** (`libvirt-dev`, a
+  compiler, `pkg-config`, `ruby-dev`), where the plugin's install failed building, and adds the
+  player to the `libvirt` and `kvm` groups. Until the next login, which those groups need, the
+  machine check shows libvirt as not ready and the setup asks to log out and back in.
+- **Removing something asks in the system's own dialog.** Removing a cloud account or a server,
+  Stop & remove, removing a tool or the downloads, and restarting Windows for WSL ask in a native
+  dialog, and only go ahead on its yes.
+- **The Cloud page lists only the connected accounts**, with each provider not connected offered
+  apart as a Connect button with its logo. Removing an account or a server drops that one saved
+  host, and refuses when more than one has its id.
 - **The ESXi VM test runs a real VM.** It used to check only that the host's SSH port answered.
   It now runs a throwaway one-machine lab on the host the way a lab runs there: Vagrant's
   `vmware_esxi` through the Isothrum runner, with the host's settings and password. The steps
@@ -147,8 +173,8 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **No vendor install script runs as root on Linux.** The one-click installs of Azure CLI and
   gcloud set up Microsoft's and Google's apt repositories, and VirtualBox's Oracle repository, each
   with its signing key checked against a fingerprint pinned in the app, as Docker's and
-  HashiCorp's already were; Docker on a distro without Docker's apt repository says where to get
-  it instead of running get.docker.com. gcloud is now a system package (`google-cloud-cli`)
+  HashiCorp's already were; Docker on a distro outside the Debian family says where to get it
+  instead of running get.docker.com. gcloud is now a system package (`google-cloud-cli`)
   rather than a per-user SDK in `~/google-cloud-sdk`; removing it from Cleanup removes both.
   Every vendor's repository is set up the same way: its key in `/etc/apt/keyrings/<name>.gpg`
   and its source, for this machine's architecture, in `/etc/apt/sources.list.d/<name>.list`.

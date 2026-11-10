@@ -339,14 +339,18 @@ launcher never asks for or stores a password itself.
   of `docker` can control the Docker daemon, which runs as root: **this is equivalent to root
   access** on the machine. Install Docker yourself (rootless, or without the group) where that is
   not acceptable.
-- Installing Docker, Terraform, VirtualBox, the Azure CLI or the Google Cloud CLI adds the
-  vendor's apt repository, for this machine's architecture, and its key, checked against a
+- Installing Docker (where Docker's repository serves the release), Terraform, VirtualBox, the
+  Azure CLI or the Google Cloud CLI adds the vendor's apt repository, for this machine's architecture, and its key, checked against a
   pinned fingerprint: `/etc/apt/sources.list.d/<name>.list` with the key
   `/etc/apt/keyrings/<name>.gpg`, `<name>` being `docker`, `hashicorp`, `virtualbox`, `azure-cli`
   or `google-cloud-sdk`. (Earlier versions put some of the keys under `/usr/share/keyrings/`.)
   Removing a tool from Settings > Maintenance leaves its repository and key in place.
-- On a distribution without Docker's apt repository, the launcher doesn't install Docker: it
-  links to Docker's own instructions.
+- On Ubuntu, Debian, Raspbian and the distributions built on them, Docker comes from Docker's
+  repository for the Ubuntu or Debian release the system is built on. Where that repository has no
+  packages for the release (Kali's rolling one, Devuan's, a release newer than Docker serves yet),
+  the launcher installs the distribution's own Docker (`docker.io` and its Compose), from the
+  distribution's own signed archive, and adds no repository or key. On any other distribution,
+  or one without apt, it installs nothing and links to Docker's own instructions.
 - The AWS CLI goes to `/usr/local/aws-cli`, after its signature is checked.
 
 **macOS.** Tools come from Homebrew, which must be installed first; casks open their vendor's
