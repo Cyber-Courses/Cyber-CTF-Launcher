@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, release } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, release, answerConfirm } from "./fixtures";
 
 // A VM lab (GOAD Light, x86 only) through the dev mock's Vagrant: started on this machine's
 // VirtualBox (an Intel Mac) or on a saved ESXi server, paused, shut down, resumed, provisioned
@@ -75,8 +75,9 @@ test.describe("VM labs", () => {
     await expect(main(page)).toContainText("✓ srv02 provisioned");
     await expect(main(page)).not.toContainText("dc01 : ok=41");
 
+    const removed = answerConfirm(page, true);
     await button(page, "Stop & remove").click();
-    await page.getByRole("alertdialog", { name: "Remove GOAD Light?" }).getByRole("button", { name: "Remove" }).click();
+    expect(await removed).toContain("Remove GOAD Light?");
     await expect(button(page, "Start lab")).toBeEnabled();
     await expect(main(page)).toContainText("Not started");
     await expect(page.locator(".react-flow")).toHaveCount(0);
@@ -105,8 +106,9 @@ test.describe("VM labs", () => {
     await expect(main(page)).toContainText("Running·on this machine");
 
     // Stop & remove offers to shut down instead.
+    const asked = answerConfirm(page, false);
     await button(page, "Stop & remove").click();
-    await expect(page.getByRole("alertdialog", { name: "Remove GOAD Light?" })).toContainText("To keep them, shut the lab down instead.");
+    expect(await asked).toContain("To keep them, shut the lab down instead.");
   });
 
   test("on Apple Silicon: an x86-only lab points at the default server, and this machine needs QEMU", async ({ page }) => {
@@ -169,8 +171,9 @@ test.describe("VM labs", () => {
     await expect(button(page, "Pause")).toBeEnabled();
     await expect(main(page)).toContainText("Running·on this machine · UTM");
 
+    const removed = answerConfirm(page, true);
     await button(page, "Stop & remove").click();
-    await page.getByRole("alertdialog", { name: "Remove Edge router?" }).getByRole("button", { name: "Remove" }).click();
+    expect(await removed).toContain("Remove Edge router?");
     await expect(button(page, "Start lab")).toBeEnabled();
     await expect(main(page)).toContainText("Not started");
   });
@@ -188,8 +191,9 @@ test.describe("VM labs", () => {
     await expect(button(page, "Re-run setup")).toBeEnabled();
     await expect(main(page).getByText("Runs on")).toBeVisible();
 
+    const removed = answerConfirm(page, true);
     await button(page, "Stop & remove").click();
-    await page.getByRole("alertdialog", { name: "Remove GOAD Light?" }).getByRole("button", { name: "Remove" }).click();
+    expect(await removed).toContain("Remove GOAD Light?");
     await expect(button(page, "Start lab")).toBeEnabled();
   });
 });

@@ -1,4 +1,4 @@
-import { test, expect, openApp, navButton, pageTitle, forceCommands, releaseForced } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, forceCommands, releaseForced, answerConfirm } from "./fixtures";
 
 // What the app shows when something fails: the catalogue API, a lab's start or removal, the
 // machine check. The dev mock answers everything else (Invoice portal API runs, GOAD Light
@@ -59,11 +59,9 @@ test.describe("failure states", () => {
     await main(page).getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
     const diagram = main(page).getByText("Your machine", { exact: true });
     await expect(diagram).toBeVisible();
+    const asked = answerConfirm(page, true);
     await page.getByRole("button", { name: "Stop & remove" }).click();
-    await page
-      .getByRole("alertdialog")
-      .getByRole("button", { name: /Remove/ })
-      .click();
+    await asked;
 
     // While it stops (held until the test has seen it): the diagram stays (dimmed), the header
     // says Stopping.

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Pencil, Trash2, X, XCircle, Zap } from "lucide-react";
+import { type ReactNode } from "react";
+import { AlertTriangle, CheckCircle2, Pencil, Trash2, XCircle, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { type ServerCheck, type ServerHost, type ServerTest } from "@/lib/tauri";
@@ -83,7 +83,7 @@ function accountFacts(t: T, { host, result, spent }: { host: ServerHost; result:
   return facts + latency + budget + spend;
 }
 
-/** The test's status and the row's buttons, or the remove confirmation in their place. */
+/** The test's status and the row's buttons (Remove asks first, in the system's dialog). */
 function AccountActions({
   test,
   overBudget,
@@ -98,24 +98,6 @@ function AccountActions({
   onRemove: () => void;
 }) {
   const t = useT();
-  const [confirming, setConfirming] = useState(false);
-  if (confirming)
-    return (
-      <>
-        <span className="text-[0.75rem] text-muted-foreground">{t("cloud.account.removeConfirm")}</span>
-        <Button variant="destructive" size="xs" onClick={onRemove}>
-          {t("cloud.account.remove")}
-        </Button>
-        <IconButton
-          label={t("cloud.account.cancel")}
-          onClick={() => {
-            setConfirming(false);
-          }}
-        >
-          <X className="size-3.5" />
-        </IconButton>
-      </>
-    );
   const testing = test === "testing";
   return (
     <>
@@ -126,12 +108,7 @@ function AccountActions({
       <IconButton label={t("cloud.account.edit")} onClick={onEdit}>
         <Pencil className="size-3.5" />
       </IconButton>
-      <IconButton
-        label={t("cloud.account.remove")}
-        onClick={() => {
-          setConfirming(true);
-        }}
-      >
+      <IconButton label={t("cloud.account.remove")} onClick={onRemove}>
         <Trash2 className="size-3.5" />
       </IconButton>
     </>
@@ -182,11 +159,11 @@ function TestDetails({ result }: { result: ServerTest }) {
 }
 
 /** The provider's logo in the 2.25rem glass tile that leads a provider row. */
-export function LogoTile({ provider, label }: { provider: string; label?: string }) {
+function LogoTile({ provider }: { provider: string }) {
   return (
     <span className="grid size-9 shrink-0 place-items-center rounded-control bg-glass-2 shadow-[inset_0_0_0_1px_var(--input)]">
       {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-      <img src={cloudLogo(provider)} alt={label ?? ""} className="size-5 object-contain" draggable={false} />
+      <img src={cloudLogo(provider)} alt="" className="size-5 object-contain" draggable={false} />
     </span>
   );
 }

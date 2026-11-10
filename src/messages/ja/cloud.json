@@ -55,11 +55,12 @@
       "failed": "失敗",
       "overBudget": "予算超過"
     },
-    "removeConfirm": "削除しますか？",
     "remove": "削除",
-    "cancel": "キャンセル",
     "test": "テスト",
-    "edit": "編集"
+    "edit": "編集",
+    "removeTitle": "{name} を削除しますか？",
+    "removeBody": "Cyber CTF はこのアカウントの登録を削除し、保存したキーを削除します。クラウドアカウント自体は何も変わらず、後でもう一度接続できます。",
+    "removeAccount": "アカウントを削除"
   },
   "connect": {
     "title": "クラウドプロバイダーを接続",

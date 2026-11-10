@@ -11,14 +11,16 @@
       "one": "{count} 台のホスト",
       "other": "{count} 台のホスト"
     },
-    "removeConfirm": "{name} を削除しますか？パスワードはキーチェーンから削除されます。",
     "capacityTitle": "{name} のキャパシティ",
     "vcpu": "{count} vCPU",
     "memory": "メモリ",
     "memoryUsed": "{total} 中 {used} 使用",
     "noServerHint": "サーバーがない場合：このマシンに余裕があれば、ローカルのハイパーバイザーをインストールして VM ラボをここで実行できます。",
     "setUpMachine": "このマシンをセットアップ",
-    "listFailed": "保存したサーバーとクラウドアカウントを読み込めませんでした"
+    "listFailed": "保存したサーバーとクラウドアカウントを読み込めませんでした",
+    "removeTitle": "{name} を削除しますか？",
+    "removeBody": "Cyber CTF はこのサーバーの登録を削除し、パスワードをキーチェーンから削除します。サーバー自体は何も変わりません。",
+    "removeServer": "サーバーを削除"
   },
   "empty": {
     "title": "接続されたサーバーはありません",

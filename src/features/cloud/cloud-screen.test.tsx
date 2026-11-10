@@ -10,7 +10,7 @@ import type { Lab } from "@/features/labs/use-labs";
 import { answer } from "@/lib/dev-mock";
 import { invoiceStatus } from "@/lib/dev-mock/labs";
 import type { LabStatus, ServerHost, ServerList, ServerTest } from "@/lib/tauri";
-import { commands, installTauri, rejects, type Call } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri, rejects, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 const sample = () => structuredClone(answer("server_list", undefined) as ServerList);
@@ -40,10 +40,9 @@ async function renderScreen() {
   await flush(50);
 }
 
-/** Removes the one account listed, confirming it. */
+/** Presses Remove on the one account listed (the system dialog answers as the test set it). */
 async function removeAccount(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Remove" }));
-  await user.click(button(/^remove$/i));
   await flush(50);
 }
 
@@ -157,25 +156,34 @@ describe("CloudScreen", () => {
     expect(document.body.textContent).toContain("· 40 ms");
   });
 
-  it("removes an account after confirming, and shows why it failed", async () => {
+  it("removes an account only once the system dialog confirms it, and shows why it failed", async () => {
+    let yes = false;
     let fails = false;
     const calls = installTauri({
+      "plugin:dialog|message": (a) => answersDialog(yes)(a),
       server_remove: (a) => (fails ? failsWith("keychain locked")(a) : null),
     });
     const user = userEvent.setup();
     await renderScreen();
-    await user.click(screen.getByRole("button", { name: "Remove" }));
-    expect(screen.getByText("Remove?")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByText("Remove?")).toBeNull();
+    // Cancelled: asked in a dialog of its own (nothing inline), and nothing removed.
+    await removeAccount(user);
+    expect(dialogsAsked(calls)).toEqual([
+      {
+        title: "Remove AWS sandbox?",
+        message:
+          "Cyber CTF forgets this account and deletes any keys it saved for it. Nothing changes in the cloud account itself, and you can connect it again later.",
+      },
+    ]);
+    expect(argsOf(calls, "plugin:dialog|message")[0]).toMatchObject({ kind: "warning", buttons: { OkCancelCustom: ["Remove account", "Cancel"] } });
     expect(commands(calls)).not.toContain("server_remove");
-    await user.click(screen.getByRole("button", { name: "Remove" }));
-    await user.click(button(/^remove$/i));
-    await flush();
+    expect(screen.queryByText(/Remove\?/)).toBeNull();
+    // Confirmed: that account, and only it, after the answer.
+    yes = true;
+    await removeAccount(user);
+    expect(commands(calls).slice(-3, -1)).toEqual(["plugin:dialog|message", "server_remove"]);
     expect(argsOf(calls, "server_remove")).toEqual([{ id: "aws1" }]);
     fails = true;
-    await user.click(button(/^remove$/i));
-    await flush();
+    await removeAccount(user);
     expect(screen.getByText("keychain locked")).toBeTruthy();
   });
 

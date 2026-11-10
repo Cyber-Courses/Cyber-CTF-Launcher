@@ -108,14 +108,14 @@
       "one": "{count} VM-Image",
       "other": "{count} VM-Images"
     },
-    "confirm": "{size} entfernen? Labs laden beim nächsten Start erneut herunter, was sie brauchen. Alles, was in Benutzung ist, bleibt erhalten.",
-    "cancel": "Abbrechen",
     "removing": "Wird entfernt…",
     "remove": "Entfernen",
     "freed": "{size} freigegeben.",
     "nothingFreed": "Nichts konnte entfernt werden (alles in Benutzung).",
     "cleanFailed": "Die Downloads konnten nicht entfernt werden",
-    "readFailed": "Was Cyber CTF heruntergeladen hat, konnte nicht gelesen werden: {why}"
+    "readFailed": "Was Cyber CTF heruntergeladen hat, konnte nicht gelesen werden: {why}",
+    "confirmTitle": "{size} an Lab-Downloads entfernen?",
+    "confirmBody": "Labs laden beim nächsten Start erneut herunter, was sie brauchen. Alles, was in Benutzung ist, bleibt erhalten."
   },
   "selfTest": {
     "containerTitle": "Test für Container-Labs",

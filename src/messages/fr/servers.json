@@ -11,14 +11,16 @@
       "one": "{count} hôte",
       "other": "{count} hôtes"
     },
-    "removeConfirm": "Supprimer {name} ? Son mot de passe est effacé du trousseau.",
     "capacityTitle": "Capacité de {name}",
     "vcpu": "{count} vCPU",
     "memory": "Mémoire",
     "memoryUsed": "{used} utilisés sur {total}",
     "noServerHint": "Pas de serveur ? Si cette machine en est capable, installez un hyperviseur local et lancez les labs VM ici.",
     "setUpMachine": "Configurer cette machine",
-    "listFailed": "Impossible de lire vos serveurs et comptes cloud enregistrés"
+    "listFailed": "Impossible de lire vos serveurs et comptes cloud enregistrés",
+    "removeTitle": "Supprimer {name} ?",
+    "removeBody": "Cyber CTF oublie ce serveur et efface son mot de passe du trousseau. Rien ne change sur le serveur lui-même.",
+    "removeServer": "Supprimer le serveur"
   },
   "empty": {
     "title": "Aucun serveur connecté",

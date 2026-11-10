@@ -55,11 +55,12 @@
       "failed": "Error",
       "overBudget": "Presupuesto superado"
     },
-    "removeConfirm": "¿Eliminar?",
     "remove": "Eliminar",
-    "cancel": "Cancelar",
     "test": "Probar",
-    "edit": "Editar"
+    "edit": "Editar",
+    "removeTitle": "¿Eliminar {name}?",
+    "removeBody": "Cyber CTF olvida esta cuenta y borra las claves que guardó para ella. No cambia nada en la propia cuenta de nube, y puedes volver a conectarla más tarde.",
+    "removeAccount": "Eliminar cuenta"
   },
   "connect": {
     "title": "Conectar un proveedor de nube",

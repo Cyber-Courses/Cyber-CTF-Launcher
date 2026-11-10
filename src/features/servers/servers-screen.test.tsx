@@ -10,7 +10,7 @@ import { loadVmTests } from "@/features/servers/vm-tests";
 import { answer } from "@/lib/dev-mock";
 import { SELFTEST_STEPS, type ServerHost, type ServerList, type ServerTest } from "@/lib/tauri";
 import { freshReport } from "@/test/fixtures";
-import { commands, installTauri, rejects, stream, type Call } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri, rejects, stream, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 const sample = () => structuredClone(answer("server_list", undefined) as ServerList);
@@ -166,27 +166,37 @@ describe("ServerScreen", () => {
     expect(screen.getByText("servers.json is read-only")).toBeTruthy();
   });
 
-  it("removes a host only once the player confirms", async () => {
-    const calls = installTauri();
+  it("removes a host only once the system dialog confirms it, never through the webview's confirm()", async () => {
+    let yes = false;
+    const calls = installTauri({ "plugin:dialog|message": (a) => answersDialog(yes)(a) });
+    const confirm = vi.spyOn(window, "confirm");
     const user = userEvent.setup();
     await renderScreen();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     await menu(user, "office-esxi", /remove/i);
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Remove office-esxi?"));
+    await flush();
+    expect(dialogsAsked(calls)).toEqual([
+      {
+        title: "Remove office-esxi?",
+        message: "Cyber CTF forgets this server and deletes its password from the keychain. Nothing changes on the server itself.",
+      },
+    ]);
+    expect(argsOf(calls, "plugin:dialog|message")[0]).toMatchObject({ kind: "warning", buttons: { OkCancelCustom: ["Remove server", "Cancel"] } });
     expect(commands(calls)).not.toContain("server_remove");
-    confirm.mockReturnValue(true);
+    yes = true;
     await menu(user, "office-esxi", /remove/i);
+    await flush();
     expect(argsOf(calls, "server_remove")).toEqual([{ id: "esxi" }]);
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it("shows why a removal failed", async () => {
     installTauri({
       server_remove: failsWith("keychain locked"),
     });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
     await renderScreen();
     await menu(user, "homelab-pve", /remove/i);
+    await flush();
     expect(screen.getByText("keychain locked")).toBeTruthy();
   });
 

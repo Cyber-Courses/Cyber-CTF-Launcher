@@ -108,14 +108,14 @@
       "one": "{count} VM image",
       "other": "{count} VM images"
     },
-    "confirm": "Remove {size}? Labs download what they need again on their next start. Anything in use stays.",
-    "cancel": "Cancel",
     "removing": "Removing…",
     "remove": "Remove",
     "freed": "Freed {size}.",
     "nothingFreed": "Nothing could be removed (all in use).",
     "cleanFailed": "Couldn't remove the downloads",
-    "readFailed": "Couldn't read what Cyber CTF downloaded: {why}"
+    "readFailed": "Couldn't read what Cyber CTF downloaded: {why}",
+    "confirmTitle": "Remove {size} of lab downloads?",
+    "confirmBody": "Labs download what they need again on their next start. Anything in use stays."
   },
   "selfTest": {
     "containerTitle": "Container lab test",

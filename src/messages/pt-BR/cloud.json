@@ -55,11 +55,12 @@
       "failed": "Falhou",
       "overBudget": "Acima do orçamento"
     },
-    "removeConfirm": "Remover?",
     "remove": "Remover",
-    "cancel": "Cancelar",
     "test": "Testar",
-    "edit": "Editar"
+    "edit": "Editar",
+    "removeTitle": "Remover {name}?",
+    "removeBody": "O Cyber CTF esquece esta conta e apaga as chaves que salvou para ela. Nada muda na própria conta de nuvem, e você pode conectá-la de novo depois.",
+    "removeAccount": "Remover conta"
   },
   "connect": {
     "title": "Conectar um provedor de nuvem",

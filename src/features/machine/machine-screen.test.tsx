@@ -18,7 +18,7 @@ import { getLastTest, getVmProvider, setAttackImage, setLastTest, setVmProvider,
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport, withNeeds } from "@/test/fixtures";
-import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, renderMachineScreen } from "@/features/machine/machine-test-kit";
 import { must, toastsShown } from "@/components/test-support";
@@ -491,9 +491,10 @@ describe("HypervisorRows", () => {
 /* ------------------------------------------------------------------ panels */
 
 describe("DownloadsPanel", () => {
-  it("lists the downloads and frees space after confirming", async () => {
+  it("lists the downloads and frees space once the system dialog confirms it", async () => {
     setAttackImage("kalilinux/kali-rolling");
-    const calls = installTauri();
+    let yes = false;
+    const calls = installTauri({ "plugin:dialog|message": (a) => answersDialog(yes)(a) });
     const user = userEvent.setup();
     render(<DownloadsPanel />);
     await flush();
@@ -505,11 +506,11 @@ describe("DownloadsPanel", () => {
     expect(text()).toContain("postgres:16");
     expect(text()).toContain("430 MB");
     await user.click(button(/clean up/i));
-    expect(screen.getByRole("alert").textContent).toContain("Remove 16 GB?");
-    await user.click(button(/cancel/i));
-    expect(screen.queryByRole("alert")).toBeNull();
+    await flush();
+    expect(dialogsAsked(calls).map((d) => d.title)).toEqual(["Remove 16 GB of lab downloads?"]);
+    expect(commands(calls)).not.toContain("machine_storage_clean");
+    yes = true;
     await user.click(button(/clean up/i));
-    await user.click(button(/^remove$/i));
     await flush();
     expect(calls.find((c) => c.cmd === "machine_storage_clean")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling", "cyberctf/attack-box:latest"] });
     expect(text()).toContain("Freed 1.0 GB.");
@@ -529,14 +530,12 @@ describe("DownloadsPanel", () => {
     );
     await flush();
     await user.click(button(/clean up/i));
-    await user.click(button(/^remove$/i));
     await flush();
     expect(text()).toContain("Nothing could be removed (all in use).");
     clean = () => {
       rejectWith("docker is not running");
     };
     await user.click(button(/clean up/i));
-    await user.click(button(/^remove$/i));
     await flush();
     // A failed clean-up isn't "nothing in use could go": it is told, with why.
     expect(text()).not.toContain("Nothing could be removed");

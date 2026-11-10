@@ -11,14 +11,16 @@
       "one": "{count} host",
       "other": "{count} hosts"
     },
-    "removeConfirm": "Remover {name}? A senha dele é apagada do keychain.",
     "capacityTitle": "Capacidade em {name}",
     "vcpu": "{count} vCPU",
     "memory": "Memória",
     "memoryUsed": "{used} de {total} em uso",
     "noServerHint": "Sem servidor? Se esta máquina aguentar, instale um hypervisor local e rode labs de VM aqui.",
     "setUpMachine": "Configurar esta máquina",
-    "listFailed": "Não foi possível ler seus servidores e contas de nuvem salvos"
+    "listFailed": "Não foi possível ler seus servidores e contas de nuvem salvos",
+    "removeTitle": "Remover {name}?",
+    "removeBody": "O Cyber CTF esquece este servidor e apaga a senha dele do keychain. Nada muda no próprio servidor.",
+    "removeServer": "Remover servidor"
   },
   "empty": {
     "title": "Nenhum servidor conectado",

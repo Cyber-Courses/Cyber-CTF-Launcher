@@ -55,11 +55,12 @@
       "failed": "Échec",
       "overBudget": "Budget dépassé"
     },
-    "removeConfirm": "Supprimer ?",
     "remove": "Supprimer",
-    "cancel": "Annuler",
     "test": "Tester",
-    "edit": "Modifier"
+    "edit": "Modifier",
+    "removeTitle": "Supprimer {name} ?",
+    "removeBody": "Cyber CTF oublie ce compte et efface les clés qu'il avait enregistrées pour lui. Rien ne change dans le compte cloud lui-même, et vous pourrez le reconnecter plus tard.",
+    "removeAccount": "Supprimer le compte"
   },
   "connect": {
     "title": "Connecter un fournisseur cloud",

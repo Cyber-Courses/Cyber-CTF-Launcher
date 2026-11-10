@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Labs } from "@/features/labs/labs-screen";
 import { answer } from "@/lib/dev-mock";
 import { readyReport } from "@/test/fixtures";
-import { installTauri, type Handler } from "@/test/tauri";
+import { commands, installTauri, type Handler } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { rowTitles } from "@/features/labs/labs-test-kit";
 
@@ -183,8 +183,8 @@ describe("Labs list", () => {
     render(<Labs {...props} />);
     await flush(80);
     await user.click(screen.getByRole("button", { name: "Stop" }));
-    await user.click(screen.getByRole("button", { name: "Remove" }));
     await flush(50);
+    expect(commands(calls).filter((c) => c === "plugin:dialog|message" || c === "lab_stop")).toEqual(["plugin:dialog|message", "lab_stop"]);
     expect(calls.find((c) => c.cmd === "lab_stop")?.args).toMatchObject({ id: "lab-invoice", runtime: "DOCKER" });
   });
 

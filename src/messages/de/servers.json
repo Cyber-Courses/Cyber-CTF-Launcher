@@ -11,14 +11,16 @@
       "one": "{count} Host",
       "other": "{count} Hosts"
     },
-    "removeConfirm": "{name} entfernen? Das Passwort wird aus dem Schlüsselbund gelöscht.",
     "capacityTitle": "Kapazität auf {name}",
     "vcpu": "{count} vCPU",
     "memory": "Arbeitsspeicher",
     "memoryUsed": "{used} von {total} belegt",
     "noServerHint": "Kein Server? Wenn dieser Rechner es schafft, installiere einen lokalen Hypervisor und führe VM-Labs hier aus.",
     "setUpMachine": "Diesen Rechner einrichten",
-    "listFailed": "Deine gespeicherten Server und Cloud-Konten konnten nicht gelesen werden"
+    "listFailed": "Deine gespeicherten Server und Cloud-Konten konnten nicht gelesen werden",
+    "removeTitle": "{name} entfernen?",
+    "removeBody": "Cyber CTF vergisst diesen Server und löscht sein Passwort aus dem Schlüsselbund. Auf dem Server selbst ändert sich nichts.",
+    "removeServer": "Server entfernen"
   },
   "empty": {
     "title": "Kein Server verbunden",

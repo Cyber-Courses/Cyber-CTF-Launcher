@@ -116,6 +116,11 @@ const windowHandlers: Record<string, BrowserHandler> = {
     return null;
   },
   "plugin:deep-link|get_current": (_args, { sc }) => (sc.link ? [sc.link] : null),
+  // The system dialog a destructive action asks in (`confirmDestructive`): the browser's own.
+  "plugin:dialog|message": (args) => {
+    const [ok, cancel] = (args?.buttons as { OkCancelCustom?: [string, string] } | undefined)?.OkCancelCustom ?? ["Ok", "Cancel"];
+    return window.confirm([args?.title, args?.message].filter(Boolean).join("\n\n")) ? ok : cancel;
+  },
 };
 
 // A Map, not an object lookup: a command named like an Object.prototype member is answered by

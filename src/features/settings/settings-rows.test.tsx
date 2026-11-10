@@ -19,7 +19,7 @@ import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
 import { getAttackImage, getAutoAttackBox, getPortMode, getVmProvider, setAttackImage, setVmProvider } from "@/lib/settings";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 import { INSTALLS_OFF, INSTALLS_OFF_NOTE, hypervisorStatus, readyReport } from "@/test/fixtures";
-import { installTauri, stream, rejectWith } from "@/test/tauri";
+import { answersDialog, dialogsAsked, installTauri, stream, rejectWith, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 // A plain function, not a `vi.fn`: a spy's bookkeeping on a rejected answer fails the test.
@@ -32,6 +32,8 @@ vi.mock("@tauri-apps/plugin-updater", () => ({
 }));
 
 const text = () => document.body.textContent;
+/** The arguments of the first system dialog asked. */
+const dialogArgs = (calls: Call[]) => calls.find((c) => c.cmd === "plugin:dialog|message")?.args;
 const radioWith = (s: string) =>
   must(
     screen.getAllByRole("radio").find((r) => r.textContent.includes(s)),
@@ -567,12 +569,14 @@ describe("InstalledToolsPanel", () => {
     expect(button(/remove/i).hasAttribute("disabled")).toBe(true);
   });
 
-  it("removes a tool after confirming, then re-reads the list", async () => {
+  it("removes a tool only once the system dialog confirms it, then re-reads the list", async () => {
+    let yes = false;
     let tools = [
       { dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 },
       { dependency: "docker", at: Math.floor(Date.now() / 1000) - 60 },
     ];
     const calls = installTauri({
+      "plugin:dialog|message": (a) => answersDialog(yes)(a),
       installed_tools: () => tools,
       uninstall_dependency: (a) => {
         stream(a, "Removed Vagrant");
@@ -586,14 +590,14 @@ describe("InstalledToolsPanel", () => {
     expect(text()).toContain("2 installed");
     expect(text()).toContain("Docker Desktop");
     expect(text()).toContain("Vagrant");
-    await user.click(screen.getAllByRole("button", { name: /remove/i })[0]);
-    expect(screen.getByRole("alertdialog").textContent).toContain("Remove Vagrant?");
     // Cancel first: nothing is removed.
-    await user.click(screen.getByRole("button", { name: /cancel/i }));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(calls.map((c) => c.cmd)).not.toContain("uninstall_dependency");
     await user.click(screen.getAllByRole("button", { name: /remove/i })[0]);
-    await user.click(must(screen.getAllByRole("button", { name: /^remove$/i }).at(-1), "the confirming Remove"));
+    await flush();
+    expect(dialogsAsked(calls).map((d) => d.title)).toEqual(["Remove Vagrant?"]);
+    expect(dialogArgs(calls)).toMatchObject({ kind: "warning", buttons: { OkCancelCustom: ["Remove", "Cancel"] } });
+    expect(calls.map((c) => c.cmd)).not.toContain("uninstall_dependency");
+    yes = true;
+    await user.click(screen.getAllByRole("button", { name: /remove/i })[0]);
     await flush();
     expect(calls.find((c) => c.cmd === "uninstall_dependency")?.args).toMatchObject({ dependency: "vagrant" });
     expect(text()).toContain("Removing Vagrant…");

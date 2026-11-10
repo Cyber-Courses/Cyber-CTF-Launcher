@@ -2,14 +2,12 @@
 
 import { type ButtonHTMLAttributes } from "react";
 import { ExternalLink, LogIn, Wrench } from "lucide-react";
-import type { Lab } from "@/features/labs/use-labs";
 import { machineOpenSetup, serverOpenSetup, type LabStatus } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { openExternal, tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
-// A lab list row's action (see LabRow) and the dialog its Stop asks first.
+// A lab list row's action (see LabRow).
 
 /** A row action: compact, drawn above the title's stretched click area (see LabRow). */
 function RowButton({ danger = false, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { danger?: boolean }) {
@@ -130,16 +128,5 @@ function SetupAction({ setup, connectCloud }: { setup: string; connectCloud: boo
     >
       <Wrench className="size-3" /> {t("labs.row.setUp")}
     </RowButton>
-  );
-}
-
-/** Stop deletes the lab's machines: asked first, as the lab's own page does. */
-export function StopDialog({ lab, status, onCancel, onConfirm }: { lab: Lab; status?: LabStatus; onCancel: () => void; onConfirm: () => void }) {
-  const t = useT();
-  return (
-    <ConfirmDialog title={t("labs.row.removeTitle", { title: lab.title })} confirmLabel={t("labs.row.remove")} onCancel={onCancel} onConfirm={onConfirm}>
-      {t(lab.runtime?.runtime === "CLOUD" ? "labs.row.removeBodyCloud" : "labs.row.removeBody")}
-      {!status?.host && status?.place !== "local_vm" && t("labs.row.removeKeep")}
-    </ConfirmDialog>
   );
 }

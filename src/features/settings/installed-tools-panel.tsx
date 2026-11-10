@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LogConsole } from "@/components/ui/log-console";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { installedTools, uninstallDependency, type Dependency, type InstalledTool } from "@/lib/tauri";
 import { useRunLog } from "@/lib/use-run-log";
 import { formatAgo } from "@/lib/format";
 import { warn } from "@/lib/failure";
+import { confirmDestructive } from "@/lib/confirm";
 import { translate, useT } from "@/lib/i18n";
 import { useToolInstallsOff } from "@/lib/use-managed";
 import { InstallsOffNote } from "@/components/installs-off-note";
@@ -91,7 +91,6 @@ function ToolRow({
 export function InstalledToolsPanel() {
   const t = useT();
   const { tools, removing, log, remove } = useInstalledTools();
-  const [asking, setAsking] = useState<Dependency | null>(null);
   // Removals go with installs under the policy (`DisableToolInstalls`).
   const installsOff = useToolInstallsOff();
 
@@ -113,7 +112,14 @@ export function InstalledToolsPanel() {
             removing={removing}
             canRemove={!installsOff}
             onRemove={() => {
-              setAsking(tool.dependency);
+              const name = toolName(tool.dependency);
+              void confirmDestructive({
+                title: t("settings.installedTools.confirmTitle", { name }),
+                message: t("settings.installedTools.confirmBody", { name }),
+                confirm: t("settings.installedTools.remove"),
+              }).then((yes) => {
+                if (yes) remove(tool.dependency);
+              });
             }}
           />
         ))}
@@ -122,21 +128,6 @@ export function InstalledToolsPanel() {
         <div className="border-t border-border p-4">
           <LogConsole lines={log} running={removing !== null} title={t("settings.installedTools.remove")} />
         </div>
-      )}
-      {asking && (
-        <ConfirmDialog
-          title={t("settings.installedTools.confirmTitle", { name: toolName(asking) })}
-          confirmLabel={t("settings.installedTools.remove")}
-          onConfirm={() => {
-            setAsking(null);
-            remove(asking);
-          }}
-          onCancel={() => {
-            setAsking(null);
-          }}
-        >
-          {t("settings.installedTools.confirmBody", { name: toolName(asking) })}
-        </ConfirmDialog>
       )}
     </Panel>
   );

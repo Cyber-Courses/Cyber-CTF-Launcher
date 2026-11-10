@@ -18,6 +18,7 @@ import { canRunVmHere, capacityHost, hostsSummary } from "@/features/servers/ser
 import { useServerHosts, type ServerHosts } from "@/features/servers/use-server-hosts";
 import { useNow } from "@/lib/use-now";
 import { useT } from "@/lib/i18n";
+import { confirmDestructive } from "@/lib/confirm";
 
 type Tab = "setup";
 
@@ -100,7 +101,14 @@ function HostRows({ page, hosts }: { page: ServerHosts; hosts: ServerHost[] }) {
       page.act(() => serverSetDefault(h.id === page.defaultId ? null : h.id));
     },
     onRemove: () => {
-      if (confirm(t("servers.screen.removeConfirm", { name: h.name }))) page.act(() => serverRemove(h.id));
+      // Removed only once the player confirmed it, in the system's dialog.
+      void confirmDestructive({
+        title: t("servers.screen.removeTitle", { name: h.name }),
+        message: t("servers.screen.removeBody"),
+        confirm: t("servers.screen.removeServer"),
+      }).then((yes) => {
+        if (yes) page.act(() => serverRemove(h.id));
+      });
     },
   });
   return hosts.map((h) => (

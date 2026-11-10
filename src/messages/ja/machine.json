@@ -108,14 +108,14 @@
       "one": "{count} 個の VM イメージ",
       "other": "{count} 個の VM イメージ"
     },
-    "confirm": "{size} を削除しますか？ラボは次回の起動時に必要なものを再ダウンロードします。使用中のものは残ります。",
-    "cancel": "キャンセル",
     "removing": "削除中…",
     "remove": "削除",
     "freed": "{size} を解放しました。",
     "nothingFreed": "削除できるものはありませんでした（すべて使用中）。",
     "cleanFailed": "ダウンロードを削除できませんでした",
-    "readFailed": "Cyber CTF がダウンロードしたものを読み取れませんでした: {why}"
+    "readFailed": "Cyber CTF がダウンロードしたものを読み取れませんでした: {why}",
+    "confirmTitle": "ラボのダウンロード {size} を削除しますか？",
+    "confirmBody": "ラボは次回の起動時に必要なものを再ダウンロードします。使用中のものは残ります。"
   },
   "selfTest": {
     "containerTitle": "コンテナラボのテスト",

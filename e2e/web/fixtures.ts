@@ -239,3 +239,17 @@ export function emitEvent(page: Page, event: string, payload: unknown) {
     [event, payload] as const,
   );
 }
+
+/** Answers the next system confirmation (`confirmDestructive`: in the preview, the browser's own
+ *  confirm()) with its confirm button (`accept`) or Cancel; resolves with what it asked (the
+ *  title, a blank line, then the message). Set it up before the click that asks. */
+export function answerConfirm(page: Page, accept: boolean): Promise<string> {
+  return new Promise((resolve) => {
+    page.once("dialog", (dialog) => {
+      const asked = dialog.message();
+      void (accept ? dialog.accept() : dialog.dismiss()).then(() => {
+        resolve(asked);
+      });
+    });
+  });
+}

@@ -5,11 +5,11 @@ import { ChevronRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
-import { StatusDot } from "@/components/ui/status-pill";
 import { ListSkeleton } from "@/features/machine/machine-parts";
 import { formatBytes } from "@/lib/format";
 import { translate, useT } from "@/lib/i18n";
 import { tell, warn } from "@/lib/failure";
+import { confirmDestructive } from "@/lib/confirm";
 import { describeError } from "@/lib/errors";
 import { getAttackImage, OLD_ATTACK_IMAGES } from "@/lib/settings";
 import { machineStorage, machineStorageClean, type Storage } from "@/lib/tauri";
@@ -23,11 +23,10 @@ function attackImages(): string[] {
 }
 
 /** What Cyber CTF downloaded (null until read, or when the read failed: `readError` says why),
- *  and its confirmed clean-up: what it freed. */
+ *  and its clean-up, once confirmed: what it freed. */
 function useDownloads() {
   const [storage, setStorage] = useState<Storage | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
-  const [confirmClean, setConfirmClean] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [freed, setFreed] = useState<number | null>(null);
   const alive = useRef(true);
@@ -59,7 +58,13 @@ function useDownloads() {
     load();
   }, [load]);
 
-  async function clean() {
+  async function clean(total: number) {
+    const yes = await confirmDestructive({
+      title: translate("machine.downloads.confirmTitle", { size: formatBytes(total) }),
+      message: translate("machine.downloads.confirmBody"),
+      confirm: translate("machine.downloads.remove"),
+    });
+    if (!yes) return;
     setCleaning(true);
     // A failed clean-up is told, and nothing reads as freed.
     setFreed(
@@ -69,18 +74,15 @@ function useDownloads() {
       }),
     );
     setCleaning(false);
-    setConfirmClean(false);
     load();
   }
   return {
     storage,
     readError,
-    confirmClean,
-    setConfirmClean,
     cleaning,
     freed,
-    clean: () => {
-      void clean();
+    clean: (total: number) => {
+      void clean(total);
     },
   };
 }
@@ -89,7 +91,7 @@ function useDownloads() {
  *  (anything in use is kept; the player's own images and boxes are never listed). */
 export function DownloadsPanel() {
   const t = useT();
-  const { storage, readError, confirmClean, setConfirmClean, cleaning, freed, clean } = useDownloads();
+  const { storage, readError, cleaning, freed, clean } = useDownloads();
   const storeItems = storage ? [...storage.images, ...storage.boxes, ...storage.plugins] : [];
   const storeTotal = storeItems.reduce((a, i) => a + i.bytes, 0);
   return (
@@ -98,16 +100,24 @@ export function DownloadsPanel() {
         title={t("machine.downloads.title")}
         meta={storage && storeItems.length > 0 ? <span className="tabular-nums">{formatBytes(storeTotal)}</span> : undefined}
         action={
-          storage && storeItems.length > 0 && !confirmClean ? (
+          storage && storeItems.length > 0 ? (
             <Button
               variant="outline"
               size="xs"
               onClick={() => {
-                setConfirmClean(true);
+                clean(storeTotal);
               }}
               disabled={cleaning}
             >
-              <Trash2 /> {t("machine.downloads.cleanUp")}
+              {cleaning ? (
+                <>
+                  <Spinner className="size-3" /> {t("machine.downloads.removing")}
+                </>
+              ) : (
+                <>
+                  <Trash2 /> {t("machine.downloads.cleanUp")}
+                </>
+              )}
             </Button>
           ) : undefined
         }
@@ -119,17 +129,7 @@ export function DownloadsPanel() {
       ) : (
         <>
           <StorageList storage={storage} items={storeItems} total={storeTotal} />
-          {confirmClean && (
-            <CleanConfirm
-              total={storeTotal}
-              cleaning={cleaning}
-              onCancel={() => {
-                setConfirmClean(false);
-              }}
-              onConfirm={clean}
-            />
-          )}
-          {freed !== null && !confirmClean && (
+          {freed !== null && (
             <p className="border-t border-border px-4 py-2.5 text-[0.75rem] text-muted-foreground">
               {freed > 0 ? t("machine.downloads.freed", { size: formatBytes(freed) }) : t("machine.downloads.nothingFreed")}
             </p>
@@ -174,30 +174,5 @@ function StorageList({ storage, items, total }: { storage: Storage; items: Store
           </div>
         ))}
     </>
-  );
-}
-
-/** "Remove N GB?" with Cancel and Remove (a spinner while it runs). */
-function CleanConfirm({ total, cleaning, onCancel, onConfirm }: { total: number; cleaning: boolean; onCancel: () => void; onConfirm: () => void }) {
-  const t = useT();
-  return (
-    <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-border bg-glass px-4 py-3">
-      <StatusDot tone="warn" />
-      <p className="min-w-0 flex-1 text-[0.75rem] text-foreground">{t("machine.downloads.confirm", { size: formatBytes(total) })}</p>
-      <div className="flex gap-2">
-        <Button variant="ghost" size="xs" onClick={onCancel} disabled={cleaning}>
-          {t("machine.downloads.cancel")}
-        </Button>
-        <Button variant="destructive" size="xs" onClick={onConfirm} disabled={cleaning}>
-          {cleaning ? (
-            <>
-              <Spinner className="size-3" /> {t("machine.downloads.removing")}
-            </>
-          ) : (
-            t("machine.downloads.remove")
-          )}
-        </Button>
-      </div>
-    </div>
   );
 }

@@ -11,14 +11,16 @@
       "one": "{count} host",
       "other": "{count} hosts"
     },
-    "removeConfirm": "¿Eliminar {name}? Su contraseña se borra del llavero.",
     "capacityTitle": "Capacidad en {name}",
     "vcpu": "{count} vCPU",
     "memory": "Memoria",
     "memoryUsed": "{used} de {total} en uso",
     "noServerHint": "¿Sin servidor? Si esta máquina puede con ello, instala un hipervisor local y ejecuta aquí los labs de VM.",
     "setUpMachine": "Configurar esta máquina",
-    "listFailed": "No se pudieron leer tus servidores y cuentas en la nube guardados"
+    "listFailed": "No se pudieron leer tus servidores y cuentas en la nube guardados",
+    "removeTitle": "¿Eliminar {name}?",
+    "removeBody": "Cyber CTF olvida este servidor y borra su contraseña del llavero. No cambia nada en el propio servidor.",
+    "removeServer": "Eliminar servidor"
   },
   "empty": {
     "title": "Ningún servidor conectado",

@@ -22,6 +22,7 @@
       ]
     },
     "dialog:allow-open",
+    "dialog:allow-message",
     "core:window:allow-set-theme",
     "main-window"
   ]

@@ -8,7 +8,7 @@
 //
 // Exit 2 (skipped) when the lab isn't listed: not signed in, or not in this account's catalogue.
 import { execFileSync } from "node:child_process";
-import { finish, goTo, mainText, openApp, waitAwake } from "../support.mjs";
+import { confirmSystemDialogs, finish, goTo, mainText, openApp, waitAwake } from "../support.mjs";
 
 const LAB = process.env.CYBERCTF_TEST_VM_LAB || "Supplier portal API";
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || (process.platform === "darwin" ? "utm" : "");
@@ -28,13 +28,13 @@ function vms() {
 }
 const pageText = (b) => mainText(b);
 const mainButton = (b, ...labels) => b.$(`//main//button[${labels.map((l) => `normalize-space()=${JSON.stringify(l)}`).join(" or ")}]`);
-/** Stop & remove from the page (the confirmation included), until the page offers Start again. */
+/** Stop & remove from the page (its system confirmation answered yes), until the page offers
+ *  Start again. */
 async function stopAndRemove(b) {
   const stop = await mainButton(b, "Stop & remove", "Stop & clean up");
   await stop.waitForClickable({ timeout: 30000 });
+  await confirmSystemDialogs(b);
   await stop.click();
-  const confirm = await b.$('//*[@role="alertdialog"]//button[normalize-space()="Remove"]');
-  if (await confirm.waitForClickable({ timeout: 10000 }).catch(() => false)) await confirm.click();
   await waitAwake(b, async () => await mainButton(b, "Start lab", "Start").isExisting(), { timeout: 300000, timeoutMsg: "the lab never stopped" });
 }
 

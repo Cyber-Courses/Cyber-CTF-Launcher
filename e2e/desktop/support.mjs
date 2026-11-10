@@ -189,6 +189,22 @@ export function localLabName(lab) {
 }
 
 /**
+ * Answers the app's destructive confirmations (`confirmDestructive`, src/lib/confirm.ts) with
+ * their confirm button from now on, in this window: they open the system's own dialog, which
+ * WebDriver can't press, so the webview's dialog call is answered before it reaches the core.
+ */
+export async function confirmSystemDialogs(b) {
+  await b.execute(() => {
+    const internals = window.__TAURI_INTERNALS__;
+    if (internals.__confirming) return;
+    const invoke = internals.invoke.bind(internals);
+    internals.invoke = (cmd, args, options) =>
+      cmd === "plugin:dialog|message" && args?.buttons?.OkCancelCustom ? Promise.resolve(args.buttons.OkCancelCustom[0]) : invoke(cmd, args, options);
+    internals.__confirming = true;
+  });
+}
+
+/**
  * Invoke a Tauri command directly, the way the UI does, and resolve with its result. Needed for
  * paths with no local-lab UI button (park/resume, re-import): the webview's `invoke` returns a
  * promise, which the classic wry WebDriver cannot await, so the call parks its outcome on a window

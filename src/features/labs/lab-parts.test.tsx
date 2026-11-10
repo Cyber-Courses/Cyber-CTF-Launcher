@@ -11,7 +11,7 @@ import type { RunTarget } from "@/features/labs/run-target";
 import type { Lab } from "@/features/labs/use-labs";
 import { getPortMode, setPortMode } from "@/lib/settings";
 import type { LabCheck, LabRunOptions, LabRunPath, LabStatus, Provider, ServerHost } from "@/lib/tauri";
-import { commands, installTauri } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
 import { invoiceRowLab, rejectWith } from "@/features/labs/labs-test-kit";
@@ -513,7 +513,8 @@ describe("LabRow", () => {
   }
 
   it("opens a running lab's URL and asks before stopping it", async () => {
-    const calls = installTauri();
+    let yes = false;
+    const calls = installTauri({ "plugin:dialog|message": (a) => answersDialog(yes)(a) });
     const user = userEvent.setup();
     const h = renderRow({ status: running() });
     expect(screen.getByText("Running")).toBeTruthy();
@@ -523,23 +524,27 @@ describe("LabRow", () => {
     expect(calls.find((c) => c.cmd.includes("opener"))?.args).toMatchObject({ url: "http://127.0.0.1:8080" });
     expect(h.onOpen).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Stop" }));
-    expect(screen.getByText("Remove Invoice portal API?")).toBeTruthy();
-    expect(screen.getByText(/To keep them, open the lab and shut it down instead/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await flush();
+    const [asked] = dialogsAsked(calls);
+    expect(asked.title).toBe("Remove Invoice portal API?");
+    expect(asked.message).toMatch(/To keep them, open the lab and shut it down instead/);
     expect(h.onStop).not.toHaveBeenCalled();
+    yes = true;
     await user.click(screen.getByRole("button", { name: "Stop" }));
-    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await flush();
     expect(h.onStop).toHaveBeenCalledTimes(1);
     expect(h.onOpen).not.toHaveBeenCalled();
   });
 
   it("doesn't offer to keep a lab on a server or in a VM", async () => {
-    installTauri();
+    const calls = installTauri();
     const user = userEvent.setup();
     renderRow({ status: running({ host: "pve", url: null }) });
     expect(screen.queryByRole("button", { name: /^Open$/ })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Stop" }));
-    expect(screen.queryByText(/To keep them/)).toBeNull();
+    await flush();
+    expect(dialogsAsked(calls)).toHaveLength(1);
+    expect(dialogsAsked(calls)[0].message).not.toMatch(/To keep them/);
   });
 
   it("offers to connect a cloud account a cloud lab lacks", async () => {
@@ -555,12 +560,13 @@ describe("LabRow", () => {
   });
 
   it("says stopping a cloud lab destroys its services in the account", async () => {
-    installTauri();
+    const calls = installTauri();
     const user = userEvent.setup();
     const cloudLab: Lab = { ...lab, id: "lab-goat", title: "EC2 SSRF", runtime: { runtime: "CLOUD", architectures: [], providers: ["aws"] } };
     renderRow({ lab: cloudLab, status: running({ host: "AWS sandbox", url: null, place: "cloud", provider: "aws" }) });
     await user.click(screen.getByRole("button", { name: "Stop" }));
-    expect(screen.getByText(/Its cloud services are destroyed in your account/)).toBeTruthy();
+    await flush();
+    expect(dialogsAsked(calls)[0].message).toMatch(/Its cloud services are destroyed in your account/);
   });
 
   it("says what is happening while busy and disables Stop", () => {
@@ -634,7 +640,7 @@ describe("LabRow", () => {
   });
 
   it("keeps the row's actions beside its open button, not inside it, and Tab reaches each", async () => {
-    installTauri();
+    const calls = installTauri({ "plugin:dialog|message": answersDialog(false) });
     const user = userEvent.setup();
     const h = renderRow({ status: running() });
     const open = screen.getByRole("button", { name: "Open Invoice portal API" });
@@ -659,7 +665,8 @@ describe("LabRow", () => {
     await user.tab();
     expect(document.activeElement).toBe(stop);
     await user.keyboard("{Enter}");
-    expect(screen.getByText("Remove Invoice portal API?")).toBeTruthy();
+    await flush();
+    expect(dialogsAsked(calls).map((d) => d.title)).toEqual(["Remove Invoice portal API?"]);
     expect(h.onOpen).toHaveBeenCalledTimes(1);
   });
 

@@ -6,7 +6,7 @@ import { Labs } from "@/features/labs/labs-screen";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { setPortMode } from "@/lib/settings";
 import { dockerOnlyReport, readyReport } from "@/test/fixtures";
-import { commands, installTauri, stream, type Handler } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri, stream, type Handler } from "@/test/tauri";
 import type { SystemReport } from "@/lib/tauri";
 import { flush } from "@/test/ui";
 import { must } from "@/components/test-support";
@@ -146,20 +146,15 @@ describe("Labs catalogue, from the keyboard", () => {
     expect(nested.map((b) => b.getAttribute("aria-label"))).toEqual([]);
   });
 
-  it("asks before stopping a running lab from its row, Escape keeps it running", async () => {
-    const { calls } = renderLabs(null);
+  it("asks in the system dialog before stopping a running lab from its row, and Cancel keeps it running", async () => {
+    const { calls } = renderLabs(null, { "plugin:dialog|message": answersDialog(false) });
     const user = userEvent.setup();
     await flush(80);
     await user.click(screen.getByRole("button", { name: "Stop" }));
-    const dialog = screen.getByRole("alertdialog");
-    // The dialog has the focus (jsdom has no layout, so the trap can't pick its first button).
-    expect(dialog.contains(document.activeElement)).toBe(true);
-    await user.keyboard("{Escape}");
+    await flush();
+    expect(dialogsAsked(calls).map((d) => d.title)).toEqual(["Remove Invoice portal API?"]);
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(dialog.isConnected).toBe(false);
     expect(commands(calls)).not.toContain("lab_stop");
-    // The focus is back on the row's Stop button, not lost to the body.
-    expect(document.activeElement?.textContent).toBe("Stop");
   });
 
   it("offers to connect a cloud account for a cloud lab when none is saved", async () => {
@@ -311,8 +306,8 @@ describe("Lab page, driven through the Labs screen", () => {
     });
     const user = userEvent.setup();
     await flush(80);
+    // Confirmed in the system dialog (the test harness's answer).
     await user.click(screen.getByRole("button", { name: /Stop & remove/ }));
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
     await flush(80);
     expect(calls.find((c) => c.cmd === "lab_stop")?.args).toMatchObject({ id: "lab-invoice", runtime: "DOCKER" });
     expect(within(deployment()).getByText("Failed")).toBeTruthy();
@@ -475,14 +470,13 @@ describe("Lab page, driven through the Labs screen", () => {
     expect(commands(calls)).not.toContain("lab_launch");
   });
 
-  it("cancels Stop & remove with Escape and stays on the lab page", async () => {
-    const { calls, onDetailChange } = renderLabs("invoice-portal-api");
+  it("cancels Stop & remove in the system dialog and stays on the lab page", async () => {
+    const { calls, onDetailChange } = renderLabs("invoice-portal-api", { "plugin:dialog|message": answersDialog(false) });
     const user = userEvent.setup();
     await flush(80);
     await user.click(screen.getByRole("button", { name: /Stop & remove/ }));
-    expect(screen.getByRole("alertdialog")).toBeTruthy();
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await flush();
+    expect(dialogsAsked(calls).map((d) => d.title)).toEqual(["Remove Invoice portal API?"]);
     expect(screen.getByRole("heading", { name: "Invoice portal API" })).toBeTruthy();
     expect(onDetailChange).not.toHaveBeenLastCalledWith(null);
     expect(commands(calls)).not.toContain("lab_stop");

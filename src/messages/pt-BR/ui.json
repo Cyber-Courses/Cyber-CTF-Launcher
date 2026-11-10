@@ -1,6 +1,7 @@
 {
   "confirm": {
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "failed": "Não foi possível pedir confirmação, então nada foi alterado"
   },
   "copy": {
     "title": "Copiar {text}"

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { LabBrief } from "@/features/labs/lab-brief";
 import { HeaderLead } from "@/features/labs/lab-detail/header-lead";
@@ -10,7 +9,7 @@ import { costEstimate } from "@/features/labs/cloud-panel";
 import { BackLink } from "@/features/labs/lab-detail/page-parts";
 import { LabDeployment, LabHeaderActions, LabNetwork, labNetworkView, LabNotices, LabObjectives, LabPanels } from "@/features/labs/lab-detail/page-sections";
 import { LabSideRail } from "@/features/labs/lab-detail/side-rail";
-import { RemoveDialog } from "@/features/labs/lab-detail/remove-dialog";
+import { confirmRemoveOnPage } from "@/features/labs/confirm-remove";
 import { LabDetailSkeleton } from "@/features/labs/lab-detail/skeleton";
 import { useEscapeBack } from "@/features/labs/lab-detail/use-escape-back";
 import { useLabDetail, type LabDetailProps, type LabPage } from "@/features/labs/lab-detail/use-lab-detail";
@@ -27,7 +26,6 @@ export function LabDetail(props: LabDetailProps) {
   useEscapeBack(props.onBack);
   const page = useLabDetail(props);
   const { s } = page;
-  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const wide = useMediaQuery(WIDE_LAB_PAGE);
 
   if (!ready) return <LabDetailSkeleton />;
@@ -49,7 +47,10 @@ export function LabDetail(props: LabDetailProps) {
         page={page}
         props={props}
         onRemove={() => {
-          setConfirmingRemove(true);
+          // Stop & remove only once the player confirmed it.
+          void confirmRemoveOnPage(t, { title: lab.title, canShutdown: s.canShutdown, cloud: s.isCloud }).then((yes) => {
+            if (yes) void props.onStop();
+          });
         }}
       />
       <LabNotices page={page} props={props} />
@@ -68,20 +69,6 @@ export function LabDetail(props: LabDetailProps) {
 
         <LabSideRail page={page} props={props} meta={meta} cost={cost} />
       </div>
-      {confirmingRemove && (
-        <RemoveDialog
-          title={lab.title}
-          canShutdown={s.canShutdown}
-          cloud={s.isCloud}
-          onCancel={() => {
-            setConfirmingRemove(false);
-          }}
-          onConfirm={() => {
-            setConfirmingRemove(false);
-            void props.onStop();
-          }}
-        />
-      )}
     </div>
   );
 }

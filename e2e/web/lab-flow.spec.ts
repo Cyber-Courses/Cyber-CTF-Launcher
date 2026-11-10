@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, breadcrumb, release } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, breadcrumb, release, answerConfirm } from "./fixtures";
 
 // A lab from the catalogue to running and back, through the dev mock's lab operations: a start
 // streams a Docker Compose log and leaves the lab running, Stop & remove takes it down
@@ -71,8 +71,9 @@ test.describe("lab flow", () => {
     await shell.close();
 
     // Stop & remove asks first, then takes it down.
+    const asked = answerConfirm(page, true);
     await page.getByRole("button", { name: "Stop & remove" }).click();
-    await page.getByRole("alertdialog", { name: "Remove Exposed dashboard?" }).getByRole("button", { name: "Remove" }).click();
+    expect(await asked).toContain("Remove Exposed dashboard?");
     await expect(page.getByRole("button", { name: "Start lab" })).toBeEnabled();
     await expect(page.locator("main")).toContainText("Not started");
     await expect(page.locator(".react-flow")).toHaveCount(0);

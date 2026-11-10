@@ -108,14 +108,14 @@
       "one": "{count} image de VM",
       "other": "{count} images de VM"
     },
-    "confirm": "Supprimer {size} ? Les labs retéléchargeront ce dont ils ont besoin au prochain démarrage. Ce qui est utilisé est conservé.",
-    "cancel": "Annuler",
     "removing": "Suppression…",
     "remove": "Supprimer",
     "freed": "{size} libérés.",
     "nothingFreed": "Rien n'a pu être supprimé (tout est utilisé).",
     "cleanFailed": "Impossible de supprimer les téléchargements",
-    "readFailed": "Impossible de lire ce que Cyber CTF a téléchargé : {why}"
+    "readFailed": "Impossible de lire ce que Cyber CTF a téléchargé : {why}",
+    "confirmTitle": "Supprimer {size} de téléchargements de labs ?",
+    "confirmBody": "Les labs retéléchargeront ce dont ils ont besoin au prochain démarrage. Ce qui est utilisé est conservé."
   },
   "selfTest": {
     "containerTitle": "Test d'un lab conteneurs",

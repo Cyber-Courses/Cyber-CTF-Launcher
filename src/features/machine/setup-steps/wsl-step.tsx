@@ -1,15 +1,14 @@
 "use client";
 
-import { useState } from "react";
 import { ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusDot } from "@/components/ui/status-pill";
 import { CmdRow, Log, Num, Requirement } from "@/features/machine/setup-steps/parts";
 import { wslState } from "@/features/machine/setup-steps/steps";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import { type SystemReport } from "@/lib/tauri";
 import { openExternal } from "@/lib/failure";
+import { confirmDestructive } from "@/lib/confirm";
 import { useT } from "@/lib/i18n";
 
 const bold = (s: string) => <b>{s}</b>;
@@ -19,7 +18,6 @@ const bold = (s: string) => <b>{s}</b>;
 export function WslStep({ report, setup }: { report: SystemReport; setup: MachineSetupState }) {
   const t = useT();
   const state = wslState(report, setup);
-  const [asking, setAsking] = useState(false);
 
   if (state === "ready") {
     return (
@@ -35,7 +33,14 @@ export function WslStep({ report, setup }: { report: SystemReport; setup: Machin
         <RestartNotice
           setup={setup}
           onAsk={() => {
-            setAsking(true);
+            // Open apps close without saving: asked first.
+            void confirmDestructive({
+              title: t("machine.body.wsl.confirmTitle"),
+              message: `${t("machine.body.wsl.confirmBody")} ${report.wsl?.reopensAfterRestart ? t("machine.body.wsl.reopens") : t("machine.body.wsl.reopenByHand")}`,
+              confirm: t("machine.body.wsl.restartNow"),
+            }).then((yes) => {
+              if (yes) setup.restart(t("machine.body.wsl.restartReason"));
+            });
           }}
         />
       ) : (
@@ -45,21 +50,6 @@ export function WslStep({ report, setup }: { report: SystemReport; setup: Machin
         <Log setup={setup} of={["wsl"]} />
       </div>
       <WslByHand />
-      {asking && (
-        <ConfirmDialog
-          title={t("machine.body.wsl.confirmTitle")}
-          confirmLabel={t("machine.body.wsl.restartNow")}
-          onConfirm={() => {
-            setAsking(false);
-            setup.restart(t("machine.body.wsl.restartReason"));
-          }}
-          onCancel={() => {
-            setAsking(false);
-          }}
-        >
-          {t("machine.body.wsl.confirmBody")} {report.wsl?.reopensAfterRestart ? t("machine.body.wsl.reopens") : t("machine.body.wsl.reopenByHand")}
-        </ConfirmDialog>
-      )}
     </>
   );
 }

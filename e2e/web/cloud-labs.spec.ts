@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, answerConfirm } from "./fixtures";
 
 // Cloud labs (EC2 SSRF, cloud services in the player's AWS account) through the dev mock: a cloud
 // start streams a Terraform log and leaves outputs and an auto-stop. `cloud=none`: no cloud
@@ -52,10 +52,10 @@ test.describe("cloud labs", () => {
     await expect(main(page).getByRole("heading", { level: 3, name: /^Attack/ })).toHaveCount(0);
     await expect(button(page, "Pause")).toHaveCount(0);
 
+    const asked = answerConfirm(page, true);
     await button(page, "Stop & remove").click();
-    const remove = page.getByRole("alertdialog", { name: "Remove EC2 SSRF?" });
-    await expect(remove).toContainText("Its cloud services are destroyed in your account");
-    await remove.getByRole("button", { name: "Remove" }).click();
+    expect(await asked).toContain("Remove EC2 SSRF?");
+    expect(await asked).toContain("Its cloud services are destroyed in your account");
     await expect(button(page, "Start lab")).toBeEnabled();
     await expect(main(page)).toContainText("Start the lab to create its cloud services in your account.");
   });
@@ -108,8 +108,9 @@ test.describe("cloud labs", () => {
     await expect(where.getByRole("radio", { name: /Lab AWS/ })).toHaveAttribute("aria-checked", "true");
     await where.getByRole("button", { name: "Start", exact: true }).click();
     await expect(main(page)).toContainText("Running·on Lab AWS");
+    const asked = answerConfirm(page, true);
     await button(page, "Stop & remove").click();
-    await page.getByRole("alertdialog", { name: "Remove EC2 SSRF?" }).getByRole("button", { name: "Remove" }).click();
+    expect(await asked).toContain("Remove EC2 SSRF?");
     await expect(button(page, "Start lab")).toBeEnabled();
   });
 });

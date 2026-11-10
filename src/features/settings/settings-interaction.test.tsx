@@ -10,7 +10,7 @@ import { must } from "@/components/test-support";
 import { openCustomImage, renderInstalledTools, toggleFailingSharedFolder } from "@/features/settings/settings-test-kit";
 import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
 import { DEFAULT_ATTACK_IMAGE, getAttackImage } from "@/lib/settings";
-import { installTauri, stream, rejectWith } from "@/test/tauri";
+import { answersDialog, dialogsAsked, installTauri, stream, rejectWith } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 // Settings driven the way a player does: with the mouse and the keyboard, across the rail's
@@ -170,23 +170,17 @@ describe("Settings: removing tools Cyber CTF installed", () => {
     { dependency: "terraform", at: Math.floor(Date.now() / 1000) - 60 },
   ];
 
-  it("cancels the removal on Escape, with nothing uninstalled", async () => {
-    const { calls, user, askToRemove } = await renderInstalledTools({ installed_tools: tools });
+  it("asks in the system dialog, and Cancel uninstalls nothing", async () => {
+    const { calls, askToRemove } = await renderInstalledTools({ installed_tools: tools, "plugin:dialog|message": answersDialog(false) });
     await askToRemove();
-    expect(screen.getByRole("alertdialog")).toBeTruthy();
-    await user.keyboard("{Escape}");
+    await flush();
+    expect(dialogsAsked(calls)).toEqual([
+      {
+        title: "Remove Vagrant?",
+        message: "Labs that need Vagrant won't start until it's installed again (setup can reinstall it). Your labs and settings are kept.",
+      },
+    ]);
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(calls.map((c) => c.cmd)).not.toContain("uninstall_dependency");
-  });
-
-  it("puts the focus on Cancel when the confirmation opens, so Enter keeps the tool", async () => {
-    const { calls, user, askToRemove } = await renderInstalledTools({ installed_tools: tools });
-    await askToRemove();
-    const dialog = screen.getByRole("alertdialog");
-    // jsdom has no layout (offsetParent is always null), so the trap can only fall back to the
-    // dialog itself; pressing Enter must still never confirm.
-    expect(dialog.contains(document.activeElement)).toBe(true);
-    await user.keyboard("{Enter}");
     expect(calls.map((c) => c.cmd)).not.toContain("uninstall_dependency");
   });
 
@@ -208,7 +202,6 @@ describe("Settings: removing tools Cyber CTF installed", () => {
     render(<InstalledToolsPanel />);
     await flush();
     await user.click(screen.getAllByRole("button", { name: /remove/i })[0]);
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /^remove$/i }));
     await flush();
     expect(text()).toContain("==> Uninstalling vagrant");
     expect(text()).toContain("Removing…");
@@ -217,7 +210,8 @@ describe("Settings: removing tools Cyber CTF installed", () => {
     expect(rowButtons().every((b) => b.hasAttribute("disabled"))).toBe(true);
     // A second press on another tool during the removal can't start a second uninstall.
     fireEvent.click(rowButtons()[1]);
-    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await flush();
+    expect(dialogsAsked(calls)).toHaveLength(1);
     finish();
     await flush();
     expect(calls.filter((c) => c.cmd === "uninstall_dependency")).toHaveLength(1);

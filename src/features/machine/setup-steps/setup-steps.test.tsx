@@ -11,7 +11,7 @@ import { firstPending } from "@/features/machine/setup-steps/step-status";
 import { must } from "@/components/test-support";
 import type { ProviderStatus, SystemReport, WslState } from "@/lib/tauri";
 import { INSTALLS_OFF, INSTALLS_OFF_NOTE, freshReport, hypervisorStatus as hv, hypervisors, readyReport, withNeeds } from "@/test/fixtures";
-import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { installDockerDesktop, radioWith } from "@/features/machine/machine-test-kit";
 
@@ -213,20 +213,20 @@ describe("WSL step, from the machine check", () => {
     expect(screen.queryByRole("button", { name: /restart now/i })).toBeNull();
   });
 
-  it("restarts only after the player confirms, saying what happens", async () => {
-    const calls = installTauri();
+  it("restarts only after the player confirms in the system dialog, saying what happens", async () => {
+    let yes = false;
+    const calls = installTauri({ "plugin:dialog|message": (a) => answersDialog(yes)(a) });
     const user = userEvent.setup();
     render(<Step step="virtualization" report={windows("needsReboot")} />);
     await user.click(button(/restart now/i));
-    const dialog = screen.getByRole("alertdialog");
-    expect(dialog.textContent).toContain("open apps close without saving");
-    expect(dialog.textContent).toContain("Cyber CTF opens again when you sign back in");
+    await flush();
+    const [asked] = dialogsAsked(calls);
+    expect(asked.message).toContain("open apps close without saving");
+    expect(asked.message).toContain("Cyber CTF opens again when you sign back in");
     // Cancel keeps everything.
-    await user.click(button(/cancel/i));
-    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(commands(calls)).not.toContain("machine_restart");
+    yes = true;
     await user.click(button(/restart now/i));
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /restart now/i }));
     await flush();
     expect(calls.find((c) => c.cmd === "machine_restart")?.args).toEqual({ reason: "Cyber CTF: restarting to finish turning on WSL 2." });
     expect(screen.getByRole("status").textContent).toContain("Restarting in a few seconds");
@@ -234,7 +234,7 @@ describe("WSL step, from the machine check", () => {
   });
 
   it("says to reopen Cyber CTF by hand when it can't reopen itself, and shows a failed restart", async () => {
-    installTauri({
+    const calls = installTauri({
       machine_restart: () => {
         rejectWith("Access is denied.");
       },
@@ -242,9 +242,8 @@ describe("WSL step, from the machine check", () => {
     const user = userEvent.setup();
     render(<Step step="virtualization" report={windows("needsReboot", false)} />);
     await user.click(button(/restart now/i));
-    expect(screen.getByRole("alertdialog").textContent).toContain("open Cyber CTF again");
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /restart now/i }));
     await flush();
+    expect(dialogsAsked(calls)[0].message).toContain("open Cyber CTF again");
     // The button comes back, to try again.
     expect(button(/restart now/i).hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("status").textContent).not.toContain("Restarting");
@@ -264,7 +263,6 @@ describe("WSL step, restarting once", () => {
     const report = windows("needsReboot");
     const r = render(<Remounting round={1} report={report} />);
     await user.click(button(/restart now/i));
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: /restart now/i }));
     await flush();
     r.rerender(<Remounting round={2} report={report} />);
     expect(screen.getByRole("status").textContent).toContain("Restarting in a few seconds");

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, breadcrumb, paletteKey } from "./fixtures";
+import { test, expect, openApp, navButton, pageTitle, breadcrumb, paletteKey, answerConfirm } from "./fixtures";
 
 // The mock's catalogue (src/lib/dev-mock/labs.ts): Invoice portal API runs, Public backup is solved.
 const ALL = ["Invoice portal API", "GOAD Light", "Blind orders", "Exposed dashboard", "Public backup", "EC2 SSRF"];
@@ -90,12 +90,9 @@ test.describe("labs", () => {
     await row(page, "Invoice portal API").click();
     await expect(pageTitle(page)).toHaveText("Invoice portal API");
 
+    const asked = answerConfirm(page, false);
     await page.getByRole("button", { name: "Stop & remove" }).click();
-    const dialog = page.getByRole("alertdialog", { name: "Remove Invoice portal API?" });
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Remove" })).toBeVisible();
-    await dialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(dialog).toBeHidden();
+    expect(await asked).toContain("Remove Invoice portal API?");
     await expect(pageTitle(page)).toHaveText("Invoice portal API");
     await expect(page.locator(".react-flow")).toBeVisible();
   });

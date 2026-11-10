@@ -13,7 +13,7 @@ import { getAttackImage, getLastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, readyReport } from "@/test/fixtures";
-import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, radioWith, renderMachineScreen } from "@/features/machine/machine-test-kit";
 
@@ -262,31 +262,31 @@ describe("Downloads panel: clean-up", () => {
     plugins: [] as { name: string; bytes: number }[],
   });
 
-  it("asks before removing anything, and Cancel keeps everything", async () => {
-    const calls = installTauri({ machine_storage: storage });
+  it("asks in the system dialog before removing anything, and Cancel keeps everything", async () => {
+    const calls = installTauri({ machine_storage: storage, "plugin:dialog|message": answersDialog(false) });
     const user = userEvent.setup();
     render(<DownloadsPanel />);
     await flush();
     await user.click(button(/clean up/i));
-    expect(screen.getByRole("alert").textContent).toContain("Remove 4.0 GB?");
-    // While asking, the header's Clean up is gone: one question at a time.
-    expect(screen.queryAllByRole("button").some((b) => /clean up/i.test(b.textContent))).toBe(false);
-    await user.click(button(/^cancel$/i));
+    await flush();
+    expect(dialogsAsked(calls)).toEqual([
+      { title: "Remove 4.0 GB of lab downloads?", message: "Labs download what they need again on their next start. Anything in use stays." },
+    ]);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(count(calls, "machine_storage_clean")).toBe(0);
     expect(button(/clean up/i)).toBeTruthy();
   });
 
-  it("removes once however often Remove is pressed, keeping the attack box image", async () => {
+  it("asks once and removes once however often Clean up is pressed, keeping the attack box image", async () => {
     let finish: (n: number) => void = () => {};
     const calls = installTauri({ machine_storage: storage, machine_storage_clean: () => new Promise((r) => (finish = r)) });
     const user = userEvent.setup();
     render(<DownloadsPanel />);
     await flush();
-    await user.click(button(/clean up/i));
-    await user.dblClick(button(/^remove$/i));
+    await user.dblClick(button(/clean up/i));
+    await flush();
+    expect(count(calls, "plugin:dialog|message")).toBe(1);
     expect(disabled(button(/removing/i))).toBe(true);
-    expect(disabled(button(/^cancel$/i))).toBe(true);
     await settle(() => {
       finish(600_000_000);
     });

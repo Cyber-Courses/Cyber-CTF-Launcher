@@ -11,14 +11,16 @@
       "one": "{count} host",
       "other": "{count} hosts"
     },
-    "removeConfirm": "Remove {name}? Its password is deleted from the keychain.",
     "capacityTitle": "Capacity on {name}",
     "vcpu": "{count} vCPU",
     "memory": "Memory",
     "memoryUsed": "{used} of {total} used",
     "noServerHint": "No server? If this machine can handle it, install a local hypervisor and run VM labs here.",
     "setUpMachine": "Set up this machine",
-    "listFailed": "Couldn't read your saved servers and cloud accounts"
+    "listFailed": "Couldn't read your saved servers and cloud accounts",
+    "removeTitle": "Remove {name}?",
+    "removeBody": "Cyber CTF forgets this server and deletes its password from the keychain. Nothing changes on the server itself.",
+    "removeServer": "Remove server"
   },
   "empty": {
     "title": "No server connected",

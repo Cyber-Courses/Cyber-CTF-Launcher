@@ -8,6 +8,8 @@ import { useHostTests, useServerList } from "@/features/servers/use-server-list"
 import { serverMonthToDateCost, serverOpenSetup, serverRemove, type CloudProvider, type ServerHost } from "@/lib/tauri";
 import { ignore } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
+import { confirmDestructive } from "@/lib/confirm";
+import { useT } from "@/lib/i18n";
 
 /** Month-to-date spend, only for accounts that set a budget (Cost Explorer costs per call), read
  *  with each account's own credentials: the figure the launch budget gate checks. `hosts` is the
@@ -30,6 +32,7 @@ const NO_HOSTS: ServerHost[] = [];
 
 /** The Cloud page's state and actions: the accounts, their tests and spend, the labs running on them. */
 export function useCloudPage() {
+  const t = useT();
   const { list, error, setError, reload } = useServerList();
   const allHosts = list?.hosts ?? null;
   const hosts = allHosts ? cloudAccounts(allHosts) : null;
@@ -42,6 +45,17 @@ export function useCloudPage() {
   const fail = (e: unknown) => {
     setError(describeError(e));
   };
+
+  /** Removes account `id`, and only it, once the player confirmed it in the system's dialog. */
+  async function removeAccount(id: string) {
+    const name = hosts?.find((h) => h.id === id)?.name ?? id;
+    const yes = await confirmDestructive({
+      title: t("cloud.account.removeTitle", { name }),
+      message: t("cloud.account.removeBody"),
+      confirm: t("cloud.account.removeAccount"),
+    });
+    if (yes) await serverRemove(id).then(reload, fail);
+  }
 
   async function stopLab(l: Lab) {
     // Why the stop failed or was refused (another operation on the lab), shown here too.
@@ -64,7 +78,7 @@ export function useCloudPage() {
       serverOpenSetup(id, "cloud", provider).catch(fail);
     },
     remove: (id: string) => {
-      serverRemove(id).then(reload, fail);
+      void removeAccount(id);
     },
     stopLab: (l: Lab) => {
       void stopLab(l);

@@ -25,8 +25,23 @@ const streams =
     return null;
   };
 
+/** The system dialog `confirmDestructive` asks in, answered with its confirm button (`yes`) or
+ *  its Cancel: `installTauri({ "plugin:dialog|message": answersDialog(false) })`. */
+export const answersDialog =
+  (yes: boolean): Handler =>
+  (args) => {
+    const [ok, cancel] = (args?.buttons as { OkCancelCustom: [string, string] }).OkCancelCustom;
+    return yes ? ok : cancel;
+  };
+
+/** The dialogs asked (their title and message), from the calls `installTauri` returned. */
+export const dialogsAsked = (calls: Call[]) =>
+  calls.filter((c) => c.cmd === "plugin:dialog|message").map((c) => ({ title: c.args?.title, message: c.args?.message }));
+
 // Commands the browser dev mock leaves unanswered (null), with a plausible answer for tests.
 const DEFAULTS: Partial<Record<string, Handler>> = {
+  // The player confirms what they asked for, unless a test answers otherwise.
+  "plugin:dialog|message": answersDialog(true),
   installed_tools: () => [{ dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 }],
   shared_folder_get: () => ({ enabled: false, path: "/Users/player/CyberCTF", mountPoint: "/shared" }),
   shared_folder_set: (a) => ({ enabled: !!a?.enabled, path: typeof a?.path === "string" ? a.path : "", mountPoint: "/shared" }),

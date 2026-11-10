@@ -108,14 +108,14 @@
       "one": "{count} imagem de VM",
       "other": "{count} imagens de VM"
     },
-    "confirm": "Remover {size}? Os labs baixam de novo o que precisarem na próxima inicialização. O que estiver em uso é mantido.",
-    "cancel": "Cancelar",
     "removing": "Removendo…",
     "remove": "Remover",
     "freed": "{size} liberados.",
     "nothingFreed": "Nada pôde ser removido (tudo em uso).",
     "cleanFailed": "Não foi possível remover os downloads",
-    "readFailed": "Não foi possível ler o que o Cyber CTF baixou: {why}"
+    "readFailed": "Não foi possível ler o que o Cyber CTF baixou: {why}",
+    "confirmTitle": "Remover {size} de downloads de labs?",
+    "confirmBody": "Os labs baixam de novo o que precisarem na próxima inicialização. O que estiver em uso é mantido."
   },
   "selfTest": {
     "containerTitle": "Teste de lab de contêiner",

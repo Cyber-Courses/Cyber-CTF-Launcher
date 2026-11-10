@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
-import { commands, installTauri, type Handler } from "@/test/tauri";
+import { answersDialog, commands, dialogsAsked, installTauri, type Handler } from "@/test/tauri";
 import { NOTHING, VMS_HERE, containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
 import { flush } from "@/test/ui";
@@ -433,7 +433,8 @@ describe("LabDetail: starting", () => {
 
 describe("LabDetail: a lab that is up", () => {
   it("opens a running lab's URL, shuts it down, and asks before removing it", async () => {
-    const calls = installTauri(quiet);
+    let yes = false;
+    const calls = installTauri({ ...quiet, "plugin:dialog|message": (a) => answersDialog(yes)(a) });
     const user = userEvent.setup();
     const h = renderDetail({ status: status() });
     await flush();
@@ -444,13 +445,16 @@ describe("LabDetail: a lab that is up", () => {
     expect(screen.queryByRole("button", { name: /^\s*Pause$/ })).toBeNull();
     await user.click(screen.getByRole("button", { name: /Shut down/ }));
     expect(h.onPark).toHaveBeenCalledWith("shutdown");
+    // Asked in the system dialog: cancelled, nothing is removed; confirmed, it is, once.
     await user.click(screen.getByRole("button", { name: /Stop & remove/ }));
-    expect(screen.getByText("Remove Invoice portal API?")).toBeTruthy();
-    expect(screen.getByText(/To keep them, shut the lab down instead/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await flush();
+    const [asked] = dialogsAsked(calls);
+    expect(asked.title).toBe("Remove Invoice portal API?");
+    expect(asked.message).toMatch(/To keep them, shut the lab down instead/);
     expect(h.onStop).not.toHaveBeenCalled();
+    yes = true;
     await user.click(screen.getByRole("button", { name: /Stop & remove/ }));
-    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await flush();
     expect(h.onStop).toHaveBeenCalledTimes(1);
   });
 
@@ -637,7 +641,7 @@ describe("LabDetail: parked and interrupted", () => {
     await flush();
     expect(screen.getAllByText(/shut down; its machines keep their state/).length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: /Stop & remove/ }));
-    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await flush();
     expect(h.onStop).toHaveBeenCalled();
   });
 

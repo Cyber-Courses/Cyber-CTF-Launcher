@@ -1,11 +1,12 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Lab } from "@/features/labs/use-labs";
 import { rowFacts, rowPhase, type RowPhase } from "@/features/labs/lab-row-state";
 import { RowColumns, RowDot, RowTitle } from "@/features/labs/lab-row-parts";
-import { RowAction, StopDialog } from "@/features/labs/lab-row-actions";
+import { RowAction } from "@/features/labs/lab-row-actions";
+import { confirmRemoveOnRow } from "@/features/labs/confirm-remove";
 import type { LabStatus } from "@/lib/tauri";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import { useT } from "@/lib/i18n";
@@ -58,29 +59,19 @@ type LabRowProps = {
  */
 export const LabRow = memo(function LabRow(props: LabRowProps) {
   const { lab, status, onStop } = props;
-  // Stop deletes the lab's machines: ask first, as the lab's own page does.
-  const [confirmingStop, setConfirmingStop] = useState(false);
+  const t = useT();
   return (
     <div className="@container border-t border-border first:border-t-0">
       <RowLine
         {...props}
         onAskStop={() => {
-          setConfirmingStop(true);
+          // Stop deletes the lab's machines: asked first, as the lab's own page does.
+          const canShutdown = !status?.host && status?.place !== "local_vm";
+          void confirmRemoveOnRow(t, { title: lab.title, canShutdown, cloud: lab.runtime?.runtime === "CLOUD" }).then((yes) => {
+            if (yes) onStop(lab);
+          });
         }}
       />
-      {confirmingStop && (
-        <StopDialog
-          lab={lab}
-          status={status}
-          onCancel={() => {
-            setConfirmingStop(false);
-          }}
-          onConfirm={() => {
-            setConfirmingStop(false);
-            onStop(lab);
-          }}
-        />
-      )}
     </div>
   );
 });
