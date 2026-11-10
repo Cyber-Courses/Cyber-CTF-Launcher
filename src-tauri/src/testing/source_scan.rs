@@ -373,3 +373,18 @@ fn the_build_script_reads_cargos_variables_when_it_runs() {
     let baked: Vec<&str> = build.lines().filter(|l| l.contains("env!(\"CARGO_")).collect();
     assert_eq!(baked, [] as [&str; 0], "build.rs reads these at compile time; use std::env::var_os");
 }
+
+/// Regression: the dev window loads `devUrl` while `pnpm dev` started Next on its default port,
+/// which Next moves elsewhere when another server already holds it (another project's dev server
+/// on 3000): the window then showed that other server. The dev script names the very port
+/// `devUrl` loads, and naming it is what makes Next refuse a busy port instead of moving.
+#[test]
+fn the_dev_window_loads_the_port_the_dev_server_is_told_to_take() {
+    let conf: serde_json::Value = serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+    let dev_url = conf["build"]["devUrl"].as_str().unwrap();
+    let port = dev_url.rsplit(':').next().unwrap().trim_end_matches('/');
+    let package: serde_json::Value = serde_json::from_str(include_str!("../../../package.json")).unwrap();
+    let dev = package["scripts"]["dev"].as_str().unwrap();
+    assert_eq!(dev, format!("next dev --port {port}"), "devUrl is {dev_url}");
+    assert_ne!(port, "3000", "Next's default, the port other projects' dev servers take");
+}

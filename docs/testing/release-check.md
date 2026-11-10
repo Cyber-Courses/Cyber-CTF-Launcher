@@ -33,7 +33,7 @@ the end of this page have been done for what the release changes.
 | `e2e-mock`      | `playwright test`                         | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n |
 | `e2e-native`    | `e2e/desktop/run.sh`                      | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                          |
 
-Next allows one dev server per checkout (its dev lock), so when one already serves port 3000
+Next allows one dev server per checkout (its dev lock), so when one already serves port 1437
 (`pnpm tauri dev`, or the native runner's), the `e2e-mock` step runs Playwright against it
 instead of starting its own on port 3210.
 
