@@ -71,6 +71,8 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
+- **`pnpm release-check` runs everything CI runs**: it gained the docs' links, the build, the
+  generated bindings check, `cargo deny` (when installed) and `pnpm audit --prod`.
 - **Licensed under the Apache License 2.0** (`LICENSE`, `NOTICE`).
 - **A tag build refuses to ship unsigned installers.** The release stops before building when a
   Windows (Azure Artifact Signing), macOS (Developer ID, notarization) or updater signing secret is
@@ -163,6 +165,39 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A lab an older version left on its own Terraform is no longer said to be removable.** When the
+  Isothrum runner couldn't take over such a cloud or Proxmox deployment, the notice said Stop and
+  the auto-stop would still remove it, but nothing did and a cloud lab kept billing. The notice
+  now says so and to delete it in the cloud console or on the Proxmox server, and a Stop that
+  leaves it up says the same instead of reporting the lab stopped. A deployment whose run record
+  can't be read is no longer handed over without its auto-stop time; that is said too.
+- **A lab run on Rancher Desktop keeps its engine.** The lab page took it for the current engine
+  and named it "Docker"; the engines and their names now come from the core.
+- **A Stop fails when the lab's server marker can't be removed**, instead of reporting the lab
+  stopped while its status, stop and the server's removal still went to that server.
+- **An updated lab no longer inherits where its old copy ran**, which could send its status and
+  Stop to a server it never ran on.
+- **Azure's Test says when it couldn't ask Azure** (signed out, throttled, no network) instead of
+  saying the lab size isn't offered in the region.
+- **A launch on a chosen container engine says when Docker's contexts can't be listed**, not that
+  the engine has none.
+- **The Cloud page says why a Stop failed or was refused**, also when another operation on the lab
+  was running.
+- **The Downloads panel says when what Cyber CTF downloaded can't be read**, instead of showing
+  "No lab downloads yet". **The Azure account setup says why its subscriptions couldn't be read.**
+- **Try again on a failed machine check keeps spinning until the check answers**, and can't be
+  pressed again meanwhile.
+- **A Mac is offered the hypervisor made for its CPU by the core**: VirtualBox is no longer
+  offered for install on Apple Silicon, nor UTM on an Intel Mac (one already installed stays).
+- **A Proxmox user with a `!` but no realm is no longer taken for an API token**; a token is
+  `user@realm!name`, as the core reads it.
+- **A lab page's memory needs are in the decimal GB the rest of the app uses** (1024 MB now reads
+  1.1 GB).
+- **A lab's objectives no longer show another lab's progress** when a re-read answers after
+  switching labs.
+- **The Cloud page finds the labs running on an account by the account itself**, not its name, so
+  a server with the same name no longer counts.
+- **An auto-stop that finds no account recorded for a lab says so in the player's language.**
 - **A VM lab on Hyper-V no longer fails to start while the app is open.** The sidebar's and the
   Machine page's count of running VMs asked `vagrant global-status --prune`, which reads every
   VM's state live; on Hyper-V that holds each VM's Vagrant lock for a moment, so a lab's own
