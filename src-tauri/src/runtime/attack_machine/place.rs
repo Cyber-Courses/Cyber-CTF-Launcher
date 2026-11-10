@@ -49,7 +49,7 @@ impl Placed {
     /// in the lab, so the learner's Stop retires whatever of it the run already has.
     pub(crate) async fn add(&self, dirs: &AppDirs, image: &str, network: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let kind = if self.vm { Kind::Vm } else { Kind::Container { image } };
-        let shared = self.shared_folder(dirs, log).await;
+        let shared = self.shared_folder(dirs, log);
         let written = super::add(&self.dir, kind, self.cpu(), network, shared.as_deref()).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
         let failed = match written {
             Err(error) => Failed { error, run_changed: false },
@@ -103,7 +103,7 @@ impl Placed {
     /// The learner's shared folder for the box, when it is on and the lab runs where a machine
     /// can mount a folder of this computer ([`shares_folders`]); otherwise none, `log` saying why
     /// when it is on (or when the setting or the folder can't be used).
-    async fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Option<PathBuf> {
+    fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Option<PathBuf> {
         let folder = match crate::shared_folder::current(dirs) {
             Ok(folder) => folder?,
             Err(e) => {
@@ -111,9 +111,10 @@ impl Placed {
                 return None;
             }
         };
+        // The run's record says its hypervisor: no status read (a `vagrant status`) for it.
         let provider = match &self.host {
-            Host::Local(run) => match run.status().await {
-                Ok(s) => s.provider,
+            Host::Local(run) => match run.recorded_provider() {
+                Ok(provider) => provider,
                 Err(e) => {
                     log::warn!("couldn't read the lab's hypervisor for the shared folder: {e}");
                     None

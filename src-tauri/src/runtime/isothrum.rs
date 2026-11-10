@@ -16,6 +16,7 @@
 mod cloud;
 pub(crate) mod errors;
 mod import;
+mod one_read;
 mod opened;
 mod progress;
 mod regenerate;
@@ -316,8 +317,21 @@ impl LabRun {
             return Ok(LabStatus { place: Some(place), ..LabStatus::default() });
         }
         let lab = self.lab().await?;
-        let status = lab.status().await.map_err(errors::from_runner)?;
+        let status = self.read(&lab).await?;
         Ok(LabStatus { place: Some(place), ..view::lab_status(lab.manifest(), &status, paths::parked(&self.dir)) })
+    }
+
+    /// `lab`'s status, read by the runner, one read of the run at a time in the app
+    /// ([`one_read`]): the lab page's and the attack box's never ask Vagrant at once.
+    async fn read(&self, lab: &Running<'_>) -> Result<Status> {
+        one_read::status(&self.dir.join(self.name.as_str()), || async { lab.status().await.map_err(errors::from_runner) }).await
+    }
+
+    /// The provider the run's record says it runs on, none before it ever ran: read from the
+    /// runner's files only, no tool runs.
+    pub(crate) fn recorded_provider(&self) -> Result<Option<String>> {
+        let runs = self.runner.runs().map_err(errors::from_runner)?;
+        Ok(runs.into_iter().find(|r| r.name == self.name).and_then(|r| r.provider))
     }
 
     /// Runs the lab's set-up again on its running machines (`machine`, or all): its provisioners,
@@ -406,7 +420,8 @@ impl LabRun {
         if !self.manifest().is_file() {
             return Ok(None);
         }
-        self.lab().await?.status().await.map(Some).map_err(errors::from_runner)
+        let lab = self.lab().await?;
+        self.read(&lab).await.map(Some)
     }
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`

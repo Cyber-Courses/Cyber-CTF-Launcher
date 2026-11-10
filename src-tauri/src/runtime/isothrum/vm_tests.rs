@@ -84,6 +84,8 @@ fn vagrant(s: &mut BTreeMap<String, String>, call: &Call) -> Reply {
 struct Provisioning {
     states: BTreeMap<String, String>,
     held_until: Option<tokio::time::Instant>,
+    /// The `vagrant` calls made while the start's `vagrant up` held the VMs.
+    while_held: Vec<String>,
 }
 
 /// How long the start's `vagrant up` takes.
@@ -94,6 +96,9 @@ const UP_TAKES: std::time::Duration = std::time::Duration::from_secs(600);
 fn provisioning(model: &Mutex<Provisioning>, call: &Call) -> Reply {
     let mut m = locked(model);
     let held = m.held_until.is_some_and(|until| tokio::time::Instant::now() < until);
+    if held {
+        m.while_held.push(format!("{} {}", call.program, call.args.join(" ")));
+    }
     match call.args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["status", ..] if held => {
             let mut refused = Reply::fail(1, "");
@@ -117,25 +122,95 @@ fn provisioning(model: &Mutex<Provisioning>, call: &Call) -> Reply {
 /// deploy worker, another process. Two minutes into the start's provisioning, Vagrant refused the
 /// status read (the start's `vagrant up` held the VMs' locks), the runner's retries ran out, and
 /// the page showed "Couldn't read the state of" the lab. The read now says it isn't running yet,
-/// as the start's own progress does.
+/// as the start's own progress does. Regression (friday, libvirt): the app's reads ran `vagrant
+/// status` on the VMs the start was provisioning, and took their locks in Vagrant's index from
+/// under the start's own Vagrant calls: neither the lab page's nor the attack box's read runs any
+/// Vagrant while the start holds the run, only the start does.
 #[tokio::test(start_paused = true)]
 async fn the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_process() {
     let f: Scripted<Provisioning> = Scripted::answered_by(Home::new("-vm-busy", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), provisioning);
-    // The deploy worker's runner, which starts the lab, and the app's, which the page reads it through.
+    // The deploy worker's runner, which starts the lab, and the app's, which the page reads it
+    // through: the lab's status, and the attack box's (the run's status, the box one of its machines).
     let worker = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
     let app = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
     let page = async {
         tokio::time::sleep(std::time::Duration::from_secs(148)).await;
-        app.status().await
+        tokio::join!(app.status(), app.run_status())
     };
     let mut log = |_| {};
-    let (started, read) = tokio::join!(worker.up(Inputs { values: &[], default_ports: true }, Some("virtualbox"), &mut log), page);
+    let (started, (read, boxed)) = tokio::join!(worker.up(Inputs { values: &[], default_ports: true }, Some("virtualbox"), &mut log), page);
     started.unwrap();
     let read = read.unwrap();
     assert!(!read.running, "not up yet");
     assert!(matches!(read.place, Some(Place::LocalVm)));
+    let boxed = boxed.unwrap().expect("the lab's files exist");
+    assert!(!boxed.live, "as last read, not asked of Vagrant");
+    let held = f.model().while_held.clone();
+    assert!(held.is_empty(), "no Vagrant ran while the start's `vagrant up` held the VMs: {held:?}");
     // Once the start is done, the page reads it running.
     assert!(app.status().await.unwrap().running);
+}
+
+/// The VMs' states, and the `vagrant status` under way, and the most ever at once.
+#[derive(Default)]
+struct Reads {
+    states: BTreeMap<String, String>,
+    /// When each `vagrant status` under way ends.
+    ending: Vec<tokio::time::Instant>,
+    most: usize,
+}
+
+/// How long a `vagrant status` takes (fog's libvirt connection, a busy VirtualBox).
+const READ_TAKES: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// The fake Vagrant's answer to `call`, each `vagrant status` taking [`READ_TAKES`], counted with
+/// those under way.
+fn timed_reads(model: &Mutex<Reads>, call: &Call) -> Reply {
+    let mut m = locked(model);
+    if call.args.first().is_some_and(|a| a == "status") {
+        let now = tokio::time::Instant::now();
+        m.ending.retain(|end| *end > now);
+        m.ending.push(now + READ_TAKES);
+        m.most = m.most.max(m.ending.len());
+        let mut read = vagrant(&mut m.states, call);
+        read.delay = READ_TAKES;
+        return read;
+    }
+    vagrant(&mut m.states, call)
+}
+
+/// Regression (friday, libvirt): at the end of a start, the lab page read the lab's status and
+/// the attack box's auto-start read it too; each asked the runner on its own, two `vagrant
+/// status` of the same VMs ran at once, Vagrant refused one (`MachineLocked`: each read takes the
+/// VMs' locks in its index without waiting), and the box "couldn't be added with the lab". The
+/// app's reads of one run take turns: never two Vagrant reads of it at once.
+#[tokio::test(start_paused = true)]
+async fn the_apps_reads_of_a_vm_lab_never_ask_vagrant_at_once() {
+    let f: Scripted<Reads> = Scripted::answered_by(Home::new("-vm-reads", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), timed_reads);
+    let worker = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    worker.up(Inputs { values: &[], default_ports: true }, Some("virtualbox"), &mut |_| {}).await.unwrap();
+    f.model().most = 0;
+    // The lab page's poll, its read after the start, the auto-start's read, and the attack box's:
+    // each command opens the run on its own.
+    let opened = || LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    let (poll, after, auto, boxed) = (opened(), opened(), opened(), opened());
+    let (polled, read_after, auto_read, box_read) = tokio::join!(poll.status(), after.status(), auto.status(), boxed.run_status());
+    assert!(polled.unwrap().running && read_after.unwrap().running && auto_read.unwrap().running);
+    assert!(box_read.unwrap().is_some_and(|s| s.live));
+    assert_eq!(f.model().most, 1, "never two `vagrant status` of the run at once");
+}
+
+/// The attack box's shared folder needs the lab's hypervisor: the run's record says it, no
+/// `vagrant status` asked for it.
+#[tokio::test]
+async fn a_vm_labs_hypervisor_is_read_from_its_record_without_vagrant() {
+    let f = Fixture::new();
+    let run = f.run();
+    assert_eq!(run.recorded_provider().unwrap(), None, "never started");
+    run.up(Inputs { values: &[], default_ports: true }, Some("virtualbox"), &mut |_| {}).await.unwrap();
+    let before = f.fake.calls().len();
+    assert_eq!(run.recorded_provider().unwrap().as_deref(), Some("virtualbox"));
+    assert_eq!(f.fake.calls().len(), before, "no tool ran");
 }
 
 #[tokio::test]
