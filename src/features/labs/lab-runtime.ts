@@ -11,7 +11,7 @@ import {
   type Provider,
   type ServerHost,
 } from "@/lib/tauri";
-import type { RunTarget } from "@/features/labs/run-on";
+import type { LocalVmForm } from "@/features/labs/run-target";
 
 // Where a lab can run, from its runtime (catalogue) and what this machine has ready.
 
@@ -156,5 +156,4 @@ export const cloudAccountsFor = (rt: LabRuntimeInfo | null | undefined, hosts: S
 
 /** A container lab's VM form here (`local-vm`: one helper VM, `local-vms`: one VM per machine) on
  *  hypervisor `provider`. */
-export const vmFormTarget = (form: "local-vm" | "local-vms", provider: Provider): RunTarget =>
-  form === "local-vm" ? { kind: form, provider } : { kind: form, provider };
+export const vmFormTarget = (form: LocalVmForm["kind"], provider: Provider): LocalVmForm => ({ kind: form, provider });

@@ -11,7 +11,7 @@ import {
   restartTarget,
 } from "@/features/labs/lab-detail/lab-state";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import type { RunTarget } from "@/features/labs/run-on";
+import type { RunTarget } from "@/features/labs/run-target";
 import type { LabControl, Provider, ServerHost } from "@/lib/tauri";
 import { deriveState as derive, labMachine as machine, labStatus as status } from "@/features/labs/labs-test-kit";
 

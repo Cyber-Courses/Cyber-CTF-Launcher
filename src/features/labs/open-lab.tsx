@@ -7,7 +7,7 @@ import type { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
 import { useWatchLab } from "@/features/labs/lab-polling";
 import type { LocalVmPick } from "@/features/labs/lab-operations";
-import type { RunTarget } from "@/features/labs/run-on";
+import type { RunTarget } from "@/features/labs/run-target";
 import type { LabStatus, Provider, SystemReport } from "@/lib/tauri";
 
 // The Labs screen's open lab: which one, from the navigation, and its page.

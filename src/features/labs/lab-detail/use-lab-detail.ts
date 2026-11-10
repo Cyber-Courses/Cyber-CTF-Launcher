@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { AttackBox } from "@/features/labs/use-attack-box";
 import { useLabCheck } from "@/features/labs/lab-health";
-import type { RunTarget } from "@/features/labs/run-on";
+import type { RunTarget } from "@/features/labs/run-target";
 import { useAttackBox } from "@/features/labs/use-attack-box";
 import type { Lab } from "@/features/labs/use-labs";
 import { useCloudPreview } from "@/features/labs/cloud-panel";

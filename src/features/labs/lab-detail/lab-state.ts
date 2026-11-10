@@ -1,4 +1,4 @@
-import type { RunTarget } from "@/features/labs/run-on";
+import { isLocalVmForm, type RunTarget } from "@/features/labs/run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { emulatorReady, vmFormTarget, isCloudLab, isContainerLab, isLocalHypervisor, runsNatively } from "@/features/labs/lab-runtime";
 import { providerName } from "@/features/machine/hypervisors";
@@ -215,7 +215,7 @@ export function restartTarget(
   if (status?.place !== "local_vm") return { kind: "local" };
   // A VM lab's own VMs: on the hypervisor they ran on, else the backend's for it.
   if (runtime === "VM") return isLocalHypervisor(status.provider) ? { kind: "local", provider: status.provider } : { kind: "local" };
-  const picked = runOn.kind === "local-vm" || runOn.kind === "local-vms" ? runOn.provider : localVm;
+  const picked = isLocalVmForm(runOn) ? runOn.provider : localVm;
   const provider = isLocalHypervisor(status.provider) ? status.provider : picked;
   if (!provider) return { kind: "local" };
   return vmFormTarget(status.perMachine ? "local-vms" : "local-vm", provider);

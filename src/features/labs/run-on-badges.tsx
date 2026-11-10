@@ -2,7 +2,7 @@
 
 import { LOCAL_PROVIDERS, isCloudProvider } from "@/lib/tauri";
 import type { LabRunOptions, LabRunPath, LabRunRefusalCause, Provider } from "@/lib/tauri";
-import type { RunTarget } from "@/features/labs/run-on";
+import type { RunTarget } from "@/features/labs/run-target";
 import type { T } from "@/lib/i18n";
 
 // The maturity badge (Beta / Experimental) on each place of "Where should it run?": the badge of

@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { cloudAccountsFor, formProviders, hostSupports, isCloudLab, isContainerLab, vmFormTarget } from "@/features/labs/lab-runtime";
-import type { PickerStep, Platform, RunTarget } from "@/features/labs/run-on";
+import type { PickerStep, Platform } from "@/features/labs/run-on";
+import { isLocalVmForm, type LocalVmForm, type RunTarget } from "@/features/labs/run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import {
   getDockerEngine,
@@ -104,7 +105,7 @@ export function useRunTarget(
      *  form step shows a cloud account's forms rather than this machine's. */
     formAccount: pickedHost,
     /** The hypervisor rows' default (marked, preselected): the Settings choice, else the first ready. */
-    defaultHypervisor: runOn.kind === "local-vm" ? (localVms.at(0) ?? null) : runOn.kind === "local-vms" ? (perMachineVms.at(0) ?? null) : null,
+    defaultHypervisor: hypervisorsFor(runOn).at(0) ?? null,
     /** The container engine a lab here runs on, every engine that answers (engine step rows when
      *  more than one), and what the launch records (null = current context). */
     engine,
@@ -170,7 +171,7 @@ function saveLaunchChoice(runOn: RunTarget, { ports, engine, engineCount, hyperv
   if (runOn.kind === "local") {
     setPortMode(ports);
     if (engineCount > 1) setDockerEngine(engine);
-  } else if (runOn.kind === "local-vm" || runOn.kind === "local-vms") {
+  } else if (isLocalVmForm(runOn)) {
     setLocalVmForm(runOn.kind === "local-vm" ? "vm" : "vms");
     if (hypervisorCount > 1) setVmProvider(runOn.provider);
   }
@@ -194,7 +195,7 @@ function useLocalVmChoice(
   const localVm = resolved(localVms);
   const perMachineVm = resolved(perMachineVms);
   const perMachine = perMachineVm ? { provider: perMachineVm, providers: perMachineVms } : null;
-  const pickProvider = (form: "local-vm" | "local-vms", provider: Provider) => {
+  const pickProvider = (form: LocalVmForm["kind"], provider: Provider) => {
     setSwitched(provider);
     setRunOn(vmFormTarget(form, provider));
   };
@@ -216,7 +217,7 @@ type StepsDeps = {
   runOn: RunTarget;
   setRunOn: (t: RunTarget) => void;
   setPickedEngine: (e: DockerEngine) => void;
-  pickProvider: (form: "local-vm" | "local-vms", provider: Provider) => void;
+  pickProvider: (form: LocalVmForm["kind"], provider: Provider) => void;
   vmForms: RunTarget[];
   cloudFormsFor: (id: string) => RunTarget[];
   hypervisorsFor: (form: RunTarget) => Provider[];
@@ -237,7 +238,7 @@ function usePickerSteps(d: StepsDeps) {
   const savedPorts = () => getPortMode() !== null;
   const hasEngineStep = engines.length > 1 && !savedEngine();
   const hasFormStep = vmForms.length >= 2 && !savedFormTarget(vmForms);
-  const curHyps = runOn.kind === "local-vm" || runOn.kind === "local-vms" ? hypervisorsFor(runOn) : [];
+  const curHyps = hypervisorsFor(runOn);
   // Whether this step finishes the path (no further choice): the engine step when the ports are
   // remembered, the form step when the chosen form needs no hypervisor choice, else ports/hypervisor.
   const isLastStep =
@@ -250,10 +251,9 @@ function usePickerSteps(d: StepsDeps) {
       d.setRunOn(form);
       return;
     }
-    const formHyps = form.kind === "local-vm" || form.kind === "local-vms" ? hypervisorsFor(form) : [];
+    const formHyps = hypervisorsFor(form);
     const saved = savedHyp(formHyps);
-    const provider = saved ?? (form.kind === "local-vm" || form.kind === "local-vms" ? form.provider : null);
-    if (provider && (form.kind === "local-vm" || form.kind === "local-vms")) d.pickProvider(form.kind, provider);
+    if (isLocalVmForm(form)) d.pickProvider(form.kind, saved ?? form.provider);
     else d.setRunOn(form);
     // More than one hypervisor (not remembered) → its step; else this form is settled (stay on the
     // form step, Start finishes it, or the platform step when the form step was skipped).
@@ -285,7 +285,7 @@ function usePickerSteps(d: StepsDeps) {
     setStep(savedPorts() ? "engine" : "ports");
   };
   const pickHypervisor = (provider: Provider) => {
-    if (runOn.kind === "local-vm" || runOn.kind === "local-vms") d.pickProvider(runOn.kind, provider);
+    if (isLocalVmForm(runOn)) d.pickProvider(runOn.kind, provider);
   };
   const back = () => {
     if (step === "ports") setStep(hasEngineStep ? "engine" : "platform");

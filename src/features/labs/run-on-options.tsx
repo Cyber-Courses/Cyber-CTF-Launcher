@@ -12,7 +12,7 @@ import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { ENGINES, engineName } from "@/features/machine/setup-steps/engines";
 import { vmFormTarget } from "@/features/labs/lab-runtime";
 import { isCloudProvider } from "@/lib/tauri";
-import type { RunTarget } from "@/features/labs/run-on";
+import { isLocalVmForm, type LocalVmForm, type RunTarget } from "@/features/labs/run-target";
 import { type T } from "@/lib/i18n";
 
 // The places "Where should it run?" offers, by group: this machine, Cyber CTF, servers, clouds.
@@ -117,7 +117,7 @@ export function vmFormOptions(t: T, options: LabRunOptions | null, forms: RunTar
         status: { tone: "ok", label: t("labs.runOn.ready") },
       };
     }
-    const provider = form.kind === "local-vm" || form.kind === "local-vms" ? form.provider : null;
+    const provider = isLocalVmForm(form) ? form.provider : null;
     const perMachine = form.kind === "local-vms";
     return {
       target: form,
@@ -133,7 +133,7 @@ export function vmFormOptions(t: T, options: LabRunOptions | null, forms: RunTar
 
 /** The "Which hypervisor?" step: the ready hypervisors that can run the chosen `form`, as full rows.
  *  The default (Settings' choice, else the first) is marked and preselected by the caller. */
-export function hypervisorOptions(t: T, form: "local-vm" | "local-vms", hypervisors: Provider[], fallback: Provider | null): Option[] {
+export function hypervisorOptions(t: T, form: LocalVmForm["kind"], hypervisors: Provider[], fallback: Provider | null): Option[] {
   return hypervisors.map((p) => ({
     target: vmFormTarget(form, p),
     title: PROVIDER_NAMES[p],
@@ -192,7 +192,7 @@ function localVmRow(t: T, local: LocalRows, options: LabRunOptions | null): Opti
     return { target: { kind: "local" }, title: t("labs.runOn.inAVm"), subtitle: localNote, ok: runs, why, logo: <HypervisorLogo provider={null} /> };
   }
   const first = vmForms.at(0);
-  if (!first || (first.kind !== "local-vm" && first.kind !== "local-vms")) return null;
+  if (!first || !isLocalVmForm(first)) return null;
   const twoForms = vmForms.length >= 2;
   return {
     target: first,

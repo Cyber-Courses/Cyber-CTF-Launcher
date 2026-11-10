@@ -3,18 +3,9 @@
 import { type DockerEngine, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
 import { RowPill, hypervisorOptions, platformGroups, vmFormOptions, useHostChecks, type LocalRows, type OptionGroup } from "@/features/labs/run-on-options";
-import type { PortMode } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
 import { EngineStep, PickerHeading } from "@/features/labs/run-on-steps";
-
-/** Where a lab starts: this machine (Docker; a container lab in one VM on a local hypervisor;
- *  or, for a lab with VM recipes too, one VM per machine there), or a saved host.
- *  `ports` on this machine: chosen in the dialog (container labs), else asked at the start. */
-export type RunTarget =
-  | { kind: "local"; ports?: PortMode; engine?: DockerEngine; provider?: Provider }
-  | { kind: "local-vm"; provider: Provider }
-  | { kind: "local-vms"; provider: Provider }
-  | { kind: "host"; id: string; perMachine?: boolean };
+import { isLocalVmForm, type RunTarget } from "@/features/labs/run-target";
 
 const targetKey = (t: RunTarget) => {
   switch (t.kind) {
@@ -135,7 +126,7 @@ export function RunOnPicker(props: RunOnPickerProps) {
   if (step === "hypervisor") {
     const form = value.kind === "local-vms" ? "local-vms" : "local-vm";
     const pickHypervisor = (target: RunTarget) => {
-      if (target.kind === "local-vm" || target.kind === "local-vms") onPickHypervisor(target.provider);
+      if (isLocalVmForm(target)) onPickHypervisor(target.provider);
     };
     return (
       <div className="space-y-4">

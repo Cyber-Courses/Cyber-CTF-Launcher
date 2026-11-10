@@ -1,4 +1,4 @@
-import type { RunTarget } from "@/features/labs/run-on";
+import type { RunTarget } from "@/features/labs/run-target";
 import type { LabStatus, ServerHost } from "@/lib/tauri";
 import type { T } from "@/lib/i18n";
 
