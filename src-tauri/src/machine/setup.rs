@@ -227,14 +227,15 @@ fn engine_actions(r: &SystemReport, engine: Engine) -> Vec<Action> {
 
 /// The hypervisor the setup installs as `provider` on `os`, when it installs it.
 fn installable(provider: Provider, os: &str) -> Option<Dependency> {
-    match provider {
-        Provider::Virtualbox => Some(Dependency::Virtualbox),
-        Provider::Qemu => Some(Dependency::Qemu),
-        Provider::Utm if os == "macos" => Some(Dependency::Utm),
-        Provider::Libvirt if os == "linux" => Some(Dependency::Libvirt),
-        Provider::Hyperv if os == "windows" => Some(Dependency::Hyperv),
-        _ => None,
-    }
+    let dependency = match provider {
+        Provider::Virtualbox => Dependency::Virtualbox,
+        Provider::Qemu => Dependency::Qemu,
+        Provider::Utm => Dependency::Utm,
+        Provider::Libvirt => Dependency::Libvirt,
+        Provider::Hyperv => Dependency::Hyperv,
+        _ => return None,
+    };
+    dependency.runs_on(os).then_some(dependency)
 }
 
 /// Where a hypervisor the setup doesn't install comes from (behind a login, or a licence).

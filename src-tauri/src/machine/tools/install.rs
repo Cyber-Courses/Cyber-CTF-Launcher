@@ -53,8 +53,21 @@ pub enum Dependency {
     Hyperv,
 }
 
-#[cfg(any(target_os = "linux", test))]
 impl Dependency {
+    /// Whether it exists on `os` (`std::env::consts::OS`): a hypervisor where
+    /// [`Provider::runs_on`](crate::runtime::providers::Provider::runs_on) says, WSL on Windows,
+    /// every other tool anywhere. An install or a removal elsewhere is refused ([`not_here`]).
+    pub fn runs_on(self, os: &str) -> bool {
+        use crate::runtime::providers::Provider;
+        match self {
+            Dependency::Wsl => os == "windows",
+            Dependency::Utm => Provider::Utm.runs_on(os),
+            Dependency::Libvirt => Provider::Libvirt.runs_on(os),
+            Dependency::Hyperv => Provider::Hyperv.runs_on(os),
+            _ => true,
+        }
+    }
+
     /// Its name, as a message names it.
     pub fn name(self) -> &'static str {
         match self {
@@ -128,9 +141,7 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
             note: Some("Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into()),
         }],
         Dependency::Utm => vec![fetch_and_open(brew, "utm", "UTM")],
-        Dependency::Libvirt => return Err(Error::Invalid("libvirt isn't used on macOS; use QEMU or UTM instead.".into())),
-        Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
-        Dependency::Hyperv => return Err(Error::Invalid("Hyper-V is only available on Windows.".into())),
+        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(not_here(dep)),
         // Cloud CLIs (brew formulae; gcloud is a cask).
         Dependency::Awscli => vec![step(brew, &["install", "awscli"])],
         // Microsoft's prebuilt cask instead of the `azure-cli` formula: on recent macOS the
@@ -198,13 +209,13 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
         // UAC prompt: DISM's 3010 is "done, restart to finish". Windows Home has no Hyper-V: said
         // before anything runs.
         (Dependency::Hyperv, None) => Ok(vec![step("powershell", &["-NoProfile", "-Command", HYPERV_ON])]),
-        (Dependency::Utm, None) => Err(Error::Invalid("UTM is only available on macOS.".into())),
+
         // VMware Workstation doesn't run on Windows on Arm, so neither does its utility.
         (Dependency::VmwareUtility, None) if std::env::consts::ARCH == "aarch64" => {
             Err(Error::Invalid("VMware Workstation doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.".into()))
         }
         (Dependency::VmwareUtility, None) => Ok(vec![super::vmware_utility::windows_install()]),
-        (_, None) => Err(Error::Invalid("libvirt is Linux-only; on Windows use Hyper-V or WSL.".into())),
+        (_, None) => Err(not_here(dep)),
     }
 }
 
@@ -241,9 +252,7 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
 #[cfg(target_os = "linux")]
 fn linux_plan_with(dep: Dependency, apt: bool) -> Result<Vec<Step>> {
     Ok(match dep {
-        Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
-        Dependency::Hyperv => return Err(Error::Invalid("Hyper-V is only available on Windows.".into())),
-        Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
+        Dependency::Wsl | Dependency::Hyperv | Dependency::Utm => return Err(not_here(dep)),
         _ if !apt => return Err(without_apt(dep)),
         Dependency::Docker => vec![root(docker_script(crate::platform::exec::login_name().as_deref()))],
         // From HashiCorp's apt repository, not the distribution's (older than labs need).
@@ -278,6 +287,9 @@ pub(crate) fn without_apt(dep: Dependency) -> Error {
 
 /// The ordered install steps for a dependency on this OS.
 fn plan(dep: Dependency) -> Result<Vec<Step>> {
+    if !dep.runs_on(std::env::consts::OS) {
+        return Err(not_here(dep));
+    }
     #[cfg(target_os = "macos")]
     {
         macos_plan(dep)
@@ -290,6 +302,16 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
     {
         linux_plan(dep)
     }
+}
+
+/// Why `dep` can't be installed or removed on this OS: it doesn't run here ([`Dependency::runs_on`]).
+pub(super) fn not_here(dep: Dependency) -> Error {
+    let os = match std::env::consts::OS {
+        "macos" => "macOS",
+        "windows" => "Windows",
+        _ => "Linux",
+    };
+    Error::Invalid(format!("{} doesn't run on {os}: there is nothing of it to install or remove here.", dep.name()))
 }
 
 /// Refused when this computer's policy turns one-click installs off (`DisableToolInstalls`): the
@@ -349,6 +371,28 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_tool_runs_on_its_os_and_is_refused_elsewhere_in_one_message() {
+        for (dep, oses) in [
+            (Dependency::Utm, ["macos"].as_slice()),
+            (Dependency::Libvirt, &["linux"]),
+            (Dependency::Wsl, &["windows"]),
+            (Dependency::Hyperv, &["windows"]),
+            (Dependency::Docker, &["macos", "linux", "windows"]),
+            (Dependency::Qemu, &["macos", "linux", "windows"]),
+        ] {
+            for os in ["macos", "linux", "windows"] {
+                assert_eq!(dep.runs_on(os), oses.contains(&os), "{dep:?} on {os}");
+            }
+        }
+        // Here: every tool this OS doesn't have is refused before any step, saying so.
+        for dep in Dependency::ALL.into_iter().filter(|d| !d.runs_on(std::env::consts::OS)) {
+            let said = plan(dep).err().map(|e| e.to_string()).unwrap_or_default();
+            assert_eq!(said, super::not_here(dep).to_string());
+            assert!(said.starts_with(&format!("{} doesn't run on ", dep.name())), "{said}");
+        }
+    }
 
     #[tokio::test]
     async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
@@ -463,7 +507,7 @@ mod tests {
             assert_eq!(err.to_string(), without_apt(dep).to_string());
             assert!(linux_plan_with(dep, true).is_ok(), "{dep:?}");
         }
-        assert!(linux_plan_with(Dependency::Utm, false).err().is_some_and(|e| e.to_string().contains("only available on macOS")));
+        assert!(linux_plan_with(Dependency::Utm, false).err().is_some_and(|e| e.to_string().starts_with("UTM doesn't run on Linux")));
     }
 
     #[test]

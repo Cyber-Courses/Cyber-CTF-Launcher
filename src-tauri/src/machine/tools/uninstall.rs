@@ -282,7 +282,7 @@ fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>
         Dependency::VmwareUtility => {
             vec![mac_admin(super::vmware_utility::MAC_UNINSTALL, "Removing the Vagrant VMware Utility (macOS asks for your password)…")]
         }
-        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(Error::Invalid("Not installed on macOS.".into())),
+        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(super::install::not_here(dep)),
     })
 }
 
@@ -294,7 +294,7 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
         (Dependency::VmwareUtility, None) => Ok(vec![super::vmware_utility::windows_uninstall()]),
         (Dependency::Wsl, None) => Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
         (Dependency::Hyperv, None) => Err(Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into())),
-        (_, None) => Err(Error::Invalid("Not installed on Windows.".into())),
+        (_, None) => Err(super::install::not_here(dep)),
     }
 }
 
@@ -317,7 +317,7 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
         // Google's apt package, and the per-user SDK earlier versions installed in its place.
         Dependency::Gcloud => vec![root("apt-get remove -y google-cloud-cli"), step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
         Dependency::VmwareUtility => vec![root("apt-get remove -y vagrant-vmware-utility")],
-        Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => return Err(Error::Invalid("Not installed on Linux.".into())),
+        Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => return Err(super::install::not_here(dep)),
     })
 }
 
@@ -325,6 +325,9 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
 /// (`virtualbox_dmg`).
 fn plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
     let _ = virtualbox_dmg;
+    if !dep.runs_on(std::env::consts::OS) {
+        return Err(super::install::not_here(dep));
+    }
     #[cfg(target_os = "macos")]
     {
         macos_plan(dep, virtualbox_dmg)
@@ -365,6 +368,13 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tool_this_os_doesnt_have_is_refused_as_the_install_refuses_it() {
+        for dep in Dependency::ALL.into_iter().filter(|d| !d.runs_on(std::env::consts::OS)) {
+            assert_eq!(plan(dep, None).err().map(|e| e.to_string()), Some(super::super::install::not_here(dep).to_string()));
+        }
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

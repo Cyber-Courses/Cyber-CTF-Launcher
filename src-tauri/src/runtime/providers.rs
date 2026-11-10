@@ -179,10 +179,17 @@ impl Provider {
 
     /// [`applicable`](Self::applicable) on `os` and CPU `arch`.
     fn applicable_on(self, os: &str, arch: &str) -> bool {
+        // Neither ships for Windows on Arm (no installer, no Arm VMs there): VM labs on those PCs
+        // go to Hyper-V, a server or the cloud.
+        let no_arm_build = matches!(self, Provider::Virtualbox | Provider::VmwareDesktop) && os == "windows" && arch == "aarch64";
+        self.runs_on(os) && !no_arm_build
+    }
+
+    /// Whether it exists on `os` (`std::env::consts::OS`) at all: Hyper-V on Windows, Parallels
+    /// and UTM on macOS, libvirt on Linux, every other one anywhere. The one table of which OS a
+    /// hypervisor belongs to: the setup's installs and removals read it too.
+    pub fn runs_on(self, os: &str) -> bool {
         match self {
-            // Neither ships for Windows on Arm (no installer, no Arm VMs there): VM labs on those
-            // PCs go to Hyper-V, a server or the cloud.
-            Provider::Virtualbox | Provider::VmwareDesktop if os == "windows" && arch == "aarch64" => false,
             Provider::Hyperv => os == "windows",
             Provider::Parallels | Provider::Utm => os == "macos",
             Provider::Libvirt => os == "linux",
