@@ -8,6 +8,7 @@ import { HostSetupPage, SetupTrademarks } from "@/features/servers/host-setup";
 import { startingSetup } from "@/features/servers/host-setup/setup-model";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/toaster";
+import { WindowTitleBar } from "@/components/window-title-bar";
 import { SERVER_CHANGED, isCloudProvider, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
 import { warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
@@ -35,8 +36,7 @@ function Setup() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      {/* Overlay title bar: drags the window and clears the macOS traffic lights. */}
-      <div data-tauri-drag-region className="h-11 shrink-0 select-none" />
+      <WindowTitleBar />
 
       {!initial ? (
         <div className="flex flex-1 items-center justify-center gap-2 pb-11 text-[0.8125rem] text-muted-foreground">

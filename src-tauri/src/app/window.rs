@@ -1,7 +1,9 @@
-//! The app's secondary windows (Settings, machine setup, shells) and what they share: the
-//! macOS overlaid title bar, attaching to the main window, and fitting the screen.
+//! The app's secondary windows (Settings, machine setup, shells) and what they share: their
+//! frame (the macOS overlaid title bar, none on Linux and Windows) and theme, attaching to the
+//! main window, and fitting the screen.
 
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::utils::config::WindowConfig;
+use tauri::{Manager, Theme, WebviewUrl, WebviewWindowBuilder};
 
 use crate::AppHandle;
 use crate::error::{Error, Result};
@@ -29,13 +31,54 @@ pub fn focus_existing(app: &AppHandle, label: &str) -> bool {
     app.get_webview_window(label).map(|w| w.set_focus()).is_some()
 }
 
-/// A window with the app's look: on macOS the page draws its own title bar under the traffic
-/// lights.
-pub fn builder<'a>(app: &'a AppHandle, label: &str, url: impl Into<String>) -> WebviewWindowBuilder<'a, crate::AppRuntime, AppHandle> {
-    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into().into()));
-    #[cfg(target_os = "macos")]
-    let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
-    builder
+/// Whether the system draws the app's windows' frame (title bar and borders): only on macOS,
+/// where the page's own title bar sits under the traffic lights. On Linux the window manager drew
+/// it from its own theme, whatever the window asked (xfwm4: a white frame around the dark app),
+/// and Windows draws its buttons its own way: there each page draws the whole title bar
+/// (`src/components/window-title-bar.tsx`). Without the frame, Tauri still resizes the window
+/// from its edges, and on Windows keeps the system's shadow and thin border (`shadow`).
+const SYSTEM_FRAME: bool = cfg!(target_os = "macos");
+
+/// The windows tauri.conf.json opens at startup (the main one) get the app's frame: none on
+/// Linux and Windows. Applied to the configuration before the app is built, so the window is
+/// never shown with the system's frame first.
+pub fn frame_configured(config: &mut tauri::Config) {
+    for window in &mut config.app.windows {
+        window.decorations &= SYSTEM_FRAME;
+    }
+}
+
+/// The theme a new window opens with: the main window's, which its page keeps on the app's
+/// appearance (Dark and Black dark, Light light: `src/lib/appearance.ts`), so the system's frame
+/// matches the app from the start instead of being the system's (light on Windows) until the
+/// page loads. Dark, the app's default, without a main window.
+fn opening_theme(app: &AppHandle) -> Theme {
+    app.get_webview_window(MAIN).and_then(|w| w.theme().ok()).unwrap_or(Theme::Dark)
+}
+
+/// The configuration of window `label` showing `url`: the app's frame (on macOS the page draws
+/// its own title bar under the traffic lights, on Linux and Windows all of it) and the app's
+/// theme, which the frame left (the taskbar's, the system's dialogs') still follows.
+fn window_config(label: &str, url: String, theme: Theme) -> WindowConfig {
+    WindowConfig {
+        label: label.to_owned(),
+        url: WebviewUrl::App(url.into()),
+        decorations: SYSTEM_FRAME,
+        // Windows: the shadow and thin border of an undecorated window (the default, said here).
+        shadow: true,
+        theme: Some(theme),
+        #[cfg(target_os = "macos")]
+        title_bar_style: tauri::TitleBarStyle::Overlay,
+        #[cfg(target_os = "macos")]
+        hidden_title: true,
+        ..WindowConfig::default()
+    }
+}
+
+/// A window with the app's look (see [`window_config`]), built from a configuration as the main
+/// window is.
+pub fn builder<'a>(app: &'a AppHandle, label: &str, url: impl Into<String>) -> tauri::Result<WebviewWindowBuilder<'a, crate::AppRuntime, AppHandle>> {
+    WebviewWindowBuilder::from_config(app, &window_config(label, url.into(), opening_theme(app)))
 }
 
 /// `builder` attached to the main window when it is open (it stays above it and closes with it).
@@ -49,10 +92,10 @@ pub fn child_of_main<'a>(
     }
 }
 
-/// Opens `builder`'s window attached to the main window (see [`child_of_main`]); a failure says
-/// it couldn't open `what`.
-pub fn open_over_main<'a>(app: &'a AppHandle, builder: WebviewWindowBuilder<'a, crate::AppRuntime, AppHandle>, what: &str) -> Result<()> {
-    child_of_main(app, builder).and_then(WebviewWindowBuilder::build).map_err(|e| Error::Invalid(format!("could not open {what}: {e}")))?;
+/// Opens `builder`'s window (from [`builder`]) attached to the main window (see
+/// [`child_of_main`]); a failure says it couldn't open `what`.
+pub fn open_over_main<'a>(app: &'a AppHandle, builder: tauri::Result<WebviewWindowBuilder<'a, crate::AppRuntime, AppHandle>>, what: &str) -> Result<()> {
+    builder.and_then(|b| child_of_main(app, b)).and_then(WebviewWindowBuilder::build).map_err(|e| Error::Invalid(format!("could not open {what}: {e}")))?;
     Ok(())
 }
 
@@ -65,7 +108,7 @@ pub fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
     // The root page in Settings mode. Not `index.html?...`: in `tauri dev` that resolves against
     // the Next dev server, which has no `/index.html` route (a 404 page), while the root serves
     // in both dev and the static export.
-    let settings = builder(app, "settings", "?window=settings").title("Settings").inner_size(760.0, 640.0).min_inner_size(560.0, 480.0).resizable(true);
+    let settings = builder(app, "settings", "?window=settings")?.title("Settings").inner_size(760.0, 640.0).min_inner_size(560.0, 480.0).resizable(true);
     child_of_main(app, settings)?.build()?;
     Ok(())
 }
@@ -78,13 +121,15 @@ pub fn open_shell(app: &AppHandle, id: &str, runtime: Runtime, title: &str) -> R
     if focus_existing(app, &label) {
         return Ok(());
     }
+    let fail = |e: tauri::Error| Error::Invalid(format!("could not open the shell window: {e}"));
     let window = builder(app, &label, page)
+        .map_err(fail)?
         .title(format!("{} · attack box", terminal::window_title(title)))
         .inner_size(900.0, 560.0)
         .min_inner_size(480.0, 280.0)
         .resizable(true)
         .build()
-        .map_err(|e| Error::Invalid(format!("could not open the shell window: {e}")))?;
+        .map_err(fail)?;
     window.on_window_event(move |e| {
         if matches!(e, tauri::WindowEvent::Destroyed) {
             terminal::close_window(&label);
@@ -132,6 +177,39 @@ mod tests {
         assert!(w.url().unwrap().as_str().ends_with("shell?id=sqli&runtime=DOCKER"), "{}", w.url().unwrap());
         open("sqli").unwrap();
         assert_eq!(t.handle().webview_windows().len(), 1);
+    }
+
+    #[test]
+    fn windows_have_a_system_frame_on_macos_only() {
+        // Linux's window manager draws the frame from its own theme (a white frame around the
+        // dark app under xfwm4): there and on Windows the page draws its title bar.
+        let macos = cfg!(target_os = "macos");
+        let settings = window_config("settings", "?window=settings".into(), Theme::Dark);
+        assert_eq!(settings.decorations, macos);
+        assert!(settings.shadow, "Windows keeps an undecorated window's shadow");
+        assert_eq!(settings.url, WebviewUrl::App("?window=settings".into()));
+        // macOS keeps its traffic lights over the page's own title bar.
+        #[cfg(target_os = "macos")]
+        assert!(settings.hidden_title && settings.title_bar_style == tauri::TitleBarStyle::Overlay);
+        // The main window, from tauri.conf.json, the same.
+        let mut config: tauri::Config = serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        assert!(config.app.windows[0].decorations, "the configuration itself keeps the frame (macOS)");
+        frame_configured(&mut config);
+        assert_eq!(config.app.windows[0].decorations, macos);
+        assert!(config.app.windows[0].shadow);
+    }
+
+    #[test]
+    fn a_window_opens_in_the_main_windows_theme_or_dark() {
+        // Regression: secondary windows set no theme, so on Windows the shell window opened with
+        // the system's white title bar over the dark app.
+        let t = TestApp::new();
+        assert_eq!(window_config("shell-sqli", "shell".into(), opening_theme(t.handle())).theme, Some(Theme::Dark));
+        // With the main window open, its theme, which its page keeps on the appearance (Tauri's
+        // mock runtime answers Light).
+        builder(t.handle(), MAIN, "").unwrap().build().unwrap();
+        assert_eq!(opening_theme(t.handle()), Theme::Light);
+        assert_eq!(window_config("settings", String::new(), Theme::Light).theme, Some(Theme::Light));
     }
 
     #[test]

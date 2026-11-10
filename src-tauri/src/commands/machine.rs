@@ -170,7 +170,7 @@ mod tests {
     #[tokio::test]
     async fn the_open_setup_window_is_brought_forward() {
         let t = TestApp::new();
-        crate::app::window::builder(t.handle(), "machine-setup", "machine-setup").build().unwrap();
+        crate::app::window::builder(t.handle(), "machine-setup", "machine-setup").unwrap().build().unwrap();
         machine_open_setup(t.handle().clone(), Some("docker".into())).await.unwrap();
         assert_eq!(t.handle().webview_windows().len(), 1);
     }

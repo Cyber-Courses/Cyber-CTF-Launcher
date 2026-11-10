@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "window-controls",
+  "description": "Linux and Windows, where the windows have no system frame and each page draws its title bar (src/components/window-title-bar.tsx): its minimize, maximize/restore and close buttons, in every window",
+  "platforms": [
+    "linux",
+    "windows"
+  ],
+  "windows": [
+    "main",
+    "settings",
+    "machine-setup",
+    "server-setup",
+    "shell-*"
+  ],
+  "permissions": [
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close"
+  ]
+}

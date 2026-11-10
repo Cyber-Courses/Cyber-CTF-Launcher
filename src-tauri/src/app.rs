@@ -53,8 +53,10 @@ pub fn run() -> tauri::Result<()> {
         std::process::exit(i32::from(!platform::console::send_ctrl_c(pid)));
     }
     crate::runtime::server::connection_test::mark_started();
-    // One context (the embedded config and assets) for whichever role this process plays.
-    let context = tauri::generate_context!();
+    // One context (the embedded config and assets) for whichever role this process plays. Its
+    // main window gets the app's frame (none on Linux and Windows) before it is created.
+    let mut context = tauri::generate_context!();
+    window::frame_configured(context.config_mut());
     // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool), nor,
     // on macOS, the proxy (said in the log once it is up). The OVF Tool the setup places in the
     // app data folder is on it too, for the deploy workers and the labs' runs.

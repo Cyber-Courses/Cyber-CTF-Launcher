@@ -8,9 +8,9 @@ import { RotateCw, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
 import { DevMockGate } from "@/components/dev-mock-gate";
+import { WindowTitleBar } from "@/components/window-title-bar";
 import { tell, warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
-import { useIsMac } from "@/lib/platform";
 import { labAttackShell, type Runtime } from "@/lib/tauri";
 import { useTerminalSession, type ShellState } from "@/app/shell/use-terminal-session";
 
@@ -45,17 +45,12 @@ function Shell() {
   );
 }
 
-/** Overlay title bar: drags the window and clears the macOS traffic lights. Shows the session's
- *  state and opens the system terminal instead. */
+/** The window's title bar, with the session's state and a button that opens the system
+ *  terminal instead. */
 function TitleBar({ state, onOpenOutside }: { state: ShellState; onOpenOutside: () => void }) {
   const t = useT();
-  // macOS overlays the traffic lights on this bar; elsewhere the window has its own title bar.
-  const isMac = useIsMac();
   return (
-    <div
-      data-tauri-drag-region
-      className={`flex h-11 shrink-0 select-none items-center justify-end gap-1 border-b border-border pr-3 ${isMac ? "pl-20" : "pl-4"}`}
-    >
+    <WindowTitleBar toolbar className="border-b border-border">
       <span data-tauri-drag-region className="mr-auto truncate font-mono text-[0.75rem] text-muted-foreground">
         {state.kind === "connecting"
           ? t("shell.terminal.connecting")
@@ -68,7 +63,7 @@ function TitleBar({ state, onOpenOutside }: { state: ShellState; onOpenOutside: 
       <Button variant="ghost" size="sm" onClick={onOpenOutside} title={t("shell.terminal.systemTerminalHint")}>
         <SquareTerminal className="size-3.5" /> {t("shell.terminal.systemTerminal")}
       </Button>
-    </div>
+    </WindowTitleBar>
   );
 }
 

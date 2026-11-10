@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn a_window_reaches_no_session_it_does_not_show() {
         let t = TestApp::new();
-        let window = window::builder(t.handle(), "shell-lab-unknown", "").build().unwrap();
+        let window = window::builder(t.handle(), "shell-lab-unknown", "").unwrap().build().unwrap();
         assert_eq!(terminal_write(window.clone(), u32::MAX, "x").unwrap_err().to_string(), "the shell has ended");
         assert!(terminal_resize(window.clone(), u32::MAX, 80, 24).is_ok());
         terminal_close(window, u32::MAX);
@@ -71,7 +71,7 @@ mod tests {
     #[tokio::test]
     async fn a_shell_for_a_lab_that_is_not_installed_starts_nothing() {
         let t = TestApp::new();
-        let window = window::builder(t.handle(), "shell-lab-gone", "").build().unwrap();
+        let window = window::builder(t.handle(), "shell-lab-gone", "").unwrap().build().unwrap();
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let events = Sink::default();
         let err = terminal_open(window, "gone".into(), Runtime::Docker, 80, 24, events.channel()).await.unwrap_err();

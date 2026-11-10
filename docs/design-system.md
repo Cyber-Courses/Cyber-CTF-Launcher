@@ -23,6 +23,7 @@ The product jewel is **Cyber CTF emerald**. This file describes the system as it
 | `src/app/topology.css`                          | The network diagram (React Flow) styles, token-driven                                                                                                      |
 | `src/app/layout.tsx`                            | Fonts: Geist and Geist Mono (`geist` package), Newsreader (`src/app/fonts`, variable opsz + wght, normal and italic). Nothing loads from Google at runtime |
 | `src/lib/appearance.ts`, `public/appearance.js` | The Dark / Black / Light preference, applied before first paint and synced across windows                                                                  |
+| `src/components/window-title-bar.tsx`           | `WindowTitleBar`, every window's title bar (see Windows below)                                                                                             |
 | `src/components/brand/mark.tsx`                 | `CtfMark`, the layered up-chevron, coloured by `--mark-top` / `--mark-base`                                                                                |
 | `src/components/ui/*`                           | The primitives below                                                                                                                                       |
 | `src/lib/dev-mock/`                             | Development only: `pnpm dev` then `http://localhost:3206/?mock` previews every screen in a browser with sample data                                        |
@@ -33,7 +34,35 @@ Dark is the default (bare `:root`). **Black** (true `#000`, for OLED) and **Ligh
 class on `<html>` chosen in Settings > Appearance and saved in `localStorage`
 (`cyberctf.appearance`). `public/appearance.js` applies it before the first paint (the CSP only
 allows same-origin scripts, so it is a file, not inline). Every window follows a change made in
-another window through the `storage` event (`useAppearance`).
+another window through the `storage` event (`AppearanceSync` in the root layout), and sets its
+system theme to match (dark for Dark and Black), for what the system still draws for it. A window
+opened from Rust opens in the main window's theme (`app/window.rs`), so it never starts light.
+
+## Windows
+
+The system draws the window frame only on macOS, where the page's title bar sits under the
+traffic lights (`titleBarStyle: Overlay`, hidden title). On Linux and Windows the windows have no
+system frame (`decorations: false`, set in `src-tauri/src/app/window.rs`, never in
+`tauri.conf.json`): a window manager such as xfwm4 drew it from its own theme, white around the
+dark app. Every window's page starts with `WindowTitleBar`, which `useWindowFrame` (`lib/platform`)
+turns into:
+
+- **macOS:** a `data-tauri-drag-region` band with `pl-20` for the traffic lights; the `title` only
+  when given (Settings).
+- **Linux and Windows:** the bar with the title (the `title` given, else the window's own) and
+  minimize, maximize/restore (its label and icon follow the window's state) and close, in the
+  tokens of the appearance. Close is `close()`, never `destroy()`: the quit guard
+  (`app/quit.rs`) sees it as it sees the system's button. A double-click on the bar maximizes or
+  restores (Tauri's drag region script); Tauri resizes the window from a 5px inset at its edges,
+  so the buttons keep clear of them. On Linux a hairline draws the window's edge (no frame or
+  shadow does); Windows keeps its own shadow and thin border (`shadow: true`).
+- **A browser** (the dev preview): nothing, except a `toolbar` bar (the shell's, the
+  onboarding's), which keeps the page's own controls.
+
+The buttons' permissions (`core:window:allow-minimize`, `allow-toggle-maximize`, `allow-close`)
+are granted on Linux and Windows only, to every window (`capabilities/window-controls.json`).
+The main window's bar spans the window above the sidebar; on macOS its traffic lights sit in the
+sidebar's own band instead.
 
 ## Tokens
 

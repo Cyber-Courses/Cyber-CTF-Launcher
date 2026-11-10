@@ -77,7 +77,11 @@ export function useAppearance(): [Appearance, (mode: Appearance) => void] {
   ];
 }
 
-/** Keeps this window in step with an appearance chosen in another window (Settings). */
-export function useAppearanceSync() {
+/** Keeps this window, its page and its system frame's theme, in step with the appearance: the
+ *  saved one on load, then one chosen in another window (Settings). In the root layout, so every
+ *  window has it (the shell and setup windows kept the system's light frame on Windows). Renders
+ *  nothing. */
+export function AppearanceSync() {
   useAppearance();
+  return null;
 }

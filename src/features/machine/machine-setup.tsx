@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { ArrowLeft, Compass, Play, Sparkles } from "lucide-react";
 import { ErrorBoundary } from "@/components/error-screen";
+import { WindowTitleBar } from "@/components/window-title-bar";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -51,8 +52,7 @@ export function MachineSetup({
   const t = useT();
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      {/* Overlay title bar: drags the window and clears the macOS traffic lights. */}
-      <div data-tauri-drag-region className="h-11 shrink-0 select-none" />
+      <WindowTitleBar />
 
       {/* Until the machine check answers, just say so: the title, stepper and step count all
           depend on what it finds. */}

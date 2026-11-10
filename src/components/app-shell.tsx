@@ -23,8 +23,9 @@ import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
 import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { useActiveOperations } from "@/features/labs/runs/operations";
-import { useAppearanceSync } from "@/lib/appearance";
 import { useT } from "@/lib/i18n";
+import { useWindowFrame } from "@/lib/platform";
+import { WindowTitleBar } from "@/components/window-title-bar";
 
 /**
  * The main window: sidebar, header and the open screen, plus the app-wide listeners (deep links,
@@ -32,7 +33,6 @@ import { useT } from "@/lib/i18n";
  * launch confirmation, port mode). The Settings window runs this shell too, as just its screen.
  */
 export function AppShell() {
-  useAppearanceSync();
   const nav = useNavigation();
   const { navigate, findALab } = nav;
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -66,7 +66,13 @@ export function AppShell() {
     session.reread();
   }
 
-  if (!mount.ready) return <div className="h-dvh bg-background" />;
+  if (!mount.ready)
+    return (
+      // The title bar already, with the window's own title: this is the Settings window too.
+      <div className="flex h-dvh flex-col bg-background">
+        <WindowTitleBar />
+      </div>
+    );
   // Settings runs standalone in its own window: no sidebar, no onboarding, just the screen.
   if (mount.settingsWindow) return <SettingsWindowView auth={session.auth} onAuthChange={session.changed} />;
   // The launch confirmation is the same one, at the same place, during the onboarding and after
@@ -121,37 +127,47 @@ function MainWindow({ nav, system, session, chrome, palette, labTitle, onLabChan
   // `overflow-clip`, not `hidden`: a hidden box can still be scrolled (focus, scrollIntoView, a
   // wheel over the sidebar), which shifted the whole window up under the titlebar.
   return (
-    <div className="flex h-dvh overflow-clip bg-background text-foreground">
-      <CommandPalette
-        key={palette.open ? "open" : "closed"}
-        open={palette.open}
-        onClose={() => {
-          palette.setOpen(false);
-        }}
-        commands={commands}
-      />
-      <QuitGuard />
-      <PortModePrompt />
-      <OfflineStartPrompt />
-      <Toaster />
-      <Sidebar
-        tab={tab}
-        isMac={chrome.isMac}
-        version={chrome.version}
-        labCount={sidebarLabs.labs.length}
-        activeLabs={sidebarLabs.active}
-        auth={session.auth}
-        onFind={() => {
-          palette.setOpen(true);
-        }}
-        onNavigate={navigate}
-        onOpenSettings={openSettingsWindow}
-        onAuthChange={session.changed}
-      />
+    <div className="flex h-dvh flex-col overflow-clip bg-background text-foreground">
+      <MainTitleBar />
+      <div className="flex min-h-0 flex-1 overflow-clip">
+        <CommandPalette
+          key={palette.open ? "open" : "closed"}
+          open={palette.open}
+          onClose={() => {
+            palette.setOpen(false);
+          }}
+          commands={commands}
+        />
+        <QuitGuard />
+        <PortModePrompt />
+        <OfflineStartPrompt />
+        <Toaster />
+        <Sidebar
+          tab={tab}
+          isMac={chrome.isMac}
+          version={chrome.version}
+          labCount={sidebarLabs.labs.length}
+          activeLabs={sidebarLabs.active}
+          auth={session.auth}
+          onFind={() => {
+            palette.setOpen(true);
+          }}
+          onNavigate={navigate}
+          onOpenSettings={openSettingsWindow}
+          onAuthChange={session.changed}
+        />
 
-      <MainColumn tab={tab} openLab={openLab} system={system} session={session} labTitle={labTitle} onLabChange={onLabChange} onNavigate={navigate} />
+        <MainColumn tab={tab} openLab={openLab} system={system} session={session} labTitle={labTitle} onLabChange={onLabChange} onNavigate={navigate} />
+      </div>
     </div>
   );
+}
+
+/** The main window's title bar where the page draws all of it (Linux, Windows): across the
+ *  window, above the sidebar. On macOS the traffic lights sit in the sidebar's own band. */
+function MainTitleBar() {
+  const frame = useWindowFrame();
+  return frame === "overlay" ? null : <WindowTitleBar title="Cyber CTF" className="border-b border-border" />;
 }
 
 /** The main column: the header with its breadcrumb, the update banner and the open screen. */

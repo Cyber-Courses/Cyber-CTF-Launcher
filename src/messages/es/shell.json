@@ -21,6 +21,12 @@
     "checkFailed": "falló la comprobación",
     "checking": "comprobando…"
   },
+  "window": {
+    "minimize": "Minimizar",
+    "maximize": "Maximizar",
+    "restore": "Restaurar",
+    "close": "Cerrar"
+  },
   "palette": {
     "label": "Menú de comandos",
     "placeholder": "Buscar labs, pantallas, acciones…",

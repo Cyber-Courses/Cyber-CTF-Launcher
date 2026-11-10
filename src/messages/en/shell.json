@@ -21,6 +21,12 @@
     "checkFailed": "machine check failed",
     "checking": "checking…"
   },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
   "palette": {
     "label": "Command menu",
     "placeholder": "Search labs, screens, actions…",

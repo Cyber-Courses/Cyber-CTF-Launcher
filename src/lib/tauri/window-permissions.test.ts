@@ -49,6 +49,27 @@ describe("window permissions", () => {
     }
   });
 
+  it("lets every window minimize, maximize and close itself from its own title bar, on Linux and Windows only", () => {
+    // There the windows have no system frame (src-tauri/src/app/window.rs): the page's title bar
+    // (components/window-title-bar.tsx) has the buttons. macOS keeps the system's.
+    const dir = fileURLToPath(new URL("../../../src-tauri/capabilities/", import.meta.url));
+    type Capability = { identifier: string; windows: string[]; platforms?: string[]; permissions: (string | { identifier: string })[] };
+    const capabilities = fs.readdirSync(dir).map((f) => JSON.parse(fs.readFileSync(dir + f, "utf8")) as Capability);
+    const ids = (c: Capability) => c.permissions.map((p) => (typeof p === "string" ? p : p.identifier));
+    const controls = ["core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-close"];
+    const bar = capabilities.find((c) => c.identifier === "window-controls");
+    expect(bar?.platforms).toEqual(["linux", "windows"]);
+    expect(bar && ids(bar)).toEqual(controls);
+    const everyWindow = capabilities.filter((c) => c !== bar).flatMap((c) => c.windows);
+    expect(bar?.windows.slice().sort()).toEqual(everyWindow.sort());
+    // Minimize and maximize nowhere else; close, which the setup and shell pages use themselves
+    // ("Done", "Close"), not for the main window on macOS.
+    for (const c of capabilities.filter((c) => c !== bar)) {
+      expect(ids(c).filter((id) => controls.slice(0, 2).includes(id))).toEqual([]);
+      if (c.windows.includes("main")) expect(ids(c)).not.toContain("core:window:allow-close");
+    }
+  });
+
   it("gives the terminal windows no opener: the xterm page opens no links", () => {
     const file = fileURLToPath(new URL("../../../src-tauri/capabilities/shell-windows.json", import.meta.url));
     const capability = JSON.parse(fs.readFileSync(file, "utf8")) as { permissions: (string | { identifier: string })[] };

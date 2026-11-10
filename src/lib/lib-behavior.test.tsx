@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { closeIfSettings, showInMainWindow } from "@/lib/app-events";
-import { useAppearance, useAppearanceSync } from "@/lib/appearance";
+import { AppearanceSync, useAppearance } from "@/lib/appearance";
 import { LOCALES, getLocale, getLocalePreference, setLocalePreference, translate, useFormat, useLocale, useT, type Locale } from "@/lib/i18n";
 import { isMac, useIsMac } from "@/lib/platform";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -277,9 +277,7 @@ describe("appearance", () => {
   it("reads the saved look, and sets the window frame's theme inside the app", async () => {
     const calls = installTauri();
     localStorage.setItem("cyberctf.appearance", "light");
-    renderHook(() => {
-      useAppearanceSync();
-    });
+    render(<AppearanceSync />);
     const { result } = renderHook(() => useAppearance());
     expect(result.current[0]).toBe("light");
     await flush(50);

@@ -21,6 +21,12 @@
     "checkFailed": "falha na verificação da máquina",
     "checking": "verificando…"
   },
+  "window": {
+    "minimize": "Minimizar",
+    "maximize": "Maximizar",
+    "restore": "Restaurar",
+    "close": "Fechar"
+  },
   "palette": {
     "label": "Menu de comandos",
     "placeholder": "Buscar labs, telas, ações…",

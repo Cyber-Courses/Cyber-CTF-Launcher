@@ -21,6 +21,12 @@
     "checkFailed": "échec de la vérification",
     "checking": "vérification…"
   },
+  "window": {
+    "minimize": "Réduire",
+    "maximize": "Agrandir",
+    "restore": "Restaurer",
+    "close": "Fermer"
+  },
   "palette": {
     "label": "Menu des commandes",
     "placeholder": "Rechercher des labs, écrans, actions…",

@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { ErrorLogging } from "@/components/error-logging";
+import { AppearanceSync } from "@/lib/appearance";
 
 // Fonts ship inside the app (no Google Fonts at runtime): Geist and Geist Mono from the `geist`
 // package, Newsreader (variable, opsz + wght, normal and italic) from src/app/fonts.
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="flex min-h-full flex-col bg-background text-foreground">
         <ErrorLogging />
+        <AppearanceSync />
         {children}
       </body>
     </html>

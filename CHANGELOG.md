@@ -71,6 +71,16 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
+- **The launcher draws its own title bar on Linux and Windows.** Every window (the main one,
+  Settings, the setup windows, the attack box shells) opens without the system's frame and shows
+  the launcher's bar instead: the window's title, then minimize, maximize/restore and close in
+  the chosen appearance (Dark, Black or Light), reachable from the keyboard and labelled in the
+  app's language. Under XFCE and other window managers that draw the frame from their own theme,
+  a dark launcher no longer sits in a white frame. The bar drags the window, a double-click on it
+  maximizes or restores it, and the window still resizes from its edges; on Windows it keeps the
+  system's shadow and thin border. Close goes through the same check as the system's button:
+  with a lab deploying, the launcher still asks first. macOS keeps its traffic lights. A crash
+  screen has the bar too, so a crashed window can still be moved and closed.
 - **The ESXi VM test runs a real VM.** It used to check only that the host's SSH port answered.
   It now runs a throwaway one-machine lab on the host the way a lab runs there: Vagrant's
   `vmware_esxi` through the Isothrum runner, with the host's settings and password. The steps
@@ -175,6 +185,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **Every window follows the appearance from the moment it opens.** The attack box shell and the
+  setup windows set no theme: on Windows their title bar opened white over the dark app, and
+  they kept the colours they opened with when the appearance changed in Settings. Each window now
+  opens in the main window's theme and follows a change made in another window, its page and the
+  theme of what the system still draws for it (the taskbar's, its dialogs').
 - **A long step of a server's VM test no longer looks frozen.** The ESXi test's upload of its
   VM sat for many minutes on one line with no sign of life: the OVF Tool redraws its progress
   (`Disk progress: 8%`) in place, which the runner never passed on as a line. With the runner

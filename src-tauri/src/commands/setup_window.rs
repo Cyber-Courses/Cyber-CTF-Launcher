@@ -39,11 +39,9 @@ pub async fn server_open_setup(app: AppHandle, id: Option<String>, kind: Option<
     if let Some(existing) = app.get_webview_window(LABEL) {
         let _ = existing.destroy();
     }
-    let builder = window::builder(&app, LABEL, path)
-        .title(if cloud { "Connect a cloud account" } else { "Connect a host" })
-        .inner_size(680.0, 760.0)
-        .min_inner_size(560.0, 560.0)
-        .resizable(true);
+    let builder = window::builder(&app, LABEL, path).map(|b| {
+        b.title(if cloud { "Connect a cloud account" } else { "Connect a host" }).inner_size(680.0, 760.0).min_inner_size(560.0, 560.0).resizable(true)
+    });
     window::open_over_main(&app, builder, "the setup window")
 }
 

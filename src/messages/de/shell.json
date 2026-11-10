@@ -21,6 +21,12 @@
     "checkFailed": "Rechnerprüfung fehlgeschlagen",
     "checking": "wird geprüft…"
   },
+  "window": {
+    "minimize": "Minimieren",
+    "maximize": "Maximieren",
+    "restore": "Wiederherstellen",
+    "close": "Schließen"
+  },
   "palette": {
     "label": "Befehlsmenü",
     "placeholder": "Labs, Ansichten, Aktionen suchen…",

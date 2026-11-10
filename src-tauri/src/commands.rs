@@ -177,7 +177,14 @@ mod tests {
     }
 
     /// What opens a window: Tauri's builder, the app's own, and the helpers built on them.
-    const OPENS_A_WINDOW: &[&str] = &["WebviewWindowBuilder::new(", "window::builder(", "open_shell(", "open_settings_window(", "setup_window::open("];
+    const OPENS_A_WINDOW: &[&str] = &[
+        "WebviewWindowBuilder::new(",
+        "WebviewWindowBuilder::from_config(",
+        "window::builder(",
+        "open_shell(",
+        "open_settings_window(",
+        "setup_window::open(",
+    ];
 
     /// The synchronous commands in `code` (named after `pub fn`) whose body opens a window.
     fn sync_commands_opening_windows(code: &str) -> Vec<String> {

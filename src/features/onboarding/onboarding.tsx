@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { ErrorBoundary } from "@/components/error-screen";
 import { CtfMark } from "@/components/brand/mark";
 import { Button } from "@/components/ui/button";
+import { WindowTitleBar } from "@/components/window-title-bar";
 import { WaitingForCheck } from "@/features/machine/waiting-for-check";
 import {
   MachineStepBody,
@@ -60,14 +61,13 @@ function OnboardingFrame({ onSkip, children }: { onSkip: (() => void) | null; ch
   const t = useT();
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      {/* Draggable title bar (Overlay style has no native bar); room for traffic lights. */}
-      <div data-tauri-drag-region className="flex h-11 shrink-0 items-center justify-end pr-4 pl-20">
+      <WindowTitleBar toolbar>
         {onSkip && (
           <Button variant="ghost" size="xs" onClick={onSkip}>
             {t("onboarding.skip")}
           </Button>
         )}
-      </div>
+      </WindowTitleBar>
 
       {/* One fixed-height column (centred in a tall window): the step scrolls inside it and its
           footer is pinned to the bottom, so the buttons stay in view and in place from step to

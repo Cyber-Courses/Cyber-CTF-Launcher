@@ -3,6 +3,7 @@
 import { Component, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Copy, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { WindowTitleBar } from "@/components/window-title-bar";
 import { cn } from "@/lib/utils";
 import { tell } from "@/lib/failure";
 import { logFolder, logFrontendError } from "@/lib/error-log";
@@ -107,9 +108,14 @@ function ErrorPanel({
 
 /** A whole window that crashed (app/error.tsx, app/global-error.tsx). */
 export function ErrorScreen({ error, retry }: { error: Error & { digest?: string }; retry?: () => void }) {
+  // With the window's title bar: where the page draws it (Linux, Windows), the crashed page took
+  // its own, and the window could no longer be moved or closed from it.
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-background px-6 py-10 text-foreground">
-      <ErrorPanel error={error} retry={retry} className="w-full max-w-lg" />
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <WindowTitleBar />
+      <div className="flex flex-1 items-center justify-center px-6 py-10">
+        <ErrorPanel error={error} retry={retry} className="w-full max-w-lg" />
+      </div>
     </div>
   );
 }

@@ -31,14 +31,15 @@ pub fn open(app: &AppHandle, step: Option<&str>) -> Result<()> {
         let _ = existing.set_focus();
         return Ok(());
     }
-    let builder = window::builder(app, LABEL, page(step))
-        .title("Set up this machine")
-        // Tall enough for the longest step (the attack-machine toolset choice pushed its buttons
-        // below the fold at 760), clamped to the screen so it never opens off-screen; the body
-        // scrolls if a step is still taller. The minimum keeps a shrunk window usable.
-        .inner_size(760.0, window::height_fitting(app, 920.0))
-        .min_inner_size(640.0, window::height_fitting(app, 760.0))
-        .resizable(true);
+    let builder = window::builder(app, LABEL, page(step)).map(|b| {
+        b.title("Set up this machine")
+            // Tall enough for the longest step (the attack-machine toolset choice pushed its
+            // buttons below the fold at 760), clamped to the screen so it never opens off-screen;
+            // the body scrolls if a step is still taller. The minimum keeps a shrunk window usable.
+            .inner_size(760.0, window::height_fitting(app, 920.0))
+            .min_inner_size(640.0, window::height_fitting(app, 760.0))
+            .resizable(true)
+    });
     window::open_over_main(app, builder, "the setup window")
 }
 
@@ -51,7 +52,7 @@ mod tests {
     #[tokio::test]
     async fn an_open_setup_window_is_focused_and_moved_to_a_known_step_only() {
         let t = crate::testing::test_app::TestApp::new();
-        crate::app::window::builder(t.handle(), super::LABEL, super::page(None)).build().unwrap();
+        crate::app::window::builder(t.handle(), super::LABEL, super::page(None)).unwrap().build().unwrap();
         let steps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen = steps.clone();
         t.handle().listen_any(crate::app::events::MACHINE_SETUP_STEP, move |e| seen.lock().unwrap().push(e.payload().to_string()));
