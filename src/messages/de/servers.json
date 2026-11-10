@@ -228,9 +228,9 @@
       "description": "Wähle, wie sich der Launcher bei AWS anmeldet.",
       "billing": "Labs laufen in deinem Konto und kosten Geld, solange sie laufen; die Kosten hängen von der Größe des Labs ab. Das Stoppen eines Labs oder sein Auto-Stopp löscht, was es erstellt hat.",
       "cliTitle": "AWS CLI nutzen",
-      "cliNote": "Ein Profil oder Anmeldung im Browser. Kein Secret gespeichert.",
+      "cliNote": "Anmeldung im Browser (aws login) oder ein Profil. Kein Secret gespeichert.",
       "keysTitle": "Zugriffsschlüssel",
-      "keysNote": "Schlüssel und Secret eines IAM-Benutzers."
+      "keysNote": "Oder füge Schlüssel und Secret eines IAM-Benutzers ein."
     },
     "credentials": {
       "titles": {
@@ -245,7 +245,7 @@
         "gcp": "Melde dich mit der gcloud CLI an und wähle dann ein Rechnungskonto. Labs laufen in einem einzigen Cyber-CTF-Labs-Projekt, das beim ersten Test erstellt wird (dafür braucht das Rechnungskonto einen freien Projektplatz).",
         "token": "Füge ein {cloud}-API-Token mit Lese-/Schreibrechten ein und wähle eine Region.",
         "oci": "Nutzt ~/.oci/config (API-Signaturschlüssel). Wähle ein Compartment und eine Region.",
-        "awsCli": "Wähle ein Profil oder melde dich im Browser an.",
+        "awsCli": "Melde dich im Browser an oder wähle ein Profil, das schon angemeldet ist.",
         "accessKeys": "Die Zugriffsschlüssel eines IAM-Benutzers."
       },
       "ociFound": "~/.oci/config gefunden",
@@ -286,7 +286,7 @@
       "orType": "oder ID eingeben",
       "checking": "Wird geprüft…",
       "notSignedInProfile": "Mit diesem Profil nicht angemeldet.",
-      "browserSignIn": "Anmelden (Browser)",
+      "browserSignIn": "Im Browser anmelden (aws login)",
       "profile": "Profil",
       "accessKeyId": "Zugriffsschlüssel-ID",
       "accessKeyHint": "Ein IAM-Benutzer mit EC2-Zugriff",
@@ -300,7 +300,9 @@
       "logSignedIn": "✓ Angemeldet",
       "logNotSignedIn": "✗ Nicht angemeldet",
       "signInCancelled": "Anmeldung abgebrochen",
-      "retrySignIn": "Erneut versuchen"
+      "retrySignIn": "Erneut versuchen",
+      "awsCliTooOld": "Deine AWS CLI ist Version {version}: Die Anmeldung im Browser (aws login) braucht 2.32 oder neuer. Aktualisiere sie und prüfe dann erneut. Bis dahin funktioniert ein bereits angemeldetes Profil, oder geh zurück und nutze Zugriffsschlüssel.",
+      "awsCliUpdate": "So aktualisierst du die AWS CLI"
     },
     "options": {
       "title": "Lab-Einstellungen",

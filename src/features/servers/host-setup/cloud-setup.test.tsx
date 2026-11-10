@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_CLOUD } from "@/features/servers/host-setup";
 import { argsOf, failsWith, go, heading, input, renderSetup, selects, title } from "@/features/servers/host-setup/setup-test-kit";
 import type { ServerHostInput } from "@/lib/tauri";
-import { freshReport } from "@/test/fixtures";
-import { installTauri, rejectWith, stream, type Handler } from "@/test/tauri";
+import { freshReport, readyReport } from "@/test/fixtures";
+import { commands, installTauri, rejectWith, stream, type Handler } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 /** An account being edited (the provider and tools steps are skipped). */
@@ -114,12 +114,50 @@ describe("AWS account setup", () => {
     await renderSetup(editing({ useCliCreds: true, awsProfile: "lab" }));
     await go(user, /^continue$/i);
     expect(screen.getByText("Not signed in on this profile.")).toBeTruthy();
-    await go(user, /sign in \(browser\)/i);
+    await go(user, /sign in with the browser \(aws login\)/i);
     expect(argsOf(calls, "aws_login")[0]).toMatchObject({ profile: "lab" });
     expect(document.body.textContent).toContain("✗ Not signed in");
     identity = "arn:aws:iam::3:user/me";
-    await go(user, /sign in \(browser\)/i);
+    await go(user, /sign in with the browser \(aws login\)/i);
     expect(document.body.textContent).toContain("Signed in asarn:aws:iam::3:user/me");
+  });
+
+  it("starts a new account on the AWS CLI, its browser sign-in first, with access keys as the other way", async () => {
+    const calls = installTauri({ aws_cli_identity: () => null });
+    const user = userEvent.setup();
+    await renderSetup(
+      { ...EMPTY_CLOUD },
+      { ...readyReport(), cloudClis: { ...readyReport().cloudClis, aws: { installed: true, version: "aws-cli/2.32.4 Python/3.13.9 Darwin/25.1.0" } } },
+    );
+    // AWS, the provider a new account starts on; then its tools.
+    for (let step = 0; heading() !== "How to connect" && step < 3; step++) await go(user, /^continue$/i);
+    const [cli, keys] = screen.getAllByRole("radio");
+    expect([cli.textContent, cli.getAttribute("aria-checked")]).toEqual([expect.stringContaining("Use the AWS CLI"), "true"]);
+    expect(cli.textContent).toContain("Sign in with the browser (aws login)");
+    expect([keys.textContent, keys.getAttribute("aria-checked")]).toEqual([expect.stringContaining("Access keys"), "false"]);
+    await go(user, /^continue$/i);
+    await go(user, /sign in with the browser \(aws login\)/i);
+    expect(argsOf(calls, "aws_login")).toHaveLength(1);
+  });
+
+  it("says an AWS CLI older than 2.32 has no browser sign-in, and where to update it, instead of a sign-in that fails", async () => {
+    const calls = installTauri({ aws_cli_identity: () => null });
+    const user = userEvent.setup();
+    const old = {
+      ...readyReport(),
+      cloudClis: { ...readyReport().cloudClis, aws: { installed: true, version: "aws-cli/2.15.0 Python/3.11.6 Darwin/23.3.0" } },
+    };
+    const h = await renderSetup(editing({ useCliCreds: true }), old);
+    await go(user, /^continue$/i);
+    expect(screen.getByRole("status").textContent).toContain("Your AWS CLI is 2.15.0: signing in with the browser (aws login) needs 2.32 or later.");
+    expect(screen.queryByRole("button", { name: /sign in with the browser/i })).toBeNull();
+    await go(user, /how to update the aws cli/i);
+    expect(calls.find((c) => c.cmd.includes("opener"))?.args).toMatchObject({
+      url: "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html",
+    });
+    await go(user, /re-check/i);
+    expect(h.onRefresh).toHaveBeenCalled();
+    expect(commands(calls)).not.toContain("aws_login");
   });
 
   it("logs a failed browser sign-in", async () => {
@@ -130,9 +168,9 @@ describe("AWS account setup", () => {
     const user = userEvent.setup();
     await renderSetup(editing({ useCliCreds: true }));
     await go(user, /^continue$/i);
-    await go(user, /sign in \(browser\)/i);
+    await go(user, /sign in with the browser \(aws login\)/i);
     expect(document.body.textContent).toContain("✗ aws: command not found");
-    expect(button(/sign in \(browser\)/i).hasAttribute("disabled")).toBe(false);
+    expect(button(/sign in with the browser \(aws login\)/i).hasAttribute("disabled")).toBe(false);
   });
 
   it("shows why the save failed and stays on the step", async () => {
@@ -406,7 +444,7 @@ const CLI_SIGN_INS = [
     cloud: "AWS",
     initial: editing({ useCliCreds: true }),
     toStep: true,
-    button: /sign in \(browser\)/i,
+    button: /sign in with the browser \(aws login\)/i,
     cmd: "aws_login",
     others: { aws_cli_identity: () => null },
   },

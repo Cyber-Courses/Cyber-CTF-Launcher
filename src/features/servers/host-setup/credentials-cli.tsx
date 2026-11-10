@@ -1,14 +1,13 @@
 "use client";
 
-import { CheckCircle2 } from "lucide-react";
-import { Spinner } from "@/components/ui/spinner";
 import { Field, Input, Select } from "@/features/servers/host-setup/form";
 import { CheckingNote, SignInLog, SignInNote, SignedInNote } from "@/features/servers/host-setup/credentials-parts";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
 
-// The clouds that sign in through their own CLI (a browser sign-in): Azure, Google Cloud and
-// AWS with CLI credentials. Each shows the sign-in, its log, then what the account gives access to.
+// The clouds that sign in through their own CLI (a browser sign-in): Azure and Google Cloud here,
+// AWS with CLI credentials in credentials-aws. Each shows the sign-in, its log, then what the
+// account gives access to.
 
 /** Azure: the CLI sign-in, then the subscription it gives access to (or one pasted). */
 export function AzureCredentials({ s }: { s: HostSetup }) {
@@ -149,55 +148,5 @@ function GcpAccount({ s, email }: { s: HostSetup; email: string }) {
         </Select>
       </Field>
     </>
-  );
-}
-
-/** AWS through its CLI: the browser sign-in, its log, then the profile (as for GCP and Azure). */
-export function AwsCliCredentials({ s }: { s: HostSetup }) {
-  const t = useT();
-  return (
-    <div className="space-y-3">
-      <SignInNote
-        hint={
-          s.checkingId ? (
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <Spinner className="size-3.5" /> {t("servers.setup.credentials.checking")}
-            </span>
-          ) : s.awsIdentity ? (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <CheckCircle2 className="size-3.5 shrink-0 text-success" />
-              <span className="text-muted-foreground">{t("servers.setup.credentials.signedInAs")}</span>
-              <span className="truncate text-foreground">{s.awsIdentity}</span>
-            </span>
-          ) : (
-            <span className="text-muted-foreground">{t("servers.setup.credentials.notSignedInProfile")}</span>
-          )
-        }
-        label={t("servers.setup.credentials.browserSignIn")}
-        onSignIn={s.awsSignIn}
-        signingIn={s.signingIn}
-      />
-      <SignInLog s={s} onRetry={s.awsSignIn} />
-      {s.profiles.length > 0 && (
-        <Field label={t("servers.setup.credentials.profile")}>
-          <Select
-            value={s.v.awsProfile ?? ""}
-            onChange={(e) => {
-              s.set("awsProfile", e.target.value || null);
-            }}
-          >
-            <option value="">default</option>
-            {/* "default" is the first option already; the CLI lists it among the others too. */}
-            {s.profiles
-              .filter((p) => p !== "default")
-              .map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-          </Select>
-        </Field>
-      )}
-    </div>
   );
 }

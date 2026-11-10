@@ -228,9 +228,9 @@
       "description": "Escolha como o launcher entra na AWS.",
       "billing": "Os labs rodam na sua conta e são cobrados enquanto rodam; o custo depende do tamanho de cada lab. Parar um lab, ou a parada automática dele, destrói o que ele criou.",
       "cliTitle": "Usar a AWS CLI",
-      "cliNote": "Um perfil ou login pelo navegador. Nenhum segredo guardado.",
+      "cliNote": "Entre pelo navegador (aws login) ou use um perfil. Nenhum segredo guardado.",
       "keysTitle": "Chaves de acesso",
-      "keysNote": "A chave e o segredo de um usuário IAM."
+      "keysNote": "Ou cole a chave e o segredo de um usuário IAM."
     },
     "credentials": {
       "titles": {
@@ -245,7 +245,7 @@
         "gcp": "Entre com a CLI gcloud e depois escolha uma conta de faturamento. Os labs rodam num único projeto Cyber CTF labs, criado no primeiro teste (ele precisa de uma vaga de projeto livre na conta de faturamento).",
         "token": "Cole um token de API do {cloud} com escopo de leitura/escrita e escolha uma região.",
         "oci": "Usa ~/.oci/config (chave de assinatura de API). Escolha um compartment e uma região.",
-        "awsCli": "Escolha um perfil ou entre pelo navegador.",
+        "awsCli": "Entre pelo navegador ou escolha um perfil que já esteja conectado.",
         "accessKeys": "As chaves de acesso de um usuário IAM."
       },
       "ociFound": "~/.oci/config encontrado",
@@ -286,7 +286,7 @@
       "orType": "ou digite o ID",
       "checking": "Verificando…",
       "notSignedInProfile": "Não conectado neste perfil.",
-      "browserSignIn": "Entrar (navegador)",
+      "browserSignIn": "Entrar pelo navegador (aws login)",
       "profile": "Perfil",
       "accessKeyId": "ID da chave de acesso",
       "accessKeyHint": "Um usuário IAM com acesso ao EC2",
@@ -300,7 +300,9 @@
       "logSignedIn": "✓ Conectado",
       "logNotSignedIn": "✗ Não conectado",
       "signInCancelled": "Login cancelado",
-      "retrySignIn": "Tentar de novo"
+      "retrySignIn": "Tentar de novo",
+      "awsCliTooOld": "Sua AWS CLI é a {version}: entrar pelo navegador (aws login) exige a 2.32 ou mais recente. Atualize-a e verifique de novo. Enquanto isso, um perfil já conectado funciona, ou volte e use chaves de acesso.",
+      "awsCliUpdate": "Como atualizar a AWS CLI"
     },
     "options": {
       "title": "Configurações dos labs",

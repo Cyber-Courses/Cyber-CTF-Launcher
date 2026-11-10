@@ -11,18 +11,18 @@ use crate::error::{Code, Error, Result};
 use crate::platform::exec::{run_cli, stream};
 use crate::runtime::server::sign_in::{AWS_WHO_AM_I, sign_in_question};
 
+/// The clouds `cloud_login` signs in to through their CLI. AWS signs in with [`aws_login`]
+/// instead: its browser sign-in takes the profile to sign in.
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(rename = "CloudLoginProvider")]
 pub enum Cloud {
-    Aws,
     Azure,
     Gcp,
 }
 
-/// Signs in to a cloud provider using its CLI. AWS uses SSO (needs a configured SSO
-/// profile); Azure and GCP open the browser. Streams the CLI output to the UI, until it ends,
-/// the player cancels it (`cloud_login_cancel`) or [`LOGIN_TIMEOUT`] passes.
+/// Signs in to Azure or GCP with its CLI, in the browser. Streams the CLI output to the UI,
+/// until it ends, the player cancels it (`cloud_login_cancel`) or [`LOGIN_TIMEOUT`] passes.
 pub async fn cloud_login(provider: Cloud, on_line: impl FnMut(String)) -> Result<()> {
     let (program, args) = login_command(&provider);
     sign_in(program, args, on_line).await
@@ -71,7 +71,6 @@ async fn sign_in_within(limit: Duration, signing_in: impl Future<Output = Result
 /// The CLI sign-in for a cloud.
 fn login_command(provider: &Cloud) -> (&'static str, &'static [&'static str]) {
     match provider {
-        Cloud::Aws => ("aws", &["sso", "login"]),
         Cloud::Azure => ("az", &["login"]),
         // One browser flow that authenticates the gcloud CLI (so `gcloud projects list` works)
         // AND writes Application Default Credentials (what Terraform's google provider reads).
@@ -416,7 +415,9 @@ mod tests {
 
     #[test]
     fn each_cloud_signs_in_with_its_own_cli() {
-        assert_eq!(login_command(&Cloud::Aws), ("aws", &["sso", "login"][..]));
+        // AWS isn't one: `aws_login` signs in with `aws login` (the old `aws sso login` path was
+        // never called).
+        assert!(serde_json::from_str::<Cloud>(r#""aws""#).is_err());
         assert_eq!(login_command(&Cloud::Azure), ("az", &["login"][..]));
         // gcloud's login also writes the credentials Terraform reads.
         assert_eq!(login_command(&Cloud::Gcp), ("gcloud", &["auth", "login", "--update-adc"][..]));

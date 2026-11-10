@@ -4,6 +4,7 @@ import type { ServerHostInput, ServerTest, SystemReport } from "@/lib/tauri";
 import { DEFAULT_REGION, EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup/constants";
 import {
   REGIONS,
+  awsCliTooOld,
   cloudCli,
   connectionReady,
   machineTools,
@@ -306,5 +307,28 @@ describe("machineTools and saveName: edges", () => {
     expect(saveName(cloud({ provider: "oci", name: " ", host: "eu-frankfurt-1" }))).toBe("Oracle Cloud");
     expect(saveName(form({ provider: "proxmox", name: "", host: " pve.local " }))).toBe("pve.local");
     expect(saveName(form({ provider: "proxmox", name: " Home lab ", host: "pve.local" }))).toBe("Home lab");
+  });
+});
+
+describe("awsCliTooOld", () => {
+  it.each([
+    ["aws-cli/2.31.9 Python/3.12.6 Darwin/24.1.0 exe/arm64", "2.31.9"],
+    ["aws-cli/2.15.0 Python/3.11.6 Windows/10 exe/AMD64 prompt/off", "2.15.0"],
+    ["aws-cli/1.33.0 Python/3.9.6 Darwin/23.3.0 botocore/1.34.0", "1.33.0"],
+  ])("names %s too old for aws login", (version, too) => {
+    expect(awsCliTooOld(version)).toBe(too);
+  });
+
+  it.each([
+    "aws-cli/2.32.0 Python/3.13.7 Darwin/25.0.0",
+    "aws-cli/2.33.4 Python/3.13.9 Linux/6.8.0",
+    "aws-cli/3.0.1 Python/3.14.0",
+    null,
+    undefined,
+    "",
+    "2.18.0",
+    "command not found",
+  ])("lets %s sign in (recent enough, or not told)", (version) => {
+    expect(awsCliTooOld(version)).toBeNull();
   });
 });

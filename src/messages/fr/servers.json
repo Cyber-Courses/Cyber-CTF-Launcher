@@ -228,9 +228,9 @@
       "description": "Choisissez comment le launcher se connecte à AWS.",
       "billing": "Les labs tournent dans votre compte et sont facturés tant qu'ils tournent ; le coût dépend de la taille de chaque lab. Arrêter un lab, ou son arrêt automatique, détruit ce qu'il a créé.",
       "cliTitle": "Utiliser la CLI AWS",
-      "cliNote": "Un profil ou une connexion par navigateur. Aucun secret stocké.",
+      "cliNote": "Connexion par navigateur (aws login), ou un profil. Aucun secret stocké.",
       "keysTitle": "Clés d'accès",
-      "keysNote": "La clé et le secret d'un utilisateur IAM."
+      "keysNote": "Ou collez la clé et le secret d'un utilisateur IAM."
     },
     "credentials": {
       "titles": {
@@ -245,7 +245,7 @@
         "gcp": "Connectez-vous avec la CLI gcloud, puis choisissez un compte de facturation. Les labs tournent dans un seul projet Cyber CTF labs, créé au premier test (il faut un emplacement de projet libre sur le compte de facturation).",
         "token": "Collez un jeton d'API {cloud} en lecture/écriture, et choisissez une région.",
         "oci": "Utilise ~/.oci/config (clé de signature d'API). Choisissez un compartiment et une région.",
-        "awsCli": "Choisissez un profil, ou connectez-vous avec le navigateur.",
+        "awsCli": "Connectez-vous avec le navigateur, ou choisissez un profil déjà connecté.",
         "accessKeys": "Les clés d'accès d'un utilisateur IAM."
       },
       "ociFound": "~/.oci/config trouvé",
@@ -286,7 +286,7 @@
       "orType": "ou saisissez l'ID",
       "checking": "Vérification…",
       "notSignedInProfile": "Non connecté sur ce profil.",
-      "browserSignIn": "Se connecter (navigateur)",
+      "browserSignIn": "Se connecter avec le navigateur (aws login)",
       "profile": "Profil",
       "accessKeyId": "ID de clé d'accès",
       "accessKeyHint": "Un utilisateur IAM avec accès à EC2",
@@ -300,7 +300,9 @@
       "logSignedIn": "✓ Connecté",
       "logNotSignedIn": "✗ Non connecté",
       "signInCancelled": "Connexion annulée",
-      "retrySignIn": "Réessayer"
+      "retrySignIn": "Réessayer",
+      "awsCliTooOld": "Votre AWS CLI est en version {version} : la connexion par navigateur (aws login) demande la 2.32 ou plus récente. Mettez-la à jour, puis vérifiez de nouveau. En attendant, un profil déjà connecté fonctionne, ou revenez en arrière pour utiliser des clés d'accès.",
+      "awsCliUpdate": "Mettre à jour l'AWS CLI"
     },
     "options": {
       "title": "Paramètres des labs",

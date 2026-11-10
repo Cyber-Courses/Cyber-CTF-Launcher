@@ -228,9 +228,9 @@
       "description": "Choose how the launcher signs in to AWS.",
       "billing": "Labs run in your account and are billed while they run; the cost depends on each lab's size. Stopping a lab, or its auto-stop, destroys what it created.",
       "cliTitle": "Use the AWS CLI",
-      "cliNote": "A profile or browser sign-in. No secret stored.",
+      "cliNote": "Sign in with the browser (aws login), or use a profile. No secret stored.",
       "keysTitle": "Access keys",
-      "keysNote": "An IAM user's key and secret."
+      "keysNote": "Or paste an IAM user's key and secret."
     },
     "credentials": {
       "titles": {
@@ -245,7 +245,7 @@
         "gcp": "Sign in with the gcloud CLI, then pick a billing account. Labs run in one Cyber CTF labs project, created on the first test (it needs one free project slot on the billing account).",
         "token": "Paste a {cloud} API token with read/write scope, and pick a region.",
         "oci": "Uses ~/.oci/config (API signing key). Pick a compartment and region.",
-        "awsCli": "Pick a profile, or sign in with the browser.",
+        "awsCli": "Sign in with the browser, or pick a profile that's already signed in.",
         "accessKeys": "An IAM user's access keys."
       },
       "ociFound": "Found ~/.oci/config",
@@ -286,7 +286,7 @@
       "orType": "or type the id",
       "checking": "Checking…",
       "notSignedInProfile": "Not signed in on this profile.",
-      "browserSignIn": "Sign in (browser)",
+      "browserSignIn": "Sign in with the browser (aws login)",
       "profile": "Profile",
       "accessKeyId": "Access key ID",
       "accessKeyHint": "An IAM user with EC2 access",
@@ -300,7 +300,9 @@
       "logSignedIn": "✓ Signed in",
       "logNotSignedIn": "✗ Not signed in",
       "signInCancelled": "Sign-in cancelled",
-      "retrySignIn": "Retry"
+      "retrySignIn": "Retry",
+      "awsCliTooOld": "Your AWS CLI is {version}: signing in with the browser (aws login) needs 2.32 or later. Update it, then check again. A profile that's already signed in works meanwhile, or go back and use access keys.",
+      "awsCliUpdate": "How to update the AWS CLI"
     },
     "options": {
       "title": "Lab settings",

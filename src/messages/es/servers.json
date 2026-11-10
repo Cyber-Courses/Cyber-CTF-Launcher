@@ -228,9 +228,9 @@
       "description": "Elige cómo inicia sesión el launcher en AWS.",
       "billing": "Los labs se ejecutan en tu cuenta y se facturan mientras se ejecutan; el coste depende del tamaño de cada lab. Detener un lab, o su parada automática, destruye lo que creó.",
       "cliTitle": "Usar la AWS CLI",
-      "cliNote": "Un perfil o inicio de sesión en el navegador. No se guarda ningún secreto.",
+      "cliNote": "Inicia sesión con el navegador (aws login) o usa un perfil. No se guarda ningún secreto.",
       "keysTitle": "Claves de acceso",
-      "keysNote": "La clave y el secreto de un usuario IAM."
+      "keysNote": "O pega la clave y el secreto de un usuario IAM."
     },
     "credentials": {
       "titles": {
@@ -245,7 +245,7 @@
         "gcp": "Inicia sesión con la CLI de gcloud y luego elige una cuenta de facturación. Los labs se ejecutan en un único proyecto de labs de Cyber CTF, creado en la primera prueba (necesita un hueco libre de proyecto en la cuenta de facturación).",
         "token": "Pega un token de API de {cloud} con permisos de lectura/escritura y elige una región.",
         "oci": "Usa ~/.oci/config (clave de firma de API). Elige un compartimento y una región.",
-        "awsCli": "Elige un perfil o inicia sesión con el navegador.",
+        "awsCli": "Inicia sesión con el navegador o elige un perfil que ya tenga la sesión iniciada.",
         "accessKeys": "Las claves de acceso de un usuario IAM."
       },
       "ociFound": "Se encontró ~/.oci/config",
@@ -286,7 +286,7 @@
       "orType": "o escribe el id",
       "checking": "Comprobando…",
       "notSignedInProfile": "Sin sesión iniciada en este perfil.",
-      "browserSignIn": "Iniciar sesión (navegador)",
+      "browserSignIn": "Iniciar sesión con el navegador (aws login)",
       "profile": "Perfil",
       "accessKeyId": "ID de clave de acceso",
       "accessKeyHint": "Un usuario IAM con acceso a EC2",
@@ -300,7 +300,9 @@
       "logSignedIn": "✓ Sesión iniciada",
       "logNotSignedIn": "✗ Sin sesión iniciada",
       "signInCancelled": "Inicio de sesión cancelado",
-      "retrySignIn": "Reintentar"
+      "retrySignIn": "Reintentar",
+      "awsCliTooOld": "Tu AWS CLI es la {version}: iniciar sesión con el navegador (aws login) necesita la 2.32 o posterior. Actualízala y vuelve a comprobar. Mientras tanto funciona un perfil que ya tenga la sesión iniciada, o vuelve atrás y usa claves de acceso.",
+      "awsCliUpdate": "Cómo actualizar la AWS CLI"
     },
     "options": {
       "title": "Ajustes de los labs",

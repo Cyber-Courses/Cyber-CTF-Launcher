@@ -251,6 +251,26 @@ export function machineTools(provider: RemoteProvider, report: SystemReport | nu
   return { ...tools, toolsOk };
 }
 
+/** The AWS CLI release that brought `aws login`, its browser sign-in. */
+const AWS_LOGIN_SINCE = [2, 32] as const;
+
+/** Where to update the AWS CLI. */
+export const AWS_CLI_UPDATE_URL = "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html";
+
+/**
+ * The AWS CLI's version when it is too old for `aws login` (before 2.32, v1 included), as the
+ * machine check read it (`aws-cli/2.15.0 Python/3.11.6 Darwin/23.3.0 …`); null when it is recent
+ * enough, or its version can't be told (the sign-in then says for itself).
+ */
+export function awsCliTooOld(version: string | null | undefined): string | null {
+  const m = /aws-cli\/(\d+)\.(\d+)(?:\.(\d+))?/.exec(version ?? "");
+  if (!m) return null;
+  const [major, minor] = [Number(m[1]), Number(m[2])];
+  const [since, sinceMinor] = AWS_LOGIN_SINCE;
+  const old = major < since || (major === since && minor < sinceMinor);
+  return old ? m[0].slice("aws-cli/".length) : null;
+}
+
 /** The name a host is saved under: the typed one, else the cloud's short name or the address. */
 export function saveName(v: ServerHostInput): string {
   const fallback = isCloudProvider(v.provider) ? defaultName(v.provider) : v.host.trim();
