@@ -160,6 +160,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   Vagrant command landing then was refused ("another process is already executing an action on
   the machine") and the start failed. The count now reads Vagrant's index as it is, and skips a
   record whose lab folder is gone.
+- **A session that can't be read no longer reads as signed out.** When the keychain couldn't be
+  read (locked, say) or a token couldn't be renewed, the catalogue loaded as anonymous, without
+  the player's progress, and the website agent forgot this machine's registration, with nothing
+  in the log. The catalogue now says why it couldn't load, the agent keeps its registration and
+  logs that it waits, and a piece of a long session the keychain couldn't read is that error, not
+  a missing session.
 - **A lab operation never reports the last run's result as its own.** When the last run's
   result file couldn't be removed (a permissions problem, a file held open on Windows), the new
   run's worker started anyway and the app read the old result at once. The operation now runs

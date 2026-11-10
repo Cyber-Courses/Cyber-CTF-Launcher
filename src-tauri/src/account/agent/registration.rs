@@ -49,16 +49,21 @@ struct Registration {
 enum Next {
     /// Signed out: no agent (its id is forgotten), wait for a sign-in.
     SignedOut,
+    /// The session can't be read now (the keychain locked): the registration is kept, and the
+    /// loop waits. Read as signed out, it dropped the agent until the next sign-in.
+    Unreadable,
     /// Signed in as someone it isn't registered for (first sign-in, or another account).
     Register,
     /// Registered for the signed-in account: heartbeat and poll.
     Run,
 }
 
-fn next_step(current: Option<&Registration>, user: Option<&str>) -> Next {
+/// `user`: who is signed in (see `auth::signed_in_user`).
+fn next_step(current: Option<&Registration>, user: std::result::Result<Option<&str>, &Error>) -> Next {
     match (current, user) {
-        (_, None) => Next::SignedOut,
-        (Some(r), Some(u)) if r.user == u => Next::Run,
+        (_, Err(_)) => Next::Unreadable,
+        (_, Ok(None)) => Next::SignedOut,
+        (Some(r), Ok(Some(u))) if r.user == u => Next::Run,
         _ => Next::Register,
     }
 }
@@ -91,7 +96,9 @@ fn heartbeat_agent(current: &Mutex<Option<Registration>>, user: Option<&str>) ->
 fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>) {
     tokio::spawn(async move {
         loop {
-            if let Some(agent_id) = heartbeat_agent(current, auth::signed_in_user().await.as_deref())
+            // A session that can't be read is logged by the agent loop: no heartbeat then.
+            if let Ok(user) = auth::signed_in_user().await
+                && let Some(agent_id) = heartbeat_agent(current, user.as_deref())
                 && auth::access_token().await.is_ok()
                 && let Err(e) = heartbeat(&dirs, &agent_id).await
             {
@@ -116,9 +123,16 @@ pub async fn run(deps: Deps) {
     let current = &REGISTRATION;
     spawn_heartbeat(deps.dirs().clone(), current);
     loop {
-        let user = auth::signed_in_user().await;
+        let read = auth::signed_in_user().await;
         let registered = registration(current).clone();
-        match next_step(registered.as_ref(), user.as_deref()) {
+        match next_step(registered.as_ref(), read.as_ref().map(Option::as_deref)) {
+            Next::Unreadable => {
+                if let Err(e) = &read {
+                    log::warn!("the agent can't read the session, and waits with its registration kept: {e}");
+                }
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                continue;
+            }
             Next::SignedOut => {
                 *registration(current) = None;
                 tokio::time::sleep(Duration::from_secs(5)).await;
@@ -128,7 +142,7 @@ pub async fn run(deps: Deps) {
                 // Not online for the account registered before while this one registers.
                 *registration(current) = None;
                 // No token yet, or registering failed: wait and start the cycle over.
-                if register_step(&deps, current, user).await {
+                if register_step(&deps, current, read.ok().flatten()).await {
                     continue;
                 }
             }
@@ -216,11 +230,14 @@ mod tests {
     fn the_agent_registers_again_for_another_account_and_forgets_it_on_sign_out() {
         // After signing out and in as someone else, the old agent id was still polled with.
         let a = Registration { user: "u1".into(), agent_id: "agent-1".into() };
-        assert_eq!(next_step(None, None), Next::SignedOut);
-        assert_eq!(next_step(None, Some("u1")), Next::Register);
-        assert_eq!(next_step(Some(&a), Some("u1")), Next::Run);
-        assert_eq!(next_step(Some(&a), Some("u2")), Next::Register);
-        assert_eq!(next_step(Some(&a), None), Next::SignedOut);
+        assert_eq!(next_step(None, Ok(None)), Next::SignedOut);
+        assert_eq!(next_step(None, Ok(Some("u1"))), Next::Register);
+        assert_eq!(next_step(Some(&a), Ok(Some("u1"))), Next::Run);
+        assert_eq!(next_step(Some(&a), Ok(Some("u2"))), Next::Register);
+        assert_eq!(next_step(Some(&a), Ok(None)), Next::SignedOut);
+        // Regression: a session that couldn't be read (the keychain locked) read as signed out,
+        // and the agent forgot its registration.
+        assert_eq!(next_step(Some(&a), Err(&Error::Invalid("the keychain is locked".into()))), Next::Unreadable);
         let current = Mutex::new(Some(a));
         assert_eq!(agent_id_of(&current).as_deref(), Some("agent-1"));
         // Regression: during a long claim, a sign-in as another account sent the first account's

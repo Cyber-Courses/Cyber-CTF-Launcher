@@ -228,9 +228,10 @@ where
 }
 
 /// Who is signed in, to tell accounts apart: the access token's `sub`, else the email. None
-/// when signed out (or the session can't be read).
-pub async fn signed_in_user() -> Option<String> {
-    store::read().await.ok().flatten().map(|s| user_of(&s))
+/// when signed out; an error when the session is there but can't be read (the keychain locked),
+/// which must not read as signed out.
+pub async fn signed_in_user() -> Result<Option<String>> {
+    store::read().await.map(|s| s.map(|s| user_of(&s))).map_err(Error::Invalid)
 }
 
 fn user_of(session: &Session) -> String {
@@ -491,12 +492,12 @@ mod tests {
         assert_eq!(status, serde_json::json!({ "loggedIn": true, "name": "Ada", "email": "ada@example.com" }));
         // A fresh token is used as is: no refresh, no network.
         assert_eq!(access_token().await.unwrap(), "tok");
-        assert_eq!(signed_in_user().await.as_deref(), Some("ada@example.com"));
+        assert_eq!(signed_in_user().await.unwrap().as_deref(), Some("ada@example.com"));
 
         auth_logout().await.unwrap();
         assert_eq!(serde_json::to_value(auth_status().await).unwrap()["loggedIn"], false);
         assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
-        assert_eq!(signed_in_user().await, None);
+        assert_eq!(signed_in_user().await.unwrap(), None);
         // Signing out twice is fine.
         auth_logout().await.unwrap();
     }
@@ -734,8 +735,24 @@ mod tests {
         assert_eq!(status["loggedIn"], false);
         assert!(status.get("keychainError").is_none(), "{status}");
         assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
-        assert_eq!(signed_in_user().await, None);
+        assert_eq!(signed_in_user().await.unwrap(), None);
         auth_logout().await.unwrap();
+    }
+
+    /// Regression: a session that is there but can't be read (the dev build's file, as a locked
+    /// keychain in a release) read as signed out: the agent forgot its registration, and calls
+    /// went out as anonymous. It is an error now.
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn an_unreadable_stored_session_is_an_error_not_signed_out() {
+        let _serial = ONE_AT_A_TIME.lock().await;
+        let path = store::dev_session_path().unwrap();
+        let _ = std::fs::remove_file(&path);
+        std::fs::create_dir_all(path.join("held")).unwrap();
+        assert!(signed_in_user().await.unwrap_err().to_string().starts_with("the session file "));
+        assert_eq!(access_token().await.unwrap_err().code(), Code::Other);
+        std::fs::remove_dir_all(&path).unwrap();
+        assert_eq!(signed_in_user().await.unwrap(), None);
     }
 
     /// An access token past its margin with no refresh token kept (a sign-in that was given

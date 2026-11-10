@@ -311,7 +311,10 @@ pub(crate) async fn launch_values_at(base: &str, token: &str, lab_id: &str) -> R
 /// installed lab's (see `offline`).
 async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(String)) -> Result<serde_json::Value> {
     let base = dirs.data()?;
-    let user = crate::account::auth::signed_in_user().await;
+    let user = crate::account::auth::signed_in_user().await.unwrap_or_else(|e| {
+        log::warn!("the session can't be read, so {lab_id}'s launch isn't kept for an offline start: {e}");
+        None
+    });
     match start_lab(lab_id).await {
         Ok(answer) => {
             if let Some(user) = &user

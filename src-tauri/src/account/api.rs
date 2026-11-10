@@ -11,12 +11,20 @@ use crate::platform::config;
 /// Runs a GraphQL operation as the logged-in player (anonymous if logged out
 /// and `require_login` is false). Returns `data`, or the first error message.
 pub async fn graphql(query: &str, variables: Value, require_login: bool) -> Result<Value> {
-    let token = match auth::access_token().await {
-        Ok(t) => Some(t),
-        Err(e) if require_login => return Err(e),
-        Err(_) => None,
-    };
+    let token = token_for_call(auth::access_token().await, require_login)?;
     send(&config::api_url(), token, query, variables).await
+}
+
+/// The token a call goes with: the player's; none (anonymous) only when the call doesn't
+/// `require_login` and there is no session to use (signed out, or it expired). A session that is
+/// there but couldn't be read or renewed (the keychain locked, the sign-in service unreachable)
+/// is that error: as anonymous, the catalogue would lose the player's progress without a word.
+fn token_for_call(token: Result<String>, require_login: bool) -> Result<Option<String>> {
+    match token {
+        Ok(t) => Ok(Some(t)),
+        Err(e) if !require_login && matches!(e.code(), crate::error::Code::SignedOut | crate::error::Code::SessionExpired) => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 /// Posts a GraphQL operation to the API at `base`, with the access token when there is one.
@@ -60,9 +68,24 @@ pub async fn api_query(operation: ApiOperation, variables: Option<Value>) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::parse_response;
+    use super::{parse_response, token_for_call};
+    use crate::error::{Code, Error};
     use reqwest::StatusCode;
     use serde_json::json;
+
+    #[test]
+    fn only_a_missing_session_makes_a_call_anonymous() {
+        assert_eq!(token_for_call(Ok("tok".into()), true).unwrap().as_deref(), Some("tok"));
+        for code in [Code::SignedOut, Code::SessionExpired] {
+            assert_eq!(token_for_call(Err(Error::coded(code.clone())), false).unwrap(), None);
+            assert_eq!(token_for_call(Err(Error::coded(code.clone())), true).unwrap_err().code(), code);
+        }
+        // Regression: a keychain that couldn't be read, or a refresh that failed, read as signed
+        // out: the catalogue loaded as anonymous, and nothing said why.
+        let locked = token_for_call(Err(Error::Invalid("the keychain is locked".into())), false);
+        assert_eq!(locked.unwrap_err().to_string(), "the keychain is locked");
+        assert!(token_for_call(Err(Error::Unreachable("cyberauth.co unreachable".into())), false).is_err());
+    }
 
     #[test]
     fn a_response_gives_its_data_or_its_first_error() {

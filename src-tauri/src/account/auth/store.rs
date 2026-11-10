@@ -80,12 +80,23 @@ fn join_chunks(head: String, mut piece: impl FnMut(usize) -> Option<String>) -> 
     (1..=n).map(&mut piece).collect()
 }
 
-/// The session a keychain `head` holds: joined from its pieces (`piece(i)`, 1-based) when it was
-/// split, then parsed. None when a piece is missing or the text isn't a session (another app's
-/// entry, a save cut short): that reads as signed out, never as a keychain error, and the next
-/// sign-in writes over it.
-fn decode(head: String, piece: impl FnMut(usize) -> Option<String>) -> Option<Session> {
-    join_chunks(head, piece).and_then(|raw| serde_json::from_str(&raw).ok())
+/// The session a keychain `head` holds: joined from its pieces (`piece(i)`, 1-based: `Ok(None)`
+/// for one that isn't there) when it was split, then parsed. None when a piece is missing or the
+/// text isn't a session (another app's entry, a save cut short): that reads as signed out, never
+/// as a keychain error, and the next sign-in writes over it. A piece the keychain couldn't read is
+/// that error: the session is there, unreadable for now.
+fn decode(head: String, mut piece: impl FnMut(usize) -> std::result::Result<Option<String>, String>) -> std::result::Result<Option<Session>, String> {
+    let mut failed = None;
+    let raw = join_chunks(head, |i| {
+        piece(i).unwrap_or_else(|why| {
+            failed.get_or_insert(why);
+            None
+        })
+    });
+    match failed {
+        Some(why) => Err(why),
+        None => Ok(raw.and_then(|raw| serde_json::from_str(&raw).ok())),
+    }
 }
 
 /// The keychain failing is the common Linux case: no Secret Service (GNOME Keyring, KWallet)
@@ -121,9 +132,14 @@ fn home_session_path() -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(home).join(".cyberctf").join("dev-session.json"))
 }
 
-/// The session kept in a dev session file, if it is there and parses.
-fn load_file(path: &std::path::Path) -> Option<Session> {
-    std::fs::read_to_string(path).ok().and_then(|raw| serde_json::from_str(&raw).ok())
+/// The session kept in a dev session file: none when there is no file or it doesn't parse (as a
+/// keychain entry that isn't a session), an error when it can't be read.
+fn load_file(path: &std::path::Path) -> std::result::Result<Option<Session>, String> {
+    match std::fs::read_to_string(path) {
+        Ok(raw) => Ok(serde_json::from_str(&raw).ok()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("the session file {} can't be read: {e}", path.display())),
+    }
 }
 
 /// Writes the session to a dev session file, creating its folder: both this user's only (the
@@ -139,7 +155,7 @@ fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
 /// The stored session: `Ok(None)` when there is none, `Err` when the keychain couldn't be read.
 /// Blocking (the Secret Service may show its unlock prompt and wait): call `read`.
 fn load_blocking(file: Option<&std::path::Path>) -> std::result::Result<Option<Session>, String> {
-    if IN_A_FILE { Ok(file.and_then(load_file)) } else { load_keychain() }
+    if IN_A_FILE { file.map_or(Ok(None), load_file) } else { load_keychain() }
 }
 
 /// The session in the keychain, unless the keychain failed a moment ago (see [`backoff`]).
@@ -147,9 +163,13 @@ fn load_keychain() -> std::result::Result<Option<Session>, String> {
     if let Some(why) = backoff::active() {
         return Err(why);
     }
-    let piece = |i: usize| entry_named(&format!("session.{i}")).ok()?.get_password().ok();
+    let piece = |i: usize| match entry_named(&format!("session.{i}")).map_err(|e| e.to_string())?.get_password() {
+        Ok(part) => Ok(Some(part)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(keychain_error(&e).to_string()),
+    };
     let read = entry().map_err(|e| e.to_string()).and_then(|e| match e.get_password() {
-        Ok(head) => Ok(decode(head, piece)),
+        Ok(head) => decode(head, piece),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(keychain_error(&e).to_string()),
     });
@@ -339,15 +359,15 @@ mod tests {
     fn a_dev_session_file_round_trips_and_a_bad_one_reads_as_none() {
         let dir = std::env::temp_dir().join(format!("cyberctf-session-{}", rand::random::<u64>()));
         let path = dir.join("nested").join("dev-session.json");
-        assert!(load_file(&path).is_none());
+        assert!(matches!(load_file(&path), Ok(None)));
         let session = Session { access_token: "a".into(), refresh_token: Some("r".into()), expires_at: 42, name: Some("N".into()), email: None, picture: None };
         save_file(&path, &serde_json::to_string(&session).unwrap()).unwrap();
         crate::platform::private_fs::tests::assert_private_with_folder(&path);
-        let back = load_file(&path).unwrap();
+        let back = load_file(&path).unwrap().unwrap();
         assert_eq!((back.access_token.as_str(), back.refresh_token.as_deref(), back.expires_at), ("a", Some("r"), 42));
         assert_eq!(back.name.as_deref(), Some("N"));
         std::fs::write(&path, "not json").unwrap();
-        assert!(load_file(&path).is_none());
+        assert!(matches!(load_file(&path), Ok(None)));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -386,15 +406,34 @@ mod tests {
         // The entry holds text that isn't a session (another app's, a save cut short), a session
         // with a field of the wrong type, or names pieces one of which is gone: no session, so the
         // app shows signed out without a keychain error, and a fresh sign-in replaces it.
-        assert!(decode("not json".into(), |_| None).is_none());
-        assert!(decode(r#"{"access_token":42,"expires_at":1}"#.into(), |_| None).is_none());
+        // Whether a session was read, or the error.
+        let read = |r: std::result::Result<Option<Session>, String>| r.map(|s| s.is_some());
+        assert_eq!(read(decode("not json".into(), |_| Ok(None))), Ok(false));
+        assert_eq!(read(decode(r#"{"access_token":42,"expires_at":1}"#.into(), |_| Ok(None))), Ok(false));
         let long = Session { access_token: "x".repeat(3000), refresh_token: Some("r".into()), expires_at: 42, name: None, email: None, picture: None };
         let (head, parts) = split_chunks(&serde_json::to_string(&long).unwrap()).unwrap();
         assert!(parts.len() >= 2);
-        assert!(decode(head.clone(), |i| (i != 2).then(|| parts[i - 1].clone())).is_none(), "a missing piece");
-        assert!(decode(head.clone(), |i| parts.get(i - 1).map(|p| p.replace('x', "\""))).is_none(), "a garbled piece");
-        let back = decode(head, |i| parts.get(i - 1).cloned()).unwrap();
+        assert_eq!(read(decode(head.clone(), |i| Ok((i != 2).then(|| parts[i - 1].clone())))), Ok(false), "a missing piece");
+        assert_eq!(read(decode(head.clone(), |i| Ok(parts.get(i - 1).map(|p| p.replace('x', "\""))))), Ok(false), "a garbled piece");
+        let back = decode(head.clone(), |i| Ok(parts.get(i - 1).cloned())).unwrap().unwrap();
         assert_eq!((back.access_token.len(), back.refresh_token.as_deref(), back.expires_at), (3000, Some("r"), 42));
+        // Regression: a piece the keychain couldn't read (locked, say) read as missing, so as
+        // signed out. It is the keychain's error.
+        let locked = decode(head, |i| if i == 2 { Err("the keychain is locked".into()) } else { Ok(parts.get(i - 1).cloned()) });
+        assert_eq!(read(locked), Err("the keychain is locked".to_string()));
+    }
+
+    #[test]
+    fn a_dev_session_file_that_cant_be_read_is_an_error_not_signed_out() {
+        let dir = crate::testing::temp_dir("session-file");
+        let path = dir.join("dev-session.json");
+        assert!(matches!(load_file(&path), Ok(None)), "no file");
+        std::fs::write(&path, "not a session").unwrap();
+        assert!(matches!(load_file(&path), Ok(None)));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir_all(path.join("held")).unwrap();
+        assert!(load_file(&path).err().is_some_and(|e| e.starts_with("the session file ")));
+        std::fs::remove_dir_all(dir).ok();
     }
 }
 
