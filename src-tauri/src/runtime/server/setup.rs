@@ -11,7 +11,7 @@ use super::input::{HostInput, valid_id};
 use super::profile::{HostProfile, new_id};
 use super::secrets::{delete_secret, get_secret, set_secret};
 use super::store::{Store, load, load_host, update};
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
 use crate::runtime::proxmox::{placement, ssh_key};
@@ -107,14 +107,23 @@ fn put(dirs: &AppDirs, mut input: HostInput) -> Result<HostProfile> {
         }
         match new_password(password)? {
             Some(p) => set_secret(&id, &p)?,
-            None if profile.keeps_secret() && get_secret(&id).is_err() => {
-                return Err(Error::Invalid("enter the host's password".into()));
-            }
+            None if profile.keeps_secret() => secret_kept(&id)?,
             None => {}
         }
         put_host(store, profile.clone());
         Ok(profile)
     })
+}
+
+/// That host `id` has a stored secret to keep, when the form left the password blank. None stored
+/// asks for one; a keychain that can't be read says so, rather than asking for a password the
+/// player already gave.
+fn secret_kept(id: &str) -> Result<()> {
+    match get_secret(id) {
+        Ok(_) => Ok(()),
+        Err(e) if e.code() == Code::NoPasswordStored => Err(Error::Invalid("enter the host's password".into())),
+        Err(e) => Err(e),
+    }
 }
 
 /// The id a save writes under: an existing host's (edit), or a new one.

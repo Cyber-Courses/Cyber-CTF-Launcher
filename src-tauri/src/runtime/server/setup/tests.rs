@@ -16,8 +16,10 @@ fn ssh_key_input(key: &Path) -> HostInput {
 
 /// An Azure account's form.
 fn azure(id: Option<&str>, region: &str, subscription: &str, name: &str) -> HostInput {
-    serde_json::from_value(serde_json::json!({ "id": id, "name": name, "provider": "azure", "host": region, "username": subscription, "datastore": "Standard_B2s" }))
-        .unwrap()
+    serde_json::from_value(
+        serde_json::json!({ "id": id, "name": name, "provider": "azure", "host": region, "username": subscription, "datastore": "Standard_B2s" }),
+    )
+    .unwrap()
 }
 
 /// A Proxmox server's form signing in as root, its password `password` (none: keep the stored one).
@@ -44,7 +46,10 @@ fn a_form_saves_a_new_host_then_edits_it_and_an_unknown_one_is_refused() {
 async fn placement_choices_need_a_proxmox_server_and_its_secret() {
     let t = crate::testing::test_app::TestApp::new();
     let err = |r: Result<placement::Placement>| r.unwrap_err().to_string();
-    let esxi: HostInput = serde_json::from_value(serde_json::json!({ "id": null, "name": "E", "provider": "vmware_esxi", "host": "127.0.0.1", "username": "root", "password": "pw" })).unwrap();
+    let esxi: HostInput = serde_json::from_value(
+        serde_json::json!({ "id": null, "name": "E", "provider": "vmware_esxi", "host": "127.0.0.1", "username": "root", "password": "pw" }),
+    )
+    .unwrap();
     assert_eq!(err(placement(&t.dirs(), esxi).await), "only Proxmox servers list their placement");
     assert_eq!(err(placement(&t.dirs(), proxmox(None, None)).await), "enter the password or token secret first");
     // Nothing listens on port 1: the read fails and says so (the setup then offers manual entry).
@@ -107,6 +112,22 @@ async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
     let resaved = save(&t.dirs(), password).unwrap();
     assert_eq!((resaved.ssh_key, resaved.username.as_str()), (None, "root@pam"));
     assert_eq!(get_secret(&saved.id).unwrap(), "pw");
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn a_blank_password_keeps_the_stored_one_asks_for_a_missing_one_and_says_why_one_cant_be_read() {
+    let t = crate::testing::test_app::TestApp::new();
+    let file = t.data().join("secrets.json");
+    crate::runtime::server::secrets::use_test_file(file.clone());
+    assert_eq!(save(&t.dirs(), proxmox(None, None)).unwrap_err().to_string(), "enter the host's password");
+    let saved = save(&t.dirs(), proxmox(None, Some("pw"))).unwrap();
+    save(&t.dirs(), proxmox(Some(&saved.id), None)).unwrap();
+    assert_eq!(get_secret(&saved.id).unwrap(), "pw", "kept");
+    // Regression: a store that couldn't be read asked for the password again, as if none was kept.
+    std::fs::write(&file, "not json").unwrap();
+    let err = save(&t.dirs(), proxmox(Some(&saved.id), None)).unwrap_err().to_string();
+    assert!(err.starts_with("the secrets file") && err.contains("isn't readable"), "{err}");
 }
 
 #[test]
@@ -195,23 +216,22 @@ fn removing_a_host_that_is_not_saved_changes_nothing() {
     assert!(load(&t.dirs()).unwrap().hosts.is_empty());
 }
 
-#[cfg(all(unix, debug_assertions))]
+#[cfg(debug_assertions)]
 #[test]
 fn a_host_whose_secret_cant_be_removed_stays_and_says_why() {
-    use std::os::unix::fs::PermissionsExt;
     // Regression: the secret's removal failed unseen, the host went, and its password stayed.
     let t = crate::testing::test_app::TestApp::new();
     let file = t.data().join("secrets.json");
     crate::runtime::server::secrets::use_test_file(file.clone());
     let host = t.host("pve1", "proxmox", serde_json::json!({}));
-    set_secret(&host, "pw").unwrap();
-    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o400)).unwrap();
+    // A folder where the secrets file should be: it can't be read, let alone changed.
+    std::fs::create_dir_all(file.join("x")).unwrap();
     let err = remove(&t.dirs(), &host).unwrap_err().to_string();
     assert!(err.starts_with("couldn't remove this host's secret, so the host stays"), "{err}");
     assert_eq!(load(&t.dirs()).unwrap().hosts.len(), 1);
-    assert_eq!(get_secret(&host).unwrap(), "pw");
-    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::fs::remove_dir_all(&file).unwrap();
+    set_secret(&host, "pw").unwrap();
     remove(&t.dirs(), &host).unwrap();
     assert!(load(&t.dirs()).unwrap().hosts.is_empty());
-    assert!(get_secret(&host).is_err(), "its secret went with it");
+    assert_eq!(get_secret(&host).unwrap_err().code(), Code::NoPasswordStored, "its secret went with it");
 }

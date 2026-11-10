@@ -101,14 +101,26 @@ pub enum BudgetCheck {
     Unverifiable(String),
 }
 
-/// Checks an account against its monthly budget before a launch.
+/// Checks an account against its monthly budget before a launch. An account whose stored keys
+/// can't be read is `Unverifiable` (saying why), never under budget.
 pub async fn check_budget(dirs: &AppDirs, id: &str) -> BudgetCheck {
     let Ok(host) = load_host(dirs, id) else { return BudgetCheck::Ok };
     let Some(limit) = budget_limit(&host) else { return BudgetCheck::Ok };
-    let Ok(password) = host_secret(&host) else {
-        return BudgetCheck::Unverifiable("No stored credentials for this account. Re-enter its access keys, then launch again.".into());
+    let password = match host_secret(&host) {
+        Ok(password) => password,
+        Err(e) => return BudgetCheck::Unverifiable(keys_unreadable_message(&e)),
     };
     verdict(limit, month_to_date_cost(&host, &password).await)
+}
+
+/// Why an account's stored keys couldn't be read for the budget check: none stored, or the
+/// keychain's own reason.
+fn keys_unreadable_message(e: &Error) -> String {
+    if e.code() == crate::error::Code::NoPasswordStored {
+        "No stored credentials for this account. Re-enter its access keys, then launch again.".into()
+    } else {
+        format!("couldn't read this account's stored keys ({e}).")
+    }
 }
 
 /// The monthly limit a launch is checked against: AWS accounts with a positive limit only.
@@ -169,6 +181,15 @@ mod tests {
         assert!(account_month_to_date_cost(&t.dirs(), "nope").await.is_err());
         // The setup form's figure, for a profile not saved yet.
         crate::testing::assert_close(cli_month_to_date_cost(None).await.unwrap(), 7.25);
+    }
+
+    #[test]
+    fn keys_that_cant_be_read_say_why_and_only_missing_ones_ask_to_re_enter_them() {
+        // Regression: a locked keychain read as keys never entered.
+        let none = keys_unreadable_message(&Error::coded(crate::error::Code::NoPasswordStored));
+        assert!(none.starts_with("No stored credentials for this account."), "{none}");
+        let locked = keys_unreadable_message(&Error::Invalid("keychain: the keychain is locked".into()));
+        assert_eq!(locked, "couldn't read this account's stored keys (keychain: the keychain is locked).");
     }
 
     #[test]

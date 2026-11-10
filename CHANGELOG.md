@@ -154,6 +154,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A server's secret that the keychain won't give is no longer read as never entered.** A
+  locked keychain, or its unlock prompt dismissed, made a saved host ask for its password again
+  ("enter the host's password") and an AWS account's budget check say its keys were never stored.
+  Both now say the keychain couldn't be read, and why. While the keychain waits on its prompt, the
+  rest of the app keeps running. In a development build, a secrets file that can't be read is an
+  error, where saving one host's secret used to erase every other's; it is written whole and
+  owner-only from the start.
 - **The attack box beside a container lab run as VMs failed on a missing Vagrant box.** On a lab
   deployed "one VM per machine" on this machine, "Start attack box" sent the attack box image
   (`cyberctf/attack-box@sha256:…`) where the runner expected a Vagrant box, and Vagrant Cloud
