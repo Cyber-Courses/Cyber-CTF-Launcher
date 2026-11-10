@@ -137,10 +137,21 @@ pub(crate) async fn in_box(console: &ShellCommand, probe: &str) -> crate::error:
     crate::platform::exec::run_env_timed(program, &args, Some(console.cwd.as_path()), &console.env, std::time::Duration::from_secs(120)).await
 }
 
-/// `console`'s arguments running `probe` without a terminal; none for a console of another shape.
+/// `console`'s arguments running `probe` without a terminal, as the account the console opens as;
+/// none for a console of another shape.
 fn probe_args(console: &ShellCommand, probe: &str) -> Option<Vec<String>> {
     let mut args = console.args.clone();
     match (console.program.as_str(), args.len()) {
+        // `vagrant ssh <vm> -c <a login as an account>`, `ssh -t … <a login as an account>` (`if
+        // <the login is the account>; then <its shell>; else exec sudo -iu <account>; fi`): no
+        // TTY, the probe in place of each shell it opens, the account's switch kept.
+        ("vagrant" | "ssh", _) if args.last().is_some_and(|a| a.contains("; else exec sudo -iu ")) => {
+            args.retain(|a| a != "-t");
+            let login = args.last_mut()?;
+            let (test, rest) = login.split_once("; then ")?;
+            let account = rest.split_once("; else exec sudo -iu ")?.1.strip_suffix("; fi")?;
+            *login = format!("{test}; then sh -c '{probe}'; else exec sudo -iu {account} sh -c '{probe}'; fi");
+        }
         // `docker compose … exec <service> sh -c <shell>` (or `… exec <service> bash`): no TTY,
         // the probe for the shell.
         ("docker", _) => {
@@ -189,9 +200,10 @@ pub(crate) async fn add_box(placed: &Placed, dirs: &AppDirs, image: &str, l: &mu
     check(added.is_ok(), format!("the attack box is added to the lab ({:?})", added.err()), f);
 }
 
-/// The box runs, with an address, and a shell in it reaches `target`'s port 80 and is called by
-/// the box's own name in the lab ([`attack_machine::name`]: the seat the lab declares, else
-/// [`attack_machine::NAME`]); `when` says at which point of the test.
+/// The box runs, with an address, and a shell in it reaches `target`'s port 80, is called by the
+/// box's own name in the lab ([`attack_machine::name`]: the seat the lab declares, else
+/// [`attack_machine::NAME`]) and is the player's ([`box_is_the_players`]); `when` says at which
+/// point of the test.
 pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &mut Vec<String>) {
     match placed.status().await {
         Ok(s) => check(s.running && !s.ip.is_empty(), format!("the attack box runs, with an address, {when} ({} on {})", s.ip, s.lab_network), f),
@@ -211,6 +223,23 @@ pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &m
         format!("a shell in the attack box reaches {target}:80 and is called {name}, {when} ({reached:?})"),
         f,
     );
+    box_is_the_players(placed, when, f).await;
+}
+
+/// A shell in the box `placed` is the player's ([`attack_machine::PLAYER`]): its account, in its
+/// home, with sudo and no password; `when` says at which point of the test.
+pub(crate) async fn box_is_the_players(placed: &Placed, when: &str, f: &mut Vec<String>) {
+    let player = attack_machine::PLAYER;
+    let seen = match placed.shell_command().await {
+        Ok(console) => in_box(&console, "whoami && cd && pwd && sudo -n true && echo sudo-ok").await,
+        Err(err) => Err(err),
+    };
+    let lines: Vec<String> = seen.as_deref().unwrap_or_default().lines().map(str::trim).map(str::to_owned).collect();
+    check(
+        lines.first().is_some_and(|l| l == player) && lines.contains(&format!("/home/{player}")) && lines.iter().any(|l| l == "sudo-ok"),
+        format!("a shell in the attack box is {player}'s (whoami), in its home, with sudo and no password, {when} ({seen:?})"),
+        f,
+    );
 }
 
 /// Takes the box out, the lab left up, and checks it is gone.
@@ -226,6 +255,25 @@ pub(crate) async fn remove_box(placed: &Placed, dirs: &AppDirs, l: &mut impl FnM
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A probe runs as the account the box's console opens as: the console's own switch to it is
+    /// kept (`exec --user`, the `sudo -i` login), only the shell it opens is the probe.
+    #[test]
+    fn a_probe_runs_as_the_account_the_console_opens_as() {
+        let login = "if [ $(id -un) = player ]; then if command -v bash >/dev/null 2>&1; then exec bash -l; else exec sh -l; fi; else exec sudo -iu player; fi";
+        let vagrant = ShellCommand::new("vagrant", ["ssh", "attackbox", "-c", login], "/run");
+        assert_eq!(
+            probe_args(&vagrant, "whoami").unwrap(),
+            ["ssh", "attackbox", "-c", "if [ $(id -un) = player ]; then sh -c 'whoami'; else exec sudo -iu player sh -c 'whoami'; fi"]
+        );
+        let ssh = ShellCommand::new("ssh", ["-t", "-F", "ssh_config", "admin@198.51.100.10", login], "/run");
+        assert_eq!(
+            probe_args(&ssh, "whoami").unwrap().last().unwrap(),
+            "if [ $(id -un) = player ]; then sh -c 'whoami'; else exec sudo -iu player sh -c 'whoami'; fi"
+        );
+        let docker = ShellCommand::new("docker", ["compose", "exec", "--user", "player", "attackbox", "sh", "-c", "cd 2>/dev/null; exec bash -l"], "/run");
+        assert_eq!(probe_args(&docker, "whoami").unwrap(), ["compose", "exec", "-T", "--user", "player", "attackbox", "sh", "-c", "whoami"]);
+    }
 
     #[tokio::test]
     async fn a_scenario_that_panics_is_still_torn_down_and_says_where_it_stopped() {

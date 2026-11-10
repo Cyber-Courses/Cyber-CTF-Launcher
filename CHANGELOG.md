@@ -200,6 +200,17 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **The attack box's shell opens as the player's own account, `player`, on every form.** It
+  opened as whatever account the way in logs in as: root in a container, `vagrant` in a VM (on
+  Windows' Hyper-V as elsewhere), a cloud image's user on a server or in a cloud account. The box
+  now has `player` everywhere, with a home and sudo without a password: the attack box image is
+  built with it, a container box makes it where it starts (its image may predate it) and a VM box
+  at the end of its set-up; the shell opens as it through Isothrum's console as a named account
+  (`exec --user` into a container, a `sudo -i` login on a VM). Where the shared folder belongs to
+  a user the box doesn't have (a Linux computer's), `player` takes that user's uid, and joins the
+  folder's group, so it writes there. Root stays the image's own user, and the lab's other
+  machines open as before.
+
 - **VMware Fusion and Workstation no longer read "Needs setup" again after the setup finishes.**
   Vagrant drives them through two parts, the `vagrant-vmware-desktop` plugin and HashiCorp's
   Vagrant VMware Utility (a system service), but the setup only linked to the utility and the

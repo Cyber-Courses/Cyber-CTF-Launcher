@@ -1,7 +1,8 @@
 //! The attack box as a machine of the lab, on this machine, end to end, in each local form: a
 //! lab started as the lab page starts it, the box added (the lab regenerated with it, the run
-//! brought up to date), a lab machine reached from a shell in the box, the box taken out, the lab
-//! stopped, nothing of it left. Opt-in (it needs Docker, or Vagrant and a hypervisor):
+//! brought up to date), a shell in the box opened as the player's account and reaching a lab
+//! machine, the box taken out, the lab stopped, nothing of it left. Opt-in (it needs Docker, or
+//! Vagrant and a hypervisor):
 //!
 //! ```text
 //! CYBERCTF_TEST_BOX_LAB=<isoloom checkout>/examples/solo-web \

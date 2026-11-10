@@ -95,9 +95,9 @@ impl Placed {
         Ok(AttackStatus { reachable: true, networks: pickable, default_network: default, ..seen })
     }
 
-    /// The command that opens a shell into the box.
+    /// The command that opens a shell into the box, as the player's account ([`super::PLAYER`]).
     pub(crate) async fn shell_command(&self) -> Result<isothrum_runner::ShellCommand> {
-        self.host.console(&super::name(&self.dir)?).await
+        self.host.console(&super::name(&self.dir)?, Some(super::PLAYER)).await
     }
 
     /// The learner's shared folder for the box, when it is on and the lab runs where a machine
@@ -240,6 +240,42 @@ mod tests {
         assert!(!dir.join(lab::overlay::FILE).exists(), "and the launcher's layer gone");
         assert_eq!(module(&dir, "aws"), before, "the lab's files as they were");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The shell the lab page opens into the box in lab `dir`, generated for `target`, run on
+    /// this computer by `run`.
+    async fn box_shell(dir: &Path, target: Target, run: Result<isothrum::LabRun>, vm: bool) -> isothrum_runner::ShellCommand {
+        lab::prepare(dir, target).unwrap();
+        let placed = Placed { host: Host::Local(run.unwrap()), dir: dir.to_path_buf(), target, vm };
+        placed.shell_command().await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_box_shell_opens_as_the_player_account_on_every_local_form() {
+        // Regression: it opened as the account the way in logs in as: root in a container,
+        // `vagrant` in a VM (on Windows' Hyper-V as elsewhere).
+        use super::super::{NAME, PLAYER};
+        let lab = |machine: &str| {
+            crate::runtime::test_support::write_lab(&format!(
+                "version: 1\nname: t\nnetworks: {{ lan: {{ cidr: 10.70.0.0/24 }} }}\nmachines:\n  web: {{ {machine}, networks: {{ lan: 10 }} }}\n"
+            ))
+        };
+        let dir = lab("app: { image: nginx }");
+        super::super::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
+        let home = dir.join("home");
+        let shell = box_shell(&dir, Target::Docker, isothrum::LabRun::docker(&home, &dir, "t"), false).await;
+        let line = shell.args.join(" ");
+        assert!(line.contains(&format!(" exec --user {PLAYER} {NAME} sh -c ")), "a container: exec as the account: {line}");
+        let compose = std::fs::read_dir(&shell.cwd).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|x| x == "yml"));
+        let compose: String = compose.map(|p| std::fs::read_to_string(p).unwrap()).collect();
+        assert!(compose.contains(&format!("account={PLAYER} shared=/shared sh -c")), "the box makes its account where it starts: {compose}");
+
+        let dir = lab("os: debian@12");
+        super::super::add(&dir, Kind::Vm, Cpu::Lab, None, None).unwrap();
+        let home = dir.join("home");
+        let shell = box_shell(&dir, Target::Vagrant, isothrum::LabRun::vm(&home, &dir, "t"), true).await;
+        assert_eq!(shell.args[..3], ["ssh", NAME, "-c"], "{:?}", shell.args);
+        assert!(shell.args[3].contains(&format!("exec sudo -iu {PLAYER}")), "a VM: a sudo login as the account: {:?}", shell.args);
     }
 
     #[test]

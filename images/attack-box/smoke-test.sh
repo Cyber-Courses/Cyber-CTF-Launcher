@@ -7,6 +7,8 @@ set -euo pipefail
 
 image=${1:?usage: smoke-test.sh <image>}
 name=attack-box-smoke-$$
+# The account the launcher's shell opens as (src-tauri `attack_machine::PLAYER`).
+player=player
 
 cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -40,6 +42,20 @@ title=$(docker exec "$name" bash -ic 'printf %s "$PROMPT_COMMAND"' 2>/dev/null)
 case "$title" in
   *"Cyber CTF attack box"*) ;;
   *) fail "the shell does not set the Cyber CTF title (PROMPT_COMMAND=$title)" ;;
+esac
+
+# The launcher's shell opens as the player's account (`docker exec --user`), in its home, with sudo
+# and no password; root stays the image's user.
+[ "$(docker exec "$name" whoami)" = root ] || fail "the image's own user is not root"
+[ "$(docker exec --user "$player" "$name" whoami)" = "$player" ] || fail "no $player account"
+home=$(docker exec --user "$player" "$name" sh -c 'cd && pwd && touch .written && echo ok')
+[ "$home" = "/home/$player
+ok" ] || fail "$player has no home it writes to ($home)"
+docker exec --user "$player" "$name" sudo -n true || fail "$player cannot sudo without a password"
+title=$(docker exec --user "$player" "$name" bash -ic 'printf %s "$PROMPT_COMMAND"' 2>/dev/null)
+case "$title" in
+  *"Cyber CTF attack box"*) ;;
+  *) fail "$player's shell does not set the Cyber CTF title (PROMPT_COMMAND=$title)" ;;
 esac
 
 echo "attack box OK: $image"

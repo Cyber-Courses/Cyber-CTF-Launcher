@@ -59,8 +59,9 @@ impl OpenedRun {
         super::retire_from(&self.running().await?, machine, opts, log).await
     }
 
-    /// The command that opens a console into `machine`, any machine of the lab.
-    pub(crate) async fn console_command(&self, machine: &str) -> Result<isothrum_runner::ShellCommand> {
-        self.running().await?.console_command(machine).map_err(errors::from_runner)
+    /// The command that opens a console into `machine`, any machine of the lab, as account `user`
+    /// when given.
+    pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<isothrum_runner::ShellCommand> {
+        self.running().await?.console_command(machine, user).map_err(errors::from_runner)
     }
 }

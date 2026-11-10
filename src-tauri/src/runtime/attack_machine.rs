@@ -5,7 +5,8 @@
 //! addresses, so the checks from that seat run from the box). Otherwise the box is `attackbox` on
 //! the lab's first network. What it runs is the launcher's: the attack image picked in Settings
 //! ([`default_image`] unless the learner picked another) beside containers, Kali with its toolset
-//! among VMs. Where the lab runs, and how the box goes in and out of its run: [`locate`],
+//! among VMs. On every form the player works as [`PLAYER`], an account of the box with sudo (its
+//! shell opens as it). Where the lab runs, and how the box goes in and out of its run: [`locate`],
 //! [`Placed`]; the box as the lab page shows it: [`AttackStatus`].
 
 mod place;
@@ -23,6 +24,30 @@ use crate::error::{Error, Result};
 
 /// The box's name (and host name) in a lab that declares no access machine.
 pub(crate) const NAME: &str = "attackbox";
+
+/// The account the player works as in the box, whatever its form: its shell opens as it, in its
+/// home, with sudo and no password. The box makes it ([`PLAYER_ACCOUNT`]); the attack box image has
+/// it already (`images/attack-box/Dockerfile`, which a test holds to this name).
+pub(crate) const PLAYER: &str = "player";
+
+/// The script that makes [`PLAYER`] in the box, as root, where it is missing, and lets it write in
+/// the shared folder: the image's build runs it, and the launcher where the box starts or is set
+/// up ([`player_account`]).
+const PLAYER_ACCOUNT: &str = include_str!("../../../images/attack-box/player-account.sh");
+
+/// [`PLAYER_ACCOUNT`] for [`PLAYER`], with the shared folder at its mount point: one `sh -c`
+/// command, the script's comments and blank lines left out.
+fn player_account() -> String {
+    let script: Vec<&str> = PLAYER_ACCOUNT.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')).collect();
+    format!("account={PLAYER} shared={} sh -c {}", crate::shared_folder::MOUNT_POINT, shell_words::quote(&script.join("\n")))
+}
+
+/// What a container box runs: [`player_account`] (a box whose image predates the account gets it;
+/// one whose shared folder's owner differs from the image's takes its uid), then idle. A box whose
+/// account can't be made still starts: its shell then says why it can't open.
+fn container_command() -> String {
+    format!("{} || echo 'the {PLAYER} account could not be made' >&2; exec sleep infinity", player_account())
+}
 
 /// The default attack image, shared with the frontend's Settings (`src/lib/settings.ts`): the
 /// Cyber CTF image, pinned by its digest in `attack-box-image.json`, which the attack-box workflow
@@ -54,14 +79,15 @@ const SETUP_FILE: &str = "cyberctf-attackbox.sh";
 const KALI_ARCHIVE_KEYS: [&str; 2] = ["827C8569F2518CC677FECA1AED65462EC8D5E4C5", "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6"];
 
 /// The set-up script: [`SETUP_START`], Kali's archive keyring downloaded into a private work
-/// directory and checked there, then [`SETUP_REST`].
+/// directory and checked there, then [`SETUP_REST`], then the player's account
+/// ([`player_account`], once the toolset brought sudo).
 fn setup_script() -> String {
     use crate::platform::root_script::{NEED_GPG, PRIVATE_WORKDIR, check_keys};
     let keyring = format!(
         "  {PRIVATE_WORKDIR}\n  {NEED_GPG}\n  curl -fsSL https://archive.kali.org/archive-keyring.gpg -o \"$d/key\"\n  {}\n  install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg\n",
         check_keys(&KALI_ARCHIVE_KEYS, "Kali's archive")
     );
-    [SETUP_START, &keyring, SETUP_REST].concat()
+    [SETUP_START, &keyring, SETUP_REST, &player_account(), "\n"].concat()
 }
 
 /// The set-up up to Kali's archive keyring, on a Debian VM.
@@ -203,7 +229,7 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
     });
     let machine = match (kind, cpu) {
         (Kind::Container { image }, _) => {
-            format!("{{ {hardware}{shared}app: {{ image: {image:?} }}, command: sleep infinity, networks: {{ {networks} }} }}")
+            format!("{{ {hardware}{shared}app: {{ image: {image:?} }}, networks: {{ {networks} }} }}")
         }
         (Kind::Vm, cpu) => {
             std::fs::write(dir.join(SETUP_FILE), setup_script())?;
@@ -213,7 +239,10 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
             )
         }
     };
-    let machine = serde_yaml_ng::from_str::<Value>(&machine).map_err(|e| Error::Invalid(format!("the attack box's spec: {e}")))?;
+    let mut machine = serde_yaml_ng::from_str::<Value>(&machine).map_err(|e| Error::Invalid(format!("the attack box's spec: {e}")))?;
+    if let (Kind::Container { .. }, Value::Mapping(m)) = (kind, &mut machine) {
+        m.insert("command".into(), container_command().into());
+    }
     overlay::add_machine(dir, &name, machine, overlay::Adding { replaces, attack_box: true })
 }
 
@@ -381,6 +410,58 @@ mod tests {
         assert!(up.running);
         assert!(!set_apart(status("exited"), &dir).unwrap().running, "the box alone up: the lab is down");
         remove(&dir).unwrap();
+    }
+
+    /// The box's spec in the launcher's layer over the lab in `dir`, as written.
+    fn layer_machine(dir: &Path) -> Value {
+        let layer: Value = serde_yaml_ng::from_str(&std::fs::read_to_string(dir.join(overlay::FILE)).unwrap()).unwrap();
+        layer["machines"][NAME].clone()
+    }
+
+    #[test]
+    fn a_vm_box_makes_the_player_account_once_its_toolset_is_in() {
+        // Regression: the box's shell opened as the VM's login (`vagrant` on Windows' Hyper-V),
+        // the box had no account of the player's.
+        let script = setup_script();
+        let toolset = script.find("install -y $keep kali-linux-headless").unwrap();
+        let account = script.find(&format!("account={PLAYER} shared={} sh -c ", crate::shared_folder::MOUNT_POINT)).unwrap();
+        assert!(toolset < account, "sudo is in before the account is given it: {script}");
+        assert!(script.contains("NOPASSWD: ALL") && script.contains("--create-home"), "{script}");
+        assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
+        let dir = crate::runtime::test_support::write_lab(
+            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n",
+        );
+        add_at(&dir, Kind::Vm, Cpu::Lab, None).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap(), script);
+        assert!(layer_machine(&dir).get("command").is_none(), "a VM box runs no command of its own");
+        remove(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_container_box_makes_the_player_account_where_it_starts_then_idles() {
+        // Its image may predate the account (a pinned older Cyber CTF image, another picked one),
+        // and the shared folder's owner may differ from the image's account.
+        let dir = crate::runtime::test_support::write_lab(
+            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10 } }\n",
+        );
+        add_at(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None).unwrap();
+        let command = layer_machine(&dir)["command"].as_str().unwrap().to_owned();
+        assert!(command.starts_with(&player_account()), "the account first: {command}");
+        assert!(command.ends_with("; exec sleep infinity"), "then idle, whether the account was made or not: {command}");
+        assert!(crate::platform::sh_parses(&command), "not valid sh: {command}");
+        remove(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_image_and_its_smoke_test_name_the_launchers_player_account() {
+        let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../images/attack-box");
+        let dockerfile = std::fs::read_to_string(image.join("Dockerfile")).unwrap();
+        assert!(dockerfile.contains(&format!("ARG PLAYER={PLAYER}\n")), "{dockerfile}");
+        assert!(dockerfile.contains("RUN account=$PLAYER sh /tmp/player-account.sh"), "the same script as the launcher's: {dockerfile}");
+        assert!(!dockerfile.contains("\nUSER "), "root stays the image's user: the box sets itself up as root");
+        let smoke = std::fs::read_to_string(image.join("smoke-test.sh")).unwrap();
+        assert!(smoke.contains(&format!("\nplayer={PLAYER}\n")), "{smoke}");
+        assert!(smoke.contains(r#"[ "$(docker exec --user "$player" "$name" whoami)" = "$player" ]"#), "{smoke}");
     }
 
     #[test]

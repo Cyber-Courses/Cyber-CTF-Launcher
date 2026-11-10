@@ -54,7 +54,17 @@ The learner's attack box is one more machine of the lab, wherever it runs: the l
 lab for its form and brings the run up to date (`Running::update`). Taking it out retires it
 from the run (`Running::retire`: Vagrant forgets a VM its Vagrantfile no longer has), removes it
 from the overlay and updates again. Its status is the run's status of that machine; its shell is
-the runner's console into it (`Running::console_command`).
+the runner's console into it as the player's account (`Running::console_command` with `player`,
+`attack_machine::PLAYER`): `exec --user` into a container, a `sudo -i` login on a VM, whatever
+account the way in logs in as (`vagrant`, a cloud image's).
+
+The box has that account on every form, with a home and sudo without a password
+(`images/attack-box/player-account.sh`): the attack image is built with it, a container box makes
+it where it starts (its image may predate it), and a VM box at the end of its set-up. Where the
+shared folder belongs to a user the box doesn't have (a Linux computer's, through Docker or
+virtiofs), the account takes that user's uid, and it joins the folder's group (a VM's shared
+folder mounted for `vagrant`), so it writes there as that user or group may. Root stays the
+image's own user.
 
 | Form               | The box                                                                                                    |
 | ------------------ | ---------------------------------------------------------------------------------------------------------- |

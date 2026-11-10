@@ -158,6 +158,21 @@ describe("WindowTitleBar", () => {
     expect(win.title).not.toHaveBeenCalled();
   });
 
+  // Regression: the shell window's header said "attack box" twice on Windows, the window's own
+  // title ("<lab> · attack box", which the bar showed) beside the page's state.
+  it.each(["linux", "windows", "macos"] as const)("says what the page puts in its toolbar once on %s, not the window's title too", async (os) => {
+    on(os);
+    win.title.mockResolvedValueOnce("SQLi lab · attack box");
+    render(
+      <WindowTitleBar toolbar>
+        <span>attack box</span>
+      </WindowTitleBar>,
+    );
+    await flush();
+    expect(bar()?.textContent.match(/attack box/g)).toEqual(["attack box"]);
+    expect(win.title).not.toHaveBeenCalled();
+  });
+
   it("puts the page's own controls before the window's buttons", async () => {
     on("windows");
     render(
