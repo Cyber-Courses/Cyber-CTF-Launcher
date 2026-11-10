@@ -96,11 +96,17 @@ pub fn last_deploy_failed(dirs: &AppDirs, lab_id: &str) -> bool {
     f.failed()
 }
 
-/// The log of a lab's latest deploy so far, for an app that (re)attaches to a running worker.
+/// The log of a lab's latest deploy so far, for an app that (re)attaches to a running worker:
+/// empty before any deploy, an error when it is there but can't be read (it re-attached as an
+/// empty log, with nothing saying why). Bytes that aren't UTF-8 (a tool's codepage) are replaced.
 pub fn log_so_far(dirs: &AppDirs, lab_id: &str) -> Result<String> {
     crate::runtime::validate_id(lab_id)?;
     let f = of(dirs, lab_id)?;
-    Ok(std::fs::read_to_string(&f.log).unwrap_or_default())
+    match std::fs::read(&f.log) {
+        Ok(bytes) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(Error::Invalid(format!("the deploy log {} can't be read: {e}", f.log.display()))),
+    }
 }
 
 /// Removes the file at `path`; one already gone is no failure.
@@ -321,6 +327,11 @@ pub(crate) mod tests {
         assert_eq!(log_so_far(&t.dirs(), "lab-1").unwrap(), "line\n");
         assert!(last_deploy_failed(&t.dirs(), "lab-1"));
         assert!(!last_deploy_failed(&t.dirs(), "../x"), "a bad id is never a failed deploy");
+        // Regression: a log that couldn't be read re-attached as an empty one, without a word.
+        std::fs::remove_file(&f.log).unwrap();
+        std::fs::create_dir_all(f.log.join("held")).unwrap();
+        let err = log_so_far(&t.dirs(), "lab-1").unwrap_err().to_string();
+        assert!(err.starts_with("the deploy log ") && err.contains("can't be read"), "{err}");
     }
 
     #[test]
