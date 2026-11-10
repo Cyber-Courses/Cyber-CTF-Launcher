@@ -12,16 +12,41 @@ use crate::error::Result;
 use crate::platform::AppDirs;
 use tokio::sync::OwnedMutexGuard;
 
-/// What is in flight for a lab: a start (provisioning) or a stop (teardown). Told apart so the
-/// UI never calls a lab being stopped "deploying".
+/// What is in flight for a lab. Told apart so the UI never calls a lab being stopped
+/// "deploying", and the sidebar names each operation as it is ([`Action::name`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Action {
-    /// Bringing the lab up: a launch, a resume or a provisioning run.
-    Start,
+    /// A launch: the lab's machines created and set up.
+    Launch,
+    /// A parked lab, or the machines of it that went down, brought back.
+    Resume,
+    /// The lab's provisioners run again on its running machines.
+    Provision,
     /// Stopping it: its machines torn down.
     Stop,
-    /// Pausing or shutting the lab down, machines kept: neither a deploy nor a teardown.
-    Park,
+    /// Pausing or shutting the lab down (by its mode), machines kept: neither a deploy nor a
+    /// teardown.
+    Park(super::Park),
+}
+
+impl Action {
+    /// Whether it brings the lab up (a launch, a resume or a provisioning run): what the UI calls
+    /// deploying.
+    pub fn brings_up(self) -> bool {
+        matches!(self, Action::Launch | Action::Resume | Action::Provision)
+    }
+
+    /// Its name in the sidebar (`ActiveOperation::op`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Action::Launch => "launch",
+            Action::Resume => "resume",
+            Action::Provision => "provision",
+            Action::Stop => "stop",
+            Action::Park(super::Park::Pause) => "pause",
+            Action::Park(super::Park::Shutdown) => "shutdown",
+        }
+    }
 }
 
 /// The labs with an operation in flight right now, each with its in-flight count (a lab can be
@@ -42,7 +67,7 @@ pub fn active_deploys() -> usize {
 
 /// The labs being started right now (in this process), deduplicated.
 pub fn deploying_labs() -> Vec<String> {
-    labs_with(Action::Start)
+    labs_with(Action::brings_up)
 }
 
 /// Every in-process operation right now: the lab and what it is doing.
@@ -52,11 +77,12 @@ pub fn active_actions() -> Vec<(String, Action)> {
 
 /// Whether lab `id` is being stopped in this process right now.
 pub fn stopping(id: &str) -> bool {
-    labs_with(Action::Stop).iter().any(|l| l == id)
+    labs_with(|a| a == Action::Stop).iter().any(|l| l == id)
 }
 
-fn labs_with(action: Action) -> Vec<String> {
-    in_flight().lock().map(|m| m.iter().filter(|(_, (a, _))| *a == action).map(|(id, _)| id.clone()).collect()).unwrap_or_default()
+/// The labs whose operation in flight is one `wanted` takes.
+fn labs_with(wanted: impl Fn(Action) -> bool) -> Vec<String> {
+    in_flight().lock().map(|m| m.iter().filter(|(_, (a, _))| wanted(*a)).map(|(id, _)| id.clone()).collect()).unwrap_or_default()
 }
 
 /// Marks its lab as starting, stopping or parking for as long as it is alive (RAII), so the mark
@@ -151,6 +177,7 @@ fn try_lock_lab_at(file: Option<&Path>, id: &str) -> Result<Option<LabLock>> {
 #[cfg(test)]
 mod tests {
     use super::{Action, DeployGuard, active_actions, active_deploys, deploying_labs, stopping, try_lock_lab_at};
+    use crate::runtime::Park;
 
     async fn lock_lab(id: &str) -> super::LabLock {
         super::lock_lab_at(None, id).await.unwrap()
@@ -163,7 +190,7 @@ mod tests {
     #[test]
     fn every_guard_counts_as_an_operation_in_flight() {
         // Other tests hold guards of their own meanwhile: only a lower bound holds.
-        let a = DeployGuard::new("inflight-test-count-a", Action::Start);
+        let a = DeployGuard::new("inflight-test-count-a", Action::Launch);
         let b = DeployGuard::new("inflight-test-count-b", Action::Stop);
         assert!(active_deploys() >= 2);
         drop((a, b));
@@ -177,7 +204,7 @@ mod tests {
     #[test]
     fn guard_marks_the_lab_until_the_last_one_drops() {
         let id = "inflight-test-nested";
-        let first = DeployGuard::new(id, Action::Start);
+        let first = DeployGuard::new(id, Action::Launch);
         assert!(deploying_labs().contains(&id.to_string()));
         // A stop entered while the start is still in flight names the state.
         let second = DeployGuard::new(id, Action::Stop);
@@ -192,8 +219,8 @@ mod tests {
     #[test]
     fn park_is_neither_a_deploy_nor_a_teardown() {
         let id = "inflight-test-park";
-        let g = DeployGuard::new(id, Action::Park);
-        assert_eq!(action_of(id), Some(Action::Park));
+        let g = DeployGuard::new(id, Action::Park(Park::Pause));
+        assert_eq!(action_of(id), Some(Action::Park(Park::Pause)));
         assert!(!deploying_labs().contains(&id.to_string()));
         drop(g);
         assert_eq!(action_of(id), None);
@@ -205,7 +232,7 @@ mod tests {
         // must not stay "starting" for the rest of the app's life, holding every quit.
         let id = "inflight-test-panic";
         let crashed = std::thread::spawn(move || {
-            let _guard = DeployGuard::new(id, Action::Start);
+            let _guard = DeployGuard::new(id, Action::Launch);
             assert!(deploying_labs().contains(&id.to_string()));
             panic!("a step blew up");
         })
@@ -213,8 +240,8 @@ mod tests {
         assert!(crashed.is_err(), "the thread panicked");
         assert_eq!(action_of(id), None, "the mark went with the guard");
         // The registry still works afterwards (its mutex wasn't poisoned by the unwind).
-        let again = DeployGuard::new(id, Action::Park);
-        assert_eq!(action_of(id), Some(Action::Park));
+        let again = DeployGuard::new(id, Action::Park(Park::Pause));
+        assert_eq!(action_of(id), Some(Action::Park(Park::Pause)));
         drop(again);
         assert_eq!(action_of(id), None);
     }
@@ -224,13 +251,13 @@ mod tests {
         // Three operations re-entering the same lab (a start that resumes, which parks the
         // attacker...): the mark holds while any of them is alive, whatever the drop order.
         let id = "inflight-test-nested-three";
-        let a = DeployGuard::new(id, Action::Start);
-        let b = DeployGuard::new(id, Action::Start);
-        let c = DeployGuard::new(id, Action::Start);
+        let a = DeployGuard::new(id, Action::Launch);
+        let b = DeployGuard::new(id, Action::Launch);
+        let c = DeployGuard::new(id, Action::Launch);
         drop(a);
-        assert_eq!(action_of(id), Some(Action::Start), "the outermost dropped first");
+        assert_eq!(action_of(id), Some(Action::Launch), "the outermost dropped first");
         drop(c);
-        assert_eq!(action_of(id), Some(Action::Start));
+        assert_eq!(action_of(id), Some(Action::Launch));
         drop(b);
         assert_eq!(action_of(id), None);
     }
@@ -266,12 +293,12 @@ mod tests {
     fn a_lab_is_stopping_while_a_stop_guard_lives() {
         let id = "inflight-test-stopping";
         assert!(!stopping(id));
-        let start = DeployGuard::new(id, Action::Start);
+        let start = DeployGuard::new(id, Action::Launch);
         assert!(!stopping(id));
         let stop = DeployGuard::new(id, Action::Stop);
         assert!(stopping(id) && !stopping("inflight-test-stopping-other"));
         // A launch that held the lab reaches its start while the stop waits: still stopping.
-        let launch = DeployGuard::new(id, Action::Start);
+        let launch = DeployGuard::new(id, Action::Launch);
         assert!(stopping(id), "a pending stop isn't undone by the start it waits for");
         drop((start, launch, stop));
         assert!(!stopping(id));

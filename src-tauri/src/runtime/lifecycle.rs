@@ -18,7 +18,7 @@ use crate::error::{Error, Result};
 async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     let _lock = lock_lab(dirs, id).await?;
-    let _deploy = DeployGuard::new(id, Action::Park);
+    let _deploy = DeployGuard::new(id, Action::Park(mode));
     refuse_cloud_park(runtime)?;
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
     let run = local_run(dirs, dir, id, runtime, "Pausing a lab on a server host isn't available yet. Stop it instead.")?;
@@ -111,7 +111,7 @@ fn parked_message(mode: Park) -> &'static str {
 /// first, as for a start ([`policy_allows`]).
 async fn resume(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, mut log: impl FnMut(String)) -> Result<()> {
     let _lock = lock_lab(dirs, id).await?;
-    let _deploy = DeployGuard::new(id, Action::Start);
+    let _deploy = DeployGuard::new(id, Action::Resume);
     refuse_cloud_park(runtime)?;
     policy_allows(dirs, runtime, None, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
     let run = local_run(dirs, dir, id, runtime, "This lab was parked on a server host; resuming there isn't available yet.")?;
@@ -136,7 +136,7 @@ async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut l
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
     let _lock = lock_lab(dirs, id).await?;
-    let _deploy = DeployGuard::new(id, Action::Start);
+    let _deploy = DeployGuard::new(id, Action::Provision);
     // Through the runner: a VM lab on this machine, or on an ESXi host. Proxmox and the clouds
     // aren't re-provisioned in place yet.
     let Some(Host::Local(run) | Host::Esxi { run, .. }) = host::locate(dirs, dir, id, runtime)? else {

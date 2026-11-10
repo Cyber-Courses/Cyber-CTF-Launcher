@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use super::deploy_worker::{self, Op};
 use crate::platform::AppDirs;
-use crate::runtime::{self, Action, Park, Runtime};
+use crate::runtime::{self, Action, Runtime};
 
 /// The labs currently starting or stopping. The UI reads this on load to rehydrate the "this lab
 /// is starting" state after a window reload: the deploy keeps running in this process even when
@@ -60,14 +60,14 @@ pub struct ActiveOperation {
     runtime: Option<Runtime>,
 }
 
-/// The sidebar's name for a worker's operation, and the machine it targets when one.
+/// The sidebar's name for a worker's operation (its [`Action`]'s), and the machine it targets
+/// when one.
 fn worker_op(op: &Op) -> (&'static str, Option<String>) {
     match op {
-        Op::Launch | Op::LaunchLocal { .. } => ("launch", None),
-        Op::Resume { .. } => ("resume", None),
-        Op::Park { mode: Park::Pause, .. } => ("pause", None),
-        Op::Park { mode: Park::Shutdown, .. } => ("shutdown", None),
-        Op::Provision { machine, .. } => ("provision", machine.clone()),
+        Op::Launch | Op::LaunchLocal { .. } => (Action::Launch.name(), None),
+        Op::Resume { .. } => (Action::Resume.name(), None),
+        Op::Park { mode, .. } => (Action::Park(*mode).name(), None),
+        Op::Provision { machine, .. } => (Action::Provision.name(), machine.clone()),
     }
 }
 
@@ -78,15 +78,6 @@ fn job_runtime(job: &deploy_worker::Job) -> Option<Runtime> {
         Op::Launch => job.launch.as_ref().map(|l| l.launch.runtime),
         Op::LaunchLocal { .. } => Some(Runtime::Docker),
         Op::Resume { runtime } | Op::Park { runtime, .. } | Op::Provision { runtime, .. } => Some(*runtime),
-    }
-}
-
-/// The sidebar's name for an in-process operation.
-fn in_app_op(action: Action) -> &'static str {
-    match action {
-        Action::Start => "launch",
-        Action::Stop => "stop",
-        Action::Park => "pause",
     }
 }
 
@@ -108,7 +99,7 @@ fn merge_operations(jobs: Vec<(deploy_worker::Job, Option<String>)>, actions: Ve
         .collect();
     for (id, action) in actions {
         if !out.iter().any(|o| o.lab_id == id) {
-            out.push(ActiveOperation { lab_id: id, op: in_app_op(action), machine: None, step: None, runtime: None });
+            out.push(ActiveOperation { lab_id: id, op: action.name(), machine: None, step: None, runtime: None });
         }
     }
     out.sort_by(|a, b| a.lab_id.cmp(&b.lab_id));
@@ -128,6 +119,7 @@ pub async fn lab_deploy_log(dirs: AppDirs, id: String) -> crate::error::Result<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::Park;
 
     #[test]
     fn worker_lab_ids_are_added_once_after_the_in_app_ones() {
@@ -141,7 +133,7 @@ mod tests {
             (deploy_worker::Job::on_lab("web", Op::Launch), Some("Pulling images".to_string())),
             (deploy_worker::Job::on_lab("ad", Op::Provision { runtime: Runtime::Vm, machine: Some("dc01".into()) }), None),
         ];
-        let actions = vec![("web".to_string(), Action::Stop), ("ctf".to_string(), Action::Park)];
+        let actions = vec![("web".to_string(), Action::Stop), ("ctf".to_string(), Action::Park(Park::Pause))];
         let ops = merge_operations(jobs, actions);
         assert_eq!(
             ops,
@@ -191,8 +183,8 @@ mod tests {
         // The in-process registry is process-wide: this test's own lab id.
         let id = "operations-test-pause";
         let listed = || wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
-        let guard = crate::runtime::DeployGuard::new(id, Action::Park);
-        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "pause", machine: None, step: None, runtime: None }));
+        let guard = crate::runtime::DeployGuard::new(id, Action::Park(Park::Shutdown));
+        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "shutdown", machine: None, step: None, runtime: None }));
         drop(guard);
         assert_eq!(listed(), None);
     }
@@ -276,8 +268,12 @@ mod tests {
         assert_eq!(worker_op(&Op::Park { runtime: Runtime::Vm, mode: Park::Pause }).0, "pause");
         assert_eq!(worker_op(&Op::Park { runtime: Runtime::Vm, mode: Park::Shutdown }).0, "shutdown");
         assert_eq!(worker_op(&Op::Provision { runtime: Runtime::Vm, machine: Some("dc01".into()) }), ("provision", Some("dc01".into())));
-        assert_eq!(in_app_op(Action::Start), "launch");
-        assert_eq!(in_app_op(Action::Stop), "stop");
-        assert_eq!(in_app_op(Action::Park), "pause");
+        // In this process too: a shutdown isn't a pause, a resume or a provisioning run not a launch.
+        assert_eq!(Action::Launch.name(), "launch");
+        assert_eq!(Action::Stop.name(), "stop");
+        assert_eq!(Action::Park(Park::Pause).name(), "pause");
+        assert_eq!(Action::Park(Park::Shutdown).name(), "shutdown");
+        assert_eq!(Action::Resume.name(), "resume");
+        assert_eq!(Action::Provision.name(), "provision");
     }
 }

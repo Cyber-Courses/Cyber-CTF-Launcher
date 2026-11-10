@@ -95,7 +95,7 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
     let LabRef { dir, id, runtime } = lab;
     let Destination { provider, host, per_machine_vm, docker_context, default_ports } = to;
     let inputs = Inputs { values: env, default_ports };
-    let _deploy = DeployGuard::new(id, Action::Start);
+    let _deploy = DeployGuard::new(id, Action::Launch);
     policy_allows(dirs, runtime, host, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
     // A lab runs in one place: starting it here (or on another host) while its run is still up
     // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud

@@ -114,7 +114,7 @@ mod tests {
     fn a_background_finish_stays_open_once_relaunched_and_a_forced_quit_exits_at_once() {
         let t = crate::testing::test_app::TestApp::new();
         // A deploy in flight holds the background finish (it looks again every 2 s).
-        let deploy = runtime::DeployGuard::new("quit-test-linger", runtime::Action::Start);
+        let deploy = runtime::DeployGuard::new("quit-test-linger", runtime::Action::Launch);
         linger_quit(t.handle().clone());
         assert!(LINGERING.load(Ordering::SeqCst));
         // Opened again meanwhile: once the deploy is done, the app stays open.
@@ -129,7 +129,7 @@ mod tests {
         let exit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| force_quit(t.handle())));
         assert!(exit.is_err(), "the runtime was asked to exit");
         assert!(FORCE_QUIT.load(Ordering::SeqCst));
-        let deploy = runtime::DeployGuard::new("quit-test-forced", runtime::Action::Start);
+        let deploy = runtime::DeployGuard::new("quit-test-forced", runtime::Action::Launch);
         assert!(!intercept(t.handle()), "a forced quit is never held");
         drop(deploy);
     }
