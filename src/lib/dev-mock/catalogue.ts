@@ -5,6 +5,7 @@ import { argText } from "@/lib/dev-mock/command";
 import { extraLabs, labs, runOptions } from "@/lib/dev-mock/labs";
 import type { BrowserHandler } from "@/lib/dev-mock/live";
 import { answer } from "@/lib/dev-mock/sample";
+import { EMULATORS } from "@/lib/tauri/generated/ProviderNames";
 
 /** The GraphQL operations that list the catalogue (sample.ts `apiQuery`). */
 const CATALOGUE_OPS = ["labs", "labTitles", "sidebarLabs"];
@@ -24,5 +25,5 @@ export const runOptionsQuery: BrowserHandler = (args, { sc }) => {
   const lab = [...labs, ...extraLabs].find((l) => l.id === args?.id);
   const cpus = lab?.runtime.architectures ?? [];
   const emulated = options.vms.length > 0 && cpus.length > 0 && !cpus.includes(sc.arch);
-  return emulated ? { ...options, emulated, vms: options.vms.filter((p) => p.provider === "qemu") } : options;
+  return emulated ? { ...options, emulated, vms: options.vms.filter((p) => p.provider !== null && EMULATORS.includes(p.provider)) } : options;
 };
