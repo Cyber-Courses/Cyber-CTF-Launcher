@@ -56,6 +56,22 @@ describe("the terminal window", () => {
     expect(attempts).toBe(2);
   });
 
+  it("logs a Close the window refuses, as the other windows do", async () => {
+    installTauri({
+      terminal_open: () => rejectWith({ code: "other", message: "no attack box running for lab-sqli" }),
+      terminal_close: () => null,
+      "plugin:window|close": () => rejectWith("the window is gone"),
+    });
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const user = userEvent.setup();
+    render(<ShellWindow />);
+    await flush();
+    await user.click(screen.getByRole("button", { name: /^Close$/ }));
+    await flush();
+    expect(logged).toHaveBeenCalledWith("closing the window:", "the window is gone");
+    logged.mockRestore();
+  });
+
   it("says when the system terminal can't open, without crashing the window", async () => {
     const calls = installTauri({
       terminal_open: () => 7,

@@ -8,7 +8,7 @@ import { RotateCw, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
 import { DevMockGate } from "@/components/dev-mock-gate";
-import { tell } from "@/lib/failure";
+import { tell, warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import { useIsMac } from "@/lib/platform";
 import { labAttackShell, type Runtime } from "@/lib/tauri";
@@ -84,7 +84,13 @@ function EndedBar({ state, onReconnect }: { state: Extract<ShellState, { kind: "
         <Button variant="outline" size="sm" onClick={onReconnect}>
           <RotateCw className="size-3.5" /> {t("shell.terminal.reconnect")}
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => void getCurrentWindow().close()}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            getCurrentWindow().close().catch(warn("closing the window"));
+          }}
+        >
           {t("shell.terminal.close")}
         </Button>
       </div>
