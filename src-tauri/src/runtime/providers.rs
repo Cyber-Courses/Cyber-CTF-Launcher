@@ -163,16 +163,38 @@ impl Provider {
     /// platform-specific; remote ones (ESXi, Proxmox) apply anywhere. We only surface
     /// providers that are possible on this machine, not the whole catalogue.
     fn applicable(self) -> bool {
-        use std::env::consts::{ARCH, OS};
+        self.applicable_on(std::env::consts::OS, std::env::consts::ARCH)
+    }
+
+    /// [`applicable`](Self::applicable) on `os` and CPU `arch`.
+    fn applicable_on(self, os: &str, arch: &str) -> bool {
         match self {
             // Neither ships for Windows on Arm (no installer, no Arm VMs there): VM labs on those
             // PCs go to Hyper-V, a server or the cloud.
-            Provider::Virtualbox | Provider::VmwareDesktop if OS == "windows" && ARCH == "aarch64" => false,
-            Provider::Hyperv => OS == "windows",
-            Provider::Parallels | Provider::Utm => OS == "macos",
-            Provider::Libvirt => OS == "linux",
+            Provider::Virtualbox | Provider::VmwareDesktop if os == "windows" && arch == "aarch64" => false,
+            Provider::Hyperv => os == "windows",
+            Provider::Parallels | Provider::Utm => os == "macos",
+            Provider::Libvirt => os == "linux",
             _ => true,
         }
+    }
+
+    /// Whether it is offered on this machine for a lab's VMs: applicable here, and, on a Mac, the
+    /// hypervisor made for its CPU (UTM on Apple Silicon, VirtualBox on an Intel Mac). One already
+    /// `installed` is offered wherever it applies: the player chose it.
+    fn offered(self, installed: bool) -> bool {
+        self.offered_on(std::env::consts::OS, std::env::consts::ARCH, installed)
+    }
+
+    /// [`offered`](Self::offered) on `os` and CPU `arch`.
+    fn offered_on(self, os: &str, arch: &str, installed: bool) -> bool {
+        let apple_silicon = os == "macos" && arch == "aarch64";
+        let not_for_this_mac = match self {
+            Provider::Virtualbox => apple_silicon,
+            Provider::Utm => os == "macos" && !apple_silicon,
+            _ => false,
+        };
+        self.applicable_on(os, arch) && (installed || !not_for_this_mac)
     }
 
     /// Vagrant plugin required, if the provider is not built in: Isoloom's table for the providers
@@ -389,6 +411,9 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
 
         // The hypervisor layer (the VM software itself).
         let hypervisor = provider.hypervisor_installed().await;
+        if !provider.offered(hypervisor == Some(true)) {
+            continue;
+        }
 
         // The Vagrant layer (the plugin that drives this provider): present, and not older than
         // the one the launcher drives labs with.
@@ -682,6 +707,20 @@ mod tests {
         for remote in [Provider::VmwareEsxi, Provider::Proxmox, Provider::Qemu, Provider::Aws] {
             assert!(remote.applicable(), "{remote:?}");
         }
+    }
+
+    #[test]
+    fn a_mac_is_offered_the_hypervisor_made_for_its_cpu_and_keeps_one_installed() {
+        // Was the webview's rule alone (`usableHypervisors`): the backend listed both, and offered
+        // to install VirtualBox on Apple Silicon.
+        assert!(!Provider::Virtualbox.offered_on("macos", "aarch64", false));
+        assert!(Provider::Utm.offered_on("macos", "aarch64", false));
+        assert!(Provider::Virtualbox.offered_on("macos", "x86_64", false));
+        assert!(!Provider::Utm.offered_on("macos", "x86_64", false));
+        assert!(Provider::Virtualbox.offered_on("macos", "aarch64", true), "installed: the player chose it");
+        assert!(Provider::Virtualbox.offered_on("linux", "aarch64", false));
+        assert!(!Provider::Utm.offered_on("linux", "aarch64", true), "never where it doesn't apply");
+        assert!(!Provider::Hyperv.offered_on("macos", "aarch64", true));
     }
 
     #[test]

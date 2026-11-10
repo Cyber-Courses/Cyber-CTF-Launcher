@@ -1,6 +1,6 @@
 import type { MachineMetrics, ProviderStatus, SystemReport, Tool } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
-import { usableHypervisors } from "@/features/machine/hypervisors";
+import { localHypervisors } from "@/features/machine/hypervisors";
 import type { LabKind } from "@/features/machine/machine-parts";
 import { GB } from "@/lib/format";
 
@@ -79,7 +79,7 @@ function vmStateOf({
 
 /** The VM side of this machine: the hypervisors it can use, the one labs run on, and its state. */
 export function vmSetup(report: SystemReport, preferred: string | null, last: LastTest | null) {
-  const hypervisors = usableHypervisors(report);
+  const hypervisors = localHypervisors(report);
   const readyList: ProviderStatus[] = report.vmProviders.filter((p) => report.readyHypervisors.includes(p.provider));
   const provider = readyList.find((p) => p.provider === preferred) ?? readyList.at(0) ?? null;
   const hasHypervisor = hypervisors.some((p) => p.hypervisor === true);

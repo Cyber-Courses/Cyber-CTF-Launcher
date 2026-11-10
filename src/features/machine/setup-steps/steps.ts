@@ -1,7 +1,7 @@
 import { Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
 import { type ProviderStatus, type SystemReport, type WslState } from "@/lib/tauri";
 import { translate, type MessageKey, type Vars } from "@/lib/i18n";
-import { cantRun, INSTALLABLE, usableHypervisors } from "@/features/machine/hypervisors";
+import { cantRun, INSTALLABLE, localHypervisors } from "@/features/machine/hypervisors";
 import { ENGINES, Engine } from "@/features/machine/setup-steps/engines";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 
@@ -55,7 +55,7 @@ export function wslState(report: SystemReport | null, setup?: Pick<MachineSetupS
   if (state !== "ready" && isDockerReady(report)) return "ready";
   return state !== "ready" && setup?.wslTurnedOn ? "needsReboot" : state;
 }
-export const hasHypervisor = (r: SystemReport | null) => !!r && usableHypervisors(r).some((p) => p.hypervisor === true);
+export const hasHypervisor = (r: SystemReport | null) => !!r && localHypervisors(r).some((p) => p.hypervisor === true);
 
 /** macOS asks for a few things along the way; say so before the step that triggers each prompt. */
 function onMac(report: SystemReport | null, t: Tr) {
@@ -167,7 +167,7 @@ export function chosenEngine(report: SystemReport, setup: MachineSetupState): En
 
 /** The hypervisor the player picked, else an installed one, else the first Cyber CTF can install. */
 export function chosenHypervisor(report: SystemReport, setup: MachineSetupState) {
-  const hypervisors = usableHypervisors(report);
+  const hypervisors = localHypervisors(report);
   // An installed one that can run labs first (QEMU without KVM can, when libvirt can't).
   const fallback =
     hypervisors.find((p) => p.hypervisor === true && !cantRun(p, report)) ??

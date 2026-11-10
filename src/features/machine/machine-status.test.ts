@@ -13,7 +13,7 @@ import {
   versionNumber,
   vmSetup,
 } from "@/features/machine/machine-status";
-import { usableHypervisors } from "@/features/machine/hypervisors";
+import { localHypervisors } from "@/features/machine/hypervisors";
 import { hypervisors } from "@/test/fixtures";
 
 // Decimal, as the Machine page shows sizes.
@@ -216,24 +216,10 @@ describe("dockerState and vmSetup: edges", () => {
   });
 });
 
-describe("usableHypervisors", () => {
-  const all = [
-    hv({ provider: "virtualbox", hypervisor: false }),
-    hv({ provider: "utm", hypervisor: false }),
-    hv({ provider: "vmware_esxi", remote: true, hypervisor: null }),
-  ];
-  const names = (r: SystemReport) => usableHypervisors(r).map((p) => p.provider);
-
-  it("hides VirtualBox on Apple Silicon and UTM on an Intel Mac, keeps both on Linux, never a remote host", () => {
-    expect(names(report({ os: "macos", arch: "aarch64", vmProviders: all }))).toEqual(["utm"]);
-    expect(names(report({ os: "macos", arch: "arm64", vmProviders: all }))).toEqual(["utm"]);
-    expect(names(report({ os: "macos", arch: "x86_64", vmProviders: all }))).toEqual(["virtualbox"]);
-    expect(names(report({ os: "linux", arch: "aarch64", vmProviders: all }))).toEqual(["virtualbox", "utm"]);
-  });
-
-  it("always keeps a hypervisor that is already installed, wherever it is", () => {
-    const installed = [hv({ provider: "virtualbox", hypervisor: true })];
-    expect(names(report({ os: "macos", arch: "aarch64", vmProviders: installed }))).toEqual(["virtualbox"]);
+describe("localHypervisors", () => {
+  it("are the backend's, which lists only those offered on this OS and CPU, never a remote host", () => {
+    const listed = [hv({ provider: "utm", hypervisor: false }), hv({ provider: "vmware_esxi", remote: true, hypervisor: null })];
+    expect(localHypervisors(report({ os: "macos", arch: "aarch64", vmProviders: listed })).map((p) => p.provider)).toEqual(["utm"]);
   });
 });
 

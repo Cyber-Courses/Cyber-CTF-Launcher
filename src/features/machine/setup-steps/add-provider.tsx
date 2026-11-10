@@ -5,7 +5,7 @@ import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { Panel, PanelHeader } from "@/components/ui/panel";
-import { usableHypervisors } from "@/features/machine/hypervisors";
+import { localHypervisors } from "@/features/machine/hypervisors";
 import { AddEngineRow } from "@/features/machine/setup-steps/add-engine-row";
 import { AddHypervisorRow } from "@/features/machine/setup-steps/add-hypervisor-row";
 import { enginesFor, type Engine } from "@/features/machine/setup-steps/engines";
@@ -23,7 +23,7 @@ function candidates(report: SystemReport): { engines: DockerEngine[]; hypervisor
     engines: enginesFor(report.os)
       .filter((e) => !report.dockerEngines.some((found) => found.engine === e.id))
       .map((e) => e.id),
-    hypervisors: usableHypervisors(report)
+    hypervisors: localHypervisors(report)
       .filter((p) => p.hypervisor !== true)
       .map((p) => p.provider),
   };
@@ -38,7 +38,7 @@ export function AddProvider({ report, onRefresh, onClose }: { report: SystemRepo
   const [list] = useState(() => candidates(report));
   const os = OS_NAMES[report.os] ?? "Linux";
   const engines = list.engines.map((id) => enginesFor(report.os).find((e) => e.id === id)).filter((e): e is Engine => !!e);
-  const hypervisors = list.hypervisors.map((id) => usableHypervisors(report).find((p) => p.provider === id)).filter((p) => !!p);
+  const hypervisors = list.hypervisors.map((id) => localHypervisors(report).find((p) => p.provider === id)).filter((p) => !!p);
   const nothing = engines.length === 0 && hypervisors.length === 0;
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">

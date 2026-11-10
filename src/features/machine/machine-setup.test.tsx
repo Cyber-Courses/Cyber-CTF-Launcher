@@ -125,12 +125,15 @@ describe("MachineSetup window", () => {
   it("Add a provider lists what this Mac can run but doesn't have, and installs one with its log", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
-    render(<MachineSetup report={freshReport("macos")} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "add", nonce: 1 }} />);
+    // An Intel Mac, as the backend lists its hypervisors: VirtualBox and VMware, not UTM.
+    const mac = freshReport("macos");
+    const intelMac = { ...mac, vmProviders: mac.vmProviders.filter((p) => p.provider !== "utm") };
+    render(<MachineSetup report={intelMac} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "add", nonce: 1 }} />);
     await flush();
     expect(text()).toContain("Add a provider");
     // Not the lab-type guide.
     expect(text()).not.toContain("What do you want to run?");
-    // This Mac's engines, none found; its hypervisors (an Intel Mac: VirtualBox and VMware, not UTM), none installed.
+    // This Mac's engines, none found; its hypervisors, none installed.
     expect(text()).toMatch(/Container engines.*Docker Desktop.*OrbStack.*Colima.*Hypervisors.*VirtualBox.*VMware Fusion/);
     expect(text()).not.toContain("UTM");
     // The recommended engine installs from here; the others link out.

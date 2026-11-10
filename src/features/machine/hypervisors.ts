@@ -28,18 +28,10 @@ export const DOWNLOAD: Partial<Record<string, string>> = {
   hyperv: "https://learn.microsoft.com/virtualization/hyper-v-on-windows/quick-start/enable-hyper-v",
 };
 
-/** Local hypervisors usable on this OS + arch (always keeps ones already installed).
- *  VirtualBox has no Apple-Silicon support; UTM is for Apple Silicon. */
-export function usableHypervisors(report: SystemReport): ProviderStatus[] {
-  const isMac = report.os === "macos";
-  const isArm = report.arch === "aarch64" || report.arch === "arm64";
-  return report.vmProviders.filter((p) => {
-    if (p.remote) return false;
-    if (p.hypervisor === true) return true;
-    if (p.provider === "virtualbox" && isMac && isArm) return false;
-    if (p.provider === "utm" && isMac && !isArm) return false;
-    return true;
-  });
+/** The hypervisors offered on this machine: the backend lists only those for its OS and CPU (UTM,
+ *  not VirtualBox, on Apple Silicon; one already installed kept), so these are its local ones. */
+export function localHypervisors(report: SystemReport): ProviderStatus[] {
+  return report.vmProviders.filter((p) => !p.remote);
 }
 
 /** An installed hypervisor that still can't run labs once Vagrant and its plugin are in place

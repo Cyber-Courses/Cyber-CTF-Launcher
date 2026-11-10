@@ -1,5 +1,5 @@
 import { hasHypervisor, isDockerReady, pathSteps, wslState, type MachineStep, type SetupPath } from "@/features/machine/setup-steps/steps";
-import { cantRun, usableHypervisors } from "@/features/machine/hypervisors";
+import { cantRun, localHypervisors } from "@/features/machine/hypervisors";
 import type { LastTest } from "@/lib/settings";
 import type { Provider, SystemReport } from "@/lib/tauri";
 
@@ -15,7 +15,7 @@ type Facts = {
   report: SystemReport;
   last: LastTests;
   /** The installed hypervisor that can run labs, else the first installed one, if any. */
-  hv: ReturnType<typeof usableHypervisors>[number] | undefined;
+  hv: ReturnType<typeof localHypervisors>[number] | undefined;
 };
 
 /** Whether each step is done on this machine. The attack box has a default: always done. */
@@ -33,7 +33,7 @@ const DONE: Record<MachineStep, (f: Facts) => boolean> = {
 
 /** Whether `step` is done on this machine; `preferred` is the hypervisor chosen in Settings. */
 export function stepDone(step: MachineStep, report: SystemReport, last: LastTests, preferred: Provider | null): boolean {
-  const installed = usableHypervisors(report).filter((p) => p.hypervisor === true);
+  const installed = localHypervisors(report).filter((p) => p.hypervisor === true);
   // The one labs run on: Settings' choice when it can run here, else one that can run labs
   // (QEMU without KVM can, when libvirt can't), else the first installed.
   const runs = installed.filter((p) => !cantRun(p, report));

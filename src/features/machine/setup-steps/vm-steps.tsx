@@ -3,7 +3,7 @@
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { type ProviderStatus, type SystemReport } from "@/lib/tauri";
-import { cantRun, DOWNLOAD, INSTALLABLE, providerLabel, usableHypervisors } from "@/features/machine/hypervisors";
+import { cantRun, DOWNLOAD, INSTALLABLE, providerLabel, localHypervisors } from "@/features/machine/hypervisors";
 import { BusyLabel, Log, Requirement } from "@/features/machine/setup-steps/parts";
 import { Choice, ChoiceAction, ChoiceGrid } from "@/components/ui/choice-card";
 import { chosenHypervisor } from "@/features/machine/setup-steps/steps";
@@ -20,7 +20,7 @@ function choiceNote(t: T, p: ProviderStatus, report: SystemReport) {
 
 export function VmStep({ report, setup }: { report: SystemReport; setup: MachineSetupState }) {
   const t = useT();
-  const hypervisors = usableHypervisors(report);
+  const hypervisors = localHypervisors(report);
   // One hypervisor is enough; the pick lives in the setup state so the flow can wait for it.
   const choice = chosenHypervisor(report, setup);
   if (!choice) return <p className="text-[0.8125rem] text-muted-foreground">{t("machine.vm.noHypervisor")}</p>;
