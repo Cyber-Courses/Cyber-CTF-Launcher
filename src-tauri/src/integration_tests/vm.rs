@@ -2,13 +2,13 @@
 //! start it on a local hypervisor (`launch::start_vm_run`, the path the lab page takes with the
 //! Isothrum runner chosen), read its status, run its checks, pause and resume the lab, shut it
 //! down and resume it, provision it again, then stop it (`lifecycle::stop_run`) and assert
-//! nothing of it is left. The attack box among a VM lab's is `real_attack_machine`'s. Opt-in (it
+//! nothing of it is left. The attack box among a VM lab's is `attack_box`'s. Opt-in (it
 //! needs Vagrant, a hypervisor and its boxes):
 //!
 //! ```text
 //! CYBERCTF_TEST_VM_LAB=<a VM lab: one Linux machine publishing an HTTP port, with checks> \
 //! CYBERCTF_TEST_VM_PROVIDER=virtualbox \
-//! cargo test real_vm_labs -- --ignored --nocapture --test-threads=1
+//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::vm::a_vm_lab_runs_end_to_end_through_the_runner
 //! ```
 //!
 //! `CYBERCTF_TEST_VM_INPUTS` gives the launch's values (`NAME=value,…`).

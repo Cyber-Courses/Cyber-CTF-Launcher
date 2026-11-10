@@ -12,7 +12,7 @@
 //! CYBERCTF_TEST_BACKEND=<CyberBackend checkout> \
 //! CYBERCTF_TEST_WEB=<cyberctf-web checkout> \
 //! CYBERCTF_TEST_LAB=<invoice-portal-api, in Isoloom's current syntax> \
-//! cargo test real_flag_labs -- --ignored --nocapture --test-threads=1
+//! cargo test --lib -- --ignored --nocapture --test-threads=1 real_flag_labs
 //! ```
 //!
 //! The backend is CyberBackend's `test/e2e/server.ts`: the real API on a throwaway database it

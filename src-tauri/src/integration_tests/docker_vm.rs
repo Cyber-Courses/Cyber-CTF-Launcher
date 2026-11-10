@@ -3,7 +3,7 @@
 //! (`launch::start_docker_in_vm_run`, the path the lab page takes for a container lab in a VM),
 //! read its status (running, in a local VM, its machine up), then stop the lab (the runner's
 //! `down`) and assert no VM of it is left.
-//! The attack box inside the VM is `real_attack_machine`'s. Opt-in (it needs Vagrant, a
+//! The attack box inside the VM is `attack_box`'s. Opt-in (it needs Vagrant, a
 //! hypervisor and its boxes):
 //!
 //! ```text

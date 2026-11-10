@@ -13,7 +13,7 @@
 //! CYBERCTF_TEST_PVE_ENDPOINT=https://172.16.1.10:8006/ CYBERCTF_TEST_PVE_TOKEN='root@pam!name=secret' \
 //! CYBERCTF_TEST_PVE_NODE=pve-lab CYBERCTF_TEST_PVE_BRIDGE=vmbr1 CYBERCTF_TEST_PVE_JUMP=root@172.16.1.10 \
 //! CYBERCTF_TEST_RUNNER_HOME=<a folder whose ssh/id_ed25519 the node lets in> \
-//! cargo test real_server_labs -- --ignored --nocapture
+//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::servers::a_vm_lab_runs_on_proxmox_through_the_runner
 //! ```
 //!
 //! On ESXi (Vagrant's `vmware_esxi`, the runner relaying the host's SSH and HTTPS from macOS):
@@ -25,7 +25,7 @@
 //! ```text
 //! CYBERCTF_TEST_ESXI_LAB=<isoloom checkout>/examples/solo-web CYBERCTF_TEST_ESXI_HOST=172.16.1.20 \
 //! CYBERCTF_TEST_ESXI_PASSWORD=… CYBERCTF_TEST_ESXI_DATASTORE=datastore1 CYBERCTF_TEST_ESXI_NETWORK='VM Network' \
-//! cargo test real_server_labs -- --ignored --nocapture
+//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::servers::a_vm_lab_runs_on_esxi_through_the_runner
 //! ```
 
 use std::path::PathBuf;
