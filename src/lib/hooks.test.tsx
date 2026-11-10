@@ -178,7 +178,11 @@ describe("failure helpers", () => {
         throw new Error("unavailable");
       },
     });
-    await expect(notify("t")).resolves.toBeUndefined();
+    // Regression: one that can't be shown left no trace, though it may be the only word.
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(notify("Lab ready")).resolves.toBeUndefined();
+    expect(warned.mock.calls.some(([what]) => what === 'the notification "Lab ready" couldn\'t be shown:')).toBe(true);
+    warned.mockRestore();
   });
 });
 
