@@ -32,6 +32,7 @@ export type * from "./LabResources";
 export type * from "./LabRunOptions";
 export type * from "./LabRunPath";
 export type * from "./LabRunRefusal";
+export type * from "./LabRunRefusalCause";
 export type * from "./LabService";
 export type * from "./LabStartPlace";
 export type * from "./LabStatus";

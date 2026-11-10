@@ -33,7 +33,7 @@ fn a_container_lab_runs_where_isoloom_generates_each_form() {
     let per_machine = providers(&o.vms);
     assert!(per_machine.contains(&Provider::Hyperv) && !per_machine.contains(&Provider::Utm), "{per_machine:?}");
     let utm = o.refused.iter().find(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant").expect("UTM's refusal");
-    assert!(utm.reason.contains("no private network"), "{}", utm.reason);
+    assert!(matches!(&utm.cause, RefusalCause::Isoloom { reason } if reason.contains("no private network")), "{:?}", utm.cause);
     // On a server, the helper VM: ESXi through Vagrant there, Proxmox through its module, each
     // by its own launch path (the picker took ESXi's for `vagrant/vmware_esxi` and Proxmox's
     // for `cloud-vm/proxmox`, neither of which Isoloom has).
@@ -87,7 +87,7 @@ fn a_refused_container_form_says_why() {
     assert!(o.docker.is_none());
     let docker = o.refused.iter().find(|r| r.provider.is_none()).expect("Docker's refusal");
     assert_eq!(docker.target, "docker");
-    assert!(!docker.reason.is_empty());
+    assert!(matches!(&docker.cause, RefusalCause::Isoloom { reason } if !reason.is_empty()), "{:?}", docker.cause);
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn the_picker_offers_no_way_the_policy_turns_off_and_says_why() {
         assert!(o.cloud_vm.is_empty() && o.cloud_docker.is_empty(), "no cloud account offered");
         assert_eq!(o.docker, open.docker, "this machine still is");
         assert_eq!(o.vms, open.vms);
-        let clouds = o.refused.iter().filter(|r| r.reason.contains("policy setting DisableCloudLaunches")).count();
+        let clouds = o.refused.iter().filter(|r| r.cause == by_policy("DisableCloudLaunches")).count();
         assert_eq!(clouds, open.cloud_vm.len() + open.cloud_docker.len(), "each cloud's row says why");
         let _privileged = Override::with(&[Key::RefusePrivilegedLabs]);
         assert_eq!(options(DUAL, Runtime::Docker).docker, open.docker, "a lab without privileged machines runs");
@@ -111,5 +111,12 @@ fn the_picker_offers_no_way_the_policy_turns_off_and_says_why() {
     let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
     let o = options(&privileged, Runtime::Docker);
     assert!(o.docker.is_none() && o.docker_vm.is_empty() && o.vms.is_empty() && o.servers.is_empty() && o.cloud_vm.is_empty(), "nowhere");
-    assert!(o.refused.iter().any(|r| r.provider.is_none() && r.reason.contains("RefusePrivilegedLabs")), "this machine's Docker says why");
+    assert!(o.refused.iter().any(|r| r.provider.is_none() && r.cause == by_policy("RefusePrivilegedLabs")), "this machine's Docker says why");
+    let utm = o.refused.iter().find(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant");
+    assert!(utm.is_some_and(|r| matches!(r.cause, RefusalCause::Isoloom { .. })), "Isoloom's own refusals stay its own: {utm:?}");
+}
+
+/// A refusal by this computer's policy `setting`.
+fn by_policy(setting: &str) -> RefusalCause {
+    RefusalCause::Policy { setting: setting.into() }
 }

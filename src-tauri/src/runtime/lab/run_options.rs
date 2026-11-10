@@ -34,8 +34,9 @@ pub struct RunPath {
     pub evidence: String,
 }
 
-/// A form of the lab Isoloom refuses: on a provider or cloud, or (no provider) as containers on
-/// this machine's Docker; the picker says the reason on that place's row.
+/// A form of the lab Isoloom refuses or this computer's policy turns off: on a provider or cloud,
+/// or (no provider) as containers on this machine's Docker; the picker says why on that place's
+/// row, naming who refuses it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabRunRefusal")]
@@ -45,7 +46,25 @@ pub struct Refusal {
     #[serde(skip)]
     #[ts(skip)]
     pub target: String,
-    pub reason: String,
+    pub cause: RefusalCause,
+}
+
+/// Who refuses a form of the lab, and why.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(rename = "LabRunRefusalCause")]
+pub enum RefusalCause {
+    /// Isoloom doesn't generate the lab there: its reason, in its words.
+    Isoloom { reason: String },
+    /// This computer's policy turns it off: the policy switch that does (`policy::Key`'s name).
+    Policy { setting: String },
+}
+
+impl Refusal {
+    /// Isoloom's refusal of `target` on `provider`, for `reason`.
+    fn by_isoloom(provider: Option<Provider>, target: String, reason: String) -> Refusal {
+        Refusal { provider, target, cause: RefusalCause::Isoloom { reason } }
+    }
 }
 
 /// Every way the lab can start, by form; empty where the lab has no such form or Isoloom refuses
@@ -99,7 +118,7 @@ fn generated(lab: &Lab, runtime: Runtime) -> RunOptions {
         }
         for p in providers {
             match lab::refusal_on(lab, target, *p) {
-                Some(reason) => refused.push(Refusal { provider: Some(*p), target: target.id().to_owned(), reason }),
+                Some(reason) => refused.push(Refusal::by_isoloom(Some(*p), target.id().to_owned(), reason)),
                 None => out.push(path(target, Some(*p))),
             }
         }
@@ -123,7 +142,7 @@ fn generated(lab: &Lab, runtime: Runtime) -> RunOptions {
             if has(Target::Proxmox) {
                 // Proxmox's own target has one form: no provider of its own in the evidence.
                 match lab::refusal_on(lab, Target::Proxmox, Provider::Proxmox) {
-                    Some(reason) => refused.push(Refusal { provider: Some(Provider::Proxmox), target: Target::Proxmox.id().to_owned(), reason }),
+                    Some(reason) => refused.push(Refusal::by_isoloom(Some(Provider::Proxmox), Target::Proxmox.id().to_owned(), reason)),
                     None => out.servers.push(RunPath { provider: Some(Provider::Proxmox), ..path(Target::Proxmox, None) }),
                 }
             }
@@ -139,14 +158,13 @@ fn generated(lab: &Lab, runtime: Runtime) -> RunOptions {
     out
 }
 
-/// `options` with the ways `policy` turns off moved to its refusals, with the policy's reason
-/// (what `launch::policy_allows` refuses at the start): every way, for a `privileged` lab under
+/// `options` with the ways `policy` turns off moved to its refusals, naming the setting (what
+/// `launch::policy_allows` refuses at the start): every way, for a `privileged` lab under
 /// `RefusePrivilegedLabs`; the cloud accounts' under `DisableCloudLaunches`.
 fn with_policy(mut options: RunOptions, policy: Policy, privileged: bool) -> RunOptions {
     let refuse = |key: Key, paths: Vec<RunPath>, refused: &mut Vec<Refusal>| {
-        if let Err(e) = policy.check(key) {
-            refused.extend(paths.into_iter().map(|p| Refusal { provider: p.provider, target: p.target, reason: e.to_string() }));
-        }
+        let cause = || RefusalCause::Policy { setting: key.name().into() };
+        refused.extend(paths.into_iter().map(|p| Refusal { provider: p.provider, target: p.target, cause: cause() }));
     };
     let o = &mut options;
     if privileged && policy.is_on(Key::RefusePrivilegedLabs) {
@@ -165,7 +183,7 @@ fn with_policy(mut options: RunOptions, policy: Policy, privileged: bool) -> Run
 fn on_docker(lab: &Lab, path: RunPath, refused: &mut Vec<Refusal>) -> Option<RunPath> {
     match isoloom_targets::refusal(lab, Target::Docker) {
         Some(reason) => {
-            refused.push(Refusal { provider: None, target: path.target, reason });
+            refused.push(Refusal::by_isoloom(None, path.target, reason));
             None
         }
         None => Some(path),

@@ -29,6 +29,20 @@ describe("RunOnPicker", () => {
     host({ id: "down", name: "old-esx", provider: "vmware_esxi", host: "10.0.0.9" }),
   ];
 
+  /** Run options that offer the lab nowhere, refused as `refused` say. */
+  const refusing = (refused: LabRunOptions["refused"]): LabRunOptions => ({
+    docker: null,
+    dockerVm: [],
+    vms: [],
+    servers: [],
+    cloudDocker: [],
+    cloudVm: [],
+    cloudServices: [],
+    refused,
+  });
+  const byPolicy = (setting: string) => ({ kind: "policy" as const, setting });
+  const POLICY_SAYS = "Your organization turned this off on this computer (policy setting RefusePrivilegedLabs). Ask your IT team if you need it.";
+
   function renderPicker(p: Partial<Parameters<typeof RunOnPicker>[0]> = {}) {
     const onPickPlatform = vi.fn();
     const onPickForm = vi.fn();
@@ -259,21 +273,11 @@ describe("RunOnPicker", () => {
     // Regression: the picker offered containers by the catalogue's word and said only "doesn't
     // support" on a refused host; Docker's refusal wasn't even sent (a refusal named a provider).
     installTauri();
-    const refusing = (refused: LabRunOptions["refused"]): LabRunOptions => ({
-      docker: null,
-      dockerVm: [],
-      vms: [],
-      servers: [],
-      cloudDocker: [],
-      cloudVm: [],
-      cloudServices: [],
-      refused,
-    });
     renderPicker({
       offerContainers: true,
       runOptions: refusing([
-        { provider: null, reason: "environment-level steps don't run on Docker" },
-        { provider: "proxmox", reason: "a Windows machine on Proxmox" },
+        { provider: null, cause: { kind: "isoloom", reason: "environment-level steps don't run on Docker" } },
+        { provider: "proxmox", cause: { kind: "isoloom", reason: "a Windows machine on Proxmox" } },
       ]),
     });
     const containers = must(screen.getByText("Container").closest<HTMLElement>("[role=radio]"), "the Containers row");
@@ -281,6 +285,22 @@ describe("RunOnPicker", () => {
     expect(containers.getAttribute("title")).toBe("Isoloom can't run this lab here: environment-level steps don't run on Docker");
     const pve = must(screen.getByText("homelab-pve").closest<HTMLElement>("[role=radio]"), "the Proxmox row");
     expect(pve.getAttribute("title")).toBe("Isoloom can't run this lab here: a Windows machine on Proxmox");
+    await flush();
+  });
+
+  it("names the organization's policy, not Isoloom, on a place the policy turns off", async () => {
+    installTauri();
+    renderPicker({
+      offerContainers: true,
+      runOptions: refusing([
+        { provider: null, cause: byPolicy("RefusePrivilegedLabs") },
+        { provider: "proxmox", cause: byPolicy("RefusePrivilegedLabs") },
+      ]),
+    });
+    const containers = must(screen.getByText("Container").closest<HTMLElement>("[role=radio]"), "the Containers row");
+    expect(containers.getAttribute("title")).toBe(POLICY_SAYS);
+    const pve = must(screen.getByText("homelab-pve").closest<HTMLElement>("[role=radio]"), "the Proxmox row");
+    expect(pve.getAttribute("title")).toBe(POLICY_SAYS);
     await flush();
   });
 

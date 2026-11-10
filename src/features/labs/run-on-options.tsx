@@ -150,7 +150,7 @@ export type LocalRows = { offerContainers: boolean; localNote: string; dockerRun
 
 /** Step 1's rows for "This machine": up to two, each its own kind of run here. Container (the
  *  engine's state) when the lab has a container form the run options give it (once read; refused
- *  there, the row says Isoloom's reason), and VM (the hypervisor's logo) when a VM form is ready
+ *  there, the row says why), and VM (the hypervisor's logo) when a VM form is ready
  *  here. No tier badges here: a place is a place, not a form being compared (step 2). */
 function localPlatformRows(t: T, local: LocalRows, options: LabRunOptions | null): Option[] {
   const { offerContainers, localNote, dockerRunning, engine } = local;

@@ -1,13 +1,13 @@
 "use client";
 
 import { isCloudProvider } from "@/lib/tauri";
-import type { LabRunOptions, LabRunPath, Provider } from "@/lib/tauri";
+import type { LabRunOptions, LabRunPath, LabRunRefusalCause, Provider } from "@/lib/tauri";
 import type { RunTarget } from "@/features/labs/run-on";
 import type { T } from "@/lib/i18n";
 
 // The maturity badge (Beta / Experimental) on each place of "Where should it run?": the badge of
 // the launch path the backend says the lab takes there (`labRunOptions`), and why it is refused
-// where Isoloom refuses it.
+// where Isoloom refuses it or this computer's policy turns it off.
 
 /** A maturity badge on a launch path (Beta / Experimental), with the evidence as its tooltip. */
 export type RunBadge = { kind: "beta" | "experimental"; title: string };
@@ -39,9 +39,15 @@ export function pathOf(options: LabRunOptions | null, target: RunTarget, provide
   }
 }
 
-/** Why Isoloom refuses the lab on `provider` (none: as containers on this machine's Docker), in
- *  the run options' words, if it does. */
+/** Why the lab is refused on `provider` (none: as containers on this machine's Docker), if it is:
+ *  Isoloom's reason, or the policy setting that turns it off. */
 export function refusalOn(t: T, options: LabRunOptions | null, provider: Provider | null): string | undefined {
-  const reason = options?.refused.find((r) => r.provider === provider)?.reason;
-  return reason ? t("labs.runOn.refusedHere", { reason }) : undefined;
+  const refusal = options?.refused.find((r) => r.provider === provider);
+  return refusal && said(t, refusal.cause);
+}
+
+/** A refusal's `cause` in the player's words, naming who refuses: Isoloom, or the organization's
+ *  policy. */
+function said(t: T, cause: LabRunRefusalCause): string {
+  return cause.kind === "isoloom" ? t("labs.runOn.refusedHere", { reason: cause.reason }) : t("errors.codes.turnedOffByPolicy", { setting: cause.setting });
 }

@@ -277,7 +277,7 @@ function runOptions(runtime: unknown): LabRunOptions {
   const clouds = () => CLOUDS_OF_SAMPLE.map((c) => runPath(c, c !== "aws"));
   if (runtime === "CLOUD") return { ...NO_OPTIONS, cloudServices: [runPath("aws")] };
   const local: Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu"];
-  const utm = { provider: "utm" as const, reason: "a VM on UTM gets no private network" };
+  const utm = { provider: "utm" as const, cause: { kind: "isoloom" as const, reason: "a VM on UTM gets no private network" } };
   if (runtime === "VM")
     return {
       ...NO_OPTIONS,
