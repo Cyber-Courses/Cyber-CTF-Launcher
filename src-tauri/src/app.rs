@@ -150,8 +150,12 @@ fn wdio_seed(handle: &crate::AppHandle) {
     let handle = handle.clone();
     tauri::async_runtime::spawn(async move {
         let src = std::path::PathBuf::from(path);
-        if let Ok(id) = crate::labs::local_id(&src) {
-            let _ = crate::labs::run_local(&platform::AppDirs::from(&handle), &id, &src, |_| {}).await;
+        let started = match crate::labs::local_id(&src) {
+            Ok(id) => crate::labs::run_local(&platform::AppDirs::from(&handle), &id, &src, |_| {}).await.map(|_| ()),
+            Err(e) => Err(e),
+        };
+        if let Err(e) = started {
+            log::error!("wdio: the seed lab {} didn't start: {e}", src.display());
         }
     });
 }

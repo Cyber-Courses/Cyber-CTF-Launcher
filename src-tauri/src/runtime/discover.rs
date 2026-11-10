@@ -259,7 +259,10 @@ async fn middot_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
             ids.extend(lab_ids_from_vm_names(names.iter().map(String::as_str), by_name));
         }
         Err(e) if crate::platform::exec::timed_out(&e) => log::warn!("running-labs scan: VirtualBox isn't responding ({e})"),
-        Err(_) => {}
+        // Not installed: nothing of it to find. Any other failure (a broken install) hides its
+        // labs from the scan, so it is said.
+        Err(crate::error::Error::ToolMissing { .. }) => {}
+        Err(e) => log::warn!("running-labs scan: VirtualBox couldn't list its running VMs ({e})"),
     }
     if let Ok(out) = run_read("prlctl", &["list", "--running", "--no-header", "-o", "name"], None).await {
         ids.extend(lab_ids_from_vm_names(out.lines().map(str::trim), by_name));

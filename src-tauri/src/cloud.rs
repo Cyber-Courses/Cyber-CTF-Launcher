@@ -101,11 +101,12 @@ fn non_empty(out: &str) -> Option<String> {
 
 /// The identity the host AWS CLI resolves (for the given profile, or the default chain),
 /// if any, so the cloud setup can show "signed in as …" and offer using the CLI instead of
-/// pasting keys. None when the CLI is missing or that profile has no usable credentials.
+/// pasting keys. None when the CLI is missing or that profile has no usable credentials (logged,
+/// but for a CLI that isn't installed).
 pub async fn aws_cli_identity(profile: Option<String>) -> Option<String> {
     // The question a launch asks (see `sign_in_question`), which answers with the identity.
     let args = with_profile(AWS_WHO_AM_I.to_vec(), profile.as_deref());
-    run_cli("aws", &args).await.ok().as_deref().and_then(non_empty)
+    answered("the AWS CLI's identity", run_cli("aws", &args).await).as_deref().and_then(non_empty)
 }
 
 /// This month's AWS spend so far in USD, as the AWS CLI's `profile` (or its default) sees it:
