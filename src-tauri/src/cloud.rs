@@ -426,7 +426,10 @@ mod tests {
         assert!(warned.len() == 1 && warned[0].starts_with("couldn't read the Google Cloud organizations from the CLI's answer"), "{warned:?}");
         assert_eq!(aws_month_to_date_cost(None).await, None);
         assert_eq!(aws_profiles().await, [] as [&str; 0]);
-        assert_eq!(crate::testing::logs::take_warnings().len(), 2, "the spend and the profiles");
+        assert_eq!(aws_cli_identity(None).await, None);
+        let warned = crate::testing::logs::take_warnings();
+        assert_eq!(warned.len(), 3, "the spend, the profiles and the identity: {warned:?}");
+        assert!(warned[2].starts_with("couldn't read the AWS CLI's identity"), "{warned:?}");
         assert!(azure_subscriptions().await.is_empty());
         assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0], "a CLI that isn't installed is no failure");
     }

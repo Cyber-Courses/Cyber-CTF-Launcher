@@ -319,6 +319,12 @@ mod tests {
         });
         crate::testing::logs::take_warnings();
         assert_eq!(super::middot_vm_ids(&by_name).await, std::collections::BTreeSet::new());
+        // Said, as a failure of its own: a broken VirtualBox hides its labs from the scan.
+        let said = crate::testing::logs::take_warnings();
+        assert!(said.iter().all(|w| !w.contains("isn't responding")) && said.iter().any(|w| w.contains("couldn't list its running VMs")), "{said:?}");
+        // Not installed: nothing to find, nothing said.
+        let _tools = Tools::new(|_, _| None);
+        super::middot_vm_ids(&by_name).await;
         assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0]);
         let _tools = Tools::new(|program, _| match program {
             "VBoxManage" => fail("timed out after 8s"),
