@@ -31,11 +31,29 @@ fn walk(dir: &Path, out: &mut Vec<Source>) {
     }
 }
 
-/// Whether the file at `path` is a module its parent declares for tests only (`#[cfg(test)]`
-/// over its `mod` line, as `runtime::fake_clis` is): all of it is test code, whatever its name.
+/// Whether the file at `path` is test code whole: a module declared for tests only (`#[cfg(test)]`
+/// over its `mod` line in its parent, as `runtime::fake_clis` is), or one inside such a module
+/// (everything under `testing/` and `integration_tests/`), whatever its name.
 fn declared_for_tests(path: &Path) -> bool {
-    let (Some(dir), Some(name)) = (path.parent(), path.file_stem().and_then(|n| n.to_str())) else { return false };
-    let Ok(parent) = std::fs::read_to_string(dir.with_extension("rs")) else { return false };
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut module = path.to_path_buf();
+    while let (Some(dir), Some(name)) = (module.parent().map(Path::to_path_buf), module.file_stem().and_then(|n| n.to_str()).map(str::to_owned)) {
+        let at_root = dir == src;
+        let parent = if at_root { src.join("lib.rs") } else { dir.with_extension("rs") };
+        if declares_for_tests(&parent, &name) {
+            return true;
+        }
+        if at_root {
+            return false;
+        }
+        module = parent;
+    }
+    false
+}
+
+/// Whether the file at `parent` declares its module `name` for tests only.
+fn declares_for_tests(parent: &Path, name: &str) -> bool {
+    let Ok(parent) = std::fs::read_to_string(parent) else { return false };
     let lines: Vec<&str> = parent.lines().map(str::trim).collect();
     let declares = |l: &str| l.strip_suffix(';').and_then(|l| l.rsplit(' ').next()) == Some(name) && l.contains("mod ");
     lines.iter().enumerate().filter(|(_, l)| declares(l)).any(|(i, _)| {
@@ -150,6 +168,16 @@ mod tests {
     }
 
     #[test]
+    fn a_module_inside_one_declared_for_tests_is_test_code() {
+        let sources = crate_sources();
+        let file = |end: &str| sources.iter().find(|s| s.path.ends_with(end)).unwrap_or_else(|| panic!("{end}"));
+        for end in ["testing/logs.rs", "integration_tests/support.rs"] {
+            assert!(file(end).code.is_empty() && !file(end).tests.is_empty(), "{end}");
+        }
+        assert_ne!(file("runtime/lifecycle.rs").code, "");
+    }
+
+    #[test]
     fn the_crate_is_read_whole() {
         let sources = crate_sources();
         assert!(sources.len() > 100, "{}", sources.len());
@@ -241,4 +269,57 @@ fn every_layer_names_only_the_layers_below_it() {
             _ => {}
         }
     }
+}
+
+/// Lines of code a file may ship before its tests (blank and comment lines not counted).
+const MAX_FILE_LOC: usize = 400;
+
+/// The lines of `code` that aren't blank or only a comment.
+fn loc(code: &str) -> usize {
+    code.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("//")).count()
+}
+
+/// The crate's files, by their path under `src/`.
+fn by_path() -> Vec<(String, Source)> {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    crate_sources().into_iter().map(|s| (s.path.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/"), s)).collect()
+}
+
+/// A file does one thing: none ships more than [`MAX_FILE_LOC`] lines of code (its tests aside),
+/// and a module with children is `foo.rs` beside `foo/`, never `foo/mod.rs`. (These rules, and
+/// where `tauri` may be used, read the split of each file into shipped and test code: they live
+/// here, beside that split, and nowhere else.)
+#[test]
+fn no_file_ships_more_than_its_share_of_code_nor_is_a_mod_rs() {
+    let over: Vec<String> =
+        by_path().iter().map(|(rel, s)| (rel, loc(&s.code))).filter(|(_, n)| *n > MAX_FILE_LOC).map(|(rel, n)| format!("{rel}: {n}")).collect();
+    assert_eq!(over, [] as [String; 0], "lines of code over {MAX_FILE_LOC}");
+    let mod_rs: Vec<String> = by_path().into_iter().map(|(rel, _)| rel).filter(|rel| rel.ends_with("/mod.rs") || rel == "mod.rs").collect();
+    assert_eq!(mod_rs, [] as [String; 0], "use foo.rs next to foo/");
+}
+
+/// Tauri is the app shell's and the commands' (and the crate root's): the domain and the layers
+/// under it reach the player through what the shell hands them, so they run and are tested
+/// without a webview.
+#[test]
+fn tauri_is_used_only_in_the_shell_and_the_commands() {
+    let tauri = regex::Regex::new(r"\btauri(_plugin_\w+)?::|\b(AppHandle|WebviewWindow|AppRuntime)\b").unwrap();
+    let adapters = regex::Regex::new(r"^((lib|main)\.rs|(app|commands)(\.rs|/))").unwrap();
+    let outside: Vec<String> = by_path()
+        .into_iter()
+        .filter(|(rel, _)| !adapters.is_match(rel))
+        .filter_map(|(rel, s)| {
+            let line = s.code.lines().position(|l| !l.trim_start().starts_with("//") && tauri.is_match(l))?;
+            Some(format!("{rel}:{}", line + 1))
+        })
+        .collect();
+    assert_eq!(outside, [] as [String; 0], "domain code uses tauri: move it into commands/ or app/");
+}
+
+#[test]
+fn the_source_rules_see_what_they_look_for() {
+    assert_eq!(loc("fn a() {}\n\n  // a comment\n/// a doc\nfn b() {}\n"), 2);
+    let tauri = regex::Regex::new(r"\btauri(_plugin_\w+)?::|\b(AppHandle|WebviewWindow|AppRuntime)\b").unwrap();
+    assert!(tauri.is_match("use tauri::Manager;") && tauri.is_match("fn f(app: &AppHandle)") && tauri.is_match("tauri_plugin_dialog::init()"));
+    assert!(!tauri.is_match("use ts_rs::TS;") && !tauri.is_match("let my_AppHandles = 1;"));
 }

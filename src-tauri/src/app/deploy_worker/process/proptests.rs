@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 
 use proptest::prelude::*;
 
+use super::terraform::pids;
 use super::*;
 use crate::testing::proptest_support::config;
 
