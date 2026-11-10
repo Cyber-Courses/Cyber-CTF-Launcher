@@ -1,7 +1,8 @@
 //! OS plumbing: the app's folders, running tools, files only this user can read, whole-file
 //! writes, the service endpoints, HTTP clients with limits, the PATH and the proxy a GUI launch is
 //! missing, the console's Ctrl+C on Windows, the files a Store build saved before, the
-//! administrator's policy, and the pieces of a root script that checks what it downloads.
+//! administrator's policy, the pieces of a root script that checks what it downloads, and a
+//! future's panic caught where it is polled.
 
 use std::path::{Path, PathBuf};
 
@@ -24,6 +25,7 @@ pub mod root_script;
 pub mod sys;
 #[cfg(any(unix, test))]
 pub mod tree_link;
+pub mod unwind;
 
 /// Resets an in-flight flag to `false` when dropped, so a single-flight scan frees the next one
 /// whether it returns normally or is cancelled. The flag is borrowed, so one guard serves every

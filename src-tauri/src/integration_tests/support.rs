@@ -4,17 +4,14 @@
 //! Docker, a probe run through the console the lab page opens, and the attack box driven as the
 //! lab page drives it.
 
-use std::future::Future;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
 use isothrum_runner::ShellCommand;
 
 use crate::error::Result;
 use crate::platform::AppDirs;
 use crate::platform::exec::run;
+use crate::platform::unwind::{CatchUnwind, panic_message};
 use crate::runtime::attack_machine::{self, Placed};
 use crate::runtime::{LabStatus, docker, isothrum, launch, lifecycle};
 
@@ -41,27 +38,6 @@ pub(crate) async fn scenario<S: Checks>(state: &mut S, body: impl AsyncFnOnce(&m
     if let Err(panic) = (CatchUnwind(Box::pin(teardown(state)))).await {
         check(false, format!("the teardown ran to its end (it panicked: {})", panic_message(&*panic)), state.failures());
     }
-}
-
-/// A future whose panic, while it is polled, is its output instead.
-struct CatchUnwind<F>(Pin<Box<F>>);
-
-impl<F: Future> Future for CatchUnwind<F> {
-    type Output = std::thread::Result<F::Output>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let inner = self.0.as_mut();
-        match catch_unwind(AssertUnwindSafe(|| inner.poll(cx))) {
-            Ok(Poll::Pending) => Poll::Pending,
-            Ok(Poll::Ready(done)) => Poll::Ready(Ok(done)),
-            Err(panic) => Poll::Ready(Err(panic)),
-        }
-    }
-}
-
-/// What a panic said.
-fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
-    panic.downcast_ref::<&str>().map(ToString::to_string).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_else(|| "no message".into())
 }
 
 /// `url` fetched on this machine (15 s at most): its status, or why it couldn't be.

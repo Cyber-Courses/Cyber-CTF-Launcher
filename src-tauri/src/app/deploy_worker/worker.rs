@@ -10,6 +10,7 @@ use tauri::Manager as _;
 
 use super::progress::FAILED_MARK;
 use super::{Job, Op, execute, files};
+use crate::platform::unwind::{CatchUnwind, panic_message};
 use crate::runtime::lab_file_lock;
 
 /// The worker's entry point, in place of the app: a headless Tauri app on the same data dir
@@ -24,7 +25,7 @@ pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntim
     #[cfg(windows)]
     crate::platform::console::let_tools_take_ctrl_c();
     let Some(job) = read_job(job_path) else {
-        eprintln!("deploy worker: unreadable job file {}", job_path.display());
+        fail_before_the_job(job_path, &format!("its job file {} can't be read", job_path.display()));
         std::process::exit(2);
     };
     #[cfg(unix)]
@@ -43,7 +44,7 @@ pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntim
             Ok(())
         })
         .build(context)
-        .inspect_err(|e| log::error!("couldn't start the deploy worker: {e}"))?;
+        .inspect_err(|e| fail_before_the_job(job_path, &format!("Tauri couldn't build it: {e}")))?;
     #[cfg(target_os = "macos")]
     app.run(|app, event| {
         keep_running(&event);
@@ -172,11 +173,32 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
     // can't be taken fails the job: running unlocked is what it is there to prevent.
     let held = hold_lab(app, &job.lab_id).await.map(Some);
     let result = match held {
-        // Boxed: every operation's future is in it, too large to keep on the caller's stack.
-        Ok(_lab) => Box::pin(execute(app, job, &log)).await,
+        // Boxed: every operation's future is in it, too large to keep on the caller's stack. A
+        // panic in it is its verdict: uncaught, it ended the job's task alone, and the worker
+        // stayed up with no status written, the lab "starting" for good.
+        Ok(_lab) => CatchUnwind(Box::pin(execute(app, job, &log))).await.unwrap_or_else(|panic| Err(crashed(&*panic))),
         Err(e) => Err(e),
     };
     conclude(&f, &result, launch, log)
+}
+
+/// The verdict of a job that panicked (the panic hook logged where, with a backtrace, in the
+/// worker's own log file).
+fn crashed(panic: &(dyn std::any::Any + Send)) -> crate::error::Error {
+    crate::error::Error::Invalid(format!("the deploy worker crashed: {}", panic_message(panic)))
+}
+
+/// A worker that can't run its job at all (`why`): said on its stderr (its job's log) and as its
+/// verdict in the status file beside the job file at `job_path` (`<key>.json`, `<key>.status`), so
+/// the app says why rather than "stopped without a result". Before the log file is set up: this
+/// is all the trace there is.
+fn fail_before_the_job(job_path: &Path, why: &str) {
+    let error = crate::error::Error::Invalid(format!("the deploy worker couldn't start: {why}"));
+    eprintln!("{FAILED_MARK} {error}");
+    let (status, _) = status_line::<()>(&Err(error));
+    if let Err(e) = std::fs::write(job_path.with_extension("status"), status) {
+        eprintln!("deploy worker: couldn't write its status beside {}: {e}", job_path.display());
+    }
 }
 
 /// The job's log file, opened for appending; none when it can't be (the job still runs, and the
@@ -332,6 +354,35 @@ mod tests {
             // Only this user reads the log, and the folder of jobs and logs.
             crate::platform::private_fs::tests::assert_private_with_folder(&f.log);
         }
+    }
+
+    #[tokio::test]
+    async fn a_job_that_panics_ends_with_its_verdict_instead_of_hanging() {
+        // Regression: a panic in the job ended its task alone. No verdict was written and the
+        // worker stayed up, so the app showed the lab starting for as long as it ran.
+        let t = crate::testing::test_app::TestApp::new();
+        let _tools = crate::platform::exec::fake::Tools::new(|program, _| panic!("{program} blew up"));
+        let mut job = Job::on_lab("web", Op::Launch);
+        let commit = "a".repeat(40);
+        job.launch = serde_json::json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": commit, "env": [] });
+        let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
+        assert_eq!(super::run_logged(t.handle(), job).await, 1);
+        let said = verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string();
+        assert_eq!(said, "the deploy worker crashed: docker blew up");
+        assert!(verdict(&std::fs::read_to_string(&f.launch_status).unwrap()).is_err(), "the launch failed");
+        assert!(std::fs::read_to_string(&f.log).unwrap().contains("✗ the deploy worker crashed: docker blew up"));
+    }
+
+    #[test]
+    fn a_worker_that_cant_run_its_job_leaves_why_as_its_verdict() {
+        // Regression: an unreadable job file (or a worker Tauri couldn't build) exited with only
+        // a line on stderr, and the app said "stopped without a result".
+        let dir = crate::testing::temp_dir("fail-early");
+        let f = Files::of(&dir, "lab-1.attack");
+        super::fail_before_the_job(&f.job, "its job file can't be read");
+        let said = verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string();
+        assert_eq!(said, "the deploy worker couldn't start: its job file can't be read");
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
