@@ -16,6 +16,10 @@ import { commands, installTauri, rejects, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
 import { rejectWith } from "@/features/labs/labs-test-kit";
+import type { ServerHost } from "@/lib/tauri";
+
+const notified = vi.hoisted(() => vi.fn<(title: string, body?: string) => Promise<void>>(() => Promise.resolve()));
+vi.mock("@/lib/notify", () => ({ notify: notified }));
 
 const dockerLab: Lab = {
   id: "act-docker",
@@ -54,12 +58,15 @@ const logsOf = (id: string) => {
   return getDeploySnapshot().runs[id]?.logs ?? [];
 };
 
-function setup(overrides: Parameters<typeof installTauri>[0] = {}) {
+function setup(overrides: Parameters<typeof installTauri>[0] = {}, hosts: ServerHost[] = []) {
   const calls = installTauri(overrides);
   const refresh = vi.fn();
-  const hook = renderHook(() => useLabActions(refresh));
+  const hook = renderHook(() => useLabActions(refresh, hosts));
   return { calls, refresh, hook };
 }
+
+/** A saved host `id` on `provider`. */
+const savedHost = (id: string, provider: ServerHost["provider"]) => ({ id, name: id, provider }) as ServerHost;
 
 /** Starts launching `lab` here (a dialog may then ask the player): the launch, to await once
  *  answered. */
@@ -207,6 +214,16 @@ describe("useLabActions: launch", () => {
     const { calls, hook } = setup();
     await act(() => hook.result.current.launch({ ...dockerLab, id: "act-remote" }, "aws-1", undefined, readyReport()));
     expect(launchArgs(calls)).toEqual({ labId: "act-remote", provider: null, host: "aws-1", defaultPorts: false });
+  });
+
+  it("says a container lab is ready on the server or in the cloud account it runs on", async () => {
+    // Regression: a container lab on an AWS account was announced as "running on your server".
+    const { hook } = setup({}, [savedHost("pve", "proxmox"), savedHost("aws1", "aws")]);
+    notified.mockClear();
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-cloud" }, "aws1", undefined, readyReport()));
+    expect(notified).toHaveBeenLastCalledWith("Lab ready", "Invoice portal API is running in your cloud account.");
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-on-pve" }, "pve", undefined, readyReport()));
+    expect(notified).toHaveBeenLastCalledWith("Lab ready", "Invoice portal API is running on your server.");
   });
 
   it("runs a container lab inside a local VM on the chosen hypervisor", async () => {

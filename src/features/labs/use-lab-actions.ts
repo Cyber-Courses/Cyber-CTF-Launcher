@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { type ActiveOperation, type DockerEngine, type Park } from "@/lib/tauri";
+import { isCloudProvider, type ActiveOperation, type DockerEngine, type Park, type ServerHost } from "@/lib/tauri";
 import { getPortMode, type PortMode } from "@/lib/settings";
 import { askPortMode } from "@/features/labs/port-mode-prompt";
 import type { Lab } from "@/features/labs/use-labs";
@@ -19,6 +19,8 @@ import {
   type OperationBody,
 } from "@/features/labs/lab-operations";
 
+const NO_HOSTS: readonly ServerHost[] = [];
+
 /**
  * Start/stop actions for labs, shared across screens. The busy lab, its streamed log lines
  * and which lab they belong to live in a module store (runs/deploy-runs), so a deploy started
@@ -26,7 +28,7 @@ import {
  * opens Settings) and comes back. Keyed per lab, so two deploys at once keep separate logs; the
  * UI reads each lab's run from `runs[labId]`. The operations themselves are in lab-operations.
  */
-export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) => Promise<void> | void) {
+export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) => Promise<void> | void, hosts: readonly ServerHost[] = NO_HOSTS) {
   // By lab id: none for a lab not run since the app started.
   const { runs }: { runs: Partial<Record<string, DeployRun>> } = useDeploy();
 
@@ -49,6 +51,7 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
    * here on that hypervisor (none: the backend's), a container lab in a VM on this machine on
    * that hypervisor, or (`perMachine`) a container lab with VM recipes as one VM per machine there.
    * A cloud lab runs only on the cloud account `host` (never one picked implicitly: it costs).
+   * `hosts` (the saved servers and cloud accounts) say which `host` is a cloud account.
    * `report` (the machine report) says why a VM lab can't run here (its CPU);
    * `chosenPorts` = the host ports for a container lab here, already chosen ("Where should it run?").
    */
@@ -64,13 +67,14 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
       const containersHere = lab.runtime.runtime !== "VM" && host == null && !vm;
       const ports = containersHere ? (here?.ports ?? getPortMode() ?? (await askPortMode(lab.title))) : null;
       if (containersHere && !ports) return;
+      const inCloud = host != null && isCloudProvider(hosts.find((h) => h.id === host)?.provider);
       await operate(
         lab,
         "launch",
-        localLaunch(lab, { host, vmProvider: vm?.provider, report, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine }),
+        localLaunch(lab, { host, vmProvider: vm?.provider, report, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine, inCloud }),
       );
     },
-    [operate],
+    [operate, hosts],
   );
 
   const stop = useCallback((lab: Lab) => operate(lab, "stop", stopping(lab)), [operate]);

@@ -83,12 +83,12 @@ function useLabsScreen({ loggedIn, report, openLab, onDetailChange }: ViewProps)
   const catalogue = useLabs(loggedIn);
   const { labs, completed } = catalogue;
   const statuses: Statuses = catalogue.statuses;
-  const actions = useLabActions(catalogue.refreshStatus);
+  const servers = useSavedHosts().hosts;
+  const actions = useLabActions(catalogue.refreshStatus, servers);
   // Deploys running in the backend (started from another window or before a reload), for the rows' dots.
   const deploying = useDeployingLabs();
   const [detailSlug, setDetailSlug] = useOpenLab(openLab, labs);
   const [filters, setFilters] = useState<LabFilters>(NO_FILTERS);
-  const servers = useSavedHosts().hosts;
   // Local hypervisors ready for a lab VM (Vagrant + hypervisor), the Settings default first.
   const readyVms = useMemo(() => (report ? preferredFirst(report.readyHypervisors, getVmProvider()) : []), [report]);
   const shown = useFilteredLabs(labs, filters, statuses, completed);

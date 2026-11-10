@@ -39,11 +39,11 @@ type HomeProps = {
  *  into, and the actions on them. */
 function useOverviewLabs(loggedIn: boolean) {
   const { labs, error, retry, statuses, scanned, completed, refreshStatus } = useLabs(loggedIn);
-  const actions = useLabActions(refreshStatus);
+  const servers = useSavedHosts().hosts;
+  const actions = useLabActions(refreshStatus, servers);
   const ops = useActiveOperations();
   // Deploys running in the backend (started before a reload, or from the website), for the rows.
   const deploying = useDeployingLabs();
-  const servers = useSavedHosts().hosts;
   const all = labs ?? [];
   const running = labsRunning(all, statuses);
   return {

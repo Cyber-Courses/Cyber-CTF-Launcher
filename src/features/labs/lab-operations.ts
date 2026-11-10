@@ -21,7 +21,7 @@ import { appendDeployLog, beginDeploy, failDeploy, getDeploySnapshot, restoreDep
 import { noteSignedOut } from "@/features/account/signed-out";
 import { describeError, errorCode, isSignedOut } from "@/lib/errors";
 import { tell } from "@/lib/failure";
-import { translate } from "@/lib/i18n";
+import { translate, type MessageKey } from "@/lib/i18n";
 import { failureTitleKey } from "@/features/labs/failure-hints";
 import { askOfflineStart } from "@/features/labs/offline-start-prompt";
 
@@ -131,6 +131,8 @@ export type LocalWhere = {
   perMachineVm?: boolean;
   /** The container engine a lab here runs on (null: the current context). */
   engine?: DockerEngine | null;
+  /** `host` is a cloud account (its ready notification says so), not a server. */
+  inCloud?: boolean;
 };
 
 /** Where a lab with no place picked starts, by the backend's one rule (`labDefaultPlace`: where
@@ -191,11 +193,15 @@ export const localLaunch =
     );
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
-    void notify(
-      translate("labs.actions.labReady"),
-      translate(remote ? "labs.actions.readyOnServer" : inLocalVm ? "labs.actions.readyInVm" : "labs.actions.readyHere", { title: lab.title }),
-    );
+    void notify(translate("labs.actions.labReady"), translate(readyKey(remote, where.inCloud ?? false, inLocalVm), { title: lab.title }));
   };
+
+/** The ready notification's text for a lab started on a `remote` host (a cloud account when
+ *  `inCloud`), else here, in a VM (`inLocalVm`) or not. */
+function readyKey(remote: boolean, inCloud: boolean, inLocalVm: boolean): MessageKey {
+  if (remote) return inCloud ? "labs.actions.readyInCloud" : "labs.actions.readyOnServer";
+  return inLocalVm ? "labs.actions.readyInVm" : "labs.actions.readyHere";
+}
 
 export const stopping =
   (lab: Lab): OperationBody =>
