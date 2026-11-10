@@ -36,16 +36,21 @@ export interface Lab {
   skills: { id: string; name: string }[];
 }
 
-/** The catalogue (the one last loaded for `reloadKey` meanwhile), its load error, and the labs
- *  the player completed; each lab's status is read once the catalogue is in. `retry` loads it
- *  again (after it failed). */
+/** The catalogue loaded for `reloadKey` (on mount, the one the store last loaded for it; none
+ *  while a load for a new key runs: never one loaded for another sign-in state), its load error,
+ *  and the labs the player completed; each lab's status is read once the catalogue is in. `retry`
+ *  loads it again (after it failed). */
 function useCatalogue(reloadKey: unknown) {
-  const [labs, setLabs] = useState<Lab[] | null>(() => catalogueFor(reloadKey));
-  const [error, setError] = useState<string | null>(null);
-  const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [loaded, setLoaded] = useState<{ key: unknown; labs: Lab[] } | null>(() => {
+    const cached = catalogueFor(reloadKey);
+    return cached && { key: reloadKey, labs: cached };
+  });
+  const labs = loaded && loaded.key === reloadKey ? loaded.labs : null;
+  const [failure, setFailure] = useState<{ key: unknown; error: string } | null>(null);
+  const [done, setDone] = useState<{ key: unknown; ids: Set<string> } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => {
-    setError(null);
+    setFailure(null);
     setAttempt((n) => n + 1);
   }, []);
   useEffect(() => {
@@ -56,35 +61,40 @@ function useCatalogue(reloadKey: unknown) {
       .then((d) => {
         if (!alive) return;
         setCatalogue(reloadKey, d.labs);
-        setLabs(d.labs);
-        setError(null);
+        setLoaded({ key: reloadKey, labs: d.labs });
+        setFailure(null);
         d.labs.forEach((l) => void refreshStatus(l));
       })
       .catch((e: unknown) => {
-        if (alive) setError(describeError(e));
+        if (alive) setFailure({ key: reloadKey, error: describeError(e) });
       });
     // Best effort: logged out (or a backend without the query) just shows no progress.
     apiQuery<{ myCompletedLabs: string[] }>("completedLabs")
       .then((d) => {
-        if (alive) setCompleted(new Set(d.myCompletedLabs));
+        if (alive) setDone({ key: reloadKey, ids: new Set(d.myCompletedLabs) });
       })
       .catch(
         ignore("signed out, or a backend without the query: no progress shown", () => {
-          if (alive) setCompleted(new Set());
+          if (alive) setDone(null);
         }),
       );
     return () => {
       alive = false;
     };
   }, [reloadKey, attempt]);
+  const error = failure && failure.key === reloadKey ? failure.error : null;
+  const completed = done && done.key === reloadKey ? done.ids : NONE_COMPLETED;
   return { labs, error, completed, retry };
 }
+
+const NONE_COMPLETED = new Set<string>();
 
 /**
  * Loads the published labs from CyberBackend and tracks each lab's local runtime status
  * (running / machines / url). Shared by the Labs screen and the Home dashboard so both
  * reflect the same state (the statuses live in lab-store). `reloadKey` re-fetches the
- * catalogue when it changes; the one last loaded for it shows meanwhile.
+ * catalogue when it changes; the one loaded for it before (this session) shows meanwhile, never
+ * another sign-in state's.
  */
 export function useLabs(reloadKey: unknown = 0) {
   const { labs, error, completed, retry } = useCatalogue(reloadKey);

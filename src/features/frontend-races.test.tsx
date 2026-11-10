@@ -246,3 +246,30 @@ describe("the running scan", () => {
     expect(result.current.statuses["lab-e"].running).toBe(false);
   });
 });
+
+describe("the catalogue across a sign-in change", () => {
+  it("shows no other sign-in state's catalogue, nor its progress, while its own loads", async () => {
+    // Regression: signing in or out kept the previous state's labs and completed ones on screen
+    // until the new catalogue answered.
+    const second = deferred<{ labs: Lab[] }>();
+    let signedIn = false;
+    installTauri({
+      api_query: (a) => {
+        if (String(a?.operation).includes("completedLabs")) return signedIn ? new Promise(() => {}) : { myCompletedLabs: ["lab-a"] };
+        return signedIn ? second.promise : { labs: [lab("lab-a")] };
+      },
+    });
+    const { result, rerender } = renderHook(({ key }) => useLabs(key), { initialProps: { key: false } });
+    await flush();
+    expect(result.current.labs?.map((l) => l.id)).toEqual(["lab-a"]);
+    expect([...result.current.completed]).toEqual(["lab-a"]);
+    signedIn = true;
+    rerender({ key: true });
+    await flush();
+    expect(result.current.labs).toBeNull();
+    expect(result.current.completed.size).toBe(0);
+    second.resolve({ labs: [lab("lab-b")] });
+    await flush();
+    expect(result.current.labs?.map((l) => l.id)).toEqual(["lab-b"]);
+  });
+});
