@@ -61,7 +61,7 @@ pub fn claim(f: &Files) -> Result<std::fs::File> {
             if f.worker().is_some_and(|w| alive(&w)) {
                 return Err(Error::coded(crate::error::Code::AlreadyInProgress));
             }
-            let _ = std::fs::remove_file(&f.pid);
+            remove_pidfile(&f.pid);
             create().map_err(Error::Io)
         }
         Err(e) => Err(Error::Io(e)),
@@ -77,7 +77,7 @@ pub fn spawn(app: &AppHandle, job: &Job, pidfile: std::fs::File) -> Result<Spawn
     let job_file = f.job.clone();
     let started = start(f, job, pidfile);
     if started.is_err() {
-        let _ = std::fs::remove_file(&path);
+        remove_pidfile(&path);
         files::remove_job(&job_file);
     }
     started
@@ -140,7 +140,16 @@ fn reap(mut child: std::process::Child, pidfile: std::path::PathBuf) -> Exit {
 /// pidfile is left alone.
 pub fn remove_pidfile_of(path: &Path, pid: u32) {
     if read_worker(path).is_some_and(|w| w.pid == pid) {
-        let _ = std::fs::remove_file(path);
+        remove_pidfile(path);
+    }
+}
+
+/// Removes the pidfile at `path`, one already gone being no failure. One that can't be removed is
+/// logged: it goes on naming a worker that ended, so the lab reads as busy until its pid is reused
+/// or the file goes.
+fn remove_pidfile(path: &Path) {
+    if let Err(e) = files::remove(path) {
+        log::warn!("couldn't remove the deploy worker's pidfile {}: {e}", path.display());
     }
 }
 
@@ -324,9 +333,7 @@ fn running_in(d: &Path) -> Vec<String> {
             Some(w) if alive(&w) => out.push(key),
             // Just claimed, its worker not started yet (see `claim`): not stale.
             None if std::fs::read(&p).is_ok_and(|b| b.is_empty()) => {}
-            _ => {
-                let _ = std::fs::remove_file(&p);
-            }
+            _ => remove_pidfile(&p),
         }
     }
     out.sort();
@@ -383,9 +390,7 @@ fn kill_files(f: &Files) {
         #[cfg(unix)]
         signal_group(worker.pid, libc::SIGTERM);
         #[cfg(windows)]
-        {
-            let _ = crate::platform::exec::headless_std(std::process::Command::new("taskkill").args(["/PID", &worker.pid.to_string(), "/T", "/F"])).status();
-        }
+        taskkill(worker.pid);
     }
     remove_pidfile_of(&f.pid, worker.pid);
     // A worker killed outside its own end (Windows, or SIGKILL) leaves its job behind.
@@ -395,10 +400,24 @@ fn kill_files(f: &Files) {
 /// Sends `signal` to the process group `pid` leads: the worker and its vagrant/docker/terraform.
 /// A syscall, not `kill -TERM -<pid>`: procps' `kill` (Debian, Ubuntu) reads `-<pid>` as an
 /// option and signals the group named by its first digit, so `-1234` sent SIGTERM to every
-/// process of the user (`kill(-1)`) instead of the worker's group.
+/// process of the user (`kill(-1)`) instead of the worker's group. A signal that can't be sent
+/// (`EPERM`) is logged: what follows (a teardown) then runs beside a worker still running.
 #[cfg(unix)]
 fn signal_group(pid: u32, signal: libc::c_int) {
-    crate::platform::sys::signal_group(pid, signal);
+    if let Err(e) = crate::platform::sys::signal_group(pid, signal) {
+        log::warn!("couldn't send signal {signal} to deploy worker {pid} and what it started: {e}");
+    }
+}
+
+/// Ends the worker `pid` and what it started (`taskkill /T /F`); a `taskkill` that can't run or
+/// fails is logged, as [`signal_group`]'s refusals are.
+#[cfg(windows)]
+fn taskkill(pid: u32) {
+    match crate::platform::exec::headless_std(std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"])).status() {
+        Ok(status) if status.success() => {}
+        Ok(status) => log::warn!("taskkill couldn't end deploy worker {pid}: it {status}"),
+        Err(e) => log::warn!("taskkill couldn't run to end deploy worker {pid}: {e}"),
+    }
 }
 
 /// Half-second checks a Terraform run gets to stop on its own once interrupted: it finishes the
@@ -497,6 +516,29 @@ async fn gone_within(worker: &Worker, checks: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression: a stop's signal to its worker, and the removal of a pidfile, were dropped
+    /// silently when they failed, and the stop went on beside a worker still running.
+    #[test]
+    fn a_signal_or_a_pidfile_removal_that_fails_is_logged_and_one_already_gone_is_not() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-pidfiles-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(dir.join("held.pid")).unwrap();
+        crate::testing::logs::take_warnings();
+        remove_pidfile(&dir.join("gone.pid"));
+        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0], "a pidfile already gone");
+        // A folder where the pidfile would be: it can't be removed as a file.
+        remove_pidfile(&dir.join("held.pid"));
+        let warned = crate::testing::logs::take_warnings();
+        assert!(warned.len() == 1 && warned[0].starts_with("couldn't remove the deploy worker's pidfile"), "{warned:?}");
+        #[cfg(unix)]
+        {
+            // Pid 1 names every process as a group: refused, and the refusal logged.
+            signal_group(1, libc::SIGTERM);
+            let warned = crate::testing::logs::take_warnings();
+            assert!(warned.len() == 1 && warned[0].starts_with("couldn't send signal 15 to deploy worker 1"), "{warned:?}");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     /// Only a launch on a host Terraform drives is waited for: a VM lab on ESXi (Vagrant) or a
     /// park can be ended as before.

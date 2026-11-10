@@ -16,7 +16,9 @@ pub(super) fn interrupt_terraform(group: u32) -> bool {
     let mut found = pgrep(&["-g", &groups, "-x", "terraform"]);
     found.extend(pgrep(&["-g", &groups, "-f", "hashicorp/terraform"]));
     for pid in &found {
-        crate::platform::sys::signal_process(*pid, libc::SIGINT);
+        if let Err(e) = crate::platform::sys::signal_process(*pid, libc::SIGINT) {
+            log::warn!("couldn't interrupt Terraform ({pid}) under deploy worker {group}: {e}");
+        }
     }
     !found.is_empty()
 }

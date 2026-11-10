@@ -53,6 +53,7 @@ proptest! {
 fn pidfile_ids_that_mean_more_than_one_process_are_never_signalled() {
     for pid in [0, 1, u32::MAX, i32::MAX as u32 + 1] {
         // Would SIGTERM this test's own group, or every process of the user, if unguarded.
-        signal_group(pid, 0);
+        let refused = crate::platform::sys::signal_group(pid, 0).unwrap_err();
+        assert_eq!(refused.kind(), std::io::ErrorKind::InvalidInput, "{pid}");
     }
 }

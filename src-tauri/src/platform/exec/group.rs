@@ -82,10 +82,18 @@ fn forget(pid: Option<u32>) -> Option<Live> {
     Some(live.remove(at))
 }
 
+/// Logs a signal to tool group `pid` that couldn't be sent: the tool runs on, past its end.
+#[cfg(unix)]
+fn signalled(pid: u32, sent: std::io::Result<()>) {
+    if let Err(e) = sent {
+        log::warn!("couldn't end tool process group {pid}: {e}");
+    }
+}
+
 fn kill(live: &Live) {
     // The group was created by `process_group(0)` at spawn.
     #[cfg(unix)]
-    sys::signal_group(live.pid, libc::SIGKILL);
+    signalled(live.pid, sys::signal_group(live.pid, libc::SIGKILL));
     #[cfg(windows)]
     live.job.kill();
     #[cfg(not(any(unix, windows)))]
@@ -101,7 +109,7 @@ pub fn kill_live_tools() {
     for live in &groups {
         #[cfg(unix)]
         if live.stream {
-            sys::signal_group(live.pid, libc::SIGTERM);
+            signalled(live.pid, sys::signal_group(live.pid, libc::SIGTERM));
             continue;
         }
         kill(live);
