@@ -7,7 +7,7 @@ use crate::platform::AppDirs;
 
 use super::inflight::{Action, DeployGuard};
 pub(crate) use super::isothrum::Inputs;
-use super::paths::{forget_lab_host_keys, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, runner_home};
+use super::paths::{mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, runner_home};
 use super::providers::Provider;
 use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server};
 use crate::error::{Error, Result};
@@ -70,11 +70,6 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
         && up.host.as_deref() != host
     {
         return Err(super::status::still_running(&up));
-    }
-    // New hosts may come up at the addresses of others: no key pinned before counts. A parked
-    // lab resumes its own machines, whose keys stay pinned.
-    if parked(dir).is_none() {
-        forget_lab_host_keys(dir);
     }
     if runtime == Runtime::Cloud {
         return cloud_services::start(dirs, lab, host, env, &mut log).await;

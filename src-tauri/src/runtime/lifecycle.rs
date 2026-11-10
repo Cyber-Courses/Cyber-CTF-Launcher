@@ -174,8 +174,6 @@ async fn stop(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl 
 /// it must not call `stop`, which would deadlock): the integration tests.
 pub(crate) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
     let _deploy = DeployGuard::new(id, Action::Stop);
-    // Its hosts' keys go with its hosts.
-    super::paths::forget_lab_host_keys(dir);
     // Wherever it runs, through the runner (its attack box, a machine of it, goes with it): on
     // this machine, or on a server host or cloud account, destroyed there with the parameters it
     // was applied with and the connection that works now. A cloud-services lab on no account has

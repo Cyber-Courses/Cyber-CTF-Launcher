@@ -181,7 +181,7 @@ impl Target {
 
 /// The host keys of the server nodes the launcher reaches with its key (a Proxmox node: the jump
 /// host to an internal lab bridge, its key setup), next to that key. A lab host's keys are never
-/// kept here (see `shell::shell_known_hosts`).
+/// kept here: the Isothrum runner keeps each run's own, in the run's folder.
 pub fn node_known_hosts(identity: &Path) -> PathBuf {
     identity.with_file_name("nodes_known_hosts")
 }

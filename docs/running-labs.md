@@ -42,11 +42,9 @@ cloud). Beside the lab, in its folder:
 | `.cyberctf-parked`         | parked (paused or shut down): the next start resumes it                                     |
 | `.cyberctf-overlay.yml`    | the machines the launcher added to the lab (the attack box), merged into its spec when read |
 | `.cyberctf-instance`       | its instance number, given at install: its networks' blocks and its generated files' folder |
-| `.cyberctf-known_hosts`    | the host keys of its own hosts, for their shells                                            |
 
-A stop clears them once the run is gone (`lifecycle::forget_run`; the host keys go with the
-hosts), so the next start is the lab as published. The instance number stays: it is the
-installed lab's, not the run's.
+A stop clears them once the run is gone (`lifecycle::forget_run`), so the next start is the lab
+as published. The instance number stays: it is the installed lab's, not the run's.
 
 ## The attack box
 
