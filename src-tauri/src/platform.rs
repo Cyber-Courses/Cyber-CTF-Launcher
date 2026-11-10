@@ -14,6 +14,7 @@ pub mod console;
 pub mod env_path;
 pub mod exec;
 pub mod http;
+pub mod keychain;
 #[cfg(any(windows, test))]
 pub mod msix_data;
 pub mod policy;

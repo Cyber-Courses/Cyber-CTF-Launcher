@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::platform::config;
+use crate::platform::keychain;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub(super) struct Session {
@@ -29,12 +29,12 @@ pub(super) struct Session {
 /// Whether this build keeps the session in a file (a dev build) rather than the keychain.
 const IN_A_FILE: bool = cfg!(debug_assertions);
 
-fn entry() -> Result<keyring::Entry> {
-    entry_named("session")
-}
+/// The keychain entry holding the session, or its head when it is split (see [`split_chunks`]).
+const SESSION: &str = "session";
 
-fn entry_named(name: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(config::KEYCHAIN_SERVICE, name).map_err(|e| keychain_error(&e))
+/// The keychain entry of the session's piece `i` (1-based).
+fn piece_name(i: usize) -> String {
+    format!("session.{i}")
 }
 
 /// The most a keychain entry holds here, in UTF-16 units: Windows' Credential Manager caps a
@@ -99,15 +99,6 @@ fn decode(head: String, mut piece: impl FnMut(usize) -> std::result::Result<Opti
     }
 }
 
-/// The keychain failing is the common Linux case: no Secret Service (GNOME Keyring, KWallet)
-/// running, or it is locked. Say what to do; the raw error stays in parentheses for support.
-fn keychain_error(e: &keyring::Error) -> Error {
-    Error::Invalid(format!(
-        "Cyber CTF couldn't use the system keychain to keep your session. On Linux, start and unlock a keyring \
-         (GNOME Keyring or KWallet) and sign in again. ({e})"
-    ))
-}
-
 pub(super) fn dev_session_path() -> Option<std::path::PathBuf> {
     // Unit tests never read or replace the developer's own session, nor each other's: each test
     // thread has its own (a `#[tokio::test]` runs its tasks on its one thread, and the file is
@@ -163,16 +154,12 @@ fn load_keychain() -> std::result::Result<Option<Session>, String> {
     if let Some(why) = backoff::active() {
         return Err(why);
     }
-    let piece = |i: usize| match entry_named(&format!("session.{i}")).map_err(|e| e.to_string())?.get_password() {
-        Ok(part) => Ok(Some(part)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(keychain_error(&e).to_string()),
+    let piece = |i: usize| keychain::get(&piece_name(i)).map_err(|e| e.to_string());
+    let read = match keychain::get(SESSION) {
+        Ok(Some(head)) => decode(head, piece),
+        Ok(None) => Ok(None),
+        Err(e) => Err(e.to_string()),
     };
-    let read = entry().map_err(|e| e.to_string()).and_then(|e| match e.get_password() {
-        Ok(head) => decode(head, piece),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(keychain_error(&e).to_string()),
-    });
     if let Err(why) = &read {
         backoff::set(Some(why.clone()));
     }
@@ -224,9 +211,9 @@ fn save_blocking(session: &Session, file: Option<&std::path::Path>) -> Result<()
     // aren't there yet. Pieces left from a longer session before are removed.
     let (head, parts) = split_chunks(&raw)?;
     for (i, part) in parts.iter().enumerate() {
-        entry_named(&format!("session.{}", i + 1))?.set_password(part).map_err(|e| keychain_error(&e))?;
+        keychain::set(&piece_name(i + 1), part)?;
     }
-    entry()?.set_password(&head).map_err(|e| keychain_error(&e))?;
+    keychain::set(SESSION, &head)?;
     // The head names how many pieces to read: one left from before is never read, only stale.
     if let Err(e) = clear_chunks_from(parts.len() + 1) {
         log::warn!("the session is saved, but a piece of the one before stays in the keychain: {e}");
@@ -237,20 +224,7 @@ fn save_blocking(session: &Session, file: Option<&std::path::Path>) -> Result<()
 
 /// Removes the session pieces `session.<from>` and after, every one tried; the first failure.
 fn clear_chunks_from(from: usize) -> Result<()> {
-    (from..=MAX_CHUNKS).map(|i| entry_named(&format!("session.{i}")).and_then(|e| delete(&e))).fold(Ok(()), Result::and)
-}
-
-/// Deletes a keychain entry; one that isn't there is deleted already.
-fn delete(entry: &keyring::Entry) -> Result<()> {
-    removed(entry.delete_credential())
-}
-
-/// The outcome of deleting a keychain entry: gone, or why it stays.
-fn removed(deleted: keyring::Result<()>) -> Result<()> {
-    match deleted {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(keychain_error(&e)),
-    }
+    (from..=MAX_CHUNKS).map(|i| keychain::delete(&piece_name(i))).fold(Ok(()), Result::and)
 }
 
 /// `save_blocking` on a blocking thread (the keychain may prompt).
@@ -265,7 +239,7 @@ fn clear_blocking(file: Option<&std::path::Path>) -> Result<()> {
     }
     // The head first: without it the pieces are never read, so the session is gone even if one
     // of them stays.
-    delete(&entry()?)?;
+    keychain::delete(SESSION)?;
     clear_chunks_from(1)
 }
 
@@ -375,11 +349,7 @@ mod tests {
     fn a_session_is_forgotten_only_when_its_store_lets_it_go() {
         // Regression: every failure to delete was dropped, and sign-out said it worked while the
         // keychain kept the session.
-        assert!(removed(Ok(())).is_ok());
-        assert!(removed(Err(keyring::Error::NoEntry)).is_ok(), "nothing kept: already signed out");
-        let locked = removed(Err(keyring::Error::PlatformFailure("the keychain is locked".into()))).unwrap_err();
-        assert!(locked.to_string().contains("the keychain is locked"), "{locked}");
-
+        // (A keychain delete's rule is platform::keychain's.)
         let dir = std::env::temp_dir().join(format!("cyberctf-clear-{}", rand::random::<u64>()));
         let path = dir.join("dev-session.json");
         assert!(remove_file(&path).is_ok(), "no file: already signed out");

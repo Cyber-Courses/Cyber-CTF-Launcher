@@ -160,6 +160,9 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   Vagrant command landing then was refused ("another process is already executing an action on
   the machine") and the start failed. The count now reads Vagrant's index as it is, and skips a
   record whose lab folder is gone.
+- **A server's or cloud account's secret that the keychain can't read says what to do.** On
+  Linux the sign-in already said to start and unlock a keyring; a server's password or an
+  account's keys said only "keychain: …". Both now give the same advice.
 - **Stop on the Machine page says why when it fails.** A lab or test that couldn't be stopped
   stayed in the list with no word; the failure is now shown.
 - **A Google Cloud account that can't launch no longer passes Test or reads as signed in.** The

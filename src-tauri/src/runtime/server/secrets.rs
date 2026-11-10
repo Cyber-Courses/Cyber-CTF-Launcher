@@ -9,6 +9,7 @@
 
 use super::profile::HostProfile;
 use crate::error::{Code, Error, Result};
+use crate::platform::keychain;
 
 /// Whether this build keeps the secrets in a file (a dev build) rather than the keychain.
 const IN_A_FILE: bool = cfg!(debug_assertions);
@@ -17,7 +18,7 @@ const IN_A_FILE: bool = cfg!(debug_assertions);
 /// read (a locked keychain, its unlock prompt dismissed, a secrets file that doesn't parse) says
 /// why instead.
 pub(crate) fn get_secret(id: &str) -> Result<String> {
-    if IN_A_FILE { found(dev_file::read()?.remove(id)) } else { blocking(|| keychain::get(id)) }
+    if IN_A_FILE { found(dev_file::read()?.remove(id)) } else { blocking(|| keychain::get(&entry_name(id))).and_then(found) }
 }
 
 pub(crate) fn set_secret(id: &str, secret: &str) -> Result<()> {
@@ -26,7 +27,7 @@ pub(crate) fn set_secret(id: &str, secret: &str) -> Result<()> {
         map.insert(id.to_string(), secret.to_string());
         dev_file::write(&map)
     } else {
-        blocking(|| keychain::set(id, secret))
+        blocking(|| keychain::set(&entry_name(id), secret))
     }
 }
 
@@ -40,7 +41,7 @@ pub(crate) fn delete_secret(id: &str) -> Result<()> {
         }
         Ok(())
     } else {
-        blocking(|| keychain::delete(id))
+        blocking(|| keychain::delete(&entry_name(id)))
     }
 }
 
@@ -65,47 +66,8 @@ fn blocking<T>(call: impl FnOnce() -> T) -> T {
 }
 
 /// The release builds' store: one keychain entry per host, `server:<id>`.
-mod keychain {
-    use super::found;
-    use crate::error::{Error, Result};
-
-    fn entry(id: &str) -> Result<keyring::Entry> {
-        keyring::Entry::new(crate::platform::config::KEYCHAIN_SERVICE, &format!("server:{id}")).map_err(|e| failed(&e))
-    }
-
-    fn failed(e: &keyring::Error) -> Error {
-        Error::Invalid(format!("keychain: {e}"))
-    }
-
-    pub(super) fn get(id: &str) -> Result<String> {
-        read(entry(id)?.get_password())
-    }
-
-    pub(super) fn set(id: &str, secret: &str) -> Result<()> {
-        entry(id)?.set_password(secret).map_err(|e| failed(&e))
-    }
-
-    pub(super) fn delete(id: &str) -> Result<()> {
-        removed(entry(id)?.delete_credential())
-    }
-
-    /// The secret a keychain read found: none stored is [`super::Code::NoPasswordStored`]; any other
-    /// failure (locked, its prompt dismissed, no Secret Service) is the keychain's, never "none".
-    pub(super) fn read(answer: keyring::Result<String>) -> Result<String> {
-        match answer {
-            Ok(secret) => Ok(secret),
-            Err(keyring::Error::NoEntry) => found(None),
-            Err(e) => Err(failed(&e)),
-        }
-    }
-
-    /// The outcome of a keychain delete: gone (or never there), or why it stays.
-    pub(super) fn removed(answer: keyring::Result<()>) -> Result<()> {
-        match answer {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(failed(&e)),
-        }
-    }
+fn entry_name(id: &str) -> String {
+    format!("server:{id}")
 }
 
 /// The dev builds' store: every host's secret in one JSON file under the home folder.
@@ -188,14 +150,11 @@ mod tests {
     fn a_keychain_that_cant_be_read_says_so_and_never_reads_as_no_secret() {
         // Regression: a locked keychain (or its unlock prompt dismissed) read as "no password
         // stored", so the player was told to enter the host's password again.
-        assert_eq!(keychain::read(Ok("pw".into())).unwrap(), "pw");
-        assert_eq!(keychain::read(Err(keyring::Error::NoEntry)).unwrap_err().code(), Code::NoPasswordStored);
-        let locked = keychain::read(Err(keyring::Error::NoStorageAccess("the keychain is locked".into()))).unwrap_err();
-        assert_ne!(locked.code(), Code::NoPasswordStored);
-        assert!(locked.to_string().starts_with("keychain: ") && locked.to_string().contains("the keychain is locked"), "{locked}");
-        // A delete: one that isn't there is gone already; a refusal says why.
-        assert!(keychain::removed(Ok(())).is_ok() && keychain::removed(Err(keyring::Error::NoEntry)).is_ok());
-        assert!(keychain::removed(Err(keyring::Error::NoStorageAccess("locked".into()))).unwrap_err().to_string().starts_with("keychain: "));
+        assert_eq!(Ok(Some("pw".to_string())).and_then(found).unwrap(), "pw");
+        assert_eq!(Ok(None).and_then(found).unwrap_err().code(), Code::NoPasswordStored);
+        let locked: Result<Option<String>> = Err(Error::Invalid("the keychain is locked".into()));
+        assert_ne!(locked.and_then(found).unwrap_err().code(), Code::NoPasswordStored);
+        assert_eq!(entry_name("pve1"), "server:pve1");
     }
 
     #[test]
