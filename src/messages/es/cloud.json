@@ -12,8 +12,6 @@
     "loading": "Cargando…",
     "accounts": "Cuentas",
     "billedOnly": "se factura solo mientras un lab se ejecuta",
-    "notConnected": "no conectada",
-    "connect": "Conectar",
     "budgetGuard": "Control de presupuesto · {name}",
     "ofLimit": "de {limit}",
     "overBudget": "Presupuesto superado",
@@ -62,5 +60,9 @@
     "cancel": "Cancelar",
     "test": "Probar",
     "edit": "Editar"
+  },
+  "connect": {
+    "title": "Conectar un proveedor de nube",
+    "provider": "Conectar {provider}"
   }
 }

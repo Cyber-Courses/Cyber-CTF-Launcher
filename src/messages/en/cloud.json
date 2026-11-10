@@ -12,8 +12,6 @@
     "loading": "Loading…",
     "accounts": "Accounts",
     "billedOnly": "billed only while a lab runs",
-    "notConnected": "not connected",
-    "connect": "Connect",
     "budgetGuard": "Budget guard · {name}",
     "ofLimit": "of {limit}",
     "overBudget": "Over budget",
@@ -62,5 +60,9 @@
     "cancel": "Cancel",
     "test": "Test",
     "edit": "Edit"
+  },
+  "connect": {
+    "title": "Connect a cloud provider",
+    "provider": "Connect {provider}"
   }
 }

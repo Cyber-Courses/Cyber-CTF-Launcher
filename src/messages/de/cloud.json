@@ -12,8 +12,6 @@
     "loading": "Wird geladen…",
     "accounts": "Konten",
     "billedOnly": "nur kostenpflichtig, während ein Lab läuft",
-    "notConnected": "nicht verbunden",
-    "connect": "Verbinden",
     "budgetGuard": "Budgetschutz · {name}",
     "ofLimit": "von {limit}",
     "overBudget": "Budget überschritten",
@@ -62,5 +60,9 @@
     "cancel": "Abbrechen",
     "test": "Testen",
     "edit": "Bearbeiten"
+  },
+  "connect": {
+    "title": "Cloud-Anbieter verbinden",
+    "provider": "{provider} verbinden"
   }
 }

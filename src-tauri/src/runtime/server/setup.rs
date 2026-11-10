@@ -84,10 +84,7 @@ pub(crate) fn remove(dirs: &AppDirs, id: &str) -> Result<()> {
     // Its secret first: a keychain that refuses to let it go leaves the host as it was, rather
     // than a removed host whose password stays behind.
     delete_secret(id).map_err(|e| Error::Invalid(format!("couldn't remove this host's secret, so the host stays: {e}")))?;
-    update(dirs, |store| {
-        remove_host(store, id);
-        Ok(())
-    })
+    update(dirs, |store| remove_host(store, id))
 }
 
 /// Saves a checked form: under its id, its secret in the keychain.

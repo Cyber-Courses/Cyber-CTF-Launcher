@@ -10,9 +10,10 @@ import { NoticePanel } from "@/components/ui/notice-panel";
 import { PageHeader } from "@/components/ui/page-header";
 import { Spinner } from "@/components/ui/spinner";
 import { FirstRun } from "@/features/cloud/first-run";
-import { AccountsPanel, BudgetPanel, RunningCloudLabs } from "@/features/cloud/cloud-panels";
+import { AccountsPanel, BudgetPanel, ConnectProviders, RunningCloudLabs } from "@/features/cloud/cloud-panels";
+import { unconnectedProviders } from "@/features/cloud/cloud-model";
 import { useCloudPage, type CloudPage } from "@/features/cloud/use-cloud-page";
-import type { ServerHost } from "@/lib/tauri";
+import type { CloudProvider, ServerHost } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
 export function CloudScreen() {
@@ -56,9 +57,13 @@ function OverBudgetNotice({ over }: { over: ServerHost[] }) {
   );
 }
 
-/** The accounts: loading, the first-run tiles before any, else the list. */
+/** The accounts: loading, the first run while there is none, else the connected accounts, then
+ *  apart from them the main providers not connected yet. */
 function Accounts({ page, onSetup }: { page: CloudPage; onSetup: () => void }) {
   const t = useT();
+  const connect = (provider: CloudProvider) => {
+    page.openSetup(null, provider);
+  };
   if (page.hosts === null)
     return (
       <Panel>
@@ -67,18 +72,11 @@ function Accounts({ page, onSetup }: { page: CloudPage; onSetup: () => void }) {
         </div>
       </Panel>
     );
-  if (page.hosts.length === 0) return <FirstRun onSetup={onSetup} />;
+  if (page.hosts.length === 0) return <FirstRun onSetup={onSetup} onConnect={connect} />;
   return (
-    <AccountsPanel
-      accounts={page.hosts}
-      tests={page.tests}
-      spend={page.spend}
-      onTest={page.test}
-      onEdit={page.openSetup}
-      onRemove={page.remove}
-      onConnect={(provider) => {
-        page.openSetup(null, provider);
-      }}
-    />
+    <>
+      <AccountsPanel accounts={page.hosts} tests={page.tests} spend={page.spend} onTest={page.test} onEdit={page.openSetup} onRemove={page.remove} />
+      <ConnectProviders providers={unconnectedProviders(page.hosts)} onConnect={connect} />
+    </>
   );
 }

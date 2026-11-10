@@ -7,11 +7,12 @@ import { Meter } from "@/components/ui/meter";
 import { StatusDot, StatusPill } from "@/components/ui/status-pill";
 import { Spinner } from "@/components/ui/spinner";
 import type { Lab } from "@/features/labs/use-labs";
-import { AccountRow, LogoTile } from "@/features/cloud/account-row";
+import { AccountRow } from "@/features/cloud/account-row";
 import { MAIN_PROVIDERS, isOverBudget } from "@/features/cloud/cloud-model";
 import type { CloudProvider, LabStatus, ServerHost, ServerTest } from "@/lib/tauri";
 import { useFormat, useT } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
+import { cloudLogo } from "@/features/servers/host-setup/constants";
 
 /** The labs running on a cloud account now (they bill while they run), each with a Stop. */
 export function RunningCloudLabs({
@@ -62,8 +63,8 @@ export function RunningCloudLabs({
   );
 }
 
-/** The connected accounts, then a "connect" row for each main provider not connected yet;
- *  `onConnect` opens the setup on that row's provider. */
+/** The connected accounts, and only those: a provider not connected yet is offered apart, in
+ *  `ConnectProviders`, so it never reads as an account. */
 export function AccountsPanel({
   accounts,
   tests,
@@ -71,7 +72,6 @@ export function AccountsPanel({
   onTest,
   onEdit,
   onRemove,
-  onConnect,
 }: {
   accounts: ServerHost[];
   tests: Partial<Record<string, ServerTest | "testing">>;
@@ -79,7 +79,6 @@ export function AccountsPanel({
   onTest: (id: string) => void;
   onEdit: (id: string) => void;
   onRemove: (id: string) => void;
-  onConnect: (provider: CloudProvider) => void;
 }) {
   const t = useT();
   return (
@@ -102,34 +101,43 @@ export function AccountsPanel({
           }}
         />
       ))}
-      {/* The main providers not connected yet, one click from their setup. */}
-      {MAIN_PROVIDERS.filter((p) => !accounts.some((h) => h.provider === p.id)).map((p) => (
-        <ConnectRow key={p.id} provider={p.id} label={p.label} onConnect={onConnect} />
-      ))}
     </Panel>
   );
 }
 
-/** A main provider not connected yet: its name, and Connect, which opens the setup on it. */
-function ConnectRow({ provider, label, onConnect }: { provider: CloudProvider; label: string; onConnect: (provider: CloudProvider) => void }) {
+/** The main providers not connected yet, each a button that opens the setup on it. */
+export function ProviderButtons({ providers, onConnect }: { providers: typeof MAIN_PROVIDERS; onConnect: (provider: CloudProvider) => void }) {
   const t = useT();
   return (
-    <div className="grid min-h-[3.25rem] grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3.5 border-t border-border px-4 py-2.5 transition-colors hover:bg-glass">
-      <LogoTile provider={provider} />
-      <div className="min-w-0">
-        <p className="truncate text-[0.8125rem] font-medium text-foreground">{label}</p>
-        <p className="truncate font-mono text-[0.6875rem] text-faint">{t("cloud.screen.notConnected")}</p>
-      </div>
-      <Button
-        variant="outline"
-        size="xs"
-        onClick={() => {
-          onConnect(provider);
-        }}
-      >
-        {t("cloud.screen.connect")}
-      </Button>
+    <div className="flex flex-wrap gap-2">
+      {providers.map((p) => (
+        <Button
+          key={p.id}
+          variant="outline"
+          size="sm"
+          aria-label={t("cloud.connect.provider", { provider: p.label })}
+          onClick={() => {
+            onConnect(p.id);
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
+          <img src={cloudLogo(p.id)} alt="" className="size-4 object-contain" draggable={false} />
+          {p.label}
+        </Button>
+      ))}
     </div>
+  );
+}
+
+/** Under the accounts, apart from them: the main providers not connected yet, as actions. */
+export function ConnectProviders({ providers, onConnect }: { providers: typeof MAIN_PROVIDERS; onConnect: (provider: CloudProvider) => void }) {
+  const t = useT();
+  if (providers.length === 0) return null;
+  return (
+    <section aria-label={t("cloud.connect.title")} className="space-y-2.5">
+      <h3 className="text-[0.8125rem] font-medium text-muted-foreground">{t("cloud.connect.title")}</h3>
+      <ProviderButtons providers={providers} onConnect={onConnect} />
+    </section>
   );
 }
 

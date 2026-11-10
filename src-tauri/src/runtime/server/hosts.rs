@@ -43,13 +43,19 @@ pub(crate) fn put_host(store: &mut Store, profile: HostProfile) {
     }
 }
 
-/// Drops a host; when it was the default, another server (never a cloud account) takes over.
-pub(crate) fn remove_host(store: &mut Store, id: &str) {
+/// Drops host `id`, and only it; when it was the default, another server (never a cloud account)
+/// takes over. A store with that id on more than one host is refused, as it is: a remove drops
+/// one host or none.
+pub(crate) fn remove_host(store: &mut Store, id: &str) -> Result<()> {
+    if store.hosts.iter().filter(|h| h.id == id).count() > 1 {
+        return Err(Error::Invalid(format!("more than one saved host has the id `{id}`, so none is removed")));
+    }
     store.hosts.retain(|h| h.id != id);
     if store.default.as_deref() == Some(id) {
         // The default is a *server* to run VM labs on; a cloud account must never become it.
         store.default = store.hosts.iter().find(|h| !h.provider.is_cloud()).map(|h| h.id.clone());
     }
+    Ok(())
 }
 
 /// Sets (or clears, with None) the host VM labs run on by default: a saved server, never a cloud

@@ -6,6 +6,9 @@ import type { Lab } from "@/features/labs/use-labs";
 /** The providers offered up front: the first-run tiles, and a "connect" row each until connected. */
 export const MAIN_PROVIDERS = (["aws", "azure", "gcp"] satisfies CloudProvider[]).map((id) => ({ id, label: PROVIDER_NAMES[id] }));
 
+/** The main providers with no account among `accounts`, offered apart from them to connect. */
+export const unconnectedProviders = (accounts: ServerHost[]) => MAIN_PROVIDERS.filter((p) => !accounts.some((h) => h.provider === p.id));
+
 /** The cloud accounts among the saved hosts (the rest are servers). */
 export const cloudAccounts = (hosts: ServerHost[]) => hosts.filter((h) => isCloudProvider(h.provider));
 

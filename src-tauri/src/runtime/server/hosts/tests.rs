@@ -54,16 +54,30 @@ fn the_first_server_saved_becomes_the_default_but_never_a_cloud() {
 #[test]
 fn removing_the_default_hands_it_to_another_server() {
     let mut s = store(vec![host("aws1", Provider::Aws), host("pve1", Provider::Proxmox), host("esx1", Provider::VmwareEsxi)], Some("pve1"));
-    remove_host(&mut s, "pve1");
+    remove_host(&mut s, "pve1").unwrap();
     assert_eq!(s.default.as_deref(), Some("esx1"));
     assert_eq!(s.hosts.len(), 2);
     // Removing a non-default leaves the default alone.
-    remove_host(&mut s, "aws1");
+    remove_host(&mut s, "aws1").unwrap();
     assert_eq!(s.default.as_deref(), Some("esx1"));
     // No server left: no default (the cloud account never takes it).
     let mut s = store(vec![host("aws1", Provider::Aws), host("esx1", Provider::VmwareEsxi)], Some("esx1"));
-    remove_host(&mut s, "esx1");
+    remove_host(&mut s, "esx1").unwrap();
     assert_eq!(s.default, None);
+}
+
+#[test]
+fn a_remove_drops_the_one_host_by_its_id() {
+    let mut s = store(vec![host("aws1", Provider::Aws), host("az1", Provider::Azure), host("pve1", Provider::Proxmox)], Some("pve1"));
+    remove_host(&mut s, "az1").unwrap();
+    assert_eq!(s.hosts.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(), ["aws1", "pve1"]);
+    // An id no host has drops none.
+    remove_host(&mut s, "gone").unwrap();
+    assert_eq!(s.hosts.len(), 2);
+    // A store where two hosts share the id is refused as it is, rather than losing both.
+    let mut s = store(vec![host("aws1", Provider::Aws), host("aws1", Provider::Aws), host("pve1", Provider::Proxmox)], None);
+    assert!(remove_host(&mut s, "aws1").unwrap_err().to_string().contains("more than one saved host"));
+    assert_eq!(s.hosts.len(), 3);
 }
 
 #[test]

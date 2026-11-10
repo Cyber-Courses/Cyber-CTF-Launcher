@@ -4,7 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CloudScreen } from "@/features/cloud/cloud-screen";
 import { AccountRow } from "@/features/cloud/account-row";
-import { AccountsPanel, BudgetPanel, RunningCloudLabs } from "@/features/cloud/cloud-panels";
+import { AccountsPanel, BudgetPanel, ConnectProviders, RunningCloudLabs } from "@/features/cloud/cloud-panels";
+import { unconnectedProviders } from "@/features/cloud/cloud-model";
 import type { Lab } from "@/features/labs/use-labs";
 import { answer } from "@/lib/dev-mock";
 import { invoiceStatus } from "@/lib/dev-mock/labs";
@@ -39,19 +40,56 @@ async function renderScreen() {
   await flush(50);
 }
 
+/** Removes the one account listed, confirming it. */
+async function removeAccount(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Remove" }));
+  await user.click(button(/^remove$/i));
+  await flush(50);
+}
+
 describe("CloudScreen", () => {
-  it("lists only the cloud accounts, with a connect row for each main provider not connected", async () => {
+  it("lists only the cloud accounts, and offers the providers not connected apart from them", async () => {
     const calls = installTauri();
     await renderScreen();
     expect(screen.getByText("AWS sandbox")).toBeTruthy();
     expect(screen.queryByText("homelab-pve")).toBeNull();
-    expect(screen.queryByText("AWS")).toBeNull();
-    expect(screen.getByText("Azure")).toBeTruthy();
-    expect(screen.getByText("Google Cloud")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Connect AWS" })).toBeNull();
+    const connect = screen.getByRole("region", { name: "Connect a cloud provider" });
+    expect(
+      within(connect)
+        .getAllByRole("button")
+        .map((b) => b.getAttribute("aria-label")),
+    ).toEqual(["Connect Azure", "Connect Google Cloud"]);
     expect(document.body.textContent).toContain("eu-west-3 · CLI · default · auto-stop 4h");
     // No budget set: Cost Explorer (billed per call) isn't asked.
     expect(commands(calls)).not.toContain("server_month_to_date_cost");
     expect(screen.getByText("Not tested")).toBeTruthy();
+  });
+
+  it("shows one account row for the one connected account, and the empty state with the connect actions once it is removed", async () => {
+    // Regression: the providers not connected were rows of the accounts list ("Azure, not
+    // connected"), so removing the one real account looked as if every account went with it.
+    let list: ServerList = { default: null, hosts: [aws] };
+    const calls = installTauri({
+      server_list: () => list,
+      server_remove: (a) => {
+        list = { default: null, hosts: list.hosts.filter((h) => h.id !== a?.id) };
+        return null;
+      },
+    });
+    const user = userEvent.setup();
+    await renderScreen();
+    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /^Connect / })).toHaveLength(2);
+    await removeAccount(user);
+    expect(argsOf(calls, "server_remove")).toEqual([{ id: aws.id }]);
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.getByText("Run labs in your own cloud account")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /^Connect / }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Connect AWS",
+      "Connect Azure",
+      "Connect Google Cloud",
+    ]);
   });
 
   it("reads this month's spend for an account with a budget and warns when it is over", async () => {
@@ -147,10 +185,8 @@ describe("CloudScreen", () => {
     await renderScreen();
     await user.click(screen.getByRole("button", { name: "Edit" }));
     // Regression: Connect on the Azure and Google Cloud rows opened the setup on AWS.
-    const connect = screen.getAllByRole("button", { name: "Connect" });
-    expect(connect).toHaveLength(2);
-    await user.click(connect[0]);
-    await user.click(connect[1]);
+    await user.click(screen.getByRole("button", { name: "Connect Azure" }));
+    await user.click(screen.getByRole("button", { name: "Connect Google Cloud" }));
     await user.click(button(/set up cloud provider/i));
     await flush();
     expect(argsOf(calls, "server_open_setup")).toEqual([
@@ -172,17 +208,22 @@ describe("CloudScreen", () => {
     expect(screen.getByText("no window")).toBeTruthy();
   });
 
-  it("shows the first run without accounts", async () => {
+  it("shows the first run without accounts, connecting a main provider or any other", async () => {
     const calls = installTauri({ server_list: () => ({ default: null, hosts: [sample().hosts[0]] }) });
     const user = userEvent.setup();
     await renderScreen();
     expect(screen.getByText("Run labs in your own cloud account")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     // One "set up" button, in the first run (none in the header).
     const setUp = screen.getAllByRole("button", { name: /set up cloud provider/i });
     expect(setUp).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Connect AWS" }));
     await user.click(setUp[0]);
     await flush();
-    expect(argsOf(calls, "server_open_setup")).toEqual([{ id: null, kind: "cloud" }]);
+    expect(argsOf(calls, "server_open_setup")).toEqual([
+      { id: null, kind: "cloud", provider: "aws" },
+      { id: null, kind: "cloud" },
+    ]);
   });
 
   it("shows loading, then the list error", async () => {
@@ -276,32 +317,25 @@ describe("cloud panels", () => {
     expect(onStop).toHaveBeenCalledWith(expect.objectContaining({ id: "a" }));
   });
 
-  it("hides the connect rows for the providers already connected", () => {
-    const accounts = [account({}), account({ id: "z", name: "Azure lab", provider: "azure" }), account({ id: "g", name: "GCP lab", provider: "gcp" })];
-    render(<AccountsPanel accounts={accounts} tests={{}} spend={{}} onTest={vi.fn()} onEdit={vi.fn()} onRemove={vi.fn()} onConnect={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+  it("lists the accounts and nothing else", () => {
+    const accounts = [account({}), account({ id: "z", name: "Azure lab", provider: "azure" })];
+    render(<AccountsPanel accounts={accounts} tests={{}} spend={{}} onTest={vi.fn()} onEdit={vi.fn()} onRemove={vi.fn()} />);
+    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(2);
+    expect(screen.queryByText("Google Cloud")).toBeNull();
   });
 
-  it("connects a provider from its own row", async () => {
+  it("offers each provider not connected, and nothing once all are", async () => {
     const user = userEvent.setup();
     const onConnect = vi.fn();
-    render(
-      <AccountsPanel
-        accounts={[account({ provider: "azure" })]}
-        tests={{}}
-        spend={{}}
-        onTest={vi.fn()}
-        onEdit={vi.fn()}
-        onRemove={vi.fn()}
-        onConnect={onConnect}
-      />,
-    );
-    const rows = screen.getAllByRole("button", { name: "Connect" });
-    expect(rows).toHaveLength(2);
-    await user.click(rows[1]);
+    const { unmount } = render(<ConnectProviders providers={unconnectedProviders([account({ provider: "azure" })])} onConnect={onConnect} />);
+    await user.click(screen.getByRole("button", { name: "Connect Google Cloud" }));
     expect(onConnect).toHaveBeenCalledWith("gcp");
-    await user.click(rows[0]);
+    await user.click(screen.getByRole("button", { name: "Connect AWS" }));
     expect(onConnect).toHaveBeenLastCalledWith("aws");
+    unmount();
+    const all = [account({}), account({ provider: "azure" }), account({ provider: "gcp" })];
+    const { container } = render(<ConnectProviders providers={unconnectedProviders(all)} onConnect={onConnect} />);
+    expect(container.textContent).toBe("");
   });
 
   it("shows a budget under its limit, with no auto-stop", () => {
