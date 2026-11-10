@@ -80,6 +80,7 @@
     "open": "attack box",
     "ended": "session terminée",
     "failed": "connexion impossible",
+    "noLab": "Cette fenêtre n’a pas été ouverte pour un lab : ouvrez le shell depuis la page du lab.",
     "systemTerminal": "Terminal système",
     "systemTerminalHint": "Ouvrir ce shell dans votre propre application de terminal",
     "systemTerminalFailed": "Impossible d'ouvrir le terminal système",

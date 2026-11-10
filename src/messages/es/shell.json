@@ -80,6 +80,7 @@
     "open": "máquina de ataque",
     "ended": "sesión finalizada",
     "failed": "no se pudo conectar",
+    "noLab": "Esta ventana no se abrió para ningún lab: abre la shell desde la página del lab.",
     "systemTerminal": "Terminal del sistema",
     "systemTerminalHint": "Abrir esta shell en tu propia app de terminal",
     "systemTerminalFailed": "No se pudo abrir la terminal del sistema",

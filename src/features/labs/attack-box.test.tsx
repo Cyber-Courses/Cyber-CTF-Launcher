@@ -37,7 +37,7 @@ describe("useAttackBox", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     setAttackImage("my/exegol:full");
     const calls = installTauri({ attack_box_status: () => box({ running: true, ip: "10.42.0.9" }) });
-    const { result, rerender } = renderHook((p: { running: boolean }) => useAttackBox("ab-poll", { running: p.running }), {
+    const { result, rerender } = renderHook((p: { running: boolean }) => useAttackBox("ab-poll", { running: p.running, runtime: "DOCKER" }), {
       initialProps: { running: true },
     });
     await flush();
@@ -62,7 +62,7 @@ describe("useAttackBox", () => {
 
   it("doesn't read the box again when the learner picks the network it joins", async () => {
     const calls = installTauri({ attack_box_status: () => box({ networks: ["default", "dmz"] }) });
-    const { result } = renderHook(() => useAttackBox("ab-pick", { running: true }));
+    const { result } = renderHook(() => useAttackBox("ab-pick", { running: true, runtime: "DOCKER" }));
     await flush();
     expect(count(calls, "attack_box_status")).toBe(1);
     act(() => {
@@ -76,7 +76,7 @@ describe("useAttackBox", () => {
   it("stops reading, and never attaches, a box the backend says it can't reach (a lab on an ESXi host)", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     const calls = installTauri({ attack_box_status: () => box({ reachable: false, networks: [], defaultNetwork: "" }) });
-    renderHook(() => useAttackBox("ab-remote", { running: true }));
+    renderHook(() => useAttackBox("ab-remote", { running: true, runtime: "DOCKER" }));
     await flush();
     act(() => {
       vi.advanceTimersByTime(15000);
@@ -89,7 +89,7 @@ describe("useAttackBox", () => {
   it("leaves the image to the backend's default when the learner saved none", async () => {
     setAttackImage(DEFAULT_ATTACK_IMAGE);
     const calls = installTauri({ attack_box_status: () => box(), attack_box_attach: () => null });
-    const { result } = renderHook(() => useAttackBox("ab-default", { running: true }));
+    const { result } = renderHook(() => useAttackBox("ab-default", { running: true, runtime: "DOCKER" }));
     await flush();
     expect(result.current.name).toBe("cyberctf/attack-box");
     await act(() => result.current.start());
@@ -113,7 +113,7 @@ describe("useAttackBox", () => {
 
   it("never attaches the box on its own, Settings or not: the app-wide auto-start does", async () => {
     const calls = installTauri({ attack_box_status: () => box() });
-    renderHook(() => useAttackBox("ab-auto", { running: true }));
+    renderHook(() => useAttackBox("ab-auto", { running: true, runtime: "DOCKER" }));
     await flush(50);
     expect(count(calls, "attack_box_status")).toBe(1);
     expect(count(calls, "attack_box_attach")).toBe(0);
@@ -121,7 +121,7 @@ describe("useAttackBox", () => {
 
   it("doesn't touch the box while a lab operation is in flight", async () => {
     const calls = installTauri({ attack_box_status: () => box() });
-    renderHook(() => useAttackBox("ab-hold", { running: true, holding: true }));
+    renderHook(() => useAttackBox("ab-hold", { running: true, holding: true, runtime: "DOCKER" }));
     await flush(50);
     expect(count(calls, "attack_box_status")).toBe(0);
     expect(count(calls, "attack_box_attach")).toBe(0);
@@ -138,7 +138,7 @@ describe("useAttackBox", () => {
       },
       attack_box_attach: () => rejectWith("image pull failed"),
     });
-    const { result } = renderHook(() => useAttackBox("ab-stop", { running: true }));
+    const { result } = renderHook(() => useAttackBox("ab-stop", { running: true, runtime: "DOCKER" }));
     await flush();
     expect(result.current.status?.running).toBe(true);
     await act(() => result.current.stop());
@@ -158,7 +158,7 @@ describe("useAttackBox", () => {
         return box({ running: true, ip: "10.42.0.9" });
       },
     });
-    const { result } = renderHook(() => useAttackBox("ab-keep", { running: true }));
+    const { result } = renderHook(() => useAttackBox("ab-keep", { running: true, runtime: "DOCKER" }));
     await flush();
     fail = true;
     act(() => {

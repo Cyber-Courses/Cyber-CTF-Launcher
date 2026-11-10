@@ -78,7 +78,7 @@ function useAttackBoxRun(refresh: () => void) {
  * where the player sits), `defaultNetwork` until they do. `holding` = a lab operation (start,
  * shut down, stop…) is in flight: nothing is read or attached meanwhile.
  */
-export function useAttackBox(labId: string, { running, holding = false, runtime = "DOCKER" }: { running: boolean; holding?: boolean; runtime?: Runtime }) {
+export function useAttackBox(labId: string, { running, holding = false, runtime }: { running: boolean; holding?: boolean; runtime: Runtime }) {
   const active = running && !holding;
   // The lab network the box joins: the learner's pick (null: the seat the lab declares, else its
   // first network).

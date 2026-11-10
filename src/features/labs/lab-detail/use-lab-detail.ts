@@ -8,6 +8,7 @@ import { useAttackBox } from "@/features/labs/use-attack-box";
 import type { Lab } from "@/features/labs/use-labs";
 import { useCloudPreview } from "@/features/labs/cloud-panel";
 import { removing, restartTarget } from "@/features/labs/lab-detail/lab-state";
+import { labRuntime } from "@/features/labs/lab-runtime";
 import { placeOf } from "@/features/labs/place";
 import { useObjectives } from "@/features/labs/objectives/use-objectives";
 import { useLabPageState } from "@/features/labs/lab-detail/use-lab-page-state";
@@ -138,7 +139,7 @@ export function useLabDetail(p: LabDetailProps) {
   const run = useRunTarget(lab, readyVms, p.dockerEngine ?? null, p.dockerEnginesRunning ?? []);
   const preview = useCloudPreview(lab.id, rt);
   // The lab's catalogue runtime: the backend resolves the form it runs in (`local_runtime`).
-  const runtime = rt?.runtime ?? "DOCKER";
+  const runtime = labRuntime(rt);
   const shell = useLabShell(lab.id, lab.title, runtime);
   const box = useShownBox(useLabAttackBox(lab.id, s, runtime), removing(s));
   const [check, clearCheck] = useLabCheck(lab.id, runtime, { running: s.running, downCount: s.down.length });

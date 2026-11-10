@@ -21,15 +21,16 @@ type Tr = (key: MessageKey, vars?: Vars) => string;
 /** The steps every path begins with: the package manager installs the rest. */
 const SHARED: MachineStep[] = ["pkgmgr"];
 
-/** Each path's own steps, after the shared ones. OS-aware: Windows gets the WSL step before Docker. */
-function ownSteps(path: SetupPath, report: SystemReport | null): MachineStep[] {
-  switch (path) {
-    case "docker":
-      return [...(report?.os === "windows" ? (["virtualization"] as const) : []), "docker", "docker-test", "attack"];
-    case "vm":
-      return ["vm", "vagrant", "vm-test"];
-  }
-}
+/** Each path's own steps on any OS, after the shared ones: the container path's WSL step
+ *  (`virtualization`) is Windows' alone. */
+const OWN_STEPS: Record<SetupPath, MachineStep[]> = {
+  docker: ["virtualization", "docker", "docker-test", "attack"],
+  vm: ["vm", "vagrant", "vm-test"],
+};
+
+/** A path's own steps on this machine (`report`'s OS): Windows gets the WSL step before Docker. */
+const ownSteps = (path: SetupPath, report: SystemReport | null): MachineStep[] =>
+  OWN_STEPS[path].filter((s) => s !== "virtualization" || report?.os === "windows");
 
 /** The steps of one path, in order: the shared ones, then its own. */
 export const pathSteps = (path: SetupPath, report: SystemReport | null): MachineStep[] => [...SHARED, ...ownSteps(path, report)];
@@ -42,7 +43,7 @@ export function machineSteps(report: SystemReport | null): MachineStep[] {
 /** The path a step belongs to (a shared step counts with the first path); none for an unknown step. */
 export function pathOf(step: string): SetupPath | null {
   if (SHARED.includes(step as MachineStep)) return PATHS[0];
-  return PATHS.find((p) => ownSteps(p, { os: "windows" } as SystemReport).includes(step as MachineStep)) ?? null;
+  return PATHS.find((p) => OWN_STEPS[p].includes(step as MachineStep)) ?? null;
 }
 
 export const isDockerReady = (r: SystemReport | null) => !!r && r.docker.installed && r.dockerRunning;

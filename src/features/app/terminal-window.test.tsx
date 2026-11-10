@@ -9,7 +9,8 @@ import { flush } from "@/test/ui";
 // can't: each is said in the window, and nothing crashes.
 
 // The window's query string: which lab's shell it shows.
-vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams("id=lab-sqli&runtime=DOCKER") }));
+const query = vi.hoisted(() => ({ value: "id=lab-sqli&runtime=DOCKER" }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query.value) }));
 
 // xterm draws on a canvas jsdom lacks: a stand-in with the surface the hook uses.
 vi.mock("@xterm/xterm", () => ({
@@ -89,5 +90,20 @@ describe("the terminal window", () => {
     expect(screen.getByText("attack box")).toBeTruthy();
     expect(await screen.findByText("Couldn't open the system terminal")).toBeTruthy();
     expect(screen.getByText(/osascript failed/)).toBeTruthy();
+  });
+
+  it("opens no session for a runtime it doesn't know, and says the window has no lab", async () => {
+    // Regression: an unknown runtime in the address was cast to one and the shell asked for the
+    // lab's attack box as if it were a container lab.
+    const calls = installTauri();
+    query.value = "id=lab-sqli&runtime=PODS";
+    try {
+      render(<ShellWindow />);
+      await flush();
+      expect(screen.getByRole("alert").textContent).toMatch(/opened for a lab/);
+      expect(commands(calls)).not.toContain("terminal_open");
+    } finally {
+      query.value = "id=lab-sqli&runtime=DOCKER";
+    }
   });
 });

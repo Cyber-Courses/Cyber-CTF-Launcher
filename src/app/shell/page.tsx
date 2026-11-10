@@ -12,14 +12,41 @@ import { WindowTitleBar } from "@/components/window-title-bar";
 import { tell, warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import { labAttackShell, type Runtime } from "@/lib/tauri";
+import { oneOf } from "@/lib/local-store";
 import { useTerminalSession, type ShellState } from "@/app/shell/use-terminal-session";
 
-/** The attack box shell window (opened by `terminal_window`): xterm.js over a pseudo-terminal. */
+/** The runtimes a lab's shell window is opened with: every `Runtime` (a new one fails to compile here). */
+const RUNTIMES = Object.keys({ DOCKER: true, VM: true, CLOUD: true } satisfies Record<Runtime, true>) as Runtime[];
+
+/** The attack box shell window (opened by `terminal_window`, which names the lab and its runtime
+ *  in the address): its session, or why there is none. */
 function Shell() {
-  const t = useT();
   const params = useSearchParams();
-  const id = params.get("id") ?? "";
-  const runtime = (params.get("runtime") ?? "DOCKER") as Runtime;
+  const id = params.get("id");
+  const runtime = oneOf(params.get("runtime"), RUNTIMES);
+  return id && runtime ? <Session id={id} runtime={runtime} /> : <NoLab />;
+}
+
+/** A window opened without a lab it knows: nothing to connect to. */
+function NoLab() {
+  const t = useT();
+  return (
+    <div className="flex h-screen flex-col bg-background text-foreground">
+      <WindowTitleBar toolbar className="border-b border-border">
+        <span data-tauri-drag-region className="mr-auto truncate font-mono text-[0.75rem] text-muted-foreground">
+          {t("shell.terminal.failed")}
+        </span>
+      </WindowTitleBar>
+      <p role="alert" className="m-auto px-6 text-center text-[0.8125rem] text-destructive">
+        {t("shell.terminal.noLab")}
+      </p>
+    </div>
+  );
+}
+
+/** xterm.js over the pseudo-terminal of lab `id`'s attack box. */
+function Session({ id, runtime }: { id: string; runtime: Runtime }) {
+  const t = useT();
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ShellState>({ kind: "connecting" });
   const [attempt, setAttempt] = useState(0);

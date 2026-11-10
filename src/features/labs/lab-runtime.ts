@@ -8,6 +8,7 @@ import {
   type LabRunOptions,
   type LabStatus,
   type Provider,
+  type Runtime,
   type ServerHost,
 } from "@/lib/tauri";
 import type { LocalVmForm } from "@/features/labs/run-target";
@@ -133,10 +134,14 @@ function cloudPlaces(rt: LabRuntimeInfo, hosts: ServerHost[], options: LabRunOpt
 /** Whether the lab is cloud services (created in the player's cloud account, no machines). */
 export const isCloudLab = (rt: LabRuntimeInfo | null | undefined) => rt?.runtime === "CLOUD";
 
+/** The lab's runtime as the catalogue publishes it; a lab it gives none counts as containers
+ *  (`isContainerLab`). The backend resolves the form it actually runs in. */
+export const labRuntime = (rt: LabRuntimeInfo | null | undefined): Runtime => rt?.runtime ?? "DOCKER";
+
 /** Whether the catalogue publishes the lab as containers (a lab not read yet counts as one). Where
  *  and in which form it actually runs is its status's (`place`, `perMachine`): this only decides
  *  what the launch picker offers and how the lab is named. */
-export const isContainerLab = (rt: LabRuntimeInfo | null | undefined) => rt?.runtime !== "VM" && !isCloudLab(rt);
+export const isContainerLab = (rt: LabRuntimeInfo | null | undefined) => labRuntime(rt) === "DOCKER";
 
 /** The runtime column's word: what the lab is made of. */
 export const runtimeLabel = (rt: LabRuntimeInfo) => (rt.runtime === "VM" ? "vm" : rt.runtime === "CLOUD" ? "cloud" : "docker");
