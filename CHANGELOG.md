@@ -94,7 +94,8 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   and the cloud CLIs as `HTTP(S)_PROXY`/`NO_PROXY`, with this machine's own addresses bypassed (a
   PAC file can't be, and the log says so). On Linux, one-click installs run through
   pkexec, which clears the environment: the proxy variables are now handed to them. The ESXi relay
-  on macOS keeps a run's `no_proxy` entries instead of replacing them.
+  on macOS keeps a run's `no_proxy` entries instead of replacing them. A proxy variable set to
+  nothing counts as unset, so the system proxy still applies.
 - **No vendor install script runs as root on Linux.** The one-click installs of Azure CLI and
   gcloud set up Microsoft's and Google's apt repositories, and VirtualBox's Oracle repository, each
   with its signing key checked against a fingerprint pinned in the app, as Docker's and

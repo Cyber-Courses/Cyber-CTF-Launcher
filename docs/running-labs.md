@@ -83,7 +83,7 @@ login`, Azure `az login`, Google Cloud's application-default credentials, OCI's
 - A cloud lab's firewall opens its SSH and published ports to this machine's public IP only,
   which two independent services must agree on (`launch::public_ip`). AWS launches also check
   the account's budget first.
-- "Test connection" checks a host without running anything: ESXi's SSH banner, Proxmox's API
+- "Test" checks a host without running anything: ESXi's SSH banner, Proxmox's API
   ticket, each cloud's credentials and what a launch needs (`server/cloud_checks.rs`).
 
 ### Requirements on a server

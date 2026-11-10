@@ -151,7 +151,7 @@ The launcher needs outbound HTTPS (TCP 443). It listens on no external interface
 | `hub.docker.com`                                                         | the download size of an attack-box image (Docker Hub's API)            | choosing the attack box image                |
 | `github.com`, `release-assets.githubusercontent.com`                     | the updater's `latest.json` and update packages                        | at start-up; when the user updates           |
 | `checkip.amazonaws.com`, `api.ipify.org`, `ifconfig.me`, `icanhazip.com` | this machine's public IPv4 address                                     | starting a lab in a cloud account only       |
-| `api.digitalocean.com`, `api.linode.com`                                 | checking a DigitalOcean or Linode token                                | "Test connection" on such an account         |
+| `api.digitalocean.com`, `api.linode.com`                                 | checking a DigitalOcean or Linode token                                | "Test" on such an account                    |
 | the user's Proxmox or ESXi host                                          | the server's API, SSH                                                  | labs on that server                          |
 
 Sign-in happens in the user's default browser, which must reach `www.cyberauth.co` (and the
@@ -195,8 +195,9 @@ OS's package manager or the vendor's installer:
 | Windows | `winget install` (`Docker.DockerDesktop`, `Hashicorp.Vagrant`, `Hashicorp.Terraform`, `Oracle.VirtualBox`, `SoftwareFreedomConservancy.QEMU`, `Amazon.AWSCLI`, `Microsoft.AzureCLI`, `Google.CloudSDK`); `wsl --install --no-distribution` | winget's sources and each package's vendor download host                                                                                                                                                                                                                                                                         |
 | Linux   | apt, through `pkexec`                                                                                                                                                                                                                      | the distribution's mirrors; `download.docker.com`; `apt.releases.hashicorp.com`; `download.virtualbox.org`, `www.virtualbox.org`; `awscli.amazonaws.com`; `packages.microsoft.com` (Azure CLI); `packages.cloud.google.com` (Google Cloud CLI). Every repository's key is pinned by fingerprint; no vendor install script is run |
 
-On Linux the Docker and HashiCorp repository keys are checked against pinned fingerprints, and the
-AWS CLI download against AWS's signing key, before anything is installed.
+On Linux every vendor repository's key (Docker's, HashiCorp's, VirtualBox's, Microsoft's for the
+Azure CLI, Google's for the Google Cloud CLI) is checked against a fingerprint pinned in the app,
+and the AWS CLI download against AWS's signing key, before anything is installed.
 
 ### Local ports
 
