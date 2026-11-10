@@ -21,8 +21,7 @@ import { useActiveOperations, useDeployingLabs } from "@/features/labs/runs/oper
 import { assessRam } from "@/features/home/capacity";
 import type { ActiveOperation, AuthStatus, LabStatus, MachineMetrics, SystemReport } from "@/lib/tauri";
 import { useStableCallback } from "@/lib/use-stable-callback";
-
-type Tab = "labs" | "machine" | "setup" | "server" | "cloud" | "settings";
+import type { Tab } from "@/components/shell/shell-model";
 
 type HomeProps = {
   report: SystemReport | null;

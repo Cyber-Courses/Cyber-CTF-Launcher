@@ -6,7 +6,7 @@ import { PageHeader, StatusStrip } from "@/components/ui/page-header";
 import { StatusDot } from "@/components/ui/status-pill";
 import type { MachineMetrics, SystemReport } from "@/lib/tauri";
 import { CalloutRow, StatCard } from "@/features/machine/machine-parts";
-import { OS_NAME, isLowDisk, usage } from "@/features/machine/machine-status";
+import { isLowDisk, osName, usage } from "@/features/machine/machine-status";
 import { formatBytes, formatBytesOf, formatUptime } from "@/lib/format";
 import { useOpenSetup } from "@/features/machine/use-open-setup";
 import { useT } from "@/lib/i18n";
@@ -52,7 +52,7 @@ function ReadinessStrip({ report, m, needsSetup }: { report: SystemReport; m: Ma
       <b>{needsSetup ? t("machine.screen.needsSetup", { count: needsSetup }) : t("machine.screen.readyForLabs")}</b>
       <span>·</span>
       <span>
-        {OS_NAME[report.os] ?? report.os} {report.arch}
+        {osName(report.os)} {report.arch}
       </span>
       {m && (
         <>

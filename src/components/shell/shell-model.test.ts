@@ -16,9 +16,8 @@ describe("shell navigation", () => {
   it("knows the sidebar's screens", () => {
     expect(isNavTab("machine")).toBe(true);
     expect(isNavTab("events")).toBe(true);
-    // Settings has its own window and "setup" lands on Machine: neither is a sidebar entry.
+    // Settings has its own window: not a sidebar entry.
     expect(isNavTab("settings")).toBe(false);
-    expect(isNavTab("setup")).toBe(false);
     expect(isNavTab("nope")).toBe(false);
   });
 

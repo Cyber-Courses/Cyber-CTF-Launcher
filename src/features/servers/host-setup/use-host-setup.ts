@@ -187,7 +187,8 @@ function useSteps(provider: RemoteProvider, editing: boolean, providerChosen: bo
  *  re-reads what the machine has. */
 function useToolInstall(onRefresh: () => void) {
   const toolLog = useRunLog();
-  const [toolLabel, setToolLabel] = useState("Install");
+  // The tool the last install was for, which titles its log (none before one).
+  const [toolLabel, setToolLabel] = useState<string | null>(null);
   // Set for the whole install: an installer printing its own "✓ …" line mid-run read as done
   // from the log, and a second install could start beside the first.
   const [toolBusy, setToolBusy] = useState(false);

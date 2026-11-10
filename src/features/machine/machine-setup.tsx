@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { CheckFailed } from "@/features/machine/check-failed";
+import { osName } from "@/features/machine/machine-status";
 import {
   MachineStepBody,
   PathChooser,
@@ -72,8 +73,6 @@ export function MachineSetup({
   );
 }
 
-const OS_NAMES: Partial<Record<string, string>> = { windows: "Windows", macos: "macOS" };
-
 /** The steps once the report is in: the path chooser, then one path's steps and its summary.
  *  The step's panel fills the window (up to 56rem, centred in a taller one): its body scrolls and
  *  its footer stays at the bottom, so Back / Continue are always in view and in the same place
@@ -95,10 +94,7 @@ function SetupWizard({ report, startAt, onRefresh, onClose }: { report: SystemRe
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <main className="mx-auto my-auto flex max-h-[56rem] min-h-[26rem] w-full max-w-2xl flex-1 flex-col px-6 pt-2 pb-6">
-        <PageHeader
-          title={<>{t.rich("machine.setup.title", { em: (s) => <em>{s}</em> })}</>}
-          lead={t("machine.setup.lead", { os: OS_NAMES[report.os] ?? "Linux" })}
-        />
+        <PageHeader title={<>{t.rich("machine.setup.title", { em: (s) => <em>{s}</em> })}</>} lead={t("machine.setup.lead", { os: osName(report.os) })} />
         {/* Progress along the path: one segment per step, the jewel up to the current one. */}
         {key !== "path" && (
           <div className="mt-5 flex gap-1" aria-hidden>

@@ -10,8 +10,11 @@ import { Step } from "@/features/servers/host-setup/form";
 import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
 import { OvftoolRequirement } from "@/features/servers/host-setup/ovftool-requirement";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
-import { useT } from "@/lib/i18n";
+import { useT, type T } from "@/lib/i18n";
 import { InstallsOffNote } from "@/components/installs-off-note";
+
+/** The install log's title: the tool it installs, once one is (the log's own title before). */
+const logTitle = (t: T, tool: string | null) => (tool ? t("servers.setup.tools.install", { name: tool }) : undefined);
 
 export function ToolsStep({ s }: { s: HostSetup }) {
   const t = useT();
@@ -44,7 +47,7 @@ export function ToolsStep({ s }: { s: HostSetup }) {
       {s.installsOff && !toolsOk && <InstallsOffNote className="mt-2" />}
       {pluginLog && (
         <div className="mt-3">
-          <LogConsole lines={pluginLog} running={toolBusy} title={t("servers.setup.tools.install", { name: toolLabel })} />
+          <LogConsole lines={pluginLog} running={toolBusy} title={logTitle(t, toolLabel)} />
         </div>
       )}
       {/* First when the provider was chosen before the window opened: Cancel, not Back. */}

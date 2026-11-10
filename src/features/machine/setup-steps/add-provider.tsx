@@ -10,10 +10,9 @@ import { AddEngineRow } from "@/features/machine/setup-steps/add-engine-row";
 import { AddHypervisorRow } from "@/features/machine/setup-steps/add-hypervisor-row";
 import { enginesFor, type Engine } from "@/features/machine/setup-steps/engines";
 import { useMachineSetup } from "@/features/machine/setup-steps/use-machine-setup";
+import { osName } from "@/features/machine/machine-status";
 import type { DockerEngine, Provider, SystemReport } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
-
-const OS_NAMES: Partial<Record<string, string>> = { windows: "Windows", macos: "macOS" };
 
 /** What this machine could run but doesn't have yet, as the picker opened: the container engines
  *  of this OS the machine check didn't find, and the hypervisors it can use that aren't installed.
@@ -36,7 +35,7 @@ export function AddProvider({ report, onRefresh, onClose }: { report: SystemRepo
   const t = useT();
   const setup = useMachineSetup(report, onRefresh);
   const [list] = useState(() => candidates(report));
-  const os = OS_NAMES[report.os] ?? "Linux";
+  const os = osName(report.os);
   const engines = list.engines.map((id) => enginesFor(report).find((e) => e.id === id)).filter((e): e is Engine => !!e);
   const hypervisors = list.hypervisors.map((id) => localHypervisors(report).find((p) => p.provider === id)).filter((p) => !!p);
   const nothing = engines.length === 0 && hypervisors.length === 0;

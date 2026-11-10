@@ -19,8 +19,7 @@ import { useServerHosts, type ServerHosts } from "@/features/servers/use-server-
 import { useNow } from "@/lib/use-now";
 import { useT } from "@/lib/i18n";
 import { confirmDestructive } from "@/lib/confirm";
-
-type Tab = "setup";
+import type { Tab } from "@/components/shell/shell-model";
 
 /** The Servers page; `report` is the shell's machine report (none until its check answers), for
  *  whether this machine can run a VM lab itself. */
@@ -69,7 +68,7 @@ export function ServerScreen({ report = null, onNavigate }: { report?: SystemRep
       {report && !canRunVmHere(report) && (
         <SetUpMachineHint
           onSetUp={() => {
-            onNavigate("setup");
+            onNavigate("machine");
           }}
         />
       )}

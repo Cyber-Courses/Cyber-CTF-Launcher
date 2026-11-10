@@ -296,7 +296,7 @@ describe("ServerScreen", () => {
     expect(document.body.textContent).not.toContain("Test all");
     expect(screen.queryByText("Hosts")).toBeNull();
     await user.click(button(/set up this machine/i));
-    expect(onNavigate).toHaveBeenCalledWith("setup");
+    expect(onNavigate).toHaveBeenCalledWith("machine");
     expect(commands(calls)).not.toContain("server_test");
     // The shell's report, not a check of its own: each one starts a process per tool.
     expect(commands(calls)).not.toContain("system_check");

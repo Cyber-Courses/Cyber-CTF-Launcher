@@ -14,9 +14,8 @@ export function useNavigation() {
 
   // Stable, so the sidebar's memoized entries keep their handler.
   const navigate = useCallback((next: Tab, slug?: string) => {
-    // Setup now lives inside the Machine dashboard; "setup" just lands on Machine.
-    setTab(next === "setup" ? "machine" : next);
-    setOpenLab((o) => ({ slug: next === "setup" ? null : (slug ?? null), tick: o.tick + 1 }));
+    setTab(next);
+    setOpenLab((o) => ({ slug: slug ?? null, tick: o.tick + 1 }));
   }, []);
 
   /** Labs, with its search field focused. */

@@ -7,7 +7,10 @@ import { GB } from "@/lib/format";
 // What the Machine page says about this machine, as pure functions of the system report, the
 // live metrics and the last self-tests.
 
-export const OS_NAME: Record<string, string> = { macos: "macOS", windows: "Windows", linux: "Linux" };
+const OS_NAMES: Partial<Record<string, string>> = { macos: "macOS", windows: "Windows", linux: "Linux" };
+
+/** An OS's name, by the machine report's id for it (`macos`, `windows`, `linux`). */
+export const osName = (os: string): string => OS_NAMES[os] ?? os;
 
 /** Free memory each lab type wants to start comfortably. */
 export const WANT_FREE: Record<LabKind, number> = { docker: 2e9, vm: 8e9 };

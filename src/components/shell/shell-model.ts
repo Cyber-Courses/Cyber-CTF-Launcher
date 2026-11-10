@@ -8,7 +8,7 @@ import { isImportedId } from "@/features/labs/imported-labs";
 // The app shell's pure logic: the screens and their order, the breadcrumb, the header's engine
 // line, which labs the sidebar lists as running and the keyboard shortcuts.
 
-export type Tab = "home" | "labs" | "machine" | "setup" | "server" | "cloud" | "events" | "settings";
+export type Tab = "home" | "labs" | "machine" | "server" | "cloud" | "events" | "settings";
 
 export type NavEntry = { id: Tab; icon: LucideIcon; soon?: boolean; sep?: boolean };
 
