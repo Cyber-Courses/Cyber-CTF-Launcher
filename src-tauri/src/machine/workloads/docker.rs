@@ -128,19 +128,29 @@ fn project_filter(id: &str) -> String {
     format!("label=com.docker.compose.project={}", crate::runtime::compose_project(id))
 }
 
-/// Removes a lab's containers, an attack box an older version left beside them included.
+/// Removes a lab's containers, an attack box an older version left beside them included. `down`
+/// and the old attack box's removal are tried first and logged when they fail (the sweep after
+/// them removes what they left); what decides is the sweep: Docker listing what is left of the
+/// project, and removing it. A Docker that can't list it fails the stop: nothing says the lab
+/// is gone.
 pub(super) async fn stop(id: &str) -> Result<()> {
     let project = crate::runtime::compose_project(id);
-    let _ = run("docker", &["compose", "-p", &project, "down", "-t", "5", "--volumes", "--remove-orphans"], None).await;
+    if let Err(e) = run("docker", &["compose", "-p", &project, "down", "-t", "5", "--volumes", "--remove-orphans"], None).await {
+        log::warn!("stopping {id}: {e}; removing what is left of it container by container");
+    }
     // Upgrade only: an older version's attack box has no Compose project, so `down` and the
     // project-label sweep below never catch it; remove it by name, or it is left running and
     // still read as this lab by the scan.
     let names = crate::runtime::legacy_attack_box_names(&project);
     let mut reap = vec!["rm", "-f"];
     reap.extend(names.iter().map(String::as_str));
-    let _ = run("docker", &reap, None).await;
+    if let Err(e) = run("docker", &reap, None).await
+        && !e.to_string().contains("No such container")
+    {
+        log::warn!("stopping {id}: an older version's attack box: {e}");
+    }
     // Whatever of this exact project is left.
-    let left = run("docker", &["ps", "-aq", "--filter", &project_filter(id)], None).await.unwrap_or_default();
+    let left = run("docker", &["ps", "-aq", "--filter", &project_filter(id)], None).await?;
     let ids: Vec<&str> = left.split_whitespace().collect();
     if !ids.is_empty() {
         let mut args = vec!["rm", "-f"];
@@ -227,14 +237,16 @@ mod tests {
         assert!(containers_by_lab("lonely-line\n").is_empty());
     }
 
-    /// Stopping a lab while the Docker daemon is down: every docker call fails, yet the stop
-    /// returns Ok (there is nothing of the lab to leave half-done), having tried each cleanup in
-    /// its order. Only a leftover the daemon lists but can't remove is a failure worth showing.
+    /// Stopping a lab Docker can't be asked about: each cleanup is tried in its order, and the
+    /// stop fails with Docker's answer, since nothing says what is left. A leftover the daemon
+    /// lists but can't remove fails it too; a `down` that failed but left nothing doesn't.
     #[tokio::test]
-    async fn stopping_a_lab_while_the_daemon_is_down_is_not_an_error() {
+    async fn a_stop_fails_when_docker_cant_say_what_is_left_of_the_lab() {
         use crate::platform::exec::fake::{Tools, fail, ok};
-        let tools = Tools::new(|_, _| fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"));
-        super::stop("sqli").await.unwrap();
+        // Regression: a refused socket read as nothing left, and the stop said it went through.
+        let tools = Tools::new(|_, _| fail("permission denied while trying to connect to the docker API at unix:///var/run/docker.sock"));
+        let err = super::stop("sqli").await.unwrap_err().to_string();
+        assert!(err.contains("permission denied"), "{err}");
         assert_eq!(
             tools.calls(),
             [
@@ -254,5 +266,12 @@ mod tests {
         let err = super::stop("sqli").await.unwrap_err().to_string();
         assert!(err.starts_with("`docker rm -f aaa111 bbb222` failed: permission denied"), "{err}");
         assert_eq!(tools.calls().len(), 4, "{:?}", tools.calls());
+        drop(tools);
+        let _tools = Tools::new(|_, args| match args.first() {
+            Some(&"compose") => fail("network cyberctf-sqli_lab: has active endpoints"),
+            Some(&"rm") => fail("Error response from daemon: No such container: cyberctf-sqli-attacker"),
+            _ => ok(""),
+        });
+        super::stop("sqli").await.unwrap();
     }
 }

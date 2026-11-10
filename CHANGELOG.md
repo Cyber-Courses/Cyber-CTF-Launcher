@@ -219,6 +219,9 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   refused to delete the host's password or token went unnoticed: the host was removed and its
   secret stayed behind. The secret now goes first, and when it can't, the host stays and the
   page says why.
+- **Stopping containers from the Machine page says when Docker couldn't be asked.** A stop of a
+  lab's leftover containers that Docker refused to list (its socket denied to this account) read
+  as done while they kept running. It now fails with Docker's answer.
 - **A cloud-services lab gets the account's region, subscription or project.** The lab's own
   Terraform module was never given where the account works when its provider names none: the AWS
   region (`AWS_REGION`), the Azure subscription, the Google Cloud project and region. They are now
