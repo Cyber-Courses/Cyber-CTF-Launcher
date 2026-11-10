@@ -27,8 +27,9 @@ pub(crate) struct Placed {
 
 /// Where lab `id`, installed in `dir` and declared `runtime`, runs, as [`host::locate`] finds it:
 /// its run on this machine, on a Proxmox server or in a cloud account. `None` where the launcher
-/// reaches no run of it to add a box to: on an ESXi host (its runs are the launcher's own), or
-/// beside cloud services ([`Host::has_machines`]), wherever they run.
+/// adds no box: on an ESXi host, not supported yet (a choice, not a limit of the run: the runner
+/// updates an ESXi run like any other), or beside cloud services, which have no machines for it
+/// to join ([`Host::has_machines`]), wherever they run.
 pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Placed>> {
     Ok(match host::locate(dirs, dir, id, runtime)? {
         None | Some(Host::Esxi { .. }) => None,
