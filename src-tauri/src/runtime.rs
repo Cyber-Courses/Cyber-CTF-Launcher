@@ -62,9 +62,11 @@ pub(crate) use launch::start;
 pub(crate) use launch::{Destination, Downloads, Placement, downloads, policy_allows, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
 pub use model::{Control, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
+#[cfg(test)]
+pub use paths::LOCAL_VM_MARKER;
 pub(crate) use paths::deploys_dir;
 pub(crate) use paths::is_lab_id;
-pub use paths::{LOCAL_VM_MARKER, validate_id};
+pub use paths::validate_id;
 pub use reaper::reap_expired_labs;
 pub(crate) use status::refuse_replace;
 pub use status::{lab_installed, lab_present, primary_url};

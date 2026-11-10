@@ -112,11 +112,8 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
     runtime::refuse_replace(dirs, &slot.dir, lab_id)?;
     log(runtime::deploy_log::downloading(repository, &commit[..12]));
     let bytes = fetch().await?;
-    let (labs, into, owned) = (slot.labs.clone(), slot.dir.clone(), (lab_id.to_owned(), repository.to_owned(), commit.to_owned()));
-    let staged = move || {
-        let (lab_id, repository, commit) = &owned;
-        stage(&labs, &into, &bytes, Release { lab_id, repository, commit, runtime: declared })
-    };
+    let (labs, into, id, sha) = (slot.labs.clone(), slot.dir.clone(), lab_id.to_owned(), commit.to_owned());
+    let staged = move || stage(&labs, &into, &bytes, &id, &sha);
     install_into(dirs, &slot, (lab_id, declared), log, staged).await?;
     log(runtime::deploy_log::INSTALLED.into());
     Ok(slot.dir)
@@ -167,21 +164,24 @@ async fn clear_parked(dirs: &AppDirs, lab: runtime::LabRef<'_>, log: &impl Fn(St
     })
 }
 
-/// Extracts the downloaded lab into a staging folder next to `dir`, with its commit marker and
-/// the markers of where the installed copy runs. Returns the staging folder.
-fn stage(labs: &Path, dir: &Path, tarball: &[u8], release: Release<'_>) -> Result<PathBuf> {
-    let Release { lab_id, commit, .. } = release;
-    let staging = labs.join(format!(".{lab_id}.staging"));
+/// The folder an install of lab `lab_id` fills under `labs` before it is swapped in: one per lab,
+/// which two installs of it share (they hold the lab's lock).
+fn staging_dir(labs: &Path, lab_id: &str) -> PathBuf {
+    labs.join(format!(".{lab_id}.staging"))
+}
+
+/// Extracts the downloaded lab `lab_id` at `commit` into its staging folder, with its commit
+/// marker and the installed copy (`dir`)'s instance number, which stays the installed lab's.
+/// Nothing of where the old copy ran comes along: the install refused a lab still up and took a
+/// parked one down first, so such a marker could only be stale. Returns the staging folder.
+fn stage(labs: &Path, dir: &Path, tarball: &[u8], lab_id: &str, commit: &str) -> Result<PathBuf> {
+    let staging = staging_dir(labs, lab_id);
     clear_leftover(&staging);
     std::fs::create_dir_all(&staging)?;
     extract(tarball, &staging)?;
     std::fs::write(staging.join(runtime::lab::COMMIT_MARKER), commit)?;
-    // Keep where the lab runs, so a lab still up on a server host or in a local VM can be
-    // stopped there.
-    for marker in [runtime::server::HOST_MARKER, runtime::LOCAL_VM_MARKER, runtime::lab::INSTANCE_MARKER] {
-        if let Ok(value) = std::fs::read(dir.join(marker)) {
-            std::fs::write(staging.join(marker), value)?;
-        }
+    if let Ok(value) = std::fs::read(dir.join(runtime::lab::INSTANCE_MARKER)) {
+        std::fs::write(staging.join(runtime::lab::INSTANCE_MARKER), value)?;
     }
     Ok(staging)
 }
@@ -418,7 +418,7 @@ async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(S
     // update would. Stop it first.
     runtime::refuse_replace(dirs, &slot.dir, lab_id)?;
     log(runtime::deploy_log::importing(lab_id, src));
-    let (from, staging) = (src.to_path_buf(), slot.dir.with_file_name(format!(".{lab_id}.staging")));
+    let (from, staging) = (src.to_path_buf(), staging_dir(&slot.labs, lab_id));
     let copied = move || {
         clear_leftover(&staging);
         runtime::lab::copy_tree(&from, &staging)?;
@@ -531,23 +531,27 @@ mod tests {
     }
 
     #[test]
-    fn staging_carries_the_source_and_where_the_old_copy_runs() {
+    fn staging_carries_the_lab_its_commit_and_its_instance_but_no_stale_place() {
         let labs = std::env::temp_dir().join(format!("cyberctf-stage-{}", rand::random::<u32>()));
         let dir = labs.join("invoice");
         let sha = "0123456789abcdef0123456789abcdef01234567";
         std::fs::create_dir_all(&dir).unwrap();
+        // Regression: where the old copy ran was carried over, though nothing of it is up by now
+        // (an install refuses a lab still up and takes a parked one down first), so a stale
+        // marker sent the new copy's status and stop to a host it never ran on.
         std::fs::write(dir.join(runtime::server::HOST_MARKER), "pve1").unwrap();
         std::fs::write(dir.join(runtime::LOCAL_VM_MARKER), "virtualbox").unwrap();
+        std::fs::write(dir.join(runtime::lab::INSTANCE_MARKER), "3").unwrap();
         std::fs::write(dir.join("old.txt"), "old").unwrap();
         // Nothing is installed at that commit yet.
         assert!(!runtime::lab::installed_at(&dir, sha));
 
-        let staging = stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: invoice")]), invoice("invoice", sha)).unwrap();
+        let staging = stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: invoice")]), "invoice", sha).unwrap();
         assert_eq!(staging, labs.join(".invoice.staging"));
         assert_eq!(std::fs::read_to_string(staging.join("isoloom.yml")).unwrap(), "name: invoice");
-        assert_eq!(std::fs::read_to_string(staging.join(runtime::server::HOST_MARKER)).unwrap(), "pve1");
-        assert_eq!(std::fs::read_to_string(staging.join(runtime::LOCAL_VM_MARKER)).unwrap(), "virtualbox");
-        assert!(!staging.join(runtime::lab::INSTANCE_MARKER).exists());
+        assert!(!staging.join(runtime::server::HOST_MARKER).exists());
+        assert!(!staging.join(runtime::LOCAL_VM_MARKER).exists());
+        assert_eq!(std::fs::read_to_string(staging.join(runtime::lab::INSTANCE_MARKER)).unwrap(), "3", "the installed lab's room stays");
 
         swap_in(&staging, &dir).unwrap();
         assert!(!staging.exists());
@@ -802,13 +806,7 @@ mod tests {
         let staging = labs.join(".lab.staging");
         std::fs::create_dir_all(staging.join("old")).unwrap();
         std::fs::write(staging.join("old/file"), "from a crashed install").unwrap();
-        let staged = stage(
-            &labs,
-            &dir,
-            &tarball(&[("lab-abc/isoloom.yml", b"name: lab")]),
-            Release { lab_id: "lab", repository: "CyberCTF/lab", commit: SHA, runtime: Runtime::Docker },
-        )
-        .unwrap();
+        let staged = stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: lab")]), "lab", SHA).unwrap();
         assert_eq!(staged, staging);
         assert!(!staging.join("old").exists(), "the crashed install's files are gone");
         // The commit marker reads back with surrounding whitespace or CRLF (a hand edit).
