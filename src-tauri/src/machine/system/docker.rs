@@ -212,7 +212,7 @@ mod tests {
             [("default".to_string(), true), ("desktop-linux".into(), false), ("orbstack".into(), false)]
         );
         assert_eq!(contexts_from("default *\ncolima-dev\n\n"), [("default".to_string(), true), ("colima-dev".into(), false)]);
-        assert!(contexts_from("").is_empty());
+        assert_eq!(contexts_from(""), [] as [(String, bool); 0]);
     }
 
     #[test]

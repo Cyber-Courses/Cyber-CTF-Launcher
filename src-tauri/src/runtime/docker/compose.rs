@@ -142,7 +142,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cyberctf-compose-ctx-{}", rand::random::<u32>()));
         std::fs::create_dir_all(&dir).unwrap();
         // No engine recorded: no `--context`, today's behaviour (the current context).
-        assert!(context_prefix(&dir).is_empty());
+        assert_eq!(context_prefix(&dir), [] as [String; 0]);
         assert_eq!(args(&dir, "cyberctf-x", &["down"]), ["compose", "-p", "cyberctf-x", "down"]);
         // Pinned to an engine: every compose call carries `--context <ctx>` first, whatever the
         // machine's current context is now (so stop reaches the engine it was started on).

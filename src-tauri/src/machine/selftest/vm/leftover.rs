@@ -95,7 +95,7 @@ mod tests {
     fn a_vm_is_found_by_its_exact_name_and_its_description_read() {
         let list = "\"CyberCTF test VM\" {11111111-2222}\n\"CyberCTF test VM 2\" {3333}\n\"lab · web\" {4444}\n";
         assert_eq!(vbox_ids_named(list, VM_NAME), ["11111111-2222"]);
-        assert!(vbox_ids_named("", VM_NAME).is_empty());
+        assert_eq!(vbox_ids_named("", VM_NAME), [] as [String; 0]);
         let info = "name=\"CyberCTF test VM\"\ndescription=\"cyberctf-selftest:/tmp/vm\"\nVMState=\"running\"\n";
         assert_eq!(vbox_value(info, "description").as_deref(), Some("cyberctf-selftest:/tmp/vm"));
         assert_eq!(vbox_value(info, "missing"), None);
@@ -119,7 +119,7 @@ mod tests {
         assert!(!tools.called("unregistervm") && !tools.called("controlvm"), "{:?}", tools.calls());
 
         let _none = Tools::rules(&[("VBoxManage list vms", ok("\"lab · web\" {x}\n"))]);
-        assert!(clear(dir).await.unwrap().is_empty());
+        assert_eq!(clear(dir).await.unwrap(), [] as [&str; 0]);
         let _no_vbox = Tools::rules(&[("VBoxManage", fail("not found"))]);
         assert!(clear(dir).await.unwrap().is_empty(), "no VirtualBox here");
     }

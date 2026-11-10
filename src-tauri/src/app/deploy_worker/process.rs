@@ -734,14 +734,14 @@ mod tests {
         // Regression: a pgrep that couldn't run read as "no Terraform here", and the stop then
         // ended the worker mid-apply with nothing in the log.
         crate::testing::logs::take_warnings();
-        assert!(pgrep_with("cyberctf-no-such-pgrep", &["-x", "terraform"]).is_empty());
+        assert_eq!(pgrep_with("cyberctf-no-such-pgrep", &["-x", "terraform"]), [] as [u32; 0]);
         let logged = crate::testing::logs::take_warnings();
         assert!(logged.iter().any(|w| w.starts_with("`cyberctf-no-such-pgrep` can't run, so a stop finds no Terraform")), "{logged:?}");
         // Nothing matched (exit 1) is no failure; a failure (exit 2) is.
-        assert!(pgrep_with("sh", &["-c", "exit 1"]).is_empty());
-        assert!(crate::testing::logs::take_warnings().is_empty());
+        assert_eq!(pgrep_with("sh", &["-c", "exit 1"]), [] as [u32; 0]);
+        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0]);
         assert_eq!(pgrep_with("sh", &["-c", "echo 42; echo 43"]), [42, 43]);
-        assert!(pgrep_with("sh", &["-c", "echo bad option >&2; exit 2"]).is_empty());
+        assert_eq!(pgrep_with("sh", &["-c", "echo bad option >&2; exit 2"]), [] as [u32; 0]);
         let logged = crate::testing::logs::take_warnings();
         assert!(logged.iter().any(|w| w.starts_with("`sh -c echo bad option >&2; exit 2` failed") && w.ends_with("bad option")), "{logged:?}");
     }

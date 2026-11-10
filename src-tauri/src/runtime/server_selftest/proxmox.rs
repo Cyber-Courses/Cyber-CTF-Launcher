@@ -321,18 +321,19 @@ mod tests {
     }
 
     impl TestRun for Scripted {
-        async fn up(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()> {
+        // A scripted run answers at once: its steps are ready futures.
+        fn up(&self, log: &mut (dyn FnMut(String) + Send)) -> impl Future<Output = Result<()>> {
             self.calls.lock().unwrap().push("up");
             self.lines.iter().for_each(|l| log((*l).to_owned()));
-            self.up.map_or(Ok(()), |e| Err(Error::Invalid(e.into())))
+            std::future::ready(self.up.map_or(Ok(()), |e| Err(Error::Invalid(e.into()))))
         }
-        async fn check(&self) -> Result<Check> {
+        fn check(&self) -> impl Future<Output = Result<Check>> {
             self.calls.lock().unwrap().push("check");
-            Ok(Check { available: true, ok: self.check_ok, output: "Linux x86_64".into(), results: Vec::new() })
+            std::future::ready(Ok(Check { available: true, ok: self.check_ok, output: "Linux x86_64".into(), results: Vec::new() }))
         }
-        async fn down(&self, _log: &mut (dyn FnMut(String) + Send)) -> Result<()> {
+        fn down(&self, _log: &mut (dyn FnMut(String) + Send)) -> impl Future<Output = Result<()>> {
             self.calls.lock().unwrap().push("down");
-            self.down.map_or(Ok(()), |e| Err(Error::Invalid(e.into())))
+            std::future::ready(self.down.map_or(Ok(()), |e| Err(Error::Invalid(e.into()))))
         }
     }
 

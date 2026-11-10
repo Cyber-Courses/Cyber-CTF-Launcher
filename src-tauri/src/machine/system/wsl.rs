@@ -820,7 +820,7 @@ mod tests {
         assert!(logged[1].starts_with("couldn't remove the WSL mark "), "{logged:?}");
         // Nothing there: nothing to say.
         unmark(&t.dirs(), INSTALL_MARK);
-        assert!(crate::testing::logs::take_warnings().is_empty());
+        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0]);
     }
 
     #[test]

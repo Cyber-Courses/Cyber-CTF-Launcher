@@ -396,8 +396,8 @@ mod tests {
         let tools = Tools::rules(&[]);
         let mut lines = Vec::<String>::new();
         clear_parked(&t.dirs(), LabRef { dir: &dir, id: "web-1", runtime: Runtime::Vm }, &mut |l| lines.push(l)).await.unwrap();
-        assert!(lines.is_empty());
-        assert!(tools.calls().is_empty());
+        assert_eq!(lines, [] as [String; 0]);
+        assert_eq!(tools.calls(), [] as [String; 0]);
     }
 
     /// What the page may do on lab `t`, declared `runtime`, where it is located now, on `provider`:

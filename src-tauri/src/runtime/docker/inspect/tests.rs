@@ -199,7 +199,7 @@ fn inspect_lines_with_missing_columns_or_odd_names_are_read_or_skipped() {
     // services.
     let m = parse_inspect("/cyberctf-x-a-1\n\n/b\tnot json\n");
     assert_eq!(m.keys().collect::<Vec<_>>(), ["b"]);
-    assert!(m["b"].services.is_empty());
+    assert_eq!(m["b"].services, [] as [crate::runtime::Service; 0]);
     // A label value holding a tab or newline comes JSON-escaped, so the columns hold.
     let m = parse_inspect("/c\t{\"isoloom.port.app\":\"http:80\",\"note\":\"a\\tb\\nc\"}\n");
     assert_eq!(m["c"].services[0].kind, "web");

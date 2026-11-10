@@ -332,7 +332,7 @@ mod tests {
     fn no_policy_turns_nothing_off() {
         let (policy, problems) = from_source(Source::Absent);
         assert_eq!(policy, Policy::default());
-        assert!(problems.is_empty());
+        assert_eq!(problems, [] as [String; 0]);
         assert!(Key::ALL.into_iter().all(|k| !policy.is_on(k) && policy.check(k).is_ok()));
     }
 

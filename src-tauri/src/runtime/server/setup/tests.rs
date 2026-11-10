@@ -75,7 +75,7 @@ async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
     let err = save_with_ssh_key(&t.dirs(), ssh_key_input(&mine)).await.unwrap_err().to_string();
     assert!(err.starts_with("Couldn't sign in to the node over SSH with your key"), "{err}");
     assert!(!tools.called("pveum"), "no token is made when SSH fails");
-    assert!(load(&t.dirs()).unwrap().hosts.is_empty());
+    assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);
     drop(tools);
 
     let name = ssh_key::token_name("ssh-ed25519 AAAA cyberctf-launcher");
@@ -199,7 +199,7 @@ fn a_deployment_left_by_an_uninstalled_lab_keeps_its_host() {
     // Destroyed (its state gone): free to remove.
     std::fs::remove_file(state.join("terraform.tfstate")).unwrap();
     remove(&t.dirs(), &host).unwrap();
-    assert!(load(&t.dirs()).unwrap().hosts.is_empty());
+    assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);
 }
 
 #[test]
@@ -213,7 +213,7 @@ fn removing_a_host_that_is_not_saved_changes_nothing() {
     std::fs::write(lab.join(HOST_MARKER), "nope").unwrap();
     assert_eq!(crate::runtime::server::hosts::running_by_host(&t.dirs()).get("nope"), Some(&1));
     remove(&t.dirs(), "az1").unwrap();
-    assert!(load(&t.dirs()).unwrap().hosts.is_empty());
+    assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);
 }
 
 #[cfg(debug_assertions)]
@@ -232,6 +232,6 @@ fn a_host_whose_secret_cant_be_removed_stays_and_says_why() {
     std::fs::remove_dir_all(&file).unwrap();
     set_secret(&host, "pw").unwrap();
     remove(&t.dirs(), &host).unwrap();
-    assert!(load(&t.dirs()).unwrap().hosts.is_empty());
+    assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);
     assert_eq!(get_secret(&host).unwrap_err().code(), Code::NoPasswordStored, "its secret went with it");
 }

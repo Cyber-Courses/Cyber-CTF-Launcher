@@ -309,7 +309,7 @@ mod tests {
         // No file yet is no host at all, not an error.
         std::fs::remove_file(t.data().join("server.json")).unwrap();
         assert_eq!(default_server(&t.dirs()).unwrap(), None);
-        assert!(launch_targets(&t.dirs()).unwrap().is_empty());
+        assert_eq!(launch_targets(&t.dirs()).unwrap(), [] as [serde_json::Value; 0]);
     }
 
     #[test]

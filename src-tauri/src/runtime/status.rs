@@ -384,6 +384,6 @@ mod tests {
         assert_eq!(docker, [Control::Shutdown]);
         let vm = super::status(&t.dirs(), &dir, "web", Runtime::Vm).await.unwrap().controls;
         assert_eq!(vm, [Control::Pause, Control::Shutdown, Control::Provision, Control::Repair]);
-        assert!(super::status(&t.dirs(), &dir, "web", Runtime::Cloud).await.unwrap().controls.is_empty());
+        assert_eq!(super::status(&t.dirs(), &dir, "web", Runtime::Cloud).await.unwrap().controls, [] as [Control; 0]);
     }
 }

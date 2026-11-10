@@ -144,6 +144,6 @@ mod tests {
     #[test]
     fn a_named_context_becomes_the_docker_cli_environment_and_none_leaves_it_alone() {
         assert_eq!(super::env_for(Some("orbstack")), [("DOCKER_CONTEXT".to_string(), "orbstack".to_string())]);
-        assert!(super::env_for(None).is_empty());
+        assert_eq!(super::env_for(None), [] as [(String, String); 0]);
     }
 }

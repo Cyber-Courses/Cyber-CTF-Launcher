@@ -40,7 +40,7 @@ fn a_container_lab_runs_where_isoloom_generates_each_form() {
     assert_eq!(paths_of(&o.servers), [(Some(Provider::Proxmox), "docker-vm", Some("proxmox")), (Some(Provider::VmwareEsxi), "docker-vm", Some("vmware_esxi"))]);
     assert_eq!(providers(&o.cloud_docker), Provider::CLOUDS);
     assert_eq!(providers(&o.cloud_vm), Provider::CLOUDS);
-    assert!(o.cloud_services.is_empty());
+    assert_eq!(o.cloud_services, [] as [RunPath; 0]);
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn a_vm_lab_runs_its_vms_where_its_spec_and_isoloom_allow() {
     // Its targets leave Proxmox out: ESXi only.
     let o = options(&format!("{VMS}targets: [vagrant]\n"), Runtime::Vm);
     assert_eq!(providers(&o.servers), [Provider::VmwareEsxi]);
-    assert!(o.cloud_vm.is_empty());
+    assert_eq!(o.cloud_vm, [] as [RunPath; 0]);
 }
 
 #[test]
