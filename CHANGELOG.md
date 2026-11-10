@@ -223,6 +223,9 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **Stopping containers from the Machine page says when Docker couldn't be asked.** A stop of a
   lab's leftover containers that Docker refused to list (its socket denied to this account) read
   as done while they kept running. It now fails with Docker's answer.
+- **Signing in or out no longer shows the other state's labs for a moment.** The catalogue and
+  the completed labs of before the change stayed on the Labs and Home screens until the new
+  catalogue answered; the screens now wait for it.
 - **A cloud-services lab gets the account's region, subscription or project.** The lab's own
   Terraform module was never given where the account works when its provider names none: the AWS
   region (`AWS_REGION`), the Azure subscription, the Google Cloud project and region. They are now
