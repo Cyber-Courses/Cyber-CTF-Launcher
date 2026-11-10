@@ -137,12 +137,13 @@ async fn start_here(
     // that engine. Only containers on Docker here (not a VM form); nothing recorded = current context.
     mark_engine(dir, if matches!(run, LocalRun::Docker) { docker_context } else { None })?;
     // Every lab on this machine runs through the Isothrum runner. A parked run is resumed as it
-    // was and leftovers are cleared first (the runner's `Occupied::ResumeParked`); the runner
-    // wrappers record the lab's downloads for Storage.
+    // was and leftovers are cleared first (the runner's `Occupied::ResumeParked`). What it
+    // downloads is the caller's to record ([`downloads`]).
+    let home = runner_home(dirs)?;
     let started = match run {
-        LocalRun::Docker => start_with_runner(dirs, dir, id, env, log).await,
-        LocalRun::DockerInVm(p) => start_docker_in_vm_with_runner(dirs, dir, id, VmStart { provider: p, env }, log).await,
-        LocalRun::Vm(p) => start_vm_with_runner(dirs, dir, id, VmStart { provider: p, env }, log).await,
+        LocalRun::Docker => start_docker_run(&home, dir, id, env, log).await,
+        LocalRun::DockerInVm(p) => start_docker_in_vm_run(&home, dir, id, VmStart { provider: p, env }, log).await,
+        LocalRun::Vm(p) => start_vm_run(&home, dir, id, VmStart { provider: p, env }, log).await,
     };
     // A clash is on a host port either form binds here, so name what holds it: the player can
     // then stop it and start again, rather than guess what "port 8080 is taken" means.
@@ -150,15 +151,6 @@ async fn start_here(
         Err(e) => Err(port_holder::with_holder(e).await),
         ok => ok,
     }
-}
-
-/// A container lab in a VM on this machine through the Isothrum runner, its boxes recorded for
-/// Storage as on the launcher's own path.
-async fn start_docker_in_vm_with_runner(dirs: &AppDirs, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    let before = crate::machine::storage::owned::Before::take(false, true).await;
-    let started = start_docker_in_vm_run(&runner_home(dirs)?, dir, id, start, log).await;
-    crate::machine::storage::claim_lab(dirs.clone(), dir, id, &before).await;
-    started
 }
 
 /// The runner's start of a container lab in one VM (Isoloom's `docker-vm`, runner home `home`) on
@@ -216,15 +208,6 @@ pub(in crate::runtime) async fn up_in_vm(
     }
 }
 
-/// A container lab on this machine's Docker through the Isothrum runner (see `isothrum`), its
-/// downloads recorded for Storage as on the launcher's own path.
-async fn start_with_runner(dirs: &AppDirs, dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-    let before = crate::machine::storage::owned::Before::take(true, false).await;
-    let started = start_docker_run(&runner_home(dirs)?, dir, id, env, log).await;
-    crate::machine::storage::claim_lab(dirs.clone(), dir, id, &before).await;
-    started
-}
-
 /// The runner's start of a container lab (runner home `home`): its files generated (the run
 /// manifest with them), then up, or resumed as it was when it is parked (the runner's own rule).
 /// Takes no app handle, so the integration tests run exactly this.
@@ -243,15 +226,6 @@ pub(crate) struct VmStart<'a> {
     pub(crate) provider: Provider,
     /// The launch's values: the inputs the lab's slots take, and the ports choice.
     pub(crate) env: &'a [(String, String)],
-}
-
-/// A VM lab on this machine through the Isothrum runner, its boxes recorded for Storage as on
-/// the launcher's own path.
-async fn start_vm_with_runner(dirs: &AppDirs, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    let before = crate::machine::storage::owned::Before::take(false, true).await;
-    let started = start_vm_run(&runner_home(dirs)?, dir, id, start, log).await;
-    crate::machine::storage::claim_lab(dirs.clone(), dir, id, &before).await;
-    started
 }
 
 /// The runner's start of a VM lab (runner home `home`) on `provider`: its files generated (the
@@ -301,6 +275,28 @@ pub(super) const CLOUD_NEEDS_ACCOUNT: &str = "This lab runs in your cloud accoun
 
 /// The per-machine form is a pick for this machine.
 pub(super) const PER_MACHINE_HERE_ONLY: &str = "One VM per machine is a way to run the lab on this machine: on a server, the lab runs as it is published.";
+
+/// What a start downloads to this machine, for the layer above to record as the app's (Storage
+/// cleans what the app downloaded): container images, Vagrant boxes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Downloads {
+    pub(crate) images: bool,
+    pub(crate) boxes: bool,
+}
+
+/// What a start of a `runtime` lab `to` its destination downloads here: images for containers on
+/// this machine's Docker, boxes for every VM form here, nothing for a server or a cloud account
+/// (nor for a start [`local_run`] refuses).
+pub(crate) fn downloads(runtime: Runtime, to: &Destination<'_>) -> Downloads {
+    if to.host.is_some() {
+        return Downloads::default();
+    }
+    match local_run(runtime, to.provider, to.per_machine_vm) {
+        Ok(LocalRun::Docker) => Downloads { images: true, boxes: false },
+        Ok(LocalRun::DockerInVm(_) | LocalRun::Vm(_)) => Downloads { images: false, boxes: true },
+        Err(_) => Downloads::default(),
+    }
+}
 
 /// How a lab runs on this machine.
 #[derive(Debug, PartialEq)]

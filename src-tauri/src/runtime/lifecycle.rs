@@ -170,14 +170,11 @@ async fn stop(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl 
     stop_locked(dirs, dir, id, runtime, log).await
 }
 
-/// The body of `stop`, assuming the caller already holds the lab lock. The reaper uses this so
-/// it can re-check expiry under the same lock before tearing a lab down (the lock is not
-/// reentrant, so it must not call `stop`, which would deadlock).
+/// The body of `stop`, for a caller already holding the lab lock (the lock is not reentrant, so
+/// it must not call `stop`, which would deadlock): the integration tests.
 pub(crate) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
     let _deploy = DeployGuard::new(id, Action::Stop);
-    // The website's co-location check for this lab has nothing left to vouch for, and its hosts'
-    // keys go with its hosts.
-    crate::account::colocation::retire(id);
+    // Its hosts' keys go with its hosts.
     super::paths::forget_lab_host_keys(dir);
     // Wherever it runs, through the runner (its attack box, a machine of it, goes with it): on
     // this machine, or on a server host or cloud account, destroyed there with the parameters it
@@ -255,16 +252,16 @@ pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
 }
 
 /// Stops lab `id` wherever it runs: the one Stop of the lab page, the Machine page and the
-/// hosted agent (through `labs::stop_lab`, which ends the lab's deploy workers). Marked as
-/// stopping from the start: `end_workers` (ending a deploy still running in its worker, which can
-/// take minutes while Terraform is interrupted and waited for) runs first, while the page and the
-/// quit guard see a stop and no attack box may be added, so the teardown never races a `vagrant
-/// up` or `compose up` that would recreate what it removes; then the lab is torn down under its
-/// lock.
-pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_workers: impl Future<Output = ()>, log: impl FnMut(String)) -> Result<()> {
+/// hosted agent (through `labs::stop_lab`). Marked as stopping from the start: `end_first` (what
+/// the layers above end with the lab: its deploy workers, a deploy still running in one of which
+/// can take minutes while Terraform is interrupted and waited for, and the website's co-location
+/// check, which has nothing left to vouch for) runs first, while the page and the quit guard see
+/// a stop and no attack box may be added, so the teardown never races a `vagrant up` or `compose
+/// up` that would recreate what it removes; then the lab is torn down under its lock.
+pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_first: impl Future<Output = ()>, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
     let _stopping = DeployGuard::new(id, Action::Stop);
-    end_workers.await;
+    end_first.await;
     stop(dirs, &dir, id, runtime, log).await
 }
 
