@@ -11,7 +11,9 @@
 #   SKIP_BUILD=1 KEEP=1 e2e/desktop/run.sh      # reuse the binary; leave the lab running
 #
 # Knobs:
-#   APP_BIN                 the app to drive (default: the wdio debug build, built here)
+#   APP_BIN                 the app to drive (default: the wdio debug build, built here); a
+#                           release build needs NEXT_PUBLIC_WDIO=1 at its build for the __wdio_*
+#                           hooks the scenarios use (docs/testing/desktop-e2e.md)
 #   TAURI_WEBDRIVER_PORT    the embedded WebDriver port (4445)
 #   DEV_URL_PORT            where a DEBUG build loads its frontend from (3000, tauri.conf.json's
 #                           devUrl); a `next dev` already listening there is reused

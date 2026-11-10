@@ -19,8 +19,8 @@ function wdioAttackLab(): string | null {
  * attack-box panel the lab page uses (the same `useAttackBox`, `AttackBoxPanel` and `useLabShell`),
  * so an e2e can attach the attack box, see it running, open the attacker shell and stop it — the
  * real panel, the real commands. A locally imported lab never reaches the catalogue detail page
- * where that panel otherwise lives, so this is the only way to drive it against a local lab. Inert
- * unless a test sets the flag, which the shipped app never does.
+ * where that panel otherwise lives, so this is the only way to drive it against a local lab.
+ * Mounted only in a build that carries the e2e hooks (`WdioHooks`), never a release build.
  */
 export function WdioAttack() {
   // Read once at mount (like the Settings-driven flags), so there is no setState in an effect.

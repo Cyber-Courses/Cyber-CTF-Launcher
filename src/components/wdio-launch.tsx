@@ -8,8 +8,8 @@ import { notify } from "@/lib/notify";
 
 /** GUI e2e only: when the `__wdio_launch_local__` localStorage key holds a lab-folder path, start that local lab
  *  exactly as the Import button does (the same `labLaunchLocal`, toasts and all), so an e2e can
- *  drive the local launch and its success/failure UI without the native folder picker. Inert unless
- *  a test sets the flag, which the shipped app never does. */
+ *  drive the local launch and its success/failure UI without the native folder picker. Mounted
+ *  only in a build that carries the e2e hooks (`WdioHooks`), never a release build. */
 export function WdioLaunch() {
   const t = useT();
   useEffect(() => {

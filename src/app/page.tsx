@@ -1,13 +1,11 @@
 import { AppShell } from "@/components/app-shell";
 import { DevMockGate } from "@/components/dev-mock-gate";
-import { WdioLaunch } from "@/components/wdio-launch";
-import { WdioAttack } from "@/components/wdio-attack";
+import { WdioHooks } from "@/components/wdio-hooks";
 
 export default function Home() {
   return (
     <DevMockGate>
-      <WdioLaunch />
-      <WdioAttack />
+      <WdioHooks />
       <AppShell />
     </DevMockGate>
   );

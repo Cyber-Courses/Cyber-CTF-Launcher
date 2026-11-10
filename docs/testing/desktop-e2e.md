@@ -39,6 +39,11 @@ On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` 
 `CYBERCTF_EXPECT_LAB=<lab id>`.
 On Windows, `e2e/desktop/smoke.ps1` runs the smoke; the scenarios take `APP_BIN` there too.
 
+The `__wdio_*` hooks (`src/components/wdio-hooks.tsx`: start a lab folder, mount the attack box
+panel) are in a development frontend only, the one a debug build loads: a release build leaves
+them out. A release app driven by these scenarios (`APP_BIN`) is built with `NEXT_PUBLIC_WDIO=1`
+(`NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`), which keeps them.
+
 Why a debug build needs the dev server: Tauri's `generate_context!` loads `devUrl` in a debug
 build and the static export only in a release build, so a debug app started by hand shows a blank
 window until `next dev` answers on port 3000. The runner handles it.

@@ -271,6 +271,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Security
 
+- **The release app no longer carries the GUI test hooks.** Two components the WebDriver tests
+  use, one of which starts the lab folder a `localStorage` key names, were mounted in every
+  build. They are now built only into a development frontend, or a build made for those tests
+  (`NEXT_PUBLIC_WDIO=1`).
 - **Kali's archive keys are checked before a Debian attack VM trusts them.** Where Kali has no VM
   image for the computer's CPU, the attack VM is a Debian VM made Kali; it downloaded Kali's
   archive keyring straight into apt's keyrings, trusted on TLS alone. The keyring is now checked
