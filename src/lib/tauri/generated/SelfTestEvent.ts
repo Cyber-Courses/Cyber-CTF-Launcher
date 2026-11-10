@@ -4,4 +4,9 @@ export type SelfTestEvent = { step: string, label: string,
 /**
  * `running`, `ok`, `fail` or `skip`.
  */
-state: "running" | "ok" | "fail" | "skip", detail: string | null, };
+state: "running" | "ok" | "fail" | "skip", detail: string | null, 
+/**
+ * How many bytes the step moves, when known (the image it uploads): its running events
+ * carry it once it is.
+ */
+size?: number | null, };

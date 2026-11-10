@@ -94,6 +94,12 @@ pub(super) trait Course: Send {
     /// noted for a step's detail or an explanation.
     fn ends(&mut self, line: &str) -> Option<usize>;
 
+    /// How many bytes step `at` of [`Course::UP`] moves, once the run's lines say (the image it
+    /// uploads): its live lines carry it.
+    fn size(&self, _at: usize) -> Option<u64> {
+        None
+    }
+
     /// What step `at` of [`Course::UP`] says when it ends.
     fn detail(&self, _at: usize) -> Option<String> {
         None
@@ -189,7 +195,7 @@ impl<'a, C: Course> Steps<'a, C> {
             }
             _ => {
                 if let Some((step, label)) = C::UP.get(self.done) {
-                    self.r.progress(step, label, line);
+                    self.r.progress_sized(step, label, line, self.course.size(self.done));
                 }
             }
         }
@@ -289,6 +295,11 @@ pub(super) mod scripted {
         seen.lock().unwrap().iter().rev().find(|e| e.step == step && e.state == state).and_then(|e| e.detail.clone()).unwrap_or_default()
     }
 
+    /// The size step `step`'s last running event carried.
+    pub(in crate::runtime::server_selftest) fn running_size(seen: &Seen, step: &str) -> Option<u64> {
+        seen.lock().unwrap().iter().rev().find(|e| e.step == step && e.state == "running").and_then(|e| e.size)
+    }
+
     /// Whether step `step` showed a running line containing `text`.
     pub(in crate::runtime::server_selftest) fn showed(seen: &Seen, step: &str, text: &str) -> bool {
         seen.lock().unwrap().iter().any(|e| e.step == step && e.state == "running" && e.detail.as_deref().is_some_and(|d| d.contains(text)))
@@ -312,6 +323,9 @@ mod tests {
         fn detail(&self, at: usize) -> Option<String> {
             (at == 0).then(|| "first".into())
         }
+        fn size(&self, at: usize) -> Option<u64> {
+            (at == 1).then_some(2_400_000_000)
+        }
         fn explain(&self, raw: &str) -> Option<(usize, String)> {
             raw.contains("bad two").then(|| (1, "two went wrong".into()))
         }
@@ -330,6 +344,16 @@ mod tests {
         assert_eq!(detail(&seen, "one", "ok"), "first");
         assert!(showed(&seen, "one", "working") && showed(&seen, "two", "still going"));
         assert_eq!(run.calls(), ["up", "check", "down"]);
+    }
+
+    #[tokio::test]
+    async fn a_steps_live_lines_carry_the_size_its_course_knows_it_moves() {
+        let (r, seen) = reporter();
+        let run = Scripted::new(&["working", "one done", "Disk progress: 8%"], None);
+        assert!(test(&r, &run, Two).await.result.is_ok());
+        assert_eq!(running_size(&seen, "one"), None);
+        assert_eq!(running_size(&seen, "two"), Some(2_400_000_000));
+        assert_eq!(detail(&seen, "two", "running"), "Disk progress: 8%");
     }
 
     #[tokio::test]

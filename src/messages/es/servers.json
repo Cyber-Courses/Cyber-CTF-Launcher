@@ -71,6 +71,8 @@
       "esxiVm": "Arrancar la VM de prueba",
       "esxiAddress": "La VM de prueba obtiene una dirección en la red del host"
     },
+    "uploadHint": "Cada prueba sube la imagen de la VM al host, lo que puede tardar varios minutos (más por Wi-Fi).",
+    "uploadHintSize": "Cada prueba sube la imagen de la VM, de unos {size}, al host, lo que puede tardar varios minutos (más por Wi-Fi).",
     "incomplete": "Prueba de VM incompleta: se detuvo antes de «{step}»",
     "notRun": "Ese paso nunca se ejecutó, así que la prueba no puede pasar. Puede que esta versión de la app aún no lo ejecute: actualiza la app y vuelve a probar."
   },

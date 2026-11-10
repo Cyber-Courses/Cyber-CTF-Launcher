@@ -41,5 +41,8 @@
     "exegolFreeTerms": "Non-commercial use",
     "exegolFull": "The latest Exegol toolkit; needs an Exegol Pro, Team or Enterprise plan",
     "exegolFullTerms": "Paid plan"
+  },
+  "progress": {
+    "uploading": "Uploading: {percent}%"
   }
 }

@@ -71,6 +71,8 @@
       "esxiVm": "Test-VM starten",
       "esxiAddress": "Die Test-VM bekommt eine Adresse im Netz des Hosts"
     },
+    "uploadHint": "Jeder Test lädt das Image der VM auf den Host hoch, was mehrere Minuten dauern kann (über WLAN länger).",
+    "uploadHintSize": "Jeder Test lädt das Image der VM, etwa {size}, auf den Host hoch, was mehrere Minuten dauern kann (über WLAN länger).",
     "incomplete": "VM-Test unvollständig: angehalten vor „{step}“",
     "notRun": "Dieser Schritt lief nie, daher kann der Test nicht bestehen. Diese App-Version führt ihn eventuell noch nicht aus: Aktualisiere die App und teste erneut."
   },

@@ -25,6 +25,13 @@ describe("DeploySteps", () => {
     expect(screen.getByText("==> SRV02: Booting VM...")).toBeTruthy();
   });
 
+  it("shows a running VM upload to ESXi as how far it is", () => {
+    const lines = ["==> probe: --- Guest Build ---", "Opening VMX source: /tmp/probe.vmx", "Disk progress: 41%", "Disk progress: 42%"];
+    render(<DeploySteps lines={lines} times={at(4)} busy ready={false} />);
+    expect(screen.getByText("Uploading: 42%")).toBeTruthy();
+    expect(screen.queryByText("Disk progress: 42%")).toBeNull();
+  });
+
   it("marks the machine a failure names as failed, not the last one shown", () => {
     const lines = [...vagrant, "✗ An error occurred while executing the action on the 'DC01' machine."];
     render(<DeploySteps lines={lines} times={at(5)} busy={false} ready={false} />);

@@ -71,6 +71,8 @@
       "esxiVm": "Démarrer la VM de test",
       "esxiAddress": "La VM de test obtient une adresse sur le réseau de l'hôte"
     },
+    "uploadHint": "Chaque test envoie l'image de la VM sur l'hôte, ce qui peut prendre plusieurs minutes (davantage en Wi-Fi).",
+    "uploadHintSize": "Chaque test envoie l'image de la VM, environ {size}, sur l'hôte, ce qui peut prendre plusieurs minutes (davantage en Wi-Fi).",
     "incomplete": "Test de VM incomplet : arrêté avant « {step} »",
     "notRun": "Cette étape ne s'est jamais exécutée, le test ne peut donc pas réussir. Cette version de l'app ne l'exécute peut-être pas encore : mettez l'app à jour et relancez le test."
   },

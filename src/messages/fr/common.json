@@ -41,5 +41,8 @@
     "exegolFreeTerms": "Usage non commercial",
     "exegolFull": "La boîte à outils Exegol la plus récente ; nécessite une offre Exegol Pro, Team ou Enterprise",
     "exegolFullTerms": "Offre payante"
+  },
+  "progress": {
+    "uploading": "Envoi : {percent} %"
   }
 }

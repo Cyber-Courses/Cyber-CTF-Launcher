@@ -175,6 +175,14 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A long step of a server's VM test no longer looks frozen.** The ESXi test's upload of its
+  VM sat for many minutes on one line with no sign of life: the OVF Tool redraws its progress
+  (`Disk progress: 8%`) in place, which the runner never passed on as a line. With the runner
+  reading those redraws, the upload step now shows **Uploading: 8%** as it moves (and so does a
+  lab's machine step on the lab page while its VM uploads to ESXi). Every step of a server's VM
+  test shows how long it has been running, then how long it took, and the upload step says up
+  front that each test uploads the VM's image, with its size once the box is on this computer
+  (about 2.4 GB for Debian 12), which can take several minutes.
 - **A lab an older version left on its own Terraform is no longer said to be removable.** When the
   Isothrum runner couldn't take over such a cloud or Proxmox deployment, the notice said Stop and
   the auto-stop would still remove it, but nothing did and a cloud lab kept billing. The notice

@@ -71,6 +71,8 @@
       "esxiVm": "Start the test VM",
       "esxiAddress": "The test VM gets an address on the host's network"
     },
+    "uploadHint": "Each test uploads the VM's image to the host, which can take several minutes (longer over Wi-Fi).",
+    "uploadHintSize": "Each test uploads the VM's image, about {size}, to the host, which can take several minutes (longer over Wi-Fi).",
     "incomplete": "VM test incomplete: stopped before “{step}”",
     "notRun": "That step never ran, so the test can't pass. This version of the app may not run it yet: update the app and test again."
   },

@@ -41,5 +41,8 @@
     "exegolFreeTerms": "非商用利用",
     "exegolFull": "最新の Exegol ツールキット。Exegol Pro、Team、Enterprise プランが必要です",
     "exegolFullTerms": "有料プラン"
+  },
+  "progress": {
+    "uploading": "アップロード中: {percent}%"
   }
 }

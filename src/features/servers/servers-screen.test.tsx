@@ -44,6 +44,8 @@ function menuBackdrop(): Element {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // A timed test that fails leaves no fake clock to the next.
+  vi.useRealTimers();
 });
 
 describe("ServerScreen", () => {
@@ -355,6 +357,54 @@ describe("ServerSelfTest", () => {
     expect(screen.getByText("VM test failed")).toBeTruthy();
     expect(screen.getByText("The test VM got no address on port group VM Network within 4 minutes")).toBeTruthy();
     expect(onDone).toHaveBeenCalledWith("fail");
+  });
+
+  it("times each step as it runs, and shows how far the ESXi upload is and how large it is", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    let args: Record<string, unknown> | undefined;
+    installTauri({
+      server_selftest: (a) => {
+        args = a;
+        return new Promise<null>(() => {});
+      },
+    });
+    render(<ServerSelfTest id="esxi-timed" provider="vmware_esxi" onDone={vi.fn()} />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const row = (label: string) => screen.getByText(label).parentElement?.parentElement as HTMLElement;
+    act(() => {
+      stream(args, { step: "connect", state: "running" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(4000);
+      stream(args, { step: "connect", state: "ok", detail: "ok" }, { step: "prepare", state: "ok" }, { step: "image", state: "running" });
+    });
+    // Up front, before the run names the box: the upload takes minutes.
+    expect(within(row("Upload the test VM to the ESXi datastore")).getByText(/Each test uploads the VM's image to the host/)).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(65_600);
+      stream(args, { step: "image", state: "running", detail: "Disk progress: 8%", size: 2_400_000_000 });
+    });
+    const image = row("Upload the test VM to the ESXi datastore");
+    expect(within(image).getByText("Uploading: 8%")).toBeTruthy();
+    expect(within(image).getByText(/about 2.4 GB, to the host/)).toBeTruthy();
+    // The running step's time ticks with the clock; a step done keeps the time it took.
+    expect(image.textContent).toContain("1:05");
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(image.textContent).toContain("1:35");
+    expect(row("Reach the host").textContent).toContain("4s");
+    expect(row("Start the test VM").textContent).not.toMatch(/\d+s|\d:\d\d/);
+    act(() => {
+      stream(args, { step: "image", state: "ok", detail: "Box bento/debian-12 v202510.26.0 (amd64)" });
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(image.textContent).toContain("1:35");
+    expect(within(image).queryByText(/Each test uploads/)).toBeNull();
+    vi.useRealTimers();
   });
 
   it("never reports a step not run as passed: the test stops before it, never green", async () => {

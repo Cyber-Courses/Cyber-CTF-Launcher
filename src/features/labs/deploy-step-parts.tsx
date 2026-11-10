@@ -8,6 +8,7 @@ import { formatDuration } from "@/lib/format";
 import type { Step, Timed } from "@/features/labs/deploy-log";
 import { useNow } from "@/lib/use-now";
 import { useT } from "@/lib/i18n";
+import { progressText } from "@/lib/progress-line";
 
 // The parts of DeploySteps: a step's row and mark, its own lines, and the raw log.
 
@@ -97,9 +98,10 @@ export function StepItem({
         <ChevronRight className={cn("size-3.5 text-faint transition-transform group-hover:text-muted-foreground", expanded && "rotate-90")} />
       </button>
       {/* While a phase is running, show its latest line inline (e.g. which container is
-          still "Waiting"), so the long "Wait until healthy" step isn't a blank spinner. */}
+          still "Waiting", or how far a VM's upload to ESXi is), so a long step isn't a blank
+          spinner. */}
       {state === "running" && !expanded && latest && (
-        <div className="-mt-1 truncate px-4 pb-2 pl-12 font-mono text-[0.6875rem] text-faint">{latest.trim()}</div>
+        <div className="-mt-1 truncate px-4 pb-2 pl-12 font-mono text-[0.6875rem] text-faint">{progressText(latest.trim())}</div>
       )}
       {expanded && (
         <div className="px-4 pb-2.5 pl-12">

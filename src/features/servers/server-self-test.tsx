@@ -5,18 +5,21 @@ import { Check, X } from "lucide-react";
 import { StatusDot } from "@/components/ui/status-pill";
 import { SELFTEST_STEPS, serverSelftest, type SelfTestEvent, type ServerHost } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { formatElapsed } from "@/lib/format";
+import { formatBytes, formatElapsed } from "@/lib/format";
+import { progressText } from "@/lib/progress-line";
 import { useNow } from "@/lib/use-now";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
+import { stepAfter, statesOf, stepTime, type Stamped, type StepStates } from "@/features/servers/self-test-steps";
 
-/** One step the test runs, with its label. */
-type PlanStep = { step: string; label: MessageKey };
+/** One step the test runs, with its label; `uploads` when it uploads the VM's image (it then
+ *  says up front that this takes minutes). */
+type PlanStep = { step: string; label: MessageKey; uploads?: true };
 
 /** The steps `steps` (the core's, in its order), each with its label in `labels`, which names
- *  each of them and no other. */
-const planOf = <S extends string>(steps: readonly S[], labels: Record<NoInfer<S>, MessageKey>): PlanStep[] =>
-  steps.map((step) => ({ step, label: labels[step] }));
+ *  each of them and no other; the step `uploads` names uploads the VM's image. */
+const planOf = <S extends string>(steps: readonly S[], labels: Record<NoInfer<S>, MessageKey>, uploads?: NoInfer<S>): PlanStep[] =>
+  steps.map((step) => (step === uploads ? { step, label: labels[step], uploads: true } : { step, label: labels[step] }));
 
 /** The step plan each provider reports, shown up front so the list doesn't grow as it runs: the
  *  steps the core runs, no others (a step listed and never run reads as a test that stopped). */
@@ -34,20 +37,21 @@ export const SELFTEST_PLAN: Record<"proxmox" | "esxi", PlanStep[]> = {
     cleanup: "servers.selfTest.steps.cleanupLab",
   }),
   // The same lab run the way a launch runs one on ESXi: Vagrant's ESXi plugin, the OVF Tool's upload.
-  esxi: planOf(SELFTEST_STEPS.vmware_esxi, {
-    connect: "servers.selfTest.steps.connect",
-    prepare: "servers.selfTest.steps.prepareLab",
-    image: "servers.selfTest.steps.esxiImage",
-    vm: "servers.selfTest.steps.esxiVm",
-    address: "servers.selfTest.steps.esxiAddress",
-    ssh: "servers.selfTest.steps.ssh",
-    command: "servers.selfTest.steps.command",
-    cleanup: "servers.selfTest.steps.cleanupLab",
-  }),
+  esxi: planOf(
+    SELFTEST_STEPS.vmware_esxi,
+    {
+      connect: "servers.selfTest.steps.connect",
+      prepare: "servers.selfTest.steps.prepareLab",
+      image: "servers.selfTest.steps.esxiImage",
+      vm: "servers.selfTest.steps.esxiVm",
+      address: "servers.selfTest.steps.esxiAddress",
+      ssh: "servers.selfTest.steps.ssh",
+      command: "servers.selfTest.steps.command",
+      cleanup: "servers.selfTest.steps.cleanupLab",
+    },
+    "image",
+  ),
 };
-
-/** Each step's last state and detail, by step name (none for a step not reached). */
-type StepStates = Partial<Record<string, { state: string; detail?: string }>>;
 
 /** How a test ended, by its plan: passed only when every listed step passed. A step that failed
  *  (listed or not) fails it; a listed step that never passed, with none failed, leaves it
@@ -62,17 +66,10 @@ export function selfTestOutcome(plan: PlanStep[], states: StepStates, running: b
   return error ? { kind: "failed" } : { kind: "passed" };
 }
 
-/** Each step's last state, from the events in the order they came. */
-function statesOf(events: SelfTestEvent[]): StepStates {
-  const states: StepStates = {};
-  for (const e of events) states[e.step] = { state: e.state, detail: e.detail ?? undefined };
-  return states;
-}
-
 /** A self-test in progress on a host, shared by every view of it: the test runs on the server
  *  whether or not its panel is shown, so a panel hidden and reopened while it runs attaches to
  *  it instead of starting a second throwaway VM beside the first. */
-type Run = { startAt: number; events: SelfTestEvent[]; error: string | null; listeners: Set<(e: SelfTestEvent) => void>; onSettled: Set<() => void> };
+type Run = { startAt: number; events: Stamped[]; error: string | null; listeners: Set<(e: Stamped) => void>; onSettled: Set<() => void> };
 const runs = new Map<string, Run>();
 
 /** The run on host `id`, started now when none is in progress. */
@@ -82,9 +79,10 @@ function runFor(id: string): Run {
   const run: Run = { startAt: Date.now(), events: [], error: null, listeners: new Set(), onSettled: new Set() };
   runs.set(id, run);
   serverSelftest(id, (e: SelfTestEvent) => {
-    run.events.push(e);
+    const stamped = { e, at: Date.now() };
+    run.events.push(stamped);
     run.listeners.forEach((l) => {
-      l(e);
+      l(stamped);
     });
   })
     .catch((err: unknown) => {
@@ -116,8 +114,8 @@ function useServerSelfTest(id: string, plan: PlanStep[], onDone: (result: "ok" |
 
   useEffect(() => {
     const run = runFor(id);
-    const shown = (e: SelfTestEvent) => {
-      setStates((s) => ({ ...s, [e.step]: { state: e.state, detail: e.detail ?? undefined } }));
+    const shown = (stamped: Stamped) => {
+      setStates((s) => ({ ...s, [stamped.e.step]: stepAfter(s[stamped.e.step], stamped) }));
     };
     // Attaching to a run already going: what it did so far, then the rest as it comes.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the start lives in the module's run, which only this effect starts or finds
@@ -166,7 +164,7 @@ export function ServerSelfTest({ id, provider, onDone }: { id: string; provider:
         <span className="text-[0.8125rem] font-medium">{headline}</span>
         <span className="ml-auto font-mono text-[0.6875rem] tabular-nums text-faint">{formatElapsed(now - startAt)}</span>
       </div>
-      <StepList plan={plan} states={states} />
+      <StepList plan={plan} states={states} now={now} />
       {shownError && (
         <div className="flex items-start gap-2.5 border-t border-border px-4 py-2 text-[0.75rem] text-muted-foreground">
           <StatusDot tone="fail" className="mt-1.5" />
@@ -177,21 +175,30 @@ export function ServerSelfTest({ id, provider, onDone }: { id: string; provider:
   );
 }
 
-/** The provider's steps, each with its mark and its last detail. */
-function StepList({ plan, states }: { plan: { step: string; label: MessageKey }[]; states: StepStates }) {
+/** The provider's steps, each with its mark, its last detail (an upload's progress as such) and
+ *  how long it ran; the step that uploads the VM's image says up front that it takes minutes. */
+function StepList({ plan, states, now }: { plan: PlanStep[]; states: StepStates; now: number }) {
   const t = useT();
   return (
     <div className="grid py-1">
       {plan.map((p) => {
-        const st = states[p.step]?.state ?? "idle";
-        const detail = states[p.step]?.detail;
+        const s = states[p.step];
+        const st = s?.state ?? "idle";
+        const detail = s?.detail && (st === "running" ? progressText(s.detail) : s.detail);
+        const time = stepTime(s, now);
         return (
-          <div key={p.step} className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-3 px-4 py-1.5 text-[0.8125rem]">
+          <div key={p.step} className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-start gap-3 px-4 py-1.5 text-[0.8125rem]">
             <StepMark state={st} />
             <div className="min-w-0">
               <p className={cn(st === "idle" || st === "skip" ? "text-faint" : "text-foreground")}>{t(p.label)}</p>
+              {p.uploads && st === "running" && (
+                <p className="mt-0.5 break-words text-[0.75rem] text-muted-foreground">
+                  {s?.size ? t("servers.selfTest.uploadHintSize", { size: formatBytes(s.size) }) : t("servers.selfTest.uploadHint")}
+                </p>
+              )}
               {detail && <p className="mt-0.5 break-words font-mono text-[0.6875rem] text-faint">{detail}</p>}
             </div>
+            <span className="mt-px font-mono text-[0.6875rem] tabular-nums text-faint">{time}</span>
           </div>
         );
       })}

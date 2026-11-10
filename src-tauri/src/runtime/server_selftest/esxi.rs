@@ -161,13 +161,16 @@ struct Esxi {
     /// Vagrant's box store, where a box already downloaded is found with its architecture.
     boxes: Option<PathBuf>,
     used: Boxed,
+    /// The size of the box's VMware build in the box store, once the box is named and stored:
+    /// about what the OVF Tool uploads.
+    size: Option<u64>,
     /// The OVF Tool's last error line, which the plugin's own error leaves out.
     ovftool_said: Option<String>,
 }
 
 impl Esxi {
     fn new(conn: &server::Connection, boxes: Option<PathBuf>) -> Self {
-        Esxi { network: network_of(conn), datastore: setting(conn, DATASTORE), boxes, used: Boxed::default(), ovftool_said: None }
+        Esxi { network: network_of(conn), datastore: setting(conn, DATASTORE), boxes, used: Boxed::default(), size: None, ovftool_said: None }
     }
 
     /// Notes the box `line` names: Vagrant adding it (`Adding box 'NAME' (vVERSION) for provider:
@@ -185,6 +188,17 @@ impl Esxi {
                 "Box Ver" => self.used.version = Some(value.to_owned()),
                 _ => {}
             }
+        }
+    }
+
+    /// Notes the size of the box `line` names, once it is in the box store (the plugin names it
+    /// after Vagrant downloaded it, before the OVF Tool uploads it).
+    fn note_size(&mut self, line: &str) {
+        self.note_box(line);
+        if self.size.is_none()
+            && let (Some(boxes), Boxed { name: Some(name), version: Some(version), arch }) = (self.boxes.as_deref(), &self.used)
+        {
+            self.size = stored_size(boxes, name, version, arch.as_deref());
         }
     }
 
@@ -208,19 +222,44 @@ fn summary(line: &str) -> Option<(&str, &str)> {
 /// The architectures box `name` at `version` is stored for in Vagrant's box store `boxes`, for a
 /// VMware provider: the one Vagrant picked when the box was already downloaded.
 fn stored_arch(boxes: &Path, name: &str, version: &str) -> Option<String> {
+    let arches = vmware_builds(boxes, name, version);
+    (!arches.is_empty()).then(|| arches.into_keys().collect::<Vec<_>>().join(" or "))
+}
+
+/// The size of box `name` at `version`'s VMware build for `arch` in Vagrant's box store `boxes`
+/// (the only one stored, when `arch` isn't known); none when it isn't stored.
+fn stored_size(boxes: &Path, name: &str, version: &str, arch: Option<&str>) -> Option<u64> {
+    let builds = vmware_builds(boxes, name, version);
+    let build = match arch {
+        Some(arch) => builds.get(arch)?,
+        None if builds.len() == 1 => builds.values().next()?,
+        None => return None,
+    };
+    // A box's build is one folder of files (its disks, its `.vmx`).
+    let size: u64 = std::fs::read_dir(build).ok()?.flatten().filter_map(|f| f.metadata().ok()).filter(std::fs::Metadata::is_file).map(|m| m.len()).sum();
+    (size > 0).then_some(size)
+}
+
+/// Box `name` at `version`'s VMware builds in Vagrant's box store `boxes`: each architecture's
+/// folder, by architecture.
+fn vmware_builds(boxes: &Path, name: &str, version: &str) -> std::collections::BTreeMap<String, PathBuf> {
     let dir = boxes.join(name.replace('/', "-VAGRANTSLASH-")).join(version);
-    let vmware = |arch: &Path| std::fs::read_dir(arch).into_iter().flatten().flatten().any(|p| p.file_name().to_string_lossy().starts_with("vmware"));
-    let mut arches: Vec<String> =
-        std::fs::read_dir(dir).ok()?.flatten().filter(|a| vmware(&a.path())).map(|a| a.file_name().to_string_lossy().into_owned()).collect();
-    arches.sort();
-    (!arches.is_empty()).then(|| arches.join(" or "))
+    let vmware = |arch: &Path| {
+        std::fs::read_dir(arch)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|p| p.path())
+            .find(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("vmware")))
+    };
+    std::fs::read_dir(dir).into_iter().flatten().flatten().filter_map(|a| Some((a.file_name().to_string_lossy().into_owned(), vmware(&a.path())?))).collect()
 }
 
 impl Course for Esxi {
     const UP: &'static [Step] = &[IMAGE, VM, ADDRESS, SSH];
 
     fn ends(&mut self, line: &str) -> Option<usize> {
-        self.note_box(line);
+        self.note_size(line);
         if line.trim_start().starts_with("Error:") {
             self.ovftool_said = Some(line.trim().to_owned());
         }
@@ -233,6 +272,10 @@ impl Course for Esxi {
         } else {
             None
         }
+    }
+
+    fn size(&self, at: usize) -> Option<u64> {
+        (at == 0).then_some(self.size).flatten()
     }
 
     fn detail(&self, at: usize) -> Option<String> {
@@ -424,6 +467,29 @@ mod tests {
         assert_eq!(e.detail(0).as_deref(), Some("Box bento/debian-12 v202510.26.0 (architecture unknown)"));
         assert_eq!(Esxi::new(&conn(&[]), None).detail(0), None, "no box named yet");
         assert_eq!(e.network, DEFAULT_NETWORK);
+    }
+
+    #[tokio::test]
+    async fn the_upload_carries_the_size_of_the_box_build_it_uploads_once_stored() {
+        let boxes = std::env::temp_dir().join(format!("cyberctf-esxi-size-{}", rand::random::<u32>()));
+        let version = boxes.join("bento-VAGRANTSLASH-debian-12").join("202510.26.0");
+        for (arch, bytes) in [("amd64", 3000), ("arm64", 5)] {
+            std::fs::create_dir_all(version.join(arch).join("vmware_desktop")).unwrap();
+            std::fs::write(version.join(arch).join("vmware_desktop").join("disk-s001.vmdk"), vec![0u8; bytes]).unwrap();
+        }
+        std::fs::create_dir_all(version.join("amd64").join("virtualbox")).unwrap();
+        std::fs::write(version.join("amd64").join("virtualbox").join("box.vmdk"), vec![0u8; 900]).unwrap();
+        let (r, seen) = reporter();
+        let run = Scripted::new(&ALL_THE_WAY, None);
+        let course = Esxi::new(&conn(&[(DATASTORE, "ssd1")]), Some(boxes.clone()));
+        assert!(lab_run::test(&r, &run, course).await.result.is_ok());
+        assert_eq!(running_size(&seen, "image"), Some(3000), "the amd64 VMware build Vagrant added, not another");
+        assert_eq!(running_size(&seen, "vm"), None);
+        // Not stored (yet): no size; with no architecture named, the only VMware build stored.
+        assert_eq!(stored_size(&boxes, "bento/debian-12", "202510.1.0", None), None);
+        std::fs::remove_dir_all(version.join("arm64")).unwrap();
+        assert_eq!(stored_size(&boxes, "bento/debian-12", "202510.26.0", None), Some(3000));
+        std::fs::remove_dir_all(&boxes).unwrap();
     }
 
     fn tools(plugin: std::result::Result<(), &str>, ovftool: std::result::Result<&str, &str>) -> Tools {

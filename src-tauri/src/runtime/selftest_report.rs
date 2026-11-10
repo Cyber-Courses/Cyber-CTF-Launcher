@@ -18,6 +18,11 @@ pub struct Event {
     #[ts(type = r#""running" | "ok" | "fail" | "skip""#)]
     pub state: &'static str,
     pub detail: Option<String>,
+    /// How many bytes the step moves, when known (the image it uploads): its running events
+    /// carry it once it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub size: Option<u64>,
 }
 
 /// Longest live output line shown under a running step, in characters.
@@ -42,15 +47,20 @@ impl Reporter {
     }
 
     pub(crate) fn send(&self, step: &'static str, label: &'static str, state: &'static str, detail: Option<String>) {
-        (self.sink)(Event { step, label, state, detail });
+        (self.sink)(Event { step, label, state, detail, size: None });
     }
 
     /// Live output for a step that is still running, as its detail line: trimmed, at most
     /// [`PROGRESS_MAX`] characters; a blank line is not sent.
     pub(crate) fn progress(&self, step: &'static str, label: &'static str, line: &str) {
+        self.progress_sized(step, label, line, None);
+    }
+
+    /// [`Reporter::progress`], with how many bytes the step moves when known (`size`).
+    pub(crate) fn progress_sized(&self, step: &'static str, label: &'static str, line: &str, size: Option<u64>) {
         let line = line.trim();
         if !line.is_empty() {
-            self.send(step, label, "running", Some(line.chars().take(PROGRESS_MAX).collect()));
+            (self.sink)(Event { step, label, state: "running", detail: Some(line.chars().take(PROGRESS_MAX).collect()), size });
         }
     }
 

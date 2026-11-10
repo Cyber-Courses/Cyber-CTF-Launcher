@@ -41,5 +41,8 @@
     "exegolFreeTerms": "Uso não comercial",
     "exegolFull": "O kit Exegol mais recente; requer um plano Exegol Pro, Team ou Enterprise",
     "exegolFullTerms": "Plano pago"
+  },
+  "progress": {
+    "uploading": "Enviando: {percent}%"
   }
 }
