@@ -234,7 +234,8 @@ pub(crate) async fn box_is_the_players(placed: &Placed, when: &str, f: &mut Vec<
         Ok(console) => in_box(&console, "whoami && cd && pwd && sudo -n true && echo sudo-ok").await,
         Err(err) => Err(err),
     };
-    let lines: Vec<String> = seen.as_deref().unwrap_or_default().lines().map(str::trim).map(str::to_owned).collect();
+    // `vagrant ssh -c` (a VM box) opens a terminal, whose output starts with an empty line.
+    let lines: Vec<String> = seen.as_deref().unwrap_or_default().lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect();
     check(
         lines.first().is_some_and(|l| l == player) && lines.contains(&format!("/home/{player}")) && lines.iter().any(|l| l == "sudo-ok"),
         format!("a shell in the attack box is {player}'s (whoami), in its home, with sudo and no password, {when} ({seen:?})"),
