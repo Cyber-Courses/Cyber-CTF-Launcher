@@ -13,7 +13,7 @@ use std::path::Path;
 
 use ts_rs::{Config, TS};
 
-use crate::labs::operations;
+use crate::app::operations;
 use crate::machine::tools;
 use crate::{account, cloud, error, machine, runtime, shared_folder, terminal};
 

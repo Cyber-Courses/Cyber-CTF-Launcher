@@ -224,10 +224,11 @@ pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result
     Ok(Present::find(&owned::load(&store)?, &extra_images, vagrant_home().as_deref(), &plugin_cache(&store)).await.storage())
 }
 
-/// Removes what `machine_storage` lists (see [`clean`]). Returns the bytes freed.
-pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>) -> Result<u64> {
+/// Removes what `machine_storage` lists (see [`clean`]). Returns the bytes freed. `workers`:
+/// whether a deploy worker runs a lab operation (the app shell's to say).
+pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>, workers: bool) -> Result<u64> {
     // A lab operation running may still use the plugins its `init` linked: they stay then.
-    let busy = crate::runtime::active_deploys() > 0 || !crate::app::deploy_worker::running(&dirs).is_empty();
+    let busy = crate::runtime::active_deploys() > 0 || workers;
     clean(&owned::path(&dirs)?, &extra_images, vagrant_home().as_deref(), !busy).await
 }
 
@@ -465,12 +466,12 @@ mod tests {
         std::fs::write(aws.join("terraform-provider-aws"), vec![0u8; 2048]).unwrap();
         let s = machine_storage(t.dirs(), Vec::new()).await.unwrap();
         assert_eq!(s.plugins.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("Terraform provider plugins", 2048)]);
-        // A lab operation running: they stay. (`clean` itself: the command's "is a lab operation
-        // running" is process-wide, and other tests run lab operations meanwhile.)
+        // A deploy worker running: they stay. (Not running: `clean` itself, the in-process "is a
+        // lab operation running" is process-wide, and other tests run lab operations meanwhile.)
+        assert_eq!(machine_storage_clean(t.dirs(), Vec::new(), true).await.unwrap(), 0);
         assert_eq!(clean(&store, &[], None, false).await.unwrap(), 0);
         assert_eq!(clean(&store, &[], None, true).await.unwrap(), 2048);
         assert!(machine_storage(t.dirs(), Vec::new()).await.unwrap().plugins.is_empty());
-        machine_storage_clean(t.dirs(), Vec::new()).await.unwrap();
     }
 
     #[tokio::test]

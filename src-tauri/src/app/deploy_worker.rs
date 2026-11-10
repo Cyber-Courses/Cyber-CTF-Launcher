@@ -88,6 +88,14 @@ impl std::fmt::Debug for Job {
     }
 }
 
+impl From<crate::labs::PreparedLaunch> for Job {
+    /// A launch's job.
+    fn from(l: crate::labs::PreparedLaunch) -> Job {
+        let crate::labs::PreparedLaunch { lab_id, launch, provider, host, default_ports, per_machine_vm, docker_context } = l;
+        Job { lab_id, op: Op::Launch, launch, provider, host, default_ports, per_machine_vm, docker_context }
+    }
+}
+
 impl Job {
     /// An operation on an installed lab (no launch payload).
     pub fn on_lab(lab_id: &str, op: Op) -> Job {

@@ -9,8 +9,8 @@ use tauri::ipc::Channel;
 
 use crate::AppHandle;
 use crate::app::deploy_worker::{self, Job, Op};
+use crate::app::operations::{self, ActiveOperation};
 use crate::error::{Error, Result};
-use crate::labs::operations::{self, ActiveOperation};
 use crate::labs::{self, LaunchRequest};
 use crate::platform::AppDirs;
 use crate::runtime::attack_machine::AttackStatus;
@@ -18,7 +18,7 @@ use crate::runtime::paths::{installed_lab_dir, lab_dir, local_runtime};
 use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, start_place, status, terminal_launch};
 
-/// Starts a lab, the deploy's log sent on `logs` (see [`labs::launch_job`]).
+/// Starts a lab, the deploy's log sent on `logs` (see [`labs::prepare_launch`]).
 #[tauri::command]
 #[allow(clippy::too_many_arguments, reason = "the webview sends each of the request's fields as an argument")]
 pub async fn lab_launch(
@@ -43,8 +43,8 @@ pub async fn lab_launch(
     };
     // The deploy runs in a detached worker process, so quitting (or crashing) the app never cuts a
     // vagrant/docker/terraform run short; this command only follows the worker's log.
-    let job = labs::launch_job(&AppDirs::from(&app), request, &channel_log(logs.clone())).await?;
-    deploy_worker::run_job(&app, job, logs).await
+    let launch = labs::prepare_launch(&AppDirs::from(&app), request, &channel_log(logs.clone())).await?;
+    deploy_worker::run_job(&app, Job::from(launch), logs).await
 }
 
 /// Imports and starts a lab from a local directory `path` (an unpublished lab), the deploy's log
@@ -94,7 +94,13 @@ fn valid_machine_name(m: &str) -> bool {
 
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    crate::labs::stop_lab(&AppDirs::from(&app), &id, runtime, channel_log(logs)).await
+    stop_lab(&AppDirs::from(&app), &id, runtime, channel_log(logs)).await
+}
+
+/// Stops lab `id` wherever it runs, the deploy still running in its worker ended first (see
+/// [`labs::stop_lab`]).
+pub(crate) async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+    labs::stop_lab(dirs, id, runtime, deploy_worker::end_workers(dirs, id), log).await
 }
 
 /// Pauses (state saved) or shuts down (powered off) a lab on this machine, keeping its machines

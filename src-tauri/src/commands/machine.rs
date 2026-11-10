@@ -101,7 +101,7 @@ impl workloads::LabRuntime for AppHandle {
 
     fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send {
         let dirs = AppDirs::from(self);
-        async move { crate::labs::stop_lab(&dirs, id, runtime, |_| {}).await }
+        async move { super::labs::stop_lab(&dirs, id, runtime, |_| {}).await }
     }
 }
 
@@ -114,7 +114,9 @@ pub async fn machine_storage(app: AppHandle, extra_images: Vec<String>) -> Resul
 /// Removes what Cyber CTF stored that no lab needs now; the bytes freed.
 #[tauri::command]
 pub async fn machine_storage_clean(app: AppHandle, extra_images: Vec<String>) -> Result<u64> {
-    storage::machine_storage_clean(AppDirs::from(&app), extra_images).await
+    let dirs = AppDirs::from(&app);
+    let workers = !crate::app::deploy_worker::running(&dirs).is_empty();
+    storage::machine_storage_clean(dirs, extra_images, workers).await
 }
 
 /// Installs `dependency`, each command and its output sent on `logs`.

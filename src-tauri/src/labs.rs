@@ -9,14 +9,12 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::account::api;
-use crate::app::deploy_worker::{Job, Op};
 use crate::error::{Error, Result};
 use crate::runtime::{self, Runtime, providers::Provider};
 
 mod archive;
 mod launch_env;
 mod offline;
-pub mod operations;
 
 use archive::extract;
 use launch_env::{EnvVar, launch_env};
@@ -280,10 +278,11 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, placement: &Placement<'_
 }
 
 /// Stops lab `id` wherever it runs ([`runtime::stop_lab`]), first ending the deploy still running
-/// in its worker, if any, and the website's co-location check of it.
-pub(crate) async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+/// in its worker, if any (`end_workers`: the app shell runs the workers), and the website's
+/// co-location check of it.
+pub(crate) async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_workers: impl Future<Output = ()>, log: impl FnMut(String)) -> Result<()> {
     let end_first = async {
-        crate::app::deploy_worker::end_workers(dirs, id).await;
+        end_workers.await;
         crate::account::colocation::retire(id);
     };
     runtime::stop_lab(dirs, id, runtime, end_first, log).await
@@ -351,16 +350,29 @@ pub struct LaunchRequest {
     pub docker_engine: Option<String>,
 }
 
-/// Prepares `request`'s launch: resolves the `startLab` spec (the
-/// backend's, kept for a later offline start, or the installed lab's when the backend can't be
-/// reached and the player asked), and returns the job to run. The deploy itself runs in a detached
-/// worker, started by the command layer (so quitting the app never cuts a run short); `log`
-/// carries the one "starting offline" line the preparation may emit.
-pub(crate) async fn launch_job(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<Job> {
+/// A launch ready to run: the lab, its `startLab` spec, and where and how it runs.
+pub(crate) struct PreparedLaunch {
+    pub(crate) lab_id: String,
+    /// The `startLab` spec (`{ labId, runtime, repository, commit, env }`).
+    pub(crate) launch: serde_json::Value,
+    pub(crate) provider: Option<Provider>,
+    pub(crate) host: Option<String>,
+    pub(crate) default_ports: bool,
+    pub(crate) per_machine_vm: bool,
+    /// The Docker context a container lab here is pinned to (the chosen engine), if any.
+    pub(crate) docker_context: Option<String>,
+}
+
+/// Prepares `request`'s launch: resolves the `startLab` spec (the backend's, kept for a later
+/// offline start, or the installed lab's when the backend can't be reached and the player asked)
+/// and the engine it runs on. The deploy itself runs in a detached worker, started by the command
+/// layer (so quitting the app never cuts a run short); `log` carries the one "starting offline"
+/// line the preparation may emit.
+pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<PreparedLaunch> {
     let LaunchRequest { lab_id, provider, host, default_ports, offline, per_machine_vm, docker_engine } = request;
     let docker_context = pinned_context(docker_engine.as_deref(), host.as_deref()).await?;
-    let startlab = launch_spec(dirs, &lab_id, offline, log).await?;
-    Ok(Job { lab_id, op: Op::Launch, launch: startlab, provider, host, default_ports, per_machine_vm, docker_context })
+    let launch = launch_spec(dirs, &lab_id, offline, log).await?;
+    Ok(PreparedLaunch { lab_id, launch, provider, host, default_ports, per_machine_vm, docker_context })
 }
 
 /// The Docker context a container lab here is pinned to, resolved now (on the main process, where

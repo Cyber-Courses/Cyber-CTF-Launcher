@@ -4,6 +4,7 @@
 pub(crate) mod deploy_worker;
 pub mod logging;
 pub mod menu;
+pub mod operations;
 pub mod quit;
 pub mod setup_window;
 pub mod updates;
@@ -191,7 +192,8 @@ fn setup(app: &mut App) {
     // the player approves it here. The agent is domain code; the app shell gives it the data
     // folder and the two effects it reaches the player through (the launch prompt, a system
     // notification).
-    let agent = account::agent::Deps::new(platform::AppDirs::from(app.handle()), agent_prompt(app.handle()), agent_notify(app.handle()));
+    let dirs = platform::AppDirs::from(app.handle());
+    let agent = account::agent::Deps::new(dirs.clone(), agent_prompt(app.handle()), agent_notify(app.handle()), agent_end_workers(dirs));
     tauri::async_runtime::spawn(account::agent::run(agent));
     spawn_reaper(app.handle().clone());
 }
@@ -227,6 +229,14 @@ fn agent_notify(handle: &AppHandle) -> std::sync::Arc<account::agent::Notify> {
     std::sync::Arc::new(move |title: &str, body: &str| {
         use tauri_plugin_notification::NotificationExt;
         let _ = handle.notification().builder().title(title).body(body).show();
+    })
+}
+
+/// How the background agent ends a lab's deploy workers before it stops the lab.
+fn agent_end_workers(dirs: platform::AppDirs) -> std::sync::Arc<account::agent::EndWorkers> {
+    std::sync::Arc::new(move |id: &str| {
+        let (dirs, id) = (dirs.clone(), id.to_owned());
+        Box::pin(async move { deploy_worker::end_workers(&dirs, &id).await })
     })
 }
 

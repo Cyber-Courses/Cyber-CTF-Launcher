@@ -37,9 +37,13 @@ use crate::runtime::{Runtime, server};
 /// A system notification for the player (title, body), shown when a website launch starts here.
 pub type Notify = dyn Fn(&str, &str) + Send + Sync;
 
-/// The app the background agent runs inside: its data folder, and the two things it reaches the
+/// Ends the deploy still running in lab `id`'s worker, if any, before the agent stops the lab
+/// (see `labs::stop_lab`).
+pub type EndWorkers = dyn Fn(&str) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync;
+
+/// The app the background agent runs inside: its data folder, the two things it reaches the
 /// player through — a prompt to confirm a website launch and a system notification when one
-/// starts here. The app shell builds it from the `AppHandle` (see `crate::app`); unit tests build
+/// starts here —, and the ending of a lab's deploy workers. The app shell builds it from the `AppHandle` (see `crate::app`); unit tests build
 /// one with effects of their own. Keeping the effects behind closures is what lets this module
 /// stay domain code, free of `tauri`.
 #[derive(Clone)]
@@ -47,12 +51,14 @@ pub struct Deps {
     dirs: AppDirs,
     prompt_launch: Arc<PromptLaunch>,
     notify: Arc<Notify>,
+    end_workers: Arc<EndWorkers>,
 }
 
 impl Deps {
-    /// The agent's dependencies: the data folder, the launch prompt, and the notification.
-    pub fn new(dirs: AppDirs, prompt_launch: Arc<PromptLaunch>, notify: Arc<Notify>) -> Deps {
-        Deps { dirs, prompt_launch, notify }
+    /// The agent's dependencies: the data folder, the launch prompt, the notification, and the
+    /// ending of a lab's workers.
+    pub fn new(dirs: AppDirs, prompt_launch: Arc<PromptLaunch>, notify: Arc<Notify>, end_workers: Arc<EndWorkers>) -> Deps {
+        Deps { dirs, prompt_launch, notify, end_workers }
     }
 
     fn dirs(&self) -> &AppDirs {
@@ -123,18 +129,23 @@ fn picked_target(target: Option<&str>, host_name: impl Fn(&str) -> Result<Option
 
 /// Stops a claimed lab that must not keep running under a failed session. A lab that never got
 /// installed (its download failed) has nothing to stop.
-async fn tear_down(dirs: &AppDirs, lab_id: &str, runtime: Runtime) -> Result<()> {
-    if crate::runtime::lab_installed(dirs, lab_id) { labs::stop_lab(dirs, lab_id, runtime, |_line: String| {}).await } else { Ok(()) }
+async fn tear_down(deps: &Deps, lab_id: &str, runtime: Runtime) -> Result<()> {
+    let dirs = deps.dirs();
+    if crate::runtime::lab_installed(dirs, lab_id) {
+        labs::stop_lab(dirs, lab_id, runtime, (deps.end_workers)(lab_id), |_line: String| {}).await
+    } else {
+        Ok(())
+    }
 }
 
 /// `failure`, after tearing down what the failed start brought up, when it must be (see
 /// [`undoes`]). A teardown that fails too is said with it: the lab may still be running (and,
 /// on a cloud account, billing), and the website and the log must say so.
-async fn undo_start(dirs: &AppDirs, lab_id: &str, runtime: Runtime, present_before: bool, failure: Error) -> Error {
+async fn undo_start(deps: &Deps, lab_id: &str, runtime: Runtime, present_before: bool, failure: Error) -> Error {
     if !undoes(&failure, present_before) {
         return failure;
     }
-    match tear_down(dirs, lab_id, runtime).await {
+    match tear_down(deps, lab_id, runtime).await {
         Ok(()) => failure,
         Err(e) => {
             log::warn!("stopping what a failed launch of {lab_id} started: {e}");
@@ -155,12 +166,12 @@ fn undoes(failure: &Error, present_before: bool) -> bool {
 /// Starts a claimed lab at `place` (no host: this machine). A failure tears down what this
 /// start brought up, and only that (see [`undoes`]; `present_before`: whether something of it
 /// was there before, see `runtime::lab_present`). Where the lab is reachable here, once running.
-async fn run_claimed(dirs: &AppDirs, launch: &labs::Launch, place: &StartPlace, present_before: bool) -> Result<Option<String>> {
+async fn run_claimed(deps: &Deps, launch: &labs::Launch, place: &StartPlace, present_before: bool) -> Result<Option<String>> {
     let placement =
         labs::Placement { host: place.host.as_deref(), provider: place.provider, per_machine_vm: place.per_machine_vm, ..labs::Placement::default() };
-    match labs::run(dirs, launch.clone(), &placement, |_line: String| {}).await {
+    match labs::run(deps.dirs(), launch.clone(), &placement, |_line: String| {}).await {
         Ok(url) => Ok(url),
-        Err(e) => Err(undo_start(dirs, &launch.lab_id, launch.runtime, present_before, e).await),
+        Err(e) => Err(undo_start(deps, &launch.lab_id, launch.runtime, present_before, e).await),
     }
 }
 
@@ -207,12 +218,12 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     // Anything this start brought up before failing (one unhealthy service, say) is torn down, or
     // it would keep running under a FAILED session and every later launch of it would be refused.
     let present = crate::runtime::lab_present(deps.dirs(), &launch.lab_id);
-    let url = run_claimed(deps.dirs(), launch, &place, present).await?;
+    let url = run_claimed(deps, launch, &place, present).await?;
     // The lab is actually running now. If reporting back to the backend fails, tear down what
     // this start brought up before returning the error, so we don't leave infra running under a
     // session the poller will mark FAILED.
     if let Err(e) = report_running(deps.dirs(), session_id, &launch.lab_id, host.as_deref(), url.as_deref()).await {
-        return Err(undo_start(deps.dirs(), &launch.lab_id, launch.runtime, present, e).await);
+        return Err(undo_start(deps, &launch.lab_id, launch.runtime, present, e).await);
     }
     // A lab launched from the website just started: let the player know on this machine.
     (deps.notify)("Lab running", &running_notice(&request));
@@ -273,7 +284,7 @@ mod tests {
     /// in `prompts`, and a no-op notification (a system notification has nothing to show here).
     pub(super) fn test_deps(t: &crate::testing::test_app::TestApp, prompts: Arc<Mutex<Vec<LaunchRequest>>>) -> Deps {
         let prompt = move |request: &LaunchRequest| prompts.lock().unwrap().push(request.clone());
-        Deps::new(t.dirs(), Arc::new(prompt), Arc::new(|_: &str, _: &str| {}))
+        Deps::new(t.dirs(), Arc::new(prompt), Arc::new(|_: &str, _: &str| {}), Arc::new(|_: &str| Box::pin(async {}) as _))
     }
 
     #[test]
@@ -325,11 +336,11 @@ mod tests {
     async fn a_lab_that_was_never_installed_has_nothing_to_tear_down() {
         // A lab whose download failed: the failure isn't said to have left anything up.
         let t = crate::testing::test_app::TestApp::new();
-        let dirs = t.dirs();
+        let deps = test_deps(&t, Arc::default());
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
-        tear_down(&dirs, "gone", Runtime::Docker).await.unwrap();
-        tear_down(&dirs, "gone", Runtime::Vm).await.unwrap();
-        let err = undo_start(&dirs, "gone", Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
+        tear_down(&deps, "gone", Runtime::Docker).await.unwrap();
+        tear_down(&deps, "gone", Runtime::Vm).await.unwrap();
+        let err = undo_start(&deps, "gone", Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
         assert_eq!(err.to_string(), "download failed: HTTP 404");
         assert_eq!(tools.calls(), [] as [&str; 0]);
     }
@@ -363,7 +374,7 @@ mod tests {
         std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         assert!(crate::runtime::lab_present(&dirs, id));
-        let err = run_claimed(&dirs, &claim_of(id).launch, &StartPlace::default(), false).await.unwrap_err();
+        let err = run_claimed(&test_deps(&t, Arc::default()), &claim_of(id).launch, &StartPlace::default(), false).await.unwrap_err();
         assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");
         assert!(!tools.called("terraform"), "nothing torn down: {:?}", tools.calls());
         assert!(state.join("terraform.tfstate").is_file());
@@ -381,7 +392,7 @@ mod tests {
         crate::runtime::test_support::record_run(t.data(), id, Some("pve1"), "proxmox", "ready");
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         let failure = Error::Invalid("the lab host didn't answer".into());
-        let err = undo_start(&t.dirs(), id, Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id), failure).await;
+        let err = undo_start(&test_deps(&t, Arc::default()), id, Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id), failure).await;
         assert_eq!(err.to_string(), "the lab host didn't answer");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert_eq!(server::marked_host(&dir).as_deref(), Some("pve1"));

@@ -210,13 +210,14 @@ fn a_files_crate_modules_are_read_from_paths_and_grouped_uses() {
 /// The layers depend downwards only: the platform (running tools, files, the OS) names no module
 /// at the crate root but its own and the crate's errors, so it can't reach up through one either;
 /// the runtime doesn't name the app shell, nor, outside its tests, the layers that use it (the
-/// CTF's labs, the account, the machine, the commands): what it needs of them is handed in (a
-/// source check, a hook to run first). A cycle between them came back more than once (the
-/// runtime reached for the deploy workers' lock and status files, then for the catalogue's source
-/// rule, the co-location server and Storage's records; the platform's process runner for the
-/// runtime's ESXi relay settings).
+/// CTF's labs, the account, the machine, the commands); and those domain layers name neither the
+/// app shell nor the commands over them. What a layer needs from above is handed in (a source
+/// check, a hook to run first, whether a deploy worker is busy). A cycle between them came back
+/// more than once (the runtime reached for the deploy workers' lock and status files, then for
+/// the catalogue's source rule, the co-location server and Storage's records; the platform's
+/// process runner for the runtime's ESXi relay settings; the labs for the deploy workers' jobs).
 #[test]
-fn the_platform_and_the_runtime_never_reach_up_into_the_layers_above() {
+fn every_layer_names_only_the_layers_below_it() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let above_runtime = ["labs", "account", "machine", "commands"];
     for s in crate_sources() {
@@ -232,6 +233,10 @@ fn the_platform_and_the_runtime_never_reach_up_into_the_layers_above() {
                 assert!(named().all(|m| m != "app"), "{rel} reaches up from the runtime into the app shell");
                 let up: Vec<&str> = code.iter().map(String::as_str).filter(|m| above_runtime.contains(m)).collect();
                 assert!(up.is_empty(), "{rel} reaches up from the runtime into {up:?}");
+            }
+            "labs" | "machine" | "account" => {
+                let up: Vec<&str> = named().filter(|m| ["app", "commands"].contains(m)).collect();
+                assert!(up.is_empty(), "{rel} reaches up from a domain layer into {up:?}");
             }
             _ => {}
         }
