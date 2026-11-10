@@ -3,6 +3,7 @@
 use crate::AppHandle;
 use tauri::Manager;
 
+use crate::app::window;
 use crate::error::{Error, Result};
 use crate::runtime::providers::Provider;
 use crate::runtime::server::input::valid_id;
@@ -38,19 +39,15 @@ pub async fn server_open_setup(app: AppHandle, id: Option<String>, kind: Option<
     if let Some(existing) = app.get_webview_window(LABEL) {
         let _ = existing.destroy();
     }
-    let mut builder = tauri::WebviewWindowBuilder::new(&app, LABEL, tauri::WebviewUrl::App(path.into()))
+    let builder = window::builder(&app, LABEL, path)
         .title(if cloud { "Connect a cloud account" } else { "Connect a host" })
         .inner_size(680.0, 760.0)
         .min_inner_size(560.0, 560.0)
         .resizable(true);
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
-    }
-    if let Some(main) = app.get_webview_window("main") {
-        builder = builder.parent(&main).map_err(|e| Error::Invalid(e.to_string()))?;
-    }
-    builder.build().map_err(|e| Error::Invalid(format!("could not open the setup window: {e}")))?;
+    window::child_of_main(&app, builder)
+        .map_err(|e| Error::Invalid(e.to_string()))?
+        .build()
+        .map_err(|e| Error::Invalid(format!("could not open the setup window: {e}")))?;
     Ok(())
 }
 

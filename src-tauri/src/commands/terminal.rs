@@ -48,10 +48,10 @@ pub fn terminal_close(window: WebviewWindow, session: u32) {
     terminal::close(window.label(), session);
 }
 
-/// Opens a shell window for lab `id`, titled `title`.
+/// Opens a shell window for lab `id`, titled `title`. Async: see `open_settings`.
 #[tauri::command]
-pub fn terminal_window(app: AppHandle, id: &str, runtime: Runtime, title: &str) -> Result<()> {
-    window::open_shell(&app, id, runtime, title)
+pub async fn terminal_window(app: AppHandle, id: String, runtime: Runtime, title: String) -> Result<()> {
+    window::open_shell(&app, &id, runtime, &title)
 }
 
 #[cfg(test)]
@@ -79,11 +79,12 @@ mod tests {
         assert_eq!((events.messages(), tools.calls()), (Vec::new(), Vec::new()));
     }
 
-    #[test]
-    fn a_lab_s_shell_window_opens_once() {
+    #[tokio::test]
+    async fn a_lab_s_shell_window_opens_once() {
         let t = TestApp::new();
-        terminal_window(t.handle().clone(), "sqli", Runtime::Docker, "SQLi").unwrap();
-        terminal_window(t.handle().clone(), "sqli", Runtime::Docker, "SQLi").unwrap();
+        for _ in 0..2 {
+            terminal_window(t.handle().clone(), "sqli".into(), Runtime::Docker, "SQLi".into()).await.unwrap();
+        }
         assert_eq!(t.handle().webview_windows().len(), 1);
     }
 }

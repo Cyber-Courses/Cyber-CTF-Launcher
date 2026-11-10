@@ -174,6 +174,38 @@ mod tests {
         }
     }
 
+    /// What opens a window: Tauri's builder, the app's own, and the helpers built on them.
+    const OPENS_A_WINDOW: &[&str] = &["WebviewWindowBuilder::new(", "window::builder(", "open_shell(", "open_settings_window(", "setup_window::open("];
+
+    /// The synchronous commands in `code` (named after `pub fn`) whose body opens a window.
+    fn sync_commands_opening_windows(code: &str) -> Vec<String> {
+        code.split("#[tauri::command]")
+            .skip(1)
+            .filter_map(|after| {
+                let item = after.trim_start().lines().skip_while(|l| l.trim_start().starts_with("#[")).collect::<Vec<_>>().join("\n");
+                let name = item.strip_prefix("pub fn ")?.split('(').next()?.to_owned();
+                let body = item.split("\n}").next().unwrap_or_default();
+                OPENS_A_WINDOW.iter().any(|o| body.contains(o)).then_some(name)
+            })
+            .collect()
+    }
+
+    /// A synchronous command runs on the main thread, and a window it opens on Windows waits
+    /// for that thread forever: the window stays white (Tauri's docs, wry#583).
+    #[test]
+    fn every_command_opening_a_window_is_async() {
+        let sync: Vec<String> = crate::testing::source_scan::crate_sources().iter().flat_map(|s| sync_commands_opening_windows(&s.code)).collect();
+        assert!(sync.is_empty(), "make these commands async: {sync:?}");
+    }
+
+    #[test]
+    fn a_sync_command_opening_a_window_is_found() {
+        let code = "#[tauri::command]\npub fn shell(app: AppHandle) -> Result<()> {\n    window::open_shell(&app)\n}\n\
+                    #[tauri::command]\n#[allow(x)]\npub fn other(app: AppHandle) {\n    ok()\n}\n\
+                    #[tauri::command]\npub async fn settings(app: AppHandle) {\n    open_settings_window(&app)\n}\n";
+        assert_eq!(sync_commands_opening_windows(code), ["shell"]);
+    }
+
     #[test]
     fn a_call_is_told_apart_from_a_longer_name() {
         assert!(calls("let x = lab_status (app, id);", "lab_status"));

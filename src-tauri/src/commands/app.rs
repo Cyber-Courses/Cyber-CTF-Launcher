@@ -15,9 +15,11 @@ pub struct ManagedSettings {
     updates: updates::Channel,
 }
 
-/// Opens the Settings window, or brings it forward.
+/// Opens the Settings window, or brings it forward. Async, as every command opening a window is:
+/// a synchronous one runs on the main thread, and on Windows the new webview then waits for that
+/// thread forever and stays white.
 #[tauri::command]
-pub fn open_settings(app: AppHandle) -> Result<()> {
+pub async fn open_settings(app: AppHandle) -> Result<()> {
     window::open_settings_window(&app).map_err(|e| Error::Invalid(format!("couldn't open Settings: {e}")))
 }
 
@@ -66,10 +68,10 @@ mod tests {
         assert_eq!(managed, serde_json::json!({ "policy": ["DisableUpdater", "DisableToolInstalls"], "updates": "policy" }));
     }
 
-    #[test]
-    fn settings_open_in_their_own_window() {
+    #[tokio::test]
+    async fn settings_open_in_their_own_window() {
         let t = TestApp::new();
-        open_settings(t.handle().clone()).unwrap();
+        open_settings(t.handle().clone()).await.unwrap();
         assert!(t.handle().get_webview_window("settings").is_some());
     }
 }
