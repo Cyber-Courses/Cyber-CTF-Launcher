@@ -44,11 +44,7 @@ pub async fn server_open_setup(app: AppHandle, id: Option<String>, kind: Option<
         .inner_size(680.0, 760.0)
         .min_inner_size(560.0, 560.0)
         .resizable(true);
-    window::child_of_main(&app, builder)
-        .map_err(|e| Error::Invalid(e.to_string()))?
-        .build()
-        .map_err(|e| Error::Invalid(format!("could not open the setup window: {e}")))?;
-    Ok(())
+    window::open_over_main(&app, builder, "the setup window")
 }
 
 #[cfg(test)]

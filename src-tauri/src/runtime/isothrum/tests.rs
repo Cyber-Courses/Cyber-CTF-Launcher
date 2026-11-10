@@ -130,7 +130,7 @@ async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
     assert_eq!(up.env("CTF_LAUNCH_TOKEN"), Some("t0k"), "the launch's input reaches its slot");
     assert_eq!(up.env("ISOLOOM_PUBLISH_FIXED"), Some("1"), "the player chose the lab's own ports");
     assert_eq!(up.env(PORTS_ENV), None, "a value no slot takes is never delivered");
-    assert!(log.iter().any(|l| l == "Starting the lab's containers…"), "{log:?}");
+    assert!(log.iter().any(|l| l == "Starting the environment's containers…"), "{log:?}");
     assert_eq!(log.last().map(String::as_str), Some("Open http://localhost:8080/"), "the lab's message, its port filled");
     assert!(f.home.root.join("runs/cyberctf-web/record.json").is_file(), "the run is kept in the app data's runs/");
     assert!(!f.home.dir.join(".cyberctf-ports.yml").exists(), "the runner pins ports in its own state, not the lab folder");

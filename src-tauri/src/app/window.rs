@@ -49,6 +49,13 @@ pub fn child_of_main<'a>(
     }
 }
 
+/// Opens `builder`'s window attached to the main window (see [`child_of_main`]); a failure says
+/// it couldn't open `what`.
+pub fn open_over_main<'a>(app: &'a AppHandle, builder: WebviewWindowBuilder<'a, crate::AppRuntime, AppHandle>, what: &str) -> Result<()> {
+    child_of_main(app, builder).and_then(WebviewWindowBuilder::build).map_err(|e| Error::Invalid(format!("could not open {what}: {e}")))?;
+    Ok(())
+}
+
 /// Opens Settings in its own window (label `settings`), focusing it if already open. The window
 /// loads the main entry with `?window=settings` so the frontend renders only the settings screen.
 pub fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {

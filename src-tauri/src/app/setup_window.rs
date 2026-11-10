@@ -4,7 +4,7 @@ use crate::AppHandle;
 use tauri::{Emitter, Manager};
 
 use crate::app::window;
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 const LABEL: &str = "machine-setup";
 
@@ -39,11 +39,7 @@ pub fn open(app: &AppHandle, step: Option<&str>) -> Result<()> {
         .inner_size(760.0, window::height_fitting(app, 920.0))
         .min_inner_size(640.0, window::height_fitting(app, 760.0))
         .resizable(true);
-    window::child_of_main(app, builder)
-        .map_err(|e| Error::Invalid(e.to_string()))?
-        .build()
-        .map_err(|e| Error::Invalid(format!("could not open the setup window: {e}")))?;
-    Ok(())
+    window::open_over_main(app, builder, "the setup window")
 }
 
 #[cfg(test)]

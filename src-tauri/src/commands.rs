@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn a_sync_command_opening_a_window_is_found() {
         let code = "#[tauri::command]\npub fn shell(app: AppHandle) -> Result<()> {\n    window::open_shell(&app)\n}\n\
-                    #[tauri::command]\n#[allow(x)]\npub fn other(app: AppHandle) {\n    ok()\n}\n\
+                    #[tauri::command]\n#[cfg(unix)]\npub fn other(app: AppHandle) {\n    ok()\n}\n\
                     #[tauri::command]\npub async fn settings(app: AppHandle) {\n    open_settings_window(&app)\n}\n";
         assert_eq!(sync_commands_opening_windows(code), ["shell"]);
     }
