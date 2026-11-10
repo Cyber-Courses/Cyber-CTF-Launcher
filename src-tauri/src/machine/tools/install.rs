@@ -8,7 +8,9 @@ use serde::Deserialize;
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
-use super::scripts::{awscli_script, azurecli_script, docker_script, gcloud_script, terraform_script, virtualbox_script, vmware_utility_script};
+use super::scripts::{
+    awscli_script, azurecli_script, docker_script, gcloud_script, libvirt_script, terraform_script, virtualbox_script, vmware_utility_script,
+};
 #[cfg(any(target_os = "macos", windows))]
 use super::steps::step;
 use super::steps::{Step, command_line, run_step, run_steps};
@@ -238,7 +240,7 @@ fn linux_plan_with(dep: Dependency, apt: bool) -> Result<Vec<Step>> {
         Dependency::Terraform => vec![root(terraform_script())],
         Dependency::Virtualbox => vec![root(virtualbox_script())],
         Dependency::Qemu => vec![root("apt-get update && apt-get install -y qemu-system qemu-utils".into())],
-        Dependency::Libvirt => vec![root("apt-get update && apt-get install -y libvirt-daemon-system virt-manager".into())],
+        Dependency::Libvirt => vec![root(libvirt_script(crate::platform::exec::login_name().as_deref()))],
         // Cloud CLIs: AWS CLI v2 from Amazon's signed bundle, in a private temporary directory;
         // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.
         Dependency::Awscli => vec![root(awscli_script())],
@@ -405,6 +407,9 @@ mod tests {
                 _ => assert_eq!(p.unwrap()[0].program, "pkexec", "{dep:?}"),
             }
         }
+        // libvirt brings what the vagrant-libvirt plugin builds against, and joins its group.
+        let libvirt = plan(Dependency::Libvirt).unwrap()[0].args.join(" ");
+        assert!(libvirt.contains("libvirt-dev") && libvirt.contains("build-essential"), "{libvirt}");
         let aws = plan(Dependency::Awscli).unwrap()[0].args.join(" ");
         assert!(aws.contains("awscli-exe-linux") && !aws.contains("/tmp/aws"), "{aws}");
     }

@@ -280,6 +280,25 @@ pub fn gcloud_script() -> String {
     format!("{PRIVATE_WORKDIR}; {}; apt-get install -y google-cloud-cli", apt_repo_script(&GOOGLE))
 }
 
+/// libvirt, with what `vagrant plugin install vagrant-libvirt` compiles against: libvirt's headers
+/// (`libvirt-dev`), a C compiler and make (`build-essential`), `pkg-config`, and Ruby's headers
+/// for a distribution's Vagrant (which builds on the system Ruby). Without them the plugin's
+/// install fails building its native extension. Then the player joins the `libvirt` group (and
+/// `kvm`, where the distribution has one), so Vagrant reaches `qemu:///system` and `/dev/kvm`
+/// without root; the groups apply from the next login.
+#[cfg(any(target_os = "linux", test))]
+pub fn libvirt_script(user: Option<&str>) -> String {
+    use std::fmt::Write as _;
+    let mut s = "apt-get update && apt-get install -y libvirt-daemon-system libvirt-dev build-essential pkg-config ruby-dev virt-manager".to_string();
+    if let Some(u) = user.filter(|u| valid_user(u)) {
+        let _ = write!(
+            s,
+            "; usermod -aG libvirt {u}; if getent group kvm >/dev/null; then usermod -aG kvm {u}; fi; echo 'Added {u} to the libvirt group: log out and back in (or restart) for it to apply.'"
+        );
+    }
+    s
+}
+
 /// A login name safe to put in a shell script unquoted.
 #[cfg(any(target_os = "linux", test))]
 fn valid_user(u: &str) -> bool {
@@ -301,6 +320,21 @@ mod tests {
         assert!(!docker_script(Some("a; rm -rf /")).contains("usermod"));
         assert!(!docker_script(None).contains("usermod"));
         assert!(valid_user("_svc-1.x") && !valid_user("Root") && !valid_user(""));
+    }
+
+    #[test]
+    fn libvirt_install_brings_what_the_vagrant_libvirt_plugin_compiles_against() {
+        // Regression: libvirt alone, and `vagrant plugin install vagrant-libvirt` then failed
+        // building its native extension (no libvirt headers, no compiler).
+        let s = libvirt_script(None);
+        for package in ["libvirt-daemon-system", "libvirt-dev", "build-essential", "pkg-config", "ruby-dev"] {
+            assert!(s.split_whitespace().any(|w| w == package), "{package}: {s}");
+        }
+        assert!(!s.contains("usermod"));
+        let s = libvirt_script(Some("ada"));
+        assert!(s.contains("usermod -aG libvirt ada") && s.contains("usermod -aG kvm ada"), "{s}");
+        assert!(!libvirt_script(Some("a; rm -rf /")).contains("usermod"));
+        assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
     }
 
     #[test]
