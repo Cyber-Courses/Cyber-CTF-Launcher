@@ -1,11 +1,20 @@
 // This machine in the browser preview: its system check (down until the test lets it come back,
 // with `hold=check`), the one-click installs (an installer's output, then the tool reported
 // installed; the first fails with `install=fail`), the self-tests and the setup window.
-import type { SystemReport } from "@/lib/tauri";
+import type { Need, SystemReport, UtilityState } from "@/lib/tauri";
 import { argText, fail, send, sleep } from "@/lib/dev-mock/command";
 import type { BrowserHandler, Live } from "@/lib/dev-mock/live";
 import { scenarioReport } from "@/lib/dev-mock/scenario";
 import { openWindow } from "@/lib/dev-mock/windows";
+
+/** What Vagrant still needs to drive a hypervisor, as the core works it out (`providers::needs`). */
+function vagrantNeeds(vagrant: boolean, plugin: boolean, utility: UtilityState | null): Need[] {
+  return [
+    ...(vagrant ? [] : (["vagrant"] as const)),
+    ...(plugin ? [] : (["plugin"] as const)),
+    ...(utility && utility !== "running" ? (["vmwareUtility"] as const) : []),
+  ];
+}
 
 /** The system check once the preview's one-click installs ran (`installed`: dependencies and
  *  Vagrant plugins), with the package manager there or not as `pm` says (null: as reported). */
@@ -20,8 +29,10 @@ function withInstalls(r: SystemReport, installed: ReadonlySet<string>, { pm }: {
     if (p.remote) return p;
     const hypervisor = has(p.provider) || p.hypervisor;
     const pluginInstalled = p.pluginInstalled || (!!p.plugin && has(p.plugin));
-    const available = hypervisor === true && vagrant.installed && pluginInstalled;
-    return { ...p, hypervisor, pluginInstalled, available, reason: available ? null : p.reason };
+    const utility = p.utility && has("vmware-utility") ? "running" : p.utility;
+    const needs = vagrantNeeds(vagrant.installed, pluginInstalled, utility);
+    const available = hypervisor === true && needs.length === 0;
+    return { ...p, hypervisor, pluginInstalled, utility, needs, available, reason: available ? null : p.reason };
   });
   return {
     ...r,
@@ -131,7 +142,8 @@ export const machineHandlers: Record<string, BrowserHandler> = {
   machine_selftest: selftest,
   machine_open_setup: (args) => {
     const step = args?.step ? `?step=${argText(args.step)}` : "";
-    openWindow(`/machine-setup${step}`);
+    const provider = step && args?.provider ? `&provider=${argText(args.provider)}` : "";
+    openWindow(`/machine-setup${step}${provider}`);
     return null;
   },
 };

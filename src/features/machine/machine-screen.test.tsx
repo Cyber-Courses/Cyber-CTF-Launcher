@@ -17,7 +17,7 @@ import { LOCALES, setLocalePreference } from "@/lib/i18n";
 import { getLastTest, getVmProvider, setAttackImage, setLastTest, setVmProvider, type LastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
-import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport } from "@/test/fixtures";
+import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport, withNeeds } from "@/test/fixtures";
 import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, renderMachineScreen } from "@/features/machine/machine-test-kit";
@@ -281,7 +281,7 @@ describe("EngineRows", () => {
     await user.click(tests[1]);
     expect(onToggleTest).toHaveBeenLastCalledWith("docker:docker-desktop");
     await user.click(button(/^fix$/i));
-    expect(onFix).toHaveBeenCalledWith("docker");
+    expect(onFix).toHaveBeenCalledWith("docker", undefined);
     // The other running engine can become the one labs use: Docker is pointed at it, the machine re-read.
     await user.click(button(/use by default/i));
     await flush();
@@ -357,7 +357,7 @@ describe("EngineRows", () => {
     );
     expect(text()).toMatch(/Docker Desktop.*current.*Engine stopped/);
     await user.click(button(/^fix$/i));
-    expect(onFix).toHaveBeenCalledWith("docker");
+    expect(onFix).toHaveBeenCalledWith("docker", undefined);
     stopped.unmount();
     // Nothing found: no row at all (Add a provider, in the header, is the way to one).
     const { container } = render(<EngineRows {...base} onFix={onFix} report={freshReport("linux")} last={null} />);
@@ -471,10 +471,13 @@ describe("HypervisorRows", () => {
     installTauri();
     const onFix = vi.fn();
     const user = userEvent.setup();
-    const r = render(rows({ ...readyReport(), vagrant: { installed: false, version: null }, ...hypervisors([hv({ available: false })]) }, null, { onFix }));
+    const r = render(
+      rows(withNeeds({ ...readyReport(), vagrant: { installed: false, version: null }, ...hypervisors([hv({ available: false })]) }), null, { onFix }),
+    );
     expect(text()).toContain("Vagrant or the hypervisor's Vagrant plugin is missing.");
     await user.click(button(/^fix$/i));
-    expect(onFix).toHaveBeenLastCalledWith("vagrant");
+    // For that hypervisor: the setup window sets up this one, not whichever it would pick.
+    expect(onFix).toHaveBeenLastCalledWith("vagrant", "virtualbox");
     r.unmount();
     // None installed, or none that applies here: no row, no placeholder.
     for (const vmProviders of [[hv({ hypervisor: false, available: false }), hv({ provider: "vmware_desktop", hypervisor: false, available: false })], []]) {
@@ -704,7 +707,7 @@ describe("MachineScreen", () => {
     expect(screen.queryByRole("button", { name: /^(fix|test|add)$/i })).toBeNull();
     await user.click(button(/add a provider/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "machine_open_setup")?.args).toEqual({ step: "add" });
+    expect(calls.find((c) => c.cmd === "machine_open_setup")?.args).toEqual({ step: "add", provider: null });
   });
 
   it("names an unknown OS as-is and counts one lab type", async () => {

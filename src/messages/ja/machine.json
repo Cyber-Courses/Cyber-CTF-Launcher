@@ -71,7 +71,8 @@
       "notRunning": "停止中",
       "builtIn": "内蔵",
       "installedWithPlugin": "インストール済み · {plugin}",
-      "pluginMissing": "プラグイン {plugin} がありません"
+      "pluginMissing": "プラグイン {plugin} がありません",
+      "utilityMissing": "インストール済み · {plugin} · Vagrant VMware Utility が動いていません"
     },
     "badge": {
       "current": "現在",
@@ -333,8 +334,13 @@
     "pluginLater": "{plugin}（Vagrant のインストール後）。",
     "pluginLog": "Vagrant プラグイン {plugin} をインストール中…",
     "installPlugin": "プラグインをインストール",
-    "utilityDetail": "VMware プラグインが通信する HashiCorp の補助サービスです。一度インストールするだけです。",
-    "getUtility": "入手"
+    "utilityDetail": "VMware プラグインが VMware を操作するための HashiCorp のサービスです。HashiCorp の署名付きパッケージからインストールし、パスワードを求められます。",
+    "utilityTitle": "Vagrant VMware Utility",
+    "utilityStopped": "インストール済みですが、サービスが動いていません。再インストールするか、コンピューターを再起動すると起動します。",
+    "utilityInstall": "インストール",
+    "utilityRestart": "再インストール",
+    "utilityLog": "Vagrant VMware Utility をインストール中…",
+    "installFailed": "インストールに失敗しました: {why}"
   },
   "attack": {
     "download": "ダウンロード {size}",

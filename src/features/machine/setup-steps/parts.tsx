@@ -10,31 +10,38 @@ import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-se
 import { useCopy } from "@/components/ui/copy-value";
 import { useT } from "@/lib/i18n";
 
+/** One thing a step needs: done (from the machine check, never from an install's exit), or to do
+ *  with its action, or failed: its last install in this flow failed, and `failed` says why. */
 export function Requirement({
   ok,
   title,
   detail,
   action,
-  optional,
+  failed = null,
 }: {
   ok: boolean;
   title: string;
   detail: string;
   action: React.ReactNode;
-  optional?: boolean;
+  failed?: string | null;
 }) {
+  const t = useT();
   return (
-    <div className="flex min-h-[3.25rem] items-center gap-3 border-t border-border px-4 py-2.5 first:border-t-0">
-      {ok || optional ? (
-        <StepCircle state={ok ? "done" : "pending"} />
+    <div
+      className="flex min-h-[3.25rem] items-center gap-3 border-t border-border px-4 py-2.5 first:border-t-0"
+      data-requirement={ok ? "done" : failed ? "failed" : "todo"}
+    >
+      {ok ? (
+        <StepCircle state="done" />
       ) : (
         <span className="grid size-[1.1rem] shrink-0 place-items-center">
-          <StatusDot tone="warn" />
+          <StatusDot tone={failed ? "fail" : "warn"} />
         </span>
       )}
       <span className="min-w-0 flex-1 text-left">
         <span className="block text-[0.8125rem] text-foreground">{title}</span>
         <span className="block font-mono text-[0.6875rem] break-words text-faint">{detail}</span>
+        {!ok && failed && <span className="block text-[0.6875rem] break-words text-destructive">{t("machine.vm.installFailed", { why: failed })}</span>}
       </span>
       {!ok && <span className="shrink-0">{action}</span>}
     </div>

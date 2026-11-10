@@ -34,9 +34,15 @@ export function localHypervisors(report: SystemReport): ProviderStatus[] {
   return report.vmProviders.filter((p) => !p.remote);
 }
 
-/** An installed hypervisor that still can't run labs once Vagrant and its plugin are in place
+/** Whether Vagrant can drive `p` here: nothing left to install for it (Vagrant, its plugin, and
+ *  for VMware HashiCorp's utility), as the backend lists it (`needs`, the same list its readiness
+ *  reads). The one rule the Machine page's rows, the setup steps and their "done" all read, so
+ *  finishing the steps can't leave a hypervisor "needs setup". */
+export const vagrantDrives = (p: ProviderStatus): boolean => p.needs.length === 0;
+
+/** An installed hypervisor that still can't run labs once everything Vagrant needs is in place
  *  (no /dev/kvm, not in the kvm group, a stuck service): nothing later in setup fixes it, and
- *  `p.reason` says why. Missing Vagrant alone isn't this; setup installs it next. */
-export function cantRun(p: ProviderStatus, report: SystemReport): boolean {
-  return p.hypervisor === true && !p.available && !!p.reason && report.vagrant.installed && (!p.plugin || p.pluginInstalled);
+ *  `p.reason` says why. Something still to install isn't this; setup installs it next. */
+export function cantRun(p: ProviderStatus): boolean {
+  return p.hypervisor === true && !p.available && !!p.reason && vagrantDrives(p);
 }

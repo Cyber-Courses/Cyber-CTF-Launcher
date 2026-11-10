@@ -26,6 +26,7 @@ const NAMES: Record<Dependency, string> = {
   azurecli: "Azure CLI",
   gcloud: "Google Cloud CLI",
   wsl: "WSL",
+  "vmware-utility": "Vagrant VMware Utility",
 };
 
 /** What setup installed under that name: Docker Engine on Linux (Docker's apt repository), Docker Desktop elsewhere. */

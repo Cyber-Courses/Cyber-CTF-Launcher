@@ -8,8 +8,9 @@ import { useStepper } from "@/lib/use-stepper";
 /** A step of the setup window: the path chooser, a machine setup step, then the summary. */
 export type WindowStep = "path" | MachineStep | "ready";
 
-/** A request to open at a step (a "Fix" link from the Machine page); a new nonce jumps again. */
-export type StartAt = { step: string; nonce: number } | null;
+/** A request to open at a step (a "Fix" link from the Machine page), for the hypervisor
+ *  `provider` when given (the row's own); a new nonce jumps again. */
+export type StartAt = { step: string; provider?: Provider | null; nonce: number } | null;
 
 const stepsOf = (path: SetupPath | null, report: SystemReport): WindowStep[] => ["path", ...(path ? pathSteps(path, report) : []), "ready"];
 

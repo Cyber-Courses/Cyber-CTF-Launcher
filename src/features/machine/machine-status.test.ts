@@ -14,7 +14,7 @@ import {
   vmSetup,
 } from "@/features/machine/machine-status";
 import { localHypervisors } from "@/features/machine/hypervisors";
-import { hypervisors } from "@/test/fixtures";
+import { hypervisorStatus, hypervisors, withNeeds } from "@/test/fixtures";
 
 // Decimal, as the Machine page shows sizes.
 const GB = 1e9;
@@ -30,18 +30,10 @@ const metrics = (patch: Partial<MachineMetrics> = {}): MachineMetrics => ({
   ...patch,
 });
 const tool = (installed: boolean, version: string | null = null) => ({ installed, version });
-const hv = (patch: Partial<ProviderStatus>): ProviderStatus => ({
-  provider: "virtualbox",
-  remote: false,
-  available: false,
-  hypervisor: true,
-  plugin: null,
-  pluginInstalled: false,
-  reason: null,
-  ...patch,
-});
+const hv = (patch: Partial<ProviderStatus>): ProviderStatus => hypervisorStatus({ available: false, pluginInstalled: false, ...patch });
+// Each hypervisor's `needs` as the core lists them for this report's Vagrant and plugins.
 const report = (patch: Partial<SystemReport> = {}) =>
-  ({
+  withNeeds({
     os: "linux",
     arch: "x86_64",
     docker: tool(true, "Docker version 29.5.3, build d1c06ef"),
@@ -50,7 +42,7 @@ const report = (patch: Partial<SystemReport> = {}) =>
     vagrant: tool(true, "Vagrant 2.4.1"),
     ...patch,
     ...hypervisors(patch.vmProviders ?? []),
-  }) as SystemReport;
+  } as SystemReport);
 
 describe("usage", () => {
   it("turns used/total into percentages, 0 when the total is unknown", () => {
@@ -142,6 +134,10 @@ describe("hypervisorDetail", () => {
     expect(hypervisorDetail(hv({}))).toEqual({ kind: "installed" });
     expect(hypervisorDetail(hv({ plugin: "vagrant-qemu", pluginInstalled: true }))).toEqual({ kind: "installedWithPlugin", plugin: "vagrant-qemu" });
     expect(hypervisorDetail(hv({ plugin: "vagrant-qemu" }))).toEqual({ kind: "pluginMissing", plugin: "vagrant-qemu" });
+    // VMware's plugin in, HashiCorp's utility not running: still short of something.
+    const vmware = { provider: "vmware_desktop", plugin: "vagrant-vmware-desktop", pluginInstalled: true } as const;
+    expect(hypervisorDetail(hv({ ...vmware, utility: "stopped" }))).toEqual({ kind: "utilityMissing", plugin: "vagrant-vmware-desktop" });
+    expect(hypervisorDetail(hv({ ...vmware, utility: "running" }))).toEqual({ kind: "installedWithPlugin", plugin: "vagrant-vmware-desktop" });
     expect(hypervisorDetail(hv({ hypervisor: false }))).toEqual({ kind: "notInstalled" });
     expect(hypervisorDetail(hv({ hypervisor: null }))).toEqual({ kind: "builtIn" });
   });

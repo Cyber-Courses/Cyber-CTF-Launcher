@@ -14,7 +14,8 @@ import { AttackStep } from "@/features/machine/setup-steps/attack-step";
 import { EngineStep } from "@/features/machine/setup-steps/engine-step";
 import { Outcome, Skipped } from "@/features/machine/setup-steps/parts";
 import { PackageManagerStep } from "@/features/machine/setup-steps/pkgmgr-step";
-import { MachineStep, PATHS, type SetupPath, hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
+import { MachineStep, PATHS, type SetupPath, chosenHypervisor, hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
+import { useVmProvider } from "@/lib/use-vm-provider";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import { VagrantStep, VmStep } from "@/features/machine/setup-steps/vm-steps";
 import { WslStep } from "@/features/machine/setup-steps/wsl-step";
@@ -72,15 +73,19 @@ function DockerTestStep({ report, setup }: { report: SystemReport; setup: Machin
   );
 }
 
-/** The VM self-test, once a hypervisor is installed. */
+/** The VM self-test, once a hypervisor is installed: on the one this flow set up (a row's Fix:
+ *  that row's), so a pass says that one runs labs, not the default. */
 function VmTestStep({ report, setup }: { report: SystemReport; setup: MachineSetupState }) {
   const t = useT();
+  const preferred = useVmProvider();
   if (!hasHypervisor(report)) return <Skipped title={t("machine.body.nothingToTest")} reason={t("machine.body.noHypervisor")} />;
+  const provider = chosenHypervisor(report, setup)?.provider ?? null;
   return (
     <SelfTest
       kind="vm"
       title={t("machine.selfTest.vmTitle")}
       description={t("machine.body.vmTestDescription")}
+      target={{ provider, primary: preferred === null || provider === preferred }}
       // Once per setup: coming back to a passed step shows its run, it doesn't boot another VM.
       auto={setup.vmTest === "idle"}
       onResult={setup.setVmTest}

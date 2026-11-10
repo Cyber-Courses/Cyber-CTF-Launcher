@@ -5,14 +5,16 @@ import type { SystemReport } from "@/lib/tauri";
 vi.mock("@/lib/tauri", () => ({}));
 
 const { firstPending, pathProgress, stepDone } = await import("@/features/machine/setup-steps/step-status");
+const { withNeeds } = await import("@/test/fixtures");
 
 const ok = { result: "ok" as const, at: 1 };
 const fail = { result: "fail" as const, at: 1 };
 const none = { docker: null, vm: null };
 
-/** A Linux machine with Docker running, VirtualBox and Vagrant in, Terraform in. */
+/** A Linux machine with Docker running, VirtualBox and Vagrant in, Terraform in; each
+ *  hypervisor's `needs` as the core lists them for its Vagrant and plugins. */
 const ready = (over: Partial<SystemReport> = {}) =>
-  ({
+  withNeeds({
     os: "linux",
     arch: "x86_64",
     docker: { installed: true, version: "27.0" },
@@ -21,9 +23,11 @@ const ready = (over: Partial<SystemReport> = {}) =>
     pkgManager: { name: "apt", installed: true, version: "3.0" },
     vagrant: { installed: true, version: "2.4.3" },
     terraform: { installed: true, version: "1.9.8" },
-    vmProviders: [{ provider: "virtualbox", remote: false, hypervisor: true, available: true, plugin: null, pluginInstalled: true, reason: null }],
+    vmProviders: [
+      { provider: "virtualbox", remote: false, hypervisor: true, available: true, plugin: null, pluginInstalled: true, utility: null, reason: null },
+    ],
     ...over,
-  }) as unknown as SystemReport;
+  } as unknown as SystemReport);
 /** Nothing installed yet. */
 const fresh = (over: Partial<SystemReport> = {}) =>
   ready({
@@ -33,7 +37,19 @@ const fresh = (over: Partial<SystemReport> = {}) =>
     pkgManager: { name: "apt", installed: false, version: null },
     vagrant: { installed: false, version: null },
     terraform: { installed: false, version: null },
-    vmProviders: [{ provider: "virtualbox", remote: false, hypervisor: false, available: false, plugin: null, pluginInstalled: false, reason: null }],
+    vmProviders: [
+      {
+        provider: "virtualbox",
+        remote: false,
+        hypervisor: false,
+        available: false,
+        plugin: null,
+        pluginInstalled: false,
+        utility: null,
+        needs: ["vagrant"],
+        reason: null,
+      },
+    ],
     ...over,
   });
 

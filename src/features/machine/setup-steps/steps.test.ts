@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SystemReport } from "@/lib/tauri";
 import type { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import type { MessageKey, Vars } from "@/lib/i18n";
+import { hypervisorStatus, withNeeds } from "@/test/fixtures";
 
 // steps.ts pulls icons and the setup hook's module only for types; no Tauri runtime needed.
 vi.mock("@/lib/tauri", () => ({}));
@@ -9,8 +10,9 @@ vi.mock("@/lib/tauri", () => ({}));
 const { canContinue, chosenEngine, chosenHypervisor, machineSteps, nextLabel, nextVariant, pathOf, pathSteps, stepMeta, wslState } =
   await import("@/features/machine/setup-steps/steps");
 
+// Each hypervisor's `needs` as the core lists them for this report's Vagrant and plugins.
 const report = (over: Partial<SystemReport> = {}) =>
-  ({
+  withNeeds({
     os: "linux",
     arch: "x86_64",
     docker: { installed: true },
@@ -24,22 +26,13 @@ const report = (over: Partial<SystemReport> = {}) =>
       { provider: "libvirt", remote: false, hypervisor: false, available: false },
     ],
     ...over,
-  }) as unknown as SystemReport;
+  } as unknown as SystemReport);
 const setup = (over: Partial<{ engine: string | null; hypervisor: string | null }> = {}) =>
   ({ engine: null, hypervisor: null, ...over }) as unknown as MachineSetupState;
 /** A Linux machine with Vagrant in and no hypervisor listed, for the edges. */
 const bareReport = (over: Partial<SystemReport> = {}) => report({ vagrant: { installed: true, version: null }, vmProviders: [], ...over });
 type Hv = SystemReport["vmProviders"][number];
-const hv = (p: Partial<Hv>): Hv => ({
-  provider: "virtualbox",
-  remote: false,
-  available: false,
-  hypervisor: false,
-  plugin: null,
-  pluginInstalled: false,
-  reason: null,
-  ...p,
-});
+const hv = (p: Partial<Hv>): Hv => hypervisorStatus({ available: false, hypervisor: false, pluginInstalled: false, ...p });
 // Labels as their keys, with the variables appended, so a test reads what was asked for.
 const t = (key: MessageKey, vars?: Vars) => (vars ? `${key}:${JSON.stringify(vars)}` : key);
 const ALL = machineSteps(bareReport({ os: "windows" }));

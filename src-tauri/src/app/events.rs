@@ -6,7 +6,8 @@ use tauri::Emitter;
 
 /// A quit was held back while deploys run; its payload is how many.
 pub const QUIT_BLOCKED: &str = "quit-blocked";
-/// The machine-setup window, open already, is asked to go to a step; its payload is the step.
+/// The machine-setup window, open already, is asked to go to a step; its payload is the step and
+/// the hypervisor it is for (`{ step, provider }`, `provider` null for none).
 pub const MACHINE_SETUP_STEP: &str = "machine-setup-step";
 /// The website asks to start a lab here; its payload is the launch to confirm.
 pub const LAUNCH_CONFIRM: &str = "launch-confirm";

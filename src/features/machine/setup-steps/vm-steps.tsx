@@ -3,6 +3,7 @@
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { type ProviderStatus, type SystemReport } from "@/lib/tauri";
+import { UTILITY, UtilityRequirement } from "@/features/machine/setup-steps/utility-requirement";
 import { cantRun, DOWNLOAD, INSTALLABLE, providerLabel, localHypervisors } from "@/features/machine/hypervisors";
 import { BusyLabel, Log, Requirement } from "@/features/machine/setup-steps/parts";
 import { Choice, ChoiceAction, ChoiceGrid } from "@/components/ui/choice-card";
@@ -13,8 +14,8 @@ import { openExternal } from "@/lib/failure";
 import { useT, type T } from "@/lib/i18n";
 
 /** A hypervisor's card note: installed (able to run here or not), installable here, or the vendor's. */
-function choiceNote(t: T, p: ProviderStatus, report: SystemReport) {
-  if (p.hypervisor === true) return cantRun(p, report) ? t("machine.vm.cantRunHere") : t("machine.vm.installedHere");
+function choiceNote(t: T, p: ProviderStatus) {
+  if (p.hypervisor === true) return cantRun(p) ? t("machine.vm.cantRunHere") : t("machine.vm.installedHere");
   return INSTALLABLE[p.provider] ? t("machine.vm.canInstall") : t("machine.vm.vendorSite");
 }
 
@@ -36,13 +37,13 @@ export function VmStep({ report, setup }: { report: SystemReport; setup: Machine
             }}
             mark={<HypervisorLogo provider={p.provider} />}
             title={providerLabel(p, report.os)}
-            note={choiceNote(t, p, report)}
+            note={choiceNote(t, p)}
             badge={p.hypervisor === true ? "installed" : undefined}
           />
         ))}
       </ChoiceGrid>
       {/* Installed but unable to run (no /dev/kvm, not in the kvm group): why, as the Machine page says. */}
-      {cantRun(choice, report) && choice.reason && (
+      {cantRun(choice) && choice.reason && (
         <ChoiceAction>
           <span className="text-[0.8125rem] text-muted-foreground">
             {choice.reason.charAt(0).toUpperCase()}
@@ -121,13 +122,14 @@ export function VagrantStep({ report, setup }: { report: SystemReport; setup: Ma
     <div className="space-y-3">
       {/* For the hypervisor picked on the previous step. */}
       <VagrantRequirements choice={choice} report={report} setup={setup} />
-      <Log setup={setup} of={["vagrant", choice.plugin]} />
+      <Log setup={setup} of={["vagrant", choice.plugin, UTILITY]} />
     </div>
   );
 }
 
 /** What Vagrant needs to drive `choice`: Vagrant itself, the hypervisor's plugin, and (VMware)
- *  the utility; each with its install, the first missing one the jewel. */
+ *  HashiCorp's utility; each with its install, the first missing one the jewel. The rows are the
+ *  backend's `needs` (what its readiness reads), so once each is done the hypervisor is ready. */
 export function VagrantRequirements({ choice, report, setup }: { choice: ProviderStatus; report: SystemReport; setup: MachineSetupState }) {
   const t = useT();
   return (
@@ -137,6 +139,7 @@ export function VagrantRequirements({ choice, report, setup }: { choice: Provide
           ok={report.vagrant.installed}
           title="Vagrant"
           detail={report.vagrant.installed ? (report.vagrant.version ?? t("machine.body.installed")) : t("machine.vm.vagrantDetail")}
+          failed={setup.failure("vagrant")}
           action={
             // The first thing missing is the jewel: Vagrant, then its plugin (one per view).
             <Button
@@ -154,25 +157,7 @@ export function VagrantRequirements({ choice, report, setup }: { choice: Provide
           }
         />
         {choice.plugin && <PluginRequirement plugin={choice.plugin} choice={choice} report={report} setup={setup} />}
-        {choice.provider === "vmware_desktop" && (
-          <Requirement
-            ok={false}
-            optional
-            title="Vagrant VMware Utility"
-            detail={t("machine.vm.utilityDetail")}
-            action={
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={() => {
-                  openExternal("https://developer.hashicorp.com/vagrant/install/vmware");
-                }}
-              >
-                <ExternalLink /> {t("machine.vm.getUtility")}
-              </Button>
-            }
-          />
-        )}
+        {choice.utility && <UtilityRequirement utility={choice.utility} choice={choice} setup={setup} />}
       </div>
     </>
   );
@@ -186,6 +171,7 @@ function PluginRequirement({ plugin, choice, report, setup }: { plugin: string; 
       ok={choice.pluginInstalled}
       title={t("machine.vm.pluginTitle", { name: providerLabel(choice, report.os) })}
       detail={choice.pluginInstalled || report.vagrant.installed ? plugin : t("machine.vm.pluginLater", { plugin })}
+      failed={setup.failure(plugin)}
       action={
         <Button
           variant={report.vagrant.installed ? "primary" : "outline"}

@@ -36,10 +36,11 @@ pub async fn machine_metrics() -> MachineMetrics {
     metrics::machine_metrics().await
 }
 
-/// Opens the machine setup window, at `step` when given.
+/// Opens the machine setup window, at `step` when given, for the hypervisor `provider` when
+/// given (a Machine page row's Fix).
 #[tauri::command]
-pub async fn machine_open_setup(app: AppHandle, step: Option<String>) -> Result<()> {
-    setup_window::open(&app, step.as_deref())
+pub async fn machine_open_setup(app: AppHandle, step: Option<String>, provider: Option<crate::runtime::providers::Provider>) -> Result<()> {
+    setup_window::open(&app, step.as_deref(), provider)
 }
 
 /// Restarts the computer, for `reason` (WSL's install finishing).
@@ -171,7 +172,7 @@ mod tests {
     async fn the_open_setup_window_is_brought_forward() {
         let t = TestApp::new();
         crate::app::window::builder(t.handle(), "machine-setup", "machine-setup").unwrap().build().unwrap();
-        machine_open_setup(t.handle().clone(), Some("docker".into())).await.unwrap();
+        machine_open_setup(t.handle().clone(), Some("docker".into()), None).await.unwrap();
         assert_eq!(t.handle().webview_windows().len(), 1);
     }
 

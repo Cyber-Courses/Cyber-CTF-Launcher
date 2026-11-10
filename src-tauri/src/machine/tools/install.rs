@@ -8,7 +8,7 @@ use serde::Deserialize;
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
-use super::scripts::{awscli_script, azurecli_script, docker_script, gcloud_script, terraform_script, virtualbox_script};
+use super::scripts::{awscli_script, azurecli_script, docker_script, gcloud_script, terraform_script, virtualbox_script, vmware_utility_script};
 #[cfg(any(target_os = "macos", windows))]
 use super::steps::step;
 use super::steps::{Step, command_line, run_step, run_steps};
@@ -31,12 +31,16 @@ pub enum Dependency {
     Gcloud,
     /// Windows Subsystem for Linux (WSL 2), enabled through its own installer.
     Wsl,
+    /// HashiCorp's Vagrant VMware Utility, the service VMware's Vagrant plugin drives VMware
+    /// through: from HashiCorp's signed package (see `vmware_utility`).
+    #[serde(rename = "vmware-utility")]
+    VmwareUtility,
 }
 
 #[cfg(test)]
 impl Dependency {
     /// Every tool the app installs.
-    pub(super) const ALL: [Dependency; 11] = [
+    pub(super) const ALL: [Dependency; 12] = [
         Dependency::Docker,
         Dependency::Vagrant,
         Dependency::Terraform,
@@ -48,12 +52,17 @@ impl Dependency {
         Dependency::Azurecli,
         Dependency::Gcloud,
         Dependency::Wsl,
+        Dependency::VmwareUtility,
     ];
 }
 
 /// The install steps on macOS: Homebrew formulae, or a cask whose installer the user finishes.
 #[cfg(target_os = "macos")]
 fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
+    // HashiCorp's own package, not Homebrew's: needs no Homebrew.
+    if dep == Dependency::VmwareUtility {
+        return Ok(vec![super::vmware_utility::mac_install(std::env::consts::ARCH)]);
+    }
     let brew = crate::platform::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()))?;
     Ok(match dep {
         // Docker Desktop: download the app with brew, then open its installer; the user
@@ -105,6 +114,7 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
             },
         ],
         Dependency::Gcloud => vec![step(brew, &["install", "--cask", "google-cloud-sdk"])],
+        Dependency::VmwareUtility => vec![super::vmware_utility::mac_install(std::env::consts::ARCH)],
     })
 }
 
@@ -120,7 +130,7 @@ pub(super) fn winget_package(dep: Dependency) -> Option<&'static str> {
         Dependency::Awscli => "Amazon.AWSCLI",
         Dependency::Azurecli => "Microsoft.AzureCLI",
         Dependency::Gcloud => "Google.CloudSDK",
-        Dependency::Utm | Dependency::Libvirt | Dependency::Wsl => return None,
+        Dependency::Utm | Dependency::Libvirt | Dependency::Wsl | Dependency::VmwareUtility => return None,
     })
 }
 
@@ -145,6 +155,11 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
             ],
         )]),
         (Dependency::Utm, None) => Err(Error::Invalid("UTM is only available on macOS.".into())),
+        // VMware Workstation doesn't run on Windows on Arm, so neither does its utility.
+        (Dependency::VmwareUtility, None) if std::env::consts::ARCH == "aarch64" => {
+            Err(Error::Invalid("VMware Workstation doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.".into()))
+        }
+        (Dependency::VmwareUtility, None) => Ok(vec![super::vmware_utility::windows_install()]),
         (_, None) => Err(Error::Invalid("libvirt is Linux-only; on Windows use Hyper-V or WSL.".into())),
     }
 }
@@ -185,6 +200,7 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Awscli => vec![root(awscli_script())],
         Dependency::Azurecli => vec![root(azurecli_script())],
         Dependency::Gcloud => vec![root(gcloud_script())],
+        Dependency::VmwareUtility => vec![root(vmware_utility_script())],
     })
 }
 
@@ -338,8 +354,8 @@ mod tests {
         for (dep, p) in plans() {
             match dep {
                 Dependency::Utm | Dependency::Libvirt => assert!(p.is_err(), "{dep:?}"),
-                Dependency::Virtualbox if std::env::consts::ARCH == "aarch64" => assert!(p.is_err()),
-                Dependency::Wsl => assert_eq!(p.unwrap()[0].program, "powershell"),
+                Dependency::Virtualbox | Dependency::VmwareUtility if std::env::consts::ARCH == "aarch64" => assert!(p.is_err()),
+                Dependency::Wsl | Dependency::VmwareUtility => assert_eq!(p.unwrap()[0].program, "powershell"),
                 _ => {
                     let steps = p.unwrap();
                     assert_eq!(steps[0].program, "winget");

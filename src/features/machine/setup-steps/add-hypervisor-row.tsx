@@ -2,18 +2,18 @@
 
 import { StepCircle } from "@/features/machine/step-row";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
-import { INSTALLABLE, providerLabel } from "@/features/machine/hypervisors";
+import { INSTALLABLE, providerLabel, vagrantDrives } from "@/features/machine/hypervisors";
 import { ProviderReady } from "@/features/machine/setup-steps/add-ready";
 import { Log } from "@/features/machine/setup-steps/parts";
-import { vagrantDrives } from "@/features/machine/setup-steps/steps";
 import type { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import { GetHypervisor, VagrantRequirements } from "@/features/machine/setup-steps/vm-steps";
+import { UTILITY } from "@/features/machine/setup-steps/utility-requirement";
 import { useVmProvider } from "@/lib/use-vm-provider";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
 /** One hypervisor this OS can run but doesn't have: its install (or where to get it, then a
- *  re-check), then what Vagrant needs to drive it, and once all is in, its own test and "Use by
+ *  re-check), then what Vagrant needs to drive it (with VMware, HashiCorp's utility too), and once all is in, its own test and "Use by
  *  default" (the Settings choice). `p` is the hypervisor as the live machine check reports it. */
 export function AddHypervisorRow({ p, report, setup }: { p: ProviderStatus; report: SystemReport; setup: MachineSetupState }) {
   const t = useT();
@@ -30,8 +30,8 @@ export function AddHypervisorRow({ p, report, setup }: { p: ProviderStatus; repo
       </div>
       {!installed && <GetHypervisor choice={p} report={report} setup={setup} />}
       {installed && <VagrantRequirements choice={p} report={report} setup={setup} />}
-      {installed && vagrantDrives(report, p) && <Ready p={p} setup={setup} />}
-      <Log setup={setup} of={[p.provider, "vagrant", p.plugin]} />
+      {installed && vagrantDrives(p) && <Ready p={p} setup={setup} />}
+      <Log setup={setup} of={[p.provider, "vagrant", p.plugin, UTILITY]} />
     </div>
   );
 }

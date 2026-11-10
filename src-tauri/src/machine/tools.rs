@@ -7,3 +7,4 @@ pub mod ovftool;
 mod scripts;
 pub mod steps;
 pub mod uninstall;
+mod vmware_utility;

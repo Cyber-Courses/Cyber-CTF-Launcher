@@ -96,6 +96,12 @@ function localProviders({ os, fresh }: Pick<Scenario, "os" | "fresh">) {
     hypervisor: fresh ? false : provider === "virtualbox",
     plugin,
     pluginInstalled: !plugin,
+    utility: provider === "vmware_desktop" ? "missing" : null,
+    needs: [
+      ...(fresh ? (["vagrant"] as const) : []),
+      ...(plugin ? (["plugin"] as const) : []),
+      ...(provider === "vmware_desktop" ? (["vmwareUtility"] as const) : []),
+    ],
     reason: !fresh && provider === "virtualbox" ? null : "Not installed",
   });
   if (os === "windows") return [p("virtualbox"), p("vmware_desktop", "vagrant-vmware-desktop"), { ...p("hyperv"), hypervisor: null }];
@@ -108,7 +114,7 @@ const PKG_MANAGER: Record<Scenario["os"], string> = { windows: "winget", linux: 
 /** On an Apple Silicon Mac VirtualBox can't run, so a ready machine there has UTM instead. */
 function onAppleSilicon(p: ProviderStatus): ProviderStatus {
   if (p.provider === "virtualbox") return { ...p, available: false, hypervisor: false, reason: "VirtualBox does not run on Apple Silicon" };
-  if (p.provider === "utm") return { ...p, available: true, hypervisor: true, pluginInstalled: true, reason: null };
+  if (p.provider === "utm") return { ...p, available: true, hypervisor: true, pluginInstalled: true, needs: [], reason: null };
   return p;
 }
 
@@ -127,7 +133,9 @@ function fresh(ready: SystemReport): SystemReport {
     vagrant: notInstalled,
     terraform: notInstalled,
     cloudClis: { aws: notInstalled, azure: notInstalled, gcloud: notInstalled },
-    vmProviders: ready.vmProviders.map((p) => (p.remote ? { ...p, available: false, pluginInstalled: false } : p)),
+    vmProviders: ready.vmProviders.map((p) =>
+      p.remote ? { ...p, available: false, pluginInstalled: false } : { ...p, needs: ["vagrant", ...p.needs.filter((n) => n !== "vagrant")] },
+    ),
   };
 }
 

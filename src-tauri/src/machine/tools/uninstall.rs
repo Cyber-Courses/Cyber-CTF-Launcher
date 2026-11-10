@@ -65,7 +65,7 @@ fn presence_probe(dep: Dependency) -> Option<(&'static str, &'static [&'static s
         Dependency::Awscli => ("aws", &["--version"]),
         Dependency::Azurecli => ("az", &["version"]),
         Dependency::Gcloud => ("gcloud", &["--version"]),
-        Dependency::Utm | Dependency::Wsl => return None,
+        Dependency::Utm | Dependency::Wsl | Dependency::VmwareUtility => return None,
     })
 }
 
@@ -81,6 +81,10 @@ fn mac_app(dep: Dependency) -> Option<&'static str> {
 
 /// Whether `dep` is installed on this machine; None when that can't be told (WSL).
 pub async fn present(dep: Dependency) -> Option<bool> {
+    // A service, not a program on PATH: what the machine check reads.
+    if dep == Dependency::VmwareUtility {
+        return Some(crate::runtime::providers::vmware_utility().await != crate::runtime::providers::UtilityState::Missing);
+    }
     if cfg!(target_os = "macos") && mac_app(dep).is_some_and(|a| std::path::Path::new(a).exists()) {
         return Some(true);
     }
@@ -275,6 +279,9 @@ fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>
             note: Some("Running Docker Desktop's own uninstaller…".into()),
         }],
         Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
+        Dependency::VmwareUtility => {
+            vec![mac_admin(super::vmware_utility::MAC_UNINSTALL, "Removing the Vagrant VMware Utility (macOS asks for your password)…")]
+        }
         Dependency::Libvirt | Dependency::Wsl => return Err(Error::Invalid("Not installed on macOS.".into())),
     })
 }
@@ -284,6 +291,7 @@ fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>
 fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
     match (dep, super::install::winget_package(dep)) {
         (_, Some(id)) => Ok(vec![step("winget", &["uninstall", "-e", "--id", id])]),
+        (Dependency::VmwareUtility, None) => Ok(vec![super::vmware_utility::windows_uninstall()]),
         (Dependency::Wsl, None) => Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
         (_, None) => Err(Error::Invalid("Not installed on Windows.".into())),
     }
@@ -307,6 +315,7 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Azurecli => vec![root("apt-get remove -y azure-cli")],
         // Google's apt package, and the per-user SDK earlier versions installed in its place.
         Dependency::Gcloud => vec![root("apt-get remove -y google-cloud-cli"), step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
+        Dependency::VmwareUtility => vec![root("apt-get remove -y vagrant-vmware-utility")],
         Dependency::Utm | Dependency::Wsl => return Err(Error::Invalid("Not installed on Linux.".into())),
     })
 }
@@ -533,6 +542,8 @@ mod tests {
         ] {
             assert_eq!(plan(dep, Some("/x/VirtualBox.dmg")).unwrap()[0].program, "winget", "{dep:?}");
         }
+        // Not in winget: its MSI removed by its product code.
+        assert_eq!(plan(Dependency::VmwareUtility, None).unwrap()[0].program, "powershell");
         assert!(
             plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err()
                 && plan(Dependency::Utm, Some("/x/VirtualBox.dmg")).is_err()

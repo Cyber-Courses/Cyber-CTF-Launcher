@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
-import { cantRun, providerLabel } from "@/features/machine/hypervisors";
+import { cantRun, providerLabel, vagrantDrives } from "@/features/machine/hypervisors";
 import { ProviderRow } from "@/features/machine/machine-parts";
 import type { vmSetup } from "@/features/machine/machine-status";
 import {
@@ -18,7 +18,7 @@ import {
   type RowProps,
 } from "@/features/machine/lab-row-parts";
 import { getLastTest, setVmProvider } from "@/lib/settings";
-import type { ProviderStatus, SystemReport } from "@/lib/tauri";
+import type { ProviderStatus } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
 // The Machine page's hypervisors, one row per hypervisor installed here: the one VM labs run on
@@ -89,10 +89,11 @@ function RunsLabsRow({ p, state, vm, onUseServer, ...row }: Props & { p: Provide
   );
 }
 
-/** Where an installed hypervisor that labs don't run on stands. */
-function standingOf(p: ProviderStatus, report: SystemReport): "cantRunHere" | "needsSetup" | "installed" {
-  if (cantRun(p, report)) return "cantRunHere";
-  if (!report.vagrant.installed || (p.plugin && !p.pluginInstalled)) return "needsSetup";
+/** Where an installed hypervisor that labs don't run on stands: "needs setup" exactly when the
+ *  setup steps have something to install for it (`vagrantDrives`, the rule they read too). */
+function standingOf(p: ProviderStatus): "cantRunHere" | "needsSetup" | "installed" {
+  if (cantRun(p)) return "cantRunHere";
+  if (!vagrantDrives(p)) return "needsSetup";
   return "installed";
 }
 
@@ -101,7 +102,7 @@ function standingOf(p: ProviderStatus, report: SystemReport): "cantRunHere" | "n
 function OtherHypervisorRow({ p, vm, onUseServer, ...row }: Props & { p: ProviderStatus }) {
   const t = useT();
   const { report, onFix } = row;
-  const standing = standingOf(p, report);
+  const standing = standingOf(p);
   const common = {
     kind: "vm" as const,
     icon: <HypervisorLogo provider={p.provider} />,
@@ -125,8 +126,8 @@ function OtherHypervisorRow({ p, vm, onUseServer, ...row }: Props & { p: Provide
         {...common}
         tone="warn"
         status={t("machine.screen.status.needsSetup")}
-        detail={t("machine.screen.vm.vagrantMissing")}
-        actions={<FixButton step="vagrant" onFix={onFix} />}
+        detail={p.reason ? `${p.reason.charAt(0).toUpperCase()}${p.reason.slice(1)}.` : t("machine.screen.vm.vagrantMissing")}
+        actions={<FixButton step="vagrant" provider={p.provider} onFix={onFix} />}
       />
     );
   return <IdleHypervisorRow p={p} vm={vm} {...row} />;

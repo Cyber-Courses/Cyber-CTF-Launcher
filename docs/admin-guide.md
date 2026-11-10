@@ -176,6 +176,7 @@ settings:
 | Docker                   | Docker Hub (`registry-1.docker.io`, `auth.docker.io`, `production.cloudflare.docker.com`) and the registries a lab's images name; the attack box image is `cyberctf/attack-box` on Docker Hub |
 | Vagrant                  | Vagrant Cloud (`vagrantcloud.com`) and where each box is hosted; `rubygems.org` for plugins                                                                                                   |
 | Terraform                | `registry.terraform.io`, `releases.hashicorp.com` (providers)                                                                                                                                 |
+| Vagrant VMware Utility   | `releases.hashicorp.com` (macOS and Windows), `apt.releases.hashicorp.com` (Linux): installed once, from the Machine page                                                                     |
 | Cloud CLIs and Terraform | the cloud provider's APIs (AWS, Azure, Google Cloud, DigitalOcean, Linode, Oracle Cloud)                                                                                                      |
 
 The lab machines themselves download too: a Kali attack VM fetches its packages from
@@ -306,6 +307,15 @@ launcher never asks for or stores a password itself.
   ordinary installs of those products, recorded in `installed-tools.json` so that Settings >
   Maintenance can remove them again.
 - Vagrant plugins a lab needs (`vagrant-*`) are installed for the user with `vagrant plugin install`.
+- VMware Fusion and Workstation also need HashiCorp's **Vagrant VMware Utility**, a system service
+  the `vagrant-vmware-desktop` plugin talks to on `127.0.0.1:9922`. The Machine page installs it
+  from HashiCorp's own package (`releases.hashicorp.com/vagrant-vmware-utility/1.0.24/`, its
+  SHA-256 pinned in the launcher), with an administrator prompt: on macOS the `.pkg` (checked as
+  signed by HashiCorp's Developer ID, team `D38WU7D763`, and notarized) puts it in
+  `/opt/vagrant-vmware-desktop` with a launchd service; on Windows the `.msi` (checked as
+  Authenticode-signed by HashiCorp, Inc.) installs the `vagrant-vmware-utility` service; on Linux
+  the `vagrant-vmware-utility` package comes from HashiCorp's apt repository and runs as a systemd
+  service. It is refused under `DisableToolInstalls`.
 - **Use a downloaded OVF Tool…** (the ESXi setup) copies the folder the user picks into
   `tools/ovftool/` in the app data folder, once it holds VMware's OVF Tool; on macOS only once the
   program and its libraries are verified as signed by VMware's Developer ID (team `EG7KH642X6`),

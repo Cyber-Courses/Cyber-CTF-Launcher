@@ -7,6 +7,7 @@ import type {
   EngineStatus,
   InstalledTool,
   MachineMetrics,
+  Need,
   OvftoolLocation,
   OvftoolPlaced,
   OvftoolRefusal,
@@ -19,6 +20,7 @@ import type {
   StoredItem,
   SystemReport,
   Tool,
+  UtilityState,
   Workload,
   WslReport,
   WslState,
@@ -31,6 +33,7 @@ export type {
   EngineStatus,
   InstalledTool,
   MachineMetrics,
+  Need,
   OvftoolLocation,
   OvftoolPlaced,
   OvftoolRefusal,
@@ -43,6 +46,7 @@ export type {
   StoredItem,
   SystemReport,
   Tool,
+  UtilityState,
   Workload,
   WslReport,
   WslState,
@@ -60,8 +64,9 @@ export const dockerStartEngine = (engine: DockerEngine) => invokeUnit("docker_st
 /** Live machine health (CPU/memory/disk/uptime + running containers). */
 export const machineMetrics = () => invoke<MachineMetrics>("machine_metrics");
 
-/** Opens the guided "set up this machine" window, optionally at one step (e.g. "docker", "vm"). */
-export const machineOpenSetup = (step?: string) => invokeUnit("machine_open_setup", { step: step ?? null });
+/** Opens the guided "set up this machine" window, optionally at one step (e.g. "docker", "vm"),
+ *  for one hypervisor (a Machine page row's Fix: that one is set up, not another). */
+export const machineOpenSetup = (step?: string, provider?: Provider) => invokeUnit("machine_open_setup", { step: step ?? null, provider: provider ?? null });
 
 /** Restarts Windows in a few seconds (to finish turning WSL 2 on); `reason` is the note
  *  Windows shows meanwhile. Windows only. */

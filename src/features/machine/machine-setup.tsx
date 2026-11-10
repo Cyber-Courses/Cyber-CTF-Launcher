@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ArrowLeft, Compass, Play, Sparkles } from "lucide-react";
 import { ErrorBoundary } from "@/components/error-screen";
 import { WindowTitleBar } from "@/components/window-title-bar";
@@ -85,6 +85,13 @@ function SetupWizard({ report, startAt, onRefresh, onClose }: { report: SystemRe
   const preferred = useVmProvider();
   const { steps, path, at, key, next, back, start } = useWindowSteps(report, startAt, last, preferred);
   const setup = useMachineSetup(report, onRefresh);
+  // A row's Fix sets up that hypervisor (picked for this flow, not made the default): the steps,
+  // their "done" and the test then read it, not whichever another rule would pick.
+  const [targeted, setTargeted] = useState<number | null>(null);
+  if (startAt?.provider && startAt.nonce !== targeted) {
+    setTargeted(startAt.nonce);
+    setup.pickHypervisor(startAt.provider);
+  }
   // The path's steps and the summary (the chooser, first in the list, counts for neither).
   const walk = steps.slice(1);
   return (

@@ -1,5 +1,5 @@
 import { answer } from "@/lib/dev-mock";
-import type { ProviderStatus, SystemReport } from "@/lib/tauri";
+import type { Need, ProviderStatus, SystemReport } from "@/lib/tauri";
 
 const missing = { installed: false, version: null };
 
@@ -16,7 +16,14 @@ export const hypervisors = (vmProviders: ProviderStatus[]): Pick<SystemReport, "
 /** No local hypervisor installed: none ready, each reported missing. */
 const noHypervisors = (r: SystemReport): Pick<SystemReport, "readyHypervisors" | "vmProviders"> => ({
   readyHypervisors: [],
-  vmProviders: r.vmProviders.map((p) => ({ ...p, available: false, hypervisor: p.remote ? null : false, pluginInstalled: false, reason: "Not installed" })),
+  vmProviders: r.vmProviders.map((p) => ({
+    ...p,
+    available: false,
+    hypervisor: p.remote ? null : false,
+    pluginInstalled: false,
+    needs: p.plugin ? ["plugin"] : [],
+    reason: "Not installed",
+  })),
 });
 
 /** Docker ready, but no local hypervisor: a container lab starts here without the "Where should it
@@ -72,16 +79,37 @@ export function stoppedDockerReport(): SystemReport {
 
 /** A local hypervisor as the machine check reports it: VirtualBox, installed and able to run labs,
  *  with `over`. */
-export const hypervisorStatus = (over: Partial<ProviderStatus>): ProviderStatus => ({
-  provider: "virtualbox",
-  remote: false,
-  available: true,
-  hypervisor: true,
-  plugin: null,
-  pluginInstalled: true,
-  reason: null,
-  ...over,
-});
+export function hypervisorStatus(over: Partial<ProviderStatus>): ProviderStatus {
+  const p = {
+    provider: "virtualbox",
+    remote: false,
+    available: true,
+    hypervisor: true,
+    plugin: null,
+    pluginInstalled: true,
+    utility: null,
+    reason: null,
+    ...over,
+  } as const;
+  // What is left to install, as the core lists it (`providers::needs`), unless the test says.
+  return { ...p, needs: over.needs ?? needsOf(true, p) };
+}
+
+/** What Vagrant still needs to drive `p`, as the core lists it (`providers::needs`), with Vagrant
+ *  installed or not. */
+function needsOf(vagrant: boolean, p: Pick<ProviderStatus, "plugin" | "pluginInstalled" | "utility">): Need[] {
+  const needs: Need[] = [];
+  if (!vagrant) needs.push("vagrant");
+  if (p.plugin && !p.pluginInstalled) needs.push("plugin");
+  if (p.utility && p.utility !== "running") needs.push("vmwareUtility");
+  return needs;
+}
+
+/** `report` with each hypervisor's `needs` as the core would list them for its Vagrant (for a test
+ *  that changes the report's Vagrant or a plugin by hand). */
+export function withNeeds(report: SystemReport): SystemReport {
+  return { ...report, vmProviders: report.vmProviders.map((p) => ({ ...p, needs: p.remote ? p.needs : needsOf(report.vagrant.installed, p) })) };
+}
 
 /** The `managed_settings` answer of a computer whose policy turns one-click tool installs off. */
 export const INSTALLS_OFF = { managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }) };

@@ -1,7 +1,7 @@
 import { Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
-import { type ProviderStatus, type SystemReport, type WslState } from "@/lib/tauri";
+import { type SystemReport, type WslState } from "@/lib/tauri";
 import { translate, type MessageKey, type Vars } from "@/lib/i18n";
-import { cantRun, INSTALLABLE, localHypervisors } from "@/features/machine/hypervisors";
+import { cantRun, INSTALLABLE, localHypervisors, vagrantDrives } from "@/features/machine/hypervisors";
 import { ENGINES, Engine } from "@/features/machine/setup-steps/engines";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 
@@ -170,21 +170,18 @@ export function chosenHypervisor(report: SystemReport, setup: MachineSetupState)
   const hypervisors = localHypervisors(report);
   // An installed one that can run labs first (QEMU without KVM can, when libvirt can't).
   const fallback =
-    hypervisors.find((p) => p.hypervisor === true && !cantRun(p, report)) ??
+    hypervisors.find((p) => p.hypervisor === true && !cantRun(p)) ??
     hypervisors.find((p) => p.hypervisor === true) ??
     hypervisors.find((p) => INSTALLABLE[p.provider] !== undefined) ??
     hypervisors.at(0);
   return hypervisors.find((p) => p.provider === (setup.hypervisor ?? fallback?.provider)) ?? fallback;
 }
 
-/** Vagrant, and the plugin that lets it drive the chosen hypervisor, are installed. */
+/** Everything Vagrant needs to drive the chosen hypervisor is in (Vagrant, its plugin, VMware's
+ *  utility): [`vagrantDrives`], or just Vagrant when there is none to drive. */
 function vagrantReady(report: SystemReport, setup: MachineSetupState): boolean {
-  return vagrantDrives(report, chosenHypervisor(report, setup));
-}
-
-/** Vagrant, and the plugin that lets it drive `hypervisor`, are installed. */
-export function vagrantDrives(report: SystemReport, hypervisor: ProviderStatus | undefined): boolean {
-  return report.vagrant.installed && (!hypervisor?.plugin || hypervisor.pluginInstalled);
+  const choice = chosenHypervisor(report, setup);
+  return choice ? vagrantDrives(choice) : report.vagrant.installed;
 }
 
 /** The flow moves on only once the option picked on this step is actually set up. */

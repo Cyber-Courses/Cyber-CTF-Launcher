@@ -226,6 +226,13 @@ impl Provider {
         }
     }
 
+    /// Whether Vagrant drives it through HashiCorp's Vagrant VMware Utility, a system service of
+    /// its own (installed apart from the plugin, with an administrator's password) that the
+    /// `vagrant-vmware-desktop` plugin asks to run VMware: without it every `vagrant up` fails.
+    pub fn needs_vmware_utility(self) -> bool {
+        self == Provider::VmwareDesktop
+    }
+
     /// The hypervisor's own version, when it is installed and says it: UTM's app bundle
     /// (`CFBundleShortVersionString`); the others aren't held to a version yet.
     async fn hypervisor_version(self) -> Option<String> {
@@ -278,6 +285,11 @@ impl Provider {
 
 const UTM_APP: &str = "/Applications/UTM.app";
 
+mod vagrant_needs;
+#[cfg(test)]
+use vagrant_needs::fake_utility;
+pub use vagrant_needs::{Need, UtilityState, VMWARE_UTILITY_MISSING, VMWARE_UTILITY_STOPPED, needs, vmware_utility};
+
 /// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.
 fn hyperv_enabled() -> bool {
     let root = std::env::var_os("SystemRoot").map_or_else(|| std::path::PathBuf::from("C:\\Windows"), std::path::PathBuf::from);
@@ -315,6 +327,11 @@ pub struct ProviderStatus {
     /// Whether that plugin is present at a version the launcher drives (true when the provider is
     /// built in): an older one reads as not installed, so setup installs it again, which updates it.
     pub plugin_installed: bool,
+    /// Where HashiCorp's Vagrant VMware Utility stands; `None` when the provider doesn't use it.
+    pub utility: Option<UtilityState>,
+    /// What is still to install for Vagrant to drive it here ([`needs`]): empty when nothing is.
+    /// The Machine page and the setup steps read this, never their own idea of it.
+    pub needs: Vec<Need>,
     /// Why it is not available (missing plugin, missing hypervisor, wrong OS).
     pub reason: Option<String>,
 }
@@ -453,6 +470,9 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
     // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
     let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::platform::exec::may_manage_hyperv();
 
+    // VMware's plugin drives VMware through HashiCorp's utility service, installed on its own.
+    let utility = if provider.needs_vmware_utility() { Some(vmware_utility().await) } else { None };
+
     let detection = Detection {
         unresponsive,
         hypervisor,
@@ -460,11 +480,13 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
         plugin: plugin.as_deref(),
         plugin_installed,
         plugin_version: plugin_version.as_deref(),
+        utility,
         needs_admin,
     };
     let reason = unavailable_reason(provider, vagrant_installed, detection);
+    let needs = needs(vagrant_installed, plugin_installed, utility);
 
-    Some(ProviderStatus { provider, remote: provider.is_remote(), available: reason.is_none(), hypervisor, plugin, plugin_installed, reason })
+    Some(ProviderStatus { provider, remote: provider.is_remote(), available: reason.is_none(), hypervisor, plugin, plugin_installed, utility, needs, reason })
 }
 
 /// Why Hyper-V can't be used by this account yet, and the two ways out.
@@ -489,15 +511,20 @@ struct Detection<'a> {
     plugin_installed: bool,
     /// That plugin's installed version, when it is present and says one.
     plugin_version: Option<&'a str>,
+    /// Where the Vagrant VMware Utility stands; `None` when the provider doesn't use it.
+    utility: Option<UtilityState>,
     /// Whether this account may not manage Hyper-V (Hyper-V only).
     needs_admin: bool,
 }
 
 /// Why a provider can't be used here (None: it can), from whether Vagrant is installed and what
-/// `detect` found out about the provider.
+/// `detect` found out about the provider: Vagrant missing first, then what is wrong with the
+/// hypervisor itself (nothing setup installs mends that), then the first of its [`needs`]. So it
+/// is `None` only when nothing is needed: readiness and the setup steps can't disagree.
 fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> Option<String> {
-    let Detection { unresponsive, hypervisor, hypervisor_version, plugin, plugin_installed, plugin_version, needs_admin } = detection;
-    if !vagrant_installed {
+    let Detection { unresponsive, hypervisor, hypervisor_version, plugin, plugin_installed, plugin_version, utility, needs_admin } = detection;
+    let needs = needs(vagrant_installed, plugin_installed, utility);
+    if needs.contains(&Need::Vagrant) {
         Some("Vagrant is not installed".to_string())
     } else if unresponsive {
         Some(
@@ -515,11 +542,14 @@ fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: De
     } else if let Some((name, version, min)) = hypervisor_too_old(provider, hypervisor_version) {
         Some(format!("{name} {version} is too old: {min} or later is needed. Update {name}, then re-check"))
     } else if let Some((version, min)) = plugin_too_old(provider, plugin_version) {
-        plugin.map(|p| format!("Vagrant plugin `{p}` {version} is too old: {min} or later is needed. Install it again to update it"))
-    } else if !plugin_installed {
-        plugin.map(|p| format!("Vagrant plugin `{p}` is not installed"))
+        Some(format!("Vagrant plugin `{}` {version} is too old: {min} or later is needed. Install it again to update it", plugin.unwrap_or("?")))
     } else {
-        None
+        needs.first().map(|need| match need {
+            Need::Vagrant => "Vagrant is not installed".to_string(),
+            Need::Plugin => format!("Vagrant plugin `{}` is not installed", plugin.unwrap_or("?")),
+            Need::VmwareUtility if utility == Some(UtilityState::Stopped) => VMWARE_UTILITY_STOPPED.to_string(),
+            Need::VmwareUtility => VMWARE_UTILITY_MISSING.to_string(),
+        })
     }
 }
 
@@ -586,6 +616,7 @@ mod tests {
             plugin: Some("vagrant_utm"),
             plugin_installed,
             plugin_version,
+            utility: None,
             needs_admin: false,
         };
         // The plugin the failure was seen with: setup installs it again, which updates it.
@@ -787,6 +818,7 @@ mod tests {
                     plugin,
                     plugin_installed: installed,
                     plugin_version: None,
+                    utility: None,
                     needs_admin: false,
                 },
             )
@@ -798,6 +830,7 @@ mod tests {
             plugin: None,
             plugin_installed: true,
             plugin_version: None,
+            utility: None,
             needs_admin,
         };
         assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(true)).as_deref(), Some(HYPERV_NEEDS_ADMIN));
@@ -818,6 +851,101 @@ mod tests {
         assert_eq!(r(Provider::Libvirt, true, false, Some(true), Some("vagrant-libvirt"), true), kvm_problem());
     }
 
+    /// A VMware detection: Fusion or Workstation installed, the plugin and the utility as given.
+    fn vmware(plugin_installed: bool, utility: UtilityState) -> Detection<'static> {
+        Detection {
+            unresponsive: false,
+            hypervisor: Some(true),
+            hypervisor_version: None,
+            plugin: Some("vagrant-vmware-desktop"),
+            plugin_installed,
+            plugin_version: None,
+            utility: Some(utility),
+            needs_admin: false,
+        }
+    }
+
+    #[test]
+    fn a_provider_is_ready_exactly_when_nothing_is_needed() {
+        // The shared rule: readiness (`unavailable_reason`, what `available` and `ready` read) and
+        // the setup steps (which install each of `needs`) agree on every combination, so a setup
+        // that installs everything it lists leaves the provider ready, and one that is ready
+        // lists nothing to install.
+        for vagrant in [false, true] {
+            for plugin_installed in [false, true] {
+                for utility in [None, Some(UtilityState::Missing), Some(UtilityState::Stopped), Some(UtilityState::Running)] {
+                    let detection = Detection { utility, ..vmware(plugin_installed, UtilityState::Running) };
+                    let needs = needs(vagrant, plugin_installed, utility);
+                    let reason = unavailable_reason(Provider::VmwareDesktop, vagrant, detection);
+                    assert_eq!(reason.is_none(), needs.is_empty(), "vagrant {vagrant}, plugin {plugin_installed}, utility {utility:?}: {reason:?} / {needs:?}");
+                }
+            }
+        }
+        assert_eq!(needs(false, false, Some(UtilityState::Missing)), [Need::Vagrant, Need::Plugin, Need::VmwareUtility], "in setup's order");
+    }
+
+    #[test]
+    fn vmware_needs_the_utility_running_as_well_as_its_plugin() {
+        assert!(Provider::VmwareDesktop.needs_vmware_utility());
+        assert!(Provider::ALL.iter().chain(&Provider::CLOUDS).filter(|p| **p != Provider::VmwareDesktop).all(|p| !p.needs_vmware_utility()));
+        // The plugin alone isn't enough (the loop: setup put the plugin in, labs still couldn't run).
+        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Missing)).as_deref(), Some(VMWARE_UTILITY_MISSING));
+        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Stopped)).as_deref(), Some(VMWARE_UTILITY_STOPPED));
+        // The plugin first: it is what setup installs first.
+        assert_eq!(
+            unavailable_reason(Provider::VmwareDesktop, true, vmware(false, UtilityState::Missing)).as_deref(),
+            Some("Vagrant plugin `vagrant-vmware-desktop` is not installed")
+        );
+        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Running)), None);
+    }
+
+    /// Fusion or Workstation installed (`vmrun` answers), Vagrant installed, with `plugins`.
+    fn vmware_machine(plugins: &'static str) -> crate::platform::exec::fake::Tools {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        Tools::new(move |program, args| match (program, args) {
+            ("vagrant", ["--version"]) => ok("Vagrant 2.4.9\n"),
+            ("vagrant", ["plugin", "list"]) => ok(plugins),
+            ("vmrun", _) => fail("usage: vmrun [AUTHENTICATION-FLAGS] COMMAND [PARAMETERS]"),
+            _ => None,
+        })
+    }
+
+    #[tokio::test]
+    async fn a_vmware_machine_without_the_plugin_or_the_utility_needs_both_and_is_ready_once_both_are_in() {
+        if !Provider::VmwareDesktop.applicable() {
+            return; // Windows on Arm: no VMware Workstation there.
+        }
+        // This Mac's state when the loop was seen: Fusion installed, other plugins, neither of
+        // VMware's two parts.
+        let before = {
+            let _tools = vmware_machine("vagrant-qemu (0.8.0, global)\nvagrant-vmware-esxi (2.5.5, global)\nvagrant_utm (0.2.0, global)\n");
+            status(Provider::VmwareDesktop).await.unwrap()
+        };
+        assert_eq!(before.hypervisor, Some(true));
+        assert_eq!(before.needs, [Need::Plugin, Need::VmwareUtility]);
+        assert_eq!(before.utility, Some(UtilityState::Missing));
+        assert!(!before.available);
+        assert_eq!(ready(std::slice::from_ref(&before), true), Vec::<Provider>::new());
+
+        // The plugin alone: still not ready, and what is left is said.
+        let plugin_only = {
+            let _tools = vmware_machine("vagrant-vmware-desktop (3.0.5, global)\n");
+            status(Provider::VmwareDesktop).await.unwrap()
+        };
+        assert_eq!(plugin_only.needs, [Need::VmwareUtility]);
+        assert_eq!(plugin_only.reason.as_deref(), Some(VMWARE_UTILITY_MISSING));
+        assert_eq!(ready(std::slice::from_ref(&plugin_only), true), Vec::<Provider>::new());
+
+        // Both in: ready, nothing left to install.
+        let after = {
+            let _tools = vmware_machine("vagrant-vmware-desktop (3.0.5, global)\n");
+            let _utility = fake_utility::Utility::set(UtilityState::Running);
+            status(Provider::VmwareDesktop).await.unwrap()
+        };
+        assert!(after.needs.is_empty() && after.available, "{:?}", after.reason);
+        assert_eq!(ready(std::slice::from_ref(&after), true), [Provider::VmwareDesktop]);
+    }
+
     #[test]
     fn statuses_serialize_in_camel_case() {
         let s = ProviderStatus {
@@ -827,10 +955,13 @@ mod tests {
             hypervisor: Some(true),
             plugin: None,
             plugin_installed: true,
+            utility: None,
+            needs: vec![Need::Plugin, Need::VmwareUtility],
             reason: None,
         };
         let v = serde_json::to_value(s).unwrap();
         assert_eq!(v["provider"], "virtualbox");
         assert_eq!(v["pluginInstalled"], true);
+        assert_eq!(v["needs"], serde_json::json!(["plugin", "vmwareUtility"]));
     }
 }

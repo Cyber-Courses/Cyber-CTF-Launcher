@@ -18,7 +18,7 @@ import { openCustomImage, toggleFailingSharedFolder } from "@/features/settings/
 import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
 import { getAttackImage, getAutoAttackBox, getPortMode, getVmProvider, setAttackImage, setVmProvider } from "@/lib/settings";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
-import { INSTALLS_OFF, INSTALLS_OFF_NOTE, readyReport } from "@/test/fixtures";
+import { INSTALLS_OFF, INSTALLS_OFF_NOTE, hypervisorStatus, readyReport } from "@/test/fixtures";
 import { installTauri, stream, rejectWith } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
@@ -249,16 +249,7 @@ describe("AboutSection", () => {
 
 /* ------------------------------------------------------------------ hypervisor */
 
-const hv = (over: Partial<ProviderStatus>): ProviderStatus => ({
-  provider: "virtualbox",
-  remote: false,
-  available: true,
-  hypervisor: true,
-  plugin: null,
-  pluginInstalled: true,
-  reason: null,
-  ...over,
-});
+const hv = (over: Partial<ProviderStatus>): ProviderStatus => hypervisorStatus(over);
 const withProviders = (vmProviders: ProviderStatus[], over: Partial<SystemReport> = {}): SystemReport => ({ ...readyReport(), vmProviders, ...over });
 
 describe("HypervisorRow", () => {

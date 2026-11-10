@@ -71,7 +71,8 @@
       "notRunning": "parado",
       "builtIn": "integrado",
       "installedWithPlugin": "instalado · {plugin}",
-      "pluginMissing": "falta o plugin {plugin}"
+      "pluginMissing": "falta o plugin {plugin}",
+      "utilityMissing": "instalado · {plugin} · Vagrant VMware Utility não está rodando"
     },
     "badge": {
       "current": "atual",
@@ -333,8 +334,13 @@
     "pluginLater": "{plugin}, depois que o Vagrant estiver instalado.",
     "pluginLog": "Instalando o plugin Vagrant {plugin}…",
     "installPlugin": "Instalar plugin",
-    "utilityDetail": "O serviço auxiliar da HashiCorp com o qual o plugin VMware se comunica. Instale-o uma vez.",
-    "getUtility": "Obter"
+    "utilityDetail": "O serviço da HashiCorp pelo qual o plugin VMware controla o VMware. Instalado a partir do pacote assinado da HashiCorp; pede sua senha.",
+    "utilityTitle": "Vagrant VMware Utility",
+    "utilityStopped": "Instalado, mas o serviço não está rodando. Instalar de novo o reinicia; reiniciar o computador também.",
+    "utilityInstall": "Instalar",
+    "utilityRestart": "Instalar de novo",
+    "utilityLog": "Instalando o Vagrant VMware Utility…",
+    "installFailed": "A instalação falhou: {why}"
   },
   "attack": {
     "download": "{size} para baixar",

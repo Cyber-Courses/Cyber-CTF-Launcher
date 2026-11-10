@@ -3,7 +3,7 @@
 import { ChevronRight } from "lucide-react";
 import { Panel } from "@/components/ui/panel";
 import { engineName } from "@/features/machine/setup-steps";
-import { providerLabel } from "@/features/machine/hypervisors";
+import { providerLabel, vagrantDrives } from "@/features/machine/hypervisors";
 import { DetailRow } from "@/features/machine/machine-parts";
 import { hypervisorDetail, versionNumber, type HypervisorDetail } from "@/features/machine/machine-status";
 import type { ProviderStatus, SystemReport, Tool } from "@/lib/tauri";
@@ -45,7 +45,7 @@ export function MachineDetails({ report, hypervisors, hasHypervisor }: { report:
               key={p.provider}
               name={providerLabel(p, report.os)}
               value={detailText(t, hypervisorDetail(p))}
-              bad={p.hypervisor === true && !p.pluginInstalled}
+              bad={p.hypervisor === true && !vagrantDrives(p)}
             />
           ))}
         <DetailRow name={report.pkgManager.name} value={report.pkgManager.installed ? installed : notInstalled} bad={!report.pkgManager.installed} />

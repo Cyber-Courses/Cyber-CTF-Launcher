@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { LabKind } from "@/features/machine/machine-parts";
 import { WANT_FREE } from "@/features/machine/machine-status";
 import { formatAgo, formatBytes } from "@/lib/format";
-import type { SystemReport } from "@/lib/tauri";
+import type { Provider, SystemReport } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
 
@@ -22,8 +22,8 @@ export type RowProps = {
   testing: string | null;
   onToggleTest: (row: string) => void;
   onTestDone: () => void;
-  /** Opens the setup window at a step. */
-  onFix: (step: string) => void;
+  /** Opens the setup window at a step, for a hypervisor when given. */
+  onFix: (step: string, provider?: Provider) => void;
   /** Reads the machine again (after Docker was pointed at another engine). */
   onRefresh: () => void | Promise<void>;
 };
@@ -56,15 +56,15 @@ export function RowTestButton({ row, id }: { row: RowProps; id: string }) {
 /** What a provider row takes for its inline test: open or not, and who hears it end. */
 export const rowTest = (row: RowProps, id: string) => ({ testing: row.testing === id, onTestDone: row.onTestDone });
 
-/** Opens the setup window at `step`. */
-export function FixButton({ step, onFix }: { step: string; onFix: (step: string) => void }) {
+/** Opens the setup window at `step`, for the hypervisor `provider` when given (the row's own). */
+export function FixButton({ step, provider, onFix }: { step: string; provider?: Provider; onFix: (step: string, provider?: Provider) => void }) {
   const t = useT();
   return (
     <Button
       variant="outline"
       size="xs"
       onClick={() => {
-        onFix(step);
+        onFix(step, provider);
       }}
     >
       {t("machine.screen.fix")}

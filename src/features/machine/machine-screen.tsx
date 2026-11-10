@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
-import type { MachineMetrics, SystemReport } from "@/lib/tauri";
+import type { MachineMetrics, Provider, SystemReport } from "@/lib/tauri";
 import { getLastTest, type LastTest } from "@/lib/settings";
 import { useVmProvider } from "@/lib/use-vm-provider";
 import type { LabKind } from "@/features/machine/machine-parts";
@@ -77,7 +77,7 @@ function MachineBody({
   m: MachineMetrics | null;
   vm: ReturnType<typeof vmSetup>;
   tests: ReturnType<typeof useLabTests>;
-  onFix: (step: string) => void;
+  onFix: (step: string, provider?: Provider) => void;
   onRefresh: () => void | Promise<void>;
   onNavigate: (tab: "cloud" | "server") => void;
 }) {

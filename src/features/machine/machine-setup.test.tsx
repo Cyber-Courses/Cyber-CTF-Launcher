@@ -5,9 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import { MachineSetup } from "@/features/machine/machine-setup";
 import { machineSteps } from "@/features/machine/setup-steps";
 import { Onboarding } from "@/features/onboarding/onboarding";
-import type { SystemReport } from "@/lib/tauri";
-import { getLastTest, getVmProvider, setLastTest } from "@/lib/settings";
-import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport } from "@/test/fixtures";
+import type { ProviderStatus, SystemReport } from "@/lib/tauri";
+import { getLastTest, getVmProvider, setLastTest, setVmProvider } from "@/lib/settings";
+import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport, withNeeds } from "@/test/fixtures";
 import { must } from "@/components/test-support";
 import { installTauri } from "@/test/tauri";
 import { button, clickEverything, flush } from "@/test/ui";
@@ -195,7 +195,7 @@ describe("MachineSetup window", () => {
     const calls = installTauri();
     const user = userEvent.setup();
     const libvirt = hv({ provider: "libvirt", hypervisor: false, available: false, plugin: "vagrant-libvirt", pluginInstalled: false });
-    const before = { ...freshReport("linux"), vmProviders: [libvirt] };
+    const before = withNeeds({ ...freshReport("linux"), vmProviders: [libvirt] });
     const { rerender } = render(<MachineSetup report={before} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "add", nonce: 1 }} />);
     await flush();
     await user.click(button(/install libvirt/i));
@@ -208,11 +208,11 @@ describe("MachineSetup window", () => {
     expect(button(/install vagrant/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^test$/i })).toBeNull();
     // Vagrant and the plugin in: the test, on that hypervisor, then the Settings choice.
-    const ready = {
+    const ready = withNeeds({
       ...installed,
       vagrant: { installed: true, version: "2.4.3" },
       vmProviders: [{ ...libvirt, hypervisor: true, available: true, pluginInstalled: true }],
-    };
+    });
     rerender(<MachineSetup report={ready} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "add", nonce: 1 }} />);
     await flush();
     await user.click(button(/^test$/i));
@@ -243,6 +243,39 @@ describe("MachineSetup window", () => {
     await flush();
     expect(text()).toContain("Step 3 of 5");
     expect(text()).toContain("Provisioning");
+  });
+
+  it("a row's Fix sets up that hypervisor, and its test runs on it, whatever else is ready", async () => {
+    // Regression: the window opened at the Vagrant step for whichever hypervisor its own rule
+    // picked (one already ready), the test ran on the default, the flow ended "ready", and the
+    // Machine page said "Needs setup" again.
+    const calls = installTauri();
+    const user = userEvent.setup();
+    setVmProvider("utm");
+    const fusion = (over: Partial<ProviderStatus>) =>
+      hv({ provider: "vmware_desktop", available: false, plugin: "vagrant-vmware-desktop", pluginInstalled: false, utility: "missing", ...over });
+    const mac = (vmware: ProviderStatus): SystemReport =>
+      withNeeds({ ...readyReport(), os: "macos", arch: "aarch64", ...hypervisors([hv({ provider: "utm", plugin: "vagrant_utm" }), vmware]) });
+    const startAt = { step: "vagrant", provider: "vmware_desktop" as const, nonce: 1 };
+    const { rerender } = render(<MachineSetup report={mac(fusion({}))} onRefresh={vi.fn()} onClose={vi.fn()} startAt={startAt} />);
+    await flush();
+    expect(text()).toContain("VMware Fusion add-on for Vagrant");
+    expect(text()).toContain("Vagrant VMware Utility");
+    expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);
+    // Both installed and the service answering: on to the test, on VMware.
+    rerender(
+      <MachineSetup
+        report={mac(fusion({ available: true, pluginInstalled: true, utility: "running" }))}
+        onRefresh={vi.fn()}
+        onClose={vi.fn()}
+        startAt={startAt}
+      />,
+    );
+    await flush();
+    await user.click(button(/^continue$/i));
+    await flush();
+    expect(calls.find((c) => c.cmd === "machine_selftest")?.args).toMatchObject({ kind: "vm", provider: "vmware_desktop" });
+    expect(getVmProvider()).toBe("utm");
   });
 });
 

@@ -120,6 +120,16 @@ pub fn terraform_script() -> String {
     format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y terraform", apt_repo_script(&HASHICORP))
 }
 
+/// HashiCorp's apt repo, then the Vagrant VMware Utility, whose package generates its
+/// certificates and enables and starts its service. `--reinstall`: an install that is there
+/// already has its package configured again, which restarts a service that had stopped.
+#[cfg(any(target_os = "linux", test))]
+pub fn vmware_utility_script() -> String {
+    // HashiCorp's repository, but a release it doesn't serve yet is sent to the utility's own page.
+    let repo = VendorRepo { by_hand: Some("https://developer.hashicorp.com/vagrant/install/vmware"), ..HASHICORP };
+    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y --reinstall vagrant-vmware-utility", apt_repo_script(&repo))
+}
+
 /// Oracle's VirtualBox archive signing key (`info@virtualbox.org`, "Oracle Corporation (VirtualBox
 /// archive signing key)"), the one www.virtualbox.org serves as `oracle_vbox_2016.asc` and
 /// download.virtualbox.org signs its `InRelease` files with.
@@ -331,9 +341,10 @@ mod tests {
     }
 
     /// Every vendor's apt repository, with the script that sets it up.
-    fn repo_scripts() -> [(&'static VendorRepo, String); 5] {
+    fn repo_scripts() -> [(&'static VendorRepo, String); 6] {
         [
             (&HASHICORP, terraform_script()),
+            (&HASHICORP, vmware_utility_script()),
             (&ORACLE, virtualbox_script()),
             (&DOCKER, docker_script(None)),
             (&MICROSOFT, azurecli_script()),
@@ -349,6 +360,11 @@ mod tests {
             assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         }
         assert!(virtualbox_script().contains("download.virtualbox.org/virtualbox/debian"));
+        // VMware's utility from HashiCorp's repository, its key pinned like Terraform's; a release
+        // the repository doesn't serve yet is sent to the utility's own page.
+        let utility = vmware_utility_script();
+        assert!(utility.contains(HASHICORP.fingerprint) && utility.contains("apt-get install -y --reinstall vagrant-vmware-utility"), "{utility}");
+        assert!(utility.contains("developer.hashicorp.com/vagrant/install/vmware") && !utility.contains("terraform/install"), "{utility}");
     }
 
     #[test]
@@ -366,8 +382,8 @@ mod tests {
     }
 
     /// Every install script that runs as root.
-    fn root_scripts() -> [String; 6] {
-        [awscli_script(), docker_script(Some("player")), terraform_script(), virtualbox_script(), azurecli_script(), gcloud_script()]
+    fn root_scripts() -> [String; 7] {
+        [awscli_script(), docker_script(Some("player")), terraform_script(), virtualbox_script(), azurecli_script(), gcloud_script(), vmware_utility_script()]
     }
 
     #[test]

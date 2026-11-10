@@ -6,8 +6,11 @@ import { MachineSetup } from "@/features/machine/machine-setup";
 import { MachineStepBody, SetupOutcome, useMachineSetup, type MachineStep, type MachineSetupState } from "@/features/machine/setup-steps";
 import { wslState } from "@/features/machine/setup-steps/steps";
 import { getAttackImage, getAutoAttackBox, setAttackImage } from "@/lib/settings";
-import type { SystemReport, WslState } from "@/lib/tauri";
-import { INSTALLS_OFF, INSTALLS_OFF_NOTE, freshReport, hypervisorStatus as hv, readyReport } from "@/test/fixtures";
+import { canContinue } from "@/features/machine/setup-steps/steps";
+import { firstPending } from "@/features/machine/setup-steps/step-status";
+import { must } from "@/components/test-support";
+import type { ProviderStatus, SystemReport, WslState } from "@/lib/tauri";
+import { INSTALLS_OFF, INSTALLS_OFF_NOTE, freshReport, hypervisorStatus as hv, hypervisors, readyReport, withNeeds } from "@/test/fixtures";
 import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { installDockerDesktop, radioWith } from "@/features/machine/machine-test-kit";
@@ -504,12 +507,12 @@ describe("Vagrant step", () => {
   it("installs Vagrant, then the hypervisor's plugin", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
-    const report: SystemReport = {
+    const report: SystemReport = withNeeds({
       ...readyReport(),
       os: "windows",
       vagrant: { installed: false, version: null },
-      vmProviders: [hv({ provider: "vmware_desktop", available: false, plugin: "vagrant-vmware-desktop", pluginInstalled: false })],
-    };
+      vmProviders: [hv({ provider: "vmware_desktop", available: false, plugin: "vagrant-vmware-desktop", pluginInstalled: false, utility: "missing" })],
+    });
     const r = render(<Step step="vagrant" report={report} />);
     expect(text()).toContain("vagrant-vmware-desktop, once Vagrant is installed.");
     expect(button(/install plugin/i).hasAttribute("disabled")).toBe(true);
@@ -517,11 +520,8 @@ describe("Vagrant step", () => {
     await user.click(button(/install vagrant/i));
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "vagrant" });
-    await user.click(button(/^\s*get$/i));
-    await flush();
-    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args?.url).toMatch(/vagrant\/install\/vmware/);
     r.unmount();
-    render(<Step step="vagrant" report={{ ...report, vagrant: { installed: true, version: null } }} />);
+    render(<Step step="vagrant" report={withNeeds({ ...report, vagrant: { installed: true, version: null } })} />);
     expect(text()).toContain("Installed");
     await user.click(button(/install plugin/i));
     await flush();
@@ -529,7 +529,116 @@ describe("Vagrant step", () => {
     expect(text()).toContain("Installing the Vagrant plugin vagrant-vmware-desktop…");
   });
 
-  it("shows a failed plugin install", async () => {
+  /** The owner's Apple Silicon Mac when the loop was seen: Fusion installed, Vagrant in with other
+   *  hypervisors' plugins, neither VMware's plugin nor HashiCorp's utility. */
+  const fusionMac = (over: Partial<ProviderStatus> = {}): SystemReport =>
+    withNeeds({
+      ...readyReport(),
+      os: "macos",
+      arch: "aarch64",
+      vagrant: { installed: true, version: "2.4.9" },
+      ...hypervisors([
+        hv({
+          provider: "vmware_desktop",
+          available: false,
+          plugin: "vagrant-vmware-desktop",
+          pluginInstalled: false,
+          utility: "missing",
+          reason: "Vagrant plugin `vagrant-vmware-desktop` is not installed",
+          ...over,
+        }),
+        hv({ provider: "utm", plugin: "vagrant_utm" }),
+      ]),
+    });
+  const requirement = (title: string) => {
+    const row = screen.getByText(title).closest("[data-requirement]");
+    if (!(row instanceof HTMLElement)) throw new Error(`no requirement row ${title}`);
+    return row;
+  };
+
+  it("installs both of VMware's parts, the plugin through Vagrant and HashiCorp's utility, and only then lets the flow on", async () => {
+    // Regression: the utility was an optional link out, never installed or checked, so the steps
+    // finished and the Machine page said "Needs setup" again.
+    const calls = installTauri();
+    const user = userEvent.setup();
+    const seen: { state?: MachineSetupState } = {};
+    render(
+      <Step
+        step="vagrant"
+        report={fusionMac()}
+        onSetup={(s) => {
+          seen.state = s;
+        }}
+      />,
+    );
+    expect(requirement("VMware Fusion add-on for Vagrant").dataset.requirement).toBe("todo");
+    expect(requirement("Vagrant VMware Utility").dataset.requirement).toBe("todo");
+    expect(within(requirement("Vagrant VMware Utility")).queryByRole("link")).toBeNull();
+    await user.click(within(requirement("VMware Fusion add-on for Vagrant")).getByRole("button", { name: /install plugin/i }));
+    await flush();
+    expect(calls.find((c) => c.cmd === "install_vagrant_plugin")?.args).toMatchObject({ plugin: "vagrant-vmware-desktop" });
+    await user.click(within(requirement("Vagrant VMware Utility")).getByRole("button", { name: /^install$/i }));
+    await flush();
+    expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "vmware-utility" });
+    expect(text()).toContain("Installing the Vagrant VMware Utility…");
+    // Whatever the installs said, the step waits on the machine check: both still missing here.
+    expect(canContinue("vagrant", fusionMac(), must(seen.state, "the setup state"))).toBe(false);
+    expect(canContinue("vagrant", fusionMac({ pluginInstalled: true }), must(seen.state, "the setup state"))).toBe(false);
+  });
+
+  it("reads VMware as set up once the plugin is in and the utility runs, and not before", () => {
+    installTauri();
+    const ready = fusionMac({ available: true, pluginInstalled: true, utility: "running", reason: null });
+    expect(ready.vmProviders[0].needs).toEqual([]);
+    const { unmount } = render(<Step step="vagrant" report={ready} />);
+    expect(requirement("VMware Fusion add-on for Vagrant").dataset.requirement).toBe("done");
+    expect(requirement("Vagrant VMware Utility").dataset.requirement).toBe("done");
+    unmount();
+    const setup = { hypervisor: "vmware_desktop" } as unknown as MachineSetupState;
+    expect(canContinue("vagrant", ready, setup)).toBe(true);
+    expect(firstPending("vm", ready, { docker: null, vm: { result: "ok", at: 1 } }, "vmware_desktop")).toBeNull();
+    // The plugin alone, or the utility installed but stopped: still something to do.
+    for (const short of [fusionMac({ pluginInstalled: true }), fusionMac({ pluginInstalled: true, utility: "stopped" })]) {
+      expect(canContinue("vagrant", short, setup)).toBe(false);
+      expect(firstPending("vm", short, { docker: null, vm: { result: "ok", at: 1 } }, "vmware_desktop")).toBe("vagrant");
+    }
+  });
+
+  it("a failed utility install reads as failed, not done, and the flow waits", async () => {
+    installTauri({
+      install_dependency: () => {
+        rejectWith("The package isn't signed by HashiCorp. Nothing was installed.");
+      },
+    });
+    const user = userEvent.setup();
+    const seen: { state?: MachineSetupState } = {};
+    const report = fusionMac({ pluginInstalled: true });
+    render(
+      <Step
+        step="vagrant"
+        report={report}
+        onSetup={(s) => {
+          seen.state = s;
+        }}
+      />,
+    );
+    await user.click(within(requirement("Vagrant VMware Utility")).getByRole("button", { name: /^install$/i }));
+    await flush();
+    const row = requirement("Vagrant VMware Utility");
+    expect(row.dataset.requirement).toBe("failed");
+    expect(row.textContent).toContain("The install failed: The package isn't signed by HashiCorp. Nothing was installed.");
+    expect(text()).toContain("✗ The package isn't signed by HashiCorp.");
+    expect(canContinue("vagrant", report, must(seen.state, "the setup state"))).toBe(false);
+  });
+
+  it("an installed utility whose service stopped is offered again, which restarts it", () => {
+    installTauri();
+    render(<Step step="vagrant" report={fusionMac({ pluginInstalled: true, utility: "stopped" })} />);
+    expect(requirement("Vagrant VMware Utility").textContent).toContain("isn't running");
+    expect(within(requirement("Vagrant VMware Utility")).getByRole("button", { name: /install again/i })).toBeTruthy();
+  });
+
+  it("shows a failed plugin install, on its row too", async () => {
     installTauri({
       install_vagrant_plugin: () => {
         rejectWith("network unreachable");
@@ -545,6 +654,7 @@ describe("Vagrant step", () => {
     await user.click(button(/install plugin/i));
     await flush();
     expect(text()).toContain("✗ network unreachable");
+    expect(requirement("QEMU add-on for Vagrant").dataset.requirement).toBe("failed");
   });
 });
 

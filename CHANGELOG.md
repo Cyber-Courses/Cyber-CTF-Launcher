@@ -200,6 +200,20 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **VMware Fusion and Workstation no longer read "Needs setup" again after the setup finishes.**
+  Vagrant drives them through two parts, the `vagrant-vmware-desktop` plugin and HashiCorp's
+  Vagrant VMware Utility (a system service), but the setup only linked to the utility and the
+  machine check never looked for it, while the steps, the Machine page and the VM test each judged
+  "set up" by a hypervisor of their own choosing. The machine check now lists what each hypervisor
+  still needs (Vagrant, its plugin, the utility installed and its service answering on
+  `127.0.0.1:9922`), it is ready only when that list is empty, and the setup steps, their "done"
+  and the Machine page read that list. The setup installs the utility from HashiCorp's signed
+  package, pinned with its SHA-256: on macOS checked again as root, as signed by HashiCorp's
+  Developer ID (team `D38WU7D763`) and notarized, then installed with macOS's password prompt; on
+  Windows checked again elevated, with its Authenticode signature, then installed with `msiexec`
+  through UAC; on Linux from HashiCorp's apt repository, its key pinned. A failed install says so on
+  its row, a row's **Fix** sets up that hypervisor and tests it, and a machine check made while an
+  install ran no longer stands for minutes after it.
 - **Every window follows the appearance from the moment it opens.** The attack box shell and the
   setup windows set no theme: on Windows their title bar opened white over the dark app, and
   they kept the colours they opened with when the appearance changed in Settings. Each window now

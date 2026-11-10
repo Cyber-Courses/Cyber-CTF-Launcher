@@ -1,6 +1,6 @@
 import type { MachineMetrics, ProviderStatus, SystemReport, Tool } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
-import { localHypervisors } from "@/features/machine/hypervisors";
+import { cantRun, localHypervisors } from "@/features/machine/hypervisors";
 import type { LabKind } from "@/features/machine/machine-parts";
 import { GB } from "@/lib/format";
 
@@ -50,11 +50,10 @@ export function dockerState(report: SystemReport, last: LastTest | null): Docker
 /** Where VM labs stand on this machine. */
 export type VmState = "notApplicable" | "ready" | "testFailed" | "blocked" | "vagrantMissing" | "needHypervisor";
 
-/** A hypervisor with Vagrant and its plugin in place that still can't run (no /dev/kvm, not in
+/** A hypervisor with everything Vagrant needs in place that still can't run (no /dev/kvm, not in
  *  the kvm group): its own reason, since installing Vagrant again wouldn't help. */
-function blockedReasonOf(report: SystemReport, hypervisors: ProviderStatus[]): string | null {
-  if (!report.vagrant.installed) return null;
-  const reason = hypervisors.find((p) => p.hypervisor === true && (!p.plugin || p.pluginInstalled) && !p.available && p.reason)?.reason;
+function blockedReasonOf(hypervisors: ProviderStatus[]): string | null {
+  const reason = hypervisors.find(cantRun)?.reason;
   return reason ? `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.` : null;
 }
 
@@ -83,7 +82,7 @@ export function vmSetup(report: SystemReport, preferred: string | null, last: La
   const readyList: ProviderStatus[] = report.vmProviders.filter((p) => report.readyHypervisors.includes(p.provider));
   const provider = readyList.find((p) => p.provider === preferred) ?? readyList.at(0) ?? null;
   const hasHypervisor = hypervisors.some((p) => p.hypervisor === true);
-  const blockedReason = blockedReasonOf(report, hypervisors);
+  const blockedReason = blockedReasonOf(hypervisors);
   const state = vmStateOf({ count: hypervisors.length, provider, blockedReason, hasHypervisor, last });
   // Several ready and no preference: the first one is picked automatically.
   const automatic = readyList.length > 1 && !preferred;
@@ -95,13 +94,15 @@ export const setupCount = (docker: DockerState, vm: VmState) =>
   (docker === "ready" || docker === "testFailed" ? 0 : 1) + (vm === "blocked" || vm === "vagrantMissing" || vm === "needHypervisor" ? 1 : 0);
 
 /** A local hypervisor's line in Details: installed (with its plugin, or the plugin it lacks, or
- *  none needed), missing, or built in. */
-export type HypervisorDetail = { kind: "installedWithPlugin" | "pluginMissing"; plugin: string } | { kind: "installed" | "notInstalled" | "builtIn" };
+ *  the VMware Utility it lacks, or none needed), missing, or built in. */
+export type HypervisorDetail =
+  { kind: "installedWithPlugin" | "pluginMissing" | "utilityMissing"; plugin: string } | { kind: "installed" | "notInstalled" | "builtIn" };
 
 export function hypervisorDetail(p: ProviderStatus): HypervisorDetail {
   if (p.hypervisor === true) {
     if (!p.plugin) return { kind: "installed" };
-    return { kind: p.pluginInstalled ? "installedWithPlugin" : "pluginMissing", plugin: p.plugin };
+    if (!p.pluginInstalled) return { kind: "pluginMissing", plugin: p.plugin };
+    return { kind: p.utility && p.utility !== "running" ? "utilityMissing" : "installedWithPlugin", plugin: p.plugin };
   }
   return { kind: p.hypervisor === false ? "notInstalled" : "builtIn" };
 }

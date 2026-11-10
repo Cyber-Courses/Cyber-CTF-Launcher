@@ -12,6 +12,8 @@ const provider = (p: string, remote = false, available = false): ProviderStatus 
   hypervisor: available,
   plugin: null,
   pluginInstalled: available,
+  utility: null,
+  needs: [],
   reason: null,
 });
 

@@ -14,6 +14,7 @@ import {
 import { hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
 import { useRunLog } from "@/lib/use-run-log";
 import { ignore, tell } from "@/lib/failure";
+import { describeError } from "@/lib/errors";
 import { translate } from "@/lib/i18n";
 import { useToolInstallsOff } from "@/lib/use-managed";
 
@@ -44,12 +45,24 @@ function useInstalls(onRefresh: () => void) {
   const { lines, run: runLog } = useRunLog();
   // What the log is about (an install id or a plugin): each step shows only its own.
   const [logsFor, setLogsFor] = useState<string | null>(null);
+  // Why each install that failed in this flow failed, by its id, until it is run again: its row
+  // says so instead of reading as still to do (or, worse, as done).
+  const [failures, setFailures] = useState<Partial<Record<string, string>>>({});
 
-  /** Runs install `id`, its log starting at `first`; a failure ends the log with "✗ <why>". */
+  /** Runs install `id`, its log starting at `first`; a failure ends the log with "✗ <why>" and
+   *  is kept as the install's failure. */
   async function run(id: string, first: string, task: (onLog: (line: string) => void) => Promise<void>) {
     setInstalling(id);
     setLogsFor(id);
-    await runLog(first, task);
+    setFailures((f) => ({ ...f, [id]: undefined }));
+    await runLog(first, async (onLog) => {
+      try {
+        await task(onLog);
+      } catch (e) {
+        setFailures((f) => ({ ...f, [id]: describeError(e) }));
+        throw e;
+      }
+    });
     setInstalling(null);
     onRefresh();
   }
@@ -70,7 +83,9 @@ function useInstalls(onRefresh: () => void) {
   };
   /** No install runs, and the policy allows one. */
   const canInstall = installing === null && !installsOff;
-  return { installing, installsOff, canInstall, installerOpened, wslTurnedOn, logs: lines ?? [], logsFor, install, installPlugin };
+  /** Why install `id` failed in this flow, if it did (and wasn't run again since). */
+  const failure = (id: string): string | null => failures[id] ?? null;
+  return { installing, installsOff, canInstall, installerOpened, wslTurnedOn, logs: lines ?? [], logsFor, install, installPlugin, failure };
 }
 
 /** Windows counts down to the restart that finishes WSL 2: kept with the flow, not the step, so a
@@ -117,6 +132,8 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => un
     setEngine,
     hypervisor,
     setHypervisor,
+    /** Picks the hypervisor this flow sets up, without making it the one labs run on (a row's Fix). */
+    pickHypervisor,
     /** Something is running: the flow should not move to another step. */
     busy: installs.installing !== null || dockerTest === "running" || vmTest === "running",
   };
