@@ -154,6 +154,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A VM lab on Hyper-V no longer fails to start while the app is open.** The sidebar's and the
+  Machine page's count of running VMs asked `vagrant global-status --prune`, which reads every
+  VM's state live; on Hyper-V that holds each VM's Vagrant lock for a moment, so a lab's own
+  Vagrant command landing then was refused ("another process is already executing an action on
+  the machine") and the start failed. The count now reads Vagrant's index as it is, and skips a
+  record whose lab folder is gone.
 - **A lab whose start failed before its download finished no longer also reports "The attack box
   couldn't be added with the lab".** With the attack box set to start with each lab, the end of
   such a start read the lab's status, which refused a lab that isn't installed. A lab that isn't

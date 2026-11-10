@@ -2,7 +2,10 @@
 //!
 //! This reads Vagrant's cached state, which can say "running" for a VM that a crash or a host
 //! reboot has actually stopped, so the "running now" count it feeds may over-report until Vagrant
-//! next refreshes. The effect is cosmetic only: the count and the per-lab Stop button are the
+//! next refreshes. It is never pruned (`--prune`): pruning reads every VM's state live, and on
+//! Hyper-V that takes each VM's Vagrant lock for a second or two, so a lab's own Vagrant command
+//! landing then was refused (`MachineActionLockedError`) and its start failed. A record whose
+//! folder is gone, the stale kind pruning dropped, is skipped instead. The effect is cosmetic only: the count and the per-lab Stop button are the
 //! harm, and that Stop merely runs `vagrant destroy -f` (a no-op on an already-down VM); nothing
 //! here drives automatic cleanup. The live, never-cached "which labs are up" answer is
 //! [`crate::runtime::discover`], asked of each hypervisor directly.
@@ -51,7 +54,7 @@ async fn global_status() -> Option<String> {
     // Cleared on drop too, so a cancelled scan doesn't block every later one.
     let _done = crate::platform::ResetOnDrop(&IN_FLIGHT);
     // Timed: without a limit a polled call would hang and stack up one blocked process per tick.
-    let out = run_env_timed("vagrant", &["global-status", "--prune", "--machine-readable"], None, &[], GLOBAL_STATUS_TIMEOUT).await.ok();
+    let out = run_env_timed("vagrant", &["global-status", "--machine-readable"], None, &[], GLOBAL_STATUS_TIMEOUT).await.ok();
     if let Some(o) = &out {
         *LAST.lock().unwrap_or_else(PoisonError::into_inner) = Some((Instant::now(), o.clone()));
     }
@@ -116,10 +119,12 @@ pub(super) async fn workloads(dirs: &AppDirs) -> Vec<Workload> {
     running_by_owner(&out, labs.as_deref(), selftest_dir.as_deref())
 }
 
-/// The app's running local VMs in `vagrant global-status` output, one workload per lab.
+/// The app's running local VMs in `vagrant global-status` output, one workload per lab; a record
+/// whose folder is gone is stale.
 fn running_by_owner(out: &str, labs: Option<&Path>, selftest_dir: Option<&Path>) -> Vec<Workload> {
     let mut by_lab: BTreeMap<String, (u32, String)> = BTreeMap::new();
-    for r in machines(out).into_iter().filter(|r| r.state == "running" && !REMOTE_PROVIDERS.contains(&r.provider.as_str())) {
+    let live = |r: &Machine| r.state == "running" && !REMOTE_PROVIDERS.contains(&r.provider.as_str()) && Path::new(&r.home).is_dir();
+    for r in machines(out).into_iter().filter(live) {
         let Some(id) = owner(Path::new(&r.home), labs, selftest_dir) else { continue };
         let e = by_lab.entry(id).or_insert((0, r.provider.clone()));
         e.0 += 1;
@@ -196,8 +201,11 @@ mod tests {
 
     #[test]
     fn records_without_a_home_or_outside_the_labs_folder_are_not_workloads() {
-        let labs = std::env::temp_dir().join("cyberctf-wl-labs");
-        let selftest = std::env::temp_dir().join("cyberctf-wl-selftest").join("vm");
+        let t = crate::testing::test_app::TestApp::new();
+        let labs = t.data().join("labs");
+        let selftest = t.data().join("selftest").join("vm");
+        std::fs::create_dir_all(labs.join("goad").join(".isoloom").join("vagrant")).unwrap();
+        std::fs::create_dir_all(labs.join("goad").join(super::LEGACY_ATTACK_VM_DIR)).unwrap();
         let home = |p: &Path| p.display().to_string();
         // The labs folder itself (no lab under it), a record with no home line (a remote
         // machine's), a sibling folder whose name only starts like the labs folder, and a lab
@@ -219,6 +227,13 @@ mod tests {
         );
         let w = running_by_owner(&deep, Some(&labs), Some(&selftest));
         assert_eq!(w.iter().map(|w| (w.id.as_str(), w.count)).collect::<Vec<_>>(), [("goad", 1)]);
+        // A record whose folder is gone (a lab removed without its VMs destroyed) is stale: the
+        // index isn't pruned, which would read every VM's state and take its lock.
+        let gone = format!(
+            "6,,machine-id,f\n6,,provider-name,hyperv\n6,,machine-home,{}\n6,,state,running\n",
+            home(&labs.join("removed").join(".isoloom").join("vagrant"))
+        );
+        assert!(running_by_owner(&gone, Some(&labs), Some(&selftest)).is_empty());
     }
 
     #[tokio::test]
@@ -243,10 +258,15 @@ mod tests {
 
     #[test]
     fn only_the_apps_running_local_vms_count() {
-        let labs = std::env::temp_dir().join("labs");
-        let selftest = std::env::temp_dir().join("selftest").join("vm");
+        let t = crate::testing::test_app::TestApp::new();
+        let labs = t.data().join("labs");
+        let selftest = t.data().join("selftest").join("vm");
         let home = |p: &Path| p.display().to_string();
-        let goad = home(&labs.join("goad").join(".isoloom").join("vagrant"));
+        let goad = labs.join("goad").join(".isoloom").join("vagrant");
+        for dir in [&goad, &selftest] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let goad = home(&goad);
         let out = format!(
             "1,,machine-id,a\n1,,provider-name,virtualbox\n1,,machine-home,{goad}\n1,,state,running\n\
              2,,machine-id,b\n2,,provider-name,virtualbox\n2,,machine-home,{goad}\n2,,state,running\n\

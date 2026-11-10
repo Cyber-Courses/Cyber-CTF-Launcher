@@ -113,6 +113,11 @@ mod tests {
         let w = super::machine_workloads(t.dirs()).await;
         let ids: Vec<(&str, &str, u64)> = w.iter().map(|w| (w.id.as_str(), w.kind, w.mem_bytes)).collect();
         assert_eq!(ids, [("sqli", "docker", 10 * 1024 * 1024), ("goad", "vm", 0)]);
+        // Regression: the scan pruned Vagrant's index, which reads every VM's state live; on
+        // Hyper-V that takes each VM's lock, and a lab starting then had its own `vagrant status`
+        // refused (`MachineActionLockedError`). It reads the index as it is.
+        assert!(tools.called("vagrant global-status --machine-readable"), "{:?}", tools.calls());
+        assert!(!tools.called("--prune"), "{:?}", tools.calls());
         // `goad` is an installed VM lab running here: its Stop is the lab's own (the runner's).
         let labs = FakeLabs { installed: vec![("goad", super::Runtime::Vm)], stopped: std::sync::Mutex::new(Vec::new()) };
         // `sqli` is a stray container the app left: it goes by name through the janitor.
