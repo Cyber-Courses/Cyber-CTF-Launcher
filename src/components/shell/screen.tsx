@@ -52,7 +52,7 @@ function TabScreen({ tab, report, checkError, auth, openLab, onRefresh, onNaviga
     return <HomeScreen report={report} checkError={checkError} onRetryCheck={onRefresh} auth={auth} onNavigate={onNavigate} onLogin={login} />;
   if (tab === "settings") return <SettingsScreen auth={auth} onAuthChange={onAuthChange} onNavigate={onNavigate} />;
   if (tab === "machine") return report ? <MachineScreen report={report} onRefresh={onRefresh} onNavigate={onNavigate} /> : waiting(t("shell.screen.checking"));
-  if (tab === "server") return <ServerScreen onNavigate={onNavigate} />;
+  if (tab === "server") return <ServerScreen report={report} onNavigate={onNavigate} />;
   if (tab === "cloud") return <CloudScreen />;
   if (tab === "events")
     return (

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { NoticePanel } from "@/components/ui/notice-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { serverRemove, serverSetDefault, type ServerHost } from "@/lib/tauri";
+import { serverRemove, serverSetDefault, type ServerHost, type SystemReport } from "@/lib/tauri";
 import { PageHeader } from "@/components/ui/page-header";
 import { HostRow, type HostActions } from "@/features/servers/host-row";
 import { CapacityPanel } from "@/features/servers/capacity-panel";
@@ -22,10 +22,12 @@ import { confirmDestructive } from "@/lib/confirm";
 
 type Tab = "setup";
 
-export function ServerScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+/** The Servers page; `report` is the shell's machine report (none until its check answers), for
+ *  whether this machine can run a VM lab itself. */
+export function ServerScreen({ report = null, onNavigate }: { report?: SystemReport | null; onNavigate: (tab: Tab) => void }) {
   const t = useT();
   const page = useServerHosts();
-  const { hosts, report, error } = page;
+  const { hosts, error } = page;
   const summary = hostsSummary(hosts ?? [], page.tests);
   const capacity = capacityHost(hosts ?? [], page.defaultId, page.caps);
   const add = () => {

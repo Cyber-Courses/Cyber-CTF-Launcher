@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { serverCapacity, serverOpenSetup, serverRunningLabs, systemCheck, type HostCapacity, type SystemReport } from "@/lib/tauri";
+import { useCallback, useRef, useState } from "react";
+import { serverCapacity, serverOpenSetup, serverRunningLabs, type HostCapacity } from "@/lib/tauri";
 import { onPremHosts } from "@/features/servers/servers-model";
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
-import { ignore, warn } from "@/lib/failure";
+import { ignore } from "@/lib/failure";
 import { usePolled } from "@/lib/use-poll";
 import { describeError } from "@/lib/errors";
 
@@ -13,14 +13,13 @@ const readRunning = (): Promise<Partial<Record<string, number>>> => serverRunnin
 
 /**
  * What the Servers page shows of its hosts: the on-prem hosts and the default, each one's last
- * test, capacity and running labs, and this machine's system report. Every host is tested and
+ * test, capacity and running labs. Every host is tested and
  * its capacity probed as it first loads. Also the page's actions: open the setup window, test
  * them all, and run a change then reload (`act`), its failure shown as the page's error.
  */
 export function useServerHosts() {
   const { tests, test } = useHostTests();
   const [caps, setCaps] = useState<Partial<Record<string, HostCapacity | null>>>({});
-  const [report, setReport] = useState<SystemReport | null>(null);
 
   const loadCapacity = useCallback((id: string) => {
     serverCapacity(id)
@@ -57,10 +56,6 @@ export function useServerHosts() {
   const hosts = list ? onPremHosts(list.hosts) : null;
   const defaultId = list?.default ?? null;
 
-  useEffect(() => {
-    systemCheck().then(setReport).catch(warn("system check"));
-  }, []);
-
   const fail = (e: unknown) => {
     setError(describeError(e));
   };
@@ -75,7 +70,7 @@ export function useServerHosts() {
     change().then(reload, fail);
   };
 
-  return { hosts, defaultId, tests, test, caps, running, loadRunning, report, error, open, testAll, act };
+  return { hosts, defaultId, tests, test, caps, running, loadRunning, error, open, testAll, act };
 }
 
 export type ServerHosts = ReturnType<typeof useServerHosts>;

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { emptyProgress, loadProgress, type Challenge, type LabProgress } from "@/features/labs/objectives/objectives";
+import { emptyProgress, loadObjectives, loadProgress, type Challenge, type LabProgress } from "@/features/labs/objectives/objectives";
 import { objectivesState, useObjectives } from "@/features/labs/objectives/use-objectives";
 import { deferred, type Deferred } from "@/test/deferred";
 import { settle } from "@/test/ui";
@@ -17,15 +17,26 @@ const main: Challenge = { key: "main", title: "Main", prompt: "?", hintCount: 0,
 const progress = emptyProgress([main]);
 
 describe("objectivesState", () => {
-  it("is loading until the challenges are read, and unavailable without the objectives API", () => {
+  it("is loading until the challenges are read, and unavailable, with why, when they couldn't be", () => {
     expect(objectivesState(undefined, progress, true, true)).toEqual({ kind: "loading" });
-    expect(objectivesState("unavailable", progress, true, true)).toEqual({ kind: "unavailable" });
+    expect(objectivesState({ unread: "No connection" }, progress, true, true)).toEqual({ kind: "unavailable", why: "No connection" });
   });
   it("has nothing to show for a lab with neither objectives nor a question", () => {
     expect(objectivesState(null, progress, true, true)).toEqual({ kind: "none" });
   });
   it("carries the challenges, the progress, the sign-in and whether the progress is in", () => {
     expect(objectivesState([main], progress, false, false)).toEqual({ kind: "ready", challenges: [main], progress, signedIn: false, progressRead: false });
+  });
+});
+
+describe("useObjectives: the challenges", () => {
+  it("keeps why the objectives couldn't be read, in the player's words", async () => {
+    vi.mocked(loadObjectives).mockRejectedValueOnce({ code: "other", message: "The Cyber CTF API answered 503" });
+    vi.mocked(loadProgress).mockResolvedValue(null);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { result } = renderHook(() => useObjectives("lab-x", "What is the flag?", "Objective", true));
+    await settle(() => {});
+    expect(result.current.state).toEqual({ kind: "unavailable", why: "The Cyber CTF API answered 503" });
   });
 });
 

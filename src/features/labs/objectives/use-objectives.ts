@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { describeError } from "@/lib/errors";
 import { warn } from "@/lib/failure";
 import { useLatest } from "@/lib/use-latest";
 import {
@@ -22,14 +23,17 @@ import {
 export type ObjectivesState =
   /** Still loading the lab's objectives. */
   | { kind: "loading" }
-  /** The backend has no objectives API (an older deploy): the page keeps the plain question. */
-  | { kind: "unavailable" }
+  /** The objectives couldn't be read (offline, the backend failing), `why` in the player's
+   *  words: the page keeps the plain question. */
+  | { kind: "unavailable"; why: string }
   /** Nothing to answer: no objectives and no question. */
   | { kind: "none" }
   /** `progressRead`: the player's progress is in (or failed, or signed out: there is none to read). */
   | { kind: "ready"; challenges: Challenge[]; progress: LabProgress; signedIn: boolean; progressRead: boolean };
 
-type Loaded = { labId: string; challenges: Challenge[] | null | "unavailable" };
+/** The challenges read (null: none), or why they couldn't be. */
+type Challenges = Challenge[] | null | { unread: string };
+type Loaded = { labId: string; challenges: Challenges };
 type Progress = { key: string; progress: LabProgress | null };
 
 /** The lab's challenges, kept with the lab they were read for (undefined while loading). */
@@ -42,11 +46,10 @@ function useChallenges(labId: string, question: string | null, title: string, en
       .then((objectives) => {
         if (alive) setLoaded({ labId, challenges: challengesFor(objectives, question, title) });
       })
-      .catch(
-        warn("reading the lab's objectives", () => {
-          if (alive) setLoaded({ labId, challenges: "unavailable" });
-        }),
-      );
+      .catch((e: unknown) => {
+        warn("reading the lab's objectives")(e);
+        if (alive) setLoaded({ labId, challenges: { unread: describeError(e) } });
+      });
     return () => {
       alive = false;
     };
@@ -87,14 +90,9 @@ function useStoredProgress(labId: string, loggedIn: boolean) {
 }
 
 /** What the page shows of the objectives, from the challenges read (undefined while loading). */
-export function objectivesState(
-  challenges: Challenge[] | null | "unavailable" | undefined,
-  progress: LabProgress,
-  signedIn: boolean,
-  progressRead: boolean,
-): ObjectivesState {
+export function objectivesState(challenges: Challenges | undefined, progress: LabProgress, signedIn: boolean, progressRead: boolean): ObjectivesState {
   if (challenges === undefined) return { kind: "loading" };
-  if (challenges === "unavailable") return { kind: "unavailable" };
+  if (challenges && "unread" in challenges) return { kind: "unavailable", why: challenges.unread };
   if (!challenges) return { kind: "none" };
   return { kind: "ready", challenges, progress, signedIn, progressRead };
 }

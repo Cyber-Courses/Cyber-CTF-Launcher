@@ -8,7 +8,7 @@ import { HostRow, type HostView } from "@/features/servers/host-row";
 import { SELFTEST_PLAN, ServerSelfTest, selfTestOutcome } from "@/features/servers/server-self-test";
 import { loadVmTests } from "@/features/servers/vm-tests";
 import { answer } from "@/lib/dev-mock";
-import { SELFTEST_STEPS, type ServerHost, type ServerList, type ServerTest } from "@/lib/tauri";
+import { SELFTEST_STEPS, type ServerHost, type ServerList, type ServerTest, type SystemReport } from "@/lib/tauri";
 import { freshReport } from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, rejects, stream, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -21,8 +21,8 @@ const argsOf = (calls: Call[], cmd: string) => calls.filter((c) => c.cmd === cmd
 /** A command that fails with `message`, as the Rust core's `other` error. */
 const failsWith = (message: string) => rejects({ code: "other", message });
 
-async function renderScreen(onNavigate = vi.fn()) {
-  render(<ServerScreen onNavigate={onNavigate} />);
+async function renderScreen(onNavigate = vi.fn(), report: SystemReport | null = null) {
+  render(<ServerScreen report={report} onNavigate={onNavigate} />);
   await flush(50);
   return onNavigate;
 }
@@ -290,14 +290,16 @@ describe("ServerScreen", () => {
   });
 
   it("offers the first server, and a local hypervisor when this machine can't run VMs", async () => {
-    const calls = installTauri({ server_list: () => ({ default: null, hosts: [] }), system_check: () => freshReport() });
+    const calls = installTauri({ server_list: () => ({ default: null, hosts: [] }) });
     const user = userEvent.setup();
-    const onNavigate = await renderScreen();
+    const onNavigate = await renderScreen(vi.fn(), freshReport());
     expect(document.body.textContent).not.toContain("Test all");
     expect(screen.queryByText("Hosts")).toBeNull();
     await user.click(button(/set up this machine/i));
     expect(onNavigate).toHaveBeenCalledWith("setup");
     expect(commands(calls)).not.toContain("server_test");
+    // The shell's report, not a check of its own: each one starts a process per tool.
+    expect(commands(calls)).not.toContain("system_check");
   });
 
   it("hides the capacity panel when no host reports its capacity", async () => {
