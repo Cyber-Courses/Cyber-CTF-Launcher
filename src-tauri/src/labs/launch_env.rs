@@ -4,10 +4,10 @@
 //! lab's manifest declares, and Isoloom turns a sensitive input into a file in the machine (a
 //! Compose secret, the VM's guest delivery), never into its environment.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// One variable of a launch's `env`.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct EnvVar {
     pub(super) name: String,
     pub(super) value: String,

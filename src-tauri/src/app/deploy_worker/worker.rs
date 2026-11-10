@@ -349,9 +349,10 @@ mod tests {
         // worker stayed up, so the app showed the lab starting for as long as it ran.
         let t = crate::testing::test_app::TestApp::new();
         let _tools = crate::platform::exec::fake::Tools::new(|program, _| panic!("{program} blew up"));
-        let mut job = Job::on_lab("web", Op::Launch);
         let commit = "a".repeat(40);
-        job.launch = serde_json::json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": commit, "env": [] });
+        let spec = serde_json::json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": commit, "env": [] });
+        let launch = crate::app::deploy_worker::LaunchJob { launch: crate::labs::parse_launch(spec).unwrap(), place: crate::runtime::Placement::default() };
+        let job = Job { launch: Some(launch), ..Job::on_lab("web", Op::Launch) };
         let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
         assert_eq!(super::run_logged(t.handle(), job).await, 1);
         let said = verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string();

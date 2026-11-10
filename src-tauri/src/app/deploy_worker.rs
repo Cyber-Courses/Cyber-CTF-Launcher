@@ -24,7 +24,6 @@ pub use worker::worker_main;
 
 use crate::error::{Code, Error, Result};
 use crate::platform::AppDirs;
-use crate::runtime::providers::Provider;
 use crate::runtime::{Park, Runtime, lab_file_lock};
 
 /// What a worker runs. `Launch` (the default, so job files from before the other kinds existed
@@ -45,69 +44,41 @@ pub enum Op {
     LaunchLocal { src: String },
 }
 
-/// What a worker needs: the lab, the operation, and for a launch the `startLab` payload and
-/// where/how to run it. Its `Debug` leaves the payload out: it carries the launch token.
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+/// What a worker needs: the lab, the operation, and for a launch what to run and where. Its
+/// `Debug` leaves the launch's values out ([`crate::labs::Launch`]'s): they carry the launch token.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Job {
     pub lab_id: String,
     /// Absent in job files from before operations existed: a launch.
     #[serde(default)]
     pub op: Op,
-    /// The `startLab` payload (`{ labId, runtime, repository, commit, env }`); null for the
-    /// operations on an installed lab.
-    #[serde(default)]
-    pub launch: serde_json::Value,
-    #[serde(default)]
-    pub provider: Option<Provider>,
-    #[serde(default)]
-    pub host: Option<String>,
-    /// A container lab on the lab's own ports rather than random free ones.
-    #[serde(default)]
-    pub default_ports: bool,
-    /// A container lab with VM recipes run here as one VM per machine (the form of a VM lab).
-    #[serde(default)]
-    pub per_machine_vm: bool,
-    /// The Docker context a container lab here was pinned to (the chosen engine), if any.
-    #[serde(default)]
-    pub docker_context: Option<String>,
+    /// A launch's `startLab` spec and where it runs, beside the operation in the file as job files
+    /// have always had them; none for the operations on an installed lab (and for a launch whose
+    /// spec can't be read, which then fails).
+    #[serde(flatten)]
+    pub(crate) launch: Option<LaunchJob>,
 }
 
-impl std::fmt::Debug for Job {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Job")
-            .field("lab_id", &self.lab_id)
-            .field("op", &self.op)
-            .field("launch", &if self.launch.is_null() { "none" } else { "<redacted>" })
-            .field("provider", &self.provider)
-            .field("host", &self.host)
-            .field("default_ports", &self.default_ports)
-            .field("per_machine_vm", &self.per_machine_vm)
-            .field("docker_context", &self.docker_context)
-            .finish()
-    }
+/// What a launch's job runs: the `startLab` spec, and where and how it runs.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub(crate) struct LaunchJob {
+    pub(crate) launch: crate::labs::Launch,
+    #[serde(flatten)]
+    pub(crate) place: crate::runtime::Placement,
 }
 
 impl From<crate::labs::PreparedLaunch> for Job {
     /// A launch's job.
     fn from(l: crate::labs::PreparedLaunch) -> Job {
-        let crate::labs::PreparedLaunch { lab_id, launch, provider, host, default_ports, per_machine_vm, docker_context } = l;
-        Job { lab_id, op: Op::Launch, launch, provider, host, default_ports, per_machine_vm, docker_context }
+        let crate::labs::PreparedLaunch { lab_id, launch, place } = l;
+        Job { lab_id, op: Op::Launch, launch: Some(LaunchJob { launch, place }) }
     }
 }
 
 impl Job {
     /// An operation on an installed lab (no launch payload).
     pub fn on_lab(lab_id: &str, op: Op) -> Job {
-        Job {
-            lab_id: lab_id.to_string(),
-            op,
-            launch: serde_json::Value::Null,
-            provider: None,
-            host: None,
-            default_ports: false,
-            per_machine_vm: false,
-            docker_context: None,
-        }
+        Job { lab_id: lab_id.to_string(), op, launch: None }
     }
 
     /// The worker files' key: a lab's operations share one (they are serialised by the lab lock
@@ -122,14 +93,8 @@ impl Job {
 pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<Option<String>> {
     match job.op {
         Op::Launch => {
-            let placement = crate::labs::Placement {
-                provider: job.provider,
-                host: job.host.as_deref(),
-                default_ports: job.default_ports,
-                per_machine_vm: job.per_machine_vm,
-                docker_context: job.docker_context.as_deref(),
-            };
-            crate::labs::run(&AppDirs::from(app), crate::labs::parse_launch(job.launch)?, &placement, log).await
+            let LaunchJob { launch, place } = job.launch.ok_or_else(|| Error::Invalid("invalid launch spec: the job has none".into()))?;
+            crate::labs::run(&AppDirs::from(app), launch, place.destination(), log).await
         }
         Op::Resume { runtime } => crate::runtime::resume_lab(&AppDirs::from(app), &job.lab_id, runtime, log).await.map(|()| None),
         Op::Park { runtime, mode } => crate::runtime::park_lab(&AppDirs::from(app), &job.lab_id, runtime, mode, log).await.map(|()| None),
@@ -244,10 +209,24 @@ mod tests {
 
     #[test]
     fn job_files_from_before_operations_existed_still_read_as_launches() {
-        let old = r#"{"lab_id":"lab-1","launch":{"labId":"lab-1"},"provider":null,"host":null,"attackbox_image":null}"#;
+        let old = r#"{"lab_id":"lab-1","launch":{"labId":"lab-1","runtime":"VM","repository":"CyberCTF/x","commit":"abc","env":[]},"provider":"virtualbox","host":null,"attackbox_image":null}"#;
         let job: Job = serde_json::from_str(old).unwrap();
         assert_eq!(job.op, Op::Launch);
+        let launch = job.launch.as_ref().unwrap();
+        assert_eq!((launch.launch.runtime, launch.place.provider), (crate::runtime::Runtime::Vm, Some(crate::runtime::providers::Provider::Virtualbox)));
         assert_eq!(job.key(), "lab-1");
+    }
+
+    #[test]
+    fn a_job_file_of_the_last_version_reads_with_its_placement() {
+        // The layout 1.8 wrote, every field beside the operation, null for a resume: read by the
+        // app it was updated to while the worker ran.
+        let launch = r#"{"lab_id":"web","op":{"op":"launch"},"launch":{"labId":"web","runtime":"DOCKER","repository":"CyberCTF/web","commit":"abc","env":[{"name":"CTF_LAUNCH_TOKEN","value":"t"}]},"provider":null,"host":"aws1","default_ports":true,"per_machine_vm":false,"docker_context":"orbstack"}"#;
+        let job: Job = serde_json::from_str(launch).unwrap();
+        let place = &job.launch.as_ref().unwrap().place;
+        assert_eq!((place.host.as_deref(), place.default_ports, place.docker_context.as_deref()), (Some("aws1"), true, Some("orbstack")));
+        let resume = r#"{"lab_id":"web","op":{"op":"resume","runtime":"VM"},"launch":null,"provider":null,"host":null,"default_ports":false,"per_machine_vm":false,"docker_context":null}"#;
+        assert_eq!(serde_json::from_str::<Job>(resume).unwrap(), Job::on_lab("web", Op::Resume { runtime: crate::runtime::Runtime::Vm }));
     }
 
     #[test]
@@ -270,7 +249,6 @@ mod tests {
         // newer field takes its default.
         let job: Job = serde_json::from_str(r#"{"lab_id":"lab-1"}"#).unwrap();
         assert_eq!(job, Job::on_lab("lab-1", Op::Launch));
-        assert!(job.launch.is_null() && !job.default_ports && !job.per_machine_vm && job.provider.is_none() && job.host.is_none());
         assert_eq!(job.key(), "lab-1");
     }
 
@@ -280,8 +258,7 @@ mod tests {
         // A field this version doesn't know (a newer one wrote it): ignored, the job still runs.
         let newer = r#"{"lab_id":"lab-1","op":{"op":"resume","runtime":"VM"},"launch":null,"future_flag":true,"default_ports":true}"#;
         let job: Job = serde_json::from_str(newer).unwrap();
-        assert_eq!(job.op, Op::Resume { runtime: Runtime::Vm });
-        assert!(job.default_ports);
+        assert_eq!(job, Job::on_lab("lab-1", Op::Resume { runtime: Runtime::Vm }));
         // An operation this version doesn't know, or one missing what it needs: refused, never
         // run as something else (a launch would download and start the lab).
         for bad in [
@@ -299,14 +276,20 @@ mod tests {
     #[test]
     fn job_round_trips_through_its_file_format() {
         let job = Job {
-            lab_id: "lab-1".into(),
-            op: Op::Launch,
-            launch: serde_json::json!({ "labId": "lab-1", "runtime": "DOCKER", "repository": "CyberCTF/x", "commit": "abc", "env": [] }),
-            provider: Some(crate::runtime::providers::Provider::Virtualbox),
-            host: None,
-            default_ports: true,
-            per_machine_vm: true,
-            docker_context: Some("orbstack".into()),
+            launch: Some(super::LaunchJob {
+                launch: crate::labs::parse_launch(
+                    serde_json::json!({ "labId": "lab-1", "runtime": "DOCKER", "repository": "CyberCTF/x", "commit": "abc", "env": [] }),
+                )
+                .unwrap(),
+                place: crate::runtime::Placement {
+                    provider: Some(crate::runtime::providers::Provider::Virtualbox),
+                    host: None,
+                    default_ports: true,
+                    per_machine_vm: true,
+                    docker_context: Some("orbstack".into()),
+                },
+            }),
+            ..Job::on_lab("lab-1", Op::Launch)
         };
         let bytes = serde_json::to_vec(&job).unwrap();
         assert_eq!(serde_json::from_slice::<Job>(&bytes).unwrap(), job);
@@ -332,8 +315,9 @@ mod tests {
     #[test]
     fn a_job_never_prints_its_launch_token() {
         // A job in a log line (`{job:?}`) must not carry the launch token into the log file.
-        let mut job = Job::on_lab("lab-1", Op::Launch);
-        job.launch = serde_json::json!({ "labId": "lab-1", "env": [{ "name": "CTF_LAUNCH_TOKEN", "value": "s3cret-token" }] });
+        let launch = serde_json::json!({ "labId": "lab-1", "runtime": "DOCKER", "repository": "CyberCTF/x", "commit": "abc", "env": [{ "name": "CTF_LAUNCH_TOKEN", "value": "s3cret-token" }] });
+        let launch = super::LaunchJob { launch: crate::labs::parse_launch(launch).unwrap(), place: crate::runtime::Placement::default() };
+        let job = Job { launch: Some(launch), ..Job::on_lab("lab-1", Op::Launch) };
         let printed = format!("{job:?} {job:#?}");
         assert!(!printed.contains("s3cret-token") && !printed.contains("CTF_LAUNCH_TOKEN"), "{printed}");
         assert!(printed.contains("lab-1") && printed.contains("<redacted>"), "{printed}");

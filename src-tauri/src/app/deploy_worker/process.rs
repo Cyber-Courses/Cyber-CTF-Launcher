@@ -439,16 +439,22 @@ const TERRAFORM_APPLY_WAIT_CHECKS: u32 = 2400;
 fn terraform_launch(job: &Job, host_provider: &crate::error::Result<Option<crate::runtime::providers::Provider>>) -> bool {
     let terraform = match host_provider {
         Ok(provider) => provider.is_some_and(|p| crate::runtime::server::terraform_target(p).is_some()),
-        Err(_) => job.host.is_some(),
+        Err(_) => launch_host(job).is_some(),
     };
     job.op == super::Op::Launch && terraform
+}
+
+/// The server or cloud account a launch job runs its lab on; none here, or for another job.
+#[cfg(any(windows, test))]
+fn launch_host(job: &Job) -> Option<&str> {
+    job.launch.as_ref().and_then(|l| l.place.host.as_deref())
 }
 
 /// [`terraform_launch`] for the job a worker's files describe.
 #[cfg(windows)]
 fn launches_terraform(dirs: &AppDirs, f: &Files) -> bool {
     let Some(job) = std::fs::read(&f.job).ok().and_then(|b| serde_json::from_slice::<Job>(&b).ok()) else { return false };
-    let provider = job.host.as_deref().map_or(Ok(None), |h| crate::runtime::server::host_provider(dirs, h));
+    let provider = launch_host(&job).map_or(Ok(None), |h| crate::runtime::server::host_provider(dirs, h));
     terraform_launch(&job, &provider)
 }
 
@@ -545,7 +551,12 @@ mod tests {
     #[test]
     fn a_launch_on_a_terraform_host_is_told_apart() {
         use crate::runtime::providers::Provider;
-        let launch = Job { host: Some("h".into()), ..Job::on_lab("lab-1", super::super::Op::Launch) };
+        let on = |host: Option<&str>, op: super::super::Op| {
+            let spec = serde_json::json!({ "labId": "lab-1", "runtime": "DOCKER", "repository": "CyberCTF/x", "commit": "abc", "env": [] });
+            let place = crate::runtime::Placement { host: host.map(str::to_owned), ..crate::runtime::Placement::default() };
+            Job { launch: Some(super::super::LaunchJob { launch: crate::labs::parse_launch(spec).unwrap(), place }), ..Job::on_lab("lab-1", op) }
+        };
+        let launch = on(Some("h"), super::super::Op::Launch);
         assert!(terraform_launch(&launch, &Ok(Some(Provider::Aws))));
         assert!(terraform_launch(&launch, &Ok(Some(Provider::Proxmox))));
         assert!(!terraform_launch(&launch, &Ok(Some(Provider::VmwareEsxi))));
@@ -553,12 +564,9 @@ mod tests {
         // Regression: an unreadable server.json read as "no such host", so a Terraform launch was
         // killed outright mid-apply. Now a launch on any host is interrupted first.
         assert!(terraform_launch(&launch, &Err(crate::error::Error::Invalid("server.json: broken".into()))));
-        let here = Job { host: None, ..launch.clone() };
+        let here = on(None, super::super::Op::Launch);
         assert!(!terraform_launch(&here, &Ok(None)));
-        let park = Job {
-            host: Some("h".into()),
-            ..Job::on_lab("lab-1", super::super::Op::Park { runtime: crate::runtime::Runtime::Vm, mode: crate::runtime::Park::Pause })
-        };
+        let park = on(Some("h"), super::super::Op::Park { runtime: crate::runtime::Runtime::Vm, mode: crate::runtime::Park::Pause });
         assert!(!terraform_launch(&park, &Ok(Some(Provider::Aws))));
     }
 

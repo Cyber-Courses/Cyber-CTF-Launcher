@@ -44,6 +44,31 @@ pub(crate) struct Destination<'a> {
     pub(crate) default_ports: bool,
 }
 
+/// A [`Destination`] that owns its values: what a launch carries from the app to the deploy worker
+/// that runs it (in its job file). Each value missing from a job file is its default.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct Placement {
+    pub(crate) provider: Option<Provider>,
+    pub(crate) host: Option<String>,
+    pub(crate) per_machine_vm: bool,
+    pub(crate) docker_context: Option<String>,
+    pub(crate) default_ports: bool,
+}
+
+impl Placement {
+    /// Where the lab starts, borrowed from this placement.
+    pub(crate) fn destination(&self) -> Destination<'_> {
+        Destination {
+            provider: self.provider,
+            host: self.host.as_deref(),
+            per_machine_vm: self.per_machine_vm,
+            docker_context: self.docker_context.as_deref(),
+            default_ports: self.default_ports,
+        }
+    }
+}
+
 /// Starts an installed lab; `env` holds the lab's input values (the evidence claim, the player's
 /// flags).
 ///

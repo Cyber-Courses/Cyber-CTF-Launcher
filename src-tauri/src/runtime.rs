@@ -59,7 +59,7 @@ pub use inflight::{Action, active_actions, active_deploys, deploying_labs, stopp
 pub use isothrum_runner::ShellCommand;
 #[cfg(test)]
 pub(crate) use launch::start;
-pub(crate) use launch::{Destination, Downloads, downloads, policy_allows, start_locked};
+pub(crate) use launch::{Destination, Downloads, Placement, downloads, policy_allows, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
 pub use model::{Control, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
 pub(crate) use paths::deploys_dir;

@@ -14,8 +14,8 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
+use super::Launch;
 use crate::error::{Code, Error, Result};
 use crate::runtime::{self, Runtime};
 
@@ -35,17 +35,6 @@ struct Kept {
     user: String,
 }
 
-/// The launch spec an offline start runs: the source, no environment.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Spec<'a> {
-    lab_id: &'a str,
-    runtime: Runtime,
-    repository: &'a str,
-    commit: &'a str,
-    env: [(); 0],
-}
-
 /// Where lab `lab_id`'s kept source is, under the app data folder `base`.
 fn kept_path(base: &Path, lab_id: &str) -> PathBuf {
     base.join("offline").join(format!("{lab_id}.json"))
@@ -53,9 +42,14 @@ fn kept_path(base: &Path, lab_id: &str) -> PathBuf {
 
 /// Keeps the source of a `startLab` answer (`launch`) to account `user` for an offline start
 /// later, this OS user's only. The answer's environment (the launch token) is never written.
-pub fn keep(base: &Path, launch: &Value, user: &str) -> Result<()> {
-    let mut kept: Kept = serde_json::from_value(launch.clone()).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))?;
-    kept.user = user.to_string();
+pub fn keep(base: &Path, launch: &Launch, user: &str) -> Result<()> {
+    let kept = Kept {
+        lab_id: launch.lab_id.clone(),
+        runtime: launch.runtime,
+        repository: launch.repository.clone(),
+        commit: launch.commit.clone(),
+        user: user.to_string(),
+    };
     runtime::validate_id(&kept.lab_id)?;
     super::validate_source(&kept.repository, &kept.commit)?;
     let path = kept_path(base, &kept.lab_id);
@@ -69,7 +63,7 @@ pub fn keep(base: &Path, launch: &Value, user: &str) -> Result<()> {
 
 /// The launch spec that starts lab `lab_id` offline for account `user`: its kept source with no
 /// environment, when it was kept for that account and the copy installed here is that commit.
-fn offline_spec(base: &Path, lab_id: &str, user: Option<&str>) -> Result<Value> {
+fn offline_spec(base: &Path, lab_id: &str, user: Option<&str>) -> Result<Launch> {
     runtime::validate_id(lab_id)?;
     let kept: Kept = std::fs::read_to_string(kept_path(base, lab_id))
         .ok()
@@ -82,14 +76,13 @@ fn offline_spec(base: &Path, lab_id: &str, user: Option<&str>) -> Result<Value> 
     if !crate::runtime::lab::installed_at(&base.join("labs").join(lab_id), &kept.commit) {
         return Err(Error::Invalid("The copy of this lab installed here isn't the one last started online, so it can't start offline.".into()));
     }
-    let spec = Spec { lab_id: &kept.lab_id, runtime: kept.runtime, repository: &kept.repository, commit: &kept.commit, env: [] };
-    serde_json::to_value(spec).map_err(|e| Error::Invalid(e.to_string()))
+    Ok(Launch { lab_id: kept.lab_id, runtime: kept.runtime, repository: kept.repository, commit: kept.commit, env: Vec::new() })
 }
 
 /// What a launch does when `startLab` failed with `failed`: a backend that answered (a refusal,
 /// signed out) is the answer. One that couldn't be reached starts the lab offline for account
 /// `user` when the player asked to (`offline`) and it can, else says that it can.
-pub fn instead_of(failed: Error, base: &Path, lab_id: &str, user: Option<&str>, offline: bool) -> Result<Value> {
+pub fn instead_of(failed: Error, base: &Path, lab_id: &str, user: Option<&str>, offline: bool) -> Result<Launch> {
     let Error::Unreachable(why) = failed else { return Err(failed) };
     match offline_spec(base, lab_id, user) {
         Ok(spec) if offline => Ok(spec),
@@ -103,7 +96,7 @@ pub fn instead_of(failed: Error, base: &Path, lab_id: &str, user: Option<&str>, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
     const ADA: &str = "user-ada";
@@ -112,11 +105,15 @@ mod tests {
         std::env::temp_dir().join(format!("cyberctf-offline-{}", rand::random::<u32>()))
     }
 
-    fn start_lab_answer(lab: &str) -> Value {
-        json!({
+    fn start_lab_answer(lab: &str) -> Launch {
+        answer(json!({
             "labId": lab, "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": SHA,
             "env": [{ "name": "CTF_API_URL", "value": "https://api" }, { "name": "CTF_LAUNCH_TOKEN", "value": "secret-token" }]
-        })
+        }))
+    }
+
+    fn answer(json: Value) -> Launch {
+        super::super::parse_launch(json).unwrap()
     }
 
     fn install(base: &Path, lab: &str, commit: &str) {
@@ -149,7 +146,7 @@ mod tests {
         let offered = instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err();
         assert_eq!(offered.code(), Code::OfflineReady { detail: "API unreachable: connection refused".into() });
         let spec = instead_of(unreachable(), &base, "web", Some(ADA), true).unwrap();
-        assert_eq!(spec, json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": SHA, "env": [] }));
+        assert_eq!(spec, answer(json!({ "labId": "web", "runtime": "DOCKER", "repository": "CyberCTF/web", "commit": SHA, "env": [] })));
         std::fs::remove_dir_all(base).unwrap();
     }
 
@@ -208,7 +205,7 @@ mod tests {
     fn a_cloud_lab_never_starts_offline() {
         let base = base();
         let mut cloud = start_lab_answer("web");
-        cloud["runtime"] = json!("CLOUD");
+        cloud.runtime = Runtime::Cloud;
         keep(&base, &cloud, ADA).unwrap();
         install(&base, "web", SHA);
         assert!(!matches!(instead_of(unreachable(), &base, "web", Some(ADA), false).unwrap_err().code(), Code::OfflineReady { .. }));
@@ -220,7 +217,7 @@ mod tests {
     fn a_launch_answer_from_elsewhere_is_never_kept() {
         let base = base();
         let mut foreign = start_lab_answer("web");
-        foreign["repository"] = json!("someone/web");
+        foreign.repository = "someone/web".into();
         assert!(keep(&base, &foreign, ADA).is_err());
         assert!(keep(&base, &start_lab_answer("../x"), ADA).is_err());
         assert!(!kept_path(&base, "web").exists());

@@ -75,7 +75,7 @@ fn worker_op(op: &Op) -> (&'static str, Option<String>) {
 /// `runtime`), a lab imported from a folder runs as containers, the other operations carry it.
 fn job_runtime(job: &deploy_worker::Job) -> Option<Runtime> {
     match &job.op {
-        Op::Launch => serde_json::from_value(job.launch.get("runtime")?.clone()).ok(),
+        Op::Launch => job.launch.as_ref().map(|l| l.launch.runtime),
         Op::LaunchLocal { .. } => Some(Runtime::Docker),
         Op::Resume { runtime } | Op::Park { runtime, .. } | Op::Provision { runtime, .. } => Some(*runtime),
     }
@@ -153,7 +153,13 @@ mod tests {
         );
         assert_eq!(merge_operations(Vec::new(), Vec::new()), [] as [ActiveOperation; 0]);
         // A launch's runtime is its payload's; a lab from a folder runs as containers.
-        let launch = deploy_worker::Job { launch: serde_json::json!({ "labId": "goad", "runtime": "VM" }), ..deploy_worker::Job::on_lab("goad", Op::Launch) };
+        let spec =
+            crate::labs::parse_launch(serde_json::json!({ "labId": "goad", "runtime": "VM", "repository": "CyberCTF/goad", "commit": "abc", "env": [] }))
+                .unwrap();
+        let launch = deploy_worker::Job {
+            launch: Some(deploy_worker::LaunchJob { launch: spec, place: crate::runtime::Placement::default() }),
+            ..deploy_worker::Job::on_lab("goad", Op::Launch)
+        };
         assert_eq!(job_runtime(&launch), Some(Runtime::Vm));
         assert_eq!(job_runtime(&deploy_worker::Job::on_lab("mine", Op::LaunchLocal { src: "/labs/mine".into() })), Some(Runtime::Docker));
         // Serialized for the sidebar in camelCase.

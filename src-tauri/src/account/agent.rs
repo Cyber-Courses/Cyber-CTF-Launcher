@@ -32,7 +32,7 @@ use crate::account::colocation;
 use crate::error::{Error, Result};
 use crate::labs;
 use crate::runtime::start_place::{self, StartPlace};
-use crate::runtime::{Runtime, server};
+use crate::runtime::{self, Runtime, server};
 
 /// A system notification for the player (title, body), shown when a website launch starts here.
 pub type Notify = dyn Fn(&str, &str) + Send + Sync;
@@ -167,9 +167,9 @@ fn undoes(failure: &Error, present_before: bool) -> bool {
 /// start brought up, and only that (see [`undoes`]; `present_before`: whether something of it
 /// was there before, see `runtime::lab_present`). Where the lab is reachable here, once running.
 async fn run_claimed(deps: &Deps, launch: &labs::Launch, place: &StartPlace, present_before: bool) -> Result<Option<String>> {
-    let placement =
-        labs::Placement { host: place.host.as_deref(), provider: place.provider, per_machine_vm: place.per_machine_vm, ..labs::Placement::default() };
-    match labs::run(deps.dirs(), launch.clone(), &placement, |_line: String| {}).await {
+    let to =
+        runtime::Destination { host: place.host.as_deref(), provider: place.provider, per_machine_vm: place.per_machine_vm, ..runtime::Destination::default() };
+    match labs::run(deps.dirs(), launch.clone(), to, |_line: String| {}).await {
         Ok(url) => Ok(url),
         Err(e) => Err(undo_start(deps, &launch.lab_id, launch.runtime, present_before, e).await),
     }

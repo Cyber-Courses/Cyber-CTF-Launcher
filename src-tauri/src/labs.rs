@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::platform::AppDirs;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::account::api;
@@ -19,8 +19,10 @@ mod offline;
 use archive::extract;
 use launch_env::{EnvVar, launch_env};
 
-/// A lab to download and run, as the backend's `startLab` and `claimLaunch` answer it.
-#[derive(Clone, Deserialize)]
+/// A lab to download and run, as the backend's `startLab` and `claimLaunch` answer it (and as a
+/// launch's job file carries it to its worker). Its `Debug` leaves the values out: they carry the
+/// launch token.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Launch {
     pub(crate) lab_id: String,
@@ -28,6 +30,18 @@ pub(crate) struct Launch {
     pub(crate) repository: String,
     pub(crate) commit: String,
     env: Vec<EnvVar>,
+}
+
+impl std::fmt::Debug for Launch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Launch")
+            .field("lab_id", &self.lab_id)
+            .field("runtime", &self.runtime)
+            .field("repository", &self.repository)
+            .field("commit", &self.commit)
+            .field("env", &format_args!("<redacted>"))
+            .finish()
+    }
 }
 
 /// A lab release to install: the lab, the CyberCTF repository and commit it comes from, and the
@@ -38,19 +52,6 @@ struct Release<'a> {
     repository: &'a str,
     commit: &'a str,
     runtime: Runtime,
-}
-
-/// Where and how a launched lab runs: VM labs locally with `provider`, or on the server `host`
-/// when one is given; whether a container lab keeps its own ports; and
-/// whether a container lab with VM recipes runs here as one VM per machine instead.
-#[derive(Default)]
-pub(crate) struct Placement<'a> {
-    pub provider: Option<Provider>,
-    pub host: Option<&'a str>,
-    pub default_ports: bool,
-    pub per_machine_vm: bool,
-    /// The Docker context a container lab here was pinned to (the chosen engine), if any.
-    pub docker_context: Option<&'a str>,
 }
 
 /// A catalogue lab's source: `repository` at `commit`, fetched only when [`validate_source`] allows
@@ -259,15 +260,15 @@ fn in_use(e: std::io::Error, dir: &Path) -> Error {
     }
 }
 
-/// A `startLab` payload (the deploy worker's job carries it as JSON).
+/// A `startLab` or `claimLaunch` answer.
 pub(crate) fn parse_launch(launch_json: serde_json::Value) -> Result<Launch> {
     serde_json::from_value(launch_json).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))
 }
 
 /// Installs and starts a lab from a launch spec (the `startLab`/`claimLaunch` answer). Shared by
 /// the manual launch command and the agent's claim loop (bring your own compute).
-/// It runs where `placement` says.
-pub(crate) async fn run(dirs: &AppDirs, launch: Launch, placement: &Placement<'_>, log: impl Fn(String)) -> Result<Option<String>> {
+/// It runs where `to` says.
+pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination<'_>, log: impl Fn(String)) -> Result<Option<String>> {
     runtime::validate_id(&launch.lab_id)?;
     // The lab is this launch's from the download on: two installs of one lab share its staging
     // folder, and a stop must not run while the new version is swapped in. Shared with the
@@ -278,13 +279,6 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, placement: &Placement<'_
     // Fixed names for every lab; the evidence itself is never in the environment.
     let env = launch_env(launch.env);
     let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
-    let to = runtime::Destination {
-        provider: placement.provider,
-        host: placement.host,
-        per_machine_vm: placement.per_machine_vm,
-        docker_context: placement.docker_context,
-        default_ports: placement.default_ports,
-    };
     start_recorded(dirs, lab, to, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
     Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
@@ -322,13 +316,13 @@ pub(crate) async fn launch_values_at(base: &str, token: &str, lab_id: &str) -> R
 /// The launch spec for `lab_id`: the backend's answer (whose source is kept for a later offline
 /// start), or, when the backend can't be reached and the player asked for it (`offline`), the
 /// installed lab's (see `offline`).
-async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(String)) -> Result<serde_json::Value> {
+async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(String)) -> Result<Launch> {
     let base = dirs.data()?;
     let user = crate::account::auth::signed_in_user().await.unwrap_or_else(|e| {
         log::warn!("the session can't be read, so {lab_id}'s launch isn't kept for an offline start: {e}");
         None
     });
-    match start_lab(lab_id).await {
+    match start_lab(lab_id).await.and_then(parse_launch) {
         Ok(answer) => {
             if let Some(user) = &user
                 && let Err(e) = offline::keep(base, &answer, user)
@@ -366,17 +360,12 @@ pub struct LaunchRequest {
     pub docker_engine: Option<String>,
 }
 
-/// A launch ready to run: the lab, its `startLab` spec, and where and how it runs.
+/// A launch ready to run: the lab, its `startLab` spec, and where and how it runs (the Docker
+/// context a container lab here is pinned to resolved from the chosen engine).
 pub(crate) struct PreparedLaunch {
     pub(crate) lab_id: String,
-    /// The `startLab` spec (`{ labId, runtime, repository, commit, env }`).
-    pub(crate) launch: serde_json::Value,
-    pub(crate) provider: Option<Provider>,
-    pub(crate) host: Option<String>,
-    pub(crate) default_ports: bool,
-    pub(crate) per_machine_vm: bool,
-    /// The Docker context a container lab here is pinned to (the chosen engine), if any.
-    pub(crate) docker_context: Option<String>,
+    pub(crate) launch: Launch,
+    pub(crate) place: runtime::Placement,
 }
 
 /// Prepares `request`'s launch: resolves the `startLab` spec (the backend's, kept for a later
@@ -388,7 +377,7 @@ pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: 
     let LaunchRequest { lab_id, provider, host, default_ports, offline, per_machine_vm, docker_engine } = request;
     let docker_context = pinned_context(docker_engine.as_deref(), host.as_deref()).await?;
     let launch = launch_spec(dirs, &lab_id, offline, log).await?;
-    Ok(PreparedLaunch { lab_id, launch, provider, host, default_ports, per_machine_vm, docker_context })
+    Ok(PreparedLaunch { lab_id, launch, place: runtime::Placement { provider, host, per_machine_vm, docker_context, default_ports } })
 }
 
 /// The Docker context a container lab here is pinned to, resolved now (on the main process, where
@@ -699,7 +688,8 @@ mod tests {
         let held = runtime::lock_lab(&t.dirs(), "invoice").await.unwrap();
         let launch =
             parse_launch(serde_json::json!({ "labId": "invoice", "runtime": "DOCKER", "repository": "CyberCTF/invoice", "commit": SHA, "env": [] })).unwrap();
-        let waiting = tokio::time::timeout(std::time::Duration::from_millis(300), run(&t.dirs(), launch.clone(), &Placement::default(), |_| {})).await;
+        let waiting =
+            tokio::time::timeout(std::time::Duration::from_millis(300), run(&t.dirs(), launch.clone(), runtime::Destination::default(), |_| {})).await;
         assert!(waiting.is_err(), "the launch waits while another operation holds the lab");
         assert!(tools.calls().is_empty(), "nothing of the install ran meanwhile: {:?}", tools.calls());
         assert!(!dir.join(runtime::lab::INSTANCE_MARKER).exists());
