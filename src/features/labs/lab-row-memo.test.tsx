@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LabRow } from "@/features/labs/lab-row";
+import { IDLE_ROW } from "@/features/labs/lab-row-state";
 import type { LabStatus } from "@/lib/tauri";
 import { installTauri } from "@/test/tauri";
 import { invoiceRowLab } from "@/features/labs/labs-test-kit";
@@ -54,5 +55,18 @@ describe("LabRow memo", () => {
 
     await user.click(screen.getByRole("button", { name: "Open Invoice portal API" }));
     expect(h.onOpen).toHaveBeenCalledWith(lab);
+  });
+
+  it("skips an idle tick whose situation is a new object saying the same, and renders on a change in it", () => {
+    installTauri();
+    const h = { onOpen: vi.fn(), onStop: vi.fn() };
+    // A list builds each row's situation afresh on every render.
+    const row = (busy: boolean) => <LabRow lab={lab} status={status} situation={{ ...IDLE_ROW, busy }} loggedIn hostArch="x86_64" {...h} />;
+    const { rerender } = render(row(false));
+    const first = cells.title;
+    rerender(row(false));
+    expect(cells.title).toBe(first);
+    rerender(row(true));
+    expect(cells.title).toBeGreaterThan(first);
   });
 });

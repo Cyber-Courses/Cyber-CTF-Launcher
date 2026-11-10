@@ -3,6 +3,27 @@ import { runsNativelyHere } from "@/features/labs/lab-runtime";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
 
+/** What a list knows of a row's lab beside its status, for the row to read in one piece. */
+export type RowSituation = {
+  /** This session runs an operation on it. */
+  busy: boolean;
+  /** The operation in flight while `busy` (launch, stop, shutdown…), for its label. */
+  operation?: string;
+  /** The backend deploys it (e.g. started before a reload), for the dot. */
+  deploying: boolean;
+  /** The player already solved it (website evidence). */
+  solved: boolean;
+  /** Its last start, from this window, failed (see `startFailed`): a red dot, "Failed to start". */
+  failed: boolean;
+  /** What this machine is missing to run it (see lab-readiness), or null. */
+  setup: string | null;
+  /** A cloud lab with no account of its cloud yet: the setup action connects one. */
+  connectCloud: boolean;
+};
+
+/** A lab nothing is happening to, that this machine can run. */
+export const IDLE_ROW: RowSituation = { busy: false, deploying: false, solved: false, failed: false, setup: null, connectCloud: false };
+
 /** What a list row says the lab is doing, most pressing first. */
 export type RowPhase = "busy" | "starting" | "running" | "failed" | "paused" | "shutDown" | "solved" | "notStarted";
 
@@ -12,16 +33,7 @@ export function rowPhase({
   deploying,
   solved,
   failed = false,
-}: {
-  status: LabStatus | undefined;
-  /** This session runs an operation on it. */
-  busy: boolean;
-  /** The backend deploys it (e.g. started before a reload). */
-  deploying: boolean;
-  solved: boolean;
-  /** Its last start, from this window, failed. */
-  failed?: boolean;
-}): RowPhase {
+}: Pick<RowSituation, "busy" | "deploying" | "solved"> & Partial<Pick<RowSituation, "failed">> & { status: LabStatus | undefined }): RowPhase {
   const phase = lifecyclePhase({ busy, running: status?.running ?? false, starting: deploying, failed, parked: status?.parked });
   return phase ?? (solved ? "solved" : "notStarted");
 }

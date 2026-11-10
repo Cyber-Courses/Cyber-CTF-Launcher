@@ -49,7 +49,8 @@ function renderActions() {
   return () => must(actions, "the lab actions");
 }
 
-const rowProps = { running: false, parked: false as const, busy: false, doing: null, setup: null, connectCloud: false, loggedIn: true, onStop: vi.fn() };
+const quiet = { running: false, parked: false as const, busy: false, doing: null, setup: null, connectCloud: false };
+const rowProps = { url: null, state: quiet, loggedIn: true, onStop: vi.fn() };
 
 beforeEach(() => {
   toastsShown();
@@ -155,7 +156,7 @@ describe("the cloud account setup can't open", () => {
     const user = userEvent.setup();
     render(
       <>
-        <RowAction {...rowProps} setup="Connect an AWS account" connectCloud />
+        <RowAction {...rowProps} state={{ ...quiet, setup: "Connect an AWS account", connectCloud: true }} />
         <Toaster />
       </>,
     );

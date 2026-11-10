@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HealthBanner, useLabCheck } from "@/features/labs/lab-health";
 import { LabRow } from "@/features/labs/lab-row";
+import { IDLE_ROW, type RowSituation } from "@/features/labs/lab-row-state";
 import { askPortMode, PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { RunOnDialog, RunOnPicker, type Platform } from "@/features/labs/run-on";
 import type { RunTarget } from "@/features/labs/run-target";
@@ -512,9 +513,13 @@ describe("LabRow", () => {
       ...p,
     }) as LabStatus;
 
-  function renderRow(p: Partial<ComponentProps<typeof LabRow>> = {}) {
+  /** A row with `p`, its situation's fields among them. */
+  function renderRow(p: Partial<ComponentProps<typeof LabRow>> & Partial<RowSituation> = {}) {
     const h = { onOpen: vi.fn(), onStop: vi.fn(), onResume: vi.fn() };
-    render(<LabRow lab={lab} loggedIn hostArch="x86_64" {...h} {...p} />);
+    const { busy, operation, deploying, solved, failed, setup, connectCloud, ...props } = p;
+    const given = Object.entries({ busy, operation, deploying, solved, failed, setup, connectCloud }).filter(([, v]) => v !== undefined);
+    const situation: RowSituation = { ...IDLE_ROW, ...Object.fromEntries(given) };
+    render(<LabRow lab={lab} loggedIn hostArch="x86_64" {...h} situation={situation} {...props} />);
     return h;
   }
 

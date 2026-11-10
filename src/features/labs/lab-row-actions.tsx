@@ -14,15 +14,24 @@ function RowButton({ danger = false, ...props }: ButtonHTMLAttributes<HTMLButton
   return <Button size="xs" variant={danger ? "destructive" : "outline"} {...props} />;
 }
 
-type RowActionProps = {
-  status?: LabStatus;
+/** Where a row's lab stands, as its action reads it. */
+export type RowActionState = {
   running: boolean;
   parked: LabStatus["parked"] | false;
+  /** This session runs an operation on it. */
   busy: boolean;
   /** The operation in flight, as a word, while busy. */
   doing: string | null;
+  /** What this machine is missing to run it, or null. */
   setup: string | null;
+  /** The setup action connects a cloud account. */
   connectCloud: boolean;
+};
+
+type RowActionProps = {
+  /** The running lab's address, for Open. */
+  url: string | null;
+  state: RowActionState;
   loggedIn: boolean;
   onLogin?: () => Promise<boolean>;
   /** Once the sign-in the row started went through: go on with what the row is for. */
@@ -35,9 +44,10 @@ type RowActionProps = {
 /** The row action: Open and Stop while it runs, Resume when parked, setup or sign-in when needed. */
 export function RowAction(p: RowActionProps) {
   const t = useT();
-  if (p.running) return <RunningActions url={p.status?.url ?? null} busy={p.busy} doing={p.doing} onStop={p.onStop} />;
-  if (p.parked) return <ParkedActions parked={p.parked} busy={p.busy} doing={p.doing} onResume={p.onResume} />;
-  if (p.setup) return <SetupAction setup={p.setup} connectCloud={p.connectCloud} />;
+  const { running, parked, busy, doing, setup, connectCloud } = p.state;
+  if (running) return <RunningActions url={p.url} busy={busy} doing={doing} onStop={p.onStop} />;
+  if (parked) return <ParkedActions parked={parked} busy={busy} doing={doing} onResume={p.onResume} />;
+  if (setup) return <SetupAction setup={setup} connectCloud={connectCloud} />;
   const { onLogin, onSignedIn } = p;
   if (!p.loggedIn && onLogin)
     return (

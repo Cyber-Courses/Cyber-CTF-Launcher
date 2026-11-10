@@ -3,7 +3,8 @@
 import { memo } from "react";
 import { ChevronRight } from "lucide-react";
 import type { Lab } from "@/features/labs/use-labs";
-import { rowFacts, rowPhase, type RowPhase } from "@/features/labs/lab-row-state";
+import { IDLE_ROW, rowFacts, rowPhase, type RowPhase, type RowSituation } from "@/features/labs/lab-row-state";
+import { structurallyEqual } from "@/lib/equal";
 import { RowColumns, RowDot, RowTitle } from "@/features/labs/lab-row-parts";
 import { RowAction } from "@/features/labs/lab-row-actions";
 import { confirmRemoveOnRow } from "@/features/labs/confirm-remove";
@@ -23,9 +24,8 @@ const PHASE_WORDS = {
 type LabRowProps = {
   lab: Lab;
   status?: LabStatus;
-  busy?: boolean;
-  /** The operation in flight while `busy` (launch, stop, shutdown…), for its label. */
-  operation?: string;
+  /** What the list knows of it beside its status (none: nothing is happening to it). */
+  situation?: RowSituation;
   loggedIn: boolean;
   /** Logged out: the start button logs in instead of being greyed out. */
   onLogin?: () => Promise<boolean>;
@@ -36,17 +36,14 @@ type LabRowProps = {
   onStop: (lab: Lab) => void;
   /** Brings a paused or shut-down lab back as it was. */
   onResume?: (lab: Lab) => void;
-  /** The player already solved it (website evidence). */
-  solved?: boolean;
-  /** What this machine is missing to run it (see lab-readiness), or null. */
-  setup?: string | null;
-  /** A cloud lab with no account of its cloud yet: the setup action connects one. */
-  connectCloud?: boolean;
-  /** A deploy is running for it in the backend (e.g. started before a reload), for the dot. */
-  deploying?: boolean;
-  /** Its last start failed (see `startFailed`): a red dot, "Failed to start". */
-  failed?: boolean;
 };
+
+/** Whether a row would render the same: every prop the same, its situation by content (a list
+ *  builds a new one on every render). */
+function sameRow({ situation: a, ...propsA }: LabRowProps, { situation: b, ...propsB }: LabRowProps): boolean {
+  const keys = Object.keys(propsA) as (keyof typeof propsA)[];
+  return keys.length === Object.keys(propsB).length && keys.every((k) => Object.is(propsA[k], propsB[k])) && structurallyEqual(a, b);
+}
 
 /**
  * One lab as a dense 3.25rem list row: a status dot, the title over mono meta, then mono columns
@@ -75,17 +72,18 @@ export const LabRow = memo(function LabRow(props: LabRowProps) {
       />
     </div>
   );
-});
+}, sameRow);
 
 /** Where a row's lab stands: its facts here, its phase, what it is doing while busy and the word
  *  its dot says. */
-function useRowState({ lab, status, busy = false, operation, hostArch, emulates = false, solved = false, deploying = false, failed = false }: LabRowProps) {
+function useRowState({ lab, status, situation = IDLE_ROW, hostArch, emulates = false }: LabRowProps) {
   const t = useT();
   const facts = rowFacts({ runtime: lab.runtime, status, hostArch, emulates });
+  const { busy, operation } = situation;
   // While busy, what is actually happening: a lab being started reports running long before
   // the launch is done, so "Stopping…" there would be wrong.
   const doing = busy ? `${(operation && OPERATION_STATUS[operation]) ?? t("labs.state.working")}…` : null;
-  const phase = rowPhase({ status, busy, deploying, solved, failed });
+  const phase = rowPhase({ status, ...situation });
   // "Starting…": the one word for a start, as on the lab's page and in the sidebar.
   const stateLabel = phase === "busy" ? doing : phase === "starting" ? `${OPERATION_STATUS.launch ?? t("labs.state.working")}…` : t(PHASE_WORDS[phase]);
   return { ...facts, doing, phase, stateLabel };
@@ -94,14 +92,15 @@ function useRowState({ lab, status, busy = false, operation, hostArch, emulates 
 /** The row itself: the dot, the title, the columns, the action and the chevron. */
 function RowLine(props: LabRowProps & { onAskStop: () => void }) {
   const t = useT();
-  const { lab, status, busy = false, hostArch, emulates = false, setup = null, onResume } = props;
+  const { lab, status, situation = IDLE_ROW, hostArch, emulates = false, onResume } = props;
   const { emulated, running, parked, doing, phase, stateLabel } = useRowState(props);
+  const { busy, setup, connectCloud, solved } = situation;
   return (
     // The title is the row's one link into the lab (a stretched button: its ::after covers the
     // row, so a click anywhere opens it); the actions are its siblings, drawn above it, so no
     // control sits inside another and Tab reaches each one.
     <div className="group relative grid h-13 grid-cols-[auto_minmax(0,1fr)_auto_1rem] items-center gap-3.5 px-4 text-[0.8125rem] transition-colors hover:bg-glass has-[[data-row-open]:focus-visible]:bg-glass @min-[44rem]:grid-cols-[auto_minmax(0,1fr)_8rem_5.5rem_7rem_9.5rem_1rem]">
-      <RowDot phase={phase} running={running} solved={props.solved ?? false} label={stateLabel} />
+      <RowDot phase={phase} running={running} solved={solved} label={stateLabel} />
       <RowTitle
         lab={lab}
         emulated={emulated}
@@ -118,13 +117,8 @@ function RowLine(props: LabRowProps & { onAskStop: () => void }) {
       {/* Starting happens on the lab's own page, where you pick where to run; the row opens it. */}
       <span className="relative z-[1] flex items-center justify-end gap-1.5">
         <RowAction
-          status={status}
-          running={running}
-          parked={parked}
-          busy={busy}
-          doing={doing}
-          setup={setup}
-          connectCloud={props.connectCloud ?? false}
+          url={status?.url ?? null}
+          state={{ running, parked, busy, doing, setup, connectCloud }}
           loggedIn={props.loggedIn}
           onLogin={props.onLogin}
           // The player wanted this lab: once signed in, its page (where it starts) opens.
