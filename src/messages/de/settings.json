@@ -148,7 +148,6 @@
     "restartNow": "Jetzt neu starten",
     "checking": "Wird geprüft…",
     "checkUpdates": "Nach Updates suchen",
-    "restartFailed": "Cyber CTF konnte nicht neu gestartet werden",
     "replayFailed": "Die Einrichtung konnte nicht erneut gestartet werden",
     "diagnostics": "Diagnose",
     "diagnosticsDescription": "Kopiert deine Version, dein Betriebssystem und den Einrichtungsstatus, für einen Fehlerbericht oder eine Supportanfrage.",

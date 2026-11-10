@@ -148,7 +148,6 @@
     "restartNow": "今すぐ再起動",
     "checking": "確認中…",
     "checkUpdates": "アップデートを確認",
-    "restartFailed": "Cyber CTF を再起動できませんでした",
     "replayFailed": "セットアップを再実行できませんでした",
     "diagnostics": "診断情報",
     "diagnosticsDescription": "バグ報告やサポート依頼のために、バージョン、OS、セットアップの状態をコピーします。",

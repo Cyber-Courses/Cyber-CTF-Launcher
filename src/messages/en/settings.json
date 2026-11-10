@@ -148,7 +148,6 @@
     "restartNow": "Restart now",
     "checking": "Checking…",
     "checkUpdates": "Check for updates",
-    "restartFailed": "Couldn't restart Cyber CTF",
     "replayFailed": "Couldn't replay the setup",
     "diagnostics": "Diagnostics",
     "diagnosticsDescription": "Copies your version, OS and setup status, for a bug report or a support request.",

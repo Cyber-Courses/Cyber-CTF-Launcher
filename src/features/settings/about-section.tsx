@@ -6,13 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KeyValue } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
-import { openLogFolder, restartApp, type AgentInfo, type SystemReport, type UpdateChannel } from "@/lib/tauri";
+import { openLogFolder, type AgentInfo, type SystemReport, type UpdateChannel } from "@/lib/tauri";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
 import { clearOnboarded } from "@/components/shell/onboarded-flag";
 import { diagnosticsText } from "@/features/settings/diagnostics";
 import { useUpdater, type UpdateState } from "@/features/settings/use-updater";
+import { restartOnUpdate } from "@/lib/install-update";
 import { ignore, tell } from "@/lib/failure";
 import { emit } from "@tauri-apps/api/event";
 import { closeIfSettings, REPLAY_ONBOARDING_EVENT } from "@/lib/app-events";
@@ -160,7 +161,7 @@ function UpdatesRow() {
           <Button
             size="xs"
             onClick={() => {
-              restartApp().catch(tell(t("settings.about.restartFailed")));
+              void restartOnUpdate();
             }}
           >
             {t("settings.about.restartNow")}

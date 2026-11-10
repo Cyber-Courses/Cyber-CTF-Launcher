@@ -148,7 +148,6 @@
     "restartNow": "Reiniciar ahora",
     "checking": "Comprobando…",
     "checkUpdates": "Buscar actualizaciones",
-    "restartFailed": "No se pudo reiniciar Cyber CTF",
     "replayFailed": "No se pudo repetir la configuración",
     "diagnostics": "Diagnóstico",
     "diagnosticsDescription": "Copia tu versión, sistema operativo y estado de configuración, para un informe de error o una solicitud de soporte.",

@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Button } from "@/components/ui/button";
-import { managedSettings, restartApp } from "@/lib/tauri";
-import { installUpdate } from "@/lib/install-update";
+import { managedSettings } from "@/lib/tauri";
+import { installAndRestart, restartOnUpdate } from "@/lib/install-update";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { cn } from "@/lib/utils";
-import { ignore, tell } from "@/lib/failure";
+import { ignore } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
 type Phase = "idle" | "downloading" | "ready" | "error";
@@ -32,19 +32,20 @@ function useUpdate() {
 
   async function install() {
     if (!update) return;
-    const installed = await installUpdate(update, () => {
-      setPhase("downloading");
-    });
-    if (!installed) {
-      // Only a download that began and failed is the banner's error; a wait for the deploys
-      // leaves it as it was.
-      setPhase((p) => (p === "downloading" ? "error" : p));
-      return;
-    }
-    setPhase("ready");
-    // Reopen on the new version straight away; the button stays as a fallback if it can't
+    // Reopened on the new version straight away; Restart now stays as the fallback if it can't
     // (the update is installed: a failed relaunch is not a failed update).
-    await restartApp().catch(ignore("Restart now stays as the fallback"));
+    const installed = await installAndRestart(
+      update,
+      () => {
+        setPhase("downloading");
+      },
+      () => {
+        setPhase("ready");
+      },
+    );
+    // Only a download that began and failed is the banner's error; a wait for the deploys
+    // leaves it as it was.
+    if (!installed) setPhase((p) => (p === "downloading" ? "error" : p));
   }
   return { update, phase, install };
 }
@@ -75,7 +76,7 @@ export function UpdateBanner() {
           variant="outline"
           size="xs"
           onClick={() => {
-            restartApp().catch(tell(t("shell.failures.restart")));
+            void restartOnUpdate();
           }}
         >
           {t("shell.update.restartNow")}

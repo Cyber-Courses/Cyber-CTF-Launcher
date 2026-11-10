@@ -149,20 +149,21 @@ describe("UpdateBanner failures", () => {
     expect(screen.getAllByRole("status")[0].textContent).not.toContain("Update failed");
   });
 
-  it("stays quiet when the relaunch after the install fails, and says so when Restart now fails too", async () => {
+  it("says the relaunch after the install failed, as Settings does, and again when Restart now fails too", async () => {
     updater.pending = { version: "9.9.9", downloadAndInstall: () => Promise.resolve() };
     const calls = installTauri({ deploying_labs: () => [], restart_app: rejects({ code: "other", message: "relaunch denied" }) });
     const user = userEvent.setup();
     await renderBanner();
     await user.click(screen.getByRole("button", { name: "Update" }));
     await flush();
-    // The update is installed: a failed relaunch is not a failed update, so nothing is told yet.
+    // The update is installed: a failed relaunch is not a failed update, but it is said, with the
+    // one message Settings gives. Regression: the banner said nothing, Settings told it.
     expect(screen.getByRole("status").textContent).toContain("Update installed");
     expect(commands(calls)).toContain("restart_app");
-    expect(alerts()).toEqual([]);
+    expect(alerts().join("\n")).toContain(RESTART_FAILED);
     await user.click(screen.getByRole("button", { name: "Restart now" }));
     await flush();
-    expect(alerts().join("\n")).toContain(RESTART_FAILED);
+    expect(alerts().filter((a) => a.includes(RESTART_FAILED))).toHaveLength(2);
     expect(alerts().join("\n")).toContain("relaunch denied");
     // The fallback stays for another try.
     expect(screen.getByRole("button", { name: "Restart now" })).toBeTruthy();
