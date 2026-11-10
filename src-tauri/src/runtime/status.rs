@@ -154,7 +154,11 @@ pub fn lab_present(dirs: &AppDirs, id: &str) -> bool {
     }
     match still_up(dirs, id) {
         Ok(up) => up.is_some(),
-        Err(_) => server::marked_host(&dir).is_some_and(|h| !h.is_empty()),
+        Err(e) => {
+            let marked = server::marked_host(&dir).filter(|h| !h.is_empty());
+            log::warn!("couldn't tell whether {id} is up ({e}); taken for {} by its host marker", if marked.is_some() { "up" } else { "down" });
+            marked.is_some()
+        }
     }
 }
 
@@ -255,6 +259,25 @@ mod tests {
         // Parked here.
         crate::runtime::paths::mark_parked(&dir, Some(crate::runtime::Park::Pause)).unwrap();
         assert!(super::lab_present(&dirs, "present"));
+    }
+
+    #[test]
+    fn a_lab_whose_run_cant_be_read_is_judged_by_its_marker_and_says_why() {
+        // Regression: why the run couldn't be read was dropped, and the failed start's teardown
+        // was decided on the marker alone with nothing in the log.
+        let t = crate::testing::test_app::TestApp::new();
+        let dir = t.lab("present", &[]);
+        let state = t.data().join("deployments/present/aws");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("terraform.tfstate"), "not a state").unwrap();
+        crate::testing::logs::take_warnings();
+        assert!(!super::lab_present(&t.dirs(), "present"), "no marker: down");
+        std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "aws1").unwrap();
+        assert!(super::lab_present(&t.dirs(), "present"), "marked as on a host: up there");
+        let logged = crate::testing::logs::take_warnings();
+        assert_eq!(logged.len(), 2, "{logged:?}");
+        assert!(logged[0].starts_with("couldn't tell whether present is up (") && logged[0].ends_with("taken for down by its host marker"), "{logged:?}");
+        assert!(logged[1].ends_with("taken for up by its host marker"), "{logged:?}");
     }
 
     #[test]

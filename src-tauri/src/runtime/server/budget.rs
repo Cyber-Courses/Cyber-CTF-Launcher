@@ -101,10 +101,13 @@ pub enum BudgetCheck {
     Unverifiable(String),
 }
 
-/// Checks an account against its monthly budget before a launch. An account whose stored keys
-/// can't be read is `Unverifiable` (saying why), never under budget.
+/// Checks an account against its monthly budget before a launch. An account that can't be read,
+/// or whose stored keys can't be, is `Unverifiable` (saying why), never under budget.
 pub async fn check_budget(dirs: &AppDirs, id: &str) -> BudgetCheck {
-    let Ok(host) = load_host(dirs, id) else { return BudgetCheck::Ok };
+    let host = match load_host(dirs, id) {
+        Ok(host) => host,
+        Err(e) => return BudgetCheck::Unverifiable(format!("couldn't read this account ({e}).")),
+    };
     let Some(limit) = budget_limit(&host) else { return BudgetCheck::Ok };
     let password = match host_secret(&host) {
         Ok(password) => password,
@@ -181,6 +184,20 @@ mod tests {
         assert!(account_month_to_date_cost(&t.dirs(), "nope").await.is_err());
         // The setup form's figure, for a profile not saved yet.
         crate::testing::assert_close(cli_month_to_date_cost(None).await.unwrap(), 7.25);
+    }
+
+    #[tokio::test]
+    async fn an_account_that_cant_be_read_is_unverifiable_never_under_budget() {
+        // Regression: an account missing from (or unreadable in) the saved hosts read as under
+        // budget, and its launch went ahead unchecked and unsaid.
+        let t = crate::testing::test_app::TestApp::new();
+        match check_budget(&t.dirs(), "gone").await {
+            BudgetCheck::Unverifiable(why) => assert!(why.starts_with("couldn't read this account ("), "{why}"),
+            _ => panic!("should be unverifiable"),
+        }
+        // An account without a limit is never checked.
+        let free = t.host("aws-free", "aws", serde_json::json!({ "useCliCreds": true }));
+        assert!(matches!(check_budget(&t.dirs(), &free).await, BudgetCheck::Ok));
     }
 
     #[test]

@@ -210,21 +210,27 @@ fn same_boot(a: u64, b: u64) -> bool {
     a.abs_diff(b) <= 30
 }
 
+/// Remembers boot `boot` in the mark `name`. One that can't be written is logged: the check then
+/// can't tell, after the app is opened again, that a restart is due for WSL or was made for it.
 fn mark(dirs: &AppDirs, name: &str, boot: u64) {
-    let Some(f) = dirs.data_file(name) else { return };
-    if let Some(dir) = f.parent() {
-        let _ = std::fs::create_dir_all(dir);
+    let written = dirs.data().and_then(|data| crate::platform::atomic_file::write(&data.join(name), boot.to_string()).map_err(Error::from));
+    if let Err(e) = written {
+        log::warn!("couldn't keep the WSL mark {name}: {e}");
     }
-    let _ = std::fs::write(f, boot.to_string());
 }
 
 fn marked_boot(dirs: &AppDirs, name: &str) -> Option<u64> {
     std::fs::read_to_string(dirs.data_file(name)?).ok()?.trim().parse().ok()
 }
 
+/// Forgets the mark `name`; one that isn't there is forgotten already. One that can't be removed
+/// is logged: the check would go on reading it.
 fn unmark(dirs: &AppDirs, name: &str) {
-    if let Some(f) = dirs.data_file(name) {
-        let _ = std::fs::remove_file(f);
+    let Some(f) = dirs.data_file(name) else { return };
+    if let Err(e) = std::fs::remove_file(&f)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        log::warn!("couldn't remove the WSL mark {}: {e}", f.display());
     }
 }
 
@@ -797,6 +803,24 @@ mod tests {
         mark(&t.dirs(), RESTART_MARK, 1_000);
         mark_installed(&t.dirs());
         assert!(!restarted_for_wsl(&t.dirs(), 2_000));
+    }
+
+    #[test]
+    fn a_mark_that_cant_be_written_or_removed_is_logged() {
+        // Regression: both failed silently, and the restart WSL needed was asked for again, or
+        // never.
+        let t = TestApp::new();
+        crate::testing::logs::take_warnings();
+        std::fs::create_dir_all(t.data().join(RESTART_MARK).join("x")).unwrap();
+        mark(&t.dirs(), RESTART_MARK, 1_000);
+        unmark(&t.dirs(), RESTART_MARK);
+        let logged = crate::testing::logs::take_warnings();
+        assert_eq!(logged.len(), 2, "{logged:?}");
+        assert!(logged[0].starts_with("couldn't keep the WSL mark wsl-restart-boot: "), "{logged:?}");
+        assert!(logged[1].starts_with("couldn't remove the WSL mark "), "{logged:?}");
+        // Nothing there: nothing to say.
+        unmark(&t.dirs(), INSTALL_MARK);
+        assert!(crate::testing::logs::take_warnings().is_empty());
     }
 
     #[test]

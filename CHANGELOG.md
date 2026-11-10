@@ -154,6 +154,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A launch on a cloud account the launcher can't read says its budget wasn't checked.** An
+  account missing from the saved hosts, or a `server.json` that couldn't be read, passed the
+  monthly budget check as under budget, without a word; the launch log now says the budget wasn't
+  checked and why.
 - **A server's secret that the keychain won't give is no longer read as never entered.** A
   locked keychain, or its unlock prompt dismissed, made a saved host ask for its password again
   ("enter the host's password") and an AWS account's budget check say its keys were never stored.
