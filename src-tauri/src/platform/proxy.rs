@@ -19,11 +19,17 @@ pub fn assignments(var: impl Fn(&str) -> Option<String>) -> Vec<String> {
     VARS.into_iter().filter_map(|name| var(name).filter(|v| !v.is_empty()).map(|v| format!("{name}={v}"))).collect()
 }
 
+/// Whether a proxy variable is set (`var` reads one), to a value: an empty one is unset.
+#[cfg(any(target_os = "macos", test))]
+fn any_set(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> bool {
+    VARS.into_iter().any(|name| var(name).is_some_and(|v| !v.is_empty()))
+}
+
 /// macOS: when no proxy variable is set, sets them from the system's proxy. Call at the very
 /// start of `run()`, before any thread is spawned. What happened, for the log (which isn't up yet).
 #[cfg(target_os = "macos")]
 pub fn inherit_system_proxy() -> Option<String> {
-    if VARS.into_iter().any(|name| std::env::var_os(name).is_some()) {
+    if any_set(|name| std::env::var_os(name)) {
         return None;
     }
     let out = match std::process::Command::new("/usr/sbin/scutil").arg("--proxy").output() {
@@ -131,6 +137,14 @@ mod tests {
   HTTPSProxy : proxy.corp
 }
 ";
+
+    #[test]
+    fn an_empty_proxy_variable_is_unset_so_the_system_proxy_still_applies() {
+        let only = |name: &'static str, value: &'static str| move |n: &str| (n == name).then(|| std::ffi::OsString::from(value));
+        assert!(!any_set(|_| None));
+        assert!(!any_set(only("HTTPS_PROXY", "")), "an empty variable is unset");
+        assert!(any_set(only("https_proxy", "http://proxy.corp:3128")));
+    }
 
     #[test]
     fn root_commands_get_the_proxy_variables_that_are_set() {

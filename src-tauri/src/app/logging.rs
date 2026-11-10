@@ -109,9 +109,10 @@ pub fn log_startup(app: &crate::AppHandle, role: &str) {
     }
 }
 
-/// What is wrong with `CYBERCTF_LOG`'s value (`setting`), if it names no level.
+/// What is wrong with `CYBERCTF_LOG`'s value (`setting`), if it names no level. A blank one is
+/// unset, like every variable the launcher reads.
 fn level_problem(setting: Option<&str>) -> Option<String> {
-    let setting = setting?;
+    let setting = setting.filter(|s| !s.trim().is_empty())?;
     setting
         .trim()
         .parse::<log::LevelFilter>()
@@ -144,6 +145,7 @@ mod tests {
         assert_eq!(level(Some("loud")), log::LevelFilter::Info, "a level that isn't one keeps the default");
         assert_eq!(LEVEL_VAR, "CYBERCTF_LOG");
         assert_eq!(level_problem(None), None);
+        assert_eq!((level_problem(Some("")), level_problem(Some("  "))), (None, None), "blank is unset");
         assert_eq!(level_problem(Some("debug")), None);
         assert_eq!(level_problem(Some("loud")).as_deref(), Some(r#"CYBERCTF_LOG="loud" isn't a log level (error, warn, info, debug, trace): logging at info"#));
     }
