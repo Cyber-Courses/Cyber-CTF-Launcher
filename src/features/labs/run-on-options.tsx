@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Container } from "lucide-react";
 import { PROVIDER_NAMES, type DockerEngine, type LabRunOptions, type Provider, type ServerHost, type ServerTest } from "@/lib/tauri";
-import { badgeOf, pathOf, refusalOn, type RunBadge } from "@/features/labs/run-on-badges";
+import { badgeOf, pathOf, refusalOn, refusalOnHypervisors, type RunBadge } from "@/features/labs/run-on-badges";
 import { testHost } from "@/features/servers/use-server-list";
 import { StatusPill, type Tone } from "@/components/ui/status-pill";
 import { TypeIcon } from "@/components/ui/type-icon";
@@ -174,19 +174,22 @@ function localPlatformRows(t: T, local: LocalRows, options: LabRunOptions | null
       status: containers ? engineStatus(t, dockerRunning) : undefined,
     });
   }
-  const vm = localVmRow(t, local);
+  const vm = localVmRow(t, local, options);
   if (vm) rows.push(vm);
   return rows;
 }
 
 /** The step-1 "VM" row, or null when no VM form is ready here. A VM lab runs its own VMs as
- *  `{ kind: "local" }`; a container lab runs a helper VM (`local-vm`) and, when dual-form, one VM
- *  per machine too. Picking it leads to the form step (two forms), the hypervisor step (one form,
- *  several hypervisors), or straight to Start — no inline switch. */
-function localVmRow(t: T, local: LocalRows): Option | null {
+ *  `{ kind: "local" }`, refused (saying why) once the run options give it no hypervisor here; a
+ *  container lab runs a helper VM (`local-vm`) and, when dual-form, one VM per machine too.
+ *  Picking it leads to the form step (two forms), the hypervisor step (one form, several
+ *  hypervisors), or straight to Start — no inline switch. */
+function localVmRow(t: T, local: LocalRows, options: LabRunOptions | null): Option | null {
   const { offerContainers, localNote, vmForms } = local;
   if (!offerContainers) {
-    return { target: { kind: "local" }, title: t("labs.runOn.inAVm"), subtitle: localNote, ok: true, logo: <HypervisorLogo provider={null} /> };
+    const runs = !options || options.vms.length > 0;
+    const why = runs ? undefined : (refusalOnHypervisors(t, options) ?? t("labs.runOn.notSupported"));
+    return { target: { kind: "local" }, title: t("labs.runOn.inAVm"), subtitle: localNote, ok: runs, why, logo: <HypervisorLogo provider={null} /> };
   }
   const first = vmForms.at(0);
   if (!first || (first.kind !== "local-vm" && first.kind !== "local-vms")) return null;

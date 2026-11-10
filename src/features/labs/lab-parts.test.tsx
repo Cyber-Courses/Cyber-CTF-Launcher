@@ -304,6 +304,15 @@ describe("RunOnPicker", () => {
     await flush();
   });
 
+  it("refuses a VM lab's In a VM row, saying why, when the run options give it no hypervisor here", async () => {
+    installTauri();
+    renderPicker({ hosts: [], offerContainers: false, runOptions: refusing([{ provider: "virtualbox", cause: byPolicy("RefusePrivilegedLabs") }]) });
+    const vm = must(screen.getByText("VM").closest<HTMLElement>("[role=radio]"), "the VM row");
+    expect(vm.getAttribute("aria-disabled")).toBe("true");
+    expect(vm.getAttribute("title")).toBe(POLICY_SAYS);
+    await flush();
+  });
+
   it("offers no Containers row when the run options give the lab no container form at all", async () => {
     installTauri();
     renderPicker({

@@ -1,6 +1,6 @@
 "use client";
 
-import { isCloudProvider } from "@/lib/tauri";
+import { LOCAL_PROVIDERS, isCloudProvider } from "@/lib/tauri";
 import type { LabRunOptions, LabRunPath, LabRunRefusalCause, Provider } from "@/lib/tauri";
 import type { RunTarget } from "@/features/labs/run-on";
 import type { T } from "@/lib/i18n";
@@ -43,6 +43,12 @@ export function pathOf(options: LabRunOptions | null, target: RunTarget, provide
  *  Isoloom's reason, or the policy setting that turns it off. */
 export function refusalOn(t: T, options: LabRunOptions | null, provider: Provider | null): string | undefined {
   const refusal = options?.refused.find((r) => r.provider === provider);
+  return refusal && said(t, refusal.cause);
+}
+
+/** Why the lab runs on none of this machine's hypervisors, as the first refusal of one says. */
+export function refusalOnHypervisors(t: T, options: LabRunOptions | null): string | undefined {
+  const refusal = options?.refused.find((r) => r.provider !== null && LOCAL_PROVIDERS.includes(r.provider));
   return refusal && said(t, refusal.cause);
 }
 

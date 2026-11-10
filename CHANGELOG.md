@@ -208,8 +208,8 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **What the policy turns off isn't offered.** The launch picker offered a cloud account under
   `DisableCloudLaunches`, and every place for a privileged lab under `RefusePrivilegedLabs`, and the
   tool install and remove buttons stayed on under `DisableToolInstalls`; each refused only once
-  clicked. The picker now shows those places as refused, with the setting that refuses them, and
-  the buttons are disabled with a line saying why. Resuming a paused or shut-down lab with a
+  clicked. The picker now shows those places as refused, with the setting that refuses them (a VM
+  lab's "VM" row on this machine too), and the buttons are disabled with a line saying why. Resuming a paused or shut-down lab with a
   privileged machine is refused under `RefusePrivilegedLabs` too, where it used to boot it again.
 - **Browsing the launch picker leaves Settings' hypervisor alone.** Picking a hypervisor for a
   container lab's VM in the "Where should the lab run?" dialog, even one then cancelled, made it
