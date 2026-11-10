@@ -140,6 +140,13 @@ pub(super) fn write_job(f: &Files, job: &Job) -> Result<std::fs::File> {
     crate::platform::private_fs::create(&f.log).map_err(Error::Io)
 }
 
+/// The job in the file at `path`, as [`write_job`] wrote it; why not when it can't be read or isn't
+/// a job.
+pub(super) fn read_job(path: &Path) -> Result<Job> {
+    let bytes = std::fs::read(path).map_err(|e| Error::Invalid(format!("its job file {} can't be read: {e}", path.display())))?;
+    serde_json::from_slice(&bytes).map_err(|e| Error::Invalid(format!("its job file {} isn't a job: {e}", path.display())))
+}
+
 /// Moves the last run's log, if any, to [`Files::previous_log`] (owner-only, as the log is).
 /// Best effort: one that can't be kept is logged, and the new run starts all the same.
 fn keep_last_log(f: &Files) {

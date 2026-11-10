@@ -369,7 +369,10 @@ fn jobs_in(d: &Path) -> Vec<(Job, Option<String>)> {
             let f = Files::of(d, &key);
             // A job file cut short (a full disk, a crash while it was written) must not hide a
             // worker that is alive: it is listed as the plain operation its key names.
-            let job: Job = std::fs::read(&f.job).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_else(|| job_for_key(&key));
+            let job = files::read_job(&f.job).unwrap_or_else(|e| {
+                log::debug!("listing the running deploy workers: {e}");
+                job_for_key(&key)
+            });
             let step = super::progress::step_of(&f.log);
             (job, step)
         })
@@ -453,7 +456,13 @@ fn launch_host(job: &Job) -> Option<&str> {
 /// [`terraform_launch`] for the job a worker's files describe.
 #[cfg(windows)]
 fn launches_terraform(dirs: &AppDirs, f: &Files) -> bool {
-    let Some(job) = std::fs::read(&f.job).ok().and_then(|b| serde_json::from_slice::<Job>(&b).ok()) else { return false };
+    let job = match files::read_job(&f.job) {
+        Ok(job) => job,
+        Err(e) => {
+            log::warn!("can't tell whether the deploy worker runs Terraform: {e}");
+            return false;
+        }
+    };
     let provider = launch_host(&job).map_or(Ok(None), |h| crate::runtime::server::host_provider(dirs, h));
     terraform_launch(&job, &provider)
 }

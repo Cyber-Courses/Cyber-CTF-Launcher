@@ -25,9 +25,12 @@ pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntim
     // would inherit: a stop's Ctrl+C never reached Terraform.
     #[cfg(windows)]
     crate::platform::console::let_tools_take_ctrl_c();
-    let Some(job) = read_job(job_path) else {
-        fail_before_the_job(job_path, &format!("its job file {} can't be read", job_path.display()));
-        std::process::exit(2);
+    let job = match files::read_job(job_path) {
+        Ok(job) => job,
+        Err(why) => {
+            fail_before_the_job(job_path, &why.to_string());
+            std::process::exit(2);
+        }
     };
     #[cfg(unix)]
     let job_file = job_path.to_path_buf();
@@ -125,10 +128,6 @@ fn hand_reopen_to_the_app(app: &AppHandle, event: &tauri::RunEvent) {
         }
         open_main_app();
     }
-}
-
-fn read_job(path: &Path) -> Option<Job> {
-    std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok())
 }
 
 /// Starts the app itself (a new instance; if one is already open, it is brought forward).
@@ -246,7 +245,8 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
 
 #[cfg(test)]
 mod tests {
-    use super::{brings_up, conclude, read_job, status_line};
+    use super::{brings_up, conclude, status_line};
+    use crate::app::deploy_worker::files::{self, read_job};
     use crate::app::deploy_worker::files::{Files, verdict};
     use crate::app::deploy_worker::{Job, Op};
     use crate::error::{Code, Error};
@@ -280,12 +280,12 @@ mod tests {
     fn a_job_file_reads_back_or_is_refused() {
         let dir = crate::testing::temp_dir("job");
         let path = dir.join("lab-1.json");
-        assert!(read_job(&path).is_none());
+        assert!(read_job(&path).is_err());
         let job = Job::on_lab("lab-1", Op::Provision { runtime: crate::runtime::Runtime::Vm, machine: Some("dc01".into()) });
         std::fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
-        assert_eq!(read_job(&path), Some(job));
+        assert_eq!(read_job(&path).ok(), Some(job));
         std::fs::write(&path, "{").unwrap();
-        assert!(read_job(&path).is_none());
+        assert!(read_job(&path).is_err());
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -297,11 +297,11 @@ mod tests {
         let job = Job::on_lab("lab-1", Op::Resume { runtime: crate::runtime::Runtime::Vm });
         let json = serde_json::to_string(&job).unwrap();
         std::fs::write(&path, format!("\u{feff}{json}")).unwrap();
-        assert!(read_job(&path).is_none(), "a BOM");
+        assert!(read_job(&path).is_err(), "a BOM");
         std::fs::write(&path, format!("{json}\n{{}}")).unwrap();
-        assert!(read_job(&path).is_none(), "two documents");
+        assert!(read_job(&path).is_err(), "two documents");
         std::fs::write(&path, format!("  {json}\n\n")).unwrap();
-        assert_eq!(read_job(&path), Some(job), "whitespace around it is fine");
+        assert_eq!(read_job(&path).ok(), Some(job), "whitespace around it is fine");
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -370,6 +370,21 @@ mod tests {
         super::fail_before_the_job(&f.job, "its job file can't be read");
         let said = verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string();
         assert_eq!(said, "the deploy worker couldn't start: its job file can't be read");
+    }
+
+    #[test]
+    fn a_job_file_that_cant_be_read_says_why() {
+        // Regression: the worker's verdict said only "its job file can't be read", the cause
+        // (missing, cut short, not a job) dropped.
+        let dir = crate::testing::temp_dir("read-job");
+        let f = Files::of(&dir, "lab-1");
+        let missing = files::read_job(&f.job).unwrap_err().to_string();
+        assert!(missing.starts_with(&format!("its job file {} can't be read: ", f.job.display())), "{missing}");
+        std::fs::write(&f.job, r#"{"lab_id":"lab-1","op":{"op":"reboot"}}"#).unwrap();
+        let odd = files::read_job(&f.job).unwrap_err().to_string();
+        assert!(odd.contains("isn't a job: unknown variant `reboot`"), "{odd}");
+        std::fs::write(&f.job, serde_json::to_vec(&Job::on_lab("lab-1", Op::Resume { runtime: crate::runtime::Runtime::Vm })).unwrap()).unwrap();
+        assert_eq!(files::read_job(&f.job).unwrap(), Job::on_lab("lab-1", Op::Resume { runtime: crate::runtime::Runtime::Vm }));
         std::fs::remove_dir_all(dir).ok();
     }
 
