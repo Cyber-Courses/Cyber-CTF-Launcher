@@ -17,7 +17,7 @@ pub(super) const PLAN: [&str; 2] = [super::CONNECT, SSH];
 const SSH: &str = "ssh";
 
 pub(super) async fn run(r: &Reporter, conn: &server::Connection, _work: &Path) -> Ran {
-    let host = conn.env.iter().find(|(k, _)| k == "CYBERCTF_ESXI_HOSTNAME").map(|(_, v)| v.clone());
+    let host = conn.env.iter().find(|(k, _)| k == crate::runtime::lab::esxi::HOSTNAME).map(|(_, v)| v.clone());
     let result = r
         .step(SSH, "Reach the ESXi host over SSH", async {
             let Some(host) = host else {

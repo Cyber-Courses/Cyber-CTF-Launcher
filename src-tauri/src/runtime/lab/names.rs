@@ -65,6 +65,19 @@ pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> (PathBuf, Target) {
     }
 }
 
+/// The environment Isoloom's Vagrantfiles read to reach an ESXi host (the `vagrant-vmware-esxi`
+/// plugin's settings), also the vagrant target's run-manifest params by the same names.
+pub mod esxi {
+    pub const HOSTNAME: &str = "ESXI_HOSTNAME";
+    pub const HOSTPORT: &str = "ESXI_HOSTPORT";
+    pub const USERNAME: &str = "ESXI_USERNAME";
+    pub const PASSWORD: &str = "ESXI_PASSWORD";
+    pub const DATASTORE: &str = "ESXI_DATASTORE";
+    pub const VIRTUAL_NETWORK: &str = "ESXI_VIRTUAL_NETWORK";
+    /// The host's settings the manifest takes as params (its password is a connection secret).
+    pub const PARAMS: [&str; 5] = [HOSTNAME, HOSTPORT, USERNAME, DATASTORE, VIRTUAL_NETWORK];
+}
+
 /// The outputs of Isoloom's Terraform modules the launcher reads (Isoloom's run manifest outputs, its docs/runner.md).
 pub mod outputs {
     /// The address to start from: the lab's VM.

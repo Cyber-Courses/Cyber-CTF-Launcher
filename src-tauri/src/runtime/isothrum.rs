@@ -85,12 +85,6 @@ pub(crate) fn record_of(dirs: &crate::platform::AppDirs, id: &str) -> Result<Opt
     Ok(records(&paths::runner_home(dirs)?)?.into_iter().find(|r| r.name.as_str() == name))
 }
 
-/// The ESXi host's settings the vagrant target's manifest takes as params.
-const ESXI_PARAMS: [&str; 5] = ["ESXI_HOSTNAME", "ESXI_HOSTPORT", "ESXI_USERNAME", "ESXI_DATASTORE", "ESXI_VIRTUAL_NETWORK"];
-
-/// The ESXi host's password: the manifest's connection slot.
-const ESXI_PASSWORD: &str = "ESXI_PASSWORD";
-
 /// Where a VM lab on an ESXi server runs (Vagrant's `vmware_esxi`): the server's id, so an
 /// operation asked for elsewhere is refused; its settings as the manifest's params; its password,
 /// given to every operation of the run (status and park too). The runner relays the host's SSH
@@ -117,15 +111,15 @@ impl EsxiPlace {
         let value = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
         EsxiPlace {
             label: label.to_owned(),
-            params: ESXI_PARAMS.iter().filter_map(|name| value(name).map(|v| ((*name).to_owned(), v))).collect(),
-            password: SecretValue::new(value(ESXI_PASSWORD).unwrap_or_default()),
+            params: lab::esxi::PARAMS.iter().filter_map(|name| value(name).map(|v| ((*name).to_owned(), v))).collect(),
+            password: SecretValue::new(value(lab::esxi::PASSWORD).unwrap_or_default()),
         }
     }
 
     /// The run's connection: the host's password.
     pub(crate) fn connection(&self) -> Secrets {
         let mut secrets = Secrets::new();
-        secrets.insert(ESXI_PASSWORD, self.password.clone());
+        secrets.insert(lab::esxi::PASSWORD, self.password.clone());
         secrets
     }
 }

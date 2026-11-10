@@ -3,6 +3,7 @@
 //! plugin's environment). Isoloom's modules keep their own conventions; the mapping from the
 //! launcher's providers, profiles and credentials to them lives here.
 
+use super::names::esxi;
 use crate::runtime::providers::Provider;
 use crate::runtime::proxmox;
 use crate::runtime::server::{DEFAULT_AUTO_STOP_HOURS, HostProfile, size_var};
@@ -11,16 +12,16 @@ use crate::runtime::server::{DEFAULT_AUTO_STOP_HOURS, HostProfile, size_var};
 /// plugin's settings), from the host's profile and password.
 pub fn esxi_env(h: &HostProfile, password: &str) -> Vec<(String, String)> {
     let mut env = vec![
-        ("ESXI_HOSTNAME".to_string(), h.host.clone()),
-        ("ESXI_HOSTPORT".to_string(), h.port.to_string()),
-        ("ESXI_USERNAME".to_string(), h.username.clone()),
-        ("ESXI_PASSWORD".to_string(), password.to_string()),
+        (esxi::HOSTNAME.to_string(), h.host.clone()),
+        (esxi::HOSTPORT.to_string(), h.port.to_string()),
+        (esxi::USERNAME.to_string(), h.username.clone()),
+        (esxi::PASSWORD.to_string(), password.to_string()),
     ];
     if let Some(v) = &h.datastore {
-        env.push(("ESXI_DATASTORE".into(), v.clone()));
+        env.push((esxi::DATASTORE.into(), v.clone()));
     }
     if let Some(v) = &h.network {
-        env.push(("ESXI_VIRTUAL_NETWORK".into(), v.clone()));
+        env.push((esxi::VIRTUAL_NETWORK.into(), v.clone()));
     }
     env
 }
