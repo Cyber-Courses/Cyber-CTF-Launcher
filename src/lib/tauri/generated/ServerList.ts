@@ -4,4 +4,17 @@ import type { ServerHost } from "./ServerHost";
 /**
  * The saved servers and cloud accounts, and which one is the default.
  */
-export type ServerList = { default: string | null, hosts: Array<ServerHost>, };
+export type ServerList = { 
+/**
+ * The default host's id, when one is set.
+ */
+default: string | null, 
+/**
+ * Every saved server and cloud account.
+ */
+hosts: Array<ServerHost>, 
+/**
+ * Each account's monthly budget in USD, by id: the ones a cloud launch is checked against
+ * (AWS accounts with a positive limit), whose spend the Cloud page reads.
+ */
+budgets: { [key in string]: number }, };

@@ -55,12 +55,12 @@ describe("late answers", () => {
     const { result } = renderHook(() => useServerList());
     await act(() => emit(SERVER_CHANGED));
     await settle(() => {
-      answers[1].resolve({ default: null, hosts: [] });
+      answers[1].resolve({ default: null, hosts: [], budgets: {} });
     });
     await settle(() => {
-      answers[0].resolve({ default: "old", hosts: [{ id: "old" } as ServerList["hosts"][number]] });
+      answers[0].resolve({ default: "old", hosts: [{ id: "old" } as ServerList["hosts"][number]], budgets: {} });
     });
-    expect(result.current.list).toEqual({ default: null, hosts: [] });
+    expect(result.current.list).toEqual({ default: null, hosts: [], budgets: {} });
   });
 
   it("two Test clicks on a host show the newest test, whichever answers last", async () => {

@@ -4,9 +4,9 @@ import { type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Pencil, Trash2, XCircle, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { type ServerCheck, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { type MonthSpend, type ServerCheck, type ServerHost, type ServerTest } from "@/lib/tauri";
 import { StatusPill } from "@/components/ui/status-pill";
-import { budgetOf, credentialOf, isOverBudget, type Credential } from "@/features/cloud/cloud-model";
+import { credentialOf, type Credential } from "@/features/cloud/cloud-model";
 import { outcomeOf, type Outcome } from "@/features/servers/test-outcome";
 import { useT, type MessageKey, type T } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
@@ -24,14 +24,18 @@ const OUTCOME_LABEL = {
 export function AccountRow({
   host,
   test,
-  spent,
+  limit,
+  spend,
   onTest,
   onEdit,
   onRemove,
 }: {
   host: ServerHost;
   test: TestState;
-  spent?: number | null;
+  /** Its monthly budget in USD, when it has one. */
+  limit?: number;
+  /** This month's spend against that budget, once read. */
+  spend?: MonthSpend;
   onTest: () => void;
   onEdit: () => void;
   onRemove: () => void;
@@ -44,10 +48,10 @@ export function AccountRow({
         <LogoTile provider={host.provider} />
         <div className="min-w-0">
           <p className="truncate text-[0.8125rem] font-medium text-foreground">{host.name}</p>
-          <p className="truncate font-mono text-[0.6875rem] text-faint">{accountFacts(t, { host, result, spent })}</p>
+          <p className="truncate font-mono text-[0.6875rem] text-faint">{accountFacts(t, { host, result, limit, spent: spend?.spent })}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <AccountActions test={test} overBudget={isOverBudget(host, spent)} onTest={onTest} onEdit={onEdit} onRemove={onRemove} />
+          <AccountActions test={test} overBudget={!!spend?.over} onTest={onTest} onEdit={onEdit} onRemove={onRemove} />
         </div>
       </div>
       {result && <TestDetails result={result} />}
@@ -70,15 +74,17 @@ function credentialText(t: T, c: Credential): string {
 }
 
 /** The account's facts line: region, sign-in, auto-stop, then the last latency and the budget. */
-function accountFacts(t: T, { host, result, spent }: { host: ServerHost; result: ServerTest | undefined; spent: number | null | undefined }): string {
+function accountFacts(
+  t: T,
+  { host, result, limit, spent }: { host: ServerHost; result: ServerTest | undefined; limit: number | undefined; spent: number | undefined },
+): string {
   const facts = [
     host.host,
     credentialText(t, credentialOf(host)),
     host.autoStopHours ? t("cloud.account.autoStop", { hours: host.autoStopHours }) : t("cloud.account.noAutoStop"),
   ].join(" · ");
   const latency = result?.latencyMs == null ? "" : ` · ${String(result.latencyMs)} ms`;
-  const limit = budgetOf(host);
-  if (limit === null) return facts + latency;
+  if (limit === undefined) return facts + latency;
   const budget = ` · ${t("cloud.account.budget", { amount: formatUsd(limit, t.locale, { whole: true }) })}`;
   const spend = spent == null ? "" : `, ${t("cloud.account.spentThisMonth", { amount: formatUsd(spent, t.locale) })}`;
   return facts + latency + budget + spend;

@@ -41,7 +41,7 @@ export function CloudScreen() {
       {running.length > 0 && <RunningCloudLabs labs={running} statuses={page.statuses} isBusy={page.isBusy} onStop={page.stopLab} />}
       <Accounts page={page} onSetup={setUp} />
       {page.budgeted.map(({ host, limit }) => (
-        <BudgetPanel key={host.id} host={host} limit={limit} spent={page.spend[host.id]} />
+        <BudgetPanel key={host.id} host={host} limit={limit} spend={page.spend[host.id]} />
       ))}
     </div>
   );
@@ -75,7 +75,15 @@ function Accounts({ page, onSetup }: { page: CloudPage; onSetup: () => void }) {
   if (page.hosts.length === 0) return <FirstRun onSetup={onSetup} onConnect={connect} />;
   return (
     <>
-      <AccountsPanel accounts={page.hosts} tests={page.tests} spend={page.spend} onTest={page.test} onEdit={page.openSetup} onRemove={page.remove} />
+      <AccountsPanel
+        accounts={page.hosts}
+        tests={page.tests}
+        budgets={page.budgets}
+        spend={page.spend}
+        onTest={page.test}
+        onEdit={page.openSetup}
+        onRemove={page.remove}
+      />
       <ConnectProviders providers={unconnectedProviders(page.hosts)} onConnect={connect} />
     </>
   );

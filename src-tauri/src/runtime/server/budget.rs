@@ -42,15 +42,28 @@ fn cli_account(profile: Option<String>) -> HostProfile {
     }
 }
 
-/// This month's spend so far (USD) on the saved AWS account `id`, with its own credentials (its
-/// stored keys, or its CLI profile): the figure the Cloud screen shows is the one the launch
-/// budget gate checks, never another account's (the CLI's default profile's).
-pub(crate) async fn account_month_to_date_cost(dirs: &AppDirs, id: &str) -> Result<f64> {
+/// This month's spend on an account with a budget, as the Cloud page shows it: what it has cost
+/// so far, and whether that reached the budget (the launch gate's verdict).
+#[derive(Debug, PartialEq, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MonthSpend {
+    /// This month's spend so far, in USD.
+    pub spent: f64,
+    /// Whether it reached the account's monthly budget: a cloud launch on it is refused.
+    pub over: bool,
+}
+
+/// This month's spend so far on the saved account `id`, with its own credentials (its stored
+/// keys, or its CLI profile), against its budget: the figure the Cloud screen shows is the one
+/// the launch budget gate checks, never another account's (the CLI's default profile's). Only an
+/// account with a budget ([`budget_limit`]) is asked: Cost Explorer bills each call.
+pub(crate) async fn account_month_spend(dirs: &AppDirs, id: &str) -> Result<MonthSpend> {
     let host = load_host(dirs, id)?;
-    if host.provider != Provider::Aws {
-        return Err(Error::Invalid("only AWS accounts report their spend".into()));
-    }
-    month_to_date_cost(&host, &host_secret(&host)?).await
+    let Some(limit) = budget_limit(&host) else {
+        return Err(Error::Invalid("only an AWS account with a monthly budget reports its spend".into()));
+    };
+    let spent = month_to_date_cost(&host, &host_secret(&host)?).await?;
+    Ok(MonthSpend { spent, over: reached(limit, spent) })
 }
 
 /// Civil (year, month, day) for a Unix timestamp, UTC (Howard Hinnant's algorithm). Used to
@@ -151,19 +164,25 @@ fn keys_unreadable_message(e: &Error) -> String {
     }
 }
 
-/// The monthly limit a launch is checked against: AWS accounts with a positive limit only.
-fn budget_limit(host: &HostProfile) -> Option<f64> {
+/// The monthly limit a launch is checked against: AWS accounts with a positive limit only. The
+/// webview reads it from the saved list (`ServerList::budgets`).
+pub(crate) fn budget_limit(host: &HostProfile) -> Option<f64> {
     if host.provider != Provider::Aws {
         return None;
     }
     host.monthly_limit.filter(|v| *v > 0.0)
 }
 
+/// Whether `spent` reached the budget `limit`: from there, a cloud launch is refused.
+fn reached(limit: f64, spent: f64) -> bool {
+    spent >= limit
+}
+
 /// This month's spend (or why it couldn't be read) against `limit`.
 fn verdict(limit: f64, spent: Result<f64>) -> BudgetCheck {
     match spent {
         Ok(spent) if spent.is_nan() => BudgetCheck::Unverifiable(budget_unverifiable_message("the spend figure isn't a number")),
-        Ok(spent) if spent >= limit => BudgetCheck::Over(spent, limit),
+        Ok(spent) if reached(limit, spent) => BudgetCheck::Over(spent, limit),
         Ok(_) => BudgetCheck::Ok,
         Err(e) => BudgetCheck::Unverifiable(budget_unverifiable_message(&e.to_string())),
     }
@@ -198,15 +217,23 @@ mod tests {
         // budget gate read the stored keys.
         use crate::platform::exec::fake::{Tools, ok};
         let t = crate::testing::test_app::TestApp::new();
-        let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs" }));
+        let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs", "monthlyLimit": 10.0 }));
         let tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
-        crate::testing::assert_close(account_month_to_date_cost(&t.dirs(), &cli).await.unwrap(), 7.25);
+        assert_eq!(account_month_spend(&t.dirs(), &cli).await.unwrap(), MonthSpend { spent: 7.25, over: false });
         assert!(tools.called("aws ce get-cost-and-usage"), "{:?}", tools.calls());
         assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("labs"));
-        // Not an AWS account, or not saved: no figure.
-        let az = t.host("az1", "azure", serde_json::json!({}));
-        assert_eq!(account_month_to_date_cost(&t.dirs(), &az).await.unwrap_err().to_string(), "only AWS accounts report their spend");
-        assert!(account_month_to_date_cost(&t.dirs(), "nope").await.is_err());
+        // At the budget, the verdict the launch gate gives: over.
+        let tight = t.host("aws-tight", "aws", serde_json::json!({ "useCliCreds": true, "monthlyLimit": 7.25 }));
+        assert_eq!(account_month_spend(&t.dirs(), &tight).await.unwrap(), MonthSpend { spent: 7.25, over: true });
+        // No budget (none set, or not an AWS account), or not saved: no figure, Cost Explorer not asked.
+        let asked = tools.calls().len();
+        let free = t.host("aws-free", "aws", serde_json::json!({ "useCliCreds": true }));
+        let az = t.host("az1", "azure", serde_json::json!({ "monthlyLimit": 10.0 }));
+        for id in [&free, &az] {
+            assert_eq!(account_month_spend(&t.dirs(), id).await.unwrap_err().to_string(), "only an AWS account with a monthly budget reports its spend");
+        }
+        assert!(account_month_spend(&t.dirs(), "nope").await.is_err());
+        assert_eq!(tools.calls().len(), asked);
         // The setup form's figure, for a profile not saved yet.
         crate::testing::assert_close(cli_month_to_date_cost(None).await.unwrap(), 7.25);
     }

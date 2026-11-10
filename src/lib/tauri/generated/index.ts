@@ -50,6 +50,7 @@ export type * from "./LaunchConfirmRequest";
 export type * from "./MachineMetrics";
 export type * from "./ManagedSettings";
 export type * from "./ManualReason";
+export type * from "./MonthSpend";
 export type * from "./Need";
 export type * from "./OciConfig";
 export type * from "./OvftoolLocation";

@@ -15,7 +15,7 @@ use crate::error::Result;
 use crate::platform::AppDirs;
 use crate::runtime::proxmox::{placement, ssh_key};
 use crate::runtime::selftest_report::Event;
-use crate::runtime::server::budget::account_month_to_date_cost;
+use crate::runtime::server::budget::{MonthSpend, account_month_spend, budget_limit};
 use crate::runtime::server::capacity::{HostCapacity, capacity};
 use crate::runtime::server::checks::TestResult;
 use crate::runtime::server::connection_test::test_connection;
@@ -30,15 +30,21 @@ use crate::runtime::server::store::{load, update};
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ServerList")]
 pub struct HostList {
+    /// The default host's id, when one is set.
     default: Option<String>,
+    /// Every saved server and cloud account.
     hosts: Vec<HostProfile>,
+    /// Each account's monthly budget in USD, by id: the ones a cloud launch is checked against
+    /// (AWS accounts with a positive limit), whose spend the Cloud page reads.
+    budgets: std::collections::BTreeMap<String, f64>,
 }
 
 /// The saved servers and cloud accounts, with the default's id.
 #[tauri::command]
 pub fn server_list(app: AppHandle) -> Result<HostList> {
     let store = load(&AppDirs::from(&app))?;
-    Ok(HostList { default: store.default, hosts: store.hosts })
+    let budgets = store.hosts.iter().filter_map(|h| Some((h.id.clone(), budget_limit(h)?))).collect();
+    Ok(HostList { default: store.default, hosts: store.hosts, budgets })
 }
 
 /// Creates or updates a host from the setup form (see `server::setup::save`).
@@ -108,11 +114,11 @@ pub async fn server_capacity(app: AppHandle, id: String) -> Result<Option<HostCa
     capacity(&AppDirs::from(&app), &id).await
 }
 
-/// This month's spend so far (USD) on the saved AWS account `id`, with its own credentials (see
-/// `server::budget::account_month_to_date_cost`).
+/// This month's spend so far on the saved account `id`, which has a budget, and whether it reached
+/// it (see `server::budget::account_month_spend`).
 #[tauri::command]
-pub async fn server_month_to_date_cost(app: AppHandle, id: String) -> Result<f64> {
-    account_month_to_date_cost(&AppDirs::from(&app), &id).await
+pub async fn server_month_to_date_cost(app: AppHandle, id: String) -> Result<MonthSpend> {
+    account_month_spend(&AppDirs::from(&app), &id).await
 }
 
 /// Runs a real-VM self-test against host `id`, streaming step events (see
@@ -160,7 +166,10 @@ mod tests {
         assert!(tools.called("az account show --subscription 00000000-0000-0000-0000-000000000000"));
         assert!(!result.checks.is_empty());
         assert!(server_capacity(app(), saved.id.clone()).await.unwrap().is_none(), "only Proxmox reports capacity");
-        assert_eq!(server_month_to_date_cost(app(), saved.id.clone()).await.unwrap_err().to_string(), "only AWS accounts report their spend");
+        assert_eq!(
+            server_month_to_date_cost(app(), saved.id.clone()).await.unwrap_err().to_string(),
+            "only an AWS account with a monthly budget reports its spend"
+        );
         // A lab running on it keeps it.
         let lab = t.lab("web", &[]);
         std::fs::write(lab.join(HOST_MARKER), &saved.id).unwrap();

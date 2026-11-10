@@ -8,8 +8,8 @@ import { StatusDot, StatusPill } from "@/components/ui/status-pill";
 import { Spinner } from "@/components/ui/spinner";
 import type { Lab } from "@/features/labs/use-labs";
 import { AccountRow, CloudLogo } from "@/features/cloud/account-row";
-import { MAIN_PROVIDERS, isOverBudget } from "@/features/cloud/cloud-model";
-import type { CloudProvider, LabStatus, ServerHost, ServerTest } from "@/lib/tauri";
+import { MAIN_PROVIDERS } from "@/features/cloud/cloud-model";
+import type { CloudProvider, LabStatus, MonthSpend, ServerHost, ServerTest } from "@/lib/tauri";
 import { useFormat, useT } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
 
@@ -67,6 +67,7 @@ export function RunningCloudLabs({
 export function AccountsPanel({
   accounts,
   tests,
+  budgets,
   spend,
   onTest,
   onEdit,
@@ -74,7 +75,8 @@ export function AccountsPanel({
 }: {
   accounts: ServerHost[];
   tests: Partial<Record<string, ServerTest | "testing">>;
-  spend: Partial<Record<string, number | null>>;
+  budgets: Partial<Record<string, number>>;
+  spend: Partial<Record<string, MonthSpend>>;
   onTest: (id: string) => void;
   onEdit: (id: string) => void;
   onRemove: (id: string) => void;
@@ -88,7 +90,8 @@ export function AccountsPanel({
           key={h.id}
           host={h}
           test={tests[h.id]}
-          spent={spend[h.id]}
+          limit={budgets[h.id]}
+          spend={spend[h.id]}
           onTest={() => {
             onTest(h.id);
           }}
@@ -140,7 +143,7 @@ export function ConnectProviders({ providers, onConnect }: { providers: typeof M
 }
 
 /** An account's budget guard: this month's spend against its limit, and its auto-stop. */
-export function BudgetPanel({ host, limit, spent }: { host: ServerHost; limit: number; spent: number | null | undefined }) {
+export function BudgetPanel({ host, limit, spend }: { host: ServerHost; limit: number; spend: MonthSpend | undefined }) {
   const t = useT();
   const format = useFormat();
   return (
@@ -149,15 +152,15 @@ export function BudgetPanel({ host, limit, spent }: { host: ServerHost; limit: n
       <div className="grid gap-3 px-4 pt-4 pb-5">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <span className="serif-title text-[1.75rem] leading-none text-foreground">
-            {spent != null ? formatUsd(spent, t.locale) : "$…"}{" "}
+            {spend ? formatUsd(spend.spent, t.locale) : "$…"}{" "}
             <small className="font-sans text-[0.8125rem] tracking-normal text-faint">{t("cloud.screen.ofLimit", { limit: formatUsd(limit, t.locale) })}</small>
           </span>
           <span className="flex items-center gap-2 font-mono text-[0.6875rem] text-faint">
-            {isOverBudget(host, spent) && <StatusPill tone="fail">{t("cloud.screen.overBudget")}</StatusPill>}
+            {spend?.over && <StatusPill tone="fail">{t("cloud.screen.overBudget")}</StatusPill>}
             {host.autoStopHours ? t("cloud.screen.autoStopAfter", { hours: host.autoStopHours }) : t("cloud.screen.noAutoStop")}
           </span>
         </div>
-        <Meter value={spent == null ? 0 : (spent / limit) * 100} />
+        <Meter value={spend ? (spend.spent / limit) * 100 : 0} />
       </div>
     </Panel>
   );

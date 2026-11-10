@@ -80,6 +80,7 @@ fn generate(dir: &Path) {
         runtime::server::HostInput,
         crate::commands::server::HostList,
         runtime::server::HostProfile,
+        runtime::server::budget::MonthSpend,
         runtime::server::TestResult,
         runtime::proxmox::placement::Placement,
         shared_folder::SharedFolderInfo,

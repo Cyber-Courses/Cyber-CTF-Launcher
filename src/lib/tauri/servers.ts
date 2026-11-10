@@ -3,6 +3,7 @@ import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type * as Generated from "@/lib/tauri/generated";
 import type {
   HostCapacity,
+  MonthSpend,
   ProxmoxBridge,
   ProxmoxNodeChoices,
   ProxmoxPlacement,
@@ -15,7 +16,7 @@ import type {
 import type { CloudProvider } from "@/lib/tauri/cloud";
 import { SERVER_PROVIDERS } from "@/lib/tauri/generated/ProviderNames";
 
-export type { HostCapacity, ProxmoxBridge, ProxmoxNodeChoices, ProxmoxPlacement, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn };
+export type { HostCapacity, MonthSpend, ProxmoxBridge, ProxmoxNodeChoices, ProxmoxPlacement, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn };
 
 // --- Server (the player's own ESXi / Proxmox host) ---
 
@@ -62,9 +63,10 @@ export const serverTest = (id: string) => invoke<ServerTest>("server_test", { id
 export const serverPublicKey = () => invoke<string>("server_public_key");
 /** How many installed labs are currently running on each host, keyed by host id. */
 export const serverRunningLabs = () => invoke<Record<string, number>>("server_running_labs");
-/** This month's spend so far (USD) on a saved AWS account, with its own credentials: the figure
- *  the launch budget gate checks. Rejects when it can't be read. */
-export const serverMonthToDateCost = (id: string) => invoke<number>("server_month_to_date_cost", { id });
+/** This month's spend so far (USD) on a saved account with a budget (`ServerList.budgets`), with
+ *  its own credentials, and whether it reached the budget: the launch budget gate's figure and
+ *  verdict. Rejects when it can't be read. */
+export const serverMonthToDateCost = (id: string) => invoke<MonthSpend>("server_month_to_date_cost", { id });
 /** A host's hardware headroom: null for a host that isn't a Proxmox server; rejects when it
  *  can't be read. */
 export const serverCapacity = (id: string) => invoke<HostCapacity | null>("server_capacity", { id });

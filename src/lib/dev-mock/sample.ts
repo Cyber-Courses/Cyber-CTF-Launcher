@@ -85,6 +85,7 @@ const savedHost = (h: Pick<ServerHost, "id" | "name" | "provider" | "host" | "po
 /** The saved servers, a new copy per call (as the backend answers). */
 const servers = (): ServerList => ({
   default: "pve",
+  budgets: {},
   hosts: [
     savedHost({
       id: "pve",

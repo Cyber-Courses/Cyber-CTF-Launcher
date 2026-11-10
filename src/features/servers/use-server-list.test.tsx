@@ -26,7 +26,7 @@ describe("the saved servers", () => {
   it("are read again when the setup window saves one, wherever they are read", async () => {
     // Regression: the labs list and home read them once, so a server added in its setup window
     // left a lab "needing setup" until the page was opened again.
-    let list: ServerList = { default: null, hosts: [] };
+    let list: ServerList = { default: null, hosts: [], budgets: {} };
     installTauri({ server_list: () => list });
     const { result } = renderHook(() => useSavedHosts());
     await act(() => flush());

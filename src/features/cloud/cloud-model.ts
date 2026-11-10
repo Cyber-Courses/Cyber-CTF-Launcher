@@ -12,20 +12,12 @@ export const unconnectedProviders = (accounts: ServerHost[]) => MAIN_PROVIDERS.f
 /** The cloud accounts among the saved hosts (the rest are servers). */
 export const cloudAccounts = (hosts: ServerHost[]) => hosts.filter((h) => isCloudProvider(h.provider));
 
-/** An account's monthly budget in USD, or null when it set none (null or 0 means no limit). */
-export const budgetOf = (h: ServerHost): number | null => (h.monthlyLimit !== null && h.monthlyLimit > 0 ? h.monthlyLimit : null);
-
-/** Whether an account's month-to-date spend reached its budget. */
-export function isOverBudget(h: ServerHost, spent: number | null | undefined) {
-  const limit = budgetOf(h);
-  return limit !== null && spent != null && spent >= limit;
-}
-
-/** The accounts with a monthly budget, each with its limit (AWS only: Cost Explorer reads the spend). */
-export function budgetedAccounts(hosts: ServerHost[]): { host: ServerHost; limit: number }[] {
+/** The accounts among `hosts` with a monthly budget, each with its limit: the ones the backend
+ *  checks a launch against (`ServerList.budgets`). */
+export function budgetedAccounts(hosts: ServerHost[], budgets: Partial<Record<string, number>>): { host: ServerHost; limit: number }[] {
   return hosts.flatMap((host) => {
-    const limit = host.provider === "aws" ? budgetOf(host) : null;
-    return limit === null ? [] : [{ host, limit }];
+    const limit = budgets[host.id];
+    return limit === undefined ? [] : [{ host, limit }];
   });
 }
 

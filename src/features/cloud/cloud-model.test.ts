@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LabStatus, ServerCheck, ServerHost, ServerTest } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
-import { budgetedAccounts, cloudAccounts, credentialOf, isOverBudget, labsOnAccounts } from "@/features/cloud/cloud-model";
+import { budgetedAccounts, cloudAccounts, credentialOf, labsOnAccounts } from "@/features/cloud/cloud-model";
 import { outcomeOf } from "@/features/servers/test-outcome";
 
 const host = (id: string, provider: ServerHost["provider"], patch: Partial<ServerHost> = {}) => ({ id, name: id, provider, ...patch }) as ServerHost;
@@ -12,24 +12,12 @@ describe("cloud model", () => {
     expect(cloudAccounts(hosts).map((h) => h.id)).toEqual(["aws", "azure", "gcp", "digitalocean", "linode", "oci"]);
   });
 
-  it("is over budget once the spend reaches the limit", () => {
-    const capped = host("a", "aws", { monthlyLimit: 50 });
-    expect(isOverBudget(capped, 50)).toBe(true);
-    expect(isOverBudget(capped, 49.99)).toBe(false);
-    expect(isOverBudget(capped, null)).toBe(false);
-    expect(isOverBudget(host("b", "aws"), 1000)).toBe(false);
-  });
-
-  it("treats a budget of 0 as no limit", () => {
-    const uncapped = host("a", "aws", { monthlyLimit: 0 });
-    expect(isOverBudget(uncapped, 0)).toBe(false);
-    expect(isOverBudget(uncapped, 12)).toBe(false);
-    expect(budgetedAccounts([uncapped])).toEqual([]);
-  });
-
-  it("guards the budget of AWS accounts that set one", () => {
-    const hosts = [host("a", "aws", { monthlyLimit: 50 }), host("b", "aws"), host("c", "azure", { monthlyLimit: 50 })];
-    expect(budgetedAccounts(hosts).map((b) => [b.host.id, b.limit])).toEqual([["a", 50]]);
+  it("guards the budgets the backend lists, whatever a host's own fields say", () => {
+    // Which account has a budget is the backend's rule (`ServerList.budgets`): an Azure limit, a
+    // limit of 0 or none is left out there, not here.
+    const hosts = [host("a", "aws", { monthlyLimit: 50 }), host("b", "aws", { monthlyLimit: 0 }), host("c", "azure", { monthlyLimit: 50 })];
+    expect(budgetedAccounts(hosts, { a: 50 }).map((b) => [b.host.id, b.limit])).toEqual([["a", 50]]);
+    expect(budgetedAccounts(hosts, {})).toEqual([]);
   });
 
   it("finds the labs running on these accounts", () => {

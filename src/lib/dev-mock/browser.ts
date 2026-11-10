@@ -84,9 +84,18 @@ const accountHandlers: Record<string, BrowserHandler> = {
   lab_run_options: runOptionsQuery,
 };
 
+/** The budgets the backend answers with the list (Rust's `budget_limit`: an AWS account's
+ *  positive limit), for the hosts saved in the preview. */
+const budgetsOf = (hosts: Host[]): Record<string, number> =>
+  Object.fromEntries(
+    hosts.flatMap((h): [string, number][] =>
+      h.id && h.provider === "aws" && typeof h.monthlyLimit === "number" && h.monthlyLimit > 0 ? [[h.id, h.monthlyLimit]] : [],
+    ),
+  );
+
 /** The saved servers and cloud accounts, kept across the preview's tabs. */
 const serverHandlers: Record<string, BrowserHandler> = {
-  server_list: (args, { sc }) => ({ ...(answer("server_list", args) as object), hosts: hostsOf(sc) }),
+  server_list: (args, { sc }) => ({ ...(answer("server_list", args) as object), hosts: hostsOf(sc), budgets: budgetsOf(hostsOf(sc)) }),
   server_save: (args, { sc }) => {
     const input = (args?.input ?? {}) as Host;
     const invalid = saveError(input);

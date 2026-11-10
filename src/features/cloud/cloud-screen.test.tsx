@@ -68,11 +68,11 @@ describe("CloudScreen", () => {
   it("shows one account row for the one connected account, and the empty state with the connect actions once it is removed", async () => {
     // Regression: the providers not connected were rows of the accounts list ("Azure, not
     // connected"), so removing the one real account looked as if every account went with it.
-    let list: ServerList = { default: null, hosts: [aws] };
+    let list: ServerList = { default: null, hosts: [aws], budgets: {} };
     const calls = installTauri({
       server_list: () => list,
       server_remove: (a) => {
-        list = { default: null, hosts: list.hosts.filter((h) => h.id !== a?.id) };
+        list = { ...list, hosts: list.hosts.filter((h) => h.id !== a?.id) };
         return null;
       },
     });
@@ -94,7 +94,8 @@ describe("CloudScreen", () => {
   it("reads this month's spend for an account with a budget and warns when it is over", async () => {
     const list = sample();
     list.hosts[2] = account({ monthlyLimit: 5, awsProfile: "lab" });
-    const calls = installTauri({ server_list: () => list, server_month_to_date_cost: () => 6.4 });
+    list.budgets = { [list.hosts[2].id]: 5 };
+    const calls = installTauri({ server_list: () => list, server_month_to_date_cost: () => ({ spent: 6.4, over: true }) });
     await renderScreen();
     // The account's own spend (its credentials), never the CLI's default profile's.
     expect(argsOf(calls, "server_month_to_date_cost")).toEqual([{ id: list.hosts[2].id }]);
@@ -108,14 +109,17 @@ describe("CloudScreen", () => {
   it("counts the accounts over budget", async () => {
     const list = sample();
     list.hosts = [account({ id: "a", name: "A", monthlyLimit: 1 }), account({ id: "b", name: "B", monthlyLimit: 2 })];
-    installTauri({ server_list: () => list, server_month_to_date_cost: () => 10 });
+    list.budgets = { a: 1, b: 2 };
+    installTauri({ server_list: () => list, server_month_to_date_cost: () => ({ spent: 10, over: true }) });
     await renderScreen();
     expect(screen.getByText(/2 accounts are over their monthly budget/)).toBeTruthy();
   });
 
-  it("treats a budget of 0 as no limit", async () => {
+  it("takes which accounts have a budget, and whether one is over it, from the backend", async () => {
+    // A limit of 0 is no budget: the backend lists none for it, so no spend is read.
     const list = sample();
     list.hosts[2] = account({ monthlyLimit: 0 });
+    list.budgets = {};
     const calls = installTauri({ server_list: () => list });
     await renderScreen();
     expect(commands(calls)).not.toContain("server_month_to_date_cost");
@@ -124,9 +128,19 @@ describe("CloudScreen", () => {
     expect(document.body.textContent).not.toContain("budget $0");
   });
 
+  it("shows the backend's verdict on the spend, not one of its own", async () => {
+    const list = sample();
+    list.hosts[2] = account({ monthlyLimit: 50 });
+    list.budgets = { [list.hosts[2].id]: 50 };
+    installTauri({ server_list: () => list, server_month_to_date_cost: () => ({ spent: 12, over: true }) });
+    await renderScreen();
+    expect(screen.getAllByText("Over budget").length).toBe(2);
+  });
+
   it("keeps the page up when the spend can't be read", async () => {
     const list = sample();
     list.hosts[2] = account({ monthlyLimit: 50 });
+    list.budgets = { [list.hosts[2].id]: 50 };
     installTauri({
       server_list: () => list,
       server_month_to_date_cost: failsWith("ce:GetCostAndUsage denied"),
@@ -217,7 +231,7 @@ describe("CloudScreen", () => {
   });
 
   it("shows the first run without accounts, connecting a main provider or any other", async () => {
-    const calls = installTauri({ server_list: () => ({ default: null, hosts: [sample().hosts[0]] }) });
+    const calls = installTauri({ server_list: () => ({ default: null, hosts: [sample().hosts[0]], budgets: {} }) });
     const user = userEvent.setup();
     await renderScreen();
     expect(screen.getByText("Run labs in your own cloud account")).toBeTruthy();
@@ -248,8 +262,8 @@ describe("CloudScreen", () => {
 
 describe("AccountRow", () => {
   const noop = () => {};
-  const row = (host: ServerHost, test?: ServerTest | "testing", spent?: number | null) =>
-    render(<AccountRow host={host} test={test} spent={spent} onTest={noop} onEdit={noop} onRemove={noop} />);
+  const row = (host: ServerHost, test?: ServerTest | "testing", limit?: number) =>
+    render(<AccountRow host={host} test={test} limit={limit} onTest={noop} onEdit={noop} onRemove={noop} />);
 
   it.each([
     [{ provider: "digitalocean" as const }, "API token"],
@@ -286,7 +300,7 @@ describe("AccountRow", () => {
   });
 
   it("shows the budget with no spend read yet", () => {
-    row(account({ monthlyLimit: 25 }), undefined, null);
+    row(account({ monthlyLimit: 25 }), undefined, 25);
     expect(document.body.textContent).toContain("budget $25/mo");
     expect(document.body.textContent).not.toContain("this month");
   });
@@ -327,7 +341,7 @@ describe("cloud panels", () => {
 
   it("lists the accounts and nothing else", () => {
     const accounts = [account({}), account({ id: "z", name: "Azure lab", provider: "azure" })];
-    render(<AccountsPanel accounts={accounts} tests={{}} spend={{}} onTest={vi.fn()} onEdit={vi.fn()} onRemove={vi.fn()} />);
+    render(<AccountsPanel accounts={accounts} tests={{}} budgets={{}} spend={{}} onTest={vi.fn()} onEdit={vi.fn()} onRemove={vi.fn()} />);
     expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(2);
     expect(screen.queryByText("Google Cloud")).toBeNull();
   });
@@ -347,7 +361,7 @@ describe("cloud panels", () => {
   });
 
   it("shows a budget under its limit, with no auto-stop", () => {
-    const { container } = render(<BudgetPanel host={account({ monthlyLimit: 100, autoStopHours: 0 })} limit={100} spent={25} />);
+    const { container } = render(<BudgetPanel host={account({ monthlyLimit: 100, autoStopHours: 0 })} limit={100} spend={{ spent: 25, over: false }} />);
     expect(container.textContent).toContain("$25.00");
     expect(container.textContent).toContain("of $100.00");
     expect(container.textContent).toContain("no auto-stop");

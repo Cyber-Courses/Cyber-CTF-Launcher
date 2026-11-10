@@ -1,30 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
-import { budgetedAccounts, cloudAccounts, isOverBudget, labsOnAccounts } from "@/features/cloud/cloud-model";
+import { budgetedAccounts, cloudAccounts, labsOnAccounts } from "@/features/cloud/cloud-model";
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
-import { serverMonthToDateCost, serverOpenSetup, serverRemove, type CloudProvider, type ServerHost } from "@/lib/tauri";
+import { serverMonthToDateCost, serverOpenSetup, serverRemove, type CloudProvider, type MonthSpend, type ServerHost } from "@/lib/tauri";
 import { ignore } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
 import { confirmDestructive } from "@/lib/confirm";
 import { useT } from "@/lib/i18n";
 
-/** Month-to-date spend, only for accounts that set a budget (Cost Explorer costs per call), read
- *  with each account's own credentials: the figure the launch budget gate checks. `hosts` is the
- *  saved list as loaded, so the spend is read again only when it reloads. */
-function useMonthSpend(hosts: ServerHost[] | null) {
-  const [spend, setSpend] = useState<Partial<Record<string, number | null>>>({});
+/** Month-to-date spend and the budget's verdict, only for accounts that set a budget (Cost
+ *  Explorer costs per call), read with each account's own credentials: the figure the launch
+ *  budget gate checks. `budgeted` comes from the saved list as loaded, so the spend is read again
+ *  only when it reloads. */
+function useMonthSpend(budgeted: { host: ServerHost }[]) {
+  const [spend, setSpend] = useState<Partial<Record<string, MonthSpend>>>({});
   useEffect(() => {
-    for (const { host } of budgetedAccounts(hosts ?? [])) {
+    for (const { host } of budgeted) {
       serverMonthToDateCost(host.id)
         .then((c) => {
           setSpend((s) => ({ ...s, [host.id]: c }));
         })
         .catch(ignore("the spend is shown only when it can be read"));
     }
-  }, [hosts]);
+  }, [budgeted]);
   return spend;
 }
 
@@ -37,7 +38,8 @@ export function useCloudPage() {
   const allHosts = list?.hosts ?? null;
   const hosts = allHosts ? cloudAccounts(allHosts) : null;
   const { tests, test } = useHostTests();
-  const spend = useMonthSpend(allHosts);
+  const budgeted = useMemo(() => (list ? budgetedAccounts(list.hosts, list.budgets) : []), [list]);
+  const spend = useMonthSpend(budgeted);
   const { labs, statuses, refreshStatus } = useLabs();
   // Through the shared lab actions: the lab reads busy everywhere (this list, Labs, its page)
   // until its status after the stop is read, so Stop can't be pressed twice.
@@ -70,8 +72,9 @@ export function useCloudPage() {
     spend,
     statuses,
     running: labsOnAccounts(labs ?? [], statuses, hosts ?? []),
-    over: (hosts ?? []).filter((h) => isOverBudget(h, spend[h.id])),
-    budgeted: budgetedAccounts(hosts ?? []),
+    over: (hosts ?? []).filter((h) => spend[h.id]?.over),
+    budgets: list?.budgets ?? {},
+    budgeted,
     isBusy: (l: Lab) => !!runs[l.id]?.busy,
     /** The cloud setup: editing account `id`, or a new account, on `provider` when one is named. */
     openSetup: (id: string | null = null, provider: CloudProvider | null = null) => {
