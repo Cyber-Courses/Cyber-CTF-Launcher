@@ -32,16 +32,4 @@ mod tests {
         assert!(said.starts_with("Another Docker network already uses the addresses this lab needs.") && said.contains("Pool overlaps"), "{said}");
         assert_eq!(explain_pool_overlap(Error::Invalid("port taken".into())).to_string(), "port taken");
     }
-
-    #[test]
-    fn nothing_the_app_runs_listens_beyond_the_loopback() {
-        // Regression (#230): the port check bound 0.0.0.0, and Windows Firewall asked the player
-        // whether Cyber CTF may accept connections from public networks, mid-deploy.
-        for src in crate::testing::source_scan::crate_sources() {
-            for needle in ["\"0.0.0.0\"", "UNSPECIFIED", "\"::\"", "\"[::]"] {
-                let binds = src.code.lines().filter(|l| l.contains("bind") && l.contains(needle)).collect::<Vec<_>>();
-                assert!(binds.is_empty(), "{} binds beyond the loopback: {binds:?}", src.path.display());
-            }
-        }
-    }
 }

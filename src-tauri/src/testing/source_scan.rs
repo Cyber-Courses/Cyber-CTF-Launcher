@@ -1,6 +1,11 @@
-//! Rules over the crate's own source that no single unit test can see: every Tauri command is
-//! called from a test (lib.rs), every literal argument a cmd.exe-wrapped tool gets passes its
-//! guard, and nothing listens beyond the loopback.
+//! The crate's own source, read whole and split into shipped and test code, for the rules no
+//! single unit test can see. Here: the layers depend downwards only, no file ships more than its
+//! share of code nor is a `mod.rs`, `tauri` is used only in the shell and the commands, and
+//! nothing listens beyond the loopback. Elsewhere, over the same split: every Tauri command is
+//! called from a test and none that opens a window is synchronous (`commands.rs`), every literal
+//! argument a cmd.exe-wrapped tool gets passes its guard (`platform/exec/shim.rs`), and only
+//! `runtime/lab/` uses Isoloom's spec and generator crates, only `runtime/isothrum/` its run
+//! manifest's (`runtime/lab.rs`).
 
 use std::path::{Path, PathBuf};
 
@@ -322,4 +327,17 @@ fn the_source_rules_see_what_they_look_for() {
     let tauri = regex::Regex::new(r"\btauri(_plugin_\w+)?::|\b(AppHandle|WebviewWindow|AppRuntime)\b").unwrap();
     assert!(tauri.is_match("use tauri::Manager;") && tauri.is_match("fn f(app: &AppHandle)") && tauri.is_match("tauri_plugin_dialog::init()"));
     assert!(!tauri.is_match("use ts_rs::TS;") && !tauri.is_match("let my_AppHandles = 1;"));
+}
+
+/// Nothing the app runs listens beyond the loopback. Regression (#230): the port check bound
+/// 0.0.0.0, and Windows Firewall asked the player whether Cyber CTF may accept connections from
+/// public networks, mid-deploy.
+#[test]
+fn nothing_the_app_runs_listens_beyond_the_loopback() {
+    for src in crate_sources() {
+        for needle in ["\"0.0.0.0\"", "UNSPECIFIED", "\"::\"", "\"[::]"] {
+            let binds = src.code.lines().filter(|l| l.contains("bind") && l.contains(needle)).collect::<Vec<_>>();
+            assert_eq!(binds, [] as [&str; 0], "{} binds beyond the loopback", src.path.display());
+        }
+    }
 }
