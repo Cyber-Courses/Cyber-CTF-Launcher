@@ -16,8 +16,14 @@ fn arches() -> (&'static str, &'static str) {
     if std::env::consts::ARCH == "aarch64" { ("arm64", "amd64") } else { ("amd64", "arm64") }
 }
 
-/// A container lab with VM recipes too.
-const DUAL: &str = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, app: { steps: [{ run: web.sh }] }, networks: { lab: 10 } }\n";
+/// A container lab with VM recipes too, built for this machine's CPU (as VMs, it runs here on any
+/// hypervisor).
+fn dual() -> String {
+    format!(
+        "version: 1\nname: t\nnetworks: {{ lab: {{ cidr: 10.70.0.0/24 }} }}\nmachines:\n  web: {{ os: debian@12, hardware: {{ arch: {} }}, app: {{ steps: [{{ run: web.sh }}] }}, networks: {{ lab: 10 }} }}\n",
+        arches().0
+    )
+}
 
 /// Lab `id` installed at [`SHA`] with `spec`, so its spec is read from the installed copy.
 fn installed(t: &TestApp, id: &str, spec: &str) {
@@ -121,7 +127,7 @@ async fn a_lab_starts_again_where_it_last_ran() {
     set_provider(&t, "ad", "libvirt");
     assert_eq!(place(&t, "ad", Runtime::Vm, &[]).await, here_on(Provider::Libvirt));
     // A container lab: in its helper VM on UTM, or as one VM per machine.
-    installed(&t, "web", DUAL);
+    installed(&t, "web", &dual());
     assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace::default(), "never ran: on Docker here");
     record_run(t.data(), "web", None, "docker-vm", "absent");
     set_provider(&t, "web", "utm");

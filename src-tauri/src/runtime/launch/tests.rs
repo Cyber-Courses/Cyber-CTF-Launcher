@@ -2,11 +2,12 @@ use std::path::PathBuf;
 
 use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{
-    CLOUD_NEEDS_ACCOUNT, Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, downloads, emulated_arches, local_run,
-    low_memory_warning, parse_ipv4, per_machine_runs_on, record_cloud_form,
+    CLOUD_NEEDS_ACCOUNT, Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, downloads, local_run, low_memory_warning, parse_ipv4,
+    per_machine_runs_on, record_cloud_form,
 };
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
+use crate::runtime::lab::emulated_arches;
 use crate::runtime::paths::{mark_parked, parked};
 use crate::runtime::{Park, start};
 use crate::testing::test_app::TestApp;

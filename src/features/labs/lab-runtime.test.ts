@@ -25,6 +25,7 @@ const options = (paths: Partial<LabRunOptions>): LabRunOptions => ({
   cloudDocker: [],
   cloudVm: [],
   cloudServices: [],
+  emulated: false,
   refused: [],
   ...paths,
 });
@@ -67,14 +68,24 @@ describe("localProviders", () => {
 });
 
 describe("formProviders", () => {
-  it("are the hypervisors the backend's run options give the form, the emulator alone for another CPU's VMs", () => {
+  it("are the hypervisors the backend's run options give the form", () => {
     // Regression: the picker kept its own tables (every local hypervisor but UTM, any cloud):
     // what a lab runs on is what Isoloom generates it for, which the backend says.
     const vms = ["virtualbox", "hyperv", "qemu"].map((p) => path(p as Provider));
-    const both = rt({ runtime: "DOCKER", docker: true, vm: true, architectures: ["x86_64"] });
-    expect(formProviders(vms, both)).toEqual(["virtualbox", "hyperv", "qemu"]);
-    expect(formProviders(vms, both, "x86_64")).toEqual(["virtualbox", "hyperv", "qemu"]);
-    expect(formProviders(vms, both, "aarch64")).toEqual(["qemu"]);
+    expect(formProviders(vms)).toEqual(["virtualbox", "hyperv", "qemu"]);
+    expect(formProviders([path("qemu")])).toEqual(["qemu"]);
+  });
+  it("take the backend's word on VMs built for another CPU over the catalogue's, once read", () => {
+    // Regression: the webview applied the emulation rule again, from the catalogue's
+    // architectures, where the backend reads the spec's machines: the two could disagree.
+    const x86 = rt({ architectures: ["x86_64"], providers: ["virtualbox", "qemu"] as Provider[] });
+    expect(localProviders(x86, "arm64")).toEqual(["qemu"]);
+    expect(localProviders(x86, "arm64", options({ vms: [path("virtualbox"), path("qemu")] }))).toEqual(["virtualbox", "qemu"]);
+    const unlisted = rt({ architectures: [], providers: ["virtualbox", "qemu"] as Provider[] });
+    expect(localProviders(unlisted, "arm64", options({ vms: [path("qemu")], emulated: true }))).toEqual(["qemu"]);
+    const here = (o: Partial<LabRunOptions>) => runPlaces(unlisted, "arm64", false, { options: options(o) }).find((p) => p.key === "local_vm")?.state;
+    expect(here({ vms: [path("qemu")], emulated: true })).toBe("unsupported");
+    expect(here({ vms: [path("virtualbox")] })).not.toBe("unsupported");
   });
   it("give a container lab's helper VM its hypervisors, and a VM lab its own once read", () => {
     const docker = rt({ runtime: "DOCKER" });

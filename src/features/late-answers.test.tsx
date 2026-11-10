@@ -82,7 +82,7 @@ describe("late answers", () => {
   it("keeps the target the player picked when the server list is read again", async () => {
     installTauri();
     const rt: LabRuntimeInfo = { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "proxmox", "vmware_esxi"] };
-    const { result, rerender } = renderHook(({ ready }) => useRunTarget({ id: "lab-t", runtime: rt }, ready, "x86_64"), {
+    const { result, rerender } = renderHook(({ ready }) => useRunTarget({ id: "lab-t", runtime: rt }, ready), {
       initialProps: { ready: [] as never[] },
     });
     await flush();
@@ -109,11 +109,12 @@ describe("late answers", () => {
         cloudVm: [],
         cloudServices: [],
         refused: [{ provider: "utm", target: "vagrant", reason: "no network" }],
+        emulated: false,
       }),
     });
     const source = { repository: "CyberCTF/lab", commit: "0123456789abcdef0123456789abcdef01234567" };
     const both: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: ["virtualbox"], docker: true, vm: true, ...source };
-    const { result, rerender } = renderHook(({ ready }) => useRunTarget({ id: "lab-t", runtime: both }, ready, "aarch64"), {
+    const { result, rerender } = renderHook(({ ready }) => useRunTarget({ id: "lab-t", runtime: both }, ready), {
       initialProps: { ready: ["utm"] as Provider[] },
     });
     await flush();

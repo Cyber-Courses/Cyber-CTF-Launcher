@@ -69,13 +69,12 @@ where
     if runtime != Runtime::Vm {
         return Ok(last.unwrap_or_default());
     }
-    // Where it last ran here, else a ready hypervisor here that runs it: VMs built for another
-    // CPU only emulated, the preferred one first.
+    // Where it last ran here, else a ready hypervisor here that runs it (VMs built for another
+    // CPU are offered only on an emulator), the preferred one first.
     let hypervisor = if let Some(StartPlace { host: None, provider: Some(p), .. }) = last.as_ref() {
         Some(*p)
     } else {
-        let foreign = !super::launch::emulated_arches(&lab.spec(), std::env::consts::ARCH).is_empty();
-        let runs_here = |p: &Provider| offers(&options.vms, *p) && (!foreign || p.is_emulator());
+        let runs_here = |p: &Provider| offers(&options.vms, *p);
         let ready: Vec<Provider> = ready().await.into_iter().filter(runs_here).collect();
         preferred.filter(|p| ready.contains(p)).or_else(|| ready.first().copied())
     };

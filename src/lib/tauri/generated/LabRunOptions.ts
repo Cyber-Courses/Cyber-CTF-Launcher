@@ -40,4 +40,9 @@ cloudServices: Array<LabRunPath>,
  * Where a form exists but Isoloom refuses the lab, or this computer's policy turns it off,
  * and why.
  */
-refused: Array<LabRunRefusal>, };
+refused: Array<LabRunRefusal>, 
+/**
+ * The lab's VMs are built for another CPU than this machine's (`emulated_arches`): here
+ * they run only emulated, so `vms` holds the emulators alone (QEMU).
+ */
+emulated: boolean, };

@@ -17,7 +17,6 @@ mod local;
 mod on_host;
 mod port_holder;
 
-pub(in crate::runtime) use local::emulated_arches;
 #[cfg(test)]
 use local::low_memory_warning;
 use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};

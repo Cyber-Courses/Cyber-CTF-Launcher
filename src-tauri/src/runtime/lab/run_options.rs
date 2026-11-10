@@ -91,17 +91,27 @@ pub struct RunOptions {
     /// Where a form exists but Isoloom refuses the lab, or this computer's policy turns it off,
     /// and why.
     pub refused: Vec<Refusal>,
+    /// The lab's VMs are built for another CPU than this machine's (`emulated_arches`): here
+    /// they run only emulated, so `vms` holds the emulators alone (QEMU).
+    pub emulated: bool,
 }
 
 /// Every way lab `lab`, declared `runtime`, can start ([`RunOptions`]), as Isoloom generates it
 /// and this computer's policy allows.
 pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
-    with_policy(generated(lab, runtime), policy::current(), lab::is_privileged(&lab.spec()))
+    run_options_on(lab, runtime, std::env::consts::ARCH)
 }
 
-/// Every way lab `lab`, declared `runtime`, can start as Isoloom generates it.
-fn generated(lab: &Lab, runtime: Runtime) -> RunOptions {
+/// [`run_options`] on a `host` CPU.
+fn run_options_on(lab: &Lab, runtime: Runtime, host: &str) -> RunOptions {
+    with_policy(generated(lab, runtime, host), policy::current(), lab::is_privileged(&lab.spec()))
+}
+
+/// Every way lab `lab`, declared `runtime`, can start as Isoloom generates it, on a `host` CPU
+/// (`std::env::consts::ARCH`'s name): VMs built for another CPU only on an emulator.
+fn generated(lab: &Lab, runtime: Runtime, host: &str) -> RunOptions {
     let spec = lab.spec();
+    let emulated = !emulated_arches(&spec, host).is_empty();
     let has = |t: Target| isoloom_spec::effective(&spec).contains(&t);
     let tiers = tiers::run_tiers();
     let path = |target: Target, provider: Option<Provider>| {
@@ -125,19 +135,21 @@ fn generated(lab: &Lab, runtime: Runtime) -> RunOptions {
     };
     let local: Vec<Provider> = Provider::ALL.into_iter().filter(|p| !p.is_remote()).collect();
     let docker_vm_local: Vec<Provider> = local.iter().copied().filter(|p| variants(Target::DockerVm).contains(&p.id())).collect();
+    // The lab's own VMs here: on an emulator only, when they are built for another CPU.
+    let vm_local: Vec<Provider> = local.iter().copied().filter(|p| !emulated || p.is_emulator()).collect();
     let clouds = |target: Target| -> Vec<Provider> { Provider::CLOUDS.into_iter().filter(|c| variants(target).contains(&c.id())).collect() };
     let mut refused = Vec::new();
     match runtime {
         Runtime::Docker => {
             out.docker = if has(Target::Docker) { on_docker(lab, path(Target::Docker, None), &mut refused) } else { None };
             on(Target::DockerVm, &docker_vm_local, &mut out.docker_vm, &mut refused);
-            on(Target::Vagrant, &local, &mut out.vms, &mut refused);
+            on(Target::Vagrant, &vm_local, &mut out.vms, &mut refused);
             on(Target::DockerVm, &Provider::SERVERS, &mut out.servers, &mut refused);
             on(Target::CloudDocker, &clouds(Target::CloudDocker), &mut out.cloud_docker, &mut refused);
             on(Target::CloudVm, &clouds(Target::CloudVm), &mut out.cloud_vm, &mut refused);
         }
         Runtime::Vm => {
-            on(Target::Vagrant, &local, &mut out.vms, &mut refused);
+            on(Target::Vagrant, &vm_local, &mut out.vms, &mut refused);
             on(Target::Vagrant, &[Provider::VmwareEsxi], &mut out.servers, &mut refused);
             if has(Target::Proxmox) {
                 // Proxmox's own target has one form: no provider of its own in the evidence.
@@ -155,6 +167,7 @@ fn generated(lab: &Lab, runtime: Runtime) -> RunOptions {
         }
     }
     out.refused = refused;
+    out.emulated = emulated;
     out
 }
 
@@ -188,6 +201,23 @@ fn on_docker(lab: &Lab, path: RunPath, refused: &mut Vec<Refusal>) -> Option<Run
         }
         None => Some(path),
     }
+}
+
+/// The CPUs (`std::env::consts::ARCH` names) a lab's VMs are built for that differ from `host`,
+/// i.e. the ones QEMU has to emulate. Any: the lab's VMs run here only on an emulator.
+pub fn emulated_arches(spec: &lab::Spec, host: &str) -> Vec<&'static str> {
+    let mut emulated: Vec<&'static str> = spec
+        .machines
+        .values()
+        .filter(|m| m.vm.is_some())
+        .map(|m| match m.arch {
+            lab::Arch::Amd64 => "x86_64",
+            lab::Arch::Arm64 => "aarch64",
+        })
+        .filter(|a| *a != host)
+        .collect();
+    emulated.dedup();
+    emulated
 }
 
 /// The providers or clouds Isoloom's tier evidence lists for `target`: the ones it generates it

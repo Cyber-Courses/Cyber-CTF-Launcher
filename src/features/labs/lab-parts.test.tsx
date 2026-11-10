@@ -39,6 +39,7 @@ describe("RunOnPicker", () => {
     cloudDocker: [],
     cloudVm: [],
     cloudServices: [],
+    emulated: false,
     refused,
   });
   const byPolicy = (setting: string) => ({ kind: "policy" as const, setting });
@@ -258,6 +259,7 @@ describe("RunOnPicker", () => {
         cloudDocker: [path("azure", "beta"), path("aws", "none")],
         cloudVm: [],
         cloudServices: [],
+        emulated: false,
         refused: [],
       },
     });
@@ -318,7 +320,7 @@ describe("RunOnPicker", () => {
     installTauri();
     renderPicker({
       offerContainers: true,
-      runOptions: { docker: null, dockerVm: [], vms: [], servers: [], cloudDocker: [], cloudVm: [], cloudServices: [], refused: [] },
+      runOptions: { docker: null, dockerVm: [], vms: [], servers: [], cloudDocker: [], cloudVm: [], cloudServices: [], refused: [], emulated: false },
     });
     expect(screen.queryByText("Container")).toBeNull();
     await flush();

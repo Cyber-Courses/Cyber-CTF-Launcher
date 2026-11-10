@@ -26,23 +26,6 @@ pub(super) fn low_memory_warning(needed_mb: u64, available_mb: u64) -> Option<St
     (available_mb > 0 && needed_mb > available_mb).then(|| deploy_log::low_memory(needed_mb, available_mb))
 }
 
-/// The CPUs (`std::env::consts::ARCH` names) a lab's VMs are built for that differ from `host`,
-/// i.e. the ones QEMU has to emulate.
-pub(in crate::runtime) fn emulated_arches(spec: &lab::Spec, host: &str) -> Vec<&'static str> {
-    let mut emulated: Vec<&'static str> = spec
-        .machines
-        .values()
-        .filter(|m| m.vm.is_some())
-        .map(|m| match m.arch {
-            lab::Arch::Amd64 => "x86_64",
-            lab::Arch::Arm64 => "aarch64",
-        })
-        .filter(|a| *a != host)
-        .collect();
-    emulated.dedup();
-    emulated
-}
-
 /// A lab run as `target` on `provider` (its VMs, or the helper VM a container lab runs in):
 /// Isoloom's own refusal of the pair, if it has one, before any VM is created. QEMU links a VM on
 /// one network only; UTM's Vagrant plugin gives a VM no private network, so a lab with a network
@@ -63,7 +46,7 @@ pub(super) fn check_provider(prepared: &lab::Prepared, target: lab::Target, prov
 /// two-VM links) is [`check_provider`]'s.
 pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(String)) -> Result<()> {
     let host = std::env::consts::ARCH;
-    for arch in emulated_arches(&prepared.spec, host) {
+    for arch in lab::emulated_arches(&prepared.spec, host) {
         let bin = if arch == "x86_64" { "qemu-system-x86_64" } else { "qemu-system-aarch64" };
         if crate::platform::exec::run(bin, &["--version"], None).await.is_err() {
             return Err(Error::Invalid(format!(

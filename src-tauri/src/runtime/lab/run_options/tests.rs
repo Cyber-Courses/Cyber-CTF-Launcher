@@ -6,8 +6,14 @@ const DUAL: &str = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 }
 /// A VM lab: a Windows machine.
 const VMS: &str = "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 } }\nmachines:\n  dc: { os: windows-server@2022, networks: { lan: 10 } }\n";
 
+/// The lab's run options on an x86-64 machine (the machines below are built for it).
 fn options(spec: &str, runtime: Runtime) -> RunOptions {
-    run_options(&Lab::new(isoloom_spec::parse(spec).unwrap()), runtime)
+    options_on(spec, runtime, "x86_64")
+}
+
+/// The lab's run options on a `host` CPU.
+fn options_on(spec: &str, runtime: Runtime, host: &str) -> RunOptions {
+    run_options_on(&Lab::new(isoloom_spec::parse(spec).unwrap()), runtime, host)
 }
 
 /// The providers of `paths`, in order.
@@ -119,4 +125,21 @@ fn the_picker_offers_no_way_the_policy_turns_off_and_says_why() {
 /// A refusal by this computer's policy `setting`.
 fn by_policy(setting: &str) -> RefusalCause {
     RefusalCause::Policy { setting: setting.into() }
+}
+
+/// Regression: the webview decided again which hypervisors run a lab built for another CPU, from
+/// the catalogue's architectures rather than the spec's machines, and the two could disagree. The
+/// run options say it, by the backend's rule: those VMs run here only on an emulator.
+#[test]
+fn vms_built_for_another_cpu_are_offered_only_on_an_emulator() {
+    let native = options_on(VMS, Runtime::Vm, "x86_64");
+    assert!(!native.emulated);
+    assert!(providers(&native.vms).len() > 1 && providers(&native.vms).contains(&Provider::Virtualbox), "{:?}", providers(&native.vms));
+    let emulated = options_on(VMS, Runtime::Vm, "aarch64");
+    assert!(emulated.emulated);
+    assert_eq!(providers(&emulated.vms), [Provider::Qemu]);
+    // A container lab's helper VM is a VM of this machine's CPU: every hypervisor as before.
+    let dual = options_on(DUAL, Runtime::Docker, "aarch64");
+    assert!(dual.emulated && providers(&dual.vms) == [Provider::Qemu], "its machines as VMs: {:?}", providers(&dual.vms));
+    assert_eq!(providers(&dual.docker_vm), providers(&options_on(DUAL, Runtime::Docker, "x86_64").docker_vm));
 }

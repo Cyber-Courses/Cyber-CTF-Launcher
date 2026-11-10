@@ -268,12 +268,22 @@ const runPath = (provider: Provider | null, beta = false): LabRunPath => ({
 });
 
 const CLOUDS_OF_SAMPLE: Provider[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"];
-const NO_OPTIONS: LabRunOptions = { docker: null, dockerVm: [], vms: [], servers: [], cloudDocker: [], cloudVm: [], cloudServices: [], refused: [] };
+const NO_OPTIONS: LabRunOptions = {
+  docker: null,
+  dockerVm: [],
+  vms: [],
+  servers: [],
+  cloudDocker: [],
+  cloudVm: [],
+  cloudServices: [],
+  refused: [],
+  emulated: false,
+};
 
 /** Where the sample's labs run, as the backend reads it from their spec: a container lab on
  *  Docker, in a helper VM and on a server or a cloud VM (none has VM recipes too), a VM lab as
  *  VMs (not on UTM), cloud services on AWS. */
-function runOptions(runtime: unknown): LabRunOptions {
+export function runOptions(runtime: unknown): LabRunOptions {
   const clouds = () => CLOUDS_OF_SAMPLE.map((c) => runPath(c, c !== "aws"));
   if (runtime === "CLOUD") return { ...NO_OPTIONS, cloudServices: [runPath("aws")] };
   const local: Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu"];

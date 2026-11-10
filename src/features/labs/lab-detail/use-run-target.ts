@@ -44,7 +44,6 @@ function cloudForms(options: LabRunOptions | null, hosts: ServerHost[], id: stri
 export function useRunTarget(
   lab: { id: string; runtime: LabRuntimeInfo | null },
   readyVms: Provider[],
-  hostArch: string,
   dockerEngine: DockerEngine | null = null,
   dockerEnginesRunning: DockerEngine[] = [],
 ) {
@@ -63,7 +62,7 @@ export function useRunTarget(
   const options = useLabRunOptions(lab.id, rt);
   const place = useLabAnswer(lab.id, rt, askDefaultPlace);
   // The VM forms a container lab can run here as, and the hypervisors each can run on.
-  const vm = useLocalVmChoice(rt, { readyVms, hostArch, options }, isDocker, setRunOn);
+  const vm = useLocalVmChoice(rt, { readyVms, options }, isDocker, setRunOn);
   const { localVm, localVms, perMachineVm, perMachineVms, perMachine, pickProvider } = vm;
   const hostOk = useCallback((h: ServerHost) => hostSupports(rt, h, options), [rt, options]);
   const { hosts } = useSavedHosts();
@@ -183,13 +182,14 @@ function saveLaunchChoice(runOn: RunTarget, { ports, engine, engineCount, hyperv
  *  saves it with "don't ask again"). Both default to the hypervisor chosen in Settings (readyVms lists it first), else the first ready. */
 function useLocalVmChoice(
   rt: LabRuntimeInfo | null,
-  { readyVms, hostArch, options }: { readyVms: Provider[]; hostArch: string; options: LabRunOptions | null },
+  { readyVms, options }: { readyVms: Provider[]; options: LabRunOptions | null },
   isDocker: boolean,
   setRunOn: (t: RunTarget) => void,
 ) {
-  // The helper VM is this machine's own CPU's; one VM per machine runs the lab's own.
-  const localVms = isDocker && rt && options ? readyVms.filter((p) => formProviders(options.dockerVm, rt).includes(p)) : [];
-  const perMachineVms = isDocker && rt && options ? readyVms.filter((p) => formProviders(options.vms, rt, hostArch).includes(p)) : [];
+  // The helper VM is this machine's own CPU's; one VM per machine runs the lab's own, on an
+  // emulator only when that is another (the backend's run options say which).
+  const localVms = isDocker && rt && options ? readyVms.filter((p) => formProviders(options.dockerVm).includes(p)) : [];
+  const perMachineVms = isDocker && rt && options ? readyVms.filter((p) => formProviders(options.vms).includes(p)) : [];
   const [switched, setSwitched] = useState<Provider | null>(null);
   const resolved = (list: Provider[]) => (switched && list.includes(switched) ? switched : list.at(0)) ?? null;
   const localVm = resolved(localVms);
