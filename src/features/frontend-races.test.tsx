@@ -104,7 +104,7 @@ describe("lab page actions during a worker operation", () => {
       lab_status: () => status(),
       deploying_labs: () => ["lab-w"],
       // A worker's operation: its job names the runtime.
-      active_operations: () => [{ labId: "lab-w", op: "provision", machine: null, step: null, runtime: "DOCKER" }],
+      active_operations: () => [{ labId: "lab-w", op: "provision", machine: null, deploying: true, step: null, runtime: "DOCKER" }],
     });
     detail("lab-w");
     await flush(50);

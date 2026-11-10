@@ -109,9 +109,9 @@ describe("Sidebar", () => {
             slug: "goad-light",
             title: "GOAD Light",
             category: "AD",
-            op: { labId: "b", op: "provision", machine: "isoloom-DC01", step: "TASK [users]" },
+            op: { labId: "b", op: "provision", machine: "isoloom-DC01", deploying: true, step: "TASK [users]" },
           },
-          { id: "c", slug: "blind", title: "Blind orders", category: "Web", op: { labId: "c", op: "stop", machine: null, step: null } },
+          { id: "c", slug: "blind", title: "Blind orders", category: "Web", op: { labId: "c", op: "stop", machine: null, deploying: false, step: null } },
         ]}
       />,
     );

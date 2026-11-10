@@ -175,7 +175,7 @@ describe("deploy runs", () => {
 });
 
 describe("operations", () => {
-  const op = (o: ActiveOperation["op"], machine: string | null = null): ActiveOperation => ({ labId: "l", op: o, machine, step: null });
+  const op = (o: ActiveOperation["op"], machine: string | null = null): ActiveOperation => ({ labId: "l", op: o, machine, deploying: false, step: null });
 
   it("names every operation", () => {
     expect((["launch", "resume", "pause", "shutdown", "provision", "stop"] as const).map((o) => operationLabel(op(o)))).toEqual([
@@ -203,29 +203,28 @@ describe("operations", () => {
     expect(OPERATION_STATUS.launch).not.toBe(en);
   });
 
-  it("counts as deploying a worker's operation and a launch in this process, not a stop or a pause here", () => {
-    const op = (labId: string, o: ActiveOperation["op"], runtime: ActiveOperation["runtime"]): [string, ActiveOperation] => [
+  it("counts as deploying the operations the backend says deploy, whatever their name", () => {
+    // Regression: the webview told them by their name and runtime, so a resume or a provisioning
+    // run in the app (no runtime, not a launch) dropped out of the set the backend counts.
+    const op = (labId: string, o: ActiveOperation["op"], deploying: boolean): [string, ActiveOperation] => [
       labId,
-      { labId, op: o, machine: null, step: null, runtime },
+      { labId, op: o, machine: null, deploying, step: null },
     ];
     const inFlight = new Map([
-      op("worker-launch", "launch", "DOCKER"),
-      op("worker-pause", "pause", "VM"),
-      op("worker-provision", "provision", "VM"),
-      // A worker whose job file couldn't be read: a launch, with no runtime.
-      op("worker-unread", "launch", null),
-      op("here-launch", "launch", undefined),
-      op("here-stop", "stop", undefined),
-      op("here-pause", "pause", null),
+      op("here-resume", "resume", true),
+      op("here-provision", "provision", true),
+      op("worker-pause", "pause", true),
+      op("here-stop", "stop", false),
+      op("here-pause", "pause", false),
     ]);
-    expect([...deployingOf(inFlight)].sort()).toEqual(["here-launch", "worker-launch", "worker-pause", "worker-provision", "worker-unread"]);
+    expect([...deployingOf(inFlight)].sort()).toEqual(["here-provision", "here-resume", "worker-pause"]);
   });
 
   it("reads the labs deploying from the one poll of the operations, not a poll of their own", async () => {
     const calls = installTauri({
       active_operations: () => [
-        { labId: "lab-w", op: "resume", machine: null, step: null, runtime: "VM" },
-        { labId: "lab-s", op: "stop", machine: null, step: null },
+        { labId: "lab-w", op: "resume", machine: null, deploying: true, step: null, runtime: "VM" },
+        { labId: "lab-s", op: "stop", machine: null, deploying: false, step: null },
       ],
     });
     const deploying = renderHook(() => useDeployingLabs());

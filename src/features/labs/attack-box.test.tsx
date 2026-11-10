@@ -231,7 +231,7 @@ describe("useAttackBoxAutoStart", () => {
   /** An operation as a worker reports it, in `runtime` (null: one in this process, which says none). */
   const op = (labId: string, o: ActiveOperation["op"], runtime: Runtime | null = "DOCKER"): [string, ActiveOperation] => [
     labId,
-    { labId, op: o, machine: null, step: null, runtime },
+    { labId, op: o, machine: null, deploying: runtime !== null, step: null, runtime },
   ];
 
   function watch(calls: Call[], enabled = true, launched: Runtime | null = "DOCKER") {

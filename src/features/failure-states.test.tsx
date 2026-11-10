@@ -12,7 +12,7 @@ import { must } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
 import { getDeploySnapshot, runFailure, startFailed, type DeployRun } from "@/features/labs/runs/deploy-runs";
 import { noteOperations, operationSeenAt } from "@/features/labs/runs/operations";
-import type { AuthStatus, LabStatus } from "@/lib/tauri";
+import type { ActiveOperation, AuthStatus, LabStatus } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
 import { commands, installTauri, rejectWith } from "@/test/tauri";
 import { answer } from "@/lib/dev-mock";
@@ -273,12 +273,12 @@ describe("a deploy with no log here", () => {
     const step = "Configure SRV02 (ansible 41/88)";
     installTauri({
       deploying_labs: () => [goad.id],
-      active_operations: () => [{ labId: goad.id, op: "launch", machine: "SRV02", step }],
+      active_operations: () => [{ labId: goad.id, op: "launch", machine: "SRV02", deploying: true, step }],
       lab_deploy_log: () => "",
       lab_status: () => stopped,
     });
     // First seen a minute ago (this window saw it then, before the page opened).
-    noteOperations([{ labId: goad.id, op: "launch", machine: "SRV02", step }], Date.now() - 61_000);
+    noteOperations([{ labId: goad.id, op: "launch", machine: "SRV02", deploying: true, step }], Date.now() - 61_000);
     render(<LabDetail lab={goad} loggedIn hostArch="x86_64" readyVms={[]} onBack={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} />);
     await flush(2200);
     expect(document.body.textContent).toContain(step);
@@ -290,7 +290,7 @@ describe("a deploy with no log here", () => {
   });
 
   it("keeps when an operation was first seen until it ends", () => {
-    const op = { labId: "lab-x", op: "launch" as const, machine: null, step: null };
+    const op: ActiveOperation = { labId: "lab-x", op: "launch", machine: null, deploying: true, step: null };
     noteOperations([op], 1000);
     noteOperations([op], 5000);
     expect(operationSeenAt("lab-x", "launch")).toBe(1000);

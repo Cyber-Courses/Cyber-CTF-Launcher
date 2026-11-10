@@ -167,7 +167,13 @@ describe("DeployPanel", () => {
   it("names the one lab deploying, its step and machine, with a link to it", async () => {
     const onOpen = vi.fn();
     const user = userEvent.setup();
-    render(<DeployPanel ops={[{ labId: "lab-goad", op: "provision", machine: "isoloom-SRV02", step: "TASK [users]" }]} labs={labs} onOpen={onOpen} />);
+    render(
+      <DeployPanel
+        ops={[{ labId: "lab-goad", op: "provision", machine: "isoloom-SRV02", deploying: true, step: "TASK [users]" }]}
+        labs={labs}
+        onOpen={onOpen}
+      />,
+    );
     // Its title, not its slug or id.
     expect(screen.getByText("GOAD Light")).toBeTruthy();
     expect(screen.queryByText("goad-light")).toBeNull();
@@ -186,9 +192,9 @@ describe("DeployPanel", () => {
     render(
       <DeployPanel
         ops={[
-          { labId: "lab-goad", op: "launch", machine: null, step: null },
-          { labId: "lab-sqli", op: "stop", machine: null, step: "Removing containers" },
-          { labId: "lab-gone", op: "pause", machine: null, step: null },
+          { labId: "lab-goad", op: "launch", machine: null, deploying: true, step: null },
+          { labId: "lab-sqli", op: "stop", machine: null, deploying: false, step: "Removing containers" },
+          { labId: "lab-gone", op: "pause", machine: null, deploying: false, step: null },
         ]}
         labs={labs}
         onOpen={onOpen}
@@ -205,7 +211,7 @@ describe("DeployPanel", () => {
   });
 
   it("names a lone deploy of an unknown lab by its id made readable, without a link", () => {
-    render(<DeployPanel ops={[{ labId: "lab-goad-light", op: "launch", machine: null, step: null }]} labs={labs} onOpen={vi.fn()} />);
+    render(<DeployPanel ops={[{ labId: "lab-goad-light", op: "launch", machine: null, deploying: true, step: null }]} labs={labs} onOpen={vi.fn()} />);
     expect(screen.getByText("Goad Light")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /view/i })).toBeNull();
   });

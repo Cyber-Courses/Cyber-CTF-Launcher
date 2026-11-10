@@ -14,6 +14,11 @@ op: "launch" | "resume" | "pause" | "shutdown" | "provision" | "stop",
  */
 machine: string | null, 
 /**
+ * Whether the lab counts as deploying ([`deploying_labs`]): under a deploy worker, whatever
+ * its operation, or brought up in this process (a launch, a resume or a provisioning run).
+ */
+deploying: boolean, 
+/**
  * The last meaningful line of the operation's log (detached workers only).
  */
 step: string | null, 

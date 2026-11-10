@@ -34,13 +34,12 @@ export const OPERATION_STATUS: Partial<Record<string, string>> = {
 };
 
 /**
- * The labs the backend deploys among `ops`, the operations in flight: those under a deploy
- * worker's operation (a launch, resume, pause, shut down or provisioning run: the worker's job
- * names its runtime) and a launch in this process. What `deploying_labs` answers, read from the
- * one poll of the operations rather than a second one; a stop (always in this process) isn't one.
+ * The labs the backend deploys among `ops`, the operations in flight, as each says (Rust's
+ * `ActiveOperation::deploying`: what `deploying_labs` answers), read from the one poll of the
+ * operations rather than a second one.
  */
 export function deployingOf(ops: ReadonlyMap<string, ActiveOperation>): Set<string> {
-  return new Set([...ops.values()].filter((o) => o.runtime != null || o.op === "launch").map((o) => o.labId));
+  return new Set([...ops.values()].filter((o) => o.deploying).map((o) => o.labId));
 }
 
 /**

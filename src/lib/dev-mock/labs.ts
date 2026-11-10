@@ -244,7 +244,7 @@ export const labCommands = {
   lab_run_options: (args) => runOptions(args?.runtime),
   running_labs: () => ["lab-invoice"],
   deploying_labs: () => ["lab-goad"],
-  active_operations: () => [{ labId: "lab-goad", op: "launch", machine: "SRV02", step: "Configure SRV02 (ansible 41/88)" }],
+  active_operations: () => [{ labId: "lab-goad", op: "launch", machine: "SRV02", deploying: true, step: "Configure SRV02 (ansible 41/88)" }],
   lab_deploy_log: () => "",
   lab_tools: () => [{ name: "Burp Suite", image: null, addresses: [{ network: "default", ip: "10.42.0.9" }], publish: null }],
   // No lab imported from a folder in the sample.

@@ -59,22 +59,21 @@ export type ActiveLab = SidebarLab & { op: ActiveOperation | null };
  */
 export function activeLabs(
   labs: SidebarLab[],
-  deploying: Set<string>,
   ops: Map<string, ActiveOperation>,
   runningIds: Set<string>,
   statuses: Partial<Record<string, LabStatus>>,
 ): ActiveLab[] {
   const scanSaysRunning = (id: string) => runningIds.has(id) && (statuses[id]?.running ?? true);
-  const active = (id: string) => deploying.has(id) || ops.has(id) || scanSaysRunning(id);
+  const active = (id: string) => ops.has(id) || scanSaysRunning(id);
   const listed = new Set(labs.map((l) => l.id));
-  const unlisted = [...new Set([...deploying, ...ops.keys(), ...runningIds])]
+  const unlisted = [...new Set([...ops.keys(), ...runningIds])]
     .filter((id) => !listed.has(id) && active(id))
     .sort()
     // An imported lab not read yet (just imported) opens by its id, its page's slug.
     .map((id): SidebarLab => ({ id, slug: isImportedId(id) ? id : "", title: prettyLabId(id), category: "" }));
   return [...labs.filter((l) => active(l.id)), ...unlisted].map((l) => ({
     ...l,
-    op: ops.get(l.id) ?? (deploying.has(l.id) ? { labId: l.id, op: "launch" as const, machine: null, step: null } : null),
+    op: ops.get(l.id) ?? null,
   }));
 }
 

@@ -69,18 +69,26 @@ describe("activeLabs", () => {
   const status = (running: boolean) => ({ running }) as LabStatus;
 
   it("lists deploying, busy and scanned-running labs, in catalogue order", () => {
-    const op: ActiveOperation = { labId: "c", op: "pause", machine: null, step: "Saving state" };
-    const out = activeLabs(labs, new Set(["b"]), new Map([["c", op]]), new Set(["d"]), {});
+    const launch: ActiveOperation = { labId: "b", op: "launch", machine: null, deploying: true, step: null };
+    const op: ActiveOperation = { labId: "c", op: "pause", machine: null, deploying: false, step: "Saving state" };
+    const out = activeLabs(
+      labs,
+      new Map([
+        ["b", launch],
+        ["c", op],
+      ]),
+      new Set(["d"]),
+      {},
+    );
     expect(out.map((l) => l.id)).toEqual(["b", "c", "d"]);
-    // A backend deploy without a live operation reads as a launch.
-    expect(out[0].op).toEqual({ labId: "b", op: "launch", machine: null, step: null });
+    expect(out[0].op).toBe(launch);
     expect(out[1].op).toBe(op);
     expect(out[2].op).toBeNull();
   });
 
   it("keeps the labs the list doesn't have (the catalogue unreachable), by id", () => {
-    const op: ActiveOperation = { labId: "lab-goad", op: "launch", machine: "SRV02", step: "Configure SRV02" };
-    const out = activeLabs([], new Set(["lab-goad"]), new Map([["lab-goad", op]]), new Set(["lab-invoice", "lab-gone"]), { "lab-gone": status(false) });
+    const op: ActiveOperation = { labId: "lab-goad", op: "launch", machine: "SRV02", deploying: true, step: "Configure SRV02" };
+    const out = activeLabs([], new Map([["lab-goad", op]]), new Set(["lab-invoice", "lab-gone"]), { "lab-gone": status(false) });
     expect(out.map((l) => [l.id, l.title, l.slug])).toEqual([
       ["lab-goad", "Goad", ""],
       ["lab-invoice", "Invoice", ""],
@@ -89,7 +97,8 @@ describe("activeLabs", () => {
   });
 
   it("opens an imported lab the list doesn't have yet by its id", () => {
-    const out = activeLabs([], new Set(["local-invoice-portal-api"]), new Map(), new Set(["lab-invoice"]), {});
+    const imported: ActiveOperation = { labId: "local-invoice-portal-api", op: "launch", machine: null, deploying: true, step: null };
+    const out = activeLabs([], new Map([[imported.labId, imported]]), new Set(["lab-invoice"]), {});
     expect(out.map((l) => [l.id, l.slug])).toEqual([
       ["lab-invoice", ""],
       ["local-invoice-portal-api", "local-invoice-portal-api"],
@@ -97,7 +106,7 @@ describe("activeLabs", () => {
   });
 
   it("lets a lab's own status overrule the workload scan", () => {
-    const out = activeLabs(labs, new Set(), new Map(), new Set(["a", "d"]), { a: status(false), d: status(true) });
+    const out = activeLabs(labs, new Map(), new Set(["a", "d"]), { a: status(false), d: status(true) });
     expect(out.map((l) => l.id)).toEqual(["d"]);
   });
 });
@@ -132,7 +141,7 @@ describe("shortcutFor", () => {
 // Odd inputs: sets in another order, missing labs, half-known engines, unusual keys.
 describe("shell model: edges", () => {
   const labs: SidebarLab[] = ["a", "b", "c"].map((id) => ({ id, slug: id, title: id, category: "Web" }));
-  const op = (labId: string, o: ActiveOperation["op"] = "pause"): ActiveOperation => ({ labId, op: o, machine: null, step: null });
+  const op = (labId: string, o: ActiveOperation["op"] = "pause"): ActiveOperation => ({ labId, op: o, machine: null, deploying: o === "launch", step: null });
   const status = (running: boolean) => ({ running }) as LabStatus;
   const report = (patch: Partial<SystemReport>) =>
     ({
@@ -144,20 +153,28 @@ describe("shell model: edges", () => {
     }) as SystemReport;
 
   describe("activeLabs: edges", () => {
-    it("lists labs in catalogue order whatever the order of the sets, and an operation wins over the synthetic launch", () => {
-      const out = activeLabs(labs, new Set(["c", "a"]), new Map([["a", op("a")]]), new Set(), {});
+    it("lists labs in catalogue order whatever the order of the operations", () => {
+      const out = activeLabs(
+        labs,
+        new Map([
+          ["c", op("c", "launch")],
+          ["a", op("a")],
+        ]),
+        new Set(),
+        {},
+      );
       expect(out.map((l) => l.id)).toEqual(["a", "c"]);
       expect(out[0].op?.op).toBe("pause");
-      expect(out[1].op).toEqual({ labId: "c", op: "launch", machine: null, step: null });
+      expect(out[1].op?.op).toBe("launch");
     });
 
     it("an operation lists a lab even when its status says stopped; a running status alone never does", () => {
-      const out = activeLabs(labs, new Set(), new Map([["a", op("a", "shutdown")]]), new Set(), { a: status(false), b: status(true) });
+      const out = activeLabs(labs, new Map([["a", op("a", "shutdown")]]), new Set(), { a: status(false), b: status(true) });
       expect(out.map((l) => l.id)).toEqual(["a"]);
     });
 
     it("a scanned lab without a status yet counts as running", () => {
-      expect(activeLabs(labs, new Set(), new Map(), new Set(["b"]), {}).map((l) => l.id)).toEqual(["b"]);
+      expect(activeLabs(labs, new Map(), new Set(["b"]), {}).map((l) => l.id)).toEqual(["b"]);
     });
   });
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiQuery, type ActiveOperation } from "@/lib/tauri";
-import { useDeployingLabs } from "@/features/labs/runs/operations";
 import { useLabState } from "@/features/labs/lab-store";
 import { useImportedLabs } from "@/features/labs/imported-labs";
 import { useScannedRunning } from "@/features/labs/lab-polling";
@@ -37,7 +36,6 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
     };
   }, [loggedIn, enabled]);
 
-  const deploying = useDeployingLabs(enabled);
   // Scanned again as soon as an operation starts or ends (the deploying labs are among them): a
   // lab just shut down otherwise kept its "Running" line until the next poll.
   const busyKey = [...ops.keys()].sort().join(",");
@@ -55,6 +53,6 @@ export function useSidebarLabs(loggedIn: boolean | undefined, ops: Map<string, A
   );
 
   // The same list object until one of its inputs changes, so the sidebar's entries don't re-render.
-  const active = useMemo(() => activeLabs(list, deploying, ops, runningIds, statuses), [list, deploying, ops, runningIds, statuses]);
+  const active = useMemo(() => activeLabs(list, ops, runningIds, statuses), [list, ops, runningIds, statuses]);
   return { labs: list, active };
 }

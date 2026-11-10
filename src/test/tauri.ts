@@ -30,7 +30,7 @@ const streams =
 export const deployingOps =
   (ids: () => string[]): Handler =>
   () =>
-    ids().map((labId) => ({ labId, op: "launch", machine: null, step: null, runtime: "DOCKER" }));
+    ids().map((labId) => ({ labId, op: "launch", machine: null, deploying: true, step: null, runtime: "DOCKER" }));
 
 /** The system dialog `confirmDestructive` asks in, answered with its confirm button (`yes`) or
  *  its Cancel: `installTauri({ "plugin:dialog|message": answersDialog(false) })`. */

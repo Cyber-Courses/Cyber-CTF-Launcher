@@ -51,6 +51,9 @@ pub struct ActiveOperation {
     op: &'static str,
     /// The machine a provisioning run targets, when one.
     machine: Option<String>,
+    /// Whether the lab counts as deploying ([`deploying_labs`]): under a deploy worker, whatever
+    /// its operation, or brought up in this process (a launch, a resume or a provisioning run).
+    deploying: bool,
     /// The last meaningful line of the operation's log (detached workers only).
     step: Option<String>,
     /// The runtime the lab was launched (or is operated) in, as its worker's job says: what its
@@ -94,12 +97,12 @@ fn merge_operations(jobs: Vec<(deploy_worker::Job, Option<String>)>, actions: Ve
         .map(|(job, step)| {
             let (op, machine) = worker_op(&job.op);
             let runtime = job_runtime(&job);
-            ActiveOperation { lab_id: job.lab_id, op, machine, step, runtime }
+            ActiveOperation { lab_id: job.lab_id, op, machine, deploying: true, step, runtime }
         })
         .collect();
     for (id, action) in actions {
         if !out.iter().any(|o| o.lab_id == id) {
-            out.push(ActiveOperation { lab_id: id, op: action.name(), machine: None, step: None, runtime: None });
+            out.push(ActiveOperation { lab_id: id, op: action.name(), machine: None, deploying: action.brings_up(), step: None, runtime: None });
         }
     }
     out.sort_by(|a, b| a.lab_id.cmp(&b.lab_id));
@@ -138,9 +141,9 @@ mod tests {
         assert_eq!(
             ops,
             [
-                ActiveOperation { lab_id: "ad".into(), op: "provision", machine: Some("dc01".into()), step: None, runtime: Some(Runtime::Vm) },
-                ActiveOperation { lab_id: "ctf".into(), op: "pause", machine: None, step: None, runtime: None },
-                ActiveOperation { lab_id: "web".into(), op: "launch", machine: None, step: Some("Pulling images".into()), runtime: None },
+                ActiveOperation { lab_id: "ad".into(), op: "provision", machine: Some("dc01".into()), deploying: true, step: None, runtime: Some(Runtime::Vm) },
+                ActiveOperation { lab_id: "ctf".into(), op: "pause", machine: None, deploying: false, step: None, runtime: None },
+                ActiveOperation { lab_id: "web".into(), op: "launch", machine: None, deploying: true, step: Some("Pulling images".into()), runtime: None },
             ]
         );
         assert_eq!(merge_operations(Vec::new(), Vec::new()), [] as [ActiveOperation; 0]);
@@ -184,9 +187,14 @@ mod tests {
         let id = "operations-test-pause";
         let listed = || wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
         let guard = crate::runtime::DeployGuard::new(id, Action::Park(Park::Shutdown));
-        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "shutdown", machine: None, step: None, runtime: None }));
+        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "shutdown", machine: None, deploying: false, step: None, runtime: None }));
         drop(guard);
         assert_eq!(listed(), None);
+        // A resume in this process deploys, as `deploying_labs` says.
+        let guard = crate::runtime::DeployGuard::new(id, Action::Resume);
+        assert_eq!(listed().map(|o| (o.op, o.deploying)), Some(("resume", true)));
+        assert!(crate::runtime::deploying_labs().contains(&id.to_string()));
+        drop(guard);
     }
 
     #[cfg(unix)]
@@ -205,7 +213,10 @@ mod tests {
         std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
         std::fs::write(dir.join(format!("{id}.log")), log).unwrap();
         let listed = || wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
-        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "launch", machine: None, step: Some("web: Booting VM...".into()), runtime: None }));
+        assert_eq!(
+            listed(),
+            Some(ActiveOperation { lab_id: id.into(), op: "launch", machine: None, deploying: true, step: Some("web: Booting VM...".into()), runtime: None })
+        );
         assert!(wait(deploying_labs(t.dirs())).contains(&id.to_string()));
         assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), log);
         worker.kill().unwrap();

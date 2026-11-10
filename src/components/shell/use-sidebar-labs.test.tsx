@@ -8,7 +8,7 @@ import { flush } from "@/test/ui";
 
 const NONE = new Map<string, ActiveOperation>();
 const ops = (...labIds: string[]) =>
-  new Map(labIds.map((labId): [string, ActiveOperation] => [labId, { labId, op: "launch", machine: null, step: null, runtime: "DOCKER" }]));
+  new Map(labIds.map((labId): [string, ActiveOperation] => [labId, { labId, op: "launch", machine: null, deploying: true, step: null, runtime: "DOCKER" }]));
 const count = (calls: Call[], cmd: string) => commands(calls).filter((c) => c === cmd).length;
 
 describe("useSidebarLabs", () => {
