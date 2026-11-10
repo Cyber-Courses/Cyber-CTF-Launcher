@@ -72,6 +72,30 @@ where
 use super::{LabStatus, Park, Place, Runtime, lab, paths};
 use crate::error::{Error, Result};
 
+/// The Vagrant plugin `provider` needs, from Isoloom's table (`isoloom_manifest::Provider::plugin`,
+/// what a run manifest's provider names): none when Vagrant has it built in, and none for a
+/// provider Isoloom's Vagrantfiles don't drive (Proxmox, the clouds), which the caller knows.
+pub(crate) fn vagrant_plugin(provider: super::providers::Provider) -> Option<&'static str> {
+    vagrant_provider(provider)?.plugin()
+}
+
+/// `provider` as Isoloom's run manifests name it, when its Vagrantfiles drive it.
+fn vagrant_provider(provider: super::providers::Provider) -> Option<isoloom_manifest::Provider> {
+    use super::providers::Provider as P;
+    use isoloom_manifest::Provider as Isoloom;
+    Some(match provider {
+        P::Virtualbox => Isoloom::Virtualbox,
+        P::VmwareDesktop => Isoloom::VmwareDesktop,
+        P::Hyperv => Isoloom::Hyperv,
+        P::Parallels => Isoloom::Parallels,
+        P::Libvirt => Isoloom::Libvirt,
+        P::Qemu => Isoloom::Qemu,
+        P::Utm => Isoloom::Utm,
+        P::VmwareEsxi => Isoloom::VmwareEsxi,
+        P::Proxmox | P::Aws | P::Azure | P::Gcp | P::DigitalOcean | P::Linode | P::Oci => return None,
+    })
+}
+
 /// Every run the runner whose home is `home` (the app data folder) records, each in the state
 /// its last operation left it in: read from its files only.
 pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {

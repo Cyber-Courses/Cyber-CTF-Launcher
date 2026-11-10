@@ -441,3 +441,22 @@ async fn a_tool_cut_short_never_outlives_the_wait_for_it_nor_the_apps_exit() {
     assert!(gone(at_exit).await, "ended at the app's exit");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn the_launchers_vagrant_providers_are_isoloom_s_by_the_same_name_and_plugin() {
+    // The launcher's provider table and Isoloom's agree: each provider Isoloom's Vagrantfiles drive
+    // is the launcher's of the same id, and its plugin is Isoloom's (`Provider::plugin`).
+    use crate::runtime::providers::Provider;
+    let mapped: Vec<(Provider, isoloom_manifest::Provider)> = Provider::ALL.iter().filter_map(|p| Some((*p, super::vagrant_provider(*p)?))).collect();
+    for (launcher, isoloom) in &mapped {
+        assert_eq!(serde_json::to_value(isoloom).unwrap(), launcher.id(), "{launcher:?}");
+        assert_eq!(super::vagrant_plugin(*launcher), isoloom.plugin(), "{launcher:?}");
+    }
+    let unmapped: Vec<Provider> = Provider::ALL.into_iter().filter(|p| super::vagrant_provider(*p).is_none()).collect();
+    assert_eq!(unmapped, [Provider::Proxmox], "Isoloom's Vagrant providers are all the launcher's but Proxmox");
+    assert_eq!(super::vagrant_plugin(Provider::Utm), Some("vagrant_utm"));
+    assert_eq!(super::vagrant_plugin(Provider::Virtualbox), None);
+    for cloud in Provider::CLOUDS {
+        assert_eq!(super::vagrant_plugin(cloud), None, "{cloud:?}");
+    }
+}

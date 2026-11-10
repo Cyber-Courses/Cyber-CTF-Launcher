@@ -175,25 +175,13 @@ impl Provider {
         }
     }
 
-    /// Vagrant plugin required, if the provider is not built in.
+    /// Vagrant plugin required, if the provider is not built in: Isoloom's table for the providers
+    /// its Vagrantfiles drive ([`super::isothrum::vagrant_plugin`]), the launcher's own for
+    /// Proxmox; the clouds aren't Vagrant providers.
     fn plugin(self) -> Option<&'static str> {
         match self {
-            // Built-in hypervisors and the clouds (not Vagrant providers): no plugin.
-            Provider::Virtualbox
-            | Provider::Hyperv
-            | Provider::Aws
-            | Provider::Azure
-            | Provider::Gcp
-            | Provider::DigitalOcean
-            | Provider::Linode
-            | Provider::Oci => None,
-            Provider::VmwareDesktop => Some("vagrant-vmware-desktop"),
-            Provider::Parallels => Some("vagrant-parallels"),
-            Provider::Libvirt => Some("vagrant-libvirt"),
-            Provider::Qemu => Some("vagrant-qemu"),
-            Provider::Utm => Some("vagrant_utm"),
-            Provider::VmwareEsxi => Some("vagrant-vmware-esxi"),
             Provider::Proxmox => Some("vagrant-proxmox"),
+            other => super::isothrum::vagrant_plugin(other),
         }
     }
 
