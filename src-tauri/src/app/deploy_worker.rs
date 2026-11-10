@@ -156,6 +156,9 @@ pub async fn run_job(app: &AppHandle, job: Job, logs: tauri::ipc::Channel<String
         // future and the child is kill_on_drop, so inline would be cut short). The app then has
         // to stay open until it finishes; the quit guard keeps it alive.
         Err(e) => {
+            // In the app's log too: the channel is gone with a reload or a closed window, and
+            // support reads the log for why a lab ran in the app.
+            log::warn!("the deploy worker for {} couldn't start, running it in the app: {e}", job.lab_id);
             let _ = logs.send(format!("Running inside the app (a background worker couldn't be started: {e}). Keep the app open until it finishes."));
             let app = app.clone();
             let handle = tauri::async_runtime::spawn(async move {
@@ -227,7 +230,10 @@ mod tests {
         // A folder where the worker's job file goes: writing the job fails, so no worker starts.
         std::fs::create_dir_all(super::files::of(&t.dirs(), &job.key()).unwrap().job).unwrap();
         let sink = crate::testing::test_app::Sink::default();
+        crate::testing::logs::take_warnings();
         let err = super::run_job(t.handle(), job, sink.channel()).await.unwrap_err().to_string();
+        let warned = crate::testing::logs::take_warnings();
+        assert!(warned.iter().any(|w| w.starts_with("the deploy worker for local-mini couldn't start, running it in the app: ")), "{warned:?}");
         let lines = sink.lines();
         assert!(lines[0].starts_with("Running inside the app (a background worker couldn't be started: "), "{lines:?}");
         assert!(lines[0].ends_with("Keep the app open until it finishes."), "{lines:?}");
