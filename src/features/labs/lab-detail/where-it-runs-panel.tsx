@@ -5,6 +5,7 @@ import { Cpu } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-pill";
 import { runPlaces } from "@/features/labs/lab-runtime";
+import { PLACE_ICONS } from "@/features/labs/run-place-icons";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { labRequirements, type LabRequirements, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -59,7 +60,8 @@ function requirementsSummary(t: T, r: LabRequirements): string {
 /** One place in the panel: ready (green), configurable (amber, with what to set up), or
  *  unsupported by the lab at all (faint, "n/a"). */
 function PlaceRow({ place, t }: { place: ReturnType<typeof runPlaces>[number]; t: T }) {
-  const { key, icon: Icon, state } = place;
+  const { key, state } = place;
+  const Icon = PLACE_ICONS[key];
   const ready = state === "ready";
   // Supported by the lab, but the launcher isn't set up for it yet: amber, with what to do.
   const configurable = state === "configurable";

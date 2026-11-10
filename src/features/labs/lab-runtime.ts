@@ -1,4 +1,3 @@
-import { Cloud, Container, Monitor, Server, type LucideIcon } from "lucide-react";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import {
   EMULATORS,
@@ -74,7 +73,8 @@ export function hostSupports(rt: LabRuntimeInfo | null, h: ServerHost, options?:
   return paths.some((p) => p.provider === h.provider);
 }
 
-type PlaceKey = NonNullable<LabStatus["place"]>;
+/** A place a lab runs: its words are `labs.places.<key>`, its icon `PLACE_ICONS` (run-place-icons). */
+export type PlaceKey = NonNullable<LabStatus["place"]>;
 
 /** A place's state: runnable now (`ready`), supported by the lab but not set up in the launcher
  *  yet (`configurable` — install a hypervisor, connect a server or a cloud account), or not a
@@ -99,12 +99,7 @@ const cloudConfigured = (rt: LabRuntimeInfo, hosts: ServerHost[], options: LabRu
  *  A VM lab built for another CPU (x86 Windows on Apple Silicon) runs on this machine only
  *  emulated, so "VM on this machine" needs `emulates` (QEMU ready); containers run emulated
  *  anyway. */
-export function runPlaces(
-  rt: LabRuntimeInfo,
-  hostArch?: string,
-  emulates = false,
-  setup: LauncherSetup = {},
-): { key: PlaceKey; icon: LucideIcon; state: PlaceState }[] {
+export function runPlaces(rt: LabRuntimeInfo, hostArch?: string, emulates = false, setup: LauncherSetup = {}): { key: PlaceKey; state: PlaceState }[] {
   const { readyVms = [], hosts = [], options = null } = setup;
   const w = ways(rt);
   // Cloud services (no container or VM edition) run in the player's cloud account only.
@@ -122,21 +117,21 @@ export function runPlaces(
   const serverReady = hosts.some((h) => SERVERS.has(h.provider) && hostSupports(rt, h, options));
   const cloudSupported = options ? cloudPaths(options).length > 0 : rt.providers.some((p) => isCloudProvider(p));
   return [
-    { key: "container", icon: Container, state: placeState(containerSupported, true) },
-    { key: "local_vm", icon: Monitor, state: placeState(localVmSupported, localVmReady) },
-    { key: "server", icon: Server, state: placeState(serverSupported, serverReady) },
-    { key: "cloud", icon: Cloud, state: placeState(cloudSupported, cloudConfigured(rt, hosts, options)) },
+    { key: "container", state: placeState(containerSupported, true) },
+    { key: "local_vm", state: placeState(localVmSupported, localVmReady) },
+    { key: "server", state: placeState(serverSupported, serverReady) },
+    { key: "cloud", state: placeState(cloudSupported, cloudConfigured(rt, hosts, options)) },
   ];
 }
 
 /** Cloud services: the player's cloud account, nowhere else (configurable until one is connected;
  *  unsupported when the backend's run options give it no cloud, Isoloom refusing it there). */
-function cloudPlaces(rt: LabRuntimeInfo, hosts: ServerHost[], options: LabRunOptions | null): { key: PlaceKey; icon: LucideIcon; state: PlaceState }[] {
+function cloudPlaces(rt: LabRuntimeInfo, hosts: ServerHost[], options: LabRunOptions | null): { key: PlaceKey; state: PlaceState }[] {
   return [
-    { key: "container", icon: Container, state: "unsupported" },
-    { key: "local_vm", icon: Monitor, state: "unsupported" },
-    { key: "server", icon: Server, state: "unsupported" },
-    { key: "cloud", icon: Cloud, state: placeState(options ? options.cloudServices.length > 0 : true, cloudConfigured(rt, hosts, options)) },
+    { key: "container", state: "unsupported" },
+    { key: "local_vm", state: "unsupported" },
+    { key: "server", state: "unsupported" },
+    { key: "cloud", state: placeState(options ? options.cloudServices.length > 0 : true, cloudConfigured(rt, hosts, options)) },
   ];
 }
 
