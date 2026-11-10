@@ -9,7 +9,7 @@ import { MachineSetup } from "@/features/machine/machine-setup";
 import { SelfTest } from "@/features/machine/self-test";
 import { MachineStepBody, useMachineSetup, type MachineStep } from "@/features/machine/setup-steps";
 import { setLocalePreference } from "@/lib/i18n";
-import { getAttackImage } from "@/lib/settings";
+import { getAttackImage, getLastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, readyReport } from "@/test/fixtures";
@@ -172,6 +172,20 @@ describe("SelfTest: states and re-runs", () => {
     // The re-run button after a pass is an icon: it must still have a name.
     expect(screen.getByRole("button", { name: "Run again" })).toBeTruthy();
     expect(count(calls, "machine_selftest")).toBe(2);
+  });
+
+  it("logs a run that rejects before any step failed, and records its error as the why", async () => {
+    // Regression: `catch {}` kept only a failed step's detail, so a run that rejected first (its
+    // work folder, an earlier test VM that can't be removed) failed with no why and no log line.
+    installTauri({ machine_selftest: () => rejectWith({ code: "other", message: "the work folder can't be made: denied" }) });
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const onResult = vi.fn<(r: SelfTestResult) => void>();
+    render(<SelfTest kind="docker" title="Container lab test" description="d" auto onResult={onResult} />);
+    await flush();
+    expect(onResult.mock.calls.map((c) => c[0])).toEqual(["running", "fail"]);
+    expect(getLastTest("docker")?.why).toBe("the work folder can't be made: denied");
+    expect(warned.mock.calls.some(([what]) => what === "self-test:")).toBe(true);
+    warned.mockRestore();
   });
 
   it("lists every planned step as pending as soon as it starts", async () => {

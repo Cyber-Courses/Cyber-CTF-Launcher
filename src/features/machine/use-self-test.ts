@@ -5,6 +5,8 @@ import { machineSelftest, type Provider, type SelfTestEvent } from "@/lib/tauri"
 import { getVmProvider, setLastTest } from "@/lib/settings";
 import { useNow } from "@/lib/use-now";
 import { registerReset } from "@/lib/module-state";
+import { describeError } from "@/lib/errors";
+import { warn } from "@/lib/failure";
 
 export type SelfTestResult = "idle" | "running" | "ok" | "fail";
 
@@ -90,8 +92,11 @@ async function perform(kind: Kind, s: Shared, { provider = null, context = null,
     );
     setLastTest(kind, "ok", { provider, primary });
     return "ok";
-  } catch {
-    setLastTest(kind, "fail", { provider, primary, why: failure(s) });
+  } catch (e) {
+    // A run can reject before any step failed (its work folder, an earlier test VM that can't be
+    // removed, the IPC itself): logged, and its error is then the why.
+    warn("self-test")(e);
+    setLastTest(kind, "fail", { provider, primary, why: failure(s) ?? describeError(e) });
     return "fail";
   }
 }
