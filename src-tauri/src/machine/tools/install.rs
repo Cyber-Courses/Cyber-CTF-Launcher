@@ -58,12 +58,12 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
     Ok(match dep {
         // Docker Desktop: download the app with brew, then open its installer; the user
         // finishes in Docker's own flow (includes the docker CLI + compose).
-        Dependency::Docker => vec![fetch_and_open(&brew, "docker-desktop", "Docker Desktop")],
+        Dependency::Docker => vec![fetch_and_open(brew, "docker-desktop", "Docker Desktop")],
         // Admin-requiring: download with brew, then open the tool's native installer.
-        Dependency::Vagrant => vec![fetch_and_open(&brew, "vagrant", "Vagrant")],
+        Dependency::Vagrant => vec![fetch_and_open(brew, "vagrant", "Vagrant")],
         // Terraform is a brew formula (no admin); full tap name since core dropped it.
-        Dependency::Terraform => vec![step(brew.clone(), &["install", "hashicorp/tap/terraform"])],
-        Dependency::Virtualbox => vec![fetch_and_open(&brew, "virtualbox", "VirtualBox")],
+        Dependency::Terraform => vec![step(brew, &["install", "hashicorp/tap/terraform"])],
+        Dependency::Virtualbox => vec![fetch_and_open(brew, "virtualbox", "VirtualBox")],
         // QEMU is a brew formula (no admin); UTM is a cask with its own installer.
         // Update Homebrew first so an outdated one learns this macOS (it otherwise refuses every
         // install with "unknown or unsupported macOS version: :dunno"), but never let that update
@@ -79,17 +79,17 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
             ],
             note: Some("Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into()),
         }],
-        Dependency::Utm => vec![fetch_and_open(&brew, "utm", "UTM")],
+        Dependency::Utm => vec![fetch_and_open(brew, "utm", "UTM")],
         Dependency::Libvirt => return Err(Error::Invalid("libvirt isn't used on macOS; use QEMU or UTM instead.".into())),
         Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
         // Cloud CLIs (brew formulae; gcloud is a cask).
-        Dependency::Awscli => vec![step(brew.clone(), &["install", "awscli"])],
+        Dependency::Awscli => vec![step(brew, &["install", "awscli"])],
         // Microsoft's prebuilt cask instead of the `azure-cli` formula: on recent macOS the
         // formula has no bottle and builds its whole tree (llvm, rust) from source, which takes
         // ~an hour. The cask is a signed download. `trust` is needed because the tap is third-party.
         // https://learn.microsoft.com/cli/azure/install-azure-cli-macos
         Dependency::Azurecli => vec![
-            step(brew.clone(), &["tap", "azure/azure-cli"]),
+            step(brew, &["tap", "azure/azure-cli"]),
             // `brew trust` exists from Homebrew 7 only; an older Homebrew needs no trust and
             // must not fail here ("Unknown command"). On 7, an untrusted tap still fails at
             // the install step with Homebrew's own message.
@@ -99,12 +99,12 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
                 note: Some("Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into()),
             },
             Step {
-                program: brew.clone(),
+                program: brew.to_string(),
                 args: vec!["install".into(), "--cask".into(), "azure-cli-preview".into()],
                 note: Some("Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into()),
             },
         ],
-        Dependency::Gcloud => vec![step(brew.clone(), &["install", "--cask", "google-cloud-sdk"])],
+        Dependency::Gcloud => vec![step(brew, &["install", "--cask", "google-cloud-sdk"])],
     })
 }
 

@@ -238,10 +238,10 @@ fn virtualbox_dmg_from(out: &str) -> Result<String> {
 /// The VirtualBox installer image Homebrew has (fetched again first: Homebrew drops the download
 /// once the cask moves on, which it does often), as the player, before the admin step.
 #[cfg(target_os = "macos")]
-async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<String> {
+async fn virtualbox_dmg(brew: &'static str, on_line: &mut impl FnMut(String)) -> Result<String> {
     run_steps(&[step(brew, &["fetch", "--cask", "virtualbox"])], on_line).await?;
-    let out = tokio::process::Command::new(brew).args(["--cache", "--cask", "virtualbox"]).output().await.map_err(Error::Io)?;
-    let dmg = virtualbox_dmg_from(&String::from_utf8_lossy(&out.stdout))?;
+    let out = crate::platform::exec::run_cli(brew, &["--cache", "--cask", "virtualbox"]).await?;
+    let dmg = virtualbox_dmg_from(&out)?;
     if !std::path::Path::new(&dmg).is_file() {
         return Err(Error::Invalid(format!(
             "VirtualBox's installer image isn't there ({dmg}), so its uninstaller can't be run. Run `brew fetch --cask virtualbox`, then try again."
@@ -340,7 +340,7 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
     let dmg = match dependency {
         Dependency::Virtualbox => {
             let brew = crate::platform::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
-            Some(virtualbox_dmg(&brew, &mut on_line).await?)
+            Some(virtualbox_dmg(brew, &mut on_line).await?)
         }
         _ => None,
     };

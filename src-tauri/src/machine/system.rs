@@ -179,21 +179,22 @@ fn pkg_manager(version: Option<String>) -> PkgManager {
     PkgManager { name: name.to_string(), installed, version }
 }
 
-/// `--version` of the package manager, when it is installed.
+/// `--version` of the package manager, when it is installed: Homebrew (where it is installed),
+/// winget or apt.
 async fn package_manager_version() -> Option<String> {
     #[cfg(target_os = "macos")]
-    {
-        let brew = crate::platform::brew_bin()?;
-        Some(tokio::process::Command::new(brew).arg("--version").output().await.ok().and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default())
-    }
+    let program = crate::platform::brew_bin()?;
     #[cfg(target_os = "windows")]
-    {
-        crate::platform::exec::run("winget", &["--version"], None).await.ok()
-    }
+    let program = "winget";
     #[cfg(target_os = "linux")]
-    {
-        crate::platform::exec::run("apt-get", &["--version"], None).await.ok()
-    }
+    let program = "apt-get";
+    version_of(program).await
+}
+
+/// `program --version`, timed as every probe is ([`run_read`]); none when it can't run or fails
+/// (a failed `brew --version` read as installed, with no version).
+async fn version_of(program: &'static str) -> Option<String> {
+    run_read(program, &["--version"], None).await.ok()
 }
 
 #[cfg(test)]
@@ -245,6 +246,15 @@ mod tests {
         assert_eq!(super::azure_version("WARNING: something\n{}"), None);
         assert_eq!(super::azure_version("{\"azure-cli\": 2}"), None);
         assert_eq!(super::azure_version(""), None);
+    }
+
+    #[tokio::test]
+    async fn a_package_manager_that_fails_its_version_is_not_installed() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let _broken = Tools::new(|program, _| if program == "brew" { fail("Error: brew is broken") } else { None });
+        assert!(!super::pkg_manager(super::version_of("brew").await).installed);
+        let _working = Tools::new(|program, _| if program == "brew" { ok("Homebrew 4.6.3\n") } else { None });
+        assert_eq!(super::pkg_manager(super::version_of("brew").await).version.as_deref(), Some("Homebrew 4.6.3"));
     }
 
     #[test]

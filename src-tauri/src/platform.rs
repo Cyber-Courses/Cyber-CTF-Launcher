@@ -105,8 +105,8 @@ pub(crate) fn sh_parses(script: &str) -> bool {
 
 /// Homebrew, where its installer puts it (Apple silicon, then Intel).
 #[cfg(target_os = "macos")]
-pub fn brew_bin() -> Option<String> {
-    ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].into_iter().find(|p| std::path::Path::new(p).exists()).map(String::from)
+pub fn brew_bin() -> Option<&'static str> {
+    ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].into_iter().find(|p| std::path::Path::new(p).exists())
 }
 
 #[cfg(test)]
