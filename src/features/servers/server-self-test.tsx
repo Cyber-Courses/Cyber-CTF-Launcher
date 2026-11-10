@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import { StatusDot } from "@/components/ui/status-pill";
-import { serverSelftest, type SelfTestEvent, type ServerHost } from "@/lib/tauri";
+import { SELFTEST_STEPS, serverSelftest, type SelfTestEvent, type ServerHost } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { formatElapsed } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
@@ -13,26 +13,28 @@ import { describeError } from "@/lib/errors";
 /** One step the test runs, with its label. */
 type PlanStep = { step: string; label: MessageKey };
 
+/** The steps `steps` (the core's, in its order), each with its label in `labels`, which names
+ *  each of them and no other. */
+const planOf = <S extends string>(steps: readonly S[], labels: Record<NoInfer<S>, MessageKey>): PlanStep[] =>
+  steps.map((step) => ({ step, label: labels[step] }));
+
 /** The step plan each provider reports, shown up front so the list doesn't grow as it runs: the
  *  steps the core runs, no others (a step listed and never run reads as a test that stopped). */
 export const SELFTEST_PLAN: Record<"proxmox" | "esxi", PlanStep[]> = {
   // A one-machine lab run the way a launch runs one (see the core's server self-test).
-  proxmox: [
-    { step: "connect", label: "servers.selfTest.steps.connect" },
-    { step: "prepare", label: "servers.selfTest.steps.prepareLab" },
-    { step: "image", label: "servers.selfTest.steps.image" },
-    { step: "network", label: "servers.selfTest.steps.network" },
-    { step: "vm", label: "servers.selfTest.steps.vm" },
-    { step: "uplink", label: "servers.selfTest.steps.uplink" },
-    { step: "ssh", label: "servers.selfTest.steps.ssh" },
-    { step: "command", label: "servers.selfTest.steps.command" },
-    { step: "cleanup", label: "servers.selfTest.steps.cleanupLab" },
-  ],
+  proxmox: planOf(SELFTEST_STEPS.proxmox, {
+    connect: "servers.selfTest.steps.connect",
+    prepare: "servers.selfTest.steps.prepareLab",
+    image: "servers.selfTest.steps.image",
+    network: "servers.selfTest.steps.network",
+    vm: "servers.selfTest.steps.vm",
+    uplink: "servers.selfTest.steps.uplink",
+    ssh: "servers.selfTest.steps.ssh",
+    command: "servers.selfTest.steps.command",
+    cleanup: "servers.selfTest.steps.cleanupLab",
+  }),
   // Connection-only for now: the host answers, and its SSH port.
-  esxi: [
-    { step: "connect", label: "servers.selfTest.steps.connect" },
-    { step: "ssh", label: "servers.selfTest.steps.esxiSsh" },
-  ],
+  esxi: planOf(SELFTEST_STEPS.vmware_esxi, { connect: "servers.selfTest.steps.connect", ssh: "servers.selfTest.steps.esxiSsh" }),
 };
 
 /** Each step's last state and detail, by step name (none for a step not reached). */

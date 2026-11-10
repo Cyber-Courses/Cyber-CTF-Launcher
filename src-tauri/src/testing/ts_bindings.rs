@@ -84,8 +84,24 @@ fn generate(dir: &Path) {
         terminal::TermEvent,
     );
     write_provider_names(dir);
+    write_selftest_steps(dir);
     write_index(dir);
 }
+
+/// The file of the steps each server's VM test reports ([`runtime::server_selftest::PLANS`]),
+/// which the Server screen lists up front (not a type: imported by its path, not from the index).
+fn write_selftest_steps(dir: &Path) {
+    let entries = runtime::server_selftest::PLANS.iter().fold(String::new(), |mut lines, (provider, steps)| {
+        let steps = steps.iter().map(|s| format!("\"{s}\"")).collect::<Vec<_>>().join(", ");
+        let _ = writeln!(lines, "  {}: [{steps}],", provider.id());
+        lines
+    });
+    let doc = "/** The steps each server's VM test reports, in order, by provider (Rust's `server_selftest::PLANS`). */";
+    fs::write(dir.join(format!("{SELFTEST_STEPS}.ts")), format!("{HEADER}\n{doc}\nexport const SELFTEST_STEPS = {{\n{entries}}} as const;\n")).unwrap();
+}
+
+/// The generated file of the VM test's steps (a value, not a type).
+const SELFTEST_STEPS: &str = "SelfTestSteps";
 
 /// The file of every provider's name as the player reads it ([`Provider::label`]), the one table
 /// the webview names providers from (not a type: imported by its path, not from the index).
@@ -156,7 +172,7 @@ fn write_index(dir: &Path) {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
         .filter_map(|e| e.unwrap().path().file_stem().map(|s| s.to_string_lossy().into_owned()))
-        .filter(|n| n != "index" && n != PROVIDER_NAMES)
+        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != SELFTEST_STEPS)
         .collect();
     names.sort();
     let lines = names.iter().fold(String::new(), |mut lines, n| {

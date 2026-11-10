@@ -8,7 +8,7 @@ import { HostRow, type HostView } from "@/features/servers/host-row";
 import { SELFTEST_PLAN, ServerSelfTest, selfTestOutcome } from "@/features/servers/server-self-test";
 import { loadVmTests } from "@/features/servers/vm-tests";
 import { answer } from "@/lib/dev-mock";
-import type { ServerHost, ServerList, ServerTest } from "@/lib/tauri";
+import { SELFTEST_STEPS, type ServerHost, type ServerList, type ServerTest } from "@/lib/tauri";
 import { freshReport } from "@/test/fixtures";
 import { commands, installTauri, rejects, stream, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -361,6 +361,12 @@ describe("ServerSelfTest", () => {
     expect(screen.getByText("VM test incomplete: stopped before “Prepare the test lab”")).toBeTruthy();
     expect(screen.getByText(/That step never ran, so the test can't pass/)).toBeTruthy();
     expect(onDone).toHaveBeenCalledWith("fail");
+  });
+
+  it("lists the steps the core's VM test reports, in its order", () => {
+    // Regression: the plan was a hand copy of the core's steps, free to drift from them.
+    expect(SELFTEST_PLAN.proxmox.map((p) => p.step)).toEqual(SELFTEST_STEPS.proxmox);
+    expect(SELFTEST_PLAN.esxi.map((p) => p.step)).toEqual(SELFTEST_STEPS.vmware_esxi);
   });
 
   it("passes only when every listed step passed", () => {

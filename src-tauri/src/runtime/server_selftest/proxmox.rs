@@ -46,6 +46,10 @@ const SSH: (&str, &str) = ("ssh", "Reach the test VM over SSH");
 const COMMAND: (&str, &str) = ("command", "Run a command inside the test VM");
 const CLEANUP: (&str, &str) = ("cleanup", "Remove everything the test created");
 
+/// The steps the test reports, in order (the frontend lists the same: [`super::PLANS`]).
+#[cfg(test)]
+pub(super) const PLAN: [&str; 9] = [super::CONNECT, PREPARE.0, IMAGE.0, NETWORK.0, VM.0, UPLINK.0, SSH.0, COMMAND.0, CLEANUP.0];
+
 /// The steps `up` goes through, each ended by a line of its own (see [`marker`]).
 const UP: [(&str, &str); 5] = [IMAGE, NETWORK, VM, UPLINK, SSH];
 
@@ -373,6 +377,8 @@ mod tests {
         let ran = test(&r, &run, "vmbr1").await;
         assert!(ran.result.is_ok() && ran.cleaned);
         assert_eq!(ends(&seen), ["image:ok", "network:ok", "vm:ok", "uplink:ok", "ssh:ok", "command:ok", "cleanup:ok"]);
+        // The steps the plan lists after the connection and the preparation, in its order.
+        assert_eq!(ends(&seen), PLAN[2..].iter().map(|s| format!("{s}:ok")).collect::<Vec<_>>());
         assert_eq!(run.calls(), ["up", "check", "down"]);
         // The running step shows the tool's latest line.
         assert!(

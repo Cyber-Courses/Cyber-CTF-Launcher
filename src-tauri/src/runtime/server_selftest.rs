@@ -25,8 +25,17 @@ use super::selftest_report::{Event, Reporter};
 use super::server;
 use crate::error::{Error, Result};
 
-/// Step labels shared by both hosts.
+/// The step every host's test starts with: the host and its secret resolved.
+const CONNECT: &str = "connect";
+
+/// The label of the step that removes what a previous run left on the host.
 const PREPARE: &str = "Prepare a test VM definition";
+
+/// The steps each host's test reports, in order, by provider: what the Server screen lists up
+/// front, generated for it by `cargo test` (`SELFTEST_STEPS` in
+/// `src/lib/tauri/generated/SelfTestSteps.ts`).
+#[cfg(test)]
+pub(crate) const PLANS: [(Provider, &[&str]); 2] = [(Provider::Proxmox, &proxmox::PLAN), (Provider::VmwareEsxi, &esxi::PLAN)];
 
 /// One self-test per host at a time in this process: two runs would share the test's run on the
 /// server and its folder, each tearing the other's down. A second one waits for the first.
@@ -44,7 +53,7 @@ pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + 
     // `connect` resolves the host and its secret, which proves the profile and keychain are
     // usable before anything is created on the host.
     let conn = r
-        .step("connect", "Reach the host", async {
+        .step(CONNECT, "Reach the host", async {
             let c = server::connection(dirs, id)?;
             let name = c.name.clone();
             Ok((c, Some(name)))
@@ -59,10 +68,9 @@ pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + 
         let left = r
             .step("prepare", PREPARE, async {
                 r.progress("prepare", PREPARE, "Removing the VM a previous test left on the host…");
-                match conn.provider {
-                    Provider::Proxmox => Box::pin(proxmox::leftover(dirs, id, &conn, &work)).await?,
-                    Provider::VmwareEsxi => esxi::leftover(&r, &conn, &work),
-                    _ => {}
+                // Only a Proxmox test creates anything (ESXi's is connection-only).
+                if conn.provider == Provider::Proxmox {
+                    Box::pin(proxmox::leftover(dirs, id, &conn, &work)).await?;
                 }
                 Ok(((), None))
             })

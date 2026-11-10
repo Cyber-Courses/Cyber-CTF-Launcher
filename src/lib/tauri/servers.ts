@@ -57,6 +57,8 @@ export const serverMonthToDateCost = (id: string) => invoke<number>("server_mont
 /** A host's hardware headroom: null for a host that isn't a Proxmox server; rejects when it
  *  can't be read. */
 export const serverCapacity = (id: string) => invoke<HostCapacity | null>("server_capacity", { id });
+/** The steps each server's VM test reports, in order, by provider (generated from the core's). */
+export { SELFTEST_STEPS } from "@/lib/tauri/generated/SelfTestSteps";
 /** Real-VM self-test: provisions a throwaway VM on the host, checks it, then destroys it. */
 export const serverSelftest = (id: string, onEvent: (e: SelfTestEvent) => void) => invokeStreaming("server_selftest", { id }, onEvent, "events");
 /** Opens (or focuses) the setup window, for a new host or to edit `id`. A new cloud account's
