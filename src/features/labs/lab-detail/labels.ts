@@ -5,7 +5,7 @@ import type { T } from "@/lib/i18n";
 
 /** The lab's runtime, as the panels' header meta. */
 export const runtimeWord = (t: T, { isDocker, isCloud }: { isDocker: boolean; isCloud: boolean }) =>
-  isCloud ? t("labs.detail.cloudServices") : isDocker ? t("labs.detail.containers") : "vm";
+  isCloud ? t("labs.detail.cloudServices") : isDocker ? t("labs.detail.containers") : t("labs.detail.vms");
 
 /** Where this deploy is headed, shown in the Deployment panel so it's clear during a build, and
  *  where it runs once up, said as the header and Details say it ([`placeText`]): the place the

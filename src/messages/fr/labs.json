@@ -271,6 +271,7 @@
     "thisMachineWith": "cette machine · {engine}",
     "onWhere": "sur {where}",
     "containers": "conteneurs",
+    "vms": "VM",
     "emulatedSlower": "émulé (plus lent)",
     "setupStopped": "La configuration s’est arrêtée, mais les machines sont construites. Relancez-la pour reprendre là où elle a échoué, ou utilisez Arrêter et nettoyer pour tout recommencer.",
     "rerunSetup": "Relancer la configuration",

@@ -269,6 +269,7 @@
     "thisMachineWith": "this machine · {engine}",
     "onWhere": "on {where}",
     "containers": "containers",
+    "vms": "VMs",
     "emulatedSlower": "emulated (slower)",
     "setupStopped": "The setup stopped, but the machines are built. Run it again to continue from where it failed, or Stop & clean up to start over.",
     "rerunSetup": "Re-run setup",

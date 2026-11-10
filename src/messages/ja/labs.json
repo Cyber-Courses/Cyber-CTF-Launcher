@@ -271,6 +271,7 @@
     "thisMachineWith": "このマシン · {engine}",
     "onWhere": "{where} 上",
     "containers": "コンテナ",
+    "vms": "VM",
     "emulatedSlower": "エミュレーション（低速）",
     "setupStopped": "セットアップは停止しましたが、マシンは構築済みです。もう一度実行して失敗した箇所から続行するか、「停止してクリーンアップ」でやり直してください。",
     "rerunSetup": "セットアップを再実行",

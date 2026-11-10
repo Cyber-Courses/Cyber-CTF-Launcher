@@ -271,6 +271,7 @@
     "thisMachineWith": "diesem Rechner · {engine}",
     "onWhere": "auf {where}",
     "containers": "Container",
+    "vms": "VMs",
     "emulatedSlower": "emuliert (langsamer)",
     "setupStopped": "Die Einrichtung wurde abgebrochen, aber die Maschinen sind erstellt. Führe sie erneut aus, um an der Fehlerstelle weiterzumachen, oder wähle Stoppen & aufräumen, um neu anzufangen.",
     "rerunSetup": "Einrichtung wiederholen",

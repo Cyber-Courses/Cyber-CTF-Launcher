@@ -94,6 +94,8 @@ describe("cloud labs", () => {
     expect(cloudView(up, { busy: false })).toBe("services");
     expect(cloudView(up, { busy: true })).toBe("none");
     expect(runtimeWord(translate as never, up)).toBe("cloud services");
+    // Regression: a VM lab's word was the literal "vm", in every language.
+    expect(runtimeWord(translate as never, { isDocker: false, isCloud: false })).toBe("VMs");
   });
 
   it("left behind by a cut-off start, say so", () => {
