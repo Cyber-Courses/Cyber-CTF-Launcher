@@ -266,6 +266,7 @@
       "orPaste": "ou cole-o",
       "checkingGcloud": "Verificando a CLI gcloud…",
       "gcpReadFailed": "Não foi possível ler a conta do Google Cloud: {error}",
+      "azureReadFailed": "Não foi possível ler as assinaturas do Azure: {error}",
       "signedInAs": "Conectado como",
       "billingAccount": "Conta de faturamento",
       "billingHint": "o projeto dos labs é cobrado aqui",

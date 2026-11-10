@@ -22,7 +22,7 @@ import {
   type ServerHostInput,
 } from "@/lib/tauri";
 import { useRunLog } from "@/lib/use-run-log";
-import { ignore } from "@/lib/failure";
+import { ignore, warn } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
 import { useLatest } from "@/lib/use-latest";
 import { translate } from "@/lib/i18n";
@@ -101,6 +101,7 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
     mtdCost: awsCli ? awsAccount.mtdCost : null,
     azureSubs: azure ? azureAccount.azureSubs : NONE,
     azureChecking: azureAccount.azureChecking,
+    azureError: azure ? azureAccount.azureError : null,
     gcpBilling: gcp ? gcpAccounts.gcpBilling : NONE,
     gcpOrgs: gcp ? gcpAccounts.gcpOrgs : NONE,
     gcpEmail: gcpAccounts.gcpEmail,
@@ -156,6 +157,7 @@ function useAwsAccount(aws: boolean, awsCli: boolean, awsProfile: string | null)
 function useAzureSubscriptions(azure: boolean, setV: SetInput) {
   const [azureSubs, setAzureSubs] = useState<AzureSubscription[]>([]);
   const [azureChecking, setAzureChecking] = useState(false);
+  const [azureError, setAzureError] = useState<string | null>(null);
   // Numbered as the AWS reads are: a sign-in reads again, and an older read answering after it
   // must not show the subscriptions from before.
   const beginSubsRead = useLatest();
@@ -166,14 +168,17 @@ function useAzureSubscriptions(azure: boolean, setV: SetInput) {
       .then((subs) => {
         if (!latest()) return;
         setAzureSubs(subs);
+        setAzureError(null);
         // Default to the account's default subscription if none chosen yet.
         setV((s) => (s.provider === "azure" && !s.username && subs.length > 0 ? { ...s, username: (subs.find((x) => x.isDefault) ?? subs[0]).id } : s));
       })
-      .catch(
-        ignore("az isn't signed in: the form says to sign in", () => {
-          if (latest()) setAzureSubs([]);
-        }),
-      )
+      .catch((e: unknown) => {
+        // A signed-out or missing `az` answers no subscriptions; a failed read says why, as GCP's.
+        warn("reading the Azure subscriptions")(e);
+        if (!latest()) return;
+        setAzureSubs([]);
+        setAzureError(describeError(e));
+      })
       .finally(() => {
         if (latest()) setAzureChecking(false);
       });
@@ -182,7 +187,7 @@ function useAzureSubscriptions(azure: boolean, setV: SetInput) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its "checking" state at once
     if (azure) loadAzureSubs();
   }, [azure, loadAzureSubs]);
-  return { azureSubs, azureChecking, loadAzureSubs };
+  return { azureSubs, azureChecking, azureError, loadAzureSubs };
 }
 
 /** GCP: the signed-in account, its billing accounts and organizations. The first open billing

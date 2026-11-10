@@ -16,6 +16,11 @@ export function AzureCredentials({ s }: { s: HostSetup }) {
   const { v, azureSubs } = s;
   return (
     <div className="space-y-3">
+      {s.azureError && !s.azureChecking && (
+        <p role="alert" className="text-[0.75rem] break-words text-destructive">
+          {t("servers.setup.credentials.azureReadFailed", { error: s.azureError })}
+        </p>
+      )}
       {s.azureChecking ? (
         <CheckingNote>{t("servers.setup.credentials.checkingAzure")}</CheckingNote>
       ) : azureSubs.length > 0 ? (

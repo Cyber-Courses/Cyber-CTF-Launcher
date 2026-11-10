@@ -266,6 +266,7 @@
       "orPaste": "または貼り付け",
       "checkingGcloud": "gcloud CLI を確認中…",
       "gcpReadFailed": "Google Cloud アカウントを読み取れませんでした: {error}",
+      "azureReadFailed": "Azure サブスクリプションを読み取れませんでした: {error}",
       "signedInAs": "サインイン中のアカウント",
       "billingAccount": "請求先アカウント",
       "billingHint": "ラボ用プロジェクトの請求先",

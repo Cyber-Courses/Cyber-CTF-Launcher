@@ -245,8 +245,10 @@ describe("Azure account setup", () => {
     const user = userEvent.setup();
     await renderSetup(editing({ provider: "azure", host: "swedencentral", username: "" }));
     expect(screen.getByText("Checking the Azure CLI…")).toBeTruthy();
-    fail("az not found");
+    fail("the launcher couldn't be reached");
     await flush();
+    // A failed read says why, as GCP's does; it isn't taken for a signed-out `az`.
+    expect(screen.getByRole("alert").textContent).toBe("Couldn't read the Azure subscriptions: the launcher couldn't be reached");
     await user.type(screen.getByPlaceholderText("00000000-0000-0000-0000-000000000000"), "pasted-sub");
     expect(button(/^continue$/i).hasAttribute("disabled")).toBe(false);
   });

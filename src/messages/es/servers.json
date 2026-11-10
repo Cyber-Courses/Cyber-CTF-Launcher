@@ -266,6 +266,7 @@
       "orPaste": "o pégalo",
       "checkingGcloud": "Comprobando la CLI de gcloud…",
       "gcpReadFailed": "No se pudo leer la cuenta de Google Cloud: {error}",
+      "azureReadFailed": "No se pudieron leer las suscripciones de Azure: {error}",
       "signedInAs": "Sesión iniciada como",
       "billingAccount": "Cuenta de facturación",
       "billingHint": "aquí se factura el proyecto de labs",
