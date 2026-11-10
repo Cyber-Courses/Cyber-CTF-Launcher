@@ -144,17 +144,15 @@ async fn clear_parked(dirs: &AppDirs, lab: runtime::LabRef<'_>, log: &impl Fn(St
     })
 }
 
-/// Extracts the downloaded lab into a staging folder next to `dir`, with its source markers and
+/// Extracts the downloaded lab into a staging folder next to `dir`, with its commit marker and
 /// the markers of where the installed copy runs. Returns the staging folder.
 fn stage(labs: &Path, dir: &Path, tarball: &[u8], release: Release<'_>) -> Result<PathBuf> {
-    let Release { lab_id, repository, commit, .. } = release;
+    let Release { lab_id, commit, .. } = release;
     let staging = labs.join(format!(".{lab_id}.staging"));
     clear_leftover(&staging);
     std::fs::create_dir_all(&staging)?;
     extract(tarball, &staging)?;
     std::fs::write(staging.join(runtime::lab::COMMIT_MARKER), commit)?;
-    // Terraform targets fetch the lab themselves, from this repository at that commit.
-    std::fs::write(staging.join(".cyberctf-repository"), repository)?;
     // Keep where the lab runs, so a lab still up on a server host or in a local VM can be
     // stopped there.
     for marker in [runtime::server::HOST_MARKER, runtime::LOCAL_VM_MARKER, runtime::lab::INSTANCE_MARKER] {
@@ -541,7 +539,6 @@ mod tests {
         let staging = stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: invoice")]), invoice("invoice", sha)).unwrap();
         assert_eq!(staging, labs.join(".invoice.staging"));
         assert_eq!(std::fs::read_to_string(staging.join("isoloom.yml")).unwrap(), "name: invoice");
-        assert_eq!(std::fs::read_to_string(staging.join(".cyberctf-repository")).unwrap(), "CyberCTF/invoice");
         assert_eq!(std::fs::read_to_string(staging.join(runtime::server::HOST_MARKER)).unwrap(), "pve1");
         assert_eq!(std::fs::read_to_string(staging.join(runtime::LOCAL_VM_MARKER)).unwrap(), "virtualbox");
         assert!(!staging.join(runtime::lab::INSTANCE_MARKER).exists());
