@@ -6,23 +6,36 @@ const logWarn = vi.fn<(message: string) => Promise<void>>(async () => {});
 vi.mock("@tauri-apps/plugin-log", () => ({ error: (message: string) => logError(message), warn: (message: string) => logWarn(message) }));
 vi.mock("@tauri-apps/api/path", () => ({ appLogDir: () => Promise.resolve("/logs/org.cyberctf.desktop") }));
 
-const { describeError, installErrorLogging, logFolder, logFrontendError } = await import("@/lib/error-log");
+const { installErrorLogging, logFolder, logFrontendError } = await import("@/lib/error-log");
 const { tell, warn } = await import("@/lib/failure");
 
-describe("describeError", () => {
+describe("an error as the log writes it", () => {
+  beforeEach(() => {
+    logError.mockClear();
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+  });
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  });
+  /** The text the log line gives `err`. */
+  const logged = (err: unknown) => {
+    logFrontendError("t", err);
+    return (logError.mock.calls.at(-1)?.[0] ?? "").replace(/^\[t\] [^:]*: /, "");
+  };
+
   it("keeps an error's stack", () => {
-    const err = new Error("boom");
-    expect(describeError(err)).toContain("boom");
-    expect(describeError(err)).toContain("error-log.test");
+    const text = logged(new Error("boom"));
+    expect(text).toContain("boom");
+    expect(text).toContain("error-log.test");
   });
 
   it("describes what isn't an Error", () => {
-    expect(describeError("plain")).toBe("plain");
-    expect(describeError({ code: 7 })).toBe('{"code":7}');
-    expect(describeError(undefined)).toBe("undefined");
+    expect(logged("plain")).toBe("plain");
+    expect(logged({ code: 7 })).toBe('{"code":7}');
+    expect(logged(undefined)).toBe("undefined");
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
-    expect(describeError(cyclic)).toBe("[object Object]");
+    expect(logged(cyclic)).toBe("[object Object]");
   });
 });
 

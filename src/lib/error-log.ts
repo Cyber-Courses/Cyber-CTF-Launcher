@@ -1,8 +1,9 @@
 import { appLogDir } from "@tauri-apps/api/path";
 import { error as logError, warn as logWarn } from "@tauri-apps/plugin-log";
 
-/** The error as text, with its stack when it has one. */
-export function describeError(err: unknown): string {
+/** The error as a log line's text, with its stack when it has one (`errors.describeError` is the
+ *  player's message, translated). */
+function errorLogText(err: unknown): string {
   if (err instanceof Error) return err.stack && err.stack.includes(err.message) ? err.stack : `${err.message}\n${err.stack ?? ""}`.trim();
   if (typeof err === "string") return err;
   try {
@@ -22,7 +23,7 @@ function writeLog(write: (message: string) => Promise<void>, where: string, err:
   const page = window.location.pathname + window.location.search;
   try {
     // A log line that can't be written has nowhere left to be said but the console.
-    write(`[${where}] ${page}: ${describeError(err)}`).catch((e: unknown) => {
+    write(`[${where}] ${page}: ${errorLogText(err)}`).catch((e: unknown) => {
       console.debug("couldn't write to the log file:", e);
     });
   } catch {
