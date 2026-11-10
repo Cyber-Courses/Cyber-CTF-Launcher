@@ -1,29 +1,18 @@
+import { readStored, writeStored } from "@/lib/local-store";
+
 // Whether this machine has been through the onboarding: a flag in localStorage. Without
 // storage (a private window), the onboarding is taken as done, so it doesn't show every launch.
 
 const ONBOARDED_KEY = "cyberctf.onboarded";
 
-export function readOnboarded(): boolean {
-  try {
-    return localStorage.getItem(ONBOARDED_KEY) === "1";
-  } catch {
-    return true;
-  }
-}
+/** Storage that can't be read at all reads as done (see above). */
+export const readOnboarded = (): boolean => readStored(ONBOARDED_KEY, "1") === "1";
 
-export function markOnboarded() {
-  try {
-    localStorage.setItem(ONBOARDED_KEY, "1");
-  } catch {
-    /* ignore */
-  }
-}
+export const markOnboarded = () => {
+  writeStored(ONBOARDED_KEY, "1");
+};
 
 /** The onboarding shows again on the next start (Settings' Replay onboarding). */
-export function clearOnboarded() {
-  try {
-    localStorage.removeItem(ONBOARDED_KEY);
-  } catch {
-    /* ignore */
-  }
-}
+export const clearOnboarded = () => {
+  writeStored(ONBOARDED_KEY, null);
+};

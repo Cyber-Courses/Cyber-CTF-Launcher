@@ -1,5 +1,7 @@
-import type { DockerEngine, Provider } from "@/lib/tauri";
+import { DOCKER_ENGINES, LOCAL_PROVIDERS, type DockerEngine, type Provider } from "@/lib/tauri";
 import { translate } from "@/lib/i18n";
+import { readStored, readStoredOneOf, writeStored } from "@/lib/local-store";
+import { ignore } from "@/lib/failure";
 import defaultAttackBox from "../../src-tauri/attack-box-image.json";
 
 /** Per-machine launcher preferences, kept locally. */
@@ -78,14 +80,10 @@ export const ATTACK_PRESETS: { image: string; label: string; note: string; large
  *  runs its own, read from the same `attack-box-image.json`). A saved old default is migrated:
  *  the key is cleared, so this machine follows the default from then on. */
 export function savedAttackImage(): string | null {
-  try {
-    const saved = localStorage.getItem(ATTACK_IMAGE_KEY);
-    if (saved && OLD_DEFAULT_IMAGES.has(saved)) localStorage.removeItem(ATTACK_IMAGE_KEY);
-    else if (saved) return saved;
-    return null;
-  } catch {
-    return null;
-  }
+  const saved = readStored(ATTACK_IMAGE_KEY);
+  if (saved && OLD_DEFAULT_IMAGES.has(saved)) writeStored(ATTACK_IMAGE_KEY, null);
+  else if (saved) return saved;
+  return null;
 }
 
 /** The attack box image to use, as the settings show it: the learner's own, else the default. */
@@ -94,13 +92,8 @@ export const getAttackImage = (): string => savedAttackImage() ?? DEFAULT_ATTACK
 /** Saves the attack box image. The default (or blank) isn't stored, so a later launcher's newer
  *  pinned default applies without another migration. */
 export function setAttackImage(image: string) {
-  try {
-    const value = image.trim();
-    if (!value || value === DEFAULT_ATTACK_IMAGE || OLD_DEFAULT_IMAGES.has(value)) localStorage.removeItem(ATTACK_IMAGE_KEY);
-    else localStorage.setItem(ATTACK_IMAGE_KEY, value);
-  } catch {
-    /* ignore */
-  }
+  const value = image.trim();
+  writeStored(ATTACK_IMAGE_KEY, !value || value === DEFAULT_ATTACK_IMAGE || OLD_DEFAULT_IMAGES.has(value) ? null : value);
 }
 
 /** How an attack box image reads in the UI: the pinned default as its repository (the digest
@@ -114,26 +107,16 @@ export const OLD_ATTACK_IMAGES: readonly string[] = [...OLD_DEFAULT_IMAGES];
 
 const VM_PROVIDER_KEY = "cyberctf.vm.provider";
 
-/** Sent on `window` when the hypervisor choice changes (Settings, the Machine setup, or the
- *  switch in "Where should it run?"), so the header and the lab page follow at once. */
+/** Sent on `window` when the hypervisor choice changes (Settings, the Machine setup, or "Don't
+ *  ask again" in "Where should it run?"), so the header and the lab page follow at once. */
 export const VM_PROVIDER_CHANGED = "cyberctf:vm-provider";
 
-/** The hypervisor VM labs (and the VM test) run on, when several are installed. Null = automatic. */
-export function getVmProvider(): Provider | null {
-  try {
-    return (localStorage.getItem(VM_PROVIDER_KEY) as Provider | null) || null;
-  } catch {
-    return null;
-  }
-}
+/** The hypervisor VM labs (and the VM test) run on, when several are installed. Null = automatic
+ *  (also for a saved value that names no hypervisor of this machine's kind). */
+export const getVmProvider = (): Provider | null => readStoredOneOf(VM_PROVIDER_KEY, LOCAL_PROVIDERS);
 
 export function setVmProvider(provider: Provider | null) {
-  try {
-    if (provider) localStorage.setItem(VM_PROVIDER_KEY, provider);
-    else localStorage.removeItem(VM_PROVIDER_KEY);
-  } catch {
-    /* ignore */
-  }
+  writeStored(VM_PROVIDER_KEY, provider);
   if (typeof window !== "undefined") window.dispatchEvent(new Event(VM_PROVIDER_CHANGED));
 }
 
@@ -159,14 +142,19 @@ const testKey = (kind: "docker" | "vm", provider?: string | null) => (provider ?
 
 /** The last test of `kind` (the one labs run on), or of one `provider` of that kind. */
 export function getLastTest(kind: "docker" | "vm", provider?: string | null): LastTest | null {
+  const raw = readStored(testKey(kind, provider));
+  const v = raw ? parsedRecord(raw) : null;
+  // Only a record of the right shape: anything else (an older format, a hand edit) is none.
+  const ok = !!v && typeof v === "object" && ["ok", "fail"].includes((v as LastTest).result) && Number.isFinite((v as LastTest).at);
+  return ok ? (v as LastTest) : null;
+}
+
+/** A saved record's JSON; null when it isn't JSON (a hand edit). */
+function parsedRecord(raw: string): unknown {
   try {
-    const raw = localStorage.getItem(testKey(kind, provider));
-    const v: unknown = raw ? JSON.parse(raw) : null;
-    // Only a record of the right shape: anything else (an older format, a hand edit) is none.
-    const ok = !!v && typeof v === "object" && ["ok", "fail"].includes((v as LastTest).result) && Number.isFinite((v as LastTest).at);
-    return ok ? (v as LastTest) : null;
-  } catch {
-    return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return ignore("a saved test record that isn't JSON reads as none", () => null)(e);
   }
 }
 
@@ -178,34 +166,20 @@ export function setLastTest(
   result: "ok" | "fail",
   { provider = null, primary = true, why = null }: { provider?: string | null; primary?: boolean; why?: string | null } = {},
 ) {
-  try {
-    const record = JSON.stringify({ result, at: Date.now(), why: result === "fail" ? why : null });
-    if (provider) localStorage.setItem(testKey(kind, provider), record);
-    if (primary) localStorage.setItem(testKey(kind), record);
-  } catch {
-    /* ignore */
-  }
+  const record = JSON.stringify({ result, at: Date.now(), why: result === "fail" ? why : null });
+  if (provider) writeStored(testKey(kind, provider), record);
+  if (primary) writeStored(testKey(kind), record);
 }
 
 const AUTO_ATTACK_KEY = "cyberctf.attackbox.auto";
 
 /** Start the attack box as soon as a lab the launcher reaches a run of is up, wherever it runs
  *  (default on). */
-export function getAutoAttackBox(): boolean {
-  try {
-    return localStorage.getItem(AUTO_ATTACK_KEY) !== "false";
-  } catch {
-    return true;
-  }
-}
+export const getAutoAttackBox = (): boolean => readStored(AUTO_ATTACK_KEY) !== "false";
 
-export function setAutoAttackBox(on: boolean) {
-  try {
-    localStorage.setItem(AUTO_ATTACK_KEY, on ? "true" : "false");
-  } catch {
-    /* ignore */
-  }
-}
+export const setAutoAttackBox = (on: boolean) => {
+  writeStored(AUTO_ATTACK_KEY, on ? "true" : "false");
+};
 
 const PORT_MODE_KEY = "cyberctf.labs.ports";
 
@@ -216,74 +190,29 @@ const PORT_MODE_KEY = "cyberctf.labs.ports";
  */
 export type PortMode = "random" | "default";
 
-export function getPortMode(): PortMode | null {
-  try {
-    const v = localStorage.getItem(PORT_MODE_KEY);
-    return v === "random" || v === "default" ? v : null;
-  } catch {
-    return null;
-  }
-}
+export const getPortMode = (): PortMode | null => readStoredOneOf(PORT_MODE_KEY, ["random", "default"]);
 
-export function setPortMode(mode: PortMode | null) {
-  try {
-    if (mode) localStorage.setItem(PORT_MODE_KEY, mode);
-    else localStorage.removeItem(PORT_MODE_KEY);
-  } catch {
-    /* ignore */
-  }
-}
+export const setPortMode = (mode: PortMode | null) => {
+  writeStored(PORT_MODE_KEY, mode);
+};
 
 const DOCKER_ENGINE_KEY = "cyberctf.docker.engine";
 const LOCAL_VM_FORM_KEY = "cyberctf.labs.vmForm";
 
-/** Sent on `window` when a saved launch choice (engine, ports, VM form, hypervisor) changes, so
- *  Settings and the lab page follow at once. */
-const LAUNCH_CHOICE_CHANGED = "cyberctf:launch-choice";
-
-function emitLaunchChoice() {
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(LAUNCH_CHOICE_CHANGED));
-}
-
 /** The container engine a lab here runs on, saved by "don't ask again". Null: follow the current
- *  Docker context (what the CLI uses). */
-export function getDockerEngine(): DockerEngine | null {
-  try {
-    return (localStorage.getItem(DOCKER_ENGINE_KEY) as DockerEngine | null) || null;
-  } catch {
-    return null;
-  }
-}
+ *  Docker context (what the CLI uses), also for a saved value that names no engine. */
+export const getDockerEngine = (): DockerEngine | null => readStoredOneOf(DOCKER_ENGINE_KEY, DOCKER_ENGINES);
 
-export function setDockerEngine(engine: DockerEngine | null) {
-  try {
-    if (engine) localStorage.setItem(DOCKER_ENGINE_KEY, engine);
-    else localStorage.removeItem(DOCKER_ENGINE_KEY);
-  } catch {
-    /* ignore */
-  }
-  emitLaunchChoice();
-}
+export const setDockerEngine = (engine: DockerEngine | null) => {
+  writeStored(DOCKER_ENGINE_KEY, engine);
+};
 
 /** For a dual-form lab here, the VM form saved by "don't ask again": `vm` = one helper VM,
  *  `vms` = one VM per machine. Null: ask which (the form step). */
 export type LocalVmForm = "vm" | "vms";
 
-export function getLocalVmForm(): LocalVmForm | null {
-  try {
-    const v = localStorage.getItem(LOCAL_VM_FORM_KEY);
-    return v === "vm" || v === "vms" ? v : null;
-  } catch {
-    return null;
-  }
-}
+export const getLocalVmForm = (): LocalVmForm | null => readStoredOneOf(LOCAL_VM_FORM_KEY, ["vm", "vms"]);
 
-export function setLocalVmForm(form: LocalVmForm | null) {
-  try {
-    if (form) localStorage.setItem(LOCAL_VM_FORM_KEY, form);
-    else localStorage.removeItem(LOCAL_VM_FORM_KEY);
-  } catch {
-    /* ignore */
-  }
-  emitLaunchChoice();
-}
+export const setLocalVmForm = (form: LocalVmForm | null) => {
+  writeStored(LOCAL_VM_FORM_KEY, form);
+};

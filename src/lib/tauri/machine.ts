@@ -43,6 +43,16 @@ export type {
 /** A Docker-compatible engine (`docker context` names it). */
 export type DockerEngine = NonNullable<SystemReport["dockerEngine"]>;
 
+/** Every engine the backend names, each once (the record makes a missing one a type error). */
+export const DOCKER_ENGINES = Object.keys({
+  "docker-desktop": true,
+  orbstack: true,
+  colima: true,
+  "rancher-desktop": true,
+  podman: true,
+  "docker-engine": true,
+} satisfies Record<DockerEngine, true>) as readonly DockerEngine[];
+
 export const systemCheck = () => invoke<SystemReport>("system_check");
 /** Points the Docker CLI at another running engine (`docker context use`). */
 export const dockerUseEngine = (engine: DockerEngine) => invokeUnit("docker_use_engine", { engine });

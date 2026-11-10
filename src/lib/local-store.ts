@@ -1,0 +1,33 @@
+import { ignore, warn } from "@/lib/failure";
+
+// This machine's preferences in the webview's localStorage. Storage can be unavailable (a private
+// window, blocked site data): a read then finds nothing, and a write lasts only as long as the
+// value it set is kept in memory by its caller.
+
+/** The value saved under `key`; null when there is none, `unreadable` when storage can't be
+ *  read (none either, unless the caller says what that means). */
+export function readStored(key: string, unreadable: string | null = null): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    return ignore("no storage here: nothing saved", () => unreadable)(e);
+  }
+}
+
+/** The value saved under `key` when it is one of `allowed`; null otherwise (none, or one a
+ *  later or earlier version saved, or a hand edit). */
+export function readStoredOneOf<T extends string>(key: string, allowed: readonly T[]): T | null {
+  const value = readStored(key);
+  return value !== null && (allowed as readonly string[]).includes(value) ? (value as T) : null;
+}
+
+/** Saves `value` under `key`; null removes it. Storage that refuses is logged: the choice then
+ *  isn't kept for the next start. */
+export function writeStored(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch (e) {
+    warn(`saving ${key}`)(e);
+  }
+}

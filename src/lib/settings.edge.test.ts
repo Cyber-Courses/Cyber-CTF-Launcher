@@ -1,10 +1,48 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_ATTACK_IMAGE, getAttackImage, getAutoAttackBox, getLastTest, getPortMode, setAttackImage, setLastTest } from "@/lib/settings";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  DEFAULT_ATTACK_IMAGE,
+  getAttackImage,
+  getAutoAttackBox,
+  getDockerEngine,
+  getLastTest,
+  getPortMode,
+  getVmProvider,
+  setAttackImage,
+  setLastTest,
+} from "@/lib/settings";
 
 // What each getter does with a value that is in storage but not one it wrote: an older
 // version's format, a hand edit in dev tools, or a partial write.
 describe("settings: stray values in storage", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it("reads a saved hypervisor or engine that names none as none, so no stale id is sent", () => {
+    // Regression: the saved string was cast and sent to the backend as the preferred one.
+    localStorage.setItem("cyberctf.vm.provider", "virtualbox");
+    localStorage.setItem("cyberctf.docker.engine", "orbstack");
+    expect([getVmProvider(), getDockerEngine()]).toEqual(["virtualbox", "orbstack"]);
+    localStorage.setItem("cyberctf.vm.provider", "vmware_esxi");
+    localStorage.setItem("cyberctf.docker.engine", "lima");
+    expect([getVmProvider(), getDockerEngine()]).toEqual([null, null]);
+  });
+
+  it("logs a setting storage refused to save, and reads none where storage can't be read", () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("no storage");
+    });
+    setAttackImage("kalilinux/kali-rolling");
+    expect(warned).toHaveBeenCalledWith("saving cyberctf.attackbox.image:", expect.any(Error));
+    expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
+  });
+
   it("reads a self-test saved as JSON null as no test, and keeps kinds apart", () => {
     localStorage.setItem("cyberctf.selftest.docker", "null");
     expect(getLastTest("docker")).toBeNull();

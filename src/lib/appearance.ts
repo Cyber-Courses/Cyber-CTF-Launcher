@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ignore } from "@/lib/failure";
+import { readStored, writeStored } from "@/lib/local-store";
 
 /**
  * The launcher's appearance: Dark (default), Black (true #000, for OLED) or Light (Paper).
@@ -22,13 +23,7 @@ function parse(v: string | null): Appearance {
   return v === "black" || v === "light" ? v : "dark";
 }
 
-function getAppearance(): Appearance {
-  try {
-    return parse(localStorage.getItem(KEY));
-  } catch {
-    return "dark";
-  }
-}
+const getAppearance = (): Appearance => parse(readStored(KEY));
 
 function applyAppearance(mode: Appearance) {
   const root = document.documentElement;
@@ -46,12 +41,9 @@ function applyWindowTheme(mode: Appearance) {
     .catch(ignore("the window's frame keeps the system's colour; the app itself follows the appearance"));
 }
 
+/** Saves the appearance (without storage, for this session only) and applies it. */
 function setAppearance(mode: Appearance) {
-  try {
-    localStorage.setItem(KEY, mode);
-  } catch {
-    /* kept for this session only */
-  }
+  writeStored(KEY, mode);
   applyAppearance(mode);
 }
 

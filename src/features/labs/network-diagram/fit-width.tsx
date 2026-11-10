@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Expand, Shrink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
+import { readStored, writeStored } from "@/lib/local-store";
 
 // A lab wider than its card: the diagram keeps a readable zoom and scrolls sideways (see
 // `shellSize`). These are the card's controls for that case: a cue that there is more to the
@@ -17,22 +18,12 @@ const FIT_MIN_ZOOM = 0.25;
 
 /** Whether the player chose to fit wide diagrams to the card. Storage can be unavailable (a
  *  private window, blocked site data): then it is off. */
-export function readFitWidth(): boolean {
-  try {
-    return localStorage.getItem(FIT_WIDTH_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+export const readFitWidth = (): boolean => readStored(FIT_WIDTH_KEY) === "1";
 
-export function writeFitWidth(on: boolean) {
-  try {
-    if (on) localStorage.setItem(FIT_WIDTH_KEY, "1");
-    else localStorage.removeItem(FIT_WIDTH_KEY);
-  } catch {
-    // Not remembered, but it still applies until the page is left.
-  }
-}
+/** Remembers the choice; without storage it still applies until the page is left. */
+export const writeFitWidth = (on: boolean) => {
+  writeStored(FIT_WIDTH_KEY, on ? "1" : null);
+};
 
 /** The remembered choice, read once on mount (localStorage isn't available during render). */
 export function useFitWidth() {
