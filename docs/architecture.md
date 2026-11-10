@@ -47,7 +47,7 @@ The [Isothrum runner](https://github.com/Isothrum/isothrum) runs every lab with 
   - `cloud.rs`: cloud account sign-in through each provider's CLI; `error.rs`: crate-wide errors.
   - [`app/`](../src-tauri/src/app/): the app shell (windows, menu, quitting, the log file); [`commands.rs`](../src-tauri/src/commands.rs): the commands the webview invokes.
 
-The runtime layer knows nothing about CTFs: a lab is a directory with an `isoloom.yml` (its machines, networks, services and checks). The launcher generates the files for the target it runs on under the lab's `.isoloom/` folder.
+The runtime layer knows nothing about CTFs: a lab is a directory with an `isoloom.yml` (its machines, networks, services and checks). It names none of the layers above it (`labs`, `account`, `machine`, `commands`, `app`); what it needs of them is handed in: the rule for which repositories a lab's spec may be fetched from (`runtime::lab::Source`, `labs::source`), what to end before a stop (`runtime::stop_lab`'s `end_first`: the deploy workers, the website's co-location check), and a start's downloads, which `labs` records for Storage around it (`runtime::downloads`). A source scan (`testing/source_scan.rs`) holds every layer to that.
 
 Labs live in `<app data>/labs/<lab id>/`.
 

@@ -25,10 +25,23 @@ fn walk(dir: &Path, out: &mut Vec<Source>) {
             walk(&path, out);
         } else if path.extension().and_then(|x| x.to_str()) == Some("rs") {
             let src = std::fs::read_to_string(&path).unwrap();
-            let (code, tests) = split_tests(&path, &src);
+            let (code, tests) = if declared_for_tests(&path) { (String::new(), src) } else { split_tests(&path, &src) };
             out.push(Source { path, code, tests });
         }
     }
+}
+
+/// Whether the file at `path` is a module its parent declares for tests only (`#[cfg(test)]`
+/// over its `mod` line, as `runtime::fake_clis` is): all of it is test code, whatever its name.
+fn declared_for_tests(path: &Path) -> bool {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_stem().and_then(|n| n.to_str())) else { return false };
+    let Ok(parent) = std::fs::read_to_string(dir.with_extension("rs")) else { return false };
+    let lines: Vec<&str> = parent.lines().map(str::trim).collect();
+    let declares = |l: &str| l.strip_suffix(';').and_then(|l| l.rsplit(' ').next()) == Some(name) && l.contains("mod ");
+    lines.iter().enumerate().filter(|(_, l)| declares(l)).any(|(i, _)| {
+        // The attributes right above the `mod` line.
+        lines[..i].iter().rev().take_while(|l| l.starts_with("#[")).any(|a| *a == "#[cfg(test)]" || a.starts_with("#[cfg(all(test"))
+    })
 }
 
 /// Whole test files (`tests.rs`, `proptests.rs`) are test code, and the test-only helpers neither;
@@ -129,6 +142,14 @@ mod tests {
     }
 
     #[test]
+    fn a_module_declared_for_tests_is_test_code_whatever_its_name() {
+        let fake_clis = crate_sources().into_iter().find(|s| s.path.ends_with("runtime/fake_clis.rs")).expect("runtime/fake_clis.rs");
+        assert!(fake_clis.code.is_empty() && fake_clis.tests.contains("struct FakeBin"));
+        let lifecycle = crate_sources().into_iter().find(|s| s.path.ends_with("runtime/lifecycle.rs")).expect("runtime/lifecycle.rs");
+        assert!(lifecycle.code.contains("fn stop_lab"));
+    }
+
+    #[test]
     fn the_crate_is_read_whole() {
         let sources = crate_sources();
         assert!(sources.len() > 100, "{}", sources.len());
@@ -137,13 +158,18 @@ mod tests {
 }
 
 /// The layers depend downwards only: the platform (running tools, files, the OS) names neither the
-/// labs' runtime nor the app shell, and the runtime doesn't name the app shell; a cycle between
-/// them came back once (the runtime reached for the deploy workers' lock and status files).
+/// labs' runtime nor the app shell; the runtime doesn't name the app shell, nor, outside its
+/// tests, the layers that use it (the CTF's labs, the account, the machine, the commands): what
+/// it needs of them is handed in (a source check, a hook to run first). A cycle between them
+/// came back more than once (the runtime reached for the deploy workers' lock and status files,
+/// then for the catalogue's source rule, the co-location server and Storage's records).
 #[test]
 fn the_platform_and_the_runtime_never_reach_up_into_the_layers_above() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     // Spelled in two, so this file doesn't name the layers itself.
-    let (runtime, app) = (["crate::", "runtime"].concat(), ["crate::", "app::"].concat());
+    let path = |layer: &str| ["crate::", layer].concat();
+    let (runtime, app) = (path("runtime"), path("app::"));
+    let above_runtime = ["labs", "account", "machine", "commands"].map(|l| (path(l), [path(l), "::".into()].concat(), [path(l), ";".into()].concat()));
     for s in crate_sources() {
         let rel = s.path.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
         let text = format!("{}\n{}", s.code, s.tests);
@@ -153,6 +179,15 @@ fn the_platform_and_the_runtime_never_reach_up_into_the_layers_above() {
         }
         if layer == "runtime" {
             assert!(!text.contains(&app), "{rel} reaches up from the runtime into the app shell");
+            for (name, item, whole) in &above_runtime {
+                assert!(!s.code.contains(item.as_str()) && !s.code.contains(whole.as_str()), "{rel} reaches up from the runtime into {name}");
+            }
+            // And through a grouped `use crate::{…}`.
+            let grouped = s.code.lines().map(str::trim).filter(|l| l.starts_with(&["use ", &path("{")].concat()));
+            for line in grouped {
+                let names: Vec<&str> = line.split(['{', '}', ',', ' ', ':', ';']).collect();
+                assert!(!["labs", "account", "machine", "commands"].iter().any(|l| names.contains(l)), "{rel} reaches up from the runtime: {line}");
+            }
         }
     }
 }
