@@ -1,6 +1,6 @@
 //! OAuth tokens: PKCE values, the token endpoint, and the session a token response makes.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::platform::clock::unix_secs;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -20,10 +20,6 @@ pub(super) struct TokenResponse {
     pub refresh_token: Option<String>,
     pub expires_in: Option<u64>,
     pub id_token: Option<String>,
-}
-
-pub(super) fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 pub(super) fn random_b64(bytes: usize) -> String {
@@ -133,7 +129,7 @@ pub(super) fn session_from(tokens: TokenResponse, previous: Option<&Session>) ->
         access_token: tokens.access_token,
         // Refresh tokens may rotate; keep the old one if none is returned.
         refresh_token: tokens.refresh_token.or_else(|| previous.and_then(|p| p.refresh_token.clone())),
-        expires_at: now().saturating_add(tokens.expires_in.unwrap_or(DEFAULT_EXPIRES_IN)),
+        expires_at: unix_secs().saturating_add(tokens.expires_in.unwrap_or(DEFAULT_EXPIRES_IN)),
         name: profile.name,
         email: profile.email,
         picture: profile.picture,
@@ -217,7 +213,7 @@ mod tests {
     #[test]
     fn session_from_defaults_expiry_and_has_no_previous_on_first_login() {
         // First login (no previous session) and a missing expires_in: default 3600s lifetime.
-        let before = now();
+        let before = unix_secs();
         let s = session_from(tokens("a", Some("r"), None, None), None);
         assert!(s.expires_at >= before + 3600);
         assert_eq!(s.refresh_token.as_deref(), Some("r"));
@@ -248,7 +244,7 @@ mod tests {
         assert_eq!(s.expires_at, u64::MAX);
         // And zero means "already expired", not the default lifetime.
         let s = session_from(tokens("a", None, None, Some(0)), None);
-        assert!(s.expires_at <= now());
+        assert!(s.expires_at <= unix_secs());
     }
 
     #[test]

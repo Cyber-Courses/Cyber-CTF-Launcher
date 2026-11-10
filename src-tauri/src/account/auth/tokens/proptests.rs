@@ -64,14 +64,14 @@ proptest! {
             format!("h.{}.s", b64(&c))
         });
         let prev = previous.as_ref().map(|(r, n, e)| Session { access_token: "old".into(), refresh_token: r.clone(), expires_at: 1, name: n.clone(), email: e.clone(), picture: None });
-        let before = now();
+        let before = unix_secs();
         let s = session_from(TokenResponse { access_token: access.clone(), refresh_token: refresh.clone(), expires_in, id_token }, prev.as_ref());
         prop_assert_eq!(&s.access_token, &access);
         prop_assert_eq!(s.refresh_token, refresh.or_else(|| prev.as_ref().and_then(|p| p.refresh_token.clone())));
         // Never in the past, never wrapped around.
         let lifetime = expires_in.unwrap_or(DEFAULT_EXPIRES_IN);
         prop_assert!(s.expires_at >= before.saturating_add(lifetime));
-        prop_assert!(s.expires_at <= now().saturating_add(lifetime));
+        prop_assert!(s.expires_at <= unix_secs().saturating_add(lifetime));
         if let Some((name, email)) = id {
             prop_assert_eq!(s.name, name);
             prop_assert_eq!(s.email, email);

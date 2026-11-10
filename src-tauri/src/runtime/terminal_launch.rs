@@ -132,7 +132,7 @@ const SCRIPT_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 fn write_shell_script(dir: &std::path::Path, line: &str) -> Result<std::path::PathBuf> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     clear_old_scripts(dir, SCRIPT_TTL);
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default();
+    let nanos = crate::platform::clock::since_epoch().as_nanos();
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let path = dir.join(format!("{SCRIPT_PREFIX}{}-{n}-{nanos}.cmd", std::process::id()));
     std::fs::write(&path, shell_script(line))?;

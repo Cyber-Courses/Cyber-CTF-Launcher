@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use tokio::sync::oneshot;
 
@@ -94,7 +94,7 @@ pub(super) async fn ask(deps: &Deps, request: &LaunchRequest) -> bool {
 
 /// The Unix time, in milliseconds, `wait` from now.
 fn unix_ms_after(wait: Duration) -> u64 {
-    let at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default() + wait;
+    let at = crate::platform::clock::since_epoch() + wait;
     u64::try_from(at.as_millis()).unwrap_or(u64::MAX)
 }
 

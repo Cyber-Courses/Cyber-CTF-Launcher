@@ -30,10 +30,6 @@ pub struct InstalledTool {
 /// shows up later than that was most likely installed some other way.
 const PENDING_FOR_SECS: u64 = 24 * 3600;
 
-fn now_secs() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
-}
-
 /// What an install leaves on record, from whether the tool was there before and after it.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Outcome {
@@ -128,7 +124,7 @@ async fn confirm_pending(dirs: &AppDirs) {
             found.push(dep);
         }
     }
-    let now = now_secs();
+    let now = crate::platform::clock::unix_secs();
     update(dirs, |tools| {
         settle(tools, &found, now);
     });
@@ -191,7 +187,7 @@ fn update_at(f: &Path, change: impl FnOnce(&mut Vec<InstalledTool>)) -> std::io:
 fn remember(tools: &mut Vec<InstalledTool>, dependency: Dependency, pending: bool) {
     let pending = pending && !tools.iter().any(|t| t.dependency == dependency && !t.pending);
     tools.retain(|t| t.dependency != dependency);
-    tools.push(InstalledTool { dependency, at: now_secs(), pending });
+    tools.push(InstalledTool { dependency, at: crate::platform::clock::unix_secs(), pending });
 }
 
 /// The confirmed records only.

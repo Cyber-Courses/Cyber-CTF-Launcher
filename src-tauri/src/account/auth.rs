@@ -21,9 +21,10 @@ use std::future::Future;
 use serde::Serialize;
 
 use crate::error::{Code, Error, Result};
+use crate::platform::clock::unix_secs;
 use crate::platform::config;
 use store::Session;
-use tokens::{TokenResponse, code_challenge, now, random_b64, refresh_request_at, session_from, token_request};
+use tokens::{TokenResponse, code_challenge, random_b64, refresh_request_at, session_from, token_request};
 
 const SCOPES: &str = "openid profile email offline_access";
 /// An access token this close to expiry is refreshed before use.
@@ -103,7 +104,7 @@ fn session_from_read(read: std::result::Result<Option<Session>, String>) -> Resu
 
 /// Whether a session's access token is still good for a call now.
 fn fresh(session: &Session) -> bool {
-    session.expires_at > now() + REFRESH_MARGIN_SECS
+    session.expires_at > unix_secs() + REFRESH_MARGIN_SECS
 }
 
 /// Every write of the session (a refresh, a sign-in, a sign-out) happens behind this lock, one
@@ -435,8 +436,8 @@ mod tests {
     #[test]
     fn a_token_near_expiry_is_not_fresh() {
         let session = |expires_at| Session { access_token: "a".into(), refresh_token: None, expires_at, name: None, email: None, picture: None };
-        assert!(fresh(&session(now() + 3600)));
-        assert!(!fresh(&session(now() + 30)));
+        assert!(fresh(&session(unix_secs() + 3600)));
+        assert!(!fresh(&session(unix_secs() + 30)));
         assert!(!fresh(&session(0)));
     }
 
@@ -488,7 +489,7 @@ mod tests {
     #[tokio::test]
     async fn the_status_follows_the_kept_session_and_logout_forgets_it() {
         let _serial = ONE_AT_A_TIME.lock().await;
-        let kept = Session { expires_at: now() + 3600, ..session() };
+        let kept = Session { expires_at: unix_secs() + 3600, ..session() };
         store::store(kept).await.unwrap();
         let status = serde_json::to_value(auth_status().await).unwrap();
         assert_eq!(status, serde_json::json!({ "loggedIn": true, "name": "Ada", "email": "ada@example.com" }));
@@ -510,20 +511,20 @@ mod tests {
     #[tokio::test]
     async fn a_renewed_session_that_could_not_be_saved_is_served_then_saved_and_forgotten_by_logout() {
         let _serial = ONE_AT_A_TIME.lock().await;
-        let stale = Session { expires_at: now() + 10, ..session() };
+        let stale = Session { expires_at: unix_secs() + 10, ..session() };
         store::store(stale).await.unwrap();
-        let renewed = Session { access_token: "tok2".into(), refresh_token: Some("ref2".into()), expires_at: now() + 3600, ..session() };
+        let renewed = Session { access_token: "tok2".into(), refresh_token: Some("ref2".into()), expires_at: unix_secs() + 3600, ..session() };
         set_unsaved(Some(renewed));
         // Served over the stored one, and saved now that the store takes it.
         assert_eq!(access_token().await.unwrap(), "tok2");
         assert!(unsaved().is_none());
         assert_eq!(store::read().await.unwrap().unwrap().refresh_token.as_deref(), Some("ref2"));
         // An older leftover never replaces a newer stored session.
-        set_unsaved(Some(Session { access_token: "old".into(), expires_at: now() + 5, ..session() }));
+        set_unsaved(Some(Session { access_token: "old".into(), expires_at: unix_secs() + 5, ..session() }));
         assert_eq!(access_token().await.unwrap(), "tok2");
         assert!(unsaved().is_none());
         // Sign-out forgets both.
-        set_unsaved(Some(Session { access_token: "tok3".into(), expires_at: now() + 3600, ..session() }));
+        set_unsaved(Some(Session { access_token: "tok3".into(), expires_at: unix_secs() + 3600, ..session() }));
         auth_logout().await.unwrap();
         assert!(unsaved().is_none());
         assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
@@ -531,7 +532,7 @@ mod tests {
 
     /// A session whose access token needs a refresh, and the tokens a refresh answers with.
     fn expiring() -> Session {
-        Session { access_token: "old".into(), refresh_token: Some("r1".into()), expires_at: now() + 10, ..session() }
+        Session { access_token: "old".into(), refresh_token: Some("r1".into()), expires_at: unix_secs() + 10, ..session() }
     }
 
     fn renewed(access: &str) -> TokenResponse {
@@ -582,7 +583,7 @@ mod tests {
         let _serial = ONE_AT_A_TIME.lock().await;
         store::store(expiring()).await.unwrap();
         let (refresh, release) = refresh_in_flight().await;
-        let other = Session { access_token: "other-account".into(), expires_at: now() + 3600, ..session() };
+        let other = Session { access_token: "other-account".into(), expires_at: unix_secs() + 3600, ..session() };
         let mut sign_in = tokio::spawn(keep_signed_in(other));
         assert!(still_waiting(&mut sign_in).await, "the sign-in was saved while the refresh was in flight");
         release.send(()).unwrap();
@@ -626,7 +627,7 @@ mod tests {
         let session = session_from(token_request_at(&base, &form).await.unwrap(), None);
         assert_eq!((session.access_token.as_str(), session.refresh_token.as_deref()), ("at1", Some("rt1")));
         assert_eq!((session.name.as_deref(), session.email.as_deref()), (Some("Ada"), Some("ada@example.com")));
-        assert!(session.expires_at > now() + 3500);
+        assert!(session.expires_at > unix_secs() + 3500);
         let sent = &requests.lock().unwrap()[0];
         assert_eq!(sent.path, "/oauth2/token");
         assert_eq!(sent.form["grant_type"], "authorization_code");
@@ -764,7 +765,7 @@ mod tests {
     #[tokio::test]
     async fn an_expired_session_without_a_refresh_token_says_session_expired() {
         let _serial = ONE_AT_A_TIME.lock().await;
-        store::store(Session { refresh_token: None, expires_at: now() + 10, ..session() }).await.unwrap();
+        store::store(Session { refresh_token: None, expires_at: unix_secs() + 10, ..session() }).await.unwrap();
         let renew = |_: String| -> std::future::Ready<Result<TokenResponse>> { panic!("there is no refresh token to send") };
         let err = access_token_renewed_by(renew).await.unwrap_err();
         assert_eq!(err.code(), Code::SessionExpired);
@@ -779,7 +780,7 @@ mod tests {
     #[tokio::test]
     async fn a_backend_refusal_keeps_the_session() {
         let _serial = ONE_AT_A_TIME.lock().await;
-        store::store(Session { expires_at: now() + 3600, ..session() }).await.unwrap();
+        store::store(Session { expires_at: unix_secs() + 3600, ..session() }).await.unwrap();
         for status in ["401 Unauthorized", "403 Forbidden"] {
             let body = r#"{"errors":[{"message":"not allowed"}]}"#;
             let response = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());

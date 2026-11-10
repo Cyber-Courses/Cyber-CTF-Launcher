@@ -1,8 +1,6 @@
 //! What an AWS account has cost this month (Cost Explorer), and the budget check run before a
 //! cloud launch. AWS-only: the other clouds have no cost read yet, and never persist a limit.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use crate::platform::AppDirs;
 
 use super::cloud_checks::{aws_cmd, last_line};
@@ -74,7 +72,7 @@ fn ymd_from_secs(secs: i64) -> (i64, i64, i64) {
 /// The Cost Explorer time period for this month so far: Start = the 1st, End = tomorrow
 /// (End is exclusive, so tomorrow includes today's spend).
 fn month_period() -> String {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok().and_then(|d| i64::try_from(d.as_secs()).ok()).unwrap_or(0);
+    let now = i64::try_from(crate::platform::clock::unix_secs()).unwrap_or(0);
     let (y, m, _) = ymd_from_secs(now);
     let (ey, em, ed) = ymd_from_secs(now + 86400);
     format!("Start={y:04}-{m:02}-01,End={ey:04}-{em:02}-{ed:02}")
