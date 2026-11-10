@@ -24,6 +24,10 @@ export const isLocalHypervisor = (p: string | null | undefined): p is Provider =
 /** Whether the lab is built for this CPU (no architectures listed = any). */
 export const runsNatively = (rt: LabRuntimeInfo, hostArch: string) => !rt.architectures.length || rt.architectures.includes(hostArch);
 
+/** Whether `rt` runs natively here, on `hostArch`: also when the host isn't known yet (the report
+ *  not in) or the lab's runtime isn't, never a wrong "emulated". */
+export const runsNativelyHere = (rt: LabRuntimeInfo | null | undefined, hostArch: string) => !hostArch || !rt || runsNatively(rt, hostArch);
+
 /** The ways a lab can run: the backend's capability flags when present, else derived from the
  *  single runtime kind so this is correct before a backend that records them. A dual-form lab has
  *  more than one true (e.g. docker and vm), and the launcher offers a place for each. */

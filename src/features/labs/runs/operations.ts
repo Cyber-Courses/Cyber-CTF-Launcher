@@ -4,6 +4,8 @@ import { activeOperations, deployingLabs, type ActiveOperation } from "@/lib/tau
 import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
 import { translate } from "@/lib/i18n";
 import { structurallyEqual } from "@/lib/equal";
+import { ignore } from "@/lib/failure";
+import { readSession, writeSession } from "@/lib/local-store";
 
 // The operations the backend runs on labs right now, polled from the long-lived Rust process,
 // and how they read on screen.
@@ -83,13 +85,17 @@ let seen: Record<string, number> | null = null;
 const seenKey = (labId: string, op: string) => `${labId}:${op}`;
 
 function readSeen(): Record<string, number> {
-  if (seen) return seen;
-  try {
-    seen = JSON.parse(sessionStorage.getItem(SEEN_KEY) ?? "{}") as Record<string, number>;
-  } catch {
-    seen = {};
-  }
+  seen ??= parseSeen(readSession(SEEN_KEY));
   return seen;
+}
+
+/** The kept record; none when there is none, or one this window can't read. */
+function parseSeen(raw: string | null): Record<string, number> {
+  try {
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
+  } catch (e) {
+    return ignore("a record of the operations seen that isn't JSON: they count from now", () => ({}))(e);
+  }
 }
 
 /** Notes the operations in flight now: a new one is first seen now, one that ended is forgotten. */
@@ -99,11 +105,7 @@ export function noteOperations(ops: ActiveOperation[], now = Date.now()) {
   for (const o of ops) next[seenKey(o.labId, o.op)] = before[seenKey(o.labId, o.op)] ?? now;
   if (structurallyEqual(before, next)) return;
   seen = next;
-  try {
-    sessionStorage.setItem(SEEN_KEY, JSON.stringify(next));
-  } catch {
-    /* no storage: kept in memory */
-  }
+  writeSession(SEEN_KEY, JSON.stringify(next));
 }
 
 /** When this window first saw `op` in flight on `labId` (see above), if it did. */

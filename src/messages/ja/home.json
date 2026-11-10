@@ -29,7 +29,6 @@
     "memory": "メモリ",
     "disk": "ディスク",
     "cores": "{cores} コア",
-    "usage": "{used}/{total} GB",
     "unavailable": "取得できません"
   },
   "capacity": {

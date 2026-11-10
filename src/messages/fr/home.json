@@ -29,7 +29,6 @@
     "memory": "Mémoire",
     "disk": "Disque",
     "cores": "{cores} cœurs",
-    "usage": "{used}/{total} Go",
     "unavailable": "indisponible"
   },
   "capacity": {

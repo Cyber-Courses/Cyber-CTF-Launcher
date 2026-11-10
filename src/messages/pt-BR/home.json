@@ -29,7 +29,6 @@
     "memory": "Memória",
     "disk": "Disco",
     "cores": "{cores} núcleos",
-    "usage": "{used}/{total} GB",
     "unavailable": "indisponível"
   },
   "capacity": {

@@ -29,7 +29,6 @@
     "memory": "Arbeitsspeicher",
     "disk": "Festplatte",
     "cores": "{cores} Kerne",
-    "usage": "{used}/{total} GB",
     "unavailable": "nicht verfügbar"
   },
   "capacity": {

@@ -1,6 +1,6 @@
 import { isLocalVmForm, type RunTarget } from "@/features/labs/run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { emulatorReady, vmFormTarget, isCloudLab, isContainerLab, isLocalHypervisor, runsNatively } from "@/features/labs/lab-runtime";
+import { emulatorReady, vmFormTarget, isCloudLab, isContainerLab, isLocalHypervisor, runsNativelyHere } from "@/features/labs/lab-runtime";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import type { ActiveOperation, LabControl, LabMachine, LabStatus, Provider, Runtime, ServerHost } from "@/lib/tauri";
 
@@ -96,8 +96,7 @@ function leftovers(status: LabStatus | undefined, isCloud: boolean): boolean {
 export function deriveLabState(i: LabStateInput) {
   const { status, runtime: rt } = i;
   const machines = status?.machines ?? [];
-  // Unknown host (report not in yet) or a lab for any CPU: native, never a wrong "emulated".
-  const native = !i.hostArch || !rt || runsNatively(rt, i.hostArch);
+  const native = runsNativelyHere(rt, i.hostArch);
   // A VM lab built for another CPU runs here only through an emulator (QEMU), when one is ready.
   const emulates = emulatorReady(i.readyVms);
   const running = status?.running ?? false;

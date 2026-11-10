@@ -10,6 +10,7 @@ import type { Capacity } from "@/features/home/capacity";
 import { machineOpenSetup, type AuthStatus, type MachineMetrics } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { useFormat, useT } from "@/lib/i18n";
+import { formatBytesOf } from "@/lib/format";
 
 // The Overview's sections around its panels (lab-panels.tsx): the greeting, live usage, the low
 // RAM callout and the sign-in hint. The screen itself (home-screen.tsx) wires them up.
@@ -72,9 +73,6 @@ export function HomeHeader({
  *  (none read yet), not placeholders forever. */
 export function UsageStats({ metrics, history, failed = false }: { metrics: MachineMetrics | null; history: UsageHistory; failed?: boolean }) {
   const t = useT();
-  const format = useFormat();
-  /** Gigabytes with one decimal, without a trailing ".0" (19.5, 32). */
-  const gb = (bytes: number) => format.number(bytes / 1e9, { maximumFractionDigits: 1, useGrouping: false });
   const use = metrics ? usage(metrics) : null;
   const gone = failed && !metrics;
   const unavailable = gone ? t("home.stats.unavailable") : "";
@@ -89,14 +87,14 @@ export function UsageStats({ metrics, history, failed = false }: { metrics: Mach
       />
       <StatCard
         label={t("home.stats.memory")}
-        detail={metrics ? t("home.stats.usage", { used: gb(metrics.memUsed), total: gb(metrics.memTotal) }) : unavailable}
+        detail={metrics ? formatBytesOf(metrics.memUsed, metrics.memTotal) : unavailable}
         value={use && metrics?.memTotal ? use.memPct : null}
         history={history.mem}
         unavailable={gone}
       />
       <StatCard
         label={t("home.stats.disk")}
-        detail={metrics ? t("home.stats.usage", { used: gb(metrics.diskUsed), total: gb(metrics.diskTotal) }) : unavailable}
+        detail={metrics ? formatBytesOf(metrics.diskUsed, metrics.diskTotal) : unavailable}
         value={use && metrics?.diskTotal ? use.diskPct : null}
         history={history.disk}
         unavailable={gone}

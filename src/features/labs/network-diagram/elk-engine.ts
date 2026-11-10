@@ -1,5 +1,6 @@
 import type { ELK, ElkNode } from "elkjs/lib/elk-api";
 import { isReady } from "@/features/labs/network-diagram/elk-ready";
+import { readSession, writeSession } from "@/lib/local-store";
 
 // ELK (~1.4 MB) is loaded on the first layout, not with the app. In a browser it runs in a Web
 // Worker (elk.worker.ts, a same-origin script the CSP allows), off the main thread. Without
@@ -19,19 +20,9 @@ type Engine = { layout: (graph: ElkNode) => Promise<ElkNode> };
 
 let engine: Promise<Engine> | undefined;
 
-const remembered = () => {
-  try {
-    return sessionStorage.getItem(MAIN_THREAD_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
+const remembered = () => readSession(MAIN_THREAD_KEY) === "1";
 const remember = () => {
-  try {
-    sessionStorage.setItem(MAIN_THREAD_KEY, "1");
-  } catch {
-    /* storage unavailable: this page still remembers it */
-  }
+  writeSession(MAIN_THREAD_KEY, "1");
 };
 
 async function inline(): Promise<ELK> {

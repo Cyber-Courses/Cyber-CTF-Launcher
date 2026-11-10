@@ -1,4 +1,4 @@
-import { runsNatively } from "@/features/labs/lab-runtime";
+import { runsNativelyHere } from "@/features/labs/lab-runtime";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
 
@@ -43,12 +43,11 @@ export function rowFacts({
   /** An emulator (QEMU) is ready here. */
   emulates: boolean;
 }) {
-  // Unknown host (report not in yet) or a lab for any CPU: native, never a wrong "emulated".
-  const native = !hostArch || !rt || runsNatively(rt, hostArch);
+  const native = runsNativelyHere(rt, hostArch);
   const running = status?.running ?? false;
   return {
     // Emulated only where it actually runs here: containers always, VMs with an emulator ready.
-    emulated: !native && (rt.runtime !== "VM" || emulates),
+    emulated: !native && (rt?.runtime !== "VM" || emulates),
     running,
     parked: !running && (status?.parked ?? null),
   };

@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { emulatorReady, formProviders, hostSupports, localProviders, preferredFirst, runPlaces, runsNatively } from "@/features/labs/lab-runtime";
+import {
+  emulatorReady,
+  formProviders,
+  hostSupports,
+  localProviders,
+  preferredFirst,
+  runPlaces,
+  runsNatively,
+  runsNativelyHere,
+} from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabRunOptions, LabRunPath, Provider, ServerHost } from "@/lib/tauri";
 
@@ -149,5 +158,16 @@ describe("runPlaces", () => {
     const goat = rt({ runtime: "CLOUD", cloud: true, providers: ["aws"] as Provider[] });
     expect(stateOf(runPlaces(goat, undefined, false, { options: options({}) }), "cloud")).toBe("unsupported");
     expect(stateOf(runPlaces(goat), "cloud")).toBe("configurable");
+  });
+});
+
+describe("runsNativelyHere", () => {
+  it("is native until the host and the lab's CPUs are known, then as runsNatively says", () => {
+    const arm = rt({ architectures: ["arm64"] });
+    expect(runsNativelyHere(arm, "")).toBe(true);
+    expect(runsNativelyHere(null, "x86_64")).toBe(true);
+    expect(runsNativelyHere(arm, "x86_64")).toBe(false);
+    expect(runsNativelyHere(arm, "arm64")).toBe(true);
+    expect(runsNativelyHere(rt({}), "x86_64")).toBe(true);
   });
 });

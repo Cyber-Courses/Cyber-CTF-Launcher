@@ -7,6 +7,8 @@ import { DeployPanel } from "@/features/home/deploy-panel";
 import { HomeScreen } from "@/features/home/home-screen";
 import { JumpBackPanel } from "@/features/home/jump-back-panel";
 import { MachineSummaryPanel } from "@/features/home/machine-summary-panel";
+import { UsageStats } from "@/features/home/home-sections";
+import { formatBytesOf } from "@/lib/format";
 import type { Lab } from "@/features/labs/use-labs";
 import { must } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
@@ -263,5 +265,16 @@ describe("assessRam", () => {
     expect(c.totalGB).toBe(gb);
     expect(c.title).not.toContain("home.capacity");
     expect(c.detail).not.toContain("home.capacity");
+  });
+});
+
+describe("UsageStats", () => {
+  it("writes memory and disk as the Machine page does", () => {
+    // Regression: Home had its own GB formatter, with other rounding than lib/format's.
+    const metrics = { cpu: 10, memUsed: 8 * GB, memTotal: 32 * GB, diskUsed: 512e6, diskTotal: 500 * GB, uptimeSecs: 1, cores: 2, containers: 0 };
+    render(<UsageStats metrics={metrics} history={{ cpu: [], mem: [], disk: [] }} />);
+    expect(document.body.textContent).toContain(formatBytesOf(8 * GB, 32 * GB));
+    expect(document.body.textContent).toContain("8.0/32 GB");
+    expect(document.body.textContent).toContain("512 MB / 500 GB");
   });
 });
