@@ -295,7 +295,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
-    use crate::machine::selftest::Event;
+    use crate::runtime::selftest_report::Event;
 
     /// A scripted run: the lines its `up` prints and how it ends, its check, its teardown, and
     /// what was called.

@@ -9,7 +9,7 @@ use crate::AppHandle;
 use crate::app::setup_window;
 use crate::error::Result;
 use crate::machine::images;
-use crate::machine::selftest::{self, Event, Kind};
+use crate::machine::selftest::{self, Kind};
 use crate::machine::storage::{self, Storage};
 use crate::machine::system::metrics::{self, MachineMetrics};
 use crate::machine::system::{self, SystemReport, docker, wsl};
@@ -19,6 +19,7 @@ use crate::machine::workloads::{self, Workload};
 use crate::platform::AppDirs;
 use crate::runtime::Runtime;
 use crate::runtime::providers::Provider;
+use crate::runtime::selftest_report::Event;
 
 use super::lines;
 

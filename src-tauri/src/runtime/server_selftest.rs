@@ -8,8 +8,8 @@
 //! - `esxi`: a minimal Vagrantfile booted with `vmware_esxi`, a command run over SSH, then
 //!   `vagrant destroy`.
 //!
-//! Progress goes to the UI as one event per step (`running`, then `ok`/`fail`), reusing the
-//! machine self-test's `Event` so both share one frontend type.
+//! Progress goes to the UI as one event per step (`running`, then `ok`/`fail`), as the machine
+//! self-test's does (`selftest_report`).
 
 mod esxi;
 mod proxmox;
@@ -21,9 +21,9 @@ use std::time::Duration;
 use crate::platform::AppDirs;
 
 use super::providers::Provider;
+use super::selftest_report::{Event, Reporter};
 use super::server;
 use crate::error::{Error, Result};
-use crate::machine::selftest::Event;
 
 /// Step labels shared by both hosts.
 const PREPARE: &str = "Prepare a test VM definition";
@@ -31,42 +31,6 @@ const PREPARE: &str = "Prepare a test VM definition";
 /// One self-test per host at a time in this process: two runs would share the test's run on the
 /// server and its folder, each tearing the other's down. A second one waits for the first.
 static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-struct Reporter(Box<dyn Fn(Event) + Send + Sync>);
-
-impl Reporter {
-    /// A reporter that hands each event to `sink` (the command wraps the webview's channel in one).
-    fn new(sink: impl Fn(Event) + Send + Sync + 'static) -> Reporter {
-        Reporter(Box::new(sink))
-    }
-
-    fn send(&self, step: &'static str, label: &'static str, state: &'static str, detail: Option<String>) {
-        (self.0)(Event { step, label, state, detail });
-    }
-
-    /// A line of a tool's output as the running step's detail (trimmed, at most 160 chars).
-    fn progress(&self, step: &'static str, label: &'static str, line: &str) {
-        let line = line.trim();
-        if !line.is_empty() {
-            self.send(step, label, "running", Some(line.chars().take(160).collect()));
-        }
-    }
-
-    /// Runs one step: `running`, then `ok` with the future's detail or `fail` with its error.
-    async fn step<T>(&self, step: &'static str, label: &'static str, fut: impl Future<Output = Result<(T, Option<String>)>>) -> Result<T> {
-        self.send(step, label, "running", None);
-        match fut.await {
-            Ok((v, detail)) => {
-                self.send(step, label, "ok", detail);
-                Ok(v)
-            }
-            Err(e) => {
-                self.send(step, label, "fail", Some(e.to_string()));
-                Err(e)
-            }
-        }
-    }
-}
 
 fn work_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
     Ok(dirs.data()?.join("selftest").join("server").join(id))
@@ -106,7 +70,7 @@ pub(crate) async fn run(dirs: &AppDirs, id: &str, sink: impl Fn(Event) + Send + 
         if let Err(e) = left {
             return kept(&work, Err(e));
         }
-        let _ = std::fs::remove_dir_all(&work);
+        remove_work(&work);
     }
 
     let ran = match conn.provider {
@@ -135,10 +99,20 @@ impl Ran {
 /// state or Vagrant machine) is kept so the next run can remove the VM, and the result says so.
 fn finish(work: &Path, ran: Ran) -> Result<()> {
     if ran.cleaned {
-        let _ = std::fs::remove_dir_all(work);
+        remove_work(work);
         ran.result
     } else {
         kept(work, ran.result)
+    }
+}
+
+/// Removes the run's folder, its VM gone. One that can't be removed is logged: the next run
+/// takes it for a VM left behind and tries to remove that first.
+fn remove_work(work: &Path) {
+    if let Err(e) = std::fs::remove_dir_all(work)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        log::warn!("server self-test: couldn't remove {}: {e}", work.display());
     }
 }
 

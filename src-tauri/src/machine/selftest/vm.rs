@@ -437,7 +437,7 @@ mod tests {
         let ours = format!("description=\"{}\"\n", leftover::vbox_description(&dir));
         let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen = events.clone();
-        let r = Reporter(Box::new(move |e: super::super::Event| seen.lock().unwrap().push(format!("{}:{}", e.step, e.state))));
+        let r = Reporter::new(move |e: crate::runtime::selftest_report::Event| seen.lock().unwrap().push(format!("{}:{}", e.step, e.state)));
         let tools = Tools::rules(&[
             ("vagrant destroy", fail("The machine isn't created")),
             ("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")),

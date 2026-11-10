@@ -15,12 +15,11 @@ mod vm;
 
 use std::path::PathBuf;
 
-use serde::Serialize;
-
 use crate::error::Result;
 use crate::machine::storage::owned;
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
+use crate::runtime::selftest_report::{Event, Reporter};
 
 use docker::IMAGE;
 use vm::candidate_boxes;
@@ -31,60 +30,6 @@ use vm::candidate_boxes;
 pub enum Kind {
     Docker,
     Vm,
-}
-
-#[derive(Clone, Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename = "SelfTestEvent")]
-pub struct Event {
-    pub step: &'static str,
-    pub label: &'static str,
-    /// `running`, `ok`, `fail` or `skip`.
-    #[ts(type = r#""running" | "ok" | "fail" | "skip""#)]
-    pub state: &'static str,
-    pub detail: Option<String>,
-}
-
-/// Longest live output line shown under a running step, in characters.
-const PROGRESS_MAX: usize = 160;
-
-/// Where a test's events go: the page that runs it.
-struct Reporter(Box<dyn Fn(Event) + Send + Sync>);
-
-impl Reporter {
-    /// Live output for a step that is still running (shown as its detail line).
-    fn progress(&self, step: &'static str, label: &'static str, line: &str) {
-        let line = line.trim();
-        if !line.is_empty() {
-            self.send(step, label, "running", Some(line.chars().take(PROGRESS_MAX).collect()));
-        }
-    }
-
-    fn send(&self, step: &'static str, label: &'static str, state: &'static str, detail: Option<String>) {
-        (self.0)(Event { step, label, state, detail });
-    }
-
-    /// Runs one step, reporting it; a failure stops the test with that step's error.
-    async fn step<T>(&self, step: &'static str, label: &'static str, fut: impl std::future::Future<Output = Result<(T, Option<String>)>>) -> Result<T> {
-        self.send(step, label, "running", None);
-        let outcome = fut.await;
-        let (state, detail) = match &outcome {
-            Ok((_, detail)) => ("ok", detail.clone()),
-            Err(e) => ("fail", Some(explain(&e.to_string()))),
-        };
-        self.send(step, label, state, detail);
-        outcome.map(|(v, _)| v)
-    }
-
-    /// The closing clean-up step, reported only when the test itself passed (a failed test
-    /// already says what went wrong).
-    fn cleanup<T>(&self, label: &'static str, test: &Result<()>, done: Result<T>, ok_detail: Option<String>) {
-        match (test, done) {
-            (Ok(()), Ok(_)) => self.send("cleanup", label, "ok", ok_detail),
-            (Ok(()), Err(e)) => self.send("cleanup", label, "fail", Some(e.to_string())),
-            (Err(_), _) => {}
-        }
-    }
 }
 
 /// A plain-language hint for the failures people actually hit, in front of the raw error (kept
@@ -163,7 +108,7 @@ pub async fn machine_selftest(
     events: impl Fn(Event) + Send + Sync + 'static,
 ) -> Result<()> {
     let _alone = one_at_a_time(kind).lock().await;
-    let r = Reporter(Box::new(events));
+    let r = Reporter::explaining(events, explain);
     // Boxed: the steps of a test VM's run make a large future.
     Box::pin(tracked(&dirs, kind, async {
         match kind {
@@ -180,41 +125,22 @@ mod tests {
     use crate::error::Error;
     use crate::testing::test_app::Sink;
 
-    /// A reporter whose events land in a sink.
-    fn reporter() -> (Reporter, Sink) {
-        let (events, sink) = events();
-        (Reporter(Box::new(events)), sink)
-    }
-
     fn states(seen: &Sink) -> Vec<String> {
         seen.messages().iter().map(|e| format!("{}:{}", e["step"].as_str().unwrap(), e["state"].as_str().unwrap())).collect()
     }
 
-    #[tokio::test]
-    async fn a_step_reports_running_then_ok_or_fail() {
-        let (r, seen) = reporter();
-        let v = r.step("one", "First", async { Ok((7, Some("fine".into()))) }).await.unwrap();
-        assert_eq!(v, 7);
-        let err = r.step::<()>("two", "Second", async { Err(Error::Invalid("Cannot connect to the Docker daemon".into())) }).await.unwrap_err();
-        assert!(err.to_string().contains("Docker daemon"));
-        assert_eq!(states(&seen), ["one:running", "one:ok", "two:running", "two:fail"]);
-        let events = seen.messages();
-        assert_eq!(events[1]["detail"], "fine");
-        assert!(events[3]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
+    /// This machine's reporter (its failures explained), whose events land in a sink.
+    fn reporter() -> (Reporter, Sink) {
+        let (events, sink) = events();
+        (Reporter::explaining(events, explain), sink)
     }
 
-    #[test]
-    fn progress_lines_are_trimmed_and_short_and_cleanup_reports_only_after_a_pass() {
+    #[tokio::test]
+    async fn a_failed_step_says_the_hint_for_a_failure_people_hit() {
         let (r, seen) = reporter();
-        r.progress("box", "Box", "   ");
-        r.progress("box", "Box", &format!("  {}  ", "x".repeat(500)));
-        r.cleanup::<()>("Clean", &Ok(()), Ok(()), Some("kept".into()));
-        r.cleanup::<()>("Clean", &Ok(()), Err(Error::Invalid("left over".into())), None);
-        r.cleanup::<()>("Clean", &Err(Error::Invalid("x".into())), Ok(()), None);
-        assert_eq!(states(&seen), ["box:running", "cleanup:ok", "cleanup:fail"]);
-        let events = seen.messages();
-        assert_eq!(events[0]["detail"].as_str().unwrap().chars().count(), PROGRESS_MAX);
-        assert_eq!(events[2]["detail"], "left over");
+        let err = r.step::<()>("two", "Second", async { Err(Error::Invalid("Cannot connect to the Docker daemon".into())) }).await.unwrap_err();
+        assert!(err.to_string().contains("Docker daemon"));
+        assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
         let _ = arm();
     }
 

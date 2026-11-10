@@ -37,6 +37,7 @@ pub(crate) mod paths;
 pub mod providers;
 pub(crate) mod proxmox;
 mod reaper;
+pub mod selftest_report;
 pub mod server;
 pub mod server_selftest;
 pub(crate) mod ssh;

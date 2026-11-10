@@ -13,11 +13,11 @@ use tauri::ipc::Channel;
 
 use crate::AppHandle;
 use crate::error::{Error, Result};
-use crate::machine::selftest::Event;
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
 use crate::runtime::proxmox::placement;
 use crate::runtime::proxmox::ssh_key;
+use crate::runtime::selftest_report::Event;
 use crate::runtime::server::SshKeySignIn;
 use crate::runtime::server::budget::month_to_date_cost;
 use crate::runtime::server::checks::{Check, TestResult};
