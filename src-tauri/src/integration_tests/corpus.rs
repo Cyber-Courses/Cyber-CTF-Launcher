@@ -108,8 +108,7 @@ async fn teardown(r: &Run, name: &str, f: &mut Vec<String>) {
 #[tokio::test]
 #[ignore = "needs Docker and corpus lab folders (CYBERCTF_TEST_DOCKER_LABS)"]
 async fn corpus_docker_labs_run_end_to_end_on_the_runner() {
-    let Some(labs) = std::env::var_os("CYBERCTF_TEST_DOCKER_LABS") else { return };
-    let labs = labs.to_string_lossy().into_owned();
+    let Some(labs) = super::support::knob("CYBERCTF_TEST_DOCKER_LABS") else { return };
     let dirs: Vec<&str> = labs.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
     let mut failures = Vec::new();
     for dir in dirs {

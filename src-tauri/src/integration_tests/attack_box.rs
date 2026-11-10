@@ -78,7 +78,7 @@ fn shared_folder(dirs: &AppDirs, f: &mut Vec<String>) {
 #[tokio::test]
 #[ignore = "needs Docker, or Vagrant and a hypervisor, and a lab (CYBERCTF_TEST_BOX_LAB)"]
 async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
-    let Ok(src) = std::env::var("CYBERCTF_TEST_BOX_LAB") else { return };
+    let Some(src) = super::support::knob("CYBERCTF_TEST_BOX_LAB") else { return };
     let form = std::env::var("CYBERCTF_TEST_BOX_FORM").unwrap_or_else(|_| "docker".into());
     let target = std::env::var("CYBERCTF_TEST_BOX_TARGET").unwrap_or_else(|_| "web".into());
     let provider: Provider = serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "qemu".into()))).unwrap();
@@ -163,7 +163,7 @@ async fn left_in_aws(region: &str, name: &str) -> String {
 #[ignore = "needs an AWS account signed in with the AWS CLI, Terraform, and a lab (CYBERCTF_TEST_BOX_LAB); billed while it runs"]
 async fn the_attack_box_is_a_machine_of_an_aws_lab() {
     use crate::testing::test_app::TestApp;
-    let Ok(src) = std::env::var("CYBERCTF_TEST_BOX_LAB") else { return };
+    let Some(src) = super::support::knob("CYBERCTF_TEST_BOX_LAB") else { return };
     let per_machine = std::env::var("CYBERCTF_TEST_BOX_FORM").is_ok_and(|f| f == "cloud-vm");
     let region = std::env::var("CYBERCTF_TEST_AWS_REGION").unwrap_or_else(|_| "eu-west-3".into());
     let target = std::env::var("CYBERCTF_TEST_BOX_TARGET").unwrap_or_else(|_| "web".into());

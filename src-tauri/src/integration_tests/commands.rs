@@ -25,7 +25,7 @@ fn up(s: &LabStatus) -> bool {
 #[tokio::test]
 #[ignore = "needs Docker and a local lab folder (CYBERCTF_TEST_LOCAL_LAB)"]
 async fn a_local_lab_launches_and_tears_down_through_the_commands() {
-    let Some(src) = std::env::var_os("CYBERCTF_TEST_LOCAL_LAB") else { return };
+    let Some(src) = super::support::knob("CYBERCTF_TEST_LOCAL_LAB") else { return };
     let src = std::path::PathBuf::from(src);
     let t = crate::testing::test_app::TestApp::new();
     let app = t.handle().clone();

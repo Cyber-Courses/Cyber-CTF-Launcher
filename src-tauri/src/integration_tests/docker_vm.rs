@@ -55,7 +55,7 @@ async fn left(provider: Provider, dir: &Path) -> Vec<String> {
 #[tokio::test]
 #[ignore = "needs Vagrant, a hypervisor and a docker-vm-capable lab (CYBERCTF_TEST_DOCKER_VM_LAB)"]
 async fn a_container_lab_runs_in_a_local_vm_end_to_end() {
-    let Ok(src) = std::env::var("CYBERCTF_TEST_DOCKER_VM_LAB") else { return };
+    let Some(src) = super::support::knob("CYBERCTF_TEST_DOCKER_VM_LAB") else { return };
     let provider: Provider =
         serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "virtualbox".into()))).unwrap();
     let id = format!("dvm-{}", rand::random::<u16>());

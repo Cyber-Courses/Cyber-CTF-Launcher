@@ -61,7 +61,7 @@ impl Knobs {
     /// The knobs from the environment; none without the paths, the report and the logs.
     fn from_env() -> Option<Knobs> {
         let var = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
-        let paths = var("CYBERCTF_TEST_SETUP_PATHS")?;
+        let paths = super::support::knob("CYBERCTF_TEST_SETUP_PATHS")?;
         let paths: Vec<SetupPath> = paths
             .split(',')
             .map(|p| serde_json::from_value(serde_json::json!(p.trim())).unwrap_or_else(|_| panic!("CYBERCTF_TEST_SETUP_PATHS: `{p}` is not docker or vm")))

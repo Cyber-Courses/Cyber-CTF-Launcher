@@ -40,7 +40,7 @@ fn refused_here<T>(result: &crate::error::Result<T>) -> bool {
 #[tokio::test]
 #[ignore = "needs Docker (and Vagrant with a hypervisor for the VM forms) and a lab (CYBERCTF_TEST_REPLACE_LAB)"]
 async fn a_running_lab_is_not_replaced_under_it() {
-    let Ok(src) = std::env::var("CYBERCTF_TEST_REPLACE_LAB") else { return };
+    let Some(src) = super::support::knob("CYBERCTF_TEST_REPLACE_LAB") else { return };
     let form = std::env::var("CYBERCTF_TEST_REPLACE_FORM").unwrap_or_else(|_| "docker".into());
     let provider: Provider =
         serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "virtualbox".into()))).unwrap();

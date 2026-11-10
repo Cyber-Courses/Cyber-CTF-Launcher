@@ -38,16 +38,25 @@ cd "$ROOT/src-tauri" || exit 2
 # shellcheck disable=SC2034 # read by lib/suite.sh's logged, which shellcheck doesn't follow
 SUITE_SHOW='^(ok|FAILED):|panicked'
 
+# How a test says it returned early for a knob that isn't set (integration_tests::support::SKIPPED,
+# which a unit test holds to this line): cargo counts that return as a pass.
+KNOB_UNSET="integration test skipped, not set:"
+
 # scenario <name> <test> [VAR=value...]: the opt-in test, alone, with its knobs. It passes when
-# the test ran and passed (a missing knob makes it return early, which isn't a pass).
+# the test ran and passed; a test that returned early for a missing knob is skipped.
 scenario() {
-  local name=$1 test=$2 start=$SECONDS log
+  local name=$1 test=$2 start=$SECONDS log unset
   shift 2
   wanted "$name" || return 0
   log="$LOGS/$name.log"
   if logged "$name" "$log" 0 env "$@" cargo test -q --lib -- --ignored --nocapture --test-threads=1 --exact "$test" &&
     grep -q "test result: ok. 1 passed" "$log"; then
-    record "$name" ok $((SECONDS - start)) ""
+    unset=$(grep -F "$KNOB_UNSET" "$log" | head -1)
+    if [ -n "$unset" ]; then
+      record "$name" skip $((SECONDS - start)) "${unset#"$KNOB_UNSET" } isn't set"
+    else
+      record "$name" ok $((SECONDS - start)) ""
+    fi
   else
     record "$name" FAIL $((SECONDS - start)) "$log"
   fi

@@ -147,7 +147,7 @@ async fn left_on(provider: Provider, lab: &str, dir: &Path) -> Result<Vec<String
 #[tokio::test]
 #[ignore = "needs Vagrant, a hypervisor and a VM lab (CYBERCTF_TEST_VM_LAB)"]
 async fn a_vm_lab_runs_end_to_end_through_the_runner() {
-    let Ok(src) = std::env::var("CYBERCTF_TEST_VM_LAB") else { return };
+    let Some(src) = super::support::knob("CYBERCTF_TEST_VM_LAB") else { return };
     let provider: Provider =
         serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "virtualbox".into()))).unwrap();
     let id = format!("vm-{}", rand::random::<u16>());
