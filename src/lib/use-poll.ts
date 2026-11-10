@@ -53,10 +53,11 @@ function pollReads<T>(latest: () => PollCallbacks<T>, { serial }: Pick<PollTimin
     last = { value: v };
     onValue(v);
   };
-  const read = () => {
+  /** Starts a read; resolves once it has answered or failed (never rejects). */
+  const read = (): Promise<void> => {
     const mine = ++started;
     reading++;
-    latest()
+    return latest()
       .read()
       .then(
         (v) => {
@@ -73,7 +74,7 @@ function pollReads<T>(latest: () => PollCallbacks<T>, { serial }: Pick<PollTimin
   return {
     /** A tick of the timer: skipped while a read is in flight when `serial`, so slow reads don't stack. */
     tick: () => {
-      if (!serial || reading === 0) read();
+      if (!serial || reading === 0) void read();
     },
     /** A read asked for (`readNow`, the window showing again): always starts. */
     now: read,
@@ -107,7 +108,7 @@ function startPoll<T>(latest: () => PollCallbacks<T>, { ms, serial, onFocus, bac
           pause();
           return;
         }
-        reads.now();
+        void reads.now();
         run();
       });
   if (onFocus) window.addEventListener("focus", tick);
@@ -125,7 +126,8 @@ function startPoll<T>(latest: () => PollCallbacks<T>, { ms, serial, onFocus, bac
 /**
  * Reads `read()` now and then every `ms` while enabled and the window is visible. The latest
  * `read` and callbacks are used on each tick without restarting the poll. Returns a function
- * that reads once more right away.
+ * that reads once more right away, resolving once that read has answered or failed (a Try again
+ * spins until then).
  */
 export function usePoll<T>(
   read: () => Promise<T>,
@@ -136,21 +138,19 @@ export function usePoll<T>(
   useEffect(() => {
     latest.current = { read, onValue, onError, equal };
   });
-  const now = useRef<() => void>(() => {});
+  const now = useRef<() => Promise<void>>(() => Promise.resolve());
 
   useEffect(() => {
     if (!enabled) return;
     const poll = startPoll(() => latest.current, { ms, serial, onFocus, background, leading });
     now.current = poll.readNow;
     return () => {
-      now.current = () => {};
+      now.current = () => Promise.resolve();
       poll.stop();
     };
   }, [ms, serial, onFocus, enabled, restartKey, background, leading]);
 
-  return useCallback(() => {
-    now.current();
-  }, []);
+  return useCallback(() => now.current(), []);
 }
 
 /** `usePoll` keeping the latest answer as state: `[value, readNow]`. An answer equal to the

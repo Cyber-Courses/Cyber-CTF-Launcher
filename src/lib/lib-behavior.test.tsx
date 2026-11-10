@@ -146,7 +146,7 @@ describe("usePoll", () => {
       resolve(8);
     });
     act(() => {
-      result.current();
+      void result.current();
     });
     expect(read).toHaveBeenCalledTimes(3);
     unmount();

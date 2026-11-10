@@ -31,6 +31,26 @@ describe("usePoll", () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
+  it("resolves a read asked for once it answers or fails, so a Try again spins until then", async () => {
+    const pending: { ok: (v: number) => void; fail: (e: unknown) => void }[] = [];
+    const read = vi.fn(() => new Promise<number>((ok, fail) => pending.push({ ok, fail })));
+    const { result } = renderHook(() => usePoll(read, 10_000, { onValue: vi.fn(), onError: vi.fn() }));
+    let done = false;
+    const asked = result.current();
+    void asked.then(() => (done = true));
+    await act(async () => {});
+    expect(done).toBe(false);
+    await settle(() => {
+      pending[1].fail(new Error("still failing"));
+    });
+    expect(done).toBe(true);
+    const again = result.current();
+    await settle(() => {
+      pending[2].ok(1);
+    });
+    await expect(again).resolves.toBeUndefined();
+  });
+
   it("overlaps reads when not serial", async () => {
     const read = vi.fn(() => new Promise<number>(() => {}));
     renderHook(() => usePoll(read, 100, { onValue: vi.fn(), serial: false }));
@@ -45,7 +65,7 @@ describe("usePoll", () => {
     const { result } = renderHook(() => usePoll(read, 10_000, { onValue }));
     // Asked for while the first read is in flight: it starts anyway.
     act(() => {
-      result.current();
+      void result.current();
     });
     expect(read).toHaveBeenCalledTimes(2);
     await settle(() => {

@@ -91,7 +91,7 @@ function HostRows({ page, hosts }: { page: ServerHosts; hosts: ServerHost[] }) {
     onVmTestDone: (result) => {
       setVmResults(saveVmTest(h.id, result));
       void page.test(h.id);
-      page.loadRunning();
+      void page.loadRunning();
     },
     onEdit: () => {
       page.open(h.id);

@@ -50,7 +50,7 @@ export function useServerHosts() {
     },
     onChanged: () => {
       seen.current.clear();
-      loadRunning();
+      void loadRunning();
     },
   });
   // Cloud accounts (AWS/Azure/GCP) live on the Cloud page; the Servers page is on-prem hosts only.

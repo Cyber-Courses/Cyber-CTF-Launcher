@@ -199,7 +199,7 @@ describe("timers", () => {
     await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(read).toHaveBeenCalledTimes(3);
     await settle(() => {
-      result.current();
+      void result.current();
     });
     expect(read).toHaveBeenCalledTimes(4);
     act(() => {
@@ -211,7 +211,7 @@ describe("timers", () => {
     unmount();
     // Stopped: no more reads, and a late "read now" is a no-op.
     act(() => {
-      result.current();
+      void result.current();
     });
     vi.advanceTimersByTime(5000);
     expect(read).toHaveBeenCalledTimes(5);

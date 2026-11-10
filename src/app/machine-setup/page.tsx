@@ -34,7 +34,7 @@ function MachineSetupWindow() {
 
   return (
     <>
-      <MachineSetup report={report} checkError={checkError} onRetryCheck={refreshReport} onRefresh={refreshReport} onClose={close} startAt={startAt} />
+      <MachineSetup report={report} checkError={checkError} onRefresh={refreshReport} onClose={close} startAt={startAt} />
       {/* This window has its own root (no app shell), so it mounts its own toasts. */}
       <Toaster />
     </>

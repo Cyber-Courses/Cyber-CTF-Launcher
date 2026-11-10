@@ -33,7 +33,6 @@ import { useT } from "@/lib/i18n";
 export function MachineSetup({
   report,
   checkError = null,
-  onRetryCheck,
   onRefresh,
   onClose,
   startAt = null,
@@ -41,8 +40,9 @@ export function MachineSetup({
   report: SystemReport | null;
   /** The machine check failed and none answered before it: the error, with Try again. */
   checkError?: string | null;
-  onRetryCheck?: () => unknown;
-  onRefresh: () => void;
+  /** Reads the machine again (Try again, and after an install); a promise keeps Try again
+   *  spinning until the read answers. */
+  onRefresh: () => unknown;
   onClose: () => void;
   /** Open at this step (a "Fix" link from the Machine page), or at the provider picker ("add");
    *  changes jump again. */
@@ -58,7 +58,7 @@ export function MachineSetup({
           depend on what it finds. */}
       {report === null && checkError && (
         <div className="flex flex-1 items-center justify-center px-6 pb-11">
-          <CheckFailed error={checkError} onRetry={onRetryCheck ?? onRefresh} className="w-full max-w-lg" />
+          <CheckFailed error={checkError} onRetry={onRefresh} className="w-full max-w-lg" />
         </div>
       )}
       {report === null && !checkError && (

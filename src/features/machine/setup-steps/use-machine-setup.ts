@@ -90,7 +90,7 @@ function useRestart() {
 }
 
 /** Install and test state for the setup steps. One per flow, passed to every step body. */
-export function useMachineSetup(report: SystemReport | null, onRefresh: () => void) {
+export function useMachineSetup(report: SystemReport | null, onRefresh: () => unknown) {
   usePrefetch(report);
   const installs = useInstalls(onRefresh);
   const restart = useRestart();

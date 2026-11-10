@@ -345,7 +345,7 @@ describe("the machine check failed", () => {
     const user = userEvent.setup();
     let fail = true;
     const retry = vi.fn(() => (fail ? Promise.reject(new Error("still failing")) : Promise.resolve()));
-    render(<MachineSetup report={null} checkError="brew: command not found" onRetryCheck={retry} onRefresh={vi.fn()} onClose={vi.fn()} />);
+    render(<MachineSetup report={null} checkError="brew: command not found" onRefresh={retry} onClose={vi.fn()} />);
     expect(document.body.textContent).toContain("Couldn’t check this machine");
     expect(document.body.textContent).toContain("brew: command not found");
     expect(document.body.textContent).not.toContain("Checking this machine…");

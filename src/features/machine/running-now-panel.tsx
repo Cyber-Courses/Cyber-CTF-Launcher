@@ -46,7 +46,7 @@ export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
     // The list shows what's still running; why it didn't stop is said.
     await machineWorkloadStop(w.kind, w.id).catch(tell(t("machine.errors.stopWorkload")));
     setStopping(null);
-    load();
+    void load();
   }
 
   const labMem = (workloads ?? []).reduce((a, w) => a + w.memBytes, 0);
