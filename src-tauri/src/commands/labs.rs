@@ -140,24 +140,32 @@ pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<
 /// Before a cloud-services lab starts: its cloud, its cost estimate, what it asks for at launch
 /// and what it exposes, from its spec at the catalogue's pinned commit. None for other labs.
 #[tauri::command]
-pub async fn lab_cloud_preview(app: AppHandle, id: String, repository: String, commit: String) -> Result<Option<cloud_services::Preview>> {
-    cloud_services::preview_at(&AppDirs::from(&app), &id, labs::source(&repository, &commit)).await
+pub async fn lab_cloud_preview(app: AppHandle, id: String, source: LabSource) -> Result<Option<cloud_services::Preview>> {
+    cloud_services::preview_at(&AppDirs::from(&app), &id, source.checked()).await
 }
 
 /// A lab's minimum-to-run system requirements (CPU, memory, disk), as a lightest-to-heaviest
 /// range over the ways it runs, from its spec at the catalogue's pinned commit. None for a lab
 /// with no machines of its own (cloud services).
 #[tauri::command]
-pub async fn lab_requirements(app: AppHandle, id: String, repository: String, commit: String) -> Result<Option<lab::Requirements>> {
-    let spec = lab::spec_at(&AppDirs::from(&app), &id, labs::source(&repository, &commit)).await?;
+pub async fn lab_requirements(app: AppHandle, id: String, source: LabSource) -> Result<Option<lab::Requirements>> {
+    let spec = lab::spec_at(&AppDirs::from(&app), &id, source.checked()).await?;
     Ok(lab::requirements(&spec))
 }
 
-/// A lab's source: its repository at the catalogue's pinned commit.
+/// A lab's source: its repository at the catalogue's pinned commit. Every command that reads a
+/// lab's spec before it is installed takes it.
 #[derive(serde::Deserialize)]
 pub struct LabSource {
     repository: String,
     commit: String,
+}
+
+impl LabSource {
+    /// The source, with the catalogue's rule for which repositories may be fetched.
+    fn checked(&self) -> lab::Source<'_> {
+        labs::source(&self.repository, &self.commit)
+    }
 }
 
 /// Where lab `id`, declared `runtime`, starts when no place is picked
@@ -172,15 +180,15 @@ pub async fn lab_default_place(
     source: LabSource,
     preferred: Option<Provider>,
 ) -> Result<start_place::StartPlace> {
-    start_place::default_place(&AppDirs::from(&app), &id, runtime, labs::source(&source.repository, &source.commit), preferred).await
+    start_place::default_place(&AppDirs::from(&app), &id, runtime, source.checked(), preferred).await
 }
 
 /// Every way lab `id`, declared `runtime`, can start ([`lab::run_options`]): per form, the
 /// hypervisors, servers and clouds its spec at the catalogue's pinned commit runs on, each with
 /// its launch path's badge, and where Isoloom refuses it. What the launch picker offers.
 #[tauri::command]
-pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, repository: String, commit: String) -> Result<lab::RunOptions> {
-    let lab = lab::lab_at(&AppDirs::from(&app), &id, labs::source(&repository, &commit)).await?;
+pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, source: LabSource) -> Result<lab::RunOptions> {
+    let lab = lab::lab_at(&AppDirs::from(&app), &id, source.checked()).await?;
     Ok(lab::run_options(&lab, runtime))
 }
 
@@ -316,8 +324,8 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 mod tests {
     use super::{AttachPick, LabSource, check_image, lines, valid_machine_name};
     use super::{
-        attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_default_place, lab_launch, lab_launch_local, lab_park,
-        lab_provision, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools, running_labs,
+        attack_box_attach, attack_box_detach, attack_box_status, lab_attack_shell, lab_check, lab_cloud_preview, lab_default_place, lab_launch,
+        lab_launch_local, lab_park, lab_provision, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools, running_labs,
     };
     use crate::platform::exec::fake::Tools;
     use crate::runtime::{Park, Runtime, providers::Provider, server};
@@ -366,6 +374,26 @@ mod tests {
         assert!(tools(Runtime::Cloud).await.unwrap().is_empty());
     }
 
+    /// A lab's source as the webview sends it.
+    fn source(repository: &str, commit: &str) -> LabSource {
+        LabSource { repository: repository.into(), commit: commit.into() }
+    }
+
+    #[tokio::test]
+    async fn the_preview_command_reads_the_installed_copy_and_refuses_a_source_the_catalogue_doesnt_allow() {
+        let t = TestApp::new();
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        let spec = "version: 1\nname: goat\ncloud:\n  provider: aws\n  terraform: terraform\n  hourly_usd: 0.02\n";
+        t.lab("goat", &[("isoloom.yml", spec), ("terraform/main.tf", ""), (crate::runtime::lab::COMMIT_MARKER, commit)]);
+        let preview = lab_cloud_preview(t.handle().clone(), "goat".into(), source("CyberCTF/goat", commit)).await.unwrap();
+        assert_eq!(preview.map(|p| p.provider).as_deref(), Some("aws"));
+        // Refused before anything is downloaded: a bad lab id, another owner, a short commit.
+        let refuse = |id: &str, repo: &str, commit: &str| lab_cloud_preview(t.handle().clone(), id.into(), source(repo, commit));
+        assert_eq!(refuse("../x", "CyberCTF/goat", commit).await.unwrap_err().to_string(), "invalid lab id `../x`");
+        assert_eq!(refuse("goat", "evil/goat", commit).await.unwrap_err().to_string(), format!("refusing to download evil/goat@{commit}"));
+        assert_eq!(refuse("goat", "CyberCTF/goat", "main").await.unwrap_err().to_string(), "refusing to download CyberCTF/goat@main");
+    }
+
     #[tokio::test]
     async fn a_container_lab_has_no_default_server() {
         let t = TestApp::new();
@@ -377,8 +405,7 @@ mod tests {
         .unwrap();
         let sha = "0123456789abcdef0123456789abcdef01234567".to_string();
         // Never run: on Docker here, its spec not even read.
-        let source = LabSource { repository: "CyberCTF/web".into(), commit: sha };
-        let place = lab_default_place(t.handle().clone(), "web".into(), Runtime::Docker, source, None).await.unwrap();
+        let place = lab_default_place(t.handle().clone(), "web".into(), Runtime::Docker, source("CyberCTF/web", &sha), None).await.unwrap();
         assert_eq!(place, crate::runtime::start_place::StartPlace::default());
     }
 
@@ -390,7 +417,7 @@ mod tests {
         let dir = t.lab("ad", &[("isoloom.yml", vms)]);
         std::fs::write(dir.join(crate::runtime::lab::COMMIT_MARKER), sha).unwrap();
         // The installed copy at that commit is read: no download.
-        let options = lab_run_options(t.handle().clone(), "ad".into(), Runtime::Vm, "CyberCTF/ad".into(), sha.into()).await.unwrap();
+        let options = lab_run_options(t.handle().clone(), "ad".into(), Runtime::Vm, source("CyberCTF/ad", sha)).await.unwrap();
         let servers: Vec<_> = options.servers.iter().map(|p| (p.provider, p.target.as_str())).collect();
         assert_eq!(servers, [(Some(Provider::VmwareEsxi), "vagrant")], "its targets leave Proxmox out");
     }

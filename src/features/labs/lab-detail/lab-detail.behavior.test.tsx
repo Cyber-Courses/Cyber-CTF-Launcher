@@ -275,7 +275,11 @@ describe("LabDetail: starting", () => {
       runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "proxmox"], repository: "CyberCTF/goad", commit: SHA },
     };
     await clickStart({ lab, readyVms: ["virtualbox"] });
-    expect(calls.find((c) => c.cmd === "lab_run_options")?.args).toEqual({ id: "lab-goad", runtime: "VM", repository: "CyberCTF/goad", commit: SHA });
+    expect(calls.find((c) => c.cmd === "lab_run_options")?.args).toEqual({
+      id: "lab-goad",
+      runtime: "VM",
+      source: { repository: "CyberCTF/goad", commit: SHA },
+    });
     expect(within(screen.getByRole("dialog")).getByTitle("This lab doesn't support Proxmox")).toBeTruthy();
   });
 

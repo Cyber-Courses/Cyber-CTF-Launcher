@@ -62,7 +62,8 @@ export type {
 };
 
 /** A cloud lab's cost and inputs before it starts; null for other labs. */
-export const labCloudPreview = (id: string, repository: string, commit: string) => invoke<CloudPreview | null>("lab_cloud_preview", { id, repository, commit });
+export const labCloudPreview = (id: string, repository: string, commit: string) =>
+  invoke<CloudPreview | null>("lab_cloud_preview", { id, source: { repository, commit } });
 
 /** Where a lab (declared `runtime`) starts when no place is picked, by the backend's one rule:
  *  where it last ran, else a hypervisor ready here for a VM lab (`preferred`, the Settings choice,
@@ -75,11 +76,11 @@ export const labDefaultPlace = (id: string, runtime: Runtime, repository: string
  *  per form, the hypervisors, servers and clouds it runs on, each with its launch path's badge,
  *  and where Isoloom refuses it. */
 export const labRunOptions = (id: string, runtime: Runtime, repository: string, commit: string) =>
-  invoke<LabRunOptions>("lab_run_options", { id, runtime, repository, commit });
+  invoke<LabRunOptions>("lab_run_options", { id, runtime, source: { repository, commit } });
 
 /** A lab's minimum-to-run requirements (CPU/RAM/disk) as a lightest-to-heaviest range; null for a lab with no machines of its own. */
 export const labRequirements = (id: string, repository: string, commit: string) =>
-  invoke<LabRequirements | null>("lab_requirements", { id, repository, commit });
+  invoke<LabRequirements | null>("lab_requirements", { id, source: { repository, commit } });
 
 export const labStop = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeStreaming("lab_stop", { id, runtime }, onLog);
 

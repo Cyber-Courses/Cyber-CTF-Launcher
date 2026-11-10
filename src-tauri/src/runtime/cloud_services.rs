@@ -311,23 +311,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_preview_command_reads_the_installed_copy_at_that_commit() {
+    async fn a_preview_reads_the_installed_copy_at_that_commit_once_its_source_is_allowed() {
         let t = crate::testing::test_app::TestApp::new();
         let commit = "0123456789abcdef0123456789abcdef01234567";
         t.lab("goat", &[("isoloom.yml", SPEC), ("terraform/main.tf", "variable \"region\" {}\n"), (crate::runtime::lab::COMMIT_MARKER, commit)]);
-        let app = || t.handle().clone();
-        let got = crate::commands::labs::lab_cloud_preview(app(), "goat".into(), "CyberCTF/goat".into(), commit.into()).await.unwrap();
+        let source = |check| lab::Source { repository: "Org/goat", commit, check };
+        let got = preview_at(&t.dirs(), "goat", source(|_, _| Ok(()))).await.unwrap();
         assert_eq!(got, preview(&spec(SPEC)));
         assert_eq!(got.map(|p| p.provider).as_deref(), Some("aws"));
         // A lab that isn't a cloud-services one has no preview.
         let docker =
             "version: 1\nname: web\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n";
         t.lab("web", &[("isoloom.yml", docker), (crate::runtime::lab::COMMIT_MARKER, commit)]);
-        assert_eq!(crate::commands::labs::lab_cloud_preview(app(), "web".into(), "CyberCTF/web".into(), commit.into()).await.unwrap(), None);
-        // Refused before anything is downloaded: a bad lab id, another owner, a short commit.
-        let refuse = |id: &str, repo: &str, commit: &str| crate::commands::labs::lab_cloud_preview(app(), id.into(), repo.into(), commit.into());
-        assert_eq!(refuse("../x", "CyberCTF/goat", commit).await.unwrap_err().to_string(), "invalid lab id `../x`");
-        assert_eq!(refuse("goat", "evil/goat", commit).await.unwrap_err().to_string(), format!("refusing to download evil/goat@{commit}"));
-        assert_eq!(refuse("goat", "CyberCTF/goat", "main").await.unwrap_err().to_string(), "refusing to download CyberCTF/goat@main");
+        assert_eq!(preview_at(&t.dirs(), "web", source(|_, _| Ok(()))).await.unwrap(), None);
+        // The caller's rule for the source is asked first, and a bad id refused, before anything is read.
+        let refused = preview_at(&t.dirs(), "goat", source(|_, _| Err(Error::Invalid("not this source".into())))).await;
+        assert_eq!(refused.unwrap_err().to_string(), "not this source");
+        assert_eq!(preview_at(&t.dirs(), "../x", source(|_, _| Ok(()))).await.unwrap_err().to_string(), "invalid lab id `../x`");
     }
 }
