@@ -9,7 +9,6 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
     "lint": "eslint src scripts e2e",
     "format": "prettier --write \"{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}\" \"{*,docs/**/*,infra/**/*,scripts/**/*}.md\" && cargo fmt --manifest-path src-tauri/Cargo.toml",
     "typecheck": "next typegen && tsc --noEmit",
