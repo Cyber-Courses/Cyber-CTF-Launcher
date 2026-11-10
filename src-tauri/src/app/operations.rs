@@ -12,14 +12,7 @@ use crate::runtime::{self, Action, Park, Runtime};
 /// is starting" state after a window reload: the deploy keeps running in this process even when
 /// the webview reloaded and lost its own in-memory deploy state.
 pub async fn deploying_labs(dirs: AppDirs) -> Vec<String> {
-    or_logged(
-        off_main(move || {
-            // Worker keys with a dot (an older version's attack VM start) are not a lab's own deploy.
-            let workers = deploy_worker::running(&dirs).into_iter().filter(|k| !k.contains('.'));
-            merge_unique(runtime::deploying_labs(), workers)
-        })
-        .await,
-    )
+    or_logged(off_main(move || merge_unique(runtime::deploying_labs(), deploy_worker::running(&dirs))).await)
 }
 
 /// Runs `f` on a blocking thread. These commands are polled every 2 s by every window, and each

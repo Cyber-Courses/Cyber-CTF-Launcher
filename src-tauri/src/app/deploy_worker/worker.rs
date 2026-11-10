@@ -365,7 +365,7 @@ mod tests {
         // Regression: an unreadable job file (or a worker Tauri couldn't build) exited with only
         // a line on stderr, and the app said "stopped without a result".
         let dir = crate::testing::temp_dir("fail-early");
-        let f = Files::of(&dir, "lab-1.attack");
+        let f = Files::of(&dir, "lab-1");
         super::fail_before_the_job(&f.job, "its job file can't be read");
         let said = verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string();
         assert_eq!(said, "the deploy worker couldn't start: its job file can't be read");

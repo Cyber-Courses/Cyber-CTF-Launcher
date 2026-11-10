@@ -333,12 +333,14 @@ fn running_in(d: &Path) -> Vec<String> {
     out
 }
 
-/// The worker key a pidfile (`<key>.pid`) is for.
+/// The worker key a pidfile (`<key>.pid`) is for: a lab id ([`Job::key`]). Any other name (an
+/// older version's `<lab>.attack`, for an attack VM it started) is no lab's operation, for every
+/// reader alike.
 fn pidfile_key(path: &Path) -> Option<String> {
     if path.extension().and_then(|x| x.to_str()) != Some("pid") {
         return None;
     }
-    path.file_stem().and_then(|s| s.to_str()).map(str::to_string)
+    path.file_stem().and_then(|s| s.to_str()).filter(|key| crate::runtime::validate_id(key).is_ok()).map(str::to_string)
 }
 
 /// The jobs whose worker runs right now, each with the step its log is at (for the sidebar).
@@ -565,7 +567,9 @@ mod tests {
     #[test]
     fn only_pidfiles_name_a_worker() {
         assert_eq!(pidfile_key(Path::new("/d/lab-1.pid")).as_deref(), Some("lab-1"));
-        assert_eq!(pidfile_key(Path::new("/d/lab-1.attack.pid")).as_deref(), Some("lab-1.attack"));
+        // Regression: an older version's `<lab>.attack` worker was left out of the labs deploying
+        // alone; it is no lab's operation anywhere.
+        assert_eq!(pidfile_key(Path::new("/d/lab-1.attack.pid")), None);
         assert_eq!(pidfile_key(Path::new("/d/lab-1.log")), None);
     }
 

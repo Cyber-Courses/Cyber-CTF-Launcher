@@ -167,13 +167,13 @@ pub(crate) mod tests {
 
     #[test]
     fn a_workers_files_share_its_key() {
-        let f = Files::of(Path::new("/data/deploys"), "lab-1.attack");
-        assert_eq!(f.job, Path::new("/data/deploys/lab-1.attack.json"));
-        assert_eq!(f.log, Path::new("/data/deploys/lab-1.attack.log"));
-        assert_eq!(f.previous_log, Path::new("/data/deploys/lab-1.attack.previous.log"));
-        assert_eq!(f.pid, Path::new("/data/deploys/lab-1.attack.pid"));
-        assert_eq!(f.status, Path::new("/data/deploys/lab-1.attack.status"));
-        assert_eq!(f.launch_status, Path::new("/data/deploys/lab-1.attack.launch-status"));
+        let f = Files::of(Path::new("/data/deploys"), "lab-1");
+        assert_eq!(f.job, Path::new("/data/deploys/lab-1.json"));
+        assert_eq!(f.log, Path::new("/data/deploys/lab-1.log"));
+        assert_eq!(f.previous_log, Path::new("/data/deploys/lab-1.previous.log"));
+        assert_eq!(f.pid, Path::new("/data/deploys/lab-1.pid"));
+        assert_eq!(f.status, Path::new("/data/deploys/lab-1.status"));
+        assert_eq!(f.launch_status, Path::new("/data/deploys/lab-1.launch-status"));
     }
 
     #[test]
