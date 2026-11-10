@@ -39,13 +39,21 @@ pub(crate) fn lab_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
     lab_dir_in(dirs.data()?, id)
 }
 
+/// [`lab_dir`], none when the lab isn't installed; an invalid id, or no data folder, is still an
+/// error.
+pub(crate) fn installed_lab_dir(dirs: &AppDirs, id: &str) -> Result<Option<PathBuf>> {
+    validate_id(id)?;
+    Ok(installed_in(dirs.data()?, id))
+}
+
 /// [`lab_dir`] under the app data folder `base` (the id already validated).
 pub(super) fn lab_dir_in(base: &Path, id: &str) -> Result<PathBuf> {
-    let dir = base.join("labs").join(id);
-    if !dir.is_dir() {
-        return Err(Error::Invalid(format!("lab `{id}` is not installed")));
-    }
-    Ok(dir)
+    installed_in(base, id).ok_or_else(|| Error::Invalid(format!("lab `{id}` is not installed")))
+}
+
+/// Lab `id`'s folder under the app data folder `base`, when it is installed.
+fn installed_in(base: &Path, id: &str) -> Option<PathBuf> {
+    Some(base.join("labs").join(id)).filter(|dir| dir.is_dir())
 }
 
 /// The ids with a Terraform deployment under the app data folder `base` (valid ids only): the

@@ -14,7 +14,7 @@ use crate::labs::operations::{self, ActiveOperation};
 use crate::labs::{self, LaunchRequest};
 use crate::platform::AppDirs;
 use crate::runtime::attack_machine::AttackStatus;
-use crate::runtime::paths::{lab_dir, local_runtime};
+use crate::runtime::paths::{installed_lab_dir, lab_dir, local_runtime};
 use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, start_place, status, terminal_launch};
 
@@ -125,11 +125,14 @@ pub async fn lab_resume(app: AppHandle, id: String, runtime: Runtime, logs: Chan
 }
 
 /// What lab `id` looks like right now, wherever it runs; not running when its last launch or
-/// resume failed in its worker, whatever machines it left up.
+/// resume failed in its worker, whatever machines it left up, nor when it isn't installed (never
+/// started here, or a launch that failed before its install). That last one was an error: the
+/// attack box started "with the lab" when a launch ends read it, after a launch that failed in
+/// its download, as a failure of its own ("lab … is not installed").
 #[tauri::command]
 pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<LabStatus> {
     let dirs = AppDirs::from(&app);
-    let dir = lab_dir(&dirs, &id)?;
+    let Some(dir) = installed_lab_dir(&dirs, &id)? else { return Ok(LabStatus::default()) };
     let failed = deploy_worker::last_deploy_failed(&dirs, &id);
     Ok(status::status(&dirs, &dir, &id, runtime).await?.unless_launch_failed(failed))
 }
@@ -427,6 +430,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_lab_that_isnt_installed_reads_as_not_running() {
+        // Regression (karen): a launch whose worker died in its download left the lab not
+        // installed, and the attack box started with each lab, reading its status when the launch
+        // ended, told "The attack box couldn't be added with the lab: lab … is not installed".
+        let t = TestApp::new();
+        let tools = Tools::rules(&[]);
+        let status = lab_status(t.handle().clone(), "gone".into(), Runtime::Docker).await.unwrap();
+        assert!(!status.running && status.machines.is_empty() && status.parked.is_none());
+        // Not a way around the id's check.
+        let bad = lab_status(t.handle().clone(), "../x".into(), Runtime::Docker).await.err().unwrap().to_string();
+        assert_eq!(bad, "invalid lab id `../x`");
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
     async fn lab_commands_refuse_labs_that_are_not_installed_and_bad_input() {
         let t = TestApp::new();
         let app = || t.handle().clone();
@@ -438,7 +456,6 @@ mod tests {
         assert_eq!(lab_park(app(), "gone".into(), Runtime::Docker, Park::Pause, channel(s.clone())).await.unwrap_err().to_string(), missing);
         assert_eq!(lab_resume(app(), "gone".into(), Runtime::Vm, channel(s.clone())).await.unwrap_err().to_string(), missing);
         assert_eq!(lab_provision(app(), "gone".into(), Runtime::Vm, None, channel(s.clone())).await.unwrap_err().to_string(), missing);
-        assert_eq!(lab_status(app(), "gone".into(), Runtime::Vm).await.err().unwrap().to_string(), missing);
         assert!(lab_tools(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(lab_check(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(lab_attack_shell(app(), "gone".into(), Runtime::Docker).await.is_err());

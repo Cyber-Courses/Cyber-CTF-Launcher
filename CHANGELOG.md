@@ -154,6 +154,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A lab whose start failed before its download finished no longer also reports "The attack box
+  couldn't be added with the lab".** With the attack box set to start with each lab, the end of
+  such a start read the lab's status, which refused a lab that isn't installed. A lab that isn't
+  installed now reads as not running, and nothing is added.
 - **Signing in as another account mid-launch no longer reports the first one's machine
   online.** While a website launch ran, the heartbeat kept sending the agent registered for the
   account signed in before, with the new account's sign-in. It now waits until this machine is
