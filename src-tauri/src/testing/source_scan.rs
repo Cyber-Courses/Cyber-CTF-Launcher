@@ -341,3 +341,14 @@ fn nothing_the_app_runs_listens_beyond_the_loopback() {
         }
     }
 }
+
+/// Regression: build.rs read its own folder with `env!`, baked into the script's binary when
+/// it was compiled. Cargo reuses that binary for every checkout sharing the target folder, so
+/// once the checkout that built it was gone (a deleted worktree), every build failed reading
+/// a Cargo.lock that no longer existed. Cargo's variables are read when the script runs.
+#[test]
+fn the_build_script_reads_cargos_variables_when_it_runs() {
+    let build = include_str!("../../build.rs");
+    let baked: Vec<&str> = build.lines().filter(|l| l.contains("env!(\"CARGO_")).collect();
+    assert_eq!(baked, [] as [&str; 0], "build.rs reads these at compile time; use std::env::var_os");
+}

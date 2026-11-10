@@ -96,15 +96,23 @@ const COMMANDS: &[&str] = &[
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     emit_engine_versions()?;
     let attributes = tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(COMMANDS));
-    tauri_build::try_build(with_windows_manifest(attributes))?;
+    tauri_build::try_build(with_windows_manifest(attributes)?)?;
     Ok(())
+}
+
+/// This package's folder, as Cargo says when it runs the script. Read at run time, not with
+/// `env!`: the script's binary is reused by every checkout that shares a target folder, so a
+/// compile-time path pointed at whichever checkout built it first (a worktree since deleted, its
+/// Cargo.lock gone, and every build failing).
+fn manifest_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    Ok(std::env::var_os("CARGO_MANIFEST_DIR").ok_or("cargo didn't set CARGO_MANIFEST_DIR")?.into())
 }
 
 /// Records the Isoloom and Isothrum versions this launcher bundles, read from the pinned entries
 /// in Cargo.lock, as compile-time env vars the `version` module exposes. The catalogue query uses
 /// them so only labs this launcher can generate (Isoloom) and run (Isothrum) are shown.
 fn emit_engine_versions() -> Result<(), Box<dyn std::error::Error>> {
-    let lock = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
+    let lock = manifest_dir()?.join("Cargo.lock");
     println!("cargo:rerun-if-changed={}", lock.display());
     let text = std::fs::read_to_string(&lock)?;
     let isoloom = locked_version(&text, "isoloom-spec").ok_or("isoloom-spec not found in Cargo.lock")?;
@@ -168,13 +176,13 @@ fn isoloom_versions(lock: &str) -> Vec<(String, String)> {
 /// On Windows, tauri-build embeds the app manifest (Common Controls v6) in the app binary only,
 /// so the unit-test executable ran without it and failed to load (`STATUS_ENTRYPOINT_NOT_FOUND`:
 /// comctl32's `TaskDialogIndirect` needs v6). Embed the same manifest in every linked target.
-fn with_windows_manifest(attributes: tauri_build::Attributes) -> tauri_build::Attributes {
+fn with_windows_manifest(attributes: tauri_build::Attributes) -> Result<tauri_build::Attributes, Box<dyn std::error::Error>> {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") || std::env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc") {
-        return attributes;
+        return Ok(attributes);
     }
-    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("windows-app-manifest.xml");
+    let manifest = manifest_dir()?.join("windows-app-manifest.xml");
     println!("cargo:rerun-if-changed={}", manifest.display());
     println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
     println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
-    attributes.windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest())
+    Ok(attributes.windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest()))
 }
