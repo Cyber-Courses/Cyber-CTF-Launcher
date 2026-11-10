@@ -15,7 +15,7 @@ import { openSettingsWindow, useShellListeners, useShellMount } from "@/componen
 import { useNavigation, type OpenLab } from "@/components/shell/use-navigation";
 import { useAuthSession } from "@/components/shell/use-auth-session";
 import { useSidebarLabs } from "@/components/shell/use-sidebar-labs";
-import { useSystemCheck } from "@/components/shell/use-system-check";
+import { useShellMachineReport } from "@/features/machine/use-machine-report";
 import { QuitGuard } from "@/features/app/quit-guard";
 import { LaunchConfirm } from "@/features/app/launch-confirm";
 import { Onboarding } from "@/features/onboarding/onboarding";
@@ -38,7 +38,7 @@ export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   // The lab page open in Labs, for the breadcrumb (null on the list and other screens).
   const [labTitle, setLabTitle] = useState<string | null>(null);
-  const system = useSystemCheck();
+  const system = useShellMachineReport();
   const { check } = system;
   const session = useAuthSession();
   const mount = useShellMount(check, session.init);
@@ -100,7 +100,7 @@ export function AppShell() {
 
 type MainWindowProps = {
   nav: ReturnType<typeof useNavigation>;
-  system: ReturnType<typeof useSystemCheck>;
+  system: ReturnType<typeof useShellMachineReport>;
   session: ReturnType<typeof useAuthSession>;
   /** The platform (for the titlebar band and shortcuts) and the app version. */
   chrome: { isMac: boolean; version: string | null };

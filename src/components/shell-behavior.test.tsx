@@ -7,7 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { UpdateBanner } from "@/components/update-banner";
 import { Screen } from "@/components/shell/screen";
 import { SettingsWindowView, isSettingsWindow } from "@/components/shell/settings-window";
-import { useSystemCheck } from "@/components/shell/use-system-check";
+import { useShellMachineReport } from "@/features/machine/use-machine-report";
 import { useAuthSession } from "@/components/shell/use-auth-session";
 import { Toaster } from "@/components/ui/toaster";
 import type { AuthStatus } from "@/lib/tauri";
@@ -296,8 +296,9 @@ describe("SettingsWindowView", () => {
   });
 });
 
-describe("useSystemCheck", () => {
+describe("useShellMachineReport", () => {
   it("reports the check, or why it failed, and re-checks on focus at most every 15 s", async () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
     let fail = true;
     const calls = installTauri({
       system_check: () => {
@@ -306,10 +307,12 @@ describe("useSystemCheck", () => {
       },
     });
     const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
-    const { result } = renderHook(() => useSystemCheck());
+    const { result } = renderHook(() => useShellMachineReport());
     await act(() => result.current.check());
     expect(result.current.checkError).toContain("docker hung");
     expect(result.current.report).toBeNull();
+    // Regression: the shell's own copy of this hook never logged a failure.
+    expect(warned.mock.calls.filter(([what]) => what === "system check:")).toHaveLength(1);
 
     fail = false;
     // Too soon: no re-check.

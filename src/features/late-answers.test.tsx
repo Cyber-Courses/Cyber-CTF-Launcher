@@ -2,7 +2,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { emit } from "@tauri-apps/api/event";
 import { afterEach, describe, expect, it } from "vitest";
-import { useSystemCheck } from "@/components/shell/use-system-check";
+import { useShellMachineReport } from "@/features/machine/use-machine-report";
 import { useRunTarget } from "@/features/labs/lab-detail/use-run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
@@ -36,7 +36,7 @@ describe("late answers", () => {
   it("a slow, older system check doesn't put back a stale state over a newer one", async () => {
     const { answers, handler } = queue<SystemReport>(2);
     installTauri({ system_check: handler });
-    const { result } = renderHook(() => useSystemCheck());
+    const { result } = renderHook(() => useShellMachineReport());
     act(() => void result.current.check());
     act(() => void result.current.check());
     await settle(() => {

@@ -14,7 +14,7 @@ const WINDOWS: Record<string, string[]> = {
   "settings-window": [
     LAYOUT,
     "components/shell/settings-window.tsx",
-    "components/shell/use-system-check.ts",
+    "features/machine/use-machine-report.ts",
     "components/shell/use-auth-session.ts",
     "components/shell/use-sidebar-labs.ts",
     "features/labs/runs/operations.ts",
