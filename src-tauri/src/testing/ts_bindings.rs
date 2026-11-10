@@ -87,10 +87,25 @@ fn generate(dir: &Path) {
     write_provider_names(dir);
     write_docker_engines(dir);
     write_host_kinds(dir);
+    write_events(dir);
     write_selftest_steps(dir);
     write_deploy_log(dir);
     write_index(dir);
 }
+
+/// The file of the events the core emits to the webview, by name ([`crate::app::events`]), which
+/// the webview listens by (not a type: imported by its path).
+fn write_events(dir: &Path) {
+    let rows = crate::app::events::ALL.iter().fold(String::new(), |mut lines, (key, name)| {
+        let _ = writeln!(lines, "  {key}: \"{name}\",");
+        lines
+    });
+    let doc = "/** The events the core emits to the webview, by name (Rust's `app::events`). */";
+    fs::write(dir.join(format!("{EVENTS}.ts")), format!("{HEADER}\n{doc}\nexport const EVENTS = {{\n{rows}}} as const;\n")).unwrap();
+}
+
+/// The generated file of the event names (values, not types).
+const EVENTS: &str = "Events";
 
 /// The file of each kind of server and cloud account as the setup and the Cloud page read it
 /// ([`runtime::server::kind::KINDS`]): its default port, how it signs in and the CLI it needs, and
@@ -243,7 +258,7 @@ fn write_index(dir: &Path) {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
         .filter_map(|e| e.unwrap().path().file_stem().map(|s| s.to_string_lossy().into_owned()))
-        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != DOCKER_ENGINES && n != HOST_KINDS && n != SELFTEST_STEPS && n != DEPLOY_LOG)
+        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != DOCKER_ENGINES && n != HOST_KINDS && n != EVENTS && n != SELFTEST_STEPS && n != DEPLOY_LOG)
         .collect();
     names.sort();
     let lines = names.iter().fold(String::new(), |mut lines, n| {

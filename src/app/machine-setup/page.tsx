@@ -8,6 +8,7 @@ import { DevMockGate } from "@/components/dev-mock-gate";
 import { warn } from "@/lib/failure";
 import { useMachineReport } from "@/features/machine/use-machine-report";
 import { useTauriEvent } from "@/lib/use-tauri-event";
+import { EVENTS } from "@/lib/tauri/generated/Events";
 
 /** The guided machine-setup window (opened by `machine_open_setup`, optionally `?step=`). */
 export default function MachineSetupPage() {
@@ -25,7 +26,7 @@ function MachineSetupWindow() {
     const step = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("step");
     return step ? { step, nonce: 0 } : null;
   });
-  useTauriEvent("machine-setup-step", (step) => {
+  useTauriEvent(EVENTS.machineSetupStep, (step) => {
     if (typeof step === "string") setStartAt({ step, nonce: Date.now() });
   });
   const close = () => {

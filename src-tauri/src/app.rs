@@ -2,6 +2,7 @@
 //! quitting, and the log file.
 
 pub(crate) mod deploy_worker;
+pub mod events;
 pub mod logging;
 pub mod menu;
 pub mod operations;
@@ -13,7 +14,7 @@ pub mod window;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 use crate::platform::{exec, private_fs};
 use crate::{AppHandle, AppRuntime, account, commands, platform, runtime, shared_folder, terminal};
@@ -223,9 +224,7 @@ fn register_updater(handle: &AppHandle, channel: updates::Channel) {
 fn agent_prompt(handle: &AppHandle) -> std::sync::Arc<account::agent::PromptLaunch> {
     let handle = handle.clone();
     std::sync::Arc::new(move |request: &account::agent::LaunchRequest| {
-        if let Err(e) = handle.emit("launch-confirm", request) {
-            log::warn!("couldn't show a website launch's prompt: {e}");
-        }
+        events::emit(&handle, events::LAUNCH_CONFIRM, request);
         window::reveal_main(&handle);
     })
 }

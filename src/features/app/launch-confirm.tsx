@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { confirmLaunch, type LaunchConfirmRequest } from "@/lib/tauri";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useTauriEvent } from "@/lib/use-tauri-event";
+import { EVENTS } from "@/lib/tauri/generated/Events";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
@@ -38,7 +39,7 @@ function useLaunchRequest() {
   // The request whose answer window ran out: it can only be dismissed.
   const [expired, setExpired] = useState<string | null>(null);
 
-  useTauriEvent("launch-confirm", (payload) => {
+  useTauriEvent(EVENTS.launchConfirm, (payload) => {
     const next = parseRequest(payload);
     if (next) setReq(next);
   });

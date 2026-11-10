@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::AppHandle;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 use crate::runtime;
 
@@ -88,7 +88,7 @@ pub fn intercept(app: &AppHandle) -> bool {
         return false;
     }
     *prompted = Some(Instant::now());
-    let _ = app.emit("quit-blocked", runtime::active_deploys());
+    crate::app::events::emit(app, crate::app::events::QUIT_BLOCKED, runtime::active_deploys());
     if let Some(w) = app.get_webview_window(crate::app::window::MAIN) {
         let _ = w.set_focus();
     }

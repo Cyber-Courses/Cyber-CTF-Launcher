@@ -1,7 +1,7 @@
 //! The guided "set up this machine" flow, in its own window.
 
 use crate::AppHandle;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 use crate::app::window;
 use crate::error::Result;
@@ -26,7 +26,7 @@ pub fn open(app: &AppHandle, step: Option<&str>) -> Result<()> {
     let step = step.filter(|s| STEPS.contains(s));
     if let Some(existing) = app.get_webview_window(LABEL) {
         if let Some(step) = step {
-            let _ = existing.emit("machine-setup-step", step);
+            crate::app::events::emit(&existing, crate::app::events::MACHINE_SETUP_STEP, step);
         }
         let _ = existing.set_focus();
         return Ok(());
@@ -54,7 +54,7 @@ mod tests {
         crate::app::window::builder(t.handle(), super::LABEL, super::page(None)).build().unwrap();
         let steps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen = steps.clone();
-        t.handle().listen_any("machine-setup-step", move |e| seen.lock().unwrap().push(e.payload().to_string()));
+        t.handle().listen_any(crate::app::events::MACHINE_SETUP_STEP, move |e| seen.lock().unwrap().push(e.payload().to_string()));
         super::open(t.handle(), Some("docker-test")).unwrap();
         super::open(t.handle(), Some("../../settings")).unwrap();
         super::open(t.handle(), Some("add")).unwrap();
