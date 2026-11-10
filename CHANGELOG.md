@@ -154,6 +154,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A relay to an ESXi host that can't start says so in the log.** On macOS, the loopback relays
+  Vagrant reaches an ESXi host through (SSH, HTTPS, the WinRM proxy for Windows guests, the
+  ovftool wrapper) failed silently when one couldn't start, as did a relay that couldn't reach
+  the host; each is now logged.
 - **Adding the attack box to a lab in a UTM VM no longer leaves the lab down.** Adding a machine
   restarts the lab's VM for its new settings; when UTM refused the boot with its passing
   "Application isn't running (-600)" after the VM had shut down, the update was tried again and

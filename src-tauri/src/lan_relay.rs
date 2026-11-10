@@ -42,8 +42,10 @@ pub async fn start(host: String, port: u16) -> std::io::Result<Relay> {
     let task = serve(listener, move |mut inbound| {
         let target = (host.clone(), port);
         async move {
-            if let Ok(mut outbound) = TcpStream::connect(target).await {
-                let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+            match TcpStream::connect(&target).await {
+                // A connection that ends either way ends the pipe: nothing to report.
+                Ok(mut outbound) => drop(tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await),
+                Err(e) => log::warn!("the relay couldn't reach {}:{}: {e}", target.0, target.1),
             }
         }
     });
@@ -107,7 +109,9 @@ pub async fn prepare(program: &str, env: &[(String, String)]) -> Relayed {
         return unchanged();
     };
     let ssh_port = first_of(env, HOSTPORT_KEYS).and_then(|p| p.parse().ok()).unwrap_or(22);
-    let (Ok(ssh), Ok(https)) = (start(host.to_string(), ssh_port).await, start(host.to_string(), 443).await) else {
+    let (Some(ssh), Some(https)) =
+        (started("the SSH relay", start(host.to_string(), ssh_port).await), started("the HTTPS relay", start(host.to_string(), 443).await))
+    else {
         return unchanged();
     };
     let mut out = env.to_vec();
@@ -124,12 +128,12 @@ pub async fn prepare(program: &str, env: &[(String, String)]) -> Relayed {
     // WinRM alone. Only the lowercase name, which Vagrant's Ruby reads first; `https_proxy` (box
     // and plugin downloads) is left as it was. The relays are on loopback: added to `no_proxy`,
     // whose own entries (the corporate bypass list) are kept.
-    let winrm = start_http_proxy(Targets::new(host)).await.ok();
+    let winrm = started("the WinRM proxy", start_http_proxy(Targets::new(host)).await);
     if let Some(p) = &winrm {
         set(&mut out, "http_proxy", format!("http://127.0.0.1:{}", p.port));
         set(&mut out, "no_proxy", bypass(env));
     }
-    if let (Some(real), Ok(dir)) = (real_ovftool(), wrapper_dir()) {
+    if let (Some(real), Some(dir)) = (real_ovftool(), started("the ovftool wrapper", wrapper_dir())) {
         set(&mut out, "CYBERCTF_REAL_OVFTOOL", real);
         set(&mut out, "CYBERCTF_OVFTOOL_PORT", https.port.to_string());
         let path = std::env::var("PATH").unwrap_or_default();
@@ -138,6 +142,12 @@ pub async fn prepare(program: &str, env: &[(String, String)]) -> Relayed {
     let mut relays = vec![ssh, https];
     relays.extend(winrm);
     Relayed { env: out, _relays: relays }
+}
+
+/// What `start` brought up for the ESXi host (a relay, the ovftool wrapper: `what`); none when it
+/// couldn't, logged: the run then goes without it, and macOS keeps that tool off the LAN.
+fn started<T>(what: &str, start: std::io::Result<T>) -> Option<T> {
+    start.inspect_err(|e| log::warn!("{what} for the ESXi host couldn't start: {e}")).ok()
 }
 
 /// The `no_proxy` of a run with environment `env` once the relays are on loopback: the one it
@@ -227,6 +237,17 @@ mod tests {
         // The launcher's name alone (no Isoloom name) still counts as the host.
         let env = vec![("CYBERCTF_ESXI_HOSTNAME".to_string(), String::new())];
         assert_eq!(prepare("vagrant", &env).await.env, env);
+    }
+
+    #[test]
+    fn a_relay_that_cant_start_is_logged() {
+        // Regression: the WinRM proxy's failure to start was dropped, and Windows guests failed
+        // over WinRM with nothing in the log saying why.
+        crate::testing::logs::take_warnings();
+        assert_eq!(started("the WinRM proxy", Ok(7)), Some(7));
+        assert!(crate::testing::logs::take_warnings().is_empty());
+        assert_eq!(started::<u16>("the WinRM proxy", Err(std::io::Error::other("no port left"))), None);
+        assert_eq!(crate::testing::logs::take_warnings(), ["the WinRM proxy for the ESXi host couldn't start: no port left"]);
     }
 
     #[test]
