@@ -121,10 +121,11 @@ pub struct EngineStatus {
     pub current: bool,
 }
 
-/// The Docker CLI contexts: each name, and whether it is the current one.
-async fn contexts() -> Vec<(String, bool)> {
-    let out = run_read("docker", &["context", "ls", "--format", "{{.Name}}\t{{.Current}}"], None).await.unwrap_or_default();
-    contexts_from(&out)
+/// The Docker CLI contexts: each name, and whether it is the current one; why not when
+/// `docker context ls` fails.
+async fn contexts() -> Result<Vec<(String, bool)>> {
+    let out = run_read("docker", &["context", "ls", "--format", "{{.Name}}\t{{.Current}}"], None).await?;
+    Ok(contexts_from(&out))
 }
 
 /// `docker context ls` lines: the name, then whether it is current (`true`, or a trailing `*`
@@ -142,9 +143,9 @@ fn contexts_from(listing: &str) -> Vec<(String, bool)> {
 }
 
 /// The Docker CLI contexts with an engine behind them (unknown contexts are left out).
-async fn engine_contexts() -> Vec<(String, Engine)> {
+async fn engine_contexts() -> Result<Vec<(String, Engine)>> {
     let os = std::env::consts::OS;
-    contexts().await.into_iter().filter_map(|(name, _)| context_engine(&name, os).map(|e| (name, e))).collect()
+    Ok(contexts().await?.into_iter().filter_map(|(name, _)| context_engine(&name, os).map(|e| (name, e))).collect())
 }
 
 /// Every engine this machine has, one per context that names one or answers: probed one by one
@@ -155,7 +156,13 @@ async fn engine_contexts() -> Vec<(String, Engine)> {
 pub(super) async fn engines() -> Vec<EngineStatus> {
     let os = std::env::consts::OS;
     let mut found: Vec<EngineStatus> = Vec::new();
-    let mut listed = contexts().await;
+    let mut listed = contexts().await.unwrap_or_else(|e| {
+        // No Docker CLI: no engine to list, and the report says Docker is missing.
+        if !matches!(e, Error::ToolMissing { .. }) {
+            log::warn!("the Docker contexts can't be listed, so no engine is: {e}");
+        }
+        Vec::new()
+    });
     listed.sort_by_key(|(_, current)| !current);
     for (name, current) in listed {
         let args = ["--context", name.as_str(), "info", "--format", "{{.OperatingSystem}}"];
@@ -185,7 +192,8 @@ pub(super) fn running_of(engines: &[EngineStatus]) -> Vec<Engine> {
 /// The Docker context behind `engine` on this machine, for pinning a lab to it (`DOCKER_CONTEXT` /
 /// `docker --context <name>`); an error when no context on this machine names that engine.
 pub async fn engine_context(engine: &str) -> Result<String> {
-    let found = engine_contexts().await.into_iter().find(|(_, e)| e.id() == engine).map(|(name, _)| name);
+    let listed = engine_contexts().await.map_err(|e| Error::Invalid(format!("couldn't list the Docker contexts to find {engine}'s: {e}")))?;
+    let found = listed.into_iter().find(|(_, e)| e.id() == engine).map(|(name, _)| name);
     found.ok_or_else(|| Error::Invalid(format!("no Docker context for {engine}")))
 }
 
@@ -326,6 +334,16 @@ mod tests {
         assert_eq!(engine_context("colima").await.unwrap(), "colima-dev");
         assert_eq!(engine_context("orbstack").await.unwrap(), "orbstack");
         assert_eq!(engine_context("podman").await.unwrap_err().to_string(), "no Docker context for podman");
+    }
+
+    #[tokio::test]
+    async fn contexts_that_cant_be_listed_say_so_not_that_the_engine_has_none() {
+        // Regression: a failed `docker context ls` read as no contexts, and a launch on a chosen
+        // engine failed with "no Docker context for orbstack".
+        let _tools = Tools::rules(&[("context ls", fail("error: invalid config file"))]);
+        let err = engine_context("orbstack").await.unwrap_err().to_string();
+        assert!(err.starts_with("couldn't list the Docker contexts to find orbstack's: "), "{err}");
+        assert!(err.contains("invalid config file"), "{err}");
     }
 
     #[tokio::test]
