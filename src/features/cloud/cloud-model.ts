@@ -26,12 +26,13 @@ export function budgetedAccounts(hosts: ServerHost[]): { host: ServerHost; limit
   });
 }
 
-/** Labs running on one of these accounts right now (a lab's status names the account it runs on). */
+/** Labs running on one of these accounts right now, by the id of the host the lab's status
+ *  names (as `placeOf` reads it): a name can be shared, or changed since. */
 export function labsOnAccounts(labs: Lab[], statuses: Partial<Record<string, LabStatus>>, accounts: ServerHost[]) {
-  const names = new Set(accounts.map((h) => h.name));
+  const ids = new Set(accounts.map((h) => h.id));
   return labs.filter((l) => {
     const s = statuses[l.id];
-    return l.runtime && s?.running && !!s.host && names.has(s.host);
+    return l.runtime && s?.running && s.hostId !== null && ids.has(s.hostId);
   });
 }
 

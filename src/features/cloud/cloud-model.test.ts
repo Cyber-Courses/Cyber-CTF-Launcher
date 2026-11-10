@@ -33,11 +33,13 @@ describe("cloud model", () => {
 
   it("finds the labs running on these accounts", () => {
     const lab = (id: string, runtime = true) => ({ id, runtime: runtime ? { runtime: "VM" } : null }) as Lab;
-    const status = (running: boolean, host: string | null) => ({ running, host }) as LabStatus;
-    const labs = [lab("on-aws"), lab("on-server"), lab("stopped"), lab("local"), lab("no-runtime", false)];
+    const status = (running: boolean, hostId: string | null, name = hostId) => ({ running, host: name, hostId }) as LabStatus;
+    const labs = [lab("on-aws"), lab("on-server"), lab("same-name"), lab("stopped"), lab("local"), lab("no-runtime", false)];
     const statuses = {
       "on-aws": status(true, "aws"),
       "on-server": status(true, "pve"),
+      // A server saved under the account's name is still no cloud account: matched by id.
+      "same-name": status(true, "pve", "aws"),
       stopped: status(false, "aws"),
       local: status(true, null),
       "no-runtime": status(true, "aws"),
