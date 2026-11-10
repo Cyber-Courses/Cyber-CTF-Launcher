@@ -135,14 +135,40 @@ pub fn ssh_user(username: &str) -> &str {
 /// Token setups upload the snippet over SSH with the launcher's key `identity`: checks it's
 /// authorized.
 pub(super) async fn ssh_key_problem(h: &HostProfile, identity: &std::path::Path) -> Option<String> {
-    let public = std::fs::read_to_string(identity.with_extension("pub")).unwrap_or_default().trim().to_string();
     let user = ssh_user(&h.username).to_string();
     let target = ssh::Target::direct(&h.host, &user, identity.to_path_buf());
-    match target.exec_timed(&ssh::node_known_hosts(identity), "true", std::time::Duration::from_secs(30)).await {
-        Ok(_) => None,
-        Err(_) => Some(format!(
-            "The launcher can't SSH to {user}@{} with its key, which a token setup needs to upload the lab's cloud-init. On the node, run:\n  echo '{public}' >> ~/.ssh/authorized_keys",
-            h.host
-        )),
+    if target.exec_timed(&ssh::node_known_hosts(identity), "true", std::time::Duration::from_secs(30)).await.is_ok() {
+        return None;
+    }
+    let public = identity.with_extension("pub");
+    Some(key_not_authorized(&user, &h.host, &public, &std::fs::read_to_string(&public)))
+}
+
+/// What to do when the node refuses the launcher's key: add it, the command to run on the node
+/// written out with the public key read from `public`. A public key that can't be read (or is
+/// empty) is said instead: the command would add an empty line.
+fn key_not_authorized(user: &str, host: &str, public: &std::path::Path, read: &std::io::Result<String>) -> String {
+    let lead = format!("The launcher can't SSH to {user}@{host} with its key, which a token setup needs to upload the lab's cloud-init.");
+    match read.as_ref().map(|k| k.trim()) {
+        Ok(key) if !key.is_empty() => format!("{lead} On the node, run:\n  echo '{key}' >> ~/.ssh/authorized_keys"),
+        Ok(_) => format!("{lead} Its public key ({}) is empty: set the server up again in the launcher to make a new key.", public.display()),
+        Err(e) => format!("{lead} Its public key ({}) can't be read ({e}): set the server up again in the launcher to make a new key.", public.display()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_refused_key_says_the_command_with_the_key_or_why_there_is_none() {
+        let path = std::path::Path::new("/keys/id_ed25519.pub");
+        let ok = key_not_authorized("root", "pve", path, &Ok("ssh-ed25519 AAAA launcher\n".into()));
+        assert!(ok.ends_with("echo 'ssh-ed25519 AAAA launcher' >> ~/.ssh/authorized_keys"), "{ok}");
+        // Regression: a public key that couldn't be read gave `echo '' >> ~/.ssh/authorized_keys`.
+        for read in [Ok("  \n".to_string()), Err(std::io::Error::from(std::io::ErrorKind::NotFound))] {
+            let said = key_not_authorized("root", "pve", path, &read);
+            assert!(!said.contains("echo ''") && said.contains("/keys/id_ed25519.pub") && said.contains("set the server up again"), "{said}");
+        }
     }
 }
