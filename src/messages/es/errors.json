@@ -5,7 +5,6 @@
     "signedOut": "Has cerrado sesión. Vuelve a iniciar sesión para continuar.",
     "sessionExpired": "Tu sesión ha caducado: has cerrado sesión. Vuelve a iniciar sesión para continuar.",
     "loginTimeout": "El inicio de sesión no terminó en {minutes} minutos, así que se canceló. Inténtalo de nuevo.",
-    "noBrowser": "No se abrió ningún navegador para iniciar sesión. Configura un navegador web predeterminado para esta cuenta e inténtalo de nuevo.",
     "alreadyInProgress": "Ya hay otra operación en curso en este lab; espera a que termine.",
     "noPasswordStored": "No hay ninguna contraseña guardada para este host. Edítalo e introduce una.",
     "portInUse": "El puerto {port} del host ya está en uso en esta máquina (lo ocupa otro lab u otra aplicación). Detén lo que lo usa y luego inicia el lab de nuevo.",
@@ -34,10 +33,6 @@
     "labRunningHere": "Este lab sigue ejecutándose en esta máquina (o sus máquinas siguen ahí). Detenlo y vuelve a intentarlo.",
     "labRunningOn": "Este lab sigue ejecutándose en {host}. Detenlo allí y vuelve a intentarlo.",
     "reapNoHost": "No hay ninguna cuenta registrada para él, así que el launcher no puede destruirlo. Elimina sus recursos en la consola de tu nube.",
-    "reapLabGone": "Los archivos del lab ya no están ({detail}). Vuelve a instalar el lab y detenlo, o elimina sus recursos en la consola de tu nube.",
-    "reapAccount": "La cuenta {account} no se puede usar ({detail}). Corrige la cuenta en Ajustes y luego detén el lab.",
-    "reapDestroy": "Falló su destrucción en {account}: {detail}",
-    "reapTimedOut": "La destrucción no terminó en {minutes} minutos. Detén el lab para reintentarlo.",
     "turnedOffByPolicy": "Tu organización desactivó esta función en este equipo (ajuste de directiva {setting}). Pide ayuda a tu equipo de TI si la necesitas."
   }
 }

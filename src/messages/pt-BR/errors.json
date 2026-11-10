@@ -5,7 +5,6 @@
     "signedOut": "Você saiu da conta. Entre novamente para continuar.",
     "sessionExpired": "Sua sessão expirou: você saiu da conta. Entre novamente para continuar.",
     "loginTimeout": "O login não foi concluído em {minutes} minutos, então foi cancelado. Tente de novo.",
-    "noBrowser": "Nenhum navegador abriu para o login. Defina um navegador padrão para esta conta e tente de novo.",
     "alreadyInProgress": "Outra operação neste lab já está em andamento; espere ela terminar.",
     "noPasswordStored": "Nenhuma senha está salva para este host. Edite-o e informe uma.",
     "portInUse": "A porta {port} do host já está em uso nesta máquina (outro lab ou app a ocupa). Pare o que a usa e inicie o lab novamente.",
@@ -34,10 +33,6 @@
     "labRunningHere": "Este lab ainda está rodando nesta máquina (ou as máquinas dele ainda estão aqui). Pare-o e tente de novo.",
     "labRunningOn": "Este lab ainda está rodando em {host}. Pare-o lá e tente de novo.",
     "reapNoHost": "Nenhuma conta está registrada para ele, então o launcher não pode destruí-lo. Remova os recursos dele no console da sua nuvem.",
-    "reapLabGone": "Os arquivos do lab sumiram ({detail}). Instale o lab de novo e pare-o, ou remova os recursos dele no console da sua nuvem.",
-    "reapAccount": "A conta {account} não pode ser usada ({detail}). Corrija a conta nas Configurações e depois pare o lab.",
-    "reapDestroy": "A destruição em {account} falhou: {detail}",
-    "reapTimedOut": "A destruição não terminou em {minutes} minutos. Pare o lab para tentar de novo.",
     "turnedOffByPolicy": "Sua organização desativou este recurso neste computador (configuração de política {setting}). Fale com sua equipe de TI se precisar dele."
   }
 }

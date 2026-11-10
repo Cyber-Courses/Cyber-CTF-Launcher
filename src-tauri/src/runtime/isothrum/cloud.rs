@@ -18,7 +18,7 @@ use isothrum_runner::{RunName, RunOptions, Runner, SecretValue, Secrets};
 
 use super::opened::OpenedRun;
 use super::{errors, progress, regenerate, view};
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::paths::lab_dir_in;
 use crate::runtime::server::sign_in::sign_in_question;
@@ -279,7 +279,7 @@ where
             continue;
         };
         let Some(host) = record.host_label.as_deref() else {
-            failed.push((name, Error::Invalid("no account is recorded for it; remove its resources in your cloud console".to_owned())));
+            failed.push((name, Error::coded(Code::ReapNoHost)));
             continue;
         };
         // The account removed or unreadable: left for a later sweep rather than reported as a
@@ -442,6 +442,21 @@ mod tests {
         let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, ["cyberctf-web"], "the free lab is swept (its files are gone, so its destroy fails); the busy one is not touched: {failed:?}");
         assert!(home.join("runs").join("cyberctf-busy").join("record.json").is_file(), "the busy run keeps its record (never destroyed)");
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    /// An expired run with no account recorded can't be destroyed by the launcher: reported with
+    /// the code the lab page says in the player's language, which tells them to remove it by hand.
+    #[tokio::test]
+    async fn an_expired_run_with_no_account_is_reported_as_such() {
+        let home = home_with(&[("web", "aws1")]);
+        let file = home.join("runs/cyberctf-web/record.json");
+        let mut record: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        record.as_object_mut().unwrap().remove("host_label");
+        std::fs::write(&file, record.to_string()).unwrap();
+        let failed = reap_expired(&home, SystemTime::now(), |_: &str| None, |_| Some(())).await;
+        let codes: Vec<(&str, Code)> = failed.iter().map(|(name, e)| (name.as_str(), e.code())).collect();
+        assert_eq!(codes, [("cyberctf-web", Code::ReapNoHost)]);
         std::fs::remove_dir_all(home).unwrap();
     }
 

@@ -16,8 +16,6 @@ pub enum Code {
     LoginTimeout {
         minutes: u64,
     },
-    /// No browser could be opened for the sign-in.
-    NoBrowser,
     /// Another operation on the lab runs: this one was refused before it changed anything.
     AlreadyInProgress,
     /// A server host saved without its password.
@@ -56,26 +54,9 @@ pub enum Code {
     DockerDeniedWindows {
         user: String,
     },
-    /// The auto-stop couldn't destroy a lab: no account is recorded for its deployment.
+    /// The auto-stop couldn't destroy a lab: no account is recorded for its run. (Its other
+    /// failures are the runner's, with their own codes.)
     ReapNoHost,
-    /// The auto-stop couldn't destroy a lab: its files (its Terraform module) are gone.
-    ReapLabGone {
-        detail: String,
-    },
-    /// The auto-stop couldn't destroy a lab: the account it runs in can't be used.
-    ReapAccount {
-        account: String,
-        detail: String,
-    },
-    /// The auto-stop's destroy failed (expired credentials, a cloud error).
-    ReapDestroy {
-        account: String,
-        detail: String,
-    },
-    /// The auto-stop's destroy ran out of time.
-    ReapTimedOut {
-        minutes: u64,
-    },
     /// A server host's placement (provider, address, node…) can't change while labs are on it.
     PlacementLockedHost {
         count: u64,
@@ -121,7 +102,6 @@ impl Code {
             Code::SignedOut => "You're signed out. Sign in again to continue.".into(),
             Code::SessionExpired => "Your session expired: you're signed out. Sign in again to continue.".into(),
             Code::LoginTimeout { minutes } => format!("Sign-in wasn't finished within {minutes} minutes, so it was cancelled. Try again."),
-            Code::NoBrowser => "No browser opened for sign-in. Set a default web browser for this account and try again.".into(),
             Code::AlreadyInProgress => "Another operation on this lab is already in progress; wait for it to finish.".into(),
             Code::NoPasswordStored => "No password is stored for this host. Edit it and enter one.".into(),
             Code::SignInCancelled => "Sign-in cancelled.".into(),
@@ -154,12 +134,6 @@ impl Code {
                 "Docker is running, but your account can't use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users \"{user}\" /add), then sign out and back in."
             ),
             Code::ReapNoHost => "No account is recorded for it, so the launcher can't destroy it. Remove its resources in your cloud console.".into(),
-            Code::ReapLabGone { detail } => {
-                format!("Its lab files are gone ({detail}). Install the lab again, then stop it, or remove its resources in your cloud console.")
-            }
-            Code::ReapAccount { account, detail } => format!("The account {account} can't be used ({detail}). Fix the account in Settings, then stop the lab."),
-            Code::ReapDestroy { account, detail } => format!("Destroying it on {account} failed: {detail}"),
-            Code::ReapTimedOut { minutes } => format!("The destroy didn't finish within {minutes} minutes. Stop the lab to retry."),
             Code::PlacementLockedHost { count, fields } => placement_locked(*count, "host", fields),
             Code::PlacementLockedAccount { count, fields } => placement_locked(*count, "account", fields),
             Code::LabRunningHere => "This lab is still running on this machine (or its machines are still there). Stop it, then try again.".into(),
@@ -368,37 +342,32 @@ mod tests {
             Code::SignedOut => 1,
             Code::SessionExpired => 2,
             Code::LoginTimeout { .. } => 3,
-            Code::NoBrowser => 4,
-            Code::AlreadyInProgress => 5,
-            Code::NoPasswordStored => 6,
-            Code::PortInUse { holder: None, .. } => 7,
-            Code::PortInUse { holder: Some(_), .. } => 8,
-            Code::SignInCancelled => 9,
-            Code::SignInDenied => 10,
-            Code::SignInCodeUnavailable => 11,
-            Code::Unreachable { .. } => 12,
-            Code::OfflineReady { .. } => 13,
-            Code::DockerNotRunning => 14,
-            Code::DockerDenied { .. } => 15,
-            Code::DockerDeniedWindows { .. } => 16,
-            Code::ReapNoHost => 17,
-            Code::ReapLabGone { .. } => 18,
-            Code::ReapAccount { .. } => 19,
-            Code::ReapDestroy { .. } => 20,
-            Code::ReapTimedOut { .. } => 21,
-            Code::PlacementLockedHost { .. } => 22,
-            Code::PlacementLockedAccount { .. } => 23,
-            Code::LabRunningHere => 24,
-            Code::LabRunningOn { .. } => 25,
-            Code::HostHasLabs { .. } => 26,
-            Code::ToolMissing { .. } => 27,
-            Code::CommandFailed { .. } => 28,
-            Code::TurnedOffByPolicy { .. } => 29,
+            Code::AlreadyInProgress => 4,
+            Code::NoPasswordStored => 5,
+            Code::PortInUse { holder: None, .. } => 6,
+            Code::PortInUse { holder: Some(_), .. } => 7,
+            Code::SignInCancelled => 8,
+            Code::SignInDenied => 9,
+            Code::SignInCodeUnavailable => 10,
+            Code::Unreachable { .. } => 11,
+            Code::OfflineReady { .. } => 12,
+            Code::DockerNotRunning => 13,
+            Code::DockerDenied { .. } => 14,
+            Code::DockerDeniedWindows { .. } => 15,
+            Code::ReapNoHost => 16,
+            Code::PlacementLockedHost { .. } => 17,
+            Code::PlacementLockedAccount { .. } => 18,
+            Code::LabRunningHere => 19,
+            Code::LabRunningOn { .. } => 20,
+            Code::HostHasLabs { .. } => 21,
+            Code::ToolMissing { .. } => 22,
+            Code::CommandFailed { .. } => 23,
+            Code::TurnedOffByPolicy { .. } => 24,
         }
     }
 
     /// How many forms [`form`] tells apart.
-    const FORMS: usize = 30;
+    const FORMS: usize = 25;
 
     #[test]
     fn every_form_has_a_sample() {
@@ -412,7 +381,6 @@ mod tests {
             Code::SignedOut,
             Code::SessionExpired,
             Code::LoginTimeout { minutes: 5 },
-            Code::NoBrowser,
             Code::SignInCancelled,
             Code::SignInDenied,
             Code::SignInCodeUnavailable,
@@ -432,10 +400,6 @@ mod tests {
             Code::LabRunningHere,
             Code::LabRunningOn { host: "My Proxmox".into() },
             Code::ReapNoHost,
-            Code::ReapLabGone { detail: "lab `web` is not installed".into() },
-            Code::ReapAccount { account: "My Azure".into(), detail: "unknown server host".into() },
-            Code::ReapDestroy { account: "My Azure".into(), detail: "token expired".into() },
-            Code::ReapTimedOut { minutes: 35 },
             Code::ToolMissing { tool: "terraform".into() },
             Code::CommandFailed { command: "vagrant up".into(), stderr: "locked".into() },
             Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() },

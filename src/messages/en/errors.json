@@ -5,7 +5,6 @@
     "signedOut": "You're signed out. Sign in again to continue.",
     "sessionExpired": "Your session expired: you're signed out. Sign in again to continue.",
     "loginTimeout": "Sign-in wasn't finished within {minutes} minutes, so it was cancelled. Try again.",
-    "noBrowser": "No browser opened for sign-in. Set a default web browser for this account and try again.",
     "alreadyInProgress": "Another operation on this lab is already in progress; wait for it to finish.",
     "noPasswordStored": "No password is stored for this host. Edit it and enter one.",
     "portInUse": "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again.",
@@ -34,10 +33,6 @@
     "labRunningHere": "This lab is still running on this machine (or its machines are still there). Stop it, then try again.",
     "labRunningOn": "This lab is still running on {host}. Stop it there, then try again.",
     "reapNoHost": "No account is recorded for it, so the launcher can't destroy it. Remove its resources in your cloud console.",
-    "reapLabGone": "Its lab files are gone ({detail}). Install the lab again, then stop it, or remove its resources in your cloud console.",
-    "reapAccount": "The account {account} can't be used ({detail}). Fix the account in Settings, then stop the lab.",
-    "reapDestroy": "Destroying it on {account} failed: {detail}",
-    "reapTimedOut": "The destroy didn't finish within {minutes} minutes. Stop the lab to retry.",
     "turnedOffByPolicy": "Your organization turned this off on this computer (policy setting {setting}). Ask your IT team if you need it."
   }
 }

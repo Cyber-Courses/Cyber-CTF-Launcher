@@ -55,25 +55,31 @@ describe("LabDetail, a cloud lab", () => {
 
   it("says when the auto-stop couldn't destroy it, as it may still be billing", async () => {
     installTauri(idle);
+    // As the reaper records the runner's failed destroy: its error, with the runner's code.
     const reapError: CommandError = {
-      code: "reapDestroy",
-      args: { account: "My AWS", detail: "ExpiredToken" },
-      message: "Auto-stop couldn't destroy lab-goat: destroying it on My AWS failed: ExpiredToken",
+      code: "commandFailed",
+      args: { command: "terraform destroy", stderr: "ExpiredToken" },
+      message: "Auto-stop couldn't destroy lab-goat: `terraform destroy` failed: ExpiredToken",
     };
     renderGoat({ status: status({ reapError, host: "My AWS", place: "cloud" }) });
     await flush();
     expect(screen.getByText("Auto-stop couldn’t destroy EC2 SSRF")).toBeTruthy();
-    expect(screen.getByText("Destroying it on My AWS failed: ExpiredToken")).toBeTruthy();
+    expect(screen.getByText("`terraform destroy` failed: ExpiredToken")).toBeTruthy();
     expect(document.body.textContent).toContain("It may still be billing in your cloud account.");
   });
 
   it("says why the auto-stop failed in the player's language", async () => {
     setLocalePreference("fr");
     installTauri(idle);
-    const reapError: CommandError = { code: "reapTimedOut", args: { minutes: 35 }, message: "Auto-stop couldn't destroy lab-goat: the destroy didn't finish" };
+    // The one reap failure of the launcher's own (a run with no account recorded).
+    const reapError: CommandError = { code: "reapNoHost", message: "Auto-stop couldn't destroy lab-goat: no account is recorded for it" };
     renderGoat({ status: status({ reapError, host: "My AWS", place: "cloud" }) });
     await flush();
-    expect(screen.getByText("La destruction ne s'est pas terminée en 35 minutes. Arrêtez le lab pour réessayer.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Aucun compte n'est enregistré pour lui, le launcher ne peut donc pas le détruire. Supprimez ses ressources dans la console de votre cloud.",
+      ),
+    ).toBeTruthy();
     setLocalePreference("en");
   });
 
