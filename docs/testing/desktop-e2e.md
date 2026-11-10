@@ -2,7 +2,7 @@
 
 `e2e/desktop/run.sh` builds the app with `--features wdio` (the embedded W3C WebDriver
 server, never in a release build), serves the frontend a debug build loads (`tauri.conf.json`'s
-`devUrl`, port 1437; a release build embeds `out/` and needs none), checks out the fixture lab
+`devUrl`, port 3206; a release build embeds `out/` and needs none), checks out the fixture lab
 (the Supplier Portal API lab, under `infra/test-servers/.state/labs`), and runs the scenarios in an
 order that leaves nothing behind:
 
@@ -46,7 +46,7 @@ them out. A release app driven by these scenarios (`APP_BIN`) is built with `NEX
 
 Why a debug build needs the dev server: Tauri's `generate_context!` loads `devUrl` in a debug
 build and the static export only in a release build, so a debug app started by hand shows a blank
-window until `next dev` answers on port 1437. The runner handles it.
+window until `next dev` answers on port 3206. The runner handles it.
 
 Why the scripts force the page visible: the frontend pauses its polls while the document is
 hidden (`src/lib/visibility.ts`), and on macOS a window another one covers reports hidden, so a

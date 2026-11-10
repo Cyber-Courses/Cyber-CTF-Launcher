@@ -15,7 +15,7 @@
 #                           release build needs NEXT_PUBLIC_WDIO=1 at its build for the __wdio_*
 #                           hooks the scenarios use (docs/testing/desktop-e2e.md)
 #   TAURI_WEBDRIVER_PORT    the embedded WebDriver port (4445)
-#   DEV_URL_PORT            where a DEBUG build loads its frontend from (1437, tauri.conf.json's
+#   DEV_URL_PORT            where a DEBUG build loads its frontend from (3206, tauri.conf.json's
 #                           devUrl); a `next dev` already listening there is reused
 #   CYBERCTF_TEST_LOCAL_LAB the lab folder the scenarios import (default: a checkout of the
 #                           Supplier Portal API lab under infra/test-servers/.state/labs)
@@ -35,7 +35,7 @@ LOGS="$NATIVE_STATE/logs"
 mkdir -p "$LOGS"
 
 CASE_TIMEOUT=${CASE_TIMEOUT:-900}
-DEV_URL_PORT=${DEV_URL_PORT:-1437}
+DEV_URL_PORT=${DEV_URL_PORT:-3206}
 export TAURI_WEBDRIVER_PORT=${TAURI_WEBDRIVER_PORT:-4445}
 OS=$(uname -s)
 

@@ -7,7 +7,7 @@
     "node": "^22.12.0 || ^24.0.0 || ^25.0.0 || >=26.0.0"
   },
   "scripts": {
-    "dev": "next dev --port 1437",
+    "dev": "next dev --port 3206",
     "build": "next build",
     "lint": "eslint src scripts e2e",
     "format": "prettier --write \"{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}\" \"{*,docs/**/*,infra/**/*,scripts/**/*}.md\" && cargo fmt --manifest-path src-tauri/Cargo.toml",

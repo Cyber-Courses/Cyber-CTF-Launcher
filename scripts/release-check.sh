@@ -58,9 +58,9 @@ rust_cov() {
 # Next's dev lock allows one dev server per checkout: when one already serves the app's devUrl
 # port (`pnpm tauri dev`, or e2e-native's), Playwright runs against it instead of starting its own.
 e2e_mock() {
-  if curl -fsS -o /dev/null "http://127.0.0.1:${DEV_URL_PORT:-1437}/"; then
-    echo "reusing the dev server on port ${DEV_URL_PORT:-1437}"
-    E2E_PORT=${DEV_URL_PORT:-1437} pnpm exec playwright test
+  if curl -fsS -o /dev/null "http://127.0.0.1:${DEV_URL_PORT:-3206}/"; then
+    echo "reusing the dev server on port ${DEV_URL_PORT:-3206}"
+    E2E_PORT=${DEV_URL_PORT:-3206} pnpm exec playwright test
   else
     pnpm exec playwright test
   fi

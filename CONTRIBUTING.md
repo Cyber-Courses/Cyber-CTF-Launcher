@@ -22,7 +22,7 @@ You need:
 ```bash
 pnpm install
 pnpm tauri dev          # the app, with hot reload
-pnpm dev                # the UI alone in a browser, on sample data: http://localhost:1437/?mock
+pnpm dev                # the UI alone in a browser, on sample data: http://localhost:3206/?mock
 pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'   # local installers, unsigned
 ```
 
