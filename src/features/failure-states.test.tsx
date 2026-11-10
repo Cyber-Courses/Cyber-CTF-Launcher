@@ -10,7 +10,7 @@ import type { Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import { must } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
-import { getDeploySnapshot, runFailure, startFailed } from "@/features/labs/runs/deploy-runs";
+import { getDeploySnapshot, runFailure, startFailed, type DeployRun } from "@/features/labs/runs/deploy-runs";
 import { noteOperations, operationSeenAt } from "@/features/labs/runs/operations";
 import type { AuthStatus, LabStatus } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
@@ -231,11 +231,11 @@ describe("a start that failed", () => {
 describe("a Stop & remove that failed", () => {
   it("says so under the header and keeps the lab's panels through the stop", async () => {
     installTauri({ ...idle, lab_status: () => up });
-    const { rerender } = render(
+    const page = (deploy: DeployRun) => (
       <LabDetail
         lab={blind}
         status={up}
-        deploy={{ busy: true, logs: [], times: [], op: "stop" }}
+        deploy={deploy}
         loggedIn
         hostArch="x86_64"
         readyVms={[]}
@@ -243,8 +243,9 @@ describe("a Stop & remove that failed", () => {
         onBack={vi.fn()}
         onStart={vi.fn()}
         onStop={vi.fn()}
-      />,
+      />
     );
+    const { rerender } = render(page({ busy: true, logs: [], times: [], op: "stop" }));
     await flush();
     // While it stops: the header says so, the panels stay (dimmed, out of reach).
     expect(document.body.textContent).toContain("Stopping");
@@ -252,26 +253,8 @@ describe("a Stop & remove that failed", () => {
     expect(inert.length).toBeGreaterThan(0);
     expect(document.body.textContent).toContain("Attack box");
 
-    rerender(
-      <LabDetail
-        lab={blind}
-        status={up}
-        deploy={{
-          busy: false,
-          logs: ["✗ Couldn't remove network lab-invoice_default: has active endpoints"],
-          times: [Date.now()],
-          op: "stop",
-          startedAt: Date.now() - 2000,
-        }}
-        loggedIn
-        hostArch="x86_64"
-        readyVms={[]}
-        dockerRunning
-        onBack={vi.fn()}
-        onStart={vi.fn()}
-        onStop={vi.fn()}
-      />,
-    );
+    const failed = "✗ Couldn't remove network lab-invoice_default: has active endpoints";
+    rerender(page({ busy: false, logs: [failed], times: [Date.now()], op: "stop", startedAt: Date.now() - 2000 }));
     await flush();
     const notice = must(
       screen.getAllByRole("alert").find((a) => a.textContent.includes("Couldn’t stop and remove Blind orders")),
