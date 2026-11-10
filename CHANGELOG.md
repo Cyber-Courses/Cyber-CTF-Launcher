@@ -160,6 +160,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   Vagrant command landing then was refused ("another process is already executing an action on
   the machine") and the start failed. The count now reads Vagrant's index as it is, and skips a
   record whose lab folder is gone.
+- **A damaged record of the tools Cyber CTF installed is no longer erased.** A record that
+  couldn't be read counted as no tools, and the next install or removal saved that over it, so
+  Cleanup stopped offering every tool recorded before. It is now left as it is and logged, and a
+  removal says it can't read it. It is written as Storage's record is, under a file lock and
+  synced to disk.
 - **A session that can't be read no longer reads as signed out.** When the keychain couldn't be
   read (locked, say) or a token couldn't be renewed, the catalogue loaded as anonymous, without
   the player's progress, and the website agent forgot this machine's registration, with nothing
