@@ -94,12 +94,15 @@ async fn a_vm_lab_runs_here_when_a_hypervisor_here_runs_it_else_on_the_default_s
     installed(&t, "other", &vms_on(foreign));
     assert_eq!(place(&t, "other", Runtime::Vm, &[Provider::Virtualbox]).await, host("pve"));
     assert_eq!(place(&t, "other", Runtime::Vm, &[Provider::Virtualbox, Provider::Qemu]).await, here_on(Provider::Qemu));
-    // A lab whose targets leave Proxmox out stays here; ESXi runs it through Vagrant.
-    installed(&t, "ad2", &format!("{}targets: [vagrant]\n", vms_on(native)));
+    // A lab whose targets leave Proxmox out stays here; ESXi runs it through Vagrant, x86-64
+    // VMs only: an arm64 lab is never sent there, whatever this machine's CPU.
+    installed(&t, "ad2", &format!("{}targets: [vagrant]\n", vms_on("amd64")));
+    installed(&t, "arm", &format!("{}targets: [vagrant]\n", vms_on("arm64")));
     assert_eq!(place(&t, "ad2", Runtime::Vm, &[]).await, StartPlace::default());
     let esx = t.host("esx", "vmware_esxi", serde_json::json!({}));
     default_server(&t, &esx);
     assert_eq!(place(&t, "ad2", Runtime::Vm, &[]).await, host("esx"));
+    assert_ne!(place(&t, "arm", Runtime::Vm, &[]).await, host("esx"), "ESXi runs no arm64 VM");
     // A cloud account is never the implicit place.
     let aws = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
     default_server(&t, &aws);
@@ -120,8 +123,10 @@ async fn a_lab_starts_again_where_it_last_ran() {
     record_run(t.data(), "ad", Some(&pve), "proxmox", "absent");
     assert_eq!(place(&t, "ad", Runtime::Vm, &[Provider::Virtualbox]).await, StartPlace { hypervisor: Some(Provider::Virtualbox), ..host("pve") });
     // Last in a cloud account: never there unasked; the rule as if it never ran.
-    record_run(t.data(), "ad", Some("aws1"), "cloud-vm", "absent");
-    assert_eq!(place(&t, "ad", Runtime::Vm, &[]).await, host("esx"));
+    // (An x86-64 lab, the only kind ESXi runs.)
+    installed(&t, "x86", &vms_on("amd64"));
+    record_run(t.data(), "x86", Some("aws1"), "cloud-vm", "absent");
+    assert_eq!(place(&t, "x86", Runtime::Vm, &[]).await, host("esx"));
     // Last here as VMs: here on that hypervisor.
     record_run(t.data(), "ad", None, "vagrant", "absent");
     set_provider(&t, "ad", "libvirt");
