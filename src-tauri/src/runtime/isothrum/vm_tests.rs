@@ -79,7 +79,9 @@ async fn a_vm_lab_goes_up_on_its_hypervisor_through_the_runner() {
     let f = Fixture::new();
     let run = f.run();
     let mut log = Vec::new();
-    run.up(Inputs::values(&[("CTF_FLAG_MAIN".into(), "flag{v}".into())]), Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
+    // On the lab's own ports: the fixture's host has no free port to pick instead.
+    let values = [("CTF_FLAG_MAIN".into(), "flag{v}".into())];
+    run.up(Inputs { values: &values, default_ports: true }, Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
     let up = f.fake.last("vagrant up --provider virtualbox").unwrap();
     assert_eq!(up.env("CTF_FLAG_MAIN"), Some("flag{v}"), "the launch's input reaches its slot");
     assert!(
@@ -100,7 +102,7 @@ async fn a_vm_lab_goes_up_on_its_hypervisor_through_the_runner() {
 async fn a_vm_lab_is_checked_parked_resumed_reprovisioned_and_stopped() {
     let f = Fixture::new();
     let run = f.run();
-    run.up(Inputs::default(), Some("virtualbox"), &mut |_| {}).await.unwrap();
+    run.up(Inputs { values: &[], default_ports: true }, Some("virtualbox"), &mut |_| {}).await.unwrap();
     let c = run.check().await.unwrap();
     assert!(c.available && c.ok, "{}", c.output);
     run.park(Park::Pause, &mut |_| {}).await.unwrap();
