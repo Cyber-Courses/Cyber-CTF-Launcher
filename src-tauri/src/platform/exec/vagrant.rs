@@ -1,4 +1,6 @@
-//! Vagrant commands on a lab's machines, elevated when the hypervisor needs it.
+//! Vagrant commands on the launcher's own Vagrantfile (the VM self-test's), elevated when the
+//! hypervisor needs it. A lab's Vagrant runs inside the Isothrum runner, which elevates on its
+//! own; the only Vagrant the launcher runs itself is the self-test's.
 //!
 //! Hyper-V only takes management commands from an administrator, and Vagrant's Hyper-V provider
 //! refuses to run otherwise (issue #185). On Windows, commands on Hyper-V machines go through
@@ -11,23 +13,18 @@ use std::path::Path;
 use super::elevate::{self, Mode};
 use crate::error::Result;
 
-/// When a step of a [`Vagrant::batch`] runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum When {
-    /// Only while every step before it succeeded.
-    IfOk,
-}
-
-/// One Vagrant command of a batch: its arguments and when it runs.
+/// One Vagrant command of a batch: its arguments. A step runs only while every step before it
+/// succeeded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Step {
+    /// Its arguments, after `vagrant`.
     pub args: Vec<String>,
-    pub when: When,
 }
 
 impl Step {
+    /// The step running `vagrant` with `args`.
     pub fn new(args: &[&str]) -> Step {
-        Step { args: args.iter().map(ToString::to_string).collect(), when: When::IfOk }
+        Step { args: args.iter().map(ToString::to_string).collect() }
     }
 }
 
@@ -109,8 +106,8 @@ impl<'a> Vagrant<'a> {
         only(self.batch(&[Step::new(args)], |_| {}).await?)
     }
 
-    /// Runs `steps` in order (a step [`When::IfOk`] is skipped once one has failed), reporting
-    /// each one's start, lines and end to `on_event`. Elevated, the whole batch runs under one
+    /// Runs `steps` in order (the rest are skipped once one has failed), reporting each one's
+    /// start, lines and end to `on_event`. Elevated, the whole batch runs under one
     /// UAC prompt. `Err` only when the batch couldn't run at all (the prompt was declined);
     /// each step's own failure is in its [`Outcome`].
     pub async fn batch(&self, steps: &[Step], on_event: impl FnMut(Event)) -> Result<Vec<Outcome>> {
@@ -128,7 +125,7 @@ impl<'a> Vagrant<'a> {
         let mut outcomes = Vec::with_capacity(steps.len());
         let mut failed = false;
         for (i, step) in steps.iter().enumerate() {
-            if failed && step.when == When::IfOk {
+            if failed {
                 outcomes.push(None);
                 continue;
             }

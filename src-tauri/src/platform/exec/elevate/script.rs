@@ -8,7 +8,7 @@ use std::time::Duration;
 use super::Batch;
 use super::collect::WorkDir;
 use crate::error::{Error, Result};
-use crate::platform::exec::vagrant::{HYPERV_SWITCH_ENV, When};
+use crate::platform::exec::vagrant::HYPERV_SWITCH_ENV;
 
 /// The longest command line Windows accepts, in UTF-16 units.
 pub(super) const MAX_COMMAND_LINE: usize = 32_000;
@@ -201,8 +201,8 @@ fn script_step_function(p: &Plan, m: &str) -> String {
     // command line, base64-encoded).
     let _ = write!(
         s,
-        "  function Invoke-CyberctfStep([int]$i, [bool]$always, [string[]]$a) {{\n\
-         \x20   if ($script:cyberctfFailed -and -not $always) {{ Write-CyberctfLine ({m} + ' skip ' + $i); return }}\n\
+        "  function Invoke-CyberctfStep([int]$i, [string[]]$a) {{\n\
+         \x20   if ($script:cyberctfFailed) {{ Write-CyberctfLine ({m} + ' skip ' + $i); return }}\n\
          \x20   Write-CyberctfLine ({m} + ' start ' + $i)\n\
          \x20   $global:LASTEXITCODE = 0\n\
          \x20   $rc = $null\n\
@@ -222,15 +222,12 @@ fn script_step_function(p: &Plan, m: &str) -> String {
     s
 }
 
-/// One line per step.
+/// One line per step (each skipped once an earlier one failed).
 fn script_steps(p: &Plan) -> String {
     let mut s = String::new();
     for (i, step) in p.batch.steps.iter().enumerate() {
-        let always = match step.when {
-            When::IfOk => "$false",
-        };
         let args: Vec<String> = step.args.iter().map(|a| ps_quote(a)).collect();
-        let _ = writeln!(s, "  Invoke-CyberctfStep {i} {always} @({})", args.join(", "));
+        let _ = writeln!(s, "  Invoke-CyberctfStep {i} @({})", args.join(", "));
     }
     s
 }

@@ -1,5 +1,6 @@
-//! Vagrant on Hyper-V, on Windows: run by a generated PowerShell script, elevated when needed
-//! (issue #185).
+//! The VM self-test's Vagrant on Hyper-V, on Windows: run by a generated PowerShell script,
+//! elevated when needed (issue #185). A lab's Vagrant runs inside the Isothrum runner, which
+//! elevates on its own; this is the launcher's own Vagrantfile's.
 //!
 //! Hyper-V management needs an administrator (or a member of "Hyper-V Administrators"), and
 //! Vagrant's Hyper-V provider refuses to run otherwise. A launcher that is neither asks Windows
