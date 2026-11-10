@@ -108,7 +108,8 @@ fn no_proxy(exceptions: &[String]) -> String {
 
 /// A `no_proxy` list of `hosts` (trimmed, each once, empty ones dropped) with this machine's own
 /// addresses added where missing: what reaches a loopback address never goes through a proxy.
-pub fn with_loopback<'a>(hosts: impl IntoIterator<Item = &'a str>) -> String {
+#[cfg(any(target_os = "macos", test))]
+fn with_loopback<'a>(hosts: impl IntoIterator<Item = &'a str>) -> String {
     let mut list: Vec<&str> = Vec::new();
     for host in hosts.into_iter().map(str::trim).chain(["localhost", "127.0.0.1", "::1"]) {
         if !host.is_empty() && !list.contains(&host) {

@@ -9,7 +9,6 @@ mod error;
 #[cfg(test)]
 mod integration_tests;
 mod labs;
-mod lan_relay;
 mod machine;
 mod platform;
 mod runtime;

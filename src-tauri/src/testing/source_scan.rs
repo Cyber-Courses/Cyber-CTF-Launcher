@@ -157,37 +157,83 @@ mod tests {
     }
 }
 
-/// The layers depend downwards only: the platform (running tools, files, the OS) names neither the
-/// labs' runtime nor the app shell; the runtime doesn't name the app shell, nor, outside its
-/// tests, the layers that use it (the CTF's labs, the account, the machine, the commands): what
-/// it needs of them is handed in (a source check, a hook to run first). A cycle between them
-/// came back more than once (the runtime reached for the deploy workers' lock and status files,
-/// then for the catalogue's source rule, the co-location server and Storage's records).
+/// The crate-root modules `code` names, outside whole-line comments: each `crate::<module>`, and
+/// each item of a grouped `use crate::{…}`. A layer that reaches another through a module at the
+/// crate root (the platform's process runner once called up into the runtime through one) names
+/// it here as surely as one that names the layer itself.
+fn crate_modules(code: &str) -> std::collections::BTreeSet<String> {
+    let ident = |s: &str| s.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<String>();
+    let prefix = ["crate", "::"].concat();
+    let mut out = std::collections::BTreeSet::new();
+    for line in code.lines().filter(|l| !l.trim_start().starts_with("//")) {
+        for (at, _) in line.match_indices(&prefix) {
+            let rest = &line[at + prefix.len()..];
+            let Some(group) = rest.strip_prefix('{') else {
+                out.insert(ident(rest));
+                continue;
+            };
+            // The first name of each top-level item: `{a::b, c, d::{e, f}}` names a, c and d.
+            let mut depth = 0;
+            let mut item = true;
+            for (i, c) in group.char_indices() {
+                match c {
+                    '{' => depth += 1,
+                    '}' if depth == 0 => break,
+                    '}' => depth -= 1,
+                    ',' if depth == 0 => item = true,
+                    c if item && (c.is_alphanumeric() || c == '_') => {
+                        out.insert(ident(&group[i..]));
+                        item = false;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out.remove("");
+    out
+}
+
+#[test]
+fn a_files_crate_modules_are_read_from_paths_and_grouped_uses() {
+    let code = [
+        "use crate::platform::exec;",
+        "use crate::{error::Result, runtime, labs::{a, b}};",
+        "    let x = crate::machine::system::probe();",
+        "/// Not code: see `crate::app`.",
+        "    // Nor this: crate::commands.",
+    ]
+    .join("\n");
+    assert_eq!(crate_modules(&code).into_iter().collect::<Vec<_>>(), ["error", "labs", "machine", "platform", "runtime"]);
+}
+
+/// The layers depend downwards only: the platform (running tools, files, the OS) names no module
+/// at the crate root but its own and the crate's errors, so it can't reach up through one either;
+/// the runtime doesn't name the app shell, nor, outside its tests, the layers that use it (the
+/// CTF's labs, the account, the machine, the commands): what it needs of them is handed in (a
+/// source check, a hook to run first). A cycle between them came back more than once (the
+/// runtime reached for the deploy workers' lock and status files, then for the catalogue's source
+/// rule, the co-location server and Storage's records; the platform's process runner for the
+/// runtime's ESXi relay settings).
 #[test]
 fn the_platform_and_the_runtime_never_reach_up_into_the_layers_above() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    // Spelled in two, so this file doesn't name the layers itself.
-    let path = |layer: &str| ["crate::", layer].concat();
-    let (runtime, app) = (path("runtime"), path("app::"));
-    let above_runtime = ["labs", "account", "machine", "commands"].map(|l| (path(l), [path(l), "::".into()].concat(), [path(l), ";".into()].concat()));
+    let above_runtime = ["labs", "account", "machine", "commands"];
     for s in crate_sources() {
         let rel = s.path.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
-        let text = format!("{}\n{}", s.code, s.tests);
-        let layer = rel.split(['/', '.']).next().unwrap_or_default();
-        if layer == "platform" {
-            assert!(!text.contains(&runtime) && !text.contains(&app), "{rel} reaches up from the platform");
-        }
-        if layer == "runtime" {
-            assert!(!text.contains(&app), "{rel} reaches up from the runtime into the app shell");
-            for (name, item, whole) in &above_runtime {
-                assert!(!s.code.contains(item.as_str()) && !s.code.contains(whole.as_str()), "{rel} reaches up from the runtime into {name}");
+        let (code, tests) = (crate_modules(&s.code), crate_modules(&s.tests));
+        let named = || code.iter().chain(&tests).map(String::as_str);
+        match rel.split(['/', '.']).next().unwrap_or_default() {
+            "platform" => {
+                let up: Vec<&str> = named().filter(|m| !["platform", "error", "testing"].contains(m)).collect();
+                assert!(up.is_empty(), "{rel} reaches up from the platform into {up:?}");
             }
-            // And through a grouped `use crate::{…}`.
-            let grouped = s.code.lines().map(str::trim).filter(|l| l.starts_with(&["use ", &path("{")].concat()));
-            for line in grouped {
-                let names: Vec<&str> = line.split(['{', '}', ',', ' ', ':', ';']).collect();
-                assert!(!["labs", "account", "machine", "commands"].iter().any(|l| names.contains(l)), "{rel} reaches up from the runtime: {line}");
+            "runtime" => {
+                assert!(named().all(|m| m != "app"), "{rel} reaches up from the runtime into the app shell");
+                let up: Vec<&str> = code.iter().map(String::as_str).filter(|m| above_runtime.contains(m)).collect();
+                assert!(up.is_empty(), "{rel} reaches up from the runtime into {up:?}");
             }
+            _ => {}
         }
     }
 }

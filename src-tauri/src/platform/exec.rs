@@ -217,9 +217,6 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
             fake::FakeOutcome::Hang => std::future::pending::<Result<String>>().await,
         };
     }
-    // Kept alive until the tool exits (see lan_relay).
-    let relayed = crate::lan_relay::prepare(program, env).await;
-    let env = relayed.env.as_slice();
     let mut cmd = piped_command(program, args, cwd, env, Stdio::null());
     // Its own group, so a timeout or cancellation ends the whole tree: `vagrant` is a wrapper
     // around `ruby` (an orphaned ruby per timed-out poll deadlocked on Vagrant's lock), and
@@ -289,8 +286,6 @@ async fn stream_from(program: &'static str, args: &[&str], cwd: Option<&Path>, e
             fake::FakeOutcome::Hang => std::future::pending::<Result<()>>().await,
         };
     }
-    let relayed = crate::lan_relay::prepare(program, env).await;
-    let env = relayed.env.as_slice();
     let mut cmd = piped_command(program, args, cwd, env, Stdio::null());
     // A cancellation ends the whole tree: `vagrant` is a wrapper whose `ruby` outlived the
     // wrapper killed alone, and kept Vagrant's lock. A deploy worker being stopped reaches it
