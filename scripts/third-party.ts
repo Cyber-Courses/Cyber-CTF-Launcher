@@ -24,7 +24,7 @@ const ABOUT_TEMPLATE = "scripts/third-party/about.hbs";
 const RULE = "-".repeat(80);
 
 /** One npm package as `pnpm licenses list --json` reports it. */
-interface NpmLicensed {
+export interface NpmLicensed {
   name: string;
   versions: string[];
   paths: string[];
@@ -33,7 +33,7 @@ interface NpmLicensed {
 }
 
 /** A node of `pnpm list --json`'s tree. */
-interface NpmNode {
+export interface NpmNode {
   version?: string;
   resolved?: string;
   dependencies?: Record<string, NpmNode>;
@@ -58,7 +58,7 @@ function npmPackages(): NpmLicensed[] {
 }
 
 /** The licence and notice files a package ships, as `name: text`. */
-function licenseFiles(dir: string): string[] {
+export function licenseFiles(dir: string): string[] {
   let names: string[];
   try {
     names = readdirSync(dir);
@@ -71,7 +71,9 @@ function licenseFiles(dir: string): string[] {
     .map((n) => `${n}:\n\n${readFileSync(join(dir, n), "utf8").trimEnd()}`);
 }
 
-function npmNotice(p: NpmLicensed): string {
+/** A package's section of the notices: its name, versions, licence and homepage, then the licence
+ *  texts its copies ship (each text once), or what its package.json declares when none does. */
+export function npmNotice(p: NpmLicensed): string {
   const head = `${p.name} ${p.versions.join(", ")} (${p.license})${p.homepage ? ` <${p.homepage}>` : ""}`;
   const texts = [...new Set(p.paths.flatMap(licenseFiles))];
   const body = texts.length > 0 ? texts.join("\n\n") : `The package ships no licence file; its package.json declares ${p.license}.`;
@@ -102,22 +104,28 @@ function notices(file: string): void {
 }
 
 /** A package URL (purl) for an npm package: `pkg:npm/%40scope/name@version`. */
-function purl(name: string, version: string): string {
+export function purl(name: string, version: string): string {
   return `pkg:npm/${name.replace(/^@/, "%40")}@${version}`;
 }
 
 /** A licence as CycloneDX takes it: an SPDX expression, an SPDX id, or a free-text name. */
-function cdxLicense(license: string): Record<string, unknown> {
+export function cdxLicense(license: string): Record<string, unknown> {
   if (/ (OR|AND|WITH) /.test(license)) return { expression: license };
   if (/^[A-Za-z0-9.+-]+$/.test(license)) return { license: { id: license } };
   return { license: { name: license } };
 }
 
-/** The npm SBOM: every package of the resolved production tree, with its licence and its edges. */
+/** The npm SBOM of this checkout: its resolved production tree, with the packages' licences. */
 function npmSbom(timestamp: string): unknown {
-  const licenses = new Map<string, string>();
-  for (const p of npmPackages()) for (const v of p.versions) licenses.set(`${p.name}@${v}`, p.license);
   const [root] = JSON.parse(run("pnpm", ["list", "--prod", "--depth", "Infinity", "--json"])) as (NpmNode & { name: string })[];
+  return npmSbomOf(root, npmPackages(), timestamp);
+}
+
+/** The npm SBOM of the tree under `root` (`pnpm list`'s): every package once, with its licence
+ *  (`packages`, `pnpm licenses list`'s) and what it depends on. */
+export function npmSbomOf(root: NpmNode & { name: string }, packages: NpmLicensed[], timestamp: string): unknown {
+  const licenses = new Map<string, string>();
+  for (const p of packages) for (const v of p.versions) licenses.set(`${p.name}@${v}`, p.license);
   const components = new Map<string, Record<string, unknown>>();
   const edges = new Map<string, Set<string>>();
   const expanded = new Set<string>();
@@ -190,11 +198,13 @@ function sbom(dir: string): void {
   console.log(`Wrote ${join(dir, "cyberctf-rust.cdx.json")} and ${join(dir, "cyberctf-npm.cdx.json")}`);
 }
 
-const command = process.argv.at(2);
-const out = process.argv.at(3);
-if (command === "notices") notices(out ?? "THIRD_PARTY_NOTICES");
-else if (command === "sbom") sbom(out ?? "sbom");
-else {
-  console.error("usage: third-party.ts notices [file] | sbom [dir]");
-  process.exit(2);
+if (process.argv[1]?.endsWith("third-party.ts")) {
+  const command = process.argv.at(2);
+  const out = process.argv.at(3);
+  if (command === "notices") notices(out ?? "THIRD_PARTY_NOTICES");
+  else if (command === "sbom") sbom(out ?? "sbom");
+  else {
+    console.error("usage: third-party.ts notices [file] | sbom [dir]");
+    process.exit(2);
+  }
 }
