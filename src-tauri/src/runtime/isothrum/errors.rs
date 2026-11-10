@@ -54,8 +54,9 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
             "This lab needs {} {required} or later, and this computer has {found}. Update it, then start the lab again.",
             tool_name(&tool)
         )),
-        RunnerError::Elevation { .. } => {
-            Error::Invalid("Hyper-V needs administrator rights, and the permission prompt was declined. Start the lab again and accept the prompt.".into())
+        // The prompt declined or unanswered, or the elevated session ended (the reason says which).
+        RunnerError::Elevation { reason } => {
+            Error::Invalid(format!("Hyper-V needs administrator rights, and they couldn't be had ({reason}). Start the lab again and accept the prompt."))
         }
         RunnerError::NotReady { detail, .. } => Error::Invalid(format!("The lab started, but didn't become ready: {detail}")),
         RunnerError::SecretMissing { name } => {
@@ -281,7 +282,10 @@ mod tests {
         let old = RunnerError::ToolTooOld { tool: "vagrant".into(), found: "2.3.8".into(), required: "2.4.0".into() };
         assert_eq!(said(old).1, "This lab needs Vagrant 2.4.0 or later, and this computer has 2.3.8. Update it, then start the lab again.");
         let declined = RunnerError::Elevation { reason: "the prompt was declined".into() };
-        assert!(said(declined).1.starts_with("Hyper-V needs administrator rights"));
+        assert_eq!(
+            said(declined).1,
+            "Hyper-V needs administrator rights, and they couldn't be had (the prompt was declined). Start the lab again and accept the prompt."
+        );
         let ceiling = TimedOut::Ceiling { after_s: 21600 };
         assert!(
             said(RunnerError::Timeout { step: "up".into(), timed_out: ceiling })
@@ -327,9 +331,13 @@ mod tests {
 
     #[test]
     fn anything_else_keeps_the_runners_words() {
-        let e = RunnerError::Unbound { at: "lifecycle.up.up".into(), placeholder: "params.X".into() };
+        let e = RunnerError::MachineUnknown { run: "r".into(), machine: "web".into() };
         let text = e.to_string();
-        assert!(said(e).1.ends_with(&text));
+        assert_eq!(said(e).1, text);
+        // A placeholder the manifest names but the run doesn't have: its generated files are wrong.
+        let unbound = RunnerError::Unbound { at: "lifecycle.up.up".into(), placeholder: "params.X".into() };
+        let text = unbound.to_string();
+        assert_eq!(said(unbound).1, format!("Cyber CTF can't run this lab's generated files: {text}"));
     }
 
     #[test]

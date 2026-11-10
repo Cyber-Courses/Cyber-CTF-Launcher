@@ -426,16 +426,11 @@ mod tests {
         // is, no shell wrapping, on every platform.
         let dir = std::env::temp_dir();
         let env = vec![("VAGRANT_DOTFILE_PATH".to_owned(), "/runs/x/vagrant".to_owned())];
-        let c = pty_command(&ShellCommand { program: "vagrant".into(), args: vec!["ssh".into(), "isoloom-controller".into()], cwd: dir.clone(), env });
+        let c = pty_command(&ShellCommand::new("vagrant", ["ssh", "isoloom-controller"], dir.clone()).with_env(env));
         assert_eq!(argv(&c), ["vagrant", "ssh", "isoloom-controller"]);
         assert_eq!(c.get_cwd().map(std::path::PathBuf::from), Some(dir.clone()));
         assert_eq!(c.get_env("VAGRANT_DOTFILE_PATH").map(|v| v.to_string_lossy().into_owned()).as_deref(), Some("/runs/x/vagrant"), "Vagrant finds the VM");
-        let d = pty_command(&ShellCommand {
-            program: "docker".into(),
-            args: ["compose", "exec", "kali", "bash"].iter().map(|s| (*s).into()).collect(),
-            cwd: dir.clone(),
-            env: Vec::new(),
-        });
+        let d = pty_command(&ShellCommand::new("docker", ["compose", "exec", "kali", "bash"], dir.clone()));
         assert_eq!(argv(&d), ["docker", "compose", "exec", "kali", "bash"]);
     }
 

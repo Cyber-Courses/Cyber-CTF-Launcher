@@ -170,7 +170,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn cmd(program: &str, args: &[&str], cwd: &str) -> ShellCommand {
-        ShellCommand { program: program.to_owned(), args: args.iter().map(|a| (*a).to_owned()).collect(), cwd: PathBuf::from(cwd), env: Vec::new() }
+        ShellCommand::new(program, args.iter().copied(), PathBuf::from(cwd))
     }
 
     /// The shell into a Vagrant run's box: `vagrant` needs the run's state folder to find the VM.
