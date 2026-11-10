@@ -521,12 +521,16 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn docker_without_its_apt_repository_stops_and_says_where_to_get_it() {
-        // Only the branch past the distro check: `dist` empty, nothing else run.
+        // Only the branch past the distro check: `dist` empty, nothing else run. Regression: the
+        // slice began at the distro detection's own `[ -n "$dist" ]`, a syntax error that never ran
+        // the refusal; bash echoes the failing line (URL included), so it passed on macOS only.
         let s = docker_script(None);
-        let refuse = &s[s.find("[ -n \"$dist\" ]").unwrap()..s.find("; if [ -n \"$own\" ]").unwrap()];
+        let refuse = &s[s.find("[ -n \"$dist\" ] ||").unwrap()..s.find("; if [ -n \"$own\" ]").unwrap()];
         let out = std::process::Command::new("sh").arg("-c").arg(format!("dist=''; {refuse}; echo installed")).output().unwrap();
-        assert!(!out.status.success() && !String::from_utf8_lossy(&out.stdout).contains("installed"));
-        assert!(String::from_utf8_lossy(&out.stderr).contains("https://docs.docker.com/engine/install/"));
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "the refusal's own exit, not a syntax error: {err}");
+        assert!(!String::from_utf8_lossy(&out.stdout).contains("installed"));
+        assert!(err.starts_with("Cyber CTF installs Docker on Debian") && err.contains("https://docs.docker.com/engine/install/"), "{err}");
     }
 
     #[cfg(unix)]
