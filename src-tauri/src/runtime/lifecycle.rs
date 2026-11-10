@@ -9,6 +9,7 @@ use super::host::{self, Host};
 use super::inflight::{Action, DeployGuard, lock_lab};
 use super::launch::policy_allows;
 use super::paths::{lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm};
+use super::providers::Provider;
 use super::{Control, LabRef, Park, Runtime, isothrum, lab, server};
 use crate::error::{Error, Result};
 
@@ -73,7 +74,7 @@ fn shuts_down(target: lab::Target) -> bool {
 /// down), unless the provider has no suspend (vagrant-qemu answers "this provider doesn't
 /// support this action").
 fn pauses(target: lab::Target, provider: Option<&str>) -> bool {
-    target != lab::Target::Docker && provider != Some("qemu")
+    target != lab::Target::Docker && provider.and_then(Provider::from_id) != Some(Provider::Qemu)
 }
 
 /// What can be done on a lab where it runs (`host`, on `provider` as its status reads it): pause
