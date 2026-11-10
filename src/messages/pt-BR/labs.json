@@ -40,6 +40,7 @@
     "checking": "Verificando se ainda dá para resolver…",
     "solvable": "Ainda dá para resolver.",
     "unsolvable": "Não dá mais para resolvê-lo. Redefina-o para ter um lab limpo.",
+    "checkFailed": "Não foi possível executar a verificação: {why}",
     "startThemHint": "Iniciar as máquinas fora do ar, mantendo o estado delas",
     "startThem": "Iniciá-las",
     "resetting": "Redefinindo…",

@@ -40,6 +40,7 @@
     "checking": "Prüfe, ob es noch lösbar ist…",
     "solvable": "Noch lösbar.",
     "unsolvable": "Es ist nicht mehr lösbar. Setze es zurück, um ein sauberes Lab zu erhalten.",
+    "checkFailed": "Die Prüfung konnte nicht ausgeführt werden: {why}",
     "startThemHint": "Ausgefallene Maschinen starten, ihr Zustand bleibt erhalten",
     "startThem": "Starten",
     "resetting": "Wird zurückgesetzt…",

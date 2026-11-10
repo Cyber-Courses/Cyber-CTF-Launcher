@@ -40,6 +40,7 @@
     "checking": "Checking whether it's still solvable…",
     "solvable": "Still solvable.",
     "unsolvable": "It can no longer be solved. Reset it to get a clean lab.",
+    "checkFailed": "The check couldn't run: {why}",
     "startThemHint": "Start the machines that are down, keeping their state",
     "startThem": "Start them",
     "resetting": "Resetting…",

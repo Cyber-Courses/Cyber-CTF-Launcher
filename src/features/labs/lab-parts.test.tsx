@@ -415,13 +415,18 @@ describe("useLabCheck and HealthBanner", () => {
     expect(calls.filter((c) => c.cmd === "lab_check")).toHaveLength(2);
   });
 
-  it("reports a check that errors as not solvable", async () => {
+  it("keeps a check that couldn't run apart from one that ran and failed", async () => {
+    // Regression: a failed call (the runner busy, the lab out of reach) was drawn as the lab being
+    // no longer solvable, with the red mark of a check that ran and failed.
     installTauri({
       lab_check: () => rejectWith("docker unreachable"),
     });
     const { result } = renderHook(() => useLabCheck("lab-y", "DOCKER", { running: true, downCount: 1 }));
     await flush();
-    expect(result.current[0]).toMatchObject({ ok: false, output: "docker unreachable" });
+    expect(result.current[0]).toEqual({ kind: "failed", why: "docker unreachable" });
+    render(<HealthBanner down={["api"]} check={result.current[0]} busy={false} resetting={false} />);
+    expect(screen.getByText("The check couldn't run: docker unreachable")).toBeTruthy();
+    expect(screen.queryByText(/no longer be solved/)).toBeNull();
   });
 
   it("checks a VM lab too, by its runtime: the checks run wherever and however the lab runs", async () => {

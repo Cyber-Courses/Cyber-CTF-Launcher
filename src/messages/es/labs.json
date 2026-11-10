@@ -40,6 +40,7 @@
     "checking": "Comprobando si todavía se puede resolver…",
     "solvable": "Todavía se puede resolver.",
     "unsolvable": "Ya no se puede resolver. Restablécelo para tener un lab limpio.",
+    "checkFailed": "No se pudo ejecutar la comprobación: {why}",
     "startThemHint": "Inicia las máquinas caídas, conservando su estado",
     "startThem": "Iniciarlas",
     "resetting": "Restableciendo…",

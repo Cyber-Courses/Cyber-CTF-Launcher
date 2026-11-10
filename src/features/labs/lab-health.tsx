@@ -8,11 +8,14 @@ import { labCheck, type LabCheck, type Runtime } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
 
-type CheckState = LabCheck | "checking" | null;
+/** The solvability check as the banner shows it: running, its answer, or a check that couldn't
+ *  run at all (`failed`: the call itself failed, with why), which says nothing about the lab. */
+export type CheckState = LabCheck | "checking" | { kind: "failed"; why: string } | null;
 
 /** When a machine goes down, check (once per incident) whether the lab is still solvable: its
  *  checks, run where it runs and in the form it was started in (the backend resolves both from
- *  the catalogue's `runtime`). */
+ *  the catalogue's `runtime`). A call that fails (the runner busy, the lab out of reach) is kept
+ *  apart from a check that ran and failed: it doesn't make the lab unsolvable. */
 export function useLabCheck(labId: string, runtime: Runtime, { running, downCount }: { running: boolean; downCount: number }) {
   const [check, setCheck] = useState<CheckState>(null);
   const done = useRef(false);
@@ -32,7 +35,7 @@ export function useLabCheck(labId: string, runtime: Runtime, { running, downCoun
         if (alive) setCheck(c);
       })
       .catch((e: unknown) => {
-        if (alive) setCheck({ available: true, ok: false, output: describeError(e), results: [] });
+        if (alive) setCheck({ kind: "failed", why: describeError(e) });
       })
       .finally(() => {
         finished = true;
@@ -101,13 +104,20 @@ export function HealthBanner({
   );
 }
 
-/** What the solvability check says under the banner: running, or its answer with what fails. */
+/** What the solvability check says under the banner: running, that it couldn't run (and why), or
+ *  its answer with what fails. */
 function CheckNote({ check }: { check: CheckState }) {
   const t = useT();
   if (check === "checking")
     return (
       <p className="mt-0.5 flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
         <Spinner className="size-3" /> {t("labs.health.checking")}
+      </p>
+    );
+  if (check && "kind" in check)
+    return (
+      <p className="mt-0.5 flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
+        <AlertTriangle className="size-3.5 text-warning" /> {t("labs.health.checkFailed", { why: check.why })}
       </p>
     );
   if (!check?.available) return null;

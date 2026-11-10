@@ -40,6 +40,7 @@
     "checking": "Vérification que le lab est encore résoluble…",
     "solvable": "Toujours résoluble.",
     "unsolvable": "Il n’est plus possible de le résoudre. Réinitialisez-le pour retrouver un lab propre.",
+    "checkFailed": "La vérification n’a pas pu s’exécuter : {why}",
     "startThemHint": "Démarrer les machines à l’arrêt, en conservant leur état",
     "startThem": "Les démarrer",
     "resetting": "Réinitialisation…",
