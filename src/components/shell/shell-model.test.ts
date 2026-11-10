@@ -36,9 +36,8 @@ describe("engineSummary", () => {
       docker: { installed: true, version: "Docker version 29.5.3, build d1c06ef" },
       dockerRunning: true,
       dockerEngine: "orbstack",
-      vmProviders: [],
       ...patch,
-      ...(patch.vmProviders ? hypervisors(patch.vmProviders) : { readyHypervisors: [] }),
+      ...hypervisors(patch.vmProviders ?? []),
     }) as unknown as SystemReport;
 
   it("names the running engine with its version", () => {
@@ -133,9 +132,8 @@ describe("shell model: edges", () => {
       docker: { installed: true, version: null },
       dockerRunning: true,
       dockerEngine: null,
-      vmProviders: [],
       ...patch,
-      ...(patch.vmProviders ? hypervisors(patch.vmProviders) : { readyHypervisors: [] }),
+      ...hypervisors(patch.vmProviders ?? []),
     }) as SystemReport;
 
   describe("activeLabs: edges", () => {

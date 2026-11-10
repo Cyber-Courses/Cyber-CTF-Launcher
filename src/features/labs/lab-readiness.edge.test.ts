@@ -16,9 +16,8 @@ const report = (over: Partial<SystemReport> = {}) =>
     docker: { installed: true },
     dockerRunning: true,
     terraform: { installed: false },
-    vmProviders: [],
     ...over,
-    ...(over.vmProviders ? hypervisors(over.vmProviders) : { readyHypervisors: [] }),
+    ...hypervisors(over.vmProviders ?? []),
   }) as unknown as SystemReport;
 const cloudLab = (providers: string[]) => ({ runtime: { runtime: "CLOUD", architectures: [], providers } }) as unknown as Lab;
 const vmLab = (providers: string[]) => ({ runtime: { runtime: "VM", architectures: [], providers } }) as unknown as Lab;

@@ -48,9 +48,8 @@ const report = (patch: Partial<SystemReport> = {}) =>
     dockerRunning: true,
     dockerDenied: false,
     vagrant: tool(true, "Vagrant 2.4.1"),
-    vmProviders: [],
     ...patch,
-    ...(patch.vmProviders ? hypervisors(patch.vmProviders) : { readyHypervisors: [] }),
+    ...hypervisors(patch.vmProviders ?? []),
   }) as SystemReport;
 
 describe("usage", () => {
