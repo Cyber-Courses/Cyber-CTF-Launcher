@@ -252,11 +252,8 @@ fn connection_secrets(tf_env: &[(String, String)]) -> Secrets {
 /// install of the same lab must not run a second Terraform operation over the same state, which
 /// could corrupt `terraform.tfstate`. Returns the runs it couldn't destroy, with why, so the
 /// caller can surface and retry them; a run whose account can't be resolved, or whose lab is
-/// busy, is left for a later sweep.
-///
-/// # Errors
-///
-/// Never returns an error itself: a sweep that can't even list the runs yields that as one entry.
+/// busy, is left for a later sweep. A sweep that can't even list the runs yields that as one
+/// entry.
 pub(crate) async fn reap_expired<F, L, G>(home: &Path, now: SystemTime, account: F, lock: L) -> Vec<(String, Error)>
 where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
@@ -291,12 +288,17 @@ where
             log::warn!("auto-stop: {name} is past its stop time, but its account {host} can't be used now; left for a later sweep");
             continue;
         };
-        // Its lab's files generated again first when an earlier version of the launcher made them.
-        if let Ok(dir) = lab_dir_in(home, id)
-            && let Err(e) = regenerate::current(&record.manifest, &dir, regenerate::lab_target(record.target)).await
-        {
-            failed.push((name, e));
-            continue;
+        // Its lab's files generated again first when an earlier version of the launcher made them;
+        // with its lab no longer installed, the destroy goes on with what its run kept (logged:
+        // those files may be an older launcher's).
+        match lab_dir_in(home, id) {
+            Ok(dir) => {
+                if let Err(e) = regenerate::current(&record.manifest, &dir, regenerate::lab_target(record.target)).await {
+                    failed.push((name, e));
+                    continue;
+                }
+            }
+            Err(e) => log::warn!("auto-stop: {name}'s files can't be generated again ({e}); destroying it with the ones its run kept"),
         }
         let open = runner.open(&record.manifest, Some(record.name.clone())).map(|r| r.with_connection(connection_secrets(&tf_env)));
         let sink = progress::silent();
@@ -409,7 +411,11 @@ mod tests {
             asked.lock().unwrap().push(host.to_string());
             (host == "aws1").then(|| vec![("AWS_ACCESS_KEY_ID".to_string(), "AKIA".to_string())])
         };
+        crate::testing::logs::take_warnings();
         let failed = reap_expired(&home, SystemTime::now(), account, |_| Some(())).await;
+        // Its lab isn't installed: its files can't be generated again, which is said.
+        let warned = crate::testing::logs::take_warnings();
+        assert!(warned.iter().any(|w| w.starts_with("auto-stop: cyberctf-web's files can't be generated again (lab `web` is not installed)")), "{warned:?}");
         assert_eq!(asked.into_inner().unwrap(), ["gone1", "aws1"], "every expired run's account is looked up");
         let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, ["cyberctf-web"], "{failed:?}");

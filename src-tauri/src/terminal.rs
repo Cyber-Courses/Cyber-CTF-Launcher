@@ -36,10 +36,20 @@ struct Session {
 /// thread): a killed child that is never waited on stays a zombie while the app runs. The shell's
 /// `exec`/`ssh` ends with it; the box stays up until the learner detaches it.
 fn end(mut sess: Session) {
-    let _ = sess.child.kill();
+    kill_shell(sess.child.as_mut());
     std::thread::spawn(move || {
-        let _ = sess.child.wait();
+        if let Err(e) = sess.child.wait() {
+            log::warn!("couldn't reap an attack-box shell ({:?}): {e}", sess.child.process_id());
+        }
     });
+}
+
+/// Kills a session's shell; one that can't be killed is logged: its `docker exec` or ssh is left
+/// running, and its terminal with it.
+fn kill_shell(child: &mut (dyn Child + Send + Sync)) {
+    if let Err(e) = child.kill() {
+        log::warn!("couldn't end an attack-box shell ({:?}): {e}", child.process_id());
+    }
 }
 
 /// A session's input, written to its PTY by a thread of its own. A shell that isn't reading (a
@@ -284,7 +294,7 @@ pub fn close_window(label: &str) {
 pub fn close_all() {
     let all: Vec<Session> = with_sessions(|s| s.drain().map(|(_, v)| v).collect());
     for mut sess in all {
-        let _ = sess.child.kill();
+        kill_shell(sess.child.as_mut());
     }
 }
 
@@ -301,6 +311,45 @@ pub(crate) fn shell_window(id: &str, runtime: Runtime) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A shell whose kill fails (`EPERM`, say).
+    #[derive(Debug)]
+    struct Unkillable;
+
+    impl portable_pty::ChildKiller for Unkillable {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        }
+        fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+            Box::new(Unkillable)
+        }
+    }
+
+    impl Child for Unkillable {
+        fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+            Ok(None)
+        }
+        fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+            Ok(portable_pty::ExitStatus::with_exit_code(0))
+        }
+        fn process_id(&self) -> Option<u32> {
+            Some(4242)
+        }
+        #[cfg(windows)]
+        fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> {
+            None
+        }
+    }
+
+    /// Regression: a shell that couldn't be killed was dropped silently, its `docker exec` or ssh
+    /// left running.
+    #[test]
+    fn a_shell_that_cant_be_killed_is_logged() {
+        crate::testing::logs::take_warnings();
+        kill_shell(&mut Unkillable);
+        let warned = crate::testing::logs::take_warnings();
+        assert!(warned.len() == 1 && warned[0].starts_with("couldn't end an attack-box shell (Some(4242)): "), "{warned:?}");
+    }
 
     #[test]
     fn split_characters_wait_for_their_last_byte() {
