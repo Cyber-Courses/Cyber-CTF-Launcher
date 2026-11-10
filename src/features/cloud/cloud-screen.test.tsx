@@ -7,6 +7,7 @@ import { AccountRow } from "@/features/cloud/account-row";
 import { AccountsPanel, BudgetPanel, RunningCloudLabs } from "@/features/cloud/cloud-panels";
 import type { Lab } from "@/features/labs/use-labs";
 import { answer } from "@/lib/dev-mock";
+import { invoiceStatus } from "@/lib/dev-mock/labs";
 import type { LabStatus, ServerHost, ServerList, ServerTest } from "@/lib/tauri";
 import { commands, installTauri, rejects, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -239,6 +240,22 @@ describe("AccountRow", () => {
     row(account({ monthlyLimit: 25 }), undefined, null);
     expect(document.body.textContent).toContain("budget $25/mo");
     expect(document.body.textContent).not.toContain("this month");
+  });
+});
+
+describe("CloudScreen's Stop", () => {
+  it("says why a Stop was refused, though the refusal writes no line to the lab's log", async () => {
+    const user = userEvent.setup();
+    const why = "Another operation on this lab is already in progress; wait for it to finish.";
+    installTauri({
+      lab_status: (a) => (a?.id === "lab-invoice" ? { ...invoiceStatus, host: aws.name, hostId: aws.id } : answer("lab_status", a)),
+      lab_stop: rejects({ code: "alreadyInProgress", message: why }),
+    });
+    await renderScreen();
+    expect(document.body.textContent).not.toContain(why);
+    await user.click(screen.getByRole("button", { name: /stop/i }));
+    await flush(50);
+    expect(document.body.textContent).toContain(why);
   });
 });
 

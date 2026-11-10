@@ -6,10 +6,8 @@ import { useLabActions } from "@/features/labs/use-lab-actions";
 import { budgetedAccounts, cloudAccounts, isOverBudget, labsOnAccounts } from "@/features/cloud/cloud-model";
 import { useHostTests, useServerList } from "@/features/servers/use-server-list";
 import { serverMonthToDateCost, serverOpenSetup, serverRemove, type CloudProvider, type ServerHost } from "@/lib/tauri";
-import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
 import { ignore } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
-import { failureText, isFailedLine } from "@/lib/log-marks";
 
 /** Month-to-date spend, only for accounts that set a budget (Cost Explorer costs per call), read
  *  with each account's own credentials: the figure the launch budget gate checks. `hosts` is the
@@ -46,10 +44,9 @@ export function useCloudPage() {
   };
 
   async function stopLab(l: Lab) {
-    await stop(l);
-    // A failure ends the run's log with "✗ <why>": show it here too.
-    const last = getDeploySnapshot().runs[l.id]?.logs.at(-1);
-    if (last !== undefined && isFailedLine(last)) setError(failureText(last).trim());
+    // Why the stop failed or was refused (another operation on the lab), shown here too.
+    const why = await stop(l);
+    if (why) setError(why);
   }
 
   return {
