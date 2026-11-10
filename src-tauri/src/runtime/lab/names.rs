@@ -68,8 +68,8 @@ pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> (PathBuf, Target) {
 /// The environment Isoloom's Vagrantfiles read to reach an ESXi host (the `vagrant-vmware-esxi`
 /// plugin's settings), also the vagrant target's run-manifest params by the same names.
 pub mod esxi {
-    pub const HOSTNAME: &str = "ESXI_HOSTNAME";
-    pub const HOSTPORT: &str = "ESXI_HOSTPORT";
+    pub const HOSTNAME: &str = crate::runtime::isothrum::ESXI_HOSTNAME;
+    pub const HOSTPORT: &str = crate::runtime::isothrum::ESXI_HOSTPORT;
     pub const USERNAME: &str = "ESXI_USERNAME";
     pub const PASSWORD: &str = "ESXI_PASSWORD";
     pub const DATASTORE: &str = "ESXI_DATASTORE";

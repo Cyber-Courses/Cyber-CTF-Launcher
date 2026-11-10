@@ -186,7 +186,7 @@ fn id_after_labs(path: &str) -> Option<String> {
     let segments: Vec<&str> = path.split('/').collect();
     let under_labs = |i: usize| segments.get(i) == Some(&"labs") && segments.get(i + 1).is_some_and(|id| is_lab_id(id));
     // A lab VM's own layout (`.isoloom/...`).
-    let lab_layout = |i: usize| segments.get(i + 2).is_some_and(|d| d.starts_with(".isoloom"));
+    let lab_layout = |i: usize| segments.get(i + 2).is_some_and(|d| d.starts_with(super::isothrum::OUTPUT_DIR));
     let at = (0..segments.len()).rev().find(|&i| under_labs(i) && lab_layout(i)).or_else(|| (0..segments.len()).rev().find(|&i| under_labs(i)))?;
     Some(segments[at + 1].to_string())
 }

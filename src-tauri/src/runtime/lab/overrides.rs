@@ -37,7 +37,7 @@ pub fn apply(files: Vec<GeneratedFile>, o: &Overrides) -> Vec<GeneratedFile> {
 /// Whether `path` is the local Docker target's Compose file: `<output folder>/docker/compose.yml`.
 fn is_compose_file(path: &str) -> bool {
     match path.split('/').collect::<Vec<_>>().as_slice() {
-        [out, "docker", "compose.yml"] => out.strip_prefix(isoloom_targets::OUTPUT_DIR).is_some_and(|rest| rest.is_empty() || rest.starts_with('-')),
+        [out, "docker", "compose.yml"] => out.strip_prefix(crate::runtime::isothrum::OUTPUT_DIR).is_some_and(|rest| rest.is_empty() || rest.starts_with('-')),
         _ => false,
     }
 }

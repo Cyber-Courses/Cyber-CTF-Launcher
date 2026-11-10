@@ -89,7 +89,7 @@ fn copy_tree_rooted(src: &Path, dst: &Path, root: &Path) -> std::io::Result<()> 
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let name = entry.file_name();
-        if [".isoloom", ".git", ".vagrant"].iter().any(|skip| name == **skip) {
+        if [super::isothrum::OUTPUT_DIR, ".git", ".vagrant"].iter().any(|skip| name == **skip) {
             continue;
         }
         let (from, to) = (entry.path(), dst.join(&name));

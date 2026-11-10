@@ -54,7 +54,7 @@ pub(super) fn write_lab(work: &Path, target: lab::Target) -> Result<PathBuf> {
 /// generating its files, so created nothing.
 pub(super) fn kept_lab(work: &Path) -> Option<PathBuf> {
     let dir = work.join("lab");
-    dir.join(".isoloom").exists().then_some(dir)
+    dir.join(crate::runtime::isothrum::OUTPUT_DIR).exists().then_some(dir)
 }
 
 /// Removes the test lab a previous test kept in `work` ([`kept_lab`]) from the server, its run

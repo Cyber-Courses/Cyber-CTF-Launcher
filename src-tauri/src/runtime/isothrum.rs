@@ -29,6 +29,9 @@ pub(crate) use server::{ServerPlace, ServerRun};
 /// The form a run was started in, as the runner records it: the run manifest's target (its types,
 /// `isoloom-manifest`, are read here alone).
 pub(crate) use isoloom_manifest::Target as RunTarget;
+/// The names Isoloom's generated files share with a run outside its manifest (`isoloom-manifest`'s
+/// contract), for the rest of the runtime: the output folder, the ESXi host's variables.
+pub(crate) use isoloom_manifest::contract::{ESXI_HOSTNAME, ESXI_HOSTPORT, OUTPUT_DIR};
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -556,7 +559,7 @@ fn start_options(inputs: Inputs<'_>, provider: Option<&str>) -> RunOptions {
     if let Some(p) = provider {
         opts = opts.with_provider(p);
     }
-    if inputs.default_ports { opts.with_param("ISOLOOM_PUBLISH_FIXED", "1") } else { opts }
+    if inputs.default_ports { opts.with_param(isoloom_manifest::contract::PUBLISH_FIXED, "1") } else { opts }
 }
 
 #[cfg(test)]
