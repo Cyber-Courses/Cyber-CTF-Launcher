@@ -23,7 +23,7 @@ The product jewel is **Cyber CTF emerald**. This file describes the system as it
 | `src/app/topology.css`                          | The network diagram (React Flow) styles, token-driven                                                                                                      |
 | `src/app/layout.tsx`                            | Fonts: Geist and Geist Mono (`geist` package), Newsreader (`src/app/fonts`, variable opsz + wght, normal and italic). Nothing loads from Google at runtime |
 | `src/lib/appearance.ts`, `public/appearance.js` | The Dark / Black / Light preference, applied before first paint and synced across windows                                                                  |
-| `src/components/window-title-bar.tsx`           | `WindowTitleBar`, every window's title bar (see Windows below)                                                                                             |
+| `src/components/window-title-bar.tsx`           | `WindowTitleBar` (a secondary window's header row) and `WindowControls` (the window's buttons), see Windows below                                          |
 | `src/components/brand/mark.tsx`                 | `CtfMark`, the layered up-chevron, coloured by `--mark-top` / `--mark-base`                                                                                |
 | `src/components/ui/*`                           | The primitives below                                                                                                                                       |
 | `src/lib/dev-mock/`                             | Development only: `pnpm dev` then `http://localhost:3206/?mock` previews every screen in a browser with sample data                                        |
@@ -40,29 +40,36 @@ opened from Rust opens in the main window's theme (`app/window.rs`), so it never
 
 ## Windows
 
-The system draws the window frame only on macOS, where the page's title bar sits under the
-traffic lights (`titleBarStyle: Overlay`, hidden title). On Linux and Windows the windows have no
-system frame (`decorations: false`, set in `src-tauri/src/app/window.rs`, never in
-`tauri.conf.json`): a window manager such as xfwm4 drew it from its own theme, white around the
-dark app. Every window's page starts with `WindowTitleBar`, which `useWindowFrame` (`lib/platform`)
-turns into:
+The system draws the window frame only on macOS, where the traffic lights sit over the page
+(`titleBarStyle: Overlay`, hidden title). On Linux and Windows the windows have no system frame
+(`decorations: false`, set in `src-tauri/src/app/window.rs`, never in `tauri.conf.json`): a window
+manager such as xfwm4 drew it from its own theme, white around the dark app. Every system has the
+same layout, with no separate title bar: the page's own header row is the title bar, a
+`data-tauri-drag-region` (drag; a double-click maximizes or restores, Tauri's drag region
+script). `useWindowFrame` (`lib/platform`) says only who draws the window's buttons:
 
-- **macOS:** a `data-tauri-drag-region` band with `pl-20` for the traffic lights; the `title` only
-  when given (Settings).
-- **Linux and Windows:** the bar with the title (the `title` given, else the window's own) and
-  minimize, maximize/restore (its label and icon follow the window's state) and close, in the
-  tokens of the appearance. Close is `close()`, never `destroy()`: the quit guard
-  (`app/quit.rs`) sees it as it sees the system's button. A double-click on the bar maximizes or
-  restores (Tauri's drag region script); Tauri resizes the window from a 5px inset at its edges,
-  so the buttons keep clear of them. On Linux a hairline draws the window's edge (no frame or
-  shadow does); Windows keeps its own shadow and thin border (`shadow: true`).
-- **A browser** (the dev preview): nothing, except a `toolbar` bar (the shell's, the
-  onboarding's), which keeps the page's own controls.
+- **Main window:** the sidebar runs to the window's top; `ShellHeader` (3rem, the breadcrumb and
+  the engine status) is the title bar. On macOS the sidebar's top keeps a 2.5rem band for the
+  traffic lights above the brand; on Linux and Windows the brand sits in a 3rem row centred on
+  the header's line.
+- **Secondary windows** (Settings, the setups, the shell, the onboarding, the crash screen):
+  `WindowTitleBar`, a 2.75rem row with a centred `title` when given (Settings), `pl-20` on macOS
+  for the traffic lights. A `toolbar` row holds the page's controls (the shell's, the
+  onboarding's) and is the only one a browser (the dev preview) shows.
+- **The window's buttons** (`WindowControls`, at the end of both rows, Linux and Windows only):
+  minimize, maximize/restore (its label and icon follow the window's state) and close, 46px wide
+  and the row's full height, square in the window's top-right corner, 1px glyphs in
+  `muted-foreground`. Hover is a `glass-2` fill; close turns `window-close` with a
+  `window-close-ink` glyph (the system's red and white, the same in every mode). Close is
+  `close()`, never `destroy()`: the quit guard (`app/quit.rs`) sees it as it sees the system's
+  button. Tauri resizes a frameless window from a band inside its edges (5px on Linux, the top
+  4px on Windows, none when maximized): the buttons start past it and their fill runs under it,
+  so they look flush and never take a click meant for resizing. A drag-region spacer keeps the
+  row's content clear of them. On Linux a hairline draws the window's edge (no frame or shadow
+  does) while it is not maximized; Windows keeps its own shadow and thin border (`shadow: true`).
 
 The buttons' permissions (`core:window:allow-minimize`, `allow-toggle-maximize`, `allow-close`)
 are granted on Linux and Windows only, to every window (`capabilities/window-controls.json`).
-The main window's bar spans the window above the sidebar; on macOS its traffic lights sit in the
-sidebar's own band instead.
 
 ## Tokens
 
@@ -80,6 +87,7 @@ Use the Tailwind names (`bg-card`, `text-faint`...). Never a hex value or a pale
 | `border`, `input` (`border-strong`), `edge`                                                         | Hairlines, control rings, lit top edge                                      |
 | `success`, `warning`, `destructive`                                                                 | Status only                                                                 |
 | `jewel`, `jewel-text`, `jewel-solid`, `jewel-on` (+ `--jewel-top`, `--jewel-bottom`, `--jewel-rgb`) | The emerald accent                                                          |
+| `window-close`, `window-close-ink`                                                                  | The window's close button under the pointer (Linux, Windows)                |
 | `primary`, `ring`, `link`                                                                           | Aliases of the jewel                                                        |
 | `you`, `you-text`                                                                                   | The player's attacker in the network diagram (amethyst reads as "you")      |
 | `--hue-*`                                                                                           | Categorical colours for diagram service types (data, not status)            |

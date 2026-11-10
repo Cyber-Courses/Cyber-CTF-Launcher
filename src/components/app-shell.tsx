@@ -24,7 +24,6 @@ import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
 import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { useActiveOperations } from "@/features/labs/runs/operations";
 import { useT } from "@/lib/i18n";
-import { useWindowFrame } from "@/lib/platform";
 import { WindowTitleBar } from "@/components/window-title-bar";
 
 /**
@@ -68,7 +67,8 @@ export function AppShell() {
 
   if (!mount.ready)
     return (
-      // The title bar already, with the window's own title: this is the Settings window too.
+      // The title bar already (the window's buttons on Linux and Windows): this is the Settings
+      // window too.
       <div className="flex h-dvh flex-col bg-background">
         <WindowTitleBar />
       </div>
@@ -124,50 +124,42 @@ function MainWindow({ nav, system, session, chrome, palette, labTitle, onLabChan
   const { tab, openLab, navigate, findALab } = nav;
   const commands = paletteCommands(t, sidebarLabs.labs, { findLab: findALab, openSettings: openSettingsWindow, navigate });
 
-  // `overflow-clip`, not `hidden`: a hidden box can still be scrolled (focus, scrollIntoView, a
-  // wheel over the sidebar), which shifted the whole window up under the titlebar.
+  // The sidebar and the main column both run to the window's top on every system: the column's
+  // header is the title bar (ShellHeader). `overflow-clip`, not `hidden`: a hidden box can still
+  // be scrolled (focus, scrollIntoView, a wheel over the sidebar), which shifted the whole window
+  // up under the titlebar.
   return (
-    <div className="flex h-dvh flex-col overflow-clip bg-background text-foreground">
-      <MainTitleBar />
-      <div className="flex min-h-0 flex-1 overflow-clip">
-        <CommandPalette
-          key={palette.open ? "open" : "closed"}
-          open={palette.open}
-          onClose={() => {
-            palette.setOpen(false);
-          }}
-          commands={commands}
-        />
-        <QuitGuard />
-        <PortModePrompt />
-        <OfflineStartPrompt />
-        <Toaster />
-        <Sidebar
-          tab={tab}
-          isMac={chrome.isMac}
-          version={chrome.version}
-          labCount={sidebarLabs.labs.length}
-          activeLabs={sidebarLabs.active}
-          auth={session.auth}
-          onFind={() => {
-            palette.setOpen(true);
-          }}
-          onNavigate={navigate}
-          onOpenSettings={openSettingsWindow}
-          onAuthChange={session.changed}
-        />
+    <div className="flex h-dvh overflow-clip bg-background text-foreground">
+      <CommandPalette
+        key={palette.open ? "open" : "closed"}
+        open={palette.open}
+        onClose={() => {
+          palette.setOpen(false);
+        }}
+        commands={commands}
+      />
+      <QuitGuard />
+      <PortModePrompt />
+      <OfflineStartPrompt />
+      <Toaster />
+      <Sidebar
+        tab={tab}
+        isMac={chrome.isMac}
+        version={chrome.version}
+        labCount={sidebarLabs.labs.length}
+        activeLabs={sidebarLabs.active}
+        auth={session.auth}
+        onFind={() => {
+          palette.setOpen(true);
+        }}
+        onNavigate={navigate}
+        onOpenSettings={openSettingsWindow}
+        onAuthChange={session.changed}
+      />
 
-        <MainColumn tab={tab} openLab={openLab} system={system} session={session} labTitle={labTitle} onLabChange={onLabChange} onNavigate={navigate} />
-      </div>
+      <MainColumn tab={tab} openLab={openLab} system={system} session={session} labTitle={labTitle} onLabChange={onLabChange} onNavigate={navigate} />
     </div>
   );
-}
-
-/** The main window's title bar where the page draws all of it (Linux, Windows): across the
- *  window, above the sidebar. On macOS the traffic lights sit in the sidebar's own band. */
-function MainTitleBar() {
-  const frame = useWindowFrame();
-  return frame === "overlay" ? null : <WindowTitleBar title="Cyber CTF" className="border-b border-border" />;
 }
 
 /** The main column: the header with its breadcrumb, the update banner and the open screen. */

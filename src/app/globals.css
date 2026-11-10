@@ -49,6 +49,11 @@
   --warning: #fbbf24;
   --destructive: #f87171;
 
+  /* A window's close button under the pointer, on Linux and Windows (src/components/
+     window-title-bar.tsx): the system's own red with a white glyph, the same in every mode. */
+  --window-close: #c42b1c;
+  --window-close-ink: #ffffff;
+
   /* Product jewel: Cyber CTF emerald */
   --jewel: #34d399;
   --jewel-text: #6ee7b7;
@@ -178,6 +183,8 @@
   --color-you: var(--you);
   --color-you-text: var(--you-text);
   --color-destructive: var(--destructive);
+  --color-window-close: var(--window-close);
+  --color-window-close-ink: var(--window-close-ink);
   --color-success: var(--success);
   --color-warning: var(--warning);
 

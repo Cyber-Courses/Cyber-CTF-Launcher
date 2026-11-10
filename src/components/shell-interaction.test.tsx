@@ -53,7 +53,7 @@ const shell = () => openMainWindow(60);
 const current = () => screen.getByRole("button", { current: "page" }).textContent;
 /** The open palette's search field. */
 const field = () => must(screen.getByRole("dialog").querySelector("input"), "the palette's search field");
-const crumbs = () => document.querySelector("[data-tauri-drag-region].h-12")?.textContent ?? "";
+const crumbs = () => document.querySelector("main > [data-tauri-drag-region]")?.textContent ?? "";
 
 describe("deep links into the main window", () => {
   // First in the file: the link the app was opened with is read once per session (module state).

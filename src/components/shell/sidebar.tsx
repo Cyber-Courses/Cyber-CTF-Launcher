@@ -86,10 +86,11 @@ function SidebarTop({ isMac, version, onFind }: { isMac: boolean; version: strin
   const t = useT();
   return (
     <>
-      {/* macOS titlebar band (traffic lights) inside the column, so the divider runs to the top.
-          Linux and Windows have the window's title bar above the whole window instead. */}
+      {/* The column runs to the window's top on every system. macOS: a band for the traffic
+          lights, the brand below it. Linux and Windows (the window's buttons are at the header's
+          end): the brand in the band, centred on the header beside it. */}
       {isMac && <div data-tauri-drag-region className="h-10 shrink-0" />}
-      <div data-tauri-drag-region className={`flex items-center gap-2.5 px-3.5 pb-3 ${isMac ? "" : "pt-4"}`}>
+      <div data-tauri-drag-region className={cn("flex shrink-0 items-center gap-2.5 px-3.5", isMac ? "pb-3" : "h-12")}>
         <CtfMark className="pointer-events-none size-[1.35rem]" />
         <span className="pointer-events-none text-[0.875rem] font-semibold tracking-tight">Cyber CTF</span>
         {version && <span className="pointer-events-none ml-auto font-mono text-[0.625rem] text-faint">v{version}</span>}

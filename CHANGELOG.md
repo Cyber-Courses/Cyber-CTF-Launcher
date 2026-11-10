@@ -71,16 +71,19 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
-- **The launcher draws its own title bar on Linux and Windows.** Every window (the main one,
-  Settings, the setup windows, the attack box shells) opens without the system's frame and shows
-  the launcher's bar instead: the window's title, then minimize, maximize/restore and close in
-  the chosen appearance (Dark, Black or Light), reachable from the keyboard and labelled in the
-  app's language. Under XFCE and other window managers that draw the frame from their own theme,
-  a dark launcher no longer sits in a white frame. The bar drags the window, a double-click on it
-  maximizes or restores it, and the window still resizes from its edges; on Windows it keeps the
-  system's shadow and thin border. Close goes through the same check as the system's button:
-  with a lab deploying, the launcher still asks first. macOS keeps its traffic lights. A crash
-  screen has the bar too, so a crashed window can still be moved and closed.
+- **The launcher draws its own title bar on Linux and Windows, built into the window as on
+  macOS.** Every window (the main one, Settings, the setup windows, the attack box shells) opens
+  without the system's frame. There is no separate bar: as on macOS, the sidebar runs to the
+  window's top and the page's own header (the breadcrumb and engine status in the main window)
+  is the title bar, with minimize, maximize/restore and close in its top-right corner, the
+  height of the header, in the chosen appearance (Dark, Black or Light), the close button red
+  under the pointer. They are reachable from the keyboard and labelled in the app's language.
+  Under XFCE and other window managers that draw the frame from their own theme, a dark launcher
+  no longer sits in a white frame. The header drags the window, a double-click on it maximizes
+  or restores it, and the window still resizes from its edges, clear of the buttons; on Windows
+  it keeps the system's shadow and thin border, on Linux a hairline draws its edge. Close goes
+  through the same check as the system's button: with a lab deploying, the launcher still asks
+  first. A crash screen has the header too, so a crashed window can still be moved and closed.
 - **The ESXi VM test runs a real VM.** It used to check only that the host's SSH port answered.
   It now runs a throwaway one-machine lab on the host the way a lab runs there: Vagrant's
   `vmware_esxi` through the Isothrum runner, with the host's settings and password. The steps

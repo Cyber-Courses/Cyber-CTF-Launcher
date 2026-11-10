@@ -14,10 +14,11 @@ export function useIsMac() {
 }
 
 /**
- * Who draws this window's title bar:
- * - `overlay`: macOS, where the system's traffic lights sit over the page's own bar;
- * - `linux`, `windows`: the app there, where the window has no system frame
- *   (src-tauri/src/app/window.rs) and the page draws all of it, buttons included;
+ * Who draws this window's frame. On every system the page's header row is the title bar (it drags
+ * the window); what differs is who draws the window's buttons:
+ * - `overlay`: macOS, where the system's traffic lights sit over the header's start;
+ * - `linux`, `windows`: the page, at the header's end, where the window has no system frame
+ *   (src-tauri/src/app/window.rs; src/components/window-title-bar.tsx);
  * - `system`: the browser, outside the app.
  */
 export type WindowFrame = "overlay" | "linux" | "windows" | "system";

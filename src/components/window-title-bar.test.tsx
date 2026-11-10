@@ -27,6 +27,7 @@ let inApp = true;
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => inApp }));
 
 const { WindowTitleBar } = await import("@/components/window-title-bar");
+const { ShellHeader } = await import("@/components/shell/shell-header");
 
 const AGENTS = {
   linux: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)",
@@ -40,6 +41,9 @@ const on = (os: keyof typeof AGENTS, app = true) => {
 
 const bar = () => document.querySelector<HTMLElement>("[data-tauri-drag-region]");
 const buttons = () => screen.queryAllByRole("button").map((b) => b.getAttribute("aria-label"));
+/** The window's buttons' box, and the band Tauri resizes the window from that it keeps clear of. */
+const controls = () => document.querySelector<HTMLElement>("[data-window-controls]");
+const band = () => controls()?.style.getPropertyValue("--band");
 
 /**
  * What Tauri's drag script (tauri 2.12, src/window/scripts/drag.js) does with a double click
@@ -73,25 +77,64 @@ afterEach(() => {
   setLocalePreference("system");
 });
 
+describe("the main window's header", () => {
+  const header = () => document.querySelector<HTMLElement>("[data-tauri-drag-region].h-12");
+
+  it.each(["linux", "windows"] as const)("is the title bar on %s, with the window's buttons at its end", async (os) => {
+    on(os);
+    render(<ShellHeader crumbs={["Labs", "SQLi"]} report={null} checkError={null} />);
+    await flush();
+    const row = header();
+    // The breadcrumb's row itself: no other bar above it, and it drags the window.
+    expect(document.querySelectorAll(".h-11")).toHaveLength(0);
+    expect(row?.textContent).toContain("Labs/SQLi");
+    expect(buttons()).toEqual(["Minimize", "Maximize", "Close"]);
+    // In the row's top-right corner, after the engine status, over the row's whole height.
+    const box = controls();
+    expect(box?.parentElement).toBe(row);
+    expect(row?.className).toContain("relative");
+    expect(box?.className).toMatch(/\bright-0\b/);
+    expect(box?.className).toMatch(/\bbottom-0\b/);
+    // After the engine status, behind the strip that keeps it clear of them.
+    expect(box?.previousElementSibling?.previousElementSibling?.textContent).toMatch(/checking/i);
+  });
+
+  it.each([
+    ["macos", true],
+    ["windows", false],
+  ] as const)("is the title bar without buttons of its own on %s (in the app: %s)", async (os, app) => {
+    on(os, app);
+    render(<ShellHeader crumbs={["Overview"]} report={null} checkError={null} />);
+    await flush();
+    expect(header()?.hasAttribute("data-tauri-drag-region")).toBe(true);
+    expect(buttons()).toEqual([]);
+    expect(controls()).toBeNull();
+  });
+});
+
 describe("WindowTitleBar", () => {
-  it.each(["linux", "windows"] as const)("draws the whole title bar on %s: a drag region, the title and the window's buttons", async (os) => {
+  it.each(["linux", "windows"] as const)("is a secondary window's header row on %s: a drag region, the title and the window's buttons", async (os) => {
     on(os);
     render(<WindowTitleBar title="Settings" />);
     await flush();
+    // The row macOS draws, at the same height, the buttons where the traffic lights are not.
+    expect(bar()?.className).toContain("h-11");
+    expect(bar()?.className).not.toContain("pl-20");
     expect(bar()?.textContent).toContain("Settings");
     expect(buttons()).toEqual(["Minimize", "Maximize", "Close"]);
+    expect(controls()?.parentElement).toBe(bar());
   });
 
-  it("clears the traffic lights on macOS, with no buttons of its own and the title only when given", async () => {
+  it("clears the traffic lights on macOS, with no buttons of its own", async () => {
     on("macos");
     const { rerender } = render(<WindowTitleBar />);
     await flush();
     expect(bar()?.className).toContain("pl-20");
+    expect(bar()?.className).toContain("h-11");
     expect(bar()?.textContent).toBe("");
     expect(buttons()).toEqual([]);
     rerender(<WindowTitleBar title="Settings" />);
     expect(bar()?.textContent).toBe("Settings");
-    expect(win.title).not.toHaveBeenCalled();
   });
 
   it("is nothing in a browser, but a toolbar keeps its controls there", () => {
@@ -105,14 +148,25 @@ describe("WindowTitleBar", () => {
     );
     expect(buttons()).toEqual([null]);
     expect(screen.getByRole("button").textContent).toBe("Skip");
-    expect(bar()?.textContent).toBe("Skip");
   });
 
-  it("shows the window's own title when the page gives none", async () => {
+  it("shows no title when the page gives none, as macOS", async () => {
     on("linux");
     render(<WindowTitleBar />);
     await flush();
-    expect(bar()?.textContent).toBe("Set up this machine");
+    expect(bar()?.textContent).toBe("");
+    expect(win.title).not.toHaveBeenCalled();
+  });
+
+  it("puts the page's own controls before the window's buttons", async () => {
+    on("windows");
+    render(
+      <WindowTitleBar toolbar>
+        <button type="button">Skip</button>
+      </WindowTitleBar>,
+    );
+    await flush();
+    expect(buttons()).toEqual([null, "Minimize", "Maximize", "Close"]);
   });
 
   it("minimizes, maximizes and closes the window through its buttons", async () => {
@@ -166,6 +220,31 @@ describe("WindowTitleBar", () => {
     expect(unlisten).toHaveBeenCalled();
   });
 
+  it("keeps its buttons clear of the band the window resizes from, and in the very corner once maximized", async () => {
+    // Linux: Tauri's band runs along every edge, so the buttons start below and left of it.
+    on("linux");
+    const { unmount } = render(<WindowTitleBar />);
+    await flush();
+    expect(band()).toBe("5px");
+    expect(controls()?.className).toContain("top-(--band)");
+    expect(controls()?.className).toContain("right-(--band)");
+    // Maximized: no band, flush to the screen's corner.
+    win.isMaximized.mockResolvedValue(true);
+    await act(async () => {
+      resized();
+      await flush();
+    });
+    expect(band()).toBe("0px");
+    unmount();
+    // Windows: the band is along the top only (the shadow takes the sides).
+    on("windows");
+    win.isMaximized.mockResolvedValue(false);
+    render(<WindowTitleBar />);
+    await flush();
+    expect(band()).toBe("5px");
+    expect(controls()?.className).not.toContain("right-(--band)");
+  });
+
   it("maximizes or restores the window on a double-click on the bar or its title, not on a button", async () => {
     on("linux");
     render(
@@ -179,7 +258,11 @@ describe("WindowTitleBar", () => {
     expect(doubleClickOn(target)).toBe("internal_toggle_maximize");
     expect(doubleClickOn(screen.getByText("Cyber CTF"))).toBe("internal_toggle_maximize");
     expect(doubleClickOn(screen.getByText("Connected"))).toBe("internal_toggle_maximize");
-    expect(doubleClickOn(screen.getByRole("button", { name: "Maximize" }))).toBeNull();
+    // The strip that keeps the row's content clear of the buttons drags too.
+    const spacer = controls()?.previousElementSibling;
+    if (!spacer) throw new Error("no spacer");
+    expect(doubleClickOn(spacer)).toBe("internal_toggle_maximize");
+    for (const name of ["Minimize", "Maximize", "Close"]) expect(doubleClickOn(screen.getByRole("button", { name }))).toBeNull();
   });
 
   it("labels its buttons in the player's language", async () => {
