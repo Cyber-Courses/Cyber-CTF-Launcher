@@ -92,9 +92,18 @@ pub fn command_line(step: &Step) -> String {
 }
 
 /// Runs one install or removal step. Whatever it changed, the tools' kept answers (versions,
-/// Vagrant's plugins) are forgotten first, so the next machine check asks them again.
+/// Vagrant's plugins) are forgotten before and after it, so the next machine check asks them
+/// again: a check while the step ran (the Machine page checks whenever it is shown) would
+/// otherwise keep what it read then, the plugin not installed yet, for minutes after the install.
 pub async fn run_step(step: &Step, on_line: &mut impl FnMut(String)) -> Result<()> {
     crate::platform::remembered::forget_all();
+    let ran = run_step_once(step, on_line).await;
+    crate::platform::remembered::forget_all();
+    ran
+}
+
+/// [`run_step`] itself.
+async fn run_step_once(step: &Step, on_line: &mut impl FnMut(String)) -> Result<()> {
     if let Some(note) = &step.note {
         on_line(note.clone());
     }
@@ -234,6 +243,22 @@ fn end_of(program: &str, removing: bool, code: Option<i32>, installer_code: Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn what_a_check_read_while_a_step_ran_is_forgotten_once_it_ends() {
+        // Regression: the kept answers were forgotten only before the step, so a machine check
+        // during a `vagrant plugin install` kept the plugin list without the plugin, and the
+        // finished install still read as "needs setup" for minutes.
+        use crate::platform::remembered::{is_kept, keep};
+        let key = format!("vagrant plugin list {}", rand::random::<u32>());
+        let during = key.clone();
+        let _tools = crate::platform::exec::fake::Tools::new(move |_, _| {
+            keep(&during, "vagrant-qemu (0.8.0, global)");
+            crate::platform::exec::fake::ok("Installed the plugin 'vagrant-vmware-desktop (3.0.5)'!")
+        });
+        run_step(&step("vagrant", &["plugin", "install", "vagrant-vmware-desktop"]), &mut |_| {}).await.unwrap();
+        assert!(!is_kept(&key), "the list read mid-install still stands");
+    }
 
     /// An exit status with `code`, as the OS reports it.
     #[cfg(unix)]

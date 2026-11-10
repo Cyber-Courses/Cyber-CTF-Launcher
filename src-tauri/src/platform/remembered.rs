@@ -48,6 +48,18 @@ pub fn forget_all() {
     kept().clear();
 }
 
+/// Keeps `answer` for `key` now, as a machine check would: for a test of who forgets it.
+#[cfg(test)]
+pub fn keep(key: &str, answer: &str) {
+    kept().insert(key.to_string(), (Instant::now(), answer.to_string()));
+}
+
+/// Whether an answer is kept for `key`.
+#[cfg(test)]
+pub fn is_kept(key: &str) -> bool {
+    kept().contains_key(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
