@@ -90,7 +90,7 @@ describe("the setup window follows the core's plan", () => {
     await flush();
     // Asked in the system's own dialog first, as WSL 2's restart is.
     expect(dialogsAsked(calls)[0]?.message).toContain("open apps close without saving");
-    expect(calls.find((c) => c.cmd === "machine_restart")?.args).toMatchObject({ reason: "Cyber CTF: restarting to finish turning on Hyper-V." });
+    expect(calls.find((c) => c.cmd === "machine_restart")?.args).toEqual({ reason: "Cyber CTF: restarting to finish turning on Hyper-V.", feature: "hyperv" });
   });
 
   it("restarts for Hyper-V only on the system dialog's yes", async () => {

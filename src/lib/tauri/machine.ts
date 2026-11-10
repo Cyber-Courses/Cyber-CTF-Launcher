@@ -11,6 +11,7 @@ import type {
   SelfTestKind,
   Storage,
   SystemReport,
+  WindowsFeature,
   Workload,
 } from "@/lib/tauri/generated";
 
@@ -62,9 +63,9 @@ export const machineMetrics = () => invoke<MachineMetrics>("machine_metrics");
  *  for one hypervisor (a Machine page row's Fix: that one is set up, not another). */
 export const machineOpenSetup = (step?: string, provider?: Provider) => invokeUnit("machine_open_setup", { step: step ?? null, provider: provider ?? null });
 
-/** Restarts Windows in a few seconds (to finish turning WSL 2 or Hyper-V on); `reason` is the
- *  note Windows shows meanwhile. Windows only. */
-export const machineRestart = (reason: string) => invokeUnit("machine_restart", { reason });
+/** Restarts Windows in a few seconds, to finish turning `feature` on (WSL 2, Hyper-V); `reason` is
+ *  the note Windows shows meanwhile. Windows only. */
+export const machineRestart = (reason: string, feature: WindowsFeature) => invokeUnit("machine_restart", { reason, feature });
 
 /** Assisted one-click install of a lab dependency, streaming the installer output. */
 export const installDependency = (dependency: Dependency, onLog: (line: string) => void) => invokeStreaming("install_dependency", { dependency }, onLog);

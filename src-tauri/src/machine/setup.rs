@@ -52,7 +52,7 @@ pub enum Action {
 }
 
 /// A Windows feature that starts only after a restart.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum WindowsFeature {
     Wsl,

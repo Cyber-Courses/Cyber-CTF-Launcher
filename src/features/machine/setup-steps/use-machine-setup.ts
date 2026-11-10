@@ -10,6 +10,7 @@ import {
   type Dependency,
   type DockerEngine,
   type SystemReport,
+  type WindowsFeature,
 } from "@/lib/tauri";
 import { hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
 import { useRunLog } from "@/lib/use-run-log";
@@ -88,15 +89,16 @@ function useInstalls(onRefresh: () => void) {
   return { installing, installsOff, canInstall, installerOpened, wslTurnedOn, logs: lines ?? [], logsFor, install, installPlugin, failure };
 }
 
-/** Windows counts down to the restart that finishes WSL 2: kept with the flow, not the step, so a
- *  remounted step (the onboarding draws each step afresh) can't ask for it a second time. */
+/** Windows counts down to the restart that finishes WSL 2 (or Hyper-V): kept with the flow, not
+ *  the step, so a remounted step (the onboarding draws each step afresh) can't ask for it a second
+ *  time. */
 function useRestart() {
   const [restarting, setRestarting] = useState(false);
-  /** Restarts Windows to finish turning WSL 2 on; `reason` is the note Windows shows. */
-  const restart = (reason: string) => {
+  /** Restarts Windows to finish turning `feature` on; `reason` is the note Windows shows. */
+  const restart = (reason: string, feature: WindowsFeature) => {
     if (restarting) return;
     setRestarting(true);
-    machineRestart(reason).catch((e: unknown) => {
+    machineRestart(reason, feature).catch((e: unknown) => {
       setRestarting(false);
       tell(translate("machine.body.wsl.restartFailed"))(e);
     });

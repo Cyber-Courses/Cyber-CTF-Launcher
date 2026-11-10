@@ -136,7 +136,7 @@ function RestartToFinish({ name, reopens, setup }: { name: string; reopens: bool
       message: `${t("machine.body.wsl.confirmBody")} ${reopens ? t("machine.body.wsl.reopens") : t("machine.body.wsl.reopenByHand")}`,
       confirm: t("machine.body.wsl.restartNow"),
     }).then((yes) => {
-      if (yes) setup.restart(t("machine.vm.restartReason", { name }));
+      if (yes) setup.restart(t("machine.vm.restartReason", { name }), "hyperv");
     });
   };
   return (

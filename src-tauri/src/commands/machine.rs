@@ -10,6 +10,7 @@ use crate::app::setup_window;
 use crate::error::Result;
 use crate::machine::images;
 use crate::machine::selftest::{self, Kind};
+use crate::machine::setup::WindowsFeature;
 use crate::machine::storage::{self, Storage};
 use crate::machine::system::metrics::{self, MachineMetrics};
 use crate::machine::system::{self, SystemReport, docker, wsl};
@@ -43,10 +44,10 @@ pub async fn machine_open_setup(app: AppHandle, step: Option<String>, provider: 
     setup_window::open(&app, step.as_deref(), provider)
 }
 
-/// Restarts the computer, for `reason` (WSL's or Hyper-V's install finishing).
+/// Restarts the computer, for `reason`: turning `feature` on finishes (WSL 2, Hyper-V).
 #[tauri::command]
-pub async fn machine_restart(app: AppHandle, reason: String) -> Result<()> {
-    wsl::machine_restart(AppDirs::from(&app), reason).await
+pub async fn machine_restart(app: AppHandle, reason: String, feature: WindowsFeature) -> Result<()> {
+    wsl::machine_restart(AppDirs::from(&app), reason, feature).await
 }
 
 /// Makes `engine` Docker's current context.

@@ -242,7 +242,7 @@ describe("WSL step, from the machine check", () => {
     yes = true;
     await user.click(button(/restart now/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "machine_restart")?.args).toEqual({ reason: "Cyber CTF: restarting to finish turning on WSL 2." });
+    expect(calls.find((c) => c.cmd === "machine_restart")?.args).toEqual({ reason: "Cyber CTF: restarting to finish turning on WSL 2.", feature: "wsl" });
     expect(screen.getByRole("status").textContent).toContain("Restarting in a few seconds");
     expect(button(/restart now/i).hasAttribute("disabled")).toBe(true);
   });

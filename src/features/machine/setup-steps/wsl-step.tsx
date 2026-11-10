@@ -39,7 +39,7 @@ export function WslStep({ report, setup }: { report: SystemReport; setup: Machin
               message: `${t("machine.body.wsl.confirmBody")} ${report.wsl?.reopensAfterRestart ? t("machine.body.wsl.reopens") : t("machine.body.wsl.reopenByHand")}`,
               confirm: t("machine.body.wsl.restartNow"),
             }).then((yes) => {
-              if (yes) setup.restart(t("machine.body.wsl.restartReason"));
+              if (yes) setup.restart(t("machine.body.wsl.restartReason"), "wsl");
             });
           }}
         />
