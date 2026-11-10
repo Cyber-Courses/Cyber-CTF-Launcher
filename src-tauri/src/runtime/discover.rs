@@ -267,7 +267,7 @@ async fn middot_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
             let names = vbox_vm_names(&out);
             ids.extend(lab_ids_from_vm_names(names.iter().map(String::as_str), by_name));
         }
-        Err(e) if e.to_string().contains("timed out") => log::warn!("running-labs scan: VirtualBox isn't responding ({e})"),
+        Err(e) if crate::platform::exec::timed_out(&e) => log::warn!("running-labs scan: VirtualBox isn't responding ({e})"),
         Err(_) => {}
     }
     if let Ok(out) = run_read("prlctl", &["list", "--running", "--no-header", "-o", "name"], None).await {
@@ -312,6 +312,27 @@ async fn prefixed_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> 
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn only_the_apps_own_timeout_reads_as_virtualbox_not_responding() {
+        // Regression: any failure whose text said "timed out" (the tool's own) was logged as
+        // VirtualBox not responding; only the app's timeout of the call is.
+        use crate::platform::exec::fake::{Tools, fail};
+        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
+        let _tools = Tools::new(|program, _| match program {
+            "VBoxManage" => fail("VBoxManage: error: the guest session timed out"),
+            _ => None,
+        });
+        crate::testing::logs::take_warnings();
+        assert_eq!(super::middot_vm_ids(&by_name).await, std::collections::BTreeSet::new());
+        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0]);
+        let _tools = Tools::new(|program, _| match program {
+            "VBoxManage" => fail("timed out after 8s"),
+            _ => None,
+        });
+        super::middot_vm_ids(&by_name).await;
+        assert!(crate::testing::logs::take_warnings().iter().any(|w| w.contains("VirtualBox isn't responding")));
+    }
 
     /// The UTM probe end to end with a scripted `utmctl`, once `pgrep` reports UTM running: its
     /// started VMs reach the installed labs through the name reader and the ` · ` matcher. A

@@ -7,8 +7,12 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::platform::exec::run_read;
+use crate::platform::exec::{run_read, timed_out};
 use crate::platform::remembered::remembered;
+
+/// How long VirtualBox's service gets to answer `VBoxManage list runningvms` before it reads as
+/// unresponsive (wedged), not just slow.
+const VBOX_SERVICE_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
 
 /// Vagrant provider ids (the value given to `vagrant up --provider`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
@@ -415,10 +419,7 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
         // "Bringing machine up" forever). Ask it something that needs the service, briefly.
         let unresponsive = provider == Provider::Virtualbox
             && hypervisor == Some(true)
-            && matches!(
-                crate::platform::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], std::time::Duration::from_secs(8)).await,
-                Err(crate::error::Error::CommandFailed { ref stderr, .. }) if stderr.contains("timed out")
-            );
+            && crate::platform::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], VBOX_SERVICE_WAIT).await.is_err_and(|e| timed_out(&e));
 
         // Vagrant's Hyper-V provider refuses every command (status reads too) from an account
         // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
@@ -714,6 +715,23 @@ mod tests {
         if let Some(why) = kvm_problem() {
             assert!(why.contains("/dev/kvm"), "{why}");
         }
+    }
+
+    #[tokio::test]
+    async fn virtualbox_reads_as_not_responding_only_when_the_apps_timeout_cut_it_short() {
+        // Regression: any `VBoxManage list runningvms` failure whose text said "timed out" (the
+        // tool's own words) read as VirtualBox's service being stuck.
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let reason = |runningvms: &'static str| async move {
+            let _tools = Tools::new(move |program, args| match (program, args) {
+                ("VBoxManage", ["list", "runningvms"]) => fail(runningvms),
+                ("VBoxManage", _) => ok("7.1.4\n"),
+                _ => ok(""),
+            });
+            detect(true).await.into_iter().find(|s| s.provider == Provider::Virtualbox).and_then(|s| s.reason).unwrap_or_default()
+        };
+        assert!(!reason("VBoxManage: error: the guest session timed out").await.contains("isn't responding"));
+        assert!(reason("timed out after 8s").await.contains("isn't responding"));
     }
 
     #[test]
