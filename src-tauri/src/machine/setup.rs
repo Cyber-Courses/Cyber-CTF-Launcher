@@ -41,8 +41,8 @@ pub enum Action {
     UseEngine { engine: Engine },
     /// Restarts the computer, which finishes turning `feature` on (`machine_restart`).
     Restart { feature: WindowsFeature },
-    /// Signs out and back in: a group the player was added to (Linux's `docker`) applies from
-    /// the next login.
+    /// Signs out and back in: a group the player was added to (Linux's `docker`, `libvirt` and
+    /// `kvm`) applies from the next login.
     Relogin,
     /// Not something the setup does here: the player gets it (`dependency`, when it is one the
     /// setup installs elsewhere; from `url`, when there is one), then checks the machine again.
@@ -221,11 +221,15 @@ pub fn cant_run(p: &ProviderStatus) -> bool {
     p.hypervisor == Some(true) && !p.available && p.reason.is_some() && p.needs.is_empty()
 }
 
-/// What gets hypervisor `p` here: nothing once it is installed (or why it still can't run); the
-/// restart Hyper-V waits for once the setup turned it on (`hyperv_restart`); its install; else its
-/// vendor's site.
+/// What gets hypervisor `p` here: nothing once it is installed (a new login when the player joined
+/// libvirt's groups since logging in; else why it still can't run); the restart Hyper-V waits for
+/// once the setup turned it on (`hyperv_restart`); its install; else its vendor's site.
 fn hypervisor_get(r: &SystemReport, p: &ProviderStatus, hyperv_restart: bool) -> Vec<Action> {
     if p.hypervisor == Some(true) {
+        let joined = r.groups_pending.iter().any(|g| crate::runtime::providers::LIBVIRT_GROUPS.contains(&g.as_str()));
+        if p.provider == Provider::Libvirt && joined {
+            return vec![Action::Relogin];
+        }
         return match &p.reason {
             Some(reason) if cant_run(p) => vec![Action::Blocked { reason: reason.clone() }],
             _ => Vec::new(),

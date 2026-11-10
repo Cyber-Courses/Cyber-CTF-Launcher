@@ -47,8 +47,9 @@ export function VmStep({ report, setup }: { report: SystemReport; setup: Machine
           />
         ))}
       </ChoiceGrid>
-      {/* Installed but unable to run (no /dev/kvm, not in the kvm group): why, as the Machine page says. */}
-      {cantRun(report, choice) && choice.reason && (
+      {/* Installed but unable to run (no /dev/kvm), or not before a new login (libvirt's group just
+          joined): why, as the Machine page says. */}
+      {(cantRun(report, choice) || getActions(report, choice.provider).at(0)?.kind === "relogin") && choice.reason && (
         <ChoiceAction>
           <span className="text-[0.8125rem] text-muted-foreground">
             {choice.reason.charAt(0).toUpperCase()}

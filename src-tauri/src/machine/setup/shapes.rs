@@ -79,6 +79,7 @@ pub(crate) fn bare(os: &'static str, arch: &'static str) -> SystemReport {
         vm_providers: offered(os, arch).into_iter().map(|p| status(p, false, false, false, None)).collect(),
         ready_hypervisors: Vec::new(),
         wsl,
+        groups_pending: Vec::new(),
         setup: super::Options::empty(),
     };
     r.setup = super::options(&r, false);
@@ -173,6 +174,22 @@ pub(crate) fn debian_libvirt_without_kvm() -> SystemReport {
     r
 }
 
+/// Debian once the setup installed libvirt and Vagrant: the player joined the libvirt and kvm
+/// groups, which apply from the next login, so libvirt can't be used yet.
+pub(crate) fn debian_libvirt_awaits_relogin() -> SystemReport {
+    let mut r = with(bare_debian(), false, |r| {
+        hypervisor(r, Provider::Libvirt, false);
+        r.groups_pending = vec!["libvirt".into(), "kvm".into()];
+    });
+    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Libvirt) {
+        p.available = false;
+        p.reason = Some(crate::runtime::providers::LIBVIRT_RELOGIN.into());
+    }
+    r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
+    r.setup = super::options(&r, false);
+    r
+}
+
 /// Fedora: Linux without apt, which the guided setup doesn't install through yet.
 pub(crate) fn bare_fedora() -> SystemReport {
     with(bare_debian(), false, |r| r.pkg_manager = PkgManager { name: "apt".into(), installed: false, version: None })
@@ -219,6 +236,7 @@ pub(crate) fn all() -> Vec<(&'static str, SystemReport)> {
         ("debianDockerDenied", debian_docker_denied()),
         ("debianLibvirtWithoutPlugin", debian_libvirt_without_plugin()),
         ("debianLibvirtWithoutKvm", debian_libvirt_without_kvm()),
+        ("debianLibvirtAwaitsRelogin", debian_libvirt_awaits_relogin()),
         ("bareFedora", bare_fedora()),
         ("macDockerWithoutVagrant", mac_docker_without_vagrant()),
         ("macTwoEngines", mac_two_engines()),

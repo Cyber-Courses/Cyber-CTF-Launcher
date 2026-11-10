@@ -18,7 +18,7 @@ use tokio::process::{Child, Command};
 
 #[cfg(target_os = "linux")]
 pub use docker::login_name;
-pub use docker::{ImageRef, docker_denied, docker_denied_error, valid_image};
+pub use docker::{ImageRef, docker_denied, docker_denied_error, groups_pending, valid_image};
 #[cfg(test)]
 pub(crate) use elevate::leftover_script;
 pub use elevate::{Leftover, join_hyperv_admins, may_manage_hyperv, remove_hyperv_leftover};

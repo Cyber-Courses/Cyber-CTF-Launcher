@@ -118,6 +118,21 @@ fn installed_libvirt_needs_only_its_plugin_and_one_that_cant_run_is_passed_over(
 }
 
 #[test]
+fn libvirt_joined_since_logging_in_asks_for_a_new_login_after_the_rest() {
+    // VM labs only: the pass installs the plugin, then ends asking for the login that applies the
+    // libvirt group (it used to read as ready, and Vagrant was refused by libvirt).
+    let r = shapes::debian_libvirt_awaits_relogin();
+    assert_eq!(get_of(&r, Provider::Libvirt), [Action::Relogin]);
+    let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Libvirt]));
+    assert_eq!(p.hypervisor, Some(Provider::Libvirt), "a new login is how it is set up, not a reason to pass it over");
+    assert_eq!(steps(&p), ["plugin:vagrant-libvirt: plugin vagrant-libvirt", "libvirt: relogin"]);
+    // Other groups pending don't hold libvirt.
+    let mut r = shapes::debian_libvirt_without_plugin();
+    r.groups_pending = vec!["docker".into()];
+    assert_eq!(options(&r, false).hypervisors.iter().find(|h| h.provider == Provider::Libvirt).unwrap().get, []);
+}
+
+#[test]
 fn a_linux_without_apt_is_told_to_install_each_tool_itself_instead_of_a_failing_apt_command() {
     // Regression: Fedora, openSUSE and Arch were offered the apt installs, which failed.
     let r = shapes::bare_fedora();

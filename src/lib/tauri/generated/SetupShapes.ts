@@ -3,7 +3,7 @@ import type { SystemReport } from "./SystemReport";
 
 /** Machines as the machine check reports them, with the setup options the core works out for each (Rust's
  *  `machine::setup::shapes`): what the setup window's tests render it on. */
-export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | "windowsDockerStopped" | "windowsHypervWaitsForRestart" | "bareDebian" | "debianDockerDenied" | "debianLibvirtWithoutPlugin" | "debianLibvirtWithoutKvm" | "bareFedora" | "macDockerWithoutVagrant" | "macTwoEngines" | "macVmwareWithoutItsParts" | "macReady", SystemReport> = {
+export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | "windowsDockerStopped" | "windowsHypervWaitsForRestart" | "bareDebian" | "debianDockerDenied" | "debianLibvirtWithoutPlugin" | "debianLibvirtWithoutKvm" | "debianLibvirtAwaitsRelogin" | "bareFedora" | "macDockerWithoutVagrant" | "macTwoEngines" | "macVmwareWithoutItsParts" | "macReady", SystemReport> = {
   "bareWindows": {
     "os": "windows",
     "arch": "x86_64",
@@ -144,6 +144,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
       "reopensAfterRestart": true,
       "virtualizationOff": false
     },
+    "groupsPending": [],
     "setup": {
       "wsl": [
         {
@@ -383,6 +384,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
       "reopensAfterRestart": true,
       "virtualizationOff": false
     },
+    "groupsPending": [],
     "setup": {
       "wsl": [
         {
@@ -622,6 +624,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
       "reopensAfterRestart": true,
       "virtualizationOff": false
     },
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-desktop",
@@ -856,6 +859,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
       "reopensAfterRestart": true,
       "virtualizationOff": false
     },
+    "groupsPending": [],
     "setup": {
       "wsl": [
         {
@@ -1092,6 +1096,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
     ],
     "readyHypervisors": [],
     "wsl": null,
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-engine",
@@ -1356,6 +1361,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
     ],
     "readyHypervisors": [],
     "wsl": null,
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-engine",
@@ -1601,6 +1607,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
     ],
     "readyHypervisors": [],
     "wsl": null,
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-engine",
@@ -1827,6 +1834,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
     ],
     "readyHypervisors": [],
     "wsl": null,
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-engine",
@@ -1906,6 +1914,242 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             }
           ],
           "vagrant": []
+        },
+        {
+          "provider": "qemu",
+          "get": [
+            {
+              "kind": "install",
+              "dependency": "qemu"
+            }
+          ],
+          "vagrant": [
+            {
+              "kind": "plugin",
+              "plugin": "vagrant-qemu"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "debianLibvirtAwaitsRelogin": {
+    "os": "linux",
+    "arch": "x86_64",
+    "pkgManager": {
+      "name": "apt",
+      "installed": true,
+      "version": "apt 2.9.8 (amd64)"
+    },
+    "docker": {
+      "installed": false,
+      "version": null
+    },
+    "dockerRunning": false,
+    "dockerDenied": false,
+    "dockerDeniedHint": null,
+    "dockerEngine": null,
+    "dockerEnginesRunning": [],
+    "dockerEngines": [],
+    "dockerCompose": {
+      "installed": false,
+      "version": null
+    },
+    "vagrant": {
+      "installed": true,
+      "version": "Vagrant 2.4.9"
+    },
+    "terraform": {
+      "installed": false,
+      "version": null
+    },
+    "ovftool": {
+      "installed": false,
+      "version": null
+    },
+    "ovftoolLocation": null,
+    "cloudClis": {
+      "aws": {
+        "installed": false,
+        "version": null
+      },
+      "azure": {
+        "installed": false,
+        "version": null
+      },
+      "gcloud": {
+        "installed": false,
+        "version": null
+      }
+    },
+    "vmProviders": [
+      {
+        "provider": "virtualbox",
+        "remote": false,
+        "available": false,
+        "hypervisor": false,
+        "plugin": null,
+        "pluginInstalled": true,
+        "utility": null,
+        "needs": [],
+        "reason": "not installed"
+      },
+      {
+        "provider": "vmware_desktop",
+        "remote": false,
+        "available": false,
+        "hypervisor": false,
+        "plugin": "vagrant-vmware-desktop",
+        "pluginInstalled": false,
+        "utility": "missing",
+        "needs": [
+          "plugin",
+          "vmwareUtility"
+        ],
+        "reason": "not installed"
+      },
+      {
+        "provider": "libvirt",
+        "remote": false,
+        "available": false,
+        "hypervisor": true,
+        "plugin": "vagrant-libvirt",
+        "pluginInstalled": false,
+        "utility": null,
+        "needs": [
+          "plugin"
+        ],
+        "reason": "you were added to the libvirt group since you logged in: log out and back in (or restart) for it to apply"
+      },
+      {
+        "provider": "qemu",
+        "remote": false,
+        "available": false,
+        "hypervisor": false,
+        "plugin": "vagrant-qemu",
+        "pluginInstalled": false,
+        "utility": null,
+        "needs": [
+          "plugin"
+        ],
+        "reason": "not installed"
+      },
+      {
+        "provider": "vmware_esxi",
+        "remote": true,
+        "available": false,
+        "hypervisor": null,
+        "plugin": "vagrant-vmware-esxi",
+        "pluginInstalled": false,
+        "utility": null,
+        "needs": [
+          "plugin"
+        ],
+        "reason": "Vagrant plugin `vagrant-vmware-esxi` is not installed"
+      },
+      {
+        "provider": "proxmox",
+        "remote": true,
+        "available": false,
+        "hypervisor": null,
+        "plugin": "vagrant-proxmox",
+        "pluginInstalled": false,
+        "utility": null,
+        "needs": [
+          "plugin"
+        ],
+        "reason": "Vagrant plugin `vagrant-proxmox` is not installed"
+      }
+    ],
+    "readyHypervisors": [],
+    "wsl": null,
+    "groupsPending": [
+      "libvirt",
+      "kvm"
+    ],
+    "setup": {
+      "wsl": [],
+      "recommendedEngine": "docker-engine",
+      "engine": "docker-engine",
+      "engines": [
+        {
+          "engine": "docker-desktop",
+          "actions": [
+            {
+              "kind": "manual",
+              "reason": "vendor",
+              "dependency": null,
+              "url": "https://www.docker.com/products/docker-desktop/"
+            }
+          ]
+        },
+        {
+          "engine": "docker-engine",
+          "actions": [
+            {
+              "kind": "install",
+              "dependency": "docker"
+            }
+          ]
+        },
+        {
+          "engine": "colima",
+          "actions": [
+            {
+              "kind": "manual",
+              "reason": "vendor",
+              "dependency": null,
+              "url": "https://github.com/abiosoft/colima"
+            }
+          ]
+        }
+      ],
+      "hypervisor": "libvirt",
+      "hypervisors": [
+        {
+          "provider": "virtualbox",
+          "get": [
+            {
+              "kind": "install",
+              "dependency": "virtualbox"
+            }
+          ],
+          "vagrant": []
+        },
+        {
+          "provider": "vmware_desktop",
+          "get": [
+            {
+              "kind": "manual",
+              "reason": "vendor",
+              "dependency": null,
+              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+            }
+          ],
+          "vagrant": [
+            {
+              "kind": "plugin",
+              "plugin": "vagrant-vmware-desktop"
+            },
+            {
+              "kind": "install",
+              "dependency": "vmware-utility"
+            }
+          ]
+        },
+        {
+          "provider": "libvirt",
+          "get": [
+            {
+              "kind": "relogin"
+            }
+          ],
+          "vagrant": [
+            {
+              "kind": "plugin",
+              "plugin": "vagrant-libvirt"
+            }
+          ]
         },
         {
           "provider": "qemu",
@@ -2062,6 +2306,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
     ],
     "readyHypervisors": [],
     "wsl": null,
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-engine",
@@ -2347,6 +2592,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
     ],
     "readyHypervisors": [],
     "wsl": null,
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-desktop",
@@ -2622,6 +2868,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
     ],
     "readyHypervisors": [],
     "wsl": null,
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-desktop",
@@ -2882,6 +3129,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
     ],
     "readyHypervisors": [],
     "wsl": null,
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-desktop",
@@ -3121,6 +3369,7 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
       "utm"
     ],
     "wsl": null,
+    "groupsPending": [],
     "setup": {
       "wsl": [],
       "recommendedEngine": "docker-desktop",

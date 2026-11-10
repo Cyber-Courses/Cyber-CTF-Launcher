@@ -117,9 +117,37 @@ pub fn login_name() -> Option<String> {
     }
 }
 
+/// The groups this account belongs to that this session doesn't have yet (Linux): added since it
+/// logged in, like the docker, libvirt and kvm groups the installs add it to, they apply from its
+/// next login. Empty elsewhere, or when it can't be told.
+pub async fn groups_pending() -> Vec<String> {
+    if !cfg!(target_os = "linux") {
+        return Vec::new();
+    }
+    let Some(user) = login_name() else { return Vec::new() };
+    // `id -nG <user>` reads the group database; `id -nG` this process's own groups.
+    match (super::run_read("id", &["-nG", &user], None).await, super::run_read("id", &["-nG"], None).await) {
+        (Ok(account), Ok(session)) => pending_groups(&account, &session),
+        _ => Vec::new(),
+    }
+}
+
+/// Of the account's groups (`id -nG <user>`), those the session's (`id -nG`) lack.
+fn pending_groups(account: &str, session: &str) -> Vec<String> {
+    let session: Vec<&str> = session.split_whitespace().collect();
+    account.split_whitespace().filter(|g| !session.contains(g)).map(str::to_owned).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_groups_pending_are_the_accounts_the_session_lacks() {
+        assert_eq!(pending_groups("vagrant sudo docker libvirt kvm\n", "vagrant sudo\n"), ["docker", "libvirt", "kvm"]);
+        assert_eq!(pending_groups("vagrant sudo libvirt\n", "vagrant libvirt sudo\n"), Vec::<String>::new());
+        assert_eq!(pending_groups("", "vagrant"), Vec::<String>::new());
+    }
 
     #[test]
     fn an_image_repository_has_no_registry_tag_or_digest() {

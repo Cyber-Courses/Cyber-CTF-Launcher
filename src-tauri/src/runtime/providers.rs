@@ -470,6 +470,12 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
     // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
     let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::platform::exec::may_manage_hyperv();
 
+    // libvirt's socket and /dev/kvm are its group's: added to them since logging in (the libvirt
+    // install does it), the player can't use them before logging in again.
+    let relogin = provider == Provider::Libvirt
+        && hypervisor == Some(true)
+        && crate::platform::exec::groups_pending().await.iter().any(|g| LIBVIRT_GROUPS.contains(&g.as_str()));
+
     // VMware's plugin drives VMware through HashiCorp's utility service, installed on its own.
     let utility = if provider.needs_vmware_utility() { Some(vmware_utility().await) } else { None };
 
@@ -481,13 +487,25 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
         plugin_installed,
         plugin_version: plugin_version.as_deref(),
         utility,
-        needs_admin,
+        account: if needs_admin {
+            Some(AccountLacks::HypervAdmin)
+        } else if relogin {
+            Some(AccountLacks::NewLogin)
+        } else {
+            None
+        },
     };
     let reason = unavailable_reason(provider, vagrant_installed, detection);
     let needs = needs(vagrant_installed, plugin_installed, utility);
 
     Some(ProviderStatus { provider, remote: provider.is_remote(), available: reason.is_none(), hypervisor, plugin, plugin_installed, utility, needs, reason })
 }
+
+/// The groups libvirt's socket and `/dev/kvm` are opened through.
+pub const LIBVIRT_GROUPS: [&str; 2] = ["libvirt", "kvm"];
+
+/// Why libvirt can't be used yet: the player joined its groups since logging in.
+pub const LIBVIRT_RELOGIN: &str = "you were added to the libvirt group since you logged in: log out and back in (or restart) for it to apply";
 
 /// Why Hyper-V can't be used by this account yet, and the two ways out.
 pub const HYPERV_NEEDS_ADMIN: &str = "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: \
@@ -513,8 +531,17 @@ struct Detection<'a> {
     plugin_version: Option<&'a str>,
     /// Where the Vagrant VMware Utility stands; `None` when the provider doesn't use it.
     utility: Option<UtilityState>,
-    /// Whether this account may not manage Hyper-V (Hyper-V only).
-    needs_admin: bool,
+    /// What this account lacks to use it, if anything.
+    account: Option<AccountLacks>,
+}
+
+/// What the player's account lacks to use a provider installed here.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AccountLacks {
+    /// The right to manage Hyper-V (Hyper-V only).
+    HypervAdmin,
+    /// A new login: it joined libvirt's groups since logging in (libvirt only).
+    NewLogin,
 }
 
 /// Why a provider can't be used here (None: it can), from whether Vagrant is installed and what
@@ -522,7 +549,7 @@ struct Detection<'a> {
 /// hypervisor itself (nothing setup installs mends that), then the first of its [`needs`]. So it
 /// is `None` only when nothing is needed: readiness and the setup steps can't disagree.
 fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> Option<String> {
-    let Detection { unresponsive, hypervisor, hypervisor_version, plugin, plugin_installed, plugin_version, utility, needs_admin } = detection;
+    let Detection { unresponsive, hypervisor, hypervisor_version, plugin, plugin_installed, plugin_version, utility, account } = detection;
     let needs = needs(vagrant_installed, plugin_installed, utility);
     if needs.contains(&Need::Vagrant) {
         Some("Vagrant is not installed".to_string())
@@ -533,10 +560,12 @@ fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: De
         )
     } else if hypervisor == Some(false) && provider == Provider::Hyperv {
         Some("Hyper-V isn't turned on (Windows Features > Hyper-V), or this edition of Windows doesn't have it".to_string())
-    } else if needs_admin {
+    } else if account == Some(AccountLacks::HypervAdmin) {
         Some(HYPERV_NEEDS_ADMIN.to_string())
     } else if hypervisor == Some(false) {
         provider.probe().map(|(program, _)| format!("`{program}` was not found")).or_else(|| Some("not installed".to_string()))
+    } else if account == Some(AccountLacks::NewLogin) {
+        Some(LIBVIRT_RELOGIN.to_string())
     } else if let Some(why) = (provider == Provider::Libvirt).then(kvm_problem).flatten() {
         Some(why)
     } else if let Some((name, version, min)) = hypervisor_too_old(provider, hypervisor_version) {
@@ -617,7 +646,7 @@ mod tests {
             plugin_installed,
             plugin_version,
             utility: None,
-            needs_admin: false,
+            account: None,
         };
         // The plugin the failure was seen with: setup installs it again, which updates it.
         assert_eq!(plugin_too_old(Provider::Utm, Some("0.1.6")), Some(("0.1.6", "0.2.0")));
@@ -819,11 +848,11 @@ mod tests {
                     plugin_installed: installed,
                     plugin_version: None,
                     utility: None,
-                    needs_admin: false,
+                    account: None,
                 },
             )
         };
-        let hyperv = |needs_admin| Detection {
+        let hyperv = |needs_admin: bool| Detection {
             unresponsive: false,
             hypervisor: Some(true),
             hypervisor_version: None,
@@ -831,7 +860,7 @@ mod tests {
             plugin_installed: true,
             plugin_version: None,
             utility: None,
-            needs_admin,
+            account: needs_admin.then_some(AccountLacks::HypervAdmin),
         };
         assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(true)).as_deref(), Some(HYPERV_NEEDS_ADMIN));
         assert!(HYPERV_NEEDS_ADMIN.contains("Hyper-V Administrators") && HYPERV_NEEDS_ADMIN.contains("Allow my account"));
@@ -851,6 +880,24 @@ mod tests {
         assert_eq!(r(Provider::Libvirt, true, false, Some(true), Some("vagrant-libvirt"), true), kvm_problem());
     }
 
+    #[test]
+    fn libvirt_joined_since_logging_in_waits_for_the_next_login() {
+        let libvirt = |relogin: bool| Detection {
+            unresponsive: false,
+            hypervisor: Some(true),
+            hypervisor_version: None,
+            plugin: Some("vagrant-libvirt"),
+            plugin_installed: true,
+            plugin_version: None,
+            utility: None,
+            account: relogin.then_some(AccountLacks::NewLogin),
+        };
+        assert_eq!(unavailable_reason(Provider::Libvirt, true, libvirt(true)).as_deref(), Some(LIBVIRT_RELOGIN));
+        assert_eq!(unavailable_reason(Provider::Libvirt, true, libvirt(false)), kvm_problem());
+        // Vagrant missing still comes first: the setup installs it in the same pass.
+        assert_eq!(unavailable_reason(Provider::Libvirt, false, libvirt(true)).as_deref(), Some("Vagrant is not installed"));
+    }
+
     /// A VMware detection: Fusion or Workstation installed, the plugin and the utility as given.
     fn vmware(plugin_installed: bool, utility: UtilityState) -> Detection<'static> {
         Detection {
@@ -861,7 +908,7 @@ mod tests {
             plugin_installed,
             plugin_version: None,
             utility: Some(utility),
-            needs_admin: false,
+            account: None,
         }
     }
 

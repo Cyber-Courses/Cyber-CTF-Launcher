@@ -68,7 +68,11 @@ function installable(provider: Provider, os: string): Dependency | null {
 
 const cantRun = (p: ProviderStatus) => p.hypervisor === true && !p.available && !!p.reason && p.needs.length === 0;
 
+/** The groups libvirt's socket and /dev/kvm are opened through (Rust's `LIBVIRT_GROUPS`). */
+const LIBVIRT_GROUPS = ["libvirt", "kvm"];
+
 function get(r: Machine, p: ProviderStatus, hypervRestart: boolean): SetupAction[] {
+  if (p.hypervisor === true && p.provider === "libvirt" && r.groupsPending.some((g) => LIBVIRT_GROUPS.includes(g))) return [{ kind: "relogin" }];
   if (p.hypervisor === true) return cantRun(p) && p.reason ? [{ kind: "blocked", reason: p.reason }] : [];
   if (p.provider === "hyperv" && hypervRestart) return [{ kind: "restart", feature: "hyperv" }];
   const dependency = installable(p.provider, r.os);

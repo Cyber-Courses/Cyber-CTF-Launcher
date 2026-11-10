@@ -80,6 +80,9 @@ pub struct SystemReport {
     pub ready_hypervisors: Vec<providers::Provider>,
     /// Windows: whether WSL 2 is on, waits for a restart, or is missing (`None` elsewhere).
     pub wsl: Option<wsl::WslReport>,
+    /// The groups this account joined since it logged in (Linux: the docker, libvirt and kvm
+    /// groups the installs add it to), which apply from its next login.
+    pub groups_pending: Vec<String>,
     /// What each choice of the guided setup takes on this machine ([`crate::machine::setup`]):
     /// the setup window renders these, never working them out itself.
     pub setup: crate::machine::setup::Options,
@@ -99,8 +102,13 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         probe("gcloud", &["--version"]),
         probe("terraform", &["version"]),
     );
-    let (vm_providers, docker_engines, (ovftool, ovftool_location), wsl) =
-        tokio::join!(providers::detect(vagrant.installed), docker::engines(), crate::machine::tools::ovftool::probe(data.as_deref()), wsl::report(&dirs));
+    let (vm_providers, docker_engines, (ovftool, ovftool_location), wsl, groups_pending) = tokio::join!(
+        providers::detect(vagrant.installed),
+        docker::engines(),
+        crate::machine::tools::ovftool::probe(data.as_deref()),
+        wsl::report(&dirs),
+        crate::platform::exec::groups_pending()
+    );
     let docker_engines_running = docker::running_of(&docker_engines);
     let docker_denied = daemon.as_ref().err().is_some_and(docker_denied);
     let docker_engine = match &daemon {
@@ -128,6 +136,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         ready_hypervisors,
         vm_providers,
         wsl,
+        groups_pending,
         setup: crate::machine::setup::Options::empty(),
     };
     // Hyper-V turned on from here starts at the next restart: until then the setup asks for it.

@@ -65,6 +65,7 @@ export const report: SystemReport = withSetup({
     { provider: "proxmox", remote: true, available: true, hypervisor: null, plugin: null, pluginInstalled: true, utility: null, needs: [], reason: null },
   ],
   wsl: null,
+  groupsPending: [],
 });
 
 /** A saved server or cloud account: the fields only some providers use left empty. */

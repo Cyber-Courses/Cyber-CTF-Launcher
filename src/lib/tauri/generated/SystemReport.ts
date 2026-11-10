@@ -67,6 +67,11 @@ readyHypervisors: Array<Provider>,
  */
 wsl: WslReport | null, 
 /**
+ * The groups this account joined since it logged in (Linux: the docker, libvirt and kvm
+ * groups the installs add it to), which apply from its next login.
+ */
+groupsPending: Array<string>, 
+/**
  * What each choice of the guided setup takes on this machine ([`crate::machine::setup`]):
  * the setup window renders these, never working them out itself.
  */
