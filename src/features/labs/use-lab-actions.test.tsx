@@ -71,7 +71,7 @@ const savedHost = (id: string, provider: ServerHost["provider"]) => ({ id, name:
 /** Starts launching `lab` here (a dialog may then ask the player): the launch, to await once
  *  answered. */
 function launching(hook: ReturnType<typeof setup>["hook"], lab: Lab, ports?: PortMode) {
-  return startInAct(() => hook.result.current.launch(lab, null, undefined, readyReport(), { ports }));
+  return startInAct(() => hook.result.current.launch(lab, null, undefined, { ports }));
 }
 
 /** A launch of the Docker lab as `id` with no port mode remembered, once the ports are asked. */
@@ -90,20 +90,25 @@ afterEach(() => {
 });
 
 describe("useLabActions: launch", () => {
-  it("starts a cloud lab only on the cloud account picked, without an attack box", async () => {
+  it("starts a cloud lab on the cloud account picked, without an attack box, and says the backend's refusal without one", async () => {
     const cloudLab: Lab = { ...dockerLab, id: "act-cloud", slug: "act-cloud", runtime: { runtime: "CLOUD", architectures: [], providers: ["aws"] } };
-    const { calls, hook } = setup();
-    await act(() => hook.result.current.launch(cloudLab, null, undefined, readyReport()));
-    expect(launchArgs(calls)).toBeUndefined();
+    const { calls, hook } = setup({
+      lab_launch: (a) => {
+        if (!a?.host) rejectWith({ code: "pickCloudAccount", message: "pick one" });
+        return null;
+      },
+    });
+    await act(() => hook.result.current.launch(cloudLab, null, undefined));
+    expect(launchArgs(calls)).toEqual({ labId: "act-cloud", provider: null, host: null, defaultPorts: false });
     expect(logsOf("act-cloud").at(-1)).toMatch(/^✗ .*pick one of your cloud accounts/);
-    await act(() => hook.result.current.launch(cloudLab, "aws1", undefined, readyReport()));
-    expect(launchArgs(calls)).toEqual({ labId: "act-cloud", provider: null, host: "aws1", defaultPorts: false });
+    await act(() => hook.result.current.launch(cloudLab, "aws1", undefined));
+    expect(launchArgs(calls.slice(1))).toEqual({ labId: "act-cloud", provider: null, host: "aws1", defaultPorts: false });
     expect(logsOf("act-cloud").at(-1)).toBe("✓ Lab is running");
   });
 
   it("starts a container lab here on the ports chosen in the dialog, without an attack box image", async () => {
     const { calls, refresh, hook } = setup();
-    await act(() => hook.result.current.launch(dockerLab, null, undefined, readyReport(), { ports: "default" }));
+    await act(() => hook.result.current.launch(dockerLab, null, undefined, { ports: "default" }));
     expect(launchArgs(calls)).toEqual({ labId: "act-docker", provider: null, host: null, defaultPorts: true });
     expect(logsOf("act-docker")).toEqual(["==> api: Creating", "✓ Lab ready", "✓ Lab is running"]);
     expect(refresh).toHaveBeenCalledWith(dockerLab, { fresh: true });
@@ -114,7 +119,7 @@ describe("useLabActions: launch", () => {
   it("uses the port mode remembered in Settings without asking", async () => {
     setPortMode("random");
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch(dockerLab, null, undefined, readyReport()));
+    await act(() => hook.result.current.launch(dockerLab, null, undefined));
     expect(launchArgs(calls)?.defaultPorts).toBe(false);
   });
 
@@ -190,7 +195,7 @@ describe("useLabActions: launch", () => {
       const offline: unknown[] = [];
       const { hook } = setup(unreachableBackend(reason, offline));
       render(<OfflineStartPrompt />);
-      await act(() => hook.result.current.launch({ ...dockerLab, id: "act-refused" }, null, undefined, readyReport(), { ports: "random" }));
+      await act(() => hook.result.current.launch({ ...dockerLab, id: "act-refused" }, null, undefined, { ports: "random" }));
       expect(screen.queryByRole("alertdialog")).toBeNull();
       expect(offline).toEqual([false]);
     }
@@ -212,7 +217,7 @@ describe("useLabActions: launch", () => {
 
   it("runs a container lab on a server", async () => {
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-remote" }, "aws-1", undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-remote" }, "aws-1", undefined));
     expect(launchArgs(calls)).toEqual({ labId: "act-remote", provider: null, host: "aws-1", defaultPorts: false });
   });
 
@@ -220,15 +225,15 @@ describe("useLabActions: launch", () => {
     // Regression: a container lab on an AWS account was announced as "running on your server".
     const { hook } = setup({}, [savedHost("pve", "proxmox"), savedHost("aws1", "aws")]);
     notified.mockClear();
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-cloud" }, "aws1", undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-cloud" }, "aws1", undefined));
     expect(notified).toHaveBeenLastCalledWith("Lab ready", "Invoice portal API is running in your cloud account.");
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-on-pve" }, "pve", undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-on-pve" }, "pve", undefined));
     expect(notified).toHaveBeenLastCalledWith("Lab ready", "Invoice portal API is running on your server.");
   });
 
   it("runs a container lab inside a local VM on the chosen hypervisor", async () => {
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-vm" }, null, { provider: "virtualbox" }, readyReport()));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-vm" }, null, { provider: "virtualbox" }));
     const args = must(launchArgs(calls), "the lab_launch call");
     expect(args.provider).toBe("virtualbox");
     expect(args.host).toBeNull();
@@ -238,7 +243,7 @@ describe("useLabActions: launch", () => {
   it("runs a container lab with VM recipes as one VM per machine on the chosen hypervisor", async () => {
     const { calls, hook } = setup();
     const both: Lab = { ...dockerLab, id: "act-vms", runtime: { ...must(dockerLab.runtime, "runtime"), docker: true, vm: true } };
-    await act(() => hook.result.current.launch(both, null, { provider: "qemu", perMachine: true }, readyReport()));
+    await act(() => hook.result.current.launch(both, null, { provider: "qemu", perMachine: true }));
     const args = must(launchArgs(calls), "the lab_launch call");
     // The VM form on that hypervisor, flagged for the backend; no port question (no containers
     // here).
@@ -252,7 +257,7 @@ describe("useLabActions: launch", () => {
     const both: Lab = { ...dockerLab, id: "act-cloud-vms", runtime: { ...must(dockerLab.runtime, "runtime"), providers: ["aws"], docker: true, vm: true } };
     // The cloud account's one-VM-per-machine form: `perMachine` with no local hypervisor; the
     // backend reads the flag with the host and starts cloud-vm.
-    await act(() => hook.result.current.launch(both, "aws1", { perMachine: true }, readyReport()));
+    await act(() => hook.result.current.launch(both, "aws1", { perMachine: true }));
     const args = must(launchArgs(calls), "the lab_launch call");
     expect(rawLaunchArgs(calls)?.perMachineVm).toBe(true);
     expect(args.provider).toBeNull();
@@ -261,20 +266,20 @@ describe("useLabActions: launch", () => {
 
   it("runs a VM lab picked here on the hypervisor the backend picks for it there", async () => {
     const { calls, hook } = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false, hypervisor: "parallels" }) });
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, null, undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, null, undefined));
     expect(launchArgs(calls)).toEqual({ labId: "act-vm-here", provider: "parallels", host: null, defaultPorts: false });
   });
 
   it("runs a VM lab started again here on the hypervisor it ran on, without asking the backend", async () => {
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-again" }, null, { provider: "libvirt" }, readyReport()));
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-again" }, null, { provider: "libvirt" }));
     expect(commands(calls)).not.toContain("lab_default_place");
     expect(launchArgs(calls)).toMatchObject({ provider: "libvirt", host: null });
   });
 
   it("starts a VM lab with no place picked on the server the backend picks for it", async () => {
     const { calls, hook } = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false, hypervisor: null }) });
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-def" }, undefined, undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-def" }, undefined, undefined));
     expect(calls.find((c) => c.cmd === "lab_default_place")?.args).toEqual({
       id: "act-vm-def",
       runtime: "VM",
@@ -292,14 +297,14 @@ describe("useLabActions: launch", () => {
     const report = readyReport();
     report.readyHypervisors = ["virtualbox", "parallels"];
     const { calls, hook } = setup({ lab_default_place: () => ({ host: null, provider: "parallels", perMachineVm: false, hypervisor: "parallels" }) });
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, undefined, undefined, report));
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-here" }, undefined, undefined));
     expect(calls.find((c) => c.cmd === "lab_default_place")?.args?.preferred).toBe("virtualbox");
     expect(launchArgs(calls)).toMatchObject({ provider: "parallels", host: null });
   });
 
   it("fails the start, rather than guess, when the default server can't be decided", async () => {
     const { calls, hook } = setup({ lab_default_place: () => rejectWith("couldn't read the lab's spec: HTTP 404") });
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-nospec" }, undefined, undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-nospec" }, undefined, undefined));
     expect(commands(calls)).not.toContain("lab_launch");
     expect(logsOf("act-vm-nospec").at(-1)).toContain("couldn't read the lab's spec");
   });
@@ -309,46 +314,35 @@ describe("useLabActions: launch", () => {
     // ran on, where the lab page's Reset takes it back there.
     const sourced = { ...sourcedVmLab, id: "act-web-again", runtime: { ...must(sourcedVmLab.runtime), runtime: "DOCKER" as const } };
     const inVm = setup({ lab_default_place: () => ({ host: null, provider: "utm", perMachineVm: false }) });
-    await act(() => inVm.hook.result.current.launch(sourced, undefined, undefined, readyReport(), { ports: "random" }));
+    await act(() => inVm.hook.result.current.launch(sourced, undefined, undefined, { ports: "random" }));
     expect(launchArgs(inVm.calls)).toMatchObject({ provider: "utm", host: null });
     const onServer = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false }) });
-    await act(() => onServer.hook.result.current.launch({ ...sourced, id: "act-web-pve" }, undefined, undefined, readyReport(), { ports: "random" }));
+    await act(() => onServer.hook.result.current.launch({ ...sourced, id: "act-web-pve" }, undefined, undefined, { ports: "random" }));
     expect(launchArgs(onServer.calls)).toMatchObject({ provider: null, host: "pve" });
   });
 
   it("asks for no default place when a place is picked", async () => {
     const { calls, hook } = setup();
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-picked" }, "pve", undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-picked" }, "pve", undefined));
     expect(commands(calls)).not.toContain("lab_default_place");
   });
 
-  it("says no hypervisor is installed instead of starting a VM lab", async () => {
-    const { calls, hook } = setup({ lab_default_place: () => ({ host: null, provider: null, perMachineVm: false, hypervisor: null }) });
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-none" }, null, undefined, readyReport()));
-    expect(launchArgs(calls)).toBeUndefined();
-    expect(logsOf("act-vm-none").at(-1)).toMatch(/^✗ No hypervisor for this lab is installed on this machine \(it runs on virtualbox\)/);
-  });
-
-  it("names 'none' when the lab lists no local hypervisor", async () => {
-    const { hook } = setup();
-    const lab: Lab = { ...vmLab, id: "act-vm-cloudonly", runtime: { runtime: "VM", architectures: [], providers: ["aws"] } };
-    await act(() => hook.result.current.launch(lab, null, undefined, readyReport()));
-    expect(logsOf("act-vm-cloudonly").at(-1)).toContain("(it runs on none)");
-  });
-
-  it("explains a VM lab built for another CPU on Apple Silicon", async () => {
-    const report = { ...readyReport(), arch: "aarch64" };
-    const { calls, hook } = setup({ lab_default_place: () => ({ host: null, provider: null, perMachineVm: false, hypervisor: null }) });
-    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-arm" }, null, undefined, report));
-    expect(launchArgs(calls)).toBeUndefined();
-    expect(logsOf("act-vm-arm").at(-1)).toContain("built for x86_64 and this machine is aarch64");
+  it("leaves a VM lab with no hypervisor here to the backend, and says its refusal", async () => {
+    // The backend's rule (`check_destination`), not one of the webview's own.
+    const { calls, hook } = setup({
+      lab_default_place: () => ({ host: null, provider: null, perMachineVm: false, hypervisor: null }),
+      lab_launch: rejects({ code: "noHypervisor", message: "No hypervisor ready on this machine runs this lab." }),
+    });
+    await act(() => hook.result.current.launch({ ...sourcedVmLab, id: "act-vm-none" }, null, undefined));
+    expect(launchArgs(calls)).toMatchObject({ provider: null, host: null });
+    expect(logsOf("act-vm-none").at(-1)).toMatch(/^✗ No hypervisor ready on this machine runs this lab\. Install one from the Machine page/);
   });
 
   it("puts a failed start on the log's last line and ends the run", async () => {
     const { hook } = setup({
       lab_launch: () => rejectWith("Port 8000 is already in use"),
     });
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-fail" }, null, undefined, readyReport(), { ports: "random" }));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-fail" }, null, undefined, { ports: "random" }));
     expect(logsOf("act-fail")).toEqual(["✗ Port 8000 is already in use"]);
     expect(getDeploySnapshot().runs["act-fail"]?.busy).toBe(false);
   });
@@ -429,7 +423,7 @@ describe("useLabActions: a failure the core knows by its code", () => {
   it("ends the log on the error in the player's language, with its code kept for the hints", async () => {
     setLocalePreference("fr");
     const { hook } = setup({ lab_launch: rejects({ code: "portInUse", args: { port: 8080 }, message: "Host port 8080 is already in use on this machine" }) });
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-port-fr" }, null, undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-port-fr" }, null, undefined));
     const run = getDeploySnapshot().runs["act-port-fr"];
     expect(run?.logs.at(-1)).toMatch(/^✗ Le port 8080 de l'hôte est déjà utilisé/);
     expect(run?.failureCode).toBe("portInUse");
@@ -439,7 +433,7 @@ describe("useLabActions: a failure the core knows by its code", () => {
     const heard = vi.fn();
     window.addEventListener(SIGNED_OUT_EVENT, heard);
     const { hook } = setup({ lab_launch: rejects({ code: "sessionExpired", message: "Your session expired" }) });
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-signed-out" }, null, undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-signed-out" }, null, undefined));
     expect(heard).toHaveBeenCalledTimes(1);
     window.removeEventListener(SIGNED_OUT_EVENT, heard);
   });
@@ -448,7 +442,7 @@ describe("useLabActions: a failure the core knows by its code", () => {
     const heard = vi.fn();
     window.addEventListener(SIGNED_OUT_EVENT, heard);
     const { hook } = setup({ lab_launch: rejects({ code: "other", message: "ansible: user signed out of the DC" }) });
-    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-not-signed-out" }, null, undefined, readyReport()));
+    await act(() => hook.result.current.launch({ ...dockerLab, id: "act-not-signed-out" }, null, undefined));
     expect(heard).not.toHaveBeenCalled();
     window.removeEventListener(SIGNED_OUT_EVENT, heard);
   });

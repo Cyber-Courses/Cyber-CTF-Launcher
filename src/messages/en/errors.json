@@ -33,6 +33,8 @@
     "labRunningHere": "This lab is still running on this machine (or its machines are still there). Stop it, then try again.",
     "labRunningOn": "This lab is still running on {host}. Stop it there, then try again.",
     "reapNoHost": "No account is recorded for it, so the launcher can't destroy it. Remove its resources in your cloud console.",
+    "pickCloudAccount": "This lab runs in your cloud account: pick one of your cloud accounts to start it on.",
+    "noHypervisor": "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account.",
     "turnedOffByPolicy": "Your organization turned this off on this computer (policy setting {setting}). Ask your IT team if you need it."
   }
 }

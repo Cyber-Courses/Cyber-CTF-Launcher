@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{
-    CLOUD_NEEDS_ACCOUNT, Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, downloads, local_run, low_memory_warning, parse_ipv4,
-    per_machine_runs_on, record_cloud_form,
+    Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, downloads, local_run, low_memory_warning, parse_ipv4, per_machine_runs_on,
+    record_cloud_form,
 };
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
@@ -141,9 +141,9 @@ fn a_local_run_follows_the_runtime_and_the_hypervisor() {
     // A server provider is never a local VM: the containers run on this machine's Docker.
     assert_eq!(local_run(Runtime::Docker, Some(Provider::Proxmox), false).unwrap(), LocalRun::Docker);
     assert_eq!(local_run(Runtime::Vm, Some(Provider::Qemu), false).unwrap(), LocalRun::Vm(Provider::Qemu));
-    assert_eq!(local_run(Runtime::Vm, None, false).unwrap_err().to_string(), "VM labs need a provider");
+    assert_eq!(local_run(Runtime::Vm, None, false).unwrap_err().code(), crate::error::Code::NoHypervisor);
     assert_eq!(local_run(Runtime::Vm, Some(Provider::VmwareEsxi), false).unwrap_err().to_string(), "pick a server host to run on ESXi or Proxmox");
-    assert_eq!(local_run(Runtime::Cloud, None, false).unwrap_err().to_string(), CLOUD_NEEDS_ACCOUNT);
+    assert_eq!(local_run(Runtime::Cloud, None, false).unwrap_err().code(), crate::error::Code::PickCloudAccount);
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn a_container_lab_picked_as_one_vm_per_machine_runs_as_a_vm_lab() {
     assert!(local_run(Runtime::Docker, Some(Provider::Proxmox), true).is_err());
     // A VM lab is already that form; a cloud lab has no machines to be VMs.
     assert_eq!(local_run(Runtime::Vm, Some(Provider::Virtualbox), true).unwrap(), LocalRun::Vm(Provider::Virtualbox));
-    assert_eq!(local_run(Runtime::Cloud, None, true).unwrap_err().to_string(), CLOUD_NEEDS_ACCOUNT);
+    assert_eq!(local_run(Runtime::Cloud, None, true).unwrap_err().code(), crate::error::Code::PickCloudAccount);
 }
 
 /// A lab with both forms: each machine has a container recipe (`app.image`) and the VM one
@@ -442,4 +442,17 @@ async fn the_policy_refuses_a_start_it_turns_off_before_anything_runs() {
         refused(start_here(&t, "priv", Runtime::Cloud, None, &[]).await.0, "DisableCloudLaunches");
     }
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+}
+
+#[test]
+fn a_start_with_nowhere_to_run_is_refused_by_its_code_before_anything_is_downloaded() {
+    use crate::error::Code;
+    let here = |provider| Destination { provider, ..Destination::default() };
+    let on = |host| Destination { host: Some(host), ..Destination::default() };
+    assert_eq!(super::check_destination(Runtime::Cloud, &here(None)).unwrap_err().code(), Code::PickCloudAccount);
+    assert_eq!(super::check_destination(Runtime::Vm, &here(None)).unwrap_err().code(), Code::NoHypervisor);
+    assert!(super::check_destination(Runtime::Cloud, &on("aws1")).is_ok());
+    assert!(super::check_destination(Runtime::Vm, &here(Some(Provider::Qemu))).is_ok());
+    assert!(super::check_destination(Runtime::Vm, &on("pve")).is_ok());
+    assert!(super::check_destination(Runtime::Docker, &here(None)).is_ok());
 }

@@ -104,7 +104,6 @@ export function OpenLab({
           lab,
           target.kind === "host" ? target.id : null,
           localVmPick(target),
-          report,
           target.kind === "local" ? { ports: target.ports, engine: target.engine } : undefined,
         )
       }

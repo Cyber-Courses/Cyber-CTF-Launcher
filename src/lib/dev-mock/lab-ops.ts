@@ -88,6 +88,9 @@ async function launchContainer(id: string, args: Args, live: Live) {
 async function launchElsewhere(id: string, runtime: "VM" | "CLOUD", args: Args, { sc, live }: Context) {
   const host = args?.host ? (hostsOf(sc).find((h) => h.id === args.host) ?? null) : null;
   if (args?.host && !host) fail(`no saved server or cloud account '${argText(args.host)}'`);
+  // Nowhere to start it, refused as the backend's `check_destination` refuses it.
+  if (!args?.host && runtime === "CLOUD") fail("This lab runs in your cloud account: pick one of your cloud accounts to start it on.", "pickCloudAccount");
+  if (!args?.host && !args?.provider && runtime === "VM") fail("No hypervisor ready on this machine runs this lab.", "noHypervisor");
   const provider = argText(host?.provider, argText(args?.provider, "virtualbox"));
   const cloud = runtime === "CLOUD";
   const lines = cloud ? terraformApply(slugOf(id)) : vagrantUp(slugOf(id), provider, host ? argText(host.name) : null);

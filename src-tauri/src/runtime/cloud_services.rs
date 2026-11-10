@@ -25,7 +25,7 @@
 use crate::platform::AppDirs;
 
 use super::lab::{CloudProvider, CloudServices, Spec, Target};
-use super::launch::{CLOUD_NEEDS_ACCOUNT, check_aws_budget, public_ip};
+use super::launch::{check_aws_budget, public_ip};
 use super::providers::Provider;
 use super::{LabRef, Runtime, isothrum, lab, server};
 use crate::error::{Error, Result};
@@ -82,7 +82,7 @@ pub(super) async fn start(dirs: &AppDirs, lab: LabRef<'_>, host: Option<&str>, e
     // A cloud-services lab always runs as `Runtime::Cloud`, so only the lab's folder and id are
     // read from the reference here.
     let LabRef { dir, id, .. } = lab;
-    let host = host.ok_or_else(|| Error::Invalid(CLOUD_NEEDS_ACCOUNT.into()))?;
+    let host = host.ok_or_else(|| Error::coded(crate::error::Code::PickCloudAccount))?;
     let spec = lab::prepare(dir, Target::CloudServices)?.spec;
     let cloud = of(&spec)?;
     check_supported(cloud)?;

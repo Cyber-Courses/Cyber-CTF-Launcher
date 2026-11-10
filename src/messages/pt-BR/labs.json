@@ -250,11 +250,7 @@
     "readyInVm": "{title} está rodando numa VM nesta máquina.",
     "readyHere": "{title} está rodando nesta máquina.",
     "back": "{title} voltou.",
-    "foreignCpu": "As VMs deste lab são feitas para {archs} e esta máquina é {arch}. Instale o QEMU pela página Máquina para rodá-las emuladas (muitas vezes mais lento) ou rode o lab num servidor ou na sua conta de nuvem.",
-    "noHypervisor": "Nenhum hypervisor para este lab está instalado nesta máquina (ele roda em {providers}). Instale um pela página Máquina ou rode-o num servidor.",
-    "none": "nenhum",
     "refused": "Outra operação ainda está em andamento neste lab",
-    "pickCloudAccount": "Este lab roda na sua conta de nuvem: escolha uma das suas contas de nuvem para iniciá-lo.",
     "readyInCloud": "{title} está rodando na sua conta de nuvem."
   },
   "detail": {

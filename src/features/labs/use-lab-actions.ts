@@ -15,7 +15,6 @@ import {
   resuming,
   runOperation,
   stopping,
-  type LaunchReport,
   type OperationBody,
 } from "@/features/labs/lab-operations";
 
@@ -52,11 +51,10 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
    * that hypervisor, or (`perMachine`) a container lab with VM recipes as one VM per machine there.
    * A cloud lab runs only on the cloud account `host` (never one picked implicitly: it costs).
    * `hosts` (the saved servers and cloud accounts) say which `host` is a cloud account.
-   * `report` (the machine report) says why a VM lab can't run here (its CPU);
    * `chosenPorts` = the host ports for a container lab here, already chosen ("Where should it run?").
    */
   const launch = useCallback(
-    async (lab: Lab, host?: string | null, vm?: LocalVmPick, report?: LaunchReport, here?: { ports?: PortMode; engine?: DockerEngine | null }) => {
+    async (lab: Lab, host?: string | null, vm?: LocalVmPick, here?: { ports?: PortMode; engine?: DockerEngine | null }) => {
       if (!lab.runtime) return;
       if (lab.runtime.runtime === "CLOUD") {
         await operate(lab, "launch", cloudLaunch(lab, host));
@@ -71,7 +69,7 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
       await operate(
         lab,
         "launch",
-        localLaunch(lab, { host, vmProvider: vm?.provider, report, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine, inCloud }),
+        localLaunch(lab, { host, vmProvider: vm?.provider, ports, perMachineVm: vm?.perMachine ?? false, engine: here?.engine, inCloud }),
       );
     },
     [operate, hosts],

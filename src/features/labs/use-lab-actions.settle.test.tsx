@@ -30,7 +30,7 @@ describe("useLabActions: the status read after an operation", () => {
     const { result } = renderHook(() => useLabActions(refresh, []));
     let launched: Promise<void> | undefined;
     act(() => {
-      launched = result.current.launch(lab, null, undefined, null, { ports: "default" });
+      launched = result.current.launch(lab, null, undefined, { ports: "default" });
     });
     await advance(0);
     expect(refresh).toHaveBeenCalledWith(lab, { fresh: true });

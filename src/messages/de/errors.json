@@ -33,6 +33,8 @@
     "labRunningHere": "Dieses Lab läuft noch auf diesem Rechner (oder seine Maschinen sind noch da). Stoppe es und versuche es dann erneut.",
     "labRunningOn": "Dieses Lab läuft noch auf {host}. Stoppe es dort und versuche es dann erneut.",
     "reapNoHost": "Für es ist kein Konto hinterlegt, daher kann der Launcher es nicht zerstören. Entferne seine Ressourcen in der Konsole deiner Cloud.",
+    "pickCloudAccount": "Dieses Lab läuft in deinem Cloud-Konto: Wähle eines deiner Cloud-Konten, um es zu starten.",
+    "noHypervisor": "Kein auf diesem Rechner bereiter Hypervisor führt dieses Lab aus. Installiere einen über die Seite Rechner oder führe das Lab auf einem Server oder in deinem Cloud-Konto aus.",
     "turnedOffByPolicy": "Deine Organisation hat diese Funktion auf diesem Computer deaktiviert (Richtlinieneinstellung {setting}). Wende dich an deine IT, wenn du sie brauchst."
   }
 }

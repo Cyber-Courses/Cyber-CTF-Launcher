@@ -127,13 +127,13 @@ test.describe("VM labs", () => {
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
     await expect(where.getByRole("radio", { name: /homelab-pve/ })).toHaveAttribute("aria-checked", "true");
     await expect(where.getByRole("radio", { name: /office-esxi/ })).toBeEnabled();
-    // Picked anyway, this machine says what it would take, before Vagrant runs.
+    // Picked anyway, the backend refuses it before anything is downloaded, saying what it takes.
     await where.getByRole("radio", { name: /^This machine/ }).click();
     await where.getByRole("button", { name: "Start", exact: true }).click();
     await expect(where).toBeHidden();
     await expect(main(page)).toContainText("Failed to start");
     await expect(main(page).getByRole("alert").filter({ hasText: "Couldn’t start GOAD Light" })).toContainText(
-      "This lab's VMs are built for x86_64 and this machine is arm64. Install QEMU from the Machine page to run them emulated (many times slower), or run the lab on a server or in your cloud account.",
+      "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account.",
     );
     await expect(page.locator(".react-flow")).toHaveCount(0);
   });

@@ -108,7 +108,7 @@ describe("an operation the backend refused", () => {
   it("says another operation is still running, as a refusal and not a failed start", async () => {
     installTauri({ ...idle, lab_launch: rejects({ code: "alreadyInProgress", message: "lab-sqli: a launch is already in progress" }) });
     const actions = renderActions();
-    await act(() => actions().launch(blind, null, undefined, null, { ports: "default" }));
+    await act(() => actions().launch(blind, null, undefined, { ports: "default" }));
     expect(alerts().join("\n")).toContain("Another operation is still running on this lab");
     expect(alerts().join("\n")).not.toContain("Couldn’t start");
     // Nothing ran, so no run is left behind reading as a failed deploy.
@@ -118,9 +118,10 @@ describe("an operation the backend refused", () => {
 
 describe("a cloud lab started without an account", () => {
   it("says to pick one of the player's cloud accounts", async () => {
-    installTauri(idle);
+    // As the backend refuses it, by its code.
+    installTauri({ ...idle, lab_launch: rejects({ code: "pickCloudAccount", message: "pick an account" }) });
     const actions = renderActions();
-    await act(() => actions().launch(goat, null, undefined, null));
+    await act(() => actions().launch(goat, null, undefined));
     const toast = must(
       alerts().find((a) => a.includes("Couldn’t start EC2 SSRF")),
       "the failed start toast",

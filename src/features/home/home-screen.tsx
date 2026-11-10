@@ -108,7 +108,7 @@ function startAgain(o: OverviewLabs, report: SystemReport | null, openLab: (slug
   return (lab: Lab) => {
     if (lab.runtime?.runtime === "CLOUD") openLab(lab.slug);
     else if (statuses[lab.id]?.parked) void o.actions.resume(lab);
-    else void o.actions.launch(lab, undefined, undefined, report);
+    else void o.actions.launch(lab);
   };
 }
 

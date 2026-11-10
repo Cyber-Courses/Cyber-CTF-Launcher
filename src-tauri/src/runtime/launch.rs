@@ -10,7 +10,7 @@ pub(crate) use super::isothrum::Inputs;
 use super::paths::{mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, runner_home};
 use super::providers::Provider;
 use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server};
-use crate::error::{Error, Result};
+use crate::error::{Code, Error, Result};
 use crate::platform::policy::Key;
 
 mod local;
@@ -288,8 +288,19 @@ async fn recheck_instance(dir: &Path, id: &str, log: &mut impl FnMut(String)) ->
     Ok(())
 }
 
-/// Cloud-services labs have nothing to run here.
-pub(super) const CLOUD_NEEDS_ACCOUNT: &str = "This lab runs in your cloud account: pick one of your cloud accounts to start it on.";
+/// Whether a `runtime` lab can start at `to` at all, before anything is downloaded for it: a
+/// cloud-services lab needs a cloud account, a VM lab on this machine a hypervisor here. Refused
+/// with a code the webview says in the player's language.
+pub(crate) fn check_destination(runtime: Runtime, to: &Destination<'_>) -> Result<()> {
+    if to.host.is_some() {
+        return Ok(());
+    }
+    match runtime {
+        Runtime::Cloud => Err(Error::coded(Code::PickCloudAccount)),
+        Runtime::Vm if to.provider.is_none() => Err(Error::coded(Code::NoHypervisor)),
+        _ => Ok(()),
+    }
+}
 
 /// The per-machine form is a pick for this machine.
 pub(super) const PER_MACHINE_HERE_ONLY: &str = "One VM per machine is a way to run the lab on this machine: on a server, the lab runs as it is published.";
@@ -343,13 +354,13 @@ fn local_run(runtime: Runtime, provider: Option<Provider>, per_machine_vm: bool)
             None => LocalRun::Docker,
         }),
         Runtime::Vm => {
-            let provider = provider.ok_or_else(|| Error::Invalid("VM labs need a provider".into()))?;
+            let provider = provider.ok_or_else(|| Error::coded(Code::NoHypervisor))?;
             if provider.is_remote() {
                 return Err(Error::Invalid("pick a server host to run on ESXi or Proxmox".into()));
             }
             Ok(LocalRun::Vm(provider))
         }
-        Runtime::Cloud => Err(Error::Invalid(CLOUD_NEEDS_ACCOUNT.into())),
+        Runtime::Cloud => Err(Error::coded(Code::PickCloudAccount)),
     }
 }
 

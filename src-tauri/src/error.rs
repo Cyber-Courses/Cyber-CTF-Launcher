@@ -112,6 +112,10 @@ pub enum Code {
         /// What the command wrote to its standard error.
         stderr: String,
     },
+    /// A lab that runs only in a cloud account was started with none picked.
+    PickCloudAccount,
+    /// A VM lab was started on this machine with no hypervisor here to run it on.
+    NoHypervisor,
     /// This computer's administrator turned the feature off: `setting` is the policy switch
     /// (`platform::policy::Key`) that did.
     TurnedOffByPolicy {
@@ -180,6 +184,11 @@ impl Code {
             }
             Code::ToolMissing { tool } => format!("`{tool}` is not installed or not on PATH"),
             Code::CommandFailed { command, stderr } => format!("`{command}` failed: {stderr}"),
+            Code::PickCloudAccount => "This lab runs in your cloud account: pick one of your cloud accounts to start it on.".into(),
+            Code::NoHypervisor => {
+                "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account."
+                    .into()
+            }
             Code::TurnedOffByPolicy { setting } => {
                 format!("Your organization turned this off on this computer (policy setting {setting}). Ask your IT team if you need it.")
             }
@@ -438,11 +447,13 @@ mod tests {
             Code::TurnedOffByPolicy { .. } => 24,
             Code::Refused => 25,
             Code::RefusedBeforeActing => 26,
+            Code::PickCloudAccount => 27,
+            Code::NoHypervisor => 28,
         }
     }
 
     /// How many forms [`form`] tells apart.
-    const FORMS: usize = 27;
+    const FORMS: usize = 29;
 
     #[test]
     fn every_form_has_a_sample() {
@@ -480,6 +491,8 @@ mod tests {
             Code::ToolMissing { tool: "terraform".into() },
             Code::CommandFailed { command: "vagrant up".into(), stderr: "locked".into() },
             Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() },
+            Code::PickCloudAccount,
+            Code::NoHypervisor,
         ]
     }
 

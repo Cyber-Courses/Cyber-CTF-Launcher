@@ -33,6 +33,8 @@
     "labRunningHere": "Este lab ainda está rodando nesta máquina (ou as máquinas dele ainda estão aqui). Pare-o e tente de novo.",
     "labRunningOn": "Este lab ainda está rodando em {host}. Pare-o lá e tente de novo.",
     "reapNoHost": "Nenhuma conta está registrada para ele, então o launcher não pode destruí-lo. Remova os recursos dele no console da sua nuvem.",
+    "pickCloudAccount": "Este lab roda na sua conta de nuvem: escolha uma das suas contas de nuvem para iniciá-lo.",
+    "noHypervisor": "Nenhum hypervisor pronto nesta máquina roda este lab. Instale um pela página Máquina, ou rode o lab num servidor ou na sua conta de nuvem.",
     "turnedOffByPolicy": "Sua organização desativou este recurso neste computador (configuração de política {setting}). Fale com sua equipe de TI se precisar dele."
   }
 }

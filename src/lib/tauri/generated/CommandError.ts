@@ -72,7 +72,7 @@ command: string,
 /**
  * What the command wrote to its standard error.
  */
-stderr: string, } } | { "code": "turnedOffByPolicy", "args": { 
+stderr: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" } | { "code": "turnedOffByPolicy", "args": { 
 /**
  * The policy setting's name.
  */
