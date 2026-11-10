@@ -2,7 +2,7 @@
 //! store long-lived cloud secrets. Terraform then uses the CLI's credential chain.
 
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
@@ -10,22 +10,6 @@ use tokio::sync::oneshot;
 use crate::error::{Code, Error, Result};
 use crate::platform::exec::{run_cli, stream};
 use crate::runtime::server::sign_in::{AWS_WHO_AM_I, sign_in_question};
-
-/// Civil (year, month, day) for a Unix timestamp, UTC (Howard Hinnant's algorithm). Used to
-/// build Cost Explorer date ranges without a date-crate dependency.
-fn ymd_from_secs(secs: i64) -> (i64, i64, i64) {
-    let z = secs.div_euclid(86_400) + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m, d)
-}
 
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
@@ -117,15 +101,6 @@ pub async fn aws_cli_identity(profile: Option<String>) -> Option<String> {
     // The question a launch asks (see `sign_in_question`), which answers with the identity.
     let args = with_profile(AWS_WHO_AM_I.to_vec(), profile.as_deref());
     run_cli("aws", &args).await.ok().as_deref().and_then(non_empty)
-}
-
-/// The Cost Explorer time period for this month so far: Start = the 1st, End = tomorrow
-/// (End is exclusive, so tomorrow includes today's spend).
-pub(crate) fn month_period() -> String {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok().and_then(|d| i64::try_from(d.as_secs()).ok()).unwrap_or(0);
-    let (y, m, _) = ymd_from_secs(now);
-    let (ey, em, ed) = ymd_from_secs(now + 86400);
-    format!("Start={y:04}-{m:02}-01,End={ey:04}-{em:02}-{ed:02}")
 }
 
 /// This month's AWS spend so far in USD, as the AWS CLI's `profile` (or its default) sees it:
@@ -586,47 +561,5 @@ mod tests {
         // A section header with trailing text is another section.
         assert_eq!(parse_oci_config("[DEFAULT] ; main\nregion=x\n").region, "");
         assert!(parse_oci_config("").configured && parse_oci_config("").region.is_empty());
-    }
-
-    #[test]
-    fn the_civil_date_at_year_and_century_boundaries() {
-        // The last second of 2026, then the day after it: a month period crossing New Year
-        // ends on 2027-01-01.
-        assert_eq!(ymd_from_secs(1_798_761_599), (2026, 12, 31));
-        assert_eq!(ymd_from_secs(1_798_761_599 + 86_400), (2027, 1, 1));
-        // 2100 is not a leap year (2100-03-01 00:00 UTC less one second is Feb 28); 2000 was.
-        assert_eq!(ymd_from_secs(4_107_542_399), (2100, 2, 28));
-        assert_eq!(ymd_from_secs(951_782_400), (2000, 2, 29));
-        // The extremes don't overflow.
-        let _ = (ymd_from_secs(i64::MIN), ymd_from_secs(i64::MAX));
-    }
-
-    #[test]
-    fn civil_date_from_unix_timestamp() {
-        // Epoch.
-        assert_eq!(ymd_from_secs(0), (1970, 1, 1));
-        // A known instant: 2021-01-01 00:00:00 UTC = 1609459200.
-        assert_eq!(ymd_from_secs(1_609_459_200), (2021, 1, 1));
-        // Leap day: 2020-02-29 12:00:00 UTC = 1582977600.
-        assert_eq!(ymd_from_secs(1_582_977_600), (2020, 2, 29));
-        // End of a year: 2023-12-31 23:59:59 UTC = 1704067199.
-        assert_eq!(ymd_from_secs(1_704_067_199), (2023, 12, 31));
-        // The day before epoch (negative seconds).
-        assert_eq!(ymd_from_secs(-1), (1969, 12, 31));
-    }
-
-    #[test]
-    fn month_period_spans_the_first_to_an_exclusive_end() {
-        // Cost Explorer wants Start=<1st of this month>,End=<tomorrow> (End exclusive).
-        let p = month_period();
-        assert!(p.starts_with("Start="), "{p}");
-        let (start, end) = p.split_once(",End=").unwrap();
-        let start = start.strip_prefix("Start=").unwrap();
-        // Start is always day 01 of a month; both are YYYY-MM-DD.
-        assert!(start.ends_with("-01"), "{start}");
-        assert_eq!(start.len(), 10);
-        assert_eq!(end.len(), 10);
-        // End is strictly after Start (this month has at least one day so far).
-        assert!(end > start, "end {end} should be after start {start}");
     }
 }
