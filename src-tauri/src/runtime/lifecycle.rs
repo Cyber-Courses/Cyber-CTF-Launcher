@@ -7,6 +7,7 @@ use crate::platform::AppDirs;
 
 use super::host::{self, Host};
 use super::inflight::{Action, DeployGuard, lock_lab};
+use super::launch::policy_allows;
 use super::paths::{lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm};
 use super::{Control, LabRef, Park, Runtime, isothrum, lab, server};
 use crate::error::{Error, Result};
@@ -103,23 +104,20 @@ fn parked_message(mode: Park) -> &'static str {
     }
 }
 
-/// Brings a parked lab back, as it was.
+/// Brings a parked lab back, as it was. Also the repair for a lab some machines of which went
+/// down (powered off by hand, or a cut resume): the machines already up are left alone, the others
+/// come back. A resume boots the lab's machines again, so the administrator's policy is asked
+/// first, as for a start ([`policy_allows`]).
 async fn resume(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, mut log: impl FnMut(String)) -> Result<()> {
     let _lock = lock_lab(dirs, id).await?;
     let _deploy = DeployGuard::new(id, Action::Start);
-    resume_locked(dirs, dir, id, runtime, &mut log).await
-}
-
-/// The body of `resume`, for a caller already holding the lab lock (a start on a parked lab).
-/// Also the repair for a lab some machines of which went down (powered off by hand, or a cut
-/// resume): the machines already up are left alone, the others come back.
-pub(super) async fn resume_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: &mut impl FnMut(String)) -> Result<()> {
     refuse_cloud_park(runtime)?;
+    policy_allows(dirs, runtime, None, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
     let run = local_run(dirs, dir, id, runtime, "This lab was parked on a server host; resuming there isn't available yet.")?;
     log("Resuming the lab…".into());
     // The runner resumes a parked run as it was; when nothing is left of it, it drops the parked
     // mark and reports `NothingToResume`, so the page offers a fresh start.
-    run.resume(&mut *log).await?;
+    run.resume(&mut log).await?;
     mark_parked(dir, None)?;
     log("Lab resumed.".into());
     Ok(())
@@ -300,6 +298,21 @@ mod tests {
         // and the lab no longer reads as running there.
         stop_lab(&t.dirs(), "web", Runtime::Docker, std::future::ready(()), |_| {}).await.unwrap();
         assert!(!dir.join(server::HOST_MARKER).exists());
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn the_policy_refuses_resuming_a_privileged_lab_before_anything_runs() {
+        use crate::error::Code;
+        use crate::platform::policy::{Key, Override};
+        let t = TestApp::new();
+        let dir = t.lab("priv", &[("isoloom.yml", crate::runtime::test_support::PRIVILEGED_LAB)]);
+        mark_parked(&dir, Some(Park::Pause)).unwrap();
+        let tools = Tools::rules(&[]);
+        let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
+        let err = resume_lab(&t.dirs(), "priv", Runtime::Docker, |_| {}).await.unwrap_err();
+        assert_eq!(err.code(), Code::TurnedOffByPolicy { setting: "RefusePrivilegedLabs".into() }, "{err}");
+        assert_eq!(parked(&dir), Some(Park::Pause));
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     }
 

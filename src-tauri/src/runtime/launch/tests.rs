@@ -408,9 +408,8 @@ async fn utm_is_opened_and_answers_before_a_vm_starts() {
 async fn the_policy_refuses_a_start_it_turns_off_before_anything_runs() {
     use crate::error::Code;
     use crate::platform::policy::{Key, Override};
-    const PRIVILEGED: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    privileged: true\n    app: { image: nginx:1.27 }\n";
     let t = TestApp::new();
-    t.lab("priv", &[("isoloom.yml", PRIVILEGED)]);
+    t.lab("priv", &[("isoloom.yml", crate::runtime::test_support::PRIVILEGED_LAB)]);
     let aws = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
     let tools = Tools::rules(&[]);
     let refused = |r: crate::error::Result<()>, setting: &str| {

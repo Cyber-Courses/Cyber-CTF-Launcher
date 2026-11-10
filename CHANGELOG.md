@@ -209,7 +209,8 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   `DisableCloudLaunches`, and every place for a privileged lab under `RefusePrivilegedLabs`, and the
   tool install and remove buttons stayed on under `DisableToolInstalls`; each refused only once
   clicked. The picker now shows those places as refused, with the setting that refuses them, and
-  the buttons are disabled with a line saying why.
+  the buttons are disabled with a line saying why. Resuming a paused or shut-down lab with a
+  privileged machine is refused under `RefusePrivilegedLabs` too, where it used to boot it again.
 - **A cloud-services lab gets the account's region, subscription or project.** The lab's own
   Terraform module was never given where the account works when its provider names none: the AWS
   region (`AWS_REGION`), the Azure subscription, the Google Cloud project and region. They are now

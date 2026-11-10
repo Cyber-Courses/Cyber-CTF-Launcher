@@ -119,6 +119,9 @@ pub(crate) struct LabRef<'a> {
 pub(crate) mod test_support {
     use super::{LabStatus, Machine};
 
+    /// A lab spec with a privileged machine: one `RefusePrivilegedLabs` turns off.
+    pub(crate) const PRIVILEGED_LAB: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    privileged: true\n    app: { image: nginx:1.27 }\n";
+
     /// A machine in `state`, with nothing else known about it.
     pub(crate) fn machine(name: &str, state: &str) -> Machine {
         Machine {
