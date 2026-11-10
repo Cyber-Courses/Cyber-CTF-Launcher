@@ -1,3 +1,4 @@
+import { lifecyclePhase } from "@/features/labs/lab-phase";
 import { runsNativelyHere } from "@/features/labs/lab-runtime";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
@@ -21,13 +22,8 @@ export function rowPhase({
   /** Its last start, from this window, failed. */
   failed?: boolean;
 }): RowPhase {
-  const running = status?.running ?? false;
-  if (busy) return "busy";
-  if (deploying && !running) return "starting";
-  if (running) return "running";
-  if (failed) return "failed";
-  if (status?.parked) return status.parked === "pause" ? "paused" : "shutDown";
-  return solved ? "solved" : "notStarted";
+  const phase = lifecyclePhase({ busy, running: status?.running ?? false, starting: deploying, failed, parked: status?.parked });
+  return phase ?? (solved ? "solved" : "notStarted");
 }
 
 /** Whether a row's lab runs, is parked (how), and runs emulated here. */

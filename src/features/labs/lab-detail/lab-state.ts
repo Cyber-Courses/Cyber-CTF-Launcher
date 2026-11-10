@@ -2,6 +2,7 @@ import { isLocalVmForm, type RunTarget } from "@/features/labs/run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { emulatorReady, vmFormTarget, isCloudLab, isContainerLab, isLocalHypervisor, runsNativelyHere } from "@/features/labs/lab-runtime";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
+import { lifecyclePhase } from "@/features/labs/lab-phase";
 import type { ActiveOperation, LabControl, LabMachine, LabStatus, Provider, Runtime, ServerHost } from "@/lib/tauri";
 
 // What the lab page shows, derived from the lab's status and what is in flight on it.
@@ -50,14 +51,12 @@ function labControls(i: LabStateInput) {
   };
 }
 
-/** The page's state as one word, most pressing first. */
+/** The page's state as one word, most pressing first (`lifecyclePhase`, an operation on it being
+ *  "operation"); else whether a run was cut off. */
 function labPhase({
   operation,
-  running,
-  starting,
-  parked,
   interrupted,
-  failed,
+  ...lifecycle
 }: {
   operation: LabOperation | null;
   running: boolean;
@@ -66,13 +65,9 @@ function labPhase({
   interrupted: boolean;
   failed: boolean;
 }): LabPhase {
-  if (operation && OPERATION_STATUS[operation]) return "operation";
-  if (running) return "running";
-  if (starting) return "starting";
-  // Its start just failed: say so, not "Not started" (or "Interrupted", for what it left).
-  if (failed) return "failed";
-  if (parked) return parked === "pause" ? "paused" : "shutDown";
-  return interrupted ? "interrupted" : "notStarted";
+  const phase = lifecyclePhase({ busy: !!operation && !!OPERATION_STATUS[operation], ...lifecycle });
+  if (phase === "busy") return "operation";
+  return phase ?? (interrupted ? "interrupted" : "notStarted");
 }
 
 /** What is in flight on a lab being deployed: the button this page clicked, else what the backend

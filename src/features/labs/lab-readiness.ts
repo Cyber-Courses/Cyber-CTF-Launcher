@@ -1,14 +1,14 @@
 import type { Lab } from "@/features/labs/use-labs";
-import { cloudAccountsFor, cloudNames, localProviders } from "@/features/labs/lab-runtime";
+import { cloudAccountsFor, cloudNames, emulatorReady, localProviders, runPlaces } from "@/features/labs/lab-runtime";
 import { providerLabel } from "@/features/machine/hypervisors";
 import type { ServerHost, SystemReport } from "@/lib/tauri";
 import { translate } from "@/lib/i18n";
 
 /**
  * What this machine is missing to run a lab, from facts the launcher already checked: a
- * running container engine for Docker labs; for VM labs, a local hypervisor the lab
- * supports that is fully usable (hypervisor + Vagrant + plugin), or a saved server it
- * can run on; for cloud labs, Terraform and a connected account of a cloud the lab runs on
+ * running container engine for Docker labs; for VM labs, a place `runPlaces` reads as ready (a
+ * local hypervisor the lab supports that is fully usable, hypervisor + Vagrant + plugin, or a
+ * saved server or cloud account it can run on); for cloud labs, Terraform and a connected account of a cloud the lab runs on
  * (its sign-in is checked when the account is picked). Null when it can run.
  */
 export function setupNeeded(lab: Lab, report: SystemReport | null, servers: ServerHost[]): string | null {
@@ -21,13 +21,13 @@ export function setupNeeded(lab: Lab, report: SystemReport | null, servers: Serv
     if (!report.dockerRunning) return translate("labs.readiness.startEngine");
     return null;
   }
-  // Built for another CPU, only an emulator (QEMU) runs it here.
-  const here = localProviders(rt, report.arch);
-  const local = report.readyHypervisors.some((p) => here.includes(p));
-  const remote = servers.some((h) => rt.providers.includes(h.provider));
-  if (local || remote) return null;
+  // Ready where it runs as VMs: a hypervisor here (only an emulator for a lab built for another
+  // CPU), a saved server or a cloud account, by the places the lab page shows.
+  const places = runPlaces(rt, report.arch, emulatorReady(report.readyHypervisors), { readyVms: report.readyHypervisors, hosts: servers });
+  if (places.some((p) => p.key !== "container" && p.state === "ready")) return null;
   // Name the hypervisors this lab supports, not a generic "a hypervisor": a lab that runs on
   // VirtualBox or VMware says so, instead of looking as if nothing is installed.
+  const here = localProviders(rt, report.arch);
   const supported = report.vmProviders.filter((p) => !p.remote && here.includes(p.provider)).map((p) => providerLabel(p, report.os));
   if (supported.length === 0) return translate("labs.readiness.needsServer");
   return translate("labs.readiness.needsHypervisor", { names: joinOr(supported) });
