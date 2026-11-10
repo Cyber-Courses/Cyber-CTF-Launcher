@@ -38,7 +38,7 @@ export const report: SystemReport = withSetup({
       pluginInstalled: false,
       utility: "missing",
       needs: ["plugin", "vmwareUtility"],
-      reason: "VMware Fusion is not installed",
+      reason: { code: "notInstalled", args: { program: null } },
     },
     {
       provider: "utm",
@@ -49,7 +49,7 @@ export const report: SystemReport = withSetup({
       pluginInstalled: false,
       utility: null,
       needs: ["plugin"],
-      reason: "UTM is not installed",
+      reason: { code: "notInstalled", args: { program: null } },
     },
     {
       provider: "vmware_esxi",

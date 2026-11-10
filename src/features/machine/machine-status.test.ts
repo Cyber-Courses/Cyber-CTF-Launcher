@@ -113,13 +113,13 @@ describe("vmSetup", () => {
   });
 
   it("explains a hypervisor that can't run once Vagrant is in place", () => {
-    const vm = vmSetup(report({ vmProviders: [hv({ reason: "no /dev/kvm" })] }), null, null);
+    const vm = vmSetup(report({ vmProviders: [hv({ reason: { code: "noKvm" } })] }), null, null);
     expect(vm.state).toBe("blocked");
-    expect(vm.blockedReason).toBe("No /dev/kvm.");
+    expect(vm.blockedReason).toEqual({ code: "noKvm" });
   });
 
   it("asks for Vagrant, or for a hypervisor", () => {
-    expect(vmSetup(report({ vagrant: tool(false), vmProviders: [hv({ reason: "no /dev/kvm" })] }), null, null).state).toBe("vagrantMissing");
+    expect(vmSetup(report({ vagrant: tool(false), vmProviders: [hv({ reason: { code: "noKvm" } })] }), null, null).state).toBe("vagrantMissing");
     expect(vmSetup(report({ vmProviders: [hv({ hypervisor: false })] }), null, null).state).toBe("needHypervisor");
   });
 
@@ -196,9 +196,9 @@ describe("dockerState and vmSetup: edges", () => {
     expect(vmSetup(one, null, { result: "fail", at: 1 })).toMatchObject({ automatic: false, state: "testFailed" });
   });
 
-  it("capitalises a blocked reason and ends it with a period, only once Vagrant is in place", () => {
-    const blocked = hv({ provider: "libvirt", available: false, reason: "no /dev/kvm on this machine", plugin: "vagrant-libvirt", pluginInstalled: true });
-    expect(vmSetup(report({ vmProviders: [blocked] }), null, null)).toMatchObject({ blockedReason: "No /dev/kvm on this machine.", state: "blocked" });
+  it("keeps a blocked reason's code, only once Vagrant is in place", () => {
+    const blocked = hv({ provider: "libvirt", available: false, reason: { code: "noKvm" }, plugin: "vagrant-libvirt", pluginInstalled: true });
+    expect(vmSetup(report({ vmProviders: [blocked] }), null, null)).toMatchObject({ blockedReason: { code: "noKvm" }, state: "blocked" });
     expect(vmSetup(report({ vagrant: tool(false), vmProviders: [blocked] }), null, null)).toMatchObject({ blockedReason: null, state: "vagrantMissing" });
     // The plugin still missing: that is what setup fixes next, not a blocked hypervisor.
     expect(vmSetup(report({ vmProviders: [{ ...blocked, pluginInstalled: false }] }), null, null).state).toBe("vagrantMissing");

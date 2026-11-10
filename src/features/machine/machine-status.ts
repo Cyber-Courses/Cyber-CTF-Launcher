@@ -1,4 +1,4 @@
-import type { MachineMetrics, ProviderStatus, SystemReport, Tool } from "@/lib/tauri";
+import type { MachineMetrics, ProviderStatus, SystemReport, Tool, Unavailable } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
 import { cantRun, labHypervisor, localHypervisors } from "@/features/machine/hypervisors";
 import type { LabKind } from "@/features/machine/machine-parts";
@@ -55,9 +55,8 @@ export type VmState = "notApplicable" | "ready" | "testFailed" | "blocked" | "va
 
 /** A hypervisor with everything Vagrant needs in place that still can't run (no /dev/kvm, not in
  *  the kvm group): its own reason, since installing Vagrant again wouldn't help. */
-function blockedReasonOf(report: SystemReport, hypervisors: ProviderStatus[]): string | null {
-  const reason = hypervisors.find((p) => cantRun(report, p))?.reason;
-  return reason ? `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.` : null;
+function blockedReasonOf(report: SystemReport, hypervisors: ProviderStatus[]): Unavailable | null {
+  return hypervisors.find((p) => cantRun(report, p))?.reason ?? null;
 }
 
 function vmStateOf({
@@ -69,7 +68,7 @@ function vmStateOf({
 }: {
   count: number;
   provider: ProviderStatus | null;
-  blockedReason: string | null;
+  blockedReason: Unavailable | null;
   hasHypervisor: boolean;
   last: LastTest | null;
 }): VmState {

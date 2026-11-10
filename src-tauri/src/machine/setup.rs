@@ -71,8 +71,8 @@ pub enum Action {
     },
     /// Installed, but it can't run here, and nothing the setup installs mends that: `reason`.
     Blocked {
-        /// Why it can't run here, in English.
-        reason: String,
+        /// Why it can't run here, as a code the webview says in the player's language.
+        reason: crate::runtime::providers::Unavailable,
     },
 }
 

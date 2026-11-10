@@ -354,5 +354,21 @@
     "autoStartHint": "Sonst startest du sie bei Bedarf auf der Seite des Labs.",
     "needsEngine": "Sie läuft auf deiner Container-Engine und funktioniert, sobald eine eingerichtet ist.",
     "firstStart": "Das Image wird heruntergeladen, wenn ein Lab sie zum ersten Mal startet."
+  },
+  "unavailable": {
+    "vagrantMissing": "Vagrant ist nicht installiert.",
+    "virtualboxStuck": "VirtualBox antwortet nicht (sein Hintergrunddienst hängt). Beende VirtualBox und alle VM-Fenster oder starte den Computer neu und prüfe dann erneut.",
+    "hypervOff": "Hyper-V ist nicht aktiviert (Windows-Features > Hyper-V), oder diese Windows-Edition hat es nicht.",
+    "hypervNeedsAdmin": "Vagrant steuert Hyper-V nur für einen Administrator oder ein Mitglied der Hyper-V-Administratoren: Wähle „Mein Konto zulassen“ (melde dich dann bei Windows ab und wieder an) oder starte Cyber CTF als Administrator.",
+    "notInstalled": "`{program}` wurde nicht gefunden.",
+    "notInstalledNoProgram": "Nicht installiert.",
+    "newLogin": "Du wurdest seit deiner Anmeldung zur Gruppe libvirt hinzugefügt: Melde dich ab und wieder an (oder starte neu), damit es gilt.",
+    "noKvm": "KVM ist auf diesem Rechner nicht verfügbar (kein /dev/kvm): Aktiviere die Virtualisierung in der Firmware oder nutze einen anderen Hypervisor.",
+    "kvmDenied": "Du kannst /dev/kvm noch nicht nutzen: Füge dich den Gruppen kvm und libvirt hinzu, melde dich dann ab und wieder an.",
+    "hypervisorTooOld": "{name} {version} ist zu alt: {min} oder neuer wird benötigt. Aktualisiere {name} und prüfe dann erneut.",
+    "pluginTooOld": "Das Vagrant-Plugin `{plugin}` {version} ist zu alt: {min} oder neuer wird benötigt. Installiere es erneut, um es zu aktualisieren.",
+    "pluginMissing": "Das Vagrant-Plugin `{plugin}` ist nicht installiert.",
+    "vmwareUtilityStopped": "Das Vagrant VMware Utility ist installiert, aber sein Dienst läuft nicht: Installiere es erneut (das startet ihn neu) oder starte den Computer neu.",
+    "vmwareUtilityMissing": "Das Vagrant VMware Utility ist nicht installiert: der Dienst von HashiCorp, über den das VMware-Plugin VMware steuert."
   }
 }

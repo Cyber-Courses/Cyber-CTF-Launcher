@@ -501,11 +501,11 @@ describe("VM step", () => {
     render(
       <Step
         step="vm"
-        report={{ ...readyReport(), os: "linux", vmProviders: [hv({ provider: "libvirt", available: false, reason: "not in the kvm group" })] }}
+        report={{ ...readyReport(), os: "linux", vmProviders: [hv({ provider: "libvirt", available: false, reason: { code: "kvmDenied" } })] }}
       />,
     );
     expect(text()).toContain("Installed, but it can't run here.");
-    expect(text()).toContain("Not in the kvm group.");
+    expect(text()).toContain("You can't use /dev/kvm yet: add yourself to the kvm and libvirt groups");
   });
 });
 
@@ -556,7 +556,7 @@ describe("Vagrant step", () => {
           plugin: "vagrant-vmware-desktop",
           pluginInstalled: false,
           utility: "missing",
-          reason: "Vagrant plugin `vagrant-vmware-desktop` is not installed",
+          reason: { code: "pluginMissing", args: { plugin: "vagrant-vmware-desktop" } },
           ...over,
         }),
         hv({ provider: "utm", plugin: "vagrant_utm" }),

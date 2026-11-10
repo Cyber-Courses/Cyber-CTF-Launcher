@@ -110,7 +110,7 @@ fn installed_libvirt_needs_only_its_plugin_and_one_that_cant_run_is_passed_over(
     let r = shapes::debian_libvirt_without_plugin();
     assert_eq!(steps(&plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Libvirt]))), ["plugin:vagrant-libvirt: plugin vagrant-libvirt"]);
     let r = shapes::debian_libvirt_without_kvm();
-    assert!(matches!(get_of(&r, Provider::Libvirt).as_slice(), [Action::Blocked { reason }] if reason.contains("/dev/kvm")));
+    assert!(matches!(get_of(&r, Provider::Libvirt).as_slice(), [Action::Blocked { reason }] if *reason == crate::runtime::providers::Unavailable::NoKvm));
     let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Libvirt, Provider::Virtualbox]));
     assert_eq!(p.hypervisor, Some(Provider::Virtualbox));
     assert!(p.passed_over[0].1.starts_with("can't run here: KVM isn't available"), "{:?}", p.passed_over);

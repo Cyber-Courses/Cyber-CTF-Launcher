@@ -338,9 +338,9 @@ describe("HypervisorRow", () => {
   it("lets a Windows account that may not manage Hyper-V join Hyper-V Administrators (#185)", async () => {
     const calls = installTauri({ hyperv_join_admins: () => null });
     const user = userEvent.setup();
-    const reason = "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators";
-    render(<HypervisorRow report={withProviders([hv({ provider: "hyperv", available: false, reason })], { os: "windows" })} {...props} />);
-    expect(text()).toContain(reason);
+    const hyperv = hv({ provider: "hyperv", available: false, reason: { code: "hypervNeedsAdmin" }, accountLacks: "hypervAdmin" });
+    render(<HypervisorRow report={withProviders([hyperv], { os: "windows" })} {...props} />);
+    expect(text()).toContain("Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators");
     await user.click(button(/allow my account/i));
     await flush();
     expect(calls.some((c) => c.cmd === "hyperv_join_admins")).toBe(true);
@@ -366,10 +366,22 @@ describe("HypervisorRow", () => {
       },
     });
     const user = userEvent.setup();
-    render(<HypervisorRow report={withProviders([hv({ provider: "hyperv", available: false })], { os: "windows" })} {...props} />);
+    render(<HypervisorRow report={withProviders([hv({ provider: "hyperv", available: false, accountLacks: "hypervAdmin" })], { os: "windows" })} {...props} />);
     await user.click(button(/allow my account/i));
     await flush();
     expect(text()).toContain("✗ The Windows permission prompt was declined");
+  });
+
+  it("offers Allow my account only when the core says the account lacks the right, not for any Hyper-V that isn't ready", () => {
+    // Regression: the webview took any installed Hyper-V that wasn't ready for a missing right,
+    // so Vagrant missing, say, offered Allow my account for the wrong problem.
+    render(
+      <HypervisorRow
+        report={withProviders([hv({ provider: "hyperv", available: false, reason: { code: "vagrantMissing" } })], { os: "windows" })}
+        {...props}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /allow my account/i })).toBeNull();
   });
 
   it("shows a failed add-on install in the log", async () => {
@@ -391,7 +403,7 @@ describe("HypervisorRow", () => {
     const report = withProviders(
       [
         hv({ provider: "qemu", available: false, plugin: "vagrant-qemu", pluginInstalled: false }),
-        hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" }),
+        hv({ provider: "libvirt", available: false, reason: { code: "noKvm" } }),
         hv({ provider: "hyperv", available: false }),
       ],
       { vagrant: { installed: false, version: null } },

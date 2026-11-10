@@ -306,25 +306,16 @@ const UTM_APP: &str = "/Applications/UTM.app";
 mod vagrant_needs;
 #[cfg(test)]
 use vagrant_needs::fake_utility;
-pub use vagrant_needs::{Need, UtilityState, VMWARE_UTILITY_MISSING, VMWARE_UTILITY_STOPPED, needs, vmware_utility};
+pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
+
+mod unavailable;
+pub use unavailable::Unavailable;
+pub(crate) use unavailable::kvm_problem;
 
 /// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.
 fn hyperv_enabled() -> bool {
     let root = std::env::var_os("SystemRoot").map_or_else(|| std::path::PathBuf::from("C:\\Windows"), std::path::PathBuf::from);
     root.join("System32").join("vmms.exe").is_file()
-}
-
-/// Why libvirt can't run VMs here although `virsh` is installed: vagrant-libvirt boots KVM
-/// guests, so it needs `/dev/kvm`, and the player must be allowed to open it.
-pub(crate) fn kvm_problem() -> Option<String> {
-    let dev = std::path::Path::new("/dev/kvm");
-    if !dev.exists() {
-        return Some("KVM isn't available on this machine (no /dev/kvm): turn on virtualization in the firmware, or use another hypervisor".into());
-    }
-    if std::fs::OpenOptions::new().read(true).write(true).open(dev).is_err() {
-        return Some("you can't use /dev/kvm yet: add yourself to the kvm and libvirt groups, then sign out and back in".into());
-    }
-    None
 }
 
 fn qemu_binary() -> &'static str {
@@ -356,8 +347,13 @@ pub struct ProviderStatus {
     /// The Machine page and the setup steps read this, never their own idea of it.
     pub needs: Vec<Need>,
     /// Why it is not available (Vagrant, the hypervisor or its plugin missing or too old, the
-    /// account not allowed to drive it, …).
-    pub reason: Option<String>,
+    /// account not allowed to drive it, …), as a code the webview says in the player's language.
+    pub reason: Option<Unavailable>,
+    /// What this account lacks to use it although it is installed (the right to manage Hyper-V,
+    /// a new login after joining libvirt's groups), whatever else is missing: the Machine page
+    /// offers the way out by it.
+    #[ts(optional = nullable)]
+    pub account_lacks: Option<AccountLacks>,
 }
 
 /// Each plugin of `vagrant plugin list` with its version, from lines like `vagrant-libvirt
@@ -523,19 +519,24 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
     };
     let reason = unavailable_reason(provider, vagrant_installed, detection);
     let needs = needs(vagrant_installed, plugin_installed, utility);
+    let account_lacks = detection.account;
 
-    Some(ProviderStatus { provider, remote: provider.is_remote(), available: reason.is_none(), hypervisor, plugin, plugin_installed, utility, needs, reason })
+    Some(ProviderStatus {
+        provider,
+        remote: provider.is_remote(),
+        available: reason.is_none(),
+        hypervisor,
+        plugin,
+        plugin_installed,
+        utility,
+        needs,
+        reason,
+        account_lacks,
+    })
 }
 
 /// The groups libvirt's socket and `/dev/kvm` are opened through.
 pub const LIBVIRT_GROUPS: [&str; 2] = ["libvirt", "kvm"];
-
-/// Why libvirt can't be used yet: the player joined its groups since logging in.
-pub const LIBVIRT_RELOGIN: &str = "you were added to the libvirt group since you logged in: log out and back in (or restart) for it to apply";
-
-/// Why Hyper-V can't be used by this account yet, and the two ways out.
-pub const HYPERV_NEEDS_ADMIN: &str = "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: \
-choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator";
 
 /// What `detect` found out about one provider: the per-provider facts `unavailable_reason` reads
 /// to name the first layer that is missing (the hypervisor, its plugin, an admin right). Grouped
@@ -562,8 +563,9 @@ struct Detection<'a> {
 }
 
 /// What the player's account lacks to use a provider installed here.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum AccountLacks {
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum AccountLacks {
     /// The right to manage Hyper-V (Hyper-V only).
     HypervAdmin,
     /// A new login: it joined libvirt's groups since logging in (libvirt only).
@@ -574,36 +576,34 @@ enum AccountLacks {
 /// `detect` found out about the provider: Vagrant missing first, then what is wrong with the
 /// hypervisor itself (nothing setup installs mends that), then the first of its [`needs`]. So it
 /// is `None` only when nothing is needed: readiness and the setup steps can't disagree.
-fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> Option<String> {
+fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> Option<Unavailable> {
     let Detection { unresponsive, hypervisor, hypervisor_version, plugin, plugin_installed, plugin_version, utility, account } = detection;
     let needs = needs(vagrant_installed, plugin_installed, utility);
+    let plugin = || plugin.unwrap_or("?").to_owned();
     if needs.contains(&Need::Vagrant) {
-        Some("Vagrant is not installed".to_string())
+        Some(Unavailable::VagrantMissing)
     } else if unresponsive {
-        Some(
-            "VirtualBox isn't responding (its background service is stuck). Quit VirtualBox and any VM windows, or restart the computer, then re-check."
-                .to_string(),
-        )
+        Some(Unavailable::VirtualboxStuck)
     } else if hypervisor == Some(false) && provider == Provider::Hyperv {
-        Some("Hyper-V isn't turned on (Windows Features > Hyper-V), or this edition of Windows doesn't have it".to_string())
+        Some(Unavailable::HypervOff)
     } else if account == Some(AccountLacks::HypervAdmin) {
-        Some(HYPERV_NEEDS_ADMIN.to_string())
+        Some(Unavailable::HypervNeedsAdmin)
     } else if hypervisor == Some(false) {
-        provider.probe().map(|(program, _)| format!("`{program}` was not found")).or_else(|| Some("not installed".to_string()))
+        Some(Unavailable::NotInstalled { program: provider.probe().map(|(program, _)| program.to_owned()) })
     } else if account == Some(AccountLacks::NewLogin) {
-        Some(LIBVIRT_RELOGIN.to_string())
+        Some(Unavailable::NewLogin)
     } else if let Some(why) = (provider == Provider::Libvirt).then(kvm_problem).flatten() {
         Some(why)
     } else if let Some((name, version, min)) = hypervisor_too_old(provider, hypervisor_version) {
-        Some(format!("{name} {version} is too old: {min} or later is needed. Update {name}, then re-check"))
+        Some(Unavailable::HypervisorTooOld { name: name.into(), version: version.into(), min: min.into() })
     } else if let Some((version, min)) = plugin_too_old(provider, plugin_version) {
-        Some(format!("Vagrant plugin `{}` {version} is too old: {min} or later is needed. Install it again to update it", plugin.unwrap_or("?")))
+        Some(Unavailable::PluginTooOld { plugin: plugin(), version: version.into(), min: min.into() })
     } else {
         needs.first().map(|need| match need {
-            Need::Vagrant => "Vagrant is not installed".to_string(),
-            Need::Plugin => format!("Vagrant plugin `{}` is not installed", plugin.unwrap_or("?")),
-            Need::VmwareUtility if utility == Some(UtilityState::Stopped) => VMWARE_UTILITY_STOPPED.to_string(),
-            Need::VmwareUtility => VMWARE_UTILITY_MISSING.to_string(),
+            Need::Vagrant => Unavailable::VagrantMissing,
+            Need::Plugin => Unavailable::PluginMissing { plugin: plugin() },
+            Need::VmwareUtility if utility == Some(UtilityState::Stopped) => Unavailable::VmwareUtilityStopped,
+            Need::VmwareUtility => Unavailable::VmwareUtilityMissing,
         })
     }
 }
@@ -677,13 +677,13 @@ mod tests {
         // The plugin the failure was seen with: setup installs it again, which updates it.
         assert_eq!(plugin_too_old(Provider::Utm, Some("0.1.6")), Some(("0.1.6", "0.2.0")));
         assert_eq!(
-            unavailable_reason(Provider::Utm, true, detection(Some("4.7.5"), Some("0.1.6"), false)).as_deref(),
-            Some("Vagrant plugin `vagrant_utm` 0.1.6 is too old: 0.2.0 or later is needed. Install it again to update it")
+            unavailable_reason(Provider::Utm, true, detection(Some("4.7.5"), Some("0.1.6"), false)),
+            Some(Unavailable::PluginTooOld { plugin: "vagrant_utm".into(), version: "0.1.6".into(), min: "0.2.0".into() })
         );
         // A UTM the plugin refuses, said before the plugin (updating the plugin wouldn't help).
         assert_eq!(
-            unavailable_reason(Provider::Utm, true, detection(Some("4.5.1"), Some("0.1.6"), false)).as_deref(),
-            Some("UTM 4.5.1 is too old: 4.6.5 or later is needed. Update UTM, then re-check")
+            unavailable_reason(Provider::Utm, true, detection(Some("4.5.1"), Some("0.1.6"), false)),
+            Some(Unavailable::HypervisorTooOld { name: "UTM".into(), version: "4.5.1".into(), min: "4.6.5".into() })
         );
         // Recent enough, or no version to judge: nothing stands in the way.
         assert_eq!(unavailable_reason(Provider::Utm, true, detection(Some("4.7.5"), Some("0.2.0"), true)), None);
@@ -839,7 +839,7 @@ mod tests {
     fn kvm_problems_are_explained() {
         // Whatever this machine has, an answer is either nothing or a sentence about /dev/kvm.
         if let Some(why) = kvm_problem() {
-            assert!(why.contains("/dev/kvm"), "{why}");
+            assert!(why.message().contains("/dev/kvm"), "{why}");
         }
     }
 
@@ -854,10 +854,10 @@ mod tests {
                 ("VBoxManage", _) => ok("7.1.4\n"),
                 _ => ok(""),
             });
-            detect(true).await.into_iter().find(|s| s.provider == Provider::Virtualbox).and_then(|s| s.reason).unwrap_or_default()
+            detect(true).await.into_iter().find(|s| s.provider == Provider::Virtualbox).and_then(|s| s.reason)
         };
-        assert!(!reason("VBoxManage: error: the guest session timed out").await.contains("isn't responding"));
-        assert!(reason("timed out after 8s").await.contains("isn't responding"));
+        assert_ne!(reason("VBoxManage: error: the guest session timed out").await, Some(Unavailable::VirtualboxStuck));
+        assert_eq!(reason("timed out after 8s").await, Some(Unavailable::VirtualboxStuck));
     }
 
     #[test]
@@ -888,17 +888,18 @@ mod tests {
             utility: None,
             account: needs_admin.then_some(AccountLacks::HypervAdmin),
         };
-        assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(true)).as_deref(), Some(HYPERV_NEEDS_ADMIN));
-        assert!(HYPERV_NEEDS_ADMIN.contains("Hyper-V Administrators") && HYPERV_NEEDS_ADMIN.contains("Allow my account"));
+        assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(true)), Some(Unavailable::HypervNeedsAdmin));
+        let said = Unavailable::HypervNeedsAdmin.message();
+        assert!(said.contains("Hyper-V Administrators") && said.contains("Allow my account"));
         assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(false)), None);
-        assert_eq!(r(Provider::Virtualbox, false, true, Some(false), None, false).as_deref(), Some("Vagrant is not installed"));
-        assert!(r(Provider::Virtualbox, true, true, Some(true), None, true).unwrap().contains("isn't responding"));
-        assert_eq!(r(Provider::Virtualbox, true, false, Some(false), None, true).as_deref(), Some("`VBoxManage` was not found"));
-        assert!(r(Provider::Hyperv, true, false, Some(false), None, true).unwrap().starts_with("Hyper-V isn't turned on"));
-        assert_eq!(r(Provider::Utm, true, false, Some(false), Some("vagrant_utm"), true).as_deref(), Some("not installed"));
+        assert_eq!(r(Provider::Virtualbox, false, true, Some(false), None, false), Some(Unavailable::VagrantMissing));
+        assert_eq!(r(Provider::Virtualbox, true, true, Some(true), None, true), Some(Unavailable::VirtualboxStuck));
+        assert_eq!(r(Provider::Virtualbox, true, false, Some(false), None, true), Some(Unavailable::NotInstalled { program: Some("VBoxManage".into()) }));
+        assert_eq!(r(Provider::Hyperv, true, false, Some(false), None, true), Some(Unavailable::HypervOff));
+        assert_eq!(r(Provider::Utm, true, false, Some(false), Some("vagrant_utm"), true), Some(Unavailable::NotInstalled { program: None }));
         assert_eq!(
-            r(Provider::Parallels, true, false, Some(true), Some("vagrant-parallels"), false).as_deref(),
-            Some("Vagrant plugin `vagrant-parallels` is not installed")
+            r(Provider::Parallels, true, false, Some(true), Some("vagrant-parallels"), false),
+            Some(Unavailable::PluginMissing { plugin: "vagrant-parallels".into() })
         );
         assert_eq!(r(Provider::Virtualbox, true, false, Some(true), None, true), None);
         assert_eq!(r(Provider::VmwareEsxi, true, false, None, Some("vagrant-vmware-esxi"), true), None);
@@ -918,10 +919,10 @@ mod tests {
             utility: None,
             account: relogin.then_some(AccountLacks::NewLogin),
         };
-        assert_eq!(unavailable_reason(Provider::Libvirt, true, libvirt(true)).as_deref(), Some(LIBVIRT_RELOGIN));
+        assert_eq!(unavailable_reason(Provider::Libvirt, true, libvirt(true)), Some(Unavailable::NewLogin));
         assert_eq!(unavailable_reason(Provider::Libvirt, true, libvirt(false)), kvm_problem());
         // Vagrant missing still comes first: the setup installs it in the same pass.
-        assert_eq!(unavailable_reason(Provider::Libvirt, false, libvirt(true)).as_deref(), Some("Vagrant is not installed"));
+        assert_eq!(unavailable_reason(Provider::Libvirt, false, libvirt(true)), Some(Unavailable::VagrantMissing));
     }
 
     /// A VMware detection: Fusion or Workstation installed, the plugin and the utility as given.
@@ -962,12 +963,12 @@ mod tests {
         assert!(Provider::VmwareDesktop.needs_vmware_utility());
         assert!(Provider::ALL.iter().chain(&Provider::CLOUDS).filter(|p| **p != Provider::VmwareDesktop).all(|p| !p.needs_vmware_utility()));
         // The plugin alone isn't enough (the loop: setup put the plugin in, labs still couldn't run).
-        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Missing)).as_deref(), Some(VMWARE_UTILITY_MISSING));
-        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Stopped)).as_deref(), Some(VMWARE_UTILITY_STOPPED));
+        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Missing)), Some(Unavailable::VmwareUtilityMissing));
+        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Stopped)), Some(Unavailable::VmwareUtilityStopped));
         // The plugin first: it is what setup installs first.
         assert_eq!(
-            unavailable_reason(Provider::VmwareDesktop, true, vmware(false, UtilityState::Missing)).as_deref(),
-            Some("Vagrant plugin `vagrant-vmware-desktop` is not installed")
+            unavailable_reason(Provider::VmwareDesktop, true, vmware(false, UtilityState::Missing)),
+            Some(Unavailable::PluginMissing { plugin: "vagrant-vmware-desktop".into() })
         );
         assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Running)), None);
     }
@@ -1006,7 +1007,7 @@ mod tests {
             status(Provider::VmwareDesktop).await.unwrap()
         };
         assert_eq!(plugin_only.needs, [Need::VmwareUtility]);
-        assert_eq!(plugin_only.reason.as_deref(), Some(VMWARE_UTILITY_MISSING));
+        assert_eq!(plugin_only.reason, Some(Unavailable::VmwareUtilityMissing));
         assert_eq!(ready(std::slice::from_ref(&plugin_only), true), Vec::<Provider>::new());
 
         // Both in: ready, nothing left to install.
@@ -1030,10 +1031,13 @@ mod tests {
             plugin_installed: true,
             utility: None,
             needs: vec![Need::Plugin, Need::VmwareUtility],
-            reason: None,
+            reason: Some(Unavailable::PluginMissing { plugin: "vagrant-libvirt".into() }),
+            account_lacks: Some(AccountLacks::HypervAdmin),
         };
         let v = serde_json::to_value(s).unwrap();
         assert_eq!(v["provider"], "virtualbox");
+        assert_eq!(v["reason"], serde_json::json!({ "code": "pluginMissing", "args": { "plugin": "vagrant-libvirt" } }));
+        assert_eq!(v["accountLacks"], "hypervAdmin");
         assert_eq!(v["pluginInstalled"], true);
         assert_eq!(v["needs"], serde_json::json!(["plugin", "vmwareUtility"]));
     }

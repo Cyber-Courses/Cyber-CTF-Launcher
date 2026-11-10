@@ -124,10 +124,3 @@ pub(super) mod fake_utility {
         }
     }
 }
-
-/// Why VMware can't run labs while HashiCorp's utility is missing.
-pub const VMWARE_UTILITY_MISSING: &str = "the Vagrant VMware Utility is not installed: HashiCorp's service the VMware plugin drives VMware through";
-
-/// Why VMware can't run labs while the utility is installed but its service doesn't answer.
-pub const VMWARE_UTILITY_STOPPED: &str =
-    "the Vagrant VMware Utility is installed, but its service isn't running: install it again (that restarts it), or restart the computer";

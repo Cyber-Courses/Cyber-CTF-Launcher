@@ -269,7 +269,7 @@ fn readiness(r: &SystemReport, wanted: &Wanted, hypervisor: Option<Provider>) ->
     if wanted.paths.contains(&SetupPath::Vm) {
         ready.push(("vagrant".to_owned(), r.vagrant.installed, r.vagrant.version.clone().unwrap_or_else(|| "no Vagrant".into())));
         if let Some(p) = hypervisor.and_then(|h| r.vm_providers.iter().find(|p| p.provider == h)) {
-            let why = p.reason.clone().unwrap_or_else(|| "available".into());
+            let why = p.reason.as_ref().map_or_else(|| "available".into(), crate::runtime::providers::Unavailable::message);
             ready.push((p.provider.id().to_owned(), p.hypervisor == Some(true) && p.available, why));
             if let Some(plugin) = &p.plugin {
                 ready.push((format!("plugin:{plugin}"), p.plugin_installed, plugin.clone()));

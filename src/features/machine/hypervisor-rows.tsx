@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { cantRun, providerLabel, vagrantDrives } from "@/features/machine/hypervisors";
 import { ProviderRow } from "@/features/machine/machine-parts";
+import { unavailableText } from "@/features/machine/unavailable";
 import type { vmSetup } from "@/features/machine/machine-status";
 import {
   FixButton,
@@ -116,7 +117,7 @@ function OtherHypervisorRow({ p, vm, onUseServer, ...row }: Props & { p: Provide
         {...common}
         tone="warn"
         status={t("machine.screen.status.cantRunHere")}
-        detail={p.reason ? `${p.reason.charAt(0).toUpperCase()}${p.reason.slice(1)}.` : ""}
+        detail={p.reason ? unavailableText(p.reason, t) : ""}
         actions={<ServerButton variant="outline" onClick={onUseServer} />}
       />
     );
@@ -126,7 +127,7 @@ function OtherHypervisorRow({ p, vm, onUseServer, ...row }: Props & { p: Provide
         {...common}
         tone="warn"
         status={t("machine.screen.status.needsSetup")}
-        detail={p.reason ? `${p.reason.charAt(0).toUpperCase()}${p.reason.slice(1)}.` : t("machine.screen.vm.vagrantMissing")}
+        detail={p.reason ? unavailableText(p.reason, t) : t("machine.screen.vm.vagrantMissing")}
         actions={<FixButton step="vagrant" provider={p.provider} onFix={onFix} />}
       />
     );

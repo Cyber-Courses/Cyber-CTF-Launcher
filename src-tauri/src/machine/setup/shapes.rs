@@ -6,7 +6,7 @@
 use crate::machine::system::docker::{Engine, EngineStatus};
 use crate::machine::system::wsl::{WslReport, WslState};
 use crate::machine::system::{CloudClis, PkgManager, SystemReport, Tool};
-use crate::runtime::providers::{Provider, ProviderStatus, UtilityState, needs};
+use crate::runtime::providers::{Provider, ProviderStatus, Unavailable, UtilityState, needs};
 
 fn missing() -> Tool {
     Tool { installed: false, version: None }
@@ -38,17 +38,17 @@ fn status(provider: Provider, vagrant: bool, installed: bool, plugin_installed: 
     let remote = provider.is_remote();
     let hypervisor = (!remote).then_some(installed);
     let reason = if !vagrant {
-        Some("Vagrant is not installed".to_owned())
+        Some(Unavailable::VagrantMissing)
     } else if hypervisor == Some(false) {
-        Some("not installed".to_owned())
+        Some(Unavailable::NotInstalled { program: None })
     } else if !plugin_installed {
-        Some(format!("Vagrant plugin `{}` is not installed", plugin.as_deref().unwrap_or("?")))
+        Some(Unavailable::PluginMissing { plugin: plugin.clone().unwrap_or_else(|| "?".into()) })
     } else if !needs.is_empty() {
-        Some(crate::runtime::providers::VMWARE_UTILITY_MISSING.to_owned())
+        Some(Unavailable::VmwareUtilityMissing)
     } else {
         None
     };
-    ProviderStatus { provider, remote, available: reason.is_none(), hypervisor, plugin, plugin_installed, utility, needs, reason }
+    ProviderStatus { provider, remote, available: reason.is_none(), hypervisor, plugin, plugin_installed, utility, needs, reason, account_lacks: None }
 }
 
 /// A machine with nothing but its OS and its package manager.
@@ -167,7 +167,7 @@ pub(crate) fn debian_libvirt_without_kvm() -> SystemReport {
     let mut r = with(bare_debian(), false, |r| hypervisor(r, Provider::Libvirt, true));
     for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Libvirt) {
         p.available = false;
-        p.reason = Some("KVM isn't available on this machine (no /dev/kvm): turn on virtualization in the firmware, or use another hypervisor".into());
+        p.reason = Some(Unavailable::NoKvm);
     }
     r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
     r.setup = super::options(&r, false);
@@ -183,7 +183,8 @@ pub(crate) fn debian_libvirt_awaits_relogin() -> SystemReport {
     });
     for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Libvirt) {
         p.available = false;
-        p.reason = Some(crate::runtime::providers::LIBVIRT_RELOGIN.into());
+        p.reason = Some(Unavailable::NewLogin);
+        p.account_lacks = Some(crate::runtime::providers::AccountLacks::NewLogin);
     }
     r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
     r.setup = super::options(&r, false);

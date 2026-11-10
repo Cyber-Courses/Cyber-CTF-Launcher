@@ -16,6 +16,7 @@ import type {
 } from "@/lib/tauri/generated";
 
 export type {
+  AccountLacks,
   CloudClis,
   Dependency,
   DockerEngine,
@@ -32,6 +33,7 @@ export type {
   PkgManager,
   Provider,
   ProviderStatus,
+  Unavailable,
   SelfTestEvent,
   SelfTestKind,
   SetupAction,

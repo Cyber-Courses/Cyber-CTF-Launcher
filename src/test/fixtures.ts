@@ -23,7 +23,7 @@ const noHypervisors = (r: SystemReport): Pick<SystemReport, "readyHypervisors" |
     hypervisor: p.remote ? null : false,
     pluginInstalled: false,
     needs: p.plugin ? ["plugin"] : [],
-    reason: "Not installed",
+    reason: { code: "notInstalled" as const, args: { program: null } },
   })),
 });
 

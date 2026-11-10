@@ -102,7 +102,7 @@ function localProviders({ os, fresh }: Pick<Scenario, "os" | "fresh">) {
       ...(plugin ? (["plugin"] as const) : []),
       ...(provider === "vmware_desktop" ? (["vmwareUtility"] as const) : []),
     ],
-    reason: !fresh && provider === "virtualbox" ? null : "Not installed",
+    reason: !fresh && provider === "virtualbox" ? null : { code: "notInstalled", args: { program: null } },
   });
   if (os === "windows") return [p("virtualbox"), p("vmware_desktop", "vagrant-vmware-desktop"), { ...p("hyperv"), hypervisor: null }];
   if (os === "linux") return [p("virtualbox"), p("libvirt", "vagrant-libvirt"), p("qemu", "vagrant-qemu")];
@@ -113,7 +113,7 @@ const PKG_MANAGER: Record<Scenario["os"], string> = { windows: "winget", linux: 
 
 /** On an Apple Silicon Mac VirtualBox can't run, so a ready machine there has UTM instead. */
 function onAppleSilicon(p: ProviderStatus): ProviderStatus {
-  if (p.provider === "virtualbox") return { ...p, available: false, hypervisor: false, reason: "VirtualBox does not run on Apple Silicon" };
+  if (p.provider === "virtualbox") return { ...p, available: false, hypervisor: false, reason: { code: "notInstalled", args: { program: "VBoxManage" } } };
   if (p.provider === "utm") return { ...p, available: true, hypervisor: true, pluginInstalled: true, needs: [], reason: null };
   return p;
 }

@@ -58,7 +58,7 @@ async fn tools_here(ovftool: impl Future<Output = std::result::Result<String, St
     let (status, ovftool) = tokio::join!(providers::status(Provider::VmwareEsxi), ovftool);
     let plugin = match status {
         Some(s) if s.available => Ok(()),
-        Some(s) => Err(s.reason.unwrap_or_else(|| "Vagrant plugin `vagrant-vmware-esxi` isn't ready".into())),
+        Some(s) => Err(s.reason.map_or_else(|| "Vagrant plugin `vagrant-vmware-esxi` isn't ready".into(), |r| r.message())),
         None => Err("Vagrant's ESXi provider isn't offered on this computer".into()),
     };
     Tools { plugin, ovftool }

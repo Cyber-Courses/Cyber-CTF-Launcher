@@ -354,5 +354,21 @@
     "autoStartHint": "Otherwise launch it from the lab’s page when you need it.",
     "needsEngine": "It runs on your container engine, so it works once one is set up.",
     "firstStart": "The image downloads the first time a lab starts it."
+  },
+  "unavailable": {
+    "vagrantMissing": "Vagrant is not installed.",
+    "virtualboxStuck": "VirtualBox isn't responding (its background service is stuck). Quit VirtualBox and any VM windows, or restart the computer, then re-check.",
+    "hypervOff": "Hyper-V isn't turned on (Windows Features > Hyper-V), or this edition of Windows doesn't have it.",
+    "hypervNeedsAdmin": "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator.",
+    "notInstalled": "`{program}` was not found.",
+    "notInstalledNoProgram": "Not installed.",
+    "newLogin": "You were added to the libvirt group since you logged in: log out and back in (or restart) for it to apply.",
+    "noKvm": "KVM isn't available on this machine (no /dev/kvm): turn on virtualization in the firmware, or use another hypervisor.",
+    "kvmDenied": "You can't use /dev/kvm yet: add yourself to the kvm and libvirt groups, then sign out and back in.",
+    "hypervisorTooOld": "{name} {version} is too old: {min} or later is needed. Update {name}, then re-check.",
+    "pluginTooOld": "Vagrant plugin `{plugin}` {version} is too old: {min} or later is needed. Install it again to update it.",
+    "pluginMissing": "Vagrant plugin `{plugin}` is not installed.",
+    "vmwareUtilityStopped": "The Vagrant VMware Utility is installed, but its service isn't running: install it again (that restarts it), or restart the computer.",
+    "vmwareUtilityMissing": "The Vagrant VMware Utility is not installed: HashiCorp's service the VMware plugin drives VMware through."
   }
 }

@@ -11,6 +11,7 @@ import { Choice, ChoiceAction, ChoiceGrid } from "@/components/ui/choice-card";
 import { chosenHypervisor } from "@/features/machine/setup-steps/steps";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
+import { unavailableText } from "@/features/machine/unavailable";
 import { openExternal } from "@/lib/failure";
 import { confirmDestructive } from "@/lib/confirm";
 import { useT, type T } from "@/lib/i18n";
@@ -51,10 +52,7 @@ export function VmStep({ report, setup }: { report: SystemReport; setup: Machine
           joined): why, as the Machine page says. */}
       {(cantRun(report, choice) || getActions(report, choice.provider).at(0)?.kind === "relogin") && choice.reason && (
         <ChoiceAction>
-          <span className="text-[0.8125rem] text-muted-foreground">
-            {choice.reason.charAt(0).toUpperCase()}
-            {choice.reason.slice(1)}.
-          </span>
+          <span className="text-[0.8125rem] text-muted-foreground">{unavailableText(choice.reason, t)}</span>
         </ChoiceAction>
       )}
       {/* Only when there is something to do: an installed hypervisor says so on its card. */}

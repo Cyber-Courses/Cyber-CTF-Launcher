@@ -354,5 +354,21 @@
     "autoStartHint": "Caso contrário, inicie-a pela página do lab quando precisar.",
     "needsEngine": "Ela roda na sua engine de contêineres, então funciona assim que uma estiver configurada.",
     "firstStart": "A imagem é baixada na primeira vez que um lab a inicia."
+  },
+  "unavailable": {
+    "vagrantMissing": "O Vagrant não está instalado.",
+    "virtualboxStuck": "O VirtualBox não está respondendo (o serviço em segundo plano travou). Feche o VirtualBox e todas as janelas de VM, ou reinicie o computador, e verifique de novo.",
+    "hypervOff": "O Hyper-V não está ativado (Recursos do Windows > Hyper-V), ou esta edição do Windows não tem.",
+    "hypervNeedsAdmin": "O Vagrant só controla o Hyper-V para um administrador ou um membro de Administradores do Hyper-V: escolha Permitir minha conta (depois saia do Windows e entre de novo), ou execute o Cyber CTF como administrador.",
+    "notInstalled": "`{program}` não foi encontrado.",
+    "notInstalledNoProgram": "Não instalado.",
+    "newLogin": "Você foi adicionado ao grupo libvirt depois de entrar: saia e entre de novo (ou reinicie) para que valha.",
+    "noKvm": "O KVM não está disponível nesta máquina (sem /dev/kvm): ative a virtualização no firmware, ou use outro hipervisor.",
+    "kvmDenied": "Você ainda não pode usar /dev/kvm: adicione-se aos grupos kvm e libvirt, depois saia e entre de novo.",
+    "hypervisorTooOld": "{name} {version} é antigo demais: é preciso {min} ou posterior. Atualize o {name} e verifique de novo.",
+    "pluginTooOld": "O plugin do Vagrant `{plugin}` {version} é antigo demais: é preciso {min} ou posterior. Instale-o de novo para atualizá-lo.",
+    "pluginMissing": "O plugin do Vagrant `{plugin}` não está instalado.",
+    "vmwareUtilityStopped": "O Vagrant VMware Utility está instalado, mas o serviço dele não está rodando: instale-o de novo (isso o reinicia), ou reinicie o computador.",
+    "vmwareUtilityMissing": "O Vagrant VMware Utility não está instalado: é o serviço da HashiCorp pelo qual o plugin do VMware controla o VMware."
   }
 }

@@ -1,4 +1,4 @@
-import type { Dependency, DockerEngine, Provider, SetupAction, SystemReport } from "@/lib/tauri";
+import type { Dependency, DockerEngine, Provider, SetupAction, SystemReport, Unavailable } from "@/lib/tauri";
 
 // What the core's plan says each choice of the setup takes on this machine (the report's `setup`,
 // Rust's `machine::setup`): the steps render these actions and run each through its command,
@@ -20,7 +20,7 @@ export const actionFor = (actions: SetupAction[], dependency: Dependency): Setup
   actions.find((a) => (a.kind === "install" || a.kind === "manual") && a.dependency === dependency);
 
 /** Why installed hypervisor `provider` can't run here, when nothing the setup installs mends it. */
-export function blockedReason(report: SystemReport, provider: Provider): string | null {
+export function blockedReason(report: SystemReport, provider: Provider): Unavailable | null {
   const blocked = getActions(report, provider).find((a) => a.kind === "blocked");
   return blocked?.kind === "blocked" ? blocked.reason : null;
 }

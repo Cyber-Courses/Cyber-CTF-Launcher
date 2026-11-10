@@ -354,5 +354,21 @@
     "autoStartHint": "Sinon, lancez-la depuis la page du lab quand vous en avez besoin.",
     "needsEngine": "Elle tourne sur votre moteur de conteneurs, elle fonctionnera donc une fois celui-ci configuré.",
     "firstStart": "L'image est téléchargée la première fois qu'un lab la démarre."
+  },
+  "unavailable": {
+    "vagrantMissing": "Vagrant n'est pas installé.",
+    "virtualboxStuck": "VirtualBox ne répond pas (son service d'arrière-plan est bloqué). Quittez VirtualBox et toutes les fenêtres de VM, ou redémarrez l'ordinateur, puis vérifiez à nouveau.",
+    "hypervOff": "Hyper-V n'est pas activé (Fonctionnalités de Windows > Hyper-V), ou cette édition de Windows ne l'a pas.",
+    "hypervNeedsAdmin": "Vagrant ne pilote Hyper-V que pour un administrateur ou un membre des Administrateurs Hyper-V : choisissez Autoriser mon compte (puis déconnectez-vous de Windows et reconnectez-vous), ou lancez Cyber CTF en tant qu'administrateur.",
+    "notInstalled": "`{program}` est introuvable.",
+    "notInstalledNoProgram": "Non installé.",
+    "newLogin": "Vous avez été ajouté au groupe libvirt depuis votre connexion : déconnectez-vous et reconnectez-vous (ou redémarrez) pour que cela s'applique.",
+    "noKvm": "KVM n'est pas disponible sur cette machine (pas de /dev/kvm) : activez la virtualisation dans le firmware, ou utilisez un autre hyperviseur.",
+    "kvmDenied": "Vous ne pouvez pas encore utiliser /dev/kvm : ajoutez-vous aux groupes kvm et libvirt, puis déconnectez-vous et reconnectez-vous.",
+    "hypervisorTooOld": "{name} {version} est trop ancien : {min} ou plus récent est nécessaire. Mettez {name} à jour, puis vérifiez à nouveau.",
+    "pluginTooOld": "Le plugin Vagrant `{plugin}` {version} est trop ancien : {min} ou plus récent est nécessaire. Installez-le à nouveau pour le mettre à jour.",
+    "pluginMissing": "Le plugin Vagrant `{plugin}` n'est pas installé.",
+    "vmwareUtilityStopped": "Le Vagrant VMware Utility est installé, mais son service ne tourne pas : installez-le à nouveau (cela le redémarre), ou redémarrez l'ordinateur.",
+    "vmwareUtilityMissing": "Le Vagrant VMware Utility n'est pas installé : c'est le service de HashiCorp par lequel le plugin VMware pilote VMware."
   }
 }

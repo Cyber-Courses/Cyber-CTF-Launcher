@@ -2,6 +2,7 @@
 import type { Dependency } from "./Dependency";
 import type { DockerEngine } from "./DockerEngine";
 import type { ManualReason } from "./ManualReason";
+import type { Unavailable } from "./Unavailable";
 import type { WindowsFeature } from "./WindowsFeature";
 
 /**
@@ -41,6 +42,6 @@ dependency: Dependency | null,
  */
 url: string | null, } | { "kind": "blocked", 
 /**
- * Why it can't run here, in English.
+ * Why it can't run here, as a code the webview says in the player's language.
  */
-reason: string, };
+reason: Unavailable, };

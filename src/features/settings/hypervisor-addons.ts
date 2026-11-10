@@ -11,9 +11,9 @@ import { translate } from "@/lib/i18n";
 /** What `installing` holds while this account is being allowed to manage Hyper-V. */
 export const HYPERV_RIGHTS = "hyperv-rights";
 
-/** Hyper-V is on and Vagrant installed, yet not ready: the one thing left is this account's
- *  right to manage Hyper-V (Vagrant needs an administrator or a Hyper-V Administrators member). */
-export const needsHypervRights = (h: ProviderStatus) => h.provider === "hyperv" && h.hypervisor === true && !h.available;
+/** This account lacks the right to manage Hyper-V, which Vagrant needs (an administrator or a
+ *  Hyper-V Administrators member has it): the core's finding (`ProviderStatus.accountLacks`). */
+export const needsHypervRights = (h: ProviderStatus) => h.accountLacks === "hypervAdmin";
 
 /** Installs a hypervisor's Vagrant add-on (or allows this account to manage Hyper-V), with its
  *  log, then re-checks the machine. */

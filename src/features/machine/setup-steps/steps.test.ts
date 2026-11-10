@@ -199,7 +199,7 @@ describe("step words and picks", () => {
   });
 
   it("the hypervisor is an installed one that can run, else an installed one, else an installable one, else none", () => {
-    const stuck = hv({ provider: "libvirt", hypervisor: true, available: false, reason: "no /dev/kvm", plugin: "vagrant-libvirt", pluginInstalled: true });
+    const stuck = hv({ provider: "libvirt", hypervisor: true, available: false, reason: { code: "noKvm" }, plugin: "vagrant-libvirt", pluginInstalled: true });
     const works = hv({ provider: "qemu", hypervisor: true, available: true });
     expect(chosenHypervisor(bareReport({ vmProviders: [stuck, works] }), setup())?.provider).toBe("qemu");
     expect(chosenHypervisor(bareReport({ vmProviders: [stuck] }), setup())?.provider).toBe("libvirt");

@@ -91,7 +91,7 @@ describe("where a path stands", () => {
       available: false,
       plugin: "vagrant-libvirt",
       pluginInstalled: true,
-      reason: "no /dev/kvm",
+      reason: { code: "noKvm" },
     };
     expect(stepDone("vm", ready({ vmProviders: [stuck] } as Partial<SystemReport>), none, null)).toBe(false);
     const noPlugin = { ...stuck, available: true, pluginInstalled: false, reason: null };

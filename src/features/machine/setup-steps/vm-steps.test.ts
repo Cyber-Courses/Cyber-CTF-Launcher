@@ -14,7 +14,7 @@ const note = (base: SystemReport, p: ProviderStatus) => {
 describe("choiceNote", () => {
   it("says an installed hypervisor runs here, or can't", () => {
     expect(note(freshDebian(), hv({ provider: "virtualbox" }))).toBe(translate("machine.vm.installedHere"));
-    const noKvm = hv({ provider: "libvirt", available: false, plugin: "vagrant-libvirt", pluginInstalled: true, reason: "no /dev/kvm" });
+    const noKvm = hv({ provider: "libvirt", available: false, plugin: "vagrant-libvirt", pluginInstalled: true, reason: { code: "noKvm" } });
     // Nothing left to install for it (Vagrant in), and still it can't run: no /dev/kvm.
     expect(note({ ...freshDebian(), vagrant: { installed: true, version: "2.4.3" } }, noKvm)).toBe(translate("machine.vm.cantRunHere"));
   });

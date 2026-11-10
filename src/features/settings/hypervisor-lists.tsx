@@ -5,6 +5,7 @@ import { RadioList, RadioRow } from "@/components/ui/radio-row";
 import { Spinner } from "@/components/ui/spinner";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { providerLabel } from "@/features/machine/hypervisors";
+import { unavailableText } from "@/features/machine/unavailable";
 import { HYPERV_RIGHTS, needsHypervRights } from "@/features/settings/hypervisor-addons";
 import type { Provider, ProviderStatus } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
@@ -98,7 +99,7 @@ function NotReadyRow({
       <div className="min-w-0 flex-1">
         <p className="text-[0.8125rem] font-medium text-foreground">{providerLabel(h, os)}</p>
         <p className="truncate text-[0.75rem] text-muted-foreground">
-          {missing ? t("settings.hypervisor.needsPlugin", { plugin: missing }) : (h.reason ?? t("settings.hypervisor.notReady"))}
+          {missing ? t("settings.hypervisor.needsPlugin", { plugin: missing }) : h.reason ? unavailableText(h.reason, t) : t("settings.hypervisor.notReady")}
         </p>
       </div>
       {missing && (

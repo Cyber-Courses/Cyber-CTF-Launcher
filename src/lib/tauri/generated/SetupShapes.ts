@@ -65,7 +65,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -80,7 +83,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "hyperv",
@@ -93,7 +99,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -107,7 +116,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -121,7 +133,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -135,7 +150,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -305,7 +323,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -320,7 +341,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "hyperv",
@@ -333,7 +357,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -347,7 +374,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -361,7 +391,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -375,7 +408,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -545,7 +581,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -560,7 +599,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "hyperv",
@@ -573,7 +615,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -587,7 +632,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -601,7 +649,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -615,7 +666,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -780,7 +834,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -795,7 +852,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "hyperv",
@@ -808,7 +868,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -822,7 +885,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -836,7 +902,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -850,7 +919,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -1020,7 +1092,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -1035,7 +1110,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "libvirt",
@@ -1049,7 +1127,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -1063,7 +1144,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -1077,7 +1161,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -1091,7 +1178,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -1285,7 +1375,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -1300,7 +1393,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "libvirt",
@@ -1314,7 +1410,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -1328,7 +1427,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -1342,7 +1444,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -1356,7 +1461,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -1536,7 +1644,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": true,
         "utility": null,
         "needs": [],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -1550,7 +1664,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "libvirt",
@@ -1563,7 +1683,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-libvirt` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-libvirt"
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -1576,7 +1702,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -1589,7 +1721,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-vmware-esxi` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-vmware-esxi"
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -1602,7 +1740,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-proxmox` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-proxmox"
+          }
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -1765,7 +1909,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": true,
         "utility": null,
         "needs": [],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -1779,7 +1929,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "libvirt",
@@ -1790,7 +1946,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": true,
         "utility": null,
         "needs": [],
-        "reason": "KVM isn't available on this machine (no /dev/kvm): turn on virtualization in the firmware, or use another hypervisor"
+        "reason": {
+          "code": "noKvm"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -1803,7 +1962,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -1816,7 +1981,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-vmware-esxi` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-vmware-esxi"
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -1829,7 +2000,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-proxmox` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-proxmox"
+          }
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -1910,7 +2087,9 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "get": [
             {
               "kind": "blocked",
-              "reason": "KVM isn't available on this machine (no /dev/kvm): turn on virtualization in the firmware, or use another hypervisor"
+              "reason": {
+                "code": "noKvm"
+              }
             }
           ],
           "vagrant": []
@@ -1992,7 +2171,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": true,
         "utility": null,
         "needs": [],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -2006,7 +2191,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "libvirt",
@@ -2019,7 +2210,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "you were added to the libvirt group since you logged in: log out and back in (or restart) for it to apply"
+        "reason": {
+          "code": "newLogin"
+        },
+        "accountLacks": "newLogin"
       },
       {
         "provider": "qemu",
@@ -2032,7 +2226,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -2045,7 +2245,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-vmware-esxi` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-vmware-esxi"
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -2058,7 +2264,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-proxmox` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-proxmox"
+          }
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -2230,7 +2442,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "vagrant"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_desktop",
@@ -2245,7 +2460,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "libvirt",
@@ -2259,7 +2477,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -2273,7 +2494,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -2287,7 +2511,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -2301,7 +2528,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -2517,7 +2747,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "parallels",
@@ -2531,7 +2764,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -2545,7 +2781,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "utm",
@@ -2559,7 +2798,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -2573,7 +2815,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -2587,7 +2832,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -2793,7 +3041,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "parallels",
@@ -2807,7 +3058,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -2821,7 +3075,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "utm",
@@ -2835,7 +3092,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -2849,7 +3109,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -2863,7 +3126,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "vagrant",
           "plugin"
         ],
-        "reason": "Vagrant is not installed"
+        "reason": {
+          "code": "vagrantMissing"
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -3059,7 +3325,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "Vagrant plugin `vagrant-vmware-desktop` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-vmware-desktop"
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "parallels",
@@ -3072,7 +3344,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -3085,7 +3363,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "utm",
@@ -3098,7 +3382,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -3111,7 +3401,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-vmware-esxi` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-vmware-esxi"
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -3124,7 +3420,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-proxmox` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-proxmox"
+          }
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -3299,7 +3601,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin",
           "vmwareUtility"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "parallels",
@@ -3312,7 +3620,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "qemu",
@@ -3325,7 +3639,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "not installed"
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "utm",
@@ -3336,7 +3656,8 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "pluginInstalled": true,
         "utility": null,
         "needs": [],
-        "reason": null
+        "reason": null,
+        "accountLacks": null
       },
       {
         "provider": "vmware_esxi",
@@ -3349,7 +3670,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-vmware-esxi` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-vmware-esxi"
+          }
+        },
+        "accountLacks": null
       },
       {
         "provider": "proxmox",
@@ -3362,7 +3689,13 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "needs": [
           "plugin"
         ],
-        "reason": "Vagrant plugin `vagrant-proxmox` is not installed"
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-proxmox"
+          }
+        },
+        "accountLacks": null
       }
     ],
     "readyHypervisors": [

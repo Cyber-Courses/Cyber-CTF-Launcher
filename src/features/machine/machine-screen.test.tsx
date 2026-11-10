@@ -391,7 +391,7 @@ describe("HypervisorRows", () => {
       ...hypervisors([
         hv({}),
         hv({ provider: "vmware_desktop" }),
-        hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" }),
+        hv({ provider: "libvirt", available: false, reason: { code: "noKvm" } }),
         hv({ provider: "qemu", hypervisor: false }),
       ]),
     };
@@ -399,7 +399,7 @@ describe("HypervisorRows", () => {
     // Picked automatically among the ready ones, and marked; the others each as they stand.
     expect(text()).toMatch(/VirtualBox.*default.*\(automatic, change in Settings\) · tested just now.*Ready/);
     expect(text()).toMatch(/VMware Workstation.*Labs run on VirtualBox by default\. · not tested yet.*Installed/);
-    expect(text()).toMatch(/libvirt.*No \/dev\/kvm\..*Can't run here/);
+    expect(text()).toMatch(/libvirt.*KVM isn't available on this machine \(no \/dev\/kvm\).*Can't run here/);
     expect(screen.getAllByText("default")).toHaveLength(1);
     // Not installed: not a row (Add a provider covers it).
     expect(text()).not.toContain("QEMU");
@@ -464,8 +464,8 @@ describe("HypervisorRows", () => {
 
   it("explains a blocked hypervisor", () => {
     installTauri();
-    render(rows({ ...readyReport(), ...hypervisors([hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" })]) }));
-    expect(text()).toMatch(/libvirt.*No \/dev\/kvm\..*Can't run here/);
+    render(rows({ ...readyReport(), ...hypervisors([hv({ provider: "libvirt", available: false, reason: { code: "noKvm" } })]) }));
+    expect(text()).toMatch(/libvirt.*KVM isn't available on this machine \(no \/dev\/kvm\).*Can't run here/);
     expect(button(/use a server/i)).toBeTruthy();
   });
 
