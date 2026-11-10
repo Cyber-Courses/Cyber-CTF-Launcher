@@ -15,6 +15,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
+use super::is_lab_id;
 use crate::platform::AppDirs;
 use crate::platform::exec::run_read;
 
@@ -192,12 +193,6 @@ fn id_after_labs(path: &str) -> Option<String> {
     let lab_layout = |i: usize| segments.get(i + 2).is_some_and(|d| d.starts_with(".isoloom"));
     let at = (0..segments.len()).rev().find(|&i| under_labs(i) && lab_layout(i)).or_else(|| (0..segments.len()).rev().find(|&i| under_labs(i)))?;
     Some(segments[at + 1].to_string())
-}
-
-/// A plausible lab id: non-empty, bounded, and only the characters an id is built from. Keeps a
-/// stray token (or an attacker project like `cyberctf-<id>-attack`, which is not an id) out.
-pub(crate) fn is_lab_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// The ids of labs running on this machine right now, asked of Docker and of each hypervisor.

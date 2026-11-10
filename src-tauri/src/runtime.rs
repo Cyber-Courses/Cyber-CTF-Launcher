@@ -22,7 +22,6 @@ pub(crate) mod attack_machine;
 pub(crate) mod cloud_services;
 pub(crate) mod deploy_log;
 pub(crate) mod discover;
-pub(crate) use discover::is_lab_id;
 pub(crate) mod docker;
 #[cfg(test)]
 #[cfg(unix)]
@@ -64,6 +63,7 @@ pub(crate) use launch::{Destination, Downloads, downloads, policy_allows, start_
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
 pub use model::{Control, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
 pub(crate) use paths::deploys_dir;
+pub(crate) use paths::is_lab_id;
 pub use paths::{LOCAL_VM_MARKER, validate_id};
 pub use reaper::reap_expired_labs;
 pub(crate) use status::refuse_replace;

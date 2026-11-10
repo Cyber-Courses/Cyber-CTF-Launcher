@@ -10,9 +10,22 @@ use super::model::Park;
 use super::providers::Provider;
 use crate::error::{Error, Result};
 
+/// Whether `id` is a lab id: non-empty, at most 64 characters, and only the characters an id is
+/// built from (ASCII letters and digits, `-`, `_`). The one rule for every lab id the launcher
+/// reads: a path segment under the labs folder, a worker's key, a project or VM name's part. It
+/// keeps `..`, a separator or a stray token (an attack box's `cyberctf-<id>-attack`) out.
+pub(crate) fn is_lab_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// `id` when it is a lab id ([`is_lab_id`]), else the error naming it: for an id that builds a
+/// path or a command.
+///
+/// # Errors
+///
+/// Not a lab id.
 pub fn validate_id(id: &str) -> Result<()> {
-    let ok = !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    if ok { Ok(()) } else { Err(Error::Invalid(format!("invalid lab id `{id}`"))) }
+    if is_lab_id(id) { Ok(()) } else { Err(Error::Invalid(format!("invalid lab id `{id}`"))) }
 }
 
 /// The Isothrum runner's home: the app data folder, its runs kept under `runs/` beside `labs/`.
@@ -197,6 +210,17 @@ pub(crate) fn parked(dir: &Path) -> Option<Park> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_lab_id_is_a_bounded_plain_name() {
+        for id in ["web", "goad-light_2", "local-invoice", "A", &"a".repeat(64)] {
+            assert!(super::is_lab_id(id) && super::validate_id(id).is_ok(), "{id}");
+        }
+        for id in ["", "../x", "a/b", "a b", "lab.1", "é", &"a".repeat(65)] {
+            assert!(!super::is_lab_id(id), "{id}");
+            assert_eq!(super::validate_id(id).unwrap_err().to_string(), format!("invalid lab id `{id}`"));
+        }
+    }
+
     #[test]
     fn a_marker_that_cannot_be_cleared_is_an_error_and_one_already_gone_is_not() {
         let dir = std::env::temp_dir().join(format!("cyberctf-marker-{}", rand::random::<u32>()));

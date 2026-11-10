@@ -29,8 +29,6 @@ fn the_labs_that_failed_last_time_are_the_ones_with_a_record() {
 
 #[test]
 fn a_lab_id_must_be_a_plain_name_to_be_a_record_file() {
-    assert!(valid_id("goad-light_2") && valid_id("web"));
-    assert!(!valid_id("") && !valid_id("../x") && !valid_id(&"a".repeat(65)));
     let t = TestApp::new();
     assert_eq!(last_failure(&t.dirs(), "../secrets"), None, "a path is never read as a record");
 }

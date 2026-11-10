@@ -78,7 +78,7 @@ fn failed_last_time(dir: &Path) -> BTreeSet<String> {
 
 /// Keeps a failed reap of lab `id` for its page (`{message, error}`), under the reap-errors folder.
 fn record_failure(dir: &Path, id: &str, error: &Wire, message: &str) -> std::io::Result<()> {
-    if !valid_id(id) {
+    if !super::is_lab_id(id) {
         return Ok(());
     }
     std::fs::create_dir_all(dir)?;
@@ -86,15 +86,10 @@ fn record_failure(dir: &Path, id: &str, error: &Wire, message: &str) -> std::io:
     std::fs::write(dir.join(id), record.to_string())
 }
 
-/// A lab id is a plain name (a file name under the reap-errors folder).
-fn valid_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
 /// Why the auto-stop couldn't destroy cloud lab `id` the last time it tried, while the lab is
 /// still billing: the lab page shows it, so a lab billing past its auto-stop never looks stopped.
 pub fn last_failure(dirs: &AppDirs, id: &str) -> Option<Wire> {
-    if !valid_id(id) {
+    if !super::is_lab_id(id) {
         return None;
     }
     let base = dirs.data().ok()?;

@@ -47,16 +47,12 @@ pub async fn machine_workloads(dirs: AppDirs) -> Vec<Workload> {
     d
 }
 
-fn valid_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
 /// Stops a workload from the Machine page. An installed lab running here gets its own Stop (the
 /// lab page's: under its lock, with its volumes, pinned ports, networks and attack box or VM);
 /// anything else of the app's (a lab removed since, the self-test) goes by name: its containers
 /// (incl. its attack box), or its local VMs. The lab can be started again from its page.
 pub async fn machine_workload_stop(labs: &impl LabRuntime, dirs: AppDirs, kind: String, id: String) -> Result<()> {
-    if !valid_id(&id) {
+    if !crate::runtime::is_lab_id(&id) {
         return Err(Error::Invalid(format!("invalid id `{id}`")));
     }
     let in_vm = match kind.as_str() {
@@ -74,8 +70,8 @@ pub async fn machine_workload_stop(labs: &impl LabRuntime, dirs: AppDirs, kind: 
 mod tests {
     #[test]
     fn workload_ids_are_plain_names() {
-        assert!(super::valid_id("goad-light_2") && super::valid_id("selftest"));
-        assert!(!super::valid_id("") && !super::valid_id("../x") && !super::valid_id(&"a".repeat(65)));
+        // The self-test's workload goes by an id too: the lab-id rule takes it.
+        assert!(crate::runtime::is_lab_id("goad-light_2") && crate::runtime::is_lab_id("selftest"));
     }
 
     /// A fake labs' runtime: an installed, running lab here gets its own Stop (the lab page's,
