@@ -215,6 +215,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   a VM's forwarded ports through Apple events, and a busy UTM let one time out ("AppleEvent timed
   out (-1712)"), failing the start. That is now taken as passing, like "Application isn't running
   (-600)": the log says so and the start (or the update of a running lab) is tried once more.
+- **Removing a server or account says when its secret stays in the keychain.** A keychain that
+  refused to delete the host's password or token went unnoticed: the host was removed and its
+  secret stayed behind. The secret now goes first, and when it can't, the host stays and the
+  page says why.
 - **A cloud-services lab gets the account's region, subscription or project.** The lab's own
   Terraform module was never given where the account works when its provider names none: the AWS
   region (`AWS_REGION`), the Azure subscription, the Google Cloud project and region. They are now

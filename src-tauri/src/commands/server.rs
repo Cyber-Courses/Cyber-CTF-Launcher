@@ -197,12 +197,13 @@ pub fn server_remove(app: AppHandle, id: &str) -> Result<()> {
     // cloud lab would keep billing with no way left to tear it down.
     let dirs = AppDirs::from(&app);
     no_labs_running(labs_on(&dirs, id)?)?;
+    // Its secret first: a keychain that refuses to let it go leaves the host as it was, rather
+    // than a removed host whose password stays behind.
+    delete_secret(id).map_err(|e| Error::Invalid(format!("couldn't remove this host's secret, so the host stays: {e}")))?;
     update(&dirs, |store| {
         remove_host(store, id);
         Ok(())
-    })?;
-    delete_secret(id);
-    Ok(())
+    })
 }
 
 /// Sets (or clears, with None) the host VM labs run on by default.
@@ -582,6 +583,28 @@ mod tests {
         assert_eq!(server_running_labs(app()).get("nope"), Some(&1));
         server_remove(app(), "az1").unwrap();
         assert_eq!(server_list(app()).unwrap().hosts, Vec::<HostProfile>::new());
+    }
+
+    #[cfg(all(unix, debug_assertions))]
+    #[test]
+    fn a_host_whose_secret_cant_be_removed_stays_and_says_why() {
+        use std::os::unix::fs::PermissionsExt;
+        // Regression: the secret's removal failed unseen, the host went, and its password stayed.
+        let t = crate::testing::test_app::TestApp::new();
+        let app = || t.handle().clone();
+        let file = t.data().join("secrets.json");
+        crate::runtime::server::secrets::use_test_file(file.clone());
+        let host = t.host("pve1", "proxmox", serde_json::json!({}));
+        set_secret(&host, "pw").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o400)).unwrap();
+        let err = server_remove(app(), &host).unwrap_err().to_string();
+        assert!(err.starts_with("couldn't remove this host's secret, so the host stays"), "{err}");
+        assert_eq!(server_list(app()).unwrap().hosts.len(), 1);
+        assert_eq!(get_secret(&host).unwrap(), "pw");
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        server_remove(app(), &host).unwrap();
+        assert!(server_list(app()).unwrap().hosts.is_empty());
+        assert!(get_secret(&host).is_err(), "its secret went with it");
     }
 
     #[test]

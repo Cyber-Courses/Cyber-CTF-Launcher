@@ -59,7 +59,7 @@ mod dev_file {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
         }
         Ok(())
     }
@@ -97,18 +97,22 @@ pub(crate) fn set_secret(id: &str, secret: &str) -> Result<()> {
     }
 }
 
-pub(crate) fn delete_secret(id: &str) {
+/// Deletes the secret stored for `id`; one that isn't there is deleted already. A keychain that
+/// refuses (locked, its prompt dismissed) says so.
+pub(crate) fn delete_secret(id: &str) -> Result<()> {
     #[cfg(debug_assertions)]
     {
         let mut map = dev_file::read();
         if map.remove(id).is_some() {
-            let _ = dev_file::write(&map);
+            dev_file::write(&map)?;
         }
+        Ok(())
     }
     #[cfg(not(debug_assertions))]
     {
-        if let Ok(e) = entry(id) {
-            let _ = e.delete_credential();
+        match entry(id)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(Error::Invalid(format!("keychain: {e}"))),
         }
     }
 }
