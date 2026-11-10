@@ -14,6 +14,7 @@ import {
   vmSetup,
 } from "@/features/machine/machine-status";
 import { usableHypervisors } from "@/features/machine/hypervisors";
+import { hypervisors } from "@/test/fixtures";
 
 // Decimal, as the Machine page shows sizes.
 const GB = 1e9;
@@ -49,6 +50,7 @@ const report = (patch: Partial<SystemReport> = {}) =>
     vagrant: tool(true, "Vagrant 2.4.1"),
     vmProviders: [],
     ...patch,
+    ...(patch.vmProviders ? hypervisors(patch.vmProviders) : { readyHypervisors: [] }),
   }) as SystemReport;
 
 describe("usage", () => {

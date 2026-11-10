@@ -6,6 +6,13 @@ const missing = { installed: false, version: null };
 /** A machine with Docker, Vagrant and VirtualBox ready (the dev mock's report). */
 export const readyReport = (): SystemReport => structuredClone(answer("system_check", undefined) as SystemReport);
 
+/** A report's hypervisors, `vmProviders` and the `readyHypervisors` the backend sends with them
+ *  (Rust's `providers::ready`, Vagrant installed): for a test that builds its own report. */
+export const hypervisors = (vmProviders: ProviderStatus[]): Pick<SystemReport, "readyHypervisors" | "vmProviders"> => ({
+  vmProviders,
+  readyHypervisors: vmProviders.filter((p) => !p.remote && p.available && p.hypervisor !== false).map((p) => p.provider),
+});
+
 /** No local hypervisor installed: none ready, each reported missing. */
 const noHypervisors = (r: SystemReport): Pick<SystemReport, "readyHypervisors" | "vmProviders"> => ({
   readyHypervisors: [],

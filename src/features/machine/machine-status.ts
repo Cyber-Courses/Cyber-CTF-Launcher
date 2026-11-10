@@ -80,7 +80,7 @@ function vmStateOf({
 /** The VM side of this machine: the hypervisors it can use, the one labs run on, and its state. */
 export function vmSetup(report: SystemReport, preferred: string | null, last: LastTest | null) {
   const hypervisors = usableHypervisors(report);
-  const readyList: ProviderStatus[] = report.vmProviders.filter((p) => !p.remote && p.available && p.hypervisor !== false);
+  const readyList: ProviderStatus[] = report.vmProviders.filter((p) => report.readyHypervisors.includes(p.provider));
   const provider = readyList.find((p) => p.provider === preferred) ?? readyList.at(0) ?? null;
   const hasHypervisor = hypervisors.some((p) => p.hypervisor === true);
   const blockedReason = blockedReasonOf(report, hypervisors);

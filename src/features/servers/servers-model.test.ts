@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ServerHost, ServerTest, SystemReport } from "@/lib/tauri";
+import type { ProviderStatus, ServerHost, ServerTest, SystemReport } from "@/lib/tauri";
 import { canRunVmHere, capacityHost, failedTest, hostStatus, hostsSummary, isPrivateHost, onPremHosts } from "@/features/servers/servers-model";
+import { hypervisors } from "@/test/fixtures";
 
 const host = (id: string, provider: ServerHost["provider"] = "proxmox") => ({ id, name: id, provider }) as ServerHost;
 const result = (ok: boolean) => ({ ok }) as ServerTest;
@@ -34,7 +35,7 @@ describe("servers model", () => {
   });
 
   it("suggests a server only when this machine can't run VM labs", () => {
-    const report = (vmProviders: unknown[]) => ({ vmProviders }) as SystemReport;
+    const report = (vmProviders: unknown[]) => hypervisors(vmProviders as ProviderStatus[]) as SystemReport;
     expect(canRunVmHere(report([{ remote: false, available: true, hypervisor: true }]))).toBe(true);
     expect(canRunVmHere(report([{ remote: true, available: true, hypervisor: null }]))).toBe(false);
     expect(canRunVmHere(report([{ remote: false, available: true, hypervisor: false }]))).toBe(false);

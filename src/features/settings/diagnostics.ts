@@ -17,14 +17,7 @@ export function diagnosticsText(version: string | null, report: SystemReport | n
     report
       ? `Vagrant: ${report.vagrant.installed ? "installed" : "not installed"}, Terraform: ${report.terraform.installed ? "installed" : "not installed"}`
       : null,
-    report
-      ? `Hypervisors ready: ${
-          report.vmProviders
-            .filter((p) => !p.remote && p.available)
-            .map((p) => p.provider)
-            .join(", ") || "none"
-        }`
-      : null,
+    report ? `Hypervisors ready: ${report.readyHypervisors.join(", ") || "none"}` : null,
     `Attack box: ${settings.attackImage}`,
     `VM provider: ${settings.vmProvider ?? "automatic"}`,
     agent ? `Install ID: ${agent.installId}` : "Not signed in",

@@ -17,7 +17,7 @@ import { LOCALES, setLocalePreference } from "@/lib/i18n";
 import { getLastTest, getVmProvider, setAttackImage, setLastTest, setVmProvider, type LastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
-import { freshReport, hypervisorStatus as hv, readyReport, stoppedDockerReport } from "@/test/fixtures";
+import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport } from "@/test/fixtures";
 import { commands, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, renderMachineScreen } from "@/features/machine/machine-test-kit";
@@ -386,12 +386,12 @@ describe("HypervisorRows", () => {
     const report = {
       ...readyReport(),
       os: "linux",
-      vmProviders: [
+      ...hypervisors([
         hv({}),
         hv({ provider: "vmware_desktop" }),
         hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" }),
         hv({ provider: "qemu", hypervisor: false }),
-      ],
+      ]),
     };
     render(rows(report, { result: "ok", at: Date.now() }));
     // Picked automatically among the ready ones, and marked; the others each as they stand.
@@ -416,7 +416,7 @@ describe("HypervisorRows", () => {
     const onToggleTest = vi.fn();
     const onTestDone = vi.fn();
     const user = userEvent.setup();
-    const report = { ...readyReport(), os: "linux", vmProviders: [hv({}), hv({ provider: "vmware_desktop" })] };
+    const report = { ...readyReport(), os: "linux", ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
     const r = render(rows(report, null, { onToggleTest }));
     const tests = screen.getAllByRole("button", { name: /^test$/i });
     await user.click(tests[1]);
@@ -441,7 +441,7 @@ describe("HypervisorRows", () => {
   it("marks the hypervisor chosen in Settings, not the first installed one", () => {
     installTauri();
     setVmProvider("vmware_desktop");
-    const report = { ...readyReport(), os: "linux", vmProviders: [hv({}), hv({ provider: "vmware_desktop" })] };
+    const report = { ...readyReport(), os: "linux", ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
     render(<HypervisorRows {...base} report={report} last={null} vm={vmSetup(report, "vmware_desktop", null)} />);
     expect(text()).toMatch(
       /VirtualBox.*Labs run on VMware Workstation by default\. · not tested yet.*Installed.*VMware Workstation.*default.*not tested yet.*Ready/,
@@ -452,7 +452,7 @@ describe("HypervisorRows", () => {
     installTauri();
     const onUseServer = vi.fn();
     const user = userEvent.setup();
-    render(rows({ ...readyReport(), vmProviders: [hv({})] }, { result: "fail", at: Date.now() }, { memFree: 2 * GB, onUseServer }));
+    render(rows({ ...readyReport(), ...hypervisors([hv({})]) }, { result: "fail", at: Date.now() }, { memFree: 2 * GB, onUseServer }));
     expect(text()).toContain("Test failed");
     expect(text()).toContain("VM labs want about 8.0 GB");
     await user.click(button(/use a server/i));
@@ -462,7 +462,7 @@ describe("HypervisorRows", () => {
 
   it("explains a blocked hypervisor", () => {
     installTauri();
-    render(rows({ ...readyReport(), vmProviders: [hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" })] }));
+    render(rows({ ...readyReport(), ...hypervisors([hv({ provider: "libvirt", available: false, reason: "no /dev/kvm" })]) }));
     expect(text()).toMatch(/libvirt.*No \/dev\/kvm\..*Can't run here/);
     expect(button(/use a server/i)).toBeTruthy();
   });
@@ -471,14 +471,14 @@ describe("HypervisorRows", () => {
     installTauri();
     const onFix = vi.fn();
     const user = userEvent.setup();
-    const r = render(rows({ ...readyReport(), vagrant: { installed: false, version: null }, vmProviders: [hv({ available: false })] }, null, { onFix }));
+    const r = render(rows({ ...readyReport(), vagrant: { installed: false, version: null }, ...hypervisors([hv({ available: false })]) }, null, { onFix }));
     expect(text()).toContain("Vagrant or the hypervisor's Vagrant plugin is missing.");
     await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenLastCalledWith("vagrant");
     r.unmount();
     // None installed, or none that applies here: no row, no placeholder.
     for (const vmProviders of [[hv({ hypervisor: false, available: false }), hv({ provider: "vmware_desktop", hypervisor: false, available: false })], []]) {
-      const { container, unmount } = render(rows({ ...readyReport(), os: "linux", vmProviders }, null, { onFix }));
+      const { container, unmount } = render(rows({ ...readyReport(), os: "linux", ...hypervisors(vmProviders) }, null, { onFix }));
       expect(container.textContent).toBe("");
       unmount();
     }
@@ -740,7 +740,7 @@ describe("MachineScreen", () => {
 
   it("lists only what is installed: no rows for the providers this machine lacks", async () => {
     installTauri();
-    const report = { ...readyReport(), vmProviders: readyReport().vmProviders.filter((p) => p.remote) };
+    const report = { ...readyReport(), ...hypervisors(readyReport().vmProviders.filter((p) => p.remote)) };
     render(<MachineScreen report={report} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
     await flush(50);
     const providers = must(screen.getByText("Providers").closest("section, div")?.parentElement, "the Providers panel").textContent;

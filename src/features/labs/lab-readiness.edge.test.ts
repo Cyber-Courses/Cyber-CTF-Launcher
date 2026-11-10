@@ -5,6 +5,7 @@ import { cloudNames } from "@/features/labs/lab-runtime";
 import type { Lab } from "@/features/labs/use-labs";
 import { translate } from "@/lib/i18n";
 import type { ProviderStatus, ServerHost, SystemReport } from "@/lib/tauri";
+import { hypervisors } from "@/test/fixtures";
 
 const provider = (p: string, available = true): ProviderStatus =>
   ({ provider: p, remote: false, available, hypervisor: available, plugin: null, pluginInstalled: available, reason: null }) as ProviderStatus;
@@ -17,6 +18,7 @@ const report = (over: Partial<SystemReport> = {}) =>
     terraform: { installed: false },
     vmProviders: [],
     ...over,
+    ...(over.vmProviders ? hypervisors(over.vmProviders) : { readyHypervisors: [] }),
   }) as unknown as SystemReport;
 const cloudLab = (providers: string[]) => ({ runtime: { runtime: "CLOUD", architectures: [], providers } }) as unknown as Lab;
 const vmLab = (providers: string[]) => ({ runtime: { runtime: "VM", architectures: [], providers } }) as unknown as Lab;

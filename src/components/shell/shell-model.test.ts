@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ActiveOperation, LabStatus, SystemReport } from "@/lib/tauri";
 import { activeLabs, breadcrumbs, engineSummary, isNavTab, isTyping, shortcutFor, type SidebarLab, type Tab } from "@/components/shell/shell-model";
+import { hypervisors } from "@/test/fixtures";
 
 const title = (tab: Tab) => tab.toUpperCase();
 const key = (key: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey", boolean>> = {}) => ({
@@ -37,6 +38,7 @@ describe("engineSummary", () => {
       dockerEngine: "orbstack",
       vmProviders: [],
       ...patch,
+      ...(patch.vmProviders ? hypervisors(patch.vmProviders) : { readyHypervisors: [] }),
     }) as unknown as SystemReport;
 
   it("names the running engine with its version", () => {
@@ -127,7 +129,14 @@ describe("shell model: edges", () => {
   const op = (labId: string, o: ActiveOperation["op"] = "pause"): ActiveOperation => ({ labId, op: o, machine: null, step: null });
   const status = (running: boolean) => ({ running }) as LabStatus;
   const report = (patch: Partial<SystemReport>) =>
-    ({ docker: { installed: true, version: null }, dockerRunning: true, dockerEngine: null, vmProviders: [], ...patch }) as SystemReport;
+    ({
+      docker: { installed: true, version: null },
+      dockerRunning: true,
+      dockerEngine: null,
+      vmProviders: [],
+      ...patch,
+      ...(patch.vmProviders ? hypervisors(patch.vmProviders) : { readyHypervisors: [] }),
+    }) as SystemReport;
 
   describe("activeLabs: edges", () => {
     it("lists labs in catalogue order whatever the order of the sets, and an operation wins over the synthetic launch", () => {

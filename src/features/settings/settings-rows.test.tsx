@@ -208,6 +208,7 @@ describe("AboutSection", () => {
       vagrant: { installed: false, version: null },
       terraform: { installed: false, version: null },
       vmProviders: [],
+      readyHypervisors: [],
     };
     const { unmount } = render(<AboutSection version="1" report={stopped} agent={null} updates="inApp" />);
     await user.click(button(/^\s*copy$/i));

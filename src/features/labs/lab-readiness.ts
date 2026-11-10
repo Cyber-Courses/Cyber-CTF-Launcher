@@ -23,7 +23,7 @@ export function setupNeeded(lab: Lab, report: SystemReport | null, servers: Serv
   }
   // Built for another CPU, only an emulator (QEMU) runs it here.
   const here = localProviders(rt, report.arch);
-  const local = report.vmProviders.some((p) => !p.remote && p.available && here.includes(p.provider));
+  const local = report.readyHypervisors.some((p) => here.includes(p));
   const remote = servers.some((h) => rt.providers.includes(h.provider));
   if (local || remote) return null;
   // Name the hypervisors this lab supports, not a generic "a hypervisor": a lab that runs on

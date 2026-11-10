@@ -40,7 +40,7 @@ export function engineSummary(report: SystemReport, preferred: Provider | null =
   // `docker --version` reads "Docker version 29.5.3, build d1c06ef": the number is enough next to the engine's name.
   const version = report.docker.version?.match(/\d+\.\d+(\.\d+)?/)?.[0] ?? null;
   const engine = report.dockerRunning && report.dockerEngine ? `${engineName(report.dockerEngine)}${version ? ` ${version}` : ""}` : null;
-  const ready = report.vmProviders.filter((p) => !p.remote && p.available && p.hypervisor !== false).map((p) => p.provider);
+  const ready = report.readyHypervisors;
   const local = (preferred && ready.includes(preferred) ? preferred : ready.at(0)) ?? null;
   const hypervisor = local ? providerName(local, report.os) : null;
   return { engine, hypervisor };

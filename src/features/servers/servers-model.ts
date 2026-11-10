@@ -36,7 +36,7 @@ export function capacityHost(hosts: ServerHost[], defaultId: string | null, caps
 }
 
 /** Whether this machine already runs VM labs itself (then a server isn't suggested). */
-export const canRunVmHere = (report: SystemReport) => report.vmProviders.some((p) => !p.remote && p.available && p.hypervisor !== false);
+export const canRunVmHere = (report: SystemReport) => report.readyHypervisors.length > 0;
 
 /** A host's test: the backend's answer, or one that couldn't run (`errorCode` says why). */
 export type HostTest = ServerTest & { errorCode?: ErrorCode | null };

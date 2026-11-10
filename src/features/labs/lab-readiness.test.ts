@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { setupNeeded } from "@/features/labs/lab-readiness";
 import type { Lab } from "@/features/labs/use-labs";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
+import { hypervisors } from "@/test/fixtures";
 
 const provider = (p: string, remote = false, available = false): ProviderStatus => ({
   provider: p as ProviderStatus["provider"],
@@ -14,7 +15,8 @@ const provider = (p: string, remote = false, available = false): ProviderStatus 
   reason: null,
 });
 
-const report = (vmProviders: ProviderStatus[]) => ({ docker: { installed: true }, dockerRunning: true, vmProviders }) as unknown as SystemReport;
+const report = (vmProviders: ProviderStatus[]) =>
+  ({ docker: { installed: true }, dockerRunning: true, ...hypervisors(vmProviders) }) as unknown as SystemReport;
 
 const vmLab = (providers: string[]) => ({ runtime: { runtime: "VM", providers } }) as unknown as Lab;
 
