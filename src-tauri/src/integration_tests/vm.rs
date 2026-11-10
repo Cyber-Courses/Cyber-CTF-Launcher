@@ -15,7 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::support::{check, install_copy, log, vm_inputs};
+use super::support::{check, fetch, install_copy, log, scenario, vm_inputs};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Park, Place, isothrum, launch, lifecycle};
 
@@ -28,6 +28,8 @@ struct Lab {
 }
 
 impl Lab {
+    /// Its run. Opened at every step, as the lab page opens it: once the start opened it, opening
+    /// it again doesn't fail (and a panic would be the scenario's failed check, its teardown run).
     fn run(&self) -> isothrum::LabRun {
         isothrum::LabRun::vm(&self.home, &self.dir, &self.id).unwrap()
     }
@@ -42,8 +44,8 @@ async fn up_and_answering(l: &Lab, f: &mut Vec<String>, when: &str) {
                 check(m.state == "running", format!("{when}: machine {} is running (state {})", m.name, m.state), f);
             }
             let Some(url) = s.url else { return check(false, format!("{when}: it has a local URL"), f) };
-            let res = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap().get(&url).send().await;
-            check(res.as_ref().is_ok_and(|r| r.status().is_success()), format!("{when}: {url} answers ({:?})", res.map(|r| r.status())), f);
+            let res = fetch(&url).await;
+            check(res.as_ref().is_ok_and(reqwest::StatusCode::is_success), format!("{when}: {url} answers ({res:?})"), f);
         }
         Err(e) => check(false, format!("{when}: its status reads: {e}"), f),
     }
@@ -53,12 +55,14 @@ async fn up_and_answering(l: &Lab, f: &mut Vec<String>, when: &str) {
 async fn park_and_resume(l: &Lab, mode: Park, f: &mut Vec<String>) {
     let parked = l.run().park(mode, &mut log(&l.id)).await;
     check(parked.is_ok(), format!("it parks ({mode:?}): {:?}", parked.err()), f);
-    crate::runtime::paths::mark_parked(&l.dir, Some(mode)).unwrap();
+    let marked = crate::runtime::paths::mark_parked(&l.dir, Some(mode));
+    check(marked.is_ok(), format!("parked ({mode:?}), the lab is marked so ({:?})", marked.err()), f);
     let s = l.run().status().await;
     check(s.as_ref().is_ok_and(|s| !s.running && s.parked == Some(mode)), format!("parked ({mode:?}), it reads as parked"), f);
     let resumed = l.run().resume(&mut log(&l.id)).await;
     check(resumed.is_ok(), format!("it resumes after {mode:?}: {:?}", resumed.err()), f);
-    crate::runtime::paths::mark_parked(&l.dir, None).unwrap();
+    let unmarked = crate::runtime::paths::mark_parked(&l.dir, None);
+    check(unmarked.is_ok(), format!("resumed after {mode:?}, its parked mark goes ({:?})", unmarked.err()), f);
     up_and_answering(l, f, &format!("resumed after {mode:?}")).await;
 }
 
@@ -148,13 +152,22 @@ async fn a_vm_lab_runs_end_to_end_through_the_runner() {
     let home = std::env::temp_dir().join(format!("cyberctf-runner-{id}"));
     let lab = Lab { dir, id, home, provider };
     let mut failures = Vec::new();
-    exercise(&lab, &mut failures).await;
-    let stopped = lifecycle::stop_run(isothrum::LabRun::vm(&lab.home, &lab.dir, &lab.id).unwrap(), &lab.dir, log(&lab.id)).await;
-    check(stopped.is_ok(), format!("it stops: {:?}", stopped.err()), &mut failures);
-    let name = crate::runtime::lab::lab(&lab.dir).map(|l| l.source().name.clone()).unwrap_or_default();
-    let left = left_on(provider, &name, &lab.dir).await;
-    check(left.as_ref().is_ok_and(Vec::is_empty), format!("nothing of it is left on {} ({left:?})", provider.id()), &mut failures);
-    check(lab.run().status().await.is_ok_and(|s| !s.running && s.machines.is_empty()), "its status reads as gone".into(), &mut failures);
+    scenario(
+        &mut failures,
+        async |f: &mut Vec<String>| exercise(&lab, f).await,
+        async |f: &mut Vec<String>| {
+            let stopped = match isothrum::LabRun::vm(&lab.home, &lab.dir, &lab.id) {
+                Ok(run) => lifecycle::stop_run(run, &lab.dir, log(&lab.id)).await,
+                Err(e) => Err(e),
+            };
+            check(stopped.is_ok(), format!("it stops: {:?}", stopped.err()), f);
+            let name = crate::runtime::lab::lab(&lab.dir).map(|l| l.source().name.clone()).unwrap_or_default();
+            let left = left_on(provider, &name, &lab.dir).await;
+            check(left.as_ref().is_ok_and(Vec::is_empty), format!("nothing of it is left on {} ({left:?})", provider.id()), f);
+            check(lab.run().status().await.is_ok_and(|s| !s.running && s.machines.is_empty()), "its status reads as gone".into(), f);
+        },
+    )
+    .await;
     let _ = std::fs::remove_dir_all(&lab.dir);
     let _ = std::fs::remove_dir_all(&lab.home);
     assert!(failures.is_empty(), "{failures:#?}");

@@ -24,7 +24,7 @@
 
 use std::path::Path;
 
-use super::support::{add_box, box_reaches, check, in_box, install_copy, leftovers, log, remove_box};
+use super::support::{add_box, box_reaches, check, in_box, install_copy, leftovers, log, remove_box, scenario};
 use crate::platform::AppDirs;
 use crate::runtime::attack_machine::{self, Placed};
 use crate::runtime::host::Host;
@@ -38,26 +38,41 @@ use crate::runtime::{isothrum, lab, lifecycle};
 pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
     add_box(placed, dirs, attack_machine::default_image(), l, f).await;
     box_reaches(placed, target, "once added", f).await;
-    if let Some(folder) = crate::shared_folder::current().unwrap_or_else(|e| panic!("the shared folder: {e}")) {
-        let console = placed.shell_command().await.expect("a console into the box");
-        std::fs::write(folder.join("to-box"), "tools in").unwrap();
-        let mount = crate::shared_folder::MOUNT_POINT;
-        let seen = in_box(&console, &format!("cat {mount}/to-box && echo loot out > {mount}/from-box")).await;
-        check(seen.as_deref().is_ok_and(|o| o.contains("tools in")), format!("the box sees the shared folder at {mount} ({seen:?})"), f);
-        let back = std::fs::read_to_string(folder.join("from-box")).unwrap_or_default();
-        check(back.contains("loot out"), format!("what the box writes there lands on this computer ({back:?})"), f);
+    match crate::shared_folder::current() {
+        Ok(Some(folder)) => shared_both_ways(placed, &folder, f).await,
+        Ok(None) => {}
+        Err(e) => check(false, format!("the shared folder's setting reads: {e}"), f),
     }
     remove_box(placed, dirs, l, f).await;
     check(!attack_machine::added(&placed.dir).unwrap_or(true), "the lab is as published".into(), f);
 }
 
-/// With `CYBERCTF_TEST_SHARED_FOLDER` (a folder; empty or unset: off), the shared folder turned on there, as Settings
-/// do, the launcher's settings kept under `home`.
-fn shared_folder(home: &Path) {
+/// The shared folder `folder` seen both ways from inside the box `placed`.
+async fn shared_both_ways(placed: &Placed, folder: &Path, f: &mut Vec<String>) {
+    let console = match placed.shell_command().await {
+        Ok(console) => console,
+        Err(e) => return check(false, format!("a console into the box opens: {e}"), f),
+    };
+    if let Err(e) = std::fs::write(folder.join("to-box"), "tools in") {
+        return check(false, format!("a file is put in the shared folder: {e}"), f);
+    }
+    let mount = crate::shared_folder::MOUNT_POINT;
+    let seen = in_box(&console, &format!("cat {mount}/to-box && echo loot out > {mount}/from-box")).await;
+    check(seen.as_deref().is_ok_and(|o| o.contains("tools in")), format!("the box sees the shared folder at {mount} ({seen:?})"), f);
+    let back = std::fs::read_to_string(folder.join("from-box")).unwrap_or_default();
+    check(back.contains("loot out"), format!("what the box writes there lands on this computer ({back:?})"), f);
+}
+
+/// With `CYBERCTF_TEST_SHARED_FOLDER` (a folder; empty or unset: off), the shared folder turned on
+/// there, as Settings do, the launcher's settings kept under `home`.
+fn shared_folder(home: &Path, f: &mut Vec<String>) {
     let Some(folder) = std::env::var("CYBERCTF_TEST_SHARED_FOLDER").ok().filter(|f| !f.is_empty()) else { return };
-    std::fs::create_dir_all(home).unwrap();
+    if let Err(e) = std::fs::create_dir_all(home) {
+        return check(false, format!("the launcher's settings folder is made: {e}"), f);
+    }
     crate::shared_folder::init(home);
-    crate::shared_folder::shared_folder_set(true, &folder).unwrap();
+    let on = crate::shared_folder::shared_folder_set(true, &folder);
+    check(on.is_ok(), format!("the shared folder is turned on at {folder} ({:?})", on.err()), f);
 }
 
 #[tokio::test]
@@ -71,39 +86,48 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
     let dir = install_copy(Path::new(&src), &id);
     let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
     let dirs = AppDirs::new(None, None);
-    let mut f = Vec::new();
-    let mut l = log(&id);
-    let (started, run, target_kind, vm) = match form.as_str() {
-        "docker" => (
-            start_docker_run(&home, &dir, &id, &[], &mut l).await,
-            isothrum::LabRun::docker(&home, &dir, &id).unwrap(),
-            crate::runtime::lab::Target::Docker,
-            false,
-        ),
-        "docker-vm" => (
-            start_docker_in_vm_run(&home, &dir, &id, VmStart { provider, env: &[] }, &mut l).await,
-            isothrum::LabRun::docker_in_vm(&home, &dir, &id).unwrap(),
-            lab::vagrant_target(crate::runtime::Runtime::Docker),
-            false,
-        ),
-        "vm" => (
-            start_vm_run(&home, &dir, &id, VmStart { provider, env: &[] }, &mut l).await,
-            isothrum::LabRun::vm(&home, &dir, &id).unwrap(),
-            crate::runtime::lab::Target::Vagrant,
-            true,
-        ),
+    let (target_kind, vm) = match form.as_str() {
+        "docker" => (lab::Target::Docker, false),
+        "docker-vm" => (lab::vagrant_target(crate::runtime::Runtime::Docker), false),
+        "vm" => (lab::Target::Vagrant, true),
         other => panic!("no form {other}"),
     };
-    check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), &mut f);
-    let placed = Placed { host: Host::Local(run), dir: dir.clone(), target: target_kind, vm };
-    if started.is_ok() {
-        shared_folder(&home);
-        exercise(&placed, &dirs, &target, &mut l, &mut f).await;
-    }
-    let Host::Local(run) = placed.host else { unreachable!("a lab on this machine") };
-    let stopped = lifecycle::stop_run(run, &dir, log(&id)).await;
-    check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), &mut f);
-    check(leftovers(&id).await.is_empty(), "nothing of it is left on this machine's Docker".into(), &mut f);
+    // The lab's run on this machine, in the form under test.
+    let run = || match form.as_str() {
+        "docker" => isothrum::LabRun::docker(&home, &dir, &id),
+        "docker-vm" => isothrum::LabRun::docker_in_vm(&home, &dir, &id),
+        _ => isothrum::LabRun::vm(&home, &dir, &id),
+    };
+    let mut f = Vec::new();
+    scenario(
+        &mut f,
+        async |f: &mut Vec<String>| {
+            let mut l = log(&id);
+            let started = match form.as_str() {
+                "docker" => start_docker_run(&home, &dir, &id, &[], &mut l).await,
+                "docker-vm" => start_docker_in_vm_run(&home, &dir, &id, VmStart { provider, env: &[] }, &mut l).await,
+                _ => start_vm_run(&home, &dir, &id, VmStart { provider, env: &[] }, &mut l).await,
+            };
+            check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), f);
+            let placed = match run() {
+                Ok(run) => Placed { host: Host::Local(run), dir: dir.clone(), target: target_kind, vm },
+                Err(e) => return check(false, format!("the lab's run opens: {e}"), f),
+            };
+            if started.is_ok() {
+                shared_folder(&home, f);
+                exercise(&placed, &dirs, &target, &mut l, f).await;
+            }
+        },
+        async |f: &mut Vec<String>| {
+            let stopped = match run() {
+                Ok(run) => lifecycle::stop_run(run, &dir, log(&id)).await,
+                Err(e) => Err(e),
+            };
+            check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), f);
+            check(leftovers(&id).await.is_empty(), "nothing of it is left on this machine's Docker".into(), f);
+        },
+    )
+    .await;
     let _ = std::fs::remove_dir_all(&dir);
     assert!(f.is_empty(), "{f:#?}");
 }
@@ -152,18 +176,29 @@ async fn the_attack_box_is_a_machine_of_an_aws_lab() {
     crate::runtime::server::mark_lab(&dir, Some(&host)).unwrap();
     let conn = crate::runtime::server::connection(&dirs, &host).unwrap();
     let mut f = Vec::new();
-    let mut l = log(&id);
-    let start = CloudStart { dir: &dir, id: &id, runtime: crate::runtime::Runtime::Docker, host: &host, conn, env: &[], per_machine };
-    let started = start_cloud_run(&dirs, start, &mut l).await;
-    check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), &mut f);
-    if started.is_ok() {
-        // The box's place, as the lab page's commands find it.
-        let placed = attack_machine::locate(&dirs, &dir, &id, crate::runtime::Runtime::Docker).unwrap().expect("the box's place in the account");
-        exercise(&placed, &dirs, &target, &mut l, &mut f).await;
-    }
-    let stopped = lifecycle::stop_locked(&dirs, &dir, &id, crate::runtime::Runtime::Docker, log(&id)).await;
-    check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), &mut f);
-    let left = left_in_aws(&region, &name).await;
-    check(left.is_empty(), format!("nothing of it is left in AWS ({left})"), &mut f);
+    scenario(
+        &mut f,
+        async |f: &mut Vec<String>| {
+            let mut l = log(&id);
+            let start = CloudStart { dir: &dir, id: &id, runtime: crate::runtime::Runtime::Docker, host: &host, conn, env: &[], per_machine };
+            let started = start_cloud_run(&dirs, start, &mut l).await;
+            check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), f);
+            if started.is_err() {
+                return;
+            }
+            // The box's place, as the lab page's commands find it.
+            match attack_machine::locate(&dirs, &dir, &id, crate::runtime::Runtime::Docker) {
+                Ok(Some(placed)) => exercise(&placed, &dirs, &target, &mut l, f).await,
+                found => check(false, format!("the box's place in the account is found ({:?})", found.err()), f),
+            }
+        },
+        async |f: &mut Vec<String>| {
+            let stopped = lifecycle::stop_locked(&dirs, &dir, &id, crate::runtime::Runtime::Docker, log(&id)).await;
+            check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), f);
+            let left = left_in_aws(&region, &name).await;
+            check(left.is_empty(), format!("nothing of it is left in AWS ({left})"), f);
+        },
+    )
+    .await;
     assert!(f.is_empty(), "{f:#?}");
 }

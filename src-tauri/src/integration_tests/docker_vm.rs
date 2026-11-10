@@ -14,7 +14,7 @@
 
 use std::path::Path;
 
-use super::support::{check, install_copy, leftovers, log};
+use super::support::{check, install_copy, leftovers, log, scenario};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Place, isothrum, lab, launch, lifecycle};
 
@@ -23,7 +23,7 @@ use crate::runtime::{Place, isothrum, lab, launch, lifecycle};
 /// before returning) and are reached from a machine inside the VM, since the lab network
 /// isn't reachable from this machine; so there is no host URL to fetch here, by design.
 async fn up_in_vm(home: &Path, dir: &Path, id: &str, f: &mut Vec<String>) {
-    match isothrum::LabRun::docker_in_vm(home, dir, id).unwrap().status().await {
+    match status_of(home, dir, id).await {
         Ok(s) => {
             check(s.running, "it reports running".into(), f);
             check(matches!(s.place, Some(Place::LocalVm)), "it runs in a local VM".into(), f);
@@ -34,6 +34,11 @@ async fn up_in_vm(home: &Path, dir: &Path, id: &str, f: &mut Vec<String>) {
         }
         Err(e) => check(false, format!("its status reads: {e}"), f),
     }
+}
+
+/// The lab's status, through its run in the VM.
+async fn status_of(home: &Path, dir: &Path, id: &str) -> crate::error::Result<crate::runtime::LabStatus> {
+    isothrum::LabRun::docker_in_vm(home, dir, id)?.status().await
 }
 
 /// Whether the hypervisor still holds a VM of the lab in `dir` (by the name Isoloom gives it).
@@ -58,24 +63,31 @@ async fn a_container_lab_runs_in_a_local_vm_end_to_end() {
     let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
     let started = std::time::Instant::now();
     let mut f = Vec::new();
-    // The launcher's own start of a container lab in a VM, as the lab page's runs it: its Vagrant
-    // files generated, the lab marked as running in a local VM, UTM opened first and its passing
-    // refusal tried again, then up through the runner.
-    let brought_up = launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, env: &[] }, &mut log(&id)).await;
-    match brought_up {
-        Ok(()) => {
-            up_in_vm(&home, &dir, &id, &mut f).await;
-        }
-        Err(e) => check(false, format!("it starts: {e}"), &mut f),
-    }
-    let stopped = lifecycle::stop_run(isothrum::LabRun::docker_in_vm(&home, &dir, &id).unwrap(), &dir, log(&id)).await;
-    check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), &mut f);
-    let leftover_vms = left(provider, &dir).await;
-    check(leftover_vms.is_empty(), format!("no VM of it is left ({leftover_vms:?})"), &mut f);
-    // No container of it on the host either (it ran inside the VM, not here).
-    check(leftovers(&id).await.is_empty(), "nothing of it is left on this machine's Docker".into(), &mut f);
-    let status_gone = isothrum::LabRun::docker_in_vm(&home, &dir, &id).unwrap().status().await;
-    check(status_gone.is_ok_and(|s| !s.running), "its status reads as gone".into(), &mut f);
+    scenario(
+        &mut f,
+        async |f: &mut Vec<String>| {
+            // The launcher's own start of a container lab in a VM, as the lab page's runs it: its
+            // Vagrant files generated, the lab marked as running in a local VM, UTM opened first
+            // and its passing refusal tried again, then up through the runner.
+            match launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, env: &[] }, &mut log(&id)).await {
+                Ok(()) => up_in_vm(&home, &dir, &id, f).await,
+                Err(e) => check(false, format!("it starts: {e}"), f),
+            }
+        },
+        async |f: &mut Vec<String>| {
+            let stopped = match isothrum::LabRun::docker_in_vm(&home, &dir, &id) {
+                Ok(run) => lifecycle::stop_run(run, &dir, log(&id)).await,
+                Err(e) => Err(e),
+            };
+            check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), f);
+            let leftover_vms = left(provider, &dir).await;
+            check(leftover_vms.is_empty(), format!("no VM of it is left ({leftover_vms:?})"), f);
+            // No container of it on the host either (it ran inside the VM, not here).
+            check(leftovers(&id).await.is_empty(), "nothing of it is left on this machine's Docker".into(), f);
+            check(status_of(&home, &dir, &id).await.is_ok_and(|s| !s.running), "its status reads as gone".into(), f);
+        },
+    )
+    .await;
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&home);
     println!("docker-vm ({}): {:.0?}", provider.id(), started.elapsed());

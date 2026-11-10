@@ -16,7 +16,7 @@
 
 use std::path::Path;
 
-use super::support::{Run, check, install_copy, leftovers, log};
+use super::support::{Run, check, install_copy, leftovers, log, scenario};
 use crate::platform::exec::run;
 use crate::runtime::{Place, docker, paths};
 
@@ -70,15 +70,19 @@ async fn run_corpus_lab(dir: &Path, f: &mut Vec<String>) {
     let id = format!("ci-corpus-{}", rand::random::<u32>());
     let r = Run { dir: install_copy(dir, &id), home: std::env::temp_dir().join(format!("cyberctf-{id}-home")), id };
     let started = std::time::Instant::now();
-    match r.start(&[], &mut log(&r.id)).await {
-        Ok(()) => {
-            ready(&r, f).await;
-            checks_pass(&r, f).await;
-            park_and_resume(&r, f).await;
-        }
-        Err(e) => check(false, format!("{name}: it starts: {e}"), f),
-    }
-    teardown(&r, name, f).await;
+    scenario(
+        f,
+        async |f: &mut Vec<String>| match r.start(&[], &mut log(&r.id)).await {
+            Ok(()) => {
+                ready(&r, f).await;
+                checks_pass(&r, f).await;
+                park_and_resume(&r, f).await;
+            }
+            Err(e) => check(false, format!("{name}: it starts: {e}"), f),
+        },
+        async |f: &mut Vec<String>| teardown(&r, name, f).await,
+    )
+    .await;
     println!("{name}: {:.0?}", started.elapsed());
     let _ = std::fs::remove_dir_all(&r.dir);
     let _ = std::fs::remove_dir_all(&r.home);

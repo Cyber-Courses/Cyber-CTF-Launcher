@@ -18,7 +18,7 @@
 
 use std::path::Path;
 
-use super::support::{Run, add_box, box_reaches, check, install_copy, leftovers, log, remove_box};
+use super::support::{Run, add_box, box_reaches, check, fetch, install_copy, leftovers, log, remove_box, scenario};
 use crate::platform::AppDirs;
 use crate::platform::exec::run;
 use crate::runtime::attack_machine::Placed;
@@ -124,8 +124,8 @@ async fn exercise_status(r: &Run, e: &Expect, f: &mut Vec<String>) {
         Ok(s) => {
             check_status(&s, e, f);
             if let Some(url) = &s.url {
-                let res = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap().get(url).send().await;
-                check(res.is_ok(), format!("{url} answers on this machine ({:?})", res.as_ref().map(reqwest::Response::status)), f);
+                let res = fetch(url).await;
+                check(res.is_ok(), format!("{url} answers on this machine ({res:?})"), f);
             }
         }
         Err(err) => check(false, format!("the lab's status reads: {err}"), f),
@@ -161,19 +161,25 @@ async fn real_lab(name: &str, e: Expect) {
     let r = Run { dir: install_copy(Path::new(&src), &id), home: std::env::temp_dir().join(format!("cyberctf-{id}-home")), id };
     let started = std::time::Instant::now();
     let mut failures = Vec::new();
-    exercise(&r, &e, &mut failures).await;
-    if !failures.is_empty() {
-        // What the lab said, before stopping it takes its containers (and logs) away.
-        let logs = run("docker", &["compose", "-p", &docker::project(&r.id), "logs", "--no-color", "--tail", "200"], None).await;
-        println!("compose logs:\n{}", logs.unwrap_or_else(|err| err.to_string()));
-    }
-    // Stop and remove, whatever happened above (as the Stop button does).
-    let stopped = r.stop(log(&r.id)).await;
-    check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), &mut failures);
-    let left = leftovers(&r.id).await;
-    check(left.is_empty(), format!("nothing of the lab is left: {left:?}"), &mut failures);
-    let record = std::fs::read_to_string(r.home.join("runs").join(docker::project(&r.id)).join("record.json")).unwrap_or_default();
-    check(record.contains(r#""state": "absent""#), format!("the runner records the run as gone ({record})"), &mut failures);
+    scenario(
+        &mut failures,
+        async |f: &mut Vec<String>| exercise(&r, &e, f).await,
+        async |f: &mut Vec<String>| {
+            if !f.is_empty() {
+                // What the lab said, before stopping it takes its containers (and logs) away.
+                let logs = run("docker", &["compose", "-p", &docker::project(&r.id), "logs", "--no-color", "--tail", "200"], None).await;
+                println!("compose logs:\n{}", logs.unwrap_or_else(|err| err.to_string()));
+            }
+            // Stop and remove, as the Stop button does.
+            let stopped = r.stop(log(&r.id)).await;
+            check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), f);
+            let left = leftovers(&r.id).await;
+            check(left.is_empty(), format!("nothing of the lab is left: {left:?}"), f);
+            let record = std::fs::read_to_string(r.home.join("runs").join(docker::project(&r.id)).join("record.json")).unwrap_or_default();
+            check(record.contains(r#""state": "absent""#), format!("the runner records the run as gone ({record})"), f);
+        },
+    )
+    .await;
     let _ = std::fs::remove_dir_all(&r.dir);
     let _ = std::fs::remove_dir_all(&r.home);
     println!("{name}: {:.0?}", started.elapsed());

@@ -16,6 +16,11 @@ the screen. The labs are Isoloom's examples (`ISOLOOM`, default `../isoloom`). R
 release that touches running labs, after a change to Isoloom or Isothrum, and after any field bug
 in the tiers below (then add the scenario that would have caught it).
 
+A scenario's lab is torn down (stopped, and what it left checked) whatever happens in its checks,
+a panic included: each runs through `support::scenario`, which records the panic as a failed
+check and runs the teardown after it. A lab one scenario leaves behind fails the ones after it (a
+UTM VM still registered made every later docker-vm import fail).
+
 ## Local tier
 
 Docker, and Vagrant with QEMU (`VM_PROVIDER`) and, on a Mac, UTM for a container lab in a VM

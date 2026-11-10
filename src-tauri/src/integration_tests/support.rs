@@ -1,9 +1,14 @@
-//! What the real-lab tests share: a lab installed for a test and run through the runner, the
-//! test's log, its checks (each failure collected, so the lab is always stopped after), what a
-//! lab leaves on Docker, a probe run through the console the lab page opens, and the attack box
-//! driven as the lab page drives it.
+//! What the real-lab tests share: a scenario's run (its checks, then its teardown whatever happens
+//! in them: [`scenario`]), a lab installed for a test and run through the runner, the test's log,
+//! its checks (each failure collected, so the lab is always stopped after), what a lab leaves on
+//! Docker, a probe run through the console the lab page opens, and the attack box driven as the
+//! lab page drives it.
 
+use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use isothrum_runner::ShellCommand;
 
@@ -12,6 +17,58 @@ use crate::platform::AppDirs;
 use crate::platform::exec::run;
 use crate::runtime::attack_machine::{self, Placed};
 use crate::runtime::{LabStatus, docker, isothrum, launch, lifecycle};
+
+/// What a scenario keeps its failed checks in: a list of them, or a state of its own holding one.
+pub(crate) trait Checks {
+    fn failures(&mut self) -> &mut Vec<String>;
+}
+
+impl Checks for Vec<String> {
+    fn failures(&mut self) -> &mut Vec<String> {
+        self
+    }
+}
+
+/// Runs a scenario's `body` (the lab started, its checks), then its `teardown` (the lab stopped,
+/// what it left checked) whatever happens in the body: a panic there is a failed check of its own,
+/// and the teardown still runs. A lab a scenario leaves behind fails the ones after it (a UTM VM
+/// still registered makes every later docker-vm import fail). A panic in the teardown is a failed
+/// check too. Each part's failures go to `state`.
+pub(crate) async fn scenario<S: Checks>(state: &mut S, body: impl AsyncFnOnce(&mut S), teardown: impl AsyncFnOnce(&mut S)) {
+    if let Err(panic) = (CatchUnwind(Box::pin(body(state)))).await {
+        check(false, format!("the scenario ran to its end (it panicked: {})", panic_message(&*panic)), state.failures());
+    }
+    if let Err(panic) = (CatchUnwind(Box::pin(teardown(state)))).await {
+        check(false, format!("the teardown ran to its end (it panicked: {})", panic_message(&*panic)), state.failures());
+    }
+}
+
+/// A future whose panic, while it is polled, is its output instead.
+struct CatchUnwind<F>(Pin<Box<F>>);
+
+impl<F: Future> Future for CatchUnwind<F> {
+    type Output = std::thread::Result<F::Output>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let inner = self.0.as_mut();
+        match catch_unwind(AssertUnwindSafe(|| inner.poll(cx))) {
+            Ok(Poll::Pending) => Poll::Pending,
+            Ok(Poll::Ready(done)) => Poll::Ready(Ok(done)),
+            Err(panic) => Poll::Ready(Err(panic)),
+        }
+    }
+}
+
+/// What a panic said.
+fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
+    panic.downcast_ref::<&str>().map(ToString::to_string).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_else(|| "no message".into())
+}
+
+/// `url` fetched on this machine (15 s at most): its status, or why it couldn't be.
+pub(crate) async fn fetch(url: &str) -> std::result::Result<reqwest::StatusCode, String> {
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
+    client.get(url).send().await.map(|r| r.status()).map_err(|e| e.to_string())
+}
 
 /// One lab installed for a test, run through the Isothrum runner.
 pub(crate) struct Run {
@@ -91,19 +148,32 @@ pub(crate) fn vm_inputs() -> Vec<(String, String)> {
         .collect()
 }
 
-/// `probe` run in the box, through the console the lab page opens, without a terminal.
+/// `probe` run in the box, through the console the lab page opens, without a terminal. A console
+/// of a shape this doesn't know is an error.
 pub(crate) async fn in_box(console: &ShellCommand, probe: &str) -> crate::error::Result<String> {
+    let args = probe_args(console, probe).ok_or_else(|| crate::error::Error::Invalid(format!("an unexpected console: {console:?}")))?;
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let program = match console.program.as_str() {
+        "docker" => "docker",
+        "ssh" => "ssh",
+        _ => "vagrant",
+    };
+    crate::platform::exec::run_env_timed(program, &args, Some(console.cwd.as_path()), &console.env, std::time::Duration::from_secs(120)).await
+}
+
+/// `console`'s arguments running `probe` without a terminal; none for a console of another shape.
+fn probe_args(console: &ShellCommand, probe: &str) -> Option<Vec<String>> {
     let mut args = console.args.clone();
     match (console.program.as_str(), args.len()) {
         // `docker compose … exec <service> sh -c <shell>` (or `… exec <service> bash`): no TTY,
         // the probe for the shell.
         ("docker", _) => {
-            let exec = args.iter().position(|a| a == "exec").expect("an exec");
+            let exec = args.iter().position(|a| a == "exec")?;
             args.insert(exec + 1, "-T".into());
             if args.len() >= 2 && args[args.len() - 2] == "-c" {
-                *args.last_mut().unwrap() = probe.into();
+                *args.last_mut()? = probe.into();
             } else {
-                *args.last_mut().unwrap() = "sh".into();
+                *args.last_mut()? = "sh".into();
                 args.extend(["-c".to_owned(), probe.to_owned()]);
             }
         }
@@ -112,25 +182,19 @@ pub(crate) async fn in_box(console: &ShellCommand, probe: &str) -> crate::error:
         // `ssh -t … <login shell>` into a VM: no TTY, the probe for the shell.
         ("ssh", _) if !args.last().is_some_and(|a| a.contains("docker exec")) => {
             args.retain(|a| a != "-t");
-            *args.last_mut().unwrap() = probe.into();
+            *args.last_mut()? = probe.into();
         }
         // `vagrant ssh <vm> -c <into the container>`, `ssh -t … <into the container>`: no TTY
         // into it, the probe for its shell.
         ("vagrant" | "ssh", _) => {
             args.retain(|a| a != "-t");
-            let into = args.last_mut().unwrap();
-            let shell = into.find("sh -c '").expect("into a container's shell");
+            let into = args.last_mut()?;
+            let shell = into.find("sh -c '")?;
             *into = format!("{} sh -c '{probe}'", into[..shell].replace(" -it ", " -i "));
         }
-        _ => panic!("an unexpected console: {console:?}"),
+        _ => return None,
     }
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let program = match console.program.as_str() {
-        "docker" => "docker",
-        "ssh" => "ssh",
-        _ => "vagrant",
-    };
-    crate::platform::exec::run_env_timed(program, &args, Some(console.cwd.as_path()), &console.env, std::time::Duration::from_secs(120)).await
+    Some(args)
 }
 
 pub(crate) fn check(ok: bool, what: String, failures: &mut Vec<String>) {
@@ -157,7 +221,10 @@ pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &m
         Ok(s) => check(s.running && !s.ip.is_empty(), format!("the attack box runs, with an address, {when} ({} on {})", s.ip, s.lab_network), f),
         Err(err) => check(false, format!("the attack box's status reads, {when}: {err}"), f),
     }
-    let name = attack_machine::name(&placed.dir).unwrap_or_else(|e| panic!("the box's name: {e}"));
+    let name = match attack_machine::name(&placed.dir) {
+        Ok(name) => name,
+        Err(err) => return check(false, format!("the attack box's name reads, {when}: {err}"), f),
+    };
     let probe = format!("bash -c \"exec 3<>/dev/tcp/{target}/80 && echo reached; hostname\"");
     let reached = match placed.shell_command().await {
         Ok(console) => in_box(&console, &probe).await,
@@ -177,5 +244,37 @@ pub(crate) async fn remove_box(placed: &Placed, dirs: &AppDirs, l: &mut impl FnM
     match placed.status().await {
         Ok(s) => check(!s.running, "the attack box is gone".into(), f),
         Err(err) => check(false, format!("the attack box's status reads: {err}"), f),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_scenario_that_panics_is_still_torn_down_and_says_where_it_stopped() {
+        // Regression: a scenario's `expect` panicked before its teardown, its UTM VM stayed
+        // registered, and every docker-vm scenario after it failed.
+        let mut failures = Vec::new();
+        let torn_down = std::cell::Cell::new(false);
+        scenario(
+            &mut failures,
+            async |f: &mut Vec<String>| {
+                check(true, "the lab starts".into(), f);
+                tokio::task::yield_now().await;
+                panic!("a console into the box: no such machine");
+            },
+            async |f: &mut Vec<String>| {
+                torn_down.set(true);
+                check(false, "nothing of it is left".into(), f);
+            },
+        )
+        .await;
+        assert!(torn_down.get(), "the teardown ran");
+        assert_eq!(failures, ["the scenario ran to its end (it panicked: a console into the box: no such machine)", "nothing of it is left"]);
+        // A body that ends, and a teardown that panics: said too.
+        let mut failures = Vec::new();
+        scenario(&mut failures, async |_: &mut Vec<String>| {}, async |_: &mut Vec<String>| panic!("{}", String::from("stop failed"))).await;
+        assert_eq!(failures, ["the teardown ran to its end (it panicked: stop failed)"]);
     }
 }

@@ -30,6 +30,7 @@
 
 use std::path::PathBuf;
 
+use super::support::{check, scenario};
 use crate::runtime::Runtime;
 use crate::runtime::isothrum::{EsxiPlace, LabRun, ServerPlace, ServerRun};
 use crate::runtime::lab;
@@ -76,20 +77,54 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
     };
     let home = PathBuf::from(var("CYBERCTF_TEST_RUNNER_HOME"));
     let run = ServerRun::new(&home, &dir, "pve-runner-lab", Runtime::Vm).unwrap();
-    let mut log = |l: String| println!("[pve] {l}");
-    let up = run.up(&place, &[], &mut log).await;
-    let status = run.status(&place).await;
-    let check = run.check().await;
-    let down = run.down(&place, &mut log).await;
-    up.expect("up");
-    let status = status.expect("status");
-    println!("status: running={} url={:?} machines={:?}", status.running, status.url, status.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
-    assert!(status.running && status.url.is_some(), "running={} url={:?}", status.running, status.url);
-    let check = check.expect("check");
-    println!("checks: ok={} {:?}", check.ok, check.results.iter().map(|r| (&r.name, r.ok)).collect::<Vec<_>>());
-    assert!(check.ok, "{}", check.output);
-    down.expect("down");
-    assert!(!run.status(&place).await.unwrap().running);
+    let mut f = Vec::new();
+    scenario(
+        &mut f,
+        async |f: &mut Vec<String>| {
+            let up = run.up(&place, &[], &mut log("pve")).await;
+            check(up.is_ok(), format!("it starts ({:?})", up.err()), f);
+            match run.status(&place).await {
+                Ok(s) => {
+                    println!("status: running={} url={:?} machines={:?}", s.running, s.url, s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
+                    check(s.running && s.url.is_some(), format!("it runs, with its entry (running={} url={:?})", s.running, s.url), f);
+                }
+                Err(e) => check(false, format!("its status reads: {e}"), f),
+            }
+            checks_pass(run.check().await, f);
+        },
+        async |f: &mut Vec<String>| {
+            let down = run.down(&place, &mut log("pve")).await;
+            check(down.is_ok(), format!("it stops ({:?})", down.err()), f);
+            check(run.status(&place).await.is_ok_and(|s| !s.running), "its status reads as gone".into(), f);
+        },
+    )
+    .await;
+    assert!(f.is_empty(), "{f:#?}");
+}
+
+/// The test's log line, tagged with the server's kind.
+fn log(tag: &'static str) -> impl FnMut(String) {
+    move |l| println!("[{tag}] {l}")
+}
+
+/// The lab's checks, read through the runner, all pass.
+fn checks_pass(checked: crate::error::Result<crate::runtime::docker::Check>, f: &mut Vec<String>) {
+    match checked {
+        Ok(c) => {
+            println!("checks: ok={} {:?}", c.ok, c.results.iter().map(|r| (&r.name, r.ok)).collect::<Vec<_>>());
+            check(c.ok, format!("its checks pass ({})", c.output.trim()), f);
+        }
+        Err(e) => check(false, format!("its checks run: {e}"), f),
+    }
+}
+
+/// The HTTP status `url` answers with, fetched with Apple's curl (which macOS lets reach the LAN).
+fn curl(url: &str) -> std::result::Result<String, String> {
+    let out = std::process::Command::new("/usr/bin/curl")
+        .args(["-s", "-m", "15", "-o", "/dev/null", "-w", "%{http_code}", url])
+        .output()
+        .map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 #[tokio::test]
@@ -111,27 +146,37 @@ async fn a_vm_lab_runs_on_esxi_through_the_runner() {
     let env = lab::esxi_env(&profile, &var("CYBERCTF_TEST_ESXI_PASSWORD"));
     let home = std::env::temp_dir().join("cyberctf-esxi-runner-home");
     let run = LabRun::on_esxi(&home, &dir, "esxi-runner-lab", Runtime::Vm, EsxiPlace::from_env(&profile.id, &env)).unwrap();
-    let mut log = |l: String| println!("[esxi] {l}");
-    let up = run.up(&[], Some("vmware_esxi"), &mut log).await;
-    let status = run.status().await;
-    // Its entry, fetched while it runs.
-    let fetched = status.as_ref().ok().and_then(|s| s.url.clone()).map(|url| {
-        let out = std::process::Command::new("/usr/bin/curl").args(["-s", "-m", "15", "-o", "/dev/null", "-w", "%{http_code}", &url]).output().unwrap();
-        (url, String::from_utf8_lossy(&out.stdout).into_owned())
-    });
-    let check = run.check().await;
-    let provision = run.provision(None, &mut log).await;
-    let down = run.down(&mut log).await;
-    up.expect("up");
-    let status = status.expect("status");
-    println!("status: running={} url={:?} machines={:?}", status.running, status.url, status.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
-    let (url, code) = fetched.expect("its entry");
-    assert!(status.running && !url.contains("127.0.0.1"), "running={} url={url}", status.running);
-    assert_eq!(code, "200", "{url} answers");
-    let check = check.expect("check");
-    println!("checks: ok={} {:?}", check.ok, check.results.iter().map(|r| (&r.name, r.ok)).collect::<Vec<_>>());
-    assert!(check.ok, "{}", check.output);
-    provision.expect("provision");
-    down.expect("down");
-    assert!(!run.status().await.unwrap().running);
+    let mut f = Vec::new();
+    scenario(
+        &mut f,
+        async |f: &mut Vec<String>| {
+            let up = run.up(&[], Some("vmware_esxi"), &mut log("esxi")).await;
+            check(up.is_ok(), format!("it starts ({:?})", up.err()), f);
+            match run.status().await {
+                Ok(s) => {
+                    println!("status: running={} url={:?} machines={:?}", s.running, s.url, s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
+                    match s.url {
+                        // Its entry at the VM's own address, fetched while it runs.
+                        Some(url) => {
+                            check(s.running && !url.contains("127.0.0.1"), format!("it runs, at the VM's own address ({url})"), f);
+                            let code = curl(&url);
+                            check(code.as_deref() == Ok("200"), format!("{url} answers ({code:?})"), f);
+                        }
+                        None => check(false, "it has its entry".into(), f),
+                    }
+                }
+                Err(e) => check(false, format!("its status reads: {e}"), f),
+            }
+            checks_pass(run.check().await, f);
+            let provisioned = run.provision(None, &mut log("esxi")).await;
+            check(provisioned.is_ok(), format!("it provisions again ({:?})", provisioned.err()), f);
+        },
+        async |f: &mut Vec<String>| {
+            let down = run.down(&mut log("esxi")).await;
+            check(down.is_ok(), format!("it stops ({:?})", down.err()), f);
+            check(run.status().await.is_ok_and(|s| !s.running), "its status reads as gone".into(), f);
+        },
+    )
+    .await;
+    assert!(f.is_empty(), "{f:#?}");
 }

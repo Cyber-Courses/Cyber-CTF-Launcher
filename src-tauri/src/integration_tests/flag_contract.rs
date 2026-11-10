@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use super::support::{Run, check, install_copy, leftovers};
+use super::support::{Checks, Run, check, install_copy, leftovers, scenario};
 use crate::platform::exec::run;
 use crate::runtime::{docker, paths};
 use services::{Backend, Expect, Submission};
@@ -71,6 +71,12 @@ struct Played {
     /// What the engine said, the launcher's log of the run.
     log: Vec<String>,
     failures: Vec<String>,
+}
+
+impl Checks for Played {
+    fn failures(&mut self) -> &mut Vec<String> {
+        &mut self.failures
+    }
 }
 
 /// One launch of a lab: the lab's id at the backend, and the values the launch gives it.
@@ -214,15 +220,21 @@ async fn play(backend: &Backend, player: &str, (lab, kind): (&str, Kind)) -> Pla
     let launch = Launch { lab_id, env };
     let id = format!("ci-flag-{lab}-{}", rand::random::<u16>());
     let r = Run { dir: install(kind, &id), home: std::env::temp_dir().join(format!("cyberctf-{id}-home")), id };
-    match r.start(&launch.env, &mut |l| p.log.push(l)).await {
-        Ok(()) => exercise(&r, kind, &launch, &mut p).await,
-        Err(e) => check(false, format!("{lab} starts through the runner: {e}"), &mut p.failures),
-    }
-    let stopped = r.stop(|l| p.log.push(l)).await;
-    check(stopped.is_ok(), format!("{lab} stops ({:?})", stopped.err()), &mut p.failures);
-    check(leftovers(&r.id).await.is_empty(), format!("nothing of {lab} is left"), &mut p.failures);
-    let leaked = leaks::places_holding(&p.secrets, &p.log, &[&r.dir, &r.home], &docker::project(&r.id)).await;
-    check(leaked.is_empty(), format!("no value of {lab}'s launch shows anywhere after the stop: {leaked:?}"), &mut p.failures);
+    scenario(
+        &mut p,
+        async |p: &mut Played| match r.start(&launch.env, &mut |l| p.log.push(l)).await {
+            Ok(()) => exercise(&r, kind, &launch, p).await,
+            Err(e) => check(false, format!("{lab} starts through the runner: {e}"), &mut p.failures),
+        },
+        async |p: &mut Played| {
+            let stopped = r.stop(|l| p.log.push(l)).await;
+            check(stopped.is_ok(), format!("{lab} stops ({:?})", stopped.err()), &mut p.failures);
+            check(leftovers(&r.id).await.is_empty(), format!("nothing of {lab} is left"), &mut p.failures);
+            let leaked = leaks::places_holding(&p.secrets, &p.log, &[&r.dir, &r.home], &docker::project(&r.id)).await;
+            check(leaked.is_empty(), format!("no value of {lab}'s launch shows anywhere after the stop: {leaked:?}"), &mut p.failures);
+        },
+    )
+    .await;
     let _ = std::fs::remove_dir_all(&r.dir);
     let _ = std::fs::remove_dir_all(&r.home);
     p

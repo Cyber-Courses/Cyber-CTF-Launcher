@@ -86,3 +86,28 @@ mod start_path {
         assert!(OPENS_ITS_OWN_RUN.iter().all(|(_, why)| !why.is_empty()));
     }
 }
+
+/// Every scenario runs through `support::scenario`, so its lab is torn down whatever happens in
+/// its checks: one left behind fails the scenarios after it (a UTM VM still registered made every
+/// later docker-vm import fail, after an `expect` ended a scenario before its stop).
+#[cfg(test)]
+mod teardown {
+    use std::path::Path;
+
+    #[test]
+    fn every_file_of_scenarios_runs_them_through_the_guard() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
+        let mut unguarded = Vec::new();
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().is_none_or(|x| x != "rs") {
+                continue;
+            }
+            let code = std::fs::read_to_string(&path).unwrap();
+            if code.contains("#[ignore") && !code.contains("scenario(") {
+                unguarded.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        assert!(unguarded.is_empty(), "run the scenario through support::scenario: {unguarded:?}");
+    }
+}

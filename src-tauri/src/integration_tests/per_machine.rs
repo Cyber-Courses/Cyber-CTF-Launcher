@@ -17,7 +17,7 @@
 
 use std::path::Path;
 
-use super::support::{check, log, vm_inputs};
+use super::support::{check, fetch, log, scenario, vm_inputs};
 use crate::runtime::paths::{PER_MACHINE_MARKER, local_runtime, per_machine_vm};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Place, Runtime, lab, status, stop_lab};
@@ -43,8 +43,8 @@ async fn up_as_vms(t: &TestApp, dir: &Path, id: &str, f: &mut Vec<String>) {
             // The web machine's fixed host port, forwarded from its VM: the portal answers here.
             match s.url {
                 Some(url) => {
-                    let res = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().unwrap().get(&url).send().await;
-                    check(res.as_ref().is_ok_and(|r| r.status().is_success()), format!("{url} answers ({:?})", res.map(|r| r.status())), f);
+                    let res = fetch(&url).await;
+                    check(res.as_ref().is_ok_and(reqwest::StatusCode::is_success), format!("{url} answers ({res:?})"), f);
                 }
                 None => check(false, "it has a URL on this machine (the web VM's forwarded port)".into(), f),
             }
@@ -66,31 +66,38 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
     lab::copy_tree(Path::new(&src), &dir).unwrap_or_else(|e| panic!("copy {src} to {}: {e}", dir.display()));
     let started = std::time::Instant::now();
     let mut f = Vec::new();
-    // The launch as the job runs it: the catalogue's runtime, the hypervisor, the override.
-    let (lab, to) = (
-        crate::runtime::LabRef { dir: &dir, id: &id, runtime: Runtime::Docker },
-        crate::runtime::Destination { provider: Some(provider), host: None, per_machine_vm: true, docker_context: None },
-    );
-    let up = crate::runtime::start(&t.dirs(), lab, to, &vm_inputs(), log(&id)).await;
-    match up {
-        Ok(()) => {
-            check(per_machine_vm(&dir) && dir.join(PER_MACHINE_MARKER).is_file(), "the form is recorded with the lab".into(), &mut f);
-            check(local_runtime(&dir, Runtime::Docker) == Runtime::Vm, "the lab runs here as a VM lab".into(), &mut f);
-            check(lab::vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target's files were generated".into(), &mut f);
-            check(!lab::vagrant_dir(&dir, Runtime::Docker).exists(), "not docker-vm's".into(), &mut f);
-            up_as_vms(&t, &dir, &id, &mut f).await;
-        }
-        Err(e) => check(false, format!("it starts: {e}"), &mut f),
-    }
-    println!("per-machine ({}): up after {:.0?}", provider.id(), started.elapsed());
-    // The page's Stop, with the catalogue runtime: the VMs go, and so does the form.
-    let stopped = stop_lab(&t.dirs(), &id, Runtime::Docker, std::future::ready(()), log(&id)).await;
-    check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), &mut f);
-    check(!per_machine_vm(&dir), "the form is forgotten".into(), &mut f);
-    let left = status::still_up(&t.dirs(), &id);
-    check(left.as_ref().is_ok_and(Option::is_none), format!("the runner records nothing of it up ({left:?})"), &mut f);
-    let gone = status::status(&t.dirs(), &dir, &id, Runtime::Docker).await;
-    check(gone.as_ref().is_ok_and(|s| !s.running), format!("its status reads as gone ({:?})", gone.map(|s| s.running)), &mut f);
+    scenario(
+        &mut f,
+        async |f: &mut Vec<String>| {
+            // The launch as the job runs it: the catalogue's runtime, the hypervisor, the override.
+            let (lab, to) = (
+                crate::runtime::LabRef { dir: &dir, id: &id, runtime: Runtime::Docker },
+                crate::runtime::Destination { provider: Some(provider), host: None, per_machine_vm: true, docker_context: None },
+            );
+            match crate::runtime::start(&t.dirs(), lab, to, &vm_inputs(), log(&id)).await {
+                Ok(()) => {
+                    check(per_machine_vm(&dir) && dir.join(PER_MACHINE_MARKER).is_file(), "the form is recorded with the lab".into(), f);
+                    check(local_runtime(&dir, Runtime::Docker) == Runtime::Vm, "the lab runs here as a VM lab".into(), f);
+                    check(lab::vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target's files were generated".into(), f);
+                    check(!lab::vagrant_dir(&dir, Runtime::Docker).exists(), "not docker-vm's".into(), f);
+                    up_as_vms(&t, &dir, &id, f).await;
+                }
+                Err(e) => check(false, format!("it starts: {e}"), f),
+            }
+            println!("per-machine ({}): up after {:.0?}", provider.id(), started.elapsed());
+        },
+        async |f: &mut Vec<String>| {
+            // The page's Stop, with the catalogue runtime: the VMs go, and so does the form.
+            let stopped = stop_lab(&t.dirs(), &id, Runtime::Docker, std::future::ready(()), log(&id)).await;
+            check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), f);
+            check(!per_machine_vm(&dir), "the form is forgotten".into(), f);
+            let left = status::still_up(&t.dirs(), &id);
+            check(left.as_ref().is_ok_and(Option::is_none), format!("the runner records nothing of it up ({left:?})"), f);
+            let gone = status::status(&t.dirs(), &dir, &id, Runtime::Docker).await;
+            check(gone.as_ref().is_ok_and(|s| !s.running), format!("its status reads as gone ({:?})", gone.map(|s| s.running)), f);
+        },
+    )
+    .await;
     println!("per-machine ({}): {:.0?}", provider.id(), started.elapsed());
     assert!(f.is_empty(), "per-machine lab failed:\n{}", f.join("\n"));
 }
