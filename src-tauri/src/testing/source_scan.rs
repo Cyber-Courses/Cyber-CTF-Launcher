@@ -242,9 +242,10 @@ fn a_files_crate_modules_are_read_from_paths_and_grouped_uses() {
 
 /// The layers depend downwards only: the platform (running tools, files, the OS) names no module
 /// at the crate root but its own and the crate's errors, so it can't reach up through one either;
-/// the runtime doesn't name the app shell, nor, outside its tests, the layers that use it (the
-/// CTF's labs, the account, the machine, the commands); and those domain layers name neither the
-/// app shell nor the commands over them. What a layer needs from above is handed in (a source
+/// the runtime names neither the app shell nor the layers that use it (the CTF's labs, the
+/// account, the machine, the commands), its tests included (a test of a command over it belongs
+/// with the command); and those domain layers name neither the app shell nor the commands over
+/// them. What a layer needs from above is handed in (a source
 /// check, a hook to run first, whether a deploy worker is busy). A cycle between them came back
 /// more than once (the runtime reached for the deploy workers' lock and status files, then for
 /// the catalogue's source rule, the co-location server and Storage's records; the platform's
@@ -263,8 +264,7 @@ fn every_layer_names_only_the_layers_below_it() {
                 assert!(up.is_empty(), "{rel} reaches up from the platform into {up:?}");
             }
             "runtime" => {
-                assert!(named().all(|m| m != "app"), "{rel} reaches up from the runtime into the app shell");
-                let up: Vec<&str> = code.iter().map(String::as_str).filter(|m| above_runtime.contains(m)).collect();
+                let up: Vec<&str> = named().filter(|m| *m == "app" || above_runtime.contains(m)).collect();
                 assert!(up.is_empty(), "{rel} reaches up from the runtime into {up:?}");
             }
             "labs" | "machine" | "account" => {
