@@ -95,15 +95,13 @@ fn copy_tree_rooted(src: &Path, dst: &Path, root: &Path) -> std::io::Result<()> 
         let (from, to) = (entry.path(), dst.join(&name));
         let kind = entry.file_type()?;
         if kind.is_symlink() {
-            // Recreate an internal symlink a lab relies on (e.g. client/src/contracts ->
-            // ../../contracts); leave out one that is absolute or escapes the tree, as the
-            // GitHub-tarball install does, so a link can never point outside the copy. The link
-            // is recreated, not followed, so a dangling one is harmless.
-            let link = std::fs::read_link(&from)?;
+            // An internal symlink a lab relies on (e.g. client/src/contracts -> ../../contracts),
+            // recreated as the GitHub-tarball install does: never one pointing outside the copy.
             let rel = from.strip_prefix(root).unwrap_or(from.as_path());
-            if crate::platform::tree_link::symlink_target_within_tree(rel, &link) {
-                crate::platform::tree_link::recreate_symlink(&link, &to)?;
-            }
+            #[cfg(unix)]
+            crate::platform::tree_link::recreate_within_tree(rel, &std::fs::read_link(&from)?, &to)?;
+            #[cfg(not(unix))]
+            log::debug!("{}: a symlink, left out off Unix", rel.display());
             continue;
         }
         if kind.is_dir() {

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use proptest::prelude::*;
 
 use super::*;
+use crate::platform::tree_link::symlink_target_within_tree;
 use crate::testing::proptest_support::config;
 
 /// One archive entry: its raw path, kind and content.

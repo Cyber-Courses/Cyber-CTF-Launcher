@@ -1,5 +1,6 @@
 //! A symlink found in a tree being copied (a lab's archive, a lab folder imported from disk): kept
-//! only when it stays inside the tree, so a copy never points outside itself.
+//! only when it stays inside the tree, so a copy never points outside itself. Unix only: off Unix
+//! a lab's links are left out (a published lab builds its image on Linux, where they matter).
 
 use std::path::Path;
 
@@ -30,14 +31,16 @@ pub(crate) fn symlink_target_within_tree(link_rel: &Path, target: &Path) -> bool
     true
 }
 
-/// Recreates a symlink to `target` at `at`. Off Unix the link is left out (a published lab builds
-/// its image on Linux, where the symlink is what matters).
+/// Recreates at `at` the symlink found at `link_rel` (its path relative to the tree's root) to
+/// `target`, when it stays inside the tree ([`symlink_target_within_tree`]); one that would
+/// escape it is left out. The link is recreated, not followed, so a dangling one is harmless.
 #[cfg(unix)]
-pub(crate) fn recreate_symlink(target: &Path, at: &Path) -> std::io::Result<()> {
+pub(crate) fn recreate_within_tree(link_rel: &Path, target: &Path, at: &Path) -> std::io::Result<()> {
+    if !symlink_target_within_tree(link_rel, target) {
+        return Ok(());
+    }
+    if let Some(parent) = at.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::os::unix::fs::symlink(target, at)
-}
-#[cfg(not(unix))]
-#[expect(clippy::unnecessary_wraps, reason = "the Unix version's signature: one call site for both")]
-pub(crate) fn recreate_symlink(_target: &Path, _at: &Path) -> std::io::Result<()> {
-    Ok(())
 }

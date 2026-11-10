@@ -5,7 +5,6 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
-use crate::platform::tree_link::{recreate_symlink, symlink_target_within_tree};
 
 /// Extracts a GitHub tarball (single top-level `<repo>-<sha>/` folder) into
 /// `dest`, rejecting absolute paths, `..` and links.
@@ -49,15 +48,10 @@ fn extract_within(tarball: &[u8], dest: &Path, max: u64) -> Result<()> {
         let target = dest.join(&relative);
         if is_symlink {
             // A lab may rely on an internal symlink (e.g. client/src/contracts -> ../../contracts):
-            // recreate one that stays inside the tree, leave out one that is absolute or climbs out
-            // of it, so a link can never point outside the extracted lab.
-            let link = entry.link_name()?.map(std::borrow::Cow::into_owned).unwrap_or_default();
-            if symlink_target_within_tree(&relative, &link) {
-                if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                recreate_symlink(&link, &target)?;
-            }
+            // recreated when it stays inside the tree, so a link can never point outside the
+            // extracted lab.
+            #[cfg(unix)]
+            crate::platform::tree_link::recreate_within_tree(&relative, &entry.link_name()?.unwrap_or_default(), &target)?;
         } else if kind.is_dir() {
             std::fs::create_dir_all(&target)?;
         } else {

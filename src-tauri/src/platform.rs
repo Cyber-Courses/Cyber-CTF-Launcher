@@ -21,6 +21,7 @@ pub mod proxy;
 pub mod redact;
 pub mod remembered;
 pub mod sys;
+#[cfg(any(unix, test))]
 pub mod tree_link;
 
 /// Resets an in-flight flag to `false` when dropped, so a single-flight scan frees the next one
