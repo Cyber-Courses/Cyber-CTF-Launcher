@@ -4,4 +4,20 @@ import type { OvftoolRefusal } from "./OvftoolRefusal";
 /**
  * What [`place`] did with the picked folder.
  */
-export type OvftoolPlaced = { "outcome": "placed", path: string, needsRosetta: boolean, } | { "outcome": "refused", reason: OvftoolRefusal, detail: string | null, };
+export type OvftoolPlaced = { "outcome": "placed", 
+/**
+ * The placed program's path.
+ */
+path: string, 
+/**
+ * Whether it can't run until Rosetta is installed (see [`Location::needs_rosetta`]).
+ */
+needsRosetta: boolean, } | { "outcome": "refused", 
+/**
+ * Why it wasn't placed.
+ */
+reason: OvftoolRefusal, 
+/**
+ * What macOS said of the signature, or the team that signed it, when known.
+ */
+detail: string | null, };

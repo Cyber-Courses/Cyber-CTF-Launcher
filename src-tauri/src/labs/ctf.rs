@@ -91,8 +91,11 @@ pub struct Problem {
 /// is there doesn't.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Ctf {
+    /// `metadata.json`, when it is there and reads.
     pub(crate) metadata: Option<Metadata>,
+    /// `objectives.json`'s challenges, when it is there and reads.
     pub(crate) objectives: Option<Vec<Challenge>>,
+    /// Each file that is there but can't be read, with why.
     pub(crate) problems: Vec<Problem>,
 }
 

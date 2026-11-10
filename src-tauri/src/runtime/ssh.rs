@@ -33,9 +33,13 @@ pub async fn ensure_key(dirs: &AppDirs) -> Result<(PathBuf, String)> {
 /// Where to SSH: what `ssh` needs, nothing more.
 #[derive(Debug, PartialEq)]
 pub struct Target {
+    /// The address to connect to.
     pub host: String,
+    /// Its SSH port.
     pub port: u16,
+    /// The user to sign in as.
     pub user: String,
+    /// The private key to sign in with.
     pub identity: PathBuf,
     /// `user@host` to go through (with the same key) when `host` isn't routable from here: a
     /// lab VM on a Proxmox node's host-internal bridge, reached via the node.

@@ -9,6 +9,8 @@ use crate::error::{Error, Result};
 /// The lab's Isoloom instance number (see the module), when it has one.
 pub const INSTANCE_MARKER: &str = ".cyberctf-instance";
 
+/// The Isoloom instance number of the lab in `dir`, from its marker; None without one, or with a
+/// number outside Isoloom's range.
 pub fn instance(dir: &Path) -> Option<u8> {
     std::fs::read_to_string(dir.join(INSTANCE_MARKER)).ok()?.trim().parse().ok().filter(|n| (1..=isoloom_spec::instance::MAX).contains(n))
 }

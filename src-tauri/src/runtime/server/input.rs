@@ -14,8 +14,10 @@ use crate::runtime::providers::Provider;
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ServerHostInput")]
 pub struct HostInput {
+    /// The host's id; None for a new host.
     pub(crate) id: Option<String>,
     name: String,
+    /// Which kind of host it is.
     pub(crate) provider: Provider,
     host: String,
     port: Option<u16>,
@@ -25,6 +27,8 @@ pub struct HostInput {
     node: Option<String>,
     insecure_tls: Option<bool>,
     auto_stop_hours: Option<u32>,
+    /// Its secret (a password, a token's secret, a secret key or an API token); None keeps the
+    /// stored one.
     pub(crate) password: Option<String>,
     #[serde(default)]
     #[ts(optional = nullable)]
@@ -51,7 +55,9 @@ pub struct HostInput {
 
 /// The connection fields of an input, checked: what `HostInput::into_profile` builds on.
 pub(crate) struct Checked {
+    /// The host's address, or a cloud's region.
     pub host: String,
+    /// The account field (`AccountField`): a login, a key id or where labs are created.
     pub username: String,
     /// AWS through the AWS CLI's own credentials (no stored keys).
     pub use_cli: bool,

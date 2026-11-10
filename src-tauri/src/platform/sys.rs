@@ -24,7 +24,9 @@ pub use windows::{
 #[cfg(any(windows, test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RegistryValue {
+    /// A `REG_DWORD`, with its number.
     Dword(u32),
+    /// Any other type, with its type code (`REG_SZ` is 1).
     Other(u32),
 }
 

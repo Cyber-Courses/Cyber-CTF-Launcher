@@ -18,10 +18,15 @@ const START_POLL: Duration = Duration::from_secs(2);
 #[serde(rename_all = "kebab-case")]
 #[ts(rename = "DockerEngine")]
 pub enum Engine {
+    /// Docker Desktop.
     DockerDesktop,
+    /// OrbStack.
     Orbstack,
+    /// Colima.
     Colima,
+    /// Rancher Desktop.
     RancherDesktop,
+    /// Podman.
     Podman,
     /// Docker Engine, the native daemon on Linux.
     #[serde(rename = "docker-engine")]
@@ -127,9 +132,13 @@ fn context_engine(name: &str, os: &str) -> Option<Engine> {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineStatus {
+    /// The engine.
     pub engine: Engine,
+    /// The CLI context that reaches it.
     pub context: String,
+    /// Whether its daemon answers.
     pub running: bool,
+    /// Whether its context is the CLI's current one, which labs run on.
     pub current: bool,
 }
 

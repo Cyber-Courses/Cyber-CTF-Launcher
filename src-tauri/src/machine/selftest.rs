@@ -24,11 +24,14 @@ use crate::runtime::selftest_report::{Event, Reporter};
 use docker::IMAGE;
 use vm::candidate_boxes;
 
+/// Which self-test to run.
 #[derive(Clone, Copy, serde::Deserialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(rename = "SelfTestKind")]
 pub enum Kind {
+    /// The container test: a throwaway two-container lab on the engine.
     Docker,
+    /// The VM test: a throwaway VM on a local hypervisor.
     Vm,
 }
 
@@ -45,6 +48,7 @@ fn explain(raw: &str) -> String {
     format!("{hint} Details: {raw}")
 }
 
+/// The self-test's own folder in the app's cache (`selftest/<kind>`), created when missing.
 pub(crate) fn work_dir(dirs: &AppDirs, kind: &str) -> Result<PathBuf> {
     let dir = dirs.cache()?.join("selftest").join(kind);
     std::fs::create_dir_all(&dir)?;

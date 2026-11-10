@@ -32,30 +32,57 @@ use crate::runtime::providers::{Need, Provider, ProviderStatus};
 pub enum Action {
     /// Installs `dependency` (`install_dependency`): Docker, WSL 2, Vagrant, a hypervisor, the
     /// Vagrant VMware Utility.
-    Install { dependency: Dependency },
+    Install {
+        /// The tool to install.
+        dependency: Dependency,
+    },
     /// Installs the Vagrant plugin `plugin` (`install_vagrant_plugin`).
-    Plugin { plugin: String },
+    Plugin {
+        /// The plugin's name (`vagrant-qemu`, …).
+        plugin: String,
+    },
     /// Starts the installed engine `engine` (`docker_start_engine`).
-    StartEngine { engine: Engine },
+    StartEngine {
+        /// The engine to start.
+        engine: Engine,
+    },
     /// Points Docker at `engine`, which runs already (`docker_use_engine`).
-    UseEngine { engine: Engine },
+    UseEngine {
+        /// The engine Docker is to use.
+        engine: Engine,
+    },
     /// Restarts the computer, which finishes turning `feature` on (`machine_restart`).
-    Restart { feature: WindowsFeature },
+    Restart {
+        /// The feature the restart starts.
+        feature: WindowsFeature,
+    },
     /// Signs out and back in: a group the player was added to (Linux's `docker`, `libvirt` and
     /// `kvm`) applies from the next login.
     Relogin,
     /// Not something the setup does here: the player gets it (`dependency`, when it is one the
     /// setup installs elsewhere; from `url`, when there is one), then checks the machine again.
-    Manual { reason: ManualReason, dependency: Option<Dependency>, url: Option<String> },
+    Manual {
+        /// Why it is the player's to get.
+        reason: ManualReason,
+        /// The tool, when it is one the setup installs elsewhere.
+        dependency: Option<Dependency>,
+        /// Where to get it, when there is a page for it.
+        url: Option<String>,
+    },
     /// Installed, but it can't run here, and nothing the setup installs mends that: `reason`.
-    Blocked { reason: String },
+    Blocked {
+        /// Why it can't run here, in English.
+        reason: String,
+    },
 }
 
 /// A Windows feature that starts only after a restart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum WindowsFeature {
+    /// WSL 2: the Virtual Machine Platform and the Windows Subsystem for Linux.
     Wsl,
+    /// Hyper-V.
     Hyperv,
 }
 
@@ -102,7 +129,9 @@ impl Options {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineOption {
+    /// The engine.
     pub engine: Engine,
+    /// What makes it the one Docker uses here, in order: nothing when it is.
     pub actions: Vec<Action>,
 }
 
@@ -111,8 +140,11 @@ pub struct EngineOption {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HypervisorOption {
+    /// The hypervisor.
     pub provider: Provider,
+    /// What installs it or turns it on, in order: nothing when it is ready.
     pub get: Vec<Action>,
+    /// What Vagrant needs to drive it: Vagrant, its plugin, VMware's utility, in order.
     pub vagrant: Vec<Action>,
 }
 

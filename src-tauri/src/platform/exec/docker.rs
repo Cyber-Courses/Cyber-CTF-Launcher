@@ -60,6 +60,7 @@ pub struct ImageRef<'a> {
 }
 
 impl<'a> ImageRef<'a> {
+    /// Reads `image`'s parts, its digest left out.
     pub fn parse(image: &'a str) -> ImageRef<'a> {
         let image = image.split('@').next().unwrap_or(image);
         let (path, tag) = match image.rsplit_once(':') {

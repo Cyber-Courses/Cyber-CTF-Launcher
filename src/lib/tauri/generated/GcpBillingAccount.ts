@@ -3,4 +3,16 @@
 /**
  * A GCP billing account the signed-in user can see.
  */
-export type GcpBillingAccount = { id: string, name: string, open: boolean, };
+export type GcpBillingAccount = { 
+/**
+ * The billing account's id (`billingAccounts/` left out).
+ */
+id: string, 
+/**
+ * Its display name.
+ */
+name: string, 
+/**
+ * Whether it is open, so it can pay for a project.
+ */
+open: boolean, };

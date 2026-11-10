@@ -3,7 +3,11 @@
 /**
  * A bridge and its address, so the player sees which one is on their LAN.
  */
-export type ProxmoxBridge = { name: string, 
+export type ProxmoxBridge = { 
+/**
+ * The bridge's name, e.g. `vmbr0`.
+ */
+name: string, 
 /**
  * e.g. `10.0.0.50/24`; None for a bridge with no address.
  */

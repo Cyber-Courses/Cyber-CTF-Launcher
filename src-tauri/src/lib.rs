@@ -24,7 +24,9 @@ mod version;
 pub(crate) type AppRuntime = tauri::Wry;
 #[cfg(test)]
 pub(crate) type AppRuntime = tauri::test::MockRuntime;
+/// The app's handle, on the runtime it runs on.
 pub(crate) type AppHandle = tauri::AppHandle<AppRuntime>;
+/// A webview window, on the runtime the app runs on.
 pub(crate) type WebviewWindow = tauri::WebviewWindow<AppRuntime>;
 /// Starts the launcher: the app with its windows, or, when started as `deploy --job <file>`, a
 /// headless deploy worker for one lab.

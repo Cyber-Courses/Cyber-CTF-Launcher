@@ -5,7 +5,20 @@ import type { Provider } from "./Provider";
  * Where a lab starts: on the saved server `host`, or here (no host) on the hypervisor `provider`
  * (none: on Docker), as one VM per machine with `per_machine_vm` (a container lab's VM form).
  */
-export type LabStartPlace = { host: string | null, provider: Provider | null, perMachineVm: boolean, 
+export type LabStartPlace = { 
+/**
+ * The saved server it starts on, by id; None for this machine.
+ */
+host: string | null, 
+/**
+ * The hypervisor it starts on here, for a VM lab or a container lab in VMs; None on Docker or
+ * on a server.
+ */
+provider: Provider | null, 
+/**
+ * A container lab started as one VM per machine.
+ */
+perMachineVm: boolean, 
 /**
  * A VM lab's hypervisor when it starts on this machine, wherever it starts by default (the
  * player can still pick this machine): the one it last ran on here, else the preferred one,

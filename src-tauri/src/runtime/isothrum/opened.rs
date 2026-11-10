@@ -10,6 +10,7 @@ use super::{errors, regenerate};
 use crate::error::Result;
 use crate::runtime::lab;
 
+/// A lab's run on the runner, opened by its name from the manifest Isoloom generated for it.
 pub(crate) struct OpenedRun {
     pub(super) runner: Runner,
     /// The lab's folder.

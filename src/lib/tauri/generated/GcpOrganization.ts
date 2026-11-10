@@ -3,4 +3,12 @@
 /**
  * A GCP organization the signed-in user belongs to.
  */
-export type GcpOrganization = { id: string, name: string, };
+export type GcpOrganization = { 
+/**
+ * The organization's numeric id.
+ */
+id: string, 
+/**
+ * Its display name.
+ */
+name: string, };

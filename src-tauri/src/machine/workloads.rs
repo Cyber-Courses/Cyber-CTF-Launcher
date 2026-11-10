@@ -24,6 +24,8 @@ pub trait LabRuntime {
     fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send;
 }
 
+/// Something of the launcher's running on this machine, as the Machine page lists it: a lab's
+/// containers or VMs, or a setup test's.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Workload {

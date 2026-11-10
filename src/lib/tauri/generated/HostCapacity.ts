@@ -3,4 +3,16 @@
 /**
  * A host's cores and memory (bytes), as its node reports them.
  */
-export type HostCapacity = { cores: number, memTotal: number, memFree: number, };
+export type HostCapacity = { 
+/**
+ * CPU cores.
+ */
+cores: number, 
+/**
+ * Memory in all, in bytes.
+ */
+memTotal: number, 
+/**
+ * Memory free, in bytes.
+ */
+memFree: number, };

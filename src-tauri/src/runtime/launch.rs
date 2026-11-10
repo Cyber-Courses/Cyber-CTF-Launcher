@@ -34,8 +34,12 @@ pub(super) use on_host::{runner_runs_on, server_place};
 /// whether its services keep their own host ports there (`default_ports`).
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Destination<'a> {
+    /// The hypervisor it runs on here (a container lab's VM's, in a VM form); None on Docker or on
+    /// a server.
     pub(crate) provider: Option<Provider>,
+    /// The saved server or cloud account it starts on, by id; None for this machine.
     pub(crate) host: Option<&'a str>,
+    /// A container lab started as one VM per machine (its VM recipes) rather than as containers.
     pub(crate) per_machine_vm: bool,
     /// The Docker context a container lab here runs on (the learner's engine); none: the
     /// current one.
@@ -49,10 +53,15 @@ pub(crate) struct Destination<'a> {
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub(crate) struct Placement {
+    /// [`Destination::provider`].
     pub(crate) provider: Option<Provider>,
+    /// [`Destination::host`].
     pub(crate) host: Option<String>,
+    /// [`Destination::per_machine_vm`].
     pub(crate) per_machine_vm: bool,
+    /// [`Destination::docker_context`].
     pub(crate) docker_context: Option<String>,
+    /// [`Destination::default_ports`].
     pub(crate) default_ports: bool,
 }
 
@@ -289,7 +298,9 @@ pub(super) const PER_MACHINE_HERE_ONLY: &str = "One VM per machine is a way to r
 /// cleans what the app downloaded): container images, Vagrant boxes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Downloads {
+    /// Container images, pulled by this machine's Docker.
     pub(crate) images: bool,
+    /// Vagrant boxes, added to this machine's Vagrant.
     pub(crate) boxes: bool,
 }
 

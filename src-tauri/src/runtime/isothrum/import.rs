@@ -122,7 +122,12 @@ pub(crate) enum Outcome {
     Left(Left),
     /// Couldn't be handed over: it stays on the launcher's path. `new` when the reason isn't the
     /// one recorded the last time (the player is told once).
-    Failed { error: ImportError, new: bool },
+    Failed {
+        /// Why it couldn't be handed over.
+        error: ImportError,
+        /// Whether that reason differs from the one recorded the last time.
+        new: bool,
+    },
 }
 
 /// Every deployment under the app data folder `base`, each lab's current one (on the host its

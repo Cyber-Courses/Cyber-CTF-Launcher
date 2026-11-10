@@ -11,7 +11,27 @@ import type { SetupOptions } from "./SetupOptions";
 import type { Tool } from "./Tool";
 import type { WslReport } from "./WslReport";
 
-export type SystemReport = { os: string, arch: string, pkgManager: PkgManager, docker: Tool, 
+/**
+ * What the machine check found on this computer: the OS, the tools, the container engines and
+ * hypervisors, and what the guided setup takes from here.
+ */
+export type SystemReport = { 
+/**
+ * The OS, as Rust names it (`macos`, `windows`, `linux`).
+ */
+os: string, 
+/**
+ * The CPU architecture, as Rust names it (`aarch64`, `x86_64`).
+ */
+arch: string, 
+/**
+ * The OS's package manager.
+ */
+pkgManager: PkgManager, 
+/**
+ * The Docker CLI.
+ */
+docker: Tool, 
 /**
  * The Docker daemon answers (Docker Desktop / engine is started).
  */
@@ -21,7 +41,11 @@ dockerRunning: boolean,
  * engine won't help; `docker_denied_hint` says what will (as an error with its code, for
  * the webview to say in the player's language).
  */
-dockerDenied: boolean, dockerDeniedHint: CommandError | null, 
+dockerDenied: boolean, 
+/**
+ * Why the daemon refused this account and what to do, as a coded error, when it did.
+ */
+dockerDeniedHint: CommandError | null, 
 /**
  * Which Docker-compatible engine answers, when one does.
  */
@@ -36,7 +60,15 @@ dockerEnginesRunning: Array<DockerEngine>,
  * one or answers), each with its own state: the Machine page lists them all, not only
  * the one the CLI uses.
  */
-dockerEngines: Array<EngineStatus>, dockerCompose: Tool, vagrant: Tool, 
+dockerEngines: Array<EngineStatus>, 
+/**
+ * Docker Compose (`docker compose`).
+ */
+dockerCompose: Tool, 
+/**
+ * Vagrant.
+ */
+vagrant: Tool, 
 /**
  * A local terraform binary (preferred for provisioning state; container is the fallback).
  */
@@ -50,7 +82,11 @@ ovftool: Tool,
  * Where the OVF Tool was found (Fusion's or Workstation's copy, the app's, or `PATH`), when
  * one was, even if it doesn't run.
  */
-ovftoolLocation: OvftoolLocation | null, cloudClis: CloudClis, 
+ovftoolLocation: OvftoolLocation | null, 
+/**
+ * The cloud providers' CLIs.
+ */
+cloudClis: CloudClis, 
 /**
  * Vagrant providers (local hypervisors and remote hosts such as ESXi).
  * Whether a given VM lab can run also depends on its boxes existing for

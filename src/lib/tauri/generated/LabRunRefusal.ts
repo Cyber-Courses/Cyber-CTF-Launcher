@@ -7,4 +7,12 @@ import type { Provider } from "./Provider";
  * or (no provider) as containers on this machine's Docker; the picker says why on that place's
  * row, naming who refuses it.
  */
-export type LabRunRefusal = { provider: Provider | null, cause: LabRunRefusalCause, };
+export type LabRunRefusal = { 
+/**
+ * The hypervisor, server or cloud refused; None for this machine's Docker.
+ */
+provider: Provider | null, 
+/**
+ * Why it is refused.
+ */
+cause: LabRunRefusalCause, };

@@ -17,7 +17,9 @@ use crate::runtime::server::sign_in::{AWS_WHO_AM_I, sign_in_question};
 #[serde(rename_all = "lowercase")]
 #[ts(rename = "CloudLoginProvider")]
 pub enum Cloud {
+    /// Azure, through `az login`.
     Azure,
+    /// Google Cloud, through `gcloud auth login --update-adc`.
     Gcp,
 }
 
@@ -149,8 +151,11 @@ fn lines(out: &str) -> Vec<String> {
 #[derive(Serialize, Deserialize, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AzureSubscription {
+    /// The subscription's display name.
     pub name: String,
+    /// The subscription's id.
     pub id: String,
+    /// Whether the Azure CLI has it as its default subscription.
     #[serde(default)]
     pub is_default: bool,
 }
@@ -175,8 +180,11 @@ fn subscriptions(out: &str) -> Vec<AzureSubscription> {
 #[derive(Serialize, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GcpBillingAccount {
+    /// The billing account's id (`billingAccounts/` left out).
     pub id: String,
+    /// Its display name.
     pub name: String,
+    /// Whether it is open, so it can pay for a project.
     pub open: bool,
 }
 
@@ -184,7 +192,9 @@ pub struct GcpBillingAccount {
 #[derive(Serialize, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GcpOrganization {
+    /// The organization's numeric id.
     pub id: String,
+    /// Its display name.
     pub name: String,
 }
 
@@ -192,8 +202,11 @@ pub struct GcpOrganization {
 #[derive(Serialize, Default, Debug, PartialEq, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct OciConfig {
+    /// Whether the config file was found and read.
     pub configured: bool,
+    /// The DEFAULT profile's tenancy OCID, empty when it has none.
     pub tenancy: String,
+    /// The DEFAULT profile's region, empty when it has none.
     pub region: String,
 }
 

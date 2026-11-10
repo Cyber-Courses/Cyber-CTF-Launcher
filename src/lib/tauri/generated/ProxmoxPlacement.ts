@@ -4,4 +4,8 @@ import type { ProxmoxNodeChoices } from "./ProxmoxNodeChoices";
 /**
  * The choices a host offers.
  */
-export type ProxmoxPlacement = { nodes: Array<ProxmoxNodeChoices>, };
+export type ProxmoxPlacement = { 
+/**
+ * Each node of the host, with its choices.
+ */
+nodes: Array<ProxmoxNodeChoices>, };

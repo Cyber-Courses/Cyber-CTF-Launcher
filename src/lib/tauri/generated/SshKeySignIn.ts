@@ -4,4 +4,16 @@
  * Signing in to a Proxmox node over SSH with the player's own key: its private key's path
  * (never its contents), the SSH user and port.
  */
-export type SshKeySignIn = { path: string, user: string, port: number, };
+export type SshKeySignIn = { 
+/**
+ * The private key's path on this machine.
+ */
+path: string, 
+/**
+ * The user to sign in to the node as.
+ */
+user: string, 
+/**
+ * The node's SSH port.
+ */
+port: number, };

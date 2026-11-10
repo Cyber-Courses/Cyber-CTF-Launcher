@@ -6,4 +6,16 @@ import type { SetupAction } from "./SetupAction";
  * A local hypervisor: what gets it here (`get`: nothing once it is installed and can run), then
  * what Vagrant needs to drive it (`vagrant`: Vagrant, its plugin, VMware's utility, in order).
  */
-export type HypervisorOption = { provider: Provider, get: Array<SetupAction>, vagrant: Array<SetupAction>, };
+export type HypervisorOption = { 
+/**
+ * The hypervisor.
+ */
+provider: Provider, 
+/**
+ * What installs it or turns it on, in order: nothing when it is ready.
+ */
+get: Array<SetupAction>, 
+/**
+ * What Vagrant needs to drive it: Vagrant, its plugin, VMware's utility, in order.
+ */
+vagrant: Array<SetupAction>, };

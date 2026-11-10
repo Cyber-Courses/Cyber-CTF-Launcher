@@ -129,7 +129,10 @@ const HIGHEST: u8 = 249;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind<'a> {
     /// A container beside the lab's, from `image`, kept up idle.
-    Container { image: &'a str },
+    Container {
+        /// The image the box's container runs.
+        image: &'a str,
+    },
     /// A VM among the lab's, booted from Kali, set up with its [`setup_script`].
     Vm,
 }

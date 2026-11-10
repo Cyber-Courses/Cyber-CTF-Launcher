@@ -62,7 +62,9 @@ pub fn load(store: &Path) -> std::io::Result<Owned> {
 /// architecture when the listing names one (`amd64`, `arm64`; older Vagrants don't).
 #[derive(Debug, PartialEq, Eq)]
 pub struct ListedBox {
+    /// The box version, for its provider.
     pub owned: OwnedBox,
+    /// Its architecture, when the listing names one.
     pub arch: Option<String>,
 }
 

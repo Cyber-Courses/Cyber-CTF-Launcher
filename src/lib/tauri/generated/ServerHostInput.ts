@@ -5,7 +5,20 @@ import type { SshKeySignIn } from "./SshKeySignIn";
 /**
  * What the UI submits. `id` is None for a new host; `password` None keeps the stored one.
  */
-export type ServerHostInput = { id: string | null, name: string, provider: Provider, host: string, port: number | null, username: string, datastore: string | null, network: string | null, node: string | null, insecureTls: boolean | null, autoStopHours: number | null, password: string | null, useCliCreds?: boolean | null, awsProfile?: string | null, monthlyLimit?: number | null, 
+export type ServerHostInput = { 
+/**
+ * The host's id; None for a new host.
+ */
+id: string | null, name: string, 
+/**
+ * Which kind of host it is.
+ */
+provider: Provider, host: string, port: number | null, username: string, datastore: string | null, network: string | null, node: string | null, insecureTls: boolean | null, autoStopHours: number | null, 
+/**
+ * Its secret (a password, a token's secret, a secret key or an API token); None keeps the
+ * stored one.
+ */
+password: string | null, useCliCreds?: boolean | null, awsProfile?: string | null, monthlyLimit?: number | null, 
 /**
  * Proxmox: sign in to the node over SSH with this key to make the launcher's API token
  * (`server_save_ssh_key`); `username` and `password` are then the token's.

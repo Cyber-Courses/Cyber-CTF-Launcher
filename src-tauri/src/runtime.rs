@@ -79,7 +79,11 @@ pub(crate) use {attack_machine::AttackStatus, cloud_services::Preview, docker::C
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Runtime {
+    /// Containers: the lab's services as Isoloom writes them for Docker (run on this machine's
+    /// engine, in a VM, or as one VM per machine).
     Docker,
+    /// VMs: the lab's machines as Isoloom writes them for Vagrant or a server's or cloud's
+    /// Terraform.
     Vm,
     /// Cloud services (Isoloom's `cloud-services`): a Terraform module of the lab's own,
     /// applied into the player's cloud account. See `cloud_services`.
@@ -87,6 +91,7 @@ pub enum Runtime {
 }
 
 impl Runtime {
+    /// Every runtime a lab can declare.
     pub const ALL: [Runtime; 3] = [Runtime::Docker, Runtime::Vm, Runtime::Cloud];
 
     /// Its tag as CyberBackend, the webview and the files next to a lab's state spell it

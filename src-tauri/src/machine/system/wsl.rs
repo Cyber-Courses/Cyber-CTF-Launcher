@@ -49,6 +49,7 @@ pub enum WslState {
 #[derive(Serialize, Clone, Debug, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct WslReport {
+    /// Whether WSL 2 is on, waits for a restart, or is missing.
     pub state: WslState,
     /// Whether a restart from Cyber CTF opens it again once the player signs back in.
     pub reopens_after_restart: bool,
@@ -92,7 +93,9 @@ pub struct Probes {
     pub lxss_service: Option<bool>,
     /// The Store WSL's service (`WslService`) is registered.
     pub wsl_service: Option<bool>,
+    /// The Virtual Machine Platform feature's state.
     pub vm_platform: Option<Feature>,
+    /// The Windows Subsystem for Linux feature's state.
     pub wsl_feature: Option<Feature>,
     /// A hypervisor runs (what the Virtual Machine Platform starts at boot).
     pub hypervisor: Option<bool>,

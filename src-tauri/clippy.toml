@@ -9,3 +9,7 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 # Product and protocol names are prose, not code: `doc_markdown` must not ask for backticks on them.
 doc-valid-idents = ["AppleScript", "CyberBackend", "CyberCTF", "ESXi", "HashiCorp", "KWallet", "OrbStack", "VirtualBox", "VMware", "WinRM", ".."]
+# `missing_docs_in_private_items` asks for a doc comment on what other modules can use (`pub`,
+# `pub(crate)`: functions, types, their fields and variants, constants), not on a module's own
+# private helpers.
+missing-docs-in-crate-items = true

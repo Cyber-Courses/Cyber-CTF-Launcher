@@ -4,4 +4,16 @@ import type { Tool } from "./Tool";
 /**
  * Cloud provider CLIs, for the Cloud setup (AWS / Azure / GCP).
  */
-export type CloudClis = { aws: Tool, azure: Tool, gcloud: Tool, };
+export type CloudClis = { 
+/**
+ * The AWS CLI (`aws`).
+ */
+aws: Tool, 
+/**
+ * The Azure CLI (`az`).
+ */
+azure: Tool, 
+/**
+ * The Google Cloud CLI (`gcloud`).
+ */
+gcloud: Tool, };

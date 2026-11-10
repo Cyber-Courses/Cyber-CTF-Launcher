@@ -5,4 +5,12 @@ import type { LabResources } from "./LabResources";
  * What a lab needs to run, as a range across the ways it runs: the lightest form (its machines
  * as containers) to the heaviest (one VM per machine). `min == max` when a lab has a single form.
  */
-export type LabRequirements = { min: LabResources, max: LabResources, };
+export type LabRequirements = { 
+/**
+ * What the lightest form the lab runs in takes.
+ */
+min: LabResources, 
+/**
+ * What the heaviest form takes.
+ */
+max: LabResources, };

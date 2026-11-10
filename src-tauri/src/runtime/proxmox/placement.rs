@@ -16,6 +16,7 @@ use super::{CallError, HostProfile, IMAGE_STORAGE, SNIPPET_STORAGE, sign_in};
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ProxmoxPlacement")]
 pub struct Placement {
+    /// Each node of the host, with its choices.
     pub nodes: Vec<NodeChoices>,
 }
 
@@ -24,6 +25,7 @@ pub struct Placement {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ProxmoxNodeChoices")]
 pub struct NodeChoices {
+    /// The node's name.
     pub name: String,
     /// Storages that hold VM disks ('images' content).
     pub disk_storages: Vec<String>,
@@ -31,9 +33,16 @@ pub struct NodeChoices {
     pub image_storages: Vec<String>,
     /// Storages that hold cloud-init snippets ('snippets' content).
     pub snippet_storages: Vec<String>,
+    /// Its network bridges.
     pub bridges: Vec<Bridge>,
+    /// The disk storage proposed (`local-lvm`, when the node has it); None when it has no such
+    /// storage.
     pub default_disk: Option<String>,
+    /// The image storage proposed (the module's default, when the node has it); None when it has no
+    /// such storage.
     pub default_image: Option<String>,
+    /// The snippet storage proposed (the module's default, when the node has it); None when it has
+    /// no such storage.
     pub default_snippet: Option<String>,
     /// The bridge whose network holds the server's own address (the one this machine reaches),
     /// else `vmbr0`, else the first.
@@ -45,6 +54,7 @@ pub struct NodeChoices {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ProxmoxBridge")]
 pub struct Bridge {
+    /// The bridge's name, e.g. `vmbr0`.
     pub name: String,
     /// e.g. `10.0.0.50/24`; None for a bridge with no address.
     pub cidr: Option<String>,

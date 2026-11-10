@@ -7,12 +7,25 @@ import type { LabOutput } from "./LabOutput";
 import type { LabPlace } from "./LabPlace";
 import type { Park } from "./Park";
 
-export type LabStatus = { running: boolean, 
+/**
+ * A lab as the UI shows it right now: whether it runs, its machines and networks, where it
+ * runs and what can be done to it there.
+ */
+export type LabStatus = { 
+/**
+ * Whether the lab is up (a lab whose launch failed reads as not running:
+ * [`LabStatus::unless_launch_failed`]).
+ */
+running: boolean, 
 /**
  * Set when the launcher parked the lab (paused or shut down) and it isn't running: its
  * machines exist and resume as they were, so the UI offers Resume, not "clean up".
  */
-parked: Park | null, machines: Array<LabMachine>, 
+parked: Park | null, 
+/**
+ * Its machines, the lab's plumbing among them ([`Machine::infra`]).
+ */
+machines: Array<LabMachine>, 
 /**
  * The lab's network segments (Docker labs); empty when the runtime doesn't report them.
  */

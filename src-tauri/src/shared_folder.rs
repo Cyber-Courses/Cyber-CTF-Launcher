@@ -16,9 +16,11 @@ use crate::platform::AppDirs;
 /// Where it shows up inside the attack box.
 pub const MOUNT_POINT: &str = "/shared";
 
+/// The shared folder's setting, as its file keeps it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SharedFolder {
+    /// Whether the folder is shared with the attack box.
     pub enabled: bool,
     /// The folder on this computer; the default one when unset.
     pub path: Option<String>,
@@ -84,15 +86,20 @@ fn check(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The shared folder as the Settings page shows it.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "SharedFolder")]
 pub struct SharedFolderInfo {
+    /// Whether the folder is shared with the attack box.
     pub enabled: bool,
+    /// The folder on this computer: the chosen one, else the default (empty when there is none).
     pub path: String,
+    /// Where it shows up inside the attack box.
     pub mount_point: &'static str,
 }
 
+/// The shared folder's setting, with the default folder when none is chosen.
 pub fn shared_folder_get(dirs: &AppDirs) -> Result<SharedFolderInfo> {
     Ok(info(load(dirs)?))
 }

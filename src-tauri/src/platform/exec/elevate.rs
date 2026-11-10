@@ -154,6 +154,7 @@ pub async fn join_hyperv_admins() -> Result<()> {
     Ok(())
 }
 
+/// Hyper-V is Windows-only: refused elsewhere.
 #[cfg(not(windows))]
 pub async fn join_hyperv_admins() -> Result<()> {
     Err(Error::Invalid("Hyper-V is only on Windows.".into()))

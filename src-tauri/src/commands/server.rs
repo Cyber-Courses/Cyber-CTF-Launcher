@@ -25,6 +25,7 @@ use crate::runtime::server::profile::HostProfile;
 use crate::runtime::server::setup;
 use crate::runtime::server::store::{load, update};
 
+/// The saved servers and cloud accounts, and which one is the default.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ServerList")]
@@ -33,6 +34,7 @@ pub struct HostList {
     hosts: Vec<HostProfile>,
 }
 
+/// The saved servers and cloud accounts, with the default's id.
 #[tauri::command]
 pub fn server_list(app: AppHandle) -> Result<HostList> {
     let store = load(&AppDirs::from(&app))?;

@@ -11,21 +11,30 @@ use crate::platform::exec::run_read;
 /// CPU usage needs two samples a moment apart.
 const CPU_SAMPLE_GAP: Duration = Duration::from_millis(220);
 
+/// This computer's load and capacity right now, for the Machine page's gauges.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MachineMetrics {
     /// Overall CPU usage, 0-100.
     pub cpu: f32,
+    /// Memory in use, in bytes.
     pub mem_used: u64,
+    /// Memory in all, in bytes.
     pub mem_total: u64,
+    /// The system disk's space in use, in bytes (0 when unreadable).
     pub disk_used: u64,
+    /// The system disk's size, in bytes (0 when unreadable).
     pub disk_total: u64,
+    /// Time since the computer started, in seconds.
     pub uptime_secs: u64,
+    /// The number of logical CPUs.
     pub cores: usize,
     /// Running Docker containers right now (0 when the engine is down).
     pub containers: u32,
 }
 
+/// Samples this computer's CPU (over about 220 ms), memory, system disk, uptime and running
+/// containers.
 pub async fn machine_metrics() -> MachineMetrics {
     let mut sys = System::new();
     sys.refresh_cpu_usage();

@@ -7,10 +7,13 @@ use ts_rs::TS;
 use super::kind::{HostField, KINDS, Secret, kind};
 use crate::runtime::providers::Provider;
 
+/// A saved server (Proxmox, ESXi) or cloud account: where it is, how to sign in (its secret is
+/// in the keychain), and where labs go on it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ServerHost")]
 pub struct HostProfile {
+    /// The host's id among the saved ones, made when it is first saved.
     pub id: String,
     /// Display name, e.g. "Garage Proxmox".
     pub name: String,
@@ -75,8 +78,11 @@ pub struct HostProfile {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SshKeySignIn {
+    /// The private key's path on this machine.
     pub path: String,
+    /// The user to sign in to the node as.
     pub user: String,
+    /// The node's SSH port.
     pub port: u16,
 }
 

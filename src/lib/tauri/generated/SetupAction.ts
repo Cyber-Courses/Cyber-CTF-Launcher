@@ -7,4 +7,40 @@ import type { WindowsFeature } from "./WindowsFeature";
 /**
  * One thing the setup does, or leaves to the player, on this machine.
  */
-export type SetupAction = { "kind": "install", dependency: Dependency, } | { "kind": "plugin", plugin: string, } | { "kind": "startEngine", engine: DockerEngine, } | { "kind": "useEngine", engine: DockerEngine, } | { "kind": "restart", feature: WindowsFeature, } | { "kind": "relogin" } | { "kind": "manual", reason: ManualReason, dependency: Dependency | null, url: string | null, } | { "kind": "blocked", reason: string, };
+export type SetupAction = { "kind": "install", 
+/**
+ * The tool to install.
+ */
+dependency: Dependency, } | { "kind": "plugin", 
+/**
+ * The plugin's name (`vagrant-qemu`, …).
+ */
+plugin: string, } | { "kind": "startEngine", 
+/**
+ * The engine to start.
+ */
+engine: DockerEngine, } | { "kind": "useEngine", 
+/**
+ * The engine Docker is to use.
+ */
+engine: DockerEngine, } | { "kind": "restart", 
+/**
+ * The feature the restart starts.
+ */
+feature: WindowsFeature, } | { "kind": "relogin" } | { "kind": "manual", 
+/**
+ * Why it is the player's to get.
+ */
+reason: ManualReason, 
+/**
+ * The tool, when it is one the setup installs elsewhere.
+ */
+dependency: Dependency | null, 
+/**
+ * Where to get it, when there is a page for it.
+ */
+url: string | null, } | { "kind": "blocked", 
+/**
+ * Why it can't run here, in English.
+ */
+reason: string, };

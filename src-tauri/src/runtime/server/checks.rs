@@ -6,6 +6,8 @@ use std::time::Instant;
 use serde::Serialize;
 use ts_rs::TS;
 
+/// The outcome of a server's or cloud account's "Test connection": each check, and whether the
+/// host looks usable.
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ServerTest")]
@@ -30,18 +32,24 @@ pub struct TestResult {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "ServerCheck")]
 pub struct Check {
+    /// What was checked.
     pub name: String,
+    /// How it went.
     pub state: CheckState,
+    /// What was found, or what to do about it.
     pub detail: String,
 }
 
+/// How a check went.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(rename = "ServerCheckState")]
 pub enum CheckState {
+    /// Passed.
     Ok,
     /// Not a blocker, but worth knowing (e.g. couldn't verify, or a soft limit).
     Warn,
+    /// A blocker: labs won't run there until it is fixed.
     Fail,
 }
 
@@ -49,12 +57,15 @@ impl Check {
     fn new(name: impl Into<String>, state: CheckState, detail: impl Into<String>) -> Self {
         Check { name: name.into(), state, detail: detail.into() }
     }
+    /// A check `name` that passed, with `detail`.
     pub fn ok(name: impl Into<String>, detail: impl Into<String>) -> Self {
         Check::new(name, CheckState::Ok, detail)
     }
+    /// A check `name` worth knowing about, not a blocker, with `detail`.
     pub fn warn(name: impl Into<String>, detail: impl Into<String>) -> Self {
         Check::new(name, CheckState::Warn, detail)
     }
+    /// A check `name` that failed, with `detail`.
     pub fn fail(name: impl Into<String>, detail: impl Into<String>) -> Self {
         Check::new(name, CheckState::Fail, detail)
     }

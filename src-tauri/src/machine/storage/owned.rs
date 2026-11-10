@@ -50,6 +50,7 @@ pub struct Before {
 }
 
 impl Before {
+    /// Reads what is on this machine now: the image ids when `images`, the boxes when `boxes`.
     pub async fn take(images: bool, boxes: bool) -> Before {
         let (images, boxes) = tokio::join!(async { if images { image_ids().await } else { None } }, async { if boxes { box_list().await } else { None } });
         Before { images, boxes }

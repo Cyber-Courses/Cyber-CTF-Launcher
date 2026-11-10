@@ -15,7 +15,9 @@ use crate::platform::sys::RegistryValue;
 /// A registry hive the launcher reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hive {
+    /// `HKEY_LOCAL_MACHINE`: the machine's settings.
     LocalMachine,
+    /// `HKEY_CURRENT_USER`: this user's settings.
     CurrentUser,
 }
 

@@ -9,6 +9,8 @@ use tauri::menu::{Menu, MenuEvent};
 /// The menu item that opens Settings.
 const SETTINGS: &str = "settings";
 
+/// The macOS menu bar: the app menu (About, Settings…, Hide, Quit), Edit's clipboard items and
+/// Window's.
 #[cfg(target_os = "macos")]
 pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
     use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder};

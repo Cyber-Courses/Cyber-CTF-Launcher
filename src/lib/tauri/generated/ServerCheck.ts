@@ -4,4 +4,16 @@ import type { ServerCheckState } from "./ServerCheckState";
 /**
  * One named pre-flight check in a cloud account test (e.g. "Credentials", "Terraform").
  */
-export type ServerCheck = { name: string, state: ServerCheckState, detail: string, };
+export type ServerCheck = { 
+/**
+ * What was checked.
+ */
+name: string, 
+/**
+ * How it went.
+ */
+state: ServerCheckState, 
+/**
+ * What was found, or what to do about it.
+ */
+detail: string, };

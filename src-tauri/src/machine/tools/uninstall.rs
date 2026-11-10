@@ -12,9 +12,11 @@ use super::steps::{Step, run_steps, step};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 
+/// A tool Cyber CTF installed, on record so Cleanup removes only what it installed.
 #[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledTool {
+    /// The tool.
     pub dependency: Dependency,
     /// When Cyber CTF installed it, in seconds since the Unix epoch.
     pub at: u64,
@@ -44,6 +46,8 @@ pub enum Outcome {
     Pending,
 }
 
+/// What an install leaves on record, from whether the tool was there before it (`present_before`)
+/// and after it (`present_after`).
 pub fn outcome(present_before: bool, present_after: bool) -> Outcome {
     match (present_before, present_after) {
         (true, _) => Outcome::NotOurs,

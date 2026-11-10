@@ -3,4 +3,16 @@
 /**
  * A size the lab's machines add up to: CPUs, memory and disk.
  */
-export type LabResources = { cpus: number, memoryMb: number, diskGb: number, };
+export type LabResources = { 
+/**
+ * CPU cores.
+ */
+cpus: number, 
+/**
+ * Memory, in MB.
+ */
+memoryMb: number, 
+/**
+ * Disk, in GB.
+ */
+diskGb: number, };

@@ -4,7 +4,11 @@ import type { WslState } from "./WslState";
 /**
  * The WSL part of the system check (Windows only).
  */
-export type WslReport = { state: WslState, 
+export type WslReport = { 
+/**
+ * Whether WSL 2 is on, waits for a restart, or is missing.
+ */
+state: WslState, 
 /**
  * Whether a restart from Cyber CTF opens it again once the player signs back in.
  */

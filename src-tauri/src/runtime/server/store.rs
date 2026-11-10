@@ -11,10 +11,12 @@ use crate::platform::AppDirs;
 
 const STORE_FILE: &str = "server.json";
 
+/// The saved servers and cloud accounts, as `server.json` holds them.
 #[derive(Default, Serialize, Deserialize)]
 pub(crate) struct Store {
     /// The server VM labs run on when none is picked (never a cloud account).
     pub default: Option<String>,
+    /// Every saved server and cloud account.
     pub hosts: Vec<HostProfile>,
 }
 
@@ -24,6 +26,7 @@ fn store_path(dirs: &AppDirs) -> Result<PathBuf> {
     Ok(dir.join(STORE_FILE))
 }
 
+/// The saved hosts; none when nothing was saved yet.
 pub(crate) fn load(dirs: &AppDirs) -> Result<Store> {
     load_from(&store_path(dirs)?)
 }
@@ -63,6 +66,7 @@ fn save_to(path: &Path, store: &Store) -> Result<()> {
     Ok(())
 }
 
+/// Saved host `id`; an error when there is none.
 pub(crate) fn find(store: &Store, id: &str) -> Result<HostProfile> {
     store.hosts.iter().find(|h| h.id == id).cloned().ok_or_else(|| Error::Invalid(format!("server host `{id}` not found")))
 }

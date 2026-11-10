@@ -7,4 +7,8 @@ export type LabInterface = {
 /**
  * The lab's own name for the network (the compose key, e.g. "dmz"), not Docker's.
  */
-network: string, ip: string, };
+network: string, 
+/**
+ * Its address on that network, e.g. "172.20.0.4".
+ */
+ip: string, };

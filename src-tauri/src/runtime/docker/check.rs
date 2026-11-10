@@ -7,9 +7,11 @@
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabCheckResult")]
 pub struct CheckResult {
+    /// The check's name, as the lab declares it.
     pub name: String,
     /// Where it ran: "from web", or "from the environment's networks".
     pub from: String,
+    /// Whether it passed.
     pub ok: bool,
     /// Why it failed (empty when it passed).
     pub reason: String,

@@ -113,9 +113,13 @@ pub(super) fn linode_env(_: &HostProfile, token: &str) -> Vec<(String, String)> 
 pub struct Connection {
     /// The host's id among the launcher's hosts (what a lab's marker names).
     pub id: String,
+    /// The host's provider: `proxmox`, `vmware_esxi` or a cloud.
     pub provider: Provider,
+    /// Its display name.
     pub name: String,
+    /// The environment Vagrant and the runner get for it ([`connection_env`]).
     pub env: Vec<(String, String)>,
+    /// The variables of Isoloom's Terraform modules for it (`lab::host_vars`), its secret included.
     pub tf_vars: Vec<(String, String)>,
     /// Raw environment for Terraform (cloud credentials the provider reads itself).
     pub tf_env: Vec<(String, String)>,
@@ -133,6 +137,7 @@ impl Connection {
     }
 }
 
+/// Saved host `id`, resolved for a launch with its secret.
 pub fn connection(dirs: &AppDirs, id: &str) -> Result<Connection> {
     let host = load_host(dirs, id)?;
     // CLI-credential hosts keep no secret; Terraform uses the CLI's own sign-in.

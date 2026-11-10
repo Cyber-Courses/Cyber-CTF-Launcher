@@ -3,4 +3,12 @@
 /**
  * Who refuses a form of the lab, and why.
  */
-export type LabRunRefusalCause = { "kind": "isoloom", reason: string, } | { "kind": "policy", setting: string, };
+export type LabRunRefusalCause = { "kind": "isoloom", 
+/**
+ * Isoloom's reason.
+ */
+reason: string, } | { "kind": "policy", 
+/**
+ * The name of the policy switch.
+ */
+setting: string, };

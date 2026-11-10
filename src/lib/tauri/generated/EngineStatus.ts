@@ -5,4 +5,20 @@ import type { DockerEngine } from "./DockerEngine";
  * One Docker-compatible engine found on this machine: the CLI context that reaches it, whether
  * its daemon answers, and whether it is the CLI's current context (the one labs run on).
  */
-export type EngineStatus = { engine: DockerEngine, context: string, running: boolean, current: boolean, };
+export type EngineStatus = { 
+/**
+ * The engine.
+ */
+engine: DockerEngine, 
+/**
+ * The CLI context that reaches it.
+ */
+context: string, 
+/**
+ * Whether its daemon answers.
+ */
+running: boolean, 
+/**
+ * Whether its context is the CLI's current one, which labs run on.
+ */
+current: boolean, };

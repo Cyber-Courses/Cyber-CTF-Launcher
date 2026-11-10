@@ -61,7 +61,9 @@ pub enum Source {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "OvftoolLocation")]
 pub struct Location {
+    /// Where it comes from.
     pub source: Source,
+    /// The program's path.
     pub path: String,
     /// It is built for Intel Macs only, this Mac has Apple Silicon and Rosetta isn't installed:
     /// it can't run until Rosetta is (`softwareupdate --install-rosetta`).
@@ -91,10 +93,20 @@ pub enum Refusal {
 #[ts(rename = "OvftoolPlaced")]
 pub enum Outcome {
     /// Copied into the app's folder, where the next machine check finds it; `path` is the program.
-    Placed { path: String, needs_rosetta: bool },
+    Placed {
+        /// The placed program's path.
+        path: String,
+        /// Whether it can't run until Rosetta is installed (see [`Location::needs_rosetta`]).
+        needs_rosetta: bool,
+    },
     /// Not placed, for `reason`; `detail` is what macOS said of the signature, or the team that
     /// signed it instead of VMware, when known.
-    Refused { reason: Refusal, detail: Option<String> },
+    Refused {
+        /// Why it wasn't placed.
+        reason: Refusal,
+        /// What macOS said of the signature, or the team that signed it, when known.
+        detail: Option<String>,
+    },
 }
 
 impl Outcome {

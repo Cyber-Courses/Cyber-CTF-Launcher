@@ -3,7 +3,15 @@
 /**
  * The OS package manager our one-click installs rely on (brew / winget / apt).
  */
-export type PkgManager = { name: string, installed: boolean, 
+export type PkgManager = { 
+/**
+ * Its name: `Homebrew`, `winget` or `apt`.
+ */
+name: string, 
+/**
+ * Whether it answered its version probe.
+ */
+installed: boolean, 
 /**
  * First line of its version output, e.g. "Homebrew 4.6.3", when installed.
  */

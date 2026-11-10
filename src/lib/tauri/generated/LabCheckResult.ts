@@ -3,11 +3,19 @@
 /**
  * One check's outcome.
  */
-export type LabCheckResult = { name: string, 
+export type LabCheckResult = { 
+/**
+ * The check's name, as the lab declares it.
+ */
+name: string, 
 /**
  * Where it ran: "from web", or "from the environment's networks".
  */
-from: string, ok: boolean, 
+from: string, 
+/**
+ * Whether it passed.
+ */
+ok: boolean, 
 /**
  * Why it failed (empty when it passed).
  */

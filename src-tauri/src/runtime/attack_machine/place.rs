@@ -19,9 +19,13 @@ use crate::runtime::{Runtime, lab};
 /// target it is generated for, and whether its machines are VMs (the box is Kali then) or
 /// containers (the picked image).
 pub(crate) struct Placed {
+    /// Where the lab runs, and its run there.
     pub(crate) host: Host,
+    /// The lab's folder.
     pub(crate) dir: PathBuf,
+    /// The Isoloom target the lab is generated for.
     pub(crate) target: Target,
+    /// Whether the lab's machines are VMs (the box is a Kali VM) rather than containers.
     pub(crate) vm: bool,
 }
 

@@ -27,9 +27,13 @@ use launch_env::{EnvVar, launch_env};
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Launch {
+    /// The lab's id.
     pub(crate) lab_id: String,
+    /// The runtime the lab declares.
     pub(crate) runtime: Runtime,
+    /// The CyberCTF repository the lab comes from.
     pub(crate) repository: String,
+    /// The commit of `repository` to install.
     pub(crate) commit: String,
     env: Vec<EnvVar>,
 }
@@ -365,8 +369,11 @@ pub struct LaunchRequest {
 /// A launch ready to run: the lab, its `startLab` spec, and where and how it runs (the Docker
 /// context a container lab here is pinned to resolved from the chosen engine).
 pub(crate) struct PreparedLaunch {
+    /// The lab's id.
     pub(crate) lab_id: String,
+    /// Its `startLab` spec.
     pub(crate) launch: Launch,
+    /// Where it runs and how.
     pub(crate) place: runtime::Placement,
 }
 

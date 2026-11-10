@@ -6,7 +6,11 @@ import type { Provider } from "./Provider";
  * One way to start the lab: the provider or cloud it runs on (none: this machine's Docker), the
  * Isoloom launch path it takes there, and how far that path is proven.
  */
-export type LabRunPath = { provider: Provider | null, 
+export type LabRunPath = { 
+/**
+ * The hypervisor, server or cloud it runs on; None for this machine's Docker.
+ */
+provider: Provider | null, 
 /**
  * The path's maturity badge (none when real runs prove it).
  */

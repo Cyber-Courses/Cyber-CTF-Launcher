@@ -18,11 +18,17 @@ const VBOX_SERVICE_WAIT: std::time::Duration = std::time::Duration::from_secs(8)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
+    /// Oracle VirtualBox.
     Virtualbox,
+    /// VMware Fusion (macOS) or Workstation (Windows, Linux).
     VmwareDesktop,
+    /// Windows' Hyper-V.
     Hyperv,
+    /// Parallels Desktop (macOS).
     Parallels,
+    /// libvirt with KVM (Linux).
     Libvirt,
+    /// QEMU on its own, without libvirt.
     Qemu,
     /// UTM (QEMU front end for macOS). Runs ARM guests natively on Apple
     /// Silicon and x86 guests under emulation (slow). Plugin `vagrant_utm`.
@@ -60,6 +66,8 @@ impl Provider {
     /// The cloud accounts, in the order the launcher lists them.
     pub const CLOUDS: [Provider; 6] = [Provider::Aws, Provider::Azure, Provider::Gcp, Provider::DigitalOcean, Provider::Linode, Provider::Oci];
 
+    /// The local hypervisors and the servers, not the clouds: the providers the machine check
+    /// considers ([`detect`]).
     pub const ALL: [Provider; 9] = [
         Provider::Virtualbox,
         Provider::VmwareDesktop,
@@ -72,6 +80,8 @@ impl Provider {
         Provider::Proxmox,
     ];
 
+    /// Its id: `vagrant up --provider`'s for a hypervisor, and the runner's and the webview's for
+    /// every provider.
     pub fn id(self) -> &'static str {
         match self {
             Provider::Virtualbox => "virtualbox",
@@ -313,11 +323,16 @@ fn qemu_binary() -> &'static str {
     if std::env::consts::ARCH == "aarch64" { "qemu-system-aarch64" } else { "qemu-system-x86_64" }
 }
 
+/// What the machine check found for one provider: whether a lab's VMs can run on it here, and
+/// what is still missing.
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStatus {
+    /// The provider.
     pub provider: Provider,
+    /// A server, run elsewhere: nothing of it is installed here.
     pub remote: bool,
+    /// Whether a lab's VMs can run on it now (`reason` says why not).
     pub available: bool,
     /// Whether the hypervisor itself is installed. None for remote providers (nothing
     /// local to run) and Hyper-V (a Windows feature we do not probe).
@@ -416,6 +431,8 @@ pub fn ready(statuses: &[ProviderStatus], vagrant_installed: bool) -> Vec<Provid
     statuses.iter().filter(|p| !p.remote && p.available && p.hypervisor != Some(false)).map(|p| p.provider).collect()
 }
 
+/// What the machine check finds for each provider this machine can run (its OS and CPU), the
+/// Vagrant plugins read only when Vagrant is installed (`vagrant_installed`).
 pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
     let plugins = if vagrant_installed { installed_plugins().await } else { Vec::new() };
     let mut statuses = Vec::new();

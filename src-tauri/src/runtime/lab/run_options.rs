@@ -18,6 +18,7 @@ use crate::runtime::{Runtime, lab};
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabRunPath")]
 pub struct RunPath {
+    /// The hypervisor, server or cloud it runs on; None for this machine's Docker.
     pub provider: Option<Provider>,
     /// The Isoloom target (`docker-vm`, `vagrant`, `cloud-vm`, …): how its badge is found, not
     /// the webview's.
@@ -41,11 +42,13 @@ pub struct RunPath {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabRunRefusal")]
 pub struct Refusal {
+    /// The hypervisor, server or cloud refused; None for this machine's Docker.
     pub provider: Option<Provider>,
     /// The Isoloom target refused there.
     #[serde(skip)]
     #[ts(skip)]
     pub target: String,
+    /// Why it is refused.
     pub cause: RefusalCause,
 }
 
@@ -55,9 +58,15 @@ pub struct Refusal {
 #[ts(rename = "LabRunRefusalCause")]
 pub enum RefusalCause {
     /// Isoloom doesn't generate the lab there: its reason, in its words.
-    Isoloom { reason: String },
+    Isoloom {
+        /// Isoloom's reason.
+        reason: String,
+    },
     /// This computer's policy turns it off: the policy switch that does (`policy::Key`'s name).
-    Policy { setting: String },
+    Policy {
+        /// The name of the policy switch.
+        setting: String,
+    },
 }
 
 impl Refusal {

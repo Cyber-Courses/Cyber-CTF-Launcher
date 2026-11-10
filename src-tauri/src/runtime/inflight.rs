@@ -16,7 +16,9 @@ use tokio::sync::OwnedMutexGuard;
 /// UI never calls a lab being stopped "deploying".
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Action {
+    /// Bringing the lab up: a launch, a resume or a provisioning run.
     Start,
+    /// Stopping it: its machines torn down.
     Stop,
     /// Pausing or shutting the lab down, machines kept: neither a deploy nor a teardown.
     Park,

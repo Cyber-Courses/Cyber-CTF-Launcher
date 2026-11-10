@@ -24,8 +24,12 @@ use super::{Runtime, isothrum, server};
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabStartPlace")]
 pub struct StartPlace {
+    /// The saved server it starts on, by id; None for this machine.
     pub host: Option<String>,
+    /// The hypervisor it starts on here, for a VM lab or a container lab in VMs; None on Docker or
+    /// on a server.
     pub provider: Option<Provider>,
+    /// A container lab started as one VM per machine.
     pub per_machine_vm: bool,
     /// A VM lab's hypervisor when it starts on this machine, wherever it starts by default (the
     /// player can still pick this machine): the one it last ran on here, else the preferred one,

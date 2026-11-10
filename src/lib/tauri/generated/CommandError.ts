@@ -4,4 +4,76 @@
  * An error as the webview receives it: `{ code, args?, message }`. `message` is English and
  * always there, for the log and for codes the UI doesn't translate (`other`).
  */
-export type CommandError = { message: string, } & ({ "code": "other" } | { "code": "signedOut" } | { "code": "sessionExpired" } | { "code": "loginTimeout", "args": { minutes: number, } } | { "code": "alreadyInProgress" } | { "code": "noPasswordStored" } | { "code": "portInUse", "args": { port: number, holder?: string | null, } } | { "code": "signInCancelled" } | { "code": "signInDenied" } | { "code": "signInCodeUnavailable" } | { "code": "unreachable", "args": { detail: string, } } | { "code": "offlineReady", "args": { detail: string, } } | { "code": "dockerNotRunning" } | { "code": "dockerDenied", "args": { user: string, } } | { "code": "dockerDeniedWindows", "args": { user: string, } } | { "code": "reapNoHost" } | { "code": "placementLockedHost", "args": { count: number, fields: string, } } | { "code": "placementLockedAccount", "args": { count: number, fields: string, } } | { "code": "labRunningHere" } | { "code": "labRunningOn", "args": { host: string, } } | { "code": "hostHasLabs", "args": { count: number, } } | { "code": "toolMissing", "args": { tool: string, } } | { "code": "commandFailed", "args": { command: string, stderr: string, } } | { "code": "turnedOffByPolicy", "args": { setting: string, } });
+export type CommandError = { 
+/**
+ * The English message.
+ */
+message: string, } & ({ "code": "other" } | { "code": "signedOut" } | { "code": "sessionExpired" } | { "code": "loginTimeout", "args": { 
+/**
+ * How long the sign-in waited, in minutes.
+ */
+minutes: number, } } | { "code": "alreadyInProgress" } | { "code": "noPasswordStored" } | { "code": "portInUse", "args": { 
+/**
+ * The host port that is taken.
+ */
+port: number, 
+/**
+ * What holds the port, when it could be found.
+ */
+holder?: string | null, } } | { "code": "signInCancelled" } | { "code": "signInDenied" } | { "code": "signInCodeUnavailable" } | { "code": "unreachable", "args": { 
+/**
+ * The technical why: the transport's error or what answered instead.
+ */
+detail: string, } } | { "code": "offlineReady", "args": { 
+/**
+ * The technical why, as for `Unreachable`.
+ */
+detail: string, } } | { "code": "dockerNotRunning" } | { "code": "dockerDenied", "args": { 
+/**
+ * The account's user name, for the `usermod` command the message gives.
+ */
+user: string, } } | { "code": "dockerDeniedWindows", "args": { 
+/**
+ * The account's user name, for the `net localgroup` command the message gives.
+ */
+user: string, } } | { "code": "reapNoHost" } | { "code": "placementLockedHost", "args": { 
+/**
+ * How many labs are on the host.
+ */
+count: number, 
+/**
+ * The placement fields the edit would change, as the message lists them.
+ */
+fields: string, } } | { "code": "placementLockedAccount", "args": { 
+/**
+ * How many labs are on the account.
+ */
+count: number, 
+/**
+ * The placement fields the edit would change, as the message lists them.
+ */
+fields: string, } } | { "code": "labRunningHere" } | { "code": "labRunningOn", "args": { 
+/**
+ * The saved host's name.
+ */
+host: string, } } | { "code": "hostHasLabs", "args": { 
+/**
+ * How many labs run on the host.
+ */
+count: number, } } | { "code": "toolMissing", "args": { 
+/**
+ * The tool's command name (`docker`, `vagrant`, …).
+ */
+tool: string, } } | { "code": "commandFailed", "args": { 
+/**
+ * The command line that failed.
+ */
+command: string, 
+/**
+ * What the command wrote to its standard error.
+ */
+stderr: string, } } | { "code": "turnedOffByPolicy", "args": { 
+/**
+ * The policy setting's name.
+ */
+setting: string, } });

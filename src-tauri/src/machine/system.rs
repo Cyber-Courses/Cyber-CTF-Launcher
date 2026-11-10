@@ -11,10 +11,13 @@ use crate::platform::exec::{docker_denied, docker_denied_error, run_read};
 use crate::platform::remembered::remembered;
 use crate::runtime::providers::{self, ProviderStatus};
 
+/// A command-line tool the machine check probes.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Tool {
+    /// Whether it answered its version probe.
     pub installed: bool,
+    /// The first line of its version output, when it answered.
     pub version: Option<String>,
 }
 
@@ -22,7 +25,9 @@ pub struct Tool {
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PkgManager {
+    /// Its name: `Homebrew`, `winget` or `apt`.
     pub name: String,
+    /// Whether it answered its version probe.
     pub installed: bool,
     /// First line of its version output, e.g. "Homebrew 4.6.3", when installed.
     pub version: Option<String>,
@@ -32,17 +37,26 @@ pub struct PkgManager {
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudClis {
+    /// The AWS CLI (`aws`).
     pub aws: Tool,
+    /// The Azure CLI (`az`).
     pub azure: Tool,
+    /// The Google Cloud CLI (`gcloud`).
     pub gcloud: Tool,
 }
 
+/// What the machine check found on this computer: the OS, the tools, the container engines and
+/// hypervisors, and what the guided setup takes from here.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemReport {
+    /// The OS, as Rust names it (`macos`, `windows`, `linux`).
     pub os: &'static str,
+    /// The CPU architecture, as Rust names it (`aarch64`, `x86_64`).
     pub arch: &'static str,
+    /// The OS's package manager.
     pub pkg_manager: PkgManager,
+    /// The Docker CLI.
     pub docker: Tool,
     /// The Docker daemon answers (Docker Desktop / engine is started).
     pub docker_running: bool,
@@ -50,6 +64,7 @@ pub struct SystemReport {
     /// engine won't help; `docker_denied_hint` says what will (as an error with its code, for
     /// the webview to say in the player's language).
     pub docker_denied: bool,
+    /// Why the daemon refused this account and what to do, as a coded error, when it did.
     pub docker_denied_hint: Option<crate::error::Wire>,
     /// Which Docker-compatible engine answers, when one does.
     pub docker_engine: Option<docker::Engine>,
@@ -60,7 +75,9 @@ pub struct SystemReport {
     /// one or answers), each with its own state: the Machine page lists them all, not only
     /// the one the CLI uses.
     pub docker_engines: Vec<docker::EngineStatus>,
+    /// Docker Compose (`docker compose`).
     pub docker_compose: Tool,
+    /// Vagrant.
     pub vagrant: Tool,
     /// A local terraform binary (preferred for provisioning state; container is the fallback).
     pub terraform: Tool,
@@ -70,6 +87,7 @@ pub struct SystemReport {
     /// Where the OVF Tool was found (Fusion's or Workstation's copy, the app's, or `PATH`), when
     /// one was, even if it doesn't run.
     pub ovftool_location: Option<crate::machine::tools::ovftool::Location>,
+    /// The cloud providers' CLIs.
     pub cloud_clis: CloudClis,
     /// Vagrant providers (local hypervisors and remote hosts such as ESXi).
     /// Whether a given VM lab can run also depends on its boxes existing for
@@ -88,6 +106,8 @@ pub struct SystemReport {
     pub setup: crate::machine::setup::Options,
 }
 
+/// Checks this machine: the tools, the container engines, the hypervisors, WSL and the groups
+/// pending a login, and what the guided setup takes from there.
 pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
     let data = dirs.data().ok().map(std::path::Path::to_path_buf);
     // A tool installed since the last check (from the app or not) is found without a restart.

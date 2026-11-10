@@ -11,16 +11,20 @@ use ts_rs::TS;
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabPort")]
 pub struct Port {
+    /// Where it is reachable on 127.0.0.1 (0: not published).
     pub published: u16,
+    /// The port inside the container.
     pub target: u16,
 }
 
+/// One machine of a lab (a container or a VM), as the lab page and its diagram show it.
 #[derive(Serialize, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabMachine")]
 pub struct Machine {
     /// The container (a small computer on the lab network).
     pub name: String,
+    /// Its state as the runtime reports it, e.g. `running`, `exited` or `unhealthy`.
     pub state: String,
     /// The image = the software running inside the container, e.g. "mysql:8.0".
     #[serde(default)]
@@ -68,6 +72,7 @@ pub struct Service {
 pub struct Interface {
     /// The lab's own name for the network (the compose key, e.g. "dmz"), not Docker's.
     pub network: String,
+    /// Its address on that network, e.g. "172.20.0.4".
     pub ip: String,
 }
 
@@ -89,9 +94,14 @@ pub struct Network {
 #[serde(rename_all = "snake_case")]
 #[ts(rename = "LabPlace")]
 pub enum Place {
+    /// In containers on this machine's Docker.
     Container,
+    /// In VMs on this machine: a VM lab, or a container lab in a VM (one helper VM, or one VM per
+    /// machine).
     LocalVm,
+    /// On a saved server (Proxmox or ESXi).
     Server,
+    /// In a cloud account.
     Cloud,
 }
 
@@ -100,11 +110,14 @@ pub enum Place {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Park {
+    /// The VMs' state saved to disk: they resume where they were.
     Pause,
+    /// The VMs powered off cleanly, kept.
     Shutdown,
 }
 
 impl Park {
+    /// Its id, as the parked marker and the webview spell it.
     pub fn id(self) -> &'static str {
         match self {
             Park::Pause => "pause",
@@ -112,6 +125,7 @@ impl Park {
         }
     }
 
+    /// The mode whose id is `id` (surrounding whitespace ignored), if there is one.
     pub fn from_id(id: &str) -> Option<Park> {
         match id.trim() {
             "pause" => Some(Park::Pause),
@@ -121,13 +135,18 @@ impl Park {
     }
 }
 
+/// A lab as the UI shows it right now: whether it runs, its machines and networks, where it
+/// runs and what can be done to it there.
 #[derive(Serialize, Clone, Default, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct LabStatus {
+    /// Whether the lab is up (a lab whose launch failed reads as not running:
+    /// [`LabStatus::unless_launch_failed`]).
     pub running: bool,
     /// Set when the launcher parked the lab (paused or shut down) and it isn't running: its
     /// machines exist and resume as they were, so the UI offers Resume, not "clean up".
     pub parked: Option<Park>,
+    /// Its machines, the lab's plumbing among them ([`Machine::infra`]).
     pub machines: Vec<Machine>,
     /// The lab's network segments (Docker labs); empty when the runtime doesn't report them.
     pub networks: Vec<Network>,
@@ -199,7 +218,9 @@ impl LabStatus {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabOutput")]
 pub struct Output {
+    /// The spec's name for it.
     pub name: String,
+    /// Its value, as the module gives it.
     pub value: String,
     /// Terraform marks it sensitive (a secret key): the UI masks it until asked.
     pub sensitive: bool,

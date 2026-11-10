@@ -93,6 +93,7 @@ fn valid_machine_name(m: &str) -> bool {
     m.len() <= 64 && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
+/// Stops lab `id` wherever it runs and removes it, its log lines sent on `logs` (see [`stop_lab`]).
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
     stop_lab(&AppDirs::from(&app), &id, runtime, lines(logs)).await

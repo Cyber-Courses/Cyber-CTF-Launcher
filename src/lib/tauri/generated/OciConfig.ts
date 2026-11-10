@@ -3,4 +3,16 @@
 /**
  * What the launcher found in ~/.oci/config (DEFAULT profile), to prefill the OCI setup.
  */
-export type OciConfig = { configured: boolean, tenancy: string, region: string, };
+export type OciConfig = { 
+/**
+ * Whether the config file was found and read.
+ */
+configured: boolean, 
+/**
+ * The DEFAULT profile's tenancy OCID, empty when it has none.
+ */
+tenancy: string, 
+/**
+ * The DEFAULT profile's region, empty when it has none.
+ */
+region: string, };

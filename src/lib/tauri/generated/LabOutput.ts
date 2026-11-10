@@ -3,7 +3,15 @@
 /**
  * One thing a cloud-services lab exposes: a module output, under the spec's name for it.
  */
-export type LabOutput = { name: string, value: string, 
+export type LabOutput = { 
+/**
+ * The spec's name for it.
+ */
+name: string, 
+/**
+ * Its value, as the module gives it.
+ */
+value: string, 
 /**
  * Terraform marks it sensitive (a secret key): the UI masks it until asked.
  */

@@ -31,23 +31,41 @@ use crate::runtime::{Park, Runtime, lab_file_lock};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
+    /// Launch the lab from its job's `startLab` spec.
     #[default]
     Launch,
     /// Bring a parked (or partly down) lab back as it was.
-    Resume { runtime: Runtime },
+    Resume {
+        /// The lab's runtime.
+        runtime: Runtime,
+    },
     /// Pause or shut the lab down, machines kept.
-    Park { runtime: Runtime, mode: Park },
+    Park {
+        /// The lab's runtime.
+        runtime: Runtime,
+        /// Pause (state saved) or shut down (powered off).
+        mode: Park,
+    },
     /// Run the provisioners again on one machine (or all).
-    Provision { runtime: Runtime, machine: Option<String> },
+    Provision {
+        /// The lab's runtime.
+        runtime: Runtime,
+        /// The machine to provision, or none for all of them.
+        machine: Option<String>,
+    },
     /// Launch a lab imported from a local directory (not the backend): the directory is copied in
     /// and run as a Docker lab with development inputs. `src` is the folder the player picked.
-    LaunchLocal { src: String },
+    LaunchLocal {
+        /// The folder the player picked.
+        src: String,
+    },
 }
 
 /// What a worker needs: the lab, the operation, and for a launch what to run and where. Its
 /// `Debug` leaves the launch's values out ([`crate::labs::Launch`]'s): they carry the launch token.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Job {
+    /// The lab the job runs an operation on.
     pub lab_id: String,
     /// Absent in job files from before operations existed: a launch.
     #[serde(default)]
@@ -62,7 +80,9 @@ pub struct Job {
 /// What a launch's job runs: the `startLab` spec, and where and how it runs.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) struct LaunchJob {
+    /// The lab's `startLab` spec and its values.
     pub(crate) launch: crate::labs::Launch,
+    /// Where it runs and how (provider, host, ports).
     #[serde(flatten)]
     pub(crate) place: crate::runtime::Placement,
 }

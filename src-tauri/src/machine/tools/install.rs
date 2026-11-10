@@ -18,18 +18,29 @@ use super::uninstall;
 use crate::error::{Error, Result};
 use crate::platform::policy::{self, Key};
 
+/// A tool the guided setup installs, as the webview names it.
 #[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Dependency {
+    /// Docker: Docker Desktop on macOS and Windows, Docker Engine on Linux.
     Docker,
+    /// HashiCorp's Vagrant.
     Vagrant,
+    /// HashiCorp's Terraform.
     Terraform,
+    /// Oracle's VirtualBox.
     Virtualbox,
+    /// QEMU.
     Qemu,
+    /// UTM (macOS).
     Utm,
+    /// libvirt, with what the vagrant-libvirt plugin builds against (Linux).
     Libvirt,
+    /// The AWS CLI.
     Awscli,
+    /// The Azure CLI.
     Azurecli,
+    /// The Google Cloud CLI.
     Gcloud,
     /// Windows Subsystem for Linux (WSL 2), enabled through its own installer.
     Wsl,

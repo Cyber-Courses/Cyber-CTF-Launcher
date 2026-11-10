@@ -29,6 +29,8 @@ const SCOPES: &str = "openid profile email offline_access";
 /// An access token this close to expiry is refreshed before use.
 const REFRESH_MARGIN_SECS: u64 = 60;
 
+/// Whether the player is signed in, and who as, for the webview's account menu and its sign-in
+/// gates.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthStatus {

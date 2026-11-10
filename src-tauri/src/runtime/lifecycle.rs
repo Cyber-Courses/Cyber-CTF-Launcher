@@ -226,15 +226,20 @@ pub async fn clear_parked(dirs: &AppDirs, lab: LabRef<'_>, log: &mut impl FnMut(
 
 // The bodies of the lab operations the deploy worker runs (`deploy_worker::execute`), by lab id.
 
+/// Parks lab `id`, declared `runtime` (pauses it or shuts it down, by `mode`), its progress lines
+/// to `log`.
 pub async fn park_lab(dirs: &AppDirs, id: &str, runtime: Runtime, mode: Park, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
     park(dirs, LabRef { dir: &dir, id, runtime }, mode, log).await
 }
 
+/// Brings parked lab `id`, declared `runtime`, back up as it was, its progress lines to `log`.
 pub async fn resume_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
     resume(dirs, &lab_dir(dirs, id)?, id, runtime, log).await
 }
 
+/// Runs the provisioning of lab `id`, declared `runtime`, again in place: of `machine` alone when
+/// given, else of every machine; its progress lines to `log`.
 pub async fn provision_lab(dirs: &AppDirs, id: &str, runtime: Runtime, machine: Option<&str>, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
     provision(dirs, LabRef { dir: &dir, id, runtime }, machine, log).await

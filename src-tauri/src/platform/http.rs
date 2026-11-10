@@ -54,6 +54,7 @@ pub struct Limited {
 }
 
 impl Limited {
+    /// An empty body of at most `max` bytes; refused at once when its `declared` length is larger.
     pub fn new(declared: Option<u64>, max: u64) -> Result<Limited> {
         if let Some(len) = declared.filter(|l| *l > max) {
             return Err(too_large(len, max));
@@ -61,6 +62,7 @@ impl Limited {
         Ok(Limited { max, buf: Vec::with_capacity(declared.unwrap_or(0).min(max).min(64 * 1024 * 1024) as usize) })
     }
 
+    /// Adds `chunk`; refused when the body would then be larger than its limit.
     pub fn push(&mut self, chunk: &[u8]) -> Result<()> {
         let total = self.buf.len() as u64 + chunk.len() as u64;
         if total > self.max {
@@ -70,6 +72,7 @@ impl Limited {
         Ok(())
     }
 
+    /// The body read.
     pub fn into_bytes(self) -> Vec<u8> {
         self.buf
     }

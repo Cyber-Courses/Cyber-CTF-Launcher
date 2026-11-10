@@ -4,4 +4,12 @@
  * A port the software inside a container binds: `target` is the port inside the
  * container, `published` is where it is reachable on 127.0.0.1 (0 = not published).
  */
-export type LabPort = { published: number, target: number, };
+export type LabPort = { 
+/**
+ * Where it is reachable on 127.0.0.1 (0: not published).
+ */
+published: number, 
+/**
+ * The port inside the container.
+ */
+target: number, };

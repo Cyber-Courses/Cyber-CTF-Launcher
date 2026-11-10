@@ -13,8 +13,11 @@ use crate::runtime::providers::Provider;
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HostCapacity {
+    /// CPU cores.
     pub cores: u64,
+    /// Memory in all, in bytes.
     pub mem_total: u64,
+    /// Memory free, in bytes.
     pub mem_free: u64,
 }
 

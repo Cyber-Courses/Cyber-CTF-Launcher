@@ -4,7 +4,11 @@ import type { ProxmoxBridge } from "./ProxmoxBridge";
 /**
  * One node's storages and bridges, with the default of each (None when it has none).
  */
-export type ProxmoxNodeChoices = { name: string, 
+export type ProxmoxNodeChoices = { 
+/**
+ * The node's name.
+ */
+name: string, 
 /**
  * Storages that hold VM disks ('images' content).
  */
@@ -16,7 +20,26 @@ imageStorages: Array<string>,
 /**
  * Storages that hold cloud-init snippets ('snippets' content).
  */
-snippetStorages: Array<string>, bridges: Array<ProxmoxBridge>, defaultDisk: string | null, defaultImage: string | null, defaultSnippet: string | null, 
+snippetStorages: Array<string>, 
+/**
+ * Its network bridges.
+ */
+bridges: Array<ProxmoxBridge>, 
+/**
+ * The disk storage proposed (`local-lvm`, when the node has it); None when it has no such
+ * storage.
+ */
+defaultDisk: string | null, 
+/**
+ * The image storage proposed (the module's default, when the node has it); None when it has no
+ * such storage.
+ */
+defaultImage: string | null, 
+/**
+ * The snippet storage proposed (the module's default, when the node has it); None when it has
+ * no such storage.
+ */
+defaultSnippet: string | null, 
 /**
  * The bridge whose network holds the server's own address (the one this machine reaches),
  * else `vmbr0`, else the first.

@@ -132,6 +132,8 @@ pub(in crate::runtime) fn set_marker(dir: &Path, name: &str, value: Option<&str>
 /// so stop, status and the attack-box shell go to the VM instead of local Docker.
 pub const LOCAL_VM_MARKER: &str = ".cyberctf-local-vm";
 
+/// Marks the lab in `dir` as a container lab run in one VM here, on hypervisor `provider`; none
+/// removes the mark.
 pub(crate) fn mark_local_vm(dir: &Path, provider: Option<Provider>) -> Result<()> {
     set_marker(dir, LOCAL_VM_MARKER, provider.map(super::providers::Provider::id))
 }
@@ -147,6 +149,7 @@ pub(crate) fn local_vm(dir: &Path) -> Option<String> {
 /// VM form (see [`local_runtime`]), whatever the catalogue calls the lab.
 pub const PER_MACHINE_MARKER: &str = ".cyberctf-per-machine-vm";
 
+/// Marks the lab in `dir` as started as one VM per machine (`on`), or removes the mark.
 pub(crate) fn mark_per_machine_vm(dir: &Path, on: bool) -> Result<()> {
     set_marker(dir, PER_MACHINE_MARKER, on.then_some("vm"))
 }
@@ -183,10 +186,13 @@ pub(crate) fn engine(dir: &Path) -> Option<String> {
 /// machines instead of clearing them as leftovers; removed on resume and on stop.
 const PARKED_MARKER: &str = ".cyberctf-parked";
 
+/// Marks the lab in `dir` as parked in `mode`; none removes the mark.
 pub(crate) fn mark_parked(dir: &Path, mode: Option<Park>) -> Result<()> {
     set_marker(dir, PARKED_MARKER, mode.map(super::model::Park::id))
 }
 
+/// How the lab in `dir` was parked, when the launcher parked it and it hasn't resumed or stopped
+/// since.
 pub(crate) fn parked(dir: &Path) -> Option<Park> {
     std::fs::read_to_string(dir.join(PARKED_MARKER)).ok().and_then(|s| Park::from_id(&s))
 }

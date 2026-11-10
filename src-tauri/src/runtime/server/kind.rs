@@ -61,23 +61,31 @@ pub enum Secret {
 
 /// A field's shape, and what the setup form says when it doesn't have it.
 pub struct Shape {
+    /// Whether a value has the shape.
     pub valid: fn(&str) -> bool,
+    /// What the setup form says when it doesn't.
     pub message: &'static str,
 }
 
 /// One kind of host.
 pub struct Kind {
+    /// The provider these hosts are.
     pub provider: Provider,
     /// The Terraform target (state folder, Isoloom module) its labs use; None for Vagrant.
     pub terraform: Option<&'static str>,
+    /// The port a new host of this kind gets (SSH's for ESXi, the API's for Proxmox).
     pub default_port: u16,
+    /// What its `host` field holds.
     pub host: HostField,
     /// The region's shape (clouds); a server's address is checked as one.
     pub region: Option<Shape>,
+    /// What its `username` field holds.
     pub account: AccountField,
+    /// That field's shape, when it has one to check.
     pub account_shape: Option<Shape>,
     /// The Isoloom module variable the instance size (`datastore`) goes to (clouds).
     pub size_var: Option<&'static str>,
+    /// The secret the keychain keeps for it.
     pub secret: Secret,
     /// The raw environment Terraform gets (credentials the provider reads itself), from the
     /// profile and its secret.

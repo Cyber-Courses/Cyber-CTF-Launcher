@@ -24,13 +24,17 @@ const IMAGE_FORMAT: &str = "{{.Id}}\t{{.Size}}";
 /// them before downloads were recorded, and nobody else publishes it.
 const ATTACK_BOX_REPOSITORY: &str = "cyberctf/attack-box";
 
+/// One download the app keeps on this machine, and the room it takes.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredItem {
+    /// How it is listed: an image's reference, a box as `name (provider, version)`.
     pub name: String,
+    /// Its size on disk, in bytes.
     pub bytes: u64,
 }
 
+/// The downloads the app keeps on this machine, for the Maintenance panel.
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Storage {

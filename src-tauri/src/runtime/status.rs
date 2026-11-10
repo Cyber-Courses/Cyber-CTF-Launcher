@@ -12,6 +12,8 @@ use super::providers::Provider;
 use super::{LabStatus, Place, Runtime, attack_machine, docker, isothrum, server};
 use crate::error::{Error, Result};
 
+/// The status of lab `id`, installed in `dir` and declared `runtime`, wherever it runs and in the
+/// form it was started in.
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     // Where it runs, in the form it was started in (a container lab run as one VM per machine
     // reads as a VM lab): the runner's view. A cloud-services lab on no account runs nowhere.

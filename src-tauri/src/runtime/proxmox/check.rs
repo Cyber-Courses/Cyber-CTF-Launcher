@@ -8,8 +8,11 @@ use super::{
 
 /// The outcome of "Test connection" for a Proxmox host.
 pub struct Report {
+    /// Every check passed: the host is ready for labs.
     pub ok: bool,
+    /// Whether the host accepted the credentials; None when the sign-in didn't get that far.
     pub authenticated: Option<bool>,
+    /// What was found, or the problem with its fix.
     pub message: String,
 }
 

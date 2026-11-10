@@ -31,6 +31,7 @@ const TIMEOUT: Duration = Duration::from_secs(8);
 /// The storages Isoloom's Proxmox module puts the cloud image and the cloud-init snippets on
 /// when the host names none (the module's defaults).
 pub const IMAGE_STORAGE: &str = "local";
+/// The storage the cloud-init snippets go on when the host names none (the module's default).
 pub const SNIPPET_STORAGE: &str = "local";
 
 /// The host's storage for cloud images, else the module's default.
@@ -104,6 +105,7 @@ pub struct Session {
     auth: (&'static str, String),
 }
 
+/// Why signing in to a Proxmox host failed.
 #[derive(Debug)]
 pub enum SignInError {
     /// The host answered and refused the credentials.
@@ -121,6 +123,8 @@ impl std::fmt::Display for SignInError {
     }
 }
 
+/// Signs in to the Proxmox API of host `h` with `secret` (its API token's secret, or its user's
+/// password for a ticket).
 pub async fn sign_in(h: &HostProfile, secret: &str) -> Result<Session, SignInError> {
     let client = crate::platform::http::probe_client(TIMEOUT, h.insecure_tls).map_err(|e| SignInError::Failed(e.to_string()))?;
     let base = api_url(h);
@@ -160,9 +164,12 @@ pub fn describe(e: &reqwest::Error) -> String {
     }
 }
 
+/// Why a call to the Proxmox API failed.
 #[derive(Debug)]
 pub enum CallError {
+    /// The API answered with this HTTP status, not a success.
     Status(u16),
+    /// No answer the launcher could read (network, TLS, not JSON): why.
     Other(String),
 }
 

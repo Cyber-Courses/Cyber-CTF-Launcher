@@ -153,7 +153,9 @@ fn as_instance(spec: Spec, n: Option<u8>) -> Result<Spec> {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabTool")]
 pub struct Observer {
+    /// Its name in the lab's spec.
     pub name: String,
+    /// The container image it runs from, when the spec gives one.
     pub image: Option<String>,
     /// Its address on each lab network, where the lab runs.
     pub addresses: Vec<Interface>,
@@ -249,8 +251,11 @@ pub fn memory_mb(spec: &Spec) -> u32 {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabResources")]
 pub struct Resources {
+    /// CPU cores.
     pub cpus: u32,
+    /// Memory, in MB.
     pub memory_mb: u32,
+    /// Disk, in GB.
     pub disk_gb: u32,
 }
 
@@ -266,7 +271,9 @@ impl From<isoloom_spec::Totals> for Resources {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabRequirements")]
 pub struct Requirements {
+    /// What the lightest form the lab runs in takes.
     pub min: Resources,
+    /// What the heaviest form takes.
     pub max: Resources,
 }
 
@@ -285,8 +292,12 @@ pub fn requirements(spec: &Spec) -> Option<Requirements> {
 /// handed, the layer above knows which sources are the catalogue's.
 #[derive(Clone, Copy)]
 pub struct Source<'a> {
+    /// The GitHub repository, `owner/name`.
     pub repository: &'a str,
+    /// The commit of it to fetch.
     pub commit: &'a str,
+    /// Whether that repository at that commit may be fetched (`repository`, `commit`): an error
+    /// refuses it, before anything is fetched.
     pub check: fn(&str, &str) -> Result<()>,
 }
 

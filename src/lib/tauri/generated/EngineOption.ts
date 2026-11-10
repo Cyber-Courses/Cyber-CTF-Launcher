@@ -5,4 +5,12 @@ import type { SetupAction } from "./SetupAction";
 /**
  * A container engine, and what makes it the one Docker uses here.
  */
-export type EngineOption = { engine: DockerEngine, actions: Array<SetupAction>, };
+export type EngineOption = { 
+/**
+ * The engine.
+ */
+engine: DockerEngine, 
+/**
+ * What makes it the one Docker uses here, in order: nothing when it is.
+ */
+actions: Array<SetupAction>, };

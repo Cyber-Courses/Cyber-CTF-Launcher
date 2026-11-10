@@ -3,7 +3,23 @@ import type { Need } from "./Need";
 import type { Provider } from "./Provider";
 import type { UtilityState } from "./UtilityState";
 
-export type ProviderStatus = { provider: Provider, remote: boolean, available: boolean, 
+/**
+ * What the machine check found for one provider: whether a lab's VMs can run on it here, and
+ * what is still missing.
+ */
+export type ProviderStatus = { 
+/**
+ * The provider.
+ */
+provider: Provider, 
+/**
+ * A server, run elsewhere: nothing of it is installed here.
+ */
+remote: boolean, 
+/**
+ * Whether a lab's VMs can run on it now (`reason` says why not).
+ */
+available: boolean, 
 /**
  * Whether the hypervisor itself is installed. None for remote providers (nothing
  * local to run) and Hyper-V (a Windows feature we do not probe).

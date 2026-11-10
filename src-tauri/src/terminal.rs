@@ -112,13 +112,20 @@ fn with_sessions<T>(f: impl FnOnce(&mut HashMap<u32, Session>) -> T) -> T {
     f(guard.get_or_insert_with(HashMap::new))
 }
 
+/// What an attack box shell sends the webview.
 #[derive(Clone, Serialize, ts_rs::TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TermEvent {
     /// Output, as text (split multi-byte characters are held back until complete).
-    Data { data: String },
+    Data {
+        /// The text.
+        data: String,
+    },
     /// The shell ended.
-    Exit { code: Option<u32> },
+    Exit {
+        /// Its exit code, when it has one.
+        code: Option<u32>,
+    },
 }
 
 /// Splits `buf` into the text that is complete (invalid bytes replaced) and the bytes of a

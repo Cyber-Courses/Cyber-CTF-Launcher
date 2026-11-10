@@ -18,13 +18,30 @@ pub(crate) enum Host {
     /// On this machine: on Docker, in one local VM, or as VMs ([`isothrum::LabRun::local`]).
     Local(isothrum::LabRun),
     /// VMs on an ESXi server (Vagrant there), through its connection.
-    Esxi { run: isothrum::LabRun, conn: server::Connection },
+    Esxi {
+        /// The lab's run on the host.
+        run: isothrum::LabRun,
+        /// The host's connection: its settings and secret.
+        conn: server::Connection,
+    },
     /// In a cloud account (its VMs, its containers on a VM, or its cloud services), with the
     /// account's credentials (`place`).
-    Cloud { run: isothrum::CloudRun, place: isothrum::CloudPlace, conn: server::Connection },
+    Cloud {
+        /// The lab's run in the account.
+        run: isothrum::CloudRun,
+        /// Where in the account it runs, as resolved from it: its region, the address let in.
+        place: isothrum::CloudPlace,
+        /// The account's connection: its settings and credentials.
+        conn: server::Connection,
+    },
     /// On a Proxmox server, through `conn`: its place is found when the run is changed (its node,
     /// its SSH jump), not to read its status.
-    Server { run: isothrum::ServerRun, conn: server::Connection },
+    Server {
+        /// The lab's run on the server.
+        run: isothrum::ServerRun,
+        /// The server's connection: its settings and secret.
+        conn: server::Connection,
+    },
 }
 
 /// Lab `id`, installed in `dir` and declared `runtime`, where it runs and in the form it was
@@ -47,6 +64,7 @@ pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> 
 
 /// Why changing a run failed, and whether the run may have changed by then.
 pub(crate) struct Failed {
+    /// What went wrong.
     pub(crate) error: Error,
     /// False only when the run certainly didn't change: its place couldn't be reached, or the
     /// change was refused before acting ([`isothrum::errors::refused_before_acting`]: a cloud

@@ -77,7 +77,9 @@ pub enum Part {
 /// A failed part and why.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Failure {
+    /// The part that failed.
     pub part: Part,
+    /// Why, in the words of the tool that failed.
     pub detail: String,
 }
 
@@ -143,8 +145,11 @@ pub async fn authorize(host: &str, key: &SshKeySignIn, known_hosts: &Path, publi
 /// The token made on the node, and whether the launcher's key was added (or there already).
 #[derive(Debug, PartialEq, Eq)]
 pub struct Made {
+    /// The token's id, `user@realm!name`.
     pub token_id: String,
+    /// The token's secret.
     pub secret: String,
+    /// Whether the launcher's SSH key is let in on the node (added now, or there already).
     pub key_added: bool,
 }
 

@@ -144,6 +144,7 @@ pub fn refresh() {
     }
 }
 
+/// Elsewhere a tool's installer can't change this process's `PATH`: nothing to merge.
 #[cfg(not(windows))]
 pub fn refresh() {}
 

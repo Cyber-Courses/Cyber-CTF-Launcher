@@ -3,11 +3,18 @@ import type { LabInterface } from "./LabInterface";
 import type { LabPort } from "./LabPort";
 import type { LabService } from "./LabService";
 
+/**
+ * One machine of a lab (a container or a VM), as the lab page and its diagram show it.
+ */
 export type LabMachine = { 
 /**
  * The container (a small computer on the lab network).
  */
-name: string, state: string, 
+name: string, 
+/**
+ * Its state as the runtime reports it, e.g. `running`, `exited` or `unhealthy`.
+ */
+state: string, 
 /**
  * The image = the software running inside the container, e.g. "mysql:8.0".
  */

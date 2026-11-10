@@ -1,3 +1,6 @@
+//! The launcher's errors: [`Error`] inside the app, [`Wire`] as the webview gets it, and the
+//! [`Code`] the webview branches on and says in the player's language.
+
 use serde::{Deserialize, Serialize};
 
 /// What went wrong, as the UI knows it: a code it can branch on and say in the player's
@@ -7,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "code", content = "args", rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[ts(rename = "ErrorCode")]
 pub enum Code {
+    /// Anything the UI has no code for: it shows the error's own (English) message.
     Other,
     /// A call that needs the account, with no session kept.
     SignedOut,
@@ -14,6 +18,7 @@ pub enum Code {
     SessionExpired,
     /// The browser sign-in wasn't finished in time.
     LoginTimeout {
+        /// How long the sign-in waited, in minutes.
         minutes: u64,
     },
     /// Another operation on the lab runs: this one was refused before it changed anything.
@@ -24,7 +29,9 @@ pub enum Code {
     /// is a short description of what holds it ("nginx (pid 4123)"), filled in on the failure
     /// path when it can be found, so the player knows what to stop.
     PortInUse {
+        /// The host port that is taken.
         port: u16,
+        /// What holds the port, when it could be found.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         holder: Option<String>,
     },
@@ -38,20 +45,24 @@ pub enum Code {
     /// CyberBackend or the sign-in service couldn't be reached (no network, an outage, an
     /// answer that isn't the API's): trying again later may work. `detail` is the technical why.
     Unreachable {
+        /// The technical why: the transport's error or what answered instead.
         detail: String,
     },
     /// Cyber CTF couldn't be reached, and the lab is installed here, so it can start offline.
     OfflineReady {
+        /// The technical why, as for `Unreachable`.
         detail: String,
     },
     /// The container engine isn't running.
     DockerNotRunning,
     /// Docker runs, but this account isn't allowed to use it.
     DockerDenied {
+        /// The account's user name, for the `usermod` command the message gives.
         user: String,
     },
     /// The same on Windows: the engine's pipe belongs to the `docker-users` group.
     DockerDeniedWindows {
+        /// The account's user name, for the `net localgroup` command the message gives.
         user: String,
     },
     /// The auto-stop couldn't destroy a lab: no account is recorded for its run. (Its other
@@ -59,12 +70,16 @@ pub enum Code {
     ReapNoHost,
     /// A server host's placement (provider, address, node…) can't change while labs are on it.
     PlacementLockedHost {
+        /// How many labs are on the host.
         count: u64,
+        /// The placement fields the edit would change, as the message lists them.
         fields: String,
     },
     /// The same for a cloud account (its region, subscription, profile…).
     PlacementLockedAccount {
+        /// How many labs are on the account.
         count: u64,
+        /// The placement fields the edit would change, as the message lists them.
         fields: String,
     },
     /// Something of the lab is still up on this machine (running, or its machines left over): it
@@ -72,24 +87,30 @@ pub enum Code {
     LabRunningHere,
     /// The same on the saved server or cloud account `host` (its name).
     LabRunningOn {
+        /// The saved host's name.
         host: String,
     },
     /// A host can't be removed while labs run on it.
     HostHasLabs {
+        /// How many labs run on the host.
         count: u64,
     },
     /// A tool the operation runs isn't installed.
     ToolMissing {
+        /// The tool's command name (`docker`, `vagrant`, …).
         tool: String,
     },
     /// A command ran and failed.
     CommandFailed {
+        /// The command line that failed.
         command: String,
+        /// What the command wrote to its standard error.
         stderr: String,
     },
     /// This computer's administrator turned the feature off: `setting` is the policy switch
     /// (`platform::policy::Key`) that did.
     TurnedOffByPolicy {
+        /// The policy setting's name.
         setting: String,
     },
 }
@@ -157,8 +178,12 @@ fn placement_locked(count: u64, what: &str, fields: &str) -> String {
     format!("{count} {labs} still on this {what}: stop {them} before changing its {fields}.")
 }
 
+/// A failure of the launcher's own code, as its functions return it; the webview gets it as a
+/// [`Wire`].
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// A request or a value the operation can't use (a bad argument, a file that isn't what it
+    /// should be): its message says what.
     #[error("{0}")]
     Invalid(String),
     /// An operation refused before it changed anything (a lab still up elsewhere, an update of a
@@ -180,15 +205,31 @@ pub enum Error {
     Unreachable(String),
     /// A failure the UI knows by its code (see [`Code`]).
     #[error("{message}")]
-    Coded { code: Code, message: String },
+    Coded {
+        /// The code the UI branches on.
+        code: Code,
+        /// The code's English message.
+        message: String,
+    },
+    /// A tool the operation runs isn't installed, or isn't on `PATH`.
     #[error("`{tool}` is not installed or not on PATH")]
-    ToolMissing { tool: &'static str },
+    ToolMissing {
+        /// The tool's command name.
+        tool: &'static str,
+    },
+    /// A command ran and failed.
     #[error("`{command}` failed: {stderr}")]
-    CommandFailed { command: String, stderr: String },
+    CommandFailed {
+        /// The command line that failed.
+        command: String,
+        /// What the command wrote to its standard error.
+        stderr: String,
+    },
     /// A lab's lock couldn't be taken (its file can't be opened or locked): the operation stops
     /// there rather than run unlocked.
     #[error("Couldn't lock the lab: {0}")]
     LockUnavailable(#[source] std::io::Error),
+    /// An I/O failure, with the system's message.
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -229,8 +270,10 @@ impl Error {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(rename = "CommandError")]
 pub struct Wire {
+    /// The code the UI branches on, with its values (`code` and `args` on the wire).
     #[serde(flatten)]
     pub code: Code,
+    /// The English message.
     pub message: String,
 }
 
@@ -251,6 +294,7 @@ impl Serialize for Error {
     }
 }
 
+/// The launcher's result: an [`Error`] on failure.
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]

@@ -195,7 +195,9 @@ fn allow_list_inputs(cloud: &CloudServices, ip: &str) -> Vec<(String, String)> {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "CloudPreview")]
 pub struct Preview {
+    /// The cloud the module runs on, by id (`aws`, `azure`, …).
     pub provider: String,
+    /// What the spec says it costs per hour, in US dollars; None when it doesn't say.
     pub hourly_usd: Option<f64>,
     /// The launch-time inputs it takes.
     pub inputs: Vec<String>,
@@ -205,6 +207,8 @@ pub struct Preview {
     pub outputs: Vec<String>,
 }
 
+/// What the cloud-services lab of `spec` runs and takes before it starts; None for a lab that
+/// isn't cloud services.
 pub fn preview(spec: &Spec) -> Option<Preview> {
     let cloud = spec.cloud.as_ref()?;
     Some(Preview {

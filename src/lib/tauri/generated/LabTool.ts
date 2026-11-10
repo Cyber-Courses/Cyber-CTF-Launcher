@@ -5,7 +5,15 @@ import type { LabInterface } from "./LabInterface";
  * An observer the lab puts beside itself (`tools:` in its spec): a toolbox or a capture box
  * on every network, outside the lab's contract.
  */
-export type LabTool = { name: string, image: string | null, 
+export type LabTool = { 
+/**
+ * Its name in the lab's spec.
+ */
+name: string, 
+/**
+ * The container image it runs from, when the spec gives one.
+ */
+image: string | null, 
 /**
  * Its address on each lab network, where the lab runs.
  */

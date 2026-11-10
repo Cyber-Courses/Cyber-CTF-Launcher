@@ -2,7 +2,15 @@
 import type { Provider } from "./Provider";
 import type { SshKeySignIn } from "./SshKeySignIn";
 
-export type ServerHost = { id: string, 
+/**
+ * A saved server (Proxmox, ESXi) or cloud account: where it is, how to sign in (its secret is
+ * in the keychain), and where labs go on it.
+ */
+export type ServerHost = { 
+/**
+ * The host's id among the saved ones, made when it is first saved.
+ */
+id: string, 
 /**
  * Display name, e.g. "Garage Proxmox".
  */

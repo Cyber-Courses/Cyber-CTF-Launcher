@@ -4,7 +4,15 @@
  * What the launch dialog shows before a cloud-services lab starts: its cloud, what it costs
  * and what it asks for. Read from the lab's spec at its pinned commit.
  */
-export type CloudPreview = { provider: string, hourlyUsd: number | null, 
+export type CloudPreview = { 
+/**
+ * The cloud the module runs on, by id (`aws`, `azure`, …).
+ */
+provider: string, 
+/**
+ * What the spec says it costs per hour, in US dollars; None when it doesn't say.
+ */
+hourlyUsd: number | null, 
 /**
  * The launch-time inputs it takes.
  */

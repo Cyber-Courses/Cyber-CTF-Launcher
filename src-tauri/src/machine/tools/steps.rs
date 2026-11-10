@@ -10,12 +10,15 @@ use crate::error::{Error, Result};
 
 /// One command of an install or removal.
 pub struct Step {
+    /// The program to run.
     pub program: String,
+    /// Its arguments.
     pub args: Vec<String>,
     /// A note shown before the step (e.g. when we open a download instead of installing).
     pub note: Option<String>,
 }
 
+/// A step that runs `program` with `args`, with no note.
 pub fn step(program: impl Into<String>, args: &[&str]) -> Step {
     Step { program: program.into(), args: args.iter().map(ToString::to_string).collect(), note: None }
 }

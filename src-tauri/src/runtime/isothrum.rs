@@ -541,7 +541,9 @@ fn host_config(home: &Path, context: Option<String>) -> RunnerConfig {
 /// (`CTFd` on 8000) rather than free ones picked at random.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Inputs<'a> {
+    /// The launch's values, by the name of the manifest slot each goes to.
     pub(crate) values: &'a [(String, String)],
+    /// Whether its services keep their own host ports rather than free ones picked at random.
     pub(crate) default_ports: bool,
 }
 

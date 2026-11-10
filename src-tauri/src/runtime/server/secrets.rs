@@ -21,6 +21,7 @@ pub(crate) fn get_secret(id: &str) -> Result<String> {
     if IN_A_FILE { found(dev_file::read()?.remove(id)) } else { blocking(|| keychain::get(&entry_name(id))).and_then(found) }
 }
 
+/// Keeps `secret` for host `id`: in the keychain, in a file in a debug build ([`IN_A_FILE`]).
 pub(crate) fn set_secret(id: &str, secret: &str) -> Result<()> {
     if IN_A_FILE {
         let mut map = dev_file::read()?;

@@ -19,6 +19,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # quality-baseline.json) counts it, its count may go down, never up, and at zero it moves to "deny".
 [lints.rust]
 unused = { level = "deny", priority = -1 }
+# The crate's one public item is `run()`: rustc's `missing_docs` holds that API, and clippy's
+# `missing_docs_in_private_items` (below), limited to what other modules can use
+# (`missing-docs-in-crate-items` in clippy.toml), holds every `pub` and `pub(crate)` item inside it.
 missing_docs = "deny"
 # Calls into libc and Win32 need `unsafe`: they all sit in `platform::sys`, the one audited module
 # allowed it. The only other `unsafe` is test-only: `runtime::fake_clis` putting stand-in tools on PATH.
@@ -33,6 +36,7 @@ too_many_arguments = "deny"
 cognitive_complexity = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
+missing_docs_in_private_items = "deny"
 case_sensitive_file_extension_comparisons = "deny"
 cast_lossless = "deny"
 cast_possible_truncation = "deny"

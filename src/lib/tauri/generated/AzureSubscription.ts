@@ -3,4 +3,16 @@
 /**
  * An Azure subscription the signed-in account can use.
  */
-export type AzureSubscription = { name: string, id: string, isDefault: boolean, };
+export type AzureSubscription = { 
+/**
+ * The subscription's display name.
+ */
+name: string, 
+/**
+ * The subscription's id.
+ */
+id: string, 
+/**
+ * Whether the Azure CLI has it as its default subscription.
+ */
+isDefault: boolean, };

@@ -102,6 +102,7 @@ impl Policy {
 /// A value as the policy holds it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
+    /// A switch, on (`true`) or off.
     Bool(bool),
     /// Anything else, described for the log (`the string "yes"`, `a REG_SZ`).
     Other(String),

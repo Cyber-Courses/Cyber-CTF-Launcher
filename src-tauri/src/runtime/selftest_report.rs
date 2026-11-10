@@ -8,15 +8,20 @@ use serde::Serialize;
 
 use crate::error::Result;
 
+/// One step's state in a self-test, as the page that runs it shows it.
 #[derive(Clone, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "SelfTestEvent")]
 pub struct Event {
+    /// The step's id, e.g. `network` or `cleanup`.
     pub step: &'static str,
+    /// What the step does, as the page names it.
     pub label: &'static str,
     /// `running`, `ok`, `fail` or `skip`.
     #[ts(type = r#""running" | "ok" | "fail" | "skip""#)]
     pub state: &'static str,
+    /// What the step found, its live output while it runs, or why it failed or was skipped; None
+    /// when there is nothing to add.
     pub detail: Option<String>,
     /// How many bytes the step moves, when known (the image it uploads): its running events
     /// carry it once it is.
@@ -46,6 +51,7 @@ impl Reporter {
         Reporter { sink: Box::new(sink), explain }
     }
 
+    /// Sends step `step` (`label`) in `state`, with `detail`.
     pub(crate) fn send(&self, step: &'static str, label: &'static str, state: &'static str, detail: Option<String>) {
         (self.sink)(Event { step, label, state, detail, size: None });
     }
