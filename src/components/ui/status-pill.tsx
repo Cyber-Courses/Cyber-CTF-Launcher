@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import type { Tone } from "@/lib/tone";
 
-export type Tone = "ok" | "warn" | "fail" | "muted";
+export type { Tone };
 
 const DOT: Record<Tone, string> = { ok: "dot-ok", warn: "dot-warn", fail: "dot-fail", muted: "dot-idle" };
 

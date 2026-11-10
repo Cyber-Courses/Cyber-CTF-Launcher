@@ -1,5 +1,5 @@
 import { isServerProvider, type HostCapacity, type ServerHost, type ServerTest, type SystemReport } from "@/lib/tauri";
-import type { Tone } from "@/components/ui/status-pill";
+import type { Tone } from "@/lib/tone";
 import { describeError, errorCode, type ErrorCode } from "@/lib/errors";
 
 // The Servers page's logic, as pure functions of the hosts, their tests and capacity.
