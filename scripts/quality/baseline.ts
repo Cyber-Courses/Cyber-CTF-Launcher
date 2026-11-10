@@ -9,7 +9,7 @@ import { type Counts, type ExceptionCounts, total } from "./model.ts";
 export type Baseline = { rules: Counts; clippy: Partial<Record<string, Counts>>; exceptions: ExceptionCounts };
 
 /** A change against the baseline: what rose, and what fell (the baseline can be lowered). */
-export type Diff = { raised: string[]; lowered: string[] };
+type Diff = { raised: string[]; lowered: string[] };
 
 export function readBaseline(file: string): Baseline {
   if (!fs.existsSync(file)) return { rules: {}, clippy: {}, exceptions: {} };
@@ -36,7 +36,7 @@ function compareCounts(group: string, now: Counts, before: Counts, diff: Diff): 
 }
 
 /** How the measured counts compare with the baseline. */
-export function compare(now: Baseline, before: Baseline, platform: string): Diff {
+function compare(now: Baseline, before: Baseline, platform: string): Diff {
   const diff: Diff = { raised: [], lowered: [] };
   compareCounts("rule", now.rules, before.rules, diff);
   const clippyBefore = before.clippy[platform];
