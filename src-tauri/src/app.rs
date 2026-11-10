@@ -279,6 +279,9 @@ fn on_run_event(app: &AppHandle, event: &RunEvent) {
     }
     if let RunEvent::Exit = event {
         exec::kill_live_tools();
+        // A tool the runner was asked to stop (an operation cancelled just before) doesn't get
+        // its grace: the app is going, and it must not outlive it.
+        crate::runtime::isothrum::end_cut_short_tools();
         terminal::close_all();
     }
 }

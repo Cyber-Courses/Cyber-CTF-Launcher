@@ -405,10 +405,31 @@ fn pin_docker(spec: &ProcessSpec, context: &str) -> Option<ProcessSpec> {
     Some(pinned)
 }
 
+/// The tools every run of this process starts, shared: a tool cut short (its operation dropped,
+/// a cancel) is asked to stop on Unix and given a grace before it is ended, and this process waits
+/// for those still stopping before it exits ([`stop_cut_short_tools`], [`end_cut_short_tools`]).
+static PROCESSES: std::sync::LazyLock<SystemProcesses> = std::sync::LazyLock::new(SystemProcesses::default);
+
+/// Waits, at most `within`, for every tool cut short to stop on its own, then ends what is left:
+/// before a process exits right after cancelling an operation (a stopped deploy worker), so no
+/// tool outlives it. Unix only: on Windows a tool cut short is ended at once.
+#[cfg(unix)]
+pub(crate) async fn stop_cut_short_tools(within: std::time::Duration) {
+    if tokio::time::timeout(within, PROCESSES.stopped()).await.is_err() {
+        log::warn!("tools cut short were still stopping after {} s: ending them", within.as_secs());
+        PROCESSES.end_stopping();
+    }
+}
+
+/// Ends every tool cut short that is still stopping, at once: the app exiting now.
+pub(crate) fn end_cut_short_tools() {
+    PROCESSES.end_stopping();
+}
+
 /// A runner at `home` with this host's tools; a container lab's docker calls pinned to `context`
 /// (the engine chosen at launch), else the current Docker context as before.
 fn host_config(home: &Path, context: Option<String>) -> RunnerConfig {
-    let processes = SystemProcesses::default();
+    let processes = PROCESSES.clone();
     let runner: Arc<dyn ProcessRunner> = match context {
         Some(context) => Arc::new(EngineProcesses { inner: processes, context }),
         None => Arc::new(processes),

@@ -226,6 +226,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **Signing in or out no longer shows the other state's labs for a moment.** The catalogue and
   the completed labs of before the change stayed on the Labs and Home screens until the new
   catalogue answered; the screens now wait for it.
+- **A tool a stop cuts short never outlives the launcher.** The lab engine now asks a tool it
+  cuts short to stop (Terraform then saves its state) and gives it time; a deploy worker being
+  stopped waits for it, up to 15 seconds, and ends what is left before it exits, and the app
+  ends any still stopping when it quits.
 - **A cloud-services lab gets the account's region, subscription or project.** The lab's own
   Terraform module was never given where the account works when its provider names none: the AWS
   region (`AWS_REGION`), the Azure subscription, the Google Cloud project and region. They are now

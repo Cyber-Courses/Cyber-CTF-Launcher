@@ -397,3 +397,47 @@ async fn a_lab_generated_by_an_earlier_version_that_cant_be_generated_again_says
     assert!(err.ends_with("Remove the lab and add it again from the catalogue; anything it still runs is on the Machine page."), "{err}");
     assert!(f.fake.calls().is_empty(), "nothing ran: {:?}", f.fake.calls());
 }
+
+/// A tool of `PROCESSES` cut short that ignores the request to stop (SIGINT trapped), its pid in
+/// `pid` once it runs.
+#[cfg(unix)]
+async fn cut_short_stubborn_tool(pid: &std::path::Path) -> u32 {
+    let script = format!("trap '' INT; echo $$ > '{}'; while :; do sleep 0.1; done", pid.display());
+    let spec = ProcessSpec::new("sh", ["-c", script.as_str()]);
+    let mut quiet = |_: isothrum_runner::Stream, _: &str| {};
+    let run = super::PROCESSES.run(&spec, &mut quiet);
+    assert!(tokio::time::timeout(std::time::Duration::from_secs(2), run).await.is_err(), "cut short");
+    std::fs::read_to_string(pid).unwrap().trim().parse().unwrap()
+}
+
+/// Whether process `pid` is gone, within a few seconds.
+#[cfg(unix)]
+async fn gone(pid: u32) -> bool {
+    for _ in 0..50 {
+        if !std::path::Path::new(&format!("/proc/{pid}")).exists()
+            && std::process::Command::new("kill").args(["-0", &pid.to_string()]).status().is_ok_and(|s| !s.success())
+        {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    false
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_tool_cut_short_never_outlives_the_wait_for_it_nor_the_apps_exit() {
+    // The runner asks a cut-short tool to stop and gives it 30 s: a process exiting meanwhile
+    // left it running.
+    let dir = std::env::temp_dir().join(format!("cyberctf-cut-short-{}", rand::random::<u32>()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let waited = cut_short_stubborn_tool(&dir.join("waited")).await;
+    let started = std::time::Instant::now();
+    super::stop_cut_short_tools(std::time::Duration::from_secs(1)).await;
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert!(gone(waited).await, "ended once the wait was over");
+    let at_exit = cut_short_stubborn_tool(&dir.join("at-exit")).await;
+    super::end_cut_short_tools();
+    assert!(gone(at_exit).await, "ended at the app's exit");
+    std::fs::remove_dir_all(dir).unwrap();
+}

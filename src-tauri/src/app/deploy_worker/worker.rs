@@ -72,11 +72,18 @@ fn start(app: &mut tauri::App<crate::AppRuntime>, job: Job) -> tauri::async_runt
     })
 }
 
+/// How long a stopped worker waits for the runner's tools it cut short to stop on their own
+/// before it ends them: within the 20 s the app's Stop gives a worker before it kills it
+/// (`process::kill_and_wait`), which would leave them running.
+#[cfg(unix)]
+const TOOLS_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// Stopped (the app's Stop sends SIGTERM to the worker's process group): the tools it runs
 /// (status probes, and the vagrant/compose/terraform runs it streams) sit in groups of their own,
 /// out of that signal's reach; end them too before going. The launcher's own are ended gently
-/// first; then the job's task is ended, which drops an Isothrum runner's operation and with it
-/// every process tree the runner started (its contract: they end when the operation is dropped).
+/// first; then the job's task is ended, which drops an Isothrum runner's operation: the runner
+/// asks the tools it started to stop (SIGINT), and they are waited for ([`TOOLS_GRACE`]), what
+/// is left ended, before the worker exits.
 #[cfg(unix)]
 fn end_tools_when_stopped(job_file: PathBuf, task: tauri::async_runtime::JoinHandle<()>) {
     tauri::async_runtime::spawn(async move {
@@ -86,6 +93,9 @@ fn end_tools_when_stopped(job_file: PathBuf, task: tauri::async_runtime::JoinHan
             task.abort();
             // Cancelled, as asked: the job's own outcome is moot.
             drop(task.await);
+            // The runner's tools it cut short are asked to stop (Terraform saves its state):
+            // waited for, within the app's patience with a stopped worker, so none outlives it.
+            crate::runtime::isothrum::stop_cut_short_tools(TOOLS_GRACE).await;
             if let Err(e) = std::fs::remove_file(&job_file)
                 && e.kind() != std::io::ErrorKind::NotFound
             {
