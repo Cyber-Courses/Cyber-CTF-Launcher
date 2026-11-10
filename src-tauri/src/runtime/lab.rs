@@ -457,7 +457,7 @@ mod tests {
         // after the target: what the player reads after "can't run there".
         let dir = lab(SPEC);
         let lab = super::lab(&dir).unwrap();
-        for target in Target::ALL.iter().filter(|t| isoloom_targets::backend(**t).is_some()) {
+        for target in &Target::ALL {
             match generate(&lab, *target, None) {
                 Ok(files) => assert!(files.iter().any(|f| f.path == isoloom_targets::resolved::PATH), "{target:?}: the snapshot goes with every target"),
                 Err(e) => assert!(e.to_string().starts_with(target.id()), "{target:?}: {e}"),
