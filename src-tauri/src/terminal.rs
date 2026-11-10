@@ -44,6 +44,18 @@ fn end(mut sess: Session) {
     });
 }
 
+/// The exit code of a shell that ended (`waited`: its reap); none when it can't be reaped, which
+/// is logged as [`end`]'s is.
+fn reaped(pid: Option<u32>, waited: std::io::Result<portable_pty::ExitStatus>) -> Option<u32> {
+    match waited {
+        Ok(status) => Some(status.exit_code()),
+        Err(e) => {
+            log::warn!("couldn't reap an attack-box shell ({pid:?}): {e}");
+            None
+        }
+    }
+}
+
 /// Kills a session's shell; one that can't be killed is logged: its `docker exec` or ssh is left
 /// running, and its terminal with it.
 fn kill_shell(child: &mut (dyn Child + Send + Sync)) {
@@ -188,7 +200,7 @@ fn follow(session: u32, mut reader: Box<dyn Read + Send>, send: impl FnMut(TermE
                 end(sess);
                 return None;
             }
-            sess.child.wait().ok().map(|st| st.exit_code())
+            reaped(sess.child.process_id(), sess.child.wait())
         });
     });
 }
@@ -207,7 +219,10 @@ fn watch_exit(session: u32, ended: std::sync::Arc<Mutex<Option<u32>>>) {
                 None => return,
                 Some(Ok(None)) => continue,
                 Some(Ok(Some(st))) => Some(st.exit_code()),
-                Some(Err(_)) => None,
+                Some(Err(e)) => {
+                    log::warn!("couldn't reap an attack-box shell (session {session}): {e}");
+                    None
+                }
             };
             *ended.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = code;
             // Dropped outside the sessions lock: closing the pseudo-console can take a moment.
@@ -647,6 +662,16 @@ mod tests {
         assert!(!with_sessions(|s| s.contains_key(&id)));
         assert!(write(&label, id, b"x").is_err());
         close(&label, id);
+    }
+
+    #[test]
+    fn a_shell_that_ends_but_cant_be_reaped_is_logged() {
+        // Regression: its reap error was dropped, as `end`'s was before.
+        crate::testing::logs::take_warnings();
+        assert_eq!(super::reaped(Some(42), Err(std::io::Error::other("no child process"))), None);
+        let warned = crate::testing::logs::take_warnings();
+        assert!(warned.iter().any(|w| w == "couldn't reap an attack-box shell (Some(42)): no child process"), "{warned:?}");
+        assert_eq!(super::reaped(Some(42), Ok(portable_pty::ExitStatus::with_exit_code(3))), Some(3));
     }
 }
 
