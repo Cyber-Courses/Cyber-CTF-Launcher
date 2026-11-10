@@ -93,6 +93,10 @@ pub(crate) enum ImportError {
     /// A file beside it couldn't be moved or written.
     #[error("a file beside it couldn't be moved ({0})")]
     Io(#[from] std::io::Error),
+    /// Its old run record is there but can't be read: handed over without it, the run would
+    /// lose the params it was applied with and when it stops itself.
+    #[error("its run record can't be read ({0})")]
+    Record(String),
 }
 
 impl ImportError {
@@ -104,6 +108,7 @@ impl ImportError {
             ImportError::NoManifest(_) => "no-manifest",
             ImportError::Runner(_) => "runner",
             ImportError::Io(_) => "io",
+            ImportError::Record(_) => "record",
         }
     }
 }
@@ -185,7 +190,7 @@ async fn import_one(runner: &Runner, base: &Path, d: &Deployment) -> Result<Outc
     }
     let manifest = manifest_of(base, d).await?;
     let takes = embedder_params(&manifest)?;
-    runner.adopt(&manifest, adoption(d, name.clone(), &takes)).await.map_err(ImportError::Runner)?;
+    runner.adopt(&manifest, adoption(d, name.clone(), &takes)?).await.map_err(ImportError::Runner)?;
     // Both folders are in the app data folder: a rename moves the file.
     let run_dir = base.join("runs").join(name.as_str());
     for carried in CARRIED.iter().filter(|f| d.state.join(f).is_file()) {
@@ -217,9 +222,10 @@ fn embedder_params(path: &Path) -> Result<BTreeSet<String>, ImportError> {
 }
 
 /// What the runner is told of deployment `d` (run `name`, its manifest taking the params
-/// `takes`): its params, its host, when it stops itself and when it was applied.
-fn adoption(d: &Deployment, name: RunName, takes: &BTreeSet<String>) -> Adoption {
-    let old = OldRecord::parse(&std::fs::read_to_string(d.state.join(RUN_FILE)).unwrap_or_default());
+/// `takes`): its params, its host, when it stops itself and when it was applied. A run record
+/// that is there but can't be read is an error: the run would lose its stop time silently.
+fn adoption(d: &Deployment, name: RunName, takes: &BTreeSet<String>) -> Result<Adoption, ImportError> {
+    let old = old_record(&d.state)?;
     let mut a = Adoption::new(name, &d.state).with_params(old.params(takes));
     if let Some(host) = recorded_host(&d.state) {
         a = a.with_host_label(host);
@@ -230,7 +236,18 @@ fn adoption(d: &Deployment, name: RunName, takes: &BTreeSet<String>) -> Adoption
     if let Ok(applied) = std::fs::metadata(d.state.join(RUN_FILE)).and_then(|m| m.modified()) {
         a = a.with_started_at(rfc3339(applied));
     }
-    if d.provider == Provider::Proxmox { a.with_slot(PROXMOX_SLOT) } else { a }
+    Ok(if d.provider == Provider::Proxmox { a.with_slot(PROXMOX_SLOT) } else { a })
+}
+
+/// The old run record beside the state in `state`; an empty one when there is none.
+fn old_record(state: &Path) -> Result<OldRecord, ImportError> {
+    let file = state.join(RUN_FILE);
+    let text = match std::fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(OldRecord::default()),
+        Err(e) => return Err(ImportError::Record(format!("{}: {e}", file.display()))),
+    };
+    OldRecord::parse(&text).ok_or_else(|| ImportError::Record(format!("{} isn't a JSON object", file.display())))
 }
 
 /// The outcome of an import of the deployment in `state`: a failure is recorded beside it (and

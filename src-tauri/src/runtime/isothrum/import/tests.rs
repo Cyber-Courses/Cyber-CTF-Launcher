@@ -188,3 +188,16 @@ async fn a_lab_generated_by_an_earlier_version_that_cant_be_generated_again_stay
     assert!(error.to_string().contains("This lab's files were made by another version of Cyber CTF"), "{error}");
     assert!(app.state("web", "aws").join("terraform.tfstate").is_file(), "left on the launcher's path");
 }
+
+#[tokio::test]
+async fn a_run_record_that_cant_be_read_fails_the_hand_over_and_says_why() {
+    // Regression: a cut-short run.json read as no record, so the run was taken with no params
+    // and no stop time, and its auto-stop was lost silently.
+    let app = AppData::new();
+    std::fs::write(app.state("web", "aws").join(RUN_FILE), r#"{"region":"eu-west-3","expires_at":41"#).unwrap();
+    let all = app.import(every_kind).await;
+    let Outcome::Failed { error, new: true } = outcome(&all, "web/aws") else { panic!("{all:?}") };
+    assert_eq!(error.kind(), "record", "{error}");
+    assert!(app.state("web", "aws").join("terraform.tfstate").is_file(), "left where it was");
+    assert!(!app.runner.runs().unwrap().iter().any(|r| r.name.as_str() == "cyberctf-web"), "not handed over");
+}

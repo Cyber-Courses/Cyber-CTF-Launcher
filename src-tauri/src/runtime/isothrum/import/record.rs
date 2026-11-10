@@ -32,7 +32,8 @@ const ENV_AS_PARAM: [(&str, &str); 10] = [
     ("GOOGLE_REGION", "GOOGLE_REGION"),
 ];
 
-/// What an old run record says, parsed once: a missing or malformed one says nothing.
+/// What an old run record says, parsed once: a missing one says nothing, and so do members of
+/// another type than the launcher wrote.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct OldRecord {
     /// The module variables it kept (strings only).
@@ -44,15 +45,17 @@ pub(crate) struct OldRecord {
 }
 
 impl OldRecord {
-    /// The record in `text` (the file's contents; empty when there is none).
-    pub(crate) fn parse(text: &str) -> OldRecord {
-        let Ok(Value::Object(mut run)) = serde_json::from_str::<Value>(text) else { return OldRecord::default() };
+    /// The record in `text` (the file's contents); none when it isn't a JSON object, which the
+    /// launcher never wrote: a record cut short or overwritten, whose params and stop time are
+    /// lost.
+    pub(crate) fn parse(text: &str) -> Option<OldRecord> {
+        let Ok(Value::Object(mut run)) = serde_json::from_str::<Value>(text) else { return None };
         let env = match run.remove(ENV) {
             Some(Value::Object(env)) => strings(env),
             _ => BTreeMap::new(),
         };
         let expires_at = run.get(EXPIRES_AT).and_then(Value::as_u64);
-        OldRecord { vars: strings(run), env, expires_at }
+        Some(OldRecord { vars: strings(run), env, expires_at })
     }
 
     /// When the deployment stops itself, in Unix seconds.
@@ -96,22 +99,23 @@ mod tests {
     fn kept_variables_become_the_params_the_manifest_takes_and_the_rest_is_dropped() {
         let r = OldRecord::parse(
             r#"{"region":"eu-west-3","allowed_cidr":"203.0.113.7/32","ssh_public_key":"ssh-ed25519 AAAA","ssh_private_key_file":"/k/id","expires_at":4102444800}"#,
-        );
+        )
+        .unwrap();
         assert_eq!(pairs(&r.params(&takes(&["region", "allowed_cidr", "AWS_PROFILE"]))), [("allowed_cidr", "203.0.113.7/32"), ("region", "eu-west-3")]);
         assert_eq!(r.expires_at(), Some(4_102_444_800));
     }
 
     #[test]
     fn the_subscription_comes_from_the_kept_environment() {
-        let r = OldRecord::parse(r#"{"region":"westeurope","env":{"ARM_SUBSCRIPTION_ID":"0000-1111"}}"#);
+        let r = OldRecord::parse(r#"{"region":"westeurope","env":{"ARM_SUBSCRIPTION_ID":"0000-1111"}}"#).unwrap();
         assert_eq!(pairs(&r.params(&takes(&["region", "subscription_id"]))), [("region", "westeurope"), ("subscription_id", "0000-1111")]);
     }
 
     #[test]
     fn the_aws_region_fills_region_only_when_no_variable_was_kept() {
-        let env_only = OldRecord::parse(r#"{"env":{"AWS_REGION":"us-east-1","AWS_DEFAULT_REGION":"us-west-2"}}"#);
+        let env_only = OldRecord::parse(r#"{"env":{"AWS_REGION":"us-east-1","AWS_DEFAULT_REGION":"us-west-2"}}"#).unwrap();
         assert_eq!(pairs(&env_only.params(&takes(&["region"]))), [("region", "us-east-1")]);
-        let both = OldRecord::parse(r#"{"region":"eu-west-3","env":{"AWS_REGION":"us-east-1"}}"#);
+        let both = OldRecord::parse(r#"{"region":"eu-west-3","env":{"AWS_REGION":"us-east-1"}}"#).unwrap();
         assert_eq!(pairs(&both.params(&takes(&["region"]))), [("region", "eu-west-3")]);
     }
 
@@ -119,31 +123,34 @@ mod tests {
     fn a_kept_region_fills_a_lab_modules_own_region_param_too() {
         // Regression: a kept AWS_REGION only ever filled `region`, never a cloud-services
         // module's own AWS_REGION param, so its adopted run had no region to destroy in.
-        let services = OldRecord::parse(r#"{"cloud_services":true,"env":{"AWS_REGION":"us-east-1"}}"#);
+        let services = OldRecord::parse(r#"{"cloud_services":true,"env":{"AWS_REGION":"us-east-1"}}"#).unwrap();
         assert_eq!(pairs(&services.params(&takes(&["region", "AWS_REGION"]))), [("AWS_REGION", "us-east-1"), ("region", "us-east-1")]);
-        let older = OldRecord::parse(r#"{"env":{"AWS_DEFAULT_REGION":"us-west-2"}}"#);
+        let older = OldRecord::parse(r#"{"env":{"AWS_DEFAULT_REGION":"us-west-2"}}"#).unwrap();
         assert_eq!(pairs(&older.params(&takes(&["AWS_REGION"]))), [("AWS_REGION", "us-west-2")]);
-        let azure = OldRecord::parse(r#"{"env":{"ARM_SUBSCRIPTION_ID":"0000-1111"}}"#);
+        let azure = OldRecord::parse(r#"{"env":{"ARM_SUBSCRIPTION_ID":"0000-1111"}}"#).unwrap();
         assert_eq!(pairs(&azure.params(&takes(&["ARM_SUBSCRIPTION_ID"]))), [("ARM_SUBSCRIPTION_ID", "0000-1111")]);
-        let gcp = OldRecord::parse(r#"{"env":{"GOOGLE_PROJECT":"labs-1","GOOGLE_REGION":"us-central1"}}"#);
+        let gcp = OldRecord::parse(r#"{"env":{"GOOGLE_PROJECT":"labs-1","GOOGLE_REGION":"us-central1"}}"#).unwrap();
         assert_eq!(pairs(&gcp.params(&takes(&["GOOGLE_PROJECT", "GOOGLE_REGION"]))), [("GOOGLE_PROJECT", "labs-1"), ("GOOGLE_REGION", "us-central1")]);
     }
 
     #[test]
     fn a_gcp_projects_kept_variable_wins_over_its_environment() {
-        let r = OldRecord::parse(r#"{"project":"labs-1","region":"europe-west1","env":{"GOOGLE_PROJECT":"other","GOOGLE_REGION":"us-central1"}}"#);
+        let r = OldRecord::parse(r#"{"project":"labs-1","region":"europe-west1","env":{"GOOGLE_PROJECT":"other","GOOGLE_REGION":"us-central1"}}"#).unwrap();
         assert_eq!(pairs(&r.params(&takes(&["project", "region"]))), [("project", "labs-1"), ("region", "europe-west1")]);
-        let services = OldRecord::parse(r#"{"cloud_services":true,"env":{"GOOGLE_PROJECT":"labs-1","GOOGLE_REGION":"us-central1"}}"#);
+        let services = OldRecord::parse(r#"{"cloud_services":true,"env":{"GOOGLE_PROJECT":"labs-1","GOOGLE_REGION":"us-central1"}}"#).unwrap();
         assert_eq!(pairs(&services.params(&takes(&["project", "region", "cloud_services"]))), [("project", "labs-1"), ("region", "us-central1")]);
     }
 
     #[test]
-    fn a_missing_or_odd_record_says_nothing() {
-        for raw in ["", "garbage", "[]", r#"{"expires_at":"1","env":"x","region":3}"#, r#"{"expires_at":-1}"#] {
-            let r = OldRecord::parse(raw);
+    fn odd_members_say_nothing_and_a_record_that_isnt_one_is_none() {
+        for raw in [r#"{"expires_at":"1","env":"x","region":3}"#, r#"{"expires_at":-1}"#] {
+            let r = OldRecord::parse(raw).unwrap();
             assert_eq!((r.params(&takes(&["region"])).len(), r.expires_at()), (0, None), "{raw}");
         }
-        let blank = OldRecord::parse(r#"{"env":{"AWS_REGION":""}}"#);
+        for raw in ["", "garbage", "[]", r#"{"expires_at":17"#] {
+            assert_eq!(OldRecord::parse(raw), None, "{raw}");
+        }
+        let blank = OldRecord::parse(r#"{"env":{"AWS_REGION":""}}"#).unwrap();
         assert!(blank.params(&takes(&["region"])).is_empty(), "an empty value is no region");
     }
 }
