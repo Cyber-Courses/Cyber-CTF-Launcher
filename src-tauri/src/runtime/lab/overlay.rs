@@ -105,10 +105,7 @@ pub(crate) fn remove_machine(dir: &Path, name: &str) -> Result<()> {
         }
     }
     if layer.as_mapping().is_none_or(Mapping::is_empty) {
-        return match std::fs::remove_file(dir.join(FILE)) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
-            _ => Ok(()),
-        };
+        return Ok(crate::platform::fs::remove_if_present(&dir.join(FILE))?);
     }
     write(dir, &layer)
 }

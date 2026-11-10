@@ -222,9 +222,7 @@ fn swap_in_with(staging: &Path, dir: &Path, rename: impl Fn(&Path, &Path) -> std
 /// Removes `path`, a staging folder or an old copy an earlier install may have left. Best effort:
 /// one that won't go is logged, and tried again by the next install.
 fn clear_leftover(path: &Path) {
-    if let Err(e) = std::fs::remove_dir_all(path)
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
+    if let Err(e) = crate::platform::fs::remove_dir_if_present(path) {
         log::warn!("couldn't remove {}: {e}", path.display());
     }
 }

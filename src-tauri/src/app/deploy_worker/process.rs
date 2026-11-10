@@ -148,7 +148,7 @@ pub fn remove_pidfile_of(path: &Path, pid: u32) {
 /// logged: it goes on naming a worker that ended, so the lab reads as busy until its pid is reused
 /// or the file goes.
 fn remove_pidfile(path: &Path) {
-    if let Err(e) = files::remove(path) {
+    if let Err(e) = crate::platform::fs::remove_if_present(path) {
         log::warn!("couldn't remove the deploy worker's pidfile {}: {e}", path.display());
     }
 }

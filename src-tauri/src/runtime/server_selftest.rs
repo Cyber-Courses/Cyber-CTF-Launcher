@@ -117,9 +117,7 @@ fn finish(work: &Path, ran: Ran) -> Result<()> {
 /// Removes the run's folder, its VM gone. One that can't be removed is logged: the next run
 /// takes it for a VM left behind and tries to remove that first.
 fn remove_work(work: &Path) {
-    if let Err(e) = std::fs::remove_dir_all(work)
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
+    if let Err(e) = crate::platform::fs::remove_dir_if_present(work) {
         log::warn!("server self-test: couldn't remove {}: {e}", work.display());
     }
 }

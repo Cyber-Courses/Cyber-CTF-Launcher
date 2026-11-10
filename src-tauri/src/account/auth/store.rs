@@ -256,10 +256,7 @@ fn clear_blocking(file: Option<&std::path::Path>) -> Result<()> {
 
 /// Removes the dev build's session file; one that isn't there is removed already.
 fn remove_file(path: &std::path::Path) -> Result<()> {
-    match std::fs::remove_file(path) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(Error::Invalid(format!("couldn't remove {}: {e}", path.display()))),
-        _ => Ok(()),
-    }
+    crate::platform::fs::remove_if_present(path).map_err(|e| Error::Invalid(format!("couldn't remove {}: {e}", path.display())))
 }
 
 /// Forgets the session, on a blocking thread.

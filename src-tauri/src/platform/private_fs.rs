@@ -23,7 +23,7 @@ pub fn write(file: &Path, contents: impl AsRef<[u8]>) -> io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     // A previous file keeps its mode when written over: start from none.
-    let _ = std::fs::remove_file(file);
+    super::fs::remove_if_present(file)?;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]

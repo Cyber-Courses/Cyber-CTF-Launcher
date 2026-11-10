@@ -222,10 +222,7 @@ pub(crate) fn remove(dir: &Path) -> Result<()> {
     if let Some(name) = overlay::attack_box(dir)? {
         overlay::remove_machine(dir, &name)?;
     }
-    match std::fs::remove_file(dir.join(SETUP_FILE)) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
-        _ => Ok(()),
-    }
+    Ok(crate::platform::fs::remove_if_present(&dir.join(SETUP_FILE))?)
 }
 
 /// The lab's status with its attack box set apart: the box has its own status and panel, and

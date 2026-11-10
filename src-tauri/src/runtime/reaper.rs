@@ -57,7 +57,10 @@ async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
     // re-notified, and a lab destroyed this time (no new record) has its record go.
     let dir = base.join(REAP_ERRORS);
     let prior = failed_last_time(&dir);
-    let _ = std::fs::remove_dir_all(&dir);
+    // Not cleared, a destroyed lab's record would go on saying it couldn't be.
+    if let Err(e) = crate::platform::fs::remove_dir_if_present(&dir) {
+        log::warn!("auto-stop: couldn't clear the last sweep's failures in {}: {e}", dir.display());
+    }
     for (run, e) in failures {
         let id = super::docker::lab_of_project(&run).unwrap_or(&run).to_string();
         let message = format!("Auto-stop couldn't destroy {id}: {e}");

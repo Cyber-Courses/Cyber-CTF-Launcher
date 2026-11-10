@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::platform::AppDirs;
+use crate::platform::fs::remove_if_present;
 
 use super::Runtime;
 use super::model::Park;
@@ -119,13 +120,10 @@ pub(crate) fn recorded_host(state: &Path) -> Option<String> {
 /// Writes `value` to `dir/name`, or removes the file for `None` (already gone is fine). A marker
 /// that can't be cleared is an error: left behind, it would send every later status, stop and
 /// check to the wrong form.
-fn set_marker(dir: &Path, name: &str, value: Option<&str>) -> Result<()> {
+pub(in crate::runtime) fn set_marker(dir: &Path, name: &str, value: Option<&str>) -> Result<()> {
     match value {
         Some(v) => std::fs::write(dir.join(name), v)?,
-        None => match std::fs::remove_file(dir.join(name)) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-            _ => {}
-        },
+        None => remove_if_present(&dir.join(name))?,
     }
     Ok(())
 }

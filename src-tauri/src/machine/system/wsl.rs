@@ -227,9 +227,7 @@ fn marked_boot(dirs: &AppDirs, name: &str) -> Option<u64> {
 /// is logged: the check would go on reading it.
 fn unmark(dirs: &AppDirs, name: &str) {
     let Some(f) = dirs.data_file(name) else { return };
-    if let Err(e) = std::fs::remove_file(&f)
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
+    if let Err(e) = crate::platform::fs::remove_if_present(&f) {
         log::warn!("couldn't remove the WSL mark {}: {e}", f.display());
     }
 }

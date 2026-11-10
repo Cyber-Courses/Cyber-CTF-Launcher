@@ -237,8 +237,10 @@ fn settle(state: &Path, imported: Result<Outcome, ImportError>) -> Outcome {
     let file = state.join(IMPORT_ERROR);
     match imported {
         Ok(outcome) => {
-            if matches!(outcome, Outcome::Imported) {
-                let _ = std::fs::remove_file(&file);
+            if matches!(outcome, Outcome::Imported)
+                && let Err(e) = crate::platform::fs::remove_if_present(&file)
+            {
+                log::warn!("couldn't clear why {} wasn't handed to the runner before: {e}", state.display());
             }
             outcome
         }

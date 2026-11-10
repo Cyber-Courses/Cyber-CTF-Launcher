@@ -1,8 +1,8 @@
-//! OS plumbing: the app's folders, running tools, files only this user can read, whole-file
-//! writes, the service endpoints, HTTP clients with limits, the PATH and the proxy a GUI launch is
-//! missing, the console's Ctrl+C on Windows, the files a Store build saved before, the
-//! administrator's policy, the pieces of a root script that checks what it downloads, and a
-//! future's panic caught where it is polled.
+//! OS plumbing: the app's folders, removing what may already be gone, running tools, files only
+//! this user can read, whole-file writes, the service endpoints, HTTP clients with limits, the
+//! PATH and the proxy a GUI launch is missing, the console's Ctrl+C on Windows, the files a Store
+//! build saved before, the administrator's policy, the pieces of a root script that checks what
+//! it downloads, and a future's panic caught where it is polled.
 
 use std::path::{Path, PathBuf};
 
@@ -13,6 +13,7 @@ pub mod config;
 pub mod console;
 pub mod env_path;
 pub mod exec;
+pub mod fs;
 pub mod http;
 pub mod keychain;
 #[cfg(any(windows, test))]

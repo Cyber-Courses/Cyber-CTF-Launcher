@@ -214,9 +214,8 @@ async fn clear_earlier_test(dir: &Path, r: &Reporter) -> Result<()> {
             return Err(e);
         }
     }
-    match std::fs::remove_dir_all(&state) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => log::warn!("removing {}: {e}", state.display()),
-        _ => {}
+    if let Err(e) = crate::platform::fs::remove_dir_if_present(&state) {
+        log::warn!("removing {}: {e}", state.display());
     }
     Ok(())
 }

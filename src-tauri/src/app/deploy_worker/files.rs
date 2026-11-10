@@ -6,6 +6,7 @@ use super::Job;
 use super::process::{Worker, alive};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
+use crate::platform::fs::remove_if_present;
 
 /// A worker's files.
 pub struct Files {
@@ -109,14 +110,6 @@ pub fn log_so_far(dirs: &AppDirs, lab_id: &str) -> Result<String> {
     }
 }
 
-/// Removes the file at `path`; one already gone is no failure.
-pub(super) fn remove(path: &Path) -> std::io::Result<()> {
-    match std::fs::remove_file(path) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        removed => removed,
-    }
-}
-
 /// Clears the verdicts an earlier run left (its status, and for an operation that brings the lab
 /// up (`launch`) its launch status), before a new run starts: the app reads any status it finds
 /// as the new run's. One that can't be removed fails the start, which would otherwise report the
@@ -124,7 +117,7 @@ pub(super) fn remove(path: &Path) -> std::io::Result<()> {
 pub(super) fn clear_verdicts(f: &Files, launch: bool) -> Result<()> {
     let launch_status = launch.then_some(&f.launch_status);
     for path in std::iter::once(&f.status).chain(launch_status) {
-        remove(path).map_err(|e| Error::Invalid(format!("the last run's verdict {} can't be removed: {e}", path.display())))?;
+        remove_if_present(path).map_err(|e| Error::Invalid(format!("the last run's verdict {} can't be removed: {e}", path.display())))?;
     }
     Ok(())
 }
@@ -132,7 +125,7 @@ pub(super) fn clear_verdicts(f: &Files, launch: bool) -> Result<()> {
 /// Removes a job file, which carries the lab's launch token: one already gone is fine, any other
 /// failure is logged (the token stays on disk).
 pub(super) fn remove_job(path: &Path) {
-    if let Err(e) = remove(path) {
+    if let Err(e) = remove_if_present(path) {
         log::warn!("couldn't remove the job file {}, which holds a launch token: {e}", path.display());
     }
 }
