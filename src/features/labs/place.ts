@@ -10,7 +10,8 @@ import type { T } from "@/lib/i18n";
 export type Place =
   /** Containers on this machine: the engine the lab runs on (null: unknown, the machine report not in). */
   | { kind: "engine"; engine: DockerEngine | null }
-  /** VMs on this machine, on `provider`; `inVm`: a container lab whose containers run in one VM here. */
+  /** VMs on this machine, on `provider`; `inVm`: a container lab whose containers run in one VM
+   *  here (not one run as one VM per machine, whose VMs are its machines, as a VM lab's are). */
   | { kind: "hypervisor"; provider: string; inVm: boolean }
   /** One of the player's servers (Proxmox, ESXi): the saved host, when it is still saved. */
   | { kind: "server"; name: string; provider: RemoteProvider | null; address: string | null }
@@ -32,7 +33,7 @@ export function placeOf(status: LabStatus | undefined, isDocker: boolean, curren
     const engine = status.provider && isEngine(status.provider) ? status.provider : currentEngine;
     return { kind: "engine", engine };
   }
-  return { kind: "hypervisor", provider: status.provider ?? "", inVm: isDocker };
+  return { kind: "hypervisor", provider: status.provider ?? "", inVm: isDocker && !status.perMachine };
 }
 
 /** The place's own name: the engine, the hypervisor, the server, the cloud. */

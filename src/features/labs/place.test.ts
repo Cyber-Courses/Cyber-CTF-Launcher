@@ -35,6 +35,10 @@ describe("where a lab runs", () => {
     const inVm = placeOf(labStatus({ running: true, place: "local_vm", provider: "utm" }), true, "docker-desktop", hosts);
     expect(inVm).toEqual({ kind: "hypervisor", provider: "utm", inVm: true });
     expect(placeText(t, must(inVm))).toBe('labs.detail.aVmHereWith:{"hypervisor":"UTM"}');
+    // A container lab run as one VM per machine: its VMs are its machines, as a VM lab's are.
+    const perMachine = placeOf(labStatus({ running: true, place: "local_vm", provider: "virtualbox", perMachine: true }), true, "docker-desktop", hosts);
+    expect(perMachine).toEqual({ kind: "hypervisor", provider: "virtualbox", inVm: false });
+    expect(placeText(t, must(perMachine))).toBe('labs.detail.thisMachineWith:{"engine":"VirtualBox"}');
     // An unnamed hypervisor: the place words alone.
     expect(placeText(t, { kind: "hypervisor", provider: "", inVm: true })).toBe("labs.detail.aVmHere");
   });
