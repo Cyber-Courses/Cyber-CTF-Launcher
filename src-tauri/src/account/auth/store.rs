@@ -95,7 +95,7 @@ fn decode(head: String, mut piece: impl FnMut(usize) -> std::result::Result<Opti
     });
     match failed {
         Some(why) => Err(why),
-        None => Ok(raw.and_then(|raw| serde_json::from_str(&raw).ok())),
+        None => Ok(raw.and_then(|raw| session_of(&raw))),
     }
 }
 
@@ -122,11 +122,23 @@ fn home_session_path() -> Option<std::path::PathBuf> {
     Some(crate::platform::home_dir()?.join(".cyberctf").join("dev-session.json"))
 }
 
+/// The session `raw` holds; none when it isn't one this version reads (a launcher update changed
+/// the session's fields, a save cut short), which signs the player out: logged, so support can
+/// tell that sign-out from one the player asked for. Only where the text stops being a session is
+/// said, never the text (it holds the tokens).
+fn session_of(raw: &str) -> Option<Session> {
+    serde_json::from_str(raw)
+        .inspect_err(|e| {
+            log::warn!("the stored session isn't one this version reads, so you're signed out: {:?} at line {}, column {}", e.classify(), e.line(), e.column());
+        })
+        .ok()
+}
+
 /// The session kept in a dev session file: none when there is no file or it doesn't parse (as a
 /// keychain entry that isn't a session), an error when it can't be read.
 fn load_file(path: &std::path::Path) -> std::result::Result<Option<Session>, String> {
     match std::fs::read_to_string(path) {
-        Ok(raw) => Ok(serde_json::from_str(&raw).ok()),
+        Ok(raw) => Ok(session_of(&raw)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("the session file {} can't be read: {e}", path.display())),
     }
@@ -339,8 +351,16 @@ mod tests {
         let back = load_file(&path).unwrap().unwrap();
         assert_eq!((back.access_token.as_str(), back.refresh_token.as_deref(), back.expires_at), ("a", Some("r"), 42));
         assert_eq!(back.name.as_deref(), Some("N"));
-        std::fs::write(&path, "not json").unwrap();
+        // Regression: a session that doesn't parse signed the player out with nothing logged.
+        std::fs::write(&path, r#"{"access_token":"secret-token","expires_at":"soon"}"#).unwrap();
+        crate::testing::logs::take_warnings();
         assert!(matches!(load_file(&path), Ok(None)));
+        let warned = crate::testing::logs::take_warnings();
+        assert!(
+            warned.len() == 1 && warned[0].starts_with("the stored session isn't one this version reads, so you're signed out: Data at line 1"),
+            "{warned:?}"
+        );
+        assert!(!warned[0].contains("secret-token") && !warned[0].contains("soon"), "never the session's text: {warned:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
