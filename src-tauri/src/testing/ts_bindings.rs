@@ -91,8 +91,28 @@ fn generate(dir: &Path) {
     write_events(dir);
     write_selftest_steps(dir);
     write_deploy_log(dir);
+    write_setup_shapes(dir);
     write_index(dir);
 }
+
+/// The file of the machines the setup's plan is tested on ([`machine::setup::shapes`]), each as
+/// the machine check reports it, with the setup options the core works out for it: the webview's
+/// tests render the setup window on them, so it is held to the core's plan (not a type: imported
+/// by its path, by tests only).
+fn write_setup_shapes(dir: &Path) {
+    let shapes = machine::setup::shapes::all();
+    let names = shapes.iter().map(|(name, _)| format!("\"{name}\"")).collect::<Vec<_>>().join(" | ");
+    let map: serde_json::Map<String, serde_json::Value> = shapes.iter().map(|(name, r)| ((*name).to_owned(), serde_json::to_value(r).unwrap())).collect();
+    let json = serde_json::to_string_pretty(&map).unwrap();
+    let doc = "/** Machines as the machine check reports them, with the setup options the core works out for each (Rust's\n *  `machine::setup::shapes`): what the setup window's tests render it on. */";
+    let text = format!(
+        "{HEADER}import type {{ SystemReport }} from \"./SystemReport\";\n\n{doc}\nexport const SETUP_SHAPES: Record<{names}, SystemReport> = {json};\n"
+    );
+    fs::write(dir.join(format!("{SETUP_SHAPES}.ts")), text).unwrap();
+}
+
+/// The generated file of the setup's machine shapes (values, not types).
+const SETUP_SHAPES: &str = "SetupShapes";
 
 /// The file of the events the core emits to the webview, by name ([`crate::app::events`]), which
 /// the webview listens by (not a type: imported by its path).
@@ -139,11 +159,16 @@ fn write_docker_engines(dir: &Path) {
         let _ = writeln!(lines, "  \"{}\": \"{}\",", e.id(), e.label());
         lines
     });
+    let urls = Engine::ALL.iter().fold(String::new(), |mut lines, e| {
+        let _ = writeln!(lines, "  \"{}\": \"{}\",", e.id(), e.url());
+        lines
+    });
     let ids = Engine::ALL.iter().map(|e| format!("\"{}\"", e.id())).collect::<Vec<_>>().join(", ");
+    let doc_urls = "/** Where the player gets each engine (Rust's `Engine::url`). */";
     let doc_all = "/** Every Docker-compatible engine the launcher knows, in its order (Rust's `Engine::ALL`). */";
     let doc_names = "/** Each engine's name as the player reads it (Rust's `Engine::label`). */";
     let text = format!(
-        "{HEADER}import type {{ DockerEngine }} from \"./DockerEngine\";\n\n{doc_all}\nexport const DOCKER_ENGINES: readonly DockerEngine[] = [{ids}];\n\n{doc_names}\nexport const DOCKER_ENGINE_NAMES: Record<DockerEngine, string> = {{\n{names}}};\n"
+        "{HEADER}import type {{ DockerEngine }} from \"./DockerEngine\";\n\n{doc_all}\nexport const DOCKER_ENGINES: readonly DockerEngine[] = [{ids}];\n\n{doc_names}\nexport const DOCKER_ENGINE_NAMES: Record<DockerEngine, string> = {{\n{names}}};\n\n{doc_urls}\nexport const DOCKER_ENGINE_URLS: Record<DockerEngine, string> = {{\n{urls}}};\n"
     );
     fs::write(dir.join(format!("{DOCKER_ENGINES}.ts")), text).unwrap();
 }
@@ -259,7 +284,16 @@ fn write_index(dir: &Path) {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
         .filter_map(|e| e.unwrap().path().file_stem().map(|s| s.to_string_lossy().into_owned()))
-        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != DOCKER_ENGINES && n != HOST_KINDS && n != EVENTS && n != SELFTEST_STEPS && n != DEPLOY_LOG)
+        .filter(|n| {
+            n != "index"
+                && n != PROVIDER_NAMES
+                && n != DOCKER_ENGINES
+                && n != HOST_KINDS
+                && n != EVENTS
+                && n != SELFTEST_STEPS
+                && n != DEPLOY_LOG
+                && n != SETUP_SHAPES
+        })
         .collect();
     names.sort();
     let lines = names.iter().fold(String::new(), |mut lines, n| {

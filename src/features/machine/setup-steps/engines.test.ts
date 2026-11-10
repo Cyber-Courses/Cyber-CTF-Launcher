@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { DOCKER_ENGINES, type SystemReport } from "@/lib/tauri";
-import { engineBadge, engineName, enginesFor, recommendedEngine } from "@/features/machine/setup-steps/engines";
+import { engineBadge, engineName, enginesFor } from "@/features/machine/setup-steps/engines";
+import { SETUP_SHAPES } from "@/lib/tauri/generated/SetupShapes";
 
 const report = (over: Partial<SystemReport> = {}) => ({ dockerEngine: null, dockerEnginesRunning: [], ...over }) as unknown as SystemReport;
 
 describe("container engines", () => {
-  it("offers each OS its engines and recommends the one with the one-click install", () => {
-    expect(enginesFor("macos").map((e) => e.id)).toEqual(["docker-desktop", "orbstack", "colima"]);
-    expect(enginesFor("windows").map((e) => e.id)).toEqual(["docker-desktop"]);
-    expect(enginesFor("linux").map((e) => e.id)).toEqual(["docker-desktop", "docker-engine", "colima"]);
-    expect(recommendedEngine("macos")).toBe("docker-desktop");
-    expect(recommendedEngine("windows")).toBe("docker-desktop");
-    expect(recommendedEngine("linux")).toBe("docker-engine");
+  it("offers the engines the core offers on the machine, in its order, each with its vendor's link", () => {
+    expect(enginesFor(SETUP_SHAPES.macReady).map((e) => e.id)).toEqual(["docker-desktop", "orbstack", "colima"]);
+    expect(enginesFor(SETUP_SHAPES.bareWindows).map((e) => e.id)).toEqual(["docker-desktop"]);
+    expect(enginesFor(SETUP_SHAPES.bareDebian).map((e) => e.id)).toEqual(["docker-desktop", "docker-engine", "colima"]);
+    expect(enginesFor(SETUP_SHAPES.bareDebian).every((e) => e.url.startsWith("https://"))).toBe(true);
   });
 
   it("badges the engine in use first, then a running one, then the recommended one", () => {

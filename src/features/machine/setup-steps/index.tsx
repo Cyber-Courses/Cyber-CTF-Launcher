@@ -17,7 +17,8 @@ import { PackageManagerStep } from "@/features/machine/setup-steps/pkgmgr-step";
 import { MachineStep, PATHS, type SetupPath, chosenHypervisor, hasHypervisor, isDockerReady } from "@/features/machine/setup-steps/steps";
 import { useVmProvider } from "@/lib/use-vm-provider";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
-import { VagrantStep, VmStep } from "@/features/machine/setup-steps/vm-steps";
+import { VmStep } from "@/features/machine/setup-steps/vm-steps";
+import { VagrantStep } from "@/features/machine/setup-steps/vagrant-step";
 import { WslStep } from "@/features/machine/setup-steps/wsl-step";
 import { useT } from "@/lib/i18n";
 

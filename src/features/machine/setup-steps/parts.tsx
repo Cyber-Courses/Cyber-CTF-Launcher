@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
 import { StatusDot } from "@/components/ui/status-pill";
@@ -9,6 +10,8 @@ import { StepCircle } from "@/features/machine/step-row";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import { useCopy } from "@/components/ui/copy-value";
 import { useT } from "@/lib/i18n";
+import { openExternal } from "@/lib/failure";
+import type { SetupAction } from "@/lib/tauri";
 
 /** One thing a step needs: done (from the machine check, never from an install's exit), or to do
  *  with its action, or failed: its last install in this flow failed, and `failed` says why. */
@@ -49,6 +52,25 @@ export function Requirement({
 }
 
 // ---------- Small parts ----------
+
+/** A tool the player installs themselves (a distribution the setup doesn't install on yet): where
+ *  to get it, when the core knows. */
+export function OwnInstall({ action, name }: { action: SetupAction | undefined; name: string }) {
+  const t = useT();
+  if (action?.kind !== "manual" || !action.url) return null;
+  const url = action.url;
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      onClick={() => {
+        openExternal(url);
+      }}
+    >
+      <ExternalLink className="size-3" /> {t("machine.vm.get", { name })}
+    </Button>
+  );
+}
 
 /** The install output of the current step, in a log well with a live timer. */
 /** The install log, when it is about one of `of` (this step's installs): a failed VirtualBox

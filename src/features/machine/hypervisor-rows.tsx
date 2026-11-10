@@ -18,7 +18,7 @@ import {
   type RowProps,
 } from "@/features/machine/lab-row-parts";
 import { getLastTest, setVmProvider } from "@/lib/settings";
-import type { ProviderStatus } from "@/lib/tauri";
+import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
 // The Machine page's hypervisors, one row per hypervisor installed here: the one VM labs run on
@@ -91,8 +91,8 @@ function RunsLabsRow({ p, state, vm, onUseServer, ...row }: Props & { p: Provide
 
 /** Where an installed hypervisor that labs don't run on stands: "needs setup" exactly when the
  *  setup steps have something to install for it (`vagrantDrives`, the rule they read too). */
-function standingOf(p: ProviderStatus): "cantRunHere" | "needsSetup" | "installed" {
-  if (cantRun(p)) return "cantRunHere";
+function standingOf(report: SystemReport, p: ProviderStatus): "cantRunHere" | "needsSetup" | "installed" {
+  if (cantRun(report, p)) return "cantRunHere";
   if (!vagrantDrives(p)) return "needsSetup";
   return "installed";
 }
@@ -102,7 +102,7 @@ function standingOf(p: ProviderStatus): "cantRunHere" | "needsSetup" | "installe
 function OtherHypervisorRow({ p, vm, onUseServer, ...row }: Props & { p: ProviderStatus }) {
   const t = useT();
   const { report, onFix } = row;
-  const standing = standingOf(p);
+  const standing = standingOf(report, p);
   const common = {
     kind: "vm" as const,
     icon: <HypervisorLogo provider={p.provider} />,

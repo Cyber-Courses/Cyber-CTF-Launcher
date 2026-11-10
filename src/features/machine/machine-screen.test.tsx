@@ -17,7 +17,7 @@ import { LOCALES, setLocalePreference } from "@/lib/i18n";
 import { getLastTest, getVmProvider, setAttackImage, setLastTest, setVmProvider, type LastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
-import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport, withNeeds } from "@/test/fixtures";
+import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport, withNeeds, withSetup } from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, renderMachineScreen } from "@/features/machine/machine-test-kit";
@@ -377,9 +377,11 @@ describe("EngineRows", () => {
 
 describe("HypervisorRows", () => {
   const base = { ...rowCallbacks(), onUseServer: vi.fn() };
-  const rows = (report: SystemReport, last: LastTest | null = null, over: Partial<typeof base> = {}) => (
-    <HypervisorRows {...base} {...over} report={report} last={last} vm={vmSetup(report, null, last)} />
-  );
+  // On the report with the setup's options the core works out for it.
+  const rows = (machine: SystemReport, last: LastTest | null = null, over: Partial<typeof base> = {}) => {
+    const report = withSetup(machine);
+    return <HypervisorRows {...base} {...over} report={report} last={last} vm={vmSetup(report, null, last)} />;
+  };
 
   it("lists every hypervisor installed, each with its own state, the one labs run on marked", () => {
     installTauri();

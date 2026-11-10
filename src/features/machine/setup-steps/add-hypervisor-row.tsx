@@ -2,11 +2,13 @@
 
 import { StepCircle } from "@/features/machine/step-row";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
-import { INSTALLABLE, providerLabel, vagrantDrives } from "@/features/machine/hypervisors";
+import { providerLabel } from "@/features/machine/hypervisors";
+import { vagrantActions } from "@/features/machine/setup-steps/plan";
 import { ProviderReady } from "@/features/machine/setup-steps/add-ready";
 import { Log } from "@/features/machine/setup-steps/parts";
 import type { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
-import { GetHypervisor, VagrantRequirements } from "@/features/machine/setup-steps/vm-steps";
+import { GetHypervisor, choiceNote } from "@/features/machine/setup-steps/vm-steps";
+import { VagrantRequirements } from "@/features/machine/setup-steps/vagrant-step";
 import { UTILITY } from "@/features/machine/setup-steps/utility-requirement";
 import { useVmProvider } from "@/lib/use-vm-provider";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
@@ -24,13 +26,13 @@ export function AddHypervisorRow({ p, report, setup }: { p: ProviderStatus; repo
         <HypervisorLogo provider={p.provider} />
         <div className="min-w-0 flex-1">
           <p className="text-[0.8125rem] font-medium text-foreground">{providerLabel(p, report.os)}</p>
-          <p className="text-[0.75rem] text-muted-foreground">{INSTALLABLE[p.provider] ? t("machine.vm.canInstall") : t("machine.vm.vendorSite")}</p>
+          <p className="text-[0.75rem] text-muted-foreground">{choiceNote(t, report, p)}</p>
         </div>
         {installed && <StepCircle state="done" />}
       </div>
       {!installed && <GetHypervisor choice={p} report={report} setup={setup} />}
       {installed && <VagrantRequirements choice={p} report={report} setup={setup} />}
-      {installed && vagrantDrives(p) && <Ready p={p} setup={setup} />}
+      {installed && vagrantActions(report, p.provider).length === 0 && <Ready p={p} setup={setup} />}
       <Log setup={setup} of={[p.provider, "vagrant", p.plugin, UTILITY]} />
     </div>
   );

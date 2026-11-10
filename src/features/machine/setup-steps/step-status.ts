@@ -1,5 +1,6 @@
 import { hasHypervisor, isDockerReady, pathSteps, wslState, type MachineStep, type SetupPath } from "@/features/machine/setup-steps/steps";
-import { cantRun, localHypervisors, vagrantDrives } from "@/features/machine/hypervisors";
+import { cantRun, localHypervisors } from "@/features/machine/hypervisors";
+import { vagrantActions } from "@/features/machine/setup-steps/plan";
 import type { LastTest } from "@/lib/settings";
 import type { Provider, SystemReport } from "@/lib/tauri";
 
@@ -26,8 +27,8 @@ const DONE: Record<MachineStep, (f: Facts) => boolean> = {
   "docker-test": ({ last }) => last.docker?.result === "ok",
   attack: () => true,
   // Installed, and able to run here (no /dev/kvm, not in the kvm group: the Health rows say why).
-  vm: ({ report, hv }) => hasHypervisor(report) && !(!!hv && cantRun(hv)),
-  vagrant: ({ report, hv }) => (hv ? vagrantDrives(hv) : report.vagrant.installed),
+  vm: ({ report, hv }) => hasHypervisor(report) && !(!!hv && cantRun(report, hv)),
+  vagrant: ({ report, hv }) => (hv ? vagrantActions(report, hv.provider).length === 0 : report.vagrant.installed),
   "vm-test": ({ last }) => last.vm?.result === "ok",
 };
 
@@ -36,7 +37,7 @@ export function stepDone(step: MachineStep, report: SystemReport, last: LastTest
   const installed = localHypervisors(report).filter((p) => p.hypervisor === true);
   // The one labs run on: Settings' choice when it can run here, else one that can run labs
   // (QEMU without KVM can, when libvirt can't), else the first installed.
-  const runs = installed.filter((p) => !cantRun(p));
+  const runs = installed.filter((p) => !cantRun(report, p));
   const hv = runs.find((p) => p.provider === preferred) ?? runs.at(0) ?? installed.at(0);
   return DONE[step]({ report, last, hv });
 }

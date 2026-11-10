@@ -5,7 +5,7 @@ import type { SystemReport } from "@/lib/tauri";
 vi.mock("@/lib/tauri", () => ({}));
 
 const { firstPending, pathProgress, stepDone } = await import("@/features/machine/setup-steps/step-status");
-const { withNeeds } = await import("@/test/fixtures");
+const { readyReport, withNeeds } = await import("@/test/fixtures");
 
 const ok = { result: "ok" as const, at: 1 };
 const fail = { result: "fail" as const, at: 1 };
@@ -15,6 +15,9 @@ const none = { docker: null, vm: null };
  *  hypervisor's `needs` as the core lists them for its Vagrant and plugins. */
 const ready = (over: Partial<SystemReport> = {}) =>
   withNeeds({
+    ...readyReport(),
+    dockerEngines: [],
+    dockerEnginesRunning: [],
     os: "linux",
     arch: "x86_64",
     docker: { installed: true, version: "27.0" },

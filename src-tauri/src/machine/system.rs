@@ -80,6 +80,9 @@ pub struct SystemReport {
     pub ready_hypervisors: Vec<providers::Provider>,
     /// Windows: whether WSL 2 is on, waits for a restart, or is missing (`None` elsewhere).
     pub wsl: Option<wsl::WslReport>,
+    /// What each choice of the guided setup takes on this machine ([`crate::machine::setup`]):
+    /// the setup window renders these, never working them out itself.
+    pub setup: crate::machine::setup::Options,
 }
 
 pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
@@ -105,7 +108,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         Err(_) => None,
     };
     let ready_hypervisors = providers::ready(&vm_providers, vagrant.installed);
-    SystemReport {
+    let mut report = SystemReport {
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
         pkg_manager: package_manager().await,
@@ -125,7 +128,12 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         ready_hypervisors,
         vm_providers,
         wsl,
-    }
+        setup: crate::machine::setup::Options::empty(),
+    };
+    // Hyper-V turned on from here starts at the next restart: until then the setup asks for it.
+    let hyperv_restart = cfg!(windows) && wsl::hyperv_on_this_boot(&dirs);
+    report.setup = crate::machine::setup::options(&report, hyperv_restart);
+    report
 }
 
 /// A tool's version, timed: a wedged daemon or a held Vagrant lock must not hang the check. A

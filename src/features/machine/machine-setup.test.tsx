@@ -7,7 +7,7 @@ import { machineSteps } from "@/features/machine/setup-steps";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 import { getLastTest, getVmProvider, setLastTest, setVmProvider } from "@/lib/settings";
-import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport, withNeeds } from "@/test/fixtures";
+import { freshDebian, freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport, withNeeds } from "@/test/fixtures";
 import { must } from "@/components/test-support";
 import { installTauri } from "@/test/tauri";
 import { button, clickEverything, flush } from "@/test/ui";
@@ -195,14 +195,14 @@ describe("MachineSetup window", () => {
     const calls = installTauri();
     const user = userEvent.setup();
     const libvirt = hv({ provider: "libvirt", hypervisor: false, available: false, plugin: "vagrant-libvirt", pluginInstalled: false });
-    const before = withNeeds({ ...freshReport("linux"), vmProviders: [libvirt] });
+    const before = withNeeds({ ...freshDebian(), vmProviders: [libvirt] });
     const { rerender } = render(<MachineSetup report={before} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "add", nonce: 1 }} />);
     await flush();
     await user.click(button(/install libvirt/i));
     await flush();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "libvirt" });
     // Installed: Vagrant and the plugin are next, nothing to test yet.
-    const installed = { ...before, vmProviders: [{ ...libvirt, hypervisor: true }] };
+    const installed = withNeeds({ ...before, vmProviders: [{ ...libvirt, hypervisor: true }] });
     rerender(<MachineSetup report={installed} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "add", nonce: 1 }} />);
     await flush();
     expect(button(/install vagrant/i)).toBeTruthy();

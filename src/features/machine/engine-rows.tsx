@@ -90,7 +90,7 @@ function CurrentEngineRow({ engine, state, ...row }: RowProps & { engine: Engine
 function OtherEngineRow({ engine, ...row }: RowProps & { engine: EngineStatus }) {
   const t = useT();
   const { report, now } = row;
-  const note = enginesFor(report.os).find((e) => e.id === engine.engine)?.note;
+  const note = enginesFor(report).find((e) => e.id === engine.engine)?.note;
   const key = testKey("docker", engine.engine);
   const useByDefault = () => {
     dockerUseEngine(engine.engine)

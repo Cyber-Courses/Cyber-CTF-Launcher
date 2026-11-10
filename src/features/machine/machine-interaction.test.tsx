@@ -12,7 +12,7 @@ import { setLocalePreference } from "@/lib/i18n";
 import { getAttackImage, getLastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
-import { freshReport, readyReport } from "@/test/fixtures";
+import { freshReport, readyReport, withSetup } from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, radioWith, renderMachineScreen } from "@/features/machine/machine-test-kit";
@@ -22,8 +22,10 @@ const disabled = (el: HTMLElement) => el.hasAttribute("disabled");
 const count = (calls: { cmd: string }[], cmd: string) => commands(calls as never).filter((c) => c === cmd).length;
 const ev = (step: string, state: SelfTestEvent["state"], detail?: string): SelfTestEvent => ({ step, label: step, state, detail: detail ?? null });
 
-/** One step body with a live setup state, the way both setup flows mount it. */
-function Step({ step, report, onRefresh = () => {} }: { step: MachineStep; report: SystemReport; onRefresh?: () => void }) {
+/** One step body with a live setup state, the way both setup flows mount it, on `machine` with
+ *  the setup's options the core works out for it. */
+function Step({ step, report: machine, onRefresh = () => {} }: { step: MachineStep; report: SystemReport; onRefresh?: () => void }) {
+  const report = withSetup(machine);
   const setup = useMachineSetup(report, onRefresh);
   return <MachineStepBody step={step} report={report} setup={setup} />;
 }

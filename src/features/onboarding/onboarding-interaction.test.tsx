@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import { setLocalePreference } from "@/lib/i18n";
 import type { SystemReport } from "@/lib/tauri";
-import { freshReport, readyReport } from "@/test/fixtures";
+import { freshReport, readyReport, withSetup } from "@/test/fixtures";
 import { commands, installTauri, rejects, rejectWith, stream, type Handler } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
@@ -394,7 +394,7 @@ describe("Onboarding: the summary and the machine check", () => {
       {
         system_check: () => {
           if (fail) rejectWith("system check timed out");
-          return { ...readyReport(), os: "windows", dockerRunning: false };
+          return withSetup({ ...readyReport(), os: "windows", dockerRunning: false });
         },
       },
       userEvent.setup({ advanceTimers: vi.advanceTimersByTime }),

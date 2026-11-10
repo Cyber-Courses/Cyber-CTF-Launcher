@@ -10,17 +10,28 @@ import { canContinue } from "@/features/machine/setup-steps/steps";
 import { firstPending } from "@/features/machine/setup-steps/step-status";
 import { must } from "@/components/test-support";
 import type { ProviderStatus, SystemReport, WslState } from "@/lib/tauri";
-import { INSTALLS_OFF, INSTALLS_OFF_NOTE, freshReport, hypervisorStatus as hv, hypervisors, readyReport, withNeeds } from "@/test/fixtures";
+import {
+  INSTALLS_OFF,
+  INSTALLS_OFF_NOTE,
+  freshDebian,
+  freshReport,
+  hypervisorStatus as hv,
+  hypervisors,
+  readyReport,
+  withNeeds,
+  withSetup,
+} from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
 import { installDockerDesktop, radioWith } from "@/features/machine/machine-test-kit";
 
 const text = () => document.body.textContent;
 
-/** One step body with a live setup state; `onSetup` sees each render's state. */
+/** One step body with a live setup state, on `machine` with the setup's options the core works
+ *  out for it; `onSetup` sees each render's state. */
 function Step({
   step,
-  report,
+  report: machine,
   onRefresh = () => {},
   onSetup,
 }: {
@@ -29,6 +40,7 @@ function Step({
   onRefresh?: () => void;
   onSetup?: (s: MachineSetupState) => void;
 }) {
+  const report = withSetup(machine);
   const setup = useMachineSetup(report, onRefresh);
   onSetup?.(setup);
   return (
@@ -121,14 +133,16 @@ describe("WSL step", () => {
 });
 
 /** Windows, with the machine check's WSL answer. */
-const windows = (state: WslState | null, reopensAfterRestart = true, virtualizationOff = false): SystemReport => ({
-  ...freshReport("windows"),
-  wsl: state ? { state, reopensAfterRestart, virtualizationOff } : null,
-});
+const windows = (state: WslState | null, reopensAfterRestart = true, virtualizationOff = false): SystemReport =>
+  withSetup({
+    ...freshReport("windows"),
+    wsl: state ? { state, reopensAfterRestart, virtualizationOff } : null,
+  });
 
-/** The setup window at its WSL step (the second, after the package manager). */
+/** The setup window at its WSL step (the second, after the package manager), on `report` with the
+ *  setup's options the core works out for it. */
 function SetupAtWsl({ report }: { report: SystemReport }) {
-  return <MachineSetup report={report} onRefresh={() => {}} onClose={() => {}} startAt={{ step: "virtualization", nonce: 1 }} />;
+  return <MachineSetup report={withSetup(report)} onRefresh={() => {}} onClose={() => {}} startAt={{ step: "virtualization", nonce: 1 }} />;
 }
 
 describe("WSL step, from the machine check", () => {
@@ -145,7 +159,7 @@ describe("WSL step, from the machine check", () => {
     // prompt and a restart for nothing) while the Machine checklist said it was done.
     for (const state of [null, "unknown", "missing"] as const) {
       installTauri();
-      const report = { ...windows(state), docker: { ...windows(state).docker, installed: true }, dockerRunning: true };
+      const report = withSetup({ ...windows(state), docker: { ...windows(state).docker, installed: true }, dockerRunning: true });
       render(<SetupAtWsl report={report} />);
       expect(screen.queryByRole("button", { name: /turn on wsl 2|restart now|done this/i })).toBeNull();
       expect(button(/^continue$/i)).toBeTruthy();
@@ -412,7 +426,7 @@ describe("engine step", () => {
   it("asks to finish another engine's install after Cyber CTF opened its installer", async () => {
     installTauri();
     const user = userEvent.setup();
-    render(<Step step="docker" report={freshReport("linux")} />);
+    render(<Step step="docker" report={freshDebian()} />);
     await user.click(button(/install docker engine/i));
     await flush();
     expect(text()).toContain("Finish installing Docker Engine, start it, then press Re-check.");
@@ -457,7 +471,7 @@ describe("VM step", () => {
   it("installs a hypervisor Cyber CTF can install", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
-    render(<Step step="vm" report={{ ...freshReport("linux") }} />);
+    render(<Step step="vm" report={freshReport("macos")} />);
     await user.click(radioWith("UTM"));
     expect(text()).toContain("Cyber CTF can install UTM for you.");
     await user.click(radioWith("VirtualBox"));
@@ -764,7 +778,7 @@ describe("one jewel per view", () => {
 
   it("a VM step with no hypervisor offers Skip for now as ghost glass, its Install as the jewel", async () => {
     installTauri();
-    render(<MachineSetup report={freshReport("linux")} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "vm", nonce: 1 }} />);
+    render(<MachineSetup report={freshDebian()} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "vm", nonce: 1 }} />);
     await flush();
     expect(button(/skip for now/i).className).toContain("btn-glass");
     expect(jewels()).toHaveLength(1);
@@ -781,14 +795,14 @@ describe("one jewel per view", () => {
   it("the Vagrant step has one jewel: Vagrant first, its plugin only once Vagrant is in", async () => {
     installTauri();
     const libvirt = hv({ provider: "libvirt", plugin: "vagrant-libvirt", pluginInstalled: false });
-    const report = { ...freshReport("linux"), vmProviders: [libvirt] };
+    const report = withNeeds({ ...freshDebian(), vmProviders: [libvirt] });
     const r = render(<MachineSetup report={report} onRefresh={vi.fn()} onClose={vi.fn()} startAt={{ step: "vagrant", nonce: 1 }} />);
     await flush();
     expect(jewels().map((b) => b.textContent)).toEqual(["Install Vagrant"]);
     r.unmount();
     render(
       <MachineSetup
-        report={{ ...report, vagrant: { installed: true, version: "2.4.3" } }}
+        report={withNeeds({ ...report, vagrant: { installed: true, version: "2.4.3" } })}
         onRefresh={vi.fn()}
         onClose={vi.fn()}
         startAt={{ step: "vagrant", nonce: 1 }}

@@ -7,8 +7,9 @@ import { argText } from "@/lib/dev-mock/command";
 import { apiQuery, labCommands } from "@/lib/dev-mock/labs";
 import type { Args, Handler, Handlers } from "@/lib/dev-mock/types";
 import { openWindow } from "@/lib/dev-mock/windows";
+import { withSetup } from "@/lib/dev-mock/setup-options";
 
-export const report: SystemReport = {
+export const report: SystemReport = withSetup({
   os: "macos",
   arch: "arm64",
   pkgManager: { name: "brew", installed: true, version: "4.4.0" },
@@ -64,7 +65,7 @@ export const report: SystemReport = {
     { provider: "proxmox", remote: true, available: true, hypervisor: null, plugin: null, pluginInstalled: true, utility: null, needs: [], reason: null },
   ],
   wsl: null,
-};
+});
 
 /** A saved server or cloud account: the fields only some providers use left empty. */
 const savedHost = (h: Pick<ServerHost, "id" | "name" | "provider" | "host" | "port" | "username"> & Partial<ServerHost>): ServerHost => ({

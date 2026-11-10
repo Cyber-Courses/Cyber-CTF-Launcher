@@ -280,7 +280,8 @@
       "setUpEngine": "Configurez un moteur de conteneurs pour les exécuter.",
       "notTested": "Non testés.",
       "installHypervisor": "Installez un hyperviseur pour les exécuter."
-    }
+    },
+    "distribution": "Cette distribution n'est pas encore prise en charge par la configuration guidée : installez {name} vous-même, puis revérifiez."
   },
   "engine": {
     "notes": {
@@ -340,7 +341,10 @@
     "utilityInstall": "Installer",
     "utilityRestart": "Réinstaller",
     "utilityLog": "Installation de Vagrant VMware Utility…",
-    "installFailed": "L'installation a échoué : {why}"
+    "installFailed": "L'installation a échoué : {why}",
+    "installYourself": "Installez-le vous-même.",
+    "restartToFinish": "{name} est activé. Redémarrez Windows pour terminer l'activation.",
+    "restartReason": "Cyber CTF : redémarrage pour terminer l'activation de {name}."
   },
   "attack": {
     "download": "{size} à télécharger",

@@ -13,3 +13,13 @@ export const DOCKER_ENGINE_NAMES: Record<DockerEngine, string> = {
   "podman": "Podman",
   "docker-engine": "Docker Engine",
 };
+
+/** Where the player gets each engine (Rust's `Engine::url`). */
+export const DOCKER_ENGINE_URLS: Record<DockerEngine, string> = {
+  "docker-desktop": "https://www.docker.com/products/docker-desktop/",
+  "orbstack": "https://orbstack.dev/",
+  "colima": "https://github.com/abiosoft/colima",
+  "rancher-desktop": "https://rancherdesktop.io/",
+  "podman": "https://podman.io/",
+  "docker-engine": "https://docs.docker.com/engine/install/",
+};

@@ -14,7 +14,7 @@ import {
   vmSetup,
 } from "@/features/machine/machine-status";
 import { localHypervisors } from "@/features/machine/hypervisors";
-import { hypervisorStatus, hypervisors, withNeeds } from "@/test/fixtures";
+import { hypervisorStatus, hypervisors, readyReport, withNeeds } from "@/test/fixtures";
 
 // Decimal, as the Machine page shows sizes.
 const GB = 1e9;
@@ -31,9 +31,11 @@ const metrics = (patch: Partial<MachineMetrics> = {}): MachineMetrics => ({
 });
 const tool = (installed: boolean, version: string | null = null) => ({ installed, version });
 const hv = (patch: Partial<ProviderStatus>): ProviderStatus => hypervisorStatus({ available: false, pluginInstalled: false, ...patch });
-// Each hypervisor's `needs` as the core lists them for this report's Vagrant and plugins.
+// Each hypervisor's `needs` as the core lists them for this report's Vagrant and plugins, and the
+// setup's options as the core works them out.
 const report = (patch: Partial<SystemReport> = {}) =>
   withNeeds({
+    ...readyReport(),
     os: "linux",
     arch: "x86_64",
     docker: tool(true, "Docker version 29.5.3, build d1c06ef"),
@@ -42,7 +44,7 @@ const report = (patch: Partial<SystemReport> = {}) =>
     vagrant: tool(true, "Vagrant 2.4.1"),
     ...patch,
     ...hypervisors(patch.vmProviders ?? []),
-  } as SystemReport);
+  });
 
 describe("usage", () => {
   it("turns used/total into percentages, 0 when the total is unknown", () => {

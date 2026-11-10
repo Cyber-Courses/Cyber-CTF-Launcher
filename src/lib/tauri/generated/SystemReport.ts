@@ -7,6 +7,7 @@ import type { OvftoolLocation } from "./OvftoolLocation";
 import type { PkgManager } from "./PkgManager";
 import type { Provider } from "./Provider";
 import type { ProviderStatus } from "./ProviderStatus";
+import type { SetupOptions } from "./SetupOptions";
 import type { Tool } from "./Tool";
 import type { WslReport } from "./WslReport";
 
@@ -64,4 +65,9 @@ readyHypervisors: Array<Provider>,
 /**
  * Windows: whether WSL 2 is on, waits for a restart, or is missing (`None` elsewhere).
  */
-wsl: WslReport | null, };
+wsl: WslReport | null, 
+/**
+ * What each choice of the guided setup takes on this machine ([`crate::machine::setup`]):
+ * the setup window renders these, never working them out itself.
+ */
+setup: SetupOptions, };

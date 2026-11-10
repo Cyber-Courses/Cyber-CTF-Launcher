@@ -20,7 +20,7 @@ const OS_NAMES: Partial<Record<string, string>> = { windows: "Windows", macos: "
  *  Read once, so a provider installed from here stays listed with its test and "Use by default". */
 function candidates(report: SystemReport): { engines: DockerEngine[]; hypervisors: Provider[] } {
   return {
-    engines: enginesFor(report.os)
+    engines: enginesFor(report)
       .filter((e) => !report.dockerEngines.some((found) => found.engine === e.id))
       .map((e) => e.id),
     hypervisors: localHypervisors(report)
@@ -37,7 +37,7 @@ export function AddProvider({ report, onRefresh, onClose }: { report: SystemRepo
   const setup = useMachineSetup(report, onRefresh);
   const [list] = useState(() => candidates(report));
   const os = OS_NAMES[report.os] ?? "Linux";
-  const engines = list.engines.map((id) => enginesFor(report.os).find((e) => e.id === id)).filter((e): e is Engine => !!e);
+  const engines = list.engines.map((id) => enginesFor(report).find((e) => e.id === id)).filter((e): e is Engine => !!e);
   const hypervisors = list.hypervisors.map((id) => localHypervisors(report).find((p) => p.provider === id)).filter((p) => !!p);
   const nothing = engines.length === 0 && hypervisors.length === 0;
   return (

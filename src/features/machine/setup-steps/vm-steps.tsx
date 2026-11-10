@@ -1,22 +1,27 @@
 "use client";
 
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { StatusDot } from "@/components/ui/status-pill";
 import { type ProviderStatus, type SystemReport } from "@/lib/tauri";
-import { UTILITY, UtilityRequirement } from "@/features/machine/setup-steps/utility-requirement";
-import { cantRun, DOWNLOAD, INSTALLABLE, providerLabel, localHypervisors } from "@/features/machine/hypervisors";
-import { BusyLabel, Log, Requirement } from "@/features/machine/setup-steps/parts";
+import { cantRun, providerLabel, localHypervisors } from "@/features/machine/hypervisors";
+import { BusyLabel, Log } from "@/features/machine/setup-steps/parts";
+import { getActions } from "@/features/machine/setup-steps/plan";
 import { Choice, ChoiceAction, ChoiceGrid } from "@/components/ui/choice-card";
 import { chosenHypervisor } from "@/features/machine/setup-steps/steps";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import { HypervisorLogo } from "@/features/machine/hypervisor-logo";
 import { openExternal } from "@/lib/failure";
+import { confirmDestructive } from "@/lib/confirm";
 import { useT, type T } from "@/lib/i18n";
 
-/** A hypervisor's card note: installed (able to run here or not), installable here, or the vendor's. */
-function choiceNote(t: T, p: ProviderStatus) {
-  if (p.hypervisor === true) return cantRun(p) ? t("machine.vm.cantRunHere") : t("machine.vm.installedHere");
-  return INSTALLABLE[p.provider] ? t("machine.vm.canInstall") : t("machine.vm.vendorSite");
+/** A hypervisor's card note: installed (able to run here or not), else what the core's plan says
+ *  gets it: the setup (installed for you), the player (this distribution), or its vendor. */
+export function choiceNote(t: T, report: SystemReport, p: ProviderStatus) {
+  if (p.hypervisor === true) return cantRun(report, p) ? t("machine.vm.cantRunHere") : t("machine.vm.installedHere");
+  const get = getActions(report, p.provider).at(0);
+  if (get?.kind === "manual") return get.reason === "distribution" ? t("machine.vm.installYourself") : t("machine.vm.vendorSite");
+  return t("machine.vm.canInstall");
 }
 
 export function VmStep({ report, setup }: { report: SystemReport; setup: MachineSetupState }) {
@@ -37,13 +42,13 @@ export function VmStep({ report, setup }: { report: SystemReport; setup: Machine
             }}
             mark={<HypervisorLogo provider={p.provider} />}
             title={providerLabel(p, report.os)}
-            note={choiceNote(t, p)}
+            note={choiceNote(t, report, p)}
             badge={p.hypervisor === true ? "installed" : undefined}
           />
         ))}
       </ChoiceGrid>
       {/* Installed but unable to run (no /dev/kvm, not in the kvm group): why, as the Machine page says. */}
-      {cantRun(choice) && choice.reason && (
+      {cantRun(report, choice) && choice.reason && (
         <ChoiceAction>
           <span className="text-[0.8125rem] text-muted-foreground">
             {choice.reason.charAt(0).toUpperCase()}
@@ -59,13 +64,16 @@ export function VmStep({ report, setup }: { report: SystemReport; setup: Machine
   );
 }
 
-/** A hypervisor not installed: its one-click install, or a link to its vendor and a re-check. */
+/** A hypervisor not installed, as the core's plan gets it: its one-click install, the restart
+ *  that finishes turning it on (Hyper-V), or a link (its vendor's, or its own install on a
+ *  distribution the setup doesn't install on yet) and a re-check. */
 export function GetHypervisor({ choice, report, setup }: { choice: ProviderStatus; report: SystemReport; setup: MachineSetupState }) {
   const t = useT();
   const label = providerLabel(choice, report.os);
-  const dependency = INSTALLABLE[choice.provider];
-  const download = DOWNLOAD[choice.provider];
-  if (dependency)
+  const get = getActions(report, choice.provider).at(0);
+  if (get?.kind === "restart") return <RestartToFinish name={label} reopens={report.wsl?.reopensAfterRestart ?? false} setup={setup} />;
+  if (get?.kind === "install") {
+    const dependency = get.dependency;
     return (
       <ChoiceAction>
         <span className="text-[0.8125rem] text-muted-foreground">{t("machine.vm.canInstallNamed", { name: label })}</span>
@@ -83,9 +91,14 @@ export function GetHypervisor({ choice, report, setup }: { choice: ProviderStatu
         </Button>
       </ChoiceAction>
     );
+  }
+  if (get?.kind !== "manual") return null;
+  const download = get.url;
   return (
     <ChoiceAction>
-      <span className="text-[0.8125rem] text-muted-foreground">{t("machine.vm.installThenRecheck", { name: label })}</span>
+      <span className="text-[0.8125rem] text-muted-foreground">
+        {get.reason === "distribution" ? t("machine.body.distribution", { name: label }) : t("machine.vm.installThenRecheck", { name: label })}
+      </span>
       <span className="flex shrink-0 gap-2">
         {download && (
           <Button
@@ -112,80 +125,29 @@ export function GetHypervisor({ choice, report, setup }: { choice: ProviderStatu
   );
 }
 
-export function VagrantStep({ report, setup }: { report: SystemReport; setup: MachineSetupState }) {
+/** Hyper-V turned on by the setup: Windows restarts to finish, once the player confirms in the
+ *  system's own dialog (open apps close without saving), as WSL 2's restart does. */
+function RestartToFinish({ name, reopens, setup }: { name: string; reopens: boolean; setup: MachineSetupState }) {
   const t = useT();
-  const choice = chosenHypervisor(report, setup);
-  if (!choice) {
-    return <p className="text-[0.8125rem] text-muted-foreground">{t("machine.vm.vagrantNothing")}</p>;
-  }
+  const ask = () => {
+    void confirmDestructive({
+      title: t("machine.body.wsl.confirmTitle"),
+      message: `${t("machine.body.wsl.confirmBody")} ${reopens ? t("machine.body.wsl.reopens") : t("machine.body.wsl.reopenByHand")}`,
+      confirm: t("machine.body.wsl.restartNow"),
+    }).then((yes) => {
+      if (yes) setup.restart(t("machine.vm.restartReason", { name }));
+    });
+  };
   return (
-    <div className="space-y-3">
-      {/* For the hypervisor picked on the previous step. */}
-      <VagrantRequirements choice={choice} report={report} setup={setup} />
-      <Log setup={setup} of={["vagrant", choice.plugin, UTILITY]} />
+    <div
+      role="status"
+      className="flex items-center gap-3 rounded-control bg-glass px-4 py-3 text-[0.8125rem] text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
+    >
+      <StatusDot tone="warn" />
+      <span className="min-w-0 flex-1">{setup.restarting ? t("machine.body.wsl.restarting") : t("machine.vm.restartToFinish", { name })}</span>
+      <Button variant="primary" size="sm" className="shrink-0" disabled={setup.busy || setup.restarting} onClick={ask}>
+        <RotateCcw className="size-3.5" /> {t("machine.body.wsl.restartNow")}
+      </Button>
     </div>
-  );
-}
-
-/** What Vagrant needs to drive `choice`: Vagrant itself, the hypervisor's plugin, and (VMware)
- *  HashiCorp's utility; each with its install, the first missing one the jewel. The rows are the
- *  backend's `needs` (what its readiness reads), so once each is done the hypervisor is ready. */
-export function VagrantRequirements({ choice, report, setup }: { choice: ProviderStatus; report: SystemReport; setup: MachineSetupState }) {
-  const t = useT();
-  return (
-    <>
-      <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
-        <Requirement
-          ok={report.vagrant.installed}
-          title="Vagrant"
-          detail={report.vagrant.installed ? (report.vagrant.version ?? t("machine.body.installed")) : t("machine.vm.vagrantDetail")}
-          failed={setup.failure("vagrant")}
-          action={
-            // The first thing missing is the jewel: Vagrant, then its plugin (one per view).
-            <Button
-              variant="primary"
-              size="xs"
-              onClick={() => {
-                setup.install("vagrant", "vagrant", t("machine.vm.installVagrantLog"));
-              }}
-              disabled={!setup.canInstall}
-            >
-              <BusyLabel busy={setup.installing === "vagrant"} label={t("machine.vm.installing")} spinner="size-3">
-                {t("machine.vm.installVagrant")}
-              </BusyLabel>
-            </Button>
-          }
-        />
-        {choice.plugin && <PluginRequirement plugin={choice.plugin} choice={choice} report={report} setup={setup} />}
-        {choice.utility && <UtilityRequirement utility={choice.utility} choice={choice} setup={setup} />}
-      </div>
-    </>
-  );
-}
-
-/** The Vagrant plugin that drives the chosen hypervisor: installed once Vagrant is. */
-function PluginRequirement({ plugin, choice, report, setup }: { plugin: string; choice: ProviderStatus; report: SystemReport; setup: MachineSetupState }) {
-  const t = useT();
-  return (
-    <Requirement
-      ok={choice.pluginInstalled}
-      title={t("machine.vm.pluginTitle", { name: providerLabel(choice, report.os) })}
-      detail={choice.pluginInstalled || report.vagrant.installed ? plugin : t("machine.vm.pluginLater", { plugin })}
-      failed={setup.failure(plugin)}
-      action={
-        <Button
-          variant={report.vagrant.installed ? "primary" : "outline"}
-          size="xs"
-          onClick={() => {
-            setup.installPlugin(plugin);
-          }}
-          disabled={!setup.canInstall || !report.vagrant.installed}
-        >
-          <BusyLabel busy={setup.installing === plugin} label={t("machine.vm.installing")} spinner="size-3">
-            {t("machine.vm.installPlugin")}
-          </BusyLabel>
-        </Button>
-      }
-    />
   );
 }

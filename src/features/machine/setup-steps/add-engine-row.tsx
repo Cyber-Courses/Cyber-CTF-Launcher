@@ -5,9 +5,8 @@ import { StepCircle } from "@/features/machine/step-row";
 import { EngineLogo } from "@/features/machine/engine-logo";
 import { EngineAction, EngineHints } from "@/features/machine/setup-steps/engine-action";
 import { ProviderReady } from "@/features/machine/setup-steps/add-ready";
-import { engineName, enginesFor, recommendedEngine, type Engine } from "@/features/machine/setup-steps/engines";
+import { engineName, enginesFor, type Engine } from "@/features/machine/setup-steps/engines";
 import { Log } from "@/features/machine/setup-steps/parts";
-import { isDockerReady } from "@/features/machine/setup-steps/steps";
 import { useEngineActions } from "@/features/machine/setup-steps/use-engine-actions";
 import type { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import type { SystemReport } from "@/lib/tauri";
@@ -34,15 +33,7 @@ export function AddEngineRow({ engine, report, setup }: { engine: Engine; report
       ) : (
         <>
           <ChoiceAction>
-            <EngineAction
-              report={report}
-              setup={setup}
-              choice={engine}
-              engines={enginesFor(report.os)}
-              recommended={recommendedEngine(report.os)}
-              actions={actions}
-              ready={isDockerReady(report)}
-            />
+            <EngineAction report={report} setup={setup} choice={engine} engines={enginesFor(report)} actions={actions} />
           </ChoiceAction>
           {setup.installerOpened && <EngineHints report={report} choice={engine} installerOpened />}
         </>

@@ -52,8 +52,8 @@ export type VmState = "notApplicable" | "ready" | "testFailed" | "blocked" | "va
 
 /** A hypervisor with everything Vagrant needs in place that still can't run (no /dev/kvm, not in
  *  the kvm group): its own reason, since installing Vagrant again wouldn't help. */
-function blockedReasonOf(hypervisors: ProviderStatus[]): string | null {
-  const reason = hypervisors.find(cantRun)?.reason;
+function blockedReasonOf(report: SystemReport, hypervisors: ProviderStatus[]): string | null {
+  const reason = hypervisors.find((p) => cantRun(report, p))?.reason;
   return reason ? `${reason.charAt(0).toUpperCase()}${reason.slice(1)}.` : null;
 }
 
@@ -82,7 +82,7 @@ export function vmSetup(report: SystemReport, preferred: string | null, last: La
   const readyList: ProviderStatus[] = report.vmProviders.filter((p) => report.readyHypervisors.includes(p.provider));
   const provider = readyList.find((p) => p.provider === preferred) ?? readyList.at(0) ?? null;
   const hasHypervisor = hypervisors.some((p) => p.hypervisor === true);
-  const blockedReason = blockedReasonOf(hypervisors);
+  const blockedReason = blockedReasonOf(report, hypervisors);
   const state = vmStateOf({ count: hypervisors.length, provider, blockedReason, hasHypervisor, last });
   // Several ready and no preference: the first one is picked automatically.
   const automatic = readyList.length > 1 && !preferred;

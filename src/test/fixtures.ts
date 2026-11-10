@@ -1,4 +1,5 @@
 import { answer } from "@/lib/dev-mock";
+import { withSetup } from "@/lib/dev-mock/setup-options";
 import type { Need, ProviderStatus, SystemReport } from "@/lib/tauri";
 
 const missing = { installed: false, version: null };
@@ -30,16 +31,16 @@ const noHypervisors = (r: SystemReport): Pick<SystemReport, "readyHypervisors" |
  *  run?" choice (no VM-here option, which any ready hypervisor would offer). */
 export function dockerOnlyReport(): SystemReport {
   const r = readyReport();
-  return {
+  return withNeeds({
     ...r,
     ...noHypervisors(r),
-  };
+  });
 }
 
 /** A fresh machine: nothing installed yet. */
 export function freshReport(os = "macos"): SystemReport {
   const r = readyReport();
-  return {
+  return withNeeds({
     ...r,
     os,
     arch: "x86_64",
@@ -55,12 +56,17 @@ export function freshReport(os = "macos"): SystemReport {
     ovftool: missing,
     cloudClis: { aws: missing, azure: missing, gcloud: missing },
     ...noHypervisors(r),
-  };
+  });
 }
+
+/** A fresh Debian: nothing installed yet but apt, which the setup installs through (a Linux
+ *  without it is one the guided setup doesn't install on yet: `freshReport("linux")`). */
+export const freshDebian = (): SystemReport =>
+  withSetup({ ...freshReport("linux"), pkgManager: { name: "apt", installed: true, version: "apt 2.9.8 (amd64)" } });
 
 /** Docker installed but its engine stopped; Linux user not in the docker group. */
 export function stoppedDockerReport(): SystemReport {
-  return {
+  return withSetup({
     ...readyReport(),
     os: "linux",
     dockerRunning: false,
@@ -74,7 +80,7 @@ export function stoppedDockerReport(): SystemReport {
       args: { user: "player" },
       message: "Docker is running, but your account can't use it yet (sudo usermod -aG docker player)",
     },
-  };
+  });
 }
 
 /** A local hypervisor as the machine check reports it: VirtualBox, installed and able to run labs,
@@ -108,8 +114,13 @@ function needsOf(vagrant: boolean, p: Pick<ProviderStatus, "plugin" | "pluginIns
 /** `report` with each hypervisor's `needs` as the core would list them for its Vagrant (for a test
  *  that changes the report's Vagrant or a plugin by hand). */
 export function withNeeds(report: SystemReport): SystemReport {
-  return { ...report, vmProviders: report.vmProviders.map((p) => ({ ...p, needs: p.remote ? p.needs : needsOf(report.vagrant.installed, p) })) };
+  return withSetup({ ...report, vmProviders: report.vmProviders.map((p) => ({ ...p, needs: p.remote ? p.needs : needsOf(report.vagrant.installed, p) })) });
 }
+
+/** `report` with its setup options as the core would work them out for it (Rust's
+ *  `machine::setup::options`, through the preview's stand-in, held to the core's by its test):
+ *  for a test that changes the report by hand. */
+export { withSetup };
 
 /** The `managed_settings` answer of a computer whose policy turns one-click tool installs off. */
 export const INSTALLS_OFF = { managed_settings: () => ({ policy: ["DisableToolInstalls"], updates: "inApp" }) };

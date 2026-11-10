@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SystemReport } from "@/lib/tauri";
 import type { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 import type { MessageKey, Vars } from "@/lib/i18n";
-import { hypervisorStatus, withNeeds } from "@/test/fixtures";
+import { hypervisorStatus, readyReport, withNeeds } from "@/test/fixtures";
 
 // steps.ts pulls icons and the setup hook's module only for types; no Tauri runtime needed.
 vi.mock("@/lib/tauri", () => ({}));
@@ -10,9 +10,13 @@ vi.mock("@/lib/tauri", () => ({}));
 const { canContinue, chosenEngine, chosenHypervisor, machineSteps, nextLabel, nextVariant, pathOf, pathSteps, stepMeta, wslState } =
   await import("@/features/machine/setup-steps/steps");
 
-// Each hypervisor's `needs` as the core lists them for this report's Vagrant and plugins.
+// Each hypervisor's `needs` as the core lists them for this report's Vagrant and plugins, and the
+// setup's options as the core works them out.
 const report = (over: Partial<SystemReport> = {}) =>
   withNeeds({
+    ...readyReport(),
+    dockerEngines: [],
+    dockerEnginesRunning: [],
     os: "linux",
     arch: "x86_64",
     docker: { installed: true },
@@ -168,9 +172,9 @@ describe("machine steps: per OS", () => {
 
 describe("step words and picks", () => {
   it("the Windows virtualization step says Done; VM steps say Skip without a hypervisor and Continue with one", () => {
-    expect(nextLabel("virtualization", bareReport({ dockerRunning: false }), t)).toBe("machine.steps.next.done");
-    // Docker running proves WSL 2 works (#224): nothing to confirm.
-    expect(nextLabel("virtualization", bareReport({ dockerRunning: true }), t)).toBe("machine.steps.next.continue");
+    expect(nextLabel("virtualization", bareReport({ os: "windows", dockerRunning: false }), t)).toBe("machine.steps.next.done");
+    // Docker running proves WSL 2 works (#224): nothing to confirm (the core's plan has nothing left for it).
+    expect(nextLabel("virtualization", bareReport({ os: "windows", dockerRunning: true }), t)).toBe("machine.steps.next.continue");
     for (const step of ["vm", "vagrant", "vm-test"] as const)
       expect(nextLabel(step, bareReport({ vmProviders: [hv({})] }), t), step).toBe("machine.steps.next.skip");
     const ready = bareReport({ vmProviders: [hv({ hypervisor: true })] });

@@ -1,8 +1,9 @@
 import { Container, Cpu, Crosshair, FlaskConical, Package, Server, type LucideIcon } from "lucide-react";
 import { type SystemReport, type WslState } from "@/lib/tauri";
 import { translate, type MessageKey, type Vars } from "@/lib/i18n";
-import { cantRun, INSTALLABLE, localHypervisors, vagrantDrives } from "@/features/machine/hypervisors";
-import { ENGINES, Engine } from "@/features/machine/setup-steps/engines";
+import { localHypervisors } from "@/features/machine/hypervisors";
+import { ENGINES, Engine, enginesFor } from "@/features/machine/setup-steps/engines";
+import { engineActions, vagrantActions } from "@/features/machine/setup-steps/plan";
 import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
 
 export type MachineStep = "pkgmgr" | "virtualization" | "docker" | "docker-test" | "attack" | "vm" | "vagrant" | "vm-test";
@@ -46,13 +47,13 @@ export function pathOf(step: string): SetupPath | null {
 
 export const isDockerReady = (r: SystemReport | null) => !!r && r.docker.installed && r.dockerRunning;
 
-/** Where WSL 2 stands (Windows): the machine check's answer, and a restart pending once
- *  "Turn on WSL 2" finished in this flow. A running Docker engine is proof enough whatever the
- *  check could tell (#224): onboarding and the Machine checklist both read it from here, so they
- *  never disagree, and a working machine is never offered an install and a restart it doesn't need. */
+/** Where WSL 2 stands (Windows): ready once the core's plan has nothing left for it (a running
+ *  Docker engine is proof enough whatever the check could tell, #224: the plan says so, and
+ *  onboarding and the Machine checklist both read it from here, so they never disagree), else the
+ *  machine check's answer, and a restart pending once "Turn on WSL 2" finished in this flow. */
 export function wslState(report: SystemReport | null, setup?: Pick<MachineSetupState, "wslTurnedOn">): WslState {
   const state = report?.wsl?.state ?? "unknown";
-  if (state !== "ready" && isDockerReady(report)) return "ready";
+  if (report?.os === "windows" && report.setup.wsl.length === 0) return "ready";
   return state !== "ready" && setup?.wslTurnedOn ? "needsReboot" : state;
 }
 export const hasHypervisor = (r: SystemReport | null) => !!r && localHypervisors(r).some((p) => p.hypervisor === true);
@@ -157,31 +158,26 @@ export function nextVariant(step: MachineStep, report: SystemReport | null, setu
   return step === "vagrant" && report && !vagrantReady(report, setup) ? "secondary" : "primary";
 }
 
-/** The engine the player picked, else the one in use (it can be reported after the step
- *  first shows), else the recommended one for this OS. */
+/** The engine the player picked, else the core's (the one in use, else the recommended one):
+ *  one the core offers on this machine, else its first. */
 export function chosenEngine(report: SystemReport, setup: MachineSetupState): Engine {
-  const engines = ENGINES.filter((e) => e.os.includes(report.os));
-  const recommended = report.os === "macos" || report.os === "windows" ? "docker-desktop" : "docker-engine";
-  return engines.find((e) => e.id === (setup.engine ?? report.dockerEngine ?? recommended)) ?? engines[0];
+  const engines = enginesFor(report);
+  return engines.find((e) => e.id === (setup.engine ?? report.setup.engine)) ?? engines[0];
 }
 
-/** The hypervisor the player picked, else an installed one, else the first Cyber CTF can install. */
+/** The hypervisor the player picked, else the core's (an installed one that can run labs, else an
+ *  installed one, else the first it installs). */
 export function chosenHypervisor(report: SystemReport, setup: MachineSetupState) {
   const hypervisors = localHypervisors(report);
-  // An installed one that can run labs first (QEMU without KVM can, when libvirt can't).
-  const fallback =
-    hypervisors.find((p) => p.hypervisor === true && !cantRun(p)) ??
-    hypervisors.find((p) => p.hypervisor === true) ??
-    hypervisors.find((p) => INSTALLABLE[p.provider] !== undefined) ??
-    hypervisors.at(0);
+  const fallback = hypervisors.find((p) => p.provider === report.setup.hypervisor) ?? hypervisors.at(0);
   return hypervisors.find((p) => p.provider === (setup.hypervisor ?? fallback?.provider)) ?? fallback;
 }
 
 /** Everything Vagrant needs to drive the chosen hypervisor is in (Vagrant, its plugin, VMware's
- *  utility): [`vagrantDrives`], or just Vagrant when there is none to drive. */
+ *  utility): the core's plan has nothing left for it, or just Vagrant when there is none to drive. */
 function vagrantReady(report: SystemReport, setup: MachineSetupState): boolean {
   const choice = chosenHypervisor(report, setup);
-  return choice ? vagrantDrives(choice) : report.vagrant.installed;
+  return choice ? vagrantActions(report, choice.provider).length === 0 : report.vagrant.installed;
 }
 
 /** The flow moves on only once the option picked on this step is actually set up. */
@@ -192,7 +188,7 @@ export function canContinue(step: MachineStep, report: SystemReport | null, setu
     if (!isDockerReady(report)) return false;
     // A working engine this step has no tile for (Podman) is fine unless another was picked.
     const known = ENGINES.some((e) => e.id === report.dockerEngine);
-    return report.dockerEngine === chosenEngine(report, setup).id || (!known && !setup.engine);
+    return engineActions(report, chosenEngine(report, setup).id).length === 0 || (!known && !setup.engine);
   }
   // A hypervisor is optional, as the step says (VM labs can go to a Server, and one can be added
   // later from the Machine page): the flow never waits on one.

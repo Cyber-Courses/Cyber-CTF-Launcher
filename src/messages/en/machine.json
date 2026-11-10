@@ -280,7 +280,8 @@
       "setUpEngine": "Set up a container engine to run them.",
       "notTested": "Not tested.",
       "installHypervisor": "Install a hypervisor to run them."
-    }
+    },
+    "distribution": "This distribution isn't supported by the guided setup yet: install {name} yourself, then re-check."
   },
   "engine": {
     "notes": {
@@ -340,7 +341,10 @@
     "utilityInstall": "Install",
     "utilityRestart": "Install again",
     "utilityLog": "Installing the Vagrant VMware Utility…",
-    "installFailed": "The install failed: {why}"
+    "installFailed": "The install failed: {why}",
+    "installYourself": "Install it yourself.",
+    "restartToFinish": "{name} is turned on. Restart Windows to finish turning it on.",
+    "restartReason": "Cyber CTF: restarting to finish turning on {name}."
   },
   "attack": {
     "download": "{size} download",

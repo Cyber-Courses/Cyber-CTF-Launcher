@@ -280,7 +280,8 @@
       "setUpEngine": "実行するにはコンテナエンジンをセットアップしてください。",
       "notTested": "未テストです。",
       "installHypervisor": "実行するにはハイパーバイザーをインストールしてください。"
-    }
+    },
+    "distribution": "このディストリビューションはまだガイド付きセットアップに対応していません。{name} をご自身でインストールしてから、再確認してください。"
   },
   "engine": {
     "notes": {
@@ -340,7 +341,10 @@
     "utilityInstall": "インストール",
     "utilityRestart": "再インストール",
     "utilityLog": "Vagrant VMware Utility をインストール中…",
-    "installFailed": "インストールに失敗しました: {why}"
+    "installFailed": "インストールに失敗しました: {why}",
+    "installYourself": "ご自身でインストールしてください。",
+    "restartToFinish": "{name} は有効になりました。有効化を完了するには Windows を再起動してください。",
+    "restartReason": "Cyber CTF: {name} の有効化を完了するために再起動しています。"
   },
   "attack": {
     "download": "ダウンロード {size}",

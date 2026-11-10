@@ -45,6 +45,18 @@ impl Engine {
         }
     }
 
+    /// Where the player gets it, when the setup doesn't install it.
+    pub fn url(self) -> &'static str {
+        match self {
+            Engine::DockerDesktop => "https://www.docker.com/products/docker-desktop/",
+            Engine::Orbstack => "https://orbstack.dev/",
+            Engine::Colima => "https://github.com/abiosoft/colima",
+            Engine::RancherDesktop => "https://rancherdesktop.io/",
+            Engine::Podman => "https://podman.io/",
+            Engine::Native => "https://docs.docker.com/engine/install/",
+        }
+    }
+
     /// Its name, as the player reads it (only the webview names engines).
     #[cfg(test)]
     pub fn label(self) -> &'static str {

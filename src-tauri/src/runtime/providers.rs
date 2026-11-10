@@ -200,7 +200,7 @@ impl Provider {
     /// Vagrant plugin required, if the provider is not built in: Isoloom's table for the providers
     /// its Vagrantfiles drive ([`super::isothrum::vagrant_plugin`]), the launcher's own for
     /// Proxmox; the clouds aren't Vagrant providers.
-    fn plugin(self) -> Option<&'static str> {
+    pub(crate) fn plugin(self) -> Option<&'static str> {
         match self {
             Provider::Proxmox => Some("vagrant-proxmox"),
             other => super::isothrum::vagrant_plugin(other),

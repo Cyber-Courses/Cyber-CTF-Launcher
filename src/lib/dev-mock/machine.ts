@@ -6,6 +6,7 @@ import { argText, fail, send, sleep } from "@/lib/dev-mock/command";
 import type { BrowserHandler, Live } from "@/lib/dev-mock/live";
 import { scenarioReport } from "@/lib/dev-mock/scenario";
 import { openWindow } from "@/lib/dev-mock/windows";
+import { withSetup } from "@/lib/dev-mock/setup-options";
 
 /** What Vagrant still needs to drive a hypervisor, as the core works it out (`providers::needs`). */
 function vagrantNeeds(vagrant: boolean, plugin: boolean, utility: UtilityState | null): Need[] {
@@ -86,7 +87,7 @@ const systemCheck: BrowserHandler = async (_args, { sc, live }) => {
   }
   // `hold=pm`: missing until the test lets it show up.
   const pm = sc.held.includes("pm") ? !live.holds.isHeld("pm") : null;
-  return withReady(withInstalls(scenarioReport(sc), live.installed, { pm }));
+  return withSetup(withReady(withInstalls(scenarioReport(sc), live.installed, { pm })));
 };
 
 /** The report's ready hypervisors, as the core works them out (providers::ready): the local ones

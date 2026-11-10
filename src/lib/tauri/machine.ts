@@ -1,38 +1,29 @@
 import { invoke } from "@tauri-apps/api/core";
 import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
 import type {
-  CloudClis,
   Dependency,
   DockerEngine,
-  EngineStatus,
   InstalledTool,
   MachineMetrics,
-  Need,
-  OvftoolLocation,
   OvftoolPlaced,
-  OvftoolRefusal,
-  PkgManager,
   Provider,
-  ProviderStatus,
   SelfTestEvent,
   SelfTestKind,
   Storage,
-  StoredItem,
   SystemReport,
-  Tool,
-  UtilityState,
   Workload,
-  WslReport,
-  WslState,
 } from "@/lib/tauri/generated";
 
 export type {
   CloudClis,
   Dependency,
   DockerEngine,
+  EngineOption,
   EngineStatus,
+  HypervisorOption,
   InstalledTool,
   MachineMetrics,
+  ManualReason,
   Need,
   OvftoolLocation,
   OvftoolPlaced,
@@ -42,18 +33,21 @@ export type {
   ProviderStatus,
   SelfTestEvent,
   SelfTestKind,
+  SetupAction,
+  SetupOptions,
   Storage,
   StoredItem,
   SystemReport,
   Tool,
   UtilityState,
+  WindowsFeature,
   Workload,
   WslReport,
   WslState,
-};
+} from "@/lib/tauri/generated";
 
 /** Every Docker-compatible engine the backend names, and each one's name (Rust's `Engine`). */
-export { DOCKER_ENGINES, DOCKER_ENGINE_NAMES } from "@/lib/tauri/generated/DockerEngines";
+export { DOCKER_ENGINES, DOCKER_ENGINE_NAMES, DOCKER_ENGINE_URLS } from "@/lib/tauri/generated/DockerEngines";
 
 export const systemCheck = () => invoke<SystemReport>("system_check");
 /** Points the Docker CLI at another running engine (`docker context use`). */
@@ -68,8 +62,8 @@ export const machineMetrics = () => invoke<MachineMetrics>("machine_metrics");
  *  for one hypervisor (a Machine page row's Fix: that one is set up, not another). */
 export const machineOpenSetup = (step?: string, provider?: Provider) => invokeUnit("machine_open_setup", { step: step ?? null, provider: provider ?? null });
 
-/** Restarts Windows in a few seconds (to finish turning WSL 2 on); `reason` is the note
- *  Windows shows meanwhile. Windows only. */
+/** Restarts Windows in a few seconds (to finish turning WSL 2 or Hyper-V on); `reason` is the
+ *  note Windows shows meanwhile. Windows only. */
 export const machineRestart = (reason: string) => invokeUnit("machine_restart", { reason });
 
 /** Assisted one-click install of a lab dependency, streaming the installer output. */
