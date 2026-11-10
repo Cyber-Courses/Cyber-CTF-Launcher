@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { runningLabs, type LabStatus } from "@/lib/tauri";
 import { activeOperationsNow, deployingLabsNow } from "@/features/labs/runs/operations";
 import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
-import { getLabState, refreshStatus, setScanRunning } from "@/features/labs/lab-store";
-import { sharedPoll } from "@/lib/shared-poll";
+import { getLabState, refreshStatus, setScanRunning, useLabState } from "@/features/labs/lab-store";
+import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
 import { onVisibilityChange } from "@/lib/visibility";
 import type { Lab } from "@/features/labs/use-labs";
 
@@ -105,6 +105,26 @@ export function useLabPolling(labs: Lab[] | null) {
       offVisibility();
     };
   }, []);
+}
+
+/**
+ * The labs the running scan last saw on this machine, kept read by the window's lab poll while
+ * `enabled` (the sidebar's running entries, on every screen), and scanned again at once when
+ * `rescanKey` changes (an operation started or ended: a lab just shut down mustn't keep its
+ * "Running" line until the next poll).
+ */
+export function useScannedRunning(enabled: boolean, rescanKey: string): Set<string> {
+  useSharedPoll(labPoll, enabled);
+  const first = useRef(true);
+  useEffect(() => {
+    // Not on the first render: subscribing has just read it.
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (enabled) void labPoll.refresh();
+  }, [enabled, rescanKey]);
+  return useLabState("scanRunning");
 }
 
 /** The lab page open on `labId`: its status is read on every poll while it is. */

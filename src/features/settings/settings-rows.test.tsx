@@ -19,7 +19,7 @@ import { getLocalePreference, setLocalePreference } from "@/lib/i18n";
 import { getAttackImage, getAutoAttackBox, getPortMode, getVmProvider, setAttackImage, setVmProvider } from "@/lib/settings";
 import type { ProviderStatus, SystemReport } from "@/lib/tauri";
 import { INSTALLS_OFF, INSTALLS_OFF_NOTE, hypervisorStatus, readyReport } from "@/test/fixtures";
-import { answersDialog, dialogsAsked, installTauri, stream, rejectWith, type Call } from "@/test/tauri";
+import { answersDialog, deployingOps, dialogsAsked, installTauri, stream, rejectWith, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
 // A plain function, not a `vi.fn`: a spy's bookkeeping on a rejected answer fails the test.
@@ -115,7 +115,7 @@ describe("AboutSection", () => {
   });
 
   it("holds an update back while a lab is deploying", async () => {
-    installTauri({ deploying_labs: () => ["web-sqli"] });
+    installTauri({ deploying_labs: () => ["web-sqli"], active_operations: deployingOps(() => ["web-sqli"]) });
     const downloadAndInstall = vi.fn(async () => {});
     updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall });
     await checkForUpdates();
@@ -125,7 +125,7 @@ describe("AboutSection", () => {
   });
 
   it("installs an available update and restarts", async () => {
-    const calls = installTauri({ deploying_labs: () => [] });
+    const calls = installTauri({ deploying_labs: () => [], active_operations: () => [] });
     const downloadAndInstall = vi.fn(async () => {});
     updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall });
     const user = await checkForUpdates();
@@ -143,7 +143,7 @@ describe("AboutSection", () => {
   });
 
   it("offers the update again when its install fails", async () => {
-    const calls = installTauri({ deploying_labs: () => [] });
+    const calls = installTauri({ deploying_labs: () => [], active_operations: () => [] });
     updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall: () => Promise.reject(new Error("bad signature")) });
     const user = await checkForUpdates();
     await user.click(button(/install update/i));

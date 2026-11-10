@@ -13,7 +13,7 @@ import {
   type DeployRun,
 } from "@/features/labs/runs/deploy-runs";
 import { getLastRun, setLastRun } from "@/features/labs/runs/last-run";
-import { operationLabel, OPERATION_STATUS, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
+import { deployingOf, operationLabel, OPERATION_STATUS, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
 import { timeLines, useWorkerLog } from "@/features/labs/runs/worker-log";
 import { setLocalePreference } from "@/lib/i18n";
 import type { ActiveOperation } from "@/lib/tauri";
@@ -201,6 +201,37 @@ describe("operations", () => {
     const en = OPERATION_STATUS.launch;
     setLocalePreference("de");
     expect(OPERATION_STATUS.launch).not.toBe(en);
+  });
+
+  it("counts as deploying a worker's operation and a launch in this process, not a stop or a pause here", () => {
+    const op = (labId: string, o: ActiveOperation["op"], runtime: ActiveOperation["runtime"]): [string, ActiveOperation] => [
+      labId,
+      { labId, op: o, machine: null, step: null, runtime },
+    ];
+    const inFlight = new Map([
+      op("worker-launch", "launch", "DOCKER"),
+      op("worker-pause", "pause", "VM"),
+      op("worker-provision", "provision", "VM"),
+      // A worker whose job file couldn't be read: a launch, with no runtime.
+      op("worker-unread", "launch", null),
+      op("here-launch", "launch", undefined),
+      op("here-stop", "stop", undefined),
+      op("here-pause", "pause", null),
+    ]);
+    expect([...deployingOf(inFlight)].sort()).toEqual(["here-launch", "worker-launch", "worker-pause", "worker-provision", "worker-unread"]);
+  });
+
+  it("reads the labs deploying from the one poll of the operations, not a poll of their own", async () => {
+    const calls = installTauri({
+      active_operations: () => [
+        { labId: "lab-w", op: "resume", machine: null, step: null, runtime: "VM" },
+        { labId: "lab-s", op: "stop", machine: null, step: null },
+      ],
+    });
+    const deploying = renderHook(() => useDeployingLabs());
+    await flush();
+    expect([...deploying.result.current]).toEqual(["lab-w"]);
+    expect(commands(calls)).not.toContain("deploying_labs");
   });
 
   it("polls the labs deploying and the operations in flight", async () => {

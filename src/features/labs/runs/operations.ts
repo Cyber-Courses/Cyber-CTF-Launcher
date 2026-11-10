@@ -1,6 +1,7 @@
 "use client";
 
-import { activeOperations, deployingLabs, type ActiveOperation } from "@/lib/tauri";
+import { activeOperations, type ActiveOperation } from "@/lib/tauri";
+import { useMemo } from "react";
 import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
 import { translate } from "@/lib/i18n";
 import { structurallyEqual } from "@/lib/equal";
@@ -32,20 +33,29 @@ export const OPERATION_STATUS: Partial<Record<string, string>> = {
 };
 
 /**
- * The lab ids the backend is starting or stopping right now, polled from the long-lived Rust
- * process. The in-memory store above is lost when the window reloads (a dev rebuild, a crash, or
- * fast-refresh), but the deploy keeps running; reading this lets a screen show "this lab is
- * starting" again instead of a bare Start button (which would invite a colliding second start).
+ * The labs the backend deploys among `ops`, the operations in flight: those under a deploy
+ * worker's operation (a launch, resume, pause, shut down or provisioning run: the worker's job
+ * names its runtime) and a launch in this process. What `deploying_labs` answers, read from the
+ * one poll of the operations rather than a second one; a stop (always in this process) isn't one.
  */
-export function useDeployingLabs(enabled = true): Set<string> {
-  return useSharedPoll(deployingPoll, enabled);
+export function deployingOf(ops: ReadonlyMap<string, ActiveOperation>): Set<string> {
+  return new Set([...ops.values()].filter((o) => o.runtime != null || o.op === "launch").map((o) => o.labId));
 }
 
-// One poll of each for the whole window, whichever screens read it (see shared-poll).
-const deployingPoll = sharedPoll({ read: () => deployingLabs().then((l) => new Set(l)), ms: 4000, initial: new Set<string>(), onFocus: true });
+/**
+ * The lab ids the backend is deploying right now (`deployingOf`), from the operations polled
+ * from the long-lived Rust process. The in-memory store above is lost when the window reloads (a
+ * dev rebuild, a crash, or fast-refresh), but the deploy keeps running; reading this lets a
+ * screen show "this lab is starting" again instead of a bare Start button (which would invite a
+ * colliding second start). The same set until the operations change.
+ */
+export function useDeployingLabs(enabled = true): Set<string> {
+  const ops = useActiveOperations(enabled);
+  return useMemo(() => deployingOf(ops), [ops]);
+}
 
 /** The labs deploying in the backend as last read (empty while nothing reads them). */
-export const deployingLabsNow = () => deployingPoll.get();
+export const deployingLabsNow = () => deployingOf(operationsPoll.get());
 
 /** The sidebar's label for an operation, e.g. "Pausing…"; the machine when it targets one. */
 export function operationLabel(o: ActiveOperation): string {
@@ -111,6 +121,7 @@ export function noteOperations(ops: ActiveOperation[], now = Date.now()) {
 /** When this window first saw `op` in flight on `labId` (see above), if it did. */
 export const operationSeenAt = (labId: string, op: string): number | undefined => readSeen()[seenKey(labId, op)];
 
+// One poll for the whole window, whichever screens read it (see shared-poll).
 const operationsPoll = sharedPoll({
   read: () =>
     activeOperations().then((l) => {
@@ -119,6 +130,8 @@ const operationsPoll = sharedPoll({
     }),
   ms: 2000,
   initial: new Map<string, ActiveOperation>(),
+  // And at once when the window comes back: a deploy may have started or ended meanwhile.
+  onFocus: true,
   // Read on in a hidden window, slower while nothing runs: the shell starts a lab's attack box
   // when its launch ends (from the website too), which must not wait for the window to show.
   hiddenMs: (ops) => (ops.size > 0 ? 2000 : 10_000),

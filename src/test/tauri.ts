@@ -25,6 +25,13 @@ const streams =
     return null;
   };
 
+/** `active_operations` answering a deploy worker's launch on each of `ids`, as the backend reports
+ *  a lab it deploys (`deploying_labs` lists them too). */
+export const deployingOps =
+  (ids: () => string[]): Handler =>
+  () =>
+    ids().map((labId) => ({ labId, op: "launch", machine: null, step: null, runtime: "DOCKER" }));
+
 /** The system dialog `confirmDestructive` asks in, answered with its confirm button (`yes`) or
  *  its Cancel: `installTauri({ "plugin:dialog|message": answersDialog(false) })`. */
 export const answersDialog =

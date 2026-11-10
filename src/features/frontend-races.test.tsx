@@ -106,7 +106,8 @@ describe("lab page actions during a worker operation", () => {
     installTauri({
       lab_status: () => status(),
       deploying_labs: () => ["lab-w"],
-      active_operations: () => [{ labId: "lab-w", op: "provision", machine: null, step: null }],
+      // A worker's operation: its job names the runtime.
+      active_operations: () => [{ labId: "lab-w", op: "provision", machine: null, step: null, runtime: "DOCKER" }],
     });
     detail("lab-w");
     await flush(50);

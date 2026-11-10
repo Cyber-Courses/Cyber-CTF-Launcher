@@ -92,7 +92,7 @@ describe("AboutSection failures", () => {
 
   it("keeps the update installed and says the restart failed, after the install and from Restart now", async () => {
     updater.pending = { version: "1.5.0", downloadAndInstall: () => Promise.resolve() };
-    const calls = installTauri({ deploying_labs: () => [], restart_app: rejects({ code: "other", message: "relaunch denied" }) });
+    const calls = installTauri({ deploying_labs: () => [], active_operations: () => [], restart_app: rejects({ code: "other", message: "relaunch denied" }) });
     const user = userEvent.setup();
     renderAbout();
     await checkThenInstall(user);
@@ -112,7 +112,7 @@ describe("AboutSection failures", () => {
     let deploying: () => unknown = () => {
       rejectWith("worker list unreadable");
     };
-    installTauri({ deploying_labs: () => deploying() });
+    installTauri({ deploying_labs: () => deploying(), active_operations: () => [] });
     const user = userEvent.setup();
     renderAbout();
     await checkThenInstall(user);
@@ -139,7 +139,7 @@ describe("UpdateBanner failures", () => {
   it("doesn't install while it can't tell whether a lab deploys, and says so", async () => {
     const downloadAndInstall = vi.fn(() => Promise.resolve());
     updater.pending = { version: "9.9.9", downloadAndInstall };
-    installTauri({ deploying_labs: rejects({ code: "other", message: "worker list unreadable" }) });
+    installTauri({ deploying_labs: rejects({ code: "other", message: "worker list unreadable" }), active_operations: () => [] });
     const user = userEvent.setup();
     await renderBanner();
     await user.click(screen.getByRole("button", { name: "Update" }));
@@ -151,7 +151,7 @@ describe("UpdateBanner failures", () => {
 
   it("says the relaunch after the install failed, as Settings does, and again when Restart now fails too", async () => {
     updater.pending = { version: "9.9.9", downloadAndInstall: () => Promise.resolve() };
-    const calls = installTauri({ deploying_labs: () => [], restart_app: rejects({ code: "other", message: "relaunch denied" }) });
+    const calls = installTauri({ deploying_labs: () => [], active_operations: () => [], restart_app: rejects({ code: "other", message: "relaunch denied" }) });
     const user = userEvent.setup();
     await renderBanner();
     await user.click(screen.getByRole("button", { name: "Update" }));

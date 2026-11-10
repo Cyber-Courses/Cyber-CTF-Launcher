@@ -16,7 +16,7 @@ import { QuitGuard } from "@/features/app/quit-guard";
 import { AUTH_CHANGED_EVENT, NAVIGATE_EVENT, REPLAY_ONBOARDING_EVENT } from "@/lib/app-events";
 import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
 import { readyReport } from "@/test/fixtures";
-import { commands, installTauri } from "@/test/tauri";
+import { commands, deployingOps, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { blockQuit, askLaunch, focusedPalette, openMainWindow } from "@/components/shell-test-kit";
 import { emitSettled, must, toastsShown } from "@/components/test-support";
@@ -35,7 +35,7 @@ afterEach(() => {
 
 // The banner with no lab deploying (the dev mock's sample data has one mid-deploy, which holds
 // the update back: see "waits for running deploys" below).
-const idleTauri = (overrides: Parameters<typeof installTauri>[0] = {}) => installTauri({ deploying_labs: () => [], ...overrides });
+const idleTauri = (overrides: Parameters<typeof installTauri>[0] = {}) => installTauri({ deploying_labs: () => [], active_operations: () => [], ...overrides });
 
 describe("UpdateBanner", () => {
   /** The banner, once its check answered, after the player clicked Update. */
@@ -59,7 +59,7 @@ describe("UpdateBanner", () => {
 
   it("waits for running deploys: installing would end them", async () => {
     let deploying = ["web-sqli"];
-    idleTauri({ deploying_labs: () => deploying });
+    idleTauri({ deploying_labs: () => deploying, active_operations: deployingOps(() => deploying) });
     const downloadAndInstall = vi.fn(() => Promise.resolve());
     updater.pending = { version: "1.5.0", downloadAndInstall };
     render(<UpdateBanner />);
