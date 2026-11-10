@@ -123,8 +123,10 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => un
     setVmProvider(p);
   };
   return {
-    ...installs,
-    ...restart,
+    /** The installs the steps run, their log and their failures (`useInstalls`). */
+    installs,
+    /** The Windows restart that finishes WSL 2 or Hyper-V (`useRestart`). */
+    restarts: restart,
     dockerTest,
     setDockerTest,
     vmTest,
@@ -141,3 +143,5 @@ export function useMachineSetup(report: SystemReport | null, onRefresh: () => un
   };
 }
 export type MachineSetupState = ReturnType<typeof useMachineSetup>;
+/** The installs a setup flow runs (`MachineSetupState["installs"]`). */
+export type SetupInstalls = MachineSetupState["installs"];

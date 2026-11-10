@@ -4,7 +4,7 @@ import { translate, type MessageKey, type Vars } from "@/lib/i18n";
 import { localHypervisors } from "@/features/machine/hypervisors";
 import { ENGINES, Engine, enginesFor } from "@/features/machine/setup-steps/engines";
 import { engineActions, vagrantActions } from "@/features/machine/setup-steps/plan";
-import { MachineSetupState } from "@/features/machine/setup-steps/use-machine-setup";
+import { MachineSetupState, type SetupInstalls } from "@/features/machine/setup-steps/use-machine-setup";
 
 export type MachineStep = "pkgmgr" | "virtualization" | "docker" | "docker-test" | "attack" | "vm" | "vagrant" | "vm-test";
 
@@ -52,10 +52,10 @@ export const isDockerReady = (r: SystemReport | null) => !!r && r.docker.install
  *  Docker engine is proof enough whatever the check could tell, #224: the plan says so, and
  *  onboarding and the Machine checklist both read it from here, so they never disagree), else the
  *  machine check's answer, and a restart pending once "Turn on WSL 2" finished in this flow. */
-export function wslState(report: SystemReport | null, setup?: Pick<MachineSetupState, "wslTurnedOn">): WslState {
+export function wslState(report: SystemReport | null, setup?: { installs: Pick<SetupInstalls, "wslTurnedOn"> }): WslState {
   const state = report?.wsl?.state ?? "unknown";
   if (report?.os === "windows" && report.setup.wsl.length === 0) return "ready";
-  return state !== "ready" && setup?.wslTurnedOn ? "needsReboot" : state;
+  return state !== "ready" && setup?.installs.wslTurnedOn ? "needsReboot" : state;
 }
 export const hasHypervisor = (r: SystemReport | null) => !!r && localHypervisors(r).some((p) => p.hypervisor === true);
 
@@ -125,7 +125,7 @@ export function stepMeta(step: MachineStep, report: SystemReport | null, t: Tr =
 /** What the flow's forward button does on this step: continue, or move on without it done. */
 type NextKind = "continue" | "restartLater" | "skip" | "done";
 
-function nextKind(step: MachineStep, report: SystemReport | null, setup?: Pick<MachineSetupState, "wslTurnedOn">): NextKind {
+function nextKind(step: MachineStep, report: SystemReport | null, setup?: { installs: Pick<SetupInstalls, "wslTurnedOn"> }): NextKind {
   if (step === "virtualization") {
     // Found on: nothing to confirm. Waiting for a restart: the step's own button restarts, this
     // one moves on without. Missing: skip. Only when the check can't tell does the player say.
@@ -142,7 +142,7 @@ function nextKind(step: MachineStep, report: SystemReport | null, setup?: Pick<M
 }
 
 /** Label for the flow's forward button on this step. */
-export function nextLabel(step: MachineStep, report: SystemReport | null, t: Tr = translate, setup?: Pick<MachineSetupState, "wslTurnedOn">): string {
+export function nextLabel(step: MachineStep, report: SystemReport | null, t: Tr = translate, setup?: { installs: Pick<SetupInstalls, "wslTurnedOn"> }): string {
   return t(`machine.steps.next.${nextKind(step, report, setup)}`);
 }
 

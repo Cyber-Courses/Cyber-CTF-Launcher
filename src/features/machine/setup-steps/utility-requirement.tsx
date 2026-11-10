@@ -38,7 +38,7 @@ export function UtilityRequirement({
             ? t("machine.vm.utilityStopped")
             : t("machine.vm.utilityDetail")
       }
-      failed={setup.failure(UTILITY)}
+      failed={setup.installs.failure(UTILITY)}
       action={
         own ? (
           <OwnInstall action={action} name={t("machine.vm.utilityTitle")} />
@@ -47,11 +47,11 @@ export function UtilityRequirement({
             variant={first ? "primary" : "outline"}
             size="xs"
             onClick={() => {
-              setup.install(UTILITY, UTILITY, t("machine.vm.utilityLog"));
+              setup.installs.install(UTILITY, UTILITY, t("machine.vm.utilityLog"));
             }}
-            disabled={!setup.canInstall}
+            disabled={!setup.installs.canInstall}
           >
-            <BusyLabel busy={setup.installing === UTILITY} label={t("machine.vm.installing")} spinner="size-3">
+            <BusyLabel busy={setup.installs.installing === UTILITY} label={t("machine.vm.installing")} spinner="size-3">
               {utility === "stopped" ? t("machine.vm.utilityRestart") : t("machine.vm.utilityInstall")}
             </BusyLabel>
           </Button>

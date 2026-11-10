@@ -82,11 +82,11 @@ export function GetHypervisor({ choice, report, setup }: { choice: ProviderStatu
           variant="primary"
           size="sm"
           onClick={() => {
-            setup.install(choice.provider, dependency, t("machine.vm.installLog", { name: label }));
+            setup.installs.install(choice.provider, dependency, t("machine.vm.installLog", { name: label }));
           }}
-          disabled={!setup.canInstall}
+          disabled={!setup.installs.canInstall}
         >
-          <BusyLabel busy={setup.installing === choice.provider} label={t("machine.vm.installing")}>
+          <BusyLabel busy={setup.installs.installing === choice.provider} label={t("machine.vm.installing")}>
             {t("machine.vm.install", { name: label })}
           </BusyLabel>
         </Button>
@@ -136,7 +136,7 @@ function RestartToFinish({ name, reopens, setup }: { name: string; reopens: bool
       message: `${t("machine.body.wsl.confirmBody")} ${reopens ? t("machine.body.wsl.reopens") : t("machine.body.wsl.reopenByHand")}`,
       confirm: t("machine.body.wsl.restartNow"),
     }).then((yes) => {
-      if (yes) setup.restart(t("machine.vm.restartReason", { name }), "hyperv");
+      if (yes) setup.restarts.restart(t("machine.vm.restartReason", { name }), "hyperv");
     });
   };
   return (
@@ -145,8 +145,8 @@ function RestartToFinish({ name, reopens, setup }: { name: string; reopens: bool
       className="flex items-center gap-3 rounded-control bg-glass px-4 py-3 text-[0.8125rem] text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
     >
       <StatusDot tone="warn" />
-      <span className="min-w-0 flex-1">{setup.restarting ? t("machine.body.wsl.restarting") : t("machine.vm.restartToFinish", { name })}</span>
-      <Button variant="primary" size="sm" className="shrink-0" disabled={setup.busy || setup.restarting} onClick={ask}>
+      <span className="min-w-0 flex-1">{setup.restarts.restarting ? t("machine.body.wsl.restarting") : t("machine.vm.restartToFinish", { name })}</span>
+      <Button variant="primary" size="sm" className="shrink-0" disabled={setup.busy || setup.restarts.restarting} onClick={ask}>
         <RotateCcw className="size-3.5" /> {t("machine.body.wsl.restartNow")}
       </Button>
     </div>

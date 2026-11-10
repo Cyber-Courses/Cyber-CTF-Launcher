@@ -35,7 +35,7 @@ export function AddEngineRow({ engine, report, setup }: { engine: Engine; report
           <ChoiceAction>
             <EngineAction report={report} setup={setup} choice={engine} engines={enginesFor(report)} actions={actions} />
           </ChoiceAction>
-          {setup.installerOpened && <EngineHints report={report} choice={engine} installerOpened />}
+          {setup.installs.installerOpened && <EngineHints report={report} choice={engine} installerOpened />}
         </>
       )}
       <Log setup={setup} of={["docker"]} />

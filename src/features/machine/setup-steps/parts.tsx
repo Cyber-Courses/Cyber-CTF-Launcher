@@ -77,8 +77,8 @@ export function OwnInstall({ action, name }: { action: SetupAction | undefined; 
  *  install isn't shown under QEMU once the player picks that instead, or on the next step. */
 export function Log({ setup, of }: { setup: MachineSetupState; of: (string | null | undefined)[] }) {
   const t = useT();
-  if (!setup.logsFor || !of.includes(setup.logsFor)) return null;
-  return <LogConsole lines={setup.logs} running={setup.installing !== null} title={t("machine.body.installLog")} />;
+  if (!setup.installs.logsFor || !of.includes(setup.installs.logsFor)) return null;
+  return <LogConsole lines={setup.installs.logs} running={setup.installs.installing !== null} title={t("machine.body.installLog")} />;
 }
 
 export function CmdRow({ cmd }: { cmd: string }) {

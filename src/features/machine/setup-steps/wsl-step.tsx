@@ -39,7 +39,7 @@ export function WslStep({ report, setup }: { report: SystemReport; setup: Machin
               message: `${t("machine.body.wsl.confirmBody")} ${report.wsl?.reopensAfterRestart ? t("machine.body.wsl.reopens") : t("machine.body.wsl.reopenByHand")}`,
               confirm: t("machine.body.wsl.restartNow"),
             }).then((yes) => {
-              if (yes) setup.restart(t("machine.body.wsl.restartReason"), "wsl");
+              if (yes) setup.restarts.restart(t("machine.body.wsl.restartReason"), "wsl");
             });
           }}
         />
@@ -63,8 +63,8 @@ function RestartNotice({ setup, onAsk }: { setup: MachineSetupState; onAsk: () =
       className="flex items-center gap-3 rounded-control bg-glass px-4 py-3 text-[0.8125rem] text-foreground shadow-[inset_0_0_0_1px_var(--border)]"
     >
       <StatusDot tone="warn" />
-      <span className="min-w-0 flex-1">{setup.restarting ? t("machine.body.wsl.restarting") : t("machine.body.wsl.restart")}</span>
-      <Button variant="primary" size="sm" className="shrink-0" disabled={setup.busy || setup.restarting} onClick={onAsk}>
+      <span className="min-w-0 flex-1">{setup.restarts.restarting ? t("machine.body.wsl.restarting") : t("machine.body.wsl.restart")}</span>
+      <Button variant="primary" size="sm" className="shrink-0" disabled={setup.busy || setup.restarts.restarting} onClick={onAsk}>
         <RotateCcw className="size-3.5" /> {t("machine.body.wsl.restartNow")}
       </Button>
     </div>
@@ -95,12 +95,12 @@ function TurnOnWsl({ report, setup, unknown }: { report: SystemReport; setup: Ma
         <Button
           variant="primary"
           size="sm"
-          disabled={setup.busy || setup.installsOff}
+          disabled={setup.busy || setup.installs.installsOff}
           onClick={() => {
-            setup.install("wsl", "wsl", t("machine.body.wsl.log"));
+            setup.installs.install("wsl", "wsl", t("machine.body.wsl.log"));
           }}
         >
-          {setup.installing === "wsl" ? t("machine.body.wsl.turningOn") : t("machine.body.wsl.turnOn")}
+          {setup.installs.installing === "wsl" ? t("machine.body.wsl.turningOn") : t("machine.body.wsl.turnOn")}
         </Button>
         <Button variant="ghost" size="sm" disabled={setup.busy} onClick={setup.onRefresh}>
           <RefreshCw className="size-3.5" /> {t("machine.body.wsl.recheck")}

@@ -49,7 +49,7 @@ export function VagrantRequirements({ choice, report, setup }: { choice: Provide
                 ? t("machine.body.distribution", { name: "Vagrant" })
                 : t("machine.vm.vagrantDetail")
           }
-          failed={setup.failure("vagrant")}
+          failed={setup.installs.failure("vagrant")}
           action={
             vagrant?.kind === "manual" ? (
               <OwnInstall action={vagrant} name="Vagrant" />
@@ -59,11 +59,11 @@ export function VagrantRequirements({ choice, report, setup }: { choice: Provide
                 variant="primary"
                 size="xs"
                 onClick={() => {
-                  setup.install("vagrant", "vagrant", t("machine.vm.installVagrantLog"));
+                  setup.installs.install("vagrant", "vagrant", t("machine.vm.installVagrantLog"));
                 }}
-                disabled={!setup.canInstall}
+                disabled={!setup.installs.canInstall}
               >
-                <BusyLabel busy={setup.installing === "vagrant"} label={t("machine.vm.installing")} spinner="size-3">
+                <BusyLabel busy={setup.installs.installing === "vagrant"} label={t("machine.vm.installing")} spinner="size-3">
                   {t("machine.vm.installVagrant")}
                 </BusyLabel>
               </Button>
@@ -99,17 +99,17 @@ function PluginRequirement({
       ok={ok}
       title={t("machine.vm.pluginTitle", { name: providerLabel(choice, report.os) })}
       detail={ok || report.vagrant.installed ? plugin : t("machine.vm.pluginLater", { plugin })}
-      failed={setup.failure(plugin)}
+      failed={setup.installs.failure(plugin)}
       action={
         <Button
           variant={report.vagrant.installed ? "primary" : "outline"}
           size="xs"
           onClick={() => {
-            setup.installPlugin(plugin);
+            setup.installs.installPlugin(plugin);
           }}
-          disabled={!setup.canInstall || !report.vagrant.installed}
+          disabled={!setup.installs.canInstall || !report.vagrant.installed}
         >
-          <BusyLabel busy={setup.installing === plugin} label={t("machine.vm.installing")} spinner="size-3">
+          <BusyLabel busy={setup.installs.installing === plugin} label={t("machine.vm.installing")} spinner="size-3">
             {t("machine.vm.installPlugin")}
           </BusyLabel>
         </Button>

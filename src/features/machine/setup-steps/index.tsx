@@ -25,7 +25,7 @@ import { useT } from "@/lib/i18n";
 /** The body of one setup step (no header, no nav: the flow draws those). */
 export function MachineStepBody({ step, report, setup }: { step: MachineStep; report: SystemReport; setup: MachineSetupState }) {
   const body = <StepContent step={step} report={report} setup={setup} />;
-  if (!setup.installsOff || !INSTALLING_STEPS.has(step)) return body;
+  if (!setup.installs.installsOff || !INSTALLING_STEPS.has(step)) return body;
   return (
     <>
       <InstallsOffNote className="mb-3" />

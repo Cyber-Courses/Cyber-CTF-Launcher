@@ -99,7 +99,7 @@ function StartEngine({ choice, actions }: ActionProps) {
 
 function InstallEngine({ setup, choice }: ActionProps) {
   const t = useT();
-  const { installing, canInstall, installerOpened, install } = setup;
+  const { installing, canInstall, installerOpened, install } = setup.installs;
   return (
     <>
       <span className="text-[0.8125rem] text-muted-foreground">{t("machine.engine.canInstall", { name: choice.name })}</span>

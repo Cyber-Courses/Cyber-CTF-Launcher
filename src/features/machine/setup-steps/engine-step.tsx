@@ -45,7 +45,7 @@ export function EngineStep({ report, setup }: { report: SystemReport; setup: Mac
           <EngineAction report={report} setup={setup} choice={choice} engines={engines} actions={actions} />
         </ChoiceAction>
       )}
-      {!ready && <EngineHints report={report} choice={choice} installerOpened={setup.installerOpened} />}
+      {!ready && <EngineHints report={report} choice={choice} installerOpened={setup.installs.installerOpened} />}
       <Log setup={setup} of={["docker"]} />
       <EngineTrademarks />
     </div>

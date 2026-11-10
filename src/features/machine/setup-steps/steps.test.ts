@@ -32,7 +32,7 @@ const report = (over: Partial<SystemReport> = {}) =>
     ...over,
   } as unknown as SystemReport);
 const setup = (over: Partial<{ engine: string | null; hypervisor: string | null }> = {}) =>
-  ({ engine: null, hypervisor: null, ...over }) as unknown as MachineSetupState;
+  ({ engine: null, hypervisor: null, installs: { wslTurnedOn: false }, ...over }) as unknown as MachineSetupState;
 /** A Linux machine with Vagrant in and no hypervisor listed, for the edges. */
 const bareReport = (over: Partial<SystemReport> = {}) => report({ vagrant: { installed: true, version: null }, vmProviders: [], ...over });
 type Hv = SystemReport["vmProviders"][number];
@@ -83,7 +83,7 @@ describe("machine setup steps", () => {
     expect(nextLabel("virtualization", win(null))).toBe("I’ve done this");
     for (const s of ["ready", "needsReboot", "missing", "unknown", null]) expect(canContinue("virtualization", win(s), setup())).toBe(true);
     // Turned on here: a restart is due, unless the check already finds it on.
-    const turnedOn = { wslTurnedOn: true };
+    const turnedOn = { installs: { wslTurnedOn: true } };
     expect(nextLabel("virtualization", win("missing"), undefined, turnedOn)).toBe("I’ll restart later");
     expect(wslState(win("unknown"), turnedOn)).toBe("needsReboot");
     expect(wslState(win("ready"), turnedOn)).toBe("ready");
