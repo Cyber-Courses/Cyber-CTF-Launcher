@@ -88,9 +88,9 @@ fn check_image(image: &str) -> Result<()> {
     if crate::platform::exec::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
 }
 
-/// A machine name as Vagrant and Isoloom spell them: plain characters, dots allowed.
+/// A machine name as Vagrant and Isoloom spell them: plain characters, dots allowed, not empty.
 fn valid_machine_name(m: &str) -> bool {
-    m.len() <= 64 && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    !m.is_empty() && m.len() <= 64 && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 /// Stops lab `id` wherever it runs and removes it, its log lines sent on `logs` (see [`stop_lab`]).
@@ -611,7 +611,7 @@ mod tests {
         t.lab("ad", &[]);
         let tools = Tools::rules(&[]);
         let s = sink();
-        for bad in ["dc01é", "dc01 ", "dc01\n", "ws01/x"] {
+        for bad in ["", "dc01é", "dc01 ", "dc01\n", "ws01/x"] {
             let err = lab_provision(t.handle().clone(), "ad".into(), Runtime::Vm, Some(bad.into()), channel(s.clone())).await.unwrap_err().to_string();
             assert_eq!(err, format!("invalid machine name `{bad}`"));
         }
@@ -623,7 +623,7 @@ mod tests {
         for good in ["dc01", "ws-01", "kingslanding.sevenkingdoms", "a_b"] {
             assert!(valid_machine_name(good), "{good:?} should be accepted");
         }
-        for bad in ["a b", "a;rm", "../x", "a/b", "é", &"x".repeat(65)] {
+        for bad in ["", "a b", "a;rm", "../x", "a/b", "é", &"x".repeat(65)] {
             assert!(!valid_machine_name(bad), "{bad:?} should be rejected");
         }
     }
