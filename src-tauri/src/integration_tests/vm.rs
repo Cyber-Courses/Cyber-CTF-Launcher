@@ -68,7 +68,10 @@ async fn park_and_resume(l: &Lab, mode: Park, f: &mut Vec<String>) {
 
 /// The lab while it exists; every failure is collected so the lab is always stopped after.
 async fn exercise(l: &Lab, f: &mut Vec<String>) {
-    if let Err(e) = launch::start_vm_run(&l.home, &l.dir, &l.id, launch::VmStart { provider: l.provider, env: &vm_inputs() }, &mut log(&l.id)).await {
+    if let Err(e) =
+        launch::start_vm_run(&l.home, &l.dir, &l.id, launch::VmStart { provider: l.provider, inputs: launch::Inputs::values(&vm_inputs()) }, &mut log(&l.id))
+            .await
+    {
         return check(false, format!("it starts: {e}"), f);
     }
     up_and_answering(l, f, "started").await;

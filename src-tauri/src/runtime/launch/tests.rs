@@ -25,7 +25,7 @@ async fn start_at(t: &TestApp, id: &str, runtime: Runtime, to: Destination<'_>, 
 
 /// A start in one VM per machine here, on `provider`.
 fn per_machine_on(provider: Provider) -> Destination<'static> {
-    Destination { provider: Some(provider), host: None, per_machine_vm: true, docker_context: None }
+    Destination { provider: Some(provider), per_machine_vm: true, ..Destination::default() }
 }
 
 #[tokio::test]
@@ -147,7 +147,7 @@ fn a_local_run_follows_the_runtime_and_the_hypervisor() {
 
 #[test]
 fn a_start_downloads_images_for_containers_here_and_boxes_for_every_vm_form_here() {
-    let to = |provider, per_machine_vm, host| Destination { provider, host, per_machine_vm, docker_context: None };
+    let to = |provider, per_machine_vm, host| Destination { provider, host, per_machine_vm, ..Destination::default() };
     let (images, boxes, none) = (Downloads { images: true, boxes: false }, Downloads { images: false, boxes: true }, Downloads::default());
     assert_eq!(downloads(Runtime::Docker, &to(None, false, None)), images);
     assert_eq!(downloads(Runtime::Docker, &to(Some(Provider::Utm), false, None)), boxes);

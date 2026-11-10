@@ -1,10 +1,6 @@
-//! What a container lab's launch is told (its ports setting) and how its failure is said.
+//! Docker's address-pool clash, said as what to do.
 
 use crate::error::Error;
-
-/// Set (to "default") in a launch's env when the player chose the lab's default ports: each
-/// service is published on its own container port (`CTFd` on 8000) instead of a random free one.
-pub const PORTS_ENV: &str = "CYBERCTF_PORTS";
 
 /// Docker's "Pool overlaps with other one on this address space", said as what to do: another
 /// network (a lab, or one left behind) holds an address block this lab needs.

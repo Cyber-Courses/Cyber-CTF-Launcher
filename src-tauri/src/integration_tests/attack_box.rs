@@ -28,7 +28,7 @@ use super::support::{add_box, box_reaches, check, in_box, install_copy, leftover
 use crate::platform::AppDirs;
 use crate::runtime::attack_machine::{self, Placed};
 use crate::runtime::host::Host;
-use crate::runtime::launch::{CloudStart, VmStart, start_cloud_run, start_docker_in_vm_run, start_docker_run, start_vm_run};
+use crate::runtime::launch::{CloudStart, Inputs, VmStart, start_cloud_run, start_docker_in_vm_run, start_docker_run, start_vm_run};
 use crate::runtime::providers::Provider;
 use crate::runtime::{isothrum, lab, lifecycle};
 
@@ -104,9 +104,9 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
         async |f: &mut Vec<String>| {
             let mut l = log(&id);
             let started = match form.as_str() {
-                "docker" => start_docker_run(&home, &dir, &id, &[], &mut l).await,
-                "docker-vm" => start_docker_in_vm_run(&home, &dir, &id, VmStart { provider, env: &[] }, &mut l).await,
-                _ => start_vm_run(&home, &dir, &id, VmStart { provider, env: &[] }, &mut l).await,
+                "docker" => start_docker_run(&home, &dir, &id, Inputs::default(), &mut l).await,
+                "docker-vm" => start_docker_in_vm_run(&home, &dir, &id, VmStart { provider, inputs: Inputs::default() }, &mut l).await,
+                _ => start_vm_run(&home, &dir, &id, VmStart { provider, inputs: Inputs::default() }, &mut l).await,
             };
             check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), f);
             let placed = match run() {

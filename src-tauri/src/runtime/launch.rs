@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::inflight::{Action, DeployGuard};
+pub(crate) use super::isothrum::Inputs;
 use super::paths::{forget_lab_host_keys, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, runner_home};
 use super::providers::Provider;
 use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server};
@@ -30,7 +31,8 @@ pub(super) use on_host::{check_aws_budget, public_ip};
 pub(super) use on_host::{runner_runs_on, server_place};
 
 /// Where a lab is started: on this machine (with a local `provider`, and `per_machine_vm`
-/// picking the one-VM-per-machine form for a container lab), or on the server `host`.
+/// picking the one-VM-per-machine form for a container lab), or on the server `host`; and
+/// whether its services keep their own host ports there (`default_ports`).
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Destination<'a> {
     pub(crate) provider: Option<Provider>,
@@ -39,9 +41,12 @@ pub(crate) struct Destination<'a> {
     /// The Docker context a container lab here runs on (the learner's engine); none: the
     /// current one.
     pub(crate) docker_context: Option<&'a str>,
+    /// The player chose the lab's own host ports (`CTFd` on 8000) over free ones picked at random.
+    pub(crate) default_ports: bool,
 }
 
-/// Starts an installed lab; `env` is passed to the runtime (evidence claim, attack box).
+/// Starts an installed lab; `env` holds the lab's input values (the evidence claim, the player's
+/// flags).
 ///
 /// - No `host`: Docker labs run on this machine's Docker, or in one VM on this machine with a
 ///   local `provider` (Isoloom's docker-vm), or, with `per_machine_vm`, as one VM per machine
@@ -55,7 +60,8 @@ pub(crate) struct Destination<'a> {
 /// the administrator's policy turns off is refused before anything changes ([`policy_allows`]).
 pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
-    let Destination { provider, host, per_machine_vm, docker_context } = to;
+    let Destination { provider, host, per_machine_vm, docker_context, default_ports } = to;
+    let inputs = Inputs { values: env, default_ports };
     let _deploy = DeployGuard::new(id, Action::Start);
     policy_allows(dirs, runtime, host, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
     // A lab runs in one place: starting it here (or on another host) while its run is still up
@@ -75,11 +81,11 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
         return cloud_services::start(dirs, lab, host, env, &mut log).await;
     }
     match host {
-        None => start_here(dirs, lab, local_run(runtime, provider, per_machine_vm)?, docker_context, env, &mut log).await,
+        None => start_here(dirs, lab, local_run(runtime, provider, per_machine_vm)?, docker_context, inputs, &mut log).await,
         // On a cloud account the per-machine form is cloud-vm (one instance per machine); on a
         // server (ESXi, Proxmox) the lab runs as the catalogue says, so `start_on_server` refuses
         // the per-machine pick there. The dispatch on the provider is its to make (the connection).
-        Some(host) => start_on_server(dirs, lab, (host, per_machine_vm), env, &mut log).await,
+        Some(host) => start_on_server(dirs, lab, (host, per_machine_vm), inputs, &mut log).await,
     }
 }
 
@@ -123,7 +129,7 @@ async fn start_here(
     lab: LabRef<'_>,
     run: LocalRun,
     docker_context: Option<&str>,
-    env: &[(String, String)],
+    inputs: Inputs<'_>,
     log: &mut impl FnMut(String),
 ) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
@@ -141,9 +147,9 @@ async fn start_here(
     // downloads is the caller's to record ([`downloads`]).
     let home = runner_home(dirs)?;
     let started = match run {
-        LocalRun::Docker => start_docker_run(&home, dir, id, env, log).await,
-        LocalRun::DockerInVm(p) => start_docker_in_vm_run(&home, dir, id, VmStart { provider: p, env }, log).await,
-        LocalRun::Vm(p) => start_vm_run(&home, dir, id, VmStart { provider: p, env }, log).await,
+        LocalRun::Docker => start_docker_run(&home, dir, id, inputs, log).await,
+        LocalRun::DockerInVm(p) => start_docker_in_vm_run(&home, dir, id, VmStart { provider: p, inputs }, log).await,
+        LocalRun::Vm(p) => start_vm_run(&home, dir, id, VmStart { provider: p, inputs }, log).await,
     };
     // A clash is on a host port either form binds here, so name what holds it: the player can
     // then stop it and start again, rather than guess what "port 8080 is taken" means.
@@ -157,7 +163,7 @@ async fn start_here(
 /// the local hypervisor: its files generated, then up. Takes no app handle, so the integration
 /// tests run exactly this.
 pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    let VmStart { provider, env } = start;
+    let VmStart { provider, inputs } = start;
     let prepared = lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
     check_provider(&prepared, lab::Target::DockerVm, provider)?;
     mark_local_vm(dir, Some(provider))?;
@@ -165,23 +171,23 @@ pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
     if provider == Provider::Utm {
         check_utm(log).await?;
     }
-    up_in_vm(dir, provider, env, || isothrum::LabRun::docker_in_vm(home, dir, id), log).await
+    up_in_vm(dir, provider, inputs, || isothrum::LabRun::docker_in_vm(home, dir, id), log).await
 }
 
 /// Brings up a container lab's helper VM on `provider` (the run [`isothrum::LabRun`] `run_of`
-/// opens) with the launch's values `env`: on UTM its passing `-600` refusal goes on as
+/// opens) with the launch's `inputs`: on UTM its passing `-600` refusal goes on as
 /// [`isothrum::LabRun::start`] says, and a start that failed takes down what it half created.
 pub(in crate::runtime) async fn up_in_vm(
     dir: &Path,
     provider: Provider,
-    env: &[(String, String)],
+    inputs: Inputs<'_>,
     run_of: impl Fn() -> Result<isothrum::LabRun>,
     log: &mut impl FnMut(String),
 ) -> Result<()> {
     let run = run_of()?;
     // Marked before the start: status, stop and the attack box read the lab as in this VM.
     mark_local_vm(dir, Some(provider))?;
-    let Err(e) = run.start(env, provider.id(), log).await else {
+    let Err(e) = run.start(inputs, provider.id(), log).await else {
         return mark_parked(dir, None);
     };
     // A failed start can leave a half-created helper VM holding host ports (e.g. the QEMU
@@ -202,11 +208,11 @@ pub(in crate::runtime) async fn up_in_vm(
 /// The runner's start of a container lab (runner home `home`): its files generated (the run
 /// manifest with them), then up, or resumed as it was when it is parked (the runner's own rule).
 /// Takes no app handle, so the integration tests run exactly this.
-pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
+pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, inputs: Inputs<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     recheck_instance(dir, id, log).await?;
     lab::prepare(dir, lab::Target::Docker)?;
     mark_local_vm(dir, None)?;
-    isothrum::LabRun::docker(home, dir, id)?.up(env, None, log).await?;
+    isothrum::LabRun::docker(home, dir, id)?.up(inputs, None, log).await?;
     mark_parked(dir, None)
 }
 
@@ -215,8 +221,8 @@ pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, env: &[(
 pub(crate) struct VmStart<'a> {
     /// The local hypervisor (Vagrant provider).
     pub(crate) provider: Provider,
-    /// The launch's values: the inputs the lab's slots take, and the ports choice.
-    pub(crate) env: &'a [(String, String)],
+    /// The launch's inputs.
+    pub(crate) inputs: Inputs<'a>,
 }
 
 /// The runner's start of a VM lab (runner home `home`) on `provider`: its files generated (the
@@ -225,7 +231,7 @@ pub(crate) struct VmStart<'a> {
 /// page or with the lab (`attack_machine`), not by the launch. Takes no app handle, so the
 /// integration tests run exactly this.
 pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    let VmStart { provider, env } = start;
+    let VmStart { provider, inputs } = start;
     let prepared = lab::prepare(dir, lab::Target::Vagrant)?;
     // A container lab's VM form leaves no local-VM mark behind: that one names docker-vm.
     mark_local_vm(dir, None)?;
@@ -237,7 +243,7 @@ pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     if provider == Provider::Utm {
         check_utm(log).await?;
     }
-    isothrum::LabRun::vm(home, dir, id)?.start(env, provider.id(), log).await?;
+    isothrum::LabRun::vm(home, dir, id)?.start(inputs, provider.id(), log).await?;
     mark_parked(dir, None)
 }
 

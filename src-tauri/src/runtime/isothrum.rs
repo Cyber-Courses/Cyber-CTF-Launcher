@@ -39,7 +39,7 @@ use isothrum_runner::{
 };
 use isothrum_runner::{Exit, OnLine, ProcessError};
 
-use super::docker::{Check, PORTS_ENV};
+use super::docker::Check;
 
 /// How long an operation the player asked for waits for the run's lock: the page's own status
 /// checks (a few seconds each, every so often) hold it too, and a Pause clicked while one runs
@@ -257,10 +257,10 @@ impl LabRun {
     }
 
     /// Brings the lab up from its generated files (a parked run is resumed as it was), and says
-    /// where to start: the lab's message, its host ports filled in. `env` is the launch's: the
-    /// inputs the lab's slots take, and [`PORTS_ENV`]; a VM lab runs on `provider`.
-    pub(crate) async fn up(&self, env: &[(String, String)], provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        up_with(&self.lab().await?, &self.placed(start_options(env, provider)), log).await
+    /// where to start: the lab's message, its host ports filled in. `inputs` are the launch's; a
+    /// VM lab runs on `provider`.
+    pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+        up_with(&self.lab().await?, &self.placed(start_options(inputs, provider)), log).await
     }
 
     /// Removes everything the run created: containers, networks, volumes, its pinned ports; or
@@ -344,8 +344,8 @@ impl LabRun {
 
     /// [`LabRun::up`] on `provider`; on UTM, a start its passing scripting refusal cut short goes
     /// on as [`LabRun::after_utm_refusal`] says.
-    pub(crate) async fn start(&self, env: &[(String, String)], provider: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        let op = Op::Up { env, provider };
+    pub(crate) async fn start(&self, inputs: Inputs<'_>, provider: &str, log: &mut impl FnMut(String)) -> Result<()> {
+        let op = Op::Up { inputs, provider };
         match Box::pin(self.attempt(op, log)).await {
             Err(e) if provider == super::providers::Provider::Utm.id() => Box::pin(self.after_utm_refusal(op, e, log)).await,
             done => done,
@@ -355,7 +355,7 @@ impl LabRun {
     /// `op`, once.
     async fn attempt(&self, op: Op<'_>, log: &mut impl FnMut(String)) -> Result<()> {
         match op {
-            Op::Up { env, provider } => self.up(env, Some(provider), log).await,
+            Op::Up { inputs, provider } => self.up(inputs, Some(provider), log).await,
             Op::Update => update_of(&self.lab().await?, &self.placed(RunOptions::new()), log).await,
         }
     }
@@ -373,10 +373,10 @@ impl LabRun {
         let Some(provider) = self.left_down().await else { return self.attempt(op, log).await };
         log("The run isn't running after that: starting it again on its current files.".into());
         match op {
-            Op::Up { env, provider } => self.up(env, Some(provider), log).await,
+            Op::Up { inputs, provider } => self.up(inputs, Some(provider), log).await,
             // An update carries no launch's values, and neither does the start that replaces it;
             // a run whose status names no provider is on the one its lab folder records.
-            Op::Update => self.up(&[], provider.or_else(|| paths::local_vm(&self.dir)).as_deref(), log).await,
+            Op::Update => self.up(Inputs::default(), provider.or_else(|| paths::local_vm(&self.dir)).as_deref(), log).await,
         }
     }
 
@@ -415,8 +415,8 @@ impl LabRun {
 /// An operation on a run that UTM's passing refusal may cut short ([`LabRun::after_utm_refusal`]).
 #[derive(Clone, Copy)]
 enum Op<'a> {
-    /// A start with the launch's values `env`, on `provider`.
-    Up { env: &'a [(String, String)], provider: &'a str },
+    /// A start with the launch's `inputs`, on `provider`.
+    Up { inputs: Inputs<'a>, provider: &'a str },
     /// Bringing the running run up to date with its files.
     Update,
 }
@@ -517,19 +517,46 @@ fn host_config(home: &Path, context: Option<String>) -> RunnerConfig {
     config
 }
 
-/// A start's options: the launch's values for the manifest's secret and input slots (a value no
-/// slot takes is never delivered), fixed host ports when the player chose the lab's own, the
-/// hypervisor a VM lab runs on, and a parked run resumed rather than rebuilt.
-fn start_options(env: &[(String, String)], provider: Option<&str>) -> RunOptions {
+/// What a start hands the lab: the launch's values for the manifest's secret and input slots (a
+/// value no slot takes is never delivered), and whether its services keep their own host ports
+/// (`CTFd` on 8000) rather than free ones picked at random.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Inputs<'a> {
+    pub(crate) values: &'a [(String, String)],
+    pub(crate) default_ports: bool,
+}
+
+/// The values' names only: a value can be a launch token or a flag.
+impl std::fmt::Debug for Inputs<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Inputs")
+            .field("names", &self.values.iter().map(|(name, _)| name).collect::<Vec<_>>())
+            .field("default_ports", &self.default_ports)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+impl<'a> Inputs<'a> {
+    /// The launch's `values`, on host ports picked at random.
+    pub(crate) fn values(values: &'a [(String, String)]) -> Self {
+        Inputs { values, default_ports: false }
+    }
+}
+
+/// A start's options: the launch's `inputs` (its values as secrets, and fixed host ports when the
+/// player chose the lab's own), the hypervisor a VM lab runs on, and a parked run resumed rather
+/// than rebuilt.
+fn start_options(inputs: Inputs<'_>, provider: Option<&str>) -> RunOptions {
     let mut secrets = Secrets::new();
-    for (name, value) in env.iter().filter(|(k, _)| k != PORTS_ENV) {
+    for (name, value) in inputs.values {
         secrets.insert(name.clone(), SecretValue::new(value.clone()));
     }
     let mut opts = RunOptions::new().with_secrets(secrets).with_occupied(Occupied::ResumeParked);
     if let Some(p) = provider {
         opts = opts.with_provider(p);
     }
-    if env.iter().any(|(k, v)| k == PORTS_ENV && v == "default") { opts.with_param("ISOLOOM_PUBLISH_FIXED", "1") } else { opts }
+    if inputs.default_ports { opts.with_param("ISOLOOM_PUBLISH_FIXED", "1") } else { opts }
 }
 
 #[cfg(test)]

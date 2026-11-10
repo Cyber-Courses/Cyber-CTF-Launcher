@@ -72,7 +72,7 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
             // The launch as the job runs it: the catalogue's runtime, the hypervisor, the override.
             let (lab, to) = (
                 crate::runtime::LabRef { dir: &dir, id: &id, runtime: Runtime::Docker },
-                crate::runtime::Destination { provider: Some(provider), host: None, per_machine_vm: true, docker_context: None },
+                crate::runtime::Destination { provider: Some(provider), per_machine_vm: true, ..Default::default() },
             );
             match crate::runtime::start(&t.dirs(), lab, to, &vm_inputs(), log(&id)).await {
                 Ok(()) => {

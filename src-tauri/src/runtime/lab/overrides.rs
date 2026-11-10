@@ -5,9 +5,9 @@
 //!   `docker::project`), not under its spec's name, so two labs declaring the same name never
 //!   share containers. Every Compose call passes it (`-p`); the generated file names it too, so
 //!   the file run by hand (`docker compose -f .isoloom/docker/compose.yml ps`) finds the lab.
-//! - Host ports (`CYBERCTF_PORTS`, random or the lab's own) can't be decided here: they are
-//!   picked from the free ports at a lab's first start and kept across starts, so they stay a
-//!   Compose override file of their own (`docker::lifecycle`), added to every Compose call.
+//! - Host ports (random, or the lab's own when the launch's `default_ports` says so) can't be
+//!   decided here: the runner picks them from the free ports at a lab's first start and keeps
+//!   them across starts in its own state (`isothrum::Inputs`).
 
 use isoloom_targets::GeneratedFile;
 

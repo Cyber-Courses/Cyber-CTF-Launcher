@@ -79,7 +79,7 @@ async fn a_vm_lab_goes_up_on_its_hypervisor_through_the_runner() {
     let f = Fixture::new();
     let run = f.run();
     let mut log = Vec::new();
-    run.up(&[("CTF_FLAG_MAIN".into(), "flag{v}".into())], Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
+    run.up(Inputs::values(&[("CTF_FLAG_MAIN".into(), "flag{v}".into())]), Some("virtualbox"), &mut |l| log.push(l)).await.unwrap();
     let up = f.fake.last("vagrant up --provider virtualbox").unwrap();
     assert_eq!(up.env("CTF_FLAG_MAIN"), Some("flag{v}"), "the launch's input reaches its slot");
     assert!(
@@ -100,7 +100,7 @@ async fn a_vm_lab_goes_up_on_its_hypervisor_through_the_runner() {
 async fn a_vm_lab_is_checked_parked_resumed_reprovisioned_and_stopped() {
     let f = Fixture::new();
     let run = f.run();
-    run.up(&[], Some("virtualbox"), &mut |_| {}).await.unwrap();
+    run.up(Inputs::default(), Some("virtualbox"), &mut |_| {}).await.unwrap();
     let c = run.check().await.unwrap();
     assert!(c.available && c.ok, "{}", c.output);
     run.park(Park::Pause, &mut |_| {}).await.unwrap();
@@ -155,7 +155,7 @@ async fn a_vm_lab_runs_on_an_esxi_host_through_the_runner() {
     let f = Fixture::new();
     let run = f.esxi_run(EsxiPlace::from_env("esxi-lab", &esxi_env()));
     let mut log = Vec::new();
-    run.up(&[("CTF_FLAG_MAIN".into(), "flag{v}".into())], Some("vmware_esxi"), &mut |l| log.push(l)).await.unwrap();
+    run.up(Inputs::values(&[("CTF_FLAG_MAIN".into(), "flag{v}".into())]), Some("vmware_esxi"), &mut |l| log.push(l)).await.unwrap();
     let up = f.fake.last("vagrant up --provider vmware_esxi").unwrap();
     for (name, value) in [("ESXI_HOSTNAME", "172.16.1.20"), ("ESXI_DATASTORE", "datastore1"), ("ESXI_VIRTUAL_NETWORK", "VM Network"), ("ESXI_PASSWORD", "pw")] {
         assert_eq!(up.env(name), Some(value), "{name}");

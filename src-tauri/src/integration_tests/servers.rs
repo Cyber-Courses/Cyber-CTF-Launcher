@@ -150,7 +150,7 @@ async fn a_vm_lab_runs_on_esxi_through_the_runner() {
     scenario(
         &mut f,
         async |f: &mut Vec<String>| {
-            let up = run.up(&[], Some("vmware_esxi"), &mut log("esxi")).await;
+            let up = run.up(crate::runtime::launch::Inputs::default(), Some("vmware_esxi"), &mut log("esxi")).await;
             check(up.is_ok(), format!("it starts ({:?})", up.err()), f);
             match run.status().await {
                 Ok(s) => {

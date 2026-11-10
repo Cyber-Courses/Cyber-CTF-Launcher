@@ -3,15 +3,18 @@
 
 use super::super::paths::local_runtime;
 use super::{
-    AppDirs, Error, LabRef, PER_MACHINE_HERE_ONLY, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, mark_per_machine_vm, runner_home, server,
+    AppDirs, Error, Inputs, LabRef, PER_MACHINE_HERE_ONLY, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, mark_per_machine_vm, runner_home,
+    server,
 };
 
-/// Starts `lab` on server `host`; `per_machine`: as one VM per machine (a cloud account only).
+/// Starts `lab` on server `host` with the launch's `inputs`; `per_machine`: as one VM per machine
+/// (a cloud account only). Only an ESXi host takes the default-ports choice: Terraform's labs
+/// (Proxmox, a cloud account) publish their own.
 pub(super) async fn start_on_server(
     dirs: &AppDirs,
     lab: LabRef<'_>,
     (host, per_machine): (&str, bool),
-    env: &[(String, String)],
+    inputs: Inputs<'_>,
     log: &mut impl FnMut(String),
 ) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
@@ -31,11 +34,11 @@ pub(super) async fn start_on_server(
     // Every server lab runs through the Isothrum runner: a cloud account, an ESXi host (Vagrant),
     // or a Proxmox server (Terraform). The runner keeps the state, the slot and the connection.
     if conn.provider.is_cloud() {
-        return start_cloud_run(dirs, CloudStart { dir, id, runtime, host, conn, env, per_machine }, log).await;
+        return start_cloud_run(dirs, CloudStart { dir, id, runtime, host, conn, env: inputs.values, per_machine }, log).await;
     }
     if conn.provider == Provider::VmwareEsxi {
         lab::prepare(dir, lab::vagrant_target(runtime))?;
-        esxi_run(dirs, dir, id, runtime, &conn)?.up(env, Some(Provider::VmwareEsxi.id()), log).await?;
+        esxi_run(dirs, dir, id, runtime, &conn)?.up(inputs, Some(Provider::VmwareEsxi.id()), log).await?;
         return mark_parked(dir, None);
     }
     lab::prepare(dir, lab::terraform(dir, runtime, "proxmox").1)?;
@@ -44,7 +47,7 @@ pub(super) async fn start_on_server(
     if place.jump.is_some() {
         log("The lab bridge is internal to the node: reaching the lab's VMs through the node.".into());
     }
-    run.up(&place, env, log).await
+    run.up(&place, inputs.values, log).await
 }
 
 /// One VM per machine on a server host is Isoloom's cloud-vm, which every cloud account runs (how

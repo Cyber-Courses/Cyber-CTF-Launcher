@@ -78,7 +78,7 @@ mod start_path {
             "isothrum::LabRun::docker_in_vm(&home, &dir, &id).unwrap().status().await;",
             "isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.check().await;",
             "let stopped = lifecycle::stop_run(isothrum::LabRun::docker_in_vm(&home, &dir, &id).unwrap(), &dir, log(&id)).await;",
-            "let started = launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, env: &[] }, &mut log(&id)).await;",
+            "let started = launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut log(&id)).await;",
         ] {
             assert!(direct_changes(fine).is_empty(), "{fine}");
         }

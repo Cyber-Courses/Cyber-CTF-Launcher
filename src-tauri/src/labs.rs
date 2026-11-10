@@ -258,13 +258,14 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, placement: &Placement<'_
     let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit, runtime: launch.runtime };
     let dir = install(dirs, release, &log).await?;
     // Fixed names for every lab; the evidence itself is never in the environment.
-    let env = launch_env(launch.env, placement.default_ports);
+    let env = launch_env(launch.env);
     let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
     let to = runtime::Destination {
         provider: placement.provider,
         host: placement.host,
         per_machine_vm: placement.per_machine_vm,
         docker_context: placement.docker_context,
+        default_ports: placement.default_ports,
     };
     start_recorded(dirs, lab, to, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
@@ -297,7 +298,7 @@ async fn start_lab(lab_id: &str) -> Result<serde_json::Value> {
 #[cfg(test)]
 pub(crate) async fn launch_values_at(base: &str, token: &str, lab_id: &str) -> Result<Vec<(String, String)>> {
     let data = api::send(base, Some(token.to_owned()), START_LAB, json!({ "id": lab_id })).await?;
-    Ok(launch_env(parse_launch(data["startLab"].clone())?.env, false))
+    Ok(launch_env(parse_launch(data["startLab"].clone())?.env))
 }
 
 /// The launch spec for `lab_id`: the backend's answer (whose source is kept for a later offline

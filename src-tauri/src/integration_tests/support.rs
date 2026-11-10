@@ -57,7 +57,7 @@ pub(crate) struct Run {
 impl Run {
     /// Starts the lab with the launch's values `env`.
     pub(crate) async fn start(&self, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        launch::start_docker_run(&self.home, &self.dir, &self.id, env, log).await
+        launch::start_docker_run(&self.home, &self.dir, &self.id, launch::Inputs::values(env), log).await
     }
 
     pub(crate) async fn status(&self) -> Result<LabStatus> {

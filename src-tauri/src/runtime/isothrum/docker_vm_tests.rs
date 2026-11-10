@@ -110,7 +110,7 @@ fn in_vm(e: &mut Engine, command: &str, call: &Call) -> Reply {
 async fn a_container_lab_in_a_utm_vm_runs_with_nothing_of_the_runners_own_in_it() {
     let f = Fixture::new();
     let run = f.run();
-    run.up(&[], Some("utm"), &mut |_| {}).await.unwrap();
+    run.up(Inputs::default(), Some("utm"), &mut |_| {}).await.unwrap();
     let s = run.status().await.unwrap();
     assert!(s.running && matches!(s.place, Some(Place::LocalVm)), "UTM's `started` reads as running (running={})", s.running);
     assert!(f.fake.calls().iter().all(|c| !c.line().contains("docker run")), "nothing but the lab went into the VM");
@@ -124,7 +124,7 @@ async fn a_container_lab_in_a_utm_vm_runs_with_nothing_of_the_runners_own_in_it(
 async fn update_through_utm_refusals(refusals: u32) -> (Vec<String>, Result<()>, usize) {
     let f = Fixture::new();
     let run = f.run();
-    run.up(&[], Some("utm"), &mut |_| {}).await.unwrap();
+    run.up(Inputs::default(), Some("utm"), &mut |_| {}).await.unwrap();
     std::fs::write(f.home.dir.join("isoloom.yml"), SPEC.replace("publish: 8080", "publish: 8081")).unwrap();
     lab::prepare(&f.home.dir, lab::vagrant_target(Runtime::Docker)).unwrap();
     f.model().refusals = refusals;
@@ -158,7 +158,8 @@ async fn start_through_utm_refusals(refusals: u32) -> (Vec<String>, Result<()>, 
     let f = Fixture::new();
     f.model().refusals = refusals;
     let mut said = Vec::new();
-    let started = crate::runtime::launch::up_in_vm(&f.home.dir, crate::runtime::providers::Provider::Utm, &[], || Ok(f.run()), &mut |l| said.push(l)).await;
+    let started =
+        crate::runtime::launch::up_in_vm(&f.home.dir, crate::runtime::providers::Provider::Utm, Inputs::default(), || Ok(f.run()), &mut |l| said.push(l)).await;
     let ups = f.fake.calls().iter().filter(|c| c.line().starts_with("vagrant up")).count();
     (said, started, ups)
 }
@@ -186,7 +187,7 @@ async fn an_update_whose_restart_utm_refused_after_stopping_the_vm_starts_the_ru
     // added and the lab stayed down.
     let f = Fixture::new();
     let run = f.run();
-    run.up(&[], Some("utm"), &mut |_| {}).await.unwrap();
+    run.up(Inputs::default(), Some("utm"), &mut |_| {}).await.unwrap();
     let with_box = SPEC.replace("publish: 8080", "publish: 8081").replace(
         "checks:",
         "  box:\n    networks: { lab: 11 }\n    ports: { web: { port: 80, protocol: http, publish: 8090 } }\n    app: { image: nginx:1.27 }\nchecks:",

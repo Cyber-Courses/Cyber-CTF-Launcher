@@ -69,7 +69,7 @@ async fn a_container_lab_runs_in_a_local_vm_end_to_end() {
             // The launcher's own start of a container lab in a VM, as the lab page's runs it: its
             // Vagrant files generated, the lab marked as running in a local VM, UTM opened first
             // and its passing refusal tried again, then up through the runner.
-            match launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, env: &[] }, &mut log(&id)).await {
+            match launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut log(&id)).await {
                 Ok(()) => up_in_vm(&home, &dir, &id, f).await,
                 Err(e) => check(false, format!("it starts: {e}"), f),
             }
