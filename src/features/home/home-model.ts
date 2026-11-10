@@ -1,6 +1,7 @@
 import type { LabStatus, SystemReport } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
 import type { MessageKey } from "@/lib/i18n";
+import { isDockerReady } from "@/features/machine/setup-steps/steps";
 
 // What the Overview shows, as pure functions of the labs, their statuses and this machine.
 
@@ -13,7 +14,7 @@ export const greetingKey = (hour: number): MessageKey =>
 
 /** Whether Docker is ready: unknown (null) until the machine report is in, so there's no "set up"
  *  call to action for a Docker that is simply not probed yet. */
-export const dockerReadiness = (report: SystemReport | null) => (report ? report.docker.installed && report.dockerRunning : null);
+export const dockerReadiness = (report: SystemReport | null) => (report ? isDockerReady(report) : null);
 
 /** The line under the greeting (home.status.*). `checkFailed`: the machine check failed, and none
  *  answered before it (the report is unknown). */
