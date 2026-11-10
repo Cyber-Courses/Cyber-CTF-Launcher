@@ -9,6 +9,7 @@ import { serverMonthToDateCost, serverOpenSetup, serverRemove, type CloudProvide
 import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
 import { ignore } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
+import { failureText, isFailedLine } from "@/lib/log-marks";
 
 /** Month-to-date spend, only for accounts that set a budget (Cost Explorer costs per call), read
  *  with each account's own credentials: the figure the launch budget gate checks. `hosts` is the
@@ -48,7 +49,7 @@ export function useCloudPage() {
     await stop(l);
     // A failure ends the run's log with "✗ <why>": show it here too.
     const last = getDeploySnapshot().runs[l.id]?.logs.at(-1);
-    if (last?.startsWith("✗")) setError(last.slice(1).trim());
+    if (last !== undefined && isFailedLine(last)) setError(failureText(last).trim());
   }
 
   return {

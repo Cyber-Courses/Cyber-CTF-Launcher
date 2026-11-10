@@ -6,12 +6,7 @@ import { failureKind } from "@/features/labs/failure-hints";
 import type { ErrorCode } from "@/lib/errors";
 import { operationSeenAt, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
 import { useWorkerLog } from "@/features/labs/runs/worker-log";
-
-/** The failure a log ended on (its last ✗ line, without the mark), or null. */
-function logFailure(lines: string[]): string | null {
-  const line = lines.findLast((l) => l.startsWith("✗"));
-  return line ? line.replace(/^✗\s*/, "") : null;
-}
+import { failureOf } from "@/lib/log-marks";
 
 /** When this window first saw the backend's operation `op` in flight on the lab (none: none). */
 const backendSince = (labId: string, op: LabOperation | undefined) => (op ? operationSeenAt(labId, op) : undefined);
@@ -55,7 +50,7 @@ export function useLabPageState(
   const [lastOperation, setLastOperation] = useState<LabOperation>("launch");
   const local = logs.length > 0 || input.busy;
   const shownLogs = local ? logs : worker.lines;
-  const failure = logFailure(shownLogs);
+  const failure = failureOf(shownLogs);
   // Which operation failed: this session's run says; a worker's log is of the operation last seen.
   const failedOp = failure ? ((runOp as LabOperation | undefined) ?? lastOperation) : null;
   // The clicked operation names the state until the backend reports it (a clean-up read as

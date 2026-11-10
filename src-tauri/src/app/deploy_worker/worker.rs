@@ -9,9 +9,9 @@ use crate::AppHandle;
 use tauri::Manager as _;
 
 use super::files::status_line;
-use super::progress::FAILED_MARK;
 use super::{Job, Op, execute, files};
 use crate::platform::unwind::{CatchUnwind, panic_message};
+use crate::runtime::deploy_log::FAILED_MARK;
 use crate::runtime::lab_file_lock;
 
 /// The worker's entry point, in place of the app: a headless Tauri app on the same data dir

@@ -1,9 +1,16 @@
-//! The launcher's own lines in a deploy log that the lab page files under a step of their own:
-//! how each starts is said once, here, and the lines are built from it here. The webview reads
+//! What the lab page reads in a deploy log: the marks a run's closing line starts with, and the
+//! launcher's own lines it files under a step of their own. How each starts is said once, here,
+//! and the lines are built from it here. The webview reads
 //! the same starts from the file `ts_bindings` generates of them (`DeployLog.ts`), so a line
 //! reworded here can't fall out of its step there.
 
 use std::path::Path;
+
+/// How a failed run's closing line starts (the lab page marks a run failed by it).
+pub(crate) const FAILED_MARK: &str = "✗";
+/// How a run's closing line starts when it went through (the webview writes those: "✓ Lab is
+/// running").
+pub(crate) const DONE_MARK: &str = "✓";
 
 // The lines said while the lab is fetched and placed: the lab page's "Download the lab" step.
 const DOWNLOADING: &str = "Downloading ";

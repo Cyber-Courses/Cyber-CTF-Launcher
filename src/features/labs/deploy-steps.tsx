@@ -9,6 +9,7 @@ import { deriveSteps, failedMachineStep, type Step, type Timed } from "@/feature
 import { LiveDuration, RawLog, StepItem, StepMark } from "@/features/labs/deploy-step-parts";
 import { OPERATION_STATUS } from "@/features/labs/runs/operations";
 import { useT, type T } from "@/lib/i18n";
+import { failureText, isDoneLine, isFailedLine } from "@/lib/log-marks";
 
 type Operation = ActiveOperation["op"];
 
@@ -37,8 +38,8 @@ function useDeployTimeline(lines: string[], times: number[], busy: boolean, oper
   const t = useT();
   const timed = useMemo<Timed[]>(() => lines.map((line, i) => ({ line, at: times.at(i) ?? times.at(-1) ?? 0 })), [lines, times]);
   const derived = useMemo(() => {
-    const failed = timed.find((row) => row.line.startsWith("✗"));
-    const done = timed.find((row) => row.line.startsWith("✓"));
+    const failed = timed.find((row) => isFailedLine(row.line));
+    const done = timed.find((row) => isDoneLine(row.line));
     const op = operationText(t, operation);
     const steps = op ? (timed.length > 0 ? [{ id: operation, label: op.step, rows: timed }] : []) : deriveSteps(t, timed);
     const lastSeen = steps.at(-1)?.id;
@@ -204,7 +205,7 @@ export function DeploySteps({
       {failed && (
         <p className="flex items-start gap-2 border-t border-border px-4 py-2.5 font-mono text-[0.6875rem] text-muted-foreground">
           <StatusDot tone="fail" className="mt-1 shrink-0" />
-          <span className="min-w-0 break-words">{failed.line.replace(/^✗\s*/, "")}</span>
+          <span className="min-w-0 break-words">{failureText(failed.line)}</span>
         </p>
       )}
       {timed.length > 0 && <RawLog timed={timed} origin={start ?? timed[0].at} shown={showLog} onToggle={toggleLog} />}

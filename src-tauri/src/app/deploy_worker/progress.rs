@@ -5,9 +5,7 @@ use std::time::Duration;
 use super::files::verdict;
 use super::process::{Spawned, alive};
 use crate::error::{Error, Result};
-
-/// How a failed run's last log line starts (the UI marks a run failed by it).
-pub const FAILED_MARK: &str = "✗";
+use crate::runtime::deploy_log::{DONE_MARK, FAILED_MARK};
 
 /// How often the log and status files are read while following a worker.
 const POLL: Duration = Duration::from_millis(300);
@@ -24,7 +22,7 @@ pub fn last_step(log: &str) -> Option<String> {
     let mut last_line: Option<String> = None;
     for raw in log.lines() {
         let l = raw.trim();
-        if l.is_empty() || l.starts_with('✓') || l.starts_with('✗') {
+        if l.is_empty() || l.starts_with(DONE_MARK) || l.starts_with(FAILED_MARK) {
             continue;
         }
         if let Some(rest) = l.strip_prefix("==>") {
@@ -104,7 +102,7 @@ pub async fn tail(spawned: &Spawned, mut log: impl FnMut(String)) -> Result<()> 
                 if !line.trim().is_empty() {
                     last = Some(line.clone());
                 }
-                // The worker's closing ✗ line restates its verdict, which the caller reports.
+                // The worker's closing failed line restates its verdict, which the caller reports.
                 if !line.starts_with(FAILED_MARK) {
                     log(line);
                 }

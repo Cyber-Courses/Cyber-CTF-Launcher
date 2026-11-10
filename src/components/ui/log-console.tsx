@@ -6,6 +6,7 @@ import { Check, ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatElapsed } from "@/lib/format";
 import { useT } from "@/lib/i18n";
+import { isFailedLine } from "@/lib/log-marks";
 
 type LogConsoleProps = {
   lines: string[];
@@ -17,7 +18,7 @@ type LogConsoleProps = {
 };
 
 /** Whether the log ends on a failure: a last line starting with ✗. */
-const endsFailed = (lines: string[]) => lines.at(-1)?.trimStart().startsWith("✗") ?? false;
+const endsFailed = (lines: string[]) => isFailedLine(lines.at(-1)?.trimStart() ?? "");
 
 /**
  * Auto-scrolling terminal for streamed command output: black body, and a header with a

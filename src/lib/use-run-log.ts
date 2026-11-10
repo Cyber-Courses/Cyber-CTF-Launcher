@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { describeError } from "@/lib/errors";
+import { failedLine } from "@/lib/log-marks";
 
 /**
  * The streamed log of a task the player started and watches line by line (an install, a sign-in,
@@ -22,7 +23,7 @@ export function useRunLog() {
         const last = await task(append);
         if (typeof last === "string") append(last);
       } catch (e) {
-        append(`✗ ${describeError(e)}`);
+        append(failedLine(describeError(e)));
       }
     },
     [append],

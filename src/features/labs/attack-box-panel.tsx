@@ -9,6 +9,7 @@ import { StatusDot } from "@/components/ui/status-pill";
 import { Spinner } from "@/components/ui/spinner";
 import type { AttackBox } from "@/features/labs/use-attack-box";
 import { useT } from "@/lib/i18n";
+import { isFailedLine } from "@/lib/log-marks";
 
 /** The attack box card in the lab page's side rail. The box is one more machine of the lab,
  *  wherever it runs (`host`: the server or cloud account of a remote lab): a Kali VM among a VM
@@ -60,7 +61,7 @@ export function AttackBoxPanel({
           </Button>
         )}
         {running && <BoxControls box={box} />}
-        {(busy || log.some((l) => l.startsWith("✗"))) && log.length > 0 && (
+        {(busy || log.some(isFailedLine)) && log.length > 0 && (
           <LogConsole lines={log} running={busy} title={vm ? t("labs.attackBox.attackVm") : t("labs.attackBox.attackBox")} />
         )}
       </div>

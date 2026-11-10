@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { commandError, describeError, errorCode, type ErrorCode } from "@/lib/errors";
 import { registerReset } from "@/lib/module-state";
+import { failedLine, failureOf } from "@/lib/log-marks";
 
 // The live state of lab start/stop, kept outside the React tree so it survives navigating away
 // from the labs screen (which unmounts it) while a deploy keeps running in the backend.
@@ -91,7 +92,7 @@ export function beginDeploy(labId: string, op?: string) {
 /** Ends `labId`'s log on the error it failed with: a ✗ line in the player's language, and the
  *  error's code kept beside it for the hints. */
 export function failDeploy(labId: string, e: unknown) {
-  appendDeployLog(labId, `✗ ${describeError(e)}`);
+  appendDeployLog(labId, failedLine(describeError(e)));
   flushDeployLogs();
   const prev = state.runs[labId];
   if (prev) setRun(labId, { ...prev, failureCode: errorCode(e), failureHolder: portHolder(e) });
@@ -106,9 +107,7 @@ function portHolder(e: unknown): string | null {
 /** The failure that ended a lab's run (its ✗ line, without the mark), once the run is over;
  *  null while it runs or when it went through. */
 export function runFailure(run: DeployRun | undefined): string | null {
-  if (!run || run.busy) return null;
-  const line = run.logs.findLast((l) => l.startsWith("✗"));
-  return line ? line.replace(/^✗\s*/, "") : null;
+  return !run || run.busy ? null : failureOf(run.logs);
 }
 
 /** Whether a lab's last run was a start (a launch) that failed. */
