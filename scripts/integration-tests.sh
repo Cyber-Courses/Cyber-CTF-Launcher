@@ -13,7 +13,7 @@
 #   TIERS               local, aws, server (default: local)
 #   ISOLOOM             an Isoloom checkout, for its example labs (default: ../isoloom)
 #   VM_PROVIDER         the hypervisor for VM labs (default: qemu)
-#   DOCKER_VM_PROVIDER  the one for a container lab in a VM (default: utm on macOS)
+#   DOCKER_VM_PROVIDER  the one for a container lab in a VM (default: utm on macOS, else VM_PROVIDER)
 #   AWS_REGION          the AWS tier's region (default: eu-west-3)
 #   LOGS                where each scenario's log goes (default: .integration-tests)
 #   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# The gate before a release: every check CI runs, plus the layer it cannot (the native GUI e2e,
-# which needs a desktop session, a real Docker engine and a hypervisor), in one command on a
-# developer machine, with one line per step at the end. Steps keep going after a failure so one
+# The gate before a release: every check CI runs on the app's code and its workflows (the
+# Terraform templates' validation stays in CI: it needs Terraform and the providers' registry),
+# plus the layer CI cannot run (the native GUI e2e, which needs a desktop session, a real Docker
+# engine and a hypervisor), in one command on a developer machine, with one line per step at the
+# end. Steps keep going after a failure so one
 # run reports everything that is wrong. docs/testing/release-check.md says what each step proves.
 #
 #   scripts/release-check.sh                     the whole gate (pnpm release-check)
@@ -10,13 +12,15 @@
 #
 # Steps, in order: prereqs, install, versions, docs, format, types, lint, build, quality, unit-web
 # (with the coverage floors), unit-rust, bindings (the generated types the Rust tests rewrote are
-# committed), coverage-rust (when cargo-llvm-cov is installed), deny (when cargo-deny is), audit,
-# e2e-mock (Playwright against the dev mock), e2e-native (e2e/desktop/run.sh, which has its own
-# knobs).
+# committed), other-platforms (clippy for Linux and Windows, scripts/check-other-platforms.sh;
+# needs rustup), coverage-rust (when cargo-llvm-cov is installed), deny (when cargo-deny is),
+# audit, shellcheck and actionlint (when installed, as lint-infra.yml runs them), pins (every
+# action pinned to a commit SHA), e2e-mock (Playwright against the dev mock), e2e-native
+# (e2e/desktop/run.sh, which has its own knobs).
 #
 # Knobs:
 #   RUST_LINES_FLOOR    the Rust line coverage floor (default: coverage.yml's)
-#   DEV_URL_PORT        a dev server Playwright reuses when it answers there (default: 3000)
+#   DEV_URL_PORT        a dev server Playwright reuses when it answers there (default: 3206)
 #   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
 
@@ -38,9 +42,28 @@ prereqs() {
   node --version | grep -q "^v${NODE_WANTED}\." || { echo "node $(node --version) in use; .nvmrc asks for $NODE_WANTED (nvm install $NODE_WANTED)"; missing=1; }
   cargo machete --version >/dev/null 2>&1 || { echo "missing: cargo-machete (cargo install cargo-machete); pnpm quality needs it"; missing=1; }
   docker info >/dev/null 2>&1 || echo "note: docker is not running; e2e-native skips the scenarios that run a lab"
-  cargo llvm-cov --version >/dev/null 2>&1 || echo "note: cargo-llvm-cov is not installed; coverage-rust is skipped (cargo install cargo-llvm-cov)"
-  cargo deny --version >/dev/null 2>&1 || echo "note: cargo-deny is not installed; deny is skipped (cargo install cargo-deny)"
+  for tool in rustup:other-platforms shellcheck:shellcheck actionlint:actionlint; do
+    command -v "${tool%%:*}" >/dev/null || echo "note: ${tool%%:*} is not installed; ${tool#*:} is skipped"
+  done
+  has cargo llvm-cov || echo "note: cargo-llvm-cov is not installed; coverage-rust is skipped (cargo install cargo-llvm-cov)"
+  has cargo deny || echo "note: cargo-deny is not installed; deny is skipped (cargo install cargo-deny)"
   [ "$missing" -eq 0 ]
+}
+# has <command...>: whether the tool answers --version (a cargo subcommand that isn't installed doesn't).
+has() { "$@" --version >/dev/null 2>&1; }
+# Every action in the workflows is pinned to a full commit SHA, its version in a comment, as
+# lint-infra.yml checks (a tag or branch can be moved to new code).
+actions_pinned() {
+  local unpinned
+  unpinned=$(grep -nE '^\s*(- )?uses:' .github/workflows/*.yml .github/actions/*/action.yml | grep -vE 'uses: \./' | grep -vE 'uses: [^@[:space:]]+@[0-9a-f]{40} # \S')
+  [ -z "$unpinned" ] || { echo "$unpinned"; echo "pin these actions to a full commit SHA, with the version in a comment (uses: owner/repo@<sha> # vX.Y.Z)"; return 1; }
+}
+# Lints the repository's shell scripts with shellcheck, as lint-infra.yml does (test fixtures under
+# testdata/ aren't scripts). Read into an array line by line: bash 3.2 has no mapfile.
+shellcheck_scripts() {
+  local scripts=() f
+  while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files '*.sh' '*.bash' 'images/attack-box/bashrc.cyberctf' ':(exclude)*/testdata/*')
+  shellcheck --severity=warning --external-sources "${scripts[@]}"
 }
 # The command types the Rust tests rewrite (ts_bindings.rs) are the ones committed, as ci.yml checks.
 bindings_committed() {
@@ -79,13 +102,19 @@ step quality pnpm quality
 step unit-web pnpm exec vitest run --coverage
 step unit-rust cargo test --manifest-path src-tauri/Cargo.toml
 step bindings bindings_committed
-if cargo llvm-cov --version >/dev/null 2>&1; then step coverage-rust rust_cov; else skip coverage-rust "cargo-llvm-cov not installed"; fi
-if cargo deny --version >/dev/null 2>&1; then
+# CI's clippy matrix for the other platforms, from here: the code behind their `#[cfg]`.
+if command -v rustup >/dev/null; then step other-platforms scripts/check-other-platforms.sh; else skip other-platforms "rustup not installed"; fi
+if has cargo llvm-cov; then step coverage-rust rust_cov; else skip coverage-rust "cargo-llvm-cov not installed"; fi
+if has cargo deny; then
   step deny cargo deny --manifest-path src-tauri/Cargo.toml check advisories bans licenses sources
 else
   skip deny "cargo-deny not installed"
 fi
 step audit pnpm audit --prod
+# lint-infra.yml's checks of the files around the app.
+if command -v shellcheck >/dev/null; then step shellcheck shellcheck_scripts; else skip shellcheck "shellcheck not installed"; fi
+if command -v actionlint >/dev/null; then step actionlint actionlint -color; else skip actionlint "actionlint not installed"; fi
+step pins actions_pinned
 step e2e-mock e2e_mock
 case "$(uname -s)" in
   Darwin | Linux) step e2e-native e2e/desktop/run.sh ;;

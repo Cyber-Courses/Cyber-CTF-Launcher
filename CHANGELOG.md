@@ -106,8 +106,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   keeps its folder, and the next test removes its VM first. Before anything reaches the host,
   the test checks that this computer has the `vagrant-vmware-esxi` plugin and the OVF Tool, as
   the Machine page finds them, and says which one is missing.
-- **`pnpm release-check` runs everything CI runs**: it gained the docs' links, the build, the
-  generated bindings check, `cargo deny` (when installed) and `pnpm audit --prod`.
+- **`pnpm release-check` runs every check CI runs but the Terraform templates' validation**: it
+  gained the docs' links, the build, the generated bindings check, clippy for Linux and Windows
+  (with `rustup`), `cargo deny`, shellcheck and actionlint (when installed), the actions' SHA pins
+  and `pnpm audit --prod`.
 - **Licensed under the Apache License 2.0** (`LICENSE`, `NOTICE`).
 - **A tag build refuses to ship unsigned installers.** The release stops before building when a
   Windows (Azure Artifact Signing), macOS (Developer ID, notarization) or updater signing secret is

@@ -5,9 +5,9 @@ Each runner takes `--help`, which prints its header (what it does, its knobs).
 
 | Script                     | Run with                           | What it does                                                                                             |
 | -------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `release-check.sh`         | `pnpm release-check`               | the gate before a release: every check CI runs plus the native e2e, one verdict per step                 |
+| `release-check.sh`         | `pnpm release-check`               | the gate before a release: CI's checks but the Terraform templates', plus the native e2e, one per step   |
 | `integration-tests.sh`     | `pnpm test:integration`            | the integration tests: real labs by tier (`local`, `aws`, `server`)                                      |
-| `quality/`                 | `pnpm quality`                     | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, conventions     |
+| `quality/`                 | `pnpm quality`                     | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, unused crates   |
 | `check-other-platforms.sh` | `scripts/check-other-platforms.sh` | clippy for Linux and Windows from any machine: the code behind another OS's `#[cfg]`, before CI's matrix |
 | `check-tauri-versions.ts`  | `pnpm check:tauri`                 | the Tauri JS plugins and Rust crates on matching versions                                                |
 | `check-doc-links.ts`       | `pnpm check:docs`                  | every relative link and `#anchor` in the repository's Markdown resolves                                  |

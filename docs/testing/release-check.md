@@ -13,33 +13,39 @@ the end of this page have been done for what the release changes.
 
 ## What each step proves
 
-| Step            | Command                                   | What it catches                                                                                                                                                 |
-| --------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `prereqs`       | tool presence                             | the machine can run the gate at all (Node from `.nvmrc`, pnpm, cargo, cargo-machete, Docker)                                                                    |
-| `install`       | `pnpm install --frozen-lockfile`          | the lockfile and `package.json` agree                                                                                                                           |
-| `versions`      | `pnpm check:tauri`                        | Tauri JS plugins and Rust crates drifted apart (fails `tauri build` otherwise)                                                                                  |
-| `docs`          | `pnpm check:docs`                         | a relative link or `#anchor` in the Markdown that doesn't resolve                                                                                               |
-| `format`        | prettier, `cargo fmt --check`             | formatting                                                                                                                                                      |
-| `types`         | `pnpm typecheck`                          | TypeScript, including the generated command bindings                                                                                                            |
-| `lint`          | `pnpm lint`                               | ESLint                                                                                                                                                          |
-| `build`         | `pnpm build`                              | the static export the app ships doesn't build                                                                                                                   |
-| `quality`       | `pnpm quality`                            | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, module conventions, unused crates (`cargo machete`)                    |
-| `unit-web`      | `vitest run --coverage`                   | the frontend's unit and component tests, with the coverage floors in `vitest.config.mts`                                                                        |
-| `unit-rust`     | `cargo test`                              | the Rust tests that need no real tool (external tools are scripted through `platform/exec/fake.rs`)                                                             |
-| `bindings`      | `git status` of `src/lib/tauri/generated` | the TypeScript command types the Rust tests rewrote differ from those committed                                                                                 |
-| `coverage-rust` | `cargo llvm-cov`                          | the Rust line floor `coverage.yml` enforces; skipped when `cargo-llvm-cov` is not installed                                                                     |
-| `deny`          | `cargo deny check`                        | a Rust dependency with an advisory, a licence `src-tauri/deny.toml` doesn't allow, or another source; skipped when `cargo-deny` is not installed                |
-| `audit`         | `pnpm audit --prod`                       | a known vulnerability in a shipped npm dependency                                                                                                               |
-| `e2e-mock`      | `playwright test`                         | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n |
-| `e2e-native`    | `e2e/desktop/run.sh`                      | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                          |
+| Step              | Command                                   | What it catches                                                                                                                                                   |
+| ----------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prereqs`         | tool presence                             | the machine can run the gate at all (Node from `.nvmrc`, pnpm, cargo, cargo-machete, Docker)                                                                      |
+| `install`         | `pnpm install --frozen-lockfile`          | the lockfile and `package.json` agree                                                                                                                             |
+| `versions`        | `pnpm check:tauri`                        | Tauri JS plugins and Rust crates drifted apart (fails `tauri build` otherwise)                                                                                    |
+| `docs`            | `pnpm check:docs`                         | a relative link or `#anchor` in the Markdown that doesn't resolve                                                                                                 |
+| `format`          | prettier, `cargo fmt --check`             | formatting                                                                                                                                                        |
+| `types`           | `pnpm typecheck`                          | TypeScript, including the generated command bindings                                                                                                              |
+| `lint`            | `pnpm lint`                               | ESLint                                                                                                                                                            |
+| `build`           | `pnpm build`                              | the static export the app ships doesn't build                                                                                                                     |
+| `quality`         | `pnpm quality`                            | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, commented-out code, unused crates (`cargo machete`)                      |
+| `unit-web`        | `vitest run --coverage`                   | the frontend's unit and component tests, with the coverage floors in `vitest.config.mts`                                                                          |
+| `unit-rust`       | `cargo test`                              | the Rust tests that need no real tool (external tools are scripted through `platform/exec/fake.rs`), the module conventions among them (`testing/source_scan.rs`) |
+| `bindings`        | `git status` of `src/lib/tauri/generated` | the TypeScript command types the Rust tests rewrote differ from those committed                                                                                   |
+| `other-platforms` | `scripts/check-other-platforms.sh`        | clippy for Linux and Windows, CI's matrix: the code behind another OS's `#[cfg]`; skipped without `rustup`                                                        |
+| `coverage-rust`   | `cargo llvm-cov`                          | the Rust line floor `coverage.yml` enforces; skipped when `cargo-llvm-cov` is not installed                                                                       |
+| `deny`            | `cargo deny check`                        | a Rust dependency with an advisory, a licence `src-tauri/deny.toml` doesn't allow, or another source; skipped when `cargo-deny` is not installed                  |
+| `audit`           | `pnpm audit --prod`                       | a known vulnerability in a shipped npm dependency                                                                                                                 |
+| `shellcheck`      | `shellcheck`                              | a warning in the repository's shell scripts, as `lint-infra.yml` runs it; skipped when not installed                                                              |
+| `actionlint`      | `actionlint`                              | a mistake in the workflows, as `lint-infra.yml` runs it; skipped when not installed                                                                               |
+| `pins`            | `grep` of the workflows                   | an action not pinned to a full commit SHA (a tag can be moved to new code)                                                                                        |
+| `e2e-mock`        | `playwright test`                         | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n   |
+| `e2e-native`      | `e2e/desktop/run.sh`                      | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                            |
 
 Next allows one dev server per checkout (its dev lock), so when one already serves port 3206
 (`pnpm tauri dev`, or the native runner's), the `e2e-mock` step runs Playwright against it
 instead of starting its own on port 3210.
 
 Every step but the last is what CI runs on every pull request (`ci.yml`, `web-coverage.yml`,
-`coverage.yml`, `e2e.yml`), so on a green PR they mostly confirm the local checkout matches. The
-last one is the reason to run the gate.
+`coverage.yml`, `e2e.yml`, `lint-infra.yml`), so on a green PR they mostly confirm the local
+checkout matches. The last one is the reason to run the gate. CI also validates the Terraform
+templates (`lint-infra.yml`), which needs Terraform and its providers' registry: the gate leaves it
+to CI.
 
 ## The native layer
 

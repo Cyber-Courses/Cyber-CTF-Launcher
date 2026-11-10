@@ -12,7 +12,8 @@ is tested at the lowest level that can show it; the higher ones run before a rel
 | End-to-end, desktop | the real app binary through its embedded WebDriver, on a real Docker and hypervisor                          | `e2e/desktop/specs/` ([desktop-e2e.md](desktop-e2e.md))        | `pnpm e2e:desktop`          | `native-e2e.yml` (manual, Linux)                             |
 | Packaging           | the built bundle installed and launched (the MSI silently, then removed); the Windows installer's edge cases | `package-smoke.yml`; `packaging/windows/smoke-test.ps1`        | see each                    | `package-smoke.yml`                                          |
 
-`pnpm release-check` runs everything CI runs plus the desktop end-to-end, one verdict per step
+`pnpm release-check` runs every check CI runs but the Terraform templates' validation, plus the
+desktop end-to-end, one verdict per step
 ([release-check.md](release-check.md)). [integration.md](integration.md) lists the integration
 scenarios and what each guards against; `infra/test-servers/` makes throwaway Proxmox and ESXi
 hosts for their server tier.

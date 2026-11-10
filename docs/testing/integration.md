@@ -54,8 +54,8 @@ checked for anything of it left (instances, networks, key pairs).
 
 A sign-in that runs out mid-run left a lab's network behind once (an empty VPC, its firewall and
 key): the launcher now asks the cloud's CLI before every change and refuses, saying to sign in
-again (`runtime/isothrum/cloud.rs`, unit-tested); the runner refuses to start the AWS tier
-signed out.
+again (`runtime/isothrum/cloud.rs`, unit-tested); the runner skips the AWS tier's scenarios
+signed out (a failure under `STRICT=1`).
 
 ## Server tier
 
