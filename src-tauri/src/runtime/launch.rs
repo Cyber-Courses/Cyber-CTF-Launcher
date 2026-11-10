@@ -169,8 +169,8 @@ pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, st
 }
 
 /// Brings up a container lab's helper VM on `provider` (the run [`isothrum::LabRun`] `run_of`
-/// opens) with the launch's values `env`: a failed start takes down what it half created, and on
-/// UTM its passing `-600` refusal is tried again, once.
+/// opens) with the launch's values `env`: on UTM its passing `-600` refusal goes on as
+/// [`isothrum::LabRun::start`] says, and a start that failed takes down what it half created.
 pub(in crate::runtime) async fn up_in_vm(
     dir: &Path,
     provider: Provider,
@@ -179,33 +179,24 @@ pub(in crate::runtime) async fn up_in_vm(
     log: &mut impl FnMut(String),
 ) -> Result<()> {
     let run = run_of()?;
-    let mut tried_again = false;
-    loop {
-        // Marked before every attempt: the teardown of a failed one forgets the marker with the
-        // rest of the run, and without it status, stop and the attack box would read the lab
-        // as plain Docker on this machine once the next attempt succeeds.
-        mark_local_vm(dir, Some(provider))?;
-        let Err(e) = run.up(env, Some(provider.id()), log).await else {
-            return mark_parked(dir, None);
-        };
-        // A failed start can leave a half-created helper VM holding host ports (e.g. the QEMU
-        // SSH forward), and that lingering VM trips the next launch with a port-collision
-        // error. Destroy it before surfacing the failure; the teardown is best-effort, so its
-        // own error is logged, never allowed to mask the start's.
-        log("Start failed: removing the half-created VM so the next launch starts clean".into());
-        let teardown = match run_of() {
-            Ok(vm) => super::lifecycle::stop_run(vm, dir, &mut *log).await,
-            Err(e) => Err(e),
-        };
-        if let Err(teardown) = teardown {
-            log(format!("Could not fully remove the failed VM: {teardown}"));
-        }
-        if provider == Provider::Utm && !tried_again && isothrum::errors::try_again_after_utm(&e, log) {
-            tried_again = true;
-            continue;
-        }
-        return Err(e);
+    // Marked before the start: status, stop and the attack box read the lab as in this VM.
+    mark_local_vm(dir, Some(provider))?;
+    let Err(e) = run.start(env, provider.id(), log).await else {
+        return mark_parked(dir, None);
+    };
+    // A failed start can leave a half-created helper VM holding host ports (e.g. the QEMU
+    // SSH forward), and that lingering VM trips the next launch with a port-collision
+    // error. Destroy it before surfacing the failure; the teardown is best-effort, so its
+    // own error is logged, never allowed to mask the start's.
+    log("Start failed: removing the half-created VM so the next launch starts clean".into());
+    let teardown = match run_of() {
+        Ok(vm) => super::lifecycle::stop_run(vm, dir, &mut *log).await,
+        Err(e) => Err(e),
+    };
+    if let Err(teardown) = teardown {
+        log(format!("Could not fully remove the failed VM: {teardown}"));
     }
+    Err(e)
 }
 
 /// The runner's start of a container lab (runner home `home`): its files generated (the run
@@ -246,14 +237,7 @@ pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     if provider == Provider::Utm {
         check_utm(log).await?;
     }
-    let run = isothrum::LabRun::vm(home, dir, id)?;
-    if let Err(e) = run.up(env, Some(provider.id()), log).await {
-        if provider != Provider::Utm || !isothrum::errors::try_again_after_utm(&e, log) {
-            return Err(e);
-        }
-        // A `vagrant up` after UTM's passing refusal resumes the VMs as they were left.
-        run.up(env, Some(provider.id()), log).await?;
-    }
+    isothrum::LabRun::vm(home, dir, id)?.start(env, provider.id(), log).await?;
     mark_parked(dir, None)
 }
 

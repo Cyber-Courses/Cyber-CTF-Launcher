@@ -26,6 +26,11 @@ struct Engine {
     /// How many of the next VM starts (an `up` or a `reload`) UTM refuses as it does right after
     /// an import or a restart.
     refusals: u32,
+    /// Whether a refused `reload` had shut the VM down first, as Vagrant's does before it boots
+    /// the VM again with its new settings.
+    reload_stops: bool,
+    /// The lab's services Compose starts, beside `web` (a machine added to the lab).
+    added: Option<&'static str>,
 }
 
 /// UTM's passing refusal, as Vagrant's UTM plugin reports it.
@@ -54,6 +59,9 @@ fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
     let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
     if call.program == "vagrant" && matches!(args.first(), Some(&("up" | "reload"))) && e.refusals > 0 {
         e.refusals -= 1;
+        if args.first() == Some(&"reload") && e.reload_stops {
+            (e.vm, e.up) = (Some("stopped"), false);
+        }
         return Reply::fail(1, UTM_REFUSAL);
     }
     match (call.program.as_str(), args.as_slice()) {
@@ -69,8 +77,8 @@ fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
             Reply::ok("")
         }
         ("vagrant", ["destroy", ..]) => {
-            // The VM goes; UTM's mood doesn't.
-            *e = Engine { refusals: e.refusals, ..Engine::default() };
+            // The VM goes; UTM's mood and the lab's files don't.
+            *e = Engine { refusals: e.refusals, reload_stops: e.reload_stops, added: e.added, ..Engine::default() };
             Reply::ok("")
         }
         ("vagrant", ["ssh", "--no-tty", "--command", command, "default"]) => {
@@ -91,7 +99,8 @@ fn in_vm(e: &mut Engine, command: &str, call: &Call) -> Reply {
         return Reply::ok(&format!("Container t-web-1  Healthy ({})", call.line()));
     }
     if command.contains("ps --all --format json") {
-        return Reply::ok(if e.up { PS } else { "" });
+        let added = e.added.map(|name| format!("\n{}", PS.replace("\"web\"", &format!("\"{name}\"")).replace("8080", "8090")));
+        return Reply::ok(&if e.up { format!("{PS}{}", added.unwrap_or_default()) } else { String::new() });
     }
     assert!(!command.starts_with("sudo docker "), "no container of the runner's own: {command}");
     Reply::ok("")
@@ -134,6 +143,8 @@ async fn an_update_tries_again_once_after_utms_passing_refusal() {
     assert!(updated.is_ok(), "{updated:?}");
     assert_eq!(reloads, 2, "the restart, tried again once");
     assert_eq!(said.iter().filter(|l| l.contains("a passing UTM scripting error") && l.ends_with("trying again.")).count(), 1, "{said:?}");
+    // The VM still ran after the refusal: the same update again, not a start.
+    assert!(!said.iter().any(|l| l.starts_with("The run isn't running after that")), "{said:?}");
     // Refused again: that is the error, not another try.
     let (said, updated, reloads) = update_through_utm_refusals(2).await;
     assert!(updated.as_ref().is_err_and(|e| e.to_string().contains("(-600)")), "{updated:?}");
@@ -165,4 +176,40 @@ async fn a_start_in_a_utm_vm_tries_again_once_after_utms_passing_refusal() {
     assert!(started.as_ref().is_err_and(|e| e.to_string().contains("(-600)")), "{started:?}");
     assert_eq!(ups, 2, "one try again, no more");
     assert_eq!(said.iter().filter(|l| l.ends_with("trying again.")).count(), 1, "{said:?}");
+}
+
+#[tokio::test]
+async fn an_update_whose_restart_utm_refused_after_stopping_the_vm_starts_the_run_again_with_its_new_machine() {
+    // Regression (a real UTM host): adding the attack box restarted the helper VM for its new
+    // settings; the reload shut the VM down, then UTM refused its boot with "-600". Trying the
+    // update again was refused ("This lab isn't running. Start it first."), so the box was never
+    // added and the lab stayed down.
+    let f = Fixture::new();
+    let run = f.run();
+    run.up(&[], Some("utm"), &mut |_| {}).await.unwrap();
+    let with_box = SPEC.replace("publish: 8080", "publish: 8081").replace(
+        "checks:",
+        "  box:\n    networks: { lab: 11 }\n    ports: { web: { port: 80, protocol: http, publish: 8090 } }\n    app: { image: nginx:1.27 }\nchecks:",
+    );
+    std::fs::write(f.home.dir.join("isoloom.yml"), with_box).unwrap();
+    lab::prepare(&f.home.dir, lab::vagrant_target(Runtime::Docker)).unwrap();
+    {
+        let mut m = f.model();
+        (m.refusals, m.reload_stops, m.added) = (1, true, Some("box"));
+    }
+    let before = f.fake.calls().len();
+    let mut said = Vec::new();
+    let updated = run.update(&mut |l| said.push(l)).await;
+    assert!(updated.is_ok(), "{updated:?} {said:?}");
+    let after: Vec<String> = f.fake.calls().iter().skip(before).map(Call::line).collect();
+    assert_eq!(after.iter().filter(|c| c.starts_with("vagrant reload")).count(), 1, "the update's restart, not tried again: {after:?}");
+    assert!(after.iter().any(|c| c.starts_with("vagrant up")), "the run started again: {after:?}");
+    assert_eq!(said.iter().filter(|l| l.ends_with("trying again.")).count(), 1, "{said:?}");
+    assert!(said.iter().any(|l| l == "The run isn't running after that: starting it again on its current files."), "{said:?}");
+    let s = run.status().await.unwrap();
+    assert!(
+        s.running && s.machines.iter().any(|m| m.name == "box" && m.state == "running"),
+        "the new machine is up: {:?}",
+        s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>()
+    );
 }

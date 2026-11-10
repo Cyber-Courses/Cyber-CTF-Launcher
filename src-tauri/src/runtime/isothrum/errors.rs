@@ -204,10 +204,10 @@ fn utm_retry_line(said: &str) -> String {
     format!("UTM answered {said} (a passing UTM scripting error, seen while a VM boots): trying again.")
 }
 
-/// Whether `e` is UTM's passing scripting error ([`utm_transient`]), saying in `log` that the
-/// operation is tried once more when it is: a start or an update leaves the run as it got it, so
-/// the next attempt picks up from there. Each caller tries again once only.
-pub(crate) fn try_again_after_utm(e: &Error, log: &mut impl FnMut(String)) -> bool {
+/// Whether `e` is UTM's passing scripting error ([`utm_transient`]), saying in `log` that it is
+/// tried once more when it is (which try, `LabRun::after_utm_refusal` decides from what the
+/// failed attempt left).
+pub(super) fn try_again_after_utm(e: &Error, log: &mut impl FnMut(String)) -> bool {
     let said = utm_transient(e);
     if let Some(said) = said {
         log(utm_retry_line(said));

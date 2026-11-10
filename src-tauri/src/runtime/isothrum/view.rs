@@ -12,7 +12,7 @@ use super::super::{Interface, LabStatus, Machine, Network, Park, Place, Port, Se
 /// one-shot jobs finished is up); parked as the player chose (`marked`, the lab's mark), else
 /// shut down; its URL is its entry output, once it runs.
 pub(super) fn lab_status(manifest: &Manifest, status: &Status, marked: Option<Park>) -> LabStatus {
-    let running = status.machines.iter().any(|m| m.role == Role::Member && matches!(m.state, MachineState::Running | MachineState::Unhealthy));
+    let running = runs(status);
     let url = status.outputs.iter().find(|o| o.role == OutputRole::Entry && !o.sensitive).and_then(|o| o.value.clone()).filter(|_| running);
     LabStatus {
         running,
@@ -27,6 +27,11 @@ pub(super) fn lab_status(manifest: &Manifest, status: &Status, marked: Option<Pa
         provider: status.provider.clone(),
         ..LabStatus::default()
     }
+}
+
+/// Whether any of the run's target machines runs (an unhealthy one runs too).
+pub(super) fn runs(status: &Status) -> bool {
+    status.machines.iter().any(|m| m.role == Role::Member && matches!(m.state, MachineState::Running | MachineState::Unhealthy))
 }
 
 /// One machine: its state as Docker words it, its addresses, its TCP ports with the host port

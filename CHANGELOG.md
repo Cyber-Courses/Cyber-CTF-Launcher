@@ -154,6 +154,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **Adding the attack box to a lab in a UTM VM no longer leaves the lab down.** Adding a machine
+  restarts the lab's VM for its new settings; when UTM refused the boot with its passing
+  "Application isn't running (-600)" after the VM had shut down, the update was tried again and
+  refused ("This lab isn't running"), so the box was never added and the lab stayed stopped. When
+  the refused attempt left the lab down, the launcher now starts it again on its current files,
+  which brings the new machine with it; otherwise it tries the same operation once more, as
+  before.
 - **A lab's "ready" notification names where it runs.** A lab launched from the website on a
   server or a cloud account was announced as "now running on this machine"; it now names the
   server or account.
