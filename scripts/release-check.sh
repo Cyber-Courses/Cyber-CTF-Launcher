@@ -42,11 +42,6 @@ prereqs() {
   node --version | grep -q "^v${NODE_WANTED}\." || { echo "node $(node --version) in use; .nvmrc asks for $NODE_WANTED (nvm install $NODE_WANTED)"; missing=1; }
   cargo machete --version >/dev/null 2>&1 || { echo "missing: cargo-machete (cargo install cargo-machete); pnpm quality needs it"; missing=1; }
   docker info >/dev/null 2>&1 || echo "note: docker is not running; e2e-native skips the scenarios that run a lab"
-  for tool in rustup:other-platforms shellcheck:shellcheck actionlint:actionlint; do
-    command -v "${tool%%:*}" >/dev/null || echo "note: ${tool%%:*} is not installed; ${tool#*:} is skipped"
-  done
-  has cargo llvm-cov || echo "note: cargo-llvm-cov is not installed; coverage-rust is skipped (cargo install cargo-llvm-cov)"
-  has cargo deny || echo "note: cargo-deny is not installed; deny is skipped (cargo install cargo-deny)"
   [ "$missing" -eq 0 ]
 }
 # has <command...>: whether the tool answers --version (a cargo subcommand that isn't installed doesn't).
@@ -72,7 +67,7 @@ bindings_committed() {
   [ -z "$changed" ] || { echo "$changed"; echo "src/lib/tauri/generated differs from the Rust structs: commit what cargo test wrote"; return 1; }
 }
 format_check() {
-  pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}" "{*,docs/**/*,infra/**/*,scripts/**/*}.md" && cargo fmt --manifest-path src-tauri/Cargo.toml --check
+  pnpm format:check && cargo fmt --manifest-path src-tauri/Cargo.toml --check
 }
 rust_cov() {
   cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml &&
@@ -81,7 +76,7 @@ rust_cov() {
 # Next's dev lock allows one dev server per checkout: when one already serves the app's devUrl
 # port (`pnpm tauri dev`, or e2e-native's), Playwright runs against it instead of starting its own.
 e2e_mock() {
-  if curl -fsS -o /dev/null "http://127.0.0.1:${DEV_URL_PORT:-3206}/"; then
+  if serves "${DEV_URL_PORT:-3206}"; then
     echo "reusing the dev server on port ${DEV_URL_PORT:-3206}"
     E2E_PORT=${DEV_URL_PORT:-3206} pnpm exec playwright test
   else
@@ -103,17 +98,17 @@ step unit-web pnpm exec vitest run --coverage
 step unit-rust cargo test --manifest-path src-tauri/Cargo.toml
 step bindings bindings_committed
 # CI's clippy matrix for the other platforms, from here: the code behind their `#[cfg]`.
-if command -v rustup >/dev/null; then step other-platforms scripts/check-other-platforms.sh; else skip other-platforms "rustup not installed"; fi
-if has cargo llvm-cov; then step coverage-rust rust_cov; else skip coverage-rust "cargo-llvm-cov not installed"; fi
+if command -v rustup >/dev/null; then step other-platforms scripts/check-other-platforms.sh; else skip other-platforms "rustup not installed (https://rustup.rs)"; fi
+if has cargo llvm-cov; then step coverage-rust rust_cov; else skip coverage-rust "cargo-llvm-cov not installed (cargo install cargo-llvm-cov)"; fi
 if has cargo deny; then
   step deny cargo deny --manifest-path src-tauri/Cargo.toml check advisories bans licenses sources
 else
-  skip deny "cargo-deny not installed"
+  skip deny "cargo-deny not installed (cargo install cargo-deny)"
 fi
 step audit pnpm audit --prod
 # lint-infra.yml's checks of the files around the app.
-if command -v shellcheck >/dev/null; then step shellcheck shellcheck_scripts; else skip shellcheck "shellcheck not installed"; fi
-if command -v actionlint >/dev/null; then step actionlint actionlint -color; else skip actionlint "actionlint not installed"; fi
+if command -v shellcheck >/dev/null; then step shellcheck shellcheck_scripts; else skip shellcheck "shellcheck not installed (https://www.shellcheck.net)"; fi
+if command -v actionlint >/dev/null; then step actionlint actionlint -color; else skip actionlint "actionlint not installed (https://github.com/rhysd/actionlint)"; fi
 step pins actions_pinned
 step e2e-mock e2e_mock
 case "$(uname -s)" in

@@ -35,7 +35,7 @@ jobs:
       - run: pnpm build
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec eslint src scripts e2e
-      - run: pnpm exec prettier --check "{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}" "{*,docs/**/*,infra/**/*,scripts/**/*}.md"
+      - run: pnpm format:check
       # Every relative link and #anchor in the Markdown resolves.
       - run: pnpm check:docs
       - run: pnpm exec vitest run

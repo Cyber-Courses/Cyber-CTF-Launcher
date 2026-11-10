@@ -9,8 +9,9 @@
 #   scripts/check-other-platforms.sh                  every other platform
 #   ONLY="linux" scripts/check-other-platforms.sh
 #
-# Steps: linux (x86_64-unknown-linux-gnu), windows (x86_64-pc-windows-msvc). A target that isn't
-# installed is skipped (rustup target add <triple>).
+# Steps: linux (x86_64-unknown-linux-gnu), windows (x86_64-pc-windows-msvc). Needs rustup (a
+# Rust from Homebrew or a distribution can't add targets): without it the run stops. A target that
+# isn't installed is skipped (rustup target add <triple>).
 #
 # Knobs:
 #   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)
@@ -21,6 +22,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 . "$ROOT/scripts/lib/suite.sh"
 suite_help "$0" "$@"
 cd "$ROOT/src-tauri" || exit 2
+# The targets rustup has installed; a Rust without rustup has none to list, and stops the run.
+INSTALLED=$(rustup target list --installed) || { echo "rustup is required: the other platforms' targets come from it (https://rustup.rs)" >&2; exit 2; }
 
 # Under target/, at a fixed path: the C crates' build scripts rerun when their compiler's path
 # changes, so a fixed one keeps their outputs cached between runs.
@@ -70,7 +73,7 @@ chmod +x "$FAKES"/*
 lint() {
   local name=$1 triple=$2 var
   wanted "$name" || return 0
-  if ! rustup target list --installed | grep -qx "$triple"; then
+  if ! grep -qx "$triple" <<<"$INSTALLED"; then
     skip "$name" "rustup target add $triple"
     return 0
   fi

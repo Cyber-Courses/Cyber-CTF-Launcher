@@ -51,15 +51,17 @@ Every runner script takes `--help`.
 
 ## The gates
 
-A pull request must pass what CI runs. Run them before you push:
+A pull request must pass what CI runs. `pnpm release-check` runs all of it on your machine, one
+verdict per step ([docs/testing/release-check.md](docs/testing/release-check.md) lists them):
+versions, the docs' links, formatting, types, ESLint, the build, the quality ratchet, the unit
+tests with the coverage floors, the committed bindings, clippy for the other platforms, `cargo
+deny`, `pnpm audit`, shellcheck, actionlint, the actions' pins and Playwright against the dev
+mock. Only the Terraform templates' validation is left to CI. Before you push:
 
 ```bash
-pnpm format     # Prettier (TypeScript, CSS, Markdown) and rustfmt
-pnpm check      # versions, formatting, types, the quality ratchet (clippy, ESLint, duplication,
-                # dead code), and the unit tests (vitest, cargo test)
-pnpm lint       # ESLint
-cargo deny --manifest-path src-tauri/Cargo.toml check   # advisories, licences, sources
-pnpm audit --prod
+pnpm format                            # Prettier (TypeScript, CSS, Markdown) and rustfmt
+SKIP=e2e-native pnpm release-check     # what CI runs (the native end-to-end needs a desktop
+                                       # session, Docker and a hypervisor: add it when you can)
 ```
 
 - **The quality ratchet** (`pnpm quality`, `quality-baseline.json`): a count of lint warnings,

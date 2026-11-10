@@ -35,6 +35,7 @@ mkdir -p "$LOGS"
 cd "$ROOT/src-tauri" || exit 2
 
 # A scenario's checks (`ok:` / `FAILED:`) are its summary on screen; its log keeps the rest.
+# shellcheck disable=SC2034 # read by lib/suite.sh's logged, which shellcheck doesn't follow
 SUITE_SHOW='^(ok|FAILED):|panicked'
 
 # scenario <name> <test> [VAR=value...]: the opt-in test, alone, with its knobs. It passes when
@@ -51,7 +52,7 @@ scenario() {
     record "$name" FAIL $((SECONDS - start)) "$log"
   fi
 }
-tier() { [[ " $TIERS " == *" $1 "* ]]; }
+tier() { listed "$1" "$TIERS"; }
 # shared_for <provider> <scenario>: the shared folder a VM box gets on that hypervisor here, empty
 # where it can't share one. The same providers as the launcher's `shares_folders`
 # (src-tauri/src/runtime/attack_machine/place.rs), which a unit test there holds to this list.

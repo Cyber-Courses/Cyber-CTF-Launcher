@@ -36,12 +36,18 @@ suite_help() {
   esac
 }
 
+# listed <word> <space-separated list>: whether the list names the word.
+listed() { [[ " $2 " == *" $1 "* ]]; }
+
 # wanted <step>: whether ONLY / SKIP let it run.
 wanted() {
-  if [ -n "${ONLY:-}" ] && [[ " $ONLY " != *" $1 "* ]]; then return 1; fi
-  if [ -n "${SKIP:-}" ] && [[ " $SKIP " == *" $1 "* ]]; then return 1; fi
+  if [ -n "${ONLY:-}" ] && ! listed "$1" "$ONLY"; then return 1; fi
+  if [ -n "${SKIP:-}" ] && listed "$1" "$SKIP"; then return 1; fi
   return 0
 }
+
+# serves <port>: whether a web server answers on this machine's port (a dev server to reuse).
+serves() { curl -fsS -o /dev/null "http://127.0.0.1:$1/"; }
 
 # record <step> <ok|FAIL|skip> <seconds> <detail>: one line of the summary.
 record() {

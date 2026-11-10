@@ -64,7 +64,7 @@ stop_frontend() {
 }
 case "$APP_BIN" in
   */debug/*)
-    if curl -fsS -o /dev/null "http://127.0.0.1:$DEV_URL_PORT/"; then
+    if serves "$DEV_URL_PORT"; then
       say "frontend: reusing the dev server on port $DEV_URL_PORT"
     else
       say "frontend: next dev on port $DEV_URL_PORT (a debug build loads devUrl, not out/)"
@@ -73,10 +73,10 @@ case "$APP_BIN" in
       NEXT_PGID=$!
       set +m
       for _ in $(seq 1 90); do
-        curl -fsS -o /dev/null "http://127.0.0.1:$DEV_URL_PORT/" && break
+        serves "$DEV_URL_PORT" && break
         sleep 2
       done
-      curl -fsS -o /dev/null "http://127.0.0.1:$DEV_URL_PORT/" || { tail -20 "$LOGS/next-dev.log"; stop_frontend; fail_now "next dev never answered on $DEV_URL_PORT"; }
+      serves "$DEV_URL_PORT" || { tail -20 "$LOGS/next-dev.log"; stop_frontend; fail_now "next dev never answered on $DEV_URL_PORT"; }
     fi
     ;;
 esac
