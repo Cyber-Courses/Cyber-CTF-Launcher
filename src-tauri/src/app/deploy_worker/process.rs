@@ -483,7 +483,7 @@ async fn claimed_worker(f: &Files) -> Option<Worker> {
 /// was found.
 #[cfg(unix)]
 fn interrupt_terraform(group: u32) -> bool {
-    let pgrep = |args: &[&str]| std::process::Command::new("pgrep").args(args).output().map(|o| pids(&String::from_utf8_lossy(&o.stdout))).unwrap_or_default();
+    let pgrep = |args: &[&str]| pgrep_with("pgrep", args);
     // The worker's group, and those of the tools it streams: each leads its own (exec::stream).
     let mut groups = vec![group];
     groups.extend(pgrep(&["-P", &group.to_string()]));
@@ -491,9 +491,32 @@ fn interrupt_terraform(group: u32) -> bool {
     let mut found = pgrep(&["-g", &groups, "-x", "terraform"]);
     found.extend(pgrep(&["-g", &groups, "-f", "hashicorp/terraform"]));
     for pid in &found {
-        let _ = std::process::Command::new("kill").args(["-INT", &pid.to_string()]).status();
+        crate::platform::sys::signal_process(*pid, libc::SIGINT);
     }
     !found.is_empty()
+}
+
+/// The process ids `program` (`pgrep`) prints for `args`. One that can't run, or that fails (not
+/// "nothing matched", its exit 1), is logged: a stop then finds no Terraform to interrupt and ends
+/// the worker as any other, mid-apply, which is what interrupting it first is there to avoid.
+#[cfg(unix)]
+fn pgrep_with(program: &str, args: &[&str]) -> Vec<u32> {
+    match std::process::Command::new(program).args(args).output() {
+        Ok(o) if o.status.success() || o.status.code() == Some(1) => pids(&String::from_utf8_lossy(&o.stdout)),
+        Ok(o) => {
+            log::warn!(
+                "`{program} {}` failed ({}), so a stop finds no Terraform to interrupt: {}",
+                args.join(" "),
+                o.status,
+                String::from_utf8_lossy(&o.stderr).trim()
+            );
+            Vec::new()
+        }
+        Err(e) => {
+            log::warn!("`{program}` can't run, so a stop finds no Terraform to interrupt: {e}");
+            Vec::new()
+        }
+    }
 }
 
 /// Windows: a Ctrl+C on the console of each Terraform run under the worker `root` (the host
@@ -703,6 +726,24 @@ mod tests {
         assert!(!status.success(), "{status:?}");
         other.kill().unwrap();
         other.wait().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pgrep_that_cant_run_or_fails_is_logged() {
+        // Regression: a pgrep that couldn't run read as "no Terraform here", and the stop then
+        // ended the worker mid-apply with nothing in the log.
+        crate::testing::logs::take_warnings();
+        assert!(pgrep_with("cyberctf-no-such-pgrep", &["-x", "terraform"]).is_empty());
+        let logged = crate::testing::logs::take_warnings();
+        assert!(logged.iter().any(|w| w.starts_with("`cyberctf-no-such-pgrep` can't run, so a stop finds no Terraform")), "{logged:?}");
+        // Nothing matched (exit 1) is no failure; a failure (exit 2) is.
+        assert!(pgrep_with("sh", &["-c", "exit 1"]).is_empty());
+        assert!(crate::testing::logs::take_warnings().is_empty());
+        assert_eq!(pgrep_with("sh", &["-c", "echo 42; echo 43"]), [42, 43]);
+        assert!(pgrep_with("sh", &["-c", "echo bad option >&2; exit 2"]).is_empty());
+        let logged = crate::testing::logs::take_warnings();
+        assert!(logged.iter().any(|w| w.starts_with("`sh -c echo bad option >&2; exit 2` failed") && w.ends_with("bad option")), "{logged:?}");
     }
 
     #[cfg(unix)]

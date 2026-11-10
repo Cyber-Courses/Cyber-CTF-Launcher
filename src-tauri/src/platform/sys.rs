@@ -12,7 +12,7 @@ mod windows;
 use std::ffi::OsStr;
 
 #[cfg(unix)]
-pub use unix::{login_name, process_exists, signal_group};
+pub use unix::{login_name, process_exists, signal_group, signal_process};
 #[cfg(windows)]
 pub use windows::{
     ElevatedProcess, Hive, Job, delete_user_registry_value, in_hyperv_admins, is_elevated, launch_elevated, registry_key_exists, registry_string,

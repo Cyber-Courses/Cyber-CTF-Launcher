@@ -26,6 +26,19 @@ pub fn signal_group(group: u32, signal: libc::c_int) {
     }
 }
 
+/// Sends `signal` to process `pid` alone. Never to an id that would name a group (0, 1, or past
+/// `pid_t`), as `kill(1)` reads them.
+pub fn signal_process(pid: u32, signal: libc::c_int) {
+    let Ok(pid) = libc::pid_t::try_from(pid) else { return };
+    if pid <= 1 {
+        return;
+    }
+    // SAFETY: a plain syscall on a process id; no memory is involved.
+    unsafe {
+        libc::kill(pid, signal);
+    }
+}
+
 /// The login name of the user running this process, from the password database.
 pub fn login_name() -> Option<String> {
     // SAFETY: getpwuid returns a pointer into static storage (or null), read at once, before any
