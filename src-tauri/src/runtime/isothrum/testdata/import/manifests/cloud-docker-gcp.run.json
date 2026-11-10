@@ -215,7 +215,7 @@
     },
     {
       "name": "web",
-      "role": "target",
+      "role": "member",
       "arch": "amd64",
       "resources": {
         "cpus": 1,

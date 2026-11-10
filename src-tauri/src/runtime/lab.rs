@@ -490,13 +490,14 @@ mod tests {
     }
 
     #[test]
-    fn the_snapshot_read_here_is_version_three() {
-        // `tools`, `topology` and `blocks_clear` read the resolved snapshot's v3 fields
-        // (`networks.*.cidr`, `docker_cidr`, `internet`, `machines.*.addresses`, `tools`). A new
-        // version changes or drops fields: this fails so they are read again.
-        assert_eq!(isoloom_targets::resolved::RESOLVED_VERSION, 4);
+    fn the_snapshot_read_here_is_the_version_its_fields_were_checked_against() {
+        // `tools`, `topology` and `blocks_clear` read the resolved snapshot's `networks.*.cidr`,
+        // `docker_cidr`, `internet`, `machines.*.addresses` and `tools`, none of which version 5
+        // (a machine's role `member`, was `target`) changed. A new version changes or drops
+        // fields: this fails so they are read again.
+        assert_eq!(isoloom_targets::resolved::RESOLVED_VERSION, 5);
         let dir = lab(SPEC);
-        assert_eq!(isoloom_targets::resolved::resolve(&super::lab(&dir).unwrap())["resolved_version"], 4);
+        assert_eq!(isoloom_targets::resolved::resolve(&super::lab(&dir).unwrap())["resolved_version"], 5);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

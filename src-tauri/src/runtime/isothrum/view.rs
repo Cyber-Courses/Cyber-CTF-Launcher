@@ -12,7 +12,7 @@ use super::super::{Interface, LabStatus, Machine, Network, Park, Place, Port, Se
 /// one-shot jobs finished is up); parked as the player chose (`marked`, the lab's mark), else
 /// shut down; its URL is its entry output, once it runs.
 pub(super) fn lab_status(manifest: &Manifest, status: &Status, marked: Option<Park>) -> LabStatus {
-    let running = status.machines.iter().any(|m| m.role == Role::Target && matches!(m.state, MachineState::Running | MachineState::Unhealthy));
+    let running = status.machines.iter().any(|m| m.role == Role::Member && matches!(m.state, MachineState::Running | MachineState::Unhealthy));
     let url = status.outputs.iter().find(|o| o.role == OutputRole::Entry && !o.sensitive).and_then(|o| o.value.clone()).filter(|_| running);
     LabStatus {
         running,
@@ -43,7 +43,7 @@ fn machine(manifest: &Manifest, m: &MachineStatus) -> Machine {
         ports: declared.iter().filter(|p| p.kind.transport() == Protocol::Tcp).map(|p| tcp_port(m, p.port.get())).collect(),
         interfaces,
         services: declared.iter().map(service).collect(),
-        infra: m.role != Role::Target,
+        infra: m.role != Role::Member,
     }
 }
 

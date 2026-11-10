@@ -49,7 +49,7 @@ mod tests {
             "state": "ready",
             "provider": "qemu",
             "machines": [
-                { "name": "web", "role": "target", "state": "running", "addresses": { "lab": "10.61.0.10" }, "published": [] },
+                { "name": "web", "role": "member", "state": "running", "addresses": { "lab": "10.61.0.10" }, "published": [] },
                 { "name": "kali", "role": "access", "state": state, "addresses": { "lab": "10.61.0.252" }, "published": [] }
             ],
             "networks": [{ "name": "lab", "cidr": "10.61.0.0/24", "internet": false, "native": "isoloom-t-lab" }],
