@@ -15,6 +15,9 @@ const TESTS = ["src/**/*.test.{ts,tsx}", "src/test/**", "scripts/**/*.test.ts"];
 /** Next.js entry points, which must be default exports. */
 const ENTRY_POINTS = ["src/app/**/{page,layout,error,global-error,not-found,loading}.tsx"];
 
+/** A static import of the dev mock, outside the mock itself. */
+const DEV_MOCK = { group: ["@/lib/dev-mock", "@/lib/dev-mock/*"], message: "Wrap the page in DevMockGate, which loads the mock in development only." };
+
 /** Rules the shipped code and the tests don't meet yet: none, every area is at zero. A rule added
  *  before the code meets it goes here, at "warn", until its count reaches zero. */
 const RATCHETED = [];
@@ -68,6 +71,14 @@ const eslintConfig = defineConfig([
     files: ["src/**/*.tsx"],
     ignores: TESTS,
     rules: Object.fromEntries([rule("max-lines", { max: 200, skipBlankLines: true, skipComments: true })]),
+  },
+  // The dev mock is loaded by DevMockGate alone, imported dynamically behind NODE_ENV, so a
+  // production build leaves it and its sample data out; a static import anywhere else would ship
+  // them (only tree-shaking stood in the way).
+  {
+    files: CODE,
+    ignores: [...TESTS, "src/**/*-test-kit.{ts,tsx}", "src/lib/dev-mock/**"],
+    rules: Object.fromEntries([rule("no-restricted-imports", { patterns: [DEV_MOCK] })]),
   },
   // Configured above for the tests too: only the level changes.
   { files: TESTS, rules: Object.fromEntries(RATCHETED_IN_TESTS.map((name) => [name, "warn"])) },

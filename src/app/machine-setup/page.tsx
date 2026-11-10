@@ -4,17 +4,21 @@ import { useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { MachineSetup } from "@/features/machine/machine-setup";
 import { Toaster } from "@/components/ui/toaster";
+import { DevMockGate } from "@/components/dev-mock-gate";
 import { warn } from "@/lib/failure";
 import { useMachineReport } from "@/features/machine/use-machine-report";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 
-import { installDevMock } from "@/lib/dev-mock";
-
-// Development only: ?mock in a plain browser answers the Tauri commands with sample data.
-installDevMock();
-
 /** The guided machine-setup window (opened by `machine_open_setup`, optionally `?step=`). */
-export default function MachineSetupWindow() {
+export default function MachineSetupPage() {
+  return (
+    <DevMockGate>
+      <MachineSetupWindow />
+    </DevMockGate>
+  );
+}
+
+function MachineSetupWindow() {
   const { report, checkError, refreshReport } = useMachineReport();
   // Deep link: the step in the URL on open, or a later "Fix" while the window is open.
   const [startAt, setStartAt] = useState<{ step: string; nonce: number } | null>(() => {

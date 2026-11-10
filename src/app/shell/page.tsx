@@ -7,15 +7,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { RotateCw, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
+import { DevMockGate } from "@/components/dev-mock-gate";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import { useIsMac } from "@/lib/platform";
 import { labAttackShell, type Runtime } from "@/lib/tauri";
 import { useTerminalSession, type ShellState } from "@/app/shell/use-terminal-session";
-import { installDevMock } from "@/lib/dev-mock";
-
-// Development only: ?mock in a plain browser answers the Tauri commands with sample data.
-installDevMock();
 
 /** The attack box shell window (opened by `terminal_window`): xterm.js over a pseudo-terminal. */
 function Shell() {
@@ -97,8 +94,10 @@ function EndedBar({ state, onReconnect }: { state: Extract<ShellState, { kind: "
 
 export default function ShellWindow() {
   return (
-    <Suspense>
-      <Shell />
-    </Suspense>
+    <DevMockGate>
+      <Suspense>
+        <Shell />
+      </Suspense>
+    </DevMockGate>
   );
 }
