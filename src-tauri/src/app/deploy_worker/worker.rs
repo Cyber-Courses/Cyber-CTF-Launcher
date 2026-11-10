@@ -98,11 +98,7 @@ fn end_tools_when_stopped(job_file: PathBuf, task: tauri::async_runtime::JoinHan
             // The runner's tools it cut short are asked to stop (Terraform saves its state):
             // waited for, within the app's patience with a stopped worker, so none outlives it.
             crate::runtime::isothrum::stop_cut_short_tools(TOOLS_GRACE).await;
-            if let Err(e) = std::fs::remove_file(&job_file)
-                && e.kind() != std::io::ErrorKind::NotFound
-            {
-                log::warn!("couldn't remove the stopped job's file {}: {e}", job_file.display());
-            }
+            files::remove_job(&job_file);
             std::process::exit(143);
         }
     });
@@ -242,7 +238,7 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
         log::error!("couldn't write the deploy status {}: {e}", f.status.display());
     }
     // The job file carries the launch token: done with it.
-    let _ = std::fs::remove_file(&f.job);
+    files::remove_job(&f.job);
     // Only while it still names this worker: a newer one's pidfile stays.
     super::process::remove_pidfile_of(&f.pid, std::process::id());
     code

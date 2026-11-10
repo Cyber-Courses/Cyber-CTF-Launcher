@@ -103,6 +103,34 @@ pub fn log_so_far(dirs: &AppDirs, lab_id: &str) -> Result<String> {
     Ok(std::fs::read_to_string(&f.log).unwrap_or_default())
 }
 
+/// Removes the file at `path`; one already gone is no failure.
+pub(super) fn remove(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        removed => removed,
+    }
+}
+
+/// Clears the verdicts an earlier run left (its status, and for an operation that brings the lab
+/// up (`launch`) its launch status), before a new run starts: the app reads any status it finds
+/// as the new run's. One that can't be removed fails the start, which would otherwise report the
+/// earlier run's verdict at once.
+pub(super) fn clear_verdicts(f: &Files, launch: bool) -> Result<()> {
+    let launch_status = launch.then_some(&f.launch_status);
+    for path in std::iter::once(&f.status).chain(launch_status) {
+        remove(path).map_err(|e| Error::Invalid(format!("the last run's verdict {} can't be removed: {e}", path.display())))?;
+    }
+    Ok(())
+}
+
+/// Removes a job file, which carries the lab's launch token: one already gone is fine, any other
+/// failure is logged (the token stays on disk).
+pub(super) fn remove_job(path: &Path) {
+    if let Err(e) = remove(path) {
+        log::warn!("couldn't remove the job file {}, which holds a launch token: {e}", path.display());
+    }
+}
+
 /// Writes the job for its worker and opens its fresh log, both owner-only: the job carries the
 /// launch token (the worker removes it when the job ends), the log what the tools printed. The
 /// last run's log is kept beside it ([`Files::previous_log`]): a start again right after a failed
@@ -228,6 +256,43 @@ pub(crate) mod tests {
             assert_eq!(f.failed(), want, "{text:?}");
             assert_eq!(verdict(text).is_err(), want, "{text:?}: the two agree");
         }
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_verdict_that_cant_be_cleared_fails_the_start() {
+        // Regression: a failed removal of the last run's status was dropped, and the new run then
+        // reported that run's verdict at once.
+        let dir = temp_dir("clear-verdicts");
+        let f = Files::of(&dir, "lab-1");
+        std::fs::write(&f.status, "error: the last run").unwrap();
+        std::fs::write(&f.launch_status, "error: the last launch").unwrap();
+        clear_verdicts(&f, false).unwrap();
+        assert!(!f.status.exists() && f.launch_status.exists(), "a pause keeps the launch's verdict");
+        clear_verdicts(&f, true).unwrap();
+        assert!(!f.launch_status.exists());
+        clear_verdicts(&f, true).unwrap();
+        // A status that can't be removed (here a folder in its place).
+        std::fs::create_dir_all(f.status.join("held")).unwrap();
+        let err = clear_verdicts(&f, false).unwrap_err().to_string();
+        assert!(err.starts_with("the last run's verdict ") && err.contains("can't be removed"), "{err}");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_job_file_that_cant_be_removed_is_logged() {
+        let dir = temp_dir("remove-job");
+        let job = dir.join("lab-1.json");
+        crate::testing::logs::take_warnings();
+        remove_job(&job);
+        assert!(crate::testing::logs::take_warnings().is_empty(), "already gone");
+        std::fs::write(&job, "{}").unwrap();
+        remove_job(&job);
+        assert!(!job.exists());
+        std::fs::create_dir_all(job.join("held")).unwrap();
+        remove_job(&job);
+        let logged = crate::testing::logs::take_warnings();
+        assert!(logged.iter().any(|w| w.starts_with("couldn't remove the job file ") && w.contains("launch token")), "{logged:?}");
         std::fs::remove_dir_all(dir).ok();
     }
 

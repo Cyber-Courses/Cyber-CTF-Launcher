@@ -75,7 +75,7 @@ pub fn spawn(app: &AppHandle, job: &Job, pidfile: std::fs::File) -> Result<Spawn
     let started = start(f, job, pidfile);
     if started.is_err() {
         let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(&job_file);
+        files::remove_job(&job_file);
     }
     started
 }
@@ -83,11 +83,8 @@ pub fn spawn(app: &AppHandle, job: &Job, pidfile: std::fs::File) -> Result<Spawn
 fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     use std::io::Write as _;
     crate::runtime::validate_id(&job.lab_id)?;
-    // A fresh run: no verdict or log left from an earlier one.
-    let _ = std::fs::remove_file(&f.status);
-    if job.op == super::Op::Launch {
-        let _ = std::fs::remove_file(&f.launch_status);
-    }
+    // A fresh run: no verdict left from an earlier one (its log is kept, see `write_job`).
+    files::clear_verdicts(&f, job.op == super::Op::Launch)?;
     let log = write_job(&f, job)?;
     let exe = std::env::current_exe().map_err(Error::Io)?;
     let mut cmd = std::process::Command::new(exe);
@@ -387,7 +384,7 @@ fn kill_files(f: &Files) {
     }
     remove_pidfile_of(&f.pid, worker.pid);
     // A worker killed outside its own end (Windows, or SIGKILL) leaves its job behind.
-    let _ = std::fs::remove_file(&f.job);
+    files::remove_job(&f.job);
 }
 
 /// Sends `signal` to the process group `pid` leads: the worker and its vagrant/docker/terraform.

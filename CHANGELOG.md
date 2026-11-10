@@ -160,6 +160,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   Vagrant command landing then was refused ("another process is already executing an action on
   the machine") and the start failed. The count now reads Vagrant's index as it is, and skips a
   record whose lab folder is gone.
+- **A lab operation never reports the last run's result as its own.** When the last run's
+  result file couldn't be removed (a permissions problem, a file held open on Windows), the new
+  run's worker started anyway and the app read the old result at once. The operation now runs
+  inside the app instead, and a job file (which holds the lab's launch token) that can't be removed
+  is logged.
 - **A lab whose last start failed no longer reads as running when its verdict is a plain
   message.** A deploy worker's verdict was read two ways: following the start counted a plain
   message (an older version's form) as a failure, but the lab's status counted it as success, so
