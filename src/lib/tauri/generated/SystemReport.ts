@@ -2,6 +2,7 @@
 import type { CloudClis } from "./CloudClis";
 import type { CommandError } from "./CommandError";
 import type { EngineStatus } from "./EngineStatus";
+import type { OvftoolLocation } from "./OvftoolLocation";
 import type { PkgManager } from "./PkgManager";
 import type { Provider } from "./Provider";
 import type { ProviderStatus } from "./ProviderStatus";
@@ -43,7 +44,12 @@ terraform: Tool,
  * VMware's OVF Tool, which the ESXi Vagrant plugin uses to upload VMs (ships with
  * VMware Fusion / Workstation, or standalone from Broadcom).
  */
-ovftool: Tool, cloudClis: CloudClis, 
+ovftool: Tool, 
+/**
+ * Where the OVF Tool was found (Fusion's or Workstation's copy, the app's, or `PATH`), when
+ * one was, even if it doesn't run.
+ */
+ovftoolLocation: OvftoolLocation | null, cloudClis: CloudClis, 
 /**
  * Vagrant providers (local hypervisors and remote hosts such as ESXi).
  * Whether a given VM lab can run also depends on its boxes existing for

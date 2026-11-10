@@ -364,7 +364,7 @@ describe("server tools step", () => {
     expect(button(/install plugin/i).hasAttribute("disabled")).toBe(true);
     await go(user, /install vagrant/i);
     expect(argsOf(calls, "install_dependency")[0]).toMatchObject({ dependency: "vagrant" });
-    await go(user, /^\s*get$/i);
+    await go(user, /get the standalone ovf tool/i);
     expect(argsOf(calls, "plugin:opener|open_url")[0]?.url).toMatch(/broadcom\.com/);
   });
 

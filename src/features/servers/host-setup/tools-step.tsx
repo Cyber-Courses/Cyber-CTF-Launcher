@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, HardDrive } from "lucide-react";
+import { HardDrive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
@@ -9,12 +9,10 @@ import { PROVIDER_NAMES, installDependency, installVagrantPlugin } from "@/lib/t
 import { CLOUD_META } from "@/features/servers/host-setup/constants";
 import { Step } from "@/features/servers/host-setup/form";
 import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
+import { OvftoolRequirement } from "@/features/servers/host-setup/ovftool-requirement";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
-import { openExternal } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import { InstallsOffNote } from "@/components/installs-off-note";
-
-const OVFTOOL_URL = "https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest";
 
 export function ToolsStep({ s }: { s: HostSetup }) {
   const t = useT();
@@ -101,10 +99,11 @@ function CloudTools({ s }: { s: HostSetup }) {
   );
 }
 
-/** An ESXi host's tools: Vagrant, its ESXi plugin, and VMware's OVF Tool (a manual download). */
+/** An ESXi host's tools: Vagrant, its ESXi plugin, and VMware's OVF Tool (a download, or inside
+ *  VMware's desktop hypervisor). */
 function EsxiTools({ s }: { s: HostSetup }) {
   const t = useT();
-  const { report, canInstallTools, installTool, vagrantOk, esxiPluginOk, esxiPlugin, ovftoolOk } = s;
+  const { report, canInstallTools, installTool, vagrantOk, esxiPluginOk, esxiPlugin } = s;
   const plugin = esxiPlugin ?? "";
   return (
     <>
@@ -142,22 +141,7 @@ function EsxiTools({ s }: { s: HostSetup }) {
           </Button>
         }
       />
-      <Requirement
-        ok={ovftoolOk}
-        title="VMware OVF Tool"
-        detail={ovftoolOk ? (report?.ovftool.version ?? t("servers.setup.tools.installed")) : t("servers.setup.tools.ovftool")}
-        action={
-          <Button
-            variant="outline"
-            size="xs"
-            onClick={() => {
-              openExternal(OVFTOOL_URL);
-            }}
-          >
-            <ExternalLink className="size-3" /> {t("servers.setup.tools.get")}
-          </Button>
-        }
-      />
+      <OvftoolRequirement s={s} />
     </>
   );
 }

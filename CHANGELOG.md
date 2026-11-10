@@ -8,6 +8,15 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **Two ways to get VMware's OVF Tool for ESXi, and a third to use one already downloaded.** The
+  ESXi setup's OVF Tool row links to VMware Fusion (macOS) or Workstation (x64 Windows and Linux),
+  both free and shipping the tool, and to the standalone download. **Use a downloaded OVF Tool…**
+  takes the folder the download unpacked to and copies it into the launcher's own `tools/ovftool/`
+  folder, on its `PATH` without a restart; on macOS only once the program and its libraries are
+  verified as signed by VMware (team `EG7KH642X6`), lifting the quarantine from that copy only.
+  It says when the Intel-only macOS tool needs Rosetta. The row shows the version found and where
+  (Fusion's or Workstation's copy first, then the launcher's, then `PATH`), and Workstation's
+  bundled copy on Windows is now found.
 - **An MSI installer for Windows x64**, for all users of a machine and for deployment with
   Intune, Configuration Manager or Group Policy: `msiexec /i Cyber.CTF_<version>_x64_en-US.msi /qn`.
   The NSIS installer (per user, `/S`) stays.

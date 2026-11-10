@@ -65,6 +65,7 @@ const COMMANDS: &[&str] = &[
     "oci_config",
     "open_log_folder",
     "open_settings",
+    "ovftool_place",
     "restart_app",
     "running_labs",
     "server_capacity",

@@ -23,6 +23,7 @@ export const report: SystemReport = {
   vagrant: { installed: true, version: "2.4.3" },
   terraform: { installed: true, version: "1.9.8" },
   ovftool: { installed: false, version: null },
+  ovftoolLocation: null,
   cloudClis: { aws: { installed: true, version: "2.18.0" }, azure: { installed: false, version: null }, gcloud: { installed: false, version: null } },
   readyHypervisors: ["virtualbox"],
   vmProviders: [

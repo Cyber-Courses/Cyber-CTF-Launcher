@@ -273,6 +273,7 @@ In the app data folder:
 | `deploys/`                             | the jobs of the deploy workers (a deploy keeps running if the window closes), each with its output (`<lab>.log`, the run before kept as `<lab>.previous.log`); a job carries the lab's launch token |
 | `storage.json`, `installed-tools.json` | the images, boxes and tools the launcher downloaded or installed, so Settings > Maintenance removes only those                                                                                      |
 | `terraform-plugins/`                   | an older Terraform provider cache, cleanable from the Storage page                                                                                                                                  |
+| `tools/ovftool/`                       | VMware's OVF Tool, when the user placed a download of it from the ESXi setup ("Use a downloaded OVF Tool…"): a copy of the unpacked folder, on the app's `PATH`                                     |
 
 **Terraform state is the record of what a server or cloud lab created.** While such a lab runs,
 deleting `runs/` (or the whole app data folder) leaves its machines running, and billing in a cloud
@@ -305,6 +306,11 @@ launcher never asks for or stores a password itself.
   ordinary installs of those products, recorded in `installed-tools.json` so that Settings >
   Maintenance can remove them again.
 - Vagrant plugins a lab needs (`vagrant-*`) are installed for the user with `vagrant plugin install`.
+- **Use a downloaded OVF Tool…** (the ESXi setup) copies the folder the user picks into
+  `tools/ovftool/` in the app data folder, once it holds VMware's OVF Tool; on macOS only once the
+  program and its libraries are verified as signed by VMware's Developer ID (team `EG7KH642X6`),
+  and it then removes `com.apple.quarantine` from that copy, not from the download. It is refused
+  under `DisableToolInstalls`. Details: [running labs](running-labs.md#the-ovf-tool-for-esxi).
 
 **Windows.**
 

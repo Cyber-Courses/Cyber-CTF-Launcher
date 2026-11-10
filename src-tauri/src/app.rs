@@ -52,15 +52,16 @@ pub fn run() -> tauri::Result<()> {
         std::process::exit(i32::from(!platform::console::send_ctrl_c(pid)));
     }
     crate::runtime::server::connection_test::mark_started();
+    // One context (the embedded config and assets) for whichever role this process plays.
+    let context = tauri::generate_context!();
     // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool), nor,
-    // on macOS, the proxy (said in the log once it is up).
-    platform::env_path::augment();
+    // on macOS, the proxy (said in the log once it is up). The OVF Tool the setup places in the
+    // app data folder is on it too, for the deploy workers and the labs' runs.
+    platform::env_path::augment(&own_tool_dirs(&context.config().identifier));
     #[cfg(target_os = "macos")]
     let proxy_note = platform::proxy::inherit_system_proxy();
     #[cfg(not(target_os = "macos"))]
     let proxy_note = None;
-    // One context (the embedded config and assets) for whichever role this process plays.
-    let context = tauri::generate_context!();
     // `cyberctf-desktop deploy --job <file>`: this process is a deploy worker, not the app. It
     // runs one lab's deploy headless and exits; the app that started it only follows its log, so
     // quitting the app never cuts a deploy short.
@@ -121,6 +122,12 @@ fn app_builder(proxy_note: Option<String>) -> tauri::Builder<AppRuntime> {
             wdio_seed(app.handle());
             Ok(())
         })
+}
+
+/// The folders of the tools the app places itself, under the data folder of the app
+/// `identifier`: the OVF Tool's.
+fn own_tool_dirs(identifier: &str) -> Vec<PathBuf> {
+    platform::env_path::app_data_dir(identifier).map(|data| crate::machine::tools::ovftool::managed_dir(&data)).into_iter().collect()
 }
 
 /// The job file when this process was started as a deploy worker (`<exe> deploy --job <file>`).
@@ -311,6 +318,15 @@ fn narrow_to_this_user(dir: &std::path::Path) {
 
 #[cfg(test)]
 mod tests {
+    /// The app starts with the OVF Tool's own folder on its PATH: the one the setup places it in,
+    /// under the data folder Tauri resolves for this app.
+    #[test]
+    fn the_ovftool_folder_the_setup_places_into_is_on_the_startup_path() {
+        let t = crate::testing::test_app::TestApp::new();
+        let dirs = super::own_tool_dirs(&t.handle().config().identifier);
+        assert_eq!(dirs, [crate::machine::tools::ovftool::managed_dir(t.data())]);
+    }
+
     #[test]
     fn a_data_folder_that_cant_be_narrowed_is_said_in_the_log() {
         // Regression: the failure was dropped.

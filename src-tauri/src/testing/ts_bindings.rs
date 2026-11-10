@@ -59,6 +59,7 @@ fn generate(dir: &Path) {
         machine::workloads::Workload,
         operations::ActiveOperation,
         tools::install::Dependency,
+        tools::ovftool::Outcome,
         tools::uninstall::InstalledTool,
         runtime::Check,
         runtime::AttackStatus,

@@ -129,6 +129,7 @@ permissions = [
   "allow-machine-selftest-prefetch",
   "allow-managed-settings",
   "allow-oci-config",
+  "allow-ovftool-place",
   "allow-server-default-ssh-key",
   "allow-server-list",
   "allow-server-proxmox-placement",

@@ -3,6 +3,10 @@
 //! (docker and its credential helper, vagrant, ovftool) live elsewhere, so append the
 //! standard install locations once at startup. Existing entries keep priority.
 //!
+//! The folders of the tools the app places itself (the OVF Tool, under the app data folder) are
+//! added too, last and before they exist: a tool placed while the app runs is then found by
+//! what it starts without a restart.
+//!
 //! On Windows the PATH is complete at startup, but it goes stale: an installer (winget, Docker
 //! Desktop, VirtualBox) writes the new PATH to the registry, which a running process never
 //! rereads. `refresh` merges it back in before each check, so a tool installed from the app is
@@ -60,7 +64,7 @@ fn extra_dirs() -> Vec<PathBuf> {
 /// The Windows tool folders, from the environment `var` reads. None of these installers adds
 /// itself to PATH: VirtualBox (`VBoxManage` drives its VMs) says where it went in
 /// `VBOX_MSI_INSTALL_PATH`, and VMware Workstation puts `vmrun` under the 32-bit Program Files.
-fn windows_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBuf> {
+pub(crate) fn windows_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(vbox) = var("VBOX_MSI_INSTALL_PATH") {
         dirs.push(PathBuf::from(vbox));
@@ -73,6 +77,10 @@ fn windows_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBuf> {
     }
     if let Some(pf86) = var("ProgramFiles(x86)").map(PathBuf::from) {
         dirs.push(pf86.join("VMware").join("VMware Workstation"));
+    }
+    // ovftool, which vagrant-vmware-esxi needs, ships inside Workstation, in a folder of its own.
+    for pf in ["ProgramFiles(x86)", "ProgramFiles"].into_iter().filter_map(&var).map(PathBuf::from) {
+        dirs.push(pf.join("VMware").join("VMware Workstation").join("OVFTool"));
     }
     dirs
 }
@@ -104,9 +112,23 @@ fn appended(current: Option<&OsStr>, dirs: impl IntoIterator<Item = PathBuf>) ->
     std::env::join_paths(paths).ok()
 }
 
-/// `current` with every existing extra dir appended (no duplicates).
-fn augmented(current: Option<&OsStr>) -> Option<OsString> {
-    appended(current, extra_dirs().into_iter().filter(|d| d.is_dir()).chain(future_dirs()))
+/// `current` with every existing extra dir appended (no duplicates), then the app's own tool
+/// folders `own`, last: a tool a hypervisor ships (Fusion's ovftool) comes before the app's copy.
+fn augmented(current: Option<&OsStr>, own: &[PathBuf]) -> Option<OsString> {
+    appended(current, extra_dirs().into_iter().filter(|d| d.is_dir()).chain(future_dirs()).chain(own.iter().cloned()))
+}
+
+/// The app data folder of the app `identifier`, as Tauri resolves it (`app_data_dir`: the OS's
+/// data folder, then the identifier), for startup, before Tauri is built.
+pub fn app_data_dir(identifier: &str) -> Option<PathBuf> {
+    let data = if cfg!(target_os = "macos") {
+        super::home_dir().map(|h| h.join("Library").join("Application Support"))
+    } else if cfg!(windows) {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else {
+        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).filter(|d| d.is_absolute()).or_else(|| super::home_dir().map(|h| h.join(".local").join("share")))
+    };
+    data.filter(|d| !d.as_os_str().is_empty()).map(|d| d.join(identifier))
 }
 
 /// Merges the PATH an installer has since written to the registry (machine, then user), and
@@ -139,9 +161,10 @@ fn user_path() -> Option<OsString> {
     registry_string(Hive::CurrentUser, "Environment", "Path")
 }
 
-/// Call first thing in `run()`, before any thread is spawned.
-pub fn augment() {
-    if let Some(path) = augmented(std::env::var_os("PATH").as_deref()) {
+/// Call first thing in `run()`, before any thread is spawned, with the folders of the tools the
+/// app places itself (`own`, which may not exist yet).
+pub fn augment(own: &[PathBuf]) {
+    if let Some(path) = augmented(std::env::var_os("PATH").as_deref(), own) {
         // At the very start of `run()`: no thread is started yet (Tauri, tokio, a plugin).
         crate::platform::sys::set_env_at_startup("PATH", &path);
     }
@@ -160,7 +183,7 @@ mod tests {
         crate::platform::sys::set_env_at_startup("PATH", OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
         let found = |tool: &str| std::process::Command::new(tool).arg("--version").output().is_ok();
         assert!(!found("docker"), "docker should be missing on the bare Finder PATH");
-        augment();
+        augment(&[]);
         for tool in ["docker", "vagrant"] {
             assert!(found(tool), "{tool} not found after augment(); PATH={:?}", std::env::var("PATH"));
         }
@@ -195,6 +218,8 @@ mod tests {
         assert!(has(r"D:\VBox\"), "{dirs:?}");
         assert!(has(r"C:\Program Files\Oracle\VirtualBox") && has(r"C:\Program Files\Vagrant\bin"), "{dirs:?}");
         assert!(has(r"C:\Program Files (x86)\VMware\VMware Workstation"), "{dirs:?}");
+        // ovftool, inside Workstation in a folder of its own.
+        assert!(has(r"C:\Program Files (x86)\VMware\VMware Workstation\OVFTool") && has(r"C:\Program Files\VMware\VMware Workstation\OVFTool"), "{dirs:?}");
         // The installer's own answer comes first: a VirtualBox moved elsewhere wins.
         assert_eq!(dirs[0], PathBuf::from(r"D:\VBox\"));
         assert_eq!(windows_dirs(|_| None), [] as [PathBuf; 0]);
@@ -214,6 +239,41 @@ mod tests {
         ] {
             assert!(dirs.iter().any(|d| d == Path::new(bundled)), "{bundled} missing from {dirs:?}");
         }
+    }
+
+    /// The data folder worked out at startup, before Tauri is built, is the one Tauri resolves:
+    /// the OVF Tool the setup places there is on the `PATH` the app started with.
+    #[test]
+    fn the_startup_data_folder_is_the_one_tauri_resolves() {
+        let t = crate::testing::test_app::TestApp::new();
+        let identifier = &t.handle().config().identifier;
+        assert_eq!(app_data_dir(identifier).as_deref(), Some(t.data()));
+    }
+
+    /// The app's own tool folders go on `PATH` last, even before they exist: after a hypervisor's
+    /// (Fusion's ovftool first, as the machine check finds it), and found by a search the way
+    /// Isothrum's ovftool wrapper looks for the real one (the first `ovftool` file on `PATH`)
+    /// once a copy is placed there, without a restart.
+    #[test]
+    fn the_apps_own_tool_folder_goes_last_and_is_found_once_placed() {
+        let data = std::env::temp_dir().join(format!("cyberctf-env-path-{}", rand::random::<u32>()));
+        let own = data.join("tools").join("ovftool");
+        let bare = joined(&["/usr/bin", "/bin"]);
+        let path = augmented(Some(&bare), std::slice::from_ref(&own)).unwrap();
+        let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        assert_eq!(dirs.last(), Some(&own), "{dirs:?}");
+        assert!(!own.exists(), "added before it exists");
+        let exe = if cfg!(windows) { "ovftool.exe" } else { "ovftool" };
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::write(own.join(exe), "").unwrap();
+        let first = std::env::split_paths(&path).map(|d| d.join(exe)).find(|f| f.is_file());
+        let fusion = Path::new("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool/ovftool");
+        assert!(first == Some(own.join(exe)) || first.as_deref() == Some(fusion), "{first:?}");
+        if cfg!(target_os = "macos") {
+            let fusion_dir = extra_dirs().iter().position(|d| d.as_path() == fusion.parent().unwrap());
+            assert!(fusion_dir.is_some(), "Fusion's ovftool folder is a tool folder");
+        }
+        let _ = std::fs::remove_dir_all(&data);
     }
 
     #[test]
@@ -249,7 +309,7 @@ mod tests {
     fn appends_existing_dirs_once_and_keeps_order() {
         let tmp = std::env::temp_dir();
         let current = std::env::join_paths([PathBuf::from("/usr/bin"), tmp.clone()]).unwrap();
-        let out = augmented(Some(&current)).unwrap_or_default();
+        let out = augmented(Some(&current), &[]).unwrap_or_default();
         let paths: Vec<PathBuf> = std::env::split_paths(&out).collect();
         if !paths.is_empty() {
             assert_eq!(paths[0], PathBuf::from("/usr/bin"));

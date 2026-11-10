@@ -132,7 +132,30 @@
       "esxiPluginPending": "{plugin}, once Vagrant is installed.",
       "installPlugin": "Install plugin",
       "ovftool": "Uploads the lab VMs to ESXi. Comes with VMware Fusion / Workstation, or standalone from Broadcom (free account).",
-      "get": "Get",
+      "ovftoolFound": "{version} · {where}: {path}",
+      "ovftoolWhere": {
+        "fusion": "VMware Fusion's copy",
+        "workstation": "VMware Workstation's copy",
+        "managed": "placed by Cyber CTF",
+        "path": "on PATH"
+      },
+      "ovftoolNoRun": "Found at {path}, but it doesn't run.",
+      "ovftoolRosetta": "Found at {path}, but it's built for Intel Macs: install Rosetta (softwareupdate --install-rosetta), then check again.",
+      "getHypervisor": "Get {name} (includes OVF Tool)",
+      "getStandalone": "Get the standalone OVF Tool",
+      "useDownloaded": "Use a downloaded OVF Tool…",
+      "pickOvftool": "Choose the unpacked OVF Tool folder",
+      "placing": "Checking and copying the OVF Tool…",
+      "placed": "OVF Tool copied into Cyber CTF's tools folder: {path}",
+      "placedRosetta": "OVF Tool copied into Cyber CTF's tools folder. It's built for Intel Macs: install Rosetta (softwareupdate --install-rosetta) to run it.",
+      "refused": {
+        "noTool": "There's no ovftool program in that folder. Choose the folder the download unpacked to, the one holding ovftool.",
+        "noLibraries": "That folder has ovftool but not its lib folder. Choose the whole unpacked folder.",
+        "tooLarge": "That folder holds far more than the OVF Tool. Choose the folder the download unpacked to.",
+        "unsigned": "macOS says it isn't validly signed ({detail}). Download it again from Broadcom.",
+        "notVmware": "It's signed by team {team}, not by VMware (EG7KH642X6), so it wasn't used.",
+        "notVmwareUnknown": "It isn't signed by VMware (EG7KH642X6), so it wasn't used."
+      },
       "terraformProxmox": "Drives the Proxmox API. Install it to run Proxmox labs."
     },
     "server": {

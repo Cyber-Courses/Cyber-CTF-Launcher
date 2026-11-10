@@ -6,6 +6,9 @@ import type {
   EngineStatus,
   InstalledTool,
   MachineMetrics,
+  OvftoolLocation,
+  OvftoolPlaced,
+  OvftoolRefusal,
   PkgManager,
   Provider,
   ProviderStatus,
@@ -26,6 +29,9 @@ export type {
   EngineStatus,
   InstalledTool,
   MachineMetrics,
+  OvftoolLocation,
+  OvftoolPlaced,
+  OvftoolRefusal,
   PkgManager,
   Provider,
   ProviderStatus,
@@ -73,6 +79,10 @@ export const machineRestart = (reason: string) => invokeUnit("machine_restart", 
 export const installDependency = (dependency: Dependency, onLog: (line: string) => void) => invokeStreaming("install_dependency", { dependency }, onLog);
 
 export const installedTools = () => invoke<InstalledTool[]>("installed_tools");
+
+/** Copies the OVF Tool unpacked at `folder` into the app's own tools folder, once it is checked
+ *  as VMware's (on macOS, its signature), or says why it wasn't. */
+export const ovftoolPlace = (folder: string) => invoke<OvftoolPlaced>("ovftool_place", { folder });
 
 /** Removes a tool Cyber CTF installed, streaming the output. */
 export const uninstallDependency = (dependency: Dependency, onLog: (line: string) => void) => invokeStreaming("uninstall_dependency", { dependency }, onLog);

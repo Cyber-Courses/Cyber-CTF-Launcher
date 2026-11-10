@@ -132,7 +132,30 @@
       "esxiPluginPending": "{plugin}, une fois Vagrant installé.",
       "installPlugin": "Installer le plugin",
       "ovftool": "Envoie les VM du lab vers ESXi. Fourni avec VMware Fusion / Workstation, ou seul chez Broadcom (compte gratuit).",
-      "get": "Obtenir",
+      "ovftoolFound": "{version} · {where} : {path}",
+      "ovftoolWhere": {
+        "fusion": "copie de VMware Fusion",
+        "workstation": "copie de VMware Workstation",
+        "managed": "placé par Cyber CTF",
+        "path": "dans le PATH"
+      },
+      "ovftoolNoRun": "Trouvé dans {path}, mais il ne se lance pas.",
+      "ovftoolRosetta": "Trouvé dans {path}, mais il est conçu pour les Mac Intel : installez Rosetta (softwareupdate --install-rosetta), puis vérifiez à nouveau.",
+      "getHypervisor": "Obtenir {name} (inclut OVF Tool)",
+      "getStandalone": "Obtenir OVF Tool seul",
+      "useDownloaded": "Utiliser un OVF Tool téléchargé…",
+      "pickOvftool": "Choisissez le dossier OVF Tool décompressé",
+      "placing": "Vérification et copie d'OVF Tool…",
+      "placed": "OVF Tool copié dans le dossier d'outils de Cyber CTF : {path}",
+      "placedRosetta": "OVF Tool copié dans le dossier d'outils de Cyber CTF. Il est conçu pour les Mac Intel : installez Rosetta (softwareupdate --install-rosetta) pour le lancer.",
+      "refused": {
+        "noTool": "Ce dossier ne contient pas de programme ovftool. Choisissez le dossier issu du téléchargement, celui qui contient ovftool.",
+        "noLibraries": "Ce dossier contient ovftool mais pas son dossier lib. Choisissez le dossier décompressé en entier.",
+        "tooLarge": "Ce dossier contient bien plus qu'OVF Tool. Choisissez le dossier issu du téléchargement.",
+        "unsigned": "macOS indique qu'il n'a pas de signature valide ({detail}). Téléchargez-le à nouveau chez Broadcom.",
+        "notVmware": "Il est signé par l'équipe {team}, pas par VMware (EG7KH642X6) : il n'a pas été utilisé.",
+        "notVmwareUnknown": "Il n'est pas signé par VMware (EG7KH642X6) : il n'a pas été utilisé."
+      },
       "terraformProxmox": "Pilote l'API Proxmox. Installez-le pour lancer des labs Proxmox."
     },
     "server": {

@@ -70,6 +70,9 @@ pub struct SystemReport {
     /// VMware's OVF Tool, which the ESXi Vagrant plugin uses to upload VMs (ships with
     /// VMware Fusion / Workstation, or standalone from Broadcom).
     pub ovftool: Tool,
+    /// Where the OVF Tool was found (Fusion's or Workstation's copy, the app's, or `PATH`), when
+    /// one was, even if it doesn't run.
+    pub ovftool_location: Option<crate::machine::tools::ovftool::Location>,
     pub cloud_clis: CloudClis,
     /// Vagrant providers (local hypervisors and remote hosts such as ESXi).
     /// Whether a given VM lab can run also depends on its boxes existing for
@@ -83,6 +86,7 @@ pub struct SystemReport {
 }
 
 pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
+    let data = dirs.data().ok().map(std::path::Path::to_path_buf);
     // A tool installed since the last check (from the app or not) is found without a restart.
     crate::platform::env_path::refresh();
     let (docker, docker_compose, vagrant, daemon, aws, azure, gcloud, terraform) = tokio::join!(
@@ -95,8 +99,8 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         probe("gcloud", &["--version"]),
         probe("terraform", &["version"]),
     );
-    let (vm_providers, docker_engines, ovftool, wsl) =
-        tokio::join!(providers::detect(vagrant.installed), docker::engines(), probe("ovftool", &["--version"]), wsl::report(&dirs));
+    let (vm_providers, docker_engines, (ovftool, ovftool_location), wsl) =
+        tokio::join!(providers::detect(vagrant.installed), docker::engines(), crate::machine::tools::ovftool::probe(data.as_deref()), wsl::report(&dirs));
     let docker_engines_running = docker::running_of(&docker_engines);
     let docker_denied = daemon.as_ref().err().is_some_and(docker_denied);
     let docker_engine = match &daemon {
@@ -119,6 +123,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         vagrant,
         terraform,
         ovftool,
+        ovftool_location,
         cloud_clis: CloudClis { aws, azure, gcloud },
         ready_hypervisors,
         vm_providers,
@@ -157,7 +162,7 @@ fn azure_version(json: &str) -> Option<String> {
 
 /// The first non-blank line, trimmed: a tool whose output opens with a blank line (a banner's
 /// spacing) read as installed with an empty version.
-fn first_line(out: &str) -> Option<String> {
+pub(crate) fn first_line(out: &str) -> Option<String> {
     out.lines().map(str::trim).find(|l| !l.is_empty()).map(str::to_string)
 }
 
@@ -269,6 +274,31 @@ mod tests {
         assert!(!missing.installed && missing.version.is_none());
         let v = serde_json::to_value(super::Tool { installed: true, version: Some("1".into()) }).unwrap();
         assert_eq!(v, serde_json::json!({ "installed": true, "version": "1" }));
+    }
+
+    /// The check reports the OVF Tool the setup placed in the app's folder, and where it is.
+    #[tokio::test]
+    async fn the_check_says_where_the_ovf_tool_was_found() {
+        use crate::machine::tools::ovftool::{Source, managed_dir};
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = crate::testing::test_app::TestApp::new();
+        let _tools = Tools::new(|program, _| if program == "ovftool" { ok("VMware ovftool 5.1.0 (build-24936374)\n") } else { None });
+        let report = super::system_check(t.dirs()).await;
+        let fusion = std::path::Path::new("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool/ovftool").is_file();
+        if report.ovftool_location.is_none() {
+            assert!(!report.ovftool.installed, "nothing found, nothing installed");
+        }
+        let exe = if cfg!(windows) { "ovftool.exe" } else { "ovftool" };
+        std::fs::create_dir_all(managed_dir(t.data())).unwrap();
+        std::fs::write(managed_dir(t.data()).join(exe), "").unwrap();
+        let report = super::system_check(t.dirs()).await;
+        assert_eq!(report.ovftool.version.as_deref(), Some("VMware ovftool 5.1.0 (build-24936374)"));
+        let location = report.ovftool_location.unwrap();
+        if !fusion && !cfg!(windows) {
+            assert_eq!((location.source, std::path::PathBuf::from(&location.path)), (Source::Managed, managed_dir(t.data()).join(exe)));
+        }
+        let json = serde_json::to_value(&location).unwrap();
+        assert!(json.get("needsRosetta").is_some() && json.get("source").is_some(), "{json}");
     }
 
     /// A tool whose probe fails (a wedged daemon, a tool refusing `--version`; a timed-out probe

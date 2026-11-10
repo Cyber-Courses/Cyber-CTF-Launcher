@@ -132,7 +132,30 @@
       "esxiPluginPending": "{plugin}, sobald Vagrant installiert ist.",
       "installPlugin": "Plugin installieren",
       "ovftool": "Lädt die Lab-VMs auf ESXi hoch. Kommt mit VMware Fusion / Workstation oder einzeln von Broadcom (kostenloses Konto).",
-      "get": "Holen",
+      "ovftoolFound": "{version} · {where}: {path}",
+      "ovftoolWhere": {
+        "fusion": "Kopie aus VMware Fusion",
+        "workstation": "Kopie aus VMware Workstation",
+        "managed": "von Cyber CTF abgelegt",
+        "path": "im PATH"
+      },
+      "ovftoolNoRun": "Gefunden unter {path}, startet aber nicht.",
+      "ovftoolRosetta": "Gefunden unter {path}, aber für Intel-Macs gebaut: Installiere Rosetta (softwareupdate --install-rosetta) und prüfe dann erneut.",
+      "getHypervisor": "{name} holen (enthält OVF Tool)",
+      "getStandalone": "Einzelnes OVF Tool holen",
+      "useDownloaded": "Heruntergeladenes OVF Tool verwenden…",
+      "pickOvftool": "Wähle den entpackten OVF-Tool-Ordner",
+      "placing": "OVF Tool wird geprüft und kopiert…",
+      "placed": "OVF Tool in den Tool-Ordner von Cyber CTF kopiert: {path}",
+      "placedRosetta": "OVF Tool in den Tool-Ordner von Cyber CTF kopiert. Es ist für Intel-Macs gebaut: Installiere Rosetta (softwareupdate --install-rosetta), um es zu starten.",
+      "refused": {
+        "noTool": "In diesem Ordner ist kein ovftool-Programm. Wähle den Ordner, in den der Download entpackt wurde, den mit ovftool.",
+        "noLibraries": "Dieser Ordner enthält ovftool, aber nicht seinen lib-Ordner. Wähle den ganzen entpackten Ordner.",
+        "tooLarge": "Dieser Ordner enthält weit mehr als das OVF Tool. Wähle den Ordner, in den der Download entpackt wurde.",
+        "unsigned": "macOS meldet, dass es nicht gültig signiert ist ({detail}). Lade es erneut von Broadcom herunter.",
+        "notVmware": "Es ist vom Team {team} signiert, nicht von VMware (EG7KH642X6), und wurde daher nicht verwendet.",
+        "notVmwareUnknown": "Es ist nicht von VMware (EG7KH642X6) signiert und wurde daher nicht verwendet."
+      },
       "terraformProxmox": "Steuert die Proxmox-API. Installiere es, um Proxmox-Labs auszuführen."
     },
     "server": {

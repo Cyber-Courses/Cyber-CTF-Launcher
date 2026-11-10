@@ -132,7 +132,30 @@
       "esxiPluginPending": "{plugin}（Vagrant のインストール後）。",
       "installPlugin": "プラグインをインストール",
       "ovftool": "ラボの VM を ESXi にアップロードします。VMware Fusion / Workstation に付属しているほか、Broadcom から単体で入手できます（無料アカウント）。",
-      "get": "入手",
+      "ovftoolFound": "{version} · {where}: {path}",
+      "ovftoolWhere": {
+        "fusion": "VMware Fusion 付属",
+        "workstation": "VMware Workstation 付属",
+        "managed": "Cyber CTF が配置",
+        "path": "PATH 上"
+      },
+      "ovftoolNoRun": "{path} に見つかりましたが、実行できません。",
+      "ovftoolRosetta": "{path} に見つかりましたが、Intel Mac 用です。Rosetta をインストール（softwareupdate --install-rosetta）してから、もう一度確認してください。",
+      "getHypervisor": "{name} を入手（OVF Tool 付属）",
+      "getStandalone": "単体の OVF Tool を入手",
+      "useDownloaded": "ダウンロードした OVF Tool を使う…",
+      "pickOvftool": "展開した OVF Tool のフォルダーを選択",
+      "placing": "OVF Tool を確認してコピーしています…",
+      "placed": "OVF Tool を Cyber CTF のツールフォルダーにコピーしました: {path}",
+      "placedRosetta": "OVF Tool を Cyber CTF のツールフォルダーにコピーしました。Intel Mac 用のため、実行するには Rosetta をインストールしてください（softwareupdate --install-rosetta）。",
+      "refused": {
+        "noTool": "そのフォルダーに ovftool プログラムがありません。ダウンロードを展開したフォルダー（ovftool があるフォルダー）を選んでください。",
+        "noLibraries": "そのフォルダーには ovftool はありますが、lib フォルダーがありません。展開したフォルダー全体を選んでください。",
+        "tooLarge": "そのフォルダーには OVF Tool 以外のものが大量に含まれています。ダウンロードを展開したフォルダーを選んでください。",
+        "unsigned": "macOS によると有効な署名がありません（{detail}）。Broadcom からもう一度ダウンロードしてください。",
+        "notVmware": "VMware（EG7KH642X6）ではなくチーム {team} が署名しているため、使用しませんでした。",
+        "notVmwareUnknown": "VMware（EG7KH642X6）の署名がないため、使用しませんでした。"
+      },
       "terraformProxmox": "Proxmox API を操作します。Proxmox ラボを実行するにはインストールしてください。"
     },
     "server": {

@@ -132,7 +132,30 @@
       "esxiPluginPending": "{plugin}, cuando Vagrant esté instalado.",
       "installPlugin": "Instalar plugin",
       "ovftool": "Sube las VM del lab a ESXi. Viene con VMware Fusion / Workstation, o por separado desde Broadcom (cuenta gratuita).",
-      "get": "Obtener",
+      "ovftoolFound": "{version} · {where}: {path}",
+      "ovftoolWhere": {
+        "fusion": "copia de VMware Fusion",
+        "workstation": "copia de VMware Workstation",
+        "managed": "colocado por Cyber CTF",
+        "path": "en el PATH"
+      },
+      "ovftoolNoRun": "Encontrado en {path}, pero no se ejecuta.",
+      "ovftoolRosetta": "Encontrado en {path}, pero está hecho para Mac con Intel: instala Rosetta (softwareupdate --install-rosetta) y vuelve a comprobar.",
+      "getHypervisor": "Obtener {name} (incluye OVF Tool)",
+      "getStandalone": "Obtener OVF Tool por separado",
+      "useDownloaded": "Usar un OVF Tool descargado…",
+      "pickOvftool": "Elige la carpeta de OVF Tool descomprimida",
+      "placing": "Comprobando y copiando OVF Tool…",
+      "placed": "OVF Tool copiado en la carpeta de herramientas de Cyber CTF: {path}",
+      "placedRosetta": "OVF Tool copiado en la carpeta de herramientas de Cyber CTF. Está hecho para Mac con Intel: instala Rosetta (softwareupdate --install-rosetta) para ejecutarlo.",
+      "refused": {
+        "noTool": "No hay ningún programa ovftool en esa carpeta. Elige la carpeta donde se descomprimió la descarga, la que contiene ovftool.",
+        "noLibraries": "Esa carpeta tiene ovftool pero no su carpeta lib. Elige la carpeta descomprimida completa.",
+        "tooLarge": "Esa carpeta contiene mucho más que OVF Tool. Elige la carpeta donde se descomprimió la descarga.",
+        "unsigned": "macOS indica que no tiene una firma válida ({detail}). Descárgalo de nuevo desde Broadcom.",
+        "notVmware": "Está firmado por el equipo {team}, no por VMware (EG7KH642X6), así que no se usó.",
+        "notVmwareUnknown": "No está firmado por VMware (EG7KH642X6), así que no se usó."
+      },
       "terraformProxmox": "Controla la API de Proxmox. Instálalo para ejecutar labs en Proxmox."
     },
     "server": {

@@ -34,7 +34,20 @@ function withInstalls(r: SystemReport, installed: ReadonlySet<string>, { pm }: {
     dockerCompose: docker ? { installed: true, version: "2.29.7" } : r.dockerCompose,
     vagrant,
     terraform: has("terraform") ? { installed: true, version: "1.9.8" } : r.terraform,
+    ...placedOvftool(r, has("ovftool")),
     vmProviders,
+  };
+}
+
+/** Where the core places a downloaded OVF Tool, in the preview. */
+const MANAGED_OVFTOOL = "/Users/player/Library/Application Support/org.cyberctf.desktop/tools/ovftool/ovftool";
+
+/** The report's OVF Tool, once the preview placed one (`placed`): the app's copy, found. */
+function placedOvftool(r: SystemReport, placed: boolean): Pick<SystemReport, "ovftool" | "ovftoolLocation"> {
+  if (!placed) return { ovftool: r.ovftool, ovftoolLocation: r.ovftoolLocation };
+  return {
+    ovftool: { installed: true, version: "VMware ovftool 5.1.0 (build-24936374)" },
+    ovftoolLocation: { source: "managed", path: MANAGED_OVFTOOL, needsRosetta: false },
   };
 }
 
@@ -109,6 +122,12 @@ export const machineHandlers: Record<string, BrowserHandler> = {
   },
   install_dependency: install("dependency"),
   install_vagrant_plugin: install("plugin"),
+  // The picked folder is taken as VMware's OVF Tool: placed, and reported by the next check.
+  ovftool_place: async (_args, { live }) => {
+    await sleep(400);
+    live.installed.add("ovftool");
+    return { outcome: "placed", path: MANAGED_OVFTOOL, needsRosetta: false };
+  },
   machine_selftest: selftest,
   machine_open_setup: (args) => {
     const step = args?.step ? `?step=${argText(args.step)}` : "";

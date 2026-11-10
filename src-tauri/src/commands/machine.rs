@@ -14,6 +14,7 @@ use crate::machine::storage::{self, Storage};
 use crate::machine::system::metrics::{self, MachineMetrics};
 use crate::machine::system::{self, SystemReport, docker, wsl};
 use crate::machine::tools::install::{self, Dependency};
+use crate::machine::tools::ovftool;
 use crate::machine::tools::uninstall::{self, InstalledTool};
 use crate::machine::workloads::{self, Workload};
 use crate::platform::AppDirs;
@@ -143,6 +144,13 @@ pub async fn uninstall_dependency(app: AppHandle, dependency: Dependency, logs: 
     uninstall::uninstall_dependency(AppDirs::from(&app), dependency, lines(logs)).await
 }
 
+/// Places the OVF Tool unpacked at `folder` (which the player picked) in the app's own folder,
+/// once verified as VMware's (see [`ovftool::place`]).
+#[tauri::command]
+pub async fn ovftool_place(app: AppHandle, folder: String) -> Result<ovftool::Outcome> {
+    ovftool::place(&AppDirs::from(&app), std::path::Path::new(&folder)).await
+}
+
 /// Adds this Windows account to "Hyper-V Administrators" (one administrator prompt), so Vagrant
 /// can drive Hyper-V for it from the next sign-in on (#185).
 #[tauri::command]
@@ -165,6 +173,17 @@ mod tests {
         crate::app::window::builder(t.handle(), "machine-setup", "machine-setup").build().unwrap();
         machine_open_setup(t.handle().clone(), Some("docker".into())).await.unwrap();
         assert_eq!(t.handle().webview_windows().len(), 1);
+    }
+
+    /// A picked folder that isn't the OVF Tool is refused, said as such, and nothing is placed.
+    #[tokio::test]
+    async fn placing_a_folder_without_the_ovf_tool_is_refused() {
+        let t = TestApp::new();
+        let picked = t.data().join("not-the-tool");
+        std::fs::create_dir_all(&picked).unwrap();
+        let outcome = ovftool_place(t.handle().clone(), picked.display().to_string()).await.unwrap();
+        assert_eq!(outcome, ovftool::Outcome::Refused { reason: ovftool::Refusal::NoTool, detail: None });
+        assert!(!ovftool::managed_dir(t.data()).exists());
     }
 
     #[tokio::test]

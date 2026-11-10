@@ -3,6 +3,7 @@
 
 mod exit_codes;
 pub mod install;
+pub mod ovftool;
 mod scripts;
 pub mod steps;
 pub mod uninstall;
