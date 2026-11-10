@@ -246,7 +246,8 @@ fn azure_subscription(r: Result<String>) -> First<()> {
 }
 
 /// Azure: `az account show` for the subscription confirms the CLI is signed in and the
-/// subscription is reachable. (az has no cheap VM-create dry-run like AWS.)
+/// subscription is reachable (az has no cheap VM-create dry-run like AWS); then whether the
+/// region has room for the lab's VM size, and Terraform.
 pub(super) async fn test_azure(h: &HostProfile) -> TestResult {
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();

@@ -14,7 +14,8 @@ use crate::platform::remembered::remembered;
 /// unresponsive (wedged), not just slow.
 const VBOX_SERVICE_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
 
-/// Vagrant provider ids (the value given to `vagrant up --provider`).
+/// Where a lab's machines can run: a hypervisor here or a server (each a Vagrant provider, its id
+/// the value given to `vagrant up --provider`), Proxmox (the runner's Terraform), or a cloud.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
@@ -334,8 +335,8 @@ pub struct ProviderStatus {
     pub remote: bool,
     /// Whether a lab's VMs can run on it now (`reason` says why not).
     pub available: bool,
-    /// Whether the hypervisor itself is installed. None for remote providers (nothing
-    /// local to run) and Hyper-V (a Windows feature we do not probe).
+    /// Whether the hypervisor itself is installed (for Hyper-V, whether the Windows feature is
+    /// on). None where nothing local is checked: a server or a cloud.
     pub hypervisor: Option<bool>,
     /// The Vagrant plugin this provider needs, if it is not built in.
     pub plugin: Option<String>,
@@ -347,7 +348,8 @@ pub struct ProviderStatus {
     /// What is still to install for Vagrant to drive it here ([`needs`]): empty when nothing is.
     /// The Machine page and the setup steps read this, never their own idea of it.
     pub needs: Vec<Need>,
-    /// Why it is not available (missing plugin, missing hypervisor, wrong OS).
+    /// Why it is not available (Vagrant, the hypervisor or its plugin missing or too old, the
+    /// account not allowed to drive it, …).
     pub reason: Option<String>,
 }
 

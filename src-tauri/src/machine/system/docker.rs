@@ -8,8 +8,9 @@ use crate::platform::exec::{docker_denied, docker_denied_error, run, run_read};
 
 /// How long each engine's context may take to answer before it counts as stopped.
 const ENGINE_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
-/// How long a started engine is waited for: 90 tries, 2 s apart.
+/// How many times a started engine is asked whether it answers: 90, [`START_POLL`] apart.
 const START_TRIES: u32 = 90;
+/// How long between two of those tries.
 const START_POLL: Duration = Duration::from_secs(2);
 
 /// A Docker-compatible engine, as the webview names it (its id) and as the player reads it (its

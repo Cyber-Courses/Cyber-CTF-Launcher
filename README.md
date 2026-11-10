@@ -4,7 +4,7 @@ The desktop launcher for [Cyber CTF](https://www.cyberctf.org) labs: hands-on, d
 vulnerable environments for learning offensive and defensive security. It runs each lab, with an
 attack box to work from, on your own computer (Docker or virtual machines), on your own Proxmox or
 ESXi server, or in your own cloud account (AWS, Azure, Google Cloud, DigitalOcean, Linode, Oracle
-Cloud), and installs and checks the tools that needs.
+Cloud), and installs and checks the tools each of them needs.
 
 It is for learners, for the trainers and teams who run Cyber CTF labs, and for the IT teams who
 deploy it: the [administrator guide](docs/admin-guide.md) has what a security review and a managed

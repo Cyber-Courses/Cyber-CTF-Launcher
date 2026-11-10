@@ -1,5 +1,9 @@
-//! Cloud account connection via each provider's own CLI auth (browser flow), so we don't
-//! store long-lived cloud secrets. Terraform then uses the CLI's credential chain.
+//! What the launcher reads and runs through the clouds' own CLIs: their browser sign-ins (`az
+//! login`, `gcloud auth`, `aws login`) and cancelling one, the AWS identity, profiles and the
+//! month's cost so far, Azure's subscriptions, GCP's account, billing accounts and organizations,
+//! and OCI's `~/.oci/config`. An account signed in this way keeps no secret in the launcher:
+//! Terraform uses the CLI's credential chain. (AWS access keys and the token clouds' tokens are
+//! the keychain's, `runtime::server::secrets`.)
 
 use std::sync::Mutex;
 use std::time::Duration;

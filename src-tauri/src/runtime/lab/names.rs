@@ -1,10 +1,8 @@
 //! Isoloom's path and naming conventions, in one place: where it writes a target's files
 //! (`.isoloom[-<n>]/docker|docker-vm|vagrant|proxmox|cloud-docker/<cloud>|cloud-vm/<cloud>|
-//! cloud-services`), what it names the machines and networks it creates (`isoloom-controller`,
-//! the `isoloom-<lab>-<network>` VM networks, the `isoloom-check` runners), the outputs of its
-//! cloud modules (`ip`, `ssh_user`, `ready_file`) and the environment variables its generated
-//! files read (`ISOLOOM_HYPERV_SWITCH`, `ISOLOOM_SSH_PROXY_COMMAND`). The rest of the launcher
-//! asks here instead of spelling them out.
+//! cloud-services`, the Compose file and the run manifest among them), the environment its
+//! Vagrantfiles read to reach an ESXi host (`ESXI_*`), and the output of its cloud modules the
+//! launcher reads (`ip`). The rest of the launcher asks here instead of spelling them out.
 
 use std::path::{Path, PathBuf};
 
@@ -89,6 +87,3 @@ pub mod outputs {
     /// The address to start from: the lab's VM.
     pub const IP: &str = "ip";
 }
-
-#[cfg(test)]
-mod tests {}

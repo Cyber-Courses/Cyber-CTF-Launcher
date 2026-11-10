@@ -1,8 +1,9 @@
 //! Login with cyber-auth: OAuth authorization code + PKCE (RFC 7636) through the
 //! system browser, back to the app by a `cyberctf://` link or a loopback redirect (RFC 8252,
 //! see `config::scheme_redirect`); or, when that browser can't be used, with a code entered on
-//! any device (RFC 8628, see `device`). Tokens live in the OS keychain and never reach the
-//! webview; API calls go through `api.rs`.
+//! any device (RFC 8628, see `device`). Tokens live in the OS keychain (a debug build keeps
+//! them in `~/.cyberctf/dev-session.json`, see `store`) and never reach the webview; API calls
+//! go through `api.rs`.
 
 mod callback;
 mod device;

@@ -156,7 +156,7 @@ fn remove_pidfile(path: &Path) {
 /// What `CreateProcess` answers when the app's job object doesn't allow breaking away.
 const ERROR_ACCESS_DENIED: i32 = 5;
 
-/// Its own process group (and session leader on unix): closing the app's terminal or the app
+/// Its own process group: closing the app's terminal or the app
 /// itself sends it nothing, and stopping it later stops its children too.
 ///
 /// On Windows, also out of the app's job object when `breakaway`: an app started by a launcher,

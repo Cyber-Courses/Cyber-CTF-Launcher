@@ -589,9 +589,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
-- **A container lab runs as a VM on QEMU and Hyper-V, not only VirtualBox/VMware/libvirt.** Bundles
-  Isoloom 1.0.7: the docker-in-VM helper box is now `generic/debian12`, which has a build for every
-  local hypervisor, so "VM on this machine" works on a QEMU-only (or Hyper-V) machine.
+- **A container lab runs as a VM on QEMU, not only VirtualBox/VMware/libvirt.** Bundles Isoloom
+  1.0.7: the docker-in-VM helper box is now `generic/debian12`, which has a build for every local
+  hypervisor, so "VM on this machine" works on a QEMU-only machine. (Not on Hyper-V, which
+  Isoloom's docker-in-VM doesn't support: 1.8.7 stopped offering it there.)
 
 ## [1.8.5] — 2026-11-06
 

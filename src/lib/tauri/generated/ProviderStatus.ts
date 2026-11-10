@@ -21,8 +21,8 @@ remote: boolean,
  */
 available: boolean, 
 /**
- * Whether the hypervisor itself is installed. None for remote providers (nothing
- * local to run) and Hyper-V (a Windows feature we do not probe).
+ * Whether the hypervisor itself is installed (for Hyper-V, whether the Windows feature is
+ * on). None where nothing local is checked: a server or a cloud.
  */
 hypervisor: boolean | null, 
 /**
@@ -44,6 +44,7 @@ utility: UtilityState | null,
  */
 needs: Array<Need>, 
 /**
- * Why it is not available (missing plugin, missing hypervisor, wrong OS).
+ * Why it is not available (Vagrant, the hypervisor or its plugin missing or too old, the
+ * account not allowed to drive it, …).
  */
 reason: string | null, };

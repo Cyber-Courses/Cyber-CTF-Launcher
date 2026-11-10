@@ -1,5 +1,6 @@
-//! The lab's Isoloom instance number: picked once per lab, kept in a marker file, and chosen
-//! so its Docker blocks clear every other running lab's.
+//! The lab's Isoloom instance number: picked for a lab, kept in a marker file, and chosen so its
+//! Docker blocks clear every other running lab's; checked again at each start, and moved when
+//! they no longer do.
 
 use std::path::Path;
 
