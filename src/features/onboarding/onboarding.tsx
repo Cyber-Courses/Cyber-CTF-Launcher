@@ -19,7 +19,8 @@ import {
 import { STEP_NAMES, isMachineStep, onboardingSteps } from "@/features/onboarding/onboarding-model";
 import { StepActions, StepHeader, StepProgress } from "@/features/onboarding/onboarding-parts";
 import { DoneStep, SignInStep, WelcomeStep } from "@/features/onboarding/onboarding-steps";
-import { useMachineReport, useOnboardingAuth, type MachineReport } from "@/features/onboarding/use-onboarding";
+import { useOnboardingAuth } from "@/features/onboarding/use-onboarding";
+import { useMachineReport, type MachineReport } from "@/features/machine/use-machine-report";
 import { useStepper } from "@/lib/use-stepper";
 import { useT } from "@/lib/i18n";
 
