@@ -16,6 +16,7 @@ import {
   connectionReady,
   initialSignIn,
   initialSshKey,
+  isProxmoxToken,
   keepsSecret,
   makesToken,
   sameSshKey,
@@ -65,7 +66,7 @@ export function useHostSetup({ initial, providerChosen, report, onRefresh, onSav
   const stepper = useSteps(v.provider, editing, providerChosen);
   const tools = useToolInstall(onRefresh);
   const signIn = useSignIn(initial);
-  const made = sameSshKey(signIn.madeWith, signIn.sshKey) && v.username.includes("!");
+  const made = sameSshKey(signIn.madeWith, signIn.sshKey) && isProxmoxToken(v.username);
   const payload = savePayload(v, signIn.signInMethod, signIn.sshKey, made);
   const saving = useSaveAndTest(payload, onSaved, stepper.next);
   const connecting = useConnect(payload, form.setV, signIn.setMadeWith, onSaved, stepper.next);

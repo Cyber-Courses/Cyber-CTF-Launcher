@@ -321,8 +321,7 @@
     "provider": {
       "title": "Choisissez un fournisseur cloud",
       "description": "Où les labs tournent comme instances jetables dans votre propre compte. AWS, Azure et Google Cloud ; d'autres arrivent.",
-      "label": "Fournisseur cloud",
-      "comingSoon": "Bientôt"
+      "label": "Fournisseur cloud"
     },
     "test": {
       "title": "Test de connexion",

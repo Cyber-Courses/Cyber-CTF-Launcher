@@ -26,7 +26,7 @@ mod contract;
 pub mod gcp;
 pub(crate) mod hosts;
 pub(crate) mod input;
-mod kind;
+pub(crate) mod kind;
 pub(crate) mod profile;
 mod reachability;
 pub(crate) mod secrets;

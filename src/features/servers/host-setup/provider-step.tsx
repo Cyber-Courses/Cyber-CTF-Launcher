@@ -3,7 +3,7 @@
 import { Cloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RadioList, RadioRow } from "@/components/ui/radio-row";
-import { CLOUD_META, cloudLogo } from "@/features/servers/host-setup/constants";
+import { cloudLogo } from "@/features/servers/host-setup/constants";
 import { MarkTile, Nav, Step } from "@/features/servers/host-setup/form";
 import { ContinueButton } from "@/features/servers/host-setup/step-nav";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
@@ -16,23 +16,21 @@ export function ProviderStep({ s }: { s: HostSetup }) {
   return (
     <Step icon={Cloud} title={t("servers.setup.provider.title")} description={t("servers.setup.provider.description")}>
       <RadioList label={t("servers.setup.provider.label")}>
-        {CLOUD_PROVIDERS.map((id) => ({ id, ...CLOUD_META[id] })).map((p) => (
+        {CLOUD_PROVIDERS.map((id) => (
           <RadioRow
-            key={p.id}
-            selected={p.ready && cloudProvider === p.id}
+            key={id}
+            selected={cloudProvider === id}
             onSelect={() => {
-              pickProvider(p.id);
+              pickProvider(id);
             }}
-            disabled={!p.ready}
-            hint={p.ready ? undefined : t("servers.setup.provider.comingSoon")}
             leading={
               <MarkTile>
                 {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-                <img src={cloudLogo(p.id)} alt="" className="size-5 object-contain" draggable={false} />
+                <img src={cloudLogo(id)} alt="" className="size-5 object-contain" draggable={false} />
               </MarkTile>
             }
-            title={PROVIDER_NAMES[p.id]}
-            subtitle={p.ready ? t(`servers.setup.kinds.${p.id}`) : t("servers.setup.provider.comingSoon")}
+            title={PROVIDER_NAMES[id]}
+            subtitle={t(`servers.setup.kinds.${id}`)}
           />
         ))}
       </RadioList>
@@ -42,7 +40,7 @@ export function ProviderStep({ s }: { s: HostSetup }) {
             {t("servers.setup.nav.cancel")}
           </Button>
         }
-        right={<ContinueButton onClick={next} disabled={!CLOUD_META[cloudProvider].ready} />}
+        right={<ContinueButton onClick={next} />}
       />
     </Step>
   );

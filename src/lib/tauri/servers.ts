@@ -20,7 +20,7 @@ export type { HostCapacity, ProxmoxBridge, ProxmoxNodeChoices, ProxmoxPlacement,
 // --- Server (the player's own ESXi / Proxmox host) ---
 
 /** The player's own servers' providers (the backend's `Provider::SERVERS`). */
-type ServerProvider = (typeof SERVER_PROVIDERS)[number];
+export type ServerProvider = (typeof SERVER_PROVIDERS)[number];
 
 /** A saved host's provider: one of the player's servers, or a cloud account. */
 export type RemoteProvider = ServerProvider | CloudProvider;
@@ -35,6 +35,10 @@ export type ServerList = Omit<Generated.ServerList, "hosts"> & { hosts: ServerHo
 /** The player's own servers, as opposed to cloud accounts, in the launcher's order: the backend's
  *  `Provider::SERVERS`, each a host's provider. */
 export { SERVER_PROVIDERS };
+
+/** Each kind of server and cloud account (how it signs in, its default port, the cloud CLI it
+ *  needs here), and an account's default auto-stop: the backend's. */
+export { DEFAULT_AUTO_STOP_HOURS, HOST_KINDS } from "@/lib/tauri/generated/HostKinds";
 
 /** Whether `provider` is one of the player's own servers', not a cloud account's. */
 export const isServerProvider = (provider: string | null | undefined): provider is ServerProvider =>

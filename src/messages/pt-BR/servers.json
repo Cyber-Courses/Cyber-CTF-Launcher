@@ -321,8 +321,7 @@
     "provider": {
       "title": "Escolha um provedor de nuvem",
       "description": "Onde os labs rodam como instâncias descartáveis na sua própria conta. AWS, Azure e Google Cloud; mais em breve.",
-      "label": "Provedor de nuvem",
-      "comingSoon": "Em breve"
+      "label": "Provedor de nuvem"
     },
     "test": {
       "title": "Teste de conexão",

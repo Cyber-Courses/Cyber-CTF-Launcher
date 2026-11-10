@@ -7,6 +7,7 @@ import { BackNav, SaveAndTestButton, StepError } from "@/features/servers/host-s
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
+import { DEFAULT_AUTO_STOP_HOURS } from "@/lib/tauri";
 
 export function OptionsStep({ s }: { s: HostSetup }) {
   const t = useT();
@@ -41,7 +42,7 @@ function AutoStopField({ s }: { s: HostSetup }) {
   return (
     <Field label={t("servers.setup.options.autoStop")}>
       <Select
-        value={String(v.autoStopHours ?? 4)}
+        value={String(v.autoStopHours ?? DEFAULT_AUTO_STOP_HOURS)}
         onChange={(e) => {
           set("autoStopHours", Number(e.target.value));
         }}

@@ -9,18 +9,18 @@ import type {
   SshKeySignIn,
   SystemReport,
 } from "@/lib/tauri";
-import { CLOUD_PROVIDERS, PROVIDER_NAMES, isCloudProvider } from "@/lib/tauri";
+import { CLOUD_PROVIDERS, HOST_KINDS, PROVIDER_NAMES, isCloudProvider, isServerProvider } from "@/lib/tauri";
 import {
   AWS_REGIONS,
   AZURE_LOCATIONS,
-  CLOUD_META,
+  DEFAULT_REGION,
   DO_REGIONS,
   EMPTY_CLOUD,
   EMPTY_HOST,
   GCP_REGIONS,
-  KIND,
   LINODE_REGIONS,
   OCI_REGIONS,
+  SERVER_USER,
   type StepKey,
 } from "@/features/servers/host-setup/constants";
 
@@ -31,10 +31,10 @@ const defaultName = (p: CloudProvider) => PROVIDER_NAMES[p];
 const DEFAULT_NAMES = CLOUD_PROVIDERS.map(defaultName);
 
 /** Token clouds (DigitalOcean, Linode) authenticate with just a pasted API token (no CLI, no username). */
-const isTokenCloud = (p: RemoteProvider) => p === "digitalocean" || p === "linode";
+const isTokenCloud = (p: RemoteProvider) => HOST_KINDS[p].signIn === "apiToken";
 
 /** Azure and GCP authenticate through their CLI (no access keys); the flow is the same shape. */
-const isCliAuthCloud = (p: RemoteProvider) => p === "azure" || p === "gcp";
+const isCliAuthCloud = (p: RemoteProvider) => HOST_KINDS[p].signIn === "cliSignIn";
 
 /**
  * The ordered steps for this setup. Editing skips choosing the provider or hypervisor and
@@ -51,16 +51,6 @@ export function setupSteps(provider: RemoteProvider, editing: boolean, providerC
   const choose: StepKey[] = editing ? [] : providerChosen ? ["tools"] : ["provider", "tools"];
   return [...choose, ...account, "credentials", "options", "test"];
 }
-
-/** Where a new account's labs run by default, per cloud. */
-export const DEFAULT_REGION: Record<CloudProvider, string> = {
-  aws: "eu-west-3",
-  azure: "swedencentral",
-  gcp: "europe-west1",
-  digitalocean: "fra1",
-  linode: "eu-central",
-  oci: "eu-frankfurt-1",
-};
 
 /** The region / location choices for a cloud (code, human name). */
 export const REGIONS: Record<CloudProvider, [string, string][]> = {
@@ -104,10 +94,17 @@ export function startingSetup(kind: string | null, provider: string | null): { f
  *  API token there), an API token, or a user and password. */
 export type SignIn = "sshKey" | "token" | "password";
 
+/** Whether `username` is a Proxmox API token id (`user@realm!name`) rather than a user: the
+ *  backend's rule (`proxmox::is_token`), which the form reads as it is typed. */
+export function isProxmoxToken(username: string): boolean {
+  const bang = username.indexOf("!");
+  return bang >= 0 && username.slice(0, bang).includes("@") && username.slice(bang + 1) !== "";
+}
+
 /** A saved host's sign-in; a new Proxmox setup starts on the SSH key. */
 export function initialSignIn(v: ServerHostInput): SignIn {
   if (v.sshKey) return "sshKey";
-  if (v.username.includes("!")) return "token";
+  if (isProxmoxToken(v.username)) return "token";
   return v.id === null && v.provider === "proxmox" ? "sshKey" : "password";
 }
 
@@ -178,7 +175,7 @@ export function connectionReady(v: ServerHostInput, secretKept: boolean, key: Ss
   const user = v.username.trim() !== "";
   const secret = secretKept || (v.password ?? "") !== "";
   if (isTokenCloud(v.provider)) return host && secret;
-  if (isCliAuthCloud(v.provider) || v.provider === "oci") return host && user;
+  if (isCliAuthCloud(v.provider) || HOST_KINDS[v.provider].signIn === "apiKey") return host && user;
   if (isCloudProvider(v.provider) && v.useCliCreds) return host;
   // A server's port: empty (its default) or a whole number a TCP port can be (the field took 0
   // or 70000 and went on).
@@ -203,21 +200,23 @@ export function providerTraits(provider: RemoteProvider) {
     oci: provider === "oci",
     tokenCloud: isTokenCloud(provider),
     cliAuth: isCliAuthCloud(provider),
-    kind: KIND[provider],
+    kind: { port: HOST_KINDS[provider].defaultPort, user: isServerProvider(provider) ? SERVER_USER[provider] : "" },
   };
 }
 
-/** The clouds with a CLI of their own: the dependency that installs it, its key in the report. */
+/** The cloud CLIs the setup installs, by program: the dependency that installs it, its key in the
+ *  report. */
 const CLIS = {
   aws: { dependency: "awscli", key: "aws" },
-  azure: { dependency: "azurecli", key: "azure" },
-  gcp: { dependency: "gcloud", key: "gcloud" },
+  az: { dependency: "azurecli", key: "azure" },
+  gcloud: { dependency: "gcloud", key: "gcloud" },
 } as const satisfies Record<string, { dependency: Dependency; key: keyof CloudClis }>;
 
-/** The CLI a cloud needs on this machine (none for the token and key clouds). */
+/** The CLI a cloud needs on this machine, as the backend says (`HOST_KINDS`): its program, the
+ *  dependency that installs it and its key in the report; null for the token and key clouds. */
 export function cloudCli(provider: CloudProvider) {
-  const cli = provider === "azure" || provider === "gcp" ? CLIS[provider] : CLIS.aws;
-  return { has: CLOUD_META[provider].cli !== "", ...cli };
+  const program = HOST_KINDS[provider].cli;
+  return program ? { program, ...CLIS[program] } : null;
 }
 
 /**
@@ -227,10 +226,10 @@ export function cloudCli(provider: CloudProvider) {
  */
 export function machineTools(provider: RemoteProvider, report: SystemReport | null) {
   const cloud = isCloudProvider(provider);
-  const cli = cloudCli(cloud ? provider : "aws");
+  const cli = cloud ? cloudCli(provider) : null;
   const status = report?.vmProviders.find((p) => p.provider === provider);
-  const cloudHasCli = cloud && cli.has;
-  const cloudCliTool = cloudHasCli ? report?.cloudClis[cli.key] : undefined;
+  const cloudHasCli = cli !== null;
+  const cloudCliTool = cli ? report?.cloudClis[cli.key] : undefined;
   const tools = {
     vagrantOk: !!report?.vagrant.installed,
     esxiPluginOk: !!status?.pluginInstalled,
@@ -241,7 +240,8 @@ export function machineTools(provider: RemoteProvider, report: SystemReport | nu
     cloudHasCli,
     cloudCliTool,
     cloudCliOk: !!cloudCliTool?.installed,
-    cloudDep: cli.dependency,
+    /** The cloud's CLI (its program, the dependency that installs it), when it has one. */
+    cloudCli: cli,
   };
   const toolsOk = cloud
     ? (cloudHasCli ? tools.cloudCliOk : true) && tools.terraformOk

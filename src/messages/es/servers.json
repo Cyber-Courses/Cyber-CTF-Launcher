@@ -321,8 +321,7 @@
     "provider": {
       "title": "Elige un proveedor de nube",
       "description": "Donde los labs se ejecutan como instancias desechables en tu propia cuenta. AWS, Azure y Google Cloud; pronto habrá más.",
-      "label": "Proveedor de nube",
-      "comingSoon": "Próximamente"
+      "label": "Proveedor de nube"
     },
     "test": {
       "title": "Prueba de conexión",

@@ -321,8 +321,7 @@
     "provider": {
       "title": "クラウドプロバイダーを選択",
       "description": "自分のアカウント上で、ラボを使い捨てインスタンスとして実行する場所です。AWS、Azure、Google Cloud に対応、今後さらに追加予定です。",
-      "label": "クラウドプロバイダー",
-      "comingSoon": "近日対応"
+      "label": "クラウドプロバイダー"
     },
     "test": {
       "title": "接続テスト",

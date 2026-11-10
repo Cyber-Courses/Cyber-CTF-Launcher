@@ -189,6 +189,29 @@ pub const KINDS: [Kind; 8] = [
     },
 ];
 
+impl Kind {
+    /// How the webview's setup and Cloud page say it signs in: a server's login, AWS's access
+    /// keys (or its CLI's credentials), the cloud CLI's own sign-in (Azure, GCP), an API token, or
+    /// OCI's API key in its config file.
+    #[cfg(test)]
+    pub fn sign_in(&self) -> &'static str {
+        match (self.secret, self.account) {
+            (Secret::Password, _) => "login",
+            (Secret::AccessKey, _) => "accessKeys",
+            (Secret::ApiToken, _) => "apiToken",
+            (Secret::None, AccountField::Compartment) => "apiKey",
+            (Secret::None, _) => "cliSignIn",
+        }
+    }
+
+    /// The cloud CLI the setup installs for it (the program a launch asks first): AWS's, Azure's
+    /// and GCP's. None for a server, a token cloud, and OCI, whose config file signs in.
+    #[cfg(test)]
+    pub fn cli(&self) -> Option<&'static str> {
+        matches!(self.sign_in(), "accessKeys" | "cliSignIn").then(|| super::sign_in::sign_in_question(self.provider.id()).map(|(program, _)| program)).flatten()
+    }
+}
+
 /// The kind of host `provider` is; None for a hypervisor on this machine.
 pub fn kind(provider: Provider) -> Option<&'static Kind> {
     KINDS.iter().find(|k| k.provider == provider)
@@ -212,6 +235,24 @@ mod tests {
         for p in Provider::ALL.iter().filter(|p| !p.is_remote()) {
             assert!(kind(*p).is_none(), "{p:?}");
         }
+    }
+
+    #[test]
+    fn each_kind_says_how_it_signs_in_and_which_cli_it_needs() {
+        let said: Vec<(&str, &str, Option<&str>)> = KINDS.iter().map(|k| (k.provider.id(), k.sign_in(), k.cli())).collect();
+        assert_eq!(
+            said,
+            [
+                ("vmware_esxi", "login", None),
+                ("proxmox", "login", None),
+                ("aws", "accessKeys", Some("aws")),
+                ("azure", "cliSignIn", Some("az")),
+                ("gcp", "cliSignIn", Some("gcloud")),
+                ("digitalocean", "apiToken", None),
+                ("linode", "apiToken", None),
+                ("oci", "apiKey", None),
+            ]
+        );
     }
 
     #[test]

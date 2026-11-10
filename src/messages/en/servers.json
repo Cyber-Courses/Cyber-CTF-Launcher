@@ -321,8 +321,7 @@
     "provider": {
       "title": "Choose a cloud provider",
       "description": "Where labs run as throwaway instances in your own account. AWS, Azure and Google Cloud; more coming.",
-      "label": "Cloud provider",
-      "comingSoon": "Coming soon"
+      "label": "Cloud provider"
     },
     "test": {
       "title": "Connection test",

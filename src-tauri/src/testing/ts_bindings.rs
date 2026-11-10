@@ -86,10 +86,33 @@ fn generate(dir: &Path) {
     );
     write_provider_names(dir);
     write_docker_engines(dir);
+    write_host_kinds(dir);
     write_selftest_steps(dir);
     write_deploy_log(dir);
     write_index(dir);
 }
+
+/// The file of each kind of server and cloud account as the setup and the Cloud page read it
+/// ([`runtime::server::kind::KINDS`]): its default port, how it signs in and the CLI it needs, and
+/// the auto-stop an account has when it sets none (not a type: imported by its path).
+fn write_host_kinds(dir: &Path) {
+    use runtime::server::kind::KINDS;
+    let rows = KINDS.iter().fold(String::new(), |mut lines, k| {
+        let cli = k.cli().map_or_else(|| "null".to_owned(), |c| format!("\"{c}\""));
+        let _ = writeln!(lines, "  {}: {{ defaultPort: {}, signIn: \"{}\", cli: {cli} }},", k.provider.id(), k.default_port, k.sign_in());
+        lines
+    });
+    let doc = "/** Each kind of server and cloud account: its default port, how it signs in (a login, AWS's access keys, the cloud\n *  CLI's sign-in, an API token, OCI's API key) and the cloud CLI it needs here (Rust's `server::kind::KINDS`). */";
+    let doc_hours = "/** A cloud account's auto-stop when it sets none, in hours (Rust's `server::DEFAULT_AUTO_STOP_HOURS`). */";
+    let text = format!(
+        "{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const HOST_KINDS = {{\n{rows}}} as const satisfies Partial<Record<Provider, {{ defaultPort: number; signIn: string; cli: string | null }}>>;\n\n{doc_hours}\nexport const DEFAULT_AUTO_STOP_HOURS = {};\n",
+        runtime::server::DEFAULT_AUTO_STOP_HOURS
+    );
+    fs::write(dir.join(format!("{HOST_KINDS}.ts")), text).unwrap();
+}
+
+/// The generated file of the kinds of host (values, not types).
+const HOST_KINDS: &str = "HostKinds";
 
 /// The file of the Docker-compatible engines and their names as the player reads them
 /// ([`Engine::label`](machine::system::docker::Engine::label)), the one list the webview knows
@@ -220,7 +243,7 @@ fn write_index(dir: &Path) {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
         .filter_map(|e| e.unwrap().path().file_stem().map(|s| s.to_string_lossy().into_owned()))
-        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != DOCKER_ENGINES && n != SELFTEST_STEPS && n != DEPLOY_LOG)
+        .filter(|n| n != "index" && n != PROVIDER_NAMES && n != DOCKER_ENGINES && n != HOST_KINDS && n != SELFTEST_STEPS && n != DEPLOY_LOG)
         .collect();
     names.sort();
     let lines = names.iter().fold(String::new(), |mut lines, n| {

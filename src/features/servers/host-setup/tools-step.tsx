@@ -6,7 +6,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { LogConsole } from "@/components/ui/log-console";
 import { Requirement } from "@/features/machine/setup-steps/parts";
 import { PROVIDER_NAMES, installDependency, installVagrantPlugin } from "@/lib/tauri";
-import { CLOUD_META } from "@/features/servers/host-setup/constants";
 import { Step } from "@/features/servers/host-setup/form";
 import { BackNav, ContinueButton } from "@/features/servers/host-setup/step-nav";
 import { OvftoolRequirement } from "@/features/servers/host-setup/ovftool-requirement";
@@ -71,25 +70,24 @@ export function ToolsStep({ s }: { s: HostSetup }) {
 /** A cloud account's tools: its CLI (for the clouds that sign in with one), then Terraform. */
 function CloudTools({ s }: { s: HostSetup }) {
   const t = useT();
-  const { cloudProvider, canInstallTools, installTool, cloudDep, cloudHasCli, cloudCliTool, cloudCliOk, terraformOk } = s;
-  const cli = CLOUD_META[cloudProvider].cli;
+  const { cloudProvider, canInstallTools, installTool, cloudCli, cloudCliTool, cloudCliOk, terraformOk } = s;
   return (
     <>
-      {cloudHasCli && (
+      {cloudCli && (
         <Requirement
           ok={cloudCliOk}
           title={t("servers.setup.tools.cliTitle", { cloud: PROVIDER_NAMES[cloudProvider] })}
-          detail={cloudCliOk ? (cloudCliTool?.version ?? t("servers.setup.tools.installed")) : t("servers.setup.tools.cliDetail", { cli })}
+          detail={cloudCliOk ? (cloudCliTool?.version ?? t("servers.setup.tools.installed")) : t("servers.setup.tools.cliDetail", { cli: cloudCli.program })}
           action={
             <Button
               variant="outline"
               size="xs"
               disabled={!canInstallTools}
               onClick={() => {
-                installTool(`${cli} CLI`, (log) => installDependency(cloudDep, log));
+                installTool(`${cloudCli.program} CLI`, (log) => installDependency(cloudCli.dependency, log));
               }}
             >
-              {t("servers.setup.tools.install", { name: cli })}
+              {t("servers.setup.tools.install", { name: cloudCli.program })}
             </Button>
           }
         />

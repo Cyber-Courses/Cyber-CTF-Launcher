@@ -1,4 +1,4 @@
-import { PROVIDER_NAMES, isCloudProvider, type CloudProvider, type LabStatus, type ServerHost, type ServerTest } from "@/lib/tauri";
+import { HOST_KINDS, PROVIDER_NAMES, isCloudProvider, type CloudProvider, type LabStatus, type ServerHost, type ServerTest } from "@/lib/tauri";
 import type { Lab } from "@/features/labs/use-labs";
 
 // The Cloud page's logic, as pure functions of the saved accounts, their spend and the labs.
@@ -39,10 +39,12 @@ export function labsOnAccounts(labs: Lab[], statuses: Partial<Record<string, Lab
 /** How an account signs in, as its row names it. */
 export type Credential = { kind: "apiToken" | "apiKey" | "cliSignIn" | "cliCredentials" | "accessKeys" } | { kind: "cliProfile"; profile: string };
 
+/** How account `h` signs in: its kind's way, the backend's (`HOST_KINDS`); AWS's keys, or the AWS
+ *  CLI's own credentials (a profile of it, or its default). */
 export function credentialOf(h: ServerHost): Credential {
-  if (h.provider === "digitalocean" || h.provider === "linode") return { kind: "apiToken" };
-  if (h.provider === "oci") return { kind: "apiKey" };
-  if (h.provider !== "aws") return { kind: "cliSignIn" };
+  const signIn = HOST_KINDS[h.provider].signIn;
+  // A server's login never shows here: the Cloud page lists cloud accounts only.
+  if (signIn !== "accessKeys") return { kind: signIn === "login" ? "cliSignIn" : signIn };
   if (!h.useCliCreds) return { kind: "accessKeys" };
   return h.awsProfile ? { kind: "cliProfile", profile: h.awsProfile } : { kind: "cliCredentials" };
 }

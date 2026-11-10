@@ -321,8 +321,7 @@
     "provider": {
       "title": "Cloud-Anbieter wählen",
       "description": "Wo Labs als Wegwerf-Instanzen in deinem eigenen Konto laufen. AWS, Azure und Google Cloud; weitere folgen.",
-      "label": "Cloud-Anbieter",
-      "comingSoon": "Demnächst"
+      "label": "Cloud-Anbieter"
     },
     "test": {
       "title": "Verbindungstest",

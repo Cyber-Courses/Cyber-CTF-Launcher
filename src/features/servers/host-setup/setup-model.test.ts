@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { PROXMOX_NODE } from "@/lib/dev-mock/proxmox-sample";
 import type { ServerHostInput, ServerTest, SystemReport } from "@/lib/tauri";
-import { EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup/constants";
+import { DEFAULT_REGION, EMPTY_CLOUD, EMPTY_HOST } from "@/features/servers/host-setup/constants";
 import {
-  DEFAULT_REGION,
   REGIONS,
   cloudCli,
   connectionReady,
   machineTools,
   initialSignIn,
   initialSshKey,
+  isProxmoxToken,
   makesToken,
   placementWith,
   savePayload,
@@ -63,6 +63,14 @@ describe("Proxmox sign-in", () => {
     expect(initialSignIn(form({ id: "a", username: "root@pam" }))).toBe("password");
     expect(initialSignIn(form({ id: "a", username: "root@pam!ci" }))).toBe("token");
     expect(initialSignIn(form({ id: "a", username: "root@pam!cyberctf-1", sshKey: key }))).toBe("sshKey");
+    // Regression: any `!` read as a token, looser than the backend's `user@realm!name`.
+    expect(initialSignIn(form({ id: "a", username: "root!ci" }))).toBe("password");
+    expect(initialSignIn(form({ id: "a", username: "root@pam!" }))).toBe("password");
+  });
+
+  it("tells a Proxmox token id by the backend's rule, user@realm!name", () => {
+    expect(["root@pam!ci", "ci@pve!a!b"].every(isProxmoxToken)).toBe(true);
+    expect(["root@pam", "root!ci", "root@pam!", "!ci", ""].some(isProxmoxToken)).toBe(false);
     expect(initialSshKey(form({}))).toEqual({ path: "", user: "root", port: 22 });
     expect(initialSshKey(form({ sshKey: key }))).toBe(key);
   });
@@ -205,13 +213,18 @@ describe("machineTools", () => {
   it("needs Terraform, plus the cloud's CLI when it has one", () => {
     expect(machineTools("proxmox", report({ terraform: tool(false) })).toolsOk).toBe(false);
     expect(machineTools("aws", report()).toolsOk).toBe(true);
-    expect(machineTools("azure", report())).toMatchObject({ cloudHasCli: true, cloudCliOk: false, cloudDep: "azurecli", toolsOk: false });
+    expect(machineTools("azure", report())).toMatchObject({ cloudHasCli: true, cloudCliOk: false, cloudCli: { dependency: "azurecli" }, toolsOk: false });
     expect(machineTools("linode", report())).toMatchObject({ cloudHasCli: false, toolsOk: true });
   });
 
-  it("names each cloud's CLI", () => {
-    expect(cloudCli("gcp")).toEqual({ has: true, dependency: "gcloud", key: "gcloud" });
-    expect(cloudCli("oci").has).toBe(false);
+  it("names each cloud's CLI as the backend does, and none for a server or a cloud without one", () => {
+    expect(cloudCli("gcp")).toEqual({ program: "gcloud", dependency: "gcloud", key: "gcloud" });
+    expect(cloudCli("azure")).toEqual({ program: "az", dependency: "azurecli", key: "azure" });
+    // Regression: a cloud with no CLI got the AWS CLI's dependency, and a server was asked
+    // for the AWS CLI's.
+    expect(cloudCli("oci")).toBeNull();
+    expect(cloudCli("digitalocean")).toBeNull();
+    expect(machineTools("proxmox", report())).toMatchObject({ cloudHasCli: false, cloudCli: null, cloudCliTool: undefined });
   });
 });
 
@@ -285,8 +298,8 @@ describe("machineTools and saveName: edges", () => {
     expect(machineTools("digitalocean", report())).toMatchObject({ toolsOk: true, cloudHasCli: false, cloudCliTool: undefined });
     expect(machineTools("proxmox", report())).toMatchObject({ toolsOk: true });
     expect(machineTools("proxmox", report({ terraform: tool(false) })).toolsOk).toBe(false);
-    expect(machineTools("azure", report())).toMatchObject({ toolsOk: false, cloudCliOk: false, cloudDep: "azurecli" });
-    expect(machineTools("gcp", report())).toMatchObject({ toolsOk: true, cloudDep: "gcloud" });
+    expect(machineTools("azure", report())).toMatchObject({ toolsOk: false, cloudCliOk: false, cloudCli: { dependency: "azurecli" } });
+    expect(machineTools("gcp", report())).toMatchObject({ toolsOk: true, cloudCli: { dependency: "gcloud" } });
   });
 
   it("saves a cloud under its short name and a server under its trimmed address when no name is typed", () => {

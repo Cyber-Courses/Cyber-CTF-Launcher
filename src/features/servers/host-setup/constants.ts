@@ -1,20 +1,11 @@
-import type { CloudProvider, ServerHostInput, RemoteProvider } from "@/lib/tauri";
+import { DEFAULT_AUTO_STOP_HOURS, type CloudProvider, type ServerHostInput, type ServerProvider } from "@/lib/tauri";
 
 // The server setup flow, a step-by-step wizard shown in its own window (src/app/server-setup).
 // Matches the "Set up this machine" wizard (features/machine/machine-setup.tsx).
 
-/** Each remote provider's connection defaults, the setup form's placeholders: its port and the
- *  user (or account field) it signs in with. Its name is the backend's `PROVIDER_NAMES`. */
-export const KIND: Record<RemoteProvider, { port: number; user: string }> = {
-  proxmox: { port: 8006, user: "root" },
-  vmware_esxi: { port: 22, user: "root" },
-  aws: { port: 443, user: "AKIA…" },
-  azure: { port: 443, user: "subscription id" },
-  gcp: { port: 443, user: "project id" },
-  digitalocean: { port: 443, user: "API token" },
-  linode: { port: 443, user: "API token" },
-  oci: { port: 443, user: "compartment OCID" },
-};
+/** The user each server signs in with by default, the connection form's placeholder (its port is
+ *  the backend's `HOST_KINDS`). */
+export const SERVER_USER: Record<ServerProvider, string> = { proxmox: "root", vmware_esxi: "root" };
 
 export const EMPTY_HOST: ServerHostInput = {
   id: null,
@@ -32,8 +23,25 @@ export const EMPTY_HOST: ServerHostInput = {
   autoStopHours: null,
 };
 
-/** A new AWS account: region + access keys. */
-export const EMPTY_CLOUD: ServerHostInput = { ...EMPTY_HOST, provider: "aws", host: "eu-west-3", useCliCreds: true, insecureTls: false, autoStopHours: 4 };
+/** Where a new account's labs run by default, per cloud. */
+export const DEFAULT_REGION: Record<CloudProvider, string> = {
+  aws: "eu-west-3",
+  azure: "swedencentral",
+  gcp: "europe-west1",
+  digitalocean: "fra1",
+  linode: "eu-central",
+  oci: "eu-frankfurt-1",
+};
+
+/** A new AWS account: its default region, signed in with the AWS CLI, the default auto-stop. */
+export const EMPTY_CLOUD: ServerHostInput = {
+  ...EMPTY_HOST,
+  provider: "aws",
+  host: DEFAULT_REGION.aws,
+  useCliCreds: true,
+  insecureTls: false,
+  autoStopHours: DEFAULT_AUTO_STOP_HOURS,
+};
 
 /** Common AWS regions for the cloud setup dropdown (code, human name). */
 export const AWS_REGIONS: [string, string][] = [
@@ -112,18 +120,5 @@ export const OCI_REGIONS: [string, string][] = [
 ];
 
 export type StepKey = "provider" | "hypervisor" | "tools" | "server" | "connection" | "placement" | "account" | "credentials" | "options" | "test";
-/** Each cloud, in the order the launcher lists them: the one table of the clouds the rest
- *  derive from. Its CLI (none for the token and key clouds), and whether it can be picked
- *  (`ready`); its name is the backend's `PROVIDER_NAMES`. Each has its logo at
- *  `/brands/<id>.svg`. */
-export const CLOUD_META: Record<CloudProvider, { cli: string; ready: boolean }> = {
-  aws: { cli: "aws", ready: true },
-  azure: { cli: "az", ready: true },
-  gcp: { cli: "gcloud", ready: true },
-  digitalocean: { cli: "", ready: true },
-  linode: { cli: "", ready: true },
-  oci: { cli: "", ready: true },
-};
-
 /** A cloud's logo, in public/brands. */
 export const cloudLogo = (id: string) => `/brands/${id}.svg`;
