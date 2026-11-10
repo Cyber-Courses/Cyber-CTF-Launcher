@@ -1,3 +1,6 @@
+import { warn } from "@/lib/failure";
+import { readStored, writeStored } from "@/lib/local-store";
+
 // ---------- last VM-test result, remembered per host (like the machine page) ----------
 
 export type VmTest = { result: "ok" | "fail"; at: number };
@@ -17,20 +20,22 @@ function parseVmTests(json: string): VmTests {
   return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, VmTest] => isVmTest(entry[1])));
 }
 
+/** The results remembered on this computer: none when there are none, or storage can't be read
+ *  (logged), or what it holds isn't JSON (logged). */
 export function loadVmTests(): VmTests {
+  const stored = readStored(VMTEST_KEY);
+  if (stored === null) return {};
   try {
-    return parseVmTests(localStorage.getItem(VMTEST_KEY) ?? "{}");
-  } catch {
-    return {};
+    return parseVmTests(stored);
+  } catch (e) {
+    return warn("reading the remembered VM tests", (): VmTests => ({}))(e);
   }
 }
 
+/** Remembers `result` as host `id`'s last VM test; storage that refuses is logged, and the
+ *  result then lasts as long as the returned list. */
 export function saveVmTest(id: string, result: "ok" | "fail"): VmTests {
   const all = { ...loadVmTests(), [id]: { result, at: Date.now() } };
-  try {
-    localStorage.setItem(VMTEST_KEY, JSON.stringify(all));
-  } catch {
-    /* private window / blocked storage: the result just isn't remembered */
-  }
+  writeStored(VMTEST_KEY, JSON.stringify(all));
   return all;
 }

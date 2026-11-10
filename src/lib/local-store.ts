@@ -1,4 +1,4 @@
-import { ignore, warn } from "@/lib/failure";
+import { ignore, warn } from "@/lib/failure-log";
 
 // This machine's preferences in the webview's localStorage. Storage can be unavailable (a private
 // window, blocked site data): a read then finds nothing, and a write lasts only as long as the
@@ -17,7 +17,12 @@ export function readStored(key: string, unreadable: string | null = null): strin
 /** The value saved under `key` when it is one of `allowed`; null otherwise (none, or one a
  *  later or earlier version saved, or a hand edit). */
 export function readStoredOneOf<T extends string>(key: string, allowed: readonly T[]): T | null {
-  const value = readStored(key);
+  return oneOf(readStored(key), allowed);
+}
+
+/** `value` (a stored one, or one another window just stored) when it is one of `allowed`; null
+ *  otherwise. */
+export function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T | null {
   return value !== null && (allowed as readonly string[]).includes(value) ? (value as T) : null;
 }
 

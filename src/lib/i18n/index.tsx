@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { CATALOGS } from "@/messages";
+import { oneOf, readStoredOneOf, writeStored } from "@/lib/local-store";
 
 /**
  * The launcher's language: English (the source of truth), French, Spanish, German, Brazilian
@@ -43,10 +44,6 @@ const KEY = "cyberctf.locale";
 const listeners = new Set<() => void>();
 let current: Locale | null = null;
 
-function parse(v: string | null | undefined): Locale | null {
-  return (LOCALES as readonly string[]).includes(v ?? "") ? (v as Locale) : null;
-}
-
 /** A system language tag ("pt-PT", "de-CH", "ja-JP") to ours: same language, any region. */
 function fromSystem(tag: string | undefined): Locale | null {
   const lang = tag?.toLowerCase().split("-")[0];
@@ -65,11 +62,7 @@ function systemLocale(): Locale {
 
 /** The chosen language: "system" when none was chosen. */
 export function getLocalePreference(): Locale | "system" {
-  try {
-    return parse(localStorage.getItem(KEY)) ?? "system";
-  } catch {
-    return "system";
-  }
+  return readStoredOneOf(KEY, LOCALES) ?? "system";
 }
 
 export function getLocale(): Locale {
@@ -89,13 +82,10 @@ function apply(next: Locale) {
   });
 }
 
+/** Saves the language choice ("system": none) and applies it; storage that refuses keeps it for
+ *  this session only. */
 export function setLocalePreference(pref: Locale | "system") {
-  try {
-    if (pref === "system") localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, pref);
-  } catch {
-    /* kept for this session only */
-  }
+  writeStored(KEY, pref === "system" ? null : pref);
   apply(pref === "system" ? systemLocale() : pref);
 }
 
@@ -103,7 +93,7 @@ function subscribe(cb: () => void) {
   listeners.add(cb);
   // Another window (Settings) changed it.
   const onStorage = (e: StorageEvent) => {
-    if (e.key === KEY) apply(parse(e.newValue) ?? systemLocale());
+    if (e.key === KEY) apply(oneOf(e.newValue, LOCALES) ?? systemLocale());
   };
   window.addEventListener("storage", onStorage);
   return () => {

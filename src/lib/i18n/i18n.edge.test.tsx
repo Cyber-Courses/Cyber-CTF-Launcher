@@ -117,6 +117,27 @@ describe("i18n: the system language", () => {
     localStorage.setItem("cyberctf.locale", "EN");
     expect(getLocalePreference()).toBe("system");
   });
+
+  it("follows the system when storage can't be read, and keeps a choice it can't save for the session, saying so", () => {
+    // Regression: both failures were swallowed with nothing in the log.
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const debugged = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage blocked");
+    });
+    expect(getLocalePreference()).toBe("system");
+    expect(debugged).toHaveBeenCalledWith(expect.stringContaining("ignored"), expect.any(Error));
+    read.mockRestore();
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
+    setLocalePreference("fr");
+    expect(getLocale()).toBe("fr");
+    expect(warned).toHaveBeenCalledWith("saving cyberctf.locale:", expect.any(Error));
+    write.mockRestore();
+    warned.mockRestore();
+    debugged.mockRestore();
+  });
 });
 
 describe("i18n: rich text markup", () => {

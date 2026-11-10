@@ -2,7 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { notify } from "@/lib/notify";
 import { toast } from "@/components/ui/toaster";
 import { translate } from "@/lib/i18n";
-import { logFrontendWarning } from "@/lib/error-log";
+import { warn } from "@/lib/failure-log";
 import { describeError } from "@/lib/errors";
 
 /**
@@ -14,22 +14,11 @@ import { describeError } from "@/lib/errors";
  *   while the window has focus, an OS notification otherwise), and log it.
  *
  * `ignore` and `warn` take what to show `instead` (an empty list, signed out…): its value is the
- * handler's, so `.catch(ignore("…", () => null))` reads a failure as null.
+ * handler's, so `.catch(ignore("…", () => null))` reads a failure as null. They live in
+ * `@/lib/failure-log`, which depends on nothing translated, so the language's own storage can use
+ * them; every other module takes them from here.
  */
-export const ignore =
-  <T = undefined>(why: string, instead: () => T = () => undefined as T) =>
-  (e: unknown): T => {
-    console.debug(`ignored (${why}):`, e);
-    return instead();
-  };
-
-export const warn =
-  <T = undefined>(what: string, instead: () => T = () => undefined as T) =>
-  (e: unknown): T => {
-    console.warn(`${what}:`, e);
-    logFrontendWarning(what, e);
-    return instead();
-  };
+export { ignore, warn } from "@/lib/failure-log";
 
 export const tell = (title: string) => (e: unknown) => {
   warn(title)(e);
