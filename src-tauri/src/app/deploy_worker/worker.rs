@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use crate::AppHandle;
 use tauri::Manager as _;
 
+use super::files::status_line;
 use super::progress::FAILED_MARK;
 use super::{Job, Op, execute, files};
 use crate::platform::unwind::{CatchUnwind, panic_message};
@@ -247,20 +248,10 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
     code
 }
 
-/// What the status file says for a result, and the exit code that goes with it.
-fn status_line<T>(result: &crate::error::Result<T>) -> (String, i32) {
-    match result {
-        Ok(_) => ("ok".to_string(), 0),
-        // As the webview gets it: the app reads its code back (`progress::verdict`).
-        Err(e) => (format!("error: {}", serde_json::to_string(&e.to_wire()).unwrap_or_else(|_| e.to_string())), 1),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{brings_up, conclude, read_job, status_line};
-    use crate::app::deploy_worker::files::Files;
-    use crate::app::deploy_worker::progress::verdict;
+    use crate::app::deploy_worker::files::{Files, verdict};
     use crate::app::deploy_worker::{Job, Op};
     use crate::error::{Code, Error};
 

@@ -42,14 +42,36 @@ impl Files {
         read_worker(&self.pid)
     }
 
-    /// Whether this lab's last finished launch or resume failed (none still running, `error: …`
-    /// launch status). A failed pause or provisioning run doesn't count.
+    /// Whether this lab's last finished launch or resume failed (none still running, a launch
+    /// status whose [`verdict`] is an error). A failed pause or provisioning run doesn't count.
     pub fn failed(&self) -> bool {
         if self.worker().is_some_and(|w| alive(&w)) {
             return false;
         }
-        std::fs::read_to_string(&self.launch_status).is_ok_and(|s| s.trim_start().starts_with("error"))
+        std::fs::read_to_string(&self.launch_status).is_ok_and(|s| verdict(&s).is_err())
     }
+}
+
+/// What a status file says for a result, and the worker's exit code that goes with it: `ok`, or
+/// the error as the webview gets it (`error: {"code":…,"message":…}`), its code read back by
+/// [`verdict`].
+pub(super) fn status_line<T>(result: &Result<T>) -> (String, i32) {
+    match result {
+        Ok(_) => ("ok".to_string(), 0),
+        Err(e) => (format!("error: {}", serde_json::to_string(&e.to_wire()).unwrap_or_else(|_| e.to_string())), 1),
+    }
+}
+
+/// The verdict in a status file, as [`status_line`] wrote it: `Ok` for `ok`, else the error the
+/// worker wrote, with its code, or a bare message (a worker of an older version). The one reader
+/// of the format: following a worker and asking whether its lab's last launch failed agree.
+pub fn verdict(status: &str) -> Result<()> {
+    let s = status.trim();
+    if s == "ok" {
+        return Ok(());
+    }
+    let body = s.strip_prefix("error: ").unwrap_or(s);
+    Err(serde_json::from_str::<crate::error::Wire>(body).map_or_else(|_| Error::Invalid(body.to_string()), Error::from))
 }
 
 /// The workers' folder (`runtime::deploys_dir`).
@@ -188,14 +210,38 @@ pub(crate) mod tests {
 
     #[test]
     fn a_failed_verdict_is_read_however_it_is_written() {
+        // Regression: the launch status was read by a check of its own (`starts_with("error")`),
+        // while following the worker read it with `verdict`: a bare message (an older worker's
+        // verdict) failed the run it followed, but its lab read as not failed, so as running.
         let dir = temp_dir("failed-forms");
         let f = Files::of(&dir, "lab-1");
-        for (text, want) in [("error: x", true), ("\r\n\terror", true), ("errors galore", true), ("Error: x", false), ("ok\nerror: later", false), ("", false)]
-        {
+        for (text, want) in [
+            ("ok", false),
+            (" ok\r\n", false),
+            ("error: x", true),
+            ("\r\n\terror", true),
+            ("Docker isn't running", true),
+            ("Error: x", true),
+            ("ok\nerror: later", true),
+        ] {
             std::fs::write(&f.launch_status, text).unwrap();
             assert_eq!(f.failed(), want, "{text:?}");
+            assert_eq!(verdict(text).is_err(), want, "{text:?}: the two agree");
         }
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn verdict_reads_ok_and_errors() {
+        assert!(verdict("ok\n").is_ok());
+        let err = verdict("error: Docker isn't running").unwrap_err();
+        assert!(format!("{err:?}").contains("Docker isn't running"));
+        // The worker's error keeps its code across the process boundary.
+        let err = verdict(r#"error: {"code":"portInUse","args":{"port":8080},"message":"Host port 8080 is taken"}"#).unwrap_err();
+        assert_eq!(err.code(), crate::error::Code::PortInUse { port: 8080, holder: None });
+        assert_eq!(err.to_string(), "Host port 8080 is taken");
+        // A bare message is still an error, kept whole.
+        assert_eq!(verdict("something else").unwrap_err().to_string(), "something else");
     }
 
     #[test]
