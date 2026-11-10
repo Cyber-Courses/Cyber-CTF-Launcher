@@ -203,13 +203,15 @@ const SELFTEST_STEPS: &str = "SelfTestSteps";
 /// under ([`runtime::deploy_log`]), which the page's step parser reads (not a type: imported by
 /// its path, not from the index).
 fn write_deploy_log(dir: &Path) {
-    use runtime::deploy_log::{DONE_MARK, FAILED_MARK, FETCH, PREPARE};
+    use runtime::deploy_log::{DONE_MARK, FAILED_CODE, FAILED_MARK, FETCH, PREPARE};
     let listed = |starts: &[&str]| starts.iter().map(|s| serde_json::to_string(s).unwrap()).collect::<Vec<_>>().join(", ");
     let doc_fetch = "/** How the launcher's lines start while it fetches and places the lab: the \"Download the lab\" step (Rust's `deploy_log::FETCH`). */";
     let doc_prepare = "/** How the launcher's lines start while it readies this machine for a lab's VMs: the \"Prepare this machine\" step when one\n *  comes first (Rust's `deploy_log::PREPARE`). */";
     let marks = format!(
-        "/** How a failed run's closing line starts (Rust's `deploy_log::FAILED_MARK`). */\nexport const FAILED_MARK = {};\n\n/** How a run's closing line starts when it went through (Rust's `deploy_log::DONE_MARK`). */\nexport const DONE_MARK = {};\n",
+        "/** How a failed run's closing line starts (Rust's `deploy_log::FAILED_MARK`). */\nexport const FAILED_MARK = {};\n\n/** The brackets around a failed run's error code, right after its mark (Rust's `deploy_log::FAILED_CODE`). */\nexport const FAILED_CODE = [{}, {}] as const;\n\n/** How a run's closing line starts when it went through (Rust's `deploy_log::DONE_MARK`). */\nexport const DONE_MARK = {};\n",
         serde_json::to_string(FAILED_MARK).unwrap(),
+        serde_json::to_string(FAILED_CODE.0).unwrap(),
+        serde_json::to_string(FAILED_CODE.1).unwrap(),
         serde_json::to_string(DONE_MARK).unwrap(),
     );
     let text = format!(

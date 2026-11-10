@@ -68,7 +68,7 @@ export function useLabPageState(
     failure: state.deploying ? null : failure,
     failedOp: state.deploying ? null : failedOp,
     /** What kind of failure it is, for a hint: by this session's error code, else its words. */
-    failureKind: state.deploying ? null : failureKind(failure, local ? runFailureCode : null),
+    failureKind: state.deploying ? null : failureKind(failure, local ? runFailureCode : worker.failureCode),
     /** For a port clash this session saw, what holds the host port (so the notice can name it). */
     failureHolder: state.deploying || !local ? null : (runFailureHolder ?? null),
     /** When the operation in flight (or the last one) began: this session's run, else when this

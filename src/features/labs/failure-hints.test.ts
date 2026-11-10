@@ -3,24 +3,31 @@ import { failureHintKey, failureKind, failureTitleKey } from "@/features/labs/fa
 import { runFailure, startFailed } from "@/features/labs/runs/deploy-runs";
 
 describe("failureKind", () => {
-  it("recognises the backend's errors that have a known fix", () => {
+  it("recognises the tools' own words that have a known fix", () => {
     const cases: [string, ReturnType<typeof failureKind>][] = [
-      ["Host port 8080 is already in use on this machine (another lab or app holds it).", "ports"],
       ["Error response from daemon: Bind for 0.0.0.0:8080 failed: port is already allocated", "ports"],
-      ["Docker is running, but your account can't use it yet. Add yourself to the docker group", "dockerAccess"],
-      ["Docker isn't running. Start your container engine (Docker Desktop, or the docker service on Linux), then start the lab again.", "docker"],
+      ["listen tcp 0.0.0.0:8443: bind: address already in use", "ports"],
+      ["permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock", "dockerAccess"],
       ["Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?", "docker"],
-      ["Your session expired: you're signed out. Sign in again to continue.", "signedOut"],
       ["write /var/lib/docker/tmp: no space left on device", "disk"],
-      ["`vagrant` is not installed or not on PATH", "tool"],
-      ["Terraform isn't installed. Install it from the Machine page (Tools on this machine).", "tool"],
       ["error sending request for url (https://api.cyberctf.org/graphql)", "network"],
       ["Couldn't download the Terraform provider plugins (the first run needs internet).", "network"],
+      ["curl: (6) Could not resolve host: download.docker.com", "network"],
+      ["dial tcp 10.0.0.5:8006: connect: network is unreachable", "network"],
+      ["dial tcp 127.0.0.1:2375: connect: connection refused", "network"],
+      ["remote error: tls handshake failure", "network"],
       ["This lab is already running on this machine. Stop it before starting it again.", null],
     ];
     for (const [message, kind] of cases) expect(failureKind(message), message).toBe(kind);
     expect(failureKind(null)).toBeNull();
     expect(failureHintKey("ports")).toBe("labs.failure.hint.ports");
+  });
+
+  it("knows the launcher's own errors by their code alone, not by their English words", () => {
+    // Regression: the hints matched the core's sentences, so a rewording there dropped them.
+    expect(failureKind("Host port 8080 is already in use on this machine (another lab or app holds it).")).toBeNull();
+    expect(failureKind("Docker isn't running. Start your container engine.")).toBeNull();
+    expect(failureKind("Host port 8080 is reworded", "portInUse")).toBe("ports");
   });
 
   it("knows an error by its code, whatever language its message is in", () => {

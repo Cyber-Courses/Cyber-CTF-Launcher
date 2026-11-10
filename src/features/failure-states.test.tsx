@@ -145,7 +145,7 @@ describe("a start that failed", () => {
   it("reads Failed to start, offers Retry and, for a port clash, Retry on random ports with a hint", async () => {
     installTauri({ ...idle, lab_status: () => stopped });
     const user = userEvent.setup();
-    const h = renderDetail({ deploy: { busy: false, logs: [`✗ ${PORT_CLASH}`], times: [2000], op: "launch", startedAt: 500 } });
+    const h = renderDetail({ deploy: { busy: false, logs: [`✗ ${PORT_CLASH}`], times: [2000], op: "launch", startedAt: 500, failureCode: "portInUse" } });
     await flush();
     expect(document.body.textContent).toContain("Failed to start");
     expect(document.body.textContent).not.toContain("Not started");
@@ -195,7 +195,9 @@ describe("a start that failed", () => {
 
   it("offers no port retry for another cause, and a failed stop is not a failed start", async () => {
     installTauri({ ...idle, lab_status: () => stopped });
-    renderDetail({ deploy: { busy: false, logs: ["✗ Docker isn't running. Start your container engine."], times: [10], op: "launch" } });
+    renderDetail({
+      deploy: { busy: false, logs: ["✗ Docker isn't running. Start your container engine."], times: [10], op: "launch", failureCode: "dockerNotRunning" },
+    });
     await flush();
     expect(document.body.textContent).toContain("Failed to start");
     expect(document.body.textContent).toContain("Start your container engine, then retry.");

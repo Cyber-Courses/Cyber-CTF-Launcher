@@ -270,6 +270,14 @@ describe("worker log", () => {
     expect(result.current.times).toHaveLength(2);
     expect(calls.find((c) => c.cmd === "lab_deploy_log")?.args).toMatchObject({ id: "lab-goad" });
   });
+
+  it("reads the code a worker's failed line carries, and shows the line without it", async () => {
+    installTauri({ lab_deploy_log: () => "==> pulling\n✗[dockerNotRunning] Docker isn't running.\n" });
+    const { result } = renderHook(() => useWorkerLog("lab-goad", true, 1000));
+    await flush();
+    expect(result.current.lines).toEqual(["==> pulling", "✗ Docker isn't running."]);
+    expect(result.current.failureCode).toBe("dockerNotRunning");
+  });
 });
 
 describe("last run", () => {

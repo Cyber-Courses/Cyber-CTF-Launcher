@@ -1,11 +1,11 @@
 import type { MessageKey } from "@/lib/i18n";
 import type { ErrorCode } from "@/lib/errors";
 
-// What a failed lab operation's error means, for a hint on what to do about it. An error this
-// window saw is known by its code (src-tauri error.rs `Code`). A failure read back from a
-// worker's log file (a deploy that ran through a reload) is only text, in English, and so is
-// what the tools themselves print (Docker's bind error, a full disk): those are recognised by
-// their words.
+// What a failed lab operation's error means, for a hint on what to do about it. The launcher's own
+// failures are known by their code (src-tauri error.rs `Code`): the error this window saw, or the
+// one a worker's log ends on (`✗[code] …`, read back after a reload). What the tools themselves
+// print (Docker's bind error, a full disk, a download that failed) has no code: it is recognised
+// by their words.
 
 export type FailureKind = "ports" | "docker" | "dockerAccess" | "signedOut" | "network" | "disk" | "tool";
 
@@ -19,19 +19,14 @@ const BY_CODE: Partial<Record<ErrorCode, FailureKind>> = {
   toolMissing: "tool",
 };
 
-// Most specific first: Docker's "can't use it yet" message also says "Docker is running".
+// The tools' own words, most specific first: the daemon's "permission denied" before its "cannot
+// connect".
 const RULES: [FailureKind, RegExp][] = [
-  // error.rs's Code::PortInUse (the launcher's own port check), and Docker's bind error when it
-  // races it.
-  ["ports", /already in use on this machine|port is already allocated|address already in use|bind for \S+ failed/i],
-  // error.rs's Code::DockerDenied, and the daemon's own answer.
-  ["dockerAccess", /can't use it yet|permission denied while trying to connect to the docker daemon/i],
-  ["docker", /docker isn't running|cannot connect to the docker daemon|is the docker daemon running/i],
-  // account/auth.rs: the session is gone.
-  ["signedOut", /\bsigned out\b|session expired/i],
+  // Docker's bind error when it races the launcher's own port check.
+  ["ports", /port is already allocated|address already in use|bind for \S+ failed/i],
+  ["dockerAccess", /permission denied while trying to connect to the docker daemon/i],
+  ["docker", /cannot connect to the docker daemon|is the docker daemon running/i],
   ["disk", /no space left on device/i],
-  // error.rs ToolMissing, and the "X isn't installed" ones (Terraform, QEMU's emulator).
-  ["tool", /is not installed or not on path|isn't installed/i],
   ["network", /error sending request|could not resolve host|couldn't download|network is unreachable|connection refused|tls handshake/i],
 ];
 

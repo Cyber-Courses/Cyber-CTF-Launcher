@@ -49,9 +49,9 @@ pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(St
     for arch in lab::emulated_arches(&prepared.spec, host) {
         let bin = if arch == "x86_64" { "qemu-system-x86_64" } else { "qemu-system-aarch64" };
         if crate::platform::exec::run(bin, &["--version"], None).await.is_err() {
-            return Err(Error::Invalid(format!(
-                "This lab's machines are {arch}, and QEMU's {arch} emulator ({bin}) isn't installed. Reinstall QEMU from the Machine page."
-            )));
+            // The webview knows a missing tool by its code, and points at the Machine page.
+            log(format!("This lab's machines are {arch}: they need QEMU's {arch} emulator."));
+            return Err(Error::ToolMissing { tool: bin });
         }
         log(deploy_log::emulating(arch, host));
     }
@@ -78,7 +78,7 @@ pub(super) const UTM_NOT_ALLOWED: &str =
 /// behind), and waited for until it answers; the automation refusal is named with its way out.
 pub(super) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
     if crate::platform::exec::run("open", &["-g", "-a", "UTM"], None).await.is_err() {
-        return Err(Error::Invalid("UTM isn't installed (no UTM app): install it from the Machine page.".into()));
+        return Err(Error::ToolMissing { tool: "UTM" });
     }
     let started = std::time::Instant::now();
     let mut said = false;

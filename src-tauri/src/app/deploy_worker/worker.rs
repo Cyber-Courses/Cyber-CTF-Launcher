@@ -10,7 +10,7 @@ use crate::AppHandle;
 use super::files::status_line;
 use super::{Job, Op, execute, files};
 use crate::platform::unwind::{CatchUnwind, panic_message};
-use crate::runtime::deploy_log::FAILED_MARK;
+use crate::runtime::deploy_log::failed_line;
 use crate::runtime::lab_file_lock;
 
 /// The worker's entry point, in place of the app: a headless Tauri app on the same data dir
@@ -186,7 +186,7 @@ fn crashed(panic: &(dyn std::any::Any + Send)) -> crate::error::Error {
 /// is all the trace there is.
 fn fail_before_the_job(job_path: &Path, why: &str) {
     let error = crate::error::Error::Invalid(format!("the deploy worker couldn't start: {why}"));
-    eprintln!("{FAILED_MARK} {error}");
+    eprintln!("{}", failed_line(&error));
     let (status, _) = status_line::<()>(&Err(error));
     if let Err(e) = std::fs::write(job_path.with_extension("status"), status) {
         eprintln!("deploy worker: couldn't write its status beside {}: {e}", job_path.display());
@@ -216,7 +216,7 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
     // The log file says how it ended too, so a page that re-attaches to it after a reload or a
     // relaunch (it has no live verdict) still sees the run failed.
     if let Err(e) = result {
-        log(format!("{FAILED_MARK} {e}"));
+        log(failed_line(e));
     }
     let (status, code) = status_line(result);
     // A refusal (the lab is still up elsewhere, an update of a running lab) changed nothing: the
@@ -333,7 +333,7 @@ mod tests {
             assert_eq!(super::run_logged(t.handle(), job).await, 1);
             let status = std::fs::read_to_string(&f.status).unwrap();
             assert!(status.starts_with("error: "), "{status}");
-            assert!(std::fs::read_to_string(&f.log).unwrap().starts_with("✗ "));
+            assert!(std::fs::read_to_string(&f.log).unwrap().starts_with("✗["));
             // Only this user reads the log, and the folder of jobs and logs.
             crate::platform::private_fs::tests::assert_private_with_folder(&f.log);
         }
@@ -354,7 +354,7 @@ mod tests {
         let said = verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string();
         assert_eq!(said, "the deploy worker crashed: docker blew up");
         assert!(verdict(&std::fs::read_to_string(&f.launch_status).unwrap()).is_err(), "the launch failed");
-        assert!(std::fs::read_to_string(&f.log).unwrap().contains("✗ the deploy worker crashed: docker blew up"));
+        assert!(std::fs::read_to_string(&f.log).unwrap().contains("✗[other] the deploy worker crashed: docker blew up"));
     }
 
     #[test]
@@ -393,7 +393,7 @@ mod tests {
         let lines = std::sync::Mutex::new(Vec::new());
         let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), true, |l| lines.lock().unwrap().push(l));
         assert_eq!(code, 1);
-        assert_eq!(lines.lock().unwrap().as_slice(), ["✗ boom"]);
+        assert_eq!(lines.lock().unwrap().as_slice(), ["✗[other] boom"]);
         let failed = r#"error: {"code":"other","message":"boom"}"#;
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), failed);
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), failed);

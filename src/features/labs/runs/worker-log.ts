@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { labDeployLog } from "@/lib/tauri";
 import { ignore } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
+import type { ErrorCode } from "@/lib/errors";
+import { readFailedLine } from "@/lib/log-marks";
 
 /** A log with each line's arrival time, parallel. */
 export type TimedLog = { lines: string[]; times: number[] };
@@ -25,15 +27,25 @@ export function timeLines(prev: TimedLog, lines: string[], at: number): TimedLog
  * (re)attaches to a deploy after a reload or an app relaunch: the in-memory store has no lines
  * of it, the worker's log file has them all.
  */
-export function useWorkerLog(labId: string, active: boolean, pollMs = 1500): TimedLog {
+export function useWorkerLog(labId: string, active: boolean, pollMs = 1500): TimedLog & { failureCode: ErrorCode | null } {
   const [log, setLog] = useState<TimedLog>(NO_LOG);
+  const [failureCode, setFailureCode] = useState<ErrorCode | null>(null);
   usePoll(() => labDeployLog(labId).then((text) => text.split("\n").filter((l) => l.length > 0)), pollMs, {
     enabled: active,
     restartKey: labId,
     onError: ignore("read again in a moment"),
-    onValue: (lines) => {
-      setLog((prev) => timeLines(prev, lines, Date.now()));
+    onValue: (raw) => {
+      // The failed line says its error's code, which the page reads apart from the line it shows.
+      const read = raw.map(readFailedLine);
+      setFailureCode(read.findLast((r) => r.code !== null)?.code ?? null);
+      setLog((prev) =>
+        timeLines(
+          prev,
+          read.map((r) => r.line),
+          Date.now(),
+        ),
+      );
     },
   });
-  return log;
+  return useMemo(() => ({ ...log, failureCode }), [log, failureCode]);
 }

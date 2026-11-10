@@ -38,7 +38,7 @@ export { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@
 
 /** The marks a run's closing line starts with, and how the launcher's own deploy-log lines start, by
  *  the step the lab page files them under (`deploy_log`). */
-export { DONE_MARK, FAILED_MARK, FETCH_LINES, PREPARE_LINES } from "@/lib/tauri/generated/DeployLog";
+export { DONE_MARK, FAILED_CODE, FAILED_MARK, FETCH_LINES, PREPARE_LINES } from "@/lib/tauri/generated/DeployLog";
 
 export type {
   ActiveOperation,

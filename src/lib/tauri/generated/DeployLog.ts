@@ -3,6 +3,9 @@
 /** How a failed run's closing line starts (Rust's `deploy_log::FAILED_MARK`). */
 export const FAILED_MARK = "✗";
 
+/** The brackets around a failed run's error code, right after its mark (Rust's `deploy_log::FAILED_CODE`). */
+export const FAILED_CODE = ["[", "]"] as const;
+
 /** How a run's closing line starts when it went through (Rust's `deploy_log::DONE_MARK`). */
 export const DONE_MARK = "✓";
 

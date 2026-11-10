@@ -8,6 +8,19 @@ use std::path::Path;
 
 /// How a failed run's closing line starts (the lab page marks a run failed by it).
 pub(crate) const FAILED_MARK: &str = "✗";
+/// The brackets around a failed run's error code in its closing line (`✗[portInUse] Host port
+/// 8000 is already in use…`), so a page reading the log back (the run's live error gone) knows
+/// the failure by its code, not by its English words.
+pub(crate) const FAILED_CODE: (&str, &str) = ("[", "]");
+
+/// A failed run's closing line: the mark, the error's code ([`FAILED_CODE`]) and its message.
+pub(crate) fn failed_line(e: &crate::error::Error) -> String {
+    let wire = e.to_wire();
+    let code = serde_json::to_value(&wire).ok().and_then(|v| v["code"].as_str().map(str::to_owned)).unwrap_or_default();
+    let (open, close) = FAILED_CODE;
+    format!("{FAILED_MARK}{open}{code}{close} {}", wire.message)
+}
+
 /// How a run's closing line starts when it went through (the webview writes those: "✓ Lab is
 /// running").
 pub(crate) const DONE_MARK: &str = "✓";
@@ -86,6 +99,14 @@ pub(crate) fn emulating(arch: &str, host: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_runs_closing_line_carries_its_errors_code() {
+        use crate::error::{Code, Error};
+        assert_eq!(failed_line(&Error::coded(Code::DockerNotRunning)), format!("✗[dockerNotRunning] {}", Error::coded(Code::DockerNotRunning)));
+        assert_eq!(failed_line(&Error::Invalid("bad id".into())), "✗[other] bad id");
+        assert_eq!(failed_line(&Error::ToolMissing { tool: "terraform" }), "✗[toolMissing] `terraform` is not installed or not on PATH");
+    }
 
     /// The lines as the deploy log shows them: the lab page's tests (`deploy-log.test.ts`) read
     /// these very lines.

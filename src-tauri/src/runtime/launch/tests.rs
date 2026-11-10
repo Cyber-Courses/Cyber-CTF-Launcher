@@ -38,7 +38,7 @@ async fn a_lab_on_qemu_is_checked_for_its_emulator() {
     // One of its machines is built for the other CPU, and its emulator is missing (or its
     // networks don't fit QEMU's two-VM links): refused before any VM is created.
     let err = r.unwrap_err().to_string();
-    assert!(err.contains("emulator") || err.contains("can't run on QEMU"), "{err}");
+    assert!(err.contains("qemu-system") || err.contains("can't run on QEMU"), "{err}");
 }
 
 async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate::error::Result<()>, Vec<String>) {
@@ -189,7 +189,7 @@ async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_fo
     let _tools = Tools::rules(&[("qemu-system", None)]);
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Qemu), &[]).await;
     let err = r.unwrap_err().to_string();
-    assert!(err.contains("emulator"), "{err}");
+    assert!(err.contains("qemu-system"), "{err}");
     // The vagrant target's files (one VM per machine), not docker-vm's, and the form marked.
     assert!(vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target was generated");
     assert!(!vagrant_dir(&dir, Runtime::Docker).join("Vagrantfile").exists(), "not docker-vm");
