@@ -65,7 +65,7 @@ fn presence_probe(dep: Dependency) -> Option<(&'static str, &'static [&'static s
         Dependency::Awscli => ("aws", &["--version"]),
         Dependency::Azurecli => ("az", &["version"]),
         Dependency::Gcloud => ("gcloud", &["--version"]),
-        Dependency::Utm | Dependency::Wsl | Dependency::VmwareUtility => return None,
+        Dependency::Utm | Dependency::Wsl | Dependency::VmwareUtility | Dependency::Hyperv => return None,
     })
 }
 
@@ -282,7 +282,7 @@ fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>
         Dependency::VmwareUtility => {
             vec![mac_admin(super::vmware_utility::MAC_UNINSTALL, "Removing the Vagrant VMware Utility (macOS asks for your password)…")]
         }
-        Dependency::Libvirt | Dependency::Wsl => return Err(Error::Invalid("Not installed on macOS.".into())),
+        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(Error::Invalid("Not installed on macOS.".into())),
     })
 }
 
@@ -293,6 +293,7 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
         (_, Some(id)) => Ok(vec![step("winget", &["uninstall", "-e", "--id", id])]),
         (Dependency::VmwareUtility, None) => Ok(vec![super::vmware_utility::windows_uninstall()]),
         (Dependency::Wsl, None) => Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
+        (Dependency::Hyperv, None) => Err(Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into())),
         (_, None) => Err(Error::Invalid("Not installed on Windows.".into())),
     }
 }
@@ -316,7 +317,7 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
         // Google's apt package, and the per-user SDK earlier versions installed in its place.
         Dependency::Gcloud => vec![root("apt-get remove -y google-cloud-cli"), step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
         Dependency::VmwareUtility => vec![root("apt-get remove -y vagrant-vmware-utility")],
-        Dependency::Utm | Dependency::Wsl => return Err(Error::Invalid("Not installed on Linux.".into())),
+        Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => return Err(Error::Invalid("Not installed on Linux.".into())),
     })
 }
 
@@ -546,6 +547,7 @@ mod tests {
         assert_eq!(plan(Dependency::VmwareUtility, None).unwrap()[0].program, "powershell");
         assert!(
             plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err()
+                && plan(Dependency::Hyperv, None).is_err()
                 && plan(Dependency::Utm, Some("/x/VirtualBox.dmg")).is_err()
                 && plan(Dependency::Libvirt, Some("/x/VirtualBox.dmg")).is_err()
         );
@@ -557,7 +559,7 @@ mod tests {
         if crate::platform::brew_bin().is_none() {
             return; // CI without Homebrew: the brew-based plans can't be built.
         }
-        for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Libvirt)) {
+        for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Libvirt | Dependency::Hyperv)) {
             assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
         }
         assert!(plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err() && plan(Dependency::Libvirt, Some("/x/VirtualBox.dmg")).is_err());
@@ -566,7 +568,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn every_linux_tool_has_a_way_out() {
-        for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Utm)) {
+        for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Utm | Dependency::Hyperv)) {
             assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
         }
         assert!(plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err() && plan(Dependency::Utm, Some("/x/VirtualBox.dmg")).is_err());

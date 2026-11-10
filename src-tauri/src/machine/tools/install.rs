@@ -16,7 +16,7 @@ use super::uninstall;
 use crate::error::{Error, Result};
 use crate::platform::policy::{self, Key};
 
-#[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Debug, ts_rs::TS)]
+#[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Dependency {
     Docker,
@@ -35,12 +35,15 @@ pub enum Dependency {
     /// through: from HashiCorp's signed package (see `vmware_utility`).
     #[serde(rename = "vmware-utility")]
     VmwareUtility,
+    /// Windows' Hyper-V feature, turned on through Windows' own servicing tool (DISM): Windows
+    /// Pro, Enterprise and Education have it, and it starts at the next restart.
+    Hyperv,
 }
 
 #[cfg(test)]
 impl Dependency {
     /// Every tool the app installs.
-    pub(super) const ALL: [Dependency; 12] = [
+    pub(super) const ALL: [Dependency; 13] = [
         Dependency::Docker,
         Dependency::Vagrant,
         Dependency::Terraform,
@@ -53,6 +56,7 @@ impl Dependency {
         Dependency::Gcloud,
         Dependency::Wsl,
         Dependency::VmwareUtility,
+        Dependency::Hyperv,
     ];
 }
 
@@ -91,6 +95,7 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
         Dependency::Utm => vec![fetch_and_open(brew, "utm", "UTM")],
         Dependency::Libvirt => return Err(Error::Invalid("libvirt isn't used on macOS; use QEMU or UTM instead.".into())),
         Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
+        Dependency::Hyperv => return Err(Error::Invalid("Hyper-V is only available on Windows.".into())),
         // Cloud CLIs (brew formulae; gcloud is a cask).
         Dependency::Awscli => vec![step(brew, &["install", "awscli"])],
         // Microsoft's prebuilt cask instead of the `azure-cli` formula: on recent macOS the
@@ -130,7 +135,7 @@ pub(super) fn winget_package(dep: Dependency) -> Option<&'static str> {
         Dependency::Awscli => "Amazon.AWSCLI",
         Dependency::Azurecli => "Microsoft.AzureCLI",
         Dependency::Gcloud => "Google.CloudSDK",
-        Dependency::Utm | Dependency::Libvirt | Dependency::Wsl | Dependency::VmwareUtility => return None,
+        Dependency::Utm | Dependency::Libvirt | Dependency::Wsl | Dependency::VmwareUtility | Dependency::Hyperv => return None,
     })
 }
 
@@ -154,6 +159,10 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
                 "try { $p = Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { exit 1223 }",
             ],
         )]),
+        // Turns the Hyper-V feature on with Windows' own servicing tool, elevated through Windows'
+        // UAC prompt: DISM's 3010 is "done, restart to finish". Windows Home has no Hyper-V: said
+        // before anything runs.
+        (Dependency::Hyperv, None) => Ok(vec![step("powershell", &["-NoProfile", "-Command", HYPERV_ON])]),
         (Dependency::Utm, None) => Err(Error::Invalid("UTM is only available on macOS.".into())),
         // VMware Workstation doesn't run on Windows on Arm, so neither does its utility.
         (Dependency::VmwareUtility, None) if std::env::consts::ARCH == "aarch64" => {
@@ -163,6 +172,11 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
         (_, None) => Err(Error::Invalid("libvirt is Linux-only; on Windows use Hyper-V or WSL.".into())),
     }
 }
+
+/// Turns Hyper-V on (Windows): refused on Windows Home, which has no Hyper-V; else DISM, elevated,
+/// its "restart to finish" (3010) a success; a declined UAC prompt reported as `ERROR_CANCELLED`.
+#[cfg(any(target_os = "windows", test))]
+const HYPERV_ON: &str = "if ((Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').EditionID -like 'Core*') { Write-Output 'This edition of Windows (Home) has no Hyper-V. Run VM labs with VirtualBox, on a server or in the cloud.'; exit 1 }; try { $p = Start-Process -FilePath dism.exe -ArgumentList '/Online','/Enable-Feature','/FeatureName:Microsoft-Hyper-V','/All','/NoRestart','/Quiet' -Verb RunAs -Wait -PassThru; if ($p.ExitCode -eq 3010) { exit 0 }; exit $p.ExitCode } catch { exit 1223 }";
 
 /// `script` run as root through pkexec, which raises a graphical password prompt (polkit). pkexec
 /// clears the environment, so the proxy variables set here (`proxy`, `NAME=value`) are handed to
@@ -187,6 +201,7 @@ pub(super) fn root(script: String) -> Step {
 fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
     Ok(match dep {
         Dependency::Wsl => return Err(Error::Invalid("WSL is only available on Windows.".into())),
+        Dependency::Hyperv => return Err(Error::Invalid("Hyper-V is only available on Windows.".into())),
         Dependency::Docker => vec![root(docker_script(crate::platform::exec::login_name().as_deref()))],
         Dependency::Vagrant => vec![root("apt-get update && apt-get install -y vagrant".into())],
         // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
@@ -245,6 +260,9 @@ pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Depe
     // app is reopened first.
     if dependency == Dependency::Wsl {
         crate::machine::system::wsl::mark_installed(&dirs);
+    }
+    if dependency == Dependency::Hyperv {
+        crate::machine::system::wsl::mark_hyperv_on(&dirs);
     }
     on_line("Done. Re-checking this machine…".into());
     Ok(())
@@ -319,7 +337,7 @@ mod tests {
         }
         for (dep, p) in plans() {
             match dep {
-                Dependency::Libvirt | Dependency::Wsl => assert!(p.is_err(), "{dep:?}"),
+                Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => assert!(p.is_err(), "{dep:?}"),
                 _ => assert!(!p.unwrap().is_empty(), "{dep:?}"),
             }
         }
@@ -340,7 +358,7 @@ mod tests {
     fn linux_installs_through_pkexec() {
         for (dep, p) in plans() {
             match dep {
-                Dependency::Utm | Dependency::Wsl => assert!(p.is_err(), "{dep:?}"),
+                Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => assert!(p.is_err(), "{dep:?}"),
                 _ => assert_eq!(p.unwrap()[0].program, "pkexec", "{dep:?}"),
             }
         }
@@ -355,7 +373,7 @@ mod tests {
             match dep {
                 Dependency::Utm | Dependency::Libvirt => assert!(p.is_err(), "{dep:?}"),
                 Dependency::Virtualbox | Dependency::VmwareUtility if std::env::consts::ARCH == "aarch64" => assert!(p.is_err()),
-                Dependency::Wsl | Dependency::VmwareUtility => assert_eq!(p.unwrap()[0].program, "powershell"),
+                Dependency::Wsl | Dependency::VmwareUtility | Dependency::Hyperv => assert_eq!(p.unwrap()[0].program, "powershell"),
                 _ => {
                     let steps = p.unwrap();
                     assert_eq!(steps[0].program, "winget");
@@ -366,9 +384,17 @@ mod tests {
     }
 
     #[test]
+    fn hyper_v_is_turned_on_by_dism_elevated_and_refused_on_windows_home() {
+        // DISM's "done, restart to finish" (3010) is a success; Home has no Hyper-V to turn on.
+        assert!(HYPERV_ON.contains("/FeatureName:Microsoft-Hyper-V") && HYPERV_ON.contains("/NoRestart") && HYPERV_ON.contains("-Verb RunAs"));
+        assert!(HYPERV_ON.contains("-eq 3010) { exit 0 }") && HYPERV_ON.contains("EditionID -like 'Core*'"));
+    }
+
+    #[test]
     fn dependencies_use_lowercase_names() {
         assert_eq!(serde_json::to_string(&Dependency::Azurecli).unwrap(), "\"azurecli\"");
         assert_eq!(serde_json::from_str::<Dependency>("\"wsl\"").unwrap(), Dependency::Wsl);
+        assert_eq!(serde_json::to_string(&Dependency::Hyperv).unwrap(), "\"hyperv\"");
     }
 
     use std::cell::Cell;

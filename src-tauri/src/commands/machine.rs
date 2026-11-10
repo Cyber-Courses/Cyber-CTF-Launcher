@@ -43,7 +43,7 @@ pub async fn machine_open_setup(app: AppHandle, step: Option<String>, provider: 
     setup_window::open(&app, step.as_deref(), provider)
 }
 
-/// Restarts the computer, for `reason` (WSL's install finishing).
+/// Restarts the computer, for `reason` (WSL's or Hyper-V's install finishing).
 #[tauri::command]
 pub async fn machine_restart(app: AppHandle, reason: String) -> Result<()> {
     wsl::machine_restart(AppDirs::from(&app), reason).await

@@ -27,6 +27,7 @@ const NAMES: Record<Dependency, string> = {
   gcloud: "Google Cloud CLI",
   wsl: "WSL",
   "vmware-utility": "Vagrant VMware Utility",
+  hyperv: "Hyper-V",
 };
 
 /** What setup installed under that name: Docker Engine on Linux (Docker's apt repository), Docker Desktop elsewhere. */

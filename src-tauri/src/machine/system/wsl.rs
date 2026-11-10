@@ -203,6 +203,8 @@ fn outcome(result: &Result<String>) -> (Run, &str) {
 const INSTALL_MARK: &str = "wsl-install-boot";
 /// The app data file holding the boot time in which Cyber CTF restarted Windows for WSL.
 const RESTART_MARK: &str = "wsl-restart-boot";
+/// The app data file holding the boot time at which Cyber CTF turned Hyper-V on.
+const HYPERV_MARK: &str = "hyperv-on-boot";
 
 /// Boot times read a second or so apart within one boot (they're derived from the uptime);
 /// two boots are minutes apart.
@@ -242,14 +244,30 @@ pub fn mark_installed(dirs: &AppDirs) {
 
 /// Whether "Turn on WSL 2" ran in boot `boot` (a mark from an earlier boot is removed).
 fn installed_this_boot(dirs: &AppDirs, boot: u64) -> bool {
-    match marked_boot(dirs, INSTALL_MARK) {
+    marked_this_boot(dirs, INSTALL_MARK, boot)
+}
+
+/// Whether the mark `name` is of boot `boot` (one from an earlier boot is removed).
+fn marked_this_boot(dirs: &AppDirs, name: &str, boot: u64) -> bool {
+    match marked_boot(dirs, name) {
         Some(marked) if same_boot(marked, boot) => true,
         Some(_) => {
-            unmark(dirs, INSTALL_MARK);
+            unmark(dirs, name);
             false
         }
         None => false,
     }
+}
+
+/// Remembers that Cyber CTF turned Hyper-V on in this boot: the feature starts at the next
+/// restart, so the setup asks for one until then (Hyper-V reads as off meanwhile).
+pub fn mark_hyperv_on(dirs: &AppDirs) {
+    mark(dirs, HYPERV_MARK, sysinfo::System::boot_time());
+}
+
+/// Whether Cyber CTF turned Hyper-V on in this boot, so a restart is due for it.
+pub fn hyperv_on_this_boot(dirs: &AppDirs) -> bool {
+    marked_this_boot(dirs, HYPERV_MARK, sysinfo::System::boot_time())
 }
 
 /// Whether Cyber CTF restarted Windows for WSL in a boot before `boot`.
@@ -369,7 +387,7 @@ async fn schedule_restart(dirs: &AppDirs, state: &AtomicU8, reason: &str, reopen
     }
 }
 
-/// Restarts Windows in a few seconds (`shutdown /r`), to finish turning WSL 2 on. Before that,
+/// Restarts Windows in a few seconds (`shutdown /r`), to finish turning WSL 2 (or Hyper-V) on. Before that,
 /// asks Windows to open Cyber CTF once when the player signs back in (`RunOnce`). Windows only.
 #[cfg_attr(not(windows), allow(clippy::unused_async, reason = "it awaits the restart on Windows"))]
 pub async fn machine_restart(dirs: AppDirs, reason: String) -> Result<()> {
@@ -782,6 +800,19 @@ mod tests {
         std::fs::write(t.data().join(INSTALL_MARK), "garbage").unwrap();
         assert!(!installed_this_boot(&t.dirs(), boot));
         assert!(same_boot(10, 40) && !same_boot(10, 41));
+    }
+
+    #[test]
+    fn hyper_v_turned_on_asks_for_a_restart_in_that_boot_only() {
+        let t = TestApp::new();
+        assert!(!hyperv_on_this_boot(&t.dirs()));
+        mark_hyperv_on(&t.dirs());
+        assert!(hyperv_on_this_boot(&t.dirs()));
+        assert!(!installed_this_boot(&t.dirs(), sysinfo::System::boot_time()), "WSL's mark is its own");
+        // After a restart it is gone for good.
+        mark(&t.dirs(), HYPERV_MARK, sysinfo::System::boot_time() - 600);
+        assert!(!hyperv_on_this_boot(&t.dirs()));
+        assert!(!t.data().join(HYPERV_MARK).exists());
     }
 
     #[test]
