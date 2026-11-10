@@ -240,11 +240,11 @@ async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugi
     let cache = plugin_cache(store);
     let before = Present::find(&owned::load(store)?, extra_images, home, &cache).await;
     for (reference, _, _) in &before.images {
-        let _ = run("docker", &["image", "rm", reference], None).await;
+        stayed(reference, run("docker", &["image", "rm", reference], None).await);
     }
     for (b, _) in &before.boxes {
         // No --force: Vagrant refuses to remove a box a VM still uses.
-        let _ = run("vagrant", &["box", "remove", &b.name, "--provider", &b.provider, "--box-version", &b.version], None).await;
+        stayed(&box_label(b), run("vagrant", &["box", "remove", &b.name, "--provider", &b.provider, "--box-version", &b.version], None).await);
     }
     if plugins && cache.is_dir() {
         crate::runtime::clear_plugin_cache(&cache);
@@ -252,6 +252,14 @@ async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugi
     let after = Present::find(&owned::load(store)?, extra_images, home, &cache).await;
     forget_gone(store).await?;
     Ok(before.storage().total().saturating_sub(after.storage().total()))
+}
+
+/// Logs why `item` stayed when its removal failed (in use by a container or a VM, a permission,
+/// the engine stopped): the clean-up goes on, and frees less.
+fn stayed(item: &str, removal: Result<String>) {
+    if let Err(e) = removal {
+        log::warn!("Storage's clean-up kept {item}: {e}");
+    }
 }
 
 /// Drops from the record the images and boxes no longer on this machine, as Docker and Vagrant
@@ -451,6 +459,40 @@ mod tests {
         let _down = Tools::rules(&[("docker", crate::platform::exec::fake::fail("Cannot connect to the Docker daemon")), ("vagrant", None)]);
         clean(&store, &[], Some(&home), true).await.unwrap();
         assert_eq!(owned::load(&store).unwrap(), owned, "the record survives a clean-up the tools couldn't answer");
+    }
+
+    #[tokio::test]
+    async fn a_removal_that_fails_says_why_the_item_stayed() {
+        // Regression: each removal's failure was dropped, and an item in use showed only as fewer
+        // bytes freed.
+        let t = crate::testing::test_app::TestApp::new();
+        let (store, home) = (owned::path(&t.dirs()).unwrap(), t.data().join("vagrant-home"));
+        let alpine = owned_box("generic/alpine319", "virtualbox", "4.3.12");
+        download_box(&home, &alpine, None, 1000);
+        let nginx = owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() };
+        owned::update(&store, |o| {
+            o.images.insert(nginx);
+            o.boxes.insert(alpine);
+        })
+        .unwrap();
+        let _in_use = Tools::rules(&[
+            (
+                "image rm nginx:1.27",
+                crate::platform::exec::fake::fail("conflict: unable to remove repository reference \"nginx:1.27\" (must force) - container 1a2b is using it"),
+            ),
+            ("box remove", crate::platform::exec::fake::fail("The box you're attempting to remove is in use by a VM")),
+            ("image inspect", crate::platform::exec::fake::ok("sha256:nginx\t1000\n")),
+            ("box list", crate::platform::exec::fake::ok("generic/alpine319 (virtualbox, 4.3.12)\n")),
+            ("image ls", crate::platform::exec::fake::ok("sha256:nginx\n")),
+        ]);
+        crate::testing::logs::take_warnings();
+        clean(&store, &[], Some(&home), false).await.unwrap();
+        let logged = crate::testing::logs::take_warnings();
+        assert!(logged.iter().any(|w| w.starts_with("Storage's clean-up kept nginx:1.27: ") && w.contains("container 1a2b is using it")), "{logged:?}");
+        assert!(
+            logged.iter().any(|w| w.starts_with("Storage's clean-up kept generic/alpine319 (virtualbox, 4.3.12): ") && w.contains("in use by a VM")),
+            "{logged:?}"
+        );
     }
 
     #[tokio::test]
