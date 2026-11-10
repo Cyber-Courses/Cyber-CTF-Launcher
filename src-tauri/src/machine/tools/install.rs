@@ -9,7 +9,7 @@ use serde::Deserialize;
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
 use super::scripts::{
-    awscli_script, azurecli_script, docker_script, gcloud_script, libvirt_script, terraform_script, virtualbox_script, vmware_utility_script,
+    awscli_script, azurecli_script, docker_script, gcloud_script, libvirt_script, terraform_script, vagrant_script, virtualbox_script, vmware_utility_script,
 };
 #[cfg(any(target_os = "macos", windows))]
 use super::steps::step;
@@ -235,7 +235,8 @@ fn linux_plan_with(dep: Dependency, apt: bool) -> Result<Vec<Step>> {
         Dependency::Utm => return Err(Error::Invalid("UTM is only available on macOS.".into())),
         _ if !apt => return Err(without_apt(dep)),
         Dependency::Docker => vec![root(docker_script(crate::platform::exec::login_name().as_deref()))],
-        Dependency::Vagrant => vec![root("apt-get update && apt-get install -y vagrant".into())],
+        // From HashiCorp's apt repository, not the distribution's (older than labs need).
+        Dependency::Vagrant => vec![root(vagrant_script())],
         // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
         Dependency::Terraform => vec![root(terraform_script())],
         Dependency::Virtualbox => vec![root(virtualbox_script())],
@@ -429,6 +430,17 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn vagrant_comes_from_hashicorps_repository_not_the_distributions() {
+        // Regression: the setup ran `apt-get install vagrant`, Debian 13's 2.3.8, and every VM lab
+        // then refused it ("needs Vagrant 2.4.0 or later").
+        let plan = linux_plan_with(Dependency::Vagrant, true).unwrap();
+        let script = plan.iter().flat_map(|s| s.args.iter()).cloned().collect::<Vec<_>>().join(" ");
+        assert!(script.contains("apt.releases.hashicorp.com") && script.contains("apt-get install -y vagrant"), "{script}");
+        assert!(!script.contains("apt-get update && apt-get install -y vagrant"), "the distribution's package: {script}");
     }
 
     #[cfg(target_os = "linux")]

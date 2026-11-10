@@ -120,6 +120,14 @@ pub fn terraform_script() -> String {
     format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y terraform", apt_repo_script(&HASHICORP))
 }
 
+/// HashiCorp's apt repo, then Vagrant: the distributions' own package is older than labs need
+/// (Debian 13 ships 2.3.8; labs need 2.4.0 or later), so a setup that installed it left a machine
+/// that refused every VM lab.
+#[cfg(any(target_os = "linux", test))]
+pub fn vagrant_script() -> String {
+    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y vagrant", apt_repo_script(&HASHICORP))
+}
+
 /// HashiCorp's apt repo, then the Vagrant VMware Utility, whose package generates its
 /// certificates and enables and starts its service. `--reinstall`: an install that is there
 /// already has its package configured again, which restarts a service that had stopped.
@@ -392,9 +400,10 @@ mod tests {
     }
 
     /// Every vendor's apt repository, with the script that sets it up.
-    fn repo_scripts() -> [(&'static VendorRepo, String); 6] {
+    fn repo_scripts() -> [(&'static VendorRepo, String); 7] {
         [
             (&HASHICORP, terraform_script()),
+            (&HASHICORP, vagrant_script()),
             (&HASHICORP, vmware_utility_script()),
             (&ORACLE, virtualbox_script()),
             (&DOCKER, docker_script(None)),
@@ -433,8 +442,17 @@ mod tests {
     }
 
     /// Every install script that runs as root.
-    fn root_scripts() -> [String; 7] {
-        [awscli_script(), docker_script(Some("player")), terraform_script(), virtualbox_script(), azurecli_script(), gcloud_script(), vmware_utility_script()]
+    fn root_scripts() -> [String; 8] {
+        [
+            awscli_script(),
+            docker_script(Some("player")),
+            terraform_script(),
+            vagrant_script(),
+            virtualbox_script(),
+            azurecli_script(),
+            gcloud_script(),
+            vmware_utility_script(),
+        ]
     }
 
     #[test]
