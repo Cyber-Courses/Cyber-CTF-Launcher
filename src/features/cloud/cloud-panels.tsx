@@ -7,12 +7,11 @@ import { Meter } from "@/components/ui/meter";
 import { StatusDot, StatusPill } from "@/components/ui/status-pill";
 import { Spinner } from "@/components/ui/spinner";
 import type { Lab } from "@/features/labs/use-labs";
-import { AccountRow } from "@/features/cloud/account-row";
+import { AccountRow, CloudLogo } from "@/features/cloud/account-row";
 import { MAIN_PROVIDERS, isOverBudget } from "@/features/cloud/cloud-model";
 import type { CloudProvider, LabStatus, ServerHost, ServerTest } from "@/lib/tauri";
 import { useFormat, useT } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
-import { cloudLogo } from "@/features/servers/host-setup/constants";
 
 /** The labs running on a cloud account now (they bill while they run), each with a Stop. */
 export function RunningCloudLabs({
@@ -120,8 +119,7 @@ export function ProviderButtons({ providers, onConnect }: { providers: typeof MA
             onConnect(p.id);
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-          <img src={cloudLogo(p.id)} alt="" className="size-4 object-contain" draggable={false} />
+          <CloudLogo provider={p.id} className="size-4" />
           {p.label}
         </Button>
       ))}

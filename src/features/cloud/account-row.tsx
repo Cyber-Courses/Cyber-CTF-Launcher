@@ -163,10 +163,15 @@ function TestDetails({ result }: { result: ServerTest }) {
 function LogoTile({ provider }: { provider: string }) {
   return (
     <span className="grid size-9 shrink-0 place-items-center rounded-control bg-glass-2 shadow-[inset_0_0_0_1px_var(--input)]">
-      {/* eslint-disable-next-line @next/next/no-img-element -- static export, plain asset */}
-      <img src={cloudLogo(provider)} alt="" className="size-5 object-contain" draggable={false} />
+      <CloudLogo provider={provider} className="size-5" />
     </span>
   );
+}
+
+/** A provider's logo, beside its name (so no text of its own). */
+export function CloudLogo({ provider, className }: { provider: string; className: string }) {
+  // eslint-disable-next-line @next/next/no-img-element -- static export, plain asset
+  return <img src={cloudLogo(provider)} alt="" className={`${className} object-contain`} draggable={false} />;
 }
 
 function CheckGlyph({ state }: { state: ServerCheck["state"] }) {
