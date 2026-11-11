@@ -113,7 +113,7 @@ step pins actions_pinned
 step e2e-mock e2e_mock
 case "$(uname -s)" in
   Darwin | Linux) step e2e-native e2e/desktop/run.sh ;;
-  *) skip e2e-native "run e2e/desktop/smoke.ps1 on Windows" ;;
+  *) skip e2e-native "run e2e/desktop/run.ps1 on Windows" ;;
 esac
 
 suite_end "release check"
