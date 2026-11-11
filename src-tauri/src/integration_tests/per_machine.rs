@@ -17,7 +17,8 @@
 
 use std::path::Path;
 
-use super::support::{check, fetch, log, scenario, vm_inputs};
+use super::support::lab::vm_inputs;
+use super::support::{check, fetch, log, scenario};
 use crate::runtime::paths::{PER_MACHINE_MARKER, local_runtime, per_machine_vm};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Place, Runtime, lab, status, stop_lab};

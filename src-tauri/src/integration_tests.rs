@@ -54,15 +54,24 @@ mod start_path {
 
     #[test]
     fn a_scenario_starts_and_stops_its_lab_the_way_the_launcher_does() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
         let mut found = Vec::new();
-        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if entry.path().extension().is_none_or(|x| x != "rs") || OPENS_ITS_OWN_RUN.iter().any(|(f, _)| *f == name) {
-                continue;
+        // The scenarios' files and their folders (`support/`, a family's own modules).
+        let mut dirs = vec![root.clone()];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                    continue;
+                }
+                let name = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+                if path.extension().is_none_or(|x| x != "rs") || OPENS_ITS_OWN_RUN.iter().any(|(f, _)| *f == name) {
+                    continue;
+                }
+                let code = std::fs::read_to_string(&path).unwrap();
+                found.extend(direct_changes(&code).into_iter().map(|s| format!("{name}: {s}")));
             }
-            let code = std::fs::read_to_string(entry.path()).unwrap();
-            found.extend(direct_changes(&code).into_iter().map(|s| format!("{name}: {s}")));
         }
         assert!(found.is_empty(), "start or stop the lab through launch:: / lifecycle::, not the runner:\n{}", found.join("\n"));
     }

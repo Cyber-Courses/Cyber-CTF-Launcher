@@ -17,7 +17,8 @@
 
 use std::path::Path;
 
-use super::support::{Run, check, install_copy, leftovers, log, scenario};
+use super::support::lab::{Run, install_copy, leftovers};
+use super::support::{check, log, scenario};
 use crate::platform::exec::run;
 use crate::runtime::{Place, docker, paths};
 

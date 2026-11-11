@@ -40,7 +40,8 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use super::support::{check, install_copy, scenario};
+use super::support::lab::install_copy;
+use super::support::{check, scenario};
 use crate::machine::selftest::{self, Kind};
 use crate::machine::setup::{Action, ManualReason, Plan, SetupPath, Step, Wanted, plan};
 use crate::machine::system::{self, SystemReport, docker};

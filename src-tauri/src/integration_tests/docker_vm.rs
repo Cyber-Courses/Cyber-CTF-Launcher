@@ -14,7 +14,8 @@
 
 use std::path::Path;
 
-use super::support::{check, install_copy, leftovers, log, scenario};
+use super::support::lab::{install_copy, leftovers};
+use super::support::{check, log, scenario};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Place, isothrum, lab, launch, lifecycle};
 

@@ -25,7 +25,9 @@
 
 use std::path::Path;
 
-use super::support::{add_box, box_reaches, check, in_box, install_copy, leftovers, log, remove_box, scenario};
+use super::support::attack_box::{add_box, box_reaches, in_box, remove_box};
+use super::support::lab::{install_copy, leftovers};
+use super::support::{check, log, scenario};
 use crate::platform::AppDirs;
 use crate::runtime::attack_machine::{self, Placed};
 use crate::runtime::host::Host;

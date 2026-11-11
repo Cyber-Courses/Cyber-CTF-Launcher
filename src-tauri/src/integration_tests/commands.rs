@@ -12,7 +12,8 @@
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::commands::a_local_lab_launches_and_tears_down_through_the_commands
 //! ```
 
-use super::support::{check, leftovers, log, scenario};
+use super::support::lab::leftovers;
+use super::support::{check, log, scenario};
 use crate::commands::labs::{lab_check, lab_status};
 use crate::labs::{local_id, run_local};
 use crate::runtime::{LabStatus, Park, Runtime, park_lab, resume_lab, stop_lab};

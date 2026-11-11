@@ -176,7 +176,7 @@ mod tests {
     fn a_module_inside_one_declared_for_tests_is_test_code() {
         let sources = crate_sources();
         let file = |end: &str| sources.iter().find(|s| s.path.ends_with(end)).unwrap_or_else(|| panic!("{end}"));
-        for end in ["testing/logs.rs", "integration_tests/support.rs"] {
+        for end in ["testing/logs.rs", "integration_tests/support/lab.rs"] {
             assert!(file(end).code.is_empty() && !file(end).tests.is_empty(), "{end}");
         }
         assert_ne!(file("runtime/lifecycle.rs").code, "");

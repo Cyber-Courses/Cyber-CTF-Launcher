@@ -15,7 +15,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::support::{check, fetch, install_copy, log, scenario, vm_inputs};
+use super::support::lab::{install_copy, vm_inputs};
+use super::support::{check, fetch, log, scenario};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Park, Place, isothrum, launch, lifecycle};
 

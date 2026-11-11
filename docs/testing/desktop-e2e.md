@@ -29,7 +29,7 @@ the fixture lab (the Invoice Portal API lab, under `infra/test-servers/.state/la
 
 ## Results
 
-Each spec prints a line per check, as the integration tests do (`support.rs`'s `check`), with a
+Each spec prints a line per check, as the integration tests do (`integration_tests/support`'s `check`), with a
 stable id and the seconds since the line before:
 
 ```text

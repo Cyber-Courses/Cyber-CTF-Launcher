@@ -16,7 +16,8 @@
 
 use std::path::Path;
 
-use super::support::{check, log, scenario, vm_inputs};
+use super::support::lab::vm_inputs;
+use super::support::{check, log, scenario};
 use crate::error::Code;
 use crate::runtime::providers::Provider;
 use crate::runtime::{Destination, LabRef, Runtime, lab, stop_lab};

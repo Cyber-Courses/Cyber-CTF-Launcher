@@ -27,7 +27,8 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use super::support::{Checks, Run, check, install_copy, leftovers, scenario};
+use super::support::lab::{Run, install_copy, leftovers};
+use super::support::{Checks, check, scenario};
 use crate::platform::exec::run;
 use crate::runtime::{docker, paths};
 use services::{Backend, Expect, Submission};
