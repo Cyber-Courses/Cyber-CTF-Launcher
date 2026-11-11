@@ -276,7 +276,7 @@ try {
   foreach ($s in "labs", "deep-link", "fail-offline", "fail-badlab") { Invoke-Spec $s }
   # Signed out: a run folder of its own, with no session in it.
   Invoke-Spec "fail-signedout" -vars @{ CYBERCTF_WDIO_ROOT = (Join-Path $RunRoot "signed-out") }
-  $dockerSpecs = "fail-docker", "launch", "restart", "stop", "launch-ui", "kill-mid-deploy", "attack-box", "attack-shell", "stop-with-box", "park-resume", "reimport-running", "attack-on-stopped", "lab-actions", "offline-start"
+  $dockerSpecs = "fail-docker", "launch", "restart", "stop", "launch-ui", "kill-mid-deploy", "stop-during-start", "double-start", "close-mid-deploy", "kill-worker", "attack-box", "attack-shell", "stop-with-box", "park-resume", "reimport-running", "attack-on-stopped", "lab-actions", "offline-start"
   if ($DockerOk) {
     Invoke-Spec "fail-docker"
     Clear-Lab

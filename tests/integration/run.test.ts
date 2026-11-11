@@ -104,6 +104,8 @@ const NOT_LISTED: Record<string, string> = {
   CYBERCTF_TEST_INVOICE_LAB: "labs.yml",
   // The setup's report in its old format, while the test rig reads it.
   CYBERCTF_TEST_SETUP_REPORT: "the rig",
+  // What a killed-start scenario hands the child process it kills, not a knob.
+  CYBERCTF_TEST_RESILIENCE_CHILD: "resilience.rs",
 };
 
 describe("--list", () => {

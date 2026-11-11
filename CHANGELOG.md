@@ -8,6 +8,14 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **What a player does that breaks a lab, catalogued and tested.** [tests/resilience.md](tests/resilience.md)
+  lists each disruption (a machine removed, stopped or powered off outside the app, the app or its
+  deploy worker killed, Docker or the hypervisor stopped, files deleted, a double Start, Stop
+  during Start, the network, the computer's sleep and clock), what the app must do and which test
+  holds it. New integration scenarios (`resilience-*` in `tests/integration/run.sh`) do each
+  disruption with the player's own tool on the real Docker or hypervisor; those that stop more
+  than their own lab run only where `CYBERCTF_TEST_RESILIENCE_THROWAWAY=1`. New desktop specs:
+  `stop-during-start`, `double-start`, `close-mid-deploy`, `kill-worker`.
 - **The integration runner records a lab the launcher refuses on a hypervisor as skipped.** A VM
   scenario whose lab can't run on the hypervisor it is given (a VM on a network, on UTM) checks the
   launch's own refusal before it starts anything, and is recorded `skip` with the launcher's words,

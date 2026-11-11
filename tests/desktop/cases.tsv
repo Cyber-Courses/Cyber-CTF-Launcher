@@ -19,6 +19,10 @@ restart	restart	-	CYBERCTF_TEST_LOCAL_LAB
 stop	stop	-	CYBERCTF_TEST_LOCAL_LAB
 launch-ui	launch-ui	-	CYBERCTF_TEST_LOCAL_LAB
 kill-mid-deploy	kill-mid-deploy	-	CYBERCTF_TEST_LOCAL_LAB
+stop-during-start	stop-during-start	-	CYBERCTF_TEST_LOCAL_LAB
+double-start	double-start	-	CYBERCTF_TEST_LOCAL_LAB
+close-mid-deploy	close-mid-deploy	-	CYBERCTF_TEST_LOCAL_LAB
+kill-worker	kill-worker	-	CYBERCTF_TEST_LOCAL_LAB
 attack-box	attack-box	-	CYBERCTF_TEST_LOCAL_LAB
 attack-shell	attack-shell	-	CYBERCTF_TEST_LOCAL_LAB
 stop-with-box	stop-with-box	-	CYBERCTF_TEST_LOCAL_LAB

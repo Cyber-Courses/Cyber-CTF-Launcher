@@ -1052,7 +1052,7 @@ areas:
           - desktop-e2e
         gaps:
           desktop: kill-mid-deploy only checks the reopened window renders with no error screen; it never checks the deploy finished in its worker, nor the lab's state or a clean-up
-          integration: no scenario kills a real worker or the app mid-deploy
+          integration: the killed start's scenarios are resilience.killed-start's; none kills the app itself mid-deploy
 
       - id: lab-run.running-labs-scan
         what: Labs already running here (started from the website, before a crash or restart) are found by asking Docker and each hypervisor, and listed as running.
@@ -4075,6 +4075,152 @@ areas:
         gaps:
           unit: the NSIS hook's script (packaging/windows/remove-test-vm.ps1) has no test
           package: only the MSI is removed (msiexec /x) and only its exit code is checked; NSIS, .deb and the leftover self-test VM are never checked
+
+  - id: resilience
+    title: What a player does that breaks a lab
+    features:
+      - id: resilience.machine-removed
+        what: "A container removed outside the app (docker rm -f) while its lab runs or starts: the lab page shows it gone with its health banner, a resume is refused naming it, a failed start says Docker's words, and a reset or a start again brings the whole lab back, nothing left (tests/resilience.md M1, M2)."
+        host: true
+        providers:
+          - docker
+        tests:
+          unit:
+            - src-tauri/src/runtime/isothrum/tests.rs > a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out
+            - src-tauri/src/runtime/isothrum/errors.rs > a_resume_with_machines_removed_outside_names_them_and_says_to_start_again
+            - src/features/labs/network-diagram/diagram.test.tsx > shows each machine's state in words
+          integration:
+            - resilience-docker-removed
+            - resilience-docker-removed-starting
+        gaps:
+          desktop: no spec removes a container under the real app and reads the health banner
+        note: Isothrum's own fake-engine and property tests (run/tests/disruptions*) hold the runner's side.
+
+      - id: resilience.machine-stopped
+        what: "A container stopped (docker stop) or a VM powered off outside the app while its lab runs: shown down, and a resume brings it back (tests/resilience.md M4, M6)."
+        host: true
+        providers:
+          - docker
+          - libvirt
+          - qemu
+          - virtualbox
+          - hyperv
+          - utm
+        tests:
+          integration:
+            - resilience-docker-stopped
+            - resilience-vm-powered-off
+        gaps:
+          unit: the launcher's own view of a stopped machine is the diagram's state words alone
+          integration: resilience-vm-powered-off powers off through Vagrant (halt --force), not each hypervisor's own Power Off
+        note: The lab page offers the resume (its repair control) to VM labs only; a Docker lab with a stopped container gets Reset.
+
+      - id: resilience.vm-destroyed
+        what: "A VM destroyed outside the app (vagrant destroy, the hypervisor's Delete) while its lab runs: shown gone, a resume refused without making it again unprovisioned, and a start again rebuilds the lab (tests/resilience.md M5)."
+        host: true
+        providers:
+          - libvirt
+          - qemu
+          - virtualbox
+          - hyperv
+        tests:
+          integration:
+            - resilience-vm-destroyed
+        gaps:
+          integration: "needs a hypervisor: run by the rig, never in CI"
+        note: Isothrum's driver/vagrant/tests/disruptions.rs holds the refusal with its fake Vagrant.
+
+      - id: resilience.vm-killed-provisioning
+        what: "A VM killed by its hypervisor while vagrant up provisions it: the start fails in Vagrant's words (or finishes whole), and a start again works with no tool left running (tests/resilience.md M7)."
+        host: true
+        providers:
+          - libvirt
+          - qemu
+          - virtualbox
+          - hyperv
+        tests:
+          integration:
+            - resilience-vm-killed-provisioning
+        gaps:
+          integration: throwaway machines only (CYBERCTF_TEST_RESILIENCE_THROWAWAY, CYBERCTF_TEST_RESILIENCE_VM_KILL)
+
+      - id: resilience.killed-start
+        what: "The deploy worker (or the process running the start) killed mid-start: the start says it stopped without a result, the lab reads as failed, not running, its launch token is removed, and a Stop then a start bring it back (tests/resilience.md A3)."
+        host: true
+        tests:
+          unit:
+            - src-tauri/src/app/deploy_worker/files.rs > a_launch_whose_worker_was_killed_is_a_failed_launch_and_its_token_is_removed
+            - src-tauri/src/app/deploy_worker/files.rs > a_killed_pause_is_its_own_failure_not_the_labs_launch
+            - src-tauri/src/app/deploy_worker/files.rs > a_job_still_being_started_or_one_that_ended_is_not_lost
+            - src-tauri/src/app/operations.rs > a_stale_pidfile_lists_no_operation_and_is_swept
+          integration:
+            - resilience-docker-killed-start
+            - resilience-vm-killed-start
+          desktop:
+            - kill-worker
+        gaps:
+          desktop: kill-worker kills with SIGKILL, so it skips on Windows
+          integration: the tools a killed start ran outlive it (their own process groups); the scenarios wait for them, nothing ends them (tests/resilience.md A4)
+
+      - id: resilience.window-closed-mid-start
+        what: "The window closed while a lab starts: the start goes on in its worker, and the reopened app shows the lab running (tests/resilience.md A1)."
+        host: true
+        tests:
+          desktop:
+            - close-mid-deploy
+        gaps:
+          unit: covered by the deploy worker's design only (it is no child of the window)
+
+      - id: resilience.double-start
+        what: "Start pressed twice: one start runs, the other is refused as already in progress, one copy of the lab (tests/resilience.md S1)."
+        host: true
+        tests:
+          unit:
+            - src-tauri/src/app/deploy_worker/process.rs > a_second_start_is_refused_while_the_first_worker_runs
+          desktop:
+            - double-start
+
+      - id: resilience.stop-during-start
+        what: "Stop pressed while the lab starts: the start ends, the lab is taken down and reads as stopped, nothing left, and a start again works (tests/resilience.md S2)."
+        host: true
+        tests:
+          unit:
+            - src-tauri/src/app/deploy_worker.rs > nothing_starts_on_a_lab_while_it_stops
+          desktop:
+            - stop-during-start
+
+      - id: resilience.docker-stopped
+        what: "Docker quit or stopped while a lab starts: the start says Docker isn't running, and a start once it is back works (tests/resilience.md T1)."
+        host: true
+        providers:
+          - docker
+        tests:
+          unit:
+            - src-tauri/src/runtime/isothrum/errors.rs > docker_stopped_while_a_step_ran_reads_as_a_stopped_engine_on_this_machine_only
+          integration:
+            - resilience-docker-daemon-stopped
+        gaps:
+          integration: throwaway machines only (CYBERCTF_TEST_RESILIENCE_THROWAWAY, the OS's stop and start commands as knobs)
+
+      - id: resilience.files-deleted
+        what: "The lab's generated files deleted while it runs: made again, so its page still sees it and its Stop takes it down; with its whole folder gone, the Stop says what may still run (tests/resilience.md F1, F2)."
+        host: false
+        tests:
+          unit:
+            - src-tauri/src/runtime/isothrum/tests.rs > a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_still_reach_it
+            - src-tauri/src/runtime/isothrum/tests.rs > a_running_lab_whose_whole_folder_is_gone_says_what_is_left
+        gaps:
+          integration: no scenario deletes a running lab's files on the real engine
+
+      - id: resilience.port-taken
+        what: "A port the lab publishes held by another process at start: refused naming the port, nothing started, and a start once it is free works (tests/resilience.md N3)."
+        host: true
+        providers:
+          - docker
+        tests:
+          integration:
+            - resilience-docker-port-taken
+
 known_gaps:
   - id: shared-folder-off-docker-and-libvirt
     what: The shared folder is untested on Hyper-V, QEMU on macOS, Proxmox and ESXi (and the clouds)
@@ -4129,7 +4275,7 @@ known_gaps:
 
   - id: resilience-suite
     what: "The resilience suite: a deploy killed, the app quit, the network or Docker lost mid-operation"
-    status: being built on the resilience branch; today kill-mid-deploy only checks the reopened window renders
+    status: "the resilience area (tests/resilience.md) covers machines removed, stopped or killed, the worker killed, a double Start, Stop during Start, Docker stopped and deleted files; sleep, reboot, a full disk, a clock jump, the network cut and a server's credentials changed are rig proposals, not tests yet"
     features:
       - lab-run.interrupted-deploy-recovery
       - app.quit-guard

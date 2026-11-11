@@ -107,6 +107,18 @@ REPLACE=integration_tests::replace::a_running_lab_is_not_replaced_under_it
 PROXMOX=integration_tests::server_lab::a_vm_lab_runs_on_proxmox_through_the_runner
 ESXI=integration_tests::server_lab::a_vm_lab_runs_on_esxi_through_the_runner
 SETUP=integration_tests::setup::the_guided_setup_readies_this_machine
+RES=integration_tests::resilience
+RES_REMOVED="$RES::a_container_removed_while_the_lab_runs_shows_down_and_a_reset_brings_it_back"
+RES_STOPPED="$RES::a_container_stopped_while_the_lab_runs_shows_down_and_a_resume_brings_it_back"
+RES_REMOVED_STARTING="$RES::a_container_removed_while_the_start_waits_fails_it_or_shows_it_and_a_start_again_works"
+RES_PORT="$RES::a_port_the_lab_publishes_taken_at_start_is_named_and_a_start_once_free_works"
+RES_KILLED="$RES::a_start_killed_midway_is_failed_and_a_start_again_works"
+RES_DAEMON="$RES::docker_stopped_while_the_lab_starts_says_so_and_a_start_once_it_is_back_works"
+RES_VM=integration_tests::resilience_vm
+RES_VM_DESTROYED="$RES_VM::a_vm_destroyed_while_the_lab_runs_shows_gone_and_a_start_again_rebuilds_it"
+RES_VM_OFF="$RES_VM::a_vm_powered_off_while_the_lab_runs_shows_off_and_a_resume_brings_it_back"
+RES_VM_KILLED="$RES_VM::a_vm_start_killed_while_it_provisions_is_failed_and_a_start_again_works"
+RES_VM_HYPERVISOR="$RES_VM::a_vm_killed_by_its_hypervisor_while_it_provisions_fails_the_start_and_a_start_again_works"
 
 # reads <test>: the knobs the test reads (a unit test, tests/integration/run.test.ts, holds this to
 # the scenarios' sources).
@@ -124,6 +136,13 @@ reads() {
     "$REPLACE") echo CYBERCTF_TEST_REPLACE_LAB CYBERCTF_TEST_REPLACE_FORM CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
     "$PROXMOX") echo CYBERCTF_TEST_PVE_LAB CYBERCTF_TEST_PVE_ENDPOINT CYBERCTF_TEST_PVE_TOKEN CYBERCTF_TEST_PVE_NODE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_PVE_JUMP CYBERCTF_TEST_PVE_RUNNER_HOME ;;
     "$ESXI") echo CYBERCTF_TEST_ESXI_LAB CYBERCTF_TEST_ESXI_HOST CYBERCTF_TEST_ESXI_PASSWORD CYBERCTF_TEST_ESXI_DATASTORE CYBERCTF_TEST_ESXI_NETWORK ;;
+    "$RES_REMOVED" | "$RES_STOPPED" | "$RES_REMOVED_STARTING") echo CYBERCTF_TEST_RESILIENCE_LAB CYBERCTF_TEST_RESILIENCE_MACHINE ;;
+    "$RES_PORT") echo CYBERCTF_TEST_RESILIENCE_LAB ;;
+    "$RES_KILLED") echo CYBERCTF_TEST_RESILIENCE_LAB ;;
+    "$RES_DAEMON") echo CYBERCTF_TEST_RESILIENCE_LAB CYBERCTF_TEST_RESILIENCE_THROWAWAY CYBERCTF_TEST_RESILIENCE_DOCKER_STOP CYBERCTF_TEST_RESILIENCE_DOCKER_START ;;
+    "$RES_VM_DESTROYED" | "$RES_VM_OFF") echo CYBERCTF_TEST_RESILIENCE_VM_LAB CYBERCTF_TEST_RESILIENCE_MACHINE CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
+    "$RES_VM_KILLED") echo CYBERCTF_TEST_RESILIENCE_VM_LAB CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
+    "$RES_VM_HYPERVISOR") echo CYBERCTF_TEST_RESILIENCE_VM_LAB CYBERCTF_TEST_RESILIENCE_THROWAWAY CYBERCTF_TEST_RESILIENCE_VM_KILL CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
     "$SETUP") echo CYBERCTF_TEST_SETUP_PATHS CYBERCTF_TEST_SETUP_HYPERVISORS CYBERCTF_TEST_SETUP_LOGS CYBERCTF_TEST_SETUP_LAB CYBERCTF_TEST_SETUP_CHECK_ONLY CYBERCTF_TEST_RESULTS ;;
   esac
 }
@@ -231,6 +250,25 @@ if in_tier local; then
   scenario replace-docker-vm docker-vm "$DOCKER_VM_PROVIDER" "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$SOLO" CYBERCTF_TEST_REPLACE_FORM=docker-vm \
     CYBERCTF_TEST_VM_PROVIDER="$DOCKER_VM_PROVIDER"
   scenario replace-vm vm "$VM_PROVIDER" "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$SOLO" CYBERCTF_TEST_REPLACE_FORM=vm \
+    CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
+  # What a player does that breaks a lab (tests/resilience.md): a container or VM removed, stopped
+  # or powered off outside the app while the lab runs or starts, the start's process killed, a
+  # port the lab publishes taken. Each checks what the launcher says, the way back, and that
+  # nothing is left. They act on their own lab alone, so they run anywhere.
+  HELLO="$EXAMPLES/hello-stack"
+  scenario resilience-docker-removed docker "" "$RES_REMOVED" CYBERCTF_TEST_RESILIENCE_LAB="$HELLO"
+  scenario resilience-docker-stopped docker "" "$RES_STOPPED" CYBERCTF_TEST_RESILIENCE_LAB="$HELLO"
+  scenario resilience-docker-removed-starting docker "" "$RES_REMOVED_STARTING" CYBERCTF_TEST_RESILIENCE_LAB="$HELLO"
+  scenario resilience-docker-port-taken docker "" "$RES_PORT" CYBERCTF_TEST_RESILIENCE_LAB="$HELLO"
+  scenario resilience-docker-killed-start docker "" "$RES_KILLED" CYBERCTF_TEST_RESILIENCE_LAB="$HELLO"
+  scenario resilience-vm-destroyed vm "$VM_PROVIDER" "$RES_VM_DESTROYED" CYBERCTF_TEST_RESILIENCE_VM_LAB="$SOLO" CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
+  scenario resilience-vm-powered-off vm "$VM_PROVIDER" "$RES_VM_OFF" CYBERCTF_TEST_RESILIENCE_VM_LAB="$SOLO" CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
+  scenario resilience-vm-killed-start vm "$VM_PROVIDER" "$RES_VM_KILLED" CYBERCTF_TEST_RESILIENCE_VM_LAB="$SOLO" CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
+  # These stop more than their own lab (Docker itself, a VM by its hypervisor's own tool): each
+  # skips unless CYBERCTF_TEST_RESILIENCE_THROWAWAY=1, which only the test rig's throwaway
+  # machines set, with the commands for their OS (tests/README.md, "Knobs").
+  scenario resilience-docker-daemon-stopped docker "" "$RES_DAEMON" CYBERCTF_TEST_RESILIENCE_LAB="$HELLO"
+  scenario resilience-vm-killed-provisioning vm "$VM_PROVIDER" "$RES_VM_HYPERVISOR" CYBERCTF_TEST_RESILIENCE_VM_LAB="$SOLO" \
     CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
 fi
 

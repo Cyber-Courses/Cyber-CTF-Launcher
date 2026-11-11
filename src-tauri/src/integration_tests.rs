@@ -11,6 +11,8 @@ mod flag_contract;
 mod launch_commands;
 mod per_machine;
 mod replace;
+mod resilience;
+mod resilience_vm;
 mod server_lab;
 mod setup;
 pub(crate) mod support;

@@ -269,6 +269,66 @@ export async function invokeCmd(b, cmd, args = {}, { streaming = false, timeoutM
 }
 
 /**
+ * Start streaming command `cmd` (`lab_launch_local`, `lab_stop`…) without waiting for it, as a
+ * click does: its outcome is parked on `window.__bg[key]`, read by `outcomeOf`. Several can run
+ * at once (a double click), each under its own key.
+ */
+export async function invokeInBackground(b, key, cmd, args = {}) {
+  await b.execute(
+    (k, c, a) => {
+      window.__bg = window.__bg || {};
+      window.__bg[k] = "pending";
+      const internals = window.__TAURI_INTERNALS__;
+      const full = { ...a, logs: `__CHANNEL__:${internals.transformCallback(() => {})}` };
+      internals.invoke(c, full).then(
+        () => (window.__bg[k] = { ok: true }),
+        (e) => (window.__bg[k] = { err: typeof e === "string" ? e : e && e.message ? e.message : JSON.stringify(e) }),
+      );
+    },
+    key,
+    cmd,
+    args,
+  );
+}
+
+/** The outcome of the command `invokeInBackground` started under `key` once it ended: `{ ok }`
+ *  or `{ err }` (its message); null when it was still running after `timeoutMs`. */
+export async function outcomeOf(b, key, timeoutMs = 600000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const r = await b.execute((k) => (window.__bg || {})[k], key).catch(() => "pending");
+    if (r && r !== "pending") return r;
+    await sleep(1000);
+  }
+  return null;
+}
+
+/** Whether the start `invokeInBackground` began under `start` made a container of lab `id`
+ *  (it is under way) before it ended or 10 minutes went by: a start refused or failed at once
+ *  never makes one, and its outcome says why. */
+export async function startMade(b, id, key = "start") {
+  return eventually(async () => {
+    if (labContainers(id).length > 0) return true;
+    const ended = await b.execute((k) => (window.__bg || {})[k], key).catch(() => "pending");
+    if (ended && ended !== "pending") throw new Error(`the start ended before it made anything: ${JSON.stringify(ended)}`);
+    return false;
+  }, 600000);
+}
+
+/** The id the app imports a local lab folder under (`labs::local_id`): `local-<slug>`. */
+export const localLabId = (lab) => `local-${localLabName(lab) || "lab"}`;
+
+/** Wait until `cond()` holds, polling every `interval` ms; whether it did within `timeoutMs`. */
+export async function eventually(cond, timeoutMs, interval = 500) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await cond()) return true;
+    await sleep(interval);
+  }
+  return false;
+}
+
+/**
  * Invoke a streaming lab command, retrying while the per-lab lock is still held by another
  * operation (the "another operation … is already in progress" refusal): a launch holds the lock
  * briefly after the lab already shows running, and the real UI gates its buttons on that, so a

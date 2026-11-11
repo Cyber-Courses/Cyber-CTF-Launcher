@@ -5,7 +5,7 @@
 Every feature the launcher offers its user, area by area, and how well each test tier checks it. The registry is
 [features.yml](features.yml); [README.md](README.md#the-feature-registry) says how a feature or a test is added.
 
-**177 features: 60 Strong, 117 Partial, 0 Unchecked.**
+**188 features: 63 Strong, 125 Partial, 0 Unchecked.**
 
 - A tier: ✔ its tests check the feature's behaviour; ◐ they check part of it (what is missing is under the table); ✖ no test.
 - **Strong**: unit tests, and a tier above that covers it: a real-host one (desktop E2E, integration, setup, package) when the feature depends on the
@@ -23,7 +23,7 @@ Every feature the launcher offers its user, area by area, and how well each test
 4. **Installers and uninstall: the AppImage, the .dmg, MSIX and the Homebrew cask are never installed by a test; only the MSI is removed**: package-smoke.yml installs and launches .deb, .app, NSIS and MSI for 15 s; the rig's package cell passed on debian-13 only (`install.installer`, `install.uninstall`)
 5. **Hostile environments: no tier runs behind a proxy, offline, as a non-administrator or on a non-English OS**: the rig answers elevation itself (a polkit rule, an elevated scheduled task), so a declined or real prompt never happens in a test (`policy.proxy`, `setup.install-tool`, `setup.package-manager`, `catalogue.unreachable`, `i18n.translated-errors`)
 6. **The lab catalogue suite: no suite starts every catalogue lab, in each of its forms, through the launcher**: planned; corpus-docker runs your own lab folders on Docker only, and no integration test downloads a lab from the catalogue (`catalogue.download-install`, `catalogue.update-installed-lab`, `lab-run.container`, `lab-run.vm`)
-7. **The resilience suite: a deploy killed, the app quit, the network or Docker lost mid-operation**: being built on the resilience branch; today kill-mid-deploy only checks the reopened window renders (`lab-run.interrupted-deploy-recovery`, `app.quit-guard`, `lab-run.failures-and-retry`)
+7. **The resilience suite: a deploy killed, the app quit, the network or Docker lost mid-operation**: the resilience area (tests/resilience.md) covers machines removed, stopped or killed, the worker killed, a double Start, Stop during Start, Docker stopped and deleted files; sleep, reboot, a full disk, a clock jump, the network cut and a server's credentials changed are rig proposals, not tests yet (`lab-run.interrupted-deploy-recovery`, `app.quit-guard`, `lab-run.failures-and-retry`)
 8. **77 features that depend on the machine have never passed on the rig on one of their platforms**: the rig's matrix (generated 2026-11-11T10:34:44+00:00) has passing cells on linux only (`website.deep-links`, `catalogue.download-install`, `catalogue.update-installed-lab`, `imports.import-folder`, `lab-run.container`, `lab-run.docker-vm` and 71 more)
 9. `account.sign-in-browser`: **no real-host test**: no spec signs in: the rig's desktop runs get a pre-made session (CYBERCTF_TEST_ACCOUNT_SESSION); the browser hand-off and loopback redirect never run for real; none against the real cyber-auth
 10. `account.session-status`: **no real-host test**: auth_status is only read to decide whether signed-in specs skip; nothing checks the account row, and the rig's session is a dev-session.json file, so the real keychain path never runs; no real keychain round trip (Windows Credential Manager, macOS Keychain, Secret Service) on any host
@@ -35,32 +35,33 @@ Every feature the launcher offers its user, area by area, and how well each test
 
 ## By area
 
-| Area                                                                   | Features | Strong | Partial | Unchecked |
-| ---------------------------------------------------------------------- | -------- | ------ | ------- | --------- |
-| [Account and sign-in](#account-and-sign-in)                            | 7        | 4      | 3       | 0         |
-| [Website links and launches](#website-links-and-launches)              | 4        | 0      | 4       | 0         |
-| [Catalogue, lab install and update](#catalogue-lab-install-and-update) | 9        | 4      | 5       | 0         |
-| [Imported labs](#imported-labs)                                        | 3        | 0      | 3       | 0         |
-| [Running a lab](#running-a-lab)                                        | 25       | 9      | 16      | 0         |
-| [Hypervisors and engines](#hypervisors-and-engines)                    | 8        | 2      | 6       | 0         |
-| [The lab page](#the-lab-page)                                          | 9        | 5      | 4       | 0         |
-| [The attack box](#the-attack-box)                                      | 13       | 4      | 9       | 0         |
-| [The VM screen](#the-vm-screen)                                        | 3        | 0      | 3       | 0         |
-| [This machine](#this-machine)                                          | 13       | 6      | 7       | 0         |
-| [Guided machine setup](#guided-machine-setup)                          | 18       | 6      | 12      | 0         |
-| [Maintenance and clean-up](#maintenance-and-clean-up)                  | 4        | 1      | 3       | 0         |
-| [Servers](#servers)                                                    | 12       | 3      | 9       | 0         |
-| [Cloud accounts](#cloud-accounts)                                      | 11       | 1      | 10      | 0         |
-| [Administrators and networks](#administrators-and-networks)            | 2        | 0      | 2       | 0         |
-| [Settings](#settings)                                                  | 9        | 4      | 5       | 0         |
-| [Onboarding](#onboarding)                                              | 2        | 2      | 0       | 0         |
-| [The app window](#the-app-window)                                      | 9        | 3      | 6       | 0         |
-| [Empty states](#empty-states)                                          | 3        | 2      | 1       | 0         |
-| [Languages](#languages)                                                | 3        | 2      | 1       | 0         |
-| [Accessibility and small windows](#accessibility-and-small-windows)    | 2        | 2      | 0       | 0         |
-| [Auto-update](#auto-update)                                            | 2        | 0      | 2       | 0         |
-| [Diagnostics and logs](#diagnostics-and-logs)                          | 3        | 0      | 3       | 0         |
-| [Install, upgrade, uninstall](#install-upgrade-uninstall)              | 3        | 0      | 3       | 0         |
+| Area                                                                          | Features | Strong | Partial | Unchecked |
+| ----------------------------------------------------------------------------- | -------- | ------ | ------- | --------- |
+| [Account and sign-in](#account-and-sign-in)                                   | 7        | 4      | 3       | 0         |
+| [Website links and launches](#website-links-and-launches)                     | 4        | 0      | 4       | 0         |
+| [Catalogue, lab install and update](#catalogue-lab-install-and-update)        | 9        | 4      | 5       | 0         |
+| [Imported labs](#imported-labs)                                               | 3        | 0      | 3       | 0         |
+| [Running a lab](#running-a-lab)                                               | 25       | 9      | 16      | 0         |
+| [Hypervisors and engines](#hypervisors-and-engines)                           | 8        | 2      | 6       | 0         |
+| [The lab page](#the-lab-page)                                                 | 9        | 5      | 4       | 0         |
+| [The attack box](#the-attack-box)                                             | 13       | 4      | 9       | 0         |
+| [The VM screen](#the-vm-screen)                                               | 3        | 0      | 3       | 0         |
+| [This machine](#this-machine)                                                 | 13       | 6      | 7       | 0         |
+| [Guided machine setup](#guided-machine-setup)                                 | 18       | 6      | 12      | 0         |
+| [Maintenance and clean-up](#maintenance-and-clean-up)                         | 4        | 1      | 3       | 0         |
+| [Servers](#servers)                                                           | 12       | 3      | 9       | 0         |
+| [Cloud accounts](#cloud-accounts)                                             | 11       | 1      | 10      | 0         |
+| [Administrators and networks](#administrators-and-networks)                   | 2        | 0      | 2       | 0         |
+| [Settings](#settings)                                                         | 9        | 4      | 5       | 0         |
+| [Onboarding](#onboarding)                                                     | 2        | 2      | 0       | 0         |
+| [The app window](#the-app-window)                                             | 9        | 3      | 6       | 0         |
+| [Empty states](#empty-states)                                                 | 3        | 2      | 1       | 0         |
+| [Languages](#languages)                                                       | 3        | 2      | 1       | 0         |
+| [Accessibility and small windows](#accessibility-and-small-windows)           | 2        | 2      | 0       | 0         |
+| [Auto-update](#auto-update)                                                   | 2        | 0      | 2       | 0         |
+| [Diagnostics and logs](#diagnostics-and-logs)                                 | 3        | 0      | 3       | 0         |
+| [Install, upgrade, uninstall](#install-upgrade-uninstall)                     | 3        | 0      | 3       | 0         |
+| [What a player does that breaks a lab](#what-a-player-does-that-breaks-a-lab) | 11       | 3      | 8       | 0         |
 
 ## Account and sign-in
 
@@ -242,7 +243,7 @@ What the partial and missing tiers leave out:
 - `lab-run.solvability-check`: Desktop E2E ✖ lab-actions/down waits for the down banner, not for the check's verdict; Integration ◐ no check for docker-vm, per-machine or cloud forms
 - `lab-run.deploy-progress`: Desktop E2E ◐ no spec reads the deploy steps or log on the page; busy_labs is only polled as a wait helper; Integration ◐ launch-commands streams the log but asserts only the outcome
 - `lab-run.image-download`: Web E2E ◐ lab-flow only sees the Get images step; no dev-mock flag makes a pull stall or fail; Integration ◐ the scenarios pull real images, so the Get images phase runs for real, but none provokes a stalled or failed pull; the runner's own pull-phase tests are Isothrum's, outside this repository; The download-phase fix (f69e4bd9) gave the stall and the failure their own codes, downloadStalled and downloadFailed, in the six languages.
-- `lab-run.interrupted-deploy-recovery`: Desktop E2E ◐ kill-mid-deploy only checks the reopened window renders with no error screen; it never checks the deploy finished in its worker, nor the lab's state or a clean-up; Integration ✖ no scenario kills a real worker or the app mid-deploy
+- `lab-run.interrupted-deploy-recovery`: Desktop E2E ◐ kill-mid-deploy only checks the reopened window renders with no error screen; it never checks the deploy finished in its worker, nor the lab's state or a clean-up; Integration ✖ the killed start's scenarios are resilience.killed-start's; none kills the app itself mid-deploy
 - `lab-run.running-labs-scan`: Desktop E2E ◐ vm-scan needs a VM set up by the caller (CYBERCTF_TEST_SCAN_LAB); run.sh does it for UTM only; Integration ✖ none; VirtualBox, VMware and Parallels probes only unit-tested on canned output
 - `lab-run.offline-start`: Desktop E2E ◐ needs a signed-in account and Docker; skips without them; the container form only; Integration ✖ no offline start in any form outside the desktop run
 - `lab-run.failures-and-retry`: Desktop E2E ◐ fail-docker and fail-badlab check the app stays usable and nothing runs, not the message or Retry; Integration ✖ real tool failures (Vagrant, Terraform, Compose) are only replayed from canned output
@@ -935,5 +936,50 @@ What the partial and missing tiers leave out:
 - `install.installer`: Package: `.github/workflows/package-smoke.yml`, `packaging/windows/smoke-test.ps1`. Rig: `package`.
 - `install.upgrade`: Unit: `src-tauri/src/platform/msix_data.rs`.
 - `install.uninstall`: Package: `.github/workflows/package-smoke.yml > msiexec-remove`.
+
+</details>
+
+## What a player does that breaks a lab
+
+11 features: 3 Strong, 8 Partial, 0 Unchecked.
+
+| Feature                                                                                                                                                                                                                                                                                                                                | Platforms | Unit | Web E2E | Desktop E2E | Integration | Setup | Package | Rig | Level       |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- | ------- | ----------- | ----------- | ----- | ------- | --- | ----------- |
+| `resilience.machine-removed` A container removed outside the app (docker rm -f) while its lab runs or starts: the lab page shows it gone with its health banner, a resume is refused naming it, a failed start says Docker's words, and a reset or a start again brings the whole lab back, nothing left (tests/resilience.md M1, M2). | all       | ✔    | ✖       | ✖           | ✔           | ✖     | ✖       | –   | **Strong**  |
+| `resilience.machine-stopped` A container stopped (docker stop) or a VM powered off outside the app while its lab runs: shown down, and a resume brings it back (tests/resilience.md M4, M6).                                                                                                                                           | all       | ✖    | ✖       | ✖           | ◐           | ✖     | ✖       | –   | **Partial** |
+| `resilience.vm-destroyed` A VM destroyed outside the app (vagrant destroy, the hypervisor's Delete) while its lab runs: shown gone, a resume refused without making it again unprovisioned, and a start again rebuilds the lab (tests/resilience.md M5).                                                                               | all       | ✖    | ✖       | ✖           | ◐           | ✖     | ✖       | –   | **Partial** |
+| `resilience.vm-killed-provisioning` A VM killed by its hypervisor while vagrant up provisions it: the start fails in Vagrant's words (or finishes whole), and a start again works with no tool left running (tests/resilience.md M7).                                                                                                  | all       | ✖    | ✖       | ✖           | ◐           | ✖     | ✖       | –   | **Partial** |
+| `resilience.killed-start` The deploy worker (or the process running the start) killed mid-start: the start says it stopped without a result, the lab reads as failed, not running, its launch token is removed, and a Stop then a start bring it back (tests/resilience.md A3).                                                        | all       | ✔    | ✖       | ◐           | ◐           | ✖     | ✖       | –   | **Partial** |
+| `resilience.window-closed-mid-start` The window closed while a lab starts: the start goes on in its worker, and the reopened app shows the lab running (tests/resilience.md A1).                                                                                                                                                       | all       | ✖    | ✖       | ✔           | ✖           | ✖     | ✖       | –   | **Partial** |
+| `resilience.double-start` Start pressed twice: one start runs, the other is refused as already in progress, one copy of the lab (tests/resilience.md S1).                                                                                                                                                                              | all       | ✔    | ✖       | ✔           | ✖           | ✖     | ✖       | –   | **Strong**  |
+| `resilience.stop-during-start` Stop pressed while the lab starts: the start ends, the lab is taken down and reads as stopped, nothing left, and a start again works (tests/resilience.md S2).                                                                                                                                          | all       | ✔    | ✖       | ✔           | ✖           | ✖     | ✖       | –   | **Strong**  |
+| `resilience.docker-stopped` Docker quit or stopped while a lab starts: the start says Docker isn't running, and a start once it is back works (tests/resilience.md T1).                                                                                                                                                                | all       | ✔    | ✖       | ✖           | ◐           | ✖     | ✖       | –   | **Partial** |
+| `resilience.files-deleted` The lab's generated files deleted while it runs: made again, so its page still sees it and its Stop takes it down; with its whole folder gone, the Stop says what may still run (tests/resilience.md F1, F2).                                                                                               | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –   | **Partial** |
+| `resilience.port-taken` A port the lab publishes held by another process at start: refused naming the port, nothing started, and a start once it is free works (tests/resilience.md N3).                                                                                                                                               | all       | ✖    | ✖       | ✖           | ✔           | ✖     | ✖       | –   | **Partial** |
+
+What the partial and missing tiers leave out:
+
+- `resilience.machine-removed`: Desktop E2E ✖ no spec removes a container under the real app and reads the health banner; Isothrum's own fake-engine and property tests (run/tests/disruptions*) hold the runner's side.
+- `resilience.machine-stopped`: Unit ✖ the launcher's own view of a stopped machine is the diagram's state words alone; Integration ◐ resilience-vm-powered-off powers off through Vagrant (halt --force), not each hypervisor's own Power Off; The lab page offers the resume (its repair control) to VM labs only; a Docker lab with a stopped container gets Reset.
+- `resilience.vm-destroyed`: Integration ◐ needs a hypervisor: run by the rig, never in CI; Isothrum's driver/vagrant/tests/disruptions.rs holds the refusal with its fake Vagrant.
+- `resilience.vm-killed-provisioning`: Integration ◐ throwaway machines only (CYBERCTF_TEST_RESILIENCE_THROWAWAY, CYBERCTF_TEST_RESILIENCE_VM_KILL)
+- `resilience.killed-start`: Desktop E2E ◐ kill-worker kills with SIGKILL, so it skips on Windows; Integration ◐ the tools a killed start ran outlive it (their own process groups); the scenarios wait for them, nothing ends them (tests/resilience.md A4)
+- `resilience.window-closed-mid-start`: Unit ✖ covered by the deploy worker's design only (it is no child of the window)
+- `resilience.docker-stopped`: Integration ◐ throwaway machines only (CYBERCTF_TEST_RESILIENCE_THROWAWAY, the OS's stop and start commands as knobs)
+- `resilience.files-deleted`: Integration ✖ no scenario deletes a running lab's files on the real engine
+
+<details><summary>The tests</summary>
+
+- `resilience.machine-removed` (docker): Unit: `src-tauri/src/runtime/isothrum/tests.rs > a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out`, `src-tauri/src/runtime/isothrum/errors.rs > a_resume_with_machines_removed_outside_names_them_and_says_to_start_again`, `src/features/labs/network-diagram/diagram.test.tsx > shows each machine's state in words`. Integration: `resilience-docker-removed`, `resilience-docker-removed-starting`.
+- `resilience.machine-stopped` (docker, libvirt, qemu, virtualbox, hyperv, utm): Integration: `resilience-docker-stopped`, `resilience-vm-powered-off`.
+- `resilience.vm-destroyed` (libvirt, qemu, virtualbox, hyperv): Integration: `resilience-vm-destroyed`.
+- `resilience.vm-killed-provisioning` (libvirt, qemu, virtualbox, hyperv): Integration: `resilience-vm-killed-provisioning`.
+- `resilience.killed-start`: Unit: `src-tauri/src/app/deploy_worker/files.rs > a_launch_whose_worker_was_killed_is_a_failed_launch_and_its_token_is_removed`, `src-tauri/src/app/deploy_worker/files.rs > a_killed_pause_is_its_own_failure_not_the_labs_launch`, `src-tauri/src/app/deploy_worker/files.rs > a_job_still_being_started_or_one_that_ended_is_not_lost`, `src-tauri/src/app/operations.rs > a_stale_pidfile_lists_no_operation_and_is_swept`. Desktop E2E: `kill-worker`. Integration: `resilience-docker-killed-start`, `resilience-vm-killed-start`.
+- `resilience.window-closed-mid-start`: Desktop E2E: `close-mid-deploy`.
+- `resilience.double-start`: Unit: `src-tauri/src/app/deploy_worker/process.rs > a_second_start_is_refused_while_the_first_worker_runs`. Desktop E2E: `double-start`.
+- `resilience.stop-during-start`: Unit: `src-tauri/src/app/deploy_worker.rs > nothing_starts_on_a_lab_while_it_stops`. Desktop E2E: `stop-during-start`.
+- `resilience.docker-stopped` (docker): Unit: `src-tauri/src/runtime/isothrum/errors.rs > docker_stopped_while_a_step_ran_reads_as_a_stopped_engine_on_this_machine_only`. Integration: `resilience-docker-daemon-stopped`.
+- `resilience.files-deleted`: Unit: `src-tauri/src/runtime/isothrum/tests.rs > a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_still_reach_it`, `src-tauri/src/runtime/isothrum/tests.rs > a_running_lab_whose_whole_folder_is_gone_says_what_is_left`.
+- `resilience.port-taken` (docker): Integration: `resilience-docker-port-taken`.
 
 </details>

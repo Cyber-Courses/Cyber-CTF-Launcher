@@ -406,7 +406,7 @@ spec fail-offline
 spec fail-badlab
 # Signed out: a run folder of its own, with no session in it.
 run_spec fail-signedout fail-signedout "$CASE_TIMEOUT" CYBERCTF_WDIO_ROOT="$RUN_ROOT/signed-out"
-DOCKER_SPECS="fail-docker launch restart stop launch-ui kill-mid-deploy attack-box attack-shell stop-with-box park-resume reimport-running attack-on-stopped lab-actions offline-start lab-form-container"
+DOCKER_SPECS="fail-docker launch restart stop launch-ui kill-mid-deploy stop-during-start double-start close-mid-deploy kill-worker attack-box attack-shell stop-with-box park-resume reimport-running attack-on-stopped lab-actions offline-start lab-form-container"
 if [ "$DOCKER_OK" -eq 1 ]; then
   spec fail-docker
   # Nothing of the lab up before launch, so a pass proves a real start and not a leftover;
@@ -415,7 +415,7 @@ if [ "$DOCKER_OK" -eq 1 ]; then
   spec launch
   spec restart
   spec stop
-  for s in launch-ui kill-mid-deploy attack-box attack-shell stop-with-box park-resume reimport-running attack-on-stopped lab-actions offline-start; do
+  for s in launch-ui kill-mid-deploy stop-during-start double-start close-mid-deploy kill-worker attack-box attack-shell stop-with-box park-resume reimport-running attack-on-stopped lab-actions offline-start; do
     cleanup_lab
     spec "$s"
   done
