@@ -90,8 +90,9 @@ fn pauses(target: lab::Target, provider: Option<&str>) -> bool {
 /// and shut down only here ([`park`] refuses elsewhere, and a cloud-services lab, which locates
 /// no run here, is never parked); provisioning on a lab run as VMs through Vagrant, here or on an
 /// ESXi host ([`provision`]); bringing machines that went down back ([`resume`], which runs here
-/// only) on a lab run as VMs here, a container lab run as one VM per machine included. None
-/// where nothing runs.
+/// only) on a lab run as VMs here, a container lab run as one VM per machine included, and on a
+/// container lab on Docker here (Compose starts its stopped containers again). None where nothing
+/// runs.
 pub(crate) fn controls(host: Option<&Host>, provider: Option<&str>) -> Vec<Control> {
     match host {
         Some(Host::Local(run)) => local_controls(run.target(), provider),
@@ -104,7 +105,10 @@ pub(crate) fn controls(host: Option<&Host>, provider: Option<&str>) -> Vec<Contr
 /// holds too.
 fn local_controls(target: lab::Target, provider: Option<&str>) -> Vec<Control> {
     let vms = target == lab::Target::Vagrant;
-    [(pauses(target, provider), Control::Pause), (shuts_down(target), Control::Shutdown), (vms, Control::Provision), (vms, Control::Repair)]
+    // Containers stopped outside the app (`docker stop`, Docker Desktop's Stop) come back with a
+    // resume as VMs do; one removed can't, and the page offers its reset instead.
+    let repairs = vms || target == lab::Target::Docker;
+    [(pauses(target, provider), Control::Pause), (shuts_down(target), Control::Shutdown), (vms, Control::Provision), (repairs, Control::Repair)]
         .into_iter()
         .filter_map(|(offered, c)| offered.then_some(c))
         .collect()
@@ -480,8 +484,10 @@ mod tests {
         let _tools = Tools::rules(&[]);
         let spec = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
         let dir = t.lab("t", &[("isoloom.yml", spec)]);
-        // Containers here: shut down only (nothing to save), no provisioning.
-        assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("docker")), (false, true, false, false));
+        // Containers here: shut down only (nothing to save), no provisioning; stopped containers
+        // brought back as they are (regression, tests/resilience.md M4: a Docker lab with a
+        // container stopped outside the app was offered a reset only).
+        assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("docker")), (false, true, false, true));
         // A VM lab here: both, provisioning and the repair; QEMU can't suspend.
         assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("virtualbox")), (true, true, true, true));
         assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("qemu")), (false, true, true, true));

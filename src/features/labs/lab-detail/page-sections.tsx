@@ -147,7 +147,7 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
                   void page.reset();
                 }
           }
-          onResume={s.canRepair && p.onResume ? () => void act("resume") : undefined}
+          onResume={s.canResumeDown && p.onResume ? () => void act("resume") : undefined}
         />
       )}
     </>

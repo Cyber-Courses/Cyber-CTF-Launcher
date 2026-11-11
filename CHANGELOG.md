@@ -296,6 +296,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A container stopped outside the app can be started again from the lab page.** A Docker lab
+  with a container stopped by `docker stop` or Docker Desktop's Stop was offered Reset only, though
+  a resume brings it back as it is (Compose starts its stopped services). The health banner now
+  offers **Start them** on a Docker lab too, while every machine that went down is still there;
+  a container removed outside the app can't be resumed, so the banner offers Reset alone then, on
+  a VM lab too.
+
 - **A VM box download that stalls or fails says so as the box.** The boxes a Vagrant start boots
   are downloaded in a step of their own (`boxes-<step>`); one that stopped making progress or
   failed was told as "the lab's images". It now reads "Downloading the lab's VM box stopped making

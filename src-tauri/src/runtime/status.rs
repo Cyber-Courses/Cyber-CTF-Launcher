@@ -407,7 +407,8 @@ mod tests {
         let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         let dir = t.lab("web", &[]);
         let docker = super::status(&t.dirs(), &dir, "web", Runtime::Docker).await.unwrap().controls;
-        assert_eq!(docker, [Control::Shutdown]);
+        // Containers stopped outside the app come back with a resume (tests/resilience.md M4).
+        assert_eq!(docker, [Control::Shutdown, Control::Repair]);
         let vm = super::status(&t.dirs(), &dir, "web", Runtime::Vm).await.unwrap().controls;
         assert_eq!(vm, [Control::Pause, Control::Shutdown, Control::Provision, Control::Repair]);
         assert_eq!(super::status(&t.dirs(), &dir, "web", Runtime::Cloud).await.unwrap().controls, [] as [Control; 0]);

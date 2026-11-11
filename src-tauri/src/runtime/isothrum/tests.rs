@@ -191,6 +191,24 @@ async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
     assert_eq!(start.env("CTF_LAUNCH_TOKEN"), Some(""), "the slot's default, which keeps the file");
 }
 
+/// Regression (tests/resilience.md M4): a container stopped outside the app (`docker stop`,
+/// Docker Desktop's Stop) while its lab ran could only be reset; a resume now starts it again
+/// with Compose, as it is, and the lab reads running.
+#[tokio::test]
+async fn a_container_stopped_outside_the_app_is_resumed_as_it_is() {
+    let f = Fixture::new();
+    let _tools = Tools::rules(&[]);
+    let run = f.up().await;
+    f.set(Containers::Stopped);
+    let down = run.status().await.unwrap();
+    let web = down.machines.iter().find(|m| m.name == "web").unwrap();
+    assert_ne!(web.state, "running");
+    run.resume(&mut |_| {}).await.unwrap();
+    assert!(f.fake.last(" start").is_some_and(|c| c.line().ends_with(" start")), "Compose starts the stopped services");
+    assert_eq!(f.fake.calls().iter().filter(|c| c.line().contains(" up --detach")).count(), 1, "nothing is rebuilt");
+    assert!(run.status().await.unwrap().running);
+}
+
 #[tokio::test]
 async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
     let (f, run, _tools) = up_then_parked().await;

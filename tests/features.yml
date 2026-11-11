@@ -4151,13 +4151,16 @@ areas:
           - hyperv
           - utm
         tests:
+          unit:
+            - src-tauri/src/runtime/isothrum/tests.rs > a_container_stopped_outside_the_app_is_resumed_as_it_is
+            - src-tauri/src/runtime/lifecycle.rs > the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs
+            - src/features/labs/lab-detail/lab-state.test.ts > offers to resume the machines that went down only while every one is still there
           integration:
             - resilience-docker-stopped
             - resilience-vm-powered-off
         gaps:
-          unit: the launcher's own view of a stopped machine is the diagram's state words alone
           integration: resilience-vm-powered-off powers off through Vagrant (halt --force), not each hypervisor's own Power Off
-        note: The lab page offers the resume (its repair control) to VM labs only; a Docker lab with a stopped container gets Reset.
+        note: The health banner offers Start them (the resume) on a VM lab and on a Docker lab here while every machine that went down is still there; one removed outside the app gets Reset only.
 
       - id: resilience.vm-destroyed
         what: "A VM destroyed outside the app (vagrant destroy, the hypervisor's Delete) while its lab runs: shown gone, a resume refused without making it again unprovisioned, and a start again rebuilds the lab (tests/resilience.md M5)."

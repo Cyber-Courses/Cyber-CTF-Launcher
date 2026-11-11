@@ -121,6 +121,10 @@ export function deriveLabState(i: LabStateInput) {
   // here, and "container" is the only place whose host ports can be swapped for random ones.
   const place = status?.place ?? null;
   const { canPause, canShutdown, canProvision, canRepair } = labControls(i);
+  // The machines that went down come back as they are (a resume) only when every one of them is
+  // still there, stopped: one removed outside the app ("absent") can't be, and the runner refuses
+  // the resume naming it, so the lab is reset (stopped, started again) instead.
+  const canResumeDown = canRepair && down.length > 0 && down.every((m) => m.state !== "absent");
 
   const phase = labPhase({ operation, running, starting, parked, interrupted, failed: !!i.startFailed && !deploying });
 
@@ -143,6 +147,7 @@ export function deriveLabState(i: LabStateInput) {
     canShutdown,
     canProvision,
     canRepair,
+    canResumeDown,
     phase,
   };
 }

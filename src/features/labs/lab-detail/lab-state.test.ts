@@ -85,6 +85,21 @@ describe("deriveLabState", () => {
     expect([unwired.canPause, unwired.canShutdown, unwired.canProvision]).toEqual([false, false, false]);
   });
 
+  it("offers to resume the machines that went down only while every one is still there", () => {
+    // Regression (tests/resilience.md M4): a Docker lab with a container stopped outside the app
+    // was offered a reset only; the backend now offers its repair, and the page the resume.
+    const controls: LabControl[] = ["shutdown", "repair"];
+    const stopped = [machine("web"), machine("db", "exited")];
+    const docker = derive({ status: status({ running: true, place: "container", controls, machines: stopped }) });
+    expect(docker.canResumeDown).toBe(true);
+    // A container removed outside the app can't be resumed: the reset brings the lab back.
+    const removed = [machine("web", "absent"), machine("db", "exited")];
+    expect(derive({ status: status({ running: true, place: "container", controls, machines: removed }) }).canResumeDown).toBe(false);
+    // Nothing down, or no repair where it runs: no resume.
+    expect(derive({ status: status({ running: true, place: "container", controls, machines: [machine("web")] }) }).canResumeDown).toBe(false);
+    expect(derive({ status: status({ running: true, place: "container", controls: ["shutdown"], machines: stopped }) }).canResumeDown).toBe(false);
+  });
+
   it("is native unless the lab is built for another CPU, and emulates with QEMU ready", () => {
     expect(derive({ runtime: vm, hostArch: "arm64" }).native).toBe(false);
     expect(derive({ runtime: vm, hostArch: "" }).native).toBe(true);
