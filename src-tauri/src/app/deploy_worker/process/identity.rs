@@ -150,10 +150,16 @@ mod tests {
         assert_ne!(other, me);
         child.kill().ok();
         child.wait().unwrap();
-        // Windows keeps an exited process's record while a handle to it is open, and `Child`
-        // holds one until it drops: gone only once nothing holds it.
+        // Windows keeps an exited process's record while any handle to it is open: `Child`'s
+        // until it drops, and another's for a moment after (a process listing in a test running
+        // beside this one, an antivirus). Its identity goes once nothing holds it; the id may name
+        // another process by then, never this one.
         let pid = child.id();
         drop(child);
-        assert_eq!(of(pid), None, "a reaped child is gone");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while of(pid) == Some(other) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert_ne!(of(pid), Some(other), "a reaped child is gone");
     }
 }
