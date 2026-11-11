@@ -44,6 +44,10 @@ the end of this page have been done for what the release changes.
 | `e2e-mock`        | `pnpm test:web`                           | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n     |
 | `e2e-native`      | `tests/desktop/run.sh`                    | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                              |
 
+`unit-web` and `unit-rust` run their tests with a temp folder of their own (`pnpm check:temp-leaks`):
+a test that leaves a file or folder there fails the step, so none piles up in the developer's temp
+folder. `CYBERCTF_TEST_TEMP_KEEP=1` keeps the folder to look into.
+
 Playwright starts the browser preview (`pnpm dev:web`) on port 3210, or reuses one already there;
 the preview builds into its own folder (`.next-web`), so it runs beside `pnpm tauri dev` and the
 native runner's dev server, which never serve the mock.

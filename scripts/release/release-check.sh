@@ -13,7 +13,8 @@
 #   SKIP="e2e-native" scripts/release/release-check.sh   what CI covers, without the native layer
 #
 # Steps, in order: prereqs, install, versions, docs, features, format, types, lint, build, quality, unit-web
-# (with the coverage floors), unit-rust, bindings (the generated types the Rust tests rewrote are
+# (with the coverage floors), unit-rust (each unit step fails on what its tests leave in their temp
+# folder, scripts/check/temp-leaks.ts), bindings (the generated types the Rust tests rewrote are
 # committed), docs-rust (rustdoc's intra-doc links), other-platforms (clippy for Linux and Windows, scripts/check/other-platforms.sh;
 # needs rustup), coverage-rust (when cargo-llvm-cov is installed), deny (when cargo-deny is),
 # audit, shellcheck and actionlint (when installed, as lint-infra.yml runs them), pins (every
@@ -76,8 +77,9 @@ step lint pnpm lint
 step build pnpm build
 step quality pnpm quality
 # The coverage run applies vitest.config.mts's floors, as web-coverage.yml does.
-step unit-web pnpm exec vitest run --coverage
-step unit-rust cargo test --manifest-path src-tauri/Cargo.toml
+# The unit tests run with a temp folder of their own: what they leave there fails the step.
+step unit-web pnpm check:temp-leaks pnpm exec vitest run --coverage
+step unit-rust pnpm check:temp-leaks cargo test --manifest-path src-tauri/Cargo.toml
 step bindings bindings_committed
 # Every intra-doc link resolves on this machine's items, as ci.yml's Docs step (the other
 # platforms' are other-platforms' -docs steps).

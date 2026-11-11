@@ -83,6 +83,7 @@ suite runners' selection (`scripts/lib/suite.sh`).
 | `CYBERCTF_TEST_SCREEN_VNC`                                                             | the real VNC bridge test (`screen/bridge.rs`)                                 | a VNC server with no password, `host:port` on loopback                                                                                       | `CYBERCTF_TEST_VNC`                          |
 | `CYBERCTF_TEST_DESKTOP_APP`                                                            | the desktop runner, the specs                                                 | the app (`--app`; default: the wdio debug build, built by the runner)                                                                        | `APP_BIN`                                    |
 | `CYBERCTF_TEST_DESKTOP_TIMEOUT`                                                        | the desktop runner                                                            | seconds for a spec with no VM in it (1800; the VM and server specs get 3 hours)                                                              | `CASE_TIMEOUT`                               |
+| `CYBERCTF_TEST_TEMP_KEEP`                                                              | `pnpm check:temp-leaks`                                                       | keep the unit tests' temp folder at the end, its path printed, to look into what they left                                                   |                                              |
 | `CYBERCTF_TEST_DESKTOP_KEEP`                                                           | the desktop runner                                                            | leave the fixture lab running and the run's folder in place at the end                                                                       | `KEEP`                                       |
 | `CYBERCTF_TEST_ACCOUNT_SESSION`                                                        | the desktop runner                                                            | a signed-in session (a `dev-session.json`), placed in the run's folder, where its app reads it whatever the build                            | `CYBERCTF_TEST_SESSION`                      |
 | `CYBERCTF_TEST_CATALOGUE_LAB`, `CYBERCTF_TEST_CATALOGUE_VM_LAB`                        | the signed-in specs, `lab-form-vm` and `screens`                              | the catalogue container lab (default `Supplier portal API`), a catalogue VM lab                                                              |                                              |
@@ -202,6 +203,11 @@ A failure found in the field goes to the lowest level that can reproduce it:
    test (`#[ignore = "needs …"]`) in `integration_tests/`, a `scenario` line in
    `tests/integration/run.sh`, and a row in [integration.md](../docs/testing/integration.md) saying what
    it guards against.
+
+A unit test removes what it writes in the temp folder: a Rust test takes its folder from
+`testing::temp_dir` (removed when it drops, a failed test's too), a TypeScript one removes its own
+in `afterEach` or `onTestFinished`. `pnpm check:temp-leaks` runs the unit tests with a temp folder
+of their own and fails on anything left in it; CI and `pnpm check` run them through it.
 
 ## The feature registry
 

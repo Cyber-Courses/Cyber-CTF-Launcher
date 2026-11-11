@@ -17,6 +17,7 @@
     "check:tauri": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check/tauri-versions.ts",
     "check:docs": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check/doc-links.ts",
     "check:features": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/features/main.ts",
+    "check:temp-leaks": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check/temp-leaks.ts",
     "features": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/features/main.ts --write",
     "quality": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/quality/main.ts",
     "check": "SKIP=e2e-native scripts/release/release-check.sh",

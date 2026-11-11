@@ -41,7 +41,8 @@ jobs:
       # Every test tests/features.yml names exists, everything a user can reach belongs to a
       # feature, and tests/FEATURES.md is what the registry makes.
       - run: pnpm check:features
-      - run: pnpm exec vitest run
+      # The unit tests with a temp folder of their own: what they leave there fails the step.
+      - run: pnpm check:temp-leaks pnpm exec vitest run
       # Known vulnerabilities in the npm packages the app ships (devDependencies are build tools).
       - run: pnpm audit --prod
 
@@ -89,7 +90,13 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: pnpm quality
       - name: Test
+        if: "!startsWith(matrix.os, 'ubuntu')"
         run: cargo test --manifest-path src-tauri/Cargo.toml
+      # On Linux, where Node is set up, with a temp folder of their own: what the tests leave there
+      # fails the step (scripts/check/temp-leaks.ts).
+      - name: Test, nothing left in the temp folder
+        if: startsWith(matrix.os, 'ubuntu')
+        run: pnpm check:temp-leaks cargo test --manifest-path src-tauri/Cargo.toml
       # The tests rewrite the TypeScript command types from the Rust structs (ts_bindings.rs):
       # a changed struct whose types weren't regenerated and committed fails here.
       - name: Generated TypeScript types are committed
