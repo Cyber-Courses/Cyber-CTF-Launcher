@@ -1,6 +1,6 @@
 name: CI
 
-# Every pull request and push to main or dev: the frontend (build, types, lint, format, tests, npm
+# Every pull request and push to main: the frontend (build, types, lint, format, tests, npm
 # audit), the Rust dependency policy (cargo deny), and the Rust core (format, lint, tests) on Linux,
 # macOS and Windows, so platform-specific code is at least compiled and tested on its own platform.
 # The Linux Rust leg also runs the quality ratchet.
@@ -8,9 +8,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, dev]
-  # The attack-box workflow's bump PR is opened with GITHUB_TOKEN, which starts no pull_request
-  # run; that workflow dispatches this one on the PR's branch instead.
+    branches: [main]
+  # The attack-box workflow's bump commit is pushed with GITHUB_TOKEN, which starts no push run;
+  # that workflow dispatches this one on main instead.
   workflow_dispatch:
 
 concurrency:

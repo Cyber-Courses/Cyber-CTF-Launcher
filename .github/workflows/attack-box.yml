@@ -7,8 +7,8 @@ name: Attack box image
 # smoke test passed on both architectures, so a broken Kali update never reaches players.
 # The launcher doesn't follow `latest`: its default is the image pinned by digest in
 # src-tauri/attack-box-image.json. Once a publish is out, the pushed digest is pulled and smoke-tested
-# again on both architectures, then a bot PR moves the launcher's default to it (and the labs
-# and CI workflows are dispatched on that PR, since a GITHUB_TOKEN PR starts no runs by itself).
+# again on both architectures, then a bot commit on main moves the launcher's default to it (and
+# the labs and CI workflows are dispatched on main, since a GITHUB_TOKEN push starts no runs).
 on:
   pull_request:
     paths: ["images/attack-box/**", ".github/workflows/attack-box.yml"]
@@ -144,51 +144,51 @@ jobs:
           docker pull -q "$PINNED"
           images/attack-box/smoke-test.sh "$PINNED"
 
-  # A PR moving the launcher's default attack box to the digest just published and verified.
+  # The launcher's default attack box moved to the digest just published and verified, committed
+  # straight to main (the repo's changes land on main, not through pull requests); a release
+  # carries it to players.
   bump:
     needs: [publish, verify]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
-      pull-requests: write
       actions: write
     env:
-      BRANCH: bot/attack-box-digest
       FILE: src-tauri/attack-box-image.json
     steps:
-      # The bump goes to dev, the staging branch; it reaches main with the next release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: dev
-      - name: Open or update the bump PR
+          ref: main
+      - name: Pin the image on main
         env:
           GH_TOKEN: ${{ github.token }}
           PINNED: ${{ env.IMAGE }}@${{ needs.publish.outputs.digest }}
         run: |
           set -euo pipefail
-          current=$(jq -er .image "$FILE")
-          if [ "$current" = "$PINNED" ]; then
-            echo "The launcher already pins $PINNED"
-            exit 0
-          fi
-          # The old default joins `previous`, so a player's saved old default moves to the new one.
-          jq --arg new "$PINNED" '.previous = ([.image] + .previous | map(select(. != $new)) | unique) | .image = $new' "$FILE" > "$RUNNER_TEMP/image.json"
-          mv "$RUNNER_TEMP/image.json" "$FILE"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -C "$BRANCH"
-          git commit -qam "Attack box: pin ${PINNED#*@}" -m "Published and smoke-tested by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
-          git push -f origin "$BRANCH"
-          title="Attack box: pin the $(date -u +%Y-%m-%d) image"
-          body="Moves the launcher's default attack box to \`$PINNED\` (\`$IMAGE:$(date -u +%Y-%m-%d)\`), published and smoke-tested on amd64 and arm64 by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. The labs and CI workflows run on this branch by dispatch."
-          # `gh pr edit` fails on repos that still list classic Projects; the REST call doesn't.
-          number=$(gh pr list --head "$BRANCH" --base dev --state open --json number -q '.[0].number')
-          if [ -n "$number" ]; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$number" -f title="$title" -f body="$body" > /dev/null
-          else
-            gh pr create --head "$BRANCH" --base dev --title "$title" --body "$body"
+          # Main may move while this runs: start again from its new tip, a few times.
+          pushed=false
+          for attempt in 1 2 3; do
+            git fetch -q --depth 1 origin main
+            git reset -q --hard FETCH_HEAD
+            if [ "$(jq -er .image "$FILE")" = "$PINNED" ]; then
+              echo "The launcher already pins $PINNED"
+              exit 0
+            fi
+            # The old default joins `previous`, so a player's saved old default moves to the new one.
+            jq --arg new "$PINNED" '.previous = ([.image] + .previous | map(select(. != $new)) | unique) | .image = $new' "$FILE" > "$RUNNER_TEMP/image.json"
+            mv "$RUNNER_TEMP/image.json" "$FILE"
+            git commit -qam "Attack box: pin ${PINNED#*@}" -m "Published and smoke-tested on amd64 and arm64 by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+            if git push origin HEAD:main; then pushed=true; break; fi
+            sleep $((attempt * 10))
+          done
+          if [ "$pushed" != true ]; then
+            echo "::error::could not push the new pin to main"
+            exit 1
           fi
-          # A GITHUB_TOKEN push starts no workflow; dispatched runs do, and report on the PR's commit.
-          gh workflow run labs.yml --ref "$BRANCH"
-          gh workflow run ci.yml --ref "$BRANCH"
+          echo "Main now pins $PINNED"
+          # A GITHUB_TOKEN push starts no workflow: the labs and CI run on the new pin by dispatch.
+          gh workflow run labs.yml --ref main
+          gh workflow run ci.yml --ref main

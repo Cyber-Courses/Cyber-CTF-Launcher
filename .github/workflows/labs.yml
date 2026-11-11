@@ -13,7 +13,7 @@ on:
       - "src-tauri/**"
       - ".github/workflows/labs.yml"
   push:
-    branches: [main, dev]
+    branches: [main]
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The exact attack box the launcher ships as its default, pinned by digest (the attack-box
-      # workflow's bump PR changes it, and dispatches this workflow on that PR).
+      # workflow's bump commit changes it, and dispatches this workflow on main).
       - name: Pinned attack box
         run: |
           set -euo pipefail
