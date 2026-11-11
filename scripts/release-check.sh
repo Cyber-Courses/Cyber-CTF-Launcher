@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# The gate before a release: every check CI runs on the app's code and its workflows (the
-# Terraform templates' validation stays in CI: it needs Terraform and the providers' registry),
-# plus the layer CI cannot run (the native GUI e2e, which needs a desktop session, a real Docker
-# engine and a hypervisor), in one command on a developer machine, with one line per step at the
-# end. Steps keep going after a failure so one
-# run reports everything that is wrong. docs/testing/release-check.md says what each step proves.
+# The gate before a release: every check CI runs on a pull request's code and workflows (ci.yml,
+# web-coverage.yml, coverage.yml, e2e.yml, lint-infra.yml), but the Terraform templates'
+# validation, which stays in CI: it needs Terraform and the providers' registry. Plus the layer CI
+# cannot run (the native GUI e2e, which needs a desktop session, a real Docker engine and a
+# hypervisor), in one command on a developer machine, with one line per step at the end. Steps
+# keep going after a failure so one run reports everything that is wrong. A runner run as a step
+# (other-platforms, e2e-native) that skipped some of its own steps is recorded `skip`, not `ok`.
+# docs/testing/release-check.md says what each step proves.
 #
 #   scripts/release-check.sh                     the whole gate (pnpm release-check)
 #   ONLY="unit-web e2e-mock" scripts/release-check.sh
@@ -15,7 +17,8 @@
 # committed), other-platforms (clippy for Linux and Windows, scripts/check-other-platforms.sh;
 # needs rustup), coverage-rust (when cargo-llvm-cov is installed), deny (when cargo-deny is),
 # audit, shellcheck and actionlint (when installed, as lint-infra.yml runs them), pins (every
-# action pinned to a commit SHA), e2e-mock (Playwright against the dev mock), e2e-native
+# action pinned to a commit SHA), store-listings (the app's JSON and the Microsoft Store listing,
+# as lint-infra.yml checks them; needs python3), e2e-mock (Playwright against the dev mock), e2e-native
 # (e2e/desktop/run.sh, which has its own knobs).
 #
 # Knobs:
@@ -98,7 +101,7 @@ step unit-web pnpm exec vitest run --coverage
 step unit-rust cargo test --manifest-path src-tauri/Cargo.toml
 step bindings bindings_committed
 # CI's clippy matrix for the other platforms, from here: the code behind their `#[cfg]`.
-if command -v rustup >/dev/null; then step other-platforms scripts/check-other-platforms.sh; else skip other-platforms "rustup not installed (https://rustup.rs)"; fi
+if command -v rustup >/dev/null; then nested other-platforms scripts/check-other-platforms.sh; else skip other-platforms "rustup not installed (https://rustup.rs)"; fi
 if has cargo llvm-cov; then step coverage-rust rust_cov; else skip coverage-rust "cargo-llvm-cov not installed (cargo install cargo-llvm-cov)"; fi
 if has cargo deny; then
   step deny cargo deny --manifest-path src-tauri/Cargo.toml check advisories bans licenses sources
@@ -110,9 +113,14 @@ step audit pnpm audit --prod
 if command -v shellcheck >/dev/null; then step shellcheck shellcheck_scripts; else skip shellcheck "shellcheck not installed (https://www.shellcheck.net)"; fi
 if command -v actionlint >/dev/null; then step actionlint actionlint -color; else skip actionlint "actionlint not installed (https://github.com/rhysd/actionlint)"; fi
 step pins actions_pinned
+if command -v python3 >/dev/null; then
+  step store-listings python3 .github/scripts/check-store-listings.py
+else
+  skip store-listings "python3 not installed"
+fi
 step e2e-mock e2e_mock
 case "$(uname -s)" in
-  Darwin | Linux) step e2e-native e2e/desktop/run.sh ;;
+  Darwin | Linux) nested e2e-native e2e/desktop/run.sh ;;
   *) skip e2e-native "run e2e/desktop/run.ps1 on Windows" ;;
 esac
 

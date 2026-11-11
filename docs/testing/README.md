@@ -12,8 +12,9 @@ is tested at the lowest level that can show it; the higher ones run before a rel
 | End-to-end, desktop | the real app binary through its embedded WebDriver, every feature, on a real Docker, hypervisor and server   | `e2e/desktop/specs/` ([desktop-e2e.md](desktop-e2e.md))        | `pnpm e2e:desktop` (`run.ps1` on Windows) | `native-e2e.yml` (manual, Linux); the test rig               |
 | Packaging           | the built bundle installed and launched (the MSI silently, then removed); the Windows installer's edge cases | `package-smoke.yml`; `packaging/windows/smoke-test.ps1`        | see each                                  | `package-smoke.yml`                                          |
 
-`pnpm release-check` runs every check CI runs but the Terraform templates' validation, plus the
-desktop end-to-end, one verdict per step
+`pnpm release-check` runs every check CI runs on a pull request's code (`ci.yml`,
+`web-coverage.yml`, `coverage.yml`, `e2e.yml`, `lint-infra.yml`) but the Terraform templates'
+validation, plus the desktop end-to-end, one verdict per step
 ([release-check.md](release-check.md)). [integration.md](integration.md) lists the integration
 scenarios and what each guards against; `infra/test-servers/` makes throwaway Proxmox and ESXi
 hosts for their server tier.

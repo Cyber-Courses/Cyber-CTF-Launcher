@@ -8,7 +8,10 @@ scripts/release-check.sh          # or: pnpm release-check
 ```
 
 It keeps going after a failure, so a single run lists everything that is wrong. `ONLY="…"` and
-`SKIP="…"` take step names. A release is ready when every step is `ok` and the manual checks at
+`SKIP="…"` take step names (the runners it runs as steps, `other-platforms` and `e2e-native`,
+don't see them). A step reads `skip` when its tool isn't installed, and so does a runner step that
+skipped some of its own steps (a missing cross target, Docker not running): its own summary above
+says which. A release is ready when every step is `ok` and the manual checks at
 the end of this page have been done for what the release changes.
 
 ## What each step proves
@@ -34,6 +37,7 @@ the end of this page have been done for what the release changes.
 | `shellcheck`      | `shellcheck`                              | a warning in the repository's shell scripts, as `lint-infra.yml` runs it; skipped when not installed                                                              |
 | `actionlint`      | `actionlint`                              | a mistake in the workflows, as `lint-infra.yml` runs it; skipped when not installed                                                                               |
 | `pins`            | `grep` of the workflows                   | an action not pinned to a full commit SHA (a tag can be moved to new code)                                                                                        |
+| `store-listings`  | `.github/scripts/check-store-listings.py` | a message catalogue or Store listing that doesn't parse, a listing over Partner Center's limits or naming a missing image; skipped without `python3`              |
 | `e2e-mock`        | `playwright test`                         | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n   |
 | `e2e-native`      | `e2e/desktop/run.sh`                      | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                            |
 
@@ -41,9 +45,9 @@ Next allows one dev server per checkout (its dev lock), so when one already serv
 (`pnpm tauri dev`, or the native runner's), the `e2e-mock` step runs Playwright against it
 instead of starting its own on port 3210.
 
-Every step but the last is what CI runs on every pull request (`ci.yml`, `web-coverage.yml`,
-`coverage.yml`, `e2e.yml`, `lint-infra.yml`), so on a green PR they mostly confirm the local
-checkout matches. The last one is the reason to run the gate. CI also validates the Terraform
+Every step but the last is what CI runs on a pull request (`ci.yml`, `web-coverage.yml`,
+`coverage.yml`, `e2e.yml`, and `lint-infra.yml` when the pull request touches the files it checks),
+so on a green PR they mostly confirm the local checkout matches. The last one is the reason to run the gate. CI also validates the Terraform
 templates (`lint-infra.yml`), which needs Terraform and its providers' registry: the gate leaves it
 to CI.
 

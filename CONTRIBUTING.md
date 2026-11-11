@@ -55,8 +55,11 @@ A pull request must pass what CI runs. `pnpm release-check` runs all of it on yo
 verdict per step ([docs/testing/release-check.md](docs/testing/release-check.md) lists them):
 versions, the docs' links, formatting, types, ESLint, the build, the quality ratchet, the unit
 tests with the coverage floors, the committed bindings, clippy for the other platforms, `cargo
-deny`, `pnpm audit`, shellcheck, actionlint, the actions' pins and Playwright against the dev
-mock. Only the Terraform templates' validation is left to CI. Before you push:
+deny`, `pnpm audit`, shellcheck, actionlint, the actions' pins, the Store listings' JSON and
+Playwright against the dev mock. Of the checks CI runs on a pull request, only the Terraform
+templates' validation is left to CI; the Docker labs end to end (`labs.yml`) and the packaged
+app's smoke test (`package-smoke.yml`) run in CI too. A step whose tool isn't installed, or a
+runner step that skipped some of its own steps, reads `skip`, not `ok`. Before you push:
 
 ```bash
 pnpm format                            # Prettier (TypeScript, CSS, Markdown) and rustfmt
