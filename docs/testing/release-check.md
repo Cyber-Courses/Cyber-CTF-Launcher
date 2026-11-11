@@ -54,7 +54,7 @@ to CI.
 ## The native layer
 
 `e2e/desktop/run.sh` drives the real app binary through its embedded WebDriver server;
-[desktop-e2e.md](desktop-e2e.md) has its scenarios, knobs and why a debug build needs the dev server.
+[desktop-e2e.md](desktop-e2e.md) has its scenarios, knobs and why an app from `cargo build` needs the dev server.
 
 ## What stays manual
 

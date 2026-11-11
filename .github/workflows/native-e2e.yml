@@ -1,7 +1,8 @@
 name: Native GUI e2e
 
-# The real app binary (a release build with the embedded WebDriver server, `--features wdio`)
-# driven through its own window under Xvfb, against the runner's Docker engine: the scenarios in
+# The real app binary (`pnpm tauri build`, which embeds the static export, with the embedded
+# WebDriver server, `--features wdio`, and the frontend's test hooks, `NEXT_PUBLIC_WDIO=1`) driven
+# through its own window under Xvfb, against the runner's Docker engine: the scenarios in
 # e2e/desktop/, as scripts/release-check.sh runs them on a developer machine (docs/testing/release-check.md).
 # Manual for now: the scenarios build the fixture lab's images and take a while, and a Linux
 # runner has no hypervisor, so the VM scan is skipped here (a Mac with UTM runs it locally).
@@ -27,13 +28,16 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           cache-shared-key: native-e2e
-          # A release build embeds the real frontend, so no dev server is needed under Xvfb.
+          # `tauri build` embeds the real frontend, so no dev server is needed under Xvfb.
           placeholder-frontend: "false"
-      - name: Build the frontend and the wdio app
-        run: |
-          set -euo pipefail
-          pnpm build
-          cargo build --release --manifest-path src-tauri/Cargo.toml --features wdio
+      # `tauri build`, not `cargo build --release`: only the Tauri CLI turns on the
+      # `custom-protocol` feature that embeds out/; a plain cargo build loads devUrl
+      # (localhost:3206), which nothing serves here. Its beforeBuildCommand (`pnpm build`) exports
+      # the frontend with NEXT_PUBLIC_WDIO=1, which keeps the __wdio_* hooks the scenarios call.
+      - name: Build the wdio app with its frontend
+        env:
+          NEXT_PUBLIC_WDIO: "1"
+        run: pnpm tauri build --features wdio --no-bundle
       - name: Run the native scenarios
         env:
           APP_BIN: ${{ github.workspace }}/src-tauri/target/release/cyberctf-desktop

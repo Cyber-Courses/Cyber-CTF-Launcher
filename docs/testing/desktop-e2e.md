@@ -17,9 +17,11 @@ pwsh -File e2e\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\.config\cybe
 pwsh -File e2e\desktop\run.ps1 -Package path\to\Cyber.CTF_1.8.9_x64_en-US.msi   # or the NSIS setup .exe
 ```
 
-Without `--app` or `--package` the runner builds the debug app with `--features wdio` and serves
-the frontend it loads (`next dev` on 3206, `tauri.conf.json`'s `devUrl`; a release build embeds
-`out/`). A package must be such a build too: `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`
+Without `--app` or `--package` the runner builds the app with `cargo build --features wdio` and
+serves the frontend such a build loads (`next dev` on 3206, `tauri.conf.json`'s `devUrl`; an app
+from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A package must be a
+`tauri build` with the hooks: `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`, as
+`native-e2e.yml` builds it
 (the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). Before the specs, the runner
 starts the app once and stops with a clear message when no WebDriver server answers. It checks out
 the fixture lab (the Invoice Portal API lab, under `infra/test-servers/.state/labs`, or
@@ -187,9 +189,10 @@ The summary's lines are the suite format the rig's Linux runner already reads
 
 ## Why the runner does what it does
 
-A debug build needs the dev server: Tauri's `generate_context!` loads `devUrl` in a debug build
-and the static export only in a release build, so a debug app started by hand shows a blank
-window until `next dev` answers on port 3206.
+An app from `cargo build` needs the dev server: the frontend is embedded only with Tauri's
+`custom-protocol` feature, which `pnpm tauri build` turns on and a plain `cargo build` doesn't,
+`--release` or not. Without it the app loads `devUrl`, and started by hand shows a blank window
+until `next dev` answers on port 3206.
 
 The specs force the page visible: the frontend pauses its polls while the document is hidden
 (`src/lib/visibility.ts`), and on macOS a window another one covers reports hidden, so a driven app

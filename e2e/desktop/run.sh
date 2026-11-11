@@ -20,7 +20,10 @@
 #   --knobs <file>        KEY=value lines (read literally, never sourced), exported first
 #
 # Knobs (environment, or the knobs file):
-#   APP_BIN                     the app (default: the wdio debug build, built here unless SKIP_BUILD)
+#   APP_BIN                     the app (default: the wdio `cargo build`, built here unless SKIP_BUILD,
+#                               which loads devUrl); one under target/release must come from
+#                               `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`, which embeds the
+#                               frontend with the hooks (a `cargo build --release` doesn't)
 #   CYBERCTF_TEST_LOCAL_LAB     the lab folder to import (default: a checkout of the Invoice Portal
 #                               API lab under infra/test-servers/.state/labs)
 #   CYBERCTF_TEST_SESSION       a signed-in session (a debug build's dev-session.json), placed at
@@ -107,7 +110,7 @@ if [ -z "${SKIP_BUILD:-}" ]; then
 fi
 [ -x "$APP_BIN" ] || fail_now "app binary not found or not executable: $APP_BIN"
 
-# --- The frontend a debug build loads (tauri.conf.json devUrl); a release build embeds it ----
+# --- The frontend a `cargo build` app loads (devUrl); a `tauri build` one embeds it ----------
 NEXT_PGID=""
 stop_frontend() {
   if [ -n "$NEXT_PGID" ]; then
