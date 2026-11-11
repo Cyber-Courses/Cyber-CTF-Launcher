@@ -1,7 +1,7 @@
 # Scripts
 
 The repo's own tooling, by purpose: `check/` the repository checks, `quality/` the ratchet,
-`release/` what a release runs, `lib/` what the runners share. Gates and suites run on a
+`release/` what a release runs, `features/` the feature registry's check and generator, `lib/` what the runners share. Gates and suites run on a
 developer machine, and the checks CI runs. Each runner takes `--help`, which prints its header
 (what it does, its knobs).
 
@@ -11,6 +11,7 @@ developer machine, and the checks CI runs. Each runner takes `--help`, which pri
 | `check/tauri-versions.ts`  | `pnpm check:tauri`                        | the Tauri JS plugins and Rust crates on matching versions                                                                       |
 | `check/other-platforms.sh` | `scripts/check/other-platforms.sh`        | clippy for Linux and Windows from any machine: the code behind another OS's `#[cfg]`, before CI's matrix                        |
 | `check/infra.sh`           | `scripts/check/infra.sh pins\|shellcheck` | the actions pinned to commit SHAs, and shellcheck on the shell scripts: one copy, run by `lint-infra.yml` and the release check |
+| `features/`                | `pnpm check:features`, `pnpm features`    | the feature registry (`tests/features.yml`) held to the tests and the code, and `tests/FEATURES.md` written from it             |
 | `quality/`                 | `pnpm quality`                            | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, unused crates                          |
 | `release/release-check.sh` | `pnpm release-check`                      | the gate before a release: CI's pull-request checks but the Terraform templates', plus the native e2e, one per step             |
 | `release/third-party.ts`   | `pnpm notices`, `pnpm sbom`               | THIRD_PARTY_NOTICES (cargo-about + the npm licences) and the CycloneDX SBOMs a release ships                                    |

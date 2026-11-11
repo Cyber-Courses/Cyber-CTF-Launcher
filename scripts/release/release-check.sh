@@ -12,7 +12,7 @@
 #   ONLY="unit-web e2e-mock" scripts/release/release-check.sh
 #   SKIP="e2e-native" scripts/release/release-check.sh   what CI covers, without the native layer
 #
-# Steps, in order: prereqs, install, versions, docs, format, types, lint, build, quality, unit-web
+# Steps, in order: prereqs, install, versions, docs, features, format, types, lint, build, quality, unit-web
 # (with the coverage floors), unit-rust, bindings (the generated types the Rust tests rewrote are
 # committed), docs-rust (rustdoc's intra-doc links), other-platforms (clippy for Linux and Windows, scripts/check/other-platforms.sh;
 # needs rustup), coverage-rust (when cargo-llvm-cov is installed), deny (when cargo-deny is),
@@ -80,6 +80,7 @@ step prereqs prereqs
 step install pnpm install --frozen-lockfile
 step versions pnpm check:tauri
 step docs pnpm check:docs
+step features pnpm check:features
 step format format_check
 step types pnpm typecheck
 step lint pnpm lint

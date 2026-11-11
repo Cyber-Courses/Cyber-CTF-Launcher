@@ -14,6 +14,9 @@ tests/
   desktop/lib/           what the specs share (support.mjs), what a run owns (owned.mjs), the run's folder
                          (run-root.sh; run.ps1's in suite.ps1), the smoke's launchers
   web/                   the Playwright specs against the dev mock, `<area>.spec.ts`, and their fixtures
+  features.yml           the feature registry: every feature the user sees, and the tests that check it per tier
+  FEATURES.md            made from it (`pnpm features`): how well each feature is checked, the biggest gaps first
+  features-rig.json      the test rig's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
 ```
 
 ## The tiers
@@ -190,6 +193,61 @@ A failure found in the field goes to the lowest level that can reproduce it:
    test (`#[ignore = "needs …"]`) in `integration_tests/`, a `scenario` line in
    `tests/integration/run.sh`, and a row in [integration.md](../docs/testing/integration.md) saying what
    it guards against.
+
+## The feature registry
+
+[`features.yml`](features.yml) lists what the launcher does for its user, area by area, and the
+tests that check each feature, tier by tier; [`FEATURES.md`](FEATURES.md) is made from it and says
+how well each feature is checked (Strong, Partial, Unchecked) and where the biggest gaps are.
+`pnpm check:features` (in `pnpm check` and CI) keeps it honest: every test it names exists, every
+command (`src-tauri/src/commands.rs`), screen, window and Settings section belongs to a feature, so
+does every integration scenario and desktop case, and FEATURES.md is up to date. The tooling is
+`scripts/features/`.
+
+A feature:
+
+```yaml
+- id: lab-run.vm # <area>.<kebab-case name>
+  what: Start and stop a VM lab on this machine's hypervisor.
+  platforms: [linux, macos, windows] # omitted: all three
+  providers: [libvirt, qemu, virtualbox, hyperv, utm]
+  host: true # it depends on the real machine: only a real-host tier (desktop, integration, setup, package) proves it
+  commands: [lab_launch] # the Tauri commands it is the home of (each command has one)
+  pages: [tab:labs] # route:/<path>, tab:<screen>, settings:<section>
+  tests:
+    unit:
+      - src-tauri/src/runtime/lab.rs > a_vm_lab_starts # a Rust test by its name
+      - src/features/labs/lab-store.test.ts # a whole test file
+    web:
+      - "vm-labs.spec.ts > on this machine: up, pause" # words of its title; quoted when they hold ": "
+    desktop: [lab-form-vm, lab-form-vm/running]
+    integration: [vm-lab]
+    setup: [selftest:vm]
+  rig: [vm, vm@qemu] # rig/MATRIX.md cells that run it: a column, `@<setup>` for the rows readied that way
+  gaps: # per tier, what its tests leave out: the tier shows ◐ with this note
+    integration: never run on Windows
+```
+
+A reference names a test exactly, and the check finds it:
+
+| Tier          | A reference                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------ |
+| `unit`        | a test file (`src/…/x.test.tsx`, a Rust file with tests), or `<file> > <Rust fn or title words>`       |
+| `web`         | `<spec>.spec.ts > <words of the test's title>`                                                         |
+| `desktop`     | a case of `tests/desktop/run.sh --list`, or `<case>/<check>` (a spec's `r.check`/`r.step` id)          |
+| `integration` | a scenario of `tests/integration/run.sh --list`, or `<Rust file> > <fn>` for an opt-in test            |
+| `package`     | the packaging check's file (`.github/workflows/package-smoke.yml`, `packaging/windows/smoke-test.ps1`) |
+| `setup`       | an item of `integration_tests::setup` (`docker`, `selftest:vm`, `plugin:<name>`…)                      |
+
+**Registering a new test.** Add it to the feature it checks, in its tier, then `pnpm features`
+and commit both files. A new integration scenario or desktop case fails the check until a feature
+claims it, as a new command or screen does until a feature is its home. A test that checks only
+part of a feature (it renders the page, it runs on Docker only) gets a `gaps` note for its tier:
+read the test, not its name. A feature that depends on the machine (`host: true`) is Strong only
+with a real-host tier that covers it and, when it names rig cells, one of them passed. A new
+feature, or a gap the registry should track, goes in the same file (`known_gaps` holds the ones
+being built or planned). After a rig run, `pnpm features --matrix ../rig/MATRIX.md` (from the
+workspace's submodule) refreshes the rig columns.
 
 ## Conventions
 

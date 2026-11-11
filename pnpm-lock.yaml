@@ -126,6 +126,9 @@ importers:
       webdriverio:
         specifier: ^10.1.0
         version: 10.1.0
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
 packages:
 

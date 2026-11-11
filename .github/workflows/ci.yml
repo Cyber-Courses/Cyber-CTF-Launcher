@@ -38,6 +38,9 @@ jobs:
       - run: pnpm format:check
       # Every relative link and #anchor in the Markdown resolves.
       - run: pnpm check:docs
+      # Every test tests/features.yml names exists, everything a user can reach belongs to a
+      # feature, and tests/FEATURES.md is what the registry makes.
+      - run: pnpm check:features
       - run: pnpm exec vitest run
       # Known vulnerabilities in the npm packages the app ships (devDependencies are build tools).
       - run: pnpm audit --prod
