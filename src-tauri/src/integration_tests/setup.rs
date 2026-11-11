@@ -1,8 +1,8 @@
 //! The launcher's guided machine setup on this machine, end to end and without a window: what the
 //! setup window would install, start or restart, in its order ([`crate::machine::setup::plan`],
 //! the plan the window renders), run through the functions the window's commands call, then the
-//! self-tests and an example lab. The test rig's `setup` suite runs it, pass after pass, on a bare
-//! Windows or Linux guest (`rig/README.md`, "The setup suite", in the launcher's workspace).
+//! self-tests and an example lab. A caller runs it pass after pass on a bare Windows or Linux
+//! machine (a throwaway one), restarting it or logging in again between passes as an item says.
 //!
 //! It installs real tools on this machine, as an administrator: never run it on a machine of
 //! yours. It returns at once without its knobs:

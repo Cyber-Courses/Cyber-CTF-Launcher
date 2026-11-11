@@ -6,7 +6,7 @@
 // it exercises the actual discover scan: the utmctl/virsh/Get-VM probe and the name matcher.
 // Docker is made unreachable for the app (deadDockerEnv), so only the hypervisor probe can report the
 // lab: its containers may still be up from the scenarios before.
-// Proven green on jarvis (libvirt), karen (Hyper-V) and a Mac with UTM.
+// Proven green on libvirt, Hyper-V and a Mac with UTM.
 import { connect, deadDockerEnv, finish, launchApp, results, sleep } from "../lib/support.mjs";
 
 const WANT = process.env.CYBERCTF_TEST_SCAN_LAB || "solo-web";

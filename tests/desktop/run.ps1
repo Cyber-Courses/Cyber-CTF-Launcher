@@ -5,7 +5,7 @@ developer alike. Must run in the logged-in desktop session (a scheduled task of 
 an SSH session): the app opens windows, and Docker Desktop and the credential store live there.
 
   pwsh -File tests\desktop\run.ps1 -All
-  pwsh -File tests\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\.config\cyberctf-test\e2e.env
+  pwsh -File tests\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\e2e.env
   pwsh -File tests\desktop\run.ps1 -App C:\path\to\cyberctf-desktop.exe
   pwsh -File tests\desktop\run.ps1 -Package C:\path\to\Cyber.CTF_1.8.9_x64_en-US.msi
   pwsh -File tests\desktop\run.ps1 -Results results.jsonl

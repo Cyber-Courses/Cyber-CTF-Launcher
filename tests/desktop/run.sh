@@ -14,7 +14,7 @@
 # the images and boxes that weren't on the machine when it started, the apps it launched.
 #
 #   tests/desktop/run.sh --all                                 # every spec (the default)
-#   tests/desktop/run.sh --specs "smoke settings" --knobs ~/.config/cyberctf-test/e2e.env
+#   tests/desktop/run.sh --specs "smoke settings" --knobs ~/e2e.env
 #   tests/desktop/run.sh --app path/to/cyberctf-desktop        # an app already built (no build here)
 #   tests/desktop/run.sh --skip-build                          # the debug build as it is
 #   tests/desktop/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # or an .AppImage, an .rpm

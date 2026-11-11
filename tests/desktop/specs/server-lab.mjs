@@ -52,9 +52,7 @@ function settings() {
 const env = settings();
 const KIND = env.CYBERCTF_TEST_PVE_HOST && env.CYBERCTF_TEST_PVE_TOKEN_ID ? "proxmox" : env.CYBERCTF_TEST_ESXI_HOST ? "esxi" : null;
 if (!KIND)
-  r.skipAll(
-    "no server: set CYBERCTF_TEST_SERVER_ENV to a file with CYBERCTF_TEST_PVE_HOST/_TOKEN_ID/_TOKEN_SECRET or CYBERCTF_TEST_ESXI_HOST/_PASSWORD (rig-proxmox.env, rig-esxi.env)",
-  );
+  r.skipAll("no server: set CYBERCTF_TEST_SERVER_ENV to a file with CYBERCTF_TEST_PVE_HOST/_TOKEN_ID/_TOKEN_SECRET or CYBERCTF_TEST_ESXI_HOST/_PASSWORD");
 const NAME = `e2e ${KIND} ${process.pid}`;
 const LAB = env.CYBERCTF_TEST_SERVER_LAB || CATALOGUE_LAB;
 

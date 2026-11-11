@@ -6,14 +6,14 @@ run on Linux, Windows and macOS. One entry point a system:
 
 ```sh
 tests/desktop/run.sh --all                                   # Linux, macOS
-tests/desktop/run.sh --specs "smoke settings" --knobs ~/.config/cyberctf-test/e2e.env
+tests/desktop/run.sh --specs "smoke settings" --knobs ~/e2e.env
 tests/desktop/run.sh --app path/to/cyberctf-desktop          # an app already built
 tests/desktop/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # .deb, .rpm or .AppImage, unpacked
 ```
 
 ```powershell
 pwsh -File tests\desktop\run.ps1 -All                        # Windows, in the desktop session
-pwsh -File tests\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\.config\cyberctf-test\e2e.env
+pwsh -File tests\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\e2e.env
 pwsh -File tests\desktop\run.ps1 -Package path\to\Cyber.CTF_1.8.9_x64_en-US.msi   # or the NSIS setup .exe
 ```
 
@@ -151,31 +151,31 @@ On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` 
 `-<instance>` when `labs/<id>/.cyberctf-instance` holds a number, and run
 `tests/desktop/specs/vm-scan.mjs` with `CYBERCTF_TEST_SCAN_LAB=<lab id>`.
 
-## On the test rig
+## On a test machine
 
-The rig (the workspace's `rig/`) runs the set on a fresh Linux or Windows clone, in the logged-in
-desktop session (on Windows a scheduled task of that account; on a headless Linux,
-`xvfb-run -a dbus-run-session --`). Its knobs file, outside every repository
-(`~/.config/cyberctf-test/e2e.env`, mode 600):
+A caller that runs the set on a fresh Linux or Windows machine runs it in the logged-in desktop
+session (on Windows a scheduled task of that account; on a headless Linux,
+`xvfb-run -a dbus-run-session --`). Its knobs file goes anywhere outside the repository, mode
+600, `~/e2e.env` say:
 
 ```sh
 CYBERCTF_TEST_VM_PROVIDER=libvirt            # hyperv or virtualbox on Windows
-CYBERCTF_TEST_ACCOUNT_SESSION=/home/vagrant/.config/cyberctf-test/launcher-session.json
+CYBERCTF_TEST_ACCOUNT_SESSION=/path/to/session.json
 CYBERCTF_TEST_CATALOGUE_VM_LAB=<a catalogue VM lab's title>
-CYBERCTF_TEST_SERVER_ENV=/home/vagrant/.config/cyberctf-test/rig-proxmox.env
+CYBERCTF_TEST_SERVER_ENV=/path/to/server.env
 ```
 
-Then, from the launcher's checkout in the clone:
+Then, from the launcher's checkout:
 
 ```sh
-xvfb-run -a dbus-run-session -- tests/desktop/run.sh --all --knobs ~/.config/cyberctf-test/e2e.env
+xvfb-run -a dbus-run-session -- tests/desktop/run.sh --all --knobs ~/e2e.env
 ```
 
 ```powershell
-pwsh -File tests\desktop\run.ps1 -All -Knobs $HOME\.config\cyberctf-test\e2e.env
+pwsh -File tests\desktop\run.ps1 -All -Knobs $HOME\e2e.env
 ```
 
-The rig reads the records `--results` writes ([tests/README.md](../../tests/README.md#results)):
+Such a caller reads the records `--results` writes ([tests/README.md](../../tests/README.md#results)):
 a line per spec, and a line per check as `<spec>/<check>`; the summary on screen says the same.
 
 ## Why the runner does what it does

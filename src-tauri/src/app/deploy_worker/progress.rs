@@ -269,7 +269,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn a_worker_gone_without_a_status_says_how_it_ended_and_its_last_line() {
-        // Regression (karen, Windows): a worker that died mid-download left the app saying only
+        // Regression (Windows): a worker that died mid-download left the app saying only
         // "stopped without a result (see its log)"; the next start then emptied that log.
         use std::os::unix::process::ExitStatusExt;
         let (dir, s) = spawned("tail-crashed");

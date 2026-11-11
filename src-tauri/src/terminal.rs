@@ -540,7 +540,7 @@ mod tests {
 
     #[test]
     fn a_bare_program_runs_as_windows_finds_it_through_pathext_not_an_extensionless_file() {
-        // Regression (karen): Docker Desktop's bin folder holds `docker` (a script) and
+        // Regression (Windows): Docker Desktop's bin folder holds `docker` (a script) and
         // `docker.exe`; the shell was started on the script and Windows refused it.
         let dir = crate::testing::temp_dir("pathext");
         std::fs::write(dir.join("docker"), "#!/bin/sh").unwrap();

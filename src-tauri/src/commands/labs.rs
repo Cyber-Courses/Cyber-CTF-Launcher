@@ -484,7 +484,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_lab_that_isnt_installed_reads_as_not_running() {
-        // Regression (karen): a launch whose worker died in its download left the lab not
+        // Regression (Windows): a launch whose worker died in its download left the lab not
         // installed, and the attack box started with each lab, reading its status when the launch
         // ended, told "The attack box couldn't be added with the lab: lab … is not installed".
         let t = TestApp::new();
