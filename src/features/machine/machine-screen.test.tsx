@@ -730,6 +730,9 @@ describe("MachineScreen", () => {
     expect(screen.queryByText("Providers")).toBeNull();
     const empty = screen.getByRole("region", { name: "No provider installed" });
     expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No provider installed");
+    // What Add a provider offers on this Linux machine, by their marks, as decoration.
+    const marks = must(empty.querySelector("ul[aria-hidden]"), "the providers' marks");
+    expect(marks.textContent).toMatch(/Docker.*VirtualBox/);
     expect(screen.queryByRole("button", { name: /^(fix|test|add)$/i })).toBeNull();
     expect(screen.getAllByRole("button", { name: /add a provider/i })).toHaveLength(1);
     await user.click(within(empty).getByRole("button", { name: /add a provider/i }));

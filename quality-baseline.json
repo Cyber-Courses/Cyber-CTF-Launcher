@@ -39,6 +39,9 @@
     "src/components/shell/use-shell-setup.ts": {
       "eslint-disable-next-line react-hooks/set-state-in-effect -- read once on mount: the window marker and localStorage don't exist during the static render": 1
     },
+    "src/components/ui/logo-tile.tsx": {
+      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
+    },
     "src/features/account/account.tsx": {
       "eslint-disable-next-line @next/next/no-img-element -- static export, a remote picture": 1
     },
@@ -52,12 +55,6 @@
       "eslint-disable-next-line react-hooks/exhaustive-deps -- sig captures everything drawn": 1
     },
     "src/features/labs/run-on-options.tsx": {
-      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
-    },
-    "src/features/machine/engine-logo.tsx": {
-      "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 2
-    },
-    "src/features/machine/hypervisor-logo.tsx": {
       "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
     },
     "src/features/servers/host-setup/form.tsx": {

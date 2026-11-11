@@ -59,6 +59,21 @@ for (const theme of ["dark", "light"] as const) {
       });
     }
 
+    // The empty pages: the shared empty state with its provider chips (the cloud ones buttons).
+    for (const [tab, query, title] of [
+      ["Servers", "&servers=none", "No server connected"],
+      ["Cloud", "&cloud=none", "No cloud account connected"],
+      ["Machine", "&machine=fresh", "No provider installed"],
+    ] as const) {
+      test(`the empty ${tab} screen passes too`, async ({ page }) => {
+        await openApp(page, query);
+        await navButton(page, tab).click();
+        await expect(page.locator("main").getByRole("region", { name: title })).toBeVisible();
+        await animationsFinished(page);
+        expect(await violations(page)).toEqual([]);
+      });
+    }
+
     test("a running lab's page, with its diagram, passes too", async ({ page }) => {
       await openLab(page, "Invoice portal API");
       // The diagram fades in once laid out (it waits at opacity 0 till then, which no animation

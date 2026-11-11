@@ -110,7 +110,7 @@ function MachineBody({
       <LowDiskCallout m={m} />
       {/* The providers: every container engine and hypervisor installed here, nothing for the rest. */}
       {noProvider ? (
-        <MachineEmptyState onUseServer={toServers} />
+        <MachineEmptyState report={report} onUseServer={toServers} />
       ) : (
         <Panel>
           <PanelHeader title={t("machine.screen.providers")} meta={t("machine.screen.providersMeta")} />

@@ -42,14 +42,14 @@ test.describe("servers and cloud", () => {
   });
 });
 
-// Each page's empty state, through the shared EmptyState: a region named by its h3, and the one
-// action that fills the page (the header has no copy of it then). `servers=none`, `cloud=none`:
+// Each page's empty state, through the shared EmptyState: a region named by its h3, the providers
+// it takes as logos, and the one action that fills the page (the header has no copy of it then). `servers=none`, `cloud=none`:
 // no saved server or cloud account; `machine=fresh`: no engine or hypervisor installed.
 test.describe("empty states", () => {
   const pages = [
-    { nav: "Servers", query: "&servers=none", title: "No server connected", action: "Add server" },
-    { nav: "Cloud", query: "&cloud=none", title: "No cloud account connected", action: "Set up cloud provider" },
-    { nav: "Machine", query: "&machine=fresh", title: "No provider installed", action: "Add a provider" },
+    { nav: "Servers", query: "&servers=none", title: "No server connected", action: "Add server", marks: ["Proxmox", "VMware ESXi"] },
+    { nav: "Cloud", query: "&cloud=none", title: "No cloud account connected", action: "Set up cloud provider", marks: ["AWS", "Azure", "Google Cloud"] },
+    { nav: "Machine", query: "&machine=fresh", title: "No provider installed", action: "Add a provider", marks: ["Docker Desktop", "UTM"] },
   ];
   for (const p of pages) {
     test(`${p.nav} shows its heading and its one action`, async ({ page }) => {
@@ -58,10 +58,20 @@ test.describe("empty states", () => {
       await expect(pageTitle(page)).toHaveText(p.nav);
       const empty = page.locator("main").getByRole("region", { name: p.title });
       await expect(empty.getByRole("heading", { level: 3, name: p.title })).toBeVisible();
+      for (const name of p.marks) await expect(empty.locator("ul li").filter({ hasText: name }).first()).toBeVisible();
       await expect(empty.getByRole("button", { name: p.action })).toBeVisible();
       await expect(page.locator("main").getByRole("button", { name: p.action })).toHaveCount(1);
     });
   }
+
+  test("Cloud's logos open the setup on their provider, with no Connect row apart", async ({ page, context }) => {
+    await openApp(page, "&cloud=none");
+    await navButton(page, "Cloud").click();
+    await expect(page.locator("main").getByRole("region", { name: "Connect a cloud provider" })).toHaveCount(0);
+    const empty = page.locator("main").getByRole("region", { name: "No cloud account connected" });
+    const [setup] = await Promise.all([context.waitForEvent("page"), empty.getByRole("button", { name: "Connect Azure" }).click()]);
+    await expect(setup).toHaveURL(/\/server-setup\?kind=cloud&provider=azure&mock&cloud=none$/);
+  });
 
   test("Machine's empty state offers a server instead", async ({ page }) => {
     await openApp(page, "&machine=fresh");

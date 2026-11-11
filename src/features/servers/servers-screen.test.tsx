@@ -12,6 +12,7 @@ import { SELFTEST_STEPS, type ServerHost, type ServerList, type ServerTest, type
 import { freshReport } from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, rejects, stream, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
+import { must } from "@/components/test-support";
 
 const sample = () => structuredClone(answer("server_list", undefined) as ServerList);
 const [pve, esxi] = sample().hosts;
@@ -298,6 +299,10 @@ describe("ServerScreen", () => {
     // The empty state carries the one Add server: the header has none of its own then.
     const empty = screen.getByRole("region", { name: "No server connected" });
     expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No server connected");
+    // The servers it takes, as decoration before Add server: Proxmox's logo, ESXi's neutral glyph.
+    const marks = must(empty.querySelector("ul[aria-hidden]"), "the servers' marks");
+    expect([...marks.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Proxmox", "VMware ESXi"]);
+    expect([...marks.querySelectorAll("img")].map((i) => i.getAttribute("src"))).toEqual(["/brands/proxmox-icon.svg"]);
     expect(screen.getAllByRole("button", { name: /add server/i })).toHaveLength(1);
     await user.click(within(empty).getByRole("button", { name: /add server/i }));
     await flush();

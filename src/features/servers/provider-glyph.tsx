@@ -12,6 +12,9 @@ const LOGO: Partial<Record<RemoteProvider, { src: string; alt: string }>> = {
   ...Object.fromEntries(CLOUD_PROVIDERS.map((id) => [id, { src: cloudLogo(id), alt: PROVIDER_NAMES[id] }])),
 };
 
+/** A host's mark, when we ship one (none for VMware ESXi: see above). */
+export const providerLogo = (provider: RemoteProvider): string | undefined => LOGO[provider]?.src;
+
 /** The leading mark for a host row: the provider's logo in a tile when we have one, else a
  *  neutral badge in the same tile, so every row's glyph lines up. */
 export function ProviderGlyph({ provider }: { provider: RemoteProvider }) {

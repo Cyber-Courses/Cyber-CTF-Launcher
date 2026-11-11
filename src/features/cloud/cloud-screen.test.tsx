@@ -92,15 +92,17 @@ describe("CloudScreen", () => {
     await removeAccount(user);
     expect(argsOf(calls, "server_remove")).toEqual([{ id: aws.id }]);
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-    // The empty state, then the same Connect row the accounts have under them, with every provider.
+    // The empty state, with every main provider's logo in it, a shortcut into its setup, before
+    // the one Set up: no Connect row of its own under it.
     const empty = screen.getByRole("region", { name: "No cloud account connected" });
     expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No cloud account connected");
     expect(within(empty).getByRole("button", { name: /set up cloud provider/i })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /^Connect / }).map((b) => b.getAttribute("aria-label"))).toEqual([
-      "Connect AWS",
-      "Connect Azure",
-      "Connect Google Cloud",
-    ]);
+    expect(screen.queryByRole("region", { name: "Connect a cloud provider" })).toBeNull();
+    expect(
+      within(empty)
+        .getAllByRole("button", { name: /^Connect / })
+        .map((b) => b.getAttribute("aria-label")),
+    ).toEqual(["Connect AWS", "Connect Azure", "Connect Google Cloud"]);
   });
 
   it("reads this month's spend for an account with a budget and warns when it is over", async () => {
