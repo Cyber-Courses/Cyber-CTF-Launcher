@@ -12,9 +12,8 @@
 use std::path::Path;
 
 use serde::Serialize;
-use sha2::{Digest, Sha512};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::platform::redact;
 use crate::runtime::server::secrets;
 
@@ -54,71 +53,21 @@ fn generate() -> String {
     (0..GROUPS).map(|_| group()).collect::<Vec<_>>().join("-")
 }
 
-/// The characters of a crypt hash's salt and its encoding.
-const CRYPT64: &[u8] = b"./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+/// The salt's random bytes: 12, its 16 characters in the hash (SHA-crypt's longest).
+const SALT_BYTES: usize = 12;
 
-/// `password`'s SHA-512 crypt hash with `salt` (at most 16 characters of [`CRYPT64`]) at the
-/// default 5000 rounds (`$6$<salt>$<hash>`), as glibc's `crypt` and `openssl passwd -6` make it:
-/// what `/etc/shadow` holds, and `chpasswd -e` takes.
-fn sha512_crypt(password: &str, salt: &str) -> String {
-    const ROUNDS: usize = 5000;
-    let (key, salt) = (password.as_bytes(), &salt.as_bytes()[..salt.len().min(16)]);
-    // `len` bytes of `digest`, repeated: whole digests, then the start of one.
-    let spread = |digest: &[u8], len: usize| -> Vec<u8> { digest.iter().copied().cycle().take(len).collect() };
-    let alternate = Sha512::new().chain_update(key).chain_update(salt).chain_update(key).finalize();
-    let mut first = Sha512::new().chain_update(key).chain_update(salt);
-    first.update(spread(&alternate, key.len()));
-    let mut bits = key.len();
-    while bits > 0 {
-        if bits & 1 == 1 {
-            first.update(alternate);
-        } else {
-            first.update(key);
-        }
-        bits >>= 1;
-    }
-    let mut digest = first.finalize();
-    let key_digest = key.iter().fold(Sha512::new(), |d, _| d.chain_update(key)).finalize();
-    let key_bytes = spread(&key_digest, key.len());
-    let salt_digest = (0..16 + usize::from(digest[0])).fold(Sha512::new(), |d, _| d.chain_update(salt)).finalize();
-    let salt_bytes = spread(&salt_digest, salt.len());
-    for round in 0..ROUNDS {
-        let mut next = Sha512::new();
-        if round % 2 == 1 {
-            next.update(&key_bytes);
-        } else {
-            next.update(digest);
-        }
-        if round % 3 != 0 {
-            next.update(&salt_bytes);
-        }
-        if round % 7 != 0 {
-            next.update(&key_bytes);
-        }
-        if round % 2 == 1 {
-            next.update(digest);
-        } else {
-            next.update(&key_bytes);
-        }
-        digest = next.finalize();
-    }
-    // Its 64 bytes in 21 groups of three, in crypt's order, then the last alone.
-    let mut out = format!("$6${}$", String::from_utf8_lossy(salt));
-    let mut put = |word: u32, chars: usize| {
-        (0..chars).for_each(|i| out.push(char::from(CRYPT64[((word >> (6 * i)) & 0x3f) as usize])));
-    };
-    for group in 0..21 {
-        let at = group * 22 % 63;
-        put(u32::from(digest[at]) << 16 | u32::from(digest[(at + 21) % 63]) << 8 | u32::from(digest[(at + 42) % 63]), 4);
-    }
-    put(u32::from(digest[63]), 2);
-    out
-}
-
-/// `password`'s SHA-512 crypt hash, with a new random salt.
-fn hash(password: &str) -> String {
-    let salt: String = (0..16).map(|_| char::from(CRYPT64[rand::random_range(0..CRYPT64.len())])).collect();
-    sha512_crypt(password, &salt)
+/// `password`'s SHA-512 crypt hash (`$6$rounds=5000$<salt>$<hash>`: what `/etc/shadow` holds, and
+/// `chpasswd -e` takes), by the `sha-crypt` crate (`RustCrypto`) at its default rounds, its salt
+/// from the operating system's random generator.
+fn hash(password: &str) -> Result<String> {
+    use rand::TryRng as _;
+    use sha_crypt::PasswordHasher as _;
+    let mut salt = [0u8; SALT_BYTES];
+    rand::rngs::SysRng.try_fill_bytes(&mut salt).map_err(|e| Error::Invalid(format!("the system gave no random salt: {e}")))?;
+    let hash = sha_crypt::ShaCrypt::SHA512
+        .hash_password_with_salt(password.as_bytes(), &salt)
+        .map_err(|e| Error::Invalid(format!("the attack box's password couldn't be hashed: {e}")))?;
+    Ok(hash.as_str().to_owned())
 }
 
 /// Its store's name for the box of the lab in `dir` (the lab's folder, named after its id).
@@ -131,8 +80,9 @@ fn entry(dir: &Path) -> String {
 pub(super) fn new(dir: &Path) -> Result<String> {
     let password = generate();
     redact::register(&password);
+    let hashed = hash(&password)?;
     secrets::set_named(&entry(dir), &password)?;
-    Ok(hash(&password))
+    Ok(hashed)
 }
 
 /// The password kept for the box of the lab in `dir`, registered with the redaction; none when
@@ -183,31 +133,44 @@ mod tests {
         assert_eq!(every.len(), ALPHABET.len(), "every character of the alphabet comes up");
     }
 
+    /// Whether `hash` (a crypt hash) is `password`'s, as the crate checks it.
+    fn verifies(password: &str, hash: &str) -> bool {
+        use sha_crypt::PasswordVerifier as _;
+        let hash = sha_crypt::PasswordHashRef::new(hash).expect("a crypt hash");
+        sha_crypt::ShaCrypt::SHA512.verify_password(password.as_bytes(), hash).is_ok()
+    }
+
     #[test]
     fn the_hash_is_sha512_crypt_as_openssl_and_glibc_make_it() {
-        // `printf %s <password> | openssl passwd -6 -salt <salt> -stdin`; the first is the
-        // reference's own (Drepper's SHA-crypt), the second a password longer than a digest.
-        let cases = [
-            ("Hello world!", "saltstring", "$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1"),
+        use sha_crypt::{CustomizedPasswordHasher as _, Params};
+        // `printf %s <password> | openssl passwd -6 -salt <salt> -stdin`: the first is the
+        // reference's own (Drepper's SHA-crypt), the second a password longer than a digest. The
+        // crate takes each, and refuses another password.
+        let openssl = [
+            ("Hello world!", "$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1"),
             (
                 "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789-long",
-                "Ab3/xY.z0123456",
                 "$6$Ab3/xY.z0123456$T3m9IgK/KG8RgqimjGQDIcX79mrpX7TGAhkMtThOUmoBscYmCG6jSjI5pb11Q9aqTFM2spulWmtMapy.OQeNp1",
             ),
-            (
-                "k7mPq-ZrT4w-Hn8Xc-Ls2Vd",
-                "0123456789abcdef",
-                "$6$0123456789abcdef$ofB0elLlK2vJI4M8vL3YpO5oegGXyVGEH6EntIjglU/mS1kHecuy5ZBL4ZN0S.aXfnQ5ZLTPwYD5M8riatiLD0",
-            ),
+            ("k7mPq-ZrT4w-Hn8Xc-Ls2Vd", "$6$0123456789abcdef$ofB0elLlK2vJI4M8vL3YpO5oegGXyVGEH6EntIjglU/mS1kHecuy5ZBL4ZN0S.aXfnQ5ZLTPwYD5M8riatiLD0"),
         ];
-        for (password, salt, expected) in cases {
-            assert_eq!(sha512_crypt(password, salt), expected, "{password}");
+        for (password, hash) in openssl {
+            assert!(verifies(password, hash), "{password}");
+            assert!(!verifies("not-it", hash), "{password}");
         }
-        let (a, b) = (hash("same"), hash("same"));
+        // The crate's own hash, as `hash` makes it (its rounds written out), for the salt it makes
+        // of 12 bytes: the digest openssl makes for that salt (`-salt XZbMZ7rMoNK9n34P`).
+        let password = b"k7mpq-zrt4w-hn8xc-ls2vd";
+        let made = sha_crypt::ShaCrypt::SHA512.hash_password_customized(password, b"cyberctf-sal", None, None, Params::RECOMMENDED).unwrap();
+        let openssl = "$6$XZbMZ7rMoNK9n34P$eNhifv2Ihpd0/B0NXuFHXfOcjID582gRPMmYXcp9.y3Yos9JYoq.gJ/qghYhxvrYTq4ssC9QS96p8Aa0WqSCE.";
+        assert_eq!(made.as_str(), openssl.replacen("$6$", "$6$rounds=5000$", 1));
+        // A new one: the default rounds, 16 characters of new salt each time, the password's.
+        let (a, b) = (hash("same-password").unwrap(), hash("same-password").unwrap());
         assert_ne!(a, b, "a new salt each time");
-        let salt = a.split('$').nth(2).unwrap();
-        assert!(salt.len() == 16 && salt.bytes().all(|c| CRYPT64.contains(&c)), "{a}");
-        assert_eq!(sha512_crypt("same", salt), a);
+        let fields: Vec<&str> = a.split('$').collect();
+        assert_eq!(fields[..3], ["", "6", "rounds=5000"], "{a}");
+        assert_eq!(fields[3].len(), 16, "{a}");
+        assert!(verifies("same-password", &a) && !verifies("same-passwore", &a));
     }
 
     #[test]
@@ -216,8 +179,7 @@ mod tests {
         assert_eq!(kept(&dir).unwrap(), None, "none before the box is added");
         let hashed = new(&dir).unwrap();
         let password = kept(&dir).unwrap().expect("kept");
-        let salt = hashed.split('$').nth(2).unwrap();
-        assert_eq!(sha512_crypt(&password, salt), hashed, "the box gets the kept password's hash");
+        assert!(verifies(&password, &hashed), "the box gets the kept password's hash");
         assert!(!hashed.contains(&password));
         let line = format!("the box's password is {password}");
         assert_eq!(crate::platform::redact::redact(&line), "the box's password is [redacted]");

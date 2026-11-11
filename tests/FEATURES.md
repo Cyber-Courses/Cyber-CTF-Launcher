@@ -5,7 +5,7 @@
 Every feature the launcher offers its user, area by area, and how well each test tier checks it. The registry is
 [features.yml](features.yml); [README.md](README.md#the-feature-registry) says how a feature or a test is added.
 
-**174 features: 60 Strong, 114 Partial, 0 Unchecked.**
+**175 features: 60 Strong, 115 Partial, 0 Unchecked.**
 
 - A tier: ✔ its tests check the feature's behaviour; ◐ they check part of it (what is missing is under the table); ✖ no test.
 - **Strong**: unit tests, and a tier above that covers it: a real-host one (desktop E2E, integration, setup, package) when the feature depends on the

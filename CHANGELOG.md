@@ -15,7 +15,8 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   page's attack box card has a **Credentials** row (`player` and the password, masked until
   **Show**, copied with a click), and the box's Screen window a **Sign-in** popover in its toolbar.
   The password is kept in the OS keychain (`attack-box:<lab>`), forgotten with the box, and
-  redacted from the logs; the box gets only its SHA-512 crypt hash, in a root-only file its set-up
+  redacted from the logs; the box gets only its SHA-512 crypt hash (RustCrypto's `sha-crypt` 0.6.0,
+  MIT OR Apache-2.0), in a root-only file its set-up
   hands to `chpasswd` on standard input, never on a command line. `sudo` still asks for none. A box
   added before this has no password and shows no row.
 

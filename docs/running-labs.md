@@ -72,8 +72,9 @@ or LightDM's login after a logout, a VM's console login on its Screen, `su`, SSH
 (`attack_machine/sign_in.rs`): 20 random characters of lowercase letters and digits without
 look-alikes, in four groups (`k7mpq-zrt4w-hn8xc-ls2vd`, 100 bits). It keeps it with its other
 secrets (the OS keychain, `attack-box:<lab>`; a 0600 file in a dev build), registers it with the
-log redaction, and forgets it when the box is taken out. The box gets only its SHA-512 crypt hash,
-as a root-only file of its spec (`files: [{ path: /etc/cyberctf/player-password, content, mode:
+log redaction, and forgets it when the box is taken out. The box gets only its SHA-512 crypt hash
+(RustCrypto's `sha-crypt`, its default 5000 rounds, a 16-character salt from the system's random
+generator), as a root-only file of its spec (`files: [{ path: /etc/cyberctf/player-password, content, mode:
 "0400" }]`, a Compose config for a container, Isoloom's files step before a VM's set-up), which
 `player-account.sh` hands to `chpasswd -e` on its standard input: the password is in none of the
 lab's or the run's files, and neither it nor its hash is on a command line. A container box sets
