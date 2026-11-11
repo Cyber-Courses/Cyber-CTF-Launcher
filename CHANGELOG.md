@@ -523,6 +523,30 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   couldn't be read read as "No briefing for this lab yet"; and a Machine page whose list of what
   runs couldn't be read said "Nothing running", dropping the list it had shown. Each now says it
   couldn't read it, and why; the Machine page keeps the list last read.
+- **On Linux, Vagrant comes from HashiCorp's repository.** The guided setup installed the
+  distribution's Vagrant, which is older than labs need (Debian 13 ships 2.3.8), so every VM lab
+  then refused it. Where HashiCorp has no packages for the release, the setup says so and links
+  to Vagrant's install page.
+- **On Linux, an attack box with the shared folder starts on libvirt.** The libvirt install now
+  brings `virtiofsd` where the release packages it; libvirt's shared folders need it, and the
+  attack box failed to start without it.
+- **On a bare Linux the setup installs curl first.** Debian's minimal image has no curl, so the
+  Vagrant install failed saying HashiCorp had no packages for the release, and the other vendor
+  installs failed the same way. A vendor repository that can't be reached is now said as such,
+  not as a release it doesn't serve, and Vagrant's refusal names Vagrant's install page, not
+  Terraform's.
+- **The attack box is added with a libvirt lab.** At the end of a launch, the lab page's status
+  read and the attack box's ran two `vagrant status` of the same VMs at once; Vagrant refused one
+  (its machine index was locked) and the box "couldn't be added with the lab". A run's status is
+  now read one read at a time, and no Vagrant runs while an operation holds the run.
+- **A cancelled cloud sign-in says it was cancelled, with Retry.** For AWS, Azure and Google
+  Cloud, a CLI sign-in the player cancelled read like a failed one, its log left on screen; it
+  now hides the log, says "Sign-in cancelled" and offers Retry, while a sign-in that failed keeps
+  its log and why.
+- **The Azure VM size check tells "not offered in this region" from "refused to your
+  subscription".** It names the regions where the size can be had (never the one checked) or,
+  for a size refused almost everywhere, the sizes the subscription can use there, and reads each
+  list once a session.
 
 ### Security
 
@@ -537,6 +561,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   installing nothing from Kali, when it holds any other key.
 - **rustls-webpki 0.103.16** (RUSTSEC-2026-0382: certificate paths through distrusted
   intermediates could be accepted).
+- **A chain of symlinks in a lab can no longer reach outside the lab's folder.** Each link in a
+  lab's archive or imported folder was judged by its path alone, so two links that each read as
+  inside the lab (`sub/a -> ..` and `b -> sub/a/../secret`) together pointed beside it, and a
+  lab's files, built into its images and mounted in its machines, could read the app's data. The
+  links are now made once the rest of the lab is written, and each is kept only when what it
+  resolves to on disk is inside the lab's folder; a link left out is said in the log.
 
 ## [1.8.9] — 2026-11-08
 
