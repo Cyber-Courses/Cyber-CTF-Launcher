@@ -604,7 +604,9 @@ mod tests {
         let found = tools(&dir, true).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "shell");
-        assert_eq!(found[0].image.as_deref(), Some("nicolaka/netshoot"));
+        // Isoloom's toolbox, pinned by its digest.
+        let image = found[0].image.as_deref().unwrap();
+        assert!(image.starts_with("nicolaka/netshoot:") && image.contains("@sha256:"), "{image}");
         assert_eq!(found[0].addresses.len(), 1);
         assert_eq!(found[0].addresses[0].network, "lab");
         assert!(tools(&dir, false).unwrap()[0].addresses[0].ip.starts_with("10.30.0."));
