@@ -56,6 +56,9 @@ jobs:
         os: [ubuntu-22.04, ubuntu-22.04-arm, macos-latest, macos-15-intel, windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      # The quality ratchet's unused-dependency check, on the Linux legs.
+      CARGO_MACHETE_VERSION: "0.9.2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: startsWith(matrix.os, 'ubuntu')
@@ -82,10 +85,23 @@ jobs:
       # the Linux leg here, after Lint: its clippy run replays the diagnostics already cached above.
       - if: startsWith(matrix.os, 'ubuntu')
         uses: ./.github/actions/setup-node-pnpm
-      - if: startsWith(matrix.os, 'ubuntu')
+      # cargo machete, pinned. On x64, its release's static (musl) build. Its Arm Linux build is
+      # linked against a newer glibc (2.39) than ubuntu-22.04 has, so on Arm it is built from
+      # source at the same version (--locked) into a folder of its own, cached by version.
+      - if: matrix.os == 'ubuntu-22.04'
         uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
-          tool: cargo-machete
+          tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
+      - if: matrix.os == 'ubuntu-22.04-arm'
+        id: machete-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo-machete
+          key: cargo-machete-${{ env.CARGO_MACHETE_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+      - if: matrix.os == 'ubuntu-22.04-arm' && steps.machete-cache.outputs.cache-hit != 'true'
+        run: cargo install --locked --root ~/.cargo-machete cargo-machete --version "$CARGO_MACHETE_VERSION"
+      - if: matrix.os == 'ubuntu-22.04-arm'
+        run: echo "$HOME/.cargo-machete/bin" >> "$GITHUB_PATH"
       - name: Quality
         if: startsWith(matrix.os, 'ubuntu')
         run: pnpm quality
