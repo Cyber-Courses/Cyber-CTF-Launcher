@@ -430,6 +430,53 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    /// A machine building its image and running `setup:` scripts, beside one on a pulled image:
+    /// the fixture lab's `database` (the supplier portal), whose init job shares the built image.
+    const BUILT_WITH_INIT: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  database:\n    networks: { lab: 32 }\n    ports: { mysql: 3306 }\n    setup: [build/database/evidence.sh]\n    app: { build: build/database }\n  web:\n    networks: { lab: 31 }\n    ports: { web: { port: 80, protocol: http } }\n    setup: [seed.sh]\n    app: { image: nginx:1.27 }\n";
+
+    #[test]
+    #[ignore = "passes once Isoloom 2.1.0 is pinned (a180941d); on 2.0.0 the job has no build: drop this line with the pin bump"]
+    fn an_init_job_of_a_machine_that_builds_its_image_is_rendered_buildable_so_the_start_pulls_nothing_for_it() {
+        // Regression (#266): with Isoloom 2.0.0 the init job ran the built image with `image:`
+        // alone, so the start's `docker compose pull --ignore-buildable` (Isothrum's pull step)
+        // left the machine out but asked a registry for the job's `localhost/isoloom/…` name, and
+        // every start of the fixture lab failed on the rig ("failed to resolve reference
+        // localhost/isoloom/invoice-portal-api-1-database:latest"). Isoloom 2.1.0 (a180941d)
+        // gives the job the machine's `build:` too, so the pull leaves it out and `up --build`
+        // builds once for both. Rendered through the pinned Isoloom crates: the pin holds it.
+        let dir = lab(BUILT_WITH_INIT);
+        std::fs::create_dir_all(dir.join("build/database")).unwrap();
+        std::fs::write(dir.join("build/database/Dockerfile"), "FROM mysql:8.0\n").unwrap();
+        std::fs::write(dir.join("build/database/evidence.sh"), "#!/bin/sh\n").unwrap();
+        std::fs::write(dir.join("seed.sh"), "#!/bin/sh\n").unwrap();
+        prepare(&dir, Target::Docker).unwrap();
+        let compose = std::fs::read_to_string(compose_file(&dir)).unwrap();
+        let file: serde_yaml_ng::Value = serde_yaml_ng::from_str(&compose).unwrap();
+        let services = file["services"].as_mapping().unwrap_or_else(|| panic!("no services in\n{compose}"));
+        let service = |name: &str| services.get(name).unwrap_or_else(|| panic!("no service {name} in\n{compose}"));
+        let (database, job) = (service("database"), service("isoloom-init-database-1"));
+        let built = database["image"].as_str().unwrap_or_default();
+        assert!(built.starts_with("localhost/isoloom/") && database["build"].is_mapping(), "the machine builds its image: {database:?}");
+        assert_eq!(job["image"].as_str(), Some(built), "the job runs the image the machine builds");
+        // `pull --ignore-buildable` skips a service with a `build`; a `pull_policy` wouldn't do,
+        // as the pull's `--policy` overrides it.
+        assert_eq!(job["build"], database["build"], "the job is as buildable as the machine, with its build:\n{compose}");
+        let web = service("isoloom-init-web-1");
+        assert!(web["build"].is_null() && web["image"].as_str() == Some("nginx:1.27"), "a pulled image's job is pulled: {web:?}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_init_job_test_runs_once_isoloom_2_1_0_is_pinned() {
+        // The test above is ignored while Isoloom is pinned at 2.0.0, where it fails for the right
+        // reason; the pin bump brings it to life, or this says so.
+        let manifest = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).unwrap();
+        let pinned = manifest.lines().find_map(|l| l.strip_prefix("isoloom-spec = \"")).map(|r| r.trim_end_matches('"')).expect("isoloom-spec's pin");
+        // The attribute's own text; this literal's escaped quote keeps it from matching itself.
+        let ignored = include_str!("lab.rs").contains("#[ignore = \"passes once Isoloom 2.1.0 is pinned");
+        assert!(pinned == "2.0.0" || !ignored, "Isoloom {pinned} is pinned: drop the #[ignore] of the init job test, which holds the fix of #266");
+    }
+
     #[test]
     fn explains_a_target_the_lab_cant_use() {
         let dir = lab(SPEC);
