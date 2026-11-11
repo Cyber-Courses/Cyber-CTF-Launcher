@@ -80,7 +80,15 @@
     "save": "Guardar",
     "autoStart": "Iniciar la máquina de ataque con el lab",
     "autoStartDescription": "La inicia en cuanto un lab está activo en esta máquina: el contenedor en un lab de contenedores, la VM junto a un lab de VM. Aun así puedes iniciarla o detenerla desde el lab.",
-    "invalidImage": "Usa un nombre de imagen simple como registry/name:tag: solo letras, cifras y . _ - / : @, sin guion al principio."
+    "invalidImage": "Usa un nombre de imagen simple como registry/name:tag: solo letras, cifras y . _ - / : @, sin guion al principio.",
+    "desktop": {
+      "title": "Escritorio de la VM de ataque",
+      "description": "Una máquina de ataque en VM funciona sin interfaz, o con el escritorio XFCE de Kali, que muestra su Pantalla, con la sesión del jugador iniciada. Una máquina en contenedor siempre funciona sin interfaz.",
+      "headless": "Sin interfaz",
+      "headlessNote": "Solo herramientas y una shell: la instalación más pequeña.",
+      "desktop": "Escritorio",
+      "desktopNote": "El escritorio XFCE de Kali: unos 1 GB más de descarga, 3 GB más en su disco, y 4 GB de memoria y 2 CPU para la VM."
+    }
   },
   "hypervisor": {
     "title": "Hipervisor para labs de VM",

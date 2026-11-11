@@ -18,6 +18,9 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   opens in the system's client (Remote Desktop Connection, Windows App, FreeRDP, Remmina) on a
   `.rdp` file with no password; its password is copied on request. A new `screen-windows`
   capability grants those windows their three commands only.
+- **The attack VM's desktop (Settings).** A VM attack box stays headless by default, or gets
+  Kali's XFCE desktop with LightDM signing `player` in (about 1 GB more to download, 3 GB more on
+  its disk, 4 GB of memory and 2 CPUs), which its Screen shows. A container box stays headless.
 - **A lab page for a lab imported from a folder, built from what the folder defines.** An
   imported lab (`local-<name>`) is listed under **Imported from a folder** on the Labs screen, and
   its entry under **Running** in the sidebar, its row on the Overview and the command palette open

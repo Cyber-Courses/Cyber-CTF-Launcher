@@ -276,6 +276,10 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime) -> 
 pub struct AttachPick {
     network: Option<String>,
     image: Option<String>,
+    /// A VM box gets Kali's desktop (the Settings choice; a container box has none). Absent:
+    /// headless.
+    #[serde(default)]
+    desktop: bool,
 }
 
 /// Adds the attack box to the running lab as a machine of it, on the network the learner picked
@@ -284,7 +288,7 @@ pub struct AttachPick {
 #[tauri::command]
 pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pick: AttachPick, logs: Channel<String>) -> Result<()> {
     Box::pin(async move {
-        let AttachPick { network, image } = pick;
+        let AttachPick { network, image, desktop } = pick;
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
         if let Some(image) = &image {
@@ -296,7 +300,7 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
         let mut log = lines(logs);
         let image = image.unwrap_or_else(|| attack_machine::default_image().to_owned());
-        let attach = run.add(&dirs, &image, network.as_deref(), &mut log);
+        let attach = run.add(&dirs, attack_machine::Pick { image: &image, desktop }, network.as_deref(), &mut log);
         // Only an image pulled on this machine is the app's to account for.
         if !run.pulls_image_here() {
             return Box::pin(attach).await;
@@ -515,7 +519,7 @@ mod tests {
         let err = lab_provision(app(), "ad".into(), Runtime::Vm, Some("a;rm".into()), channel(s.clone())).await.unwrap_err().to_string();
         assert_eq!(err, "invalid machine name `a;rm`");
         assert_eq!(
-            attack_box_attach(app(), "ad".into(), Runtime::Vm, AttachPick { network: None, image: Some("-x/y z".into()) }, channel(s.clone()))
+            attack_box_attach(app(), "ad".into(), Runtime::Vm, AttachPick { network: None, image: Some("-x/y z".into()), desktop: false }, channel(s.clone()))
                 .await
                 .unwrap_err()
                 .to_string(),
@@ -551,7 +555,7 @@ mod tests {
 
     /// Whether attaching the Kali attack box to lab `id`, a Docker lab, fails.
     async fn kali_attach_fails(app: crate::AppHandle, id: &str, logs: Channel<String>) -> bool {
-        let pick = AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) };
+        let pick = AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()), desktop: false };
         attack_box_attach(app, id.into(), Runtime::Docker, pick, logs).await.is_err()
     }
 
@@ -585,7 +589,7 @@ mod tests {
                 t.handle().clone(),
                 "a b".into(),
                 Runtime::Docker,
-                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()) },
+                AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()), desktop: false },
                 channel(sink.clone())
             )
             .await
@@ -595,7 +599,7 @@ mod tests {
             t.handle().clone(),
             "web".into(),
             Runtime::Docker,
-            AttachPick { network: None, image: Some("x;y".into()) },
+            AttachPick { network: None, image: Some("x;y".into()), desktop: false },
             channel(sink.clone()),
         )
         .await

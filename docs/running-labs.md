@@ -66,11 +66,11 @@ virtiofs), the account takes that user's uid, and it joins the folder's group (a
 folder mounted for `vagrant`), so it writes there as that user or group may. Root stays the
 image's own user.
 
-| Form               | The box                                                                                                    |
-| ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| Containers         | a container from the attack image picked in Settings, on the lab's network                                 |
-| VMs                | a Kali VM (`kali@rolling`, 40 GB) with Kali's headless toolset, installed on its first start (~16 minutes) |
-| On an Arm computer | native: Kali's arm64 image beside containers; a Debian arm64 VM made Kali by its set-up among VMs          |
+| Form               | The box                                                                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Containers         | a container from the attack image picked in Settings, on the lab's network                                                                                |
+| VMs                | a Kali VM (`kali@rolling`, 40 GB) with Kali's headless toolset, installed on its first start (~16 minutes); with Kali's XFCE desktop when Settings say so |
+| On an Arm computer | native: Kali's arm64 image beside containers; a Debian arm64 VM made Kali by its set-up among VMs                                                         |
 
 A lab that declares an access machine (`access: true`) says with it where the player sits: the
 box takes its place there (its name, its networks and addresses, in the overlay's `replace:`), so
@@ -78,6 +78,12 @@ the checks run from that seat run from the box; taking the box out brings the la
 back. Without one, the box is `attackbox` on the lab's first network (or the one the player
 picks). Isoloom and Isothrum know nothing of the attack box: the launcher composes their general
 features (`.cyberctf-overlay.yml`, update, retire, the console).
+
+A VM box runs headless unless Settings choose its desktop (Settings, Attack box, "Attack VM
+desktop"): its set-up then installs Kali's XFCE desktop and LightDM, which signs `player` in
+(about 1 GB more to download, 3 GB more on its disk), and the VM gets 4 GB of memory and 2 CPUs.
+Its Screen shows that desktop. The `player` account and its sudo rule stay as they are. A
+container box is always headless: no desktop is offered for it.
 
 ## A machine's screen
 

@@ -80,7 +80,15 @@
     "save": "Enregistrer",
     "autoStart": "Démarrer l'attack box avec le lab",
     "autoStartDescription": "La démarre dès qu'un lab tourne sur cette machine : le conteneur pour un lab conteneur, la VM à côté d'un lab VM. Vous pouvez toujours la démarrer ou l'arrêter depuis le lab.",
-    "invalidImage": "Utilisez un nom d'image simple comme registry/name:tag : lettres, chiffres et . _ - / : @ uniquement, sans tiret au début."
+    "invalidImage": "Utilisez un nom d'image simple comme registry/name:tag : lettres, chiffres et . _ - / : @ uniquement, sans tiret au début.",
+    "desktop": {
+      "title": "Bureau de la VM d'attaque",
+      "description": "Une machine d'attaque VM tourne sans interface, ou avec le bureau XFCE de Kali, que son Écran affiche, session ouverte en tant que joueur. Une machine en conteneur est toujours sans interface.",
+      "headless": "Sans interface",
+      "headlessNote": "Les outils et un shell seulement : l'installation la plus légère.",
+      "desktop": "Bureau",
+      "desktopNote": "Le bureau XFCE de Kali : environ 1 Go de plus à télécharger, 3 Go de plus sur son disque, et 4 Go de mémoire et 2 processeurs pour la VM."
+    }
   },
   "hypervisor": {
     "title": "Hyperviseur pour les labs VM",

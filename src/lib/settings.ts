@@ -180,6 +180,17 @@ export const setAutoAttackBox = (on: boolean) => {
   writeStored(AUTO_ATTACK_KEY, on ? "true" : "false");
 };
 
+const ATTACK_DESKTOP_KEY = "cyberctf.attackbox.desktop";
+
+/** Whether a VM attack box gets Kali's XFCE desktop (its Screen shows it, the player signed in),
+ *  else stays headless (the default: a shell is enough, and the desktop is a larger set-up). A
+ *  container box is always headless. */
+export const getAttackDesktop = (): boolean => readStored(ATTACK_DESKTOP_KEY) === "true";
+
+export const setAttackDesktop = (on: boolean) => {
+  writeStored(ATTACK_DESKTOP_KEY, on ? "true" : "false");
+};
+
 const PORT_MODE_KEY = "cyberctf.labs.ports";
 
 /**

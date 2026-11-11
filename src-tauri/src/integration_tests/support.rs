@@ -210,7 +210,7 @@ pub(crate) fn check(ok: bool, what: String, failures: &mut Vec<String>) {
 /// Adds the attack box to the running lab `placed`, from `image` beside containers, as the lab
 /// page's Start attack box does.
 pub(crate) async fn add_box(placed: &Placed, dirs: &AppDirs, image: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
-    let added = placed.add(dirs, image, None, l).await;
+    let added = placed.add(dirs, crate::runtime::attack_machine::Pick { image, desktop: false }, None, l).await;
     check(added.is_ok(), format!("the attack box is added to the lab ({:?})", added.err()), f);
 }
 

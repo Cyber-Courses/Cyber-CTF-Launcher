@@ -12,7 +12,7 @@
 mod place;
 mod status;
 
-pub(crate) use place::{Placed, locate};
+pub(crate) use place::{Pick, Placed, locate};
 pub(crate) use status::AttackStatus;
 
 use std::path::Path;
@@ -80,14 +80,14 @@ const KALI_ARCHIVE_KEYS: [&str; 2] = ["827C8569F2518CC677FECA1AED65462EC8D5E4C5"
 
 /// The set-up script: [`SETUP_START`], Kali's archive keyring downloaded into a private work
 /// directory and checked there, then [`SETUP_REST`], then the player's account
-/// ([`player_account`], once the toolset brought sudo).
-fn setup_script() -> String {
+/// ([`player_account`], once the toolset brought sudo), then the desktop when it has one.
+fn setup_script(desktop: bool) -> String {
     use crate::platform::root_script::{NEED_GPG, PRIVATE_WORKDIR, check_keys};
     let keyring = format!(
         "  {PRIVATE_WORKDIR}\n  {NEED_GPG}\n  curl -fsSL https://archive.kali.org/archive-keyring.gpg -o \"$d/key\"\n  {}\n  install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg\n",
         check_keys(&KALI_ARCHIVE_KEYS, "Kali's archive")
     );
-    [SETUP_START, &keyring, SETUP_REST, &player_account(), "\n"].concat()
+    [SETUP_START, &keyring, SETUP_REST, &player_account(), "\n", if desktop { DESKTOP } else { "" }].concat()
 }
 
 /// The set-up up to Kali's archive keyring, on a Debian VM.
@@ -118,8 +118,28 @@ apt-get update
 apt-get install -y $keep kali-linux-headless
 ";
 
-/// Its disk: room for Kali's headless toolset (about 12 GB) beside the image.
+/// Its disk: room for Kali's headless toolset (about 12 GB) beside the image, and for the desktop
+/// (about 3 GB more) when it has one.
 const DISK_GB: u32 = 40;
+
+/// What a box with a desktop adds to its set-up, once the player's account is in: Kali's XFCE
+/// desktop (about 1 GB to download, 3 GB on its disk) and `LightDM` signing [`PLAYER`] in, so its
+/// screen (the lab page's Screen) shows the player's desktop. The account and its sudo rules stay
+/// as [`PLAYER_ACCOUNT`] makes them.
+const DESKTOP: &str = r"apt-get install -y $keep kali-desktop-xfce lightdm
+# LightDM signs the player in to XFCE, on the VM's own screen.
+mkdir -p /etc/lightdm/lightdm.conf.d
+printf '[Seat:*]\nautologin-user=player\nautologin-user-timeout=0\nautologin-session=xfce\nuser-session=xfce\n' > /etc/lightdm/lightdm.conf.d/50-cyberctf-autologin.conf
+groupadd -f -r autologin
+usermod -a -G autologin player
+systemctl set-default graphical.target
+systemctl enable lightdm
+systemctl restart lightdm
+";
+
+/// The memory (MB) and CPUs a box with a desktop gets: XFCE beside Kali's tools wants more than a
+/// VM's default.
+const DESKTOP_SIZE: (u32, u32) = (4096, 2);
 
 /// The highest address the box takes on its network: the ones above are the gateway's, the
 /// tools' and Isoloom's controller and router's.
@@ -133,8 +153,12 @@ pub(crate) enum Kind<'a> {
         /// The image the box's container runs.
         image: &'a str,
     },
-    /// A VM among the lab's, booted from Kali, set up with its [`setup_script`].
-    Vm,
+    /// A VM among the lab's, booted from Kali, set up with its [`setup_script`]; with Kali's
+    /// desktop when `desktop` (the Settings choice), headless otherwise.
+    Vm {
+        /// It gets Kali's XFCE desktop, the player signed in.
+        desktop: bool,
+    },
 }
 
 /// The box's own CPU, when it isn't the lab's: `arm64` on an Arm computer running the lab
@@ -234,11 +258,12 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
         (Kind::Container { image }, _) => {
             format!("{{ {hardware}{shared}app: {{ image: {image:?} }}, networks: {{ {networks} }} }}")
         }
-        (Kind::Vm, cpu) => {
-            std::fs::write(dir.join(SETUP_FILE), setup_script())?;
+        (Kind::Vm { desktop }, cpu) => {
+            std::fs::write(dir.join(SETUP_FILE), setup_script(desktop))?;
             let os = if cpu == Cpu::Arm { "debian@12" } else { "kali@rolling" };
+            let size = if desktop { format!(", memory_mb: {}, cpus: {}", DESKTOP_SIZE.0, DESKTOP_SIZE.1) } else { String::new() };
             format!(
-                "{{ os: {os}, {hardware}{shared}networks: {{ {networks} }}, resources: {{ disk_gb: {DISK_GB} }}, app: {{ steps: [{{ run: {SETUP_FILE} }}] }} }}"
+                "{{ os: {os}, {hardware}{shared}networks: {{ {networks} }}, resources: {{ disk_gb: {DISK_GB}{size} }}, app: {{ steps: [{{ run: {SETUP_FILE} }}] }} }}"
             )
         }
     };
@@ -297,7 +322,7 @@ mod tests {
         let dir = crate::runtime::test_support::write_lab(
             "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 249 } }\n",
         );
-        add_at(&dir, Kind::Vm, Cpu::Lab, None).unwrap();
+        add_at(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None).unwrap();
         assert!(added(&dir).unwrap());
         let spec = lab::load(&dir).unwrap();
         let attackbox = &spec.machines[NAME];
@@ -364,7 +389,7 @@ mod tests {
     fn kalis_archive_keys_are_checked_before_apt_trusts_them() {
         // Regression: the keyring was downloaded straight into apt's keyrings, trusted on TLS
         // alone, with no fingerprint holding it.
-        let script = setup_script();
+        let script = setup_script(false);
         let download = script.find("archive.kali.org/archive-keyring.gpg").unwrap();
         let checked = script.find(r#"[ "$k" = "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6 827C8569F2518CC677FECA1AED65462EC8D5E4C5" ]"#).unwrap();
         let trusted = script.find("/usr/share/keyrings/kali-archive-keyring.gpg").unwrap();
@@ -376,10 +401,8 @@ mod tests {
 
     #[test]
     fn on_an_arm_computer_the_box_runs_natively_a_debian_vm_made_kali() {
-        let dir = crate::runtime::test_support::write_lab(
-            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n",
-        );
-        add_at(&dir, Kind::Vm, Cpu::Arm, None).unwrap();
+        let dir = web_lab();
+        add_at(&dir, Kind::Vm { desktop: false }, Cpu::Arm, None).unwrap();
         let spec = lab::load(&dir).unwrap();
         let attackbox = &spec.machines[NAME];
         assert_eq!(attackbox.os.as_deref(), Some("debian@12"));
@@ -417,6 +440,13 @@ mod tests {
     }
 
     /// The box's spec in the launcher's layer over the lab in `dir`, as written.
+    /// A lab of one Debian VM, `web`, on `lan`.
+    fn web_lab() -> std::path::PathBuf {
+        crate::runtime::test_support::write_lab(
+            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n",
+        )
+    }
+
     fn layer_machine(dir: &Path) -> Value {
         let layer: Value = serde_yaml_ng::from_str(&std::fs::read_to_string(dir.join(overlay::FILE)).unwrap()).unwrap();
         layer["machines"][NAME].clone()
@@ -426,18 +456,35 @@ mod tests {
     fn a_vm_box_makes_the_player_account_once_its_toolset_is_in() {
         // Regression: the box's shell opened as the VM's login (`vagrant` on Windows' Hyper-V),
         // the box had no account of the player's.
-        let script = setup_script();
+        let script = setup_script(false);
         let toolset = script.find("install -y $keep kali-linux-headless").unwrap();
         let account = script.find(&format!("account={PLAYER} shared={} sh -c ", crate::shared_folder::MOUNT_POINT)).unwrap();
         assert!(toolset < account, "sudo is in before the account is given it: {script}");
         assert!(script.contains("NOPASSWD: ALL") && script.contains("--create-home"), "{script}");
         assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
-        let dir = crate::runtime::test_support::write_lab(
-            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n",
-        );
-        add_at(&dir, Kind::Vm, Cpu::Lab, None).unwrap();
+        let dir = web_lab();
+        add_at(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap(), script);
         assert!(layer_machine(&dir).get("command").is_none(), "a VM box runs no command of its own");
+        remove(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_desktop_box_gets_xfce_and_the_player_signed_in_after_its_account() {
+        let headless = setup_script(false);
+        assert!(!headless.contains("kali-desktop-xfce") && !headless.contains("lightdm"), "headless by default");
+        let script = setup_script(true);
+        let account = script.find(&format!("account={PLAYER} ")).unwrap();
+        let desktop = script.find("install -y $keep kali-desktop-xfce lightdm").unwrap();
+        assert!(account < desktop, "the account the display manager signs in exists first");
+        assert!(script.contains("autologin-user=player\\n") && script.contains("systemctl set-default graphical.target"), "{script}");
+        assert!(DESKTOP.contains(&format!("autologin-user={PLAYER}")), "the launcher's player account");
+        assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
+        let dir = web_lab();
+        add_at(&dir, Kind::Vm { desktop: true }, Cpu::Lab, None).unwrap();
+        let resources = &layer_machine(&dir)["resources"];
+        assert_eq!((resources["memory_mb"].as_u64(), resources["cpus"].as_u64()), (Some(4096), Some(2)), "{resources:?}");
+        assert_eq!(std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap(), script);
         remove(&dir).unwrap();
     }
 
@@ -470,11 +517,9 @@ mod tests {
 
     #[test]
     fn the_shared_folder_is_mounted_in_the_box_on_every_kind() {
-        let dir = crate::runtime::test_support::write_lab(
-            "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n",
-        );
+        let dir = web_lab();
         let folder = Path::new("/Users/someone/CyberCTF/shared");
-        for kind in [Kind::Container { image: "kalilinux/kali-rolling" }, Kind::Vm] {
+        for kind in [Kind::Container { image: "kalilinux/kali-rolling" }, Kind::Vm { desktop: false }] {
             add(&dir, kind, Cpu::Lab, None, Some(folder)).unwrap();
             let spec = lab::load(&dir).unwrap();
             let mounted: Vec<(&str, &str)> = spec.machines[NAME].host_folders.iter().map(|h| (h.from.as_str(), h.path.as_str())).collect();

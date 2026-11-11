@@ -8,7 +8,7 @@ import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { useAttackBox, type AttackBox } from "@/features/labs/use-attack-box";
 import { attachAttackBox } from "@/features/labs/attack-box-attach";
 import type { ActiveOperation, AttackStatus, Runtime } from "@/lib/tauri";
-import { DEFAULT_ATTACK_IMAGE, setAttackImage, setAutoAttackBox } from "@/lib/settings";
+import { DEFAULT_ATTACK_IMAGE, setAttackDesktop, setAttackImage, setAutoAttackBox } from "@/lib/settings";
 import { commands, installTauri, stream, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { rejectWith } from "@/features/labs/labs-test-kit";
@@ -96,6 +96,19 @@ describe("useAttackBox", () => {
     expect(result.current.name).toBe("cyberctf/attack-box");
     await act(() => result.current.start());
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ pick: { image: null } });
+  });
+
+  it("gives a VM box Kali's desktop only when the learner chose it", async () => {
+    const calls = installTauri({ attack_box_status: () => box({ vm: true }), attack_box_attach: () => null });
+    const { result } = renderHook(() => useAttackBox("ab-desktop", { running: true, runtime: "VM" }));
+    await flush();
+    await act(() => result.current.start());
+    expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ pick: { desktop: false } });
+    setAttackDesktop(true);
+    await act(() => result.current.stop());
+    await act(() => result.current.start());
+    expect(calls.filter((c) => c.cmd === "attack_box_attach").at(-1)?.args).toMatchObject({ pick: { desktop: true } });
+    setAttackDesktop(false);
   });
 
   it("offers the box's screen beside its shell when it has one", async () => {

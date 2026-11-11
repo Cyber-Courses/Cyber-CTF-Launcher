@@ -8,7 +8,9 @@ import {
   CYBERCTF_ATTACK_REPO,
   DEFAULT_ATTACK_IMAGE,
   getAttackImage,
+  getAttackDesktop,
   getAutoAttackBox,
+  setAttackDesktop,
   setAttackImage,
   setAutoAttackBox,
   validImage,
@@ -45,6 +47,8 @@ export function AttackBoxRows({ onSaved }: { onSaved: () => void }) {
       <div className="border-t border-border px-4 py-3.5">
         <SharedFolderControl onSaved={onSaved} />
       </div>
+
+      <DesktopRow onSaved={onSaved} />
 
       <AutoStartRow onSaved={onSaved} />
     </>
@@ -150,6 +154,46 @@ function ImagePresetSubtitle({ preset: p }: { preset: ImagePreset }) {
       )}{" "}
       <span className="text-faint">·</span> {translated(t, IMAGE_NOTES[p.image], p.note)}
     </>
+  );
+}
+
+/** A VM attack box: headless (the default), or Kali's desktop, which its Screen shows (sizes said:
+ *  the larger set-up's download and disk, and the memory it takes). Not for a container box. */
+function DesktopRow({ onSaved }: { onSaved: () => void }) {
+  const t = useT();
+  const [desktop, setDesktop] = useState(() => getAttackDesktop());
+  const choose = (on: boolean) => {
+    setAttackDesktop(on);
+    setDesktop(on);
+    onSaved();
+  };
+  return (
+    <Row stacked title={t("settings.attackBox.desktop.title")} description={t("settings.attackBox.desktop.description")}>
+      <RadioList label={t("settings.attackBox.desktop.title")} className="mt-3">
+        <RadioRow
+          compact
+          selected={!desktop}
+          onSelect={() => {
+            choose(false);
+          }}
+          title={
+            <>
+              {t("settings.attackBox.desktop.headless")} <Badge>{t("settings.attackBox.default")}</Badge>
+            </>
+          }
+          subtitle={t("settings.attackBox.desktop.headlessNote")}
+        />
+        <RadioRow
+          compact
+          selected={desktop}
+          onSelect={() => {
+            choose(true);
+          }}
+          title={t("settings.attackBox.desktop.desktop")}
+          subtitle={t("settings.attackBox.desktop.desktopNote")}
+        />
+      </RadioList>
+    </Row>
   );
 }
 

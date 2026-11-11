@@ -80,7 +80,15 @@
     "save": "Save",
     "autoStart": "Start the attack box with the lab",
     "autoStartDescription": "Starts it as soon as a lab is up on this machine: the container on a container lab, the VM beside a VM lab. You can still start or stop it from the lab.",
-    "invalidImage": "Use a plain image name such as registry/name:tag: letters, digits and . _ - / : @ only, not starting with a dash."
+    "invalidImage": "Use a plain image name such as registry/name:tag: letters, digits and . _ - / : @ only, not starting with a dash.",
+    "desktop": {
+      "title": "Attack VM desktop",
+      "description": "A VM attack box runs headless, or with Kali's XFCE desktop, which its Screen shows, signed in as the player. A container box is always headless.",
+      "headless": "Headless",
+      "headlessNote": "Tools and a shell only: the smallest set-up.",
+      "desktop": "Desktop",
+      "desktopNote": "Kali's XFCE desktop: about 1 GB more to download, 3 GB more on its disk, and 4 GB of memory and 2 CPUs for the VM."
+    }
   },
   "hypervisor": {
     "title": "Hypervisor for VM labs",

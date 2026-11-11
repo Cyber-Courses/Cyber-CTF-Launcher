@@ -124,11 +124,14 @@ export const labCheck = (id: string, runtime: Runtime) => invoke<LabCheck>("lab_
  *  the lab networks it can join. Known before the box is up. */
 export const attackBoxStatus = (id: string, runtime: Runtime) => invoke<AttackStatus>("attack_box_status", { id, runtime });
 
-/** Adds the attack box to the running lab as one of its machines, on `network` (null: the seat the
- *  lab declares, else its first network), from `image` when it is a container (null: the
- *  launcher's default; a VM box is Kali). */
-export const attackBoxAttach = (id: string, runtime: Runtime, network: string | null, image: string | null, onLog: (line: string) => void) =>
-  invokeStreaming("attack_box_attach", { id, runtime, pick: { network, image } }, onLog);
+/** The learner's pick for an attack box: the lab network it joins (null: the seat the lab declares,
+ *  else its first network), the image a container box runs (null: the launcher's default), and
+ *  whether a VM box (Kali) gets its desktop. */
+export type AttackPick = { network: string | null; image: string | null; desktop: boolean };
+
+/** Adds the attack box to the running lab as one of its machines, as `pick` says. */
+export const attackBoxAttach = (id: string, runtime: Runtime, pick: AttackPick, onLog: (line: string) => void) =>
+  invokeStreaming("attack_box_attach", { id, runtime, pick }, onLog);
 
 /** Takes the attack box back out of the running lab. */
 export const attackBoxDetach = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeStreaming("attack_box_detach", { id, runtime }, onLog);

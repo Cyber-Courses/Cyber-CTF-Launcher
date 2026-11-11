@@ -42,6 +42,16 @@ pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> 
     })
 }
 
+/// What the learner picked for the box: the image a container box runs, and whether a VM box gets
+/// Kali's desktop.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Pick<'a> {
+    /// The image a container box runs.
+    pub(crate) image: &'a str,
+    /// A VM box gets Kali's desktop.
+    pub(crate) desktop: bool,
+}
+
 impl Placed {
     /// Adds the box onto `network` (else the lab's first machine's), from `image` beside
     /// containers, then brings the run up to date with it.
@@ -51,8 +61,8 @@ impl Placed {
     /// the run's place couldn't be reached, or the runner refused before acting (the run isn't
     /// up, another operation holds it). A failure while the runner changed the run keeps the box
     /// in the lab, so the learner's Stop retires whatever of it the run already has.
-    pub(crate) async fn add(&self, dirs: &AppDirs, image: &str, network: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        let kind = if self.vm { Kind::Vm } else { Kind::Container { image } };
+    pub(crate) async fn add(&self, dirs: &AppDirs, pick: Pick<'_>, network: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+        let kind = if self.vm { Kind::Vm { desktop: pick.desktop } } else { Kind::Container { image: pick.image } };
         let shared = self.shared_folder(dirs, log);
         let written = super::add(&self.dir, kind, self.cpu(), network, shared.as_deref()).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
         let failed = match written {
@@ -237,7 +247,7 @@ mod tests {
         let placed = Placed { host: Host::Cloud { run, place: isothrum::CloudPlace::default(), conn }, dir: dir.clone(), target, vm: false };
         let tools = Tools::rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
         let dirs = AppDirs::new(Some(home), None);
-        let err = placed.add(&dirs, "kalilinux/kali-rolling", None, &mut |_| {}).await.unwrap_err();
+        let err = placed.add(&dirs, Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.unwrap_err();
         assert!(err.to_string().starts_with("Your sign-in to AWS has expired"), "{err}");
         let asked = tools.calls().iter().filter(|c| c.contains("sts get-caller-identity")).count();
         assert_eq!(asked, 1, "the sign-in asked once: {:?}", tools.calls());
@@ -276,7 +286,7 @@ mod tests {
         assert!(compose.contains(&format!("account={PLAYER} shared=/shared sh -c")), "the box makes its account where it starts: {compose}");
 
         let dir = lab("os: debian@12");
-        super::super::add(&dir, Kind::Vm, Cpu::Lab, None, None).unwrap();
+        super::super::add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, None).unwrap();
         let home = dir.join("home");
         let shell = box_shell(&dir, Target::Vagrant, isothrum::LabRun::vm(&home, &dir, "t"), true).await;
         assert_eq!(shell.args[..3], ["ssh", NAME, "-c"], "{:?}", shell.args);
