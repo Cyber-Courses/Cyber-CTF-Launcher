@@ -37,8 +37,11 @@ try {
   ({ proc, b } = await openApp());
   await goTo(b, "Labs");
   const targets = [];
-  const first = await b.$("main button[data-row-open]");
-  if (await first.waitForExist({ timeout: 60000 }).catch(() => false)) {
+  // The list's first row: `$$`, since WebdriverIO 10 refuses a `$` that matches several (which
+  // read as no catalogue, leaving only an imported lab to link to).
+  const rows = () => b.$$("main button[data-row-open]");
+  if (await b.waitUntil(async () => (await rows()).length > 0, { timeout: 60000, interval: 1000 }).catch(() => false)) {
+    const first = (await rows())[0];
     const title = (await first.getAttribute("aria-label")).replace(/^Open /, "");
     const slug = (await (await first.$("./following-sibling::span[1]")).getText()).split(/\s/)[0];
     targets.push({ kind: "catalogue", title, slug });
@@ -51,15 +54,33 @@ try {
   if (targets.length === 0) r.skipAll("no lab to link to: the catalogue can't be read here and no lab is imported");
 
   const [lab, other = lab] = targets;
+  let shown;
   if (ARGV_LINKS) {
     ({ proc, b } = await openApp({ args: [`cyberctf://labs/${lab.slug}`] }));
-    r.check("launch-link", await showsLab(b, lab.title), `opened with cyberctf://labs/${lab.slug}, the app shows ${lab.title}'s page (${lab.kind})`);
+    shown = await showsLab(b, lab.title);
+    r.check("launch-link", shown, `opened with cyberctf://labs/${lab.slug}, the app shows ${lab.title}'s page (${lab.kind})`);
   } else {
+    // macOS hands a link to the app as an event, never on its command line: the lab's page the
+    // not-started check reads is the one a link handed to the running app shows.
     ({ proc, b } = await openApp());
     r.skip("launch-link", "macOS hands a link to the app as an event, not on its command line (the running-link checks cover the page's side)");
+    await openLink(b, `cyberctf://labs/${lab.slug}`);
+    shown = await showsLab(b, lab.title);
   }
-  const offered = await mainButton(b, "Start lab", "Sign in to start", "Import a lab", "Retry").isExisting();
-  r.check("not-started", offered, "the link only shows the lab: its page still offers to start it");
+  // Read on the lab's page the link showed, once its actions are drawn (they follow its title).
+  const offered =
+    shown &&
+    (await mainButton(b, "Start lab", "Sign in to start", "Import a lab", "Retry")
+      .waitForExist({ timeout: 15000 })
+      .then(
+        () => true,
+        () => false,
+      ));
+  r.check(
+    "not-started",
+    offered,
+    shown ? "the link only shows the lab: its page still offers to start it" : `the link never showed ${lab.title}'s page, so nothing offers to start it`,
+  );
 
   await goTo(b, "Overview");
   await openLink(b, `cyberctf://labs/${other.slug}`);
