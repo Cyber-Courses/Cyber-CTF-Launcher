@@ -25,6 +25,7 @@ import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, providerRows, renderMachineScreen } from "@/features/machine/machine-test-kit";
 import { must, toastsShown } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
+import attackBoxPin from "../../../src-tauri/attack-box-image.json";
 
 const GB = 1e9;
 const text = () => document.body.textContent;
@@ -514,12 +515,15 @@ describe("HypervisorRows", () => {
 describe("DownloadsPanel", () => {
   it("lists the downloads and frees space once the system dialog confirms it", async () => {
     setAttackImage("kalilinux/kali-rolling");
+    // The chosen image, then an older launcher's defaults: the floating tag and each digest the
+    // pin file keeps under `previous` (the bump workflow adds one with every new image).
+    const counted = { extraImages: ["kalilinux/kali-rolling", "cyberctf/attack-box:latest", ...attackBoxPin.previous] };
     let yes = false;
     const calls = installTauri({ "plugin:dialog|message": (a) => answersDialog(yes)(a) });
     const user = userEvent.setup();
     render(<DownloadsPanel />);
     await flush();
-    expect(calls.find((c) => c.cmd === "machine_storage")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling", "cyberctf/attack-box:latest"] });
+    expect(calls.find((c) => c.cmd === "machine_storage")?.args).toEqual(counted);
     expect(text()).toContain("16 GB of lab downloads");
     expect(text()).toContain("2 container images · 1 VM image");
     expect(text()).not.toContain("postgres:16");
@@ -533,7 +537,7 @@ describe("DownloadsPanel", () => {
     yes = true;
     await user.click(button(/clean up/i));
     await flush();
-    expect(calls.find((c) => c.cmd === "machine_storage_clean")?.args).toEqual({ extraImages: ["kalilinux/kali-rolling", "cyberctf/attack-box:latest"] });
+    expect(calls.find((c) => c.cmd === "machine_storage_clean")?.args).toEqual(counted);
     expect(text()).toContain("Freed 1.0 GB.");
     expect(commands(calls).filter((c) => c === "machine_storage")).toHaveLength(2);
   });
