@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
+import { startEnded, stuckLabReport } from "./diagnose.mjs";
 
 export { runContainers } from "./owned.mjs";
 
@@ -203,9 +204,59 @@ export function waitAwake(b, cond, { timeout, interval = 4000, timeoutMsg }) {
   );
 }
 
-/** Wait until a lab shows as running on the Overview. */
-export function waitForLab(b, timeout = LAB_START_MS, timeoutMsg = "lab not shown running") {
-  return waitAwake(b, () => labRunning(b), { timeout, timeoutMsg });
+/** How often `waitForLab` looks at the Overview, and how often it asks the app about the lab. */
+const LAB_TICK_MS = 4000;
+const DIAGNOSE_EVERY = 5;
+
+/**
+ * Lab `id` as the app knows it (`active_operations`, `lab_status`, `lab_deploy_log`), each read
+ * on its own and a read that fails noted, for `stuckLabReport`.
+ */
+export async function labDiagnosis(b, id) {
+  const errors = [];
+  const read = (cmd, args) =>
+    invokeCmd(b, cmd, args, { timeoutMs: 10000 }).catch((e) => {
+      errors.push(e?.message ?? String(e));
+      return null;
+    });
+  const operations = await read("active_operations", {});
+  const status = await read("lab_status", { id, runtime: "DOCKER" });
+  const log = await read("lab_deploy_log", { id });
+  return { status, operations, log, error: errors.length ? errors.join("; ") : null };
+}
+
+/**
+ * Wait until a lab shows as running on the Overview (the page's polls kept awake, as `waitAwake`
+ * does). The wait says what the lab was doing when it fails: every `DIAGNOSE_EVERY` ticks the
+ * app is asked about lab `id` (the fixture lab, by default), and once its start has ended with
+ * the lab not running (nothing in flight on it, twice in a row) the wait fails at once with that
+ * report rather than at its timeout; a timeout carries the report too.
+ */
+export async function waitForLab(b, timeout = LAB_START_MS, timeoutMsg = "lab not shown running", { id = defaultLabId() } = {}) {
+  const deadline = Date.now() + timeout;
+  let ticks = 0;
+  let ended = 0;
+  let report = null;
+  while (Date.now() < deadline) {
+    if ((await forceVisible(b)) && ticks > 0) console.log("visibility override re-applied (the page reloaded)");
+    if (await labRunning(b)) return;
+    ticks += 1;
+    if (id && ticks % DIAGNOSE_EVERY === 0) {
+      const seen = await labDiagnosis(b, id);
+      report = stuckLabReport(id, seen);
+      ended = startEnded(id, seen) ? ended + 1 : 0;
+      if (ended >= 2) throw new Error(`${timeoutMsg}: the start ended without the lab running (${report})`);
+    }
+    await sleep(LAB_TICK_MS);
+  }
+  if (id && report === null) report = stuckLabReport(id, await labDiagnosis(b, id));
+  throw new Error(`${timeoutMsg} after ${Math.round(timeout / 1000)} s${report ? ` (${report})` : ""}`);
+}
+
+/** The lab `waitForLab` asks about: the fixture lab's id, when one is named. */
+function defaultLabId() {
+  const lab = localLab();
+  return lab ? localLabId(lab) : null;
 }
 
 /**

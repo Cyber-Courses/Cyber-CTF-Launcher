@@ -32,7 +32,16 @@ async function runSelfTest(b, button, title, timeout) {
   await button.waitForClickable({ timeout: 20000 });
   await button.click();
   let outcome = null;
-  await waitAwake(b, async () => (outcome = await testOutcome(b, title)) !== null, { timeout, interval: 5000, timeoutMsg: `the ${title} never ended` });
+  try {
+    await waitAwake(b, async () => (outcome = await testOutcome(b, title)) !== null, { timeout, interval: 5000, timeoutMsg: `the ${title} never ended` });
+  } catch (e) {
+    // What the panel said when the wait ran out: the step it stood at, so the reason says.
+    const panel = await b
+      .$(`//main//*[normalize-space()=${JSON.stringify(title)}]/ancestor::div[.//*[normalize-space()="Testing"]][1]`)
+      .getText()
+      .catch(() => "");
+    throw new Error(`${e.message}${panel ? `; the panel says: ${panel.replace(/\s+/g, " ").slice(0, 400)}` : ""}`);
+  }
   return outcome;
 }
 
