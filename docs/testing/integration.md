@@ -80,7 +80,7 @@ every setting its test reads, its scenario is skipped, naming those not set (Pro
 | `server-lab-proxmox` | a VM lab on Proxmox: up, status, checks over SSH through the node, down  |
 | `server-lab-esxi`    | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down |
 
-## Bare-machine tier (the test rig only)
+## Bare-machine tier (the test rig, or check-only anywhere)
 
 The launcher's guided machine setup on a fresh, bare Windows or Linux guest, end to end and
 without a window: `integration_tests::setup::the_guided_setup_readies_this_machine`. It installs
@@ -90,8 +90,15 @@ the machine report, runs the Docker and VM self-tests and starts and stops an ex
 installs real tools as an administrator, so it is not in `tests/integration/run.sh`: the test
 rig's `setup` suite runs it from the built test binary, pass after pass (a pass ends at WSL's
 restart or the docker group's new login), and gives its knobs (`CYBERCTF_TEST_SETUP_PATHS`,
-`_HYPERVISORS`, `_REPORT`, `_LOGS`, `_LAB`; the test's module documentation says each). Without
-them it returns at once.
+`_HYPERVISORS`, `_REPORT`, `_LOGS`, `_LAB`, `_CHECK_ONLY`; the test's module documentation says
+each). Without them it returns at once.
+
+With `CYBERCTF_TEST_SETUP_CHECK_ONLY=1` it is safe on any machine, a developer's included: it runs
+the machine check and the plan exactly as the app does and writes the same report and records,
+but installs, starts, removes and restarts nothing, and runs no self-test or lab. Each item is
+`pass` or `fail` for what the check found, or `skip` with the reason `check-only: would <action>`
+for what the setup would do (`would install Vagrant`, `would run the Docker self-test`, a
+`ready:<tool>` that `would be ready once set up`).
 
 ## Not here yet
 

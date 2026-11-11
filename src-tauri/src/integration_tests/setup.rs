@@ -5,7 +5,7 @@
 //! machine (a throwaway one), restarting it or logging in again between passes as an item says.
 //!
 //! It installs real tools on this machine, as an administrator: never run it on a machine of
-//! yours. It returns at once without its knobs:
+//! yours, unless check-only (below). It returns at once without its knobs:
 //!
 //! - `CYBERCTF_TEST_SETUP_PATHS`: the lab types to set up, `docker,vm`;
 //! - `CYBERCTF_TEST_SETUP_HYPERVISORS`: the hypervisors to try, in order (`libvirt,virtualbox`):
@@ -18,7 +18,16 @@
 //!   still leaves what was done), in the format of every test runner's `--results`
 //!   (tests/README.md, "Results"; [`support::results`](super::support::results));
 //! - `CYBERCTF_TEST_SETUP_REPORT`: the same items as `@@setup` lines, the report's format before
-//!   the records, while the test rig reads it (remove once it reads the records).
+//!   the records, while the test rig reads it (remove once it reads the records);
+//! - `CYBERCTF_TEST_SETUP_CHECK_ONLY`: `1` checks only, see below.
+//!
+//! Check-only (`CYBERCTF_TEST_SETUP_CHECK_ONLY=1`), safe on any machine: the machine check and the
+//! plan run exactly as the app runs them, and the report, the records and the `@@setup` lines are
+//! written as in a pass, but nothing is installed, started, removed or restarted, and no
+//! self-test or lab runs. An item the setup finds in place is `present` (`pass`), one it can't
+//! set up `failed` (`fail`), one it leaves to the player `skipped`, and anything it would do is
+//! `check-only` (`skip`, reason `check-only: would <action>`): each step of the plan, a tool that
+//! isn't ready yet but would be (`ready:<tool>`), the self-tests and the lab.
 //!
 //! An item's status is `installed` (done in this pass), `present` (there already, or ready),
 //! `failed` (the note names its log), `skipped` (the note says why) or `again` (note `reboot` or
@@ -49,7 +58,7 @@ use super::support::lab::install_copy;
 use super::support::results::{self, Record, Verdict};
 use super::support::{check, scenario};
 use crate::machine::selftest::{self, Kind};
-use crate::machine::setup::{Action, ManualReason, Plan, SetupPath, Step, Wanted, plan};
+use crate::machine::setup::{Action, ManualReason, Plan, SetupPath, Step, Wanted, WindowsFeature, plan};
 use crate::machine::system::{self, SystemReport, docker};
 use crate::machine::tools::install;
 use crate::platform::AppDirs;
@@ -64,6 +73,8 @@ struct Knobs {
     report: Option<PathBuf>,
     logs: PathBuf,
     lab: Option<PathBuf>,
+    /// Detect and plan only (`CYBERCTF_TEST_SETUP_CHECK_ONLY=1`): nothing is run.
+    check_only: bool,
 }
 
 impl Knobs {
@@ -87,6 +98,7 @@ impl Knobs {
             report: var("CYBERCTF_TEST_SETUP_REPORT").map(PathBuf::from),
             logs: PathBuf::from(var("CYBERCTF_TEST_SETUP_LOGS")?),
             lab: var("CYBERCTF_TEST_SETUP_LAB").map(PathBuf::from),
+            check_only: var("CYBERCTF_TEST_SETUP_CHECK_ONLY").is_some_and(|v| v.trim() == "1"),
         })
     }
 }
@@ -99,6 +111,8 @@ enum Status {
     Failed,
     Skipped,
     Again,
+    /// What a check-only pass would do, not done.
+    CheckOnly,
 }
 
 impl Status {
@@ -107,7 +121,7 @@ impl Status {
         match self {
             Status::Installed | Status::Present => Verdict::Pass,
             Status::Failed => Verdict::Fail,
-            Status::Skipped | Status::Again => Verdict::Skip,
+            Status::Skipped | Status::Again | Status::CheckOnly => Verdict::Skip,
         }
     }
 
@@ -118,6 +132,7 @@ impl Status {
             Status::Failed => "failed",
             Status::Skipped => "skipped",
             Status::Again => "again",
+            Status::CheckOnly => "check-only",
         }
     }
 }
@@ -243,6 +258,9 @@ fn dirs() -> AppDirs {
 /// What `step` does, by the function the window's command for it calls, into `log`: its status
 /// and note.
 async fn run_step(dirs: &AppDirs, step: &Step, log: &mut Log) -> (Status, String) {
+    if let Some(left) = left_alone(&step.action) {
+        return left;
+    }
     let mut on_line = |l: String| log.write(&l);
     let done = match &step.action {
         Action::Install { dependency } => {
@@ -251,14 +269,7 @@ async fn run_step(dirs: &AppDirs, step: &Step, log: &mut Log) -> (Status, String
         Action::Plugin { plugin } => install::install_vagrant_plugin(plugin.clone(), &mut on_line).await.map(|()| format!("{plugin} installed")),
         Action::StartEngine { engine } => docker::docker_start_engine(engine.id().to_owned()).await.map(|()| format!("{} started", engine.id())),
         Action::UseEngine { engine } => docker::docker_use_engine(engine.id().to_owned()).await.map(|()| format!("Docker uses {}", engine.id())),
-        Action::Manual { reason: ManualReason::Distribution, dependency, .. } => {
-            let what = dependency.map_or("it", |d| d.name());
-            return (Status::Skipped, format!("this distribution isn't supported by the guided setup yet: install {what} yourself"));
-        }
-        Action::Manual { reason: ManualReason::Vendor, url, .. } => {
-            return (Status::Skipped, format!("links out: {}", url.as_deref().unwrap_or("its vendor's site")));
-        }
-        Action::Blocked { reason } => return (Status::Failed, format!("can't run here: {reason}")),
+        Action::Manual { .. } | Action::Blocked { .. } => unreachable!("left alone above"),
         Action::Restart { .. } | Action::Relogin => unreachable!("a pass ends at a restart or a new login"),
     };
     match done {
@@ -266,6 +277,103 @@ async fn run_step(dirs: &AppDirs, step: &Step, log: &mut Log) -> (Status, String
         Err(e) => {
             log.write(&format!("failed: {e}"));
             (Status::Failed, format!("{e}; see {}", log.name))
+        }
+    }
+}
+
+/// A step the setup doesn't run itself, as a pass records it: the player's to take (skipped) or one
+/// that can't run here (failed). None for a step the setup runs.
+fn left_alone(action: &Action) -> Option<(Status, String)> {
+    Some(match action {
+        Action::Manual { reason: ManualReason::Distribution, dependency, .. } => {
+            let what = dependency.map_or("it", |d| d.name());
+            (Status::Skipped, format!("this distribution isn't supported by the guided setup yet: install {what} yourself"))
+        }
+        Action::Manual { reason: ManualReason::Vendor, url, .. } => (Status::Skipped, format!("links out: {}", url.as_deref().unwrap_or("its vendor's site"))),
+        Action::Blocked { reason } => (Status::Failed, format!("can't run here: {reason}")),
+        _ => return None,
+    })
+}
+
+/// What the setup would do for a step it runs, said by a check-only pass (`would …`); None for
+/// one it leaves alone ([`left_alone`]).
+fn would(action: &Action) -> Option<String> {
+    Some(match action {
+        Action::Install { dependency } => format!("would install {}", dependency.name()),
+        Action::Plugin { plugin } => format!("would install the Vagrant plugin {plugin}"),
+        Action::StartEngine { engine } => format!("would start {}", engine.id()),
+        Action::UseEngine { engine } => format!("would point Docker at {}", engine.id()),
+        Action::Restart { feature } => format!(
+            "would restart the computer to turn {} on",
+            match feature {
+                WindowsFeature::Wsl => "WSL 2",
+                WindowsFeature::Hyperv => "Hyper-V",
+            }
+        ),
+        Action::Relogin => "would sign out and back in".to_owned(),
+        Action::Manual { .. } | Action::Blocked { .. } => return None,
+    })
+}
+
+/// Whether a step about `item` sets up `tool` (a `ready:` line's): its own item, or for Docker and
+/// Compose, Docker's install, its engine or WSL.
+fn sets_up(item: &str, tool: &str) -> bool {
+    item == tool || (matches!(tool, "docker" | "compose") && (item == "docker" || item == "wsl" || item.starts_with("engine:")))
+}
+
+/// The example lab's item: `lab:<its folder's name>`.
+fn lab_item(lab: &Path) -> String {
+    format!("lab:{}", lab.file_name().map_or_else(|| "lab".to_owned(), |n| n.to_string_lossy().into_owned()))
+}
+
+/// A check-only pass: what the machine check `before` found and what the setup would do about it
+/// (`first`, the plan for the knobs' wants), recorded item by item as a pass records them, and
+/// nothing run: no install, engine, restart, self-test or lab, nor any tool at all.
+fn check_only(out: &mut Out, before: &SystemReport, first: &Plan, knobs: &Knobs) {
+    // The plan a pass acts on: the hypervisor the first plan picked, as `act` plans it.
+    let wanted = Wanted { hypervisors: first.hypervisor.into_iter().collect(), ..knobs.wanted.clone() };
+    let steps = plan(before, &before.setup, &wanted).steps;
+    for step in &steps {
+        match (would(&step.action), left_alone(&step.action)) {
+            (Some(what), _) => out.line(&step.item, Status::CheckOnly, 0, &what),
+            (None, Some((status, note))) => out.line(&step.item, status, 0, &note),
+            (None, None) => unreachable!("a step is run or left alone"),
+        }
+    }
+    for item in first.items.iter().filter(|i| !steps.iter().any(|s| &s.item == *i)) {
+        out.line(item, Status::Present, 0, "nothing to do");
+    }
+    let acts_on = |tool: &str| steps.iter().any(|s| would(&s.action).is_some() && sets_up(&s.item, tool));
+    let ready = readiness(before, &knobs.wanted, first.hypervisor);
+    for (tool, ok, note) in &ready {
+        let item = format!("ready:{tool}");
+        match (*ok, acts_on(tool)) {
+            (true, _) => out.line(&item, Status::Present, 0, note),
+            (false, true) => out.line(&item, Status::CheckOnly, 0, &format!("would be ready once set up (now: {note})")),
+            (false, false) => out.line(&item, Status::Failed, 0, note),
+        }
+    }
+    let will_be = |tool: &str| ready.iter().any(|(t, ok, _)| t == tool && (*ok || acts_on(t)));
+    let docker_ready = knobs.wanted.paths.contains(&SetupPath::Docker) && will_be("docker");
+    let vm_ready = first.hypervisor.filter(|h| will_be(h.id()) && will_be("vagrant"));
+    if knobs.wanted.paths.contains(&SetupPath::Docker) {
+        if docker_ready {
+            out.line("selftest:docker", Status::CheckOnly, 0, "would run the Docker self-test");
+        } else {
+            out.line("selftest:docker", Status::Skipped, 0, "Docker isn't ready");
+        }
+    }
+    if knobs.wanted.paths.contains(&SetupPath::Vm) {
+        match vm_ready {
+            Some(h) => out.line("selftest:vm", Status::CheckOnly, 0, &format!("would run the VM self-test on {}", h.id())),
+            None => out.line("selftest:vm", Status::Skipped, 0, "no hypervisor is ready"),
+        }
+    }
+    if let Some(lab) = &knobs.lab {
+        match (docker_ready, vm_ready) {
+            (true, _) => out.line(&lab_item(lab), Status::CheckOnly, 0, "would start and stop it in containers"),
+            (false, Some(h)) => out.line(&lab_item(lab), Status::CheckOnly, 0, &format!("would start and stop it in a VM on {}", h.id())),
+            (false, None) => out.line(&lab_item(lab), Status::Skipped, 0, "nothing to run it on"),
         }
     }
 }
@@ -377,7 +485,7 @@ enum LabPlace {
 /// Starts the example lab at `src` as the lab page does, then stops it, in `place`.
 async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
     let name = src.file_name().map_or_else(|| "lab".to_owned(), |n| n.to_string_lossy().into_owned());
-    let item = format!("lab:{name}");
+    let item = lab_item(src);
     let started = Instant::now();
     let id = format!("setup-{name}-{}", rand::random::<u16>());
     let dir = install_copy(src, &id);
@@ -443,7 +551,7 @@ fn report_hypervisors(out: &mut Out, first: &Plan, wanted: &Wanted) {
 }
 
 #[tokio::test]
-#[ignore = "installs real tools on this machine, as an administrator: the test rig's bare guests only (CYBERCTF_TEST_SETUP_*)"]
+#[ignore = "installs real tools on this machine, as an administrator: the test rig's bare guests only, or CYBERCTF_TEST_SETUP_CHECK_ONLY=1 (CYBERCTF_TEST_SETUP_*)"]
 async fn the_guided_setup_readies_this_machine() {
     let Some(knobs) = Knobs::from_env() else { return };
     std::fs::create_dir_all(&knobs.logs).unwrap_or_else(|e| panic!("creating {}: {e}", knobs.logs.display()));
@@ -456,6 +564,11 @@ async fn the_guided_setup_readies_this_machine() {
     let first = plan(&before, &before.setup, &knobs.wanted);
     out.hypervisor = first.hypervisor.map_or_else(String::new, |h| h.id().to_owned());
     report_hypervisors(&mut out, &first, &knobs.wanted);
+    if knobs.check_only {
+        check_only(&mut out, &before, &first, &knobs);
+        assert!(out.failed.is_empty(), "the setup can't ready this machine:\n{}", out.failed.join("\n"));
+        return;
+    }
     let wanted = Wanted { hypervisors: first.hypervisor.into_iter().collect(), ..knobs.wanted.clone() };
     let items = first.items.clone();
 
@@ -496,12 +609,7 @@ async fn the_guided_setup_readies_this_machine() {
         match (docker_ready, vm_ready) {
             (true, _) => example_lab(&mut out, lab, LabPlace::Docker).await,
             (false, Some(hypervisor)) => example_lab(&mut out, lab, LabPlace::Vm(hypervisor)).await,
-            (false, None) => out.line(
-                &format!("lab:{}", lab.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned())),
-                Status::Skipped,
-                0,
-                "nothing to run it on",
-            ),
+            (false, None) => out.line(&lab_item(lab), Status::Skipped, 0, "nothing to run it on"),
         }
     }
 
@@ -516,7 +624,7 @@ mod tests {
 
     #[test]
     fn an_items_record_says_its_status_and_the_pass_hypervisor() {
-        let knobs = Knobs { wanted: Wanted::default(), results: None, report: None, logs: PathBuf::from("setup-logs"), lab: None };
+        let knobs = Knobs { wanted: Wanted::default(), results: None, report: None, logs: PathBuf::from("setup-logs"), lab: None, check_only: false };
         let mut out = Out::new(&knobs);
         out.hypervisor = "libvirt".into();
         let r = out.record("docker", Status::Installed, 42, "Docker installed");
@@ -546,6 +654,64 @@ mod tests {
         assert_eq!(paths, [SetupPath::Docker, SetupPath::Vm]);
         assert_eq!(Provider::from_id("vmware_desktop"), Some(Provider::VmwareDesktop));
         assert_eq!(Provider::from_id("libvirt"), Some(Provider::Libvirt));
+    }
+
+    /// The records a check-only pass wrote on the machine `report`, for docker and vm on libvirt
+    /// with a lab, and every tool call it made.
+    fn checked_only(report: &SystemReport) -> (Vec<serde_json::Value>, Vec<String>) {
+        let dir = std::env::temp_dir().join(format!("cyberctf-setup-check-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let knobs = Knobs {
+            wanted: Wanted { paths: vec![SetupPath::Docker, SetupPath::Vm], engine: None, hypervisors: vec![Provider::Libvirt, Provider::Virtualbox] },
+            results: Some(dir.join("setup.jsonl")),
+            report: Some(dir.join("setup.report")),
+            logs: dir.clone(),
+            lab: Some(PathBuf::from("examples").join("hello-stack")),
+            check_only: true,
+        };
+        // Every tool, installer and command runner answers from here, and says it was called.
+        let tools = crate::platform::exec::fake::Tools::new(|_, _| None);
+        let mut out = Out::new(&knobs);
+        let first = plan(report, &report.setup, &knobs.wanted);
+        report_hypervisors(&mut out, &first, &knobs.wanted);
+        check_only(&mut out, report, &first, &knobs);
+        let records = std::fs::read_to_string(dir.join("setup.jsonl")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let lines = std::fs::read_to_string(dir.join("setup.report")).unwrap();
+        assert_eq!(lines.lines().count(), std::fs::read_to_string(dir.join("setup.jsonl")).unwrap().lines().count(), "the @@setup lines say the same items");
+        std::fs::remove_dir_all(&dir).ok();
+        (records, tools.calls())
+    }
+
+    #[test]
+    fn a_check_only_pass_records_what_the_setup_would_do_and_runs_nothing() {
+        for (name, report) in crate::machine::setup::shapes::all() {
+            let (records, calls) = checked_only(&report);
+            assert_eq!(calls, [] as [String; 0], "{name}: no installer, engine, self-test, lab or other tool runs");
+            assert!(!records.is_empty(), "{name}");
+            for r in &records {
+                let (result, reason) = (r["result"].as_str().unwrap(), r["reason"].as_str().unwrap());
+                let done = matches!((result, reason.split(':').next().unwrap()), ("pass", "present") | ("fail", "failed") | ("skip", "skipped" | "check-only"));
+                assert!(done, "{name}: {r}");
+                assert!(!reason.starts_with("installed") && !reason.starts_with("again"), "{name}: nothing is done in check-only: {r}");
+                if reason.starts_with("check-only:") {
+                    assert!(reason.starts_with("check-only: would "), "{name}: {r}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_check_only_pass_on_a_bare_debian_says_each_install_it_would_make() {
+        let (records, _) = checked_only(&crate::machine::setup::shapes::bare_debian());
+        let reason = |case: &str| {
+            records.iter().find(|r| r["case"] == case).map(|r| (r["result"].as_str().unwrap().to_owned(), r["reason"].as_str().unwrap().to_owned()))
+        };
+        assert_eq!(reason("docker").unwrap().0, "skip");
+        assert!(reason("docker").unwrap().1.starts_with("check-only: would install"), "{:?}", reason("docker"));
+        assert_eq!(reason("vagrant").unwrap().1, format!("check-only: would install {}", crate::machine::tools::install::Dependency::Vagrant.name()));
+        assert!(reason("ready:docker").unwrap().1.starts_with("check-only: would be ready once set up"), "{:?}", reason("ready:docker"));
+        assert_eq!(reason("selftest:docker").unwrap(), ("skip".to_owned(), "check-only: would run the Docker self-test".to_owned()));
+        assert_eq!(reason("lab:hello-stack").unwrap(), ("skip".to_owned(), "check-only: would start and stop it in containers".to_owned()));
     }
 
     #[test]
