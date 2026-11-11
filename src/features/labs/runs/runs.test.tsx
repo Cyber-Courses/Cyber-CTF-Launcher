@@ -13,7 +13,7 @@ import {
   type DeployRun,
 } from "@/features/labs/runs/deploy-runs";
 import { getLastRun, setLastRun } from "@/features/labs/runs/last-run";
-import { deployingOf, operationLabel, OPERATION_STATUS, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
+import { deployingOf, keepsRunningPhase, operationLabel, operationStatus, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
 import { timeLines, useWorkerLog } from "@/features/labs/runs/worker-log";
 import { setLocalePreference } from "@/lib/i18n";
 import type { ActiveOperation } from "@/lib/tauri";
@@ -195,12 +195,14 @@ describe("operations", () => {
     expect(operationLabel(op("provision"))).not.toContain("{");
   });
 
-  it("names the status shown while an operation runs, in the current language", () => {
-    const statuses = [OPERATION_STATUS.launch, OPERATION_STATUS.resume, OPERATION_STATUS.pause, OPERATION_STATUS.shutdown, OPERATION_STATUS.stop];
-    expect(statuses.every(Boolean)).toBe(true);
-    const en = OPERATION_STATUS.launch;
+  it("names the status shown while every operation runs, in the current language", () => {
+    const ops: ActiveOperation["op"][] = ["launch", "resume", "pause", "shutdown", "provision", "stop"];
+    expect(ops.map((o) => operationStatus(o))).toEqual(["Starting", "Resuming", "Pausing", "Shutting down", "Provisioning", "Stopping"]);
+    // Only a provisioning run leaves the lab in its running phase.
+    expect(ops.filter(keepsRunningPhase)).toEqual(["provision"]);
+    const en = operationStatus("launch");
     setLocalePreference("de");
-    expect(OPERATION_STATUS.launch).not.toBe(en);
+    expect(operationStatus("launch")).not.toBe(en);
   });
 
   it("counts as deploying the operations the backend says deploy, whatever their name", () => {

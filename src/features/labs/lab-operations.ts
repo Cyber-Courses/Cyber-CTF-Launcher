@@ -72,8 +72,7 @@ export async function runOperation(lab: Lab, op: ActiveOperation["op"], body: Op
       if (isSignedOut(e)) noteSignedOut();
       // Said wherever the player is (a toast, or a notification when the window is away), not
       // only in the lab's own deployment panel: a failed removal otherwise went unnoticed.
-      const title = failureTitleKey(op);
-      if (title) tell(translate(title, { title: lab.title }))(e);
+      tell(translate(failureTitleKey(op), { title: lab.title }))(e);
     }
     return describeError(e);
   } finally {

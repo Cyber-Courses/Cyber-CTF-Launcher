@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { failureHintKey, failureKind, failureTitleKey } from "@/features/labs/failure-hints";
+import type { LabOperation } from "@/features/labs/runs/operations";
 import { runFailure, startFailed } from "@/features/labs/runs/deploy-runs";
 
 describe("failureKind", () => {
@@ -43,12 +44,12 @@ describe("failureKind", () => {
 
   it("names the operations it reports", () => {
     expect(failureTitleKey("stop")).toBe("labs.failure.title.stop");
-    expect(failureTitleKey("reboot")).toBeNull();
+    expect(failureTitleKey("provision")).toBe("labs.failure.title.provision");
   });
 });
 
 describe("a run's failure", () => {
-  const run = (op: string, logs: string[], busy = false) => ({ busy, logs, times: logs.map(() => 0), op });
+  const run = (op: LabOperation, logs: string[], busy = false) => ({ busy, logs, times: logs.map(() => 0), op });
   it("is its last ✗ line once it is over", () => {
     expect(runFailure(run("launch", ["==> pulling", "✗ boom"]))).toBe("boom");
     expect(runFailure(run("launch", ["✗ boom"], true))).toBeNull();

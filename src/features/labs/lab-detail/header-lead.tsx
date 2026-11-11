@@ -8,7 +8,7 @@ import { runtimeWord } from "@/features/labs/lab-detail/labels";
 import { placeName, placeText, type Place } from "@/features/labs/place";
 import type { LabPhase, LabState } from "@/features/labs/lab-detail/lab-state";
 import { difficultyLabel, type Lab } from "@/features/labs/use-labs";
-import { OPERATION_STATUS } from "@/features/labs/runs/operations";
+import { operationStatus } from "@/features/labs/runs/operations";
 import type { LabStatus } from "@/lib/tauri";
 import { useT, type T } from "@/lib/i18n";
 
@@ -17,7 +17,7 @@ function stateWord(t: T, s: LabState): { tone: Tone; word: string; pulse?: boole
   const words: Record<Exclude<LabPhase, "operation">, { tone: Tone; word: string; pulse?: boolean }> = {
     running: { tone: "ok", word: t("labs.state.running") },
     // The one word for a start, as in the list, the sidebar and the deployment panel.
-    starting: { tone: "warn", word: OPERATION_STATUS.launch ?? t("common.operation.status.launch"), pulse: true },
+    starting: { tone: "warn", word: operationStatus("launch", t), pulse: true },
     failed: { tone: "fail", word: t("labs.state.failed") },
     paused: { tone: "muted", word: t("labs.state.paused") },
     shutDown: { tone: "muted", word: t("labs.state.shutDown") },
@@ -26,7 +26,7 @@ function stateWord(t: T, s: LabState): { tone: Tone; word: string; pulse?: boole
   };
   // "operation" means an operation with a word of its own is in flight (see labState).
   return s.phase === "operation"
-    ? { tone: "warn", word: (s.operation && OPERATION_STATUS[s.operation]) ?? t("labs.state.working"), pulse: true }
+    ? { tone: "warn", word: s.operation ? operationStatus(s.operation, t) : t("labs.state.working"), pulse: true }
     : words[s.phase];
 }
 

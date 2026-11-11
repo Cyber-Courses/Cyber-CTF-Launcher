@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { commandError, describeError, errorCode, type ErrorCode } from "@/lib/errors";
 import { registerReset } from "@/lib/module-state";
 import { failedLine, failureOf } from "@/lib/log-marks";
+import type { LabOperation } from "@/features/labs/runs/operations";
 
 // The live state of lab start/stop, kept outside the React tree so it survives navigating away
 // from the labs screen (which unmounts it) while a deploy keeps running in the backend.
@@ -21,7 +22,7 @@ export type DeployRun = {
   times: number[];
   /** What the run is (launch, stop, shutdown…), so a list row can say "Starting…" or
    *  "Stopping…" instead of guessing from the lab's status. */
-  op?: string;
+  op?: LabOperation;
   /** When it began (ms): its timers count from here, not from its first log line or from when
    *  a page showing it opened. */
   startedAt?: number;
@@ -84,7 +85,7 @@ function flushDeployLogs() {
 }
 
 /** Begin a run (`op`) for `labId`: clears that lab's previous logs, leaves other labs untouched. */
-export function beginDeploy(labId: string, op?: string) {
+export function beginDeploy(labId: string, op?: LabOperation) {
   flushDeployLogs();
   setRun(labId, { busy: true, logs: [], times: [], op, startedAt: Date.now() });
 }

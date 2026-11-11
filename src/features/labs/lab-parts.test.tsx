@@ -7,12 +7,13 @@ import { HealthBanner, useLabCheck } from "@/features/labs/lab-health";
 import { ObjectivePanel } from "@/features/labs/lab-detail/page-parts";
 import { LabRow } from "@/features/labs/lab-row";
 import { IDLE_ROW, type RowSituation } from "@/features/labs/lab-row-state";
+import { catalogueRowProps, type RowContext } from "@/features/labs/labs-list";
 import { askPortMode, PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { RunOnDialog, RunOnPicker, type Platform } from "@/features/labs/run-on";
 import type { RunTarget } from "@/features/labs/run-target";
 import type { Lab } from "@/features/labs/use-labs";
 import { getPortMode, setPortMode } from "@/lib/settings";
-import type { LabCheck, LabRunOptions, LabRunPath, LabStatus, Provider, ServerHost } from "@/lib/tauri";
+import type { ActiveOperation, LabCheck, LabRunOptions, LabRunPath, LabStatus, Provider, ServerHost } from "@/lib/tauri";
 import { answersDialog, commands, dialogsAsked, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
@@ -610,10 +611,42 @@ describe("LabRow", () => {
     expect(screen.getByRole("button", { name: "Shutting down…" }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("says Working… for an operation it has no word for", () => {
+  it("names an operation by its own word, as the lab page and the sidebar do", () => {
     installTauri();
     renderRow({ status: running(), busy: true, operation: "provision" });
-    expect(screen.getByRole("button", { name: "Working…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Provisioning…" })).toBeTruthy();
+  });
+
+  it("reads an operation the backend runs as the lab page does: a worker's pause after a reload, a provisioning run as running", () => {
+    installTauri();
+    const op = (o: ActiveOperation["op"]): ActiveOperation => ({ labId: lab.id, op: o, machine: null, deploying: true, step: null });
+    const ctx = (operations: [string, ActiveOperation][], runs: RowContext["runs"] = {}): RowContext => ({
+      statuses: { [lab.id]: running() },
+      runs,
+      completed: new Set(),
+      operations: new Map(operations),
+      report: null,
+      servers: [],
+      loggedIn: true,
+      hostArch: "x86_64",
+      emulates: false,
+      onOpen: vi.fn(),
+      onStop: vi.fn(),
+      onResume: vi.fn(),
+    });
+    // Regression: after a reload the row knew only this window's runs, so a worker's pause read
+    // "Starting…" while the page said "Pausing…".
+    const paused = render(<LabRow {...catalogueRowProps(lab, ctx([[lab.id, op("pause")]]))} />);
+    expect(screen.getByRole("button", { name: "Pausing…" })).toBeTruthy();
+    paused.unmount();
+    // Regression: a provisioning run read "Working…" in the row and "Running" on the page.
+    const provisioning = catalogueRowProps(lab, ctx([[lab.id, op("provision")]]));
+    expect(provisioning.situation).toMatchObject({ busy: false, operation: "provision" });
+    const mine = catalogueRowProps(lab, ctx([], { [lab.id]: { busy: true, logs: [], times: [], op: "provision" } }));
+    expect(mine.situation?.busy).toBe(false);
+    // This window's run names the operation until the backend reports it.
+    const clicked = catalogueRowProps(lab, ctx([], { [lab.id]: { busy: true, logs: [], times: [], op: "stop" } }));
+    expect(clicked.situation).toMatchObject({ busy: true, operation: "stop" });
   });
 
   it("resumes a paused or shut down lab", async () => {

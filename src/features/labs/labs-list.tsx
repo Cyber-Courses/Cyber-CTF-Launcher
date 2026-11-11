@@ -13,7 +13,8 @@ import { LabRow } from "@/features/labs/lab-row";
 import { needsCloudAccount, setupNeeded } from "@/features/labs/lab-readiness";
 import type { Lab } from "@/features/labs/use-labs";
 import { startFailed, type DeployRun } from "@/features/labs/runs/deploy-runs";
-import type { LabStatus, ServerHost, SystemReport } from "@/lib/tauri";
+import { keepsRunningPhase } from "@/features/labs/runs/operations";
+import type { ActiveOperation, LabStatus, ServerHost, SystemReport } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { prettyLabId } from "@/lib/format";
 import { useT } from "@/lib/i18n";
@@ -102,7 +103,9 @@ export type RowContext = {
   /** By lab id: none for a lab not run since the app started. */
   runs: Partial<Record<string, DeployRun>>;
   completed: Set<string>;
-  deploying: Set<string>;
+  /** The operations in flight, by lab id (`useActiveOperations`): what a row says after a reload,
+   *  or for a lab this window didn't start. */
+  operations: ReadonlyMap<string, ActiveOperation>;
   report: SystemReport | null | undefined;
   servers: ServerHost[];
   loggedIn: boolean;
@@ -119,13 +122,19 @@ export type RowContext = {
  *  row skips a render that changes nothing for its lab. */
 export function catalogueRowProps(lab: Lab, c: RowContext): ComponentProps<typeof LabRow> {
   const running = c.statuses[lab.id]?.running ?? false;
+  const run = c.runs[lab.id];
+  const backend = c.operations.get(lab.id);
+  // This window's run names the operation until the backend reports it; after a reload, or for a
+  // worker's park or resume, the backend's alone does, as on the lab page.
+  const operation = (run?.busy ? run.op : undefined) ?? backend?.op;
   return {
     lab,
     status: c.statuses[lab.id],
     situation: {
-      busy: c.runs[lab.id]?.busy ?? false,
-      operation: c.runs[lab.id]?.op,
-      deploying: c.deploying.has(lab.id),
+      // A provisioning run leaves the lab in its running phase, as on the lab page.
+      busy: ((run?.busy ?? false) || backend !== undefined) && !(operation && keepsRunningPhase(operation)),
+      operation,
+      deploying: backend?.deploying ?? false,
       solved: c.completed.has(lab.id),
       failed: startFailed(c.runs[lab.id]),
       setup: running ? null : setupNeeded(lab, c.report ?? null, c.servers),

@@ -17,7 +17,7 @@ import { dockerReadiness, labContainerCount, recentLabs, labsRunning } from "@/f
 import { runningUnlisted } from "@/features/labs/lab-row-state";
 import { CheckFailed } from "@/features/machine/check-failed";
 import { getLastRun } from "@/features/labs/runs/last-run";
-import { useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
+import { useActiveOperations } from "@/features/labs/runs/operations";
 import { assessRam } from "@/features/home/capacity";
 import type { ActiveOperation, AuthStatus, LabStatus, MachineMetrics, SystemReport } from "@/lib/tauri";
 import { useStableCallback } from "@/lib/use-stable-callback";
@@ -40,9 +40,8 @@ function useOverviewLabs(loggedIn: boolean) {
   const { labs, imported, error, retry, statuses, scanned, completed, refreshStatus } = useLabs(loggedIn);
   const servers = useSavedHosts().hosts;
   const actions = useLabActions(refreshStatus, servers);
+  // Operations running in the backend (started before a reload, or from the website), for the rows.
   const ops = useActiveOperations();
-  // Deploys running in the backend (started before a reload, or from the website), for the rows.
-  const deploying = useDeployingLabs();
   const all = labs ?? [];
   const running = labsRunning(all, statuses);
   // Running here but not in the catalogue: an imported lab (its page opens like any lab's), or any
@@ -56,7 +55,7 @@ function useOverviewLabs(loggedIn: boolean) {
     statuses,
     completed,
     actions,
-    deploying,
+    operations: ops,
     servers,
     running,
     importedRunning,
@@ -87,7 +86,7 @@ function useRowContext(
     statuses: o.statuses,
     runs: o.actions.runs,
     completed: o.completed,
-    deploying: o.deploying,
+    operations: o.operations,
     report,
     servers: o.servers,
     loggedIn,

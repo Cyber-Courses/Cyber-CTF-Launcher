@@ -3,7 +3,7 @@
 import { activeOperations, type ActiveOperation } from "@/lib/tauri";
 import { useMemo } from "react";
 import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
-import { translate } from "@/lib/i18n";
+import { translate, type MessageKey } from "@/lib/i18n";
 import { structurallyEqual } from "@/lib/equal";
 import { ignore } from "@/lib/failure";
 import { readSession, writeSession } from "@/lib/local-store";
@@ -12,26 +12,18 @@ import { machineLabel } from "@/lib/format";
 // The operations the backend runs on labs right now, polled from the long-lived Rust process,
 // and how they read on screen.
 
-/** What a lab shows while an operation runs on it: the containers report "running" well before
- *  a launch or resume is done, and until the end of a shut down or stop. */
-export const OPERATION_STATUS: Partial<Record<string, string>> = {
-  // Getters: read in the current language each time.
-  get launch() {
-    return translate("common.operation.status.launch");
-  },
-  get resume() {
-    return translate("common.operation.status.resume");
-  },
-  get pause() {
-    return translate("common.operation.status.pause");
-  },
-  get shutdown() {
-    return translate("common.operation.status.shutdown");
-  },
-  get stop() {
-    return translate("common.operation.status.stop");
-  },
-};
+/** A lab operation, as the backend names it. */
+export type LabOperation = ActiveOperation["op"];
+
+/** The word a lab shows while `op` runs on it ("Starting", "Pausing", "Provisioning"), the same in
+ *  the list, the lab page, the sidebar and Home: the containers report "running" well before a
+ *  launch or resume is done, and until the end of a shut down or stop. */
+export const operationStatus = (op: LabOperation, t: (key: MessageKey) => string = translate): string => t(`common.operation.status.${op}`);
+
+/** Whether a lab keeps its running phase while `op` runs on it: a provisioning run works on a lab
+ *  that is up and usable, so the list and the page still say "Running"; every other operation
+ *  names the lab's state while it runs. */
+export const keepsRunningPhase = (op: LabOperation): boolean => op === "provision";
 
 /**
  * The labs the backend deploys among `ops`, the operations in flight, as each says (Rust's
@@ -70,7 +62,7 @@ export const deployingLabsNow = () => deployingOf(operationsPoll.get());
  *  else (header, list, deployment), running; the machine when it targets one. */
 export function operationLabel(o: ActiveOperation): string {
   if (o.op === "provision" && o.machine) return translate("common.operation.label.provisionMachine", { machine: machineLabel(o.machine) });
-  return `${translate(`common.operation.status.${o.op}`)}…`;
+  return `${operationStatus(o.op)}…`;
 }
 
 /**

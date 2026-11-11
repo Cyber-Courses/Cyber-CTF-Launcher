@@ -9,7 +9,7 @@ import { RowColumns, RowDot, RowTitle } from "@/features/labs/lab-row-parts";
 import { RowAction } from "@/features/labs/lab-row-actions";
 import { confirmRemoveOnRow } from "@/features/labs/confirm-remove";
 import type { LabStatus } from "@/lib/tauri";
-import { OPERATION_STATUS } from "@/features/labs/runs/operations";
+import { operationStatus } from "@/features/labs/runs/operations";
 import { useT } from "@/lib/i18n";
 
 const PHASE_WORDS = {
@@ -82,10 +82,10 @@ function useRowState({ lab, status, situation = IDLE_ROW, hostArch, emulates = f
   const { busy, operation } = situation;
   // While busy, what is actually happening: a lab being started reports running long before
   // the launch is done, so "Stopping…" there would be wrong.
-  const doing = busy ? `${(operation && OPERATION_STATUS[operation]) ?? t("labs.state.working")}…` : null;
+  const doing = busy ? `${operation ? operationStatus(operation, t) : t("labs.state.working")}…` : null;
   const phase = rowPhase({ status, ...situation });
   // "Starting…": the one word for a start, as on the lab's page and in the sidebar.
-  const stateLabel = phase === "busy" ? doing : phase === "starting" ? `${OPERATION_STATUS.launch ?? t("labs.state.working")}…` : t(PHASE_WORDS[phase]);
+  const stateLabel = phase === "busy" ? doing : phase === "starting" ? `${operationStatus("launch", t)}…` : t(PHASE_WORDS[phase]);
   return { ...facts, doing, phase, stateLabel };
 }
 

@@ -1,13 +1,13 @@
 import { isLocalVmForm, type RunTarget } from "@/features/labs/run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { emulatorReady, vmFormTarget, isCloudLab, isContainerLab, isLocalHypervisor, runsNativelyHere } from "@/features/labs/lab-runtime";
-import { OPERATION_STATUS } from "@/features/labs/runs/operations";
+import { keepsRunningPhase, type LabOperation } from "@/features/labs/runs/operations";
 import { lifecyclePhase } from "@/features/labs/lab-phase";
-import type { ActiveOperation, LabControl, LabMachine, LabStatus, Provider, Runtime, ServerHost } from "@/lib/tauri";
+import type { LabControl, LabMachine, LabStatus, Provider, Runtime, ServerHost } from "@/lib/tauri";
 
 // What the lab page shows, derived from the lab's status and what is in flight on it.
 
-export type LabOperation = ActiveOperation["op"];
+export type { LabOperation };
 /** A header or panel action this page runs on a built lab. */
 export type LabAction = "pause" | "shutdown" | "resume" | "provision";
 
@@ -65,7 +65,7 @@ function labPhase({
   interrupted: boolean;
   failed: boolean;
 }): LabPhase {
-  const phase = lifecyclePhase({ busy: !!operation && !!OPERATION_STATUS[operation], ...lifecycle });
+  const phase = lifecyclePhase({ busy: !!operation && !keepsRunningPhase(operation), ...lifecycle });
   if (phase === "busy") return "operation";
   return phase ?? (interrupted ? "interrupted" : "notStarted");
 }

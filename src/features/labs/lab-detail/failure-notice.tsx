@@ -40,7 +40,6 @@ export function FailureNotice({
 }) {
   const t = useT();
   const key = failureTitleKey(op);
-  if (!key) return null;
   // The port-clash hint depends on where it ran: a VM here forwards fixed ports, so "random ports"
   // can't help; freeing the port is the only fix.
   const hintKey = kind === "ports" && !canRandomPorts ? "labs.failure.hint.portsVm" : kind ? failureHintKey(kind) : null;

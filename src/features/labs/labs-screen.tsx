@@ -15,7 +15,7 @@ import { ImportedLabs } from "@/features/labs/imported-labs-list";
 import { OpenLab, OpenLabLoading, useDetailTitle, useOpenLab } from "@/features/labs/open-lab";
 import { useLabs, type Lab } from "@/features/labs/use-labs";
 import { useLabActions } from "@/features/labs/use-lab-actions";
-import { useDeployingLabs } from "@/features/labs/runs/operations";
+import { useActiveOperations } from "@/features/labs/runs/operations";
 import type { LabStatus, SystemReport } from "@/lib/tauri";
 import { useSavedHosts } from "@/features/servers/use-server-list";
 import { useVmProvider } from "@/lib/use-vm-provider";
@@ -87,8 +87,8 @@ function useLabsScreen({ loggedIn, report, openLab, onDetailChange }: ViewProps)
   const statuses: Statuses = catalogue.statuses;
   const servers = useSavedHosts().hosts;
   const actions = useLabActions(catalogue.refreshStatus, servers);
-  // Deploys running in the backend (started from another window or before a reload), for the rows' dots.
-  const deploying = useDeployingLabs();
+  // Operations running in the backend (started from another window or before a reload), for the rows.
+  const operations = useActiveOperations();
   // A lab page opens on a catalogue lab or an imported one (each read on its own).
   const openable = useMemo(() => (labs || imported ? [...(labs ?? []), ...(imported ?? [])] : null), [labs, imported]);
   const [detailSlug, setDetailSlug] = useOpenLab(openLab, openable);
@@ -100,7 +100,7 @@ function useLabsScreen({ loggedIn, report, openLab, onDetailChange }: ViewProps)
   const shown = useFilteredLabs(labs, filters, statuses, completed);
   const detail = openable && detailSlug ? openable.find((l) => l.slug === detailSlug) : undefined;
   useDetailTitle(detail?.title ?? null, onDetailChange);
-  return { ...catalogue, statuses, actions, deploying, detailSlug, setDetailSlug, filters, setFilters, servers, readyVms, shown, detail };
+  return { ...catalogue, statuses, actions, operations, detailSlug, setDetailSlug, filters, setFilters, servers, readyVms, shown, detail };
 }
 
 /** The rows' context: the screen's state and its stable handlers (the rows are memoized). */
@@ -116,7 +116,7 @@ function useRowContext(v: ReturnType<typeof useLabsScreen>, { loggedIn, onLogin,
     statuses: v.statuses,
     runs: actions.runs,
     completed: v.completed,
-    deploying: v.deploying,
+    operations: v.operations,
     report,
     servers: v.servers,
     loggedIn,

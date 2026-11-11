@@ -1,5 +1,6 @@
 import type { MessageKey } from "@/lib/i18n";
 import type { ErrorCode } from "@/lib/errors";
+import type { LabOperation } from "@/features/labs/runs/operations";
 
 // What a failed lab operation's error means, for a hint on what to do about it. The launcher's own
 // failures are known by their code (src-tauri error.rs `Code`): the error this window saw, or the
@@ -42,11 +43,6 @@ export function failureKind(message: string | null | undefined, code?: ErrorCode
 /** The hint for a kind of failure (labs.failure.hint.*). */
 export const failureHintKey = (kind: FailureKind): MessageKey => `labs.failure.hint.${kind}`;
 
-/** The operations whose failure is reported by name (labs.failure.title.*). */
-const TITLED = ["launch", "resume", "pause", "shutdown", "stop", "provision"] as const;
-
-/** The title of a failed operation's notice and toast ("Couldn't start Blind orders"). */
-export function failureTitleKey(op: string): MessageKey | null {
-  const known = TITLED.find((o) => o === op);
-  return known ? `labs.failure.title.${known}` : null;
-}
+/** The title of a failed operation's notice and toast ("Couldn't start Blind orders"): every
+ *  operation has one (labs.failure.title.*). */
+export const failureTitleKey = (op: LabOperation): MessageKey => `labs.failure.title.${op}`;

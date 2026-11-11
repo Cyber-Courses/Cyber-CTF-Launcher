@@ -2,13 +2,14 @@ import { lifecyclePhase } from "@/features/labs/lab-phase";
 import { runsNativelyHere } from "@/features/labs/lab-runtime";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
+import type { LabOperation } from "@/features/labs/runs/operations";
 
 /** What a list knows of a row's lab beside its status, for the row to read in one piece. */
 export type RowSituation = {
   /** This session runs an operation on it. */
   busy: boolean;
   /** The operation in flight while `busy` (launch, stop, shutdown…), for its label. */
-  operation?: string;
+  operation?: LabOperation;
   /** The backend deploys it (e.g. started before a reload), for the dot. */
   deploying: boolean;
   /** The player already solved it (website evidence). */

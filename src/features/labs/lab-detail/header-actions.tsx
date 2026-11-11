@@ -7,7 +7,7 @@ import { StartTimer } from "@/features/labs/lab-timers";
 import type { HeaderMode, LabAction, LabState } from "@/features/labs/lab-detail/lab-state";
 import { ParkedActions, RunningActions } from "@/features/labs/lab-detail/up-actions";
 import { tell } from "@/lib/failure";
-import { OPERATION_STATUS } from "@/features/labs/runs/operations";
+import { operationStatus } from "@/features/labs/runs/operations";
 import { useT } from "@/lib/i18n";
 
 type HeaderActionsProps = {
@@ -117,7 +117,7 @@ function StartingButton({ operation, startedAt }: { operation: LabState["operati
   const t = useT();
   return (
     <Button variant="primary" disabled>
-      <Spinner className="size-3.5" /> {`${OPERATION_STATUS[operation ?? "launch"] ?? t("common.operation.status.launch")}…`} <StartTimer from={startedAt} />
+      <Spinner className="size-3.5" /> {`${operationStatus(operation ?? "launch", t)}…`} <StartTimer from={startedAt} />
     </Button>
   );
 }
