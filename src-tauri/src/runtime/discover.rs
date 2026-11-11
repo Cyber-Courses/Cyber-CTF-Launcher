@@ -235,7 +235,7 @@ async fn scan(dirs: &AppDirs) -> Vec<String> {
 /// installed labs' VM-name prefixes, so they are skipped when nothing is installed.
 async fn vm_lab_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
     let mut ids = BTreeSet::new();
-    if let Ok(out) = run_read("vmrun", &["list"], None).await {
+    if let Some(out) = read_vms("VMware", "vmrun", &["list"]).await {
         ids.extend(lab_ids_from_vmrun(&out));
     }
     if by_name.is_empty() {
@@ -253,18 +253,11 @@ async fn vm_lab_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
 /// these when no lab is installed, since the match is by the installed labs' names).
 async fn middot_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
     let mut ids = BTreeSet::new();
-    match run_read("VBoxManage", &["list", "runningvms"], None).await {
-        Ok(out) => {
-            let names = vbox_vm_names(&out);
-            ids.extend(lab_ids_from_vm_names(names.iter().map(String::as_str), by_name));
-        }
-        Err(e) if crate::platform::exec::timed_out(&e) => log::warn!("running-labs scan: VirtualBox isn't responding ({e})"),
-        // Not installed: nothing of it to find. Any other failure (a broken install) hides its
-        // labs from the scan, so it is said.
-        Err(crate::error::Error::ToolMissing { .. }) => {}
-        Err(e) => log::warn!("running-labs scan: VirtualBox couldn't list its running VMs ({e})"),
+    if let Some(out) = read_vms("VirtualBox", "VBoxManage", &["list", "runningvms"]).await {
+        let names = vbox_vm_names(&out);
+        ids.extend(lab_ids_from_vm_names(names.iter().map(String::as_str), by_name));
     }
-    if let Ok(out) = run_read("prlctl", &["list", "--running", "--no-header", "-o", "name"], None).await {
+    if let Some(out) = read_vms("Parallels", "prlctl", &["list", "--running", "--no-header", "-o", "name"]).await {
         ids.extend(lab_ids_from_vm_names(out.lines().map(str::trim), by_name));
     }
     // UTM (macOS): a started VM carries the same `<lab> · <machine>` label. Only ask utmctl when
@@ -272,7 +265,7 @@ async fn middot_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
     // every running-labs scan. `pgrep -x UTM` is a read-only check that cannot launch it (and on
     // Linux/Windows it finds nothing, so utmctl is skipped there too).
     if run_read("pgrep", &["-x", "UTM"], None).await.is_ok()
-        && let Ok(out) = run_read("utmctl", &["list"], None).await
+        && let Some(out) = read_vms("UTM", "utmctl", &["list"]).await
     {
         let names = utm_running_vm_names(&out);
         ids.extend(lab_ids_from_vm_names(names.iter().map(String::as_str), by_name));
@@ -288,24 +281,71 @@ async fn prefixed_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> 
     // `default_prefix`). Ask both the default URI (a user session, or `$LIBVIRT_DEFAULT_URI`) and
     // the system instance, since vagrant-libvirt deploys to `qemu:///system` by default, which a
     // plain user `virsh` does not read.
-    for args in [["list", "--name", "--state-running"].as_slice(), ["-c", "qemu:///system", "list", "--name", "--state-running"].as_slice()] {
-        if let Ok(out) = run_read("virsh", args, None).await {
+    for (name, args) in [
+        ("libvirt (default URI)", ["list", "--name", "--state-running"].as_slice()),
+        ("libvirt (qemu:///system)", ["-c", "qemu:///system", "list", "--name", "--state-running"].as_slice()),
+    ] {
+        if let Some(out) = read_vms(name, "virsh", args).await {
             ids.extend(lab_ids_from_prefixed_vm_names(out.lines(), by_name, '_'));
         }
     }
     // Hyper-V (Windows only; elsewhere the command isn't there and the probe just contributes
-    // nothing): a VM is `<lab>-<machine>` (Hyper-V allows no `·`). The running ones by name.
-    if let Ok(out) =
-        run_read("powershell", &["-NoProfile", "-Command", "Get-VM | Where-Object { $_.State -eq 'Running' } | ForEach-Object { $_.Name }"], None).await
-    {
+    // nothing): a VM is `<lab>-<machine>` (Hyper-V allows no `·`). The running ones by name. A
+    // Windows without Hyper-V's module lists nothing, rather than failing every scan.
+    if let Some(out) = read_vms("Hyper-V", "powershell", &["-NoProfile", "-Command", HYPERV_RUNNING]).await {
         ids.extend(lab_ids_from_prefixed_vm_names(out.lines(), by_name, '-'));
     }
     ids
 }
 
+/// Hyper-V's running VMs by name; nothing where its PowerShell module isn't installed.
+const HYPERV_RUNNING: &str =
+    "if (Get-Command Get-VM -ErrorAction SilentlyContinue) { Get-VM | Where-Object { $_.State -eq 'Running' } | ForEach-Object { $_.Name } }";
+
+/// What a hypervisor's `program args` lists of its running VMs, `name` saying which in the log.
+/// Not installed: nothing of it to find, said nowhere. Past the app's time limit: said as not
+/// responding. Any other failure (a broken install, a service down, a right missing) hides its
+/// labs from the scan, so it is said too. The one rule of every probe of the scan.
+async fn read_vms(name: &str, program: &'static str, args: &[&str]) -> Option<String> {
+    match run_read(program, args, None).await {
+        Ok(out) => Some(out),
+        Err(e) if crate::platform::exec::timed_out(&e) => {
+            log::warn!("running-labs scan: {name} isn't responding ({e})");
+            None
+        }
+        Err(crate::error::Error::ToolMissing { .. }) => None,
+        Err(e) => {
+            log::warn!("running-labs scan: {name} couldn't list its running VMs ({e})");
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn every_hypervisor_probe_says_a_failure_and_stays_quiet_when_not_installed() {
+        // Regression: only VirtualBox's failure was logged; a broken Parallels, UTM, libvirt,
+        // VMware or Hyper-V hid its running labs without a word.
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
+        let _tools = Tools::new(|program, _| match program {
+            "pgrep" => ok("123"),
+            _ => fail("permission denied"),
+        });
+        crate::testing::logs::take_warnings();
+        assert_eq!(super::vm_lab_ids(&by_name).await, std::collections::BTreeSet::new());
+        let said = crate::testing::logs::take_warnings();
+        for name in ["VMware", "VirtualBox", "Parallels", "UTM", "libvirt (default URI)", "libvirt (qemu:///system)", "Hyper-V"] {
+            assert!(said.iter().any(|w| w.contains(&format!("{name} couldn't list its running VMs"))), "{name}: {said:?}");
+        }
+        // None installed: nothing to find, nothing said.
+        let _tools = Tools::new(|program, _| if program == "pgrep" { ok("123") } else { None });
+        super::vm_lab_ids(&by_name).await;
+        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0]);
+    }
 
     #[tokio::test]
     async fn only_the_apps_own_timeout_reads_as_virtualbox_not_responding() {
