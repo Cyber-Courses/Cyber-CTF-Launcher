@@ -56,6 +56,41 @@ describe("deriveSteps", () => {
     ]);
   });
 
+  it("gives the boxes downloaded before a Vagrant start their own step, the lab's download its own", () => {
+    expect(
+      steps([
+        "Downloading CyberCTF/ad@0123456789ab",
+        "Downloading the VMs' boxes…",
+        "==> box: Loading metadata for box 'bento/debian-12'",
+        "    box: Progress: 42% (Rate: 1201k/s, Estimated time remaining: 0:04:10)",
+        "Bringing machine 'dc01' up with 'virtualbox' provider...",
+        "==> dc01: Importing base box 'bento/debian-12'...",
+      ]),
+    ).toEqual([
+      ["download", "labs.deploy.steps.download", 1],
+      ["boxes", "labs.deploy.phases.boxes", 3],
+      ["prepare", "labs.deploy.steps.start", 1],
+      ["m:dc01", "dc01", 1],
+    ]);
+  });
+
+  it("gives the images a Docker VM pulls their own step", () => {
+    expect(
+      steps([
+        "==> default: Machine booted and ready!",
+        "Pulling the environment's images in the VM…",
+        " web Pulling",
+        "36b0bafd7f97 Downloading 1.283GB",
+        "Starting the environment's containers in the VM…",
+        " Container web-1  Healthy",
+      ]),
+    ).toEqual([
+      // A step's lines stay together: the start's go back to the VM's.
+      ["m:default", "default", 3],
+      ["images", "labs.deploy.phases.images", 3],
+    ]);
+  });
+
   it("reads Terraform's init, apply and host setup", () => {
     expect(
       steps(["Initializing the backend...", "aws_instance.lab: Creating...", "aws_instance.lab: Creation complete", "the lab host is ready", "other"]),

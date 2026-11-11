@@ -133,6 +133,7 @@
     },
     "phases": {
       "images": "Récupérer les images",
+      "boxes": "Récupérer les boxes",
       "create": "Créer le réseau et les conteneurs",
       "start": "Démarrer les conteneurs",
       "health": "Attendre qu’ils soient opérationnels"

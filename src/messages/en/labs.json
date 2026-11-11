@@ -133,6 +133,7 @@
     },
     "phases": {
       "images": "Get images",
+      "boxes": "Get boxes",
       "create": "Create the network and containers",
       "start": "Start the containers",
       "health": "Wait until healthy"

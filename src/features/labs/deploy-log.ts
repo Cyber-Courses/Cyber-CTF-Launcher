@@ -7,7 +7,8 @@ import { FETCH_LINES, PREPARE_LINES } from "@/lib/tauri";
  * launcher is driving, detected from the output itself:
  *  - Docker Compose: pull images, create, start, wait until healthy.
  *  - Vagrant (a VM on this machine, or an ESXi host): one step per machine (dc01, ws01, …), each
- *    showing its live action (importing the box, booting, provisioning).
+ *    showing its live action (importing the box, booting, provisioning); before them, the boxes
+ *    the runner downloads, and in a Docker VM the images it pulls, each a step of its own.
  *  - Terraform (a cloud account or Proxmox): set up Terraform, create the infrastructure, then
  *    install and start the lab on the host.
  */
@@ -54,12 +55,26 @@ type StepKey = { id: string; label: string };
  *  Docker phase). `last` is the step the previous line went to. */
 type Stepper = (line: string, last: Step | undefined) => StepKey;
 
-/** Vagrant: one step per machine, from the first `==> name:` line on; before it, the start. */
+// The runner's downloads before a start, each in a step of its own: the boxes a `vagrant up` boots
+// (its line, then `vagrant box add`'s, which speaks as `box`), and the images a Compose start in a
+// Docker VM pulls (its line, then Compose's, until the start's own line).
+const BOXES_LINE = "Downloading the VMs' boxes";
+const IMAGES_IN_VM_LINE = "Pulling the environment's images in the VM";
+const STARTING_IN_VM_LINE = "Starting the environment's containers in the VM";
+const isBoxLine = (l: string) => l.startsWith(BOXES_LINE) || /^\s*(==>\s*)?box:/.test(l);
+
+/** Vagrant: one step per machine, from the first `==> name:` line on; before it, the start. The
+ *  boxes downloaded first, and a Docker VM's images, are steps of their own. */
 function vagrantStepper(t: T): Stepper {
   let machine: string | null = null;
+  let images = false;
   return (l) => {
+    if (isBoxLine(l)) return { id: "boxes", label: t("labs.deploy.phases.boxes") };
+    if (l.startsWith(IMAGES_IN_VM_LINE)) images = true;
+    else if (l.startsWith(STARTING_IN_VM_LINE)) images = false;
     const m = /^\s*==>\s*([A-Za-z0-9_.-]+):/.exec(l);
-    if (m) machine = m[1];
+    if (m) [machine, images] = [m[1], false];
+    if (images) return { id: "images", label: t("labs.deploy.phases.images") };
     if (machine) return { id: `m:${machine}`, label: machineLabel(machine) };
     return { id: "prepare", label: isPrepLine(l) ? t("labs.deploy.steps.prepareMachine") : t("labs.deploy.steps.start") };
   };
@@ -104,7 +119,9 @@ export function deriveSteps(t: T, timed: Timed[]): Step[] {
   const steps: Step[] = [];
   const stepOf = STEPPERS[detectTarget(timed.map((row) => row.line).join("\n"))](t);
   for (const row of timed) {
-    const { id, label } = isDownloadLine(row.line) ? { id: "download", label: t("labs.deploy.steps.download") } : stepOf(row.line, steps.at(-1));
+    // The runner's own box download speaks as the launcher's lab download does: it is Vagrant's.
+    const fetched = isDownloadLine(row.line) && !isBoxLine(row.line);
+    const { id, label } = fetched ? { id: "download", label: t("labs.deploy.steps.download") } : stepOf(row.line, steps.at(-1));
     let s = steps.find((x) => x.id === id);
     if (!s) {
       s = { id, label, rows: [] };

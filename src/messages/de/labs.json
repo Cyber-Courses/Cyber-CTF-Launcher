@@ -133,6 +133,7 @@
     },
     "phases": {
       "images": "Images holen",
+      "boxes": "Boxen holen",
       "create": "Netzwerk und Container erstellen",
       "start": "Container starten",
       "health": "Warten, bis alles bereit ist"
