@@ -4,10 +4,18 @@
 // Cyber CTF installed removed, when one is named. Run last: the labs download again what they
 // need on their next start.
 //
+// Only what the run itself downloaded is removed. Clean up removes every download the panel
+// lists, so it is confirmed only when each is the run's (an image or a box that wasn't on the
+// machine when the run started, owned.mjs's `ownedDownloads` from the runner's records); when the
+// panel lists one that isn't (the attack box's image the player already had, say), the spec says
+// which and leaves them all. The tools listed are the ones the run's app installed: it keeps that
+// list in the run's own folder.
+//
 //   CYBERCTF_TEST_CLEANUP_TOOL  the name of a tool Settings lists as installed by Cyber CTF to remove
 //                              (as the list shows it, e.g. "Terraform"); none: that check skipped,
 //                              since removing a tool takes it from the machine
-import { closeWindow, confirmSystemDialogs, finish, goTo, openApp, results, sleep, switchToWindow } from "../lib/support.mjs";
+import { ownedDownloads, readBefore, runRoot, runTool } from "../lib/owned.mjs";
+import { answerOf, closeWindow, confirmSystemDialogs, finish, goTo, openApp, recordAnswers, results, sleep, switchToWindow } from "../lib/support.mjs";
 
 const r = results();
 const TOOL = process.env.CYBERCTF_TEST_CLEANUP_TOOL || "";
@@ -19,6 +27,8 @@ const body = (b) =>
     .catch(() => "");
 /** The names the installed tools list shows (its rows' first line). */
 const toolNames = async (b) => Promise.all((await b.$$("//li/div/p[1]")).map((p) => p.getText()));
+/** The image `reference` names now, as Docker says it. */
+const imageId = (reference) => runTool("docker", ["image", "inspect", "--format", "{{.Id}}", reference])?.trim() || null;
 
 let proc;
 let b;
@@ -26,6 +36,8 @@ try {
   ({ proc, b } = await openApp());
   await goTo(b, "Settings");
   await switchToWindow(b, "settings");
+  // What the downloads panel lists, as it reads it on opening: what Clean up would remove.
+  await recordAnswers(b, "machine_storage");
   await (await b.$('//nav[@aria-label="Settings sections"]//button[contains(normalize-space(), "Maintenance")]')).click();
   await r.step("section", "Maintenance shows what runs and the lab downloads", async () => {
     await b.waitUntil(async () => /Running now/.test(await body(b)) && /Downloads/.test(await body(b)), {
@@ -42,12 +54,25 @@ try {
   });
 
   const clean = await b.$('//button[contains(normalize-space(), "Clean up")]');
+  // Unknown is never the run's: outside a run, or when the panel's read wasn't seen.
+  const root = runRoot();
+  const listed = await answerOf(b, "machine_storage");
+  const { ours, theirs } =
+    root && listed
+      ? ownedDownloads(listed, readBefore(root), imageId)
+      : { ours: [], theirs: [root ? "what the panel lists (its read wasn't seen)" : "all of them (no run folder)"] };
   if (await clean.isExisting()) {
     const before = (await body(b)).match(/[^\n]*of lab downloads/)?.[0] ?? "";
     await confirmSystemDialogs(b, "cancel");
     await clean.click();
     await sleep(3000);
     r.check("downloads-cancel", !/Freed|Removing/.test(await body(b)), `Clean up answered Cancel removes nothing (${before})`);
+  }
+  if (!(await clean.isExisting())) r.skip("downloads", "no lab downloads here to clean up");
+  else if (theirs.length) {
+    console.log(`downloads this run didn't make, left as they are: ${theirs.join(", ")}`);
+    r.skip("downloads", `Clean up would also remove downloads this run didn't make, so it isn't confirmed: ${theirs.join(", ")}`);
+  } else {
     await confirmSystemDialogs(b);
     await clean.click();
     await r.step("downloads", "Clean up, confirmed, removes the lab downloads and says what it freed", async () => {
@@ -58,11 +83,8 @@ try {
       });
       const t = await body(b);
       if (/Couldn.t remove the downloads/.test(t)) throw new Error("Couldn't remove the downloads");
-      return `${before} -> ${t.match(/Freed [^\n]+|Nothing could be removed[^\n]*/)[0]}`;
+      return `${ours.join(", ")} -> ${t.match(/Freed [^\n]+|Nothing could be removed[^\n]*/)[0]}`;
     });
-  } else {
-    r.skip("downloads-cancel", "no lab downloads here to clean up");
-    r.skip("downloads", "no lab downloads here to clean up");
   }
 
   const listed = await b.$('//*[normalize-space()="Tools Cyber CTF installed"]').isExisting();

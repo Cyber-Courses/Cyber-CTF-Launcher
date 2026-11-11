@@ -16,7 +16,6 @@ import {
   closeWindow,
   finish,
   forceVisible,
-  mainButton,
   mainText,
   openApp,
   openLabFromList,
@@ -24,6 +23,7 @@ import {
   signedIn,
   startFromDialog,
   stopAndRemoveOnPage,
+  stopLeftover,
   waitAwake,
   waitLabPageRunning,
 } from "../lib/support.mjs";
@@ -95,7 +95,7 @@ try {
   ({ proc, b } = await openApp({ storage: DESKTOP ? { "cyberctf.attackbox.desktop": "true" } : {} }));
   if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_ACCOUNT_SESSION to the runner)");
   if (!(await openLabFromList(b, LAB))) r.skipAll(`the catalogue doesn't list "${LAB}"`);
-  if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) await stopAndRemoveOnPage(b);
+  await stopLeftover(b, r);
   await startFromDialog(b, { ...START, provider: PROVIDER });
   await waitLabPageRunning(b, 3600000);
 

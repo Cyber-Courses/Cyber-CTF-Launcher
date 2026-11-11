@@ -1,7 +1,8 @@
 //! Each host's secret (password, API token or access key): the OS keychain in release builds,
 //! a 0600 JSON file in debug builds, since every `tauri dev` rebuild is a new unsigned binary
 //! and the keychain would re-prompt on each run (as the sign-in session's store does). Both
-//! stores are built in every build, so each is checked and tested; [`IN_A_FILE`] picks one.
+//! stores are built in every build, so each is checked and tested; [`in_a_file`] picks one. An
+//! end-to-end run's app (`platform::test_root`) keeps them in the file too, under the run's folder.
 //!
 //! A keychain call blocks: the OS may show its unlock prompt and wait for the player. Called
 //! from an async worker, it runs through [`blocking`], so the worker's other tasks move on to
@@ -11,19 +12,22 @@ use super::profile::HostProfile;
 use crate::error::{Code, Error, Result};
 use crate::platform::keychain;
 
-/// Whether this build keeps the secrets in a file (a dev build) rather than the keychain.
-const IN_A_FILE: bool = cfg!(debug_assertions);
+/// Whether this build keeps the secrets in a file (a dev build, or an end-to-end run's app)
+/// rather than the keychain.
+fn in_a_file() -> bool {
+    cfg!(debug_assertions) || crate::platform::test_root::root().is_some()
+}
 
 /// The secret stored for `id`. None stored is [`Code::NoPasswordStored`]; a store that can't be
 /// read (a locked keychain, its unlock prompt dismissed, a secrets file that doesn't parse) says
 /// why instead.
 pub(crate) fn get_secret(id: &str) -> Result<String> {
-    if IN_A_FILE { found(dev_file::read()?.remove(id)) } else { blocking(|| keychain::get(&entry_name(id))).and_then(found) }
+    if in_a_file() { found(dev_file::read()?.remove(id)) } else { blocking(|| keychain::get(&entry_name(id))).and_then(found) }
 }
 
-/// Keeps `secret` for host `id`: in the keychain, in a file in a debug build ([`IN_A_FILE`]).
+/// Keeps `secret` for host `id`: in the keychain, in a file in a debug build ([`in_a_file`]).
 pub(crate) fn set_secret(id: &str, secret: &str) -> Result<()> {
-    if IN_A_FILE {
+    if in_a_file() {
         let mut map = dev_file::read()?;
         map.insert(id.to_string(), secret.to_string());
         dev_file::write(&map)
@@ -35,7 +39,7 @@ pub(crate) fn set_secret(id: &str, secret: &str) -> Result<()> {
 /// Deletes the secret stored for `id`; one that isn't there is deleted already. A store that
 /// refuses (a locked keychain, its prompt dismissed) says so.
 pub(crate) fn delete_secret(id: &str) -> Result<()> {
-    if IN_A_FILE {
+    if in_a_file() {
         let mut map = dev_file::read()?;
         if map.remove(id).is_some() {
             dev_file::write(&map)?;
@@ -89,7 +93,7 @@ mod dev_file {
         if let Some(file) = TEST_FILE.with(|f| f.borrow().clone()) {
             return Ok(file);
         }
-        let home = crate::platform::home_dir().ok_or_else(|| Error::Invalid("no home directory".into()))?;
+        let home = crate::platform::own_home().ok_or_else(|| Error::Invalid("no home directory".into()))?;
         Ok(file_in(&home))
     }
 

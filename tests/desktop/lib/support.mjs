@@ -6,9 +6,12 @@ import { remote } from "webdriverio";
 import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
+
+export { runContainers } from "./owned.mjs";
 
 /** Path to the app binary: CYBERCTF_TEST_DESKTOP_APP, else the debug build. */
 export function appBinary() {
@@ -54,6 +57,7 @@ export async function launchApp({ env = {}, args = [] } = {}) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   launched.add(proc);
+  recordApp(proc.pid, bin);
   let out = "";
   proc.stdout.on("data", (d) => (out += d));
   proc.stderr.on("data", (d) => (out += d));
@@ -70,6 +74,16 @@ export async function launchApp({ env = {}, args = [] } = {}) {
   }
   stopApp(proc);
   throw new Error(`embedded WebDriver server never came up on ${PORT}:\n${out.slice(-800)}`);
+}
+
+/** Records an app this run launched (`<root>/records/apps/<pid>`, its binary inside), so the
+ *  runner stops the run's own apps and never another copy of the same binary. */
+function recordApp(pid, bin) {
+  const root = runRoot();
+  if (!root || !pid) return;
+  const dir = join(runFolders(root).records, "apps");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, String(pid)), bin);
 }
 
 /** Connect a WebdriverIO session to the running app's embedded server. */
@@ -449,9 +463,11 @@ export function hypervisorVms(provider) {
   }
 }
 
-/** The app's data folder, where it installs labs (`<data>/labs/<id>`), as Tauri resolves it for
- *  the identifier `org.cyberctf.desktop`. */
+/** The app's data folder, where it installs labs (`<data>/labs/<id>`): the run's (`<root>/app`,
+ *  see owned.mjs) under the runner, else as Tauri resolves it for `org.cyberctf.desktop`. */
 export function appDataDir() {
+  const root = runRoot();
+  if (root) return runFolders(root).app;
   const id = "org.cyberctf.desktop";
   if (process.platform === "darwin") return join(homedir(), "Library", "Application Support", id);
   if (process.platform === "win32") return join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), id);
@@ -564,6 +580,45 @@ export async function labPageRunning(b) {
 export function waitLabPageRunning(b, timeout) {
   return waitAwake(b, () => labPageRunning(b), { timeout, interval: 5000, timeoutMsg: "the lab never showed as running on its page" });
 }
+
+/**
+ * Before a spec starts its lab: a lab the page already shows running is stopped (Stop & remove)
+ * only when the run started it, an earlier spec's; otherwise (the player's own copy, which the
+ * app's running-labs scan shows too) the spec skips, leaving it as it is (owned.mjs says whose).
+ */
+export async function stopLeftover(b, r) {
+  if (!(await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting())) return;
+  const leftover = leftoverIsTheRuns(runRoot());
+  if (!leftover.ok) r.skipAll(`the lab already runs here: ${leftover.why}`);
+  console.log("the lab is up (or half up) from an earlier spec: stopping it first");
+  await stopAndRemoveOnPage(b);
+}
+
+/**
+ * Keeps, from now on in this window, the last answer the page got to command `cmd`, for
+ * `answerOf`: what a panel read, as it read it (its arguments are the page's own).
+ */
+export async function recordAnswers(b, cmd) {
+  await b.execute((c) => {
+    const internals = window.__TAURI_INTERNALS__;
+    internals.__recorded = { ...internals.__recorded, [c]: true };
+    if (internals.__recording) return;
+    const invoke = internals.invoke.bind(internals);
+    internals.invoke = (name, args, options) => {
+      const answer = invoke(name, args, options);
+      if (internals.__recorded[name])
+        answer.then(
+          (v) => (window.__wdioAnswers = { ...window.__wdioAnswers, [name]: v }),
+          () => {},
+        );
+      return answer;
+    };
+    internals.__recording = true;
+  }, cmd);
+}
+
+/** The last answer to `cmd` `recordAnswers` kept (undefined before one came). */
+export const answerOf = (b, cmd) => b.execute((c) => window.__wdioAnswers?.[c], cmd);
 
 /** Stop & remove from the lab page, its system confirmation answered yes, then waits until the
  *  page offers a start again (Start lab, or Import a lab for an imported one). */

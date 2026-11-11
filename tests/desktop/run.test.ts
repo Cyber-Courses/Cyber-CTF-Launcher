@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -136,5 +136,75 @@ describe.skipIf(!pwsh)("run.ps1's records", () => {
       { suite: "desktop", case: "settings", provider: "", form: "", result: "skip", reason: "docker is not running", seconds: 0, log: "" },
     ]);
     expect(existsSync(join(dir, "out"))).toBe(true);
+  });
+});
+
+describe("the run's own folder", () => {
+  /** A temporary folder the run's folder is made in, and a session file to place. */
+  function scratch() {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "desktop-root-")));
+    dirs.push(dir);
+    const session = join(dir, "session.json");
+    writeFileSync(session, '{"accessToken":"t"}');
+    return { dir, session };
+  }
+
+  it.skipIf(process.platform === "win32")("is made fresh by run.sh, holds the session where the app reads it, and goes unless kept", () => {
+    const { dir, session } = scratch();
+    const lib = join(HERE, "lib", "run-root.sh");
+    const sh = (script: string, env: Record<string, string> = {}) =>
+      spawnSync("bash", ["-c", `. "${lib}"; ${script}`], { encoding: "utf8", env: { ...process.env, TMPDIR: dir, ...env } });
+    const made = sh("run_root_make").stdout.trim();
+    expect(made.startsWith(join(dir, "cyberctf-e2e."))).toBe(true);
+    expect(readdirSync(made)).toEqual([]);
+    expect(sh("run_root_make").stdout.trim()).not.toBe(made);
+    expect(sh(`run_root_place_session "${made}" "${session}"`).status).toBe(0);
+    const placed = join(made, "home", ".cyberctf", "dev-session.json");
+    expect(readFileSync(placed, "utf8")).toBe('{"accessToken":"t"}');
+    expect(statSync(placed).mode & 0o077).toBe(0);
+    expect(sh(`run_root_drop "${made}"`, { CYBERCTF_TEST_DESKTOP_KEEP: "1" }).stdout).toContain(`kept: the run's folder ${made}`);
+    expect(existsSync(made)).toBe(true);
+    expect(sh(`run_root_drop "${made}"`).stdout).toBe("");
+    expect(existsSync(made)).toBe(false);
+  });
+
+  it.skipIf(!pwsh)("is made fresh by run.ps1 the same way", () => {
+    const { dir, session } = scratch();
+    const script = join(dir, "root.ps1");
+    writeFileSync(
+      script,
+      [
+        `. "${join(HERE, "lib", "suite.ps1")}"`,
+        `$a = Initialize-RunRoot`,
+        `$b = Initialize-RunRoot`,
+        `Copy-RunSession $a "${session}"`,
+        `$placed = Get-Content -Raw (Join-Path $a "home/.cyberctf/dev-session.json")`,
+        `$env:CYBERCTF_TEST_DESKTOP_KEEP = "1"`,
+        `$kept = Clear-RunRoot $a`,
+        `$keptThere = Test-Path $a`,
+        `$env:CYBERCTF_TEST_DESKTOP_KEEP = ""`,
+        `$gone = Clear-RunRoot $a`,
+        `Clear-RunRoot $b | Out-Null`,
+        `ConvertTo-Json -Compress @{ fresh = ($a -ne $b); name = (Split-Path -Leaf $a); placed = $placed; kept = $kept; keptThere = $keptThere; gone = ($null -eq $gone); left = ((Test-Path $a) -or (Test-Path $b)) }`,
+      ].join("\n"),
+    );
+    const r = spawnSync("pwsh", ["-NoProfile", "-File", script], { encoding: "utf8" });
+    expect(r.stderr).toBe("");
+    const out = JSON.parse(r.stdout) as Record<string, unknown>;
+    expect(out).toMatchObject({ fresh: true, placed: '{"accessToken":"t"}', keptThere: true, gone: true, left: false });
+    expect(String(out.name)).toMatch(/^cyberctf-e2e-[a-z0-9]+$/);
+    expect(String(out.kept)).toContain("kept: the run's folder");
+  });
+
+  it("is given to the app and the specs, and every clean-up goes through what the run recorded", () => {
+    for (const runner of [read("run.sh"), read("run.ps1")]) {
+      expect(runner).toMatch(/CYBERCTF_WDIO_ROOT/);
+      expect(runner).toMatch(/owned\.mjs/);
+      expect(runner).toMatch(/ record "?\$(RUN_ROOT|RunRoot)/);
+      // No clean-up by a name pattern, nor of every copy of the app's binary.
+      expect(runner).not.toMatch(/--filter "name=|pkill -f "\$APP_BIN"|\$_\.Path -eq \$App \} \| Stop-Process/);
+      // Nothing of the user's: their data folder, their session file.
+      expect(runner).not.toMatch(/Application Support|XDG_DATA_HOME|USERPROFILE|\$HOME\/\.cyberctf/);
+    }
   });
 });

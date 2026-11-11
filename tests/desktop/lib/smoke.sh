@@ -9,6 +9,8 @@ export TAURI_WEBDRIVER_PORT="${TAURI_WEBDRIVER_PORT:-4445}"
 
 "$BIN" >/tmp/cyberctf-app.out 2>&1 &
 APP=$!
+# The run's own app (tests/desktop/lib/owned.mjs): the runner stops it by this record.
+if [ -n "${CYBERCTF_WDIO_ROOT:-}" ]; then mkdir -p "$CYBERCTF_WDIO_ROOT/records/apps" && echo "$BIN" >"$CYBERCTF_WDIO_ROOT/records/apps/$APP"; fi
 cleanup() { kill "$APP" 2>/dev/null; }
 trap cleanup EXIT
 

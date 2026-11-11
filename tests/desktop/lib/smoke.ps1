@@ -7,6 +7,12 @@ if (!(Test-Path $bin)) { "app binary not found: $bin"; exit 2 }
 if (-not $env:TAURI_WEBDRIVER_PORT) { $env:TAURI_WEBDRIVER_PORT = "4445" }
 
 $app = Start-Process -PassThru -FilePath $bin -RedirectStandardOutput "$env:TEMP\cyberctf-app.out" -RedirectStandardError "$env:TEMP\cyberctf-app.err"
+# The run's own app (tests/desktop/lib/owned.mjs): the runner stops it by this record.
+if ($env:CYBERCTF_WDIO_ROOT) {
+  $apps = Join-Path $env:CYBERCTF_WDIO_ROOT "records\apps"
+  New-Item -ItemType Directory -Force -Path $apps | Out-Null
+  Set-Content -Path (Join-Path $apps $app.Id) -Value $bin
+}
 $rc = 1
 try {
   $up = $false

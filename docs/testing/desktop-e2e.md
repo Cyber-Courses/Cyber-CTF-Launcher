@@ -27,6 +27,11 @@ starts the app once and stops with a clear message when no WebDriver server answ
 the fixture lab (the Invoice Portal API lab, under `infra/test-servers/.state/labs`, or
 `tests\desktop\.state\labs` on Windows) unless `CYBERCTF_TEST_LOCAL_LAB` names one.
 
+It is safe on a machine someone uses: the app keeps all of its own (data, settings, logs, webview
+data, session, secrets) in a folder made for the run and removed after it, and every clean-up
+removes only what the run made, by the records it wrote: never the user's labs, images, boxes or
+apps ([tests/README.md](../../tests/README.md#a-desktop-runs-own-folder)).
+
 ## Results
 
 Each spec prints a line per check, as the integration tests do (`integration_tests/support`'s `check`), with a
@@ -114,7 +119,7 @@ so in the check line.
 | `deep-link`         | a link the app is opened with, and one opened while it runs, show the lab's page without starting it; a link to no lab, or not to a lab, leaves the app as it was                                                                            |
 | `fail-offline`      | with the backend unreachable (`CYBERBACKEND_URL` dead), the catalogue degrades and the app stays usable                                                                                                                                      |
 | `fail-badlab`       | a folder that is not a lab is refused without a crash or a phantom running lab                                                                                                                                                               |
-| `fail-signedout`    | signed out (an empty `HOME`, or `USERPROFILE` on Windows, where a debug build keeps its session), the app is usable and asks to sign in                                                                                                      |
+| `fail-signedout`    | signed out (a run folder of its own with no session in it, `CYBERCTF_WDIO_ROOT`), the app is usable and asks to sign in                                                                                                                      |
 | `fail-docker`       | with Docker unreachable (a dead `DOCKER_HOST` and a `DOCKER_CONFIG` naming no current context), the header says Docker is not running, the seed lab's start fails and nothing runs                                                           |
 | `launch`            | the seeded local lab reaches "running on this machine" on the Overview                                                                                                                                                                       |
 | `restart`           | after the app is killed and reopened without the seed, the running-labs scan finds the lab again                                                                                                                                             |
@@ -133,7 +138,7 @@ so in the check line.
 | `screens`           | a running VM lab's Screens panel; a VNC screen's window shows its framebuffer; an RDP one's window hands it to the system's client; a machine without a screen says why; with `CYBERCTF_TEST_BOX_DESKTOP=1`, the attack box's desktop Screen |
 | `vm-scan`           | on a Mac with UTM: a started VM named `<lab> · <machine>` is matched to the installed lab by the running-labs scan (the fixture VM is made and deleted by the runner; Docker is made unreachable so only the hypervisor probe can match)     |
 | `server-lab`        | Add server, the setup window filled from the settings file (tools installed from it when missing), Save and test passing, the VM test, the server listed and Online, a catalogue lab started, running and removed there, the server removed  |
-| `cleanup`           | Settings > Maintenance: Clean up answered Cancel removes nothing, answered Remove says what it freed; a named installed tool removed                                                                                                         |
+| `cleanup`           | Settings > Maintenance: Clean up answered Cancel removes nothing; answered Remove, when every download it lists is the run's, says what it freed (otherwise the others are named and all left); a named tool the run's app installed removed |
 
 The specs are `tests/desktop/specs/<name>.mjs` and share `tests/desktop/lib/support.mjs`. A case's
 id is its spec's name, which its summary line and its log (`<id>.log`) carry; a spec run once per

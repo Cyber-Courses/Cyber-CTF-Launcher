@@ -24,6 +24,10 @@ an SSH session): the app opens windows, and Docker Desktop and the credential st
 -List       print a JSON line per case (cases.tsv: its id, spec, form and knobs) and exit (run.sh's
             --list)
 
+Safe on a machine someone uses, as run.sh: the app keeps all of its own in a folder made for the
+run (CYBERCTF_WDIO_ROOT, under %TEMP%), removed at the end, and every clean-up acts only on what
+the run made, by the records it wrote (lib\owned.mjs).
+
 Knobs: as run.sh's (CYBERCTF_TEST_LOCAL_LAB, CYBERCTF_TEST_ACCOUNT_SESSION,
 CYBERCTF_TEST_VM_PROVIDER, CYBERCTF_TEST_SERVER_ENV, ...; tests/README.md lists each). Exit status: 0 nothing failed (and
 no skip under STRICT), 1 a spec failed, 2 the runner itself couldn't run.
@@ -49,7 +53,12 @@ $State = Join-Path $Repo "tests\desktop\.state"
 $Logs = Join-Path $State "logs"
 New-Item -ItemType Directory -Force -Path $Logs | Out-Null
 
-function Stop-Runner([string]$why) { Write-Host "run.ps1: $why"; exit 2 }
+# Before the specs run, the run's folder goes with it (once they run, the finally below sees to it).
+function Stop-Runner([string]$why) {
+  Write-Host "run.ps1: $why"
+  if ($script:RunRoot -and -not $script:Running) { Close-RunRoot }
+  exit 2
+}
 function Say([string]$what) { Write-Host ""; Write-Host "==== $what" }
 
 # --- Knobs ------------------------------------------------------------------------------------
@@ -109,8 +118,36 @@ if (-not (Test-Path $App)) { Stop-Runner "app binary not found: $App" }
 $env:CYBERCTF_TEST_DESKTOP_APP = $App
 $Debug = $App -match "\\debug\\"
 
+# --- The run's own folder ---------------------------------------------------------------------
+# The app (a wdio build) keeps everything of its own under CYBERCTF_WDIO_ROOT (src-tauri's
+# platform/test_root.rs; lib\run-root.sh says what goes where), removed at the end unless
+# CYBERCTF_TEST_DESKTOP_KEEP.
+$RunRoot = Initialize-RunRoot
+$env:CYBERCTF_WDIO_ROOT = $RunRoot
+$Owned = Join-Path $Repo "tests\desktop\lib\owned.mjs"
+function Close-RunRoot {
+  $said = Clear-RunRoot $RunRoot
+  if ($said) { Say $said }
+}
+# What is on the machine before the run: what the run downloads is told apart from it.
+& node $Owned record $RunRoot
+if ($LASTEXITCODE -ne 0) { Stop-Runner "couldn't record what is on the machine" }
+
+# The run's own apps still up, stopped, never another copy of the same binary: the ones the run
+# launched (records\apps\<pid>, by support.mjs, smoke.ps1 and the preflight; fail-signedout's
+# under signed-out\), while that pid is still the app, and the deploy workers whose job is in the
+# run's folder.
 function Stop-App {
-  Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $App } | Stop-Process -Force -ErrorAction SilentlyContinue
+  foreach ($dir in (Join-Path $RunRoot "records\apps"), (Join-Path $RunRoot "signed-out\records\apps")) {
+    Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue | ForEach-Object {
+      $p = Get-Process -Id ([int]$_.Name) -ErrorAction SilentlyContinue
+      if ($p -and $p.Path -eq $App) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+      Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+    }
+  }
+  Get-CimInstance Win32_Process -Filter "Name = '$(Split-Path -Leaf $App)'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine.Contains("deploy --job") -and $_.CommandLine.Contains($RunRoot) } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 function Serves([string]$port) {
   try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$port/" -TimeoutSec 3 | Out-Null; return $true } catch { return $false }
@@ -125,19 +162,12 @@ if ($Debug -and -not (Serves $DevPort)) {
   if (-not (Serves $DevPort)) { Stop-Runner "next dev never answered on $DevPort" }
 }
 
-# --- A signed-in session (a debug build's file; a release build reads the credential store) -----
-$SessionFile = Join-Path $env:USERPROFILE ".cyberctf\dev-session.json"
-$SessionBackup = $null
-$SessionPlaced = $false
+# --- A signed-in session: the run's app keeps it in a file under the run's folder whatever the
+# build, never the user's file or credential store.
 if ($env:CYBERCTF_TEST_ACCOUNT_SESSION) {
   if (-not (Test-Path $env:CYBERCTF_TEST_ACCOUNT_SESSION)) { Stop-Runner "no session file: $($env:CYBERCTF_TEST_ACCOUNT_SESSION)" }
-  if ($Debug) {
-    New-Item -ItemType Directory -Force -Path (Split-Path $SessionFile) | Out-Null
-    if (Test-Path $SessionFile) { $SessionBackup = Join-Path $State "dev-session.backup.json"; Copy-Item $SessionFile $SessionBackup -Force }
-    Copy-Item $env:CYBERCTF_TEST_ACCOUNT_SESSION $SessionFile -Force
-    $SessionPlaced = $true
-    Say "session: placed $SessionFile for the run"
-  } else { Say "session: a release build reads the credential store, CYBERCTF_TEST_ACCOUNT_SESSION is ignored" }
+  Copy-RunSession $RunRoot $env:CYBERCTF_TEST_ACCOUNT_SESSION
+  Say "session: placed in the run's folder"
 }
 
 # --- Fixtures ---------------------------------------------------------------------------------
@@ -154,15 +184,24 @@ $slug = ($LabName.ToLower() -replace '[^a-z0-9_-]', '-').Trim('-')
 if ($slug.Length -gt 56) { $slug = $slug.Substring(0, 56) }
 $LabId = "local-$slug"
 
+# The Compose projects here, `ours` (the run's: a lab installed in its folder, started from there)
+# or `theirs` (any other, the user's own copy of a lab of the same name included): lib\owned.mjs.
+function Get-Project([string]$whose) {
+  @(& node $Owned projects $RunRoot | ForEach-Object { $f = $_ -split "`t"; if ($f[0] -eq $whose) { $f[1] } })
+}
+# What a run leaves behind: its labs' containers, only the run's projects (as run.sh's cleanup_lab).
+function Clear-RunProject {
+  if (-not $DockerOk) { return }
+  foreach ($p in (Get-Project "ours")) {
+    Say "cleanup: docker compose -p $p down (the run's)"
+    & docker compose -p $p down --remove-orphans *> $null
+  }
+}
 function Clear-Lab([switch]$Final) {
   if ($Final -and $env:CYBERCTF_TEST_DESKTOP_KEEP) { return }
-  if (-not $DockerOk) { return }
-  if ((& docker compose ls -q 2>$null) -contains "cyberctf-$LabId") {
-    Say "cleanup: docker compose -p cyberctf-$LabId down"
-    & docker compose -p "cyberctf-$LabId" down --remove-orphans *> $null
-  }
-  $left = & docker ps -q --filter "name=$LabId" 2>$null
-  if ($left) { & docker rm -f $left *> $null }
+  Clear-RunProject
+  $left = if ($DockerOk) { Get-Project "ours" } else { @() }
+  if ($left) { Stop-Runner "the run's Compose projects are left after the clean-up: $($left -join ' ')" }
 }
 
 # --- Running the specs ------------------------------------------------------------------------
@@ -170,6 +209,12 @@ function Clear-Lab([switch]$Final) {
 # killed past its timeout; exit 0 passes, 2 skips (its `skipped: spec` line says why).
 function Invoke-Logged([string]$name, [int]$limit, [hashtable]$vars, [string]$program, [string[]]$arguments) {
   if (-not (Test-Wanted $name)) { return }
+  # A case that imports the fixture lab leaves alone a copy of it the run didn't start (the user's).
+  $c = $script:Cases | Where-Object { $_.Case -eq $name } | Select-Object -First 1
+  if ($DockerOk -and $c -and $c.Knobs -contains "CYBERCTF_TEST_LOCAL_LAB" -and (Get-Project "theirs") -contains "cyberctf-$LabId") {
+    Skip-Spec $name "a copy of $LabName this run didn't start runs here (Compose project cyberctf-$LabId): left as it is"
+    return
+  }
   Stop-App
   Say $name
   $log = Join-Path $Logs "$name.log"
@@ -206,6 +251,7 @@ function Invoke-Spec([string]$name, [string]$file = "", [int]$limit = 0, [hashta
   Invoke-Logged $name $limit $vars "node" @("tests/desktop/specs/$file.mjs")
 }
 
+$script:Running = $true
 try {
   Say "app: $App"
   Say "lab: $($env:CYBERCTF_TEST_LOCAL_LAB) ($LabName, id $LabId)"
@@ -213,6 +259,8 @@ try {
 
   # The embedded WebDriver server answers, or nothing below can.
   $pre = Start-Process -PassThru -FilePath $App -RedirectStandardOutput "$Logs\preflight.log" -RedirectStandardError "$Logs\preflight.err"
+  New-Item -ItemType Directory -Force -Path (Join-Path $RunRoot "records\apps") | Out-Null
+  Set-Content -Path (Join-Path $RunRoot "records\apps\$($pre.Id)") -Value $App
   $up = $false
   for ($i = 0; $i -lt 60 -and -not $up; $i++) {
     try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$Port/status" -TimeoutSec 2 | Out-Null; $up = $true } catch { Start-Sleep -Seconds 1 }
@@ -226,10 +274,8 @@ try {
   foreach ($s in "title-bar", "settings", "onboarding", "setup-screens", "machine") { Invoke-Spec $s }
   Clear-Lab
   foreach ($s in "labs", "deep-link", "fail-offline", "fail-badlab") { Invoke-Spec $s }
-  $signedOut = Join-Path $env:TEMP "cyberctf-signedout-$PID"
-  New-Item -ItemType Directory -Force -Path $signedOut | Out-Null
-  Invoke-Spec "fail-signedout" -vars @{ USERPROFILE = $signedOut; HOME = $signedOut }
-  Remove-Item -Recurse -Force $signedOut -ErrorAction SilentlyContinue
+  # Signed out: a run folder of its own, with no session in it.
+  Invoke-Spec "fail-signedout" -vars @{ CYBERCTF_WDIO_ROOT = (Join-Path $RunRoot "signed-out") }
   $dockerSpecs = "fail-docker", "launch", "restart", "stop", "launch-ui", "kill-mid-deploy", "attack-box", "attack-shell", "stop-with-box", "park-resume", "reimport-running", "attack-on-stopped", "lab-actions", "offline-start"
   if ($DockerOk) {
     Invoke-Spec "fail-docker"
@@ -251,9 +297,9 @@ try {
 } finally {
   Stop-App
   if ($NextDev) { & taskkill /T /F /PID $NextDev.Id *> $null }
-  if ($SessionPlaced) {
-    if ($SessionBackup) { Move-Item -Force $SessionBackup $SessionFile } else { Remove-Item -Force $SessionFile -ErrorAction SilentlyContinue }
-  }
+  # An interrupted run leaves none of its labs running on a folder about to go.
+  if (-not $env:CYBERCTF_TEST_DESKTOP_KEEP) { Clear-RunProject }
+  Close-RunRoot
 }
 
 Say "desktop e2e, logs in $Logs"

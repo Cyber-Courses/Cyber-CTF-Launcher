@@ -26,6 +26,7 @@ pub mod redact;
 pub mod remembered;
 pub mod root_script;
 pub mod sys;
+pub mod test_root;
 pub mod tree_link;
 pub mod unwind;
 
@@ -74,6 +75,13 @@ impl AppDirs {
 /// The user's home folder (`USERPROFILE` on Windows, `HOME` elsewhere).
 pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)
+}
+
+/// The home folder the app keeps its own files in (`.cyberctf/`, `CyberCTF/shared`): the user's,
+/// or an end-to-end run's ([`test_root`]). The tools' homes (Docker's, Vagrant's, SSH's) are the
+/// user's either way: read them through [`home_dir`].
+pub fn own_home() -> Option<PathBuf> {
+    test_root::root().map(|root| test_root::home(&root)).or_else(home_dir)
 }
 
 /// `bytes` as lowercase hex, two digits each.

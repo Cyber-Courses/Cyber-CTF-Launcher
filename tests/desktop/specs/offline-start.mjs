@@ -23,6 +23,7 @@ import {
   signedIn,
   startFromDialog,
   stopAndRemoveOnPage,
+  stopLeftover,
   waitAwake,
   waitLabPageRunning,
 } from "../lib/support.mjs";
@@ -76,7 +77,7 @@ try {
       "the app isn't signed in: an offline start is kept for the account that started the lab online (give CYBERCTF_TEST_ACCOUNT_SESSION to the runner)",
     );
   if (!(await openLabFromList(b, CATALOGUE_LAB))) r.skipAll(`the catalogue doesn't list "${CATALOGUE_LAB}"`);
-  if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) await stopAndRemoveOnPage(b);
+  await stopLeftover(b, r);
 
   const online = await r.step("online", "started and stopped online first (the start's source kept)", async () => {
     await startFromDialog(b, { place: "container" });

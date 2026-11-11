@@ -20,13 +20,16 @@ import {
   openApp,
   openLabFromList,
   results,
+  runContainers,
   signedIn,
   sleep,
   startFromDialog,
   stopAndRemoveOnPage,
+  stopLeftover,
   waitAwake,
   waitLabPageRunning,
 } from "../lib/support.mjs";
+import { runRoot } from "../lib/owned.mjs";
 
 const r = results();
 if (!dockerUp()) r.skipAll("no Docker engine answers here");
@@ -59,7 +62,7 @@ try {
   ({ proc, b } = await openApp());
   if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_ACCOUNT_SESSION to the runner)");
   if (!(await openLabFromList(b, CATALOGUE_LAB))) r.skipAll(`the catalogue doesn't list "${CATALOGUE_LAB}"`);
-  if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) await stopAndRemoveOnPage(b);
+  await stopLeftover(b, r);
   const before = containers();
   await startFromDialog(b, { place: "container" });
   await waitLabPageRunning(b, 1200000);
@@ -83,8 +86,10 @@ try {
     r.skip("resume", "the page offers no Pause for this lab");
   }
 
-  // Reset: a machine down behind the lab's back, as a crash would leave it.
-  const victim = up.find((n) => !/attackbox/.test(n));
+  // Reset: a machine down behind the lab's back, as a crash would leave it; a container of the
+  // run's own Compose project, never one by its name alone.
+  const own = runContainers(runRoot());
+  const victim = up.find((n) => !/attackbox/.test(n) && own.includes(n));
   if (victim) {
     docker("stop", victim);
     await r.step("down", `the page says ${victim} is down and offers Reset lab`, () =>

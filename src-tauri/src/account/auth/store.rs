@@ -26,8 +26,11 @@ pub(super) struct Session {
     pub picture: Option<String>,
 }
 
-/// Whether this build keeps the session in a file (a dev build) rather than the keychain.
-const IN_A_FILE: bool = cfg!(debug_assertions);
+/// Whether this build keeps the session in a file (a dev build, or an end-to-end run's app,
+/// `platform::test_root`) rather than the keychain.
+fn in_a_file() -> bool {
+    cfg!(debug_assertions) || crate::platform::test_root::root().is_some()
+}
 
 /// The keychain entry holding the session, or its head when it is split (see [`split_chunks`]).
 const SESSION: &str = "session";
@@ -114,12 +117,12 @@ pub(super) fn dev_session_path() -> Option<std::path::PathBuf> {
 /// The dev session file a read, save or clear goes to (none when the keychain keeps the
 /// session), resolved on the caller's thread.
 fn session_file() -> Option<std::path::PathBuf> {
-    if IN_A_FILE { dev_session_path() } else { None }
+    if in_a_file() { dev_session_path() } else { None }
 }
 
-/// The dev session file in the home folder.
+/// The dev session file in the home folder (an end-to-end run's, in one).
 fn home_session_path() -> Option<std::path::PathBuf> {
-    Some(crate::platform::home_dir()?.join(".cyberctf").join("dev-session.json"))
+    Some(crate::platform::own_home()?.join(".cyberctf").join("dev-session.json"))
 }
 
 /// The session `raw` holds; none when it isn't one this version reads (a launcher update changed
@@ -157,7 +160,7 @@ fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
 /// The stored session: `Ok(None)` when there is none, `Err` when the keychain couldn't be read.
 /// Blocking (the Secret Service may show its unlock prompt and wait): call `read`.
 fn load_blocking(file: Option<&std::path::Path>) -> std::result::Result<Option<Session>, String> {
-    if IN_A_FILE { file.map_or(Ok(None), load_file) } else { load_keychain() }
+    if in_a_file() { file.map_or(Ok(None), load_file) } else { load_keychain() }
 }
 
 /// The session in the keychain, unless the keychain failed a moment ago (see [`backoff`]).
@@ -201,7 +204,7 @@ mod backoff {
 
 /// A fresh sign-in asks the keychain again, even right after it failed.
 pub(super) fn ask_keychain_again() {
-    if !IN_A_FILE {
+    if !in_a_file() {
         backoff::set(None);
     }
 }
@@ -214,7 +217,7 @@ pub(super) async fn read() -> std::result::Result<Option<Session>, String> {
 
 fn save_blocking(session: &Session, file: Option<&std::path::Path>) -> Result<()> {
     let raw = serde_json::to_string(session).map_err(|e| Error::Invalid(e.to_string()))?;
-    if IN_A_FILE {
+    if in_a_file() {
         let path = file.ok_or_else(|| Error::Invalid("no home directory".into()))?;
         return save_file(path, &raw);
     }
@@ -245,7 +248,7 @@ pub(super) async fn store(session: Session) -> Result<()> {
 }
 
 fn clear_blocking(file: Option<&std::path::Path>) -> Result<()> {
-    if IN_A_FILE {
+    if in_a_file() {
         return file.map_or(Ok(()), remove_file);
     }
     // The head first: without it the pieces are never read, so the session is gone even if one

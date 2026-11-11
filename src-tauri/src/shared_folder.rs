@@ -31,9 +31,9 @@ fn file(dirs: &AppDirs) -> Result<PathBuf> {
     Ok(dirs.data()?.join("shared-folder.json"))
 }
 
-/// The suggested folder: `CyberCTF/shared` in the home folder.
+/// The suggested folder: `CyberCTF/shared` in the home folder (an end-to-end run's, in one).
 pub fn default_path() -> Option<PathBuf> {
-    crate::platform::home_dir().map(|h| h.join("CyberCTF").join("shared"))
+    crate::platform::own_home().map(|h| h.join("CyberCTF").join("shared"))
 }
 
 fn load(dirs: &AppDirs) -> Result<SharedFolder> {

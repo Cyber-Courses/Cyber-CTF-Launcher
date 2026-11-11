@@ -28,6 +28,7 @@ import {
   sleep,
   startFromDialog,
   stopAndRemoveOnPage,
+  stopLeftover,
   waitLabPageRunning,
 } from "../lib/support.mjs";
 
@@ -59,10 +60,7 @@ try {
   ({ proc, b } = await openApp());
   if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_ACCOUNT_SESSION to the runner)");
   if (!(await openLabFromList(b, want.lab))) r.skipAll(`the catalogue doesn't list "${want.lab}"`);
-  if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) {
-    console.log("the lab is up (or half up) from before: stopping it first");
-    await stopAndRemoveOnPage(b);
-  }
+  await stopLeftover(b, r);
   const before = snapshot();
 
   const started = await r.step(

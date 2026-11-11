@@ -67,6 +67,8 @@ fn window_config(label: &str, url: String, theme: Theme) -> WindowConfig {
         // Windows: the shadow and thin border of an undecorated window (the default, said here).
         shadow: true,
         theme: Some(theme),
+        // macOS: an end-to-end run's webviews keep their data apart from the user's.
+        data_store_identifier: crate::platform::test_root::webview_store(),
         #[cfg(target_os = "macos")]
         title_bar_style: tauri::TitleBarStyle::Overlay,
         #[cfg(target_os = "macos")]

@@ -7,6 +7,12 @@
 # scripts/release/release-check.sh; the test rig's entry point (docs/testing/desktop-e2e.md says
 # what each spec proves and needs).
 #
+# Safe on a machine someone uses: the app keeps all of its own in a folder made for the run
+# (CYBERCTF_WDIO_ROOT: its data, settings, logs, webview data, session and secrets, never the
+# user's), removed at the end; and every clean-up acts only on what the run made, by the records
+# it wrote (tests/desktop/lib/owned.mjs): its labs' Compose projects started from that folder,
+# the images and boxes that weren't on the machine when it started, the apps it launched.
+#
 #   tests/desktop/run.sh --all                                 # every spec (the default)
 #   tests/desktop/run.sh --specs "smoke settings" --knobs ~/.config/cyberctf-test/e2e.env
 #   tests/desktop/run.sh --app path/to/cyberctf-desktop        # an app already built (no build here)
@@ -33,13 +39,13 @@
 #   CYBERCTF_TEST_DESKTOP_APP     the app (default: the wdio `cargo build`, built here)
 #   CYBERCTF_TEST_LOCAL_LAB       the lab folder to import (default: a checkout of the Invoice Portal
 #                                 API lab under infra/test-servers/.state/labs)
-#   CYBERCTF_TEST_ACCOUNT_SESSION a signed-in session (a debug build's dev-session.json), placed at
-#                                 ~/.cyberctf/dev-session.json for the run (the one there is put back)
+#   CYBERCTF_TEST_ACCOUNT_SESSION a signed-in session (a dev-session.json), placed in the run's folder
+#                                 (its home/.cyberctf/), where the run's app reads it whatever the build
 #   CYBERCTF_TEST_VM_PROVIDER     the hypervisor for the VM specs (libvirt, virtualbox, hyperv, qemu, utm)
 #   CYBERCTF_TEST_CATALOGUE_LAB, CYBERCTF_TEST_CATALOGUE_VM_LAB, CYBERCTF_TEST_SERVER_ENV,
 #   CYBERCTF_TEST_SERVER_LAB, CYBERCTF_TEST_BOX_DESKTOP, CYBERCTF_TEST_CLEANUP_TOOL: see each spec
 #   CYBERCTF_TEST_DESKTOP_TIMEOUT seconds for a spec without a lab in a VM (1800; the VM ones get 3 h)
-#   CYBERCTF_TEST_DESKTOP_KEEP    leave the fixture lab running at the end
+#   CYBERCTF_TEST_DESKTOP_KEEP    leave the fixture lab running and the run's folder in place at the end
 #   TAURI_WEBDRIVER_PORT          the app's embedded WebDriver port (4445)
 #   ONLY, SKIP, STRICT            as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
@@ -174,31 +180,25 @@ case "$APP_BIN" in
     ;;
 esac
 
-# --- A signed-in session, for the specs that start catalogue labs ------------------------------
-# A debug build keeps its session in ~/.cyberctf/dev-session.json (a release build: the system's
-# keychain, which can't be seeded: those specs then skip, saying the app isn't signed in).
-SESSION_FILE="$HOME/.cyberctf/dev-session.json"
-SESSION_BACKUP=""
-SESSION_PLACED=""
-place_session() {
-  [ -n "${CYBERCTF_TEST_ACCOUNT_SESSION:-}" ] || return 0
+# --- The run's own folder ---------------------------------------------------------------------
+# The app (a wdio build) keeps everything of its own under CYBERCTF_WDIO_ROOT (lib/run-root.sh
+# says what goes where); removed at the end unless CYBERCTF_TEST_DESKTOP_KEEP.
+# shellcheck source=lib/run-root.sh
+. "$HERE/tests/desktop/lib/run-root.sh"
+RUN_ROOT=$(run_root_make) || fail_now "couldn't make the run's folder"
+export CYBERCTF_WDIO_ROOT="$RUN_ROOT"
+drop_run_root() { run_root_drop "$RUN_ROOT"; }
+trap drop_run_root EXIT INT TERM
+# What is on the machine before the run: what the run downloads is told apart from it.
+node tests/desktop/lib/owned.mjs record "$RUN_ROOT" || fail_now "couldn't record what is on the machine"
+
+# A signed-in session, for the specs that start catalogue labs: the run's app keeps it in a file
+# under the run's folder whatever the build, never the user's file or keychain.
+if [ -n "${CYBERCTF_TEST_ACCOUNT_SESSION:-}" ]; then
   [ -f "$CYBERCTF_TEST_ACCOUNT_SESSION" ] || fail_now "no session file: $CYBERCTF_TEST_ACCOUNT_SESSION"
-  case "$APP_BIN" in */debug/*) ;; *) say "session: a release build reads the keychain, CYBERCTF_TEST_ACCOUNT_SESSION is ignored"; return 0 ;; esac
-  mkdir -p "$(dirname "$SESSION_FILE")"
-  if [ -f "$SESSION_FILE" ]; then
-    SESSION_BACKUP="$NATIVE_STATE/dev-session.backup.json"
-    cp -p "$SESSION_FILE" "$SESSION_BACKUP"
-  fi
-  (umask 077 && cp "$CYBERCTF_TEST_ACCOUNT_SESSION" "$SESSION_FILE")
-  SESSION_PLACED=1
-  say "session: placed $SESSION_FILE for the run"
-}
-restore_session() {
-  [ -n "$SESSION_PLACED" ] || return 0
-  if [ -n "$SESSION_BACKUP" ]; then mv -f "$SESSION_BACKUP" "$SESSION_FILE"; else rm -f "$SESSION_FILE"; fi
-  SESSION_PLACED=""
-}
-place_session
+  run_root_place_session "$RUN_ROOT" "$CYBERCTF_TEST_ACCOUNT_SESSION" || fail_now "couldn't place the session"
+  say "session: placed in the run's folder"
+fi
 
 # --- Fixtures ---------------------------------------------------------------------------------
 DOCKER_OK=1
@@ -216,17 +216,42 @@ lab_name() { sed -n 's/^name:[[:space:]]*//p' "$1/isoloom.yml" | head -1 | tr -d
 LAB_NAME=$(lab_name "$CYBERCTF_TEST_LOCAL_LAB")
 # The id a local import gets (labs::local_id): `local-<slug of the name>`.
 LAB_ID="local-$(printf '%s' "$LAB_NAME" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9_-]/-/g; s/^-*//; s/-*$//' | cut -c1-56)"
-case "$OS" in
-  Darwin) LABS_DIR="$HOME/Library/Application Support/org.cyberctf.desktop/labs" ;;
-  *) LABS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/org.cyberctf.desktop/labs" ;;
-esac
+# Where the run's app installs labs.
+LABS_DIR="$RUN_ROOT/app/labs"
 
 # --- Running the specs ------------------------------------------------------------------------
 # A spec's check lines (support.mjs `results`) are its summary on screen, as the integration
 # runner shows its tests' checks.
 # shellcheck disable=SC2034 # read by logged (scripts/lib/suite.sh)
 SUITE_SHOW='^(ok|FAILED|skipped):'
-stale_apps() { pkill -f "$APP_BIN" 2>/dev/null && sleep 1; }
+# stale_apps: the run's own apps still up, stopped, never another copy of the same binary (a
+# developer's `tauri dev`): the ones the run launched (records/apps/<pid>, by support.mjs,
+# smoke.sh and the preflight; fail-signedout's under signed-out/), while that pid is still the app,
+# and the deploy workers whose job is in the run's folder.
+stale_apps() {
+  local f pid killed=""
+  for f in "$RUN_ROOT"/records/apps/* "$RUN_ROOT"/signed-out/records/apps/*; do
+    [ -f "$f" ] || continue
+    pid=${f##*/}
+    if kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o command= 2>/dev/null | grep -qF "$APP_BIN"; then
+      kill -9 "$pid" 2>/dev/null && killed=1
+    fi
+    rm -f "$f"
+  done
+  pkill -9 -f "deploy --job $RUN_ROOT" 2>/dev/null && killed=1
+  [ -z "$killed" ] || sleep 1
+}
+# case_reads <case> <knob>: whether the case reads that knob (cases.tsv).
+case_reads() {
+  case " $(case_field "$1" 4) " in *" $2 "*) return 0 ;; esac
+  return 1
+}
+# other_copy: the fixture lab's Compose project when it runs here but isn't the run's (the
+# user's own copy of the lab, the same name): the cases that import the lab leave it alone.
+other_copy() {
+  [ "$DOCKER_OK" -eq 1 ] || return 0
+  node tests/desktop/lib/owned.mjs projects "$RUN_ROOT" | awk -F'\t' -v p="cyberctf-$LAB_ID" '$1 == "theirs" && $2 == p { print p }'
+}
 
 # run_logged <name> <timeout> <command...>: one spec, alone (no app left from before), its output
 # in its log, killed past its timeout. Exit 0 passes, 2 skips (its `skipped: spec` line says why),
@@ -235,6 +260,10 @@ run_logged() {
   local name=$1 limit=$2 start=$SECONDS log rc why form provider
   shift 2
   wanted "$name" || return 0
+  if case_reads "$name" CYBERCTF_TEST_LOCAL_LAB && [ -n "$(other_copy)" ]; then
+    skip_case "$name" "a copy of $LAB_NAME this run didn't start runs here (Compose project cyberctf-$LAB_ID): left as it is"
+    return 0
+  fi
   stale_apps
   log="$LOGS/$name.log"
   logged "$name" "$log" "$limit" "$@"
@@ -309,30 +338,36 @@ vm_scan() {
   drop_utm_vm
 }
 
-# What a run leaves behind: the imported lab's containers (its Compose project and attack box).
+# What a run leaves behind: its labs' containers (each lab's Compose project, its attack box
+# among them). Only the run's projects (owned.mjs): a lab installed in its folder, started from
+# there; a project of the same name started from elsewhere is the user's, and stays.
 # `cleanup_lab final` is the run's last word and honours CYBERCTF_TEST_DESKTOP_KEEP; between
 # specs it always runs.
+run_projects() { node tests/desktop/lib/owned.mjs projects "$RUN_ROOT" | awk -F'\t' '$1 == "ours" { print $2 }'; }
+down_run_projects() {
+  [ "$DOCKER_OK" -eq 1 ] || return 0
+  local p
+  for p in $(run_projects); do
+    say "cleanup: docker compose -p $p down (the run's)"
+    docker compose -p "$p" down --remove-orphans >/dev/null 2>&1
+  done
+}
 cleanup_lab() {
   [ "${1:-}" = final ] && [ -n "${CYBERCTF_TEST_DESKTOP_KEEP:-}" ] && return 0
-  [ "$DOCKER_OK" -eq 1 ] || return 0
-  if docker compose ls -q 2>/dev/null | grep -qx "cyberctf-$LAB_ID"; then
-    say "cleanup: docker compose -p cyberctf-$LAB_ID down"
-    docker compose -p "cyberctf-$LAB_ID" down --remove-orphans >/dev/null 2>&1
-  fi
-  # One id per line: each removed (the ids passed as one word failed with more than one), and
-  # the next scenario never starts on what is left.
-  local leftovers
-  leftovers=$(docker ps -aq --filter "name=$LAB_ID")
-  [ -z "$leftovers" ] || printf '%s\n' "$leftovers" | xargs docker rm -f >/dev/null
-  leftovers=$(docker ps -aq --filter "name=$LAB_ID")
-  [ -z "$leftovers" ] || fail_now "containers of $LAB_ID are left after the clean-up: $(echo "$leftovers" | tr '\n' ' ')"
+  down_run_projects
+  # The next scenario never starts on what is left.
+  local left=""
+  if [ "$DOCKER_OK" -eq 1 ]; then left=$(run_projects); fi
+  [ -z "$left" ] || fail_now "the run's Compose projects are left after the clean-up: $(echo "$left" | tr '\n' ' ')"
 }
 
 on_exit() {
   stale_apps
   drop_utm_vm
   stop_frontend
-  restore_session
+  # An interrupted run leaves none of its labs running on a folder about to go.
+  [ -n "${CYBERCTF_TEST_DESKTOP_KEEP:-}" ] || down_run_projects
+  drop_run_root
 }
 trap on_exit EXIT INT TERM
 
@@ -345,6 +380,7 @@ preflight() {
   local pid up=0
   TAURI_WEBDRIVER_PORT=$TAURI_WEBDRIVER_PORT "$APP_BIN" >"$LOGS/preflight.log" 2>&1 &
   pid=$!
+  mkdir -p "$RUN_ROOT/records/apps" && echo "$APP_BIN" >"$RUN_ROOT/records/apps/$pid"
   for _ in $(seq 1 60); do
     curl -fsS -o /dev/null "http://127.0.0.1:$TAURI_WEBDRIVER_PORT/status" && { up=1; break; }
     kill -0 "$pid" 2>/dev/null || break
@@ -368,9 +404,8 @@ spec labs
 spec deep-link
 spec fail-offline
 spec fail-badlab
-SIGNED_OUT_HOME=$(mktemp -d "${TMPDIR:-/tmp}/cyberctf-signedout.XXXXXX")
-run_spec fail-signedout fail-signedout "$CASE_TIMEOUT" HOME="$SIGNED_OUT_HOME"
-rm -rf "$SIGNED_OUT_HOME"
+# Signed out: a run folder of its own, with no session in it.
+run_spec fail-signedout fail-signedout "$CASE_TIMEOUT" CYBERCTF_WDIO_ROOT="$RUN_ROOT/signed-out"
 DOCKER_SPECS="fail-docker launch restart stop launch-ui kill-mid-deploy attack-box attack-shell stop-with-box park-resume reimport-running attack-on-stopped lab-actions offline-start lab-form-container"
 if [ "$DOCKER_OK" -eq 1 ]; then
   spec fail-docker

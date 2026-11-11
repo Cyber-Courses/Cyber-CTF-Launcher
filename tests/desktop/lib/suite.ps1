@@ -1,8 +1,8 @@
 <#
 What run.ps1 shares with its unit test (tests/desktop/run.test.ts), as scripts/lib/suite.sh is
 run.sh's: which cases run (ONLY / SKIP), the summary's lines (suite.sh's format), the JSON record
-of each case and check for a caller that reads them (tests/README.md, "Results"), and the cases'
-table (cases.tsv). Dot-sourced, never run.
+of each case and check for a caller that reads them (tests/README.md, "Results"), the cases'
+table (cases.tsv), and the run's own folder (lib/run-root.sh's counterpart). Dot-sourced, never run.
 #>
 
 $script:SummaryLines = New-Object System.Collections.Generic.List[string]
@@ -84,4 +84,27 @@ function Add-CheckResult([string]$name, [string[]]$lines, [string]$form, [string
       Add-Result "$name/$($Matches[2])" $status ([int]$Matches[3]) $Matches[4] $form $provider $log -NotCounted
     }
   }
+}
+
+# --- The run's own folder (lib/run-root.sh says what goes where) ------------------------------
+
+# A fresh folder for the run under the system's temporary folder; its full path.
+function Initialize-RunRoot {
+  $dir = Join-Path ([IO.Path]::GetTempPath()) ("cyberctf-e2e-" + [IO.Path]::GetRandomFileName().Replace(".", ""))
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  return (Get-Item $dir).FullName
+}
+
+# The session where the run's app reads it, whatever the build: home\.cyberctf\dev-session.json.
+function Copy-RunSession([string]$root, [string]$session) {
+  $dir = Join-Path $root "home\.cyberctf"
+  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  Copy-Item $session (Join-Path $dir "dev-session.json") -Force
+}
+
+# Removes the run's folder, unless CYBERCTF_TEST_DESKTOP_KEEP is set; says where it is when it stays.
+function Clear-RunRoot([string]$root) {
+  if ($env:CYBERCTF_TEST_DESKTOP_KEEP) { return "kept: the run's folder $root (CYBERCTF_TEST_DESKTOP_KEEP)" }
+  Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
+  if (Test-Path $root) { return "couldn't remove all of the run's folder $root" }
 }

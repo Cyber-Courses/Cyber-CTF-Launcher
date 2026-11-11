@@ -57,10 +57,16 @@ pub fn run() -> tauri::Result<()> {
     // main window gets the app's frame (none on Linux and Windows) before it is created.
     let mut context = tauri::generate_context!();
     window::frame_configured(context.config_mut());
+    // An end-to-end run's app (a `wdio` build given the run's folder) keeps all of its own there,
+    // never in the user's folders; its deploy workers get the same context.
+    let test_root = platform::test_root::root();
+    if let Some(root) = &test_root {
+        test_root_config(context.config_mut(), root);
+    }
     // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool), nor,
     // on macOS, the proxy (said in the log once it is up). The OVF Tool the setup places in the
     // app data folder is on it too, for the deploy workers and the labs' runs.
-    platform::env_path::augment(&own_tool_dirs(&context.config().identifier));
+    platform::env_path::augment(&own_tool_dirs(&context.config().identifier, test_root.as_deref()));
     #[cfg(target_os = "macos")]
     let proxy_note = platform::proxy::inherit_system_proxy();
     #[cfg(not(target_os = "macos"))]
@@ -127,10 +133,24 @@ fn app_builder(proxy_note: Option<String>) -> tauri::Builder<AppRuntime> {
         })
 }
 
+/// Points the app's folders (`config`, before the app is built) and its windows' webview data at
+/// an end-to-end run's `root` (`platform::test_root`): Tauri's `appDirectoriesOverride` puts its
+/// data, config and local data folders in `<root>/app`, with `caches/` and `logs/` in it.
+fn test_root_config(config: &mut tauri::Config, root: &std::path::Path) {
+    config.app.app_directories_override = Some(tauri::utils::config::AppDirectoriesOverride::Root(platform::test_root::app_dir(root)));
+    for window in &mut config.app.windows {
+        window.data_store_identifier = Some(platform::test_root::WEBVIEW_STORE);
+    }
+}
+
 /// The folders of the tools the app places itself, under the data folder of the app
-/// `identifier`: the OVF Tool's.
-fn own_tool_dirs(identifier: &str) -> Vec<PathBuf> {
-    platform::env_path::app_data_dir(identifier).map(|data| crate::machine::tools::ovftool::managed_dir(&data)).into_iter().collect()
+/// `identifier` (an end-to-end run's, under its `test_root`): the OVF Tool's.
+fn own_tool_dirs(identifier: &str, test_root: Option<&std::path::Path>) -> Vec<PathBuf> {
+    let data = match test_root {
+        Some(root) => Some(platform::test_root::app_dir(root)),
+        None => platform::env_path::app_data_dir(identifier),
+    };
+    data.map(|data| crate::machine::tools::ovftool::managed_dir(&data)).into_iter().collect()
 }
 
 /// The job file when this process was started as a deploy worker (`<exe> deploy --job <file>`).
@@ -165,9 +185,10 @@ fn setup(app: &mut App) {
     // Once the log is up, so what is wrong with the policy is in it.
     let policy = platform::policy::current();
     register_updater(app.handle(), updates::channel(policy));
-    // Before anything reads its settings: what a virtualized Store build saved.
+    // Before anything reads its settings: what a virtualized Store build saved (never into an
+    // end-to-end run's folders).
     #[cfg(windows)]
-    {
+    if platform::test_root::root().is_none() {
         let paths = app.path();
         platform::msix_data::migrate(&app.config().identifier, paths.app_local_data_dir().ok().as_deref(), paths.app_data_dir().ok().as_deref());
     }
@@ -183,8 +204,9 @@ fn setup(app: &mut App) {
         narrow_to_this_user(&dir);
     }
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
+    // Not an end-to-end run's app: the user's links stay with the app they chose.
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
-    {
+    if platform::test_root::root().is_none() {
         use tauri_plugin_deep_link::DeepLinkExt;
         if let Err(e) = app.deep_link().register_all() {
             log::warn!("couldn't register cyberctf:// links with the system (sign-in links won't come back to the app): {e}");
@@ -327,8 +349,35 @@ mod tests {
     #[test]
     fn the_ovftool_folder_the_setup_places_into_is_on_the_startup_path() {
         let t = crate::testing::test_app::TestApp::new();
-        let dirs = super::own_tool_dirs(&t.handle().config().identifier);
+        let dirs = super::own_tool_dirs(&t.handle().config().identifier, None);
         assert_eq!(dirs, [crate::machine::tools::ovftool::managed_dir(t.data())]);
+        // An end-to-end run's app: the one under the run's folder, never the user's.
+        let root = std::env::temp_dir().join("cyberctf-e2e-run");
+        let dirs = super::own_tool_dirs(&t.handle().config().identifier, Some(&root));
+        assert_eq!(dirs, [crate::machine::tools::ovftool::managed_dir(&root.join("app"))]);
+    }
+
+    /// An end-to-end run's app keeps every folder Tauri resolves, and its windows' webview data,
+    /// under the run's folder, on every OS.
+    #[test]
+    fn a_runs_app_keeps_every_folder_and_its_webviews_data_under_the_root() {
+        use tauri::Manager;
+        let root = std::env::temp_dir().join(format!("cyberctf-e2e-root-{}", rand::random::<u32>()));
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().identifier = format!("com.cyberctf.unit-test.{}-{}", std::process::id(), rand::random::<u64>());
+        context.config_mut().app.windows.push(tauri::utils::config::WindowConfig::default());
+        super::test_root_config(context.config_mut(), &root);
+        assert!(context.config().app.windows.iter().all(|w| w.data_store_identifier == Some(crate::platform::test_root::WEBVIEW_STORE)));
+        let app = tauri::test::mock_builder().build(context).expect("mock app");
+        let paths = app.path();
+        let app_dir = root.join("app");
+        assert_eq!(paths.app_data_dir().unwrap(), app_dir);
+        assert_eq!(paths.app_config_dir().unwrap(), app_dir);
+        // The webviews' data on Linux and Windows.
+        assert_eq!(paths.app_local_data_dir().unwrap(), app_dir);
+        assert_eq!(paths.app_cache_dir().unwrap(), app_dir.join("caches"));
+        assert_eq!(paths.app_log_dir().unwrap(), app_dir.join("logs"));
+        assert_eq!(crate::platform::AppDirs::from(app.handle()).data().unwrap(), app_dir);
     }
 
     #[test]
