@@ -38,7 +38,7 @@ pub(crate) fn assume_devices_ready() {
     DEVICES_READY.with(|ready| ready.set(true));
 }
 
-/// Whether a test said this host's devices are usable ([`assume_devices_ready`]); never outside
+/// Whether a test said this host's devices are usable (`assume_devices_ready`); never outside
 /// the tests.
 pub(super) fn devices_assumed_ready() -> bool {
     #[cfg(test)]
