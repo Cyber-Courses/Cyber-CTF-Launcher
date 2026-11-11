@@ -3,7 +3,8 @@
 // lab has the same name, so a name says nothing about whose it is. The run's folder (`root`, the
 // app's CYBERCTF_WDIO_ROOT, made fresh by the runner) holds:
 //
-//   app/       the app's data (its labs in app/labs/<id>, its downloads record), config, caches,
+//   app/       the app's data (its labs in app/labs/<id>, its downloads record, the Isothrum
+//              runner's record of each lab's run in app/runs/cyberctf-<id>), config, caches,
 //              logs, and on Linux and Windows its webviews' data
 //   home/      the app's files in the home folder (the session, the server secrets, the shared folder)
 //   records/   what was on the machine when the run started: images.txt (the image ids), boxes.txt
@@ -17,7 +18,7 @@
 //   node tests/desktop/lib/owned.mjs record <root>     what is on the machine now, into <root>/records
 //   node tests/desktop/lib/owned.mjs projects <root>   a line per Compose project: `ours` or `theirs`, a tab, its name
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,7 +27,14 @@ export const projectOf = (id) => `cyberctf-${id}`;
 
 /** The run's folders under its `root`. */
 export function runFolders(root) {
-  return { root, app: join(root, "app"), labs: join(root, "app", "labs"), home: join(root, "home"), records: join(root, "records") };
+  return {
+    root,
+    app: join(root, "app"),
+    labs: join(root, "app", "labs"),
+    runs: join(root, "app", "runs"),
+    home: join(root, "home"),
+    records: join(root, "records"),
+  };
 }
 
 /** The run's folder (CYBERCTF_WDIO_ROOT, which the runner gives the app and the specs), or null
@@ -165,6 +173,30 @@ export function runContainers(root, run = runTool, platform = process.platform) 
       .map((l) => l.trim())
       .filter(Boolean),
   );
+}
+
+/**
+ * The app's record of run `name` (`<root>/app/runs/<name>`, the Isothrum runner's) dropped, after
+ * the run's clean-up took that Compose project down behind the app's back: the record still says
+ * the lab runs, and the app reads it, from its files alone, before replacing the lab's folder, so
+ * the next spec's seed (an import again, then a start) would be refused ("This lab is still
+ * running on this machine"). Only a lab's run (`cyberctf-<id>`) of a lab installed in the run's
+ * folder, a Compose one on this machine (driver `compose`, target `docker`, no host), whose record reads;
+ * anything else (a VM's run, which still holds its machines) stays. Whether it was dropped.
+ */
+export function dropComposeRecord(root, name) {
+  const { labs, runs } = runFolders(root);
+  if (!/^cyberctf-[a-z0-9][a-z0-9-]*$/.test(name) || !existsSync(join(labs, name.slice("cyberctf-".length)))) return false;
+  const dir = join(runs, name);
+  let run;
+  try {
+    run = JSON.parse(readFileSync(join(dir, "record.json"), "utf8"));
+  } catch {
+    return false;
+  }
+  if (run?.name !== name || run.driver !== "compose" || run.target !== "docker" || run.host_label) return false;
+  rmSync(dir, { recursive: true, force: true });
+  return !existsSync(dir);
 }
 
 /** Whether a Vagrant machine was created in the run's folder (a VM lab or Docker in a VM of its). */

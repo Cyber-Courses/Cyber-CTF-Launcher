@@ -59,7 +59,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PORT_FREE_S, portStillHeld, waitPortFree } from "./lib/host.mjs";
-import { projects, record as recordMachine, runFolders, runTool } from "./lib/owned.mjs";
+import { dropComposeRecord, projects, record as recordMachine, runFolders, runTool } from "./lib/owned.mjs";
 import {
   DEAD_APP,
   RUNNER_NEEDS,
@@ -305,16 +305,22 @@ function stopRunApps() {
   if (killed) sleepSync(1000);
 }
 
-/** The run's own Compose projects (owned.mjs), taken down; the next spec never starts on what is
- *  left. `final` honours CYBERCTF_TEST_DESKTOP_KEEP. Nothing to do while no engine answers. */
+/** The run's own Compose projects (owned.mjs), taken down with their volumes; the next spec never
+ *  starts on what is left. The app's record of each run taken down (`app/runs/<project>`) goes
+ *  too: it still says the lab runs, and the next spec's seed, an import again, would be refused as
+ *  the import of a running lab is (owned.mjs `dropComposeRecord`); the lab stays installed, which
+ *  is what makes its project the run's. `final` honours CYBERCTF_TEST_DESKTOP_KEEP. Nothing to do
+ *  while no engine answers. */
 function cleanupLab(final = false) {
   if ((final && KEEP) || engineWhy !== null) return;
-  for (const p of projects(RUN_ROOT).ours) {
-    say(`cleanup: docker compose -p ${p} down (the run's)`);
-    runTool("docker", ["compose", "-p", p, "down", "--remove-orphans"]);
+  const downed = projects(RUN_ROOT).ours;
+  for (const p of downed) {
+    say(`cleanup: docker compose -p ${p} down --volumes (the run's)`);
+    runTool("docker", ["compose", "-p", p, "down", "--volumes", "--remove-orphans"]);
   }
   const left = projects(RUN_ROOT).ours;
   if (left.length && !final) die(`the run's Compose projects are left after the clean-up: ${left.join(" ")}`);
+  for (const p of downed) if (!left.includes(p) && dropComposeRecord(RUN_ROOT, p)) say(`cleanup: the app's record of ${p} dropped (taken down)`);
 }
 /** The fixture lab's Compose project when it runs here but isn't the run's (the user's own copy
  *  of the lab, the same name): the cases that import the lab leave it alone. */

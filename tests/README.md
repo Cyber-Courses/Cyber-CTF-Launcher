@@ -125,14 +125,17 @@ never reads or changes their labs, settings, session or secrets, and it removes 
   (`tests/desktop/lib/owned.mjs`, held by `tests/desktop/owned.test.ts`), never on a name: a
   player's own copy of the fixture or catalogue lab has the same Compose project name
   (`cyberctf-<id>`). A Compose project is the run's when its lab is installed in the run's folder
-  and every Compose file it was started from lies there; the runners take down only those, and a
-  case that imports the fixture lab skips while a copy of it the run didn't start runs. A spec
+  and every Compose file it was started from lies there; the runners take down only those, with
+  their volumes, and then drop the app's record of each run taken down (`app/runs/<project>`, a
+  Compose run on this machine only), which still says the lab runs and would refuse the next
+  spec's seed as the import of a running lab; a case that imports the fixture lab skips while a
+  copy of it the run didn't start runs. A spec
   that finds its lab already running stops it only when the run started it (`stopLeftover`). An
   image or a box is the run's when it wasn't on the machine when the run started (`records/`,
   written first): `cleanup` confirms Clean up only when every download it would remove is the
   run's, and otherwise names the others and leaves them all. The apps stopped between specs are
-  the ones the run launched (`records/apps/<pid>`) and their deploy workers, never another copy
-  of the same binary.
+  the ones the run launched (`records/apps/<pid>`), everything left in the spec's process group,
+  and their deploy workers, never another copy of the same binary.
 - **Afterwards.** The apps' logs (the app's own and its labs' deploy logs, every `*.log` under
   `app/`, the signed-out run's too; never `home/`, and a line naming a password, a token or a key
   left out) are copied beside the specs' logs (`tests/desktop/.state/logs/app/`), whatever the

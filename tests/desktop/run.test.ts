@@ -326,8 +326,12 @@ const binds = `{
 const pidsIn = (pids: string) => readdirSync(pids).map(Number);
 
 /** The runner on a fake plan with a fake app and a fake docker (`dockerUp`: whether it answers). */
-function runRunner(planDir: string, args: string[], { dockerUp = true, env = {} }: { dockerUp?: boolean; env?: Record<string, string> } = {}) {
-  const { dir, clean, results } = runnerSetup({ dockerUp, env });
+function runRunner(
+  planDir: string,
+  args: string[],
+  { dockerUp = true, env = {}, docker }: { dockerUp?: boolean; env?: Record<string, string>; docker?: string } = {},
+) {
+  const { dir, clean, results } = runnerSetup({ dockerUp, env, docker });
   const r = spawnSync(process.execPath, [RUNNER, "--plan", planDir, "--results", results, ...args], { env: clean, encoding: "utf8", timeout: 60000 });
   return { status: r.status, out: r.stdout + r.stderr, records: readRecords(results), dir };
 }
@@ -344,13 +348,13 @@ function readRecords(results: string): Record<string, unknown>[] {
 }
 
 /** A folder for one run of the runner: its fake app, docker and vagrant, its lab and its environment. */
-function runnerSetup({ dockerUp = true, env = {} }: { dockerUp?: boolean; env?: Record<string, string> } = {}) {
+function runnerSetup({ dockerUp = true, env = {}, docker }: { dockerUp?: boolean; env?: Record<string, string>; docker?: string } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "desktop-run-"));
   dirs.push(dir);
   const app = fakeApp(dir);
   if (env.FAKE_APP_DEAD) writeFileSync(join(dir, "dead"), "");
   // A docker that answers `info` as asked and knows no Compose project; a vagrant with no boxes.
-  writeFileSync(join(dir, "docker"), `#!/bin/sh\ncase "$1" in info) exit ${dockerUp ? "0" : "1"} ;; compose) echo '[]' ;; *) exit 0 ;; esac\n`);
+  writeFileSync(join(dir, "docker"), docker ?? `#!/bin/sh\ncase "$1" in info) exit ${dockerUp ? "0" : "1"} ;; compose) echo '[]' ;; *) exit 0 ;; esac\n`);
   writeFileSync(join(dir, "vagrant"), "#!/bin/sh\nexit 0\n");
   chmodSync(join(dir, "docker"), 0o755);
   chmodSync(join(dir, "vagrant"), 0o755);
@@ -516,6 +520,52 @@ describe.skipIf(!unix)("run.mjs on a fake plan", () => {
     const kept = readdirSync(r.dir).filter((f) => f.startsWith("cyberctf-e2e."));
     expect(kept.length).toBe(1);
     expect(r.out).toContain(`kept: the run's folder`);
+  });
+});
+
+describe.skipIf(!unix)("run.mjs between two specs that start the fixture lab", () => {
+  it("takes the lab down with its volumes and drops the app's record of it, so the next seed starts it again", () => {
+    const state = mkdtempSync(join(tmpdir(), "desktop-docker-"));
+    dirs.push(state);
+    // A docker that lists the project the first spec "started" until it is taken down, every call logged.
+    const docker = `#!/bin/sh
+echo "$*" >> "${state}/calls"
+case "$1 $2" in
+  "compose ls") cat "${state}/ls.json" 2>/dev/null || echo '[]' ;;
+  "compose -p") [ "$4" = down ] && rm -f "${state}/ls.json" ;;
+esac
+exit 0
+`;
+    const starts = `{
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const root = process.env.CYBERCTF_WDIO_ROOT;
+  for (const [id, record] of [["local-lab", { target: "docker", driver: "compose" }], ["vm-lab", { target: "vagrant", driver: "vagrant" }]]) {
+    mkdirSync(root + "/app/labs/" + id, { recursive: true });
+    mkdirSync(root + "/app/runs/cyberctf-" + id, { recursive: true });
+    writeFileSync(root + "/app/runs/cyberctf-" + id + "/record.json", JSON.stringify({ version: 0, name: "cyberctf-" + id, state: "ready", ...record }));
+  }
+  writeFileSync(process.env.FAKE_DOCKER_STATE + "/ls.json", JSON.stringify([{ Name: "cyberctf-local-lab", ConfigFiles: root + "/app/runs/cyberctf-local-lab/compose.yml" }]));
+  console.log("ok: start (0s) the lab runs");
+}`;
+    // What the app's seed checks before importing the lab again (runtime::status::refuse_replace).
+    const seeds = `{
+  const { existsSync, readFileSync } = await import("node:fs");
+  const record = process.env.CYBERCTF_WDIO_ROOT + "/app/runs/cyberctf-local-lab/record.json";
+  if (existsSync(record) && JSON.parse(readFileSync(record, "utf8")).state !== "absent") {
+    console.log("FAILED: seed (0s) This lab is still running on this machine");
+    process.exit(1);
+  }
+  console.log("ok: seed (0s) nothing of the lab up");
+}`;
+    const planDir = fakePlan({ launch: { body: `${starts}\nprocess.exit(0);` }, restart: { body: `${seeds}\nprocess.exit(0);` } });
+    const r = runRunner(planDir, ["--all"], { docker, env: { FAKE_DOCKER_STATE: state, CYBERCTF_TEST_DESKTOP_KEEP: "1" } });
+    expect(verdicts(r.records), r.out).toEqual({ launch: ["pass", ""], restart: ["pass", ""] });
+    expect(readFileSync(join(state, "calls"), "utf8")).toContain("compose -p cyberctf-local-lab down --volumes --remove-orphans");
+    expect(r.out).toContain("cleanup: the app's record of cyberctf-local-lab dropped (taken down)");
+    // The lab stays installed (its project is the run's by it); the VM lab's run keeps its record.
+    const [kept] = readdirSync(r.dir).filter((f) => f.startsWith("cyberctf-e2e."));
+    expect(existsSync(join(r.dir, kept, "app", "labs", "local-lab"))).toBe(true);
+    expect(existsSync(join(r.dir, kept, "app", "runs", "cyberctf-vm-lab", "record.json"))).toBe(true);
   });
 });
 
