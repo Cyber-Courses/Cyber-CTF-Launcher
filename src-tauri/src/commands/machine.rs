@@ -92,7 +92,7 @@ pub async fn machine_workloads(app: AppHandle) -> Vec<Workload> {
 
 /// Stops the workload `id` of `kind`.
 #[tauri::command]
-pub async fn machine_workload_stop(app: AppHandle, kind: String, id: String) -> Result<()> {
+pub async fn machine_workload_stop(app: AppHandle, kind: workloads::WorkloadKind, id: String) -> Result<()> {
     workloads::machine_workload_stop(&app, AppDirs::from(&app), kind, id).await
 }
 

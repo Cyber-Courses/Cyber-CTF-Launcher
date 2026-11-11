@@ -31,15 +31,24 @@ pub trait LabRuntime {
 pub struct Workload {
     /// Lab id, or `selftest` for a setup test.
     pub id: String,
-    /// `docker` or `vm`.
-    #[ts(type = r#""docker" | "vm""#)]
-    pub kind: &'static str,
+    /// What runs it.
+    pub kind: WorkloadKind,
     /// Containers running for it (VMs: 1 per machine).
     pub count: u32,
     /// Memory used, when the runtime reports it (Docker); 0 if unknown.
     pub mem_bytes: u64,
     /// Hypervisor, for VMs.
     pub provider: Option<String>,
+}
+
+/// What runs a [`Workload`]: this machine's Docker, or a hypervisor here.
+#[derive(Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkloadKind {
+    /// Containers on Docker.
+    Docker,
+    /// VMs on a hypervisor here.
+    Vm,
 }
 
 /// What the app runs on this machine: its labs' containers and local VMs.
@@ -53,15 +62,11 @@ pub async fn machine_workloads(dirs: AppDirs) -> Vec<Workload> {
 /// lab page's: under its lock, with its volumes, pinned ports, networks and attack box or VM);
 /// anything else of the app's (a lab removed since, the self-test) goes by name: its containers
 /// (incl. its attack box), or its local VMs. The lab can be started again from its page.
-pub async fn machine_workload_stop(labs: &impl LabRuntime, dirs: AppDirs, kind: String, id: String) -> Result<()> {
+pub async fn machine_workload_stop(labs: &impl LabRuntime, dirs: AppDirs, kind: WorkloadKind, id: String) -> Result<()> {
     if !crate::runtime::is_lab_id(&id) {
         return Err(Error::Invalid(format!("invalid id `{id}`")));
     }
-    let in_vm = match kind.as_str() {
-        "docker" => false,
-        "vm" => true,
-        _ => return Err(Error::Invalid(format!("unknown workload kind `{kind}`"))),
-    };
+    let in_vm = kind == WorkloadKind::Vm;
     if let Some(runtime) = labs.runtime_here(&id, in_vm) {
         return labs.stop_lab(&id, runtime).await;
     }
@@ -70,6 +75,7 @@ pub async fn machine_workload_stop(labs: &impl LabRuntime, dirs: AppDirs, kind: 
 
 #[cfg(test)]
 mod tests {
+    use super::WorkloadKind;
     #[test]
     fn workload_ids_are_plain_names() {
         // The self-test's workload goes by an id too: the lab-id rule takes it.
@@ -109,8 +115,8 @@ mod tests {
             ("ps -aq", ok("bbb\nccc\n")),
         ]);
         let w = super::machine_workloads(t.dirs()).await;
-        let ids: Vec<(&str, &str, u64)> = w.iter().map(|w| (w.id.as_str(), w.kind, w.mem_bytes)).collect();
-        assert_eq!(ids, [("sqli", "docker", 10 * 1024 * 1024), ("goad", "vm", 0)]);
+        let ids: Vec<(&str, WorkloadKind, u64)> = w.iter().map(|w| (w.id.as_str(), w.kind, w.mem_bytes)).collect();
+        assert_eq!(ids, [("sqli", WorkloadKind::Docker, 10 * 1024 * 1024), ("goad", WorkloadKind::Vm, 0)]);
         // Regression: the scan pruned Vagrant's index, which reads every VM's state live; on
         // Hyper-V that takes each VM's lock, and a lab starting then had its own `vagrant status`
         // refused (`MachineActionLockedError`). It reads the index as it is.
@@ -119,17 +125,17 @@ mod tests {
         // `goad` is an installed VM lab running here: its Stop is the lab's own (the runner's).
         let labs = FakeLabs { installed: vec![("goad", super::Runtime::Vm)], stopped: std::sync::Mutex::new(Vec::new()) };
         // `sqli` is a stray container the app left: it goes by name through the janitor.
-        super::machine_workload_stop(&labs, t.dirs(), "docker".into(), "sqli".into()).await.unwrap();
+        super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Docker, "sqli".into()).await.unwrap();
         assert!(tools.called("compose -p cyberctf-sqli down") && tools.called("docker rm -f bbb ccc"));
-        super::machine_workload_stop(&labs, t.dirs(), "vm".into(), "goad".into()).await.unwrap();
+        super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Vm, "goad".into()).await.unwrap();
         assert_eq!(*labs.stopped.lock().unwrap(), [("goad".to_string(), super::Runtime::Vm)], "the lab's own stop, not the janitor's");
-        let err = super::machine_workload_stop(&labs, t.dirs(), "vm".into(), "other".into()).await.unwrap_err().to_string();
+        let err = super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Vm, "other".into()).await.unwrap_err().to_string();
         assert_eq!(err, "no VMs found for `other`");
-        assert!(super::machine_workload_stop(&labs, t.dirs(), "vm".into(), "selftest".into()).await.is_err());
-        assert!(
-            super::machine_workload_stop(&labs, t.dirs(), "tape".into(), "goad".into()).await.unwrap_err().to_string().starts_with("unknown workload kind")
-        );
-        assert!(super::machine_workload_stop(&labs, t.dirs(), "vm".into(), "../x".into()).await.is_err());
+        assert!(super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Vm, "selftest".into()).await.is_err());
+        // An unknown kind never reaches the stop: the command's argument doesn't parse.
+        assert!(serde_json::from_value::<WorkloadKind>(serde_json::json!("tape")).is_err());
+        assert_eq!(serde_json::from_value::<WorkloadKind>(serde_json::json!("vm")).unwrap(), WorkloadKind::Vm);
+        assert!(super::machine_workload_stop(&labs, t.dirs(), WorkloadKind::Vm, "../x".into()).await.is_err());
     }
 
     /// The real Docker: a lab's containers stopped from the Machine page go with their volume,
@@ -158,8 +164,8 @@ mod tests {
         let file = compose.display().to_string();
         run("docker", &["compose", "-p", &project, "-f", &file, "up", "-d"], Some(&lab)).await.unwrap();
         let listed = super::machine_workloads(t.dirs()).await;
-        assert!(listed.iter().any(|w| w.id == id && w.kind == "docker"), "{}", listed.iter().map(|w| w.id.as_str()).collect::<Vec<_>>().join(","));
-        super::machine_workload_stop(t.handle(), t.dirs(), "docker".into(), id.clone()).await.unwrap();
+        assert!(listed.iter().any(|w| w.id == id && w.kind == WorkloadKind::Docker), "{}", listed.iter().map(|w| w.id.as_str()).collect::<Vec<_>>().join(","));
+        super::machine_workload_stop(t.handle(), t.dirs(), WorkloadKind::Docker, id.clone()).await.unwrap();
         let label = format!("label=com.docker.compose.project={project}");
         let containers = run("docker", &["ps", "-aq", "--filter", &label], None).await.unwrap();
         let volumes = run("docker", &["volume", "ls", "-q", "--filter", &label], None).await.unwrap();

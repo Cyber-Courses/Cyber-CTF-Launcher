@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use super::deploy_worker::{self, Op};
 use crate::platform::AppDirs;
-use crate::runtime::{self, Action, Runtime};
+use crate::runtime::{self, Action, Operation, Runtime};
 
 /// The labs with any operation in flight: every one of this process ([`runtime::busy_labs`]: a
 /// start, a provisioning run, a stop, a park), then those a deploy worker runs. Installing an
@@ -48,9 +48,8 @@ fn merge_unique(mut ids: Vec<String>, more: impl IntoIterator<Item = String>) ->
 #[serde(rename_all = "camelCase")]
 pub struct ActiveOperation {
     lab_id: String,
-    /// `launch`, `resume`, `pause`, `shutdown`, `provision` or `stop`.
-    #[ts(type = r#""launch" | "resume" | "pause" | "shutdown" | "provision" | "stop""#)]
-    op: &'static str,
+    /// What it is.
+    op: Operation,
     /// The machine a provisioning run targets, when one.
     machine: Option<String>,
     /// Whether the UI shows the lab as deploying: under a deploy worker, whatever its operation,
@@ -68,12 +67,12 @@ pub struct ActiveOperation {
 
 /// The sidebar's name for a worker's operation (its [`Action`]'s), and the machine it targets
 /// when one.
-fn worker_op(op: &Op) -> (&'static str, Option<String>) {
+fn worker_op(op: &Op) -> (Operation, Option<String>) {
     match op {
-        Op::Launch | Op::LaunchLocal { .. } => (Action::Launch.name(), None),
-        Op::Resume { .. } => (Action::Resume.name(), None),
-        Op::Park { mode, .. } => (Action::Park(*mode).name(), None),
-        Op::Provision { machine, .. } => (Action::Provision.name(), machine.clone()),
+        Op::Launch | Op::LaunchLocal { .. } => (Action::Launch.operation(), None),
+        Op::Resume { .. } => (Action::Resume.operation(), None),
+        Op::Park { mode, .. } => (Action::Park(*mode).operation(), None),
+        Op::Provision { machine, .. } => (Action::Provision.operation(), machine.clone()),
     }
 }
 
@@ -105,7 +104,7 @@ fn merge_operations(jobs: Vec<(deploy_worker::Job, Option<String>)>, actions: Ve
         .collect();
     for (id, action) in actions {
         if !out.iter().any(|o| o.lab_id == id) {
-            out.push(ActiveOperation { lab_id: id, op: action.name(), machine: None, deploying: action.brings_up(), step: None, runtime: None });
+            out.push(ActiveOperation { lab_id: id, op: action.operation(), machine: None, deploying: action.brings_up(), step: None, runtime: None });
         }
     }
     out.sort_by(|a, b| a.lab_id.cmp(&b.lab_id));
@@ -144,9 +143,23 @@ mod tests {
         assert_eq!(
             ops,
             [
-                ActiveOperation { lab_id: "ad".into(), op: "provision", machine: Some("dc01".into()), deploying: true, step: None, runtime: Some(Runtime::Vm) },
-                ActiveOperation { lab_id: "ctf".into(), op: "pause", machine: None, deploying: false, step: None, runtime: None },
-                ActiveOperation { lab_id: "web".into(), op: "launch", machine: None, deploying: true, step: Some("Pulling images".into()), runtime: None },
+                ActiveOperation {
+                    lab_id: "ad".into(),
+                    op: Operation::Provision,
+                    machine: Some("dc01".into()),
+                    deploying: true,
+                    step: None,
+                    runtime: Some(Runtime::Vm)
+                },
+                ActiveOperation { lab_id: "ctf".into(), op: Operation::Pause, machine: None, deploying: false, step: None, runtime: None },
+                ActiveOperation {
+                    lab_id: "web".into(),
+                    op: Operation::Launch,
+                    machine: None,
+                    deploying: true,
+                    step: Some("Pulling images".into()),
+                    runtime: None
+                },
             ]
         );
         assert_eq!(merge_operations(Vec::new(), Vec::new()), [] as [ActiveOperation; 0]);
@@ -190,12 +203,12 @@ mod tests {
         let id = "operations-test-pause";
         let listed = || wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
         let guard = crate::runtime::DeployGuard::new(id, Action::Park(Park::Shutdown));
-        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "shutdown", machine: None, deploying: false, step: None, runtime: None }));
+        assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: Operation::Shutdown, machine: None, deploying: false, step: None, runtime: None }));
         drop(guard);
         assert_eq!(listed(), None);
         // A resume in this process deploys.
         let guard = crate::runtime::DeployGuard::new(id, Action::Resume);
-        assert_eq!(listed().map(|o| (o.op, o.deploying)), Some(("resume", true)));
+        assert_eq!(listed().map(|o| (o.op, o.deploying)), Some((Operation::Resume, true)));
         drop(guard);
     }
 
@@ -234,7 +247,14 @@ mod tests {
         let listed = || wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
         assert_eq!(
             listed(),
-            Some(ActiveOperation { lab_id: id.into(), op: "launch", machine: None, deploying: true, step: Some("web: Booting VM...".into()), runtime: None })
+            Some(ActiveOperation {
+                lab_id: id.into(),
+                op: Operation::Launch,
+                machine: None,
+                deploying: true,
+                step: Some("web: Booting VM...".into()),
+                runtime: None
+            })
         );
         assert!(wait(busy_labs(t.dirs())).contains(&id.to_string()));
         assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), log);
@@ -282,7 +302,7 @@ mod tests {
         worker.wait().unwrap();
         assert!(deploying, "the lab page sees the worker");
         // The sidebar should too: at least as a launch at its step.
-        assert_eq!(listed.map(|o| (o.op, o.step)), Some(("launch", Some("web: Booting VM...".to_string()))));
+        assert_eq!(listed.map(|o| (o.op, o.step)), Some((Operation::Launch, Some("web: Booting VM...".to_string()))));
     }
 
     #[test]
@@ -294,16 +314,16 @@ mod tests {
 
     #[test]
     fn operations_get_their_sidebar_names() {
-        assert_eq!(worker_op(&Op::Launch), ("launch", None));
-        assert_eq!(worker_op(&Op::Park { runtime: Runtime::Vm, mode: Park::Pause }).0, "pause");
-        assert_eq!(worker_op(&Op::Park { runtime: Runtime::Vm, mode: Park::Shutdown }).0, "shutdown");
-        assert_eq!(worker_op(&Op::Provision { runtime: Runtime::Vm, machine: Some("dc01".into()) }), ("provision", Some("dc01".into())));
+        assert_eq!(worker_op(&Op::Launch), (Operation::Launch, None));
+        assert_eq!(worker_op(&Op::Park { runtime: Runtime::Vm, mode: Park::Pause }).0, Operation::Pause);
+        assert_eq!(worker_op(&Op::Park { runtime: Runtime::Vm, mode: Park::Shutdown }).0, Operation::Shutdown);
+        assert_eq!(worker_op(&Op::Provision { runtime: Runtime::Vm, machine: Some("dc01".into()) }), (Operation::Provision, Some("dc01".into())));
         // In this process too: a shutdown isn't a pause, a resume or a provisioning run not a launch.
-        assert_eq!(Action::Launch.name(), "launch");
-        assert_eq!(Action::Stop.name(), "stop");
-        assert_eq!(Action::Park(Park::Pause).name(), "pause");
-        assert_eq!(Action::Park(Park::Shutdown).name(), "shutdown");
-        assert_eq!(Action::Resume.name(), "resume");
-        assert_eq!(Action::Provision.name(), "provision");
+        assert_eq!(Action::Launch.operation(), Operation::Launch);
+        assert_eq!(Action::Stop.operation(), Operation::Stop);
+        assert_eq!(Action::Park(Park::Pause).operation(), Operation::Pause);
+        assert_eq!(Action::Park(Park::Shutdown).operation(), Operation::Shutdown);
+        assert_eq!(Action::Resume.operation(), Operation::Resume);
+        assert_eq!(Action::Provision.operation(), Operation::Provision);
     }
 }

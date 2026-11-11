@@ -130,7 +130,10 @@ fn running_by_owner(out: &str, labs: Option<&Path>, selftest_dir: Option<&Path>)
         let e = by_lab.entry(id).or_insert((0, r.provider.clone()));
         e.0 += 1;
     }
-    by_lab.into_iter().map(|(id, (count, provider))| Workload { id, kind: "vm", count, mem_bytes: 0, provider: Some(provider) }).collect()
+    by_lab
+        .into_iter()
+        .map(|(id, (count, provider))| Workload { id, kind: crate::machine::workloads::WorkloadKind::Vm, count, mem_bytes: 0, provider: Some(provider) })
+        .collect()
 }
 
 /// Upgrade only: the folder beside `.isoloom` where older versions of the launcher kept the
@@ -280,7 +283,7 @@ mod tests {
         let w = running_by_owner(&out, Some(&labs), Some(&selftest));
         assert_eq!(w.len(), 2);
         assert_eq!((w[0].id.as_str(), w[0].count, w[0].provider.as_deref()), ("goad", 2, Some("virtualbox")));
-        assert_eq!((w[1].id.as_str(), w[1].count, w[1].kind), ("selftest", 1, "vm"));
+        assert_eq!((w[1].id.as_str(), w[1].count, w[1].kind), ("selftest", 1, crate::machine::workloads::WorkloadKind::Vm));
         assert!(running_by_owner(&out, None, None).is_empty());
     }
 

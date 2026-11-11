@@ -118,7 +118,13 @@ fn workloads_from(by_lab: BTreeMap<String, Vec<String>>, mem: &BTreeMap<String, 
         .into_iter()
         .map(|(id, cids)| {
             let mem_bytes = cids.iter().map(|c| memory_of(c, mem)).sum();
-            Workload { id, kind: "docker", count: u32::try_from(cids.len()).unwrap_or(u32::MAX), mem_bytes, provider: None }
+            Workload {
+                id,
+                kind: crate::machine::workloads::WorkloadKind::Docker,
+                count: u32::try_from(cids.len()).unwrap_or(u32::MAX),
+                mem_bytes,
+                provider: None,
+            }
         })
         .collect()
 }
@@ -226,7 +232,7 @@ mod tests {
         let mem = memory_by_container("aaa\t1kB / 1GiB\nbbb\t2KiB / 1GiB\n");
         let w = workloads_from(by_lab, &mem);
         assert_eq!(w.len(), 2);
-        assert_eq!((w[0].id.as_str(), w[0].kind, w[0].count, w[0].mem_bytes), ("sqli", "docker", 2, 1000 + 2048));
+        assert_eq!((w[0].id.as_str(), w[0].kind, w[0].count, w[0].mem_bytes), ("sqli", crate::machine::workloads::WorkloadKind::Docker, 2, 1000 + 2048));
         assert_eq!((w[1].id.as_str(), w[1].mem_bytes), ("xss", 0));
         assert!(w[0].provider.is_none());
         assert_eq!(parse_size("3MB"), 3_000_000);

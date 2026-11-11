@@ -36,17 +36,35 @@ impl Action {
         matches!(self, Action::Launch | Action::Resume | Action::Provision)
     }
 
-    /// Its name in the sidebar (`ActiveOperation::op`).
-    pub fn name(self) -> &'static str {
+    /// The operation it is, as the UI names it (`ActiveOperation::op`).
+    pub fn operation(self) -> Operation {
         match self {
-            Action::Launch => "launch",
-            Action::Resume => "resume",
-            Action::Provision => "provision",
-            Action::Stop => "stop",
-            Action::Park(super::Park::Pause) => "pause",
-            Action::Park(super::Park::Shutdown) => "shutdown",
+            Action::Launch => Operation::Launch,
+            Action::Resume => Operation::Resume,
+            Action::Provision => Operation::Provision,
+            Action::Stop => Operation::Stop,
+            Action::Park(super::Park::Pause) => Operation::Pause,
+            Action::Park(super::Park::Shutdown) => Operation::Shutdown,
         }
     }
+}
+
+/// A lab operation as the UI names it: an [`Action`], a pause and a shut down told apart.
+#[derive(serde::Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
+#[serde(rename_all = "lowercase")]
+pub enum Operation {
+    /// A launch.
+    Launch,
+    /// A resume of a parked lab.
+    Resume,
+    /// A pause.
+    Pause,
+    /// A shut down.
+    Shutdown,
+    /// A provisioning run.
+    Provision,
+    /// A stop.
+    Stop,
 }
 
 /// The labs with an operation in flight in this process right now, each with its in-flight count
