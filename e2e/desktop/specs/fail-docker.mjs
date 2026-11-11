@@ -2,7 +2,7 @@
 // config without a current context (see deadDockerEnv), plus the seed lab it would normally start
 // on launch: the header must say Docker is not running, the seed's start must fail, and the
 // Overview must show nothing running.
-import { LAB_RUNNING, deadDockerEnv, finish, goTo, mainText, openApp, waitAwake } from "../support.mjs";
+import { deadDockerEnv, finish, goTo, LAB_RUNNING, mainText, openApp, results, waitAwake } from "../support.mjs";
 
 const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
 const env = deadDockerEnv();
@@ -11,7 +11,7 @@ if (LAB) env.CYBERCTF_WDIO_SEED_LAB = LAB;
 const DOCKER_DOWN = /Docker not running/i;
 const NOTHING_RUNNING = /Nothing running/i;
 
-let rc = 0;
+const r = results();
 let proc;
 let b;
 try {
@@ -43,16 +43,14 @@ try {
     ),
   );
   console.log("dockerDown:", dockerDown, "noLabRunning:", noLab);
-  if (dockerDown && noLab) console.log("FAIL_DOCKER_OK the UI reflects Docker engine down + no lab running");
+  if (dockerDown && noLab) r.pass("fail-docker", "the UI reflects Docker engine down + no lab running");
   else {
-    console.log("FAIL_DOCKER_FAIL did not clearly reflect Docker down");
-    rc = 1;
+    r.fail("fail-docker", "did not clearly reflect Docker down");
   }
 } catch (e) {
-  console.log("FAIL_DOCKER_FAIL", e.message);
+  r.fail("fail-docker", e.message);
   if (b) console.log("main text:", JSON.stringify((await mainText(b).catch(() => "")).slice(0, 600)));
-  rc = 1;
 } finally {
   await finish(b, proc);
 }
-process.exit(rc);
+r.exit();

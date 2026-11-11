@@ -3,7 +3,7 @@
 // Skip setup and assert the app completes onboarding and lands on the shell. Exercises the real
 // wizard (the same machine-setup step components the standalone setup window reuses), without
 // depending on the machine report, since Skip setup leaves the machine steps untouched.
-import { connect, finish, forceVisible, launchApp, sleep } from "../support.mjs";
+import { connect, finish, forceVisible, launchApp, results, sleep } from "../support.mjs";
 
 const main = (b) =>
   b
@@ -18,7 +18,7 @@ const clickText = async (b, label) => {
   return true;
 };
 
-let rc = 0;
+const r = results();
 let proc;
 let b;
 try {
@@ -82,11 +82,10 @@ try {
       return null;
     }
   });
-  console.log(`ONBOARDING_OK wizard rendered, advanced past Welcome, then Skip setup reached the shell (onboarded=${onboarded})`);
+  r.pass("onboarding", `wizard rendered, advanced past Welcome, then Skip setup reached the shell (onboarded=${onboarded})`);
 } catch (e) {
-  console.log("ONBOARDING_FAIL", e.message);
-  rc = 1;
+  r.fail("onboarding", e.message);
 } finally {
   await finish(b, proc);
 }
-process.exit(rc);
+r.exit();

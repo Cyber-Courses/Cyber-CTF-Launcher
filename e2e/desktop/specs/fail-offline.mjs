@@ -1,12 +1,12 @@
 // Failure scenario: the Cyber CTF backend is unreachable. Point CYBERBACKEND_URL at a dead host;
 // the catalogue must degrade gracefully (no crash) and the UI must stay usable with its machine
 // panel.
-import { finish, goTo, mainText, openApp, sleep } from "../support.mjs";
+import { finish, goTo, mainText, openApp, results, sleep } from "../support.mjs";
 
 /** What the Labs page shows once the catalogue load failed (any apostrophe). */
 const DEGRADED = /can.?t (be )?reach|couldn|sign in|offline|no labs/i;
 
-let rc = 0;
+const r = results();
 let proc;
 let b;
 try {
@@ -29,15 +29,13 @@ try {
   );
   const rendered = await b.$("aside nav").isExisting(); // app still usable, not crashed
   const degraded = DEGRADED.test(main);
-  if (rendered && degraded) console.log("FAIL_OFFLINE_OK the app stays usable and shows the catalogue degraded");
+  if (rendered && degraded) r.pass("fail-offline", "the app stays usable and shows the catalogue degraded");
   else {
-    console.log("FAIL_OFFLINE_FAIL rendered=", rendered, "degraded=", degraded);
-    rc = 1;
+    r.fail("fail-offline", `shell rendered: ${rendered}, catalogue shown degraded: ${degraded}`);
   }
 } catch (e) {
-  console.log("FAIL_OFFLINE_ERR", e.message);
-  rc = 1;
+  r.fail("fail-offline", e.message);
 } finally {
   await finish(b, proc);
 }
-process.exit(rc);
+r.exit();

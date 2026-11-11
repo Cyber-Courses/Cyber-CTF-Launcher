@@ -2,21 +2,17 @@
 // attack-box panel (WdioAttack), let it attach the attack box, see it running with an address,
 // open the attacker shell, then Stop it and watch it detach. Drives the same useAttackBox /
 // AttackBoxPanel / useLabShell the catalogue lab page uses.
-import { existsSync } from "node:fs";
-import { finish, forceVisible, goTo, mainText, openApp, sleep, waitAwake, waitForLab } from "../support.mjs";
+import { finish, forceVisible, goTo, localLab, mainText, openApp, results, sleep, waitAwake, waitForLab } from "../support.mjs";
 
-const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
-if (!LAB || !existsSync(LAB)) {
-  console.log(`no lab at CYBERCTF_TEST_LOCAL_LAB=${LAB}`);
-  process.exit(2);
-}
+const r = results();
+const LAB = localLab();
+if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
 const text = (b) =>
   b
     .$("[data-wdio-attack]")
     .getText()
     .catch(() => "");
 
-let rc = 0;
 let proc;
 let b;
 try {
@@ -123,9 +119,9 @@ try {
     console.log(ok ? `SHELL_WINDOW_OK attacker shell opened (${url})` : `SHELL_WINDOW_URL unexpected (${url})`);
     await b.switchToWindow(before[0]).catch(() => {});
   } else {
-    // The embedded WebDriver server exposes only the main webview; the shell opens as its own OS
-    // window, which it does not surface as a handle. The open path still fired without error.
-    console.log("SHELL_WINDOW_SOFT attacker shell opened (new window not exposed by the embedded server)");
+    // Not yet listed 4 s after the click (the embedded server lists every webview window): the
+    // attack-shell spec waits for the window and types in it; here the open path fired.
+    console.log("SHELL_WINDOW_SOFT the shell window wasn't listed yet");
   }
 
   // 6. Stop the box from the panel and watch it detach.
@@ -140,11 +136,10 @@ try {
     },
     { timeout: 60000, interval: 2000, timeoutMsg: "attack box never detached" },
   );
-  console.log("ATTACK_BOX_OK attached, ran with an address, opened a shell, then detached");
+  r.pass("attack-box", "attached, ran with an address, opened a shell, then detached");
 } catch (e) {
-  console.log("ATTACK_BOX_FAIL", e.message);
-  rc = 1;
+  r.fail("attack-box", e.message);
 } finally {
   await finish(b, proc);
 }
-process.exit(rc);
+r.exit();

@@ -1,16 +1,12 @@
 // Functional GUI e2e: a running lab survives an app restart. Launch with the seed, verify running,
 // kill the app, reopen WITHOUT the seed, and assert the lab is rediscovered as running (the
 // running-labs scan, not a cache: the in-memory state died with the first process).
-import { existsSync } from "node:fs";
-import { finish, goTo, mainText, openApp, sleep, stopApp, waitForLab } from "../support.mjs";
+import { finish, goTo, localLab, mainText, openApp, results, sleep, stopApp, waitForLab } from "../support.mjs";
 
-const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
-if (!LAB || !existsSync(LAB)) {
-  console.log(`no lab at CYBERCTF_TEST_LOCAL_LAB=${LAB}`);
-  process.exit(2);
-}
+const r = results();
+const LAB = localLab();
+if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
 
-let rc = 0;
 let app1;
 let app2;
 let b2;
@@ -27,13 +23,12 @@ try {
   ({ proc: app2, b: b2 } = await openApp());
   await goTo(b2, "Overview");
   await waitForLab(b2, 70000);
-  console.log("RESTART_PERSIST_OK lab still running after app restart");
+  r.pass("restart", "lab still running after app restart");
 } catch (e) {
-  console.log("RESTART_PERSIST_FAIL", e.message);
+  r.fail("restart", e.message);
   if (b2) console.log("main:", JSON.stringify((await mainText(b2)).slice(0, 400)));
-  rc = 1;
 } finally {
   await finish(b2, app2);
   stopApp(app1);
 }
-process.exit(rc);
+r.exit();

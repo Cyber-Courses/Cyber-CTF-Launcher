@@ -3,11 +3,11 @@
 // tear everything down. macOS, Linux and Windows. Every script goes through here, so every script
 // honours APP_BIN (or CYBERCTF_BIN) and TAURI_WEBDRIVER_PORT; e2e/desktop/run.sh sets both.
 import { remote } from "webdriverio";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Path to the app binary: APP_BIN, else CYBERCTF_BIN, else the debug build. */
@@ -37,18 +37,23 @@ export function deadDockerEnv() {
 /** A lab shows as running on the Overview. */
 export const LAB_RUNNING = /\blab[s]? running on this machine\b/i;
 
+/** Every app this process launched, killed when a spec skips mid-way (`results().skipAll`). */
+const launched = new Set();
+
 /**
  * Launch the app and wait for its embedded WebDriver server to accept connections. `env` is added
- * to the app's environment (a seed lab, a dead Docker socket, a dead backend). The returned child
- * carries `output()`, the app's stdout and stderr so far, for a failure report.
+ * to the app's environment (a seed lab, a dead Docker socket, a dead backend), `args` to its
+ * command line (a `cyberctf://` link, as the system opens one). The returned child carries
+ * `output()`, the app's stdout and stderr so far, for a failure report.
  */
-export async function launchApp({ env = {} } = {}) {
+export async function launchApp({ env = {}, args = [] } = {}) {
   const bin = appBinary();
   if (!existsSync(bin)) throw new Error(`app binary not found (build with --features wdio): ${bin}`);
-  const proc = spawn(bin, [], {
+  const proc = spawn(bin, args, {
     env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT), ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  launched.add(proc);
   let out = "";
   proc.stdout.on("data", (d) => (out += d));
   proc.stderr.on("data", (d) => (out += d));
@@ -124,8 +129,8 @@ export async function forceVisible(b) {
 }
 
 /** Launch, connect and prepare in one go; the app is stopped again if the session can't open. */
-export async function openApp({ env = {}, storage = {} } = {}) {
-  const proc = await launchApp({ env });
+export async function openApp({ env = {}, storage = {}, args = [] } = {}) {
+  const proc = await launchApp({ env, args });
   try {
     const b = await connect();
     await prepare(b, storage);
@@ -189,19 +194,23 @@ export function localLabName(lab) {
 }
 
 /**
- * Answers the app's destructive confirmations (`confirmDestructive`, src/lib/confirm.ts) with
- * their confirm button from now on, in this window: they open the system's own dialog, which
- * WebDriver can't press, so the webview's dialog call is answered before it reaches the core.
+ * Answers the app's destructive confirmations (`confirmDestructive`, src/lib/confirm.ts) from now
+ * on, in this window, with their confirm button (`answer` "cancel": with Cancel): they open the
+ * system's own dialog, which WebDriver can't press, so the webview's dialog call is answered
+ * before it reaches the core. Called again, it answers the new way.
  */
-export async function confirmSystemDialogs(b) {
-  await b.execute(() => {
+export async function confirmSystemDialogs(b, answer = "confirm") {
+  await b.execute((a) => {
     const internals = window.__TAURI_INTERNALS__;
+    internals.__answer = a;
     if (internals.__confirming) return;
     const invoke = internals.invoke.bind(internals);
     internals.invoke = (cmd, args, options) =>
-      cmd === "plugin:dialog|message" && args?.buttons?.OkCancelCustom ? Promise.resolve(args.buttons.OkCancelCustom[0]) : invoke(cmd, args, options);
+      cmd === "plugin:dialog|message" && args?.buttons?.OkCancelCustom
+        ? Promise.resolve(args.buttons.OkCancelCustom[internals.__answer === "cancel" ? 1 : 0])
+        : invoke(cmd, args, options);
     internals.__confirming = true;
-  });
+  }, answer);
 }
 
 /**
@@ -295,3 +304,323 @@ export async function finish(b, proc) {
 }
 
 export { sleep };
+
+// --- Results ---------------------------------------------------------------------------------
+// A spec's checks, one line each, as the integration tests print theirs (`ok:` / `FAILED:`, see
+// src-tauri/src/integration_tests/support.rs), with a stable id and the seconds since the line
+// before, so the runner can put a line per check in its summary:
+//
+//   ok: <id> (<seconds>s) <what was seen>
+//   FAILED: <id> (<seconds>s) <what was seen>
+//   skipped: <id> (0s) <why>
+//
+// The spec's exit status is its verdict: 0 every check passed (or was skipped), 1 one failed,
+// 2 the whole spec was skipped (`skipAll`), a knob it needs missing.
+
+/** Exit status of a spec skipped as a whole. */
+export const SKIPPED = 2;
+
+/** The result lines of one spec. */
+export function results() {
+  let failed = 0;
+  let mark = Date.now();
+  const line = (status, id, text) => {
+    const secs = Math.round((Date.now() - mark) / 1000);
+    mark = Date.now();
+    console.log(`${status}: ${id} (${status === "skipped" ? 0 : secs}s) ${String(text).replace(/\s+/g, " ").trim()}`);
+  };
+  const r = {
+    pass: (id, what) => line("ok", id, what),
+    fail: (id, what) => {
+      failed += 1;
+      line("FAILED", id, what);
+    },
+    /** A check: `ok` decides which line; returns `ok`. */
+    check: (id, ok, what) => {
+      if (ok) r.pass(id, what);
+      else r.fail(id, what);
+      return ok;
+    },
+    skip: (id, why) => line("skipped", id, why),
+    /** Runs `fn`; its answer (or `what`) is the ok line, what it throws the FAILED one. */
+    step: async (id, what, fn) => {
+      try {
+        const seen = await fn();
+        r.pass(id, typeof seen === "string" && seen ? seen : what);
+        return true;
+      } catch (e) {
+        r.fail(id, `${what}: ${e?.message ?? e}`);
+        return false;
+      }
+    },
+    /** The whole spec skipped: one line, the apps it launched stopped, and exit. */
+    skipAll: (why) => {
+      line("skipped", "spec", why);
+      for (const p of launched) stopApp(p);
+      process.exit(SKIPPED);
+    },
+    get failed() {
+      return failed;
+    },
+    /** Exit with the verdict. */
+    exit: () => process.exit(failed > 0 ? 1 : 0),
+  };
+  return r;
+}
+
+// --- Knobs and the machine --------------------------------------------------------------------
+
+/** The lab folder the local scenarios import, when it is one. */
+export function localLab() {
+  const lab = process.env.CYBERCTF_TEST_LOCAL_LAB;
+  return lab && existsSync(join(lab, "isoloom.yml")) ? lab : null;
+}
+
+/** The catalogue lab the signed-in scenarios start (its title in the Labs list). */
+export const CATALOGUE_LAB = process.env.CYBERCTF_TEST_CATALOGUE_LAB || "Supplier portal API";
+
+/** `docker <args>`, without a shell (so `{{.Names}}` and `^` reach Docker as written on every
+ *  system); its output, or null when Docker failed. */
+export function docker(...args) {
+  try {
+    return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 60000 });
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a Docker engine answers here. */
+export const dockerUp = () => docker("info", "--format", "{{.ServerVersion}}") !== null;
+
+/** The containers of lab `id` (its Compose project, `cyberctf-<id>`): name and state each. */
+export function labContainers(id) {
+  const out = docker("ps", "-a", "--format", "{{.Names}}\t{{.State}}", "--filter", `name=^cyberctf-${id}`) ?? "";
+  return out
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => {
+      const [name, state] = l.split("\t");
+      return { name, state };
+    });
+}
+
+/** The VMs a hypervisor lists here, by name; null when this one can't be asked. */
+export function hypervisorVms(provider) {
+  const run = (cmd, args) => {
+    try {
+      return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 60000 });
+    } catch {
+      return null;
+    }
+  };
+  const lines = (out) =>
+    out === null
+      ? null
+      : out
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+  switch (provider) {
+    case "libvirt":
+    case "qemu":
+      return lines(run("virsh", ["-c", "qemu:///system", "list", "--all", "--name"]));
+    case "virtualbox":
+      return lines(run("VBoxManage", ["list", "vms"]))?.map((l) => l.replace(/^"(.*)".*$/, "$1")) ?? null;
+    case "hyperv":
+      return lines(run("powershell.exe", ["-NoProfile", "-Command", "Get-VM | ForEach-Object { $_.Name }"]));
+    case "utm":
+      return lines(run("/Applications/UTM.app/Contents/MacOS/utmctl", ["list"]))?.slice(1) ?? null;
+    default:
+      return null;
+  }
+}
+
+/** The app's data folder, where it installs labs (`<data>/labs/<id>`), as Tauri resolves it for
+ *  the identifier `org.cyberctf.desktop`. */
+export function appDataDir() {
+  const id = "org.cyberctf.desktop";
+  if (process.platform === "darwin") return join(homedir(), "Library", "Application Support", id);
+  if (process.platform === "win32") return join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), id);
+  return join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), id);
+}
+
+/** Whether the app has its own window frame (Linux and Windows), where the page draws the window
+ *  controls; macOS keeps the system's. */
+export const ownFrame = process.platform === "linux" || process.platform === "win32";
+
+// --- The app's state, asked through its own commands -----------------------------------------
+
+/** Whether the app is signed in to Cyber CTF (`auth_status`). */
+export async function signedIn(b) {
+  const status = await invokeCmd(b, "auth_status", {}, { timeoutMs: 30000 }).catch(() => null);
+  return !!status?.loggedIn;
+}
+
+/** The labs imported from a folder installed here (`imported_labs`): id and title each. */
+export async function importedLabs(b) {
+  const list = await invokeCmd(b, "imported_labs", {}, { timeoutMs: 30000 }).catch(() => []);
+  return (Array.isArray(list) ? list : []).map((l) => ({ id: l.id, title: l.metadata?.title ?? l.name }));
+}
+
+// --- System dialogs and windows ---------------------------------------------------------------
+
+/**
+ * Answers the app's folder and file pickers (`open` of the dialog plugin) with `path` from now
+ * on, in this window: the system's picker is a window WebDriver can't drive, so the webview's
+ * call is answered before it reaches the core, as `confirmSystemDialogs` answers confirmations.
+ * Called again, it answers with the new path.
+ */
+export async function answerPickers(b, path) {
+  await b.execute((p) => {
+    const internals = window.__TAURI_INTERNALS__;
+    internals.__pickPath = p;
+    if (internals.__picking) return;
+    const invoke = internals.invoke.bind(internals);
+    internals.invoke = (cmd, args, options) => (cmd === "plugin:dialog|open" ? Promise.resolve(internals.__pickPath) : invoke(cmd, args, options));
+    internals.__picking = true;
+  }, path);
+}
+
+/** Waits for the window labelled `label` (`settings`, `machine-setup`, `server-setup`,
+ *  `shell-<lab id>`) to exist, and switches the session to it. */
+export async function switchToWindow(b, label, timeout = 30000) {
+  await b.waitUntil(async () => (await b.getWindowHandles()).includes(label), {
+    timeout,
+    interval: 500,
+    timeoutMsg: `no window "${label}" opened (windows: ${(await b.getWindowHandles().catch(() => [])).join(", ")})`,
+  });
+  await b.switchToWindow(label);
+  await b.$("body").waitForExist({ timeout: 20000 });
+  await forceVisible(b);
+}
+
+/** Closes window `label` if it is open, and goes back to the main window. */
+export async function closeWindow(b, label) {
+  if ((await b.getWindowHandles().catch(() => [])).includes(label)) {
+    await b.switchToWindow(label).catch(() => {});
+    await b.closeWindow().catch(() => {});
+  }
+  await b.switchToWindow("main").catch(() => {});
+}
+
+/** A button in the main pane named exactly one of `labels` (its text, trimmed). */
+export const mainButton = (b, ...labels) => b.$(`//main//button[${labels.map((l) => `normalize-space()=${JSON.stringify(l)}`).join(" or ")}]`);
+
+/** A radio row (`role="radio"`) under `scope` whose text holds `text`. */
+export const radioRow = (scope, text) => scope.$(`.//*[@role="radio"][contains(normalize-space(), ${JSON.stringify(text)})]`);
+
+// --- Lab pages --------------------------------------------------------------------------------
+
+/** Opens the lab titled `title` from the Labs screen (the search narrows the list first);
+ *  false when the list has no such lab. */
+export async function openLabFromList(b, title) {
+  await goTo(b, "Labs");
+  const search = await b.$('main input[aria-label="Search labs and skills"]');
+  if (await search.waitForExist({ timeout: 20000 }).catch(() => false)) await search.setValue(title);
+  const open = await b.$(`main button[aria-label=${JSON.stringify(`Open ${title}`)}]`);
+  if (!(await open.waitForClickable({ timeout: 30000 }).catch(() => false))) return false;
+  await open.click();
+  await b.waitUntil(
+    async () =>
+      (
+        await b
+          .$("main h1")
+          .getText()
+          .catch(() => "")
+      ).includes(title),
+    {
+      timeout: 30000,
+      timeoutMsg: `the page of ${title} never opened`,
+    },
+  );
+  return true;
+}
+
+/** Whether the lab page says the lab runs: its header offers Stop & remove, enabled (nothing in
+ *  flight: a start, a stop, a park), and no Resume (a parked lab offers both). Throws the page's
+ *  failure when its start failed. */
+export async function labPageRunning(b) {
+  const t = await mainText(b);
+  if (/Couldn.t start/.test(t)) throw new Error(`the start failed: ${t.slice(0, 1200)}`);
+  const remove = await mainButton(b, "Stop & remove");
+  return (await remove.isExisting()) && (await remove.isEnabled()) && !(await (await mainButton(b, "Resume")).isExisting());
+}
+
+/** Waits until the lab page shows the lab running. */
+export function waitLabPageRunning(b, timeout) {
+  return waitAwake(b, () => labPageRunning(b), { timeout, interval: 5000, timeoutMsg: "the lab never showed as running on its page" });
+}
+
+/** Stop & remove from the lab page, its system confirmation answered yes, then waits until the
+ *  page offers a start again (Start lab, or Import a lab for an imported one). */
+export async function stopAndRemoveOnPage(b, timeout = 600000) {
+  const stop = await mainButton(b, "Stop & remove", "Stop & clean up");
+  await stop.waitForClickable({ timeout: 60000 });
+  await confirmSystemDialogs(b);
+  await stop.click();
+  await waitAwake(b, () => mainButton(b, "Start lab", "Retry", "Import a lab").isExisting(), {
+    timeout,
+    timeoutMsg: "the lab never stopped",
+  });
+}
+
+/** The provider names the hypervisor rows show (src/lib/tauri/generated/ProviderNames.ts). */
+const PROVIDER_LABELS = {
+  utm: "UTM",
+  qemu: "QEMU",
+  virtualbox: "VirtualBox",
+  vmware_desktop: "VMware",
+  parallels: "Parallels",
+  libvirt: "libvirt",
+  hyperv: "Hyper-V",
+};
+
+/**
+ * Start lab, then the "Where should the lab run?" dialog answered as asked: `place` is
+ * `container`, `vm` (`form` `one` or `per-machine`, on `provider`) or `host` (the saved server
+ * named `host`); an engine step takes the default engine, a ports step random ports. Returns
+ * what the dialog showed, for the log. Throws, saying why, when the place is refused here.
+ */
+export async function startFromDialog(b, { place, form = "one", provider = null, host = null }) {
+  const start = await mainButton(b, "Start lab", "Retry");
+  await start.waitForClickable({ timeout: 60000 });
+  await start.click();
+  const dialog = await b.$('[role="dialog"][aria-label="Where should the lab run?"]');
+  await dialog.waitForExist({ timeout: 20000 });
+  const pick = async (text) => {
+    const row = await radioRow(dialog, text);
+    if (!(await row.waitForExist({ timeout: 20000 }).catch(() => false))) throw new Error(`the dialog offers no "${text}":\n${await dialog.getText()}`);
+    if ((await row.getAttribute("aria-disabled")) === "true") throw new Error(`"${text}" is refused here: ${(await row.getText()).replace(/\s+/g, " ")}`);
+    await row.click();
+    await sleep(800);
+  };
+  const seen = [];
+  await pick(place === "container" ? "Container" : place === "vm" ? "VM" : host);
+  seen.push(place === "host" ? host : place);
+  const answered = new Set();
+  for (let i = 0; i < 6; i++) {
+    const text = await dialog.getText();
+    if (/How should it run\?/.test(text) && !answered.has("form")) {
+      answered.add("form");
+      await pick(form === "per-machine" ? "One VM per machine" : "In one VM");
+      seen.push(form);
+    } else if (/Which hypervisor\?/.test(text) && !answered.has("hypervisor")) {
+      answered.add("hypervisor");
+      if (!provider) throw new Error("the dialog asks which hypervisor: set CYBERCTF_TEST_VM_PROVIDER");
+      await pick(PROVIDER_LABELS[provider] ?? provider);
+      seen.push(provider);
+    } else if (/Which engine\?/.test(text) && !answered.has("engine")) {
+      answered.add("engine");
+      const current = await dialog.$('.//*[@role="radio"][@aria-checked="true"]');
+      await ((await current.isExisting()) ? current : await dialog.$('.//*[@role="radio"]')).click();
+      await sleep(800);
+      seen.push("default engine");
+    } else if (/Which ports should/.test(text) && !answered.has("ports")) {
+      answered.add("ports");
+      await pick("Random ports");
+      seen.push("random ports");
+    } else break;
+  }
+  await (await dialog.$('.//button[normalize-space()="Start"]')).click();
+  return seen.join(" > ");
+}

@@ -3,23 +3,18 @@
 // Machine page kept listing the lab as running. Launch the local lab, attach the box through the
 // real panel, then stop the lab through the `lab_stop` command (what the lab page and the
 // Overview call) and check Docker has nothing of the lab left, box included.
-import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { finish, forceVisible, goTo, mainText, openApp, sleep, waitAwake, waitForLab } from "../support.mjs";
+import { finish, forceVisible, goTo, labContainers, localLab, mainText, openApp, results, sleep, waitAwake, waitForLab } from "../support.mjs";
 
-const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
-if (!LAB || !existsSync(LAB)) {
-  console.log(`no lab at CYBERCTF_TEST_LOCAL_LAB=${LAB}`);
-  process.exit(2);
-}
+const r = results();
+const LAB = localLab();
+if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
 const panel = (b) =>
   b
     .$("[data-wdio-attack]")
     .getText()
     .catch(() => "");
-const labContainers = (id) => execSync(`docker ps -a --format '{{.Names}}' --filter name=^cyberctf-${id}`, { encoding: "utf8" }).split("\n").filter(Boolean);
+const containerNames = (id) => labContainers(id).map((c) => c.name);
 
-let rc = 0;
 let proc;
 let b;
 try {
@@ -37,7 +32,7 @@ try {
   await b.$("[data-wdio-attack]").waitForExist({ timeout: 25000 });
   await forceVisible(b);
   await waitAwake(b, async () => /Stop attack box/.test(await panel(b)), { timeout: 90000, interval: 3000, timeoutMsg: "the box never came up" });
-  const withBox = labContainers(id);
+  const withBox = containerNames(id);
   // The box is a machine of the lab: its `attackbox` service in the lab's own project.
   if (!withBox.some((n) => /-attackbox-\d+$/.test(n))) throw new Error(`no attack box container among ${JSON.stringify(withBox)}`);
   console.log("box attached; containers:", JSON.stringify(withBox));
@@ -59,16 +54,14 @@ try {
   }
   if (result !== "ok") throw new Error(`lab_stop: ${result}`);
   await sleep(2000);
-  const left = labContainers(id);
-  if (left.length === 0) console.log("STOP_WITH_BOX_OK stopping the lab removed its containers, attack box included");
+  const left = containerNames(id);
+  if (left.length === 0) r.pass("stop-with-box", "stopping the lab removed its containers, attack box included");
   else {
-    console.log(`STOP_WITH_BOX_FAIL containers left after stop: ${JSON.stringify(left)}`);
-    rc = 1;
+    r.fail("stop-with-box", `containers left after stop: ${JSON.stringify(left)}`);
   }
 } catch (e) {
-  console.log("STOP_WITH_BOX_FAIL", e.message);
-  rc = 1;
+  r.fail("stop-with-box", e.message);
 } finally {
   await finish(b, proc);
 }
-process.exit(rc);
+r.exit();

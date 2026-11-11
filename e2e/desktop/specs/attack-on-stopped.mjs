@@ -2,7 +2,7 @@
 // gracefully — the panel renders a not-running / error state, never claims a box is up, and the
 // app stays usable. No lab is launched; a lab id that nothing is running under is handed to the
 // real panel (WdioAttack), exercising useAttackBox / attack_box_status on a dead lab.
-import { finish, forceVisible, goTo, openApp, sleep } from "../support.mjs";
+import { finish, forceVisible, goTo, openApp, results, sleep } from "../support.mjs";
 
 const DEAD_ID = "local-no-such-lab";
 const text = (b) =>
@@ -11,7 +11,7 @@ const text = (b) =>
     .getText()
     .catch(() => "");
 
-let rc = 0;
+const r = results();
 let proc;
 let b;
 try {
@@ -28,11 +28,10 @@ try {
   await goTo(b, "Machine");
   await goTo(b, "Overview");
   if (!(await b.$("aside nav").isExisting())) throw new Error("shell unusable after the attack-panel error");
-  console.log("ATTACK_ON_STOPPED_OK panel degraded gracefully, app still usable; panel=", JSON.stringify(t.replace(/\s+/g, " ").slice(0, 160)));
+  r.pass("attack-on-stopped", `the panel degraded gracefully and the app stays usable; panel: ${t.replace(/\s+/g, " ").slice(0, 160)}`);
 } catch (e) {
-  console.log("ATTACK_ON_STOPPED_FAIL", e.message);
-  rc = 1;
+  r.fail("attack-on-stopped", e.message);
 } finally {
   await finish(b, proc);
 }
-process.exit(rc);
+r.exit();

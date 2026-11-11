@@ -2,10 +2,10 @@
 // (tauri-plugin-wdio-webdriver), which the app starts when launched with TAURI_WEBDRIVER_PORT.
 // No external driver (tauri-driver/msedgedriver), so it works on macOS, Linux and Windows.
 // The app is launched by the caller (run-embedded.sh / run-embedded.ps1); this only connects.
-import { connect } from "../support.mjs";
+import { connect, results } from "../support.mjs";
 
 const browser = await connect();
-let rc = 0;
+const r = results();
 try {
   await browser.waitUntil(
     async () => {
@@ -25,11 +25,10 @@ try {
       .catch(() => "")
   ).length;
   console.log(`SMOKE title=${JSON.stringify(title)} bodyLen=${bodyLen}`);
-  console.log("SMOKE_OK the app booted and its shell rendered (embedded WebDriver)");
+  r.pass("smoke", "the app booted and its shell rendered (embedded WebDriver)");
 } catch (e) {
-  console.log(`SMOKE_FAIL ${e.message}`);
-  rc = 1;
+  r.fail("smoke", `${e.message}`);
 } finally {
   await browser.deleteSession().catch(() => {});
 }
-process.exit(rc);
+r.exit();

@@ -1,6 +1,5 @@
 // Functional: stop a running lab from the Machine > Running now panel; it must stop and clear.
-import { existsSync } from "node:fs";
-import { finish, goTo, labRunning, localLabName, mainText, openApp, waitForLab } from "../support.mjs";
+import { finish, goTo, labRunning, localLab, localLabName, mainText, openApp, results, waitForLab } from "../support.mjs";
 
 /** The name the Running now panel gives a local lab (prettyLabId of its `local-<slug>` id). */
 const prettyName = (lab) =>
@@ -10,13 +9,10 @@ const prettyName = (lab) =>
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join(" ");
 
-const LAB = process.env.CYBERCTF_TEST_LOCAL_LAB;
-if (!LAB || !existsSync(LAB)) {
-  console.log(`no lab at CYBERCTF_TEST_LOCAL_LAB=${LAB}`);
-  process.exit(2);
-}
+const r = results();
+const LAB = localLab();
+if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
 
-let rc = 0;
 let proc;
 let b;
 try {
@@ -35,11 +31,10 @@ try {
     interval: 3000,
     timeoutMsg: "lab did not stop",
   });
-  console.log("STOP_OK the running lab stopped and cleared");
+  r.pass("stop", "the running lab stopped and cleared");
 } catch (e) {
-  console.log("STOP_FAIL", e.message);
-  rc = 1;
+  r.fail("stop", e.message);
 } finally {
   await finish(b, proc);
 }
-process.exit(rc);
+r.exit();

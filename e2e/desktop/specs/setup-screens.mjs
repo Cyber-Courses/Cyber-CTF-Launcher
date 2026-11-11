@@ -2,9 +2,9 @@
 // open run in a separate OS window the embedded WebDriver cannot reach, so this asserts the list
 // screens themselves — their titles and the "Add server" / "Set up cloud provider" buttons — and
 // that the shell stays usable (a signed-out machine with no hosts configured).
-import { finish, goTo, mainText, openApp } from "../support.mjs";
+import { finish, goTo, mainText, openApp, results } from "../support.mjs";
 
-let rc = 0;
+const r = results();
 let proc;
 let b;
 try {
@@ -36,11 +36,10 @@ try {
   // Still usable afterwards.
   await goTo(b, "Overview");
   if (!(await b.$("aside nav").isExisting())) throw new Error("shell unusable after visiting Servers/Cloud");
-  console.log("SETUP_SCREENS_OK Servers and Cloud screens render with their setup entry points");
+  r.pass("setup-screens", "Servers and Cloud screens render with their setup entry points");
 } catch (e) {
-  console.log("SETUP_SCREENS_FAIL", e.message);
-  rc = 1;
+  r.fail("setup-screens", e.message);
 } finally {
   await finish(b, proc);
 }
-process.exit(rc);
+r.exit();

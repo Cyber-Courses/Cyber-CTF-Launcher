@@ -7,18 +7,19 @@
 // Docker is made unreachable for the app (deadDockerEnv), so only the hypervisor probe can report the
 // lab: its containers may still be up from the scenarios before.
 // Proven green on jarvis (libvirt), karen (Hyper-V) and a Mac with UTM.
-import { connect, deadDockerEnv, finish, launchApp, sleep } from "../support.mjs";
+import { connect, deadDockerEnv, finish, launchApp, results, sleep } from "../support.mjs";
 
 const WANT = process.env.CYBERCTF_EXPECT_LAB || "solo-web";
 
-let rc = 1;
+const r = results();
+let found = false;
 let proc;
 let b;
 try {
   proc = await launchApp({ env: deadDockerEnv() });
   b = await connect();
   // The scan is debounced and each hypervisor probe waits out its own timeout, so poll a few times.
-  for (let attempt = 0; attempt < 8 && rc !== 0; attempt++) {
+  for (let attempt = 0; attempt < 8 && !found; attempt++) {
     await b.execute(() => {
       window.__scan = "pending";
       const inv = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
@@ -47,14 +48,13 @@ try {
     } catch {
       /* not a list yet */
     }
-    if (Array.isArray(list) && list.includes(WANT)) rc = 0;
+    if (Array.isArray(list) && list.includes(WANT)) found = true;
     else await sleep(3000);
   }
-  console.log(rc === 0 ? `VM_SCAN_OK the running-labs scan detected the VM lab ${WANT}` : `VM_SCAN_FAIL ${WANT} not detected`);
+  r.check("vm-scan", found, found ? `the running-labs scan detected the VM lab ${WANT}` : `${WANT} not detected`);
 } catch (e) {
-  console.log("VM_SCAN_ERR", e.message);
-  rc = 1;
+  r.fail("vm-scan", e.message);
 } finally {
   await finish(b, proc);
 }
-process.exit(rc);
+r.exit();
