@@ -9,7 +9,7 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 ### Added
 
 - **A lab machine's screen, in its own window.** The lab page's Screens list each VM whose run
-  offers a graphical console, with a Screen button (and why one has none: UTM's SPICE, VirtualBox
+  offers a graphical console, with a Screen button (and why one has none: Parallels, VirtualBox
   without its extension pack, a cloud Linux VM), and the attack box's card has one. A VNC screen
   (libvirt, QEMU, VMware, Proxmox) is drawn in the window by noVNC 1.6.0 (vendored, MPL-2.0)
   through the window's own loopback WebSocket bridge: one viewer, a one-time token, the app's own
@@ -109,6 +109,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
+- **A Windows lab with a flag or another input runs on no cloud.** Isoloom sets a Windows
+  machine in the cloud up during Terraform's apply, before the runner delivers its inputs, so AWS
+  and Azure (the clouds that took it) now show as refused in the launch picker with that reason,
+  and its VMs run on this computer or on ESXi. The ways a lab runs, and its requirements, are
+  Isoloom's own answer (`Lab::possible`), the one its generator gives.
 - **The launcher draws its own title bar on Linux and Windows, built into the window as on
   macOS.** Every window (the main one, Settings, the setup windows, the attack box shells) opens
   without the system's frame. There is no separate bar: as on macOS, the sidebar runs to the
