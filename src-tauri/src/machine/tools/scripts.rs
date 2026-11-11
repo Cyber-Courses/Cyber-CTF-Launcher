@@ -49,7 +49,7 @@ esac"#
 }
 
 #[cfg(any(target_os = "linux", test))]
-use crate::platform::root_script::{NEED_GPG, PRIVATE_WORKDIR, check_keys};
+use crate::platform::root_script::{NEED_CURL, NEED_GPG, PRIVATE_WORKDIR, check_keys};
 
 /// The distro's codename as the vendors' repos name it (`$codename`): an Ubuntu derivative like
 /// Mint uses its Ubuntu base's.
@@ -89,10 +89,12 @@ struct VendorRepo {
 fn apt_repo_script(r: &VendorRepo) -> String {
     let VendorRepo { vendor, fingerprint, key_url, repo, suite, component, name, by_hand } = r;
     let suite_check = by_hand.map(|url| {
-        format!(r#"; curl -fsI "$repo/dists/{suite}/Release" >/dev/null || {{ echo "{vendor} has no packages for {suite} yet. Install it from {url}" >&2; exit 1; }}"#)
+        format!(
+            r#"; served=$(curl -s -o /dev/null -w '%{{http_code}}' "$repo/dists/{suite}/Release" || true); case "$served" in 2??) ;; 404) echo "{vendor} has no packages for {suite} yet. Install it from {url}" >&2; exit 1 ;; *) echo "Couldn't reach $repo (HTTP ${{served:-none}}). Check this machine's internet access or proxy, then try again." >&2; exit 1 ;; esac"#
+        )
     });
     format!(
-        r#"repo="{repo}"{suite_check}; {NEED_GPG}; curl -fsSL "{key_url}" -o "$d/key"; {check}; install -m 0755 -d /etc/apt/keyrings; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /etc/apt/keyrings/{name}.gpg "$d/key"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/{name}.gpg] $repo {suite} {component}" > /etc/apt/sources.list.d/{name}.list; apt-get update"#,
+        r#"{NEED_CURL}; repo="{repo}"{suite_check}; {NEED_GPG}; curl -fsSL "{key_url}" -o "$d/key"; {check}; install -m 0755 -d /etc/apt/keyrings; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /etc/apt/keyrings/{name}.gpg "$d/key"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/{name}.gpg] $repo {suite} {component}" > /etc/apt/sources.list.d/{name}.list; apt-get update"#,
         suite_check = suite_check.unwrap_or_default(),
         check = check_keys(&[fingerprint], vendor),
     )
@@ -125,7 +127,8 @@ pub fn terraform_script() -> String {
 /// that refused every VM lab.
 #[cfg(any(target_os = "linux", test))]
 pub fn vagrant_script() -> String {
-    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y vagrant", apt_repo_script(&HASHICORP))
+    const VAGRANT: VendorRepo = VendorRepo { by_hand: Some("https://developer.hashicorp.com/vagrant/install"), ..HASHICORP };
+    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y vagrant", apt_repo_script(&VAGRANT))
 }
 
 /// HashiCorp's apt repo, then the Vagrant VMware Utility, whose package generates its
@@ -195,7 +198,7 @@ const DOCKER: VendorRepo = VendorRepo {
 pub fn docker_script(user: Option<&str>) -> String {
     use std::fmt::Write as _;
     let mut s = format!(
-        "{PRIVATE_WORKDIR}; {DOCKER_SERVES}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'Cyber CTF installs Docker on Debian, Ubuntu and the distributions built on them. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; if [ -n \"$own\" ]; then {DISTRIBUTION_DOCKER}; else {}; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi",
+        "{PRIVATE_WORKDIR}; {NEED_CURL}; {DOCKER_SERVES}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'Cyber CTF installs Docker on Debian, Ubuntu and the distributions built on them. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; if [ -n \"$own\" ]; then {DISTRIBUTION_DOCKER}; else {}; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi",
         apt_repo_script(&DOCKER)
     );
     if let Some(u) = user.filter(|u| valid_user(u)) {
@@ -242,7 +245,7 @@ pub const AWS_CLI_KEY_FINGERPRINT: &str = "FB5DB77FD5C118B80511ADA8A6310ACC46724
 #[cfg(any(target_os = "linux", test))]
 pub fn awscli_script() -> String {
     format!(
-        r#"{PRIVATE_WORKDIR}; url="https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip"; curl -fsSL "$url" -o "$d/awscliv2.zip"; curl -fsSL "$url.sig" -o "$d/awscliv2.zip.sig"; {}; command -v unzip >/dev/null || {{ apt-get update && apt-get install -y unzip; }}; unzip -tq "$d/awscliv2.zip" >/dev/null; unzip -oq "$d/awscliv2.zip" -d "$d"; "$d/aws/install" --update"#,
+        r#"{PRIVATE_WORKDIR}; {NEED_CURL}; url="https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip"; curl -fsSL "$url" -o "$d/awscliv2.zip"; curl -fsSL "$url.sig" -o "$d/awscliv2.zip.sig"; {}; command -v unzip >/dev/null || {{ apt-get update && apt-get install -y unzip; }}; unzip -tq "$d/awscliv2.zip" >/dev/null; unzip -oq "$d/awscliv2.zip" -d "$d"; "$d/aws/install" --update"#,
         aws_verify()
     )
 }
@@ -450,7 +453,7 @@ mod tests {
             let source = format!("signed-by=/etc/apt/keyrings/{name}.gpg] $repo {} {}\" > /etc/apt/sources.list.d/{name}.list", repo.suite, repo.component);
             assert!(s.contains(&format!("deb [arch=$(dpkg --print-architecture) {source}")), "{s}");
             assert!(!s.contains("/usr/share/keyrings"), "{s}");
-            assert_eq!(s.contains(r#"curl -fsI "$repo/dists/"#), repo.by_hand.is_some(), "{s}");
+            assert_eq!(s.contains(r#""$repo/dists/{suite}/Release""#.replace("{suite}", repo.suite).as_str()), repo.by_hand.is_some(), "{s}");
         }
     }
 
@@ -466,6 +469,52 @@ mod tests {
             gcloud_script(),
             vmware_utility_script(),
         ]
+    }
+
+    #[test]
+    fn every_root_script_that_downloads_installs_curl_first() {
+        // Regression: Debian's minimal image has no curl; the Vagrant install failed, saying
+        // HashiCorp had no packages for trixie, and Docker's repository check read as "not
+        // served", so Docker came from the distribution instead.
+        for s in root_scripts() {
+            if let Some(first) = s.find("curl -") {
+                let installed = s.find(NEED_CURL).unwrap_or_else(|| panic!("curl used, never installed: {s}"));
+                assert!(installed < first, "curl used before it is installed: {s}");
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_repository_check_says_no_packages_only_when_the_release_has_none() {
+        // Regression: any curl failure (curl missing, no network) read as "no packages for trixie".
+        let check = |http: &str| {
+            let bin = std::env::temp_dir().join(format!("cyberctf-curl-{}-{}", std::process::id(), rand::random::<u32>()));
+            std::fs::create_dir_all(&bin).unwrap();
+            let fake = bin.join("curl");
+            std::fs::write(&fake, format!("#!/bin/sh\nprintf '%s' '{http}'\n")).unwrap();
+            std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+            let s = apt_repo_script(&HASHICORP);
+            let snippet = &s[s.find("; served=").unwrap() + 2..s.find("; command -v gpg").unwrap()];
+            let out = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(format!("repo=https://apt.example; codename=trixie; {snippet}; echo went-on"))
+                .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+                .output()
+                .unwrap();
+            std::fs::remove_dir_all(&bin).unwrap();
+            (String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned())
+        };
+        assert_eq!(check("200").0.trim(), "went-on");
+        let missing = check("404").1;
+        assert!(missing.starts_with("HashiCorp has no packages for trixie yet"), "{missing}");
+        let unreachable = check("000").1;
+        assert!(unreachable.starts_with("Couldn't reach https://apt.example (HTTP 000)") && !unreachable.contains("no packages"), "{unreachable}");
+    }
+
+    #[test]
+    fn vagrant_names_its_own_install_page() {
+        assert!(vagrant_script().contains("https://developer.hashicorp.com/vagrant/install"), "not Terraform's page");
     }
 
     #[test]
@@ -635,7 +684,7 @@ mod tests {
     #[test]
     fn where_dockers_repository_has_no_release_the_distributions_own_docker_and_compose_go_in() {
         let s = docker_script(Some("ada"));
-        let own = &s[s.find("if [ -n \"$own\" ]; then").unwrap()..s.find("; else repo=").unwrap()];
+        let own = &s[s.find("if [ -n \"$own\" ]; then").unwrap()..s.find("; else command -v curl").unwrap()];
         assert!(
             own.contains("apt-get install -y docker.io") && own.contains("docker-compose-v2") && own.contains("apt-get install -y docker-compose"),
             "{own}"

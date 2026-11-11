@@ -9,6 +9,11 @@
 /// path such as `/tmp/aws` could be prepared by any local user beforehand and then run as root.
 pub const PRIVATE_WORKDIR: &str = r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT"#;
 
+/// curl, installed first where a bare system has none (Debian's minimal image): every vendor
+/// install downloads with it, and without it the repository checks read as "no packages".
+#[cfg(any(target_os = "linux", test))]
+pub const NEED_CURL: &str = r"command -v curl >/dev/null || { apt-get update && apt-get install -y curl ca-certificates; }";
+
 /// gpg, for the vendors' signing keys (Debian's minimal installs have only gpgv), and a private
 /// keyring folder for it in the work directory, so root's own keyring is never read or changed.
 pub const NEED_GPG: &str = r#"command -v gpg >/dev/null || { apt-get update && apt-get install -y gnupg; }; mkdir -p -m 700 "$d/gnupg""#;
