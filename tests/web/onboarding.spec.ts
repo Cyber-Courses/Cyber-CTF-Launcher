@@ -113,10 +113,10 @@ test.describe("onboarding", () => {
       await expect(pageTitle(page)).toHaveText("Labs");
       expect(await onboarded(page)).toBe("1");
 
-      // The Machine page says what is left to do.
+      // The Machine page says what is left to do, and offers to add a provider.
       await navButton(page, "Machine").click();
       await expect(page.getByText("2 lab types need setup")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Set up this machine" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "No provider installed" }).getByRole("button", { name: "Add a provider" })).toBeVisible();
     });
   }
 

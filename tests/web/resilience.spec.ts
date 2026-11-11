@@ -40,7 +40,7 @@ for (const size of [
       const screens: [string, string | RegExp, (p: Page) => ReturnType<Page["getByRole"]>][] = [
         ["Overview", /Florian/, (p) => p.locator("main").getByRole("button", { name: "Browse labs" })],
         ["Labs", "Labs", (p) => p.getByRole("textbox", { name: "Search labs and skills" })],
-        ["Machine", "Machine", (p) => p.getByRole("radiogroup", { name: "Machine view" })],
+        ["Machine", "Machine", (p) => p.locator("main").getByRole("button", { name: "Add a provider" })],
         ["Servers", "Servers", (p) => p.getByRole("button", { name: "Add server" })],
         ["Cloud", "Cloud", (p) => p.getByRole("button", { name: "Set up cloud provider" })],
       ];

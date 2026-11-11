@@ -81,35 +81,19 @@ test.describe("settings persistence", () => {
 });
 
 test.describe("machine page", () => {
-  test("the Health and Setup views switch, and the setup checklist says what is done", async ({ page }) => {
-    await openApp(page);
-    await navButton(page, "Machine").click();
-    const view = page.getByRole("radiogroup", { name: "Machine view" });
-    await expect(view.getByRole("radio", { name: "Health" })).toHaveAttribute("aria-checked", "true");
-    await expect(page.locator("main").getByRole("heading", { level: 3, name: "Engines" })).toBeVisible();
-    await expect(page.locator("main")).toContainText("Ready for labs");
-    await expect(page.locator("main")).toContainText("macOS arm64");
-
-    await view.getByRole("radio", { name: "Setup" }).click();
-    await expect(view.getByRole("radio", { name: "Setup" })).toHaveAttribute("aria-checked", "true");
-    await expect(page.locator("main").getByRole("heading", { level: 3, name: "Guided setup" })).toBeVisible();
-    await expect(page.locator("main").getByText(/^\d+ of \d+ done$/)).toBeVisible();
-    await expect(page.locator("main").getByRole("heading", { level: 3, name: "Engines" })).toHaveCount(0);
-
-    // Keyboard: the arrow keys move between the two views.
-    await view.getByRole("radio", { name: "Setup" }).focus();
-    await page.keyboard.press("ArrowLeft");
-    await expect(view.getByRole("radio", { name: "Health" })).toHaveAttribute("aria-checked", "true");
-    await expect(page.locator("main").getByRole("heading", { level: 3, name: "Engines" })).toBeVisible();
-  });
-
-  test("a fresh Windows machine lists what to set up", async ({ page }) => {
+  test("a fresh Windows machine lists what to set up", async ({ page, context }) => {
     await openApp(page, "&machine=fresh&os=windows&arch=x86_64");
     await navButton(page, "Machine").click();
     await expect(page.locator("main")).toContainText("2 lab types need setup");
     await expect(page.locator("main")).toContainText("Windows x86_64");
-    await page.getByRole("radiogroup", { name: "Machine view" }).getByRole("radio", { name: "Setup" }).click();
-    await expect(page.locator("main").getByText("1 of 8 done", { exact: true })).toBeVisible();
-    await expect(page.locator("main").getByText("not installed").first()).toBeVisible();
+    const empty = page.getByRole("region", { name: "No provider installed" });
+    await expect(empty).toContainText("Install a container engine or a hypervisor to run labs on this machine.");
+    // Add a provider: what Windows can run, each one to install.
+    const [add] = await Promise.all([context.waitForEvent("page"), empty.getByRole("button", { name: "Add a provider" }).click()]);
+    await expect(add.getByRole("heading", { level: 1, name: "Add a provider" })).toBeVisible();
+    await expect(add.getByRole("button", { name: "Install Docker Desktop" })).toBeVisible();
+    for (const hypervisor of ["Install VirtualBox", "Get VMware Workstation", "Install Hyper-V"]) {
+      await expect(add.getByRole("button", { name: hypervisor })).toBeVisible();
+    }
   });
 });
