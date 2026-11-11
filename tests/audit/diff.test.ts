@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { diff, nameList, report, toRecord } from "./diff.ts";
 import type { Probe, Snapshot } from "./inventory.ts";
 import { ALLOWLIST, isMain, parseDiffArgs, runDiff } from "./main.ts";
-import { type Allowance, type Scope, allowanceFor, globRegExp, parseWindow, readAllowlist, readLogs, under } from "./scope.ts";
+import { type Allowance, type Scope, allowanceFor, globRegExp, mentions, parseWindow, projectOf, readAllowlist, readLogs, under } from "./scope.ts";
 
 // The leftover audit's diff: what's new sorted into what the run left, what it may leave and what
 // isn't its. On a machine someone uses (the owner's Mac), the owner's own labs, VMs, containers
@@ -134,6 +134,52 @@ describe("on a machine someone uses (shared)", () => {
   it("takes a name it was given as the run's", () => {
     const r = diff(before, after, scope({ names: ["cyberctf-scratch"] }), allowlist);
     expect(leftNames(r)["docker-container"]).toEqual(["cyberctf-scratch-db-1"]);
+  });
+});
+
+describe("jobs side by side on one machine (shared)", () => {
+  // The rig's docker-vm-lab@qemu job, beside a launcher test that ran a lab with a `database` VM
+  // and another docker-vm job: Vagrant's index lists all three. The job's logs name "database"
+  // (apt's "Reading database …") and "default" (Vagrant's own machine), never the others' folders.
+  const SUPPORT = "/Users/owner/Library/Application Support";
+  const machine = (name: string, dir: string) => ({ name, provider: "qemu", vagrantfile_path: dir, local_data_path: `${dir}/.vagrant` });
+  const index = (machines: Record<string, object>) => JSON.stringify({ version: 1, machines });
+  const others = {
+    db: machine("database", `${SUPPORT}/com.cyberctf.unit-test.19990-a1/labs/pm-9221/.isoloom/vagrant`),
+    dvm: machine("default", "/var/folders/xy/T/cyberctf-dvm-21666/.isoloom/docker-vm"),
+  };
+  const own = { mine: machine("default", "/var/folders/xy/T/cyberctf-dvm-30500/.isoloom/docker-vm") };
+  const LOGS = "Reading database ... 34%\nBringing machine 'default' up with 'qemu' provider...\nlab: /var/folders/xy/T/cyberctf-dvm-30500\n";
+  const vagrant = (machines: Record<string, object>) => snap(6000, [ok("vagrant-machine", index(machines))]);
+  const left = (machines: Record<string, object>, logText: string) =>
+    leftNames(diff(snap(900, [ok("vagrant-machine", index({}))]), vagrant(machines), scope({ logText, windows: [{ start: 1000, end: 2000 }] }), allowlist));
+
+  it("takes a machine of a lab's folder as the run's only when the run names that folder, never by its machine's name", () => {
+    expect(left({ ...others, ...own }, LOGS)).toEqual({
+      "vagrant-machine": ["default (qemu, /var/folders/xy/T/cyberctf-dvm-30500/.isoloom/docker-vm)"],
+    });
+    expect(left(others, LOGS)).toEqual({});
+    // The other job's folder named by this run's logs: the run's after all.
+    expect(left(others, `${LOGS}removed ${SUPPORT}/com.cyberctf.unit-test.19990-a1/labs/pm-9221\n`)["vagrant-machine"]).toEqual([
+      `database (qemu, ${SUPPORT}/com.cyberctf.unit-test.19990-a1/labs/pm-9221/.isoloom/vagrant)`,
+    ]);
+  });
+
+  it("knows a path's project folder, and a name only as a whole", () => {
+    expect(projectOf(`${SUPPORT}/x/labs/pm-9221/.isoloom/vagrant/.vagrant`)).toBe("pm-9221");
+    expect(projectOf("C:\\Users\\p\\own\\.vagrant")).toBe("own");
+    expect(projectOf("/var/lib/libvirt/images/solo-web_web.img")).toBeUndefined();
+    expect(mentions("lab pm-9221 up", "pm-9221")).toBe(true);
+    expect(mentions("--project-name cyberctf-pm-9221", "pm-9221")).toBe(true);
+    expect(mentions("lab pm-92210 up", "pm-9221")).toBe(false);
+    expect(mentions("the databases", "database")).toBe(false);
+    expect(mentions("a.b (x)", "a.b (x)")).toBe(true);
+    expect(mentions("axb", "a.b")).toBe(false);
+  });
+
+  it("names a thing outside any lab's folder by its own names, as a whole", () => {
+    const r = diff(before, after, scope({ logText: "docker compose --project-name cyberctf-hello2 up", windows: [{ start: 1000, end: 2000 }] }), allowlist);
+    expect(leftNames(r)["docker-container"]).toBeUndefined();
   });
 });
 

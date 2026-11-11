@@ -64,16 +64,46 @@ export function under(path: string, root: string): boolean {
   return r !== "" && (p === r || p.startsWith(`${r}/`));
 }
 
+/** The folders that lie in a copy of a project: Isoloom's outputs, Vagrant's state. */
+const PROJECT_MARKERS = new Set([".isoloom", ".vagrant"]);
+
+/** The project folder `path` lies in, which tells one copy of a lab from another: the folder its
+ *  `.isoloom` (or Vagrant's `.vagrant`) lies in, so `…/labs/pm-9221/.isoloom/vagrant` is pm-9221's
+ *  and `…/T/cyberctf-dvm-21666/.isoloom/docker-vm` cyberctf-dvm-21666's. None for a path outside
+ *  one. */
+export function projectOf(path: string): string | undefined {
+  const parts = path.split(/[\\/]/).filter((p) => p !== "");
+  const i = parts.findIndex((p) => PROJECT_MARKERS.has(p));
+  return i > 0 ? parts[i - 1] : undefined;
+}
+
+/** Whether `text` names `ref` as a whole: not as a piece of a longer word or name ("data" in
+ *  "database", "pm-9221" in "pm-92210"). */
+export function mentions(text: string, ref: string): boolean {
+  const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\w])${escaped}(?![\\w])`).test(text);
+}
+
+/** The names that make `item` the run's when the run names one. A thing in a copy of a project (a
+ *  Vagrant machine, a container or process of a lab's folder) by its project folder alone: copies
+ *  run side by side share their machines' names ("database", "default"), and those turn up in any
+ *  log (apt's "Reading database …"). Anything else by its names. Four characters at least. */
+function namesOf(item: Item): string[] {
+  const projects = [...new Set(item.paths.map(projectOf).filter((p): p is string => p !== undefined))];
+  return (projects.length > 0 ? projects : item.refs).filter((r) => r.length >= 4);
+}
+
 /** Whether the run made `item`: on a clone, always; on a shared machine, when it lies under one of
  *  the run's folders, when it is a socket of a process the run made (`pids`), or when the run's
- *  names or logs name it and it was made in one of the run's windows (its date unknown: the name
- *  decides). A window with logs of its own needs them to name it. */
+ *  names or logs name it (`namesOf`, each as a whole) and it was made in one of the run's
+ *  windows (its date unknown: the name decides). A window with logs of its own needs them to name
+ *  it. */
 export function ownedByRun(item: Item, scope: Scope, pids: ReadonlySet<number>): boolean {
   if (scope.mode === "clone") return true;
   if (item.paths.some((p) => scope.roots.some((r) => under(p, r)))) return true;
   if (item.kind === "listening-port") return item.pid !== undefined && pids.has(item.pid);
-  const names = item.refs.filter((r) => r.length >= 4);
-  const named = (text: string) => names.some((r) => scope.names.includes(r) || text.includes(r));
+  const names = namesOf(item);
+  const named = (text: string) => names.some((r) => scope.names.includes(r) || mentions(text, r));
   if (!named(scope.logText) && !scope.windows.some((w) => w.text !== undefined && named(w.text))) return false;
   if (scope.windows.length === 0 || item.created === undefined) return true;
   const { created } = item;
