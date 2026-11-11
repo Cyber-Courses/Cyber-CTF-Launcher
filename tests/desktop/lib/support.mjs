@@ -605,6 +605,29 @@ export const mainButton = (b, ...labels) => b.$(`//main//button[${labels.map((l)
 /** A radio row (`role="radio"`) under `scope` whose text holds `text`. */
 export const radioRow = (scope, text) => scope.$(`.//*[@role="radio"][contains(normalize-space(), ${JSON.stringify(text)})]`);
 
+/**
+ * Chooses `value` in the `<select>` at `selector` the way the page sees a player's choice: the
+ * element's value set and a `change` event sent, which React's `onChange` takes. WebdriverIO's
+ * `selectByAttribute` clicks the option instead, which the macOS webview's native popup menu
+ * swallows (nothing changed, no event), while Linux's WebKitGTK popup takes it: the settings
+ * spec's Français never applied on the rig's Mac.
+ */
+export async function selectValue(b, selector, value) {
+  const changed = await b.execute(
+    (sel, v) => {
+      const el = document.querySelector(sel);
+      if (!el || !Array.from(el.options).some((o) => o.value === v)) return false;
+      el.value = v;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    },
+    selector,
+    value,
+  );
+  if (!changed) throw new Error(`no <select> at ${selector} with an option ${JSON.stringify(value)}`);
+}
+
 // --- Lab pages --------------------------------------------------------------------------------
 
 /** Opens the lab titled `title` from the Labs screen (the search narrows the list first);
@@ -632,6 +655,28 @@ export async function openLabFromList(b, title) {
   return true;
 }
 
+/**
+ * Opens the lab titled `title` from the "Imported from a folder" list of the Labs screen (the
+ * row's own name, "Open <title>, imported from a folder": the catalogue may list a lab of the
+ * same title, whose row is named "Open <title>"), and waits for its page.
+ */
+export async function openImportedLab(b, title, timeout = 60000) {
+  await goTo(b, "Labs");
+  const open = await b.$(`main button[aria-label=${JSON.stringify(`Open ${title}, imported from a folder`)}]`);
+  await open.waitForClickable({ timeout, timeoutMsg: `no imported lab ${JSON.stringify(title)} to open on the Labs screen` });
+  await open.click();
+  await b.waitUntil(
+    async () =>
+      (
+        await b
+          .$("main h1")
+          .getText()
+          .catch(() => "")
+      ).includes(title),
+    { timeout: 30000, timeoutMsg: `the page of the imported ${title} never opened` },
+  );
+}
+
 /** Whether the lab page says the lab runs: its header offers Stop & remove, enabled (nothing in
  *  flight: a start, a stop, a park), and no Resume (a parked lab offers both). Throws the page's
  *  failure when its start failed. */
@@ -655,28 +700,6 @@ export function waitLabPageRunning(b, timeout) {
 export async function stopLeftover(b, r) {
   if (!(await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting())) return;
   const leftover = leftoverIsTheRuns(runRoot());
-/**
- * Opens the lab titled `title` from the "Imported from a folder" list of the Labs screen (the
- * row's own name, "Open <title>, imported from a folder": the catalogue may list a lab of the
- * same title, whose row is named "Open <title>"), and waits for its page.
- */
-export async function openImportedLab(b, title, timeout = 60000) {
-  await goTo(b, "Labs");
-  const open = await b.$(`main button[aria-label=${JSON.stringify(`Open ${title}, imported from a folder`)}]`);
-  await open.waitForClickable({ timeout, timeoutMsg: `no imported lab ${JSON.stringify(title)} to open on the Labs screen` });
-  await open.click();
-  await b.waitUntil(
-    async () =>
-      (
-        await b
-          .$("main h1")
-          .getText()
-          .catch(() => "")
-      ).includes(title),
-    { timeout: 30000, timeoutMsg: `the page of the imported ${title} never opened` },
-  );
-}
-
   if (!leftover.ok) r.skipAll(`the lab already runs here: ${leftover.why}`);
   console.log("the lab is up (or half up) from an earlier spec: stopping it first");
   await stopAndRemoveOnPage(b);

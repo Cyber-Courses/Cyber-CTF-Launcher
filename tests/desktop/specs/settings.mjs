@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { answerPickers, closeWindow, finish, goTo, invokeCmd, openApp, results, sleep, switchToWindow } from "../lib/support.mjs";
+import { answerPickers, closeWindow, finish, goTo, invokeCmd, openApp, results, selectValue, sleep, switchToWindow } from "../lib/support.mjs";
 
 export const needs = [];
 const r = results();
@@ -57,10 +57,9 @@ try {
 
   // Language: French, read in both windows' own words, then English again (the specs read English).
   await b.switchToWindow("settings");
-  const language = await b.$('select[aria-label="Language"]');
-  await language.selectByAttribute("value", "fr");
+  await selectValue(b, 'select[aria-label="Language"]', "fr");
   const sections = () => b.$('nav[aria-label="Sections des réglages"]').isExisting();
-  r.check("language", await followed(b, "settings", sections, true), "Français: the Settings window speaks French");
+  const french = r.check("language", await followed(b, "settings", sections, true), "Français: the Settings window speaks French");
   const sidebar = async () =>
     /Vue d.ensemble/.test(
       await b
@@ -70,7 +69,7 @@ try {
     );
   r.check("language-main", await followed(b, "main", sidebar, true), "the main window's sidebar follows (Vue d'ensemble)");
   await b.switchToWindow("settings");
-  await (await b.$('select[aria-label="Langue"], select[aria-label="Language"]')).selectByAttribute("value", "en");
+  await selectValue(b, 'select[aria-label="Langue"], select[aria-label="Language"]', "en");
   const english = async () =>
     /Overview/.test(
       await b
@@ -78,7 +77,9 @@ try {
         .getText()
         .catch(() => ""),
     );
-  r.check("language-back", await followed(b, "main", english, true), "back to English in the main window");
+  // Proves the switch back only once French had applied: still English, it would prove nothing.
+  if (french) r.check("language-back", await followed(b, "main", english, true), "back to English in the main window");
+  else r.skip("language-back", "French never applied, so English again proves nothing");
 
   // Shared folder: on, a folder picked through the picker, read back from the core.
   await b.switchToWindow("settings");
