@@ -1,4 +1,6 @@
 {
-  "image": "cyberctf/attack-box@sha256:5e083303cfbab36e3c1d2ad40c97057eaee5c98cb8bfd8aa73bfa45b1f899ec6",
-  "previous": []
+  "image": "cyberctf/attack-box@sha256:828435d69fdea36fee304e419a1e46ff0e4c658fb5da4fb41988bdb10d3ae1b5",
+  "previous": [
+    "cyberctf/attack-box@sha256:5e083303cfbab36e3c1d2ad40c97057eaee5c98cb8bfd8aa73bfa45b1f899ec6"
+  ]
 }
