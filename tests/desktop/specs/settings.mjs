@@ -4,7 +4,7 @@
 // picked through the system's folder picker (answered by `answerPickers`). Every setting is put
 // back as it was, and the attack VM's desktop (headless or Kali's desktop) is chosen and put
 // back to headless. The first run's wizard is the `onboarding` spec; whether the box sees the shared
-// folder is the attack-shell spec's and the integration tests' (`box-*`).
+// folder is the attack-shell spec's and the integration tests' (`attack-box-*`).
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

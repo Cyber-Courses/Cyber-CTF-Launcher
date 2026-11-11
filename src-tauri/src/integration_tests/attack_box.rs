@@ -19,7 +19,7 @@
 //! ```text
 //! CYBERCTF_TEST_BOX_LAB=<isoloom checkout>/examples/solo-web \
 //! CYBERCTF_TEST_BOX_FORM=cloud-docker|cloud-vm CYBERCTF_TEST_AWS_REGION=eu-west-3 \
-//! CYBERCTF_TEST_REAL_PUBLIC_IP=1 \
+//! CYBERCTF_TEST_CLOUD_REAL_IP=1 \
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 the_attack_box_is_a_machine_of_an_aws_lab
 //! ```
 
@@ -66,10 +66,10 @@ async fn shared_both_ways(placed: &Placed, folder: &Path, f: &mut Vec<String>) {
     check(back.contains("loot out"), format!("what the box writes there lands on this computer ({back:?})"), f);
 }
 
-/// With `CYBERCTF_TEST_SHARED_FOLDER` (a folder; empty or unset: off), the shared folder turned on
+/// With `CYBERCTF_TEST_BOX_SHARED_FOLDER` (a folder; empty or unset: off), the shared folder turned on
 /// there, as Settings do, the launcher's settings kept in `dirs`' data folder.
 fn shared_folder(dirs: &AppDirs, f: &mut Vec<String>) {
-    let Some(folder) = std::env::var("CYBERCTF_TEST_SHARED_FOLDER").ok().filter(|f| !f.is_empty()) else { return };
+    let Some(folder) = super::support::var("CYBERCTF_TEST_BOX_SHARED_FOLDER") else { return };
     if let Err(e) = dirs.data().map_err(|e| e.to_string()).and_then(|home| std::fs::create_dir_all(home).map_err(|e| e.to_string())) {
         return check(false, format!("the launcher's settings folder is made: {e}"), f);
     }

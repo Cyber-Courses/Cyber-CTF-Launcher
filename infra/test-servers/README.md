@@ -2,7 +2,7 @@
 
 Throwaway Proxmox and ESXi hosts to test the launcher's **Server** flow against, on any
 computer. Nothing here is shipped. Once a host is up, the integration tests run a lab on it the
-way the launcher does: `TIERS=server tests/integration/run.sh` with the host's knobs
+way the launcher does: `CYBERCTF_TEST_INTEGRATION_TIERS=server tests/integration/run.sh` with the host's knobs
 (`docs/testing/integration.md`).
 
 Machine-specific things (generated root passwords, the test SSH key, lab checkouts,
@@ -100,11 +100,11 @@ The integration tests' server tier runs a lab on it through the launcher's own r
 # internal to the node; a runner home whose ssh/id_ed25519 the node lets in.
 CYBERCTF_TEST_PVE_ENDPOINT=https://<ip>:8006/ CYBERCTF_TEST_PVE_TOKEN='root@pam!name=secret' \
 CYBERCTF_TEST_PVE_NODE=pve CYBERCTF_TEST_PVE_BRIDGE=vmbr1 CYBERCTF_TEST_PVE_JUMP=root@<ip> \
-CYBERCTF_TEST_RUNNER_HOME=<folder> TIERS=server tests/integration/run.sh
+CYBERCTF_TEST_PVE_RUNNER_HOME=<folder> CYBERCTF_TEST_INTEGRATION_TIERS=server tests/integration/run.sh
 
 # ESXi: the host, its root password, the datastore and port group.
 CYBERCTF_TEST_ESXI_HOST=<ip> CYBERCTF_TEST_ESXI_PASSWORD=... CYBERCTF_TEST_ESXI_DATASTORE=datastore1 \
-CYBERCTF_TEST_ESXI_NETWORK='VM Network' TIERS=server tests/integration/run.sh
+CYBERCTF_TEST_ESXI_NETWORK='VM Network' CYBERCTF_TEST_INTEGRATION_TIERS=server tests/integration/run.sh
 ```
 
 The launcher's "Test connection" against a Proxmox host has its own opt-in test (from

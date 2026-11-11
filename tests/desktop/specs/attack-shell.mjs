@@ -4,7 +4,7 @@
 // `player`, and, when a shared folder is set, a file put there read at its mount point from inside
 // the box. Then the box stopped from the page (its container gone) and the lab stopped. The box on
 // the other forms (a VM lab's Kali, the box in the lab's VM, on AWS) is the integration tests'
-// `box-*`; this is the window a player types in.
+// `attack-box-*`; this is the window a player types in.
 //
 //   CYBERCTF_TEST_LOCAL_LAB  the lab folder to import and start (none: skipped)
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";

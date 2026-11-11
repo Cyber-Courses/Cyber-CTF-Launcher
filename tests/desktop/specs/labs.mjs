@@ -4,7 +4,7 @@
 // real "Import a lab" button, the system's folder picker answered with the lab folder
 // (`answerPickers`): the lab starts, the "Imported from a folder" list holds it, its page shows
 // what its `.ctf/` folder defines, it runs, and Stop & remove (its confirmation answered) stops it
-// and keeps it listed. Starting a catalogue lab is the form-* specs'.
+// and keeps it listed. Starting a catalogue lab is the lab-form-* cases'.
 //
 //   CYBERCTF_TEST_CATALOGUE_LAB  the catalogue lab whose page to open (default Supplier portal API)
 //   CYBERCTF_TEST_LOCAL_LAB      the lab folder to import (none: the import checks skipped)

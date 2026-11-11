@@ -9,15 +9,15 @@
 //! run's log, the lab's or the runner's files, `docker inspect`, or the backend's own output.
 //!
 //! ```text
-//! CYBERCTF_TEST_BACKEND=<CyberBackend checkout> \
-//! CYBERCTF_TEST_WEB=<cyberctf-web checkout> \
-//! CYBERCTF_TEST_LAB=<invoice-portal-api, in Isoloom's current syntax> \
+//! CYBERCTF_TEST_FLAG_BACKEND=<CyberBackend checkout> \
+//! CYBERCTF_TEST_FLAG_WEB=<cyberctf-web checkout> \
+//! CYBERCTF_TEST_INVOICE_LAB=<invoice-portal-api, in Isoloom's current syntax> \
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 real_flag_labs
 //! ```
 //!
 //! The backend is CyberBackend's `test/e2e/server.ts`: the real API on a throwaway database it
 //! starts and removes, with test players whose tokens it signs itself. Never production.
-//! `CYBERCTF_TEST_LAB` is optional (the invoice lab claims its evidence with the launch token);
+//! `CYBERCTF_TEST_INVOICE_LAB` is optional (the invoice lab claims its evidence with the launch token);
 //! the flag lab is written here.
 
 mod leaks;
@@ -192,7 +192,7 @@ async fn found(r: &Run, kind: Kind) -> Vec<(&'static str, Option<String>)> {
 enum Kind {
     /// The flag lab written here.
     Flags,
-    /// `CYBERCTF_TEST_LAB`.
+    /// `CYBERCTF_TEST_INVOICE_LAB`.
     Invoice,
 }
 
@@ -207,7 +207,7 @@ fn install(kind: Kind, id: &str) -> PathBuf {
             let _ = std::fs::remove_dir_all(src);
             dir
         }
-        Kind::Invoice => install_copy(Path::new(&std::env::var("CYBERCTF_TEST_LAB").unwrap()), id),
+        Kind::Invoice => install_copy(Path::new(&std::env::var("CYBERCTF_TEST_INVOICE_LAB").unwrap()), id),
     }
 }
 
@@ -275,7 +275,7 @@ async fn exercise(r: &Run, kind: Kind, launch: &Launch, p: &mut Played) {
 /// answers, from the lab page.
 async fn contract(backend: &Backend, web: &Path, player: &str) -> Vec<String> {
     let mut cases = vec![("flags", Kind::Flags), ("flags-main", Kind::Flags)];
-    if std::env::var_os("CYBERCTF_TEST_LAB").is_some() {
+    if std::env::var_os("CYBERCTF_TEST_INVOICE_LAB").is_some() {
         cases.push(("invoice", Kind::Invoice));
     }
     let mut all = Played::default();
@@ -302,7 +302,7 @@ async fn contract(backend: &Backend, web: &Path, player: &str) -> Vec<String> {
 #[ignore = "needs Docker, CyberBackend and cyberctf-web checkouts (their opt-in e2e files), and optionally the invoice-portal-api lab"]
 async fn real_flag_labs_the_flag_contract_holds_on_the_runner() {
     let var = |name: &str| PathBuf::from(std::env::var(name).unwrap_or_else(|_| panic!("set {name}")));
-    let (backend, web) = (Backend::start(&var("CYBERCTF_TEST_BACKEND")), var("CYBERCTF_TEST_WEB"));
+    let (backend, web) = (Backend::start(&var("CYBERCTF_TEST_FLAG_BACKEND")), var("CYBERCTF_TEST_FLAG_WEB"));
     let failures = contract(&backend, &web, "ada").await;
     drop(backend);
     assert!(failures.is_empty(), "the flag contract failed:\n{}", failures.join("\n"));

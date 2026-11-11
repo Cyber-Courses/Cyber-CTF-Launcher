@@ -2,14 +2,14 @@
 //! imports and starts the lab as `lab_launch_local` does (its worker body, `labs::run_local`),
 //! reads it through the `lab_status` and `lab_check` commands, parks and resumes it through the
 //! runtime operations, then stops it and asserts nothing of it is left. This covers the import and
-//! start-locked path a real launch takes, which the engine-level `corpus` tests do not. The
+//! start-locked path a real launch takes, which the engine-level `corpus_docker` tests do not. The
 //! assertion helpers are shared with the other integration tests (`integration_tests::support`).
 //!
 //! Opt-in (it needs Docker and a local lab folder whose image is cached or buildable in time):
 //!
 //! ```text
 //! CYBERCTF_TEST_LOCAL_LAB=/path/to/lab \
-//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::commands::a_local_lab_launches_and_tears_down_through_the_commands
+//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::launch_commands::a_local_lab_launches_and_tears_down_through_the_commands
 //! ```
 
 use super::support::lab::leftovers;

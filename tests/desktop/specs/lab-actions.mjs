@@ -57,7 +57,7 @@ let proc;
 let b;
 try {
   ({ proc, b } = await openApp());
-  if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_SESSION to the runner)");
+  if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_ACCOUNT_SESSION to the runner)");
   if (!(await openLabFromList(b, CATALOGUE_LAB))) r.skipAll(`the catalogue doesn't list "${CATALOGUE_LAB}"`);
   if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) await stopAndRemoveOnPage(b);
   const before = containers();

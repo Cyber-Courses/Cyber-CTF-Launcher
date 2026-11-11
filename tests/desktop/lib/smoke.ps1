@@ -2,7 +2,7 @@
 # smoke. Must run in an interactive desktop session; the app must be built with `--features wdio`.
 $ErrorActionPreference = "Continue"
 $here = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)))
-$bin = if ($env:APP_BIN) { $env:APP_BIN } else { "$here\src-tauri\target\debug\cyberctf-desktop.exe" }
+$bin = if ($env:CYBERCTF_TEST_DESKTOP_APP) { $env:CYBERCTF_TEST_DESKTOP_APP } else { "$here\src-tauri\target\debug\cyberctf-desktop.exe" }
 if (!(Test-Path $bin)) { "app binary not found: $bin"; exit 2 }
 if (-not $env:TAURI_WEBDRIVER_PORT) { $env:TAURI_WEBDRIVER_PORT = "4445" }
 

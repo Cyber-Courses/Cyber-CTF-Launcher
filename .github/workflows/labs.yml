@@ -1,6 +1,6 @@
 name: Labs
 
-# Integration tests through the launcher's own Rust code on Linux Docker (src-tauri/src/integration_tests/docker.rs):
+# Integration tests through the launcher's own Rust code on Linux Docker (src-tauri/src/integration_tests/docker_lab.rs):
 # a lab is generated and started, its status read, the attack box started beside it and a target
 # reached from inside it, the lab's checks run, then the lab stopped and nothing of it left.
 # Labs: the Supplier portal API (one network) and Isoloom's `segmented` example (three networks
@@ -89,12 +89,12 @@ jobs:
       - name: Integration tests (Docker labs)
         timeout-minutes: 8
         env:
-          CYBERCTF_TEST_LAB: ${{ runner.temp }}/invoice-portal-api
+          CYBERCTF_TEST_INVOICE_LAB: ${{ runner.temp }}/invoice-portal-api
           CYBERCTF_TEST_SEGMENTED_LAB: ${{ runner.temp }}/isoloom/examples/segmented
           CYBERCTF_TEST_HELLO_LAB: ${{ runner.temp }}/isoloom/examples/hello-stack
-          CYBERCTF_TEST_ATTACK_BOX: ${{ env.ATTACK_BOX }}
+          CYBERCTF_TEST_BOX_IMAGE: ${{ env.ATTACK_BOX }}
           ISOLOOM_HOME: ${{ runner.temp }}/isoloom-home
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib 'integration_tests::docker::' -- --ignored --nocapture --test-threads=1
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib 'integration_tests::docker_lab::' -- --ignored --nocapture --test-threads=1
       - name: Integration tests (the attack box)
         timeout-minutes: 8
         env:

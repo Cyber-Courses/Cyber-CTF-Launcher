@@ -11,14 +11,15 @@ an SSH session): the app opens windows, and Docker Desktop and the credential st
 
 -All        every spec (the default)
 -Specs      only these specs (space-separated, as ONLY)
--App        the app to drive, built with --features wdio (default: the debug build, built here)
+-App        the app to drive, built with --features wdio (CYBERCTF_TEST_DESKTOP_APP; default: the
+            debug build, built here)
 -Package    an .msi (unpacked with msiexec /a, not installed) or an NSIS setup .exe (installed
             silently into the run's folder) of such a build
 -Knobs      a KEY=value file (read literally), set in the environment first
 -SkipBuild  use the debug build as it is
 
-Knobs: as run.sh's (CYBERCTF_TEST_LOCAL_LAB, CYBERCTF_TEST_SESSION, CYBERCTF_TEST_VM_PROVIDER,
-CYBERCTF_TEST_SERVER_ENV, ...; docs/testing/desktop-e2e.md). Exit status: 0 nothing failed (and
+Knobs: as run.sh's (CYBERCTF_TEST_LOCAL_LAB, CYBERCTF_TEST_ACCOUNT_SESSION,
+CYBERCTF_TEST_VM_PROVIDER, CYBERCTF_TEST_SERVER_ENV, ...; tests/README.md lists each). Exit status: 0 nothing failed (and
 no skip under STRICT), 1 a spec failed, 2 the runner itself couldn't run.
 #>
 param(
@@ -51,8 +52,9 @@ if ($Knobs) {
 if ($Specs) { $env:ONLY = $Specs } elseif ($All) { $env:ONLY = "" }
 if (-not $env:TAURI_WEBDRIVER_PORT) { $env:TAURI_WEBDRIVER_PORT = "4445" }
 $Port = $env:TAURI_WEBDRIVER_PORT
-$DevPort = if ($env:DEV_URL_PORT) { $env:DEV_URL_PORT } else { "3206" }
-$CaseTimeout = if ($env:CASE_TIMEOUT) { [int]$env:CASE_TIMEOUT } else { 1800 }
+# Where a debug build loads its frontend from: tauri.conf.json's devUrl, compiled into the app.
+$DevPort = ((Get-Content (Join-Path $Repo "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).build.devUrl -replace '^.*:(\d+).*$', '$1')
+$CaseTimeout = if ($env:CYBERCTF_TEST_DESKTOP_TIMEOUT) { [int]$env:CYBERCTF_TEST_DESKTOP_TIMEOUT } else { 1800 }
 $VmTimeout = 10800
 
 function Wanted([string]$name) {
@@ -98,16 +100,17 @@ if ($Package) {
   if (-not $found) { Stop-Runner "no app in $Package" }
   $App = $found.FullName
 }
+if (-not $App -and $env:CYBERCTF_TEST_DESKTOP_APP) { $App = $env:CYBERCTF_TEST_DESKTOP_APP }
 if (-not $App) {
   $App = Join-Path $Repo "src-tauri\target\debug\cyberctf-desktop.exe"
-  if (-not $SkipBuild -and -not $env:SKIP_BUILD) {
+  if (-not $SkipBuild) {
     Say "cargo build --features wdio"
     & cargo build --manifest-path src-tauri\Cargo.toml --features wdio
     if ($LASTEXITCODE -ne 0) { Stop-Runner "the wdio build failed" }
   }
 }
 if (-not (Test-Path $App)) { Stop-Runner "app binary not found: $App" }
-$env:APP_BIN = $App
+$env:CYBERCTF_TEST_DESKTOP_APP = $App
 $Debug = $App -match "\\debug\\"
 
 function Stop-App {
@@ -130,15 +133,15 @@ if ($Debug -and -not (Serves $DevPort)) {
 $SessionFile = Join-Path $env:USERPROFILE ".cyberctf\dev-session.json"
 $SessionBackup = $null
 $SessionPlaced = $false
-if ($env:CYBERCTF_TEST_SESSION) {
-  if (-not (Test-Path $env:CYBERCTF_TEST_SESSION)) { Stop-Runner "no session file: $($env:CYBERCTF_TEST_SESSION)" }
+if ($env:CYBERCTF_TEST_ACCOUNT_SESSION) {
+  if (-not (Test-Path $env:CYBERCTF_TEST_ACCOUNT_SESSION)) { Stop-Runner "no session file: $($env:CYBERCTF_TEST_ACCOUNT_SESSION)" }
   if ($Debug) {
     New-Item -ItemType Directory -Force -Path (Split-Path $SessionFile) | Out-Null
     if (Test-Path $SessionFile) { $SessionBackup = Join-Path $State "dev-session.backup.json"; Copy-Item $SessionFile $SessionBackup -Force }
-    Copy-Item $env:CYBERCTF_TEST_SESSION $SessionFile -Force
+    Copy-Item $env:CYBERCTF_TEST_ACCOUNT_SESSION $SessionFile -Force
     $SessionPlaced = $true
     Say "session: placed $SessionFile for the run"
-  } else { Say "session: a release build reads the credential store, CYBERCTF_TEST_SESSION is ignored" }
+  } else { Say "session: a release build reads the credential store, CYBERCTF_TEST_ACCOUNT_SESSION is ignored" }
 }
 
 # --- Fixtures ---------------------------------------------------------------------------------
@@ -156,7 +159,7 @@ if ($slug.Length -gt 56) { $slug = $slug.Substring(0, 56) }
 $LabId = "local-$slug"
 
 function Clear-Lab([switch]$Final) {
-  if ($Final -and $env:KEEP) { return }
+  if ($Final -and $env:CYBERCTF_TEST_DESKTOP_KEEP) { return }
   if (-not $DockerOk) { return }
   if ((& docker compose ls -q 2>$null) -contains "cyberctf-$LabId") {
     Say "cleanup: docker compose -p cyberctf-$LabId down"
@@ -240,15 +243,15 @@ try {
     Clear-Lab
     foreach ($s in "launch", "restart", "stop") { Invoke-Spec $s }
     foreach ($s in ($dockerSpecs | Select-Object -Skip 4)) { Clear-Lab; Invoke-Spec $s }
-    Invoke-Spec "form-container" "lab-form" 0 @{ CYBERCTF_TEST_FORM = "container" }
+    Invoke-Spec "lab-form-container" "lab-form" 0 @{ CYBERCTF_TEST_LAB_FORM = "container" }
   } else {
-    foreach ($s in ($dockerSpecs + "form-container")) { Skip-Spec $s "docker is not running" }
+    foreach ($s in ($dockerSpecs + "lab-form-container")) { Skip-Spec $s "docker is not running" }
   }
-  Invoke-Spec "form-docker-vm" "lab-form" $VmTimeout @{ CYBERCTF_TEST_FORM = "docker-vm" }
-  Invoke-Spec "form-vm" "lab-form" $VmTimeout @{ CYBERCTF_TEST_FORM = "vm" }
-  Invoke-Spec "form-per-machine" "lab-form" $VmTimeout @{ CYBERCTF_TEST_FORM = "per-machine" }
+  Invoke-Spec "lab-form-docker-vm" "lab-form" $VmTimeout @{ CYBERCTF_TEST_LAB_FORM = "docker-vm" }
+  Invoke-Spec "lab-form-vm" "lab-form" $VmTimeout @{ CYBERCTF_TEST_LAB_FORM = "vm" }
+  Invoke-Spec "lab-form-per-machine" "lab-form" $VmTimeout @{ CYBERCTF_TEST_LAB_FORM = "per-machine" }
   Invoke-Spec "screens" "screens" $VmTimeout
-  Skip-Spec "vm-scan" "its fixture VM is made on a Mac (UTM); on Hyper-V start a VM named <lab>-<machine> and run tests/desktop/specs/vm-scan.mjs with CYBERCTF_EXPECT_LAB"
+  Skip-Spec "vm-scan" "its fixture VM is made on a Mac (UTM); on Hyper-V start a VM named <lab>-<machine> and run tests/desktop/specs/vm-scan.mjs with CYBERCTF_TEST_SCAN_LAB"
   Invoke-Spec "server-lab" "server-lab" $VmTimeout
   Clear-Lab -Final
   Invoke-Spec "cleanup"

@@ -72,7 +72,9 @@ try {
   backend = await relay();
   ({ proc, b } = await openApp({ env: { CYBERBACKEND_URL: backend.url } }));
   if (!(await signedIn(b)))
-    r.skipAll("the app isn't signed in: an offline start is kept for the account that started the lab online (give CYBERCTF_TEST_SESSION to the runner)");
+    r.skipAll(
+      "the app isn't signed in: an offline start is kept for the account that started the lab online (give CYBERCTF_TEST_ACCOUNT_SESSION to the runner)",
+    );
   if (!(await openLabFromList(b, CATALOGUE_LAB))) r.skipAll(`the catalogue doesn't list "${CATALOGUE_LAB}"`);
   if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) await stopAndRemoveOnPage(b);
 

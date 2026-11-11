@@ -4,13 +4,13 @@
 // Cyber CTF installed removed, when one is named. Run last: the labs download again what they
 // need on their next start.
 //
-//   CYBERCTF_TEST_REMOVE_TOOL  the name of a tool Settings lists as installed by Cyber CTF to remove
+//   CYBERCTF_TEST_CLEANUP_TOOL  the name of a tool Settings lists as installed by Cyber CTF to remove
 //                              (as the list shows it, e.g. "Terraform"); none: that check skipped,
 //                              since removing a tool takes it from the machine
 import { closeWindow, confirmSystemDialogs, finish, goTo, openApp, results, sleep, switchToWindow } from "../lib/support.mjs";
 
 const r = results();
-const TOOL = process.env.CYBERCTF_TEST_REMOVE_TOOL || "";
+const TOOL = process.env.CYBERCTF_TEST_CLEANUP_TOOL || "";
 
 const body = (b) =>
   b
@@ -67,7 +67,7 @@ try {
 
   const listed = await b.$('//*[normalize-space()="Tools Cyber CTF installed"]').isExisting();
   if (!listed) r.skip("tool-remove", "no tool installed by Cyber CTF here");
-  else if (!TOOL) r.skip("tool-remove", `name one to remove with CYBERCTF_TEST_REMOVE_TOOL (listed: ${(await toolNames(b)).join(", ")})`);
+  else if (!TOOL) r.skip("tool-remove", `name one to remove with CYBERCTF_TEST_CLEANUP_TOOL (listed: ${(await toolNames(b)).join(", ")})`);
   else {
     await r.step("tool-remove", `${TOOL} removed from Settings (confirmed)`, async () => {
       const row = await b.$(`//li[.//p[normalize-space()=${JSON.stringify(TOOL)}]]`);

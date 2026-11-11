@@ -14,7 +14,7 @@
 //              _DATASTORE, _NETWORK
 //   CYBERCTF_TEST_SERVER_LAB     the catalogue lab to start there (default CYBERCTF_TEST_CATALOGUE_LAB)
 // The same knobs' variables in the environment work too. A lab's whole life on a server (status,
-// checks over SSH, provisioning) is the integration tests' server tier (proxmox-lab, esxi-lab).
+// checks over SSH, provisioning) is the integration tests' server tier (server-lab-proxmox, server-lab-esxi).
 import { existsSync, readFileSync } from "node:fs";
 import {
   CATALOGUE_LAB,
@@ -192,7 +192,7 @@ try {
 
   if (!(await signedIn(b))) {
     for (const id of ["lab-start", "lab-running", "lab-stop"])
-      r.skip(id, "the app isn't signed in: a catalogue lab starts only signed in (CYBERCTF_TEST_SESSION)");
+      r.skip(id, "the app isn't signed in: a catalogue lab starts only signed in (CYBERCTF_TEST_ACCOUNT_SESSION)");
   } else if (!(await openLabFromList(b, LAB))) {
     for (const id of ["lab-start", "lab-running", "lab-stop"]) r.skip(id, `the catalogue doesn't list "${LAB}" (set CYBERCTF_TEST_SERVER_LAB)`);
   } else {

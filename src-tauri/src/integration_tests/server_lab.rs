@@ -12,8 +12,8 @@
 //! CYBERCTF_TEST_PVE_LAB=<isoloom checkout>/examples/solo-web \
 //! CYBERCTF_TEST_PVE_ENDPOINT=https://172.16.1.10:8006/ CYBERCTF_TEST_PVE_TOKEN='root@pam!name=secret' \
 //! CYBERCTF_TEST_PVE_NODE=pve-lab CYBERCTF_TEST_PVE_BRIDGE=vmbr1 CYBERCTF_TEST_PVE_JUMP=root@172.16.1.10 \
-//! CYBERCTF_TEST_RUNNER_HOME=<a folder whose ssh/id_ed25519 the node lets in> \
-//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::servers::a_vm_lab_runs_on_proxmox_through_the_runner
+//! CYBERCTF_TEST_PVE_RUNNER_HOME=<a folder whose ssh/id_ed25519 the node lets in> \
+//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::server_lab::a_vm_lab_runs_on_proxmox_through_the_runner
 //! ```
 //!
 //! On ESXi (Vagrant's `vmware_esxi`, the runner relaying the host's SSH and HTTPS from macOS):
@@ -25,7 +25,7 @@
 //! ```text
 //! CYBERCTF_TEST_ESXI_LAB=<isoloom checkout>/examples/solo-web CYBERCTF_TEST_ESXI_HOST=172.16.1.20 \
 //! CYBERCTF_TEST_ESXI_PASSWORD=… CYBERCTF_TEST_ESXI_DATASTORE=datastore1 CYBERCTF_TEST_ESXI_NETWORK='VM Network' \
-//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::servers::a_vm_lab_runs_on_esxi_through_the_runner
+//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::server_lab::a_vm_lab_runs_on_esxi_through_the_runner
 //! ```
 
 use std::path::PathBuf;
@@ -36,14 +36,15 @@ use crate::runtime::isothrum::{EsxiPlace, LabRun, ServerPlace, ServerRun};
 use crate::runtime::lab;
 use crate::runtime::server::HostProfile;
 
+/// Knob `k`, which the test can't run without.
 fn var(k: &str) -> String {
-    std::env::var(k).unwrap_or_else(|_| panic!("{k} is required"))
+    super::support::var(k).unwrap_or_else(|| panic!("{k} is required"))
 }
 
-/// A fresh copy of the lab in `CYBERCTF_TEST_<what>_LAB`, as `name` in the temp folder, without
-/// its generated files.
-fn copy_lab(what: &str, name: &str) -> PathBuf {
-    let src = PathBuf::from(var(&format!("CYBERCTF_TEST_{what}_LAB")));
+/// A fresh copy of the lab the knob `knob` names, as `name` in the temp folder, without its
+/// generated files.
+fn copy_lab(knob: &str, name: &str) -> PathBuf {
+    let src = PathBuf::from(var(knob));
     let dir = std::env::temp_dir().join(name);
     let _ = std::fs::remove_dir_all(&dir);
     assert!(std::process::Command::new("cp").arg("-R").arg(&src).arg(&dir).status().unwrap().success());
@@ -54,7 +55,7 @@ fn copy_lab(what: &str, name: &str) -> PathBuf {
 #[tokio::test]
 #[ignore = "needs a Proxmox server; see the module docs"]
 async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
-    let dir = copy_lab("PVE", "cyberctf-pve-runner-lab");
+    let dir = copy_lab("CYBERCTF_TEST_PVE_LAB", "cyberctf-pve-runner-lab");
     lab::prepare(&dir, lab::Target::Proxmox).unwrap();
     let endpoint = var("CYBERCTF_TEST_PVE_ENDPOINT");
     let host = endpoint.trim_start_matches("https://").split(':').next().unwrap().to_owned();
@@ -75,7 +76,7 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
         node: Some(var("CYBERCTF_TEST_PVE_NODE")),
         jump: std::env::var("CYBERCTF_TEST_PVE_JUMP").ok().filter(|j| !j.is_empty()),
     };
-    let home = PathBuf::from(var("CYBERCTF_TEST_RUNNER_HOME"));
+    let home = PathBuf::from(var("CYBERCTF_TEST_PVE_RUNNER_HOME"));
     let run = ServerRun::new(&home, &dir, "pve-runner-lab", Runtime::Vm).unwrap();
     let mut f = Vec::new();
     scenario(
@@ -130,7 +131,7 @@ fn curl(url: &str) -> std::result::Result<String, String> {
 #[tokio::test]
 #[ignore = "needs an ESXi host; see the module docs"]
 async fn a_vm_lab_runs_on_esxi_through_the_runner() {
-    let dir = copy_lab("ESXI", "cyberctf-esxi-runner-lab");
+    let dir = copy_lab("CYBERCTF_TEST_ESXI_LAB", "cyberctf-esxi-runner-lab");
     lab::prepare(&dir, lab::Target::Vagrant).unwrap();
     let profile: HostProfile = serde_json::from_value(serde_json::json!({
         "id": "esxi-lab",

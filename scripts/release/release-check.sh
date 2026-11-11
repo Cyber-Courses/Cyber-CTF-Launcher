@@ -70,7 +70,7 @@ rust_cov() {
 e2e_mock() {
   if serves "${DEV_URL_PORT:-3206}"; then
     echo "reusing the dev server on port ${DEV_URL_PORT:-3206}"
-    E2E_PORT=${DEV_URL_PORT:-3206} pnpm test:web
+    CYBERCTF_TEST_WEB_PORT=${DEV_URL_PORT:-3206} pnpm test:web
   else
     pnpm test:web
   fi

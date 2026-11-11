@@ -10,31 +10,33 @@
 #   tests/desktop/run.sh --all                                 # every spec (the default)
 #   tests/desktop/run.sh --specs "smoke settings" --knobs ~/.config/cyberctf-test/e2e.env
 #   tests/desktop/run.sh --app path/to/cyberctf-desktop        # an app already built (no build here)
+#   tests/desktop/run.sh --skip-build                          # the debug build as it is
 #   tests/desktop/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # or an .AppImage, an .rpm
 #
 # Options:
 #   --all                 every spec (the default)
 #   --specs "<names>"     only these specs (as ONLY)
-#   --app <binary>        the app to drive, built with `--features wdio` (APP_BIN)
+#   --app <binary>        the app to drive, built with `--features wdio` (CYBERCTF_TEST_DESKTOP_APP);
+#                         one under target/release must come from `NEXT_PUBLIC_WDIO=1 pnpm tauri
+#                         build --features wdio`, which embeds the frontend with the hooks (a
+#                         `cargo build --release` doesn't)
 #   --package <file>      a .deb, .rpm or .AppImage of such a build: unpacked here, not installed
+#   --skip-build          use the debug build as it is (it loads devUrl, served here)
 #   --knobs <file>        KEY=value lines (read literally, never sourced), exported first
 #
-# Knobs (environment, or the knobs file):
-#   APP_BIN                     the app (default: the wdio `cargo build`, built here unless SKIP_BUILD,
-#                               which loads devUrl); one under target/release must come from
-#                               `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`, which embeds the
-#                               frontend with the hooks (a `cargo build --release` doesn't)
-#   CYBERCTF_TEST_LOCAL_LAB     the lab folder to import (default: a checkout of the Invoice Portal
-#                               API lab under infra/test-servers/.state/labs)
-#   CYBERCTF_TEST_SESSION       a signed-in session (a debug build's dev-session.json), placed at
-#                               ~/.cyberctf/dev-session.json for the run (the one there is put back)
-#   CYBERCTF_TEST_VM_PROVIDER   the hypervisor for the VM specs (libvirt, virtualbox, hyperv, qemu, utm)
+# Knobs (environment, or the knobs file; tests/README.md has each spec's):
+#   CYBERCTF_TEST_DESKTOP_APP     the app (default: the wdio `cargo build`, built here)
+#   CYBERCTF_TEST_LOCAL_LAB       the lab folder to import (default: a checkout of the Invoice Portal
+#                                 API lab under infra/test-servers/.state/labs)
+#   CYBERCTF_TEST_ACCOUNT_SESSION a signed-in session (a debug build's dev-session.json), placed at
+#                                 ~/.cyberctf/dev-session.json for the run (the one there is put back)
+#   CYBERCTF_TEST_VM_PROVIDER     the hypervisor for the VM specs (libvirt, virtualbox, hyperv, qemu, utm)
 #   CYBERCTF_TEST_CATALOGUE_LAB, CYBERCTF_TEST_CATALOGUE_VM_LAB, CYBERCTF_TEST_SERVER_ENV,
-#   CYBERCTF_TEST_SERVER_LAB, CYBERCTF_TEST_ATTACK_DESKTOP, CYBERCTF_TEST_REMOVE_TOOL: see each spec
-#   TAURI_WEBDRIVER_PORT        the embedded WebDriver port (4445)
-#   CASE_TIMEOUT                seconds for a spec without a lab in a VM (1800; the VM ones get 3 h)
-#   KEEP                        leave the fixture lab running at the end
-#   ONLY, SKIP, STRICT          as every suite runner (scripts/lib/suite.sh)
+#   CYBERCTF_TEST_SERVER_LAB, CYBERCTF_TEST_BOX_DESKTOP, CYBERCTF_TEST_CLEANUP_TOOL: see each spec
+#   CYBERCTF_TEST_DESKTOP_TIMEOUT seconds for a spec without a lab in a VM (1800; the VM ones get 3 h)
+#   CYBERCTF_TEST_DESKTOP_KEEP    leave the fixture lab running at the end
+#   TAURI_WEBDRIVER_PORT          the app's embedded WebDriver port (4445)
+#   ONLY, SKIP, STRICT            as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
 
 HERE=$(cd "$(dirname "$0")/../.." && pwd)
@@ -46,12 +48,14 @@ fail_now() { printf 'run.sh: %s\n' "$*" >&2; exit 2; }
 
 # Arguments: everything else stays a knob.
 PACKAGE=""
+SKIP_BUILD=""
 while [ $# -gt 0 ]; do
   case $1 in
     --all) ONLY="" ;;
     --specs) ONLY=${2:?--specs needs names}; shift ;;
-    --app) APP_BIN=${2:?--app needs a path}; SKIP_BUILD=1; shift ;;
+    --app) CYBERCTF_TEST_DESKTOP_APP=${2:?--app needs a path}; SKIP_BUILD=1; shift ;;
     --package) PACKAGE=${2:?--package needs a file}; SKIP_BUILD=1; shift ;;
+    --skip-build) SKIP_BUILD=1 ;;
     --knobs)
       [ -f "${2:-}" ] || fail_now "no knobs file: ${2:-}"
       while IFS= read -r line || [ -n "$line" ]; do
@@ -70,7 +74,7 @@ cd "$HERE" || exit 2
 NATIVE_STATE="$HERE/tests/desktop/.state"
 LOGS="$NATIVE_STATE/logs"
 mkdir -p "$LOGS"
-CASE_TIMEOUT=${CASE_TIMEOUT:-1800}
+CASE_TIMEOUT=${CYBERCTF_TEST_DESKTOP_TIMEOUT:-1800}
 VM_TIMEOUT=10800
 # Where a `cargo build` app loads its frontend from: tauri.conf.json's devUrl, compiled into the
 # app (not a knob: another port would serve a frontend the app never loads). A `next dev` already
@@ -101,13 +105,14 @@ if [ -n "$PACKAGE" ]; then
     *) fail_now "not a package this runner unpacks (.deb, .rpm, .AppImage): $PACKAGE" ;;
   esac
   case $PACKAGE in
-    *.AppImage) APP_BIN="$UNPACKED/$(basename "$PACKAGE")" ;;
-    *) APP_BIN=$(find "$UNPACKED/usr/bin" -type f -perm -u+x | head -n 1) ;;
+    *.AppImage) CYBERCTF_TEST_DESKTOP_APP="$UNPACKED/$(basename "$PACKAGE")" ;;
+    *) CYBERCTF_TEST_DESKTOP_APP=$(find "$UNPACKED/usr/bin" -type f -perm -u+x | head -n 1) ;;
   esac
 fi
-APP_BIN=${APP_BIN:-$HERE/src-tauri/target/debug/cyberctf-desktop}
-export APP_BIN
-if [ -z "${SKIP_BUILD:-}" ]; then
+# The app the specs drive (tests/desktop/lib/support.mjs reads it).
+export CYBERCTF_TEST_DESKTOP_APP=${CYBERCTF_TEST_DESKTOP_APP:-$HERE/src-tauri/target/debug/cyberctf-desktop}
+APP_BIN=$CYBERCTF_TEST_DESKTOP_APP
+if [ -z "$SKIP_BUILD" ]; then
   say "cargo build --features wdio"
   cargo build --manifest-path src-tauri/Cargo.toml --features wdio || fail_now "the wdio build failed"
 fi
@@ -147,15 +152,15 @@ SESSION_FILE="$HOME/.cyberctf/dev-session.json"
 SESSION_BACKUP=""
 SESSION_PLACED=""
 place_session() {
-  [ -n "${CYBERCTF_TEST_SESSION:-}" ] || return 0
-  [ -f "$CYBERCTF_TEST_SESSION" ] || fail_now "no session file: $CYBERCTF_TEST_SESSION"
-  case "$APP_BIN" in */debug/*) ;; *) say "session: a release build reads the keychain, CYBERCTF_TEST_SESSION is ignored"; return 0 ;; esac
+  [ -n "${CYBERCTF_TEST_ACCOUNT_SESSION:-}" ] || return 0
+  [ -f "$CYBERCTF_TEST_ACCOUNT_SESSION" ] || fail_now "no session file: $CYBERCTF_TEST_ACCOUNT_SESSION"
+  case "$APP_BIN" in */debug/*) ;; *) say "session: a release build reads the keychain, CYBERCTF_TEST_ACCOUNT_SESSION is ignored"; return 0 ;; esac
   mkdir -p "$(dirname "$SESSION_FILE")"
   if [ -f "$SESSION_FILE" ]; then
     SESSION_BACKUP="$NATIVE_STATE/dev-session.backup.json"
     cp -p "$SESSION_FILE" "$SESSION_BACKUP"
   fi
-  (umask 077 && cp "$CYBERCTF_TEST_SESSION" "$SESSION_FILE")
+  (umask 077 && cp "$CYBERCTF_TEST_ACCOUNT_SESSION" "$SESSION_FILE")
   SESSION_PLACED=1
   say "session: placed $SESSION_FILE for the run"
 }
@@ -258,7 +263,7 @@ drop_utm_vm() {
 vm_scan() {
   wanted vm-scan || return 0
   if [ "$OS" != Darwin ]; then
-    skip vm-scan "the UTM fixture is macOS only; elsewhere start a libvirt/Hyper-V VM named for the lab and run tests/desktop/specs/vm-scan.mjs with CYBERCTF_EXPECT_LAB"
+    skip vm-scan "the UTM fixture is macOS only; elsewhere start a libvirt/Hyper-V VM named for the lab and run tests/desktop/specs/vm-scan.mjs with CYBERCTF_TEST_SCAN_LAB"
     return
   fi
   [ -x "$UTMCTL" ] || { skip vm-scan "UTM is not installed"; return; }
@@ -284,14 +289,15 @@ vm_scan() {
     sleep 2
   done
   # The script makes Docker unreachable for the app, so only the hypervisor probe can report the lab.
-  run_spec vm-scan vm-scan "$CASE_TIMEOUT" CYBERCTF_EXPECT_LAB="$LAB_ID"
+  run_spec vm-scan vm-scan "$CASE_TIMEOUT" CYBERCTF_TEST_SCAN_LAB="$LAB_ID"
   drop_utm_vm
 }
 
 # What a run leaves behind: the imported lab's containers (its Compose project and attack box).
-# `cleanup_lab final` is the run's last word and honours KEEP; between specs it always runs.
+# `cleanup_lab final` is the run's last word and honours CYBERCTF_TEST_DESKTOP_KEEP; between
+# specs it always runs.
 cleanup_lab() {
-  [ "${1:-}" = final ] && [ -n "${KEEP:-}" ] && return 0
+  [ "${1:-}" = final ] && [ -n "${CYBERCTF_TEST_DESKTOP_KEEP:-}" ] && return 0
   [ "$DOCKER_OK" -eq 1 ] || return 0
   if docker compose ls -q 2>/dev/null | grep -qx "cyberctf-$LAB_ID"; then
     say "cleanup: docker compose -p cyberctf-$LAB_ID down"
@@ -349,7 +355,7 @@ spec fail-badlab
 SIGNED_OUT_HOME=$(mktemp -d "${TMPDIR:-/tmp}/cyberctf-signedout.XXXXXX")
 run_spec fail-signedout fail-signedout "$CASE_TIMEOUT" HOME="$SIGNED_OUT_HOME"
 rm -rf "$SIGNED_OUT_HOME"
-DOCKER_SPECS="fail-docker launch restart stop launch-ui kill-mid-deploy attack-box attack-shell stop-with-box park-resume reimport-running attack-on-stopped lab-actions offline-start form-container"
+DOCKER_SPECS="fail-docker launch restart stop launch-ui kill-mid-deploy attack-box attack-shell stop-with-box park-resume reimport-running attack-on-stopped lab-actions offline-start lab-form-container"
 if [ "$DOCKER_OK" -eq 1 ]; then
   spec fail-docker
   # Nothing of the lab up before launch, so a pass proves a real start and not a leftover;
@@ -362,13 +368,13 @@ if [ "$DOCKER_OK" -eq 1 ]; then
     cleanup_lab
     spec "$s"
   done
-  run_spec form-container lab-form "$CASE_TIMEOUT" CYBERCTF_TEST_FORM=container
+  run_spec lab-form-container lab-form "$CASE_TIMEOUT" CYBERCTF_TEST_LAB_FORM=container
 else
   for s in $DOCKER_SPECS; do skip "$s" "docker is not running"; done
 fi
-run_spec form-docker-vm lab-form "$VM_TIMEOUT" CYBERCTF_TEST_FORM=docker-vm
-run_spec form-vm lab-form "$VM_TIMEOUT" CYBERCTF_TEST_FORM=vm
-run_spec form-per-machine lab-form "$VM_TIMEOUT" CYBERCTF_TEST_FORM=per-machine
+run_spec lab-form-docker-vm lab-form "$VM_TIMEOUT" CYBERCTF_TEST_LAB_FORM=docker-vm
+run_spec lab-form-vm lab-form "$VM_TIMEOUT" CYBERCTF_TEST_LAB_FORM=vm
+run_spec lab-form-per-machine lab-form "$VM_TIMEOUT" CYBERCTF_TEST_LAB_FORM=per-machine
 run_spec screens screens "$VM_TIMEOUT"
 vm_scan
 run_spec server-lab server-lab "$VM_TIMEOUT"

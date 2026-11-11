@@ -26,7 +26,16 @@ function runner(cargo: string, env: Record<string, string>, args: string[] = [])
   const dir = folder();
   writeFileSync(join(dir, "cargo"), `#!/bin/sh\n${cargo}\n`);
   chmodSync(join(dir, "cargo"), 0o755);
-  const clean = { ...process.env, ONLY: "", SKIP: "", STRICT: "", SUITE_NESTED: "", ISOLOOM: dir, LOGS: dir, ...env };
+  const clean = {
+    ...process.env,
+    ONLY: "",
+    SKIP: "",
+    STRICT: "",
+    SUITE_NESTED: "",
+    CYBERCTF_TEST_ISOLOOM_DIR: dir,
+    CYBERCTF_TEST_INTEGRATION_LOGS: dir,
+    ...env,
+  };
   const r = spawnSync("bash", [RUNNER, ...args], { env: { ...clean, PATH: `${dir}:${process.env.PATH ?? ""}` }, encoding: "utf8" });
   return { status: r.status, out: r.stdout + r.stderr };
 }
@@ -35,8 +44,8 @@ function runner(cargo: string, env: Record<string, string>, args: string[] = [])
 const verdict = (out: string, step: string) => new RegExp(`^ {3}${step} +(ok|FAIL|skip) `, "m").exec(out)?.[1];
 
 describe("an integration scenario's verdict", () => {
-  /** The `docker-lab` scenario alone, with a `cargo` that answers `script`. */
-  const scenario = (script: string) => verdict(runner(script, { ONLY: "docker-lab" }).out, "docker-lab");
+  /** The `docker-lab-hello-stack` scenario alone, with a `cargo` that answers `script`. */
+  const scenario = (script: string) => verdict(runner(script, { ONLY: "docker-lab-hello-stack" }).out, "docker-lab-hello-stack");
 
   it("is ok when the test passed, skip when it returned for a knob not set, FAIL when it failed", () => {
     expect(scenario(`echo "test result: ok. 1 passed; 0 failed"`)).toBe("ok");
@@ -44,5 +53,13 @@ describe("an integration scenario's verdict", () => {
     expect(scenario(`echo "test result: FAILED. 0 passed; 1 failed"; exit 101`)).toBe("FAIL");
     // A filter that matched no test ran nothing: not a pass.
     expect(scenario(`echo "test result: ok. 0 passed; 0 failed"`)).toBe("FAIL");
+  });
+
+  it("reads a knob by its old name while the test rig sets that one", () => {
+    // ISOLOOM for CYBERCTF_TEST_ISOLOOM_DIR: the runner finds the checkout by it.
+    const isoloom = folder();
+    const r = runner(`echo "test result: ok. 1 passed; 0 failed"`, { CYBERCTF_TEST_ISOLOOM_DIR: "", ISOLOOM: isoloom, ONLY: "docker-lab-hello-stack" });
+    expect(verdict(r.out, "docker-lab-hello-stack")).toBe("ok");
+    expect(runner("", { CYBERCTF_TEST_ISOLOOM_DIR: "/nonexistent" }).status).toBe(2);
   });
 });

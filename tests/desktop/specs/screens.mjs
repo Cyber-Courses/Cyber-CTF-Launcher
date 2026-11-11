@@ -3,12 +3,12 @@
 // (`screen-<lab>:<machine>`) that shows its framebuffer (noVNC drawing into a canvas through the
 // window's loopback bridge); one with Remote Desktop opens the window that hands it to the
 // system's client (not launched here); one with no screen says so on its row, and why. With
-// CYBERCTF_TEST_ATTACK_DESKTOP=1 the attack box is Kali's desktop (Settings > Labs, Attack VM
+// CYBERCTF_TEST_BOX_DESKTOP=1 the attack box is Kali's desktop (Settings > Labs, Attack VM
 // desktop), and its own Screen shows it. Then the lab is stopped and removed.
 //
 //   CYBERCTF_TEST_VM_PROVIDER       the hypervisor to run the lab on (libvirt and QEMU give VNC)
 //   CYBERCTF_TEST_CATALOGUE_VM_LAB  a catalogue VM lab (else the container lab as one VM per machine)
-//   CYBERCTF_TEST_ATTACK_DESKTOP    1: also the attack box's desktop (about 1 GB more, 4 GB of memory)
+//   CYBERCTF_TEST_BOX_DESKTOP    1: also the attack box's desktop (about 1 GB more, 4 GB of memory)
 // Needs the app signed in. The console's plumbing per hypervisor (the runner's answer, the bridge)
 // is unit-tested in the core; a cloud's or a server's screen is the integration tests' to add.
 import {
@@ -31,7 +31,7 @@ import {
 const r = results();
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || (process.platform === "darwin" ? "utm" : "");
 const VM_LAB = process.env.CYBERCTF_TEST_CATALOGUE_VM_LAB || "";
-const DESKTOP = process.env.CYBERCTF_TEST_ATTACK_DESKTOP === "1";
+const DESKTOP = process.env.CYBERCTF_TEST_BOX_DESKTOP === "1";
 if (!PROVIDER) r.skipAll("no hypervisor named: set CYBERCTF_TEST_VM_PROVIDER");
 const LAB = VM_LAB || CATALOGUE_LAB;
 const START = VM_LAB ? { place: "vm", form: "one" } : { place: "vm", form: "per-machine" };
@@ -93,7 +93,7 @@ let proc;
 let b;
 try {
   ({ proc, b } = await openApp({ storage: DESKTOP ? { "cyberctf.attackbox.desktop": "true" } : {} }));
-  if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_SESSION to the runner)");
+  if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_ACCOUNT_SESSION to the runner)");
   if (!(await openLabFromList(b, LAB))) r.skipAll(`the catalogue doesn't list "${LAB}"`);
   if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) await stopAndRemoveOnPage(b);
   await startFromDialog(b, { ...START, provider: PROVIDER });
@@ -134,7 +134,7 @@ try {
       if (!showing(seen)) throw new Error(`${seen.label}: ${seen.state}`);
       return `${seen.label}: ${described(seen)}`;
     });
-  } else r.skip("box-desktop", "the attack box's desktop downloads about 1 GB more and takes 4 GB: set CYBERCTF_TEST_ATTACK_DESKTOP=1");
+  } else r.skip("box-desktop", "the attack box's desktop downloads about 1 GB more and takes 4 GB: set CYBERCTF_TEST_BOX_DESKTOP=1");
 
   await r.step("stop", "Stop & remove ends the lab, its screens with it", () => stopAndRemoveOnPage(b, 1800000));
 } catch (e) {

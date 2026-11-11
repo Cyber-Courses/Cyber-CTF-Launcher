@@ -1,5 +1,5 @@
 // The running-labs scan sees a VM lab, on UTM, libvirt or Hyper-V. Prerequisite (set up by the
-// caller, tests/desktop/run.sh does it for UTM on a Mac): an installed lab whose id is CYBERCTF_EXPECT_LAB,
+// caller, tests/desktop/run.sh does it for UTM on a Mac): an installed lab whose id is CYBERCTF_TEST_SCAN_LAB,
 // and a VM for it running under the hypervisor, named as the engine names it: `<name> · <machine>`
 // for a UTM VM, `<name>_<machine>` for a libvirt domain (on qemu:///system) or `<name>-<machine>` for
 // a Hyper-V VM, where `<name>` is the lab's isoloom name. Drives the real `running_labs` command, so
@@ -9,7 +9,7 @@
 // Proven green on jarvis (libvirt), karen (Hyper-V) and a Mac with UTM.
 import { connect, deadDockerEnv, finish, launchApp, results, sleep } from "../lib/support.mjs";
 
-const WANT = process.env.CYBERCTF_EXPECT_LAB || "solo-web";
+const WANT = process.env.CYBERCTF_TEST_SCAN_LAB || "solo-web";
 
 const r = results();
 let found = false;

@@ -4,23 +4,23 @@
 //! runs them by tier; docs/testing/integration.md says what each one guards against.
 
 mod attack_box;
-mod commands;
-mod corpus;
-mod docker;
-mod docker_vm;
+mod corpus_docker;
+mod docker_lab;
+mod docker_vm_lab;
 mod flag_contract;
+mod launch_commands;
 mod per_machine;
 mod replace;
-mod servers;
+mod server_lab;
 mod setup;
 pub(crate) mod support;
-mod vm;
+mod vm_lab;
 
 /// A scenario starts and stops its lab through the launcher's own functions (`launch::start_*`,
 /// `runtime::start`, `lifecycle::stop_run`, `stop_lab`), never by calling the runner's `up` or
 /// `down` on a run it opened itself: what the launcher does around the runner (generating the
 /// files, the form's marks, opening UTM and trying its passing `-600` refusal again) is what a
-/// real run goes through. `docker_vm`'s scenario once built its start by hand, so it skipped that
+/// real run goes through. `docker_vm_lab`'s scenario once built its start by hand, so it skipped that
 /// retry and failed on a UTM run where the app would not have.
 #[cfg(test)]
 mod start_path {
@@ -28,7 +28,7 @@ mod start_path {
 
     /// The scenarios that drive a run they open themselves, each with why: the server ones take
     /// the host's connection from their knobs, with no saved host for the launcher's start to read.
-    const OPENS_ITS_OWN_RUN: &[(&str, &str)] = &[("servers.rs", "a server's connection from its knobs, not a saved host")];
+    const OPENS_ITS_OWN_RUN: &[(&str, &str)] = &[("server_lab.rs", "a server's connection from its knobs, not a saved host")];
 
     /// The runs a scenario opens itself: `LabRun::…`, `ServerRun::…`, `CloudRun::…`.
     const RUNS: [&str; 3] = ["LabRun::", "ServerRun::", "CloudRun::"];
@@ -78,7 +78,7 @@ mod start_path {
 
     #[test]
     fn a_run_started_by_hand_is_told_from_one_read_or_handed_over() {
-        // docker_vm.rs as it was: the run opened and brought up in one expression.
+        // docker_vm_lab.rs as it was: the run opened and brought up in one expression.
         let by_hand = "let up = async {\n lab::prepare(&dir, t)?;\n isothrum::LabRun::docker_in_vm(&home, &dir, &id)?.up(&[], Some(p), &mut log(&id)).await\n}";
         assert_eq!(direct_changes(by_hand).len(), 1);
         // A run bound to a variable, then brought up or down.

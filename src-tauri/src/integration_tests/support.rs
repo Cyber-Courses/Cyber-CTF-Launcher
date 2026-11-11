@@ -13,10 +13,22 @@ use crate::platform::unwind::{CatchUnwind, panic_message};
 /// records the scenario as skipped on this line, where cargo counts the early return as a pass.
 pub(crate) const SKIPPED: &str = "integration test skipped, not set:";
 
+/// Knobs renamed to `CYBERCTF_TEST_<AREA>_<WHAT>` whose old names the workspace's test rig still
+/// sets: (new, old). The old name is read when the new one isn't set. Remove each pair once the rig
+/// sets the new name (tests/README.md, "Knobs").
+const OLD_NAMES: &[(&str, &str)] =
+    &[("CYBERCTF_TEST_BOX_SHARED_FOLDER", "CYBERCTF_TEST_SHARED_FOLDER"), ("CYBERCTF_TEST_PVE_RUNNER_HOME", "CYBERCTF_TEST_RUNNER_HOME")];
+
+/// Knob `name` from the environment (or its old name, [`OLD_NAMES`]); None when unset or blank.
+pub(crate) fn var(name: &str) -> Option<String> {
+    let set = |n: &str| std::env::var(n).ok().filter(|v| !v.trim().is_empty());
+    set(name).or_else(|| OLD_NAMES.iter().find(|(new, _)| *new == name).and_then(|(_, old)| set(old)))
+}
+
 /// Knob `name`, the test's input from the environment; None when it is unset or blank, said on
 /// the test's output ([`SKIPPED`]) so the test returning on it isn't taken for a pass.
 pub(crate) fn knob(name: &str) -> Option<String> {
-    let value = std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+    let value = var(name);
     if value.is_none() {
         println!("{SKIPPED} {name}");
     }
@@ -77,6 +89,8 @@ mod tests {
     #[test]
     fn an_unset_knob_is_none_and_said_as_the_runner_reads_it() {
         assert_eq!(knob("CYBERCTF_TEST_NEVER_SET_BY_ANYONE"), None);
+        // A renamed knob is read by its old name too, while the rig sets that one.
+        assert!(OLD_NAMES.iter().all(|(new, old)| new.starts_with("CYBERCTF_TEST_") && old.starts_with("CYBERCTF_TEST_") && new != old));
         // tests/integration/run.sh records a scenario as skipped on this line.
         assert!(include_str!("../../../tests/integration/run.sh").contains(&format!("KNOB_UNSET=\"{SKIPPED}\"")));
     }

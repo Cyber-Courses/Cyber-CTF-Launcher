@@ -173,7 +173,7 @@ pub(in crate::runtime) async fn public_ip() -> Result<String> {
     const RESOLVERS: [&str; 4] = ["https://checkip.amazonaws.com", "https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"];
     // Unit tests never reach the internet: a documentation address stands in. An integration test
     // (a lab in a real account, its firewall opened to this machine) asks for the real one.
-    if cfg!(test) && std::env::var_os("CYBERCTF_TEST_REAL_PUBLIC_IP").is_none() {
+    if cfg!(test) && std::env::var_os("CYBERCTF_TEST_CLOUD_REAL_IP").is_none() {
         return Ok("203.0.113.7".into());
     }
     public_ip_from(&RESOLVERS).await

@@ -8,7 +8,7 @@
 //! ```text
 //! CYBERCTF_TEST_VM_LAB=<a VM lab: one Linux machine publishing an HTTP port, with checks> \
 //! CYBERCTF_TEST_VM_PROVIDER=virtualbox \
-//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::vm::a_vm_lab_runs_end_to_end_through_the_runner
+//! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::vm_lab::a_vm_lab_runs_end_to_end_through_the_runner
 //! ```
 //!
 //! `CYBERCTF_TEST_VM_INPUTS` gives the launch's values (`NAME=value,…`).

@@ -2,7 +2,7 @@
 // should it run?" dialog, until its page says it runs; what runs checked on the engine itself
 // (its containers in Docker, its VMs in the hypervisor's own list), its published address
 // answering, then Stop & remove from the page (the system confirmation answered) and nothing of it
-// left. One form a run (`CYBERCTF_TEST_FORM`), so the runner gives each its own verdict:
+// left. One form a run (`CYBERCTF_TEST_LAB_FORM`), so the runner gives each its own verdict:
 //
 //   container    the lab as containers on this machine's engine
 //   docker-vm    its containers in one VM (the helper VM), on CYBERCTF_TEST_VM_PROVIDER
@@ -10,7 +10,7 @@
 //   vm           a VM lab's own VMs (CYBERCTF_TEST_CATALOGUE_VM_LAB), on CYBERCTF_TEST_VM_PROVIDER
 //
 // Needs the app signed in (a catalogue lab starts only so; a debug build reads its session from
-// ~/.cyberctf/dev-session.json, which the runner can place from CYBERCTF_TEST_SESSION). The
+// ~/.cyberctf/dev-session.json, which the runner can place from CYBERCTF_TEST_ACCOUNT_SESSION). The
 // labs' own checks, status and park/resume per form are the integration tests' (docker-lab,
 // docker-vm-lab, vm-lab, per-machine); an imported lab's start is labs' and launch-ui's.
 import {
@@ -32,7 +32,7 @@ import {
 } from "../lib/support.mjs";
 
 const r = results();
-const FORM = process.env.CYBERCTF_TEST_FORM || "container";
+const FORM = process.env.CYBERCTF_TEST_LAB_FORM || "container";
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || (process.platform === "darwin" ? "utm" : "");
 const FORMS = {
   container: { place: "container", lab: CATALOGUE_LAB, minutes: 20 },
@@ -41,7 +41,7 @@ const FORMS = {
   vm: { place: "vm", form: "one", lab: process.env.CYBERCTF_TEST_CATALOGUE_VM_LAB || "", minutes: 60 },
 };
 const want = FORMS[FORM];
-if (!want) r.skipAll(`unknown CYBERCTF_TEST_FORM "${FORM}" (container, docker-vm, per-machine or vm)`);
+if (!want) r.skipAll(`unknown CYBERCTF_TEST_LAB_FORM "${FORM}" (container, docker-vm, per-machine or vm)`);
 if (!want.lab) r.skipAll("no VM lab named: set CYBERCTF_TEST_CATALOGUE_VM_LAB to a catalogue VM lab's title");
 if (want.place === "container" && !dockerUp()) r.skipAll("no Docker engine answers here");
 if (want.place === "vm" && !PROVIDER) r.skipAll("no hypervisor named: set CYBERCTF_TEST_VM_PROVIDER (libvirt, virtualbox, hyperv, qemu, utm…)");
@@ -57,7 +57,7 @@ let proc;
 let b;
 try {
   ({ proc, b } = await openApp());
-  if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_SESSION to the runner)");
+  if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_ACCOUNT_SESSION to the runner)");
   if (!(await openLabFromList(b, want.lab))) r.skipAll(`the catalogue doesn't list "${want.lab}"`);
   if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) {
     console.log("the lab is up (or half up) from before: stopping it first");

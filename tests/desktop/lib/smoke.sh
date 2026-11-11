@@ -3,7 +3,7 @@
 # macOS/Linux. The app must be built with `--features wdio`.
 set -u
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
-BIN="${APP_BIN:-$HERE/src-tauri/target/debug/cyberctf-desktop}"
+BIN="${CYBERCTF_TEST_DESKTOP_APP:-$HERE/src-tauri/target/debug/cyberctf-desktop}"
 [ -x "$BIN" ] || { echo "app binary not found/executable: $BIN"; exit 2; }
 export TAURI_WEBDRIVER_PORT="${TAURI_WEBDRIVER_PORT:-4445}"
 

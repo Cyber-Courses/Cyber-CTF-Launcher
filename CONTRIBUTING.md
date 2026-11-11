@@ -46,8 +46,8 @@ without Git's `usr\bin`); their other assertions still run.
 | What CI runs, one verdict per step                                | `pnpm check`            |
 | Everything, the desktop end-to-end too: the gate before a release | `pnpm release-check`    |
 
-[tests/README.md](tests/README.md) says what each tier proves and needs, how to run it, and where a
-new test goes.
+[tests/README.md](tests/README.md) says what each tier proves and needs, how to run it, every knob,
+and where a new test goes.
 Every runner script takes `--help`.
 
 ## The gates

@@ -493,12 +493,12 @@ mod tests {
     }
 
     /// The bridge to a real VNC server (a lab VM's console): the RFB handshake through it, up to
-    /// the server's framebuffer size. `CYBERCTF_TEST_VNC=127.0.0.1:5900 cargo test --lib --
+    /// the server's framebuffer size. `CYBERCTF_TEST_SCREEN_VNC=127.0.0.1:5900 cargo test --lib --
     /// --ignored a_real_vnc_server`.
     #[tokio::test]
-    #[ignore = "needs a VNC server with no password: CYBERCTF_TEST_VNC=<loopback host:port>"]
+    #[ignore = "needs a VNC server with no password: CYBERCTF_TEST_SCREEN_VNC=<loopback host:port>"]
     async fn a_real_vnc_server_answers_through_the_bridge() {
-        let at: SocketAddr = std::env::var("CYBERCTF_TEST_VNC").expect("CYBERCTF_TEST_VNC").parse().unwrap();
+        let at: SocketAddr = std::env::var("CYBERCTF_TEST_SCREEN_VNC").expect("CYBERCTF_TEST_SCREEN_VNC").parse().unwrap();
         let bridge = Bridge::bind().await.unwrap();
         let token = bridge.arm(Target::Tcp(at));
         let (mut viewer, head) = connect(bridge.port(), &token, "tauri://localhost").await;

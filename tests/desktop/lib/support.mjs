@@ -1,7 +1,7 @@
 // Shared helpers for the native GUI e2e: launch the real app (built with `--features wdio`) so its
 // embedded WebDriver server comes up, connect a WebdriverIO session to it, drive the shell, and
 // tear everything down. macOS, Linux and Windows. Every script goes through here, so every script
-// honours APP_BIN (or CYBERCTF_BIN) and TAURI_WEBDRIVER_PORT; tests/desktop/run.sh sets both.
+// honours CYBERCTF_TEST_DESKTOP_APP and TAURI_WEBDRIVER_PORT; tests/desktop/run.sh sets both.
 import { remote } from "webdriverio";
 import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -10,9 +10,9 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** Path to the app binary: APP_BIN, else CYBERCTF_BIN, else the debug build. */
+/** Path to the app binary: CYBERCTF_TEST_DESKTOP_APP, else the debug build. */
 export function appBinary() {
-  const given = process.env.APP_BIN || process.env.CYBERCTF_BIN;
+  const given = process.env.CYBERCTF_TEST_DESKTOP_APP;
   if (given) return given;
   const ext = process.platform === "win32" ? ".exe" : "";
   return fileURLToPath(new URL(`../../../src-tauri/target/debug/cyberctf-desktop${ext}`, import.meta.url));

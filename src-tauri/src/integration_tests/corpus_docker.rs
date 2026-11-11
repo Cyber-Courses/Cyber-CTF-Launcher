@@ -1,15 +1,15 @@
 //! Representative 0.11.0 CTF labs on Docker through the Isothrum runner (the launcher's one local
 //! Docker path), end to end, for the release QA: for each lab folder named in
-//! `CYBERCTF_TEST_DOCKER_LABS` (comma-separated), start it with every input empty (the
+//! `CYBERCTF_TEST_CORPUS_LABS` (comma-separated), start it with every input empty (the
 //! development value), assert it reaches ready (running, every non-infra machine
 //! up), run the lab's own checks and assert they pass, park and resume it, then stop it and assert
 //! nothing of it is left. The lab's own checks are the solve/graded proof the brief allows.
 //!
 //! Opt-in (it needs Docker and the labs' own images); `tests/integration/run.sh` runs it as the
-//! `corpus-docker` scenario, skipped while `CYBERCTF_TEST_DOCKER_LABS` isn't set:
+//! `corpus-docker` scenario, skipped while `CYBERCTF_TEST_CORPUS_LABS` isn't set:
 //!
 //! ```text
-//! CYBERCTF_TEST_DOCKER_LABS=/path/to/lab-a,/path/to/lab-b \
+//! CYBERCTF_TEST_CORPUS_LABS=/path/to/lab-a,/path/to/lab-b \
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 corpus_docker_labs
 //! ```
 //!
@@ -108,9 +108,9 @@ async fn teardown(r: &Run, name: &str, f: &mut Vec<String>) {
 }
 
 #[tokio::test]
-#[ignore = "needs Docker and corpus lab folders (CYBERCTF_TEST_DOCKER_LABS)"]
+#[ignore = "needs Docker and corpus lab folders (CYBERCTF_TEST_CORPUS_LABS)"]
 async fn corpus_docker_labs_run_end_to_end_on_the_runner() {
-    let Some(labs) = super::support::knob("CYBERCTF_TEST_DOCKER_LABS") else { return };
+    let Some(labs) = super::support::knob("CYBERCTF_TEST_CORPUS_LABS") else { return };
     let dirs: Vec<&str> = labs.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
     let mut failures = Vec::new();
     for dir in dirs {

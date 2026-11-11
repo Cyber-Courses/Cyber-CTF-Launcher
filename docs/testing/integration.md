@@ -4,54 +4,59 @@ What only the real tools show: a lab on real Docker, Vagrant, hypervisors and cl
 One command runs it, one verdict per scenario:
 
 ```sh
-tests/integration/run.sh                       # the local tier (pnpm test:integration)
-TIERS="local aws" tests/integration/run.sh     # and the AWS tier: billed while it runs, ~20 minutes
-TIERS=server tests/integration/run.sh          # a lab on a Proxmox / ESXi host
-ONLY="box-docker box-vm" tests/integration/run.sh
+tests/integration/run.sh                                                 # the local tier (pnpm test:integration)
+CYBERCTF_TEST_INTEGRATION_TIERS="local aws" tests/integration/run.sh     # and the AWS tier: billed while it runs, ~20 minutes
+CYBERCTF_TEST_INTEGRATION_TIERS=server tests/integration/run.sh          # a lab on a Proxmox / ESXi host
+ONLY="attack-box-docker attack-box-vm" tests/integration/run.sh
 ```
 
 Each scenario is an opt-in Rust test (`#[ignore]`, so `cargo test` never runs it), given the
-knobs it needs; its output is in `tests/integration/.state/logs/<scenario>.log`, its checks (`ok:` / `FAILED:`) on
-the screen. The labs are Isoloom's examples (`ISOLOOM`, default `../isoloom`). Run it before a
-release that touches running labs, after a change to Isoloom or Isothrum, and after any field bug
-in the tiers below (then add the scenario that would have caught it).
+knobs it needs; its output is in `tests/integration/.state/logs/<scenario>.log`, its checks (`ok:`
+/ `FAILED:`) on the screen. The labs are Isoloom's examples (`CYBERCTF_TEST_ISOLOOM_DIR`, default
+`../isoloom`). Run it before a release that touches running labs, after a change to Isoloom or
+Isothrum, and after any field bug in the tiers below (then add the scenario that would have caught
+it).
 
 A scenario's lab is torn down (stopped, and what it left checked) whatever happens in its checks,
 a panic included: each runs through `support::scenario`, which records the panic as a failed
 check and runs the teardown after it. A lab one scenario leaves behind fails the ones after it (a
 UTM VM still registered made every later docker-vm import fail).
 
+A scenario's id is its file's name and, for a file of several, the form or lab it runs:
+`attack-box-vm` is `integration_tests/attack_box.rs` on the VM form.
+[tests/README.md](../../tests/README.md#knobs) lists every knob.
+
 ## Local tier
 
-Docker, and Vagrant with QEMU (`VM_PROVIDER`) and, on a Mac, UTM for a container lab in a VM
-(`DOCKER_VM_PROVIDER`). About 30 minutes, most of it Kali's install on the VM form.
+Docker, and Vagrant with QEMU (`CYBERCTF_TEST_VM_PROVIDER`) and, on a Mac, UTM for a container lab in a VM
+(`CYBERCTF_TEST_DOCKER_VM_PROVIDER`). About 30 minutes, most of it Kali's install on the VM form.
 
-| Scenario               | Proves                                                                                                                                                                                  | Guards against (found)                                                                                                                                                                                                                                                    |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `box-docker`           | the attack box added to a running Docker lab as a machine of it, reaching `web`, called `attackbox`, the shared folder seen both ways at `/shared`, removed                             | the box is the lab's: regenerated with it, the run updated, taken out by `--remove-orphans`; on an Arm Mac it runs Kali's arm64 image natively (it was emulated amd64)                                                                                                    |
-| `box-docker-vm`        | the same, the box a container inside the lab's VM, its shell through the VM                                                                                                             | the console into a service inside a VM (`vagrant ssh … docker exec` by its Compose label); the box native on the Arm helper VM                                                                                                                                            |
-| `box-vm`               | the same among a VM lab's, a Kali VM with `kali-linux-headless`                                                                                                                         | on an Arm Mac Kali has no Vagrant box: a native Debian made Kali. Its set-up keeps the VM's kernel (Kali's didn't fit the EFI partition), takes Kali's archive only, pinned (Debian's newer `tzdata` blocked Kali's), and lets renamed libraries overwrite (the t64 move) |
-| `docker-lab`           | a Docker lab's whole life: up, status, park and resume, checks, down, nothing left                                                                                                      |                                                                                                                                                                                                                                                                           |
-| `docker-lab-segmented` | the same with several networks and no published port                                                                                                                                    |                                                                                                                                                                                                                                                                           |
-| `docker-vm-lab`        | a container lab in one local VM, up to down, no VM left                                                                                                                                 | UTM's transient `-600` scripting error; macOS 27's port check; amd64 images on an Arm helper VM                                                                                                                                                                           |
-| `vm-lab`               | a VM lab up to down on the hypervisor, then no VM of it left there (asked of that hypervisor; one it can't ask fails the check)                                                         |                                                                                                                                                                                                                                                                           |
-| `per-machine`          | a container lab run as one VM per machine, the page's operations following that form                                                                                                    | the example's MariaDB refusing root over TCP (its seed's way in)                                                                                                                                                                                                          |
-| `launch-commands`      | a local lab launched and torn down through the app's own commands                                                                                                                       |                                                                                                                                                                                                                                                                           |
-| `corpus-docker`        | your own CTF lab folders (`CYBERCTF_TEST_DOCKER_LABS`, comma-separated) on Docker through the runner: up, ready, their checks, park and resume, down, nothing left; skipped while unset |                                                                                                                                                                                                                                                                           |
-| `replace-docker`       | a running Docker lab's folder is not replaced: an update and a re-import are refused while it runs, and go through once it is stopped                                                   | the update and the import asked the lab folder (Vagrant's `.vagrant`, `deployments/`), where the runner keeps nothing, so a run's files were swapped out from under it                                                                                                    |
-| `replace-docker-vm`    | the same for a container lab in a local VM                                                                                                                                              |                                                                                                                                                                                                                                                                           |
-| `replace-vm`           | the same for a VM lab                                                                                                                                                                   |                                                                                                                                                                                                                                                                           |
+| Scenario                 | Proves                                                                                                                                                                                  | Guards against (found)                                                                                                                                                                                                                                                    |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `attack-box-docker`      | the attack box added to a running Docker lab as a machine of it, reaching `web`, called `attackbox`, the shared folder seen both ways at `/shared`, removed                             | the box is the lab's: regenerated with it, the run updated, taken out by `--remove-orphans`; on an Arm Mac it runs Kali's arm64 image natively (it was emulated amd64)                                                                                                    |
+| `attack-box-docker-vm`   | the same, the box a container inside the lab's VM, its shell through the VM                                                                                                             | the console into a service inside a VM (`vagrant ssh … docker exec` by its Compose label); the box native on the Arm helper VM                                                                                                                                            |
+| `attack-box-vm`          | the same among a VM lab's, a Kali VM with `kali-linux-headless`                                                                                                                         | on an Arm Mac Kali has no Vagrant box: a native Debian made Kali. Its set-up keeps the VM's kernel (Kali's didn't fit the EFI partition), takes Kali's archive only, pinned (Debian's newer `tzdata` blocked Kali's), and lets renamed libraries overwrite (the t64 move) |
+| `docker-lab-hello-stack` | a Docker lab's whole life: up, status, park and resume, checks, down, nothing left                                                                                                      |                                                                                                                                                                                                                                                                           |
+| `docker-lab-segmented`   | the same with several networks and no published port                                                                                                                                    |                                                                                                                                                                                                                                                                           |
+| `docker-vm-lab`          | a container lab in one local VM, up to down, no VM left                                                                                                                                 | UTM's transient `-600` scripting error; macOS 27's port check; amd64 images on an Arm helper VM                                                                                                                                                                           |
+| `vm-lab`                 | a VM lab up to down on the hypervisor, then no VM of it left there (asked of that hypervisor; one it can't ask fails the check)                                                         |                                                                                                                                                                                                                                                                           |
+| `per-machine`            | a container lab run as one VM per machine, the page's operations following that form                                                                                                    | the example's MariaDB refusing root over TCP (its seed's way in)                                                                                                                                                                                                          |
+| `launch-commands`        | a local lab launched and torn down through the app's own commands                                                                                                                       |                                                                                                                                                                                                                                                                           |
+| `corpus-docker`          | your own CTF lab folders (`CYBERCTF_TEST_CORPUS_LABS`, comma-separated) on Docker through the runner: up, ready, their checks, park and resume, down, nothing left; skipped while unset |                                                                                                                                                                                                                                                                           |
+| `replace-docker`         | a running Docker lab's folder is not replaced: an update and a re-import are refused while it runs, and go through once it is stopped                                                   | the update and the import asked the lab folder (Vagrant's `.vagrant`, `deployments/`), where the runner keeps nothing, so a run's files were swapped out from under it                                                                                                    |
+| `replace-docker-vm`      | the same for a container lab in a local VM                                                                                                                                              |                                                                                                                                                                                                                                                                           |
+| `replace-vm`             | the same for a VM lab                                                                                                                                                                   |                                                                                                                                                                                                                                                                           |
 
 ## AWS tier
 
-The AWS CLI signed in (`aws login`), Terraform, `AWS_REGION` (default `eu-west-3`). The lab
+The AWS CLI signed in (`aws login`), Terraform, `CYBERCTF_TEST_AWS_REGION` (default `eu-west-3`). The lab
 runs in that account through the launcher's own cloud start and stop, then the account is
 checked for anything of it left (instances, networks, key pairs).
 
-| Scenario         | Proves                                                                                            | Guards against (found)                                                                                                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `box-aws-docker` | cloud-docker: the box a container in the lab's cloud VM, its shell over SSH into it, nothing left | the box wrapped in a VM of its own; a lab left behind                                                                                                                                               |
-| `box-aws-vm`     | cloud-vm: the box a Kali instance among the lab's, added by updating the run, nothing left        | Debian booted instead of Kali (the Marketplace AMI), a 20 GB disk under Kali's 25, the box as a target, the host name `kali`, set-up run again on every update, the instances replaced by an update |
+| Scenario                | Proves                                                                                            | Guards against (found)                                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `attack-box-aws-docker` | cloud-docker: the box a container in the lab's cloud VM, its shell over SSH into it, nothing left | the box wrapped in a VM of its own; a lab left behind                                                                                                                                               |
+| `attack-box-aws-vm`     | cloud-vm: the box a Kali instance among the lab's, added by updating the run, nothing left        | Debian booted instead of Kali (the Marketplace AMI), a 20 GB disk under Kali's 25, the box as a target, the host name `kali`, set-up run again on every update, the instances replaced by an update |
 
 A sign-in that runs out mid-run left a lab's network behind once (an empty VPC, its firewall and
 key): the launcher now asks the cloud's CLI before every change and refuses, saying to sign in
@@ -63,14 +68,14 @@ signed out (a failure under `STRICT=1`).
 A Proxmox or an ESXi host (`infra/test-servers/` makes a throwaway one), named by its knobs: the lab
 runs on it through the runner, as the launcher drives it, then nothing of it is left. Without
 every setting its test reads, its scenario is skipped, naming those not set (Proxmox:
-`CYBERCTF_TEST_PVE_ENDPOINT`, `_TOKEN`, `_NODE`, `_BRIDGE` and `CYBERCTF_TEST_RUNNER_HOME`, plus
+`CYBERCTF_TEST_PVE_ENDPOINT`, `_TOKEN`, `_NODE`, `_BRIDGE` and `CYBERCTF_TEST_PVE_RUNNER_HOME`, plus
 `_JUMP` when the lab bridge is internal to the node; ESXi: `CYBERCTF_TEST_ESXI_HOST` and
 `_PASSWORD`, plus `_DATASTORE` and `_NETWORK`).
 
-| Scenario      | Proves                                                                   |
-| ------------- | ------------------------------------------------------------------------ |
-| `proxmox-lab` | a VM lab on Proxmox: up, status, checks over SSH through the node, down  |
-| `esxi-lab`    | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down |
+| Scenario             | Proves                                                                   |
+| -------------------- | ------------------------------------------------------------------------ |
+| `server-lab-proxmox` | a VM lab on Proxmox: up, status, checks over SSH through the node, down  |
+| `server-lab-esxi`    | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down |
 
 ## Bare-machine tier (the test rig only)
 
@@ -87,7 +92,7 @@ them it returns at once.
 
 ## Not here yet
 
-- The attack box on a server: `box-*` on Proxmox, once a test host is back (a lab on ESXi has
+- The attack box on a server: `attack-box-*` on Proxmox, once a test host is back (a lab on ESXi has
   no attack box).
 - The shell as a person sees it: a console whose prompt went to its error output and showed
   nothing after Kali's MOTD (now a unit test in Isothrum: the shell is chosen first, then started

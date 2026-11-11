@@ -7,13 +7,13 @@
 //! Opt-in (they need Docker, a lab checkout and the attack-box image):
 //!
 //! ```text
-//! CYBERCTF_TEST_LAB=<invoice-portal-api, in Isoloom's current syntax> \
+//! CYBERCTF_TEST_INVOICE_LAB=<invoice-portal-api, in Isoloom's current syntax> \
 //! CYBERCTF_TEST_HELLO_LAB=<isoloom checkout>/examples/hello-stack \
 //! CYBERCTF_TEST_SEGMENTED_LAB=<isoloom checkout>/examples/segmented \
-//! cargo test --lib integration_tests::docker:: -- --ignored --nocapture --test-threads=1
+//! cargo test --lib integration_tests::docker_lab:: -- --ignored --nocapture --test-threads=1
 //! ```
 //!
-//! `CYBERCTF_TEST_ATTACK_BOX` is the attack image of a box the launcher adds (default: Kali's
+//! `CYBERCTF_TEST_BOX_IMAGE` is the attack image of a box the launcher adds (default: Kali's
 //! official image).
 
 use std::path::Path;
@@ -100,7 +100,7 @@ async fn exercise(r: &Run, e: &Expect, f: &mut Vec<String>) {
 async fn attack_box_up(r: &Run, e: &Expect, f: &mut Vec<String>) -> Option<Placed> {
     let run = isothrum::LabRun::docker(&r.home, &r.dir, &r.id).ok()?;
     let placed = Placed { host: Host::Local(run), dir: r.dir.clone(), target: crate::runtime::lab::Target::Docker, vm: false };
-    let image = std::env::var("CYBERCTF_TEST_ATTACK_BOX").unwrap_or_else(|_| crate::runtime::attack_machine::default_image().to_owned());
+    let image = std::env::var("CYBERCTF_TEST_BOX_IMAGE").unwrap_or_else(|_| crate::runtime::attack_machine::default_image().to_owned());
     add_box(&placed, &AppDirs::new(None, None), &image, &mut log(&r.id), f).await;
     box_reaches(&placed, e.target, "once up", f).await;
     Some(placed)
@@ -217,7 +217,7 @@ async fn segmented_runs_end_to_end() {
 /// claims the player's evidence in a set-up job), checks of its own (an HTTP probe and a script).
 /// `env`: its inputs at launch.
 fn invoice_portal(env: &'static [(&'static str, &'static str)]) -> Expect {
-    Expect { lab_var: "CYBERCTF_TEST_LAB", target: "web", networks: &["lab"], services: &["portal=web"], published: true, env }
+    Expect { lab_var: "CYBERCTF_TEST_INVOICE_LAB", target: "web", networks: &["lab"], services: &["portal=web"], published: true, env }
 }
 
 #[tokio::test]
