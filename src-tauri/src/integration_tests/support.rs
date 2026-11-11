@@ -213,13 +213,18 @@ pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &m
         Ok(name) => name,
         Err(err) => return check(false, format!("the attack box's name reads, {when}: {err}"), f),
     };
-    let probe = format!("bash -c \"exec 3<>/dev/tcp/{target}/80 && echo reached; hostname\"");
+    // On a failure it says why (the connection's error, whether the name has an address, the
+    // routes): a bare "not reached" left a libvirt run's failure undiagnosable. The connection is
+    // made in a subshell, as a failed `exec` redirection ends the shell it runs in.
+    let probe = format!(
+        "bash -c \"(exec 3<>/dev/tcp/{target}/80) 2>&1 && echo reach-ok || {{ echo reach-failed; getent hosts {target} || echo {target} has no address; ip -4 route; }}; hostname\""
+    );
     let reached = match placed.shell_command().await {
         Ok(console) => in_box(&console, &probe).await,
         Err(err) => Err(err),
     };
     check(
-        reached.as_deref().is_ok_and(|o| o.contains("reached") && o.contains(&name)),
+        reached.as_deref().is_ok_and(|o| o.lines().any(|l| l.trim() == "reach-ok") && o.contains(&name)),
         format!("a shell in the attack box reaches {target}:80 and is called {name}, {when} ({reached:?})"),
         f,
     );
