@@ -175,16 +175,18 @@ describe("NetworkDiagram", () => {
           machine("b", { state: "poweroff" }),
           machine("c", { state: "" }),
           machine("d", { state: "restarting" }),
+          // Removed outside the app while its lab runs.
+          machine("f", { state: "absent" }),
           machine("e", { ip: "", interfaces: [{ network: "default", ip: "" }] }),
         ]}
       />,
     );
     await settle();
     const states = Array.from(document.querySelectorAll(".running")).map((n) => n.textContent.trim());
-    expect(states).toEqual(["paused", "off", "stopped", "restarting", "running"]);
+    expect(states).toEqual(["paused", "off", "stopped", "restarting", "gone", "running"]);
     // Only a running machine's dot is the live green: the others are idle (grey).
     const tones = Array.from(document.querySelectorAll(".running")).map((n) => n.getAttribute("data-state"));
-    expect(tones).toEqual(["idle", "idle", "idle", "idle", "running"]);
+    expect(tones).toEqual(["idle", "idle", "idle", "idle", "idle", "running"]);
     // No address yet: says so instead of a blank.
     expect(screen.getByText(/resolving/i)).toBeTruthy();
   });

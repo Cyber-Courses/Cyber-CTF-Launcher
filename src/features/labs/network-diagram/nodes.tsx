@@ -203,9 +203,11 @@ function ComputerNode({ data }: NodeProps<Node<ComputerData>>) {
 
 export const nodeTypes = { zone: ZoneNode, bridge: BridgeNode, attacker: AttackerNode, computer: ComputerNode, hostport: HostPortNode, uplink: UplinkNode };
 
-/** A machine's state as a word: Vagrant's `saved`/`paused` and `poweroff`, Docker's `exited`. */
+/** A machine's state as a word: Vagrant's `saved`/`paused` and `poweroff`, Docker's `exited`, and
+ *  `absent` for one removed outside the app while its lab runs. */
 function stateLabel(t: T, state: string, running: boolean): string {
   if (running) return t("diagram.states.running");
+  if (state === "absent") return t("diagram.states.gone");
   if (state === "saved" || state === "paused") return t("diagram.states.paused");
   if (state === "poweroff" || state === "exited" || state === "stopped") return t("diagram.states.off");
   return state || t("diagram.states.stopped");

@@ -35,7 +35,8 @@
     "running": "running",
     "paused": "paused",
     "off": "off",
-    "stopped": "stopped"
+    "stopped": "stopped",
+    "gone": "gone"
   },
   "services": {
     "database": "database",

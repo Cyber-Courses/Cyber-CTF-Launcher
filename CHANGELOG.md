@@ -283,6 +283,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   job file removed, and the failure says to stop the lab to clear what it left. Isothrum's runner
   now also takes a run whose operation's process died as failed, so its next start clears what
   it left instead of saying the lab already runs.
+- **A machine removed outside the app is shown gone.** A container removed with `docker rm -f`
+  (or a VM deleted in its hypervisor) while its lab ran disappeared from the lab page, which drew
+  a healthy lab without it and offered no way back; it is now shown `gone`, with the page's health
+  banner and its reset. A resume no longer brings the lab back without it (Isothrum): it says
+  which machines are gone, and a start again builds the lab afresh.
 - **A slow download of a container lab's images no longer reads as Docker running out of
   resources.** Starting a lab with the attack box (an 11 GB image) on a slow connection was stopped
   with "The lab's `up` step didn't finish within 30 minutes … check the resources of Docker, the

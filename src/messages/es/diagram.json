@@ -35,7 +35,8 @@
     "running": "en ejecución",
     "paused": "en pausa",
     "off": "apagada",
-    "stopped": "detenida"
+    "stopped": "detenida",
+    "gone": "eliminada"
   },
   "services": {
     "database": "base de datos",

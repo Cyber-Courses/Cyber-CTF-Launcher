@@ -35,7 +35,8 @@
     "running": "rodando",
     "paused": "pausada",
     "off": "desligada",
-    "stopped": "parada"
+    "stopped": "parada",
+    "gone": "removida"
   },
   "services": {
     "database": "banco de dados",

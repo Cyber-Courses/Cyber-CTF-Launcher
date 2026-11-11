@@ -35,7 +35,8 @@
     "running": "実行中",
     "paused": "一時停止",
     "off": "オフ",
-    "stopped": "停止"
+    "stopped": "停止",
+    "gone": "削除済み"
   },
   "services": {
     "database": "データベース",

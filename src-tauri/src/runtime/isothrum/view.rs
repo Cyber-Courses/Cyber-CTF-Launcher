@@ -10,15 +10,18 @@ use super::super::{Interface, LabStatus, Machine, Network, Park, Place, Port, Se
 
 /// The run as the lab page shows it. Running while any of its target machines runs (a lab whose
 /// one-shot jobs finished is up); parked as the player chose (`marked`, the lab's mark), else
-/// shut down; its URL is its entry output, once it runs.
+/// shut down; its URL is its entry output, once it runs. Its machines are those there; while it
+/// runs, a machine of the lab that is gone (removed outside the app) is shown too, `absent`, so
+/// the page says it is down and offers a way back rather than drawing the lab without it.
 pub(super) fn lab_status(manifest: &Manifest, status: &Status, marked: Option<Park>) -> LabStatus {
     let running = runs(status);
     let native = crate::screen::native::installed_here(status.native.as_ref());
+    let shown = |m: &&MachineStatus| m.state != MachineState::Absent || (running && m.role == Role::Member);
     let url = status.outputs.iter().find(|o| o.role == OutputRole::Entry && !o.sensitive).and_then(|o| o.value.clone()).filter(|_| running);
     LabStatus {
         running,
         parked: (status.state == RunState::Parked && !running).then(|| marked.unwrap_or(Park::Shutdown)),
-        machines: status.machines.iter().filter(|m| m.state != MachineState::Absent).map(|m| machine(manifest, m, native.as_deref())).collect(),
+        machines: status.machines.iter().filter(shown).map(|m| machine(manifest, m, native.as_deref())).collect(),
         networks: status.networks.iter().map(|n| Network { name: n.name.clone(), subnet: n.cidr.clone(), internal: !n.internet }).collect(),
         url,
         place: Some(Place::Container),

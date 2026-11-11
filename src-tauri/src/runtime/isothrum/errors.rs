@@ -65,6 +65,10 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
             Error::Invalid(format!("Hyper-V needs administrator rights, and they couldn't be had ({reason}). Start the lab again and accept the prompt."))
         }
         RunnerError::NotReady { detail, .. } => Error::Invalid(format!("The lab started, but didn't become ready: {detail}")),
+        RunnerError::PartlyGone { machines, .. } => Error::Invalid(format!(
+            "Some of this lab's machines are gone ({}): they were removed outside Cyber CTF, so it can't resume as it was. Start it again for a fresh copy.",
+            machines.join(", ")
+        )),
         RunnerError::SecretMissing { name } => {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
         }
@@ -231,6 +235,16 @@ mod tests {
         assert_eq!(said(down).0, Code::DockerNotRunning);
         let denied = RunnerError::ToolFailed { step: "tools".into(), reason: "`docker` doesn't answer: permission denied while trying to connect".into() };
         assert!(matches!(said(denied).0, Code::DockerDenied { .. } | Code::DockerDeniedWindows { .. }));
+    }
+
+    #[test]
+    fn a_resume_with_machines_removed_outside_names_them_and_says_to_start_again() {
+        let e = from_runner(RunnerError::PartlyGone { run: "cyberctf-web".into(), machines: vec!["web".into(), "db".into()] });
+        assert_eq!(
+            e.to_string(),
+            "Some of this lab's machines are gone (web, db): they were removed outside Cyber CTF, so it can't resume as it was. Start it again for a fresh copy."
+        );
+        assert!(!refused_before_acting(&e), "the run was recorded failed: the next start clears it");
     }
 
     #[test]

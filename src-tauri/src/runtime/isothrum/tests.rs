@@ -509,3 +509,32 @@ fn the_launchers_vagrant_providers_are_isoloom_s_by_the_same_name_and_plugin() {
         assert_eq!(super::vagrant_plugin(cloud), None, "{cloud:?}");
     }
 }
+
+/// Two machines on one network, both the lab's own: one can go while the other runs.
+const TWO: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    app: { image: nginx:1.27 }\n  db:\n    networks: { lab: 11 }\n    app: { image: redis:7-alpine }\n";
+
+#[test]
+fn a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out() {
+    // Regression: a container removed outside the app (`docker rm -f`) vanished from the lab page,
+    // so the page drew a healthy lab without it and offered no way back.
+    let home = Home::new("gone", TWO, &[], lab::Target::Docker);
+    let manifest = isoloom_manifest::parse(&std::fs::read_to_string(lab::docker_manifest(&home.dir)).unwrap()).unwrap();
+    let status = |web: &str, db: &str| -> Status {
+        serde_json::from_value(serde_json::json!({
+            "state": "failed", "provider": null, "networks": [], "outputs": [], "message": null,
+            "machines": [
+                { "name": "web", "role": "member", "state": web, "addresses": {}, "published": [] },
+                { "name": "db", "role": "member", "state": db, "addresses": {}, "published": [] },
+            ],
+        }))
+        .unwrap()
+    };
+    let shown = view::lab_status(&manifest, &status("absent", "running"), None);
+    assert!(shown.running);
+    let words: Vec<(&str, &str)> = shown.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect();
+    assert_eq!(words, [("web", "absent"), ("db", "running")], "the gone machine is there, down");
+    // A lab that doesn't run shows only what is there.
+    assert!(view::lab_status(&manifest, &status("absent", "absent"), None).machines.is_empty());
+    let stopped = view::lab_status(&manifest, &status("absent", "stopped"), None);
+    assert_eq!(stopped.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["db"]);
+}
