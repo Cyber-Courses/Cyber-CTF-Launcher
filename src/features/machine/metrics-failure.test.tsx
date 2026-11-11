@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { render, renderHook, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { UsageStats } from "@/features/home/home-sections";
 import { StatCard } from "@/features/machine/machine-parts";
 import { useMachineMetrics } from "@/features/machine/use-machine-metrics";
@@ -13,9 +13,13 @@ import { flush } from "@/test/ui";
 describe("useMachineMetrics", () => {
   it("reports a failed read, with no metrics and an empty history", async () => {
     installTauri({ machine_metrics: rejects({ code: "other", message: "sysinfo unavailable" }) });
+    const said = vi.spyOn(console, "debug").mockImplementation(() => {});
     const { result } = renderHook(() => useMachineMetrics(60_000));
     await flush();
     expect(result.current.failed).toBe(true);
+    // Said in the log, as every quiet failure is, not swallowed.
+    expect(said).toHaveBeenCalledWith(expect.stringContaining("usage figures"), expect.objectContaining({ message: "sysinfo unavailable" }));
+    said.mockRestore();
     expect(result.current.metrics).toBeNull();
     expect(result.current.history).toEqual({ cpu: [], mem: [], disk: [] });
   });

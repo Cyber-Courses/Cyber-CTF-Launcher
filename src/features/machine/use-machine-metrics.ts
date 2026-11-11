@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { machineMetrics, type MachineMetrics } from "@/lib/tauri";
 import { usePoll } from "@/lib/use-poll";
+import { ignore } from "@/lib/failure";
 import { appendUsage, type UsageHistory } from "@/features/machine/machine-status";
 
 /**
@@ -22,7 +23,9 @@ export function useMachineMetrics(ms: number, { serial = false }: { serial?: boo
       setHistory((h) => appendUsage(h, m));
       setFailed(false);
     },
-    onError: () => {
+    // Polled every few seconds: said quietly, as every poll's failure is, and shown as unavailable.
+    onError: (e) => {
+      ignore("the usage figures read as unavailable; the next read may answer")(e);
       setFailed(true);
     },
   });
