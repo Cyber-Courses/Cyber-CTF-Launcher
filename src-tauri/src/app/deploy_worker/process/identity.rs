@@ -150,6 +150,10 @@ mod tests {
         assert_ne!(other, me);
         child.kill().ok();
         child.wait().unwrap();
-        assert_eq!(of(child.id()), None, "a reaped child is gone");
+        // Windows keeps an exited process's record while a handle to it is open, and `Child`
+        // holds one until it drops: gone only once nothing holds it.
+        let pid = child.id();
+        drop(child);
+        assert_eq!(of(pid), None, "a reaped child is gone");
     }
 }
