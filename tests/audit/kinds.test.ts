@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { PARSERS, parseProbe, readSnapshot } from "./inventory.ts";
 import { KINDS } from "./kinds.ts";
+import { globRegExp } from "./scope.ts";
 
 // The leftover audit's kinds, held together: its listing (kinds.ts), its parsers, the kinds the
 // three snapshot scripts record and the contract (tests/leftovers.md); then snapshot.sh run for
@@ -157,6 +158,20 @@ describe("what the guided setup leaves (setup-leaves.tsv)", () => {
       expect(r.name, r.item).not.toBe("");
       expect(r.reason, r.item).not.toBe("");
     }
+    // What Docker Engine 29 leaves on Linux besides its own chains (ubuntu2404-arm64-bare's
+    // setup-docker audit): iptables-nft's raw table and its base chains.
+    const docker = rows.filter((r) => r.item === "docker" && r.os === "linux");
+    for (const [kind, name] of [
+      ["nft-table", "table ip raw"],
+      ["iptables-rule", "raw :PREROUTING ACCEPT"],
+      ["iptables-rule", "raw :OUTPUT ACCEPT"],
+      ["nft-table", "table ip nat"],
+      ["iptables-rule", "filter :FORWARD DROP"],
+    ])
+      expect(
+        docker.some((r) => r.kind === kind && globRegExp(r.name).test(name)),
+        `${kind} ${name}`,
+      ).toBe(true);
     // The paths the setup sets up each leave something: the engine, each hypervisor, the launcher.
     for (const item of ["launcher", "docker", "libvirt", "qemu", "virtualbox", "hyperv", "wsl"])
       expect(

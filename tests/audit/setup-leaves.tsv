@@ -16,8 +16,11 @@ docker	linux	iptables-rule	* docker0 *	the Docker engine's masquerade and forwar
 docker	linux	iptables-rule	filter :FORWARD DROP	the Docker engine sets the FORWARD chain's policy to DROP
 docker	linux	iptables-rule	filter :* ACCEPT	the filter table's base chains, which the engine's first rule creates on a machine without any
 docker	linux	iptables-rule	nat :* ACCEPT	the nat table's base chains, which the engine's first rule creates on a machine without any
+docker	linux	iptables-rule	raw :PREROUTING ACCEPT	the raw table's base chains: Docker Engine 29 drops traffic to its containers' addresses from outside their bridge there
+docker	linux	iptables-rule	raw :OUTPUT ACCEPT	the same table's other base chain
 docker	linux	nft-table	table ip filter	the filter table iptables-nft creates for the Docker engine's rules
 docker	linux	nft-table	table ip nat	the nat table iptables-nft creates for the Docker engine's rules
+docker	linux	nft-table	table ip raw	the raw table iptables-nft creates for Docker Engine 29's rules
 docker	linux	nft-table	table ip6 filter	the same for IPv6
 docker	linux	nft-table	table ip6 nat	the same for IPv6
 docker	linux	nft-table	table * docker*	the Docker engine's own nftables tables (its nftables firewall backend)

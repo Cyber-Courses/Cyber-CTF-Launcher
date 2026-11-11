@@ -107,6 +107,10 @@ mod tests {
             ("iptables-rule", "filter :FORWARD DROP"),
             ("nft-table", "table ip nat"),
             ("nft-table", "table * docker*"),
+            // Docker Engine 29's raw table (ubuntu2404-arm64-bare's setup-docker audit).
+            ("nft-table", "table ip raw"),
+            ("iptables-rule", "raw :PREROUTING ACCEPT"),
+            ("iptables-rule", "raw :OUTPUT ACCEPT"),
             FOLDER,
         ] {
             assert!(linux.contains(&pair(kind, name)), "docker on linux lacks {kind} {name}: {linux:?}");
