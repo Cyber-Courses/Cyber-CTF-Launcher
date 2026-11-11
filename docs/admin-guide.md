@@ -193,11 +193,11 @@ reach whatever their own definitions name.
 When the user installs a tool from the Machine page or the first-run setup, the launcher runs the
 OS's package manager or the vendor's installer:
 
-| OS      | How                                                                                                                                                                                                                                        | Hosts                                                                                                                                                                                                                                                                                                                            |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS   | Homebrew formulae and casks (`docker-desktop`, `vagrant`, `virtualbox`, `utm`, `qemu`, `hashicorp/tap/terraform`, `awscli`, `azure/azure-cli` tap's `azure-cli-preview`, `google-cloud-sdk`)                                               | Homebrew (`github.com`, `ghcr.io`, `formulae.brew.sh`) and each cask's vendor download host                                                                                                                                                                                                                                      |
-| Windows | `winget install` (`Docker.DockerDesktop`, `Hashicorp.Vagrant`, `Hashicorp.Terraform`, `Oracle.VirtualBox`, `SoftwareFreedomConservancy.QEMU`, `Amazon.AWSCLI`, `Microsoft.AzureCLI`, `Google.CloudSDK`); `wsl --install --no-distribution` | winget's sources and each package's vendor download host                                                                                                                                                                                                                                                                         |
-| Linux   | apt, through `pkexec`                                                                                                                                                                                                                      | the distribution's mirrors; `download.docker.com`; `apt.releases.hashicorp.com`; `download.virtualbox.org`, `www.virtualbox.org`; `awscli.amazonaws.com`; `packages.microsoft.com` (Azure CLI); `packages.cloud.google.com` (Google Cloud CLI). Every repository's key is pinned by fingerprint; no vendor install script is run |
+| OS      | How                                                                                                                                                                                                                                                                                                                                                          | Hosts                                                                                                                                                                                                                                                                                                                            |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS   | Homebrew formulae and casks (`docker-desktop`, `vagrant`, `virtualbox`, `utm`, `qemu`, `hashicorp/tap/terraform`, `awscli`, `azure/azure-cli` tap's `azure-cli-preview`, `google-cloud-sdk`)                                                                                                                                                                 | Homebrew (`github.com`, `ghcr.io`, `formulae.brew.sh`) and each cask's vendor download host                                                                                                                                                                                                                                      |
+| Windows | `winget install` (`Docker.DockerDesktop`, `Hashicorp.Vagrant`, `Hashicorp.Terraform`, `Oracle.VirtualBox`, `SoftwareFreedomConservancy.QEMU`, `Amazon.AWSCLI`, `Microsoft.AzureCLI`, `Google.CloudSDK`); `wsl --install --no-distribution`; **Turn on Hyper-V**: `dism.exe /Online /Enable-Feature /FeatureName:Microsoft-Hyper-V /All /NoRestart`, elevated | winget's sources and each package's vendor download host                                                                                                                                                                                                                                                                         |
+| Linux   | apt, through `pkexec`                                                                                                                                                                                                                                                                                                                                        | the distribution's mirrors; `download.docker.com`; `apt.releases.hashicorp.com`; `download.virtualbox.org`, `www.virtualbox.org`; `awscli.amazonaws.com`; `packages.microsoft.com` (Azure CLI); `packages.cloud.google.com` (Google Cloud CLI). Every repository's key is pinned by fingerprint; no vendor install script is run |
 
 On Linux every vendor repository's key (Docker's, HashiCorp's, VirtualBox's, Microsoft's for the
 Azure CLI, Google's for the Google Cloud CLI) is checked against a fingerprint pinned in the app,
@@ -331,6 +331,12 @@ launcher never asks for or stores a password itself.
 - **Turn on WSL 2** (needed by Docker Desktop) runs `wsl --install --no-distribution` elevated,
   which turns on the WSL and Virtual Machine Platform features; the launcher then offers to
   restart Windows and adds a one-time `RunOnce` entry under `HKCU` to reopen itself after it.
+- **Turn on Hyper-V** (the setup's VM step, and the Machine page) runs
+  `dism.exe /Online /Enable-Feature /FeatureName:Microsoft-Hyper-V /All /NoRestart` elevated (a UAC
+  prompt), which turns on the Hyper-V feature and its management tools; it takes effect after a
+  restart. It is refused on Windows Home, which has no Hyper-V. Turn it off again from **Turn
+  Windows features on or off**, or with `dism.exe /Online /Disable-Feature
+/FeatureName:Microsoft-Hyper-V-All`.
 - **Allow my account** (Settings > Labs > Hypervisor) adds the user to the local
   **Hyper-V Administrators** group (SID `S-1-5-32-578`), which lets them manage every VM on the
   machine. Without it, each batch of Hyper-V commands asks for administrator rights.
@@ -343,11 +349,19 @@ launcher never asks for or stores a password itself.
   of `docker` can control the Docker daemon, which runs as root: **this is equivalent to root
   access** on the machine. Install Docker yourself (rootless, or without the group) where that is
   not acceptable.
-- Installing Docker (where Docker's repository serves the release), Terraform, VirtualBox, the
-  Azure CLI or the Google Cloud CLI adds the vendor's apt repository, for this machine's architecture, and its key, checked against a
-  pinned fingerprint: `/etc/apt/sources.list.d/<name>.list` with the key
-  `/etc/apt/keyrings/<name>.gpg`, `<name>` being `docker`, `hashicorp`, `virtualbox`, `azure-cli`
-  or `google-cloud-sdk`. (Earlier versions put some of the keys under `/usr/share/keyrings/`.)
+- **Installing libvirt adds the user to the `libvirt` group**, and to `kvm` where the distribution
+  has one (`usermod -aG libvirt <user>`, `usermod -aG kvm <user>`), so Vagrant reaches
+  `qemu:///system` and `/dev/kvm` without root. Members of `libvirt` can create, change and remove
+  every VM of the system's libvirt, and define VMs that read the host's files: treat it like root
+  access as well. It also installs `virtiofsd` (for the attack box's shared folder) and what the
+  `vagrant-libvirt` plugin builds against (`libvirt-dev`, `build-essential`, `pkg-config`,
+  `ruby-dev`), and `virt-manager`.
+- Installing Docker (where Docker's repository serves the release), Terraform, Vagrant, the Vagrant
+  VMware Utility, VirtualBox, the Azure CLI or the Google Cloud CLI adds the vendor's apt
+  repository, for this machine's architecture, and its key, checked against a pinned fingerprint:
+  `/etc/apt/sources.list.d/<name>.list` with the key `/etc/apt/keyrings/<name>.gpg`, `<name>` being
+  `docker`, `hashicorp` (Terraform, Vagrant and the Vagrant VMware Utility), `virtualbox`,
+  `azure-cli` or `google-cloud-sdk`. (Earlier versions put some of the keys under `/usr/share/keyrings/`.)
   Removing a tool from Settings > Maintenance leaves its repository and key in place.
 - On Ubuntu, Debian, Raspbian and the distributions built on them, Docker comes from Docker's
   repository for the Ubuntu or Debian release the system is built on. Only where that repository
@@ -464,6 +478,8 @@ rm -rf ~/.local/share/org.cyberctf.desktop ~/.cache/org.cyberctf.desktop \
   ~/.local/share/applications/cyberctf-desktop-handler.desktop
 secret-tool clear service org.cyberctf.desktop
 sudo gpasswd -d "$USER" docker              # if the launcher added the user to docker
+sudo gpasswd -d "$USER" libvirt             # if the launcher installed libvirt
+sudo gpasswd -d "$USER" kvm                 # likewise, where the distribution has a kvm group
 ```
 
 On every platform `~/CyberCTF/shared` (the folder shared with the attack box) holds the user's own
