@@ -13,8 +13,9 @@ You need:
 
 - Node 22.12 or a later 22, 24, 25, or 26 and later (`engines` in `package.json`:
   `^22.12.0 || ^24.0.0 || ^25.0.0 || >=26.0.0`); `.nvmrc` says 22, the one CI and the release
-  check use (`pnpm release-check` stops on another major), and pnpm (the version in
-  `packageManager`; `corepack enable` installs it);
+  check use (`pnpm release-check` stops on another major), and the major `@types/node` stays on
+  (Dependabot ignores later ones in `.github/dependabot.yml`: move both with `.nvmrc`); and pnpm
+  (the version in `packageManager`; `corepack enable` installs it);
 - Rust stable (the crate's floor is `rust-version` in `src-tauri/Cargo.toml`);
 - the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. On Windows that is
   **Visual Studio 2022 Build Tools** with the _Desktop development with C++_ workload; without it

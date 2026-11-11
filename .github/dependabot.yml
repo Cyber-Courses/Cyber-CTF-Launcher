@@ -30,6 +30,12 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    ignore:
+      # @types/node follows the Node the app runs on (.nvmrc, CI and the release: 22), not the
+      # newest Node: a later major's types let code call APIs a Node 22 doesn't have. Raise this
+      # bound with .nvmrc.
+      - dependency-name: "@types/node"
+        versions: [">=23"]
     groups:
       tauri:
         patterns: ["@tauri-apps/*"]
