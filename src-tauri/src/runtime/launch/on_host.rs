@@ -18,10 +18,7 @@ pub(super) async fn start_on_server(
     log: &mut impl FnMut(String),
 ) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
-    // Refuse before any side effect (the secret, GCP, the marker).
-    if per_machine {
-        per_machine_runs_on(server::host_provider(dirs, host)?)?;
-    }
+    // The per-machine form was checked with the destination (`destination`), before the download.
     let conn = server::connection(dirs, host)?;
     // GCP labs run in the account's labs project: make sure it exists (one free billing slot).
     if conn.provider == Provider::Gcp {

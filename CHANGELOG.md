@@ -252,8 +252,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   controls the lab page does.
 - **A lab check that couldn't run says so.** When a machine of a running lab went down, a check
   that failed to run (the runner busy, the lab out of reach) read as the lab no longer solvable.
-- **A launch with nowhere to run is refused before anything is downloaded**, saying why in the
-  app's language: a cloud lab with no account picked, a VM lab with no hypervisor here.
+- **A launch with nowhere to run is refused before anything is downloaded**, saying why: a
+  cloud lab with no account picked, a VM lab with no hypervisor here (both in the app's
+  language), one VM per machine with no hypervisor here or on a server rather than a cloud
+  account, ESXi or Proxmox picked with no host, and a start on a cloud account the policy turns
+  off (`DisableCloudLaunches`).
 - **A failure read back after a reload gets its hint.** A deploy that ran through a window reload
   or a relaunch is known by its error's code, so its hint (a port taken, Docker not running, …)
   shows whatever the error's wording.

@@ -21,12 +21,12 @@ mod port_holder;
 use local::low_memory_warning;
 use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
 pub(in crate::runtime) use on_host::esxi_run;
-use on_host::start_on_server;
 #[cfg(test)]
 pub(crate) use on_host::{CloudStart, start_cloud_run};
 #[cfg(test)]
-use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, per_machine_runs_on, public_ip_from, record_cloud_form};
+use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from, record_cloud_form};
 pub(super) use on_host::{check_aws_budget, public_ip};
+use on_host::{per_machine_runs_on, start_on_server};
 pub(super) use on_host::{runner_runs_on, server_place};
 
 /// Where a lab is started: on this machine (with a local `provider`, and `per_machine_vm`
@@ -90,13 +90,15 @@ impl Placement {
 /// - Cloud-services labs (`Runtime::Cloud`) run only on a cloud account `host`.
 ///
 /// The caller holds the lab lock (`lock_lab`): a launch holds it from the download on. A start
-/// the administrator's policy turns off is refused before anything changes ([`policy_allows`]).
+/// with nowhere to run, or that the administrator's policy turns off, is refused before anything
+/// changes ([`destination`], then [`privileged_allowed`]).
 pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, env: &[(String, String)], mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
-    let Destination { provider, host, per_machine_vm, docker_context, default_ports } = to;
+    let place = destination(dirs, runtime, &to)?;
+    let Destination { host, per_machine_vm, docker_context, default_ports, .. } = to;
     let inputs = Inputs { values: env, default_ports };
     let _deploy = DeployGuard::new(id, Action::Launch);
-    policy_allows(dirs, runtime, host, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
+    privileged_allowed(|| Ok(lab::is_privileged(&lab::load(dir)?)))?;
     // A lab runs in one place: starting it here (or on another host) while its run is still up
     // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud
     // lab would keep billing).
@@ -108,12 +110,11 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
     if runtime == Runtime::Cloud {
         return cloud_services::start(dirs, lab, host, env, &mut log).await;
     }
-    match host {
-        None => start_here(dirs, lab, local_run(runtime, provider, per_machine_vm)?, docker_context, inputs, &mut log).await,
-        // On a cloud account the per-machine form is cloud-vm (one instance per machine); on a
-        // server (ESXi, Proxmox) the lab runs as the catalogue says, so `start_on_server` refuses
-        // the per-machine pick there. The dispatch on the provider is its to make (the connection).
-        Some(host) => start_on_server(dirs, lab, (host, per_machine_vm), inputs, &mut log).await,
+    match place {
+        Place::Here(run) => start_here(dirs, lab, run, docker_context, inputs, &mut log).await,
+        // On a cloud account the per-machine form is cloud-vm (one instance per machine). The
+        // dispatch on the provider is `start_on_server`'s to make (the connection).
+        Place::Host(host) => start_on_server(dirs, lab, (host, per_machine_vm), inputs, &mut log).await,
     }
 }
 
@@ -121,10 +122,24 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
 /// a cloud-services lab always runs on one), or of a lab with a privileged machine
 /// (`RefusePrivilegedLabs`; `privileged` reads the lab's spec, only when that switch is on).
 pub(crate) fn policy_allows(dirs: &AppDirs, runtime: Runtime, host: Option<&str>, privileged: impl FnOnce() -> Result<bool>) -> Result<()> {
+    cloud_allowed(dirs, runtime, host)?;
+    privileged_allowed(privileged)
+}
+
+/// [`policy_allows`]' first half: refused under `DisableCloudLaunches` when the start runs on a
+/// cloud account. Needs no spec, so it is asked before the download ([`check_destination`]).
+fn cloud_allowed(dirs: &AppDirs, runtime: Runtime, host: Option<&str>) -> Result<()> {
     let policy = crate::platform::policy::current();
     if policy.is_on(Key::DisableCloudLaunches) && on_cloud(dirs, runtime, host)? {
         return policy.check(Key::DisableCloudLaunches);
     }
+    Ok(())
+}
+
+/// [`policy_allows`]' second half: refused under `RefusePrivilegedLabs` when `privileged` (the
+/// lab's spec, read only when that switch is on) says a machine is privileged.
+fn privileged_allowed(privileged: impl FnOnce() -> Result<bool>) -> Result<()> {
+    let policy = crate::platform::policy::current();
     if policy.is_on(Key::RefusePrivilegedLabs) && privileged()? {
         return policy.check(Key::RefusePrivilegedLabs);
     }
@@ -288,17 +303,37 @@ async fn recheck_instance(dir: &Path, id: &str, log: &mut impl FnMut(String)) ->
     Ok(())
 }
 
-/// Whether a `runtime` lab can start at `to` at all, before anything is downloaded for it: a
-/// cloud-services lab needs a cloud account, a VM lab on this machine a hypervisor here. Refused
-/// with a code the webview says in the player's language.
-pub(crate) fn check_destination(runtime: Runtime, to: &Destination<'_>) -> Result<()> {
-    if to.host.is_some() {
-        return Ok(());
-    }
-    match runtime {
-        Runtime::Cloud => Err(Error::coded(Code::PickCloudAccount)),
-        Runtime::Vm if to.provider.is_none() => Err(Error::coded(Code::NoHypervisor)),
-        _ => Ok(()),
+/// Whether a `runtime` lab can start at `to` at all, asked before anything is downloaded for it
+/// (see [`destination`], the one rule [`start_locked`] applies too).
+pub(crate) fn check_destination(dirs: &AppDirs, runtime: Runtime, to: &Destination<'_>) -> Result<()> {
+    destination(dirs, runtime, to).map(drop)
+}
+
+/// Where a checked start runs.
+#[derive(Debug, PartialEq)]
+enum Place<'a> {
+    /// On this machine, in this form.
+    Here(LocalRun),
+    /// On this saved server host or cloud account.
+    Host(&'a str),
+}
+
+/// Where a `runtime` lab starts at `to`, or why it can't, from what is known before the lab is
+/// downloaded: the policy's `DisableCloudLaunches` ([`cloud_allowed`]); on this machine, a form
+/// that runs here ([`local_run`]: a cloud-services lab needs a cloud account, a VM lab a
+/// hypervisor here, one VM per machine a hypervisor here, ESXi or Proxmox a host); on a host, one
+/// VM per machine only on a cloud account ([`per_machine_runs_on`]). The codes are said in the
+/// player's language.
+fn destination<'a>(dirs: &AppDirs, runtime: Runtime, to: &Destination<'a>) -> Result<Place<'a>> {
+    cloud_allowed(dirs, runtime, to.host)?;
+    match to.host {
+        None => local_run(runtime, to.provider, to.per_machine_vm).map(Place::Here),
+        Some(host) => {
+            if to.per_machine_vm {
+                per_machine_runs_on(server::host_provider(dirs, host)?)?;
+            }
+            Ok(Place::Host(host))
+        }
     }
 }
 

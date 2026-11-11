@@ -447,12 +447,31 @@ async fn the_policy_refuses_a_start_it_turns_off_before_anything_runs() {
 #[test]
 fn a_start_with_nowhere_to_run_is_refused_by_its_code_before_anything_is_downloaded() {
     use crate::error::Code;
+    use crate::platform::policy::{Key, Override};
+    let t = TestApp::new();
+    let dirs = t.dirs();
+    t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+    t.host("pve", "proxmox", serde_json::json!({}));
+    let check = |runtime, to: Destination<'_>| super::check_destination(&dirs, runtime, &to);
     let here = |provider| Destination { provider, ..Destination::default() };
     let on = |host| Destination { host: Some(host), ..Destination::default() };
-    assert_eq!(super::check_destination(Runtime::Cloud, &here(None)).unwrap_err().code(), Code::PickCloudAccount);
-    assert_eq!(super::check_destination(Runtime::Vm, &here(None)).unwrap_err().code(), Code::NoHypervisor);
-    assert!(super::check_destination(Runtime::Cloud, &on("aws1")).is_ok());
-    assert!(super::check_destination(Runtime::Vm, &here(Some(Provider::Qemu))).is_ok());
-    assert!(super::check_destination(Runtime::Vm, &on("pve")).is_ok());
-    assert!(super::check_destination(Runtime::Docker, &here(None)).is_ok());
+    let per_machine = |provider, host| Destination { provider, host, per_machine_vm: true, ..Destination::default() };
+    assert_eq!(check(Runtime::Cloud, here(None)).unwrap_err().code(), Code::PickCloudAccount);
+    assert_eq!(check(Runtime::Vm, here(None)).unwrap_err().code(), Code::NoHypervisor);
+    assert!(check(Runtime::Cloud, on("aws1")).is_ok());
+    assert!(check(Runtime::Vm, here(Some(Provider::Qemu))).is_ok());
+    assert!(check(Runtime::Vm, on("pve")).is_ok());
+    assert!(check(Runtime::Docker, here(None)).is_ok());
+    // Regression: these were refused only once the lab was downloaded, at its start.
+    // One VM per machine with no hypervisor here.
+    assert!(check(Runtime::Docker, per_machine(None, None)).unwrap_err().to_string().contains("needs a hypervisor on this machine"));
+    // ESXi or Proxmox picked with no host.
+    assert!(check(Runtime::Vm, here(Some(Provider::Proxmox))).unwrap_err().to_string().contains("pick a server host"));
+    // One VM per machine on a server rather than a cloud account.
+    assert_eq!(check(Runtime::Docker, per_machine(None, Some("pve"))).unwrap_err().to_string(), super::PER_MACHINE_HERE_ONLY);
+    assert!(check(Runtime::Docker, per_machine(None, Some("aws1"))).is_ok());
+    // A start on a cloud account under DisableCloudLaunches, which needs no spec.
+    let _policy = Override::with(&[Key::DisableCloudLaunches]);
+    assert_eq!(check(Runtime::Docker, on("aws1")).unwrap_err().code(), Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() });
+    assert!(check(Runtime::Docker, on("pve")).is_ok());
 }

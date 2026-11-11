@@ -276,8 +276,8 @@ pub(crate) fn parse_launch(launch_json: serde_json::Value) -> Result<Launch> {
 /// It runs where `to` says.
 pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination<'_>, log: impl Fn(String)) -> Result<Option<String>> {
     runtime::validate_id(&launch.lab_id)?;
-    // Nowhere to start it: said before the download.
-    runtime::check_destination(launch.runtime, &to)?;
+    // Nowhere to start it, or a start the policy turns off: said before the download.
+    runtime::check_destination(dirs, launch.runtime, &to)?;
     // The lab is this launch's from the download on: two installs of one lab share its staging
     // folder, and a stop must not run while the new version is swapped in. Shared with the
     // deploy worker's own hold on it (same process), so a worker runs on.
