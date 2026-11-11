@@ -72,7 +72,15 @@ command: string,
 /**
  * What the command wrote to its standard error.
  */
-stderr: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" } | { "code": "turnedOffByPolicy", "args": { 
+stderr: string, } } | { "code": "downloadStalled", "args": { 
+/**
+ * How long it went without progress, in minutes.
+ */
+minutes: number, } } | { "code": "downloadFailed", "args": { 
+/**
+ * Why, in the container engine's words.
+ */
+reason: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" } | { "code": "turnedOffByPolicy", "args": { 
 /**
  * The policy setting's name.
  */

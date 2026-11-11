@@ -18,6 +18,9 @@ const BY_CODE: Partial<Record<ErrorCode, FailureKind>> = {
   signedOut: "signedOut",
   sessionExpired: "signedOut",
   toolMissing: "tool",
+  // The lab's images stopped downloading. One that failed is known by Docker's words in it (a
+  // full disk, a registry that can't be reached).
+  downloadStalled: "network",
 };
 
 // The tools' own words, most specific first: the daemon's "permission denied" before its "cannot

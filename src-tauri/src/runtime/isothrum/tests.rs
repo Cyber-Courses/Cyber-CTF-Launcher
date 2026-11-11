@@ -18,6 +18,8 @@ struct Engine {
     host_port: u16,
     /// `compose up` fails (Compose's own error) from now on.
     failing_up: bool,
+    /// `compose pull` fails (the registry's refusal) from now on.
+    failing_pull: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +66,9 @@ fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
         return Reply::ok(
             r#"{"services":{"web":{"ports":[{"target":80,"host_ip":"127.0.0.1","published":"","protocol":"tcp"}]}},"networks":{"lab":{"name":"cyberctf-web_lab"}}}"#,
         );
+    }
+    if line.contains(" pull --policy ") && e.failing_pull {
+        return Reply::fail(18, "Error response from daemon: toomanyrequests: You have reached your pull rate limit");
     }
     if line.contains(" up --detach ") {
         if e.failing_up {
@@ -322,6 +327,34 @@ async fn an_attack_box_whose_start_failed_in_the_run_stays_in_the_lab_for_stop_t
     f.model().failing_up = false;
     placed.remove(&dirs, &mut |_| {}).await.unwrap();
     assert!(!crate::runtime::attack_machine::added(&f.home.dir).unwrap());
+}
+
+#[tokio::test]
+async fn an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull() {
+    // Regression: the box's image downloading inside the start's `up` was read as the lab's `up`
+    // running out of time, and the player was told to check Docker's resources.
+    let f = Fixture::new();
+    let _tools = Tools::rules(&[]);
+    let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
+    f.up().await;
+    f.model().failing_pull = true;
+    let ups = || f.fake.calls().iter().filter(|c| c.line().contains(" up --detach ")).count();
+    let before = ups();
+    let mut lines = Vec::new();
+    let err = placed_box(&f)
+        .add(&dirs, crate::runtime::attack_machine::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |l| lines.push(l))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.code(),
+        crate::error::Code::DownloadFailed {
+            reason: "Error response from daemon: toomanyrequests: You have reached your pull rate limit (exited with code 18)".into()
+        }
+    );
+    assert!(err.to_string().starts_with("Couldn't download the lab's images: Error response from daemon: toomanyrequests"), "{err}");
+    // The pull is its own step in the deploy log, before the containers' (which never ran).
+    assert!(lines.iter().any(|l| l == "Pulling the environment's images…"), "{lines:#?}");
+    assert_eq!(ups(), before, "nothing started after the failed pull");
 }
 
 #[tokio::test]

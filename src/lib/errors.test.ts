@@ -59,6 +59,8 @@ describe("command errors", () => {
         "dockerDenied",
         "dockerDeniedWindows",
         "dockerNotRunning",
+        "downloadFailed",
+        "downloadStalled",
         "hostHasLabs",
         "labRunningHere",
         "labRunningOn",

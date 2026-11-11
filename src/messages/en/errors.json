@@ -13,6 +13,8 @@
     "dockerDeniedWindows": "Docker is running, but your account can't use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users \"{user}\" /add), then sign out and back in.",
     "toolMissing": "`{tool}` is not installed or not on PATH",
     "commandFailed": "`{command}` failed: {stderr}",
+    "downloadStalled": "Downloading the lab's images stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again: what was already downloaded is kept.",
+    "downloadFailed": "Couldn't download the lab's images: {reason}. Check your internet connection, then try again.",
     "signInCancelled": "Sign-in cancelled.",
     "signInDenied": "Sign-in was declined at Cyber Auth, so you're still signed out. Sign in again and allow Cyber CTF to continue.",
     "signInCodeUnavailable": "Signing in with a code isn't available yet. Copy the sign-in link into any browser instead, on this machine or another.",

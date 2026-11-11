@@ -137,6 +137,27 @@ describe("deriveSteps: Docker Compose and Terraform order", () => {
     ]);
   });
 
+  it("the runner's pull before the containers start is the images phase, its progress in it", () => {
+    // The runner pulls a lab's images in a step of its own (its note, then Compose's pull lines)
+    // before the step that starts the containers.
+    expect(
+      steps([
+        "Checking the tools…",
+        "Pulling the environment's images…",
+        " Image cyberctf/attack-box Pulling ",
+        " 36b0bafd7f97 Downloading 1.283GB",
+        " Image cyberctf/attack-box Pulled ",
+        " Container lab-attackbox-1  Created",
+        " Container lab-attackbox-1  Started",
+      ]),
+    ).toEqual([
+      ["prepare", "labs.deploy.steps.prepareLab", 1],
+      ["images", "labs.deploy.phases.images", 4],
+      ["create", "labs.deploy.phases.create", 1],
+      ["start", "labs.deploy.phases.start", 1],
+    ]);
+  });
+
   it("lines before the first Compose phase are preparation", () => {
     expect(steps(["Clearing a previous, stopped run…", "Container api Creating"])).toEqual([
       ["prepare", "labs.deploy.steps.prepareLab", 1],

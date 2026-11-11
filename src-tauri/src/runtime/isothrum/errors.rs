@@ -52,6 +52,10 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
         RunnerError::Timeout { step, timed_out } => timed_out_step(&step, &timed_out),
+        // The lab's images, pulled before its containers start: a slow connection, not the
+        // resources of Docker, the hypervisor or the server.
+        RunnerError::DownloadStalled { after_s, .. } => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
+        RunnerError::DownloadFailed { reason, .. } => Error::coded(Code::DownloadFailed { reason: reason.trim().to_owned() }),
         RunnerError::ToolTooOld { tool, found, required } => Error::Invalid(format!(
             "This lab needs {} {required} or later, and this computer has {found}. Update it, then start the lab again.",
             tool_name(&tool)
@@ -280,6 +284,35 @@ mod tests {
         let silent = TimedOut::NoProgress { after_s: 1800, last_line: None };
         assert!(said(RunnerError::Timeout { step: "up".into(), timed_out: silent }).1.starts_with("The lab's `up` step printed nothing for 30 minutes"));
         assert!(said(RunnerError::SecretMissing { name: "CTF_FLAG_MAIN".into() }).1.contains("`CTF_FLAG_MAIN`"));
+    }
+
+    #[test]
+    fn a_download_that_stalled_or_failed_says_so_not_the_resources() {
+        // Regression: an 11 GB attack box still downloading through a slow connection was
+        // stopped with the start's `up`, and the player was told to check Docker's resources.
+        let stalled = RunnerError::DownloadStalled { step: "pull-up".into(), after_s: 900, last_line: Some("36b0bafd7f97 Downloading 1.283GB".into()) };
+        let (code, text) = said(stalled);
+        assert_eq!(code, Code::DownloadStalled { minutes: 15 });
+        assert_eq!(
+            text,
+            "Downloading the lab's images stopped making progress (nothing new for 15 minutes), so it was stopped. Check your internet connection, then try again: what was already downloaded is kept."
+        );
+        let failed = RunnerError::DownloadFailed {
+            step: "pull-up".into(),
+            reason: "Error response from daemon: toomanyrequests: You have reached your pull rate limit\n".into(),
+        };
+        let (code, text) = said(failed);
+        assert_eq!(code, Code::DownloadFailed { reason: "Error response from daemon: toomanyrequests: You have reached your pull rate limit".into() });
+        assert_eq!(
+            text,
+            "Couldn't download the lab's images: Error response from daemon: toomanyrequests: You have reached your pull rate limit. Check your internet connection, then try again."
+        );
+        for text in [said(RunnerError::DownloadStalled { step: "pull-up".into(), after_s: 900, last_line: None }).1, text] {
+            assert!(!text.contains("resources"), "{text}");
+        }
+        // A step that ran out of time still says to check the resources.
+        let up = TimedOut::NoProgress { after_s: 1800, last_line: None };
+        assert!(said(RunnerError::Timeout { step: "up".into(), timed_out: up }).1.contains("the resources of Docker"));
     }
 
     #[test]

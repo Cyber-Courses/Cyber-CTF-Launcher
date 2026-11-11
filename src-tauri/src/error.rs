@@ -112,6 +112,17 @@ pub enum Code {
         /// What the command wrote to its standard error.
         stderr: String,
     },
+    /// Downloading the lab's images, before its containers start, showed no progress for
+    /// `minutes`, so it was stopped.
+    DownloadStalled {
+        /// How long it went without progress, in minutes.
+        minutes: u64,
+    },
+    /// The lab's images couldn't be downloaded, before its containers start.
+    DownloadFailed {
+        /// Why, in the container engine's words.
+        reason: String,
+    },
     /// A lab that runs only in a cloud account was started with none picked.
     PickCloudAccount,
     /// A VM lab was started on this machine with no hypervisor here to run it on.
@@ -184,6 +195,8 @@ impl Code {
             }
             Code::ToolMissing { tool } => format!("`{tool}` is not installed or not on PATH"),
             Code::CommandFailed { command, stderr } => format!("`{command}` failed: {stderr}"),
+            Code::DownloadStalled { minutes } => images_stalled(*minutes),
+            Code::DownloadFailed { reason } => format!("Couldn't download the lab's images: {reason}. Check your internet connection, then try again."),
             Code::PickCloudAccount => "This lab runs in your cloud account: pick one of your cloud accounts to start it on.".into(),
             Code::NoHypervisor => {
                 "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account."
@@ -194,6 +207,13 @@ impl Code {
             }
         }
     }
+}
+
+/// A download of the lab's images that showed no progress for `minutes`.
+fn images_stalled(minutes: u64) -> String {
+    format!(
+        "Downloading the lab's images stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again: what was already downloaded is kept."
+    )
 }
 
 /// "2 labs are still on this account: stop them before changing its region."
@@ -457,11 +477,13 @@ mod tests {
             Code::RefusedBeforeActing => 26,
             Code::PickCloudAccount => 27,
             Code::NoHypervisor => 28,
+            Code::DownloadStalled { .. } => 29,
+            Code::DownloadFailed { .. } => 30,
         }
     }
 
     /// How many forms [`form`] tells apart.
-    const FORMS: usize = 29;
+    const FORMS: usize = 31;
 
     #[test]
     fn every_form_has_a_sample() {
@@ -498,6 +520,8 @@ mod tests {
             Code::ReapNoHost,
             Code::ToolMissing { tool: "terraform".into() },
             Code::CommandFailed { command: "vagrant up".into(), stderr: "locked".into() },
+            Code::DownloadStalled { minutes: 15 },
+            Code::DownloadFailed { reason: "toomanyrequests: You have reached your pull rate limit".into() },
             Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() },
             Code::PickCloudAccount,
             Code::NoHypervisor,

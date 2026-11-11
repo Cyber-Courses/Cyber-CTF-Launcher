@@ -13,6 +13,8 @@
     "dockerDeniedWindows": "Docker は実行中ですが、このアカウントではまだ使用できません。自分を docker-users グループに追加し（管理者として実行したターミナルで net localgroup docker-users \"{user}\" /add）、いったんサインアウトしてから再度サインインしてください。",
     "toolMissing": "{tool} がインストールされていないか、PATH にありません。",
     "commandFailed": "{command} が失敗しました: {stderr}",
+    "downloadStalled": "ラボのイメージのダウンロードが進まなくなったため（{minutes} 分間進捗なし）、中止しました。インターネット接続を確認して、もう一度お試しください。ダウンロード済みの部分は保持されます。",
+    "downloadFailed": "ラボのイメージをダウンロードできませんでした（{reason}）。インターネット接続を確認して、もう一度お試しください。",
     "signInCancelled": "サインインはキャンセルされました。",
     "signInDenied": "Cyber Auth でサインインが拒否されたため、サインアウトしたままです。もう一度サインインし、Cyber CTF を許可して続行してください。",
     "signInCodeUnavailable": "コードによるサインインはまだ利用できません。代わりにサインインリンクを、このマシンまたは別のマシンの任意のブラウザにコピーしてください。",

@@ -46,6 +46,17 @@ describe("failureKind", () => {
     expect(failureKind("Une autre opération est déjà en cours", "alreadyInProgress")).toBeNull();
   });
 
+  it("reads a download of the lab's images that stalled as the network, and one that failed by Docker's words", () => {
+    expect(failureKind("Le téléchargement des images du lab n'avançait plus", "downloadStalled")).toBe("network");
+    expect(
+      failureKind(
+        "Couldn't download the lab's images: Error response from daemon: Get \"https://registry-1.docker.io/v2/\": net/http: TLS handshake timeout.",
+        "downloadFailed",
+      ),
+    ).toBe("network");
+    expect(failureKind("Couldn't download the lab's images: write /var/lib/docker/tmp: no space left on device.", "downloadFailed")).toBe("disk");
+  });
+
   it("names the operations it reports", () => {
     expect(failureTitleKey("stop")).toBe("labs.failure.title.stop");
     expect(failureTitleKey("provision")).toBe("labs.failure.title.provision");

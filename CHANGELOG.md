@@ -248,6 +248,15 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A slow download of a container lab's images no longer reads as Docker running out of
+  resources.** Starting a lab with the attack box (an 11 GB image) on a slow connection was stopped
+  with "The lab's `up` step didn't finish within 30 minutes … check the resources of Docker, the
+  hypervisor or the server", and every retry hit the same wall. The runner now pulls a container
+  lab's images before starting its containers, with no time limit while the download moves; the
+  lab page shows that download under **Get images**. A download that stops moving for 15 minutes
+  says "Downloading the lab's images stopped making progress", and one that fails says "Couldn't
+  download the lab's images:" with Docker's reason, in the app's six languages, with the network
+  hint. A step that runs out of time still says to check the network and the resources.
 - **Why a hypervisor can't run labs is said in the app's language.** The Machine page, the
   setup's VM step and Settings showed the core's English reason in every language; they now say
   it in the six. **Allow my account** is offered only when the account lacks the right to manage
