@@ -314,7 +314,11 @@ pub fn gcloud_script() -> String {
 #[cfg(any(target_os = "linux", test))]
 pub fn libvirt_script(user: Option<&str>) -> String {
     use std::fmt::Write as _;
-    let mut s = "apt-get update && apt-get install -y libvirt-daemon-system libvirt-dev build-essential pkg-config ruby-dev virt-manager".to_string();
+    // virtiofsd: libvirt's shared folders (the attack box's /shared) need it, and it is its own
+    // package from Debian 12 and Ubuntu 23.10 on (QEMU's before); a release without it skips it.
+    let mut s = "apt-get update && apt-get install -y libvirt-daemon-system libvirt-dev build-essential pkg-config ruby-dev virt-manager \
+                 && if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi"
+        .to_string();
     if let Some(u) = user.filter(|u| valid_user(u)) {
         let _ = write!(
             s,
@@ -359,6 +363,15 @@ mod tests {
         let s = libvirt_script(Some("ada"));
         assert!(s.contains("usermod -aG libvirt ada") && s.contains("usermod -aG kvm ada"), "{s}");
         assert!(!libvirt_script(Some("a; rm -rf /")).contains("usermod"));
+        assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
+    }
+
+    #[test]
+    fn libvirt_install_brings_virtiofsd_for_the_shared_folder_where_the_release_has_it() {
+        // Regression: libvirt alone, and an attack box with the shared folder failed to start on
+        // libvirt ("Unable to find a satisfying virtiofsd").
+        let s = libvirt_script(None);
+        assert!(s.contains("if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi"), "{s}");
         assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
     }
 
