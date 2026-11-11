@@ -22,7 +22,10 @@ if (typeof window !== "undefined") {
   }
   // Assigned, not `vi.stubGlobal`: a test's `vi.unstubAllGlobals()` must not take them away.
   polyfill(globalThis, "ResizeObserver", ResizeObserverStub as unknown as typeof ResizeObserver);
-  polyfill(window, "matchMedia", (query: string) => ({
+  // xterm still subscribes with the legacy addListener, so the list keeps it beside
+  // addEventListener. Built as a plain object and cast like the observer above: typed as a
+  // MediaQueryList, the legacy pair would be flagged as deprecated.
+  const mediaQueryList = (query: string) => ({
     matches: false,
     media: query,
     onchange: null,
@@ -31,7 +34,8 @@ if (typeof window !== "undefined") {
     addListener: () => {},
     removeListener: () => {},
     dispatchEvent: () => false,
-  }));
+  });
+  polyfill(window, "matchMedia", mediaQueryList as unknown as typeof window.matchMedia);
   polyfill(Element.prototype, "scrollIntoView", () => {});
   polyfill(HTMLDialogElement.prototype, "showModal", function (this: HTMLDialogElement) {
     this.open = true;
