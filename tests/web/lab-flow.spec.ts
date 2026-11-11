@@ -19,14 +19,16 @@ async function openLab(page: Page, search: string, title: string) {
   await expect(breadcrumb(page)).toHaveText(title);
 }
 
-/** Start lab, then Start in "Where should it run?" (this machine, random ports). */
+/** Start lab, then in "Where should it run?": containers on this machine (picked already), then
+ *  their host ports (random ones, picked already), and Start. */
 async function startHere(page: Page) {
   await page.getByRole("button", { name: "Start lab" }).click();
   const where = page.getByRole("dialog", { name: "Where should the lab run?" });
   await expect(where).toBeVisible();
-  // The first row only: "This machine, in a VM" (and a per-machine VM row) also start with it.
-  await expect(where.getByRole("radio", { name: /This machine On your system/ })).toHaveAttribute("aria-checked", "true");
-  await expect(where.getByRole("radio", { name: /Random ports/ })).toHaveAttribute("aria-checked", "true");
+  const containers = where.getByRole("radiogroup", { name: "This machine" }).getByRole("radio", { name: /^Container/ });
+  await expect(containers).toHaveAttribute("aria-checked", "true");
+  await containers.click();
+  await expect(where.getByRole("radio", { name: /^Random ports/ })).toHaveAttribute("aria-checked", "true");
   await where.getByRole("button", { name: "Start", exact: true }).click();
   await expect(where).toBeHidden();
 }
@@ -54,6 +56,9 @@ test.describe("lab flow", () => {
     await expect(diagram).toBeVisible();
     await expect(diagram.locator(".react-flow__node").filter({ hasText: "10.43.0.2" })).toContainText("web");
     await expect(diagram.locator(".react-flow__node").filter({ hasText: "Attack box" })).toBeVisible();
+    // Its service is published on a random port of this machine, not its own.
+    await expect(page.locator("main").getByRole("button", { name: /^:\d+$/ })).toBeVisible();
+    await expect(page.locator("main").getByRole("button", { name: ":8443", exact: true })).toHaveCount(0);
     // The sidebar lists it with the running labs.
     await expect(page.locator("aside").getByRole("button", { name: /Exposed dashboard/ })).toBeVisible();
 

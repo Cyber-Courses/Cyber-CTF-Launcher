@@ -41,7 +41,7 @@ test.describe("settings persistence", () => {
     await expect(pageTitle(page)).toHaveText(frShell.tabs.machine);
   });
 
-  test("the lab ports picked in Settings are the start dialog's default", async ({ page }) => {
+  test("the lab ports picked in Settings are what a start uses, without asking", async ({ page }) => {
     await page.goto("/?mock&window=settings");
     await sections(page).getByRole("button", { name: "Labs" }).click();
     await radio(page, "Lab ports", "Default").click();
@@ -51,10 +51,16 @@ test.describe("settings persistence", () => {
     await page.locator("main").getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
     await page.getByRole("button", { name: "Start lab" }).click();
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where.getByRole("radio", { name: /^The lab's default ports/ })).toHaveAttribute("aria-checked", "true");
-    await expect(where.getByText(/already uses one|collide|in use/i).first()).toBeVisible();
-    await where.getByRole("button", { name: "Cancel" }).click();
+    // Containers here: Settings has answered which host ports, so picking them asks nothing more.
+    const containers = where.getByRole("radiogroup", { name: "This machine" }).getByRole("radio", { name: /^Container/ });
+    await containers.click();
+    await expect(containers).toHaveAttribute("aria-checked", "true");
+    await expect(where.getByRole("radiogroup", { name: "Host ports" })).toHaveCount(0);
+    await where.getByRole("button", { name: "Start", exact: true }).click();
     await expect(where).toBeHidden();
+    // Its service is published on this machine on its own port, not a random one.
+    await expect(page.getByRole("button", { name: "Stop & remove" })).toBeEnabled();
+    await expect(page.locator("main").getByRole("button", { name: ":8443", exact: true })).toBeVisible();
   });
 
   // BUG (accessibility): each Settings section keeps a "Saved" mark in the page at all times, only

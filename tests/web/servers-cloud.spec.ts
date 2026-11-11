@@ -62,7 +62,8 @@ test.describe("empty states", () => {
       query: "&machine=fresh",
       title: "No provider installed",
       action: "Add a provider",
-      avatars: ["Docker Desktop", "OrbStack", "Colima", "VirtualBox", "VMware Fusion", "UTM", "Parallels"],
+      // The mock's Apple Silicon Mac: UTM, not VirtualBox, is the hypervisor the core offers there.
+      avatars: ["Docker Desktop", "OrbStack", "Colima", "VMware Fusion", "UTM", "Parallels"],
     },
   ];
   for (const p of pages) {

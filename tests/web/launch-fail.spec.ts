@@ -31,7 +31,7 @@ test.describe("a start that fails, then a retry", () => {
   test("a VM lab on this machine: Vagrant's failure under the header, then Retry brings it up", async ({ page }) => {
     await openApp(page, "&deploying=none&os=macos&arch=x86_64&launch=fail");
     await openLab(page, "goad", "GOAD Light");
-    await start(page, "Start lab", /^This machine/);
+    await start(page, "Start lab", /^VM On your system/);
 
     await expect(main(page)).toContainText("Failed to start");
     const notice = main(page).getByRole("alert").filter({ hasText: "Couldn’t start GOAD Light" });
@@ -41,7 +41,7 @@ test.describe("a start that fails, then a retry", () => {
     await expect(button(page, "Stop & clean up")).toHaveCount(0);
     await expect(page.locator(".react-flow")).toHaveCount(0);
 
-    await start(page, "Retry", /^This machine/);
+    await start(page, "Retry", /^VM On your system/);
     await expect(main(page)).toContainText("Running·on this machine · VirtualBox");
     await expect(main(page)).not.toContainText("Failed to start");
     await expect(button(page, "Pause")).toBeEnabled();
@@ -58,7 +58,7 @@ test.describe("a start that fails, then a retry", () => {
     await expect(page.getByRole("alert").filter({ hasText: "Couldn’t start EC2 SSRF" })).toHaveCount(2);
 
     await start(page, "Retry", /AWS sandbox/);
-    await expect(main(page)).toContainText("Running·on AWS sandbox");
+    await expect(main(page)).toContainText("Running·on AWS · eu-west-3");
     await expect(main(page)).not.toContainText("Failed to start");
     await expect(main(page).getByRole("heading", { level: 3, name: "Cloud services" })).toBeVisible();
     await expect(button(page, "Stop & remove")).toBeEnabled();

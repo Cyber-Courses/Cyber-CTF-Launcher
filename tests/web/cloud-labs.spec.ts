@@ -38,9 +38,11 @@ test.describe("cloud labs", () => {
     await expect(steps.getByRole("button", { name: /^Set up Terraform/ })).toBeVisible();
     await expect(steps.getByRole("button", { name: /^Create the infrastructure/ })).toBeVisible();
     await expect(button(page, "Stop & remove")).toBeEnabled();
-    await expect(main(page)).toContainText("Running·on AWS sandbox");
+    // Where it runs: the cloud and its region in the header, the account on its services' panel.
+    await expect(main(page)).toContainText("Running·on AWS · eu-west-3");
     await expect(main(page)).toContainText(/Auto-stops at \d{2}:\d{2}( [AP]M)? · in [34]h/);
     await expect(main(page).getByRole("heading", { level: 3, name: "Cloud services" })).toBeVisible();
+    await expect(main(page).getByText("AWS sandbox", { exact: true })).toBeVisible();
     const services = main(page);
     await expect(services).toContainText("Sign in with access_key_id and secret_key, then find the Lambda function.");
     await expect(services).toContainText("AKIAZ7EXAMPLE4SSRF01");
@@ -60,13 +62,8 @@ test.describe("cloud labs", () => {
     await expect(main(page)).toContainText("Start the lab to create its cloud services in your account.");
   });
 
-  // BUG: connecting a cloud account from a cloud lab's page leaves the page on "Connect an account
-  // on AWS". The setup window saves the account and emits `server:changed` (server-setup/page.tsx),
-  // but the lab page reads the accounts once (use-run-target.ts, useRunTarget: `serverList()` in an
-  // effect on [rt, localReady]) and doesn't listen for the event, so the player clicks Connect
-  // again (and connects a second account) or has to leave the page and come back. Fix
-  // (use-run-target.ts): read `serverList()` again on `useTauriEvent(SERVER_CHANGED, …)`, as
-  // use-server-list.ts does.
+  // The lab page follows the accounts saved in the setup window (`server:changed`): once one is
+  // connected, Start is there, without leaving the page or connecting a second one.
   test("with no account: Connect opens the cloud setup, and once connected the lab can start", async ({ page, context }) => {
     await openApp(page, "&cloud=none");
     await openLab(page, "ssrf", "EC2 SSRF");
@@ -107,7 +104,8 @@ test.describe("cloud labs", () => {
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
     await expect(where.getByRole("radio", { name: /Lab AWS/ })).toHaveAttribute("aria-checked", "true");
     await where.getByRole("button", { name: "Start", exact: true }).click();
-    await expect(main(page)).toContainText("Running·on Lab AWS");
+    await expect(main(page)).toContainText("Running·on AWS · eu-west-3");
+    await expect(main(page).getByText("Lab AWS", { exact: true })).toBeVisible();
     const asked = answerConfirm(page, true);
     await button(page, "Stop & remove").click();
     expect(await asked).toContain("Remove EC2 SSRF?");

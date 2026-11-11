@@ -12,6 +12,8 @@ import { test, expect, openApp, navButton, pageTitle, release, answerConfirm } f
 const main = (page: Page) => page.locator("main");
 const button = (page: Page, name: string) => main(page).getByRole("button", { name, exact: true });
 const diagramNode = (page: Page, ip: string) => page.locator(".react-flow .react-flow__node").filter({ hasText: ip });
+/** "Where should it run?"'s row for this machine: a VM lab's own VMs here, under "This machine". */
+const HERE = /^VM On your system/;
 
 async function openGoad(page: Page) {
   await navButton(page, "Labs").click();
@@ -36,13 +38,13 @@ test.describe("VM labs", () => {
     await openApp(page, "&deploying=none&os=macos&arch=x86_64&hold=provision");
     await openGoad(page);
 
-    // This machine is the default (VirtualBox is ready here); the ESXi server is offered too, the
-    // AWS account isn't (a VM lab there isn't supported by this one).
+    // This machine is the default (VirtualBox is ready here); the ESXi server and the AWS account
+    // (one cloud VM per machine) are offered too.
     await button(page, "Start lab").click();
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where.getByRole("radio", { name: /^This machine/ })).toHaveAttribute("aria-checked", "true");
+    await expect(where.getByRole("radio", { name: HERE })).toHaveAttribute("aria-checked", "true");
     await expect(where.getByRole("radio", { name: /^office-esxi/ })).toBeEnabled();
-    await expect(where.getByRole("radio", { name: /AWS sandbox/ })).toBeDisabled();
+    await expect(where.getByRole("radio", { name: /AWS sandbox/ })).toBeEnabled();
     await where.getByRole("button", { name: "Start", exact: true }).click();
 
     // Vagrant's machines come up one step each.
@@ -83,19 +85,12 @@ test.describe("VM labs", () => {
     await expect(page.locator(".react-flow")).toHaveCount(0);
   });
 
-  // BUG: a VM lab running on this machine has no "Shut down", only Pause. The core reports its
-  // place as "local_vm" (runtime/status.rs, local_status: `Runtime::Vm => Place::LocalVm`) and
-  // shuts VM labs down fine (lifecycle.rs park: only a *container* lab in a VM refuses it), but
-  // lab-state.ts deriveLabState has `canShutdown = … && status?.place !== "local_vm"`, which was
-  // meant for a container lab in a VM ("A VM lab gets both", says its comment). So the player can
-  // only pause (saved state on disk, GBs per Windows VM) and the remove dialog never offers to shut
-  // down instead. Fix (lab-state.ts): `canShutdown = i.parkable && !remote && !isCloud &&
-  // !(isDocker && status?.place === "local_vm")`, and the unit test in lab-state.test.ts
-  // ("offers pause and shut down by where the lab runs") expecting [true, false] for a VM lab.
+  // A VM lab here is shut down as well as paused (the backend's controls offer both; only a
+  // container lab in one VM can't be), and Stop & remove offers that instead.
   test("on this machine: shut down powers the VMs off, Resume boots them again", async ({ page }) => {
     await openApp(page, "&deploying=none&os=macos&arch=x86_64");
     await openGoad(page);
-    await startOn(page, /^This machine/);
+    await startOn(page, HERE);
     await expect(button(page, "Shut down")).toBeEnabled();
 
     await button(page, "Shut down").click();
@@ -128,7 +123,7 @@ test.describe("VM labs", () => {
     await expect(where.getByRole("radio", { name: /homelab-pve/ })).toHaveAttribute("aria-checked", "true");
     await expect(where.getByRole("radio", { name: /office-esxi/ })).toBeEnabled();
     // Picked anyway, the backend refuses it before anything is downloaded, saying what it takes.
-    await where.getByRole("radio", { name: /^This machine/ }).click();
+    await where.getByRole("radio", { name: HERE }).click();
     await where.getByRole("button", { name: "Start", exact: true }).click();
     await expect(where).toBeHidden();
     await expect(main(page)).toContainText("Failed to start");
@@ -149,12 +144,12 @@ test.describe("VM labs", () => {
     await expect(main(page)).not.toContainText("Built for another CPU");
 
     // This machine is the default (UTM is ready here).
-    await startOn(page, /^This machine/);
+    await startOn(page, HERE);
     const steps = main(page).getByRole("listitem");
     await expect(steps.getByRole("button", { name: /^dc01/ })).toBeVisible();
     await expect(button(page, "Pause")).toBeEnabled();
     await expect(main(page)).toContainText("Running·on this machine · UTM");
-    await expect(main(page).getByText("Engine", { exact: true }).locator("xpath=..")).toContainText("UTM");
+    await expect(main(page).getByText("Runs on", { exact: true }).locator("xpath=..")).toContainText("this machine · UTM");
     await expect(
       page
         .locator("aside")

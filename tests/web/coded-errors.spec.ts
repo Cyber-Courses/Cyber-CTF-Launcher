@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { test, expect, openApp, navButton, pageTitle, forceCommands, reforce } from "./fixtures";
 
 // The Rust core's coded errors (src/lib/tauri/generated/CommandError.ts), each driven through the
@@ -19,6 +19,9 @@ const notice = (page: Page) => main(page).getByRole("alert").filter({ hasText: "
 
 const SIGNED_OUT = { loggedIn: false, name: null, email: null };
 
+/** "Where should it run?"'s row for containers on this machine. */
+const containersHere = (where: Locator) => where.getByRole("radiogroup", { name: "This machine" }).getByRole("radio", { name: /^Container/ });
+
 async function openBlindOrders(page: Page) {
   await navButton(page, "Labs").click();
   await main(page).getByRole("button", { name: "Open Blind orders", exact: true }).click();
@@ -29,7 +32,7 @@ async function openBlindOrders(page: Page) {
 async function startHere(page: Page, from: "Start lab" | "Retry" = "Start lab") {
   await button(page, from).click();
   const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-  await expect(where.getByRole("radio", { name: /This machine On your system/ })).toHaveAttribute("aria-checked", "true");
+  await expect(containersHere(where)).toHaveAttribute("aria-checked", "true");
   await where.getByRole("button", { name: "Start", exact: true }).click();
   await expect(where).toBeHidden();
 }
@@ -112,7 +115,7 @@ test.describe("coded errors", () => {
 
     await button(page, "Start lab").click();
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where.getByRole("radio", { name: /This machine On your system/ })).toContainText("Engine stopped");
+    await expect(containersHere(where)).toContainText("Engine stopped");
     await where.getByRole("button", { name: "Start", exact: true }).click();
 
     await expect(main(page)).toContainText("Failed to start");
@@ -149,7 +152,7 @@ test.describe("coded errors", () => {
     await button(page, "Sign in to start").click();
     await expect(sidebar(page)).toContainText("Florian");
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where.getByRole("radio", { name: /This machine On your system/ })).toHaveAttribute("aria-checked", "true");
+    await expect(containersHere(where)).toHaveAttribute("aria-checked", "true");
     await where.getByRole("button", { name: "Start", exact: true }).click();
     await expect(where).toBeHidden();
     await expect(button(page, "Stop & remove")).toBeEnabled();
