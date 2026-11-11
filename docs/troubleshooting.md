@@ -42,9 +42,11 @@ and the proxy. A lab you already installed and started before can still start: t
   Without that, each batch of VM commands asks for administrator rights. Settings > Labs >
   Hypervisor > **Allow my account** adds you to the group, once; it applies from your next Windows
   sign-in.
-- **Which virtual switch** (Hyper-V): when Vagrant would ask which switch to use, set the
-  environment variable `ISOLOOM_HYPERV_SWITCH` to the switch's name (`Get-VMSwitch` lists them), or
-  keep a single virtual switch.
+- **Which virtual switch** (Hyper-V): a lab's VMs use the "Default Switch"; where there is none
+  (Windows Server), a Hyper-V lab stops with "no virtual switch named Default Switch". Set the
+  environment variable `ISOLOOM_HYPERV_SWITCH` to the switch's name (`Get-VMSwitch` lists them) and
+  restart the launcher. The VM test on the Machine page picks a switch itself (the Default Switch,
+  else an external one, else the first), unless the variable names one.
 - **Apple silicon**: a lab whose VMs exist only for x86 (pfSense, for instance) runs under QEMU
   emulation, several times slower. Run such labs on an x86 server (Proxmox, ESXi) instead.
 - **VirtualBox on Windows on Arm** doesn't exist: use Hyper-V, a server or a cloud account.
