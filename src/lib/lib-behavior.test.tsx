@@ -8,6 +8,8 @@ import { AppearanceSync, useAppearance } from "@/lib/appearance";
 import { LOCALES, getLocale, getLocalePreference, setLocalePreference, translate, useFormat, useLocale, useT, type Locale } from "@/lib/i18n";
 import { isMac, useIsMac } from "@/lib/platform";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { setVmProvider } from "@/lib/settings";
+import { useVmProvider } from "@/lib/use-vm-provider";
 import { usePoll } from "@/lib/use-poll";
 import { commands, installTauri } from "@/test/tauri";
 import { flush, settle } from "@/test/ui";
@@ -282,6 +284,33 @@ describe("appearance", () => {
     expect(result.current[0]).toBe("light");
     await flush(50);
     expect(calls.some((c) => c.cmd === "plugin:window|set_theme" && c.args?.value === "light")).toBe(true);
+  });
+});
+
+describe("the hypervisor choice", () => {
+  it("follows a change made in this window and one made in another (Settings, the setup window)", () => {
+    const { result } = renderHook(() => useVmProvider());
+    expect(result.current).toBeNull();
+    act(() => {
+      setVmProvider("qemu");
+    });
+    expect(result.current).toBe("qemu");
+    // Settings is another window: its write reaches this one as a storage event only.
+    localStorage.setItem("cyberctf.vm.provider", "virtualbox");
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "cyberctf.vm.provider", newValue: "virtualbox" }));
+    });
+    expect(result.current).toBe("virtualbox");
+    // Another key changes nothing; the storage cleared reads as automatic.
+    localStorage.removeItem("cyberctf.vm.provider");
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "unrelated", newValue: "x" }));
+    });
+    expect(result.current).toBe("virtualbox");
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    });
+    expect(result.current).toBeNull();
   });
 });
 

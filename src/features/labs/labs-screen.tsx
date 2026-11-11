@@ -18,7 +18,7 @@ import { useLabActions } from "@/features/labs/use-lab-actions";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
 import type { LabStatus, SystemReport } from "@/lib/tauri";
 import { useSavedHosts } from "@/features/servers/use-server-list";
-import { getVmProvider } from "@/lib/settings";
+import { useVmProvider } from "@/lib/use-vm-provider";
 import { useStableCallback } from "@/lib/use-stable-callback";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -93,8 +93,10 @@ function useLabsScreen({ loggedIn, report, openLab, onDetailChange }: ViewProps)
   const openable = useMemo(() => (labs || imported ? [...(labs ?? []), ...(imported ?? [])] : null), [labs, imported]);
   const [detailSlug, setDetailSlug] = useOpenLab(openLab, openable);
   const [filters, setFilters] = useState<LabFilters>(NO_FILTERS);
-  // Local hypervisors ready for a lab VM (Vagrant + hypervisor), the Settings default first.
-  const readyVms = useMemo(() => (report ? preferredFirst(report.readyHypervisors, getVmProvider()) : []), [report]);
+  // Local hypervisors ready for a lab VM (Vagrant + hypervisor), the Settings default first, as it
+  // changes in any window.
+  const vmProvider = useVmProvider();
+  const readyVms = useMemo(() => (report ? preferredFirst(report.readyHypervisors, vmProvider) : []), [report, vmProvider]);
   const shown = useFilteredLabs(labs, filters, statuses, completed);
   const detail = openable && detailSlug ? openable.find((l) => l.slug === detailSlug) : undefined;
   useDetailTitle(detail?.title ?? null, onDetailChange);

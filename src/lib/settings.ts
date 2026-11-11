@@ -106,10 +106,14 @@ export function attackImageLabel(image: string): string {
 /** Earlier default images, for cleaning up what an older launcher downloaded. */
 export const OLD_ATTACK_IMAGES: readonly string[] = [...OLD_DEFAULT_IMAGES];
 
-const VM_PROVIDER_KEY = "cyberctf.vm.provider";
+/** Where the hypervisor choice is stored; another window learns of a change through a `storage`
+ *  event for this key. */
+export const VM_PROVIDER_KEY = "cyberctf.vm.provider";
 
-/** Sent on `window` when the hypervisor choice changes (Settings, the Machine setup, or "Don't
- *  ask again" in "Where should it run?"), so the header and the lab page follow at once. */
+/** Sent on this `window` when the hypervisor choice changes here ("Don't ask again" in "Where
+ *  should it run?"); a change in another window (Settings, the Machine setup) arrives as a
+ *  `storage` event instead. `useVmProvider` follows both, so the header, the Machine page and the
+ *  lab list follow at once. */
 export const VM_PROVIDER_CHANGED = "cyberctf:vm-provider";
 
 /** The hypervisor VM labs (and the VM test) run on, when several are installed. Null = automatic

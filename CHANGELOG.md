@@ -547,6 +547,9 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   subscription".** It names the regions where the size can be had (never the one checked) or,
   for a size refused almost everywhere, the sizes the subscription can use there, and reads each
   list once a session.
+- **A hypervisor chosen in Settings or the Machine setup applies in the main window at once.**
+  Both are windows of their own, and the main window's header, Machine page and lab list kept the
+  choice they had read until it was reopened. They now follow a change made in any window.
 
 ### Security
 
