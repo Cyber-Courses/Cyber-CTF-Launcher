@@ -4,7 +4,7 @@
 import type { DockerEngine, Need, SystemReport, UtilityState } from "@/lib/tauri";
 import { argText, fail, send, sleep } from "@/lib/dev-mock/command";
 import type { BrowserHandler, Live } from "@/lib/dev-mock/live";
-import { scenarioReport } from "@/lib/dev-mock/scenario";
+import { type Scenario, scenarioReport } from "@/lib/dev-mock/scenario";
 import { openWindow } from "@/lib/dev-mock/windows";
 import { withSetup } from "@/lib/dev-mock/setup-options";
 
@@ -103,6 +103,9 @@ function withReady(r: SystemReport): SystemReport {
   const ready = r.vagrant.installed ? r.vmProviders.filter((p) => !p.remote && p.available && p.hypervisor !== false).map((p) => p.provider) : [];
   return { ...r, readyHypervisors: ready };
 }
+
+/** The hypervisors ready on the scenario's machine now (with what the preview installed since). */
+export const readyHere = (sc: Scenario, live: Live) => withReady(withInstalls(scenarioReport(sc), live.installed, { pm: null })).readyHypervisors;
 
 /** A one-click install of `what` (a dependency or a Vagrant plugin). */
 const install =

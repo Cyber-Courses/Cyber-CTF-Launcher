@@ -189,10 +189,21 @@ function many(ready: SystemReport): SystemReport {
   };
 }
 
+/** Whether the core offers hypervisor `p` on this Mac (providers.rs `offered_on`): the one made for
+ *  its CPU, UTM on Apple Silicon and VirtualBox on an Intel Mac, unless the other is installed. */
+function offeredOnMac(p: ProviderStatus, appleSilicon: boolean): boolean {
+  const installed = p.reason?.code !== "notInstalled";
+  const notForThisMac = p.provider === "virtualbox" ? appleSilicon : p.provider === "utm" && !appleSilicon;
+  return installed || !notForThisMac;
+}
+
 /** The system check's answer for a scenario. */
 export function scenarioReport(sc: Scenario): SystemReport {
-  const appleSilicon = !sc.fresh && sc.os === "macos" && sc.arch === "arm64";
-  const local = localProviders(sc).map((p) => (appleSilicon ? onAppleSilicon(p) : p));
+  const mac = sc.os === "macos";
+  const appleSilicon = mac && sc.arch === "arm64";
+  const local = localProviders(sc)
+    .map((p) => (appleSilicon && !sc.fresh ? onAppleSilicon(p) : p))
+    .filter((p) => !mac || offeredOnMac(p, appleSilicon));
   const engine = sc.os === "linux" ? "docker-engine" : "docker-desktop";
   const ready: SystemReport = {
     ...report,

@@ -231,6 +231,8 @@ const appCommands = {
     openWindow(`/server-setup${id}`);
     return null;
   },
+  // A website launch's answer, given while the launch still waited for it.
+  confirm_launch: () => true,
   "plugin:app|version": () => "0.3.2",
   "plugin:notification|is_permission_granted": () => false,
   "plugin:event|listen": () => 1,

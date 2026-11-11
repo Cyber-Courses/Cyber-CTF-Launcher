@@ -6,6 +6,10 @@ import type { Args, Handlers } from "@/lib/dev-mock/types";
 // The dev mock's labs (see index.ts): the catalogue and their statuses, answered as the backend
 // would. The objectives of "Exposed dashboard" are in objectives.ts.
 
+/** A catalogue lab's source, as the catalogue lists it: its repository and the commit it points
+ *  at, where the backend reads the lab's spec (its run options, where it starts by default). */
+const source = (slug: string) => ({ repository: `CyberCTF/${slug}`, commit: "4c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d" });
+
 export const labs = [
   {
     id: "lab-invoice",
@@ -15,7 +19,7 @@ export const labs = [
     question: "What is the total amount of invoice INV-2041?",
     difficulty: 1,
     category: "Web",
-    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker", "aws"] },
+    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker", "aws"], ...source("invoice-portal-api") },
     skills: [
       { id: "s1", name: "API keys" },
       { id: "s2", name: "IDOR" },
@@ -29,7 +33,7 @@ export const labs = [
     question: "Which account holds the NTLM hash you recovered?",
     difficulty: 3,
     category: "Active Directory",
-    runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"] },
+    runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi", "proxmox"], ...source("goad-light") },
     skills: [{ id: "s3", name: "Kerberoasting" }],
   },
   {
@@ -40,7 +44,7 @@ export const labs = [
     question: null,
     difficulty: 2,
     category: "Web",
-    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker"] },
+    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker"], ...source("sqli-blind-orders") },
     skills: [{ id: "s4", name: "SQL injection" }],
   },
   {
@@ -51,7 +55,7 @@ export const labs = [
     question: null,
     difficulty: 2,
     category: "Containers",
-    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker"] },
+    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["docker"], ...source("kube-dashboard-exposed") },
     skills: [],
   },
   {
@@ -62,7 +66,7 @@ export const labs = [
     question: null,
     difficulty: 1,
     category: "Cloud",
-    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws"] },
+    runtime: { runtime: "DOCKER", architectures: ["arm64", "x86_64"], providers: ["aws"], ...source("s3-public-backup") },
     skills: [],
   },
   {
@@ -95,7 +99,7 @@ export const extraLabs = [
     question: null,
     difficulty: 2,
     category: "Network",
-    runtime: { runtime: "VM", architectures: ["arm64", "x86_64"], providers: ["utm", "virtualbox", "vmware_esxi", "proxmox"] },
+    runtime: { runtime: "VM", architectures: ["arm64", "x86_64"], providers: ["utm", "virtualbox", "vmware_esxi", "proxmox"], ...source("edge-router") },
     skills: [{ id: "s6", name: "Routing" }],
   },
 ];
@@ -252,13 +256,21 @@ export const labCommands = {
   lab_check: () => ({ available: true, ok: true, output: "", results: [{ name: "api", from: "attacker", ok: true, reason: "" }] }),
 } satisfies Handlers;
 
-/** A GraphQL operation (`api_query`): the completed labs, the objectives, the catalogue. */
+/** The labs' briefs (`labBrief`), in markdown; a lab not listed has none. */
+const BRIEFS: Record<string, string> = {
+  "lab-sqli":
+    "The shop's order lookup answers only *found* or *not found*. Ask it the right questions, one character at a time, and it gives up a customer's email.",
+  "lab-invoice": "The billing API trusts one static key for every customer. Find it, then read invoices that aren't yours.",
+};
+
+/** A GraphQL operation (`api_query`): the completed labs, the objectives, the catalogue, a brief. */
 export function apiQuery(args: Args): unknown {
   const op = argText(args?.operation);
   if (op === "completedLabs") return { myCompletedLabs: ["lab-s3"] };
   if (["labObjectives", "labProgress", "submitObjective", "openObjectiveHelp"].includes(op))
     return objectivesAnswer(op, (args?.variables ?? {}) as Record<string, unknown>);
   if (["labs", "labTitles", "sidebarLabs"].includes(op)) return { labs };
+  if (op === "labBrief") return { labs: [{ contentMd: BRIEFS[argText((args?.variables as Record<string, unknown> | undefined)?.id)] ?? null }] };
   return {};
 }
 
@@ -268,6 +280,9 @@ const runPath = (provider: Provider | null, beta = false): LabRunPath => ({
   badge: beta ? "beta" : "none",
   evidence: beta ? "validated only; tier 1 pending: linux, macos, windows" : "real runs: macos (mac, 2026-10-17)",
 });
+
+/** UTM's path for a VM lab whose spec has a recipe for it. */
+export const utmPath = runPath("utm", true);
 
 const CLOUDS_OF_SAMPLE: Provider[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"];
 const NO_OPTIONS: LabRunOptions = {

@@ -53,13 +53,16 @@ const vagrantUp = (slug: string, provider: string, hostName: string | null) => [
   ]),
 ];
 
-/** A container lab started here; with `launch=fail`, the first one fails on its port. With
+/** A container lab started here, on its own host ports or random ones (`defaultPorts`); with
+ *  `launch=fail`, the first one fails on its port. With
  *  `hold=launch`, it stays starting, its images pulled and its containers created but not started,
  *  until the test lets it go on. Started again offline (after a launch failed with `offlineReady`),
  *  its log says so first, as the core's does. */
 async function launchContainer(id: string, args: Args, live: Live) {
   const slug = slugOf(id);
   live.ops.set(id, "launch");
+  if (args?.defaultPorts === true) live.ownPorts.add(id);
+  else live.ownPorts.delete(id);
   try {
     if (args?.offline === true) send(args, "Starting offline: Cyber CTF can't be reached, progress isn't saved");
     for (const [n, line] of composeUp(slug).entries()) {

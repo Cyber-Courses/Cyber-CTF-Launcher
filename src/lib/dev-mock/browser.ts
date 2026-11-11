@@ -3,7 +3,7 @@
 import { fail, send, sleep } from "@/lib/dev-mock/command";
 import { eventHandlers } from "@/lib/dev-mock/events";
 import { type Host, hostsOf, saveError, saveHosts } from "@/lib/dev-mock/hosts";
-import { catalogueQuery, runOptionsQuery } from "@/lib/dev-mock/catalogue";
+import { catalogueQuery, defaultPlaceQuery, runOptionsQuery } from "@/lib/dev-mock/catalogue";
 import { labHandlers } from "@/lib/dev-mock/lab-ops";
 import type { BrowserHandler, Context } from "@/lib/dev-mock/live";
 import { machineHandlers } from "@/lib/dev-mock/machine";
@@ -82,6 +82,7 @@ const accountHandlers: Record<string, BrowserHandler> = {
   managed_settings: (_args, { sc }) => (sc.managed ? MANAGED : UNMANAGED),
   api_query: catalogueQuery,
   lab_run_options: runOptionsQuery,
+  lab_default_place: defaultPlaceQuery,
 };
 
 /** The budgets the backend answers with the list (Rust's `budget_limit`: an AWS account's

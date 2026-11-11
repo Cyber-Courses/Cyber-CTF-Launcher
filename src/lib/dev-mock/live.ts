@@ -1,7 +1,7 @@
 // What the browser preview changes as it is used: labs started and stopped, where they run, the
 // failures still to come, the steps a test still holds. And the statuses the labs report
 // meanwhile. (The sign-in is shared by the preview's tabs: session.ts.)
-import type { DockerEngine, LabStatus } from "@/lib/tauri";
+import type { DockerEngine, LabControl, LabStatus } from "@/lib/tauri";
 import { argText, send, sleep } from "@/lib/dev-mock/command";
 import { type Holds, holdsOf, isHoldable } from "@/lib/dev-mock/holds";
 import type { Host } from "@/lib/dev-mock/hosts";
@@ -30,6 +30,8 @@ export type Live = {
   placed: Map<string, Placement>;
   /** The engine Docker was pointed at here ("Use by default"), if any: its context is current. */
   engine: DockerEngine | null;
+  /** Container labs started here on their own host ports (`defaultPorts`), not random ones. */
+  ownPorts: Set<string>;
 };
 
 /** The preview's state at load, as the scenario sets it. */
@@ -43,6 +45,7 @@ export function liveFrom(sc: Scenario): Live {
     holds: holdsOf(sc.held),
     placed: new Map(),
     engine: null,
+    ownPorts: new Set(),
   };
 }
 
@@ -86,11 +89,20 @@ export const vagrantMachines = (machine?: string | null) => VM_MACHINES.filter((
 const hostName = (p: Placement) => (p.host ? argText(p.host.name) : null);
 const hostId = (p: Placement) => (p.host ? argText(p.host.id) : null);
 
+/** What the lifecycle accepts on a VM lab where it runs (lifecycle.rs `controls`): here, pause
+ *  (not on QEMU, which can't suspend), shut down, provisioning and the repair; on an ESXi host,
+ *  provisioning only; on another server or a cloud account, nothing. */
+function vmControls(p: Placement): LabControl[] {
+  if (p.host) return p.host.provider === "vmware_esxi" ? ["provision"] : [];
+  return [...(p.provider === "qemu" ? [] : (["pause"] as const)), "shutdown", "provision", "repair"];
+}
+
 /** A VM lab's status: its machines on the lab network, running, saved or powered off. */
 function vmStatus(p: Placement): LabStatus {
   const state = p.parked === "pause" ? "saved" : p.parked === "shutdown" ? "poweroff" : "running";
   return {
     ...stopped,
+    controls: vmControls(p),
     running: !p.parked,
     parked: p.parked,
     host: hostName(p),
@@ -130,19 +142,25 @@ function cloudStatus(p: Placement): LabStatus {
   };
 }
 
-/** A started container lab's status: one web container on its own network, next to the attack box. */
-function startedStatus(id: string): LabStatus {
+/** The host port a started container lab's web service is published on: its own (8443), or a
+ *  random free one, as Docker picks it. */
+const RANDOM_PORT = 52817;
+
+/** A started container lab's status: one web container on its own network, next to the attack
+ *  box, published on its own host port or a random one (`ownPorts`). */
+function startedStatus(id: string, ownPorts: boolean): LabStatus {
   if (id === "lab-invoice") return invoiceStatus;
+  const published = ownPorts ? 8443 : RANDOM_PORT;
   return {
     ...invoiceStatus,
-    url: "http://127.0.0.1:8443",
+    url: `http://127.0.0.1:${String(published)}`,
     networks: [{ name: "default", subnet: "10.43.0.0/24", internal: false }],
     machines: [
       {
         name: "web",
         state: "running",
         ip: "10.43.0.2",
-        ports: [{ published: 8443, target: 443 }],
+        ports: [{ published, target: 443 }],
         interfaces: [{ network: "default", ip: "10.43.0.2" }],
         services: [{ name: "dashboard", kind: "web", ports: [443] }],
         infra: false,
@@ -156,7 +174,7 @@ function startedStatus(id: string): LabStatus {
 export function statusOf(id: string, live: Live): LabStatus {
   const placed = live.placed.get(id);
   if (placed) return labRuntime(id) === "CLOUD" ? cloudStatus(placed) : vmStatus(placed);
-  return live.running.has(id) ? startedStatus(id) : stopped;
+  return live.running.has(id) ? startedStatus(id, live.ownPorts.has(id)) : stopped;
 }
 
 /** A command's answer in the browser preview, given its arguments and the preview's state. */
