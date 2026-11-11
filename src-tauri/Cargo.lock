@@ -2392,11 +2392,12 @@ dependencies = [
 
 [[package]]
 name = "isoloom-ansible"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac0f7c883bbf795d52d645708c5d2a997cc817da601967ff4f4aaaf28d6dd226"
+checksum = "e27c9cb1f52d967c80a9489333dee30d347cf48be752f405523920d9fb140870"
 dependencies = [
  "isoloom-catalogue",
+ "isoloom-manifest",
  "isoloom-plan",
  "isoloom-render",
  "isoloom-spec",
@@ -2406,11 +2407,12 @@ dependencies = [
 
 [[package]]
 name = "isoloom-catalogue"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89de54fcc8a12f09456bca0e2e9db283a06f782be9fd8a4b47a9cabc492dd7b5"
+checksum = "7403524373573d6d29c50f44f8c66b1470429f715a7ebd864adda7d6ea86d746"
 dependencies = [
  "indexmap 2.14.2",
+ "isoloom-manifest",
  "isoloom-spec",
  "regex",
  "schemars 1.2.3",
@@ -2422,9 +2424,9 @@ dependencies = [
 
 [[package]]
 name = "isoloom-compose"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c3bb945ef230393b4d767aded109e81f3215f650727e2779bdad5a40bca2c13"
+checksum = "4c847a17a2b7669e53cce1866edc783a2e370e8c100b75aba4787dfa755d89cd"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-manifest",
@@ -2438,11 +2440,12 @@ dependencies = [
 
 [[package]]
 name = "isoloom-kubernetes"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fae74eff84a67adde031a36315711c75dc9c17d17839e1e6347dd4e172234aa"
+checksum = "be5bbb45a509e80c54883c90ea3620a156d0746058ec291745325e8f191b7415"
 dependencies = [
  "indexmap 2.14.2",
+ "isoloom-manifest",
  "isoloom-plan",
  "isoloom-render",
  "isoloom-spec",
@@ -2454,9 +2457,9 @@ dependencies = [
 
 [[package]]
 name = "isoloom-manifest"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab4c522cafb18fa5fd3ea96f39ff0da35a2ad35b3eb8fb242732e04843080418"
+checksum = "479b6afd3928a7a38861d8656e765bcd4cb3efe8b599382232be9a23f55fd24f"
 dependencies = [
  "schemars 1.2.3",
  "serde",
@@ -2467,9 +2470,9 @@ dependencies = [
 
 [[package]]
 name = "isoloom-plan"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8356edf7a3176c8a6376e2614d14da698232c6a9127b97cb9306ad6e1cf90f41"
+checksum = "867966f135a93d9511bfc1d8aab69e264157149318140c2d4c3e28864f68a57f"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-catalogue",
@@ -2480,12 +2483,11 @@ dependencies = [
 
 [[package]]
 name = "isoloom-render"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d08d41a6b50ac7c1d628c097c6195fee81872684a5155b01e261d15df598e4a7"
+checksum = "281ec8a835d86a84e8f15be4a74d977bca36c74f933f6943f404b36e5894466b"
 dependencies = [
  "flate2",
- "hcl-rs",
  "indexmap 2.14.2",
  "isoloom-manifest",
  "isoloom-plan",
@@ -2497,11 +2499,12 @@ dependencies = [
 
 [[package]]
 name = "isoloom-spec"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c6c8d56398c94c76bc497b4eb4644348667ab92565ea8370aaf971efb65ffb8"
+checksum = "cb29ab84c5db26d8bf7a33601b7c017ddcce52d53a53955df9006e80b676f291"
 dependencies = [
  "indexmap 2.14.2",
+ "isoloom-manifest",
  "saphyr-parser",
  "schemars 1.2.3",
  "serde",
@@ -2513,9 +2516,9 @@ dependencies = [
 
 [[package]]
 name = "isoloom-targets"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d21dcebfe47b5283c33b0468379524ce16d0f80acc3f33c940c6d3021de656f"
+checksum = "614db9614212c84e9a63b50d70751878eceb69260de690d55339569a9f74a1a1"
 dependencies = [
  "isoloom-ansible",
  "isoloom-compose",
@@ -2534,10 +2537,11 @@ dependencies = [
 
 [[package]]
 name = "isoloom-terraform"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10af8d7232264d6c15809928ee5516ecfb2fb471f2fab7e25d97357582efac0e"
+checksum = "84d9be577345dbbfd3c995f02b53eac6d69389d717a889e30aed34a96c96537a"
 dependencies = [
+ "hcl-rs",
  "indexmap 2.14.2",
  "isoloom-manifest",
  "isoloom-plan",
@@ -2549,32 +2553,33 @@ dependencies = [
 
 [[package]]
 name = "isoloom-vagrant"
-version = "1.0.9"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "476c291533f58912451a7146cca7622ad5d68cc4388fb267835a0cbbec65b17c"
+checksum = "6579799df2e2f4b43b0ec865eee68fd1da0c1bc7e8d166b22b925dcff92f0cb8"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-manifest",
  "isoloom-plan",
  "isoloom-render",
  "isoloom-spec",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "isothrum-runner"
-version = "1.0.5"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "325f777e04252c9e5b71b4fe145eb17f6e2c94fbec4ac574b8faf3eea4c217aa"
+checksum = "37f876c8ef0e808abf839a33ff46ce9afe42b7727d63b34bf628cfcef9bdd895"
 dependencies = [
  "flate2",
+ "getrandom 0.4.3",
  "isoloom-manifest",
  "process-wrap",
  "regex",
  "schemars 1.2.3",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "tar",
  "thiserror 2.0.21",
  "tokio",

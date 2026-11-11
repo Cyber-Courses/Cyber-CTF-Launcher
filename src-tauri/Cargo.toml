@@ -105,16 +105,16 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 reqwest = { version = "0.13", features = ["json", "form"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
-# layered crates, the published crates.io 1.0 line. Only `src/runtime/lab/` calls them:
+# layered crates, the published crates.io 2.0 line. Only `src/runtime/lab/` calls them:
 # the spec (`isoloom-spec`), the backends' registry and the resolved snapshot
 # (`isoloom-targets`).
-isoloom-spec = "1.0.9"
-isoloom-targets = "1.0.9"
+isoloom-spec = "2.0.0"
+isoloom-targets = "2.0.0"
 # The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
-isoloom-manifest = "1.0.9"
+isoloom-manifest = "2.0.0"
 # The Isothrum runner: executes the run manifest Isoloom writes; every lab runs through it
-# (`runtime/isothrum`). The published crates.io 1.0 line.
-isothrum-runner = "1.0.5"
+# (`runtime/isothrum`). The published crates.io 2.0 line.
+isothrum-runner = "2.0.0"
 # The in-app terminal's pseudo-terminal (`terminal`).
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"
@@ -155,6 +155,6 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 # Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
 tauri = { version = "2.12.0", features = ["test"] }
 # The runner's test doubles (scripted processes and host ports), for `runtime/isothrum`'s.
-isothrum-runner = { version = "1.0.5", features = ["fake"] }
+isothrum-runner = { version = "2.0.0", features = ["fake"] }
 # A test's temp folder, removed when it drops, a failed test's too (`testing::temp_dir`).
 tempfile = "3"

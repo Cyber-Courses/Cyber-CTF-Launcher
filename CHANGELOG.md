@@ -150,6 +150,9 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
+- Bundles Isoloom 2.0.0 and Isothrum 2.0.0 from crates.io, which write and read the run
+  manifest's version 1. Their changelogs list what changed.
+
 - **A desktop attack VM never locks its screen.** Kali's screen lockers don't start for `player`,
   the screen never blanks, and the session doesn't lock on suspend or a switch of user, so the
   player isn't locked out mid-exercise; a login prompt that still shows takes the box's password.
