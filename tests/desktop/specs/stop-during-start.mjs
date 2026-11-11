@@ -6,6 +6,7 @@ import {
   finish,
   invokeInBackground,
   invokeWhenIdle,
+  LAB_START_MS,
   labContainers,
   localLab,
   localLabId,
@@ -16,6 +17,7 @@ import {
   waitSettled,
 } from "../lib/support.mjs";
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -44,7 +46,7 @@ try {
   if (left.length) r.fail("stop-during-start/nothing-left", `containers left: ${JSON.stringify(left)}`);
   else r.pass("stop-during-start/nothing-left", "nothing of the lab is left on Docker");
 
-  await invokeWhenIdle(b, "lab_launch_local", { path: LAB }, 900000);
+  await invokeWhenIdle(b, "lab_launch_local", { path: LAB }, LAB_START_MS);
   await waitSettled(b, id);
   const again = await invokeWhenIdle(b, "lab_status", { id, runtime: "DOCKER" });
   if (again && again.running) r.pass("stop-during-start/start-again", "a start again brings the lab up");

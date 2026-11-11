@@ -22,12 +22,15 @@ import {
   results,
   signedIn,
   startFromDialog,
+  STOP_MS,
   stopAndRemoveOnPage,
   stopLeftover,
+  VM_START_MS,
   waitAwake,
   waitLabPageRunning,
 } from "../lib/support.mjs";
 
+export const needs = ["vm-start"];
 const r = results();
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || (process.platform === "darwin" ? "utm" : "");
 const VM_LAB = process.env.CYBERCTF_TEST_CATALOGUE_VM_LAB || "";
@@ -97,7 +100,7 @@ try {
   if (!(await openLabFromList(b, LAB))) r.skipAll(`the catalogue doesn't list "${LAB}"`);
   await stopLeftover(b, r);
   await startFromDialog(b, { ...START, provider: PROVIDER });
-  await waitLabPageRunning(b, 3600000);
+  await waitLabPageRunning(b, VM_START_MS);
 
   let rows = [];
   await r.step("panel", "the running lab's page lists its VMs' screens", async () => {
@@ -129,14 +132,14 @@ try {
       const start = await b.$('//main//aside//button[contains(normalize-space(), "Start attack box")]');
       if (await start.isExisting()) await start.click();
       const open = await b.$('//main//aside//button[contains(normalize-space(), "Open screen")]');
-      await waitAwake(b, () => open.isExisting(), { timeout: 3600000, interval: 10000, timeoutMsg: "the box never offered its screen" });
+      await waitAwake(b, () => open.isExisting(), { timeout: VM_START_MS, interval: 10000, timeoutMsg: "the box never offered its screen" });
       const seen = await openScreen(b, () => open.click());
       if (!showing(seen)) throw new Error(`${seen.label}: ${seen.state}`);
       return `${seen.label}: ${described(seen)}`;
     });
   } else r.skip("box-desktop", "the attack box's desktop downloads about 1 GB more and takes 4 GB: set CYBERCTF_TEST_BOX_DESKTOP=1");
 
-  await r.step("stop", "Stop & remove ends the lab, its screens with it", () => stopAndRemoveOnPage(b, 1800000));
+  await r.step("stop", "Stop & remove ends the lab, its screens with it", () => stopAndRemoveOnPage(b, STOP_MS));
 } catch (e) {
   r.fail("error", e.message);
   if (b) console.log("main text:", JSON.stringify((await mainText(b)).slice(0, 800)));

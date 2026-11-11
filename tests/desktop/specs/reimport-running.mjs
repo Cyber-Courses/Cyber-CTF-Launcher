@@ -2,8 +2,23 @@
 // second copy, the app stays usable and exactly one copy runs. Launch the local lab, then invoke
 // lab_launch_local on the SAME folder again; whatever the command decides (refuse, or restart in
 // place), the machine must not end up with two copies and the shell must stay usable.
-import { finish, goTo, invokeCmd, labContainers, labRunning, localLab, mainText, openApp, results, sleep, waitForLab } from "../lib/support.mjs";
+import {
+  finish,
+  goTo,
+  invokeCmd,
+  LAB_START_MS,
+  labContainers,
+  labRunning,
+  localLab,
+  mainText,
+  openApp,
+  results,
+  sleep,
+  STOP_MS,
+  waitForLab,
+} from "../lib/support.mjs";
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -18,7 +33,7 @@ let b;
 try {
   ({ proc, b } = await openApp({ storage: { __wdio_launch_local__: LAB } }));
   await goTo(b, "Overview");
-  await waitForLab(b, 300000, "lab never ran");
+  await waitForLab(b, LAB_START_MS, "lab never ran");
   const main = await mainText(b);
   const raw = (main.match(/local-[a-z0-9_-]+/) || [])[0];
   const id = raw && raw.split("-isoloom-")[0];
@@ -28,7 +43,7 @@ try {
   // Import the same folder again while it runs.
   let refused = false;
   try {
-    await invokeCmd(b, "lab_launch_local", { path: LAB }, { streaming: true, timeoutMs: 180000 });
+    await invokeCmd(b, "lab_launch_local", { path: LAB }, { streaming: true, timeoutMs: STOP_MS });
   } catch (e) {
     refused = true;
     console.log("second import refused (acceptable):", e.message.slice(0, 160));

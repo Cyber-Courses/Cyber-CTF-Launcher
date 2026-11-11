@@ -11,6 +11,7 @@ const text = (b) =>
     .getText()
     .catch(() => "");
 
+export const needs = [];
 const r = results();
 let proc;
 let b;

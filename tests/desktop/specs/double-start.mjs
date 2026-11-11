@@ -1,8 +1,21 @@
 // Resilience (tests/resilience.md): Start pressed twice (a double click, or the catalogue's Start
 // and the lab page's at once). Exactly one start runs, the other is refused as already in
 // progress, and the lab comes up once.
-import { finish, invokeInBackground, invokeWhenIdle, labContainers, localLab, localLabId, openApp, outcomeOf, results, waitSettled } from "../lib/support.mjs";
+import {
+  finish,
+  invokeInBackground,
+  invokeWhenIdle,
+  LAB_START_MS,
+  labContainers,
+  localLab,
+  localLabId,
+  openApp,
+  outcomeOf,
+  results,
+  waitSettled,
+} from "../lib/support.mjs";
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -14,7 +27,7 @@ try {
   ({ proc, b } = await openApp());
   await invokeInBackground(b, "first", "lab_launch_local", { path: LAB });
   await invokeInBackground(b, "second", "lab_launch_local", { path: LAB });
-  const [first, second] = [await outcomeOf(b, "first", 900000), await outcomeOf(b, "second", 900000)];
+  const [first, second] = [await outcomeOf(b, "first", LAB_START_MS), await outcomeOf(b, "second", LAB_START_MS)];
   const outcomes = [first, second];
   const refused = outcomes.filter((o) => o && o.err && /already in progress/i.test(o.err));
   const ran = outcomes.filter((o) => o && o.ok);

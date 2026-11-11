@@ -6,6 +6,7 @@ run on Linux, Windows and macOS. One entry point a system:
 
 ```sh
 tests/desktop/run.sh --all                                   # Linux, macOS
+tests/desktop/run.sh --group lab                             # one group of specs (below)
 tests/desktop/run.sh --specs "smoke settings" --knobs ~/e2e.env
 tests/desktop/run.sh --app path/to/cyberctf-desktop          # an app already built
 tests/desktop/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # .deb, .rpm or .AppImage, unpacked
@@ -13,11 +14,14 @@ tests/desktop/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # .deb, .rpm 
 
 ```powershell
 pwsh -File tests\desktop\run.ps1 -All                        # Windows, in the desktop session
+pwsh -File tests\desktop\run.ps1 -Group lab
 pwsh -File tests\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\e2e.env
 pwsh -File tests\desktop\run.ps1 -Package path\to\Cyber.CTF_1.8.9_x64_en-US.msi   # or the NSIS setup .exe
 ```
 
-Without `--app` or `--package` the runner builds the app with `cargo build --features wdio` and
+Both are thin: they build or unpack the app and serve a debug build's frontend, then start
+`tests/desktop/run.mjs`, the runner itself, the same on every system (it makes the run's folder,
+checks the needs, runs the specs and writes the results). Without `--app` or `--package` they build the app with `cargo build --features wdio` and
 serves the frontend such a build loads (`next dev` on 3206, `tauri.conf.json`'s `devUrl`; an app
 from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A package must be a
 `tauri build` with the hooks: `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`, as
@@ -55,9 +59,54 @@ check, named `<spec>/<check>` (counted once, under the spec):
 ```
 
 With `--results <file>` (`-Results` on Windows) the runner also appends a JSON record per spec and
-per check there, and `--list` (`-List`) prints its cases ([tests/README.md](../../tests/README.md#results)).
+per check there, and `--list` (`-List`) prints its cases, each with its knobs, groups and needs
+([tests/README.md](../../tests/README.md#results)).
 Its exit status: 0 nothing failed, 1 a spec failed, 2 the runner itself couldn't run; `STRICT=1`
 fails a skip. Logs: `tests/desktop/.state/logs/<spec>.log`.
+
+## Needs, caps and groups
+
+A failure costs seconds, not an hour. Each spec declares what it needs on its first lines
+(`export const needs = [...]`, read by `tests/desktop/lib/plan.mjs`), and the runner meets each
+need once:
+
+- The runner provides some itself, checked when the first spec needing it comes up: `engine` (a
+  Docker engine answers, within a minute), `fixture-lab` (the lab folder), `session`
+  (`CYBERCTF_TEST_ACCOUNT_SESSION`), `hypervisor` (`CYBERCTF_TEST_VM_PROVIDER`, and its tool answers
+  where one can be asked), `server` (`CYBERCTF_TEST_SERVER_ENV`), `own-frame` (Linux, Windows),
+  `unix`, `utm-fixture-vm` (macOS with UTM: the VM `vm-scan` looks for, made and deleted by the
+  runner).
+- A spec provides the others by passing (`export const provides`): `launch` provides
+  `running-lab:fixture` (the fixture lab starts here), `lab-form-container` provides
+  `catalogue-lab` (a catalogue lab starts here, signed in), `lab-form-docker-vm` provides `vm-start`
+  (a VM lab starts on the hypervisor).
+
+A need not met skips every spec needing it at once, in the console and the results, with the
+failure as the reason (`needs running-lab:fixture, which launch didn't provide (failed: the seeded
+lab never showed as running on Overview (exit 1))`); the spec that owns the failure keeps its
+own verdict, with the app log's last lines. So the twelve specs that start the fixture lab wait
+for one failed start, not twelve; the three VM forms and `screens` for one VM that can't start.
+
+Every spec is killed past its cap, 5 minutes (`CYBERCTF_TEST_DESKTOP_TIMEOUT`; `machine` gets 8),
+and keeps its own waits under it (`support.mjs`'s `LAB_START_MS`, 3 minutes for a lab to start,
+`VM_START_MS`, 4 for a VM lab, `STOP_MS`, 2 for a stop, each a fraction of the cap), so a wait
+that runs out fails with its own reason first. An app that dies under a spec (WebDriver
+`ECONNREFUSED`) is started again once, to see whether it comes up at all; a second death, or none,
+ends the run with that reason, the specs left skipped.
+
+The cases fall into four groups (`cases.tsv`'s last column; `--group <name>`, `-Group`), for a
+caller that runs them as parallel jobs, each on a machine of its own; a group holds the providers
+of what its specs need, so `launch` is in two:
+
+| Group        | Cases                                                                                                                                             | About                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `shell`      | smoke, title-bar, settings, onboarding, setup-screens, labs, deep-link, fail-offline, fail-badlab, fail-signedout, fail-docker, attack-on-stopped | no lab, but `labs`' import                      |
+| `lab`        | launch, restart, stop, launch-ui, attack-box, attack-shell, stop-with-box, vm-scan                                                                | the fixture lab's life                          |
+| `resilience` | launch, kill-mid-deploy, stop-during-start, double-start, close-mid-deploy, kill-worker, park-resume, reimport-running                            | what breaks a start                             |
+| `vm`         | machine, lab-form-container, lab-actions, offline-start, lab-form-docker-vm, lab-form-vm, lab-form-per-machine, screens, server-lab, cleanup      | signed in, a hypervisor, a server; cleanup last |
+
+`--all` runs the groups in that order, each case once. A group that runs on another machine
+than the rest writes its own results file; `launch`'s record then appears in two of them.
 
 ## Knobs
 
@@ -144,7 +193,8 @@ The specs are `tests/desktop/specs/<name>.mjs` and share `tests/desktop/lib/supp
 id is its spec's name, which its summary line and its log (`<id>.log`) carry; a spec run once per
 form adds the form: `lab-form` runs as `lab-form-container`, `lab-form-docker-vm`, `lab-form-vm` and
 `lab-form-per-machine`. A new spec is a short `.mjs` there (its checks through `results()`, its
-skips through `skipAll`) plus a line in `run.sh` and `run.ps1` and a row above.
+skips through `skipAll`, its needs declared on its first lines, its waits under the cap) plus a
+row in `cases.tsv` (its id, spec, form, knobs and groups) and a row above.
 
 On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` (or a Hyper-V VM
 `<lab>-<machine>` on Windows) yourself, `<lab>` being the installed lab's isoloom name plus

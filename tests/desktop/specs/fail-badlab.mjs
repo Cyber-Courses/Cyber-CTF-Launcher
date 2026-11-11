@@ -2,6 +2,7 @@
 // and nothing ends up running (no crash, no phantom lab).
 import { finish, goTo, mainText, openApp, results, sleep } from "../lib/support.mjs";
 
+export const needs = [];
 const r = results();
 let proc;
 let b;

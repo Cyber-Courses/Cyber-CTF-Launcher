@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { answerPickers, closeWindow, finish, goTo, invokeCmd, openApp, results, sleep, switchToWindow } from "../lib/support.mjs";
 
+export const needs = [];
 const r = results();
 
 /** The appearance class on the page's root: `light`, `black`, or none for dark (src/lib/appearance.ts). */

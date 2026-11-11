@@ -3,8 +3,22 @@
 // Machine page kept listing the lab as running. Launch the local lab, attach the box through the
 // real panel, then stop the lab through the `lab_stop` command (what the lab page and the
 // Overview call) and check Docker has nothing of the lab left, box included.
-import { finish, forceVisible, goTo, labContainers, localLab, mainText, openApp, results, sleep, waitAwake, waitForLab } from "../lib/support.mjs";
+import {
+  finish,
+  forceVisible,
+  goTo,
+  LAB_START_MS,
+  labContainers,
+  localLab,
+  mainText,
+  openApp,
+  results,
+  sleep,
+  waitAwake,
+  waitForLab,
+} from "../lib/support.mjs";
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -20,7 +34,7 @@ let b;
 try {
   ({ proc, b } = await openApp({ storage: { __wdio_launch_local__: LAB } }));
   await goTo(b, "Overview");
-  await waitForLab(b, 220000, "lab never ran");
+  await waitForLab(b, LAB_START_MS, "lab never ran");
   const main = await mainText(b);
   const raw = (main.match(/local-[a-z0-9_-]+/) || [])[0];
   const id = raw && raw.split("-isoloom-")[0];

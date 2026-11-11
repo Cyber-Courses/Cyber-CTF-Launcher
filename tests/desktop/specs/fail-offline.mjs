@@ -6,6 +6,7 @@ import { finish, goTo, mainText, openApp, results, sleep } from "../lib/support.
 /** What the Labs page shows once the catalogue load failed (any apostrophe). */
 const DEGRADED = /can.?t (be )?reach|couldn|sign in|offline|no labs/i;
 
+export const needs = [];
 const r = results();
 let proc;
 let b;

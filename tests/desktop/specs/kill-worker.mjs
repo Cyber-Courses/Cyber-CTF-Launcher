@@ -9,6 +9,7 @@ import {
   finish,
   invokeInBackground,
   invokeWhenIdle,
+  LAB_START_MS,
   labContainers,
   localLab,
   localLabId,
@@ -16,9 +17,11 @@ import {
   outcomeOf,
   results,
   startMade,
+  STOP_MS,
   waitSettled,
 } from "../lib/support.mjs";
 
+export const needs = ["unix", "running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -52,10 +55,10 @@ try {
 
   // As the failure says: a Stop clears what the killed start left (a start is refused while
   // something of the lab is there), then a start again brings it up.
-  await invokeWhenIdle(b, "lab_stop", { id, runtime: "DOCKER" }, 600000);
+  await invokeWhenIdle(b, "lab_stop", { id, runtime: "DOCKER" }, STOP_MS);
   if (labContainers(id).length === 0) r.pass("kill-worker/cleared", "a Stop clears what the killed start left");
   else r.fail("kill-worker/cleared", `left: ${JSON.stringify(labContainers(id))}`);
-  await invokeWhenIdle(b, "lab_launch_local", { path: LAB }, 900000);
+  await invokeWhenIdle(b, "lab_launch_local", { path: LAB }, LAB_START_MS);
   await waitSettled(b, id);
   const again = await invokeWhenIdle(b, "lab_status", { id, runtime: "DOCKER" });
   if (again && again.running) r.pass("kill-worker/start-again", "a start again brings the lab up");

@@ -18,6 +18,7 @@ const clickText = async (b, label) => {
   return true;
 };
 
+export const needs = [];
 const r = results();
 let proc;
 let b;

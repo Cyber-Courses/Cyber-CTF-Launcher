@@ -8,6 +8,7 @@
 // registration, a second launch handed to the first) is the packaging smoke's.
 import { finish, goTo, importedLabs, invokeCmd, mainButton, mainText, openApp, results, sleep } from "../lib/support.mjs";
 
+export const needs = [];
 const r = results();
 const ARGV_LINKS = process.platform !== "darwin";
 

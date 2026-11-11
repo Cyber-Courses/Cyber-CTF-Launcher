@@ -2,6 +2,7 @@
 // (the deploy worker's pidfile and status are swept, the shell comes up, no error screen).
 import { finish, goTo, localLab, mainText, openApp, results, sleep, stopApp } from "../lib/support.mjs";
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");

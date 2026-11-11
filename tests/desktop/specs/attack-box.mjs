@@ -2,8 +2,9 @@
 // attack-box panel (WdioAttack), let it attach the attack box, see it running with an address,
 // open the attacker shell, then Stop it and watch it detach. Drives the same useAttackBox /
 // AttackBoxPanel / useLabShell the catalogue lab page uses.
-import { finish, forceVisible, goTo, localLab, mainText, openApp, results, sleep, waitAwake, waitForLab } from "../lib/support.mjs";
+import { finish, forceVisible, goTo, LAB_START_MS, localLab, mainText, openApp, results, sleep, waitAwake, waitForLab } from "../lib/support.mjs";
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -19,7 +20,7 @@ try {
   // 1. Launch the local lab through the real import path and wait until it runs here.
   ({ proc, b } = await openApp({ storage: { __wdio_launch_local__: LAB } }));
   await goTo(b, "Overview");
-  await waitForLab(b, 220000, "lab never ran");
+  await waitForLab(b, LAB_START_MS, "lab never ran");
 
   // 2. Read the running lab's id off the Overview. The page also carries container names
   //    (`<id>-isoloom-<role>…`), so strip any `-isoloom-*` suffix to get the bare lab id. No word

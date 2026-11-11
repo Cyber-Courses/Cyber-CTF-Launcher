@@ -15,8 +15,9 @@
 //                              (as the list shows it, e.g. "Terraform"); none: that check skipped,
 //                              since removing a tool takes it from the machine
 import { ownedDownloads, readBefore, runRoot, runTool } from "../lib/owned.mjs";
-import { answerOf, closeWindow, confirmSystemDialogs, finish, goTo, openApp, recordAnswers, results, sleep, switchToWindow } from "../lib/support.mjs";
+import { answerOf, closeWindow, confirmSystemDialogs, finish, goTo, openApp, recordAnswers, results, sleep, STOP_MS, switchToWindow } from "../lib/support.mjs";
 
+export const needs = [];
 const r = results();
 const TOOL = process.env.CYBERCTF_TEST_CLEANUP_TOOL || "";
 
@@ -77,7 +78,7 @@ try {
     await clean.click();
     await r.step("downloads", "Clean up, confirmed, removes the lab downloads and says what it freed", async () => {
       await b.waitUntil(async () => /Freed [^\n]+|Nothing could be removed/.test(await body(b)), {
-        timeout: 600000,
+        timeout: STOP_MS,
         interval: 2000,
         timeoutMsg: "Clean up never said what it freed",
       });
@@ -97,7 +98,7 @@ try {
       await confirmSystemDialogs(b);
       await (await row.$('.//button[contains(normalize-space(), "Remove")]')).click();
       await b.waitUntil(async () => !(await b.$(`//li[.//p[normalize-space()=${JSON.stringify(TOOL)}]]`).isExisting()), {
-        timeout: 900000,
+        timeout: STOP_MS,
         interval: 3000,
         timeoutMsg: `${TOOL} is still listed`,
       });

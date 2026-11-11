@@ -15,6 +15,7 @@ import {
   CATALOGUE_LAB,
   dockerUp,
   finish,
+  LAB_START_MS,
   mainButton,
   mainText,
   openApp,
@@ -22,12 +23,14 @@ import {
   results,
   signedIn,
   startFromDialog,
+  STOP_MS,
   stopAndRemoveOnPage,
   stopLeftover,
   waitAwake,
   waitLabPageRunning,
 } from "../lib/support.mjs";
 
+export const needs = ["catalogue-lab"];
 const r = results();
 if (!dockerUp()) r.skipAll("no Docker engine answers here");
 const UPSTREAM = new URL(process.env.CYBERBACKEND_URL || "https://cyberbackend.com");
@@ -81,7 +84,7 @@ try {
 
   const online = await r.step("online", "started and stopped online first (the start's source kept)", async () => {
     await startFromDialog(b, { place: "container" });
-    await waitLabPageRunning(b, 1200000);
+    await waitLabPageRunning(b, LAB_START_MS);
     await stopAndRemoveOnPage(b);
   });
   if (!online) r.skipAll("the lab couldn't be started online, so there is nothing to start offline");
@@ -105,11 +108,11 @@ try {
             .catch(() => ""),
         ) || (await mainButton(b, "Stop & remove").isExisting()),
       {
-        timeout: 300000,
+        timeout: STOP_MS,
         timeoutMsg: "the offline start never began",
       },
     );
-    await waitLabPageRunning(b, 1200000);
+    await waitLabPageRunning(b, LAB_START_MS);
   });
   await r.step("offline-stop", "the offline lab stops and is removed", () => stopAndRemoveOnPage(b));
 } catch (e) {

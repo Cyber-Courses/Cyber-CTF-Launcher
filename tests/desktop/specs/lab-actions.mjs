@@ -14,6 +14,7 @@ import {
   docker,
   dockerUp,
   finish,
+  LAB_START_MS,
   labPageRunning,
   mainButton,
   mainText,
@@ -24,6 +25,7 @@ import {
   signedIn,
   sleep,
   startFromDialog,
+  STOP_MS,
   stopAndRemoveOnPage,
   stopLeftover,
   waitAwake,
@@ -31,6 +33,7 @@ import {
 } from "../lib/support.mjs";
 import { runRoot } from "../lib/owned.mjs";
 
+export const needs = ["catalogue-lab"];
 const r = results();
 if (!dockerUp()) r.skipAll("no Docker engine answers here");
 
@@ -49,7 +52,7 @@ const mine = (before) => [...containers()].filter(([name]) => !before.has(name))
 const runningOf = (list) => list.filter(([, state]) => state === "running").map(([name]) => name);
 
 /** Clicks the page's `label` button and waits until `done()`. */
-async function act(b, label, done, timeout = 300000) {
+async function act(b, label, done, timeout = STOP_MS) {
   const button = await mainButton(b, label);
   await button.waitForClickable({ timeout: 60000 });
   await button.click();
@@ -65,7 +68,7 @@ try {
   await stopLeftover(b, r);
   const before = containers();
   await startFromDialog(b, { place: "container" });
-  await waitLabPageRunning(b, 1200000);
+  await waitLabPageRunning(b, LAB_START_MS);
   const up = runningOf(mine(before));
   if (up.length === 0) throw new Error("the page says the lab runs, but none of its containers does");
 
@@ -103,7 +106,7 @@ try {
       await (await mainButton(b, "Reset lab")).click();
       await sleep(5000);
       await waitAwake(b, async () => !/Resetting/.test(await mainText(b)) && (await labPageRunning(b)), {
-        timeout: 1200000,
+        timeout: LAB_START_MS,
         interval: 5000,
         timeoutMsg: "the lab never ran again after Reset",
       });

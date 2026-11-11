@@ -6,6 +6,7 @@
 // Run by hand, it relies on this machine having no session.
 import { finish, goTo, openApp, results, sleep } from "../lib/support.mjs";
 
+export const needs = [];
 const r = results();
 let proc;
 let b;

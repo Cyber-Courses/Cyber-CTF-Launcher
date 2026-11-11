@@ -17,6 +17,7 @@
 // checks over SSH, provisioning) is the integration tests' server tier (server-lab-proxmox, server-lab-esxi).
 import { existsSync, readFileSync } from "node:fs";
 import {
+  capMs,
   CATALOGUE_LAB,
   closeWindow,
   confirmSystemDialogs,
@@ -29,12 +30,15 @@ import {
   signedIn,
   sleep,
   startFromDialog,
+  STOP_MS,
   stopAndRemoveOnPage,
   switchToWindow,
+  VM_START_MS,
   waitAwake,
   waitLabPageRunning,
 } from "../lib/support.mjs";
 
+export const needs = ["server"];
 const r = results();
 
 /** The settings: the file's KEY=value lines (values as written), over the environment's. */
@@ -87,7 +91,7 @@ async function tools(b) {
     if (!(await install.isExisting())) break;
     const what = await install.getText();
     await install.click();
-    await b.waitUntil(async () => !/Installing/.test(await body(b)), { timeout: 1200000, timeoutMsg: `${what} never finished` });
+    await b.waitUntil(async () => !/Installing/.test(await body(b)), { timeout: capMs(0.5), timeoutMsg: `${what} never finished` });
     await (await button(b, "Re-check")).click().catch(() => {});
     await sleep(3000);
   }
@@ -139,7 +143,7 @@ try {
   added = true;
   await r.step("test", "Save and test: the connection's checks pass", async () => {
     const mark = await b.$('//*[@role="img"][@aria-label="Passed" or @aria-label="Passed, with a warning" or @aria-label="Failed"]');
-    await mark.waitForExist({ timeout: 300000, timeoutMsg: "the connection test never answered" });
+    await mark.waitForExist({ timeout: STOP_MS, timeoutMsg: "the connection test never answered" });
     const outcome = await mark.getAttribute("aria-label");
     const text = (await body(b)).replace(/\s+/g, " ");
     if (outcome === "Failed") throw new Error(text.slice(0, 800));
@@ -153,7 +157,7 @@ try {
           if (/VM test (failed|incomplete)/.test(t)) throw new Error(t.slice(t.search(/VM test/), t.search(/VM test/) + 800));
           return /VM test passed/.test(t);
         },
-        { timeout: 2400000, interval: 10000, timeoutMsg: "the VM test never ended" },
+        { timeout: VM_START_MS, interval: 10000, timeoutMsg: "the VM test never ended" },
       ),
     );
   }
@@ -183,7 +187,7 @@ try {
           if (/VM test (failed|incomplete)/.test(t)) throw new Error(t.slice(t.search(/VM test/), t.search(/VM test/) + 800));
           return /VM test passed/.test(t);
         },
-        { timeout: 2400000, interval: 10000, timeoutMsg: "the VM test never ended" },
+        { timeout: VM_START_MS, interval: 10000, timeoutMsg: "the VM test never ended" },
       );
     });
   }
@@ -199,8 +203,8 @@ try {
       `${LAB} started on ${NAME} through the dialog`,
       async () => `picked: ${await startFromDialog(b, { place: "host", host: NAME })}`,
     );
-    const running = started && (await r.step("lab-running", `${LAB} runs on the server, as its page says`, () => waitLabPageRunning(b, 3600000)));
-    if (started) await r.step("lab-stop", "Stop & remove takes it off the server", () => stopAndRemoveOnPage(b, 1800000));
+    const running = started && (await r.step("lab-running", `${LAB} runs on the server, as its page says`, () => waitLabPageRunning(b, VM_START_MS)));
+    if (started) await r.step("lab-stop", "Stop & remove takes it off the server", () => stopAndRemoveOnPage(b, STOP_MS));
     else r.skip("lab-stop", "the lab never started");
     if (!running) console.log("(the lab didn't reach running; see lab-running)");
   }

@@ -6,6 +6,7 @@
 // system's frame and traffic lights: skipped there.
 import { closeWindow, finish, goTo, openApp, invokeCmd, ownFrame, results, sleep, switchToWindow } from "../lib/support.mjs";
 
+export const needs = ["own-frame"];
 const r = results();
 if (!ownFrame) r.skipAll("macOS keeps the system's window frame: the app draws no window controls there");
 

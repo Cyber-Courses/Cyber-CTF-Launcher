@@ -11,6 +11,7 @@ import { connect, deadDockerEnv, finish, launchApp, results, sleep } from "../li
 
 const WANT = process.env.CYBERCTF_TEST_SCAN_LAB || "solo-web";
 
+export const needs = ["running-lab:fixture", "utm-fixture-vm"];
 const r = results();
 let found = false;
 let proc;

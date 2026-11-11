@@ -8,8 +8,9 @@
 // is the integration tests' bare-machine tier (docs/testing/integration.md).
 //
 //   CYBERCTF_TEST_VM_PROVIDER  the hypervisor whose VM lab test to run (none: that check skipped)
-import { closeWindow, deadDockerEnv, dockerUp, finish, goTo, mainText, openApp, results, switchToWindow, waitAwake } from "../lib/support.mjs";
+import { capMs, closeWindow, deadDockerEnv, dockerUp, finish, goTo, mainText, openApp, results, switchToWindow, waitAwake } from "../lib/support.mjs";
 
+export const needs = [];
 const r = results();
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || "";
 const LABELS = { utm: "UTM", qemu: "QEMU", virtualbox: "VirtualBox", vmware_desktop: "VMware", parallels: "Parallels", libvirt: "libvirt", hyperv: "Hyper-V" };
@@ -49,7 +50,7 @@ try {
   });
 
   if (dockerUp()) {
-    const outcome = await runSelfTest(b, await b.$('(//main//button[normalize-space()="Test"])[1]'), "Container lab test", 600000).catch((e) => ({
+    const outcome = await runSelfTest(b, await b.$('(//main//button[normalize-space()="Test"])[1]'), "Container lab test", capMs(0.4)).catch((e) => ({
       ok: false,
       text: e.message,
     }));
@@ -62,7 +63,7 @@ try {
       `(//main//*[contains(normalize-space(text()), ${JSON.stringify(label)})]/ancestor::div[.//button[normalize-space()="Test"]][1]//button[normalize-space()="Test"])[1]`,
     );
     if (await test.isExisting()) {
-      const outcome = await runSelfTest(b, test, "VM lab test", 1800000).catch((e) => ({ ok: false, text: e.message }));
+      const outcome = await runSelfTest(b, test, "VM lab test", capMs(0.5)).catch((e) => ({ ok: false, text: e.message }));
       r.check("vm-test", outcome.ok, `the VM lab test on ${label}: ${outcome.text.replace(/\s+/g, " ").slice(0, 300)}`);
     } else r.fail("vm-test", `no ${label} row with a Test button on the Machine page`);
   } else r.skip("vm-test", "no hypervisor asked: set CYBERCTF_TEST_VM_PROVIDER");

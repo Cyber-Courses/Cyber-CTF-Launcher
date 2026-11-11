@@ -1,7 +1,9 @@
 // Functional GUI e2e: the app seeds a running lab on startup (CYBERCTF_WDIO_SEED_LAB, wdio build);
 // this drives the REAL UI to verify the lab shows as running on the Overview.
-import { finish, goTo, localLab, mainText, openApp, results, waitForLab } from "../lib/support.mjs";
+import { finish, goTo, LAB_START_MS, localLab, mainText, openApp, results, waitForLab } from "../lib/support.mjs";
 
+export const needs = ["engine", "fixture-lab"];
+export const provides = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -13,7 +15,7 @@ try {
   await b.$("main h1").waitForExist({ timeout: 25000 });
   console.log("shell rendered; h1 =", JSON.stringify(await b.$("main h1").getText()));
   await goTo(b, "Overview");
-  await waitForLab(b, 220000, "the seeded lab never showed as running on Overview");
+  await waitForLab(b, LAB_START_MS, "the seeded lab never showed as running on Overview");
   const running = (await mainText(b))
     .split("\n")
     .filter((l) => /running/i.test(l))

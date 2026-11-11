@@ -8,6 +8,7 @@ import {
   goTo,
   invokeInBackground,
   invokeWhenIdle,
+  LAB_START_MS,
   labContainers,
   localLab,
   localLabId,
@@ -19,6 +20,7 @@ import {
   waitForLab,
 } from "../lib/support.mjs";
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -43,7 +45,7 @@ try {
 
   ({ proc: p2, b: b2 } = await openApp());
   await goTo(b2, "Overview");
-  await waitForLab(b2, 600000, "the reopened app never showed the lab running");
+  await waitForLab(b2, LAB_START_MS, "the reopened app never showed the lab running");
   r.pass("close-mid-deploy/finished", "the start went on without the window, and the reopened app shows the lab running");
   await invokeWhenIdle(b2, "lab_stop", { id, runtime: "DOCKER" });
   if (labContainers(id).length === 0) r.pass("close-mid-deploy/stopped", "it stops, nothing left");

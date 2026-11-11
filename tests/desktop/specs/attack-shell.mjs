@@ -17,6 +17,7 @@ import {
   goTo,
   importedLabs,
   invokeCmd,
+  LAB_START_MS,
   labContainers,
   localLab,
   localLabName,
@@ -24,12 +25,14 @@ import {
   openApp,
   results,
   sleep,
+  STOP_MS,
   stopAndRemoveOnPage,
   switchToWindow,
   waitAwake,
   waitLabPageRunning,
 } from "../lib/support.mjs";
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB");
@@ -91,7 +94,7 @@ try {
   ({ proc, b } = await openApp({ storage: { __wdio_launch_local__: LAB } }));
   let title = null;
   await b.waitUntil(async () => (title = (await importedLabs(b)).find((l) => l.id === ID)?.title ?? null) !== null, {
-    timeout: 300000,
+    timeout: LAB_START_MS,
     interval: 3000,
     timeoutMsg: `the lab was never imported as ${ID}`,
   });
@@ -99,14 +102,14 @@ try {
   const open = await b.$(`main button[aria-label=${JSON.stringify(`Open ${title}`)}]`);
   await open.waitForClickable({ timeout: 60000 });
   await open.click();
-  await waitLabPageRunning(b, 900000);
+  await waitLabPageRunning(b, LAB_START_MS);
 
   await r.step("box-up", "the attack box runs on the lab network, with an address", async () => {
     const start = await sideButton(b, "Start attack box");
     const clicked = await start.isExisting();
     if (clicked) await start.click();
     await waitAwake(b, async () => /Stop attack box/.test(await panel(b)) && (await (await sideButton(b, "Open attacker shell")).isEnabled()), {
-      timeout: 600000,
+      timeout: LAB_START_MS,
       interval: 3000,
       timeoutMsg: "the box never showed running",
     });
@@ -156,7 +159,7 @@ try {
     await stop.waitForClickable({ timeout: 30000 });
     await stop.click();
     await waitAwake(b, async () => /Start attack box|not started/.test(await panel(b)), {
-      timeout: 300000,
+      timeout: STOP_MS,
       interval: 3000,
       timeoutMsg: "the box never stopped",
     });

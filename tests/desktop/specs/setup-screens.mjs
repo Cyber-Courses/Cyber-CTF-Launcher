@@ -5,6 +5,7 @@
 // (setup-wizards.spec.ts) the server and cloud setups against the dev mock.
 import { finish, goTo, mainText, openApp, results } from "../lib/support.mjs";
 
+export const needs = [];
 const r = results();
 let proc;
 let b;

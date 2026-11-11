@@ -19,6 +19,7 @@ import {
   dockerUp,
   finish,
   hypervisorVms,
+  LAB_START_MS,
   mainButton,
   mainText,
   openApp,
@@ -27,19 +28,23 @@ import {
   signedIn,
   sleep,
   startFromDialog,
+  STOP_MS,
   stopAndRemoveOnPage,
   stopLeftover,
+  VM_START_MS,
   waitLabPageRunning,
 } from "../lib/support.mjs";
 
+export const needs = { container: ["session", "engine"], "docker-vm": ["session", "hypervisor"], vm: ["vm-start"], "per-machine": ["vm-start"] };
+export const provides = { container: ["catalogue-lab"], "docker-vm": ["vm-start"] };
 const r = results();
 const FORM = process.env.CYBERCTF_TEST_LAB_FORM || "container";
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || (process.platform === "darwin" ? "utm" : "");
 const FORMS = {
-  container: { place: "container", lab: CATALOGUE_LAB, minutes: 20 },
-  "docker-vm": { place: "vm", form: "one", lab: CATALOGUE_LAB, minutes: 45 },
-  "per-machine": { place: "vm", form: "per-machine", lab: CATALOGUE_LAB, minutes: 60 },
-  vm: { place: "vm", form: "one", lab: process.env.CYBERCTF_TEST_CATALOGUE_VM_LAB || "", minutes: 60 },
+  container: { place: "container", lab: CATALOGUE_LAB, start: LAB_START_MS },
+  "docker-vm": { place: "vm", form: "one", lab: CATALOGUE_LAB, start: VM_START_MS },
+  "per-machine": { place: "vm", form: "per-machine", lab: CATALOGUE_LAB, start: VM_START_MS },
+  vm: { place: "vm", form: "one", lab: process.env.CYBERCTF_TEST_CATALOGUE_VM_LAB || "", start: VM_START_MS },
 };
 const want = FORMS[FORM];
 if (!want) r.skipAll(`unknown CYBERCTF_TEST_LAB_FORM "${FORM}" (container, docker-vm, per-machine or vm)`);
@@ -68,7 +73,7 @@ try {
     `Start lab, ${FORM} through the dialog`,
     async () => `picked: ${await startFromDialog(b, { ...want, provider: PROVIDER })}`,
   );
-  const running = started && (await r.step("running", `the page says ${want.lab} runs`, () => waitLabPageRunning(b, want.minutes * 60000)));
+  const running = started && (await r.step("running", `the page says ${want.lab} runs`, () => waitLabPageRunning(b, want.start)));
   if (running) {
     await r.step("engine", `what runs is the ${FORM} form, asked of the engine`, async () => {
       const now = snapshot();
@@ -101,7 +106,7 @@ try {
   }
 
   await r.step("stop", "Stop & remove from the page leaves nothing of the lab", async () => {
-    if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) await stopAndRemoveOnPage(b, want.minutes * 60000);
+    if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) await stopAndRemoveOnPage(b, STOP_MS);
     await sleep(3000);
     const after = snapshot();
     const containers = added(after.containers, before.containers);

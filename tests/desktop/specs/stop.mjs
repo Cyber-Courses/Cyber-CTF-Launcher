@@ -1,5 +1,5 @@
 // Functional: stop a running lab from the Machine > Running now panel; it must stop and clear.
-import { finish, goTo, labRunning, localLab, localLabName, mainText, openApp, results, waitForLab } from "../lib/support.mjs";
+import { finish, goTo, LAB_START_MS, labRunning, localLab, localLabName, mainText, openApp, results, waitForLab } from "../lib/support.mjs";
 
 /** The name the Running now panel gives a local lab (prettyLabId of its `local-<slug>` id). */
 const prettyName = (lab) =>
@@ -9,6 +9,7 @@ const prettyName = (lab) =>
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join(" ");
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -18,7 +19,7 @@ let b;
 try {
   ({ proc, b } = await openApp({ env: { CYBERCTF_WDIO_SEED_LAB: LAB } }));
   await goTo(b, "Overview");
-  await waitForLab(b, 220000, "lab not running");
+  await waitForLab(b, LAB_START_MS, "lab not running");
   await goTo(b, "Machine");
   // The Stop of this lab's own row: other labs may run here too (each row is its name, then Stop).
   const stopBtn = await b.$(`//main//div[div/p[normalize-space()=${JSON.stringify(prettyName(LAB))}]]/button[normalize-space()="Stop"]`);

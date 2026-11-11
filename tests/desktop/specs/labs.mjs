@@ -11,12 +11,13 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-  CATALOGUE_LAB,
   answerPickers,
+  CATALOGUE_LAB,
   dockerUp,
   finish,
   goTo,
   importedLabs,
+  LAB_START_MS,
   localLab,
   localLabName,
   mainText,
@@ -28,6 +29,7 @@ import {
   waitLabPageRunning,
 } from "../lib/support.mjs";
 
+export const needs = [];
 const r = results();
 const LAB = localLab();
 
@@ -93,7 +95,7 @@ try {
     let title = null;
     await r.step("imported-list", "the lab is listed under Imported from a folder", async () => {
       await b.waitUntil(async () => (title = (await importedLabs(b)).find((l) => l.id === id)?.title ?? null) !== null, {
-        timeout: 300000,
+        timeout: LAB_START_MS,
         interval: 3000,
         timeoutMsg: `no imported lab ${id}`,
       });
@@ -119,7 +121,7 @@ try {
         if (existsSync(join(LAB, ".ctf", "objectives.json")) && !/Objectives/.test(await mainText(b)))
           throw new Error("the lab has .ctf/objectives.json but its page shows no Objectives");
       });
-      await r.step("imported-runs", "the imported lab runs, as its page says", () => waitLabPageRunning(b, 900000));
+      await r.step("imported-runs", "the imported lab runs, as its page says", () => waitLabPageRunning(b, LAB_START_MS));
       await r.step("imported-stop", "Stop & remove stops it (confirmed in the system dialog) and it stays listed", async () => {
         await stopAndRemoveOnPage(b);
         await sleep(2000);

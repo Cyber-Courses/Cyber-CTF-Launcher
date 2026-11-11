@@ -25,6 +25,19 @@ export function appBinary() {
 export const PORT = Number(process.env.TAURI_WEBDRIVER_PORT || 4445);
 
 /**
+ * The caps the specs keep to, scaled from the seconds the runner gives a spec
+ * (CYBERCTF_TEST_DESKTOP_TIMEOUT: 300 by default, the Machine page's 480; tests/desktop/run.mjs),
+ * so a wait that runs out fails with its own reason before the runner kills the spec: `capMs(f)`
+ * is that fraction of it; LAB_START_MS a lab's start here (0.6: 3 min), VM_START_MS a VM lab's
+ * (0.8: 4 min), STOP_MS a stop or a command (0.4: 2 min).
+ */
+export const CAP_S = Number(process.env.CYBERCTF_TEST_DESKTOP_TIMEOUT) || 300;
+export const capMs = (fraction) => Math.round(CAP_S * fraction) * 1000;
+export const LAB_START_MS = capMs(0.6);
+export const VM_START_MS = capMs(0.8);
+export const STOP_MS = capMs(0.4);
+
+/**
  * An environment in which the app cannot reach any Docker engine: a dead `DOCKER_HOST` and a
  * `DOCKER_CONFIG` whose config.json names no current context. The second half matters: the app
  * deliberately follows the user's Docker context (`docker context use`, what Docker Desktop sets)
@@ -191,7 +204,7 @@ export function waitAwake(b, cond, { timeout, interval = 4000, timeoutMsg }) {
 }
 
 /** Wait until a lab shows as running on the Overview. */
-export function waitForLab(b, timeout = 220000, timeoutMsg = "lab not shown running") {
+export function waitForLab(b, timeout = LAB_START_MS, timeoutMsg = "lab not shown running") {
   return waitAwake(b, () => labRunning(b), { timeout, timeoutMsg });
 }
 
@@ -237,7 +250,7 @@ export async function confirmSystemDialogs(b, answer = "confirm") {
  * global that we poll. `streaming` adds the `logs: __CHANNEL__:<cb>` argument that the streaming
  * commands (lab_stop/park/resume/launch…) require; a plain command (lab_status) omits it.
  */
-export async function invokeCmd(b, cmd, args = {}, { streaming = false, timeoutMs = 150000 } = {}) {
+export async function invokeCmd(b, cmd, args = {}, { streaming = false, timeoutMs = STOP_MS } = {}) {
   await b.execute(
     (c, a, stream) => {
       window.__inv = "pending";
@@ -296,7 +309,7 @@ export async function invokeInBackground(b, key, cmd, args = {}) {
 
 /** The outcome of the command `invokeInBackground` started under `key` once it ended: `{ ok }`
  *  or `{ err }` (its message); null when it was still running after `timeoutMs`. */
-export async function outcomeOf(b, key, timeoutMs = 600000) {
+export async function outcomeOf(b, key, timeoutMs = LAB_START_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const r = await b.execute((k) => (window.__bg || {})[k], key).catch(() => "pending");
@@ -307,7 +320,7 @@ export async function outcomeOf(b, key, timeoutMs = 600000) {
 }
 
 /** Whether the start `invokeInBackground` began under `start` made a container of lab `id`
- *  (it is under way) before it ended or 10 minutes went by: a start refused or failed at once
+ *  (it is under way) before it ended or the lab-start cap went by: a start refused or failed at once
  *  never makes one, and its outcome says why. */
 export async function startMade(b, id, key = "start") {
   return eventually(async () => {
@@ -315,7 +328,7 @@ export async function startMade(b, id, key = "start") {
     const ended = await b.execute((k) => (window.__bg || {})[k], key).catch(() => "pending");
     if (ended && ended !== "pending") throw new Error(`the start ended before it made anything: ${JSON.stringify(ended)}`);
     return false;
-  }, 600000);
+  }, LAB_START_MS);
 }
 
 /** The id the app imports a local lab folder under (`labs::local_id`): `local-<slug>`. */
@@ -337,7 +350,7 @@ export async function eventually(cond, timeoutMs, interval = 500) {
  * briefly after the lab already shows running, and the real UI gates its buttons on that, so a
  * direct invoke waits the same way instead of racing it.
  */
-export async function invokeWhenIdle(b, cmd, args, timeoutMs = 240000) {
+export async function invokeWhenIdle(b, cmd, args, timeoutMs = LAB_START_MS) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
@@ -356,7 +369,7 @@ export async function invokeWhenIdle(b, cmd, args, timeoutMs = 240000) {
  *  lifecycle command won't race the launch for the per-lab lock. Polls the app's own `busy_labs`;
  *  a failed read is tried again, never taken for "settled", and a lab still busy at the deadline
  *  fails the scenario. */
-export async function waitSettled(b, id, timeoutMs = 240000) {
+export async function waitSettled(b, id, timeoutMs = STOP_MS) {
   const deadline = Date.now() + timeoutMs;
   let failure = null;
   while (Date.now() < deadline) {
@@ -685,7 +698,7 @@ export const answerOf = (b, cmd) => b.execute((c) => window.__wdioAnswers?.[c], 
 
 /** Stop & remove from the lab page, its system confirmation answered yes, then waits until the
  *  page offers a start again (Start lab, or Import a lab for an imported one). */
-export async function stopAndRemoveOnPage(b, timeout = 600000) {
+export async function stopAndRemoveOnPage(b, timeout = STOP_MS) {
   const stop = await mainButton(b, "Stop & remove", "Stop & clean up");
   await stop.waitForClickable({ timeout: 60000 });
   await confirmSystemDialogs(b);

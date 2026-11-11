@@ -4,8 +4,22 @@
 // leaves nothing of the lab running (Docker stops the containers, keeping them), lab_resume runs
 // it again, then stop. Drives the real lab_park / lab_resume commands (the lab page's Shut down /
 // Resume) against a local lab, which has no detail-page buttons of its own.
-import { finish, goTo, invokeWhenIdle, labContainers, localLab, mainText, openApp, results, sleep, waitForLab, waitSettled } from "../lib/support.mjs";
+import {
+  finish,
+  goTo,
+  invokeWhenIdle,
+  LAB_START_MS,
+  labContainers,
+  localLab,
+  mainText,
+  openApp,
+  results,
+  sleep,
+  waitForLab,
+  waitSettled,
+} from "../lib/support.mjs";
 
+export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
@@ -21,7 +35,7 @@ let b;
 try {
   ({ proc, b } = await openApp({ storage: { __wdio_launch_local__: LAB } }));
   await goTo(b, "Overview");
-  await waitForLab(b, 300000, "lab never ran");
+  await waitForLab(b, LAB_START_MS, "lab never ran");
   const main = await mainText(b);
   const raw = (main.match(/local-[a-z0-9_-]+/) || [])[0];
   const id = raw && raw.split("-isoloom-")[0];

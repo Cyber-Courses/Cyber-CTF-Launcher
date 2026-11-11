@@ -11,6 +11,7 @@ if (LAB) env.CYBERCTF_WDIO_SEED_LAB = LAB;
 const DOCKER_DOWN = /Docker not running/i;
 const NOTHING_RUNNING = /Nothing running/i;
 
+export const needs = [];
 const r = results();
 let proc;
 let b;
