@@ -68,7 +68,7 @@ pub(crate) use paths::deploys_dir;
 pub(crate) use paths::is_lab_id;
 pub use paths::validate_id;
 pub use reaper::reap_expired_labs;
-pub(crate) use status::refuse_replace;
+pub(crate) use status::{forget_gone, refuse_replace};
 pub use status::{lab_installed, lab_present, primary_url};
 pub use terraform::{PLUGIN_CACHE as TERRAFORM_PLUGINS, clear_plugin_cache};
 /// For the generated TypeScript types (`ts_bindings`).

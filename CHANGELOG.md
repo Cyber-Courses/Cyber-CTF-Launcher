@@ -300,6 +300,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A lab removed outside the app no longer blocks its re-import.** When a lab's containers or VMs
+  are removed outside Cyber CTF (`docker compose down` by hand, a clean-up tool, a VM deleted in its
+  hypervisor's app), its page already said it wasn't running, but a re-import, an update, a
+  removal or a start elsewhere was refused as "still running" until Stop. The app now checks first:
+  when nothing of the lab is left where it ran, it clears the lab's record and goes ahead. When
+  anything is left, even stopped, the refusal stands (#276).
+
 - **VirtualBox on Linux gets the running kernel's headers, and is ready only with its driver
   loaded.** The guided setup's VirtualBox install on Debian, Ubuntu and Kali now brings the headers
   of the kernel the computer runs (with the compiler and the flavour's header package), without

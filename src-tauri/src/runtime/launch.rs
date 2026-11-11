@@ -101,7 +101,8 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
     privileged_allowed(|| Ok(lab::is_privileged(&lab::load(dir)?)))?;
     // A lab runs in one place: starting it here (or on another host) while its run is still up
     // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud
-    // lab would keep billing).
+    // lab would keep billing). A run here taken down outside the app is forgotten first.
+    super::status::forget_gone(dirs, id, &mut log).await?;
     if let Some(up) = super::status::still_up(dirs, id)?
         && up.host.as_deref() != host
     {

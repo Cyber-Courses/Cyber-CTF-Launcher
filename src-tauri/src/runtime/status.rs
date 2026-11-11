@@ -162,6 +162,44 @@ pub(crate) fn refuse_replace(dirs: &AppDirs, dir: &Path, id: &str) -> Result<()>
     }
 }
 
+/// Lab `id`'s run, recorded up on this machine, of which nothing is left where it ran (taken down
+/// outside the app: `docker compose down` by hand, a clean-up tool, a VM deleted in its
+/// hypervisor's app): taken down through the runner, which clears its record, so an update, a
+/// re-import, a removal or a start elsewhere goes ahead instead of being refused as still running
+/// while the lab's page says it isn't (#276). Nothing for a run recorded on a server or a cloud
+/// (read from files only, as [`still_up`] is), a parked one, one with anything left, or one that
+/// can't be read now (Docker stopped): the refusal stands. The caller holds the lab lock.
+pub(crate) async fn forget_gone(dirs: &AppDirs, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
+    forget_gone_with(dirs, id, |dir| isothrum::recorded_here(dirs, dir, id), log).await
+}
+
+/// [`forget_gone`], the run opened by `open` from the lab's folder ([`isothrum::recorded_here`]:
+/// none for a run that isn't this machine's to read).
+pub(crate) async fn forget_gone_with(
+    dirs: &AppDirs,
+    id: &str,
+    open: impl FnOnce(&Path) -> Result<Option<isothrum::LabRun>>,
+    log: &mut impl FnMut(String),
+) -> Result<()> {
+    let Some(up) = still_up(dirs, id)? else { return Ok(()) };
+    if up.host.is_some() || up.parked {
+        return Ok(());
+    }
+    let Ok(dir) = lab_dir(dirs, id) else { return Ok(()) };
+    let Some(run) = open(&dir)? else { return Ok(()) };
+    match run.is_gone().await {
+        Ok(true) => {
+            log("Nothing of this lab is left where it ran (removed outside Cyber CTF): clearing its record.".into());
+            run.down(log).await
+        }
+        Ok(false) => Ok(()),
+        Err(e) => {
+            log::warn!("couldn't tell whether {id} is gone ({e}): taken as up");
+            Ok(())
+        }
+    }
+}
+
 /// The refusal of an operation that needs the lab down while it is `up`.
 pub(crate) fn still_running(up: &Up) -> crate::error::Error {
     use crate::error::{Code, Error};

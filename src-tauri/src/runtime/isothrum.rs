@@ -107,6 +107,20 @@ pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
     import::runner(home)?.runs().map_err(errors::from_runner)
 }
 
+/// Lab `id`'s run here, installed in `dir`, opened in the form its record says it was started in
+/// (Docker, Docker in a local VM, VMs): none without a record, or for a run recorded on a server
+/// or a cloud, which isn't this machine's to read.
+pub(crate) fn recorded_here(dirs: &crate::platform::AppDirs, dir: &Path, id: &str) -> Result<Option<LabRun>> {
+    let Some(record) = record_of(dirs, id)? else { return Ok(None) };
+    let home = paths::runner_home(dirs)?;
+    Ok(Some(match record.target {
+        isoloom_manifest::Target::Docker => LabRun::docker(&home, dir, id)?,
+        isoloom_manifest::Target::DockerVm => LabRun::docker_in_vm(&home, dir, id)?,
+        isoloom_manifest::Target::Vagrant if record.host_label.is_none() => LabRun::vm(&home, dir, id)?,
+        _ => return Ok(None),
+    }))
+}
+
 /// Lab `id`'s run as the runner whose home is the app data folder records it (`cyberctf-<id>`),
 /// if it has one: read from its files only, an unreadable record an error.
 pub(crate) fn record_of(dirs: &crate::platform::AppDirs, id: &str) -> Result<Option<isothrum_runner::RunRecord>> {

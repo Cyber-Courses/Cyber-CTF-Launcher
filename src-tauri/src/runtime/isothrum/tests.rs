@@ -220,6 +220,37 @@ async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
     assert_eq!(paths::parked(&f.home.dir), None, "the parked mark goes");
 }
 
+/// Regression (#276): a lab whose containers were removed outside the app (`docker compose down`
+/// by hand, a clean-up tool) stayed `ready` in the runner's record: its page said it wasn't
+/// running, but a re-import, an update or a removal was refused as still running until Stop.
+/// Before those, a run of which nothing is left is now taken down through the runner, which
+/// clears its record; one with anything left, even stopped, still holds them back.
+#[tokio::test]
+async fn a_lab_taken_down_outside_the_app_is_forgotten_before_a_reimport() {
+    use crate::runtime::status::{forget_gone_with, refuse_replace, still_up};
+    let f = Fixture::new();
+    let _tools = Tools::rules(&[]);
+    let run = f.up().await;
+    let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
+    let mut quiet = |_: String| {};
+    for (left, what) in [(Containers::Up, "running"), (Containers::Stopped, "stopped outside the app")] {
+        f.set(left);
+        assert!(!run.is_gone().await.unwrap(), "{what}");
+        forget_gone_with(&dirs, "web", |_| Ok(Some(f.run())), &mut quiet).await.unwrap();
+        assert!(refuse_replace(&dirs, &f.home.dir, "web").is_err(), "{what}: still there, still refused");
+    }
+    f.set(Containers::None);
+    assert!(!run.status().await.unwrap().running, "its page says it isn't running");
+    assert!(refuse_replace(&dirs, &f.home.dir, "web").is_err(), "the record alone still says ready");
+    assert!(run.is_gone().await.unwrap());
+    forget_gone_with(&dirs, "web", |_| Ok(Some(f.run())), &mut quiet).await.unwrap();
+    assert!(f.fake.last(" down --volumes").is_some(), "taken down through the runner");
+    assert_eq!(still_up(&dirs, "web").unwrap(), None);
+    refuse_replace(&dirs, &f.home.dir, "web").unwrap();
+    run.up(on_own_ports(&launch_env()), None, &mut |_| {}).await.unwrap();
+    assert!(run.status().await.unwrap().running, "and it starts again");
+}
+
 #[tokio::test]
 async fn a_second_start_of_a_running_lab_is_refused_and_a_down_removes_it_all() {
     let f = Fixture::new();

@@ -64,6 +64,7 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str, worker_files: impl FnOnce()
     }
     let _lock = runtime::try_lock_lab(dirs, id)?.ok_or_else(busy)?;
     let dir = paths::lab_dir(dirs, id)?;
+    runtime::forget_gone(dirs, id, &mut |l| log::info!("{id}: {l}")).await?;
     if let Some(up) = runtime::status::still_up(dirs, id)? {
         return Err(runtime::status::still_running(&up));
     }

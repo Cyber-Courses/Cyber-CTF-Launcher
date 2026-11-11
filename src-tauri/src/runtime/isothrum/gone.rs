@@ -32,6 +32,24 @@ impl LabRun {
         })
     }
 
+    /// Whether nothing of the run is left where it ran though the runner records it: a live read
+    /// finds every machine absent (its containers removed with `docker compose down` by hand or a
+    /// clean-up tool, its VMs deleted in the hypervisor's app). False when anything of it is
+    /// left, even stopped, when an operation holds the run (the read isn't live), or when the run's
+    /// files are gone too (nothing is made again here: [`LabRun::files_back`] is a stop's).
+    ///
+    /// # Errors
+    ///
+    /// When the run can't be read (the engine doesn't answer): whether it is gone can't be told.
+    pub(crate) async fn is_gone(&self) -> Result<bool> {
+        if !self.manifest().is_file() {
+            return Ok(false);
+        }
+        let lab = self.lab().await?;
+        let status = self.read(&lab).await?;
+        Ok(status.live && !status.machines.is_empty() && status.machines.iter().all(|m| m.state == isothrum_runner::MachineState::Absent))
+    }
+
     /// `e`, an operation's failure on this run, as the player reads it: on this machine's Docker,
     /// the engine stopped while a step ran is said as such ([`errors::engine_stopped`]).
     pub(super) fn said(&self, e: Error) -> Error {
