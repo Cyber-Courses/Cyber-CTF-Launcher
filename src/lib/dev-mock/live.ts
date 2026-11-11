@@ -73,8 +73,8 @@ export async function operation({ id, op, lines }: { id: string; op: Operation; 
 
 /** A VM lab's machines (GOAD Light's, for any VM lab). */
 const VM_MACHINES = [
-  { name: "dc01", ip: "192.168.56.10", image: "StefanScherer/windows_2019" },
-  { name: "srv02", ip: "192.168.56.22", image: "StefanScherer/windows_2019" },
+  { name: "dc01", ip: "192.168.56.10" },
+  { name: "srv02", ip: "192.168.56.22" },
 ];
 
 /** The VM lab machines an operation acts on: `machine`, or all of them. */
@@ -98,7 +98,6 @@ function vmStatus(p: Placement): LabStatus {
     machines: VM_MACHINES.map((m) => ({
       name: m.name,
       state,
-      image: m.image,
       ip: m.ip,
       ports: [],
       interfaces: [{ network: "lab", ip: m.ip }],
@@ -139,7 +138,6 @@ function startedStatus(id: string): LabStatus {
       {
         name: "web",
         state: "running",
-        image: `${slugOf(id)}:latest`,
         ip: "10.43.0.2",
         ports: [{ published: 8443, target: 443 }],
         interfaces: [{ network: "default", ip: "10.43.0.2" }],

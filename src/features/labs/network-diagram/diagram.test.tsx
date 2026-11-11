@@ -21,7 +21,6 @@ vi.mock("@xyflow/react", async (orig) => {
 const machine = (name: string, over: Partial<Machine> = {}): Machine => ({
   name,
   state: "running",
-  image: `${name}:latest`,
   ip: "10.42.0.3",
   ports: [],
   interfaces: [{ network: "default", ip: "10.42.0.3" }],
@@ -97,14 +96,13 @@ describe("NetworkDiagram", () => {
       <NetworkDiagram
         machines={[
           machine("api", {
-            image: "node:20",
             ports: [{ published: 8080, target: 80 }],
             services: [
               { name: "invoice-api", kind: "web", ports: [80] },
               { name: "admin", kind: "web", ports: [9090] },
             ],
           }),
-          machine("cache", { image: "redis:7", ip: "10.42.0.5", interfaces: [{ network: "default", ip: "10.42.0.5" }] }),
+          machine("cache", { ip: "10.42.0.5", interfaces: [{ network: "default", ip: "10.42.0.5" }] }),
         ]}
         networks={networks}
       />,
@@ -114,10 +112,10 @@ describe("NetworkDiagram", () => {
     expect(screen.getAllByText("127.0.0.1").length).toBeGreaterThan(0);
     expect(screen.getByText("invoice-api")).toBeTruthy();
     expect(screen.getByText("admin")).toBeTruthy();
-    // With declared services, the image moves up onto the card.
-    expect(screen.getByText("node:20")).toBeTruthy();
-    // A machine without declared services: one row named after its image, no ports.
-    expect(screen.getAllByText("redis:7").length).toBeGreaterThan(0);
+    // With declared services, what the machine is (by its name) moves up onto the card.
+    expect(screen.getAllByText("web / api").length).toBeGreaterThan(0);
+    // A machine without declared services: one row named for what it is, no ports.
+    expect(screen.getAllByText("cache").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/no ports/i).length).toBeGreaterThan(0);
     // The published port docks as a tab on the card's bottom edge, once laid out.
     expect(document.querySelector(".hostcard-docked")).not.toBeNull();

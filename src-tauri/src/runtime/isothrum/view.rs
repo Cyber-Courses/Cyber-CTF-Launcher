@@ -43,7 +43,6 @@ fn machine(manifest: &Manifest, m: &MachineStatus) -> Machine {
     Machine {
         name: m.name.clone(),
         state: state_word(&m.state),
-        image: String::new(),
         ip: interfaces.first().map(|i| i.ip.clone()).unwrap_or_default(),
         ports: declared.iter().filter(|p| p.kind.transport() == Protocol::Tcp).map(|p| tcp_port(m, p.port.get())).collect(),
         interfaces,

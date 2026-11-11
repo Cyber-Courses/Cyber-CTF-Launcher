@@ -10,7 +10,6 @@ import { must } from "@/components/test-support";
 const machine = (name: string, ip: string, published: number[]): Machine => ({
   name,
   state: "running",
-  image: `${name}:latest`,
   ip,
   ports: published.map((p, i) => ({ published: p, target: 80 + i })),
   interfaces: [{ network: "default", ip }],

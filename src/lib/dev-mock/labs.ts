@@ -126,7 +126,6 @@ export const invoiceStatus: LabStatus = {
     {
       name: "api",
       state: "running",
-      image: "node:20",
       ip: "10.42.0.3",
       ports: [
         { published: 8080, target: 8080 },
@@ -146,7 +145,6 @@ export const invoiceStatus: LabStatus = {
     {
       name: "postgres",
       state: "running",
-      image: "postgres:16",
       ip: "10.42.0.4",
       ports: [{ published: 5432, target: 5432 }],
       interfaces: [{ network: "default", ip: "10.42.0.4" }],
@@ -157,7 +155,6 @@ export const invoiceStatus: LabStatus = {
     {
       name: "cache",
       state: "running",
-      image: "redis:7",
       ip: "10.42.0.5",
       ports: [],
       interfaces: [{ network: "default", ip: "10.42.0.5" }],
@@ -168,7 +165,6 @@ export const invoiceStatus: LabStatus = {
     {
       name: "billing-worker",
       state: "running",
-      image: "python:3.12",
       ip: "10.42.1.10",
       ports: [],
       interfaces: [
@@ -182,7 +178,6 @@ export const invoiceStatus: LabStatus = {
     {
       name: "ledger-db",
       state: "running",
-      image: "mysql:8",
       ip: "10.42.1.11",
       ports: [],
       interfaces: [{ network: "billing", ip: "10.42.1.11" }],
@@ -193,7 +188,6 @@ export const invoiceStatus: LabStatus = {
     {
       name: "payroll",
       state: "running",
-      image: "nginx:1.27",
       ip: "10.42.2.20",
       ports: [],
       interfaces: [{ network: "finance", ip: "10.42.2.20" }],
@@ -204,7 +198,6 @@ export const invoiceStatus: LabStatus = {
     {
       name: "backup",
       state: "running",
-      image: "alpine:3.20",
       ip: "10.42.2.21",
       ports: [],
       interfaces: [{ network: "finance", ip: "10.42.2.21" }],

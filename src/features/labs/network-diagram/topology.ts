@@ -19,7 +19,6 @@ import {
   serviceLabel,
   serviceRows,
   serviceType,
-  uniquePorts,
   type ZoneData,
 } from "@/features/labs/network-diagram/model";
 
@@ -134,7 +133,7 @@ function addAttacker(g: Graph, attacker: NonNullable<Attacker>, entry: string) {
  *  into its nearest network(s) and leads on into the deeper ones, each link carrying its address
  *  on that network), then its localhost port bindings. */
 function addMachine(g: Graph, m: Machine, ifaces: LabInterface[], d: (net: string) => number) {
-  const type = serviceType(m.image, m.name);
+  const type = serviceType(m.name);
   const id = `svc-${m.name}`;
   g.nodes.push({
     id,
@@ -142,13 +141,13 @@ function addMachine(g: Graph, m: Machine, ifaces: LabInterface[], d: (net: strin
     position: { x: 0, y: 0 },
     data: {
       hostname: m.name,
-      image: m.image || serviceLabel(type),
+      kind: serviceLabel(type),
       type,
       ifaces,
       running: m.state === "running",
       state: m.state,
-      ports: uniquePorts(m.ports),
-      rows: serviceRows(m, uniquePorts(m.ports), type),
+      ports: m.ports,
+      rows: serviceRows(m, m.ports, type),
     } satisfies ComputerData,
   });
   if (ifaces.length === 1) {
@@ -171,7 +170,7 @@ function addMachine(g: Graph, m: Machine, ifaces: LabInterface[], d: (net: strin
 
 /** Localhost port bindings: a small node below, linked from the container it forwards to. */
 function addHostPorts(g: Graph, m: Machine, id: string, type: ReturnType<typeof serviceType>) {
-  uniquePorts(m.ports)
+  m.ports
     .filter((p) => p.published > 0)
     .forEach((p) => {
       const hp = `hp-${m.name}-${String(p.published)}`;
@@ -186,7 +185,7 @@ function addHostPorts(g: Graph, m: Machine, id: string, type: ReturnType<typeof 
       });
       // From the service that publishes it (its box's right edge); a port no service row
       // shows keeps the card's own bottom handle.
-      const shown = serviceRows(m, uniquePorts(m.ports), type).some((r) => r.ports.some((q) => q.published === p.published));
+      const shown = serviceRows(m, m.ports, type).some((r) => r.ports.some((q) => q.published === p.published));
       const e = link(`e-${hp}`, id, hp, GREEN, { dashed: true, label: translate("diagram.published") });
       g.edges.push(shown ? { ...e, sourceHandle: publishHandle(p.published) } : e);
     });

@@ -149,19 +149,10 @@ export function deriveLabState(i: LabStateInput) {
 export type LabState = ReturnType<typeof deriveLabState>;
 
 /** Each published container port and the local port it is bound to, so the player sees the
- *  link between a service inside the lab (web :3206) and the port on this machine (:56235). */
+ *  link between a service inside the lab (web :3206) and the port on this machine (:56235). The
+ *  backend lists each declared port once. */
 export function publishedBinds(machines: LabMachine[]) {
-  // Docker reports a port once per address family (0.0.0.0 and ::): one row each.
-  const seen = new Set<string>();
-  return machines.flatMap((m) =>
-    m.ports
-      .filter((p) => p.published > 0)
-      .map((p) => ({ machine: m.name, target: p.target, published: p.published }))
-      .filter((b) => {
-        const k = `${b.machine}:${String(b.target)}:${String(b.published)}`;
-        return !seen.has(k) && !!seen.add(k);
-      }),
-  );
+  return machines.flatMap((m) => m.ports.filter((p) => p.published > 0).map((p) => ({ machine: m.name, target: p.target, published: p.published })));
 }
 
 /** The host a lab's published ports answer on: its URL's, else loopback. */

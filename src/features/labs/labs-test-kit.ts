@@ -42,7 +42,6 @@ export const labStatus = (p: Partial<LabStatus> = {}): LabStatus => ({ ...struct
 export const labMachine = (name: string, state = "running", p: Partial<LabMachine> = {}): LabMachine => ({
   name,
   state,
-  image: "",
   ip: "",
   ports: [],
   interfaces: [],
@@ -54,7 +53,7 @@ export const labMachine = (name: string, state = "running", p: Partial<LabMachin
 
 /** A `node:20` container on the lab's default network, at 10.42.0.3, `p` over it. */
 export const containerMachine = (name: string, state = "running", p: Partial<LabMachine> = {}): LabMachine =>
-  labMachine(name, state, { image: "node:20", ip: "10.42.0.3", interfaces: [{ network: "default", ip: "10.42.0.3" }], ...p });
+  labMachine(name, state, { ip: "10.42.0.3", interfaces: [{ network: "default", ip: "10.42.0.3" }], ...p });
 
 /** The lab page's state for a settled Docker lab on an x86_64 machine, `p` over its inputs. */
 export const deriveState = (p: Partial<LabStateInput>) =>

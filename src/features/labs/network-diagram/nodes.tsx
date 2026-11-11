@@ -190,8 +190,8 @@ function ComputerNode({ data }: NodeProps<Node<ComputerData>>) {
       ) : (
         <div className="computer-ip mono">{isIp(ip) ? <CopyText text={ip}>{ip}</CopyText> : ip || t("diagram.computer.resolving")}</div>
       )}
-      {/* With declared services, the image moves up here: the rows below name the services. */}
-      {data.rows.length > 1 || data.rows[0]?.title !== data.image ? <div className="computer-image mono">{data.image}</div> : null}
+      {/* With declared services, what the machine is moves up here: the rows below name the services. */}
+      {data.rows.length > 1 || data.rows[0]?.title !== data.kind ? <div className="computer-image mono">{data.kind}</div> : null}
       <div className="service-rows">
         {data.rows.map((r) => (
           <ServiceChip key={r.title} row={r} ip={ip} />

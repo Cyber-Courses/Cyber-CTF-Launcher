@@ -46,7 +46,7 @@ struct Expect {
 fn check_status(s: &LabStatus, e: &Expect, f: &mut Vec<String>) {
     check(s.running, "the lab reports running".into(), f);
     check(matches!(s.place, Some(Place::Container)), "it runs in containers on this machine".into(), f);
-    let machines: Vec<String> = s.machines.iter().map(|m| format!("{} ({}, {})", m.name, m.state, m.image)).collect();
+    let machines: Vec<String> = s.machines.iter().map(|m| format!("{} ({})", m.name, m.state)).collect();
     println!("machines: {machines:?}");
     check(!s.machines.is_empty(), "it has machines".into(), f);
     for m in s.machines.iter().filter(|m| !m.infra) {

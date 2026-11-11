@@ -9,7 +9,6 @@ import { must } from "@/components/test-support";
 const machine = (name: string, ip: string, network = "default"): Machine => ({
   name,
   state: "running",
-  image: `${name}:latest`,
   ip,
   ports: [],
   interfaces: [{ network, ip }],

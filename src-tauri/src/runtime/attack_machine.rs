@@ -420,7 +420,6 @@ mod tests {
         let machine = |name: &str, state: &str| Machine {
             name: name.into(),
             state: state.into(),
-            image: String::new(),
             ip: String::new(),
             ports: Vec::new(),
             interfaces: Vec::new(),

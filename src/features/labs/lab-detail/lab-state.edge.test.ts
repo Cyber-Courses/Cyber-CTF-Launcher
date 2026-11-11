@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bindHost, cloudView, deployPlacement, headerMode, networkView, publishedBinds, restartTarget } from "@/features/labs/lab-detail/lab-state";
+import { bindHost, cloudView, deployPlacement, headerMode, networkView, restartTarget } from "@/features/labs/lab-detail/lab-state";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabControl, Provider } from "@/lib/tauri";
 import { deriveState as derive, labMachine as machine, labStatus as status } from "@/features/labs/labs-test-kit";
@@ -104,24 +104,12 @@ describe("headerMode and networkView: edges", () => {
   });
 });
 
-describe("bindHost, publishedBinds, restartTarget: edges", () => {
+describe("bindHost, restartTarget: edges", () => {
   it("reads an IPv6 literal and a host behind credentials, and falls back to loopback for anything unparsable", () => {
     expect(bindHost("http://[::1]:8080/")).toBe("[::1]");
     expect(bindHost("http://user:pw@10.0.0.5:81/x")).toBe("10.0.0.5");
     expect(bindHost("")).toBe("127.0.0.1");
     expect(bindHost("::nope")).toBe("127.0.0.1");
-  });
-
-  it("a port Docker reports once per address family is listed once", () => {
-    // Regression: Docker publishes on 0.0.0.0 and ::, and the Details panel drew both entries as one
-    // row twice, with the same React key.
-    const web = machine("web", "running", {
-      ports: [
-        { published: 8080, target: 80 },
-        { published: 8080, target: 80 },
-      ],
-    });
-    expect(publishedBinds([web])).toEqual([{ machine: "web", target: 80, published: 8080 }]);
   });
 
   it("matches the saved host by id, not by its name's spelling", () => {

@@ -17,10 +17,6 @@ name: string,
  */
 state: string, 
 /**
- * The image = the software running inside the container, e.g. "mysql:8.0".
- */
-image: string, 
-/**
  * The container's address on the lab network, e.g. "172.20.0.4" (empty if unknown).
  */
 ip: string, 

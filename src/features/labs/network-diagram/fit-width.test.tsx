@@ -28,7 +28,6 @@ class SizedObserver {
 const machine = (name: string, i: number): Machine => ({
   name,
   state: "running",
-  image: `${name}:latest`,
   ip: `10.42.0.${String(i + 2)}`,
   ports: [{ published: 8000 + i, target: 80 }],
   interfaces: [{ network: "default", ip: `10.42.0.${String(i + 2)}` }],

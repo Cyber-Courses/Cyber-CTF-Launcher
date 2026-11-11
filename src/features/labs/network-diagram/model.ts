@@ -1,10 +1,10 @@
 import { Box, Database, Globe2, Terminal, Workflow, Zap, type LucideIcon } from "lucide-react";
-import type { LabInterface, LabMachine } from "@/lib/tauri";
+import type { LabInterface, LabMachine, LabPort } from "@/lib/tauri";
 import { translate } from "@/lib/i18n";
 
 // Shared types, colours and helpers for the lab network diagram.
 
-type Port = { published: number; target: number };
+type Port = LabPort;
 export type Machine = LabMachine;
 export type Attacker = { running: boolean; ip: string; labNetwork?: string } | null;
 
@@ -13,11 +13,6 @@ export const attack = "var(--you)"; // violet: you, the attacker, and your link 
 
 export function isIp(s: string) {
   return /^\d{1,3}\.\d{1,3}\./.test(s);
-}
-
-/** Docker lists a published port once per address family (0.0.0.0 and ::): keep one. */
-export function uniquePorts(ports: Port[]) {
-  return ports.filter((p, i) => ports.findIndex((q) => q.published === p.published && q.target === p.target) === i);
 }
 
 /** Compose's implicit network is "default"; to a player it's just the lab network. */
@@ -34,7 +29,8 @@ type ServiceType = "database" | "web" | "cache" | "worker" | "ssh" | "service";
 export type ServiceRow = { title: string; type: ServiceType; label: string; ports: Port[] };
 export type ComputerData = {
   hostname: string;
-  image: string;
+  /** What the machine is, as a word (its service type's label): the card's line under the name. */
+  kind: string;
   type: ServiceType;
   ifaces: LabInterface[];
   running: boolean;
@@ -68,16 +64,17 @@ export const publishHandle = (published: number) => `pub-${String(published)}`;
  *  ports. Container ports none of them claims are left out: they are the image's own EXPOSE
  *  defaults (a MySQL image exposes 3306/33060 even when the lab's database listens on 3207),
  *  not lab services, and listing them as "other ports" only sends the player to doors that
- *  aren't open. With nothing declared, one row: the image, its look, every port. */
+ *  aren't open. With nothing declared, one row: what the machine is, its look, every port. */
 export function serviceRows(m: Machine, ports: Port[], fallback: ServiceType): ServiceRow[] {
   const declared = m.services;
-  if (declared.length === 0) return [{ title: m.image || serviceLabel(fallback), type: fallback, label: serviceLabel(fallback), ports }];
+  if (declared.length === 0) return [{ title: serviceLabel(fallback), type: fallback, label: serviceLabel(fallback), ports }];
   const byTarget = (n: number) => ports.find((p) => (p.target || p.published) === n) ?? { published: 0, target: n };
   return declared.map((d) => ({ title: d.name, type: declaredType(d.kind), label: d.kind || serviceLabel("service"), ports: d.ports.map(byTarget) }));
 }
 
-export function serviceType(image: string, name: string): ServiceType {
-  const s = `${image} ${name}`.toLowerCase();
+/** What a machine is, by its name (`db`, `api`, `redis`…). */
+export function serviceType(name: string): ServiceType {
+  const s = name.toLowerCase();
   if (/(maria|mysql|postgres|psql|mongo|sqlite|mssql|cassandra|database|[-_]db\b|^db)/.test(s)) return "database";
   if (/(redis|memcache|cache|valkey)/.test(s)) return "cache";
   if (/(nginx|caddy|apache|httpd|web|api|frontend|portal|gateway|proxy|node|php|python|flask|django|rails)/.test(s)) return "web";

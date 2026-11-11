@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { topology } from "@/features/labs/network-diagram/topology";
-import { isIp, netLabel, serviceRows, serviceType, uniquePorts, type ComputerData, type Machine } from "@/features/labs/network-diagram/model";
+import { isIp, netLabel, serviceRows, serviceType, type ComputerData, type Machine } from "@/features/labs/network-diagram/model";
 import type { LabNetwork } from "@/lib/tauri";
 import { must } from "@/components/test-support";
 
 const machine = (name: string, over: Partial<Machine> = {}): Machine => ({
   name,
   state: "running",
-  image: `${name}:latest`,
   ip: "10.0.0.2",
   ports: [],
   interfaces: [{ network: "default", ip: "10.0.0.2" }],
@@ -120,11 +119,10 @@ describe("topology", () => {
     expect(ids(t)).not.toContain("svc-isoloom-controller");
   });
 
-  it("publishes each port once, from its service's box when a service shows it", () => {
+  it("publishes each port, from its service's box when a service shows it", () => {
+    // The backend lists each declared port once (no Docker family duplicates to drop).
     const m = machine("api", {
-      image: "node:20",
       ports: [
-        { published: 8080, target: 80 },
         { published: 8080, target: 80 },
         { published: 9000, target: 9000 },
         { published: 0, target: 22 },
@@ -146,9 +144,9 @@ describe("topology", () => {
     expect(t.zones[1].data.detail).toBe("");
   });
 
-  it("names a stopped machine's image by its look when it has none", () => {
-    const t = topology([machine("redis-cache", { image: "", state: "exited" })], [], null);
-    expect(data(t, "svc-redis-cache")).toMatchObject({ image: "cache", running: false, state: "exited", type: "cache" });
+  it("says what a stopped machine is by its look", () => {
+    const t = topology([machine("redis-cache", { state: "exited" })], [], null);
+    expect(data(t, "svc-redis-cache")).toMatchObject({ kind: "cache", running: false, state: "exited", type: "cache" });
   });
 });
 
@@ -163,25 +161,15 @@ describe("model helpers", () => {
     expect(netLabel("dmz")).toBe("dmz");
   });
 
-  it("drops Docker's duplicate port per address family", () => {
-    expect(
-      uniquePorts([
-        { published: 1, target: 2 },
-        { published: 1, target: 2 },
-        { published: 1, target: 3 },
-      ]),
-    ).toHaveLength(2);
-  });
-
   it.each([
-    ["mariadb:11", "x", "database"],
-    ["x", "app-db", "database"],
-    ["valkey", "x", "cache"],
-    ["nginx", "x", "web"],
-    ["x", "rabbitmq", "worker"],
-    ["busybox", "thing", "service"],
-  ])("types %s / %s as %s", (image, name, type) => {
-    expect(serviceType(image, name)).toBe(type);
+    ["mariadb", "database"],
+    ["app-db", "database"],
+    ["valkey", "cache"],
+    ["nginx", "web"],
+    ["rabbitmq", "worker"],
+    ["thing", "service"],
+  ])("types %s as %s", (name, type) => {
+    expect(serviceType(name)).toBe(type);
   });
 
   it("maps declared kinds onto known looks, else a plain service", () => {
@@ -242,18 +230,6 @@ describe("topology: addresses and ports", () => {
     expect(data(t, "svc-web").ifaces).toEqual([{ network: "lan", ip: "" }]);
   });
 
-  it("a port published on both address families gets one host-port node and one link", () => {
-    const web = machine("web", {
-      ports: [
-        { published: 8080, target: 80 },
-        { published: 8080, target: 80 },
-      ],
-    });
-    const t = topology([web], [], null);
-    expect(ids(t).filter((id) => id === "hp-web-8080")).toHaveLength(1);
-    expect(t.edges.filter((e) => e.id === "e-hp-web-8080")).toHaveLength(1);
-  });
-
   it("a declared service port the container does not expose is drawn unpublished, with no host port", () => {
     const api = machine("api", { services: [{ name: "api", kind: "web", ports: [9999] }], ports: [] });
     const t = topology([api], [], null);
@@ -276,20 +252,11 @@ describe("topology: addresses and ports", () => {
 });
 
 describe("model helpers: edges", () => {
-  it("reads the image and the name together, the database look winning over the cache one", () => {
-    expect(serviceType("redis:7", "users-db")).toBe("database");
-    expect(serviceType("", "")).toBe("service");
-    expect(serviceType("node:20", "")).toBe("web");
-    expect(serviceType("busybox", "seed-data")).toBe("worker");
-  });
-
-  it("keeps the same host port forwarded to two targets", () => {
-    expect(
-      uniquePorts([
-        { published: 8080, target: 80 },
-        { published: 8080, target: 81 },
-      ]),
-    ).toHaveLength(2);
+  it("reads the name, the database look winning over the cache one", () => {
+    expect(serviceType("redis-users-db")).toBe("database");
+    expect(serviceType("")).toBe("service");
+    expect(serviceType("api")).toBe("web");
+    expect(serviceType("seed-data")).toBe("worker");
   });
 
   it("a declared kind outside the known looks keeps its own word on the row", () => {

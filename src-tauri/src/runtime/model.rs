@@ -26,9 +26,6 @@ pub struct Machine {
     pub name: String,
     /// Its state as the runtime reports it, e.g. `running`, `exited` or `unhealthy`.
     pub state: String,
-    /// The image = the software running inside the container, e.g. "mysql:8.0".
-    #[serde(default)]
-    pub image: String,
     /// The container's address on the lab network, e.g. "172.20.0.4" (empty if unknown).
     #[serde(default)]
     pub ip: String,

@@ -137,7 +137,6 @@ pub(crate) mod test_support {
             name: name.into(),
             state: state.into(),
             infra: false,
-            image: String::new(),
             ip: String::new(),
             ports: Vec::new(),
             interfaces: Vec::new(),

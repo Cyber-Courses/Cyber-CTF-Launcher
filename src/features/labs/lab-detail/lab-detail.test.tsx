@@ -189,7 +189,7 @@ describe("LabDetail", () => {
   it("offers to run a broken VM setup again", async () => {
     installTauri(idle);
     const user = userEvent.setup();
-    const vmMachines = [machine("DC01", "running", { image: "", ip: "192.168.56.10", ports: [], services: [] })];
+    const vmMachines = [machine("DC01", "running", { ip: "192.168.56.10", ports: [], services: [] })];
     const h = renderDetail({
       lab: vmLab,
       status: status({ machines: vmMachines, place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }),
@@ -205,8 +205,8 @@ describe("LabDetail", () => {
     installTauri(idle);
     const user = userEvent.setup();
     const vmMachines = [
-      machine("DC01", "running", { image: "", ip: "192.168.56.10", ports: [], services: [] }),
-      machine("SRV02", "running", { image: "", ip: "192.168.56.22", ports: [], services: [] }),
+      machine("DC01", "running", { ip: "192.168.56.10", ports: [], services: [] }),
+      machine("SRV02", "running", { ip: "192.168.56.22", ports: [], services: [] }),
     ];
     const h = renderDetail({ lab: vmLab, status: status({ machines: vmMachines, place: "local_vm", controls: VMS_HERE, provider: "virtualbox", url: null }) });
     await flush();

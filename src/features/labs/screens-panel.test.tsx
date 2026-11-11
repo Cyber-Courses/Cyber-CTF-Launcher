@@ -11,7 +11,6 @@ import { ScreensPanel, screenMachines, screenOpens } from "@/features/labs/scree
 const machine = (name: string, state: string, console: LabMachine["console"], infra = false): LabMachine => ({
   name,
   state,
-  image: "",
   ip: "",
   ports: [],
   interfaces: [],

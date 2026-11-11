@@ -7,7 +7,6 @@ import type { Machine } from "@/features/labs/network-diagram/model";
 const api: Machine = {
   name: "api",
   state: "running",
-  image: "node:20",
   ip: "10.0.0.2",
   ports: [{ published: 8080, target: 80 }],
   interfaces: [{ network: "default", ip: "10.0.0.2" }],

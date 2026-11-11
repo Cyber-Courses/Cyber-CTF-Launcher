@@ -70,7 +70,6 @@ const up: LabStatus = {
     {
       name: "api",
       state: "running",
-      image: "node:20",
       ip: "10.42.0.3",
       ports: [],
       interfaces: [{ network: "default", ip: "10.42.0.3" }],

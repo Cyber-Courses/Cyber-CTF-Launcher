@@ -323,7 +323,7 @@ describe("Lab page, driven through the Labs screen", () => {
     let release!: () => void;
     const vmUp = status({
       running: true,
-      machines: [machine("DC01", "running", { image: "" })],
+      machines: [machine("DC01", "running")],
       place: "local_vm",
       controls: VMS_HERE,
       provider: "virtualbox",
@@ -332,7 +332,7 @@ describe("Lab page, driven through the Labs screen", () => {
       lab_status: (a) =>
         a?.id === "lab-goad"
           ? parked
-            ? status({ parked: "pause", machines: [machine("DC01", "saved", { image: "" })], place: "local_vm", controls: VMS_HERE })
+            ? status({ parked: "pause", machines: [machine("DC01", "saved")], place: "local_vm", controls: VMS_HERE })
             : vmUp
           : status(),
       lab_park: (a) => {
@@ -368,8 +368,8 @@ describe("Lab page, driven through the Labs screen", () => {
         a?.id !== "lab-goad"
           ? status()
           : parked
-            ? status({ parked: "shutdown", machines: [machine("DC01", "poweroff", { image: "" })], place: "local_vm", controls: VMS_HERE })
-            : status({ running: true, machines: [machine("DC01", "running", { image: "" })], place: "local_vm", controls: VMS_HERE, provider: "virtualbox" }),
+            ? status({ parked: "shutdown", machines: [machine("DC01", "poweroff")], place: "local_vm", controls: VMS_HERE })
+            : status({ running: true, machines: [machine("DC01", "running")], place: "local_vm", controls: VMS_HERE, provider: "virtualbox" }),
       lab_resume: (a) => {
         stream(a, "==> DC01: Resuming");
         parked = false;
@@ -390,7 +390,7 @@ describe("Lab page, driven through the Labs screen", () => {
         a?.id === "lab-goad"
           ? status({
               running: true,
-              machines: [machine("DC01", "running", { image: "" }), machine("SRV02", "running", { image: "" })],
+              machines: [machine("DC01", "running"), machine("SRV02", "running")],
               place: "local_vm",
               controls: VMS_HERE,
               provider: "virtualbox",

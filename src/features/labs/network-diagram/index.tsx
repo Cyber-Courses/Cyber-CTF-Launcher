@@ -39,7 +39,7 @@ function machineSig(m: Machine): string {
   const interfaces = m.interfaces.map((i) => `${i.network}=${i.ip}`).join(",");
   const services = m.services.map((v) => `${v.name}=${v.kind}/${v.ports.join("+")}`).join(",");
   const ports = m.ports.map((p) => `${String(p.published)}-${String(p.target)}`).join(",");
-  return `${m.name}:${m.state}:${m.ip}:${m.image}:${m.infra ? "infra" : ""}:${interfaces}:${services}:${ports}`;
+  return `${m.name}:${m.state}:${m.ip}:${m.infra ? "infra" : ""}:${interfaces}:${services}:${ports}`;
 }
 
 /** The shell's size for the graph (`graph`, the drawing's size plus its vertical margins; the

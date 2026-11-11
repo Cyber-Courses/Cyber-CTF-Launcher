@@ -72,7 +72,7 @@ const bothForms = () =>
 const machine = containerMachine;
 const status = (p: Partial<LabStatus> = {}) => upStatus([machine("api")], p);
 const stopped = status({ running: false, machines: [], url: null, place: null, provider: null });
-const vmRunning = status({ machines: [machine("DC01", "running", { image: "" })], place: "local_vm", provider: "virtualbox", url: null, controls: VMS_HERE });
+const vmRunning = status({ machines: [machine("DC01", "running")], place: "local_vm", provider: "virtualbox", url: null, controls: VMS_HERE });
 
 /** A container lab with VM recipes too, `id`, whose one saved place is cloud `account` (its test
  *  answering at once), the backend's answers installed. */
@@ -607,7 +607,7 @@ describe("LabDetail: a lab that is up", () => {
     const h = renderDetail({
       lab: vmLab,
       status: status({
-        machines: [machine("DC01", "running", { image: "" }), machine("SRV02", "poweroff", { image: "" })],
+        machines: [machine("DC01", "running"), machine("SRV02", "poweroff")],
         place: "local_vm",
         provider: "virtualbox",
         url: null,
@@ -621,7 +621,7 @@ describe("LabDetail: a lab that is up", () => {
 
   it("offers Start them where the backend can bring machines back: a container lab run as one VM per machine, not one in a helper VM", async () => {
     installTauri(quiet);
-    const machines = [machine("web", "running", { image: "" }), machine("db", "poweroff", { image: "" })];
+    const machines = [machine("web", "running"), machine("db", "poweroff")];
     const perMachine = status({ machines, place: "local_vm", provider: "virtualbox", perMachine: true, url: null, controls: VMS_HERE });
     renderDetail({ status: perMachine });
     await flush();
