@@ -66,6 +66,24 @@ fn a_vm_lab_runs_its_vms_where_its_spec_and_isoloom_allow() {
     assert_eq!(o.cloud_vm, [] as [RunPath; 0]);
 }
 
+/// A Windows machine in the cloud gets no secrets (a lab's inputs, its flags among them): Isoloom
+/// sets it up during Terraform's apply, before the runner delivers them. The picker offers it on
+/// no cloud, and says why on AWS and Azure, which otherwise take it.
+#[test]
+fn a_windows_vm_given_a_labs_input_runs_on_no_cloud_and_says_why() {
+    let given = VMS.replace("networks: { lan: 10 } }", "networks: { lan: 10 }, files: [{ path: 'C:\\ctf\\flag.txt', input: FLAG }] }");
+    let o = options(&format!("{given}inputs: [FLAG]\n"), Runtime::Vm);
+    assert_eq!(o.cloud_vm, [] as [RunPath; 0]);
+    for cloud in [Provider::Aws, Provider::Azure] {
+        let refused = o.refused.iter().find(|r| r.provider == Some(cloud)).unwrap_or_else(|| panic!("{cloud:?}'s refusal"));
+        assert_eq!(refused.target, "cloud-vm");
+        assert!(matches!(&refused.cause, RefusalCause::Isoloom { reason } if reason.contains("gets `secrets`")), "{:?}", refused.cause);
+    }
+    // Its VMs still run here, and on ESXi (Vagrant delivers its secrets there).
+    assert!(providers(&o.vms).contains(&Provider::Hyperv));
+    assert!(providers(&o.servers).contains(&Provider::VmwareEsxi));
+}
+
 #[test]
 fn each_path_carries_its_own_tier_badge() {
     let tiers = tiers::run_tiers();
