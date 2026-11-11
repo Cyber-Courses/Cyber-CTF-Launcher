@@ -16,6 +16,11 @@
 #   DOCKER_VM_PROVIDER  the one for a container lab in a VM (default: utm on macOS, else VM_PROVIDER)
 #   AWS_REGION          the AWS tier's region (default: eu-west-3)
 #   LOGS                where each scenario's log goes (default: .integration-tests)
+#   CYBERCTF_TEST_DOCKER_LABS  lab folders, comma-separated, for the corpus-docker scenario
+#   CYBERCTF_TEST_PVE_ENDPOINT, _TOKEN, _NODE, _BRIDGE (and _JUMP when the lab bridge is internal to
+#                       the node), CYBERCTF_TEST_RUNNER_HOME: the Proxmox host of proxmox-lab
+#   CYBERCTF_TEST_ESXI_HOST, _PASSWORD (and _DATASTORE, _NETWORK): the ESXi host of esxi-lab
+#                       (infra/test-servers/README.md makes either host)
 #   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
 
@@ -62,6 +67,12 @@ scenario() {
   fi
 }
 tier() { listed "$1" "$TIERS"; }
+# unset_of <VAR...>: those of the settings named that aren't set, space-separated.
+unset_of() {
+  local v out=""
+  for v in "$@"; do [ -n "${!v:-}" ] || out="$out $v"; done
+  echo "${out# }"
+}
 # shared_for <provider> <scenario>: the shared folder a VM box gets on that hypervisor here, empty
 # where it can't share one. The same providers as the launcher's `shares_folders`
 # (src-tauri/src/runtime/attack_machine/place.rs), which a unit test there holds to this list.
@@ -100,6 +111,8 @@ if tier local; then
     CYBERCTF_TEST_VM_INPUTS=API_URL=http://localhost:3206,LAUNCH_TOKEN=test-token
   scenario launch-commands integration_tests::commands::a_local_lab_launches_and_tears_down_through_the_commands \
     CYBERCTF_TEST_LOCAL_LAB="$EXAMPLES/hello-stack"
+  # Representative CTF labs of one's own (private, so named by folder only), each up to down.
+  scenario corpus-docker integration_tests::corpus::corpus_docker_labs_run_end_to_end_on_the_runner
   # A running lab's folder is never replaced under it: an update and a re-import are refused
   # while it is up on each local form, and go through once it is stopped.
   REPLACE=integration_tests::replace::a_running_lab_is_not_replaced_under_it
@@ -126,15 +139,18 @@ fi
 if tier server; then
   # A lab on a server through the runner, as the launcher drives it; each host by its own knobs
   # (infra/test-servers/README.md makes a throwaway one).
-  if [ -n "${CYBERCTF_TEST_PVE_ENDPOINT:-}" ]; then
+  # Every setting a host's test reads checked first: one missing made the test panic, recorded FAIL.
+  needs=$(unset_of CYBERCTF_TEST_PVE_ENDPOINT CYBERCTF_TEST_PVE_TOKEN CYBERCTF_TEST_PVE_NODE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_RUNNER_HOME)
+  if [ -z "$needs" ]; then
     scenario proxmox-lab integration_tests::servers::a_vm_lab_runs_on_proxmox_through_the_runner CYBERCTF_TEST_PVE_LAB="$SOLO"
   else
-    skip proxmox-lab "no Proxmox host: set CYBERCTF_TEST_PVE_* (infra/test-servers/README.md)"
+    skip proxmox-lab "not set: $needs (infra/test-servers/README.md)"
   fi
-  if [ -n "${CYBERCTF_TEST_ESXI_HOST:-}" ]; then
+  needs=$(unset_of CYBERCTF_TEST_ESXI_HOST CYBERCTF_TEST_ESXI_PASSWORD)
+  if [ -z "$needs" ]; then
     scenario esxi-lab integration_tests::servers::a_vm_lab_runs_on_esxi_through_the_runner CYBERCTF_TEST_ESXI_LAB="$SOLO"
   else
-    skip esxi-lab "no ESXi host: set CYBERCTF_TEST_ESXI_* (infra/test-servers/README.md)"
+    skip esxi-lab "not set: $needs (infra/test-servers/README.md)"
   fi
 fi
 

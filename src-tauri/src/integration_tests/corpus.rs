@@ -1,11 +1,12 @@
-//! Representative 0.11.0 CTF labs through the launcher's two local Docker paths, end to end, for
-//! the v1 release QA: for each lab folder named in `CYBERCTF_TEST_DOCKER_LABS` (comma-separated),
-//! and through both the launcher's own Docker code and the Isothrum runner, start it with every
-//! input empty (the development value), assert it reaches ready (running, every non-infra machine
+//! Representative 0.11.0 CTF labs on Docker through the Isothrum runner (the launcher's one local
+//! Docker path), end to end, for the release QA: for each lab folder named in
+//! `CYBERCTF_TEST_DOCKER_LABS` (comma-separated), start it with every input empty (the
+//! development value), assert it reaches ready (running, every non-infra machine
 //! up), run the lab's own checks and assert they pass, park and resume it, then stop it and assert
 //! nothing of it is left. The lab's own checks are the solve/graded proof the brief allows.
 //!
-//! Opt-in (it needs Docker and the labs' own images):
+//! Opt-in (it needs Docker and the labs' own images); `scripts/integration-tests.sh` runs it as the
+//! `corpus-docker` scenario, skipped while `CYBERCTF_TEST_DOCKER_LABS` isn't set:
 //!
 //! ```text
 //! CYBERCTF_TEST_DOCKER_LABS=/path/to/lab-a,/path/to/lab-b \

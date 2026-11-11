@@ -65,9 +65,15 @@ Not in the gate, run when the release touches them:
 - The integration tests, `scripts/integration-tests.sh` ([integration.md](integration.md)): real labs on
   Docker, local VMs, an AWS account and servers (`infra/test-servers/` makes throwaway ones), with
   the attack box on each form. Run it when the release touches running labs.
-- The other ignored Rust tests that need real tools: `real_flag_labs` (the flag contract, with
-  the backend), `fake_clis` (cloud reaper and hung CLI, `--test-threads=1`),
-  `finder_path_finds_tools` (the Finder PATH, `--test-threads=1`).
+- The other ignored Rust tests that need real tools: `real_flag_labs_the_flag_contract_holds_on_the_runner` (the flag
+  contract, with the backend), `fake_clis` (cloud reaper and hung CLI, `--test-threads=1`),
+  `finder_path_finds_tools` (the Finder PATH, `--test-threads=1`),
+  `the_real_aws_account_test_confirms_the_launch_permission` (an AWS account signed in with the
+  AWS CLI), `real_docker_machine_page_stop_removes_the_labs_volumes_and_networks` and
+  `real_docker_clean_up_keeps_the_players_image` (Docker), `proxmox_live_test` (a Proxmox host,
+  `CYBERCTF_TEST_PVE_*`), `prints_this_machines_report` (prints the machine report),
+  `real_download_is_placed_and_runs` (a downloaded OVF Tool), `utm_is_opened_and_answers_before_a_vm_starts`
+  (UTM) and `queries_the_api_anonymously` (the network).
 - `labs.yml` and `package-smoke.yml` run in CI, not in the gate: the three Docker labs end to end
   (on each push to `main`, on pull requests that touch the backend, and nightly), and the built
   bundle installed and launched on all three OSes (on pull requests that touch the app, or by

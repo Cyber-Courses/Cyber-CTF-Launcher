@@ -571,10 +571,16 @@ mod tests {
     fn root_scripts_never_use_fixed_temp_paths_or_pipe_downloads_into_a_shell() {
         // Under pkexec the AWS CLI was unzipped into /tmp/aws and /tmp/aws/install run as root:
         // any local user could plant that file first.
+        // Every download fails on an HTTP error (`-f`); the one curl that doesn't is the
+        // repository check, which reads the status code itself (RELEASE_SERVED).
+        const STATUS_PROBE: &str = "s -o /dev/null -w '%{http_code}'";
+        assert!(RELEASE_SERVED.contains(&format!("curl -{STATUS_PROBE}")));
         for s in root_scripts() {
             assert!(!s.contains("/tmp"), "fixed temp path: {s}");
             assert!(!s.contains("| sh") && !s.contains("| bash"), "download piped into a shell: {s}");
-            assert!(!s.contains("curl -s") || s.contains("curl -fs"), "a failed download must fail: {s}");
+            for call in s.split("curl -").skip(1) {
+                assert!(call.starts_with('f') || call.starts_with(STATUS_PROBE), "a failed download must fail: curl -{call}");
+            }
             assert!(s.starts_with("set -e"), "{s}");
             assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         }

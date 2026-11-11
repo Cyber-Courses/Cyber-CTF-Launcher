@@ -88,27 +88,66 @@ mod start_path {
     }
 }
 
+/// Each file of scenarios under `integration_tests/`: its module name and its code.
+#[cfg(test)]
+fn scenario_files() -> Vec<(String, String)> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
+    std::fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|x| x == "rs"))
+        .map(|path| (path.file_stem().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&path).unwrap()))
+        .collect()
+}
+
+/// Every opt-in scenario is run by something: `scripts/integration-tests.sh`, a workflow (by its
+/// name or its module's), or the testing docs that say how to run it by hand. One that nothing
+/// named (the Docker corpus) was never run.
+#[cfg(test)]
+mod reached {
+    use std::path::Path;
+
+    #[test]
+    fn every_opt_in_scenario_is_run_by_the_runner_a_workflow_or_the_docs() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let read = |p: &Path| std::fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+        let mut runners = read(&root.join("scripts/integration-tests.sh"));
+        for doc in ["docs/testing/release-check.md", "docs/testing/integration.md"] {
+            runners.push_str(&read(&root.join(doc)));
+        }
+        for entry in std::fs::read_dir(root.join(".github/workflows")).unwrap().flatten() {
+            runners.push_str(&read(&entry.path()));
+        }
+        let mut unrun = Vec::new();
+        for (module, code) in super::scenario_files() {
+            let mut lines = code.lines();
+            while let Some(line) = lines.next() {
+                if !line.trim_start().starts_with("#[ignore") {
+                    continue;
+                }
+                let Some(name) = lines.find_map(|l| l.split("fn ").nth(1)).and_then(|rest| rest.split('(').next()) else { continue };
+                if !runners.contains(name) && !runners.contains(&format!("'integration_tests::{module}::'")) {
+                    unrun.push(format!("{module}::{name}"));
+                }
+            }
+        }
+        assert!(unrun.is_empty(), "name these in scripts/integration-tests.sh, a workflow or docs/testing: {unrun:?}");
+    }
+}
+
 /// Every scenario runs through `support::scenario`, so its lab is torn down whatever happens in
 /// its checks: one left behind fails the scenarios after it (a UTM VM still registered made every
 /// later docker-vm import fail, after an `expect` ended a scenario before its stop).
 #[cfg(test)]
 mod teardown {
-    use std::path::Path;
-
     #[test]
     fn every_file_of_scenarios_runs_them_through_the_guard() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
-        let mut unguarded = Vec::new();
-        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-            let path = entry.path();
-            if path.extension().is_none_or(|x| x != "rs") {
-                continue;
-            }
-            let code = std::fs::read_to_string(&path).unwrap();
-            if code.contains("#[ignore") && !code.contains("scenario(") {
-                unguarded.push(entry.file_name().to_string_lossy().into_owned());
-            }
-        }
+        let unguarded: Vec<String> = super::scenario_files()
+            .into_iter()
+            .filter(|(_, code)| code.contains("#[ignore") && !code.contains("scenario("))
+            .map(|(module, _)| format!("{module}.rs"))
+            .collect();
         assert!(unguarded.is_empty(), "run the scenario through support::scenario: {unguarded:?}");
     }
 }
