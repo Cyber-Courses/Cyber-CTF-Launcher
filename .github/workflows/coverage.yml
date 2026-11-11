@@ -10,8 +10,10 @@ on:
     branches: [main]
 
 concurrency:
-  group: coverage-${{ github.ref }}
-  cancel-in-progress: true
+  # A branch's newer push cancels its older run; on main every commit keeps a run of its own,
+  # so each one gets a verdict while several pushes land close together.
+  group: coverage-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
