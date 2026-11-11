@@ -296,6 +296,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A lab VM deleted in Proxmox's web UI shows gone.** A Proxmox lab's page read its run's own
+  Terraform state, which still held the VM: it read as running until the next stop. The status
+  now asks the server's API where each VM stands, signed in with the server's saved token or
+  password: a VM removed there shows gone, as a container removed outside the app does (the health
+  banner, Reset), and one powered off there shows off. An ESXi lab's status already asked its host.
+
 - **A server that refuses its saved credentials says so, with the way to fix it.** A Proxmox API
   token revoked, or an ESXi host's password changed, showed only as the step's raw failure. The
   runner now reports the server's refusal (`server_auth_failed`), and the lab page says "Cyber CTF

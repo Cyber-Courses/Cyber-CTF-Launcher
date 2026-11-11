@@ -4271,6 +4271,20 @@ areas:
         gaps:
           integration: "no scenario sets the clock: rig proposal resilience-clock-jump (+1 h mid-start, Linux)"
 
+      - id: resilience.server-vm-deleted
+        what: "A lab VM deleted in Proxmox's web UI or the ESXi host client while the lab runs: the lab page shows it gone, as a container removed outside the app is (the health banner, Reset), read from the server itself, not from the run's own records (tests/resilience.md M10)."
+        host: true
+        providers:
+          - proxmox
+          - vmware_esxi
+        tests:
+          unit:
+            - src-tauri/src/runtime/isothrum/server.rs > a_vm_removed_in_proxmoxs_web_ui_shows_gone_and_a_revoked_token_says_to_update_it
+            - src-tauri/src/runtime/isothrum/tests.rs > a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out
+        gaps:
+          integration: "needs a real server: rig proposals resilience-pve-vm-deleted, resilience-esxi-vm-deleted"
+        note: "Isothrum asks Proxmox's API where each VM stands (cluster/resources, with the server's saved token or password), tested with a fake API (run/tests/terraform/on_server.rs); an ESXi lab's Vagrant status asks the host (vagrant-vmware-esxi's vim-cmd), tested in driver/vagrant/tests/disruptions.rs."
+
       - id: resilience.server-credentials
         what: "A Proxmox API token revoked, or an ESXi password changed, while a lab runs there: the lab page says Cyber CTF can't sign in to the server (by its name in Servers) and to update it there, with a button to the server's settings, on a failed operation and on a status read (tests/resilience.md N4)."
         host: true

@@ -5,7 +5,7 @@
 Every feature the launcher offers its user, area by area, and how well each test tier checks it. The registry is
 [features.yml](features.yml); [README.md](README.md#the-feature-registry) says how a feature or a test is added.
 
-**192 features: 64 Strong, 128 Partial, 0 Unchecked.**
+**193 features: 64 Strong, 129 Partial, 0 Unchecked.**
 
 - A tier: ✔ its tests check the feature's behaviour; ◐ they check part of it (what is missing is under the table); ✖ no test.
 - **Strong**: unit tests, and a tier above that covers it: a real-host one (desktop E2E, integration, setup, package) when the feature depends on the
@@ -61,7 +61,7 @@ Every feature the launcher offers its user, area by area, and how well each test
 | [Auto-update](#auto-update)                                                   | 2        | 0      | 2       | 0         |
 | [Diagnostics and logs](#diagnostics-and-logs)                                 | 3        | 0      | 3       | 0         |
 | [Install, upgrade, uninstall](#install-upgrade-uninstall)                     | 3        | 0      | 3       | 0         |
-| [What a player does that breaks a lab](#what-a-player-does-that-breaks-a-lab) | 13       | 3      | 10      | 0         |
+| [What a player does that breaks a lab](#what-a-player-does-that-breaks-a-lab) | 14       | 3      | 11      | 0         |
 
 ## Account and sign-in
 
@@ -947,7 +947,7 @@ What the partial and missing tiers leave out:
 
 ## What a player does that breaks a lab
 
-13 features: 3 Strong, 10 Partial, 0 Unchecked.
+14 features: 3 Strong, 11 Partial, 0 Unchecked.
 
 | Feature                                                                                                                                                                                                                                                                                                                                 | Platforms | Unit | Web E2E | Desktop E2E | Integration | Setup | Package | Rig | Level       |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- | ------- | ----------- | ----------- | ----- | ------- | --- | ----------- |
@@ -962,6 +962,7 @@ What the partial and missing tiers leave out:
 | `resilience.docker-stopped` Docker quit or stopped while a lab starts: the start says Docker isn't running, and a start once it is back works (tests/resilience.md T1).                                                                                                                                                                 | all       | ✔    | ✖       | ✖           | ◐           | ✖     | ✖       | –   | **Partial** |
 | `resilience.files-deleted` The lab's generated files deleted while it runs: made again, so its page still sees it and its Stop takes it down; with its whole folder gone, the Stop says what may still run (tests/resilience.md F1, F2).                                                                                                | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –   | **Partial** |
 | `resilience.clock-jump` The clock jumps (NTP, set by hand, a VM restored) while a lab starts: its deploy worker is still recognised as alive, by its boot and its start within it as the kernel stored them, so its job is never settled as lost (tests/resilience.md C4).                                                              | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –   | **Partial** |
+| `resilience.server-vm-deleted` A lab VM deleted in Proxmox's web UI or the ESXi host client while the lab runs: the lab page shows it gone, as a container removed outside the app is (the health banner, Reset), read from the server itself, not from the run's own records (tests/resilience.md M10).                                | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –   | **Partial** |
 | `resilience.server-credentials` A Proxmox API token revoked, or an ESXi password changed, while a lab runs there: the lab page says Cyber CTF can't sign in to the server (by its name in Servers) and to update it there, with a button to the server's settings, on a failed operation and on a status read (tests/resilience.md N4). | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –   | **Partial** |
 | `resilience.port-taken` A port the lab publishes held by another process at start: refused naming the port, nothing started, and a start once it is free works (tests/resilience.md N3).                                                                                                                                                | all       | ✖    | ✖       | ✖           | ✔           | ✖     | ✖       | –   | **Partial** |
 
@@ -976,6 +977,7 @@ What the partial and missing tiers leave out:
 - `resilience.docker-stopped`: Integration ◐ throwaway machines only (CYBERCTF_TEST_RESILIENCE_THROWAWAY, the OS's stop and start commands as knobs)
 - `resilience.files-deleted`: Integration ✖ no scenario deletes a running lab's files on the real engine
 - `resilience.clock-jump`: Integration ✖ no scenario sets the clock: rig proposal resilience-clock-jump (+1 h mid-start, Linux)
+- `resilience.server-vm-deleted`: Integration ✖ needs a real server: rig proposals resilience-pve-vm-deleted, resilience-esxi-vm-deleted; Isothrum asks Proxmox's API where each VM stands (cluster/resources, with the server's saved token or password), tested with a fake API (run/tests/terraform/on_server.rs); an ESXi lab's Vagrant status asks the host (vagrant-vmware-esxi's vim-cmd), tested in driver/vagrant/tests/disruptions.rs.
 - `resilience.server-credentials`: Integration ✖ needs a real server whose credentials are changed: rig proposals resilience-pve-token-revoked, resilience-esxi-password-changed; Isothrum maps the servers' refusals (HTTP 401/403, Terraform's Proxmox provider, ovftool, vagrant-vmware-esxi's SSH) to server_auth_failed, tested with its fakes (server_auth.rs, driver/vagrant/tests/disruptions.rs, run/tests/terraform/on_server.rs).
 
 <details><summary>The tests</summary>
@@ -991,6 +993,7 @@ What the partial and missing tiers leave out:
 - `resilience.docker-stopped` (docker): Unit: `src-tauri/src/runtime/isothrum/errors.rs > docker_stopped_while_a_step_ran_reads_as_a_stopped_engine_on_this_machine_only`. Integration: `resilience-docker-daemon-stopped`.
 - `resilience.files-deleted`: Unit: `src-tauri/src/runtime/isothrum/tests.rs > a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_still_reach_it`, `src-tauri/src/runtime/isothrum/tests.rs > a_running_lab_whose_whole_folder_is_gone_says_what_is_left`.
 - `resilience.clock-jump`: Unit: `src-tauri/src/app/deploy_worker/process.rs > a_clock_jump_leaves_a_live_worker_alive_and_a_recycled_pid_still_dead`, `src-tauri/src/app/deploy_worker/process.rs > a_live_worker_is_alive_only_with_its_own_start_time`, `src-tauri/src/app/deploy_worker/process/identity.rs > a_proc_stat_line_gives_its_start_in_ticks_since_boot`, `src-tauri/src/app/deploy_worker/process/identity.rs > a_process_keeps_its_identity_and_another_has_its_own`.
+- `resilience.server-vm-deleted` (proxmox, vmware_esxi): Unit: `src-tauri/src/runtime/isothrum/server.rs > a_vm_removed_in_proxmoxs_web_ui_shows_gone_and_a_revoked_token_says_to_update_it`, `src-tauri/src/runtime/isothrum/tests.rs > a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out`.
 - `resilience.server-credentials` (proxmox, vmware_esxi): Unit: `src-tauri/src/runtime/isothrum/errors.rs > a_server_refusing_the_credentials_says_to_update_them_in_servers`, `src-tauri/src/runtime/isothrum/vm_tests.rs > an_esxi_password_changed_says_to_update_it_in_servers`, `src/features/labs/lab-detail/failure-notice.test.tsx > says so under the failed start, with its settings a click away`, `src/features/labs/lab-detail/failure-notice.test.tsx > says so when the lab's state can't be read, and opens the server's own settings`, `src/features/labs/failure-hints.test.ts > reads a server refusing its saved credentials by its code, in any language`, `src/lib/errors.test.ts > "serverAuthFailed"`.
 - `resilience.port-taken` (docker): Integration: `resilience-docker-port-taken`.
 

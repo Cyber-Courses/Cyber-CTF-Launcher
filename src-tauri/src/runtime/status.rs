@@ -53,9 +53,11 @@ async fn status_at(host: &Host) -> Result<LabStatus> {
         Host::Esxi { run, conn } => on_server(run.status().await?, conn),
         // A cloud account (cloud-vm, cloud-docker, cloud-services): from the runner's record.
         Host::Cloud { run, conn, .. } => on_server(run.status().await?, conn),
-        // A Proxmox server: from the runner's own record and state (no SSH, no API call).
+        // A Proxmox server: from the runner's own record and state, each VM as the server's API
+        // says it stands, asked with the server's credentials (a VM removed in its web UI gone).
         Host::Server { run, conn } => {
-            on_server(run.status(&isothrum::ServerPlace { name: conn.name.clone(), ..isothrum::ServerPlace::default() }).await?, conn)
+            let place = isothrum::ServerPlace { name: conn.name.clone(), vars: conn.tf_vars.clone(), ..isothrum::ServerPlace::default() };
+            on_server(run.status(&place).await?, conn)
         }
     })
 }

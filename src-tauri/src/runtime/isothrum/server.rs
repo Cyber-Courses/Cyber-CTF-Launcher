@@ -56,7 +56,11 @@ impl ServerRun {
     /// Running `id`, installed in `dir`, on the runner whose home is `home` (the app data folder),
     /// with this host's tools.
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
-        let config = super::host_config(home, None);
+        ServerRun::with(super::host_config(home, None), dir, id, runtime)
+    }
+
+    /// [`ServerRun::new`] on a runner set up with `config` (tests script its tools).
+    fn with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         // VM labs use the per-machine Proxmox module; container labs use docker-vm on one VM there.
         let (out, target) = lab::terraform(dir, runtime, "proxmox");
@@ -93,12 +97,13 @@ impl ServerRun {
         self.retire_with(machine, &options(place, &[]), log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
-    /// The lab as its page shows it, on the server `place` names.
+    /// The lab as its page shows it, on the server `place` names: its VMs as the server says they
+    /// stand (the runner asks its API with `place`'s credentials), one removed there gone.
     pub(crate) async fn status(&self, place: &ServerPlace) -> Result<LabStatus> {
         if !self.manifest.is_file() {
             return Ok(LabStatus { place: Some(Place::Server), ..LabStatus::default() });
         }
-        let lab = self.running().await?;
+        let lab = self.running().await?.with_connection(connection_of(place));
         let status = lab.status().await.map_err(|e| errors::on_server(errors::from_runner(e), &place.name))?;
         let shown = view::lab_status(lab.manifest(), &status, None);
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
@@ -187,5 +192,95 @@ mod tests {
         let mut p = place();
         p.vars.push(("node".into(), "pve2".into()));
         assert_eq!(options(&p, &[]).params.get("node").map(String::as_str), Some("pve2"));
+    }
+
+    /// tests/resilience.md M10 and N4: a Proxmox lab's page reads its VMs from the server's API,
+    /// signed in with the server's saved token; a VM removed in Proxmox's web UI shows gone, a
+    /// revoked token says to update it in Servers.
+    mod on_the_server {
+        use super::*;
+        use crate::runtime::isothrum::test_lab::prelude::*;
+        use crate::runtime::lab;
+
+        const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.32.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n  db:\n    os: debian@12\n    networks: { lab: 11 }\n";
+
+        /// What the fake Proxmox API says of VM 104.
+        #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+        enum Api {
+            #[default]
+            Has,
+            Removed,
+            Refuses,
+        }
+
+        fn answer(api: &Mutex<Api>, call: &Call) -> Reply {
+            if call.program != "curl" {
+                return Reply::ok("");
+            }
+            let config = call.stdin.as_ref().map(|p| std::fs::read_to_string(p).unwrap()).unwrap_or_default();
+            assert!(config.contains("Authorization: PVEAPIToken=root@pam!cyberctf=sec"), "signed in with the saved token: {config}");
+            match *locked(api) {
+                Api::Refuses => Reply::fail(22, "curl: (22) The requested URL returned error: 401"),
+                Api::Has => Reply::ok(r#"{"data":[{"vmid":104,"status":"running","type":"qemu"},{"vmid":105,"status":"running","type":"qemu"}]}"#),
+                // `web` removed in the web UI; `db` runs on.
+                Api::Removed => Reply::ok(r#"{"data":[{"vmid":105,"status":"running","type":"qemu"}]}"#),
+            }
+        }
+
+        /// A Proxmox VM lab whose run is up (its record and Terraform state as an `up` leaves
+        /// them), on fake tools.
+        fn up() -> (Scripted<Api>, ServerRun) {
+            let f = Scripted::answered_by(Home::new("-pve", SPEC, &[], lab::Target::Proxmox), answer);
+            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm).unwrap();
+            let state = f.home.root.join("runs").join("cyberctf-web");
+            std::fs::create_dir_all(&state).unwrap();
+            std::fs::write(
+                state.join("terraform.tfstate"),
+                r#"{"outputs":{"vm_id_web":{"value":104},"vm_id_db":{"value":105}},"resources":[{"instances":[{}]}]}"#,
+            )
+            .unwrap();
+            let manifest: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&run.manifest).unwrap()).unwrap();
+            // Every param the manifest takes, as the start applied them.
+            let mut params = serde_json::Map::new();
+            for p in manifest["params"].as_array().into_iter().flatten() {
+                params.insert(p["name"].as_str().unwrap().to_owned(), "x".into());
+            }
+            params.insert("proxmox_endpoint".into(), "https://10.0.0.5:8006/".into());
+            params.insert("node".into(), "pve-lab".into());
+            params.insert("proxmox_insecure".into(), "true".into());
+            let record = serde_json::json!({
+                "version": 0, "name": "cyberctf-web", "manifest": run.manifest, "target": "proxmox", "driver": "terraform",
+                "state": "ready", "params": params, "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
+            });
+            std::fs::write(state.join("record.json"), record.to_string()).unwrap();
+            (f, run)
+        }
+
+        fn place() -> ServerPlace {
+            let vars = [("proxmox_endpoint", "https://10.0.0.5:8006/"), ("proxmox_api_token", "root@pam!cyberctf=sec")];
+            ServerPlace {
+                label: "pve-1".into(),
+                name: "Home lab".into(),
+                vars: vars.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
+                ..ServerPlace::default()
+            }
+        }
+
+        fn web(status: &LabStatus) -> String {
+            status.machines.iter().find(|m| m.name == "web").map(|m| m.state.clone()).unwrap()
+        }
+
+        #[tokio::test]
+        async fn a_vm_removed_in_proxmoxs_web_ui_shows_gone_and_a_revoked_token_says_to_update_it() {
+            let (f, run) = up();
+            let shown = run.status(&place()).await.unwrap();
+            assert_eq!((shown.running, web(&shown).as_str()), (true, "running"));
+            *f.model() = Api::Removed;
+            let gone = run.status(&place()).await.unwrap();
+            assert_eq!((gone.running, web(&gone).as_str()), (true, "absent"), "the page's gone view, as a removed container's");
+            *f.model() = Api::Refuses;
+            let refused = run.status(&place()).await.err().unwrap();
+            assert_eq!(refused.code(), crate::error::Code::ServerAuthFailed { server: "Home lab".into() });
+        }
     }
 }
