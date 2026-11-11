@@ -7,9 +7,12 @@
 ; in that folder is removed (remove-test-vm.ps1, written from the app's own removal). Without the
 ; rights to manage Hyper-V (an administrator, or a member of Hyper-V Administrators) it changes
 ; nothing, and the uninstall goes on.
+; The macro's body expands where Tauri inserts it (its generated installer.nsi, in another folder), so
+; ${__FILEDIR__} is read here, at definition, not inside the macro.
+!define CYBERCTF_HOOKS_DIR "${__FILEDIR__}"
 !macro NSIS_HOOK_PREUNINSTALL
   InitPluginsDir
-  File "/oname=$PLUGINSDIR\remove-test-vm.ps1" "${__FILEDIR__}\remove-test-vm.ps1"
+  File "/oname=$PLUGINSDIR\remove-test-vm.ps1" "${CYBERCTF_HOOKS_DIR}/remove-test-vm.ps1"
   nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "$PLUGINSDIR\remove-test-vm.ps1"'
   Pop $0
   DetailPrint "Removing the self-test VM: exit code $0"
