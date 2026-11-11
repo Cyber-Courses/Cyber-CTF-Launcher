@@ -668,8 +668,10 @@ export async function closeWindow(b, label) {
   await b.switchToWindow("main").catch(() => {});
 }
 
-/** A button in the main pane named exactly one of `labels` (its text, trimmed). */
-export const mainButton = (b, ...labels) => b.$(`//main//button[${labels.map((l) => `normalize-space()=${JSON.stringify(l)}`).join(" or ")}]`);
+/** A button in the main pane named exactly one of `labels` (its text, trimmed): the first in the
+ *  page's order when several are there, since WebdriverIO's `$` refuses a selector that matches
+ *  more than one element (its strict selectors). */
+export const mainButton = (b, ...labels) => b.$(`(//main//button[${labels.map((l) => `normalize-space()=${JSON.stringify(l)}`).join(" or ")}])[1]`);
 
 /** A radio row (`role="radio"`) under `scope` whose text holds `text`. */
 export const radioRow = (scope, text) => scope.$(`.//*[@role="radio"][contains(normalize-space(), ${JSON.stringify(text)})]`);
