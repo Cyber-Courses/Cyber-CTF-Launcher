@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SelfTest, type SelfTestResult, type SelfTestTarget } from "@/features/machine/self-test";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
-import { StatusDot, type Tone } from "@/components/ui/status-pill";
+import { StatusDot } from "@/components/ui/status-pill";
 
 // ---------- small parts ----------
 
@@ -123,89 +123,6 @@ export function ListSkeleton() {
 // ---------- lab types ----------
 
 export type LabKind = "docker" | "vm";
-
-const STATUS_TEXT: Record<Tone, string> = {
-  ok: "text-foreground",
-  warn: "text-warning",
-  fail: "text-destructive",
-  muted: "text-muted-foreground",
-};
-
-/** A provider row's name, with its mark (the current engine, the default hypervisor) beside it. */
-function RowTitle({ title, badge }: { title: string; badge?: string }) {
-  return (
-    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.8125rem] font-medium text-foreground">
-      <span className="min-w-0 break-words">{title}</span>
-      {badge && (
-        <span className="rounded-full px-2 py-px font-mono text-[0.625rem] font-normal whitespace-nowrap text-jewel-text shadow-[inset_0_0_0_1px_rgb(var(--jewel-rgb)/0.4)]">
-          {badge}
-        </span>
-      )}
-    </p>
-  );
-}
-
-/** One provider (a container engine, a hypervisor) as a row: logo tile, name over mono detail,
- *  status (dot + word) and the one action that matters on the right; the lab type's self-test
- *  opens inline below the provider labs use. */
-export function ProviderRow({
-  kind,
-  icon,
-  title,
-  badge,
-  tone,
-  status,
-  detail,
-  hint,
-  actions,
-  testing,
-  onTestDone,
-  target,
-}: {
-  kind: LabKind;
-  icon: ReactNode;
-  title: string;
-  /** A short mark beside the name: the current engine, the default hypervisor. */
-  badge?: string;
-  tone: Tone;
-  status: string;
-  detail: ReactNode;
-  hint?: string;
-  actions: ReactNode;
-  testing: boolean;
-  onTestDone: () => void;
-  /** Which engine or hypervisor the inline test is of (this row's), and how its result is kept. */
-  target?: SelfTestTarget;
-}) {
-  return (
-    <div className="border-t border-border first:border-t-0">
-      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 px-4 py-3">
-        {icon}
-        <div className="min-w-0 flex-1">
-          <RowTitle title={title} badge={badge} />
-          <p className="mt-0.5 font-mono text-[0.6875rem] text-faint">{detail}</p>
-          {hint && <p className="mt-1 text-[0.75rem] text-warning">{hint}</p>}
-        </div>
-        <span className={cn("inline-flex shrink-0 items-center gap-2 text-[0.75rem]", STATUS_TEXT[tone])}>
-          <StatusDot tone={tone} />
-          {status}
-        </span>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-      </div>
-      {testing && (
-        <div className="px-4 pb-4">
-          <MachineSelfTest
-            kind={kind}
-            target={target}
-            onResult={(r) => {
-              if (r === "ok" || r === "fail") onTestDone();
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** A lab type's self-test on this machine, run at once on `target`. */
 export function MachineSelfTest({ kind, target, onResult }: { kind: LabKind; target?: SelfTestTarget; onResult: (r: SelfTestResult) => void }) {

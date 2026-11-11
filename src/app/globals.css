@@ -478,3 +478,19 @@
   background: #ffffff;
   box-shadow: inset 0 0 0 1px rgb(16 16 24 / 0.08);
 }
+
+/* A label as wide as the wider of itself and the one it swaps with (`data-unseen`, Test and Hide
+   test): the other is laid out unseen in the same cell, as generated content with no alternative
+   text, so it is neither read nor part of the element's text. */
+.keeps-width {
+  display: inline-grid;
+}
+.keeps-width > *,
+.keeps-width::after {
+  grid-area: 1 / 1;
+}
+.keeps-width::after {
+  content: attr(data-unseen);
+  content: attr(data-unseen) / "";
+  visibility: hidden;
+}

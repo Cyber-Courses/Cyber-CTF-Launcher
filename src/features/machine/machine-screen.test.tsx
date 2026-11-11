@@ -22,7 +22,7 @@ import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport, withNeeds, withSetup } from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, rejectWith, stream } from "@/test/tauri";
 import { button, flush, settle } from "@/test/ui";
-import { pressFirstTest, renderMachineScreen } from "@/features/machine/machine-test-kit";
+import { pressFirstTest, providerRows, renderMachineScreen } from "@/features/machine/machine-test-kit";
 import { must, toastsShown } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -268,11 +268,13 @@ describe("EngineRows", () => {
         last={{ result: "ok", at: base.now - 3_600_000 }}
       />,
     );
-    // Three rows, in the check's order: the current one, another running, one stopped.
-    expect(text()).toMatch(
-      /OrbStack.*current.*tested 1 h ago.*Ready.*Docker Desktop.*Labs use OrbStack by default\. · last test failed just now · pull timed out.*Running.*Colima.*Engine stopped/,
-    );
-    expect(screen.getAllByText("current")).toHaveLength(1);
+    // Three rows, in the check's order: the current one (the default), another running (its own
+    // test failed, so said so), one stopped. The same words whichever is the default.
+    expect(providerRows()).toEqual([
+      { name: "OrbStack", status: "Ready", slot: "Default", detail: "tested 1 h ago" },
+      { name: "Docker Desktop", status: "Test failed", slot: "Use by default", detail: "last test failed just now · pull timed out" },
+      { name: "Colima", status: "Stopped", slot: "", detail: "Open source, command line only." },
+    ]);
     // Not installed here: not a row (Add a provider covers it).
     expect(text()).not.toContain("Podman");
     // Every running engine has its own test; the stopped one its fix.
@@ -311,7 +313,7 @@ describe("EngineRows", () => {
     expect(getLastTest("docker", "orbstack")).toMatchObject({ result: "fail", why: "toomanyrequests: rate limit" });
     // OrbStack isn't what labs run on: the container labs' own last test is untouched.
     expect(getLastTest("docker")).toBeNull();
-    expect(text()).toContain("Hide test");
+    expect(button(/hide test/i)).toBeTruthy();
   });
 
   it("shows a failed last test and a low-memory hint on the current engine, and names one without a tile", () => {
@@ -322,7 +324,7 @@ describe("EngineRows", () => {
       dockerEngines: [found("podman", { context: "podman-machine-default", current: true })],
     };
     render(<EngineRows {...base} memFree={GB} report={report} last={{ result: "fail", at: Date.now() }} />);
-    expect(text()).toMatch(/Podman.*current.*last test failed just now.*Test failed/);
+    expect(providerRows()).toEqual([{ name: "Podman", status: "Test failed", slot: "Default", detail: "last test failed just now" }]);
     expect(text()).toContain("Container labs want about 2.0 GB of free memory; 1.0 GB free now.");
   });
 
@@ -331,7 +333,7 @@ describe("EngineRows", () => {
     const onFix = vi.fn();
     const user = userEvent.setup();
     const { unmount } = render(<EngineRows {...base} report={stoppedDockerReport()} last={null} />);
-    expect(text()).toMatch(/Docker Engine.*current.*No permission/);
+    expect(providerRows()).toMatchObject([{ name: "Docker Engine", status: "No permission", slot: "Default" }]);
     expect(text()).toContain("sudo usermod -aG docker player");
     expect(screen.queryByRole("button", { name: /^fix$/i })).toBeNull();
     unmount();
@@ -357,7 +359,7 @@ describe("EngineRows", () => {
         last={null}
       />,
     );
-    expect(text()).toMatch(/Docker Desktop.*current.*Engine stopped/);
+    expect(providerRows()).toMatchObject([{ name: "Docker Desktop", status: "Stopped", slot: "Default" }]);
     await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenCalledWith("docker", undefined);
     stopped.unmount();
@@ -371,7 +373,7 @@ describe("EngineRows", () => {
     const onTestDone = vi.fn();
     render(<EngineRows {...base} testing="docker:docker-desktop" onTestDone={onTestDone} report={readyReport()} last={null} />);
     await flush();
-    expect(text()).toContain("Hide test");
+    expect(button(/hide test/i)).toBeTruthy();
     expect(text()).toContain("not tested yet");
     expect(onTestDone).toHaveBeenCalledOnce();
   });
@@ -398,11 +400,18 @@ describe("HypervisorRows", () => {
       ]),
     };
     render(rows(report, { result: "ok", at: Date.now() }));
-    // Picked automatically among the ready ones, and marked; the others each as they stand.
-    expect(text()).toMatch(/VirtualBox.*default.*\(automatic, change in Settings\) · tested just now.*Ready/);
-    expect(text()).toMatch(/VMware Workstation.*Labs run on VirtualBox by default\. · not tested yet.*Installed/);
-    expect(text()).toMatch(/libvirt.*KVM isn't available on this machine \(no \/dev\/kvm\).*Can't run here/);
-    expect(screen.getAllByText("default")).toHaveLength(1);
+    // Picked automatically among the ready ones, and marked; the others each as they stand: the
+    // other ready one is Ready too, only its slot differs.
+    expect(providerRows()).toEqual([
+      { name: "VirtualBox", status: "Ready", slot: "Default", detail: " (automatic, change in Settings) · tested just now" },
+      { name: "VMware Workstation", status: "Ready", slot: "Use by default", detail: "not tested yet" },
+      {
+        name: "libvirt",
+        status: "Can't run here",
+        slot: "",
+        detail: "KVM isn't available on this machine (no /dev/kvm): turn on virtualization in the firmware, or use another hypervisor.",
+      },
+    ]);
     // Not installed: not a row (Add a provider covers it).
     expect(text()).not.toContain("QEMU");
     // Every ready hypervisor has its own test (not the blocked one); the other can become the default.
@@ -447,9 +456,10 @@ describe("HypervisorRows", () => {
     setVmProvider("vmware_desktop");
     const report = { ...readyReport(), os: "linux", ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
     render(<HypervisorRows {...base} report={report} last={null} vm={vmSetup(report, "vmware_desktop", null)} />);
-    expect(text()).toMatch(
-      /VirtualBox.*Labs run on VMware Workstation by default\. · not tested yet.*Installed.*VMware Workstation.*default.*not tested yet.*Ready/,
-    );
+    expect(providerRows()).toEqual([
+      { name: "VirtualBox", status: "Ready", slot: "Use by default", detail: "not tested yet" },
+      { name: "VMware Workstation", status: "Ready", slot: "Default", detail: "not tested yet" },
+    ]);
   });
 
   it("offers a server beside the test when memory is short", async () => {
@@ -467,7 +477,14 @@ describe("HypervisorRows", () => {
   it("explains a blocked hypervisor", () => {
     installTauri();
     render(rows({ ...readyReport(), ...hypervisors([hv({ provider: "libvirt", available: false, reason: { code: "noKvm" } })]) }));
-    expect(text()).toMatch(/libvirt.*KVM isn't available on this machine \(no \/dev\/kvm\).*Can't run here/);
+    expect(providerRows()).toEqual([
+      {
+        name: "libvirt",
+        status: "Can't run here",
+        slot: "",
+        detail: "KVM isn't available on this machine (no /dev/kvm): turn on virtualization in the firmware, or use another hypervisor.",
+      },
+    ]);
     expect(button(/use a server/i)).toBeTruthy();
   });
 
@@ -712,7 +729,10 @@ describe("MachineScreen", () => {
     expect(text()).not.toContain("Low disk space");
     // The providers, each its own row; "Add a provider" opens the setup on its choice.
     expect(text()).toContain("Providers");
-    expect(text()).toMatch(/Docker Desktop.*current.*VirtualBox.*default/);
+    expect(providerRows()).toMatchObject([
+      { name: "Docker Desktop", status: "Ready", slot: "Default" },
+      { name: "VirtualBox", status: "Ready", slot: "Default" },
+    ]);
     expect(text()).not.toContain("OrbStack");
     expect(screen.getByRole("button", { name: /add a provider/i })).toBeTruthy();
   });
@@ -775,10 +795,10 @@ describe("MachineScreen", () => {
     await renderMachineScreen();
     await pressFirstTest(user);
     await flush(50);
-    expect(text()).toContain("Hide test");
+    expect(button(/hide test/i)).toBeTruthy();
     expect(text()).toMatch(/tested just now/);
     await user.click(button(/hide test/i));
-    expect(text()).not.toContain("Hide test");
+    expect(screen.queryByRole("button", { name: /hide test/i })).toBeNull();
   });
 
   it("lists only what is installed: no rows for the providers this machine lacks", async () => {

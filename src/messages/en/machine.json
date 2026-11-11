@@ -34,6 +34,11 @@
     "fix": "Fix",
     "useServer": "Use a server",
     "useDefault": "Use by default",
+    "defaultMark": "Default",
+    "defaultHint": {
+      "docker": "Container labs run on this engine.",
+      "vm": "VM labs run on this hypervisor."
+    },
     "notTestedYet": "not tested yet",
     "tested": "tested {ago}",
     "lastTestFailed": "last test failed {ago}",
@@ -43,23 +48,28 @@
       "ready": "Ready",
       "testFailed": "Test failed",
       "noPermission": "No permission",
-      "engineStopped": "Engine stopped",
+      "stopped": "Stopped",
       "needsSetup": "Needs setup",
-      "running": "Running",
-      "installed": "Installed",
       "cantRunHere": "Can't run here"
+    },
+    "statusHint": {
+      "ready": {
+        "docker": "Its engine is running and your account may use it: container labs can run on it.",
+        "vm": "Installed, with Vagrant and its plugin: VM labs can run on it."
+      },
+      "testFailed": "It looks ready, but its last self-test failed: run Test to see why.",
+      "noPermission": "Its engine is running, but your account may not use it yet.",
+      "stopped": "Installed, but its engine isn't running: start it to run labs on it.",
+      "needsSetup": "Something it needs isn't installed yet: Fix sets it up.",
+      "cantRunHere": "Installed, but this machine can't run it: the line under its name says why."
     },
     "docker": {
       "denied": "Docker is running, but this user may not use it: add yourself to the docker group, then log out and back in.",
       "stopped": "A container engine is installed but not running. Start it to run labs."
     },
-    "engine": {
-      "runningIdle": "Labs use {engine} by default."
-    },
     "vm": {
       "automatic": " (automatic, change in Settings)",
-      "vagrantMissing": "Vagrant or the hypervisor's Vagrant plugin is missing.",
-      "installedIdle": "Labs run on {provider} by default."
+      "vagrantMissing": "Vagrant or the hypervisor's Vagrant plugin is missing."
     },
     "details": "Details",
     "detail": {
@@ -72,10 +82,6 @@
       "installedWithPlugin": "installed · {plugin}",
       "pluginMissing": "plugin {plugin} missing",
       "utilityMissing": "installed · {plugin} · Vagrant VMware Utility not running"
-    },
-    "badge": {
-      "current": "current",
-      "default": "default"
     }
   },
   "empty": {

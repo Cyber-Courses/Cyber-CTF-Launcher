@@ -34,6 +34,11 @@
     "fix": "修正",
     "useServer": "サーバーを使う",
     "useDefault": "既定にする",
+    "defaultMark": "既定",
+    "defaultHint": {
+      "docker": "コンテナラボはこのエンジンで実行されます。",
+      "vm": "VM ラボはこのハイパーバイザーで実行されます。"
+    },
     "notTestedYet": "未テスト",
     "tested": "{ago} にテスト済み",
     "lastTestFailed": "{ago} の前回のテストは失敗",
@@ -43,23 +48,28 @@
       "ready": "準備完了",
       "testFailed": "テスト失敗",
       "noPermission": "権限なし",
-      "engineStopped": "エンジン停止中",
+      "stopped": "停止中",
       "needsSetup": "セットアップが必要",
-      "running": "実行中",
-      "installed": "インストール済み",
       "cantRunHere": "このマシンでは実行不可"
+    },
+    "statusHint": {
+      "ready": {
+        "docker": "エンジンが動作中で、このアカウントで使えます。コンテナラボを実行できます。",
+        "vm": "Vagrant とそのプラグインがそろっています。VM ラボを実行できます。"
+      },
+      "testFailed": "準備はできていますが、前回のセルフテストが失敗しました。テストで原因を確認してください。",
+      "noPermission": "エンジンは動作中ですが、このアカウントではまだ使えません。",
+      "stopped": "インストール済みですが、エンジンが停止しています。ラボを実行するには起動してください。",
+      "needsSetup": "必要なものがまだインストールされていません。修正でセットアップできます。",
+      "cantRunHere": "インストール済みですが、このマシンでは実行できません。名前の下の行に理由があります。"
     },
     "docker": {
       "denied": "Docker は起動していますが、このユーザーには使用権限がない可能性があります。自分を docker グループに追加し、一度ログアウトしてから再ログインしてください。",
       "stopped": "コンテナエンジンはインストールされていますが、起動していません。ラボを実行するには起動してください。"
     },
-    "engine": {
-      "runningIdle": "ラボは既定で {engine} を使用します。"
-    },
     "vm": {
       "automatic": "（自動選択、「設定」で変更可能）",
-      "vagrantMissing": "Vagrant またはハイパーバイザー用の Vagrant プラグインがありません。",
-      "installedIdle": "ラボは既定で {provider} で実行されます。"
+      "vagrantMissing": "Vagrant またはハイパーバイザー用の Vagrant プラグインがありません。"
     },
     "details": "詳細",
     "detail": {
@@ -72,10 +82,6 @@
       "installedWithPlugin": "インストール済み · {plugin}",
       "pluginMissing": "プラグイン {plugin} がありません",
       "utilityMissing": "インストール済み · {plugin} · Vagrant VMware Utility が動いていません"
-    },
-    "badge": {
-      "current": "現在",
-      "default": "既定"
     }
   },
   "empty": {

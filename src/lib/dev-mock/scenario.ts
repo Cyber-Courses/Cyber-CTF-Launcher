@@ -1,7 +1,7 @@
 // The browser preview's scenarios: the switches next to `?mock` in the URL, and the machine the
 // system check reports for them.
 import type { CommandError } from "@/lib/errors";
-import type { Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
+import type { DockerEngine, Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
 import { type Holdable, isHoldable } from "@/lib/dev-mock/holds";
 import { report } from "@/lib/dev-mock/sample";
 
@@ -10,6 +10,9 @@ import { report } from "@/lib/dev-mock/sample";
  * them; `answer` (sample.ts) stays the plain sample data the component tests build on):
  *  - `os=macos|windows|linux`, `arch=arm64|x86_64`: the machine the system check reports.
  *  - `machine=fresh`: nothing installed yet (no package manager, engine, Vagrant or hypervisor).
+ *    `machine=many`: several of each: a second engine running and a third stopped, and on an
+ *    Apple Silicon Mac Parallels ready beside UTM and VMware Fusion short of its plugin, so the
+ *    Machine page has a row in each state (and "Use by default" on the ready ones).
  *  - `docker=stopped|denied`: the container engine is installed but stopped, or running yet
  *    refusing this account (the report carries the hint, with its code, as the core sends it).
  *  - `catalogue=arm64vm`: the catalogue also has a VM lab built for arm64 (Edge router), so an
@@ -43,6 +46,8 @@ export type Scenario = {
   os: "macos" | "windows" | "linux";
   arch: "arm64" | "x86_64";
   fresh: boolean;
+  /** Several engines and hypervisors installed (`machine=many`). */
+  many: boolean;
   /** The container engine: running, installed but stopped, or refusing this account. */
   docker: "running" | "stopped" | "denied";
   /** With `arm64vm`, the catalogue also lists the VM lab built for arm64 (labs.ts `extraLabs`). */
@@ -71,6 +76,7 @@ export function scenarioFrom(search: string): Scenario {
     os: os === "windows" || os === "linux" ? os : "macos",
     arch: q.get("arch") === "x86_64" ? "x86_64" : "arm64",
     fresh: q.get("machine") === "fresh",
+    many: q.get("machine") === "many",
     docker: docker === "stopped" || docker === "denied" ? docker : "running",
     catalogue: q.get("catalogue") === "arm64vm" ? "arm64vm" : "default",
     onboarding: q.has("onboarding"),
@@ -162,6 +168,27 @@ function engineDown(ready: SystemReport, docker: Exclude<Scenario["docker"], "ru
   };
 }
 
+/** `ready` with more installed (`machine=many`): two more engines, one running and one stopped,
+ *  and on an Apple Silicon Mac Parallels ready and VMware Fusion installed, short of its plugin. */
+function many(ready: SystemReport): SystemReport {
+  const [extraRunning, extraStopped]: DockerEngine[] = ready.os === "linux" ? ["podman", "colima"] : ["orbstack", "colima"];
+  const vmProviders = ready.vmProviders.map((p): ProviderStatus => {
+    if (p.provider === "parallels") return { ...p, available: true, hypervisor: true, pluginInstalled: true, needs: [], reason: null };
+    if (p.provider === "vmware_desktop") return { ...p, hypervisor: true, reason: null };
+    return p;
+  });
+  return {
+    ...ready,
+    dockerEnginesRunning: [...ready.dockerEnginesRunning, extraRunning],
+    dockerEngines: [
+      ...ready.dockerEngines,
+      { engine: extraRunning, context: extraRunning, running: true, current: false },
+      { engine: extraStopped, context: extraStopped, running: false, current: false },
+    ],
+    vmProviders,
+  };
+}
+
 /** The system check's answer for a scenario. */
 export function scenarioReport(sc: Scenario): SystemReport {
   const appleSilicon = !sc.fresh && sc.os === "macos" && sc.arch === "arm64";
@@ -181,5 +208,6 @@ export function scenarioReport(sc: Scenario): SystemReport {
     vmProviders: [...local, ...report.vmProviders.filter((p) => p.remote)],
   };
   if (sc.fresh) return fresh(ready);
-  return sc.docker === "running" ? ready : engineDown(ready, sc.docker);
+  const machine = sc.many ? many(ready) : ready;
+  return sc.docker === "running" ? machine : engineDown(machine, sc.docker);
 }

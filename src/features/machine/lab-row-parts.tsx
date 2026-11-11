@@ -8,9 +8,6 @@ import type { Provider, SystemReport } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
 import { useT } from "@/lib/i18n";
 
-/** A row's tone once its provider runs labs: the last test passed or failed. */
-export const TESTED_TONE = { ready: "ok", testFailed: "fail" } as const;
-
 /** What every provider row takes. */
 export type RowProps = {
   report: SystemReport;
@@ -31,12 +28,16 @@ export type RowProps = {
 /** The key of a row's inline test. */
 export const testKey = (kind: LabKind, provider: string) => `${kind}:${provider}`;
 
-/** Opens or hides a lab type's self-test inline. */
+/** Opens or hides a lab type's self-test inline. As wide as its wider label either way (the
+ *  other one laid out unseen in the same place), so opening a test doesn't move the row's columns. */
 function TestButton({ testing, onClick }: { testing: boolean; onClick: () => void }) {
   const t = useT();
+  const [shown, unseen] = testing ? [t("machine.screen.hideTest"), t("machine.screen.test")] : [t("machine.screen.test"), t("machine.screen.hideTest")];
   return (
-    <Button variant="outline" size="xs" onClick={onClick}>
-      {testing ? t("machine.screen.hideTest") : t("machine.screen.test")}
+    <Button variant="outline" size="xs" className="whitespace-nowrap" onClick={onClick}>
+      <span className="keeps-width" data-unseen={unseen}>
+        <span>{shown}</span>
+      </span>
     </Button>
   );
 }
@@ -63,6 +64,7 @@ export function FixButton({ step, provider, onFix }: { step: string; provider?: 
     <Button
       variant="outline"
       size="xs"
+      className="whitespace-nowrap"
       onClick={() => {
         onFix(step, provider);
       }}
@@ -71,6 +73,9 @@ export function FixButton({ step, provider, onFix }: { step: string; provider?: 
     </Button>
   );
 }
+
+/** A row's status once its provider can run labs: ready, unless its last test failed. */
+export const testedStatus = (test: LastTest | null) => (test?.result === "fail" ? "testFailed" : "ready");
 
 /** The last test: never run, passed, or failed (and why), and how long ago. */
 export function TestLine({ test, now }: { test: LastTest | null; now: number }) {
@@ -82,16 +87,6 @@ export function TestLine({ test, now }: { test: LastTest | null; now: number }) 
       {t("machine.screen.lastTestFailed", { ago: formatAgo(test.at, now) })}
       {test.why ? ` · ${test.why}` : ""}
     </span>
-  );
-}
-
-/** Makes this row's engine or hypervisor the one labs run on. */
-export function UseDefaultButton({ onClick }: { onClick: () => void }) {
-  const t = useT();
-  return (
-    <Button variant="ghost" size="xs" onClick={onClick}>
-      {t("machine.screen.useDefault")}
-    </Button>
   );
 }
 

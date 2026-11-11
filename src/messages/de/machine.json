@@ -34,6 +34,11 @@
     "fix": "Beheben",
     "useServer": "Server nutzen",
     "useDefault": "Als Standard verwenden",
+    "defaultMark": "Standard",
+    "defaultHint": {
+      "docker": "Container-Labs laufen auf dieser Engine.",
+      "vm": "VM-Labs laufen auf diesem Hypervisor."
+    },
     "notTestedYet": "noch nicht getestet",
     "tested": "getestet {ago}",
     "lastTestFailed": "letzter Test fehlgeschlagen {ago}",
@@ -43,23 +48,28 @@
       "ready": "Bereit",
       "testFailed": "Test fehlgeschlagen",
       "noPermission": "Keine Berechtigung",
-      "engineStopped": "Engine gestoppt",
+      "stopped": "Gestoppt",
       "needsSetup": "Einrichtung nötig",
-      "running": "Läuft",
-      "installed": "Installiert",
       "cantRunHere": "Kann hier nicht laufen"
+    },
+    "statusHint": {
+      "ready": {
+        "docker": "Die Engine läuft und dein Konto darf sie nutzen: Container-Labs können darauf laufen.",
+        "vm": "Installiert, mit Vagrant und seinem Plugin: VM-Labs können darauf laufen."
+      },
+      "testFailed": "Wirkt bereit, aber der letzte Selbsttest ist fehlgeschlagen: Testen zeigt, warum.",
+      "noPermission": "Die Engine läuft, aber dein Konto darf sie noch nicht nutzen.",
+      "stopped": "Installiert, aber die Engine läuft nicht: Starte sie, um Labs darauf auszuführen.",
+      "needsSetup": "Etwas, das es braucht, fehlt noch: Beheben richtet es ein.",
+      "cantRunHere": "Installiert, aber dieser Rechner kann es nicht ausführen: Die Zeile unter dem Namen sagt, warum."
     },
     "docker": {
       "denied": "Docker läuft, aber dieser Benutzer darf es nicht nutzen: Füge dich der Gruppe docker hinzu, dann melde dich ab und wieder an.",
       "stopped": "Eine Container-Engine ist installiert, läuft aber nicht. Starte sie, um Labs auszuführen."
     },
-    "engine": {
-      "runningIdle": "Labs nutzen standardmäßig {engine}."
-    },
     "vm": {
       "automatic": " (automatisch, in den Einstellungen änderbar)",
-      "vagrantMissing": "Vagrant oder das Vagrant-Plugin des Hypervisors fehlt.",
-      "installedIdle": "Labs laufen standardmäßig auf {provider}."
+      "vagrantMissing": "Vagrant oder das Vagrant-Plugin des Hypervisors fehlt."
     },
     "details": "Details",
     "detail": {
@@ -72,10 +82,6 @@
       "installedWithPlugin": "installiert · {plugin}",
       "pluginMissing": "Plugin {plugin} fehlt",
       "utilityMissing": "installiert · {plugin} · Vagrant VMware Utility läuft nicht"
-    },
-    "badge": {
-      "current": "aktuell",
-      "default": "Standard"
     }
   },
   "empty": {

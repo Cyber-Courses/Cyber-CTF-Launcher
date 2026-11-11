@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Panel, PanelHeader } from "@/components/ui/panel";
 import type { MachineMetrics, Provider, SystemReport } from "@/lib/tauri";
 import { getLastTest, type LastTest } from "@/lib/settings";
 import { useVmProvider } from "@/lib/use-vm-provider";
 import type { LabKind } from "@/features/machine/machine-parts";
+import { ProvidersPanel } from "@/features/machine/provider-row";
 import { EngineRows } from "@/features/machine/engine-rows";
 import { HypervisorRows } from "@/features/machine/hypervisor-rows";
 import { MachineDetails } from "@/features/machine/machine-details";
@@ -18,7 +18,6 @@ import { useMachineMetrics } from "@/features/machine/use-machine-metrics";
 import { useRefreshOnFocus } from "@/features/machine/use-refresh-on-focus";
 import { useNow } from "@/lib/use-now";
 import { useOpenSetup } from "@/features/machine/use-open-setup";
-import { useT } from "@/lib/i18n";
 
 const lastTests = (): Record<LabKind, LastTest | null> => ({ docker: getLastTest("docker"), vm: getLastTest("vm") });
 
@@ -86,7 +85,6 @@ function MachineBody({
   onRefresh: () => void | Promise<void>;
   onNavigate: (tab: "cloud" | "server") => void;
 }) {
-  const t = useT();
   const { last, testing, setTesting, now, refreshLast } = tests;
   const rowProps = (kind: LabKind) => ({
     report,
@@ -112,11 +110,10 @@ function MachineBody({
       {noProvider ? (
         <MachineEmptyState report={report} onUseServer={toServers} />
       ) : (
-        <Panel>
-          <PanelHeader title={t("machine.screen.providers")} meta={t("machine.screen.providersMeta")} />
+        <ProvidersPanel>
           <EngineRows {...rowProps("docker")} />
           <HypervisorRows {...rowProps("vm")} vm={vm} onUseServer={toServers} />
-        </Panel>
+        </ProvidersPanel>
       )}
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <RunningNowPanel refreshKey={now} />

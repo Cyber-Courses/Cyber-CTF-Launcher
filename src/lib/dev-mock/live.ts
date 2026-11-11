@@ -1,7 +1,7 @@
 // What the browser preview changes as it is used: labs started and stopped, where they run, the
 // failures still to come, the steps a test still holds. And the statuses the labs report
 // meanwhile. (The sign-in is shared by the preview's tabs: session.ts.)
-import type { LabStatus } from "@/lib/tauri";
+import type { DockerEngine, LabStatus } from "@/lib/tauri";
 import { argText, send, sleep } from "@/lib/dev-mock/command";
 import { type Holds, holdsOf, isHoldable } from "@/lib/dev-mock/holds";
 import type { Host } from "@/lib/dev-mock/hosts";
@@ -28,6 +28,8 @@ export type Live = {
   holds: Holds;
   /** VM and cloud labs started here: where they run. */
   placed: Map<string, Placement>;
+  /** The engine Docker was pointed at here ("Use by default"), if any: its context is current. */
+  engine: DockerEngine | null;
 };
 
 /** The preview's state at load, as the scenario sets it. */
@@ -40,6 +42,7 @@ export function liveFrom(sc: Scenario): Live {
     installFails: sc.installFails,
     holds: holdsOf(sc.held),
     placed: new Map(),
+    engine: null,
   };
 }
 

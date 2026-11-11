@@ -4,8 +4,8 @@
 import { render, screen, within } from "@testing-library/react";
 import type userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
-import { must } from "@/components/test-support";
 import { MachineScreen } from "@/features/machine/machine-screen";
+import { must } from "@/components/test-support";
 import { readyReport } from "@/test/fixtures";
 import type { Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -25,8 +25,22 @@ export async function renderMachineScreen() {
 
 /** Presses Test on the first provider of the Providers panel (the engine labs use). */
 export async function pressFirstTest(user: ReturnType<typeof userEvent.setup>) {
-  const engines = must(screen.getByText("Providers").closest("section, div")?.parentElement, "the Providers panel");
-  await user.click(within(engines).getAllByRole("button", { name: /^test$/i })[0]);
+  await user.click(within(screen.getByRole("list", { name: "Providers" })).getAllByRole("button", { name: /^test$/i })[0]);
+}
+
+/** A provider row as it reads, column by column: its name, status, default slot (the Default
+ *  mark, "Use by default", or nothing) and detail line. */
+export type RowReading = { name: string; status: string; slot: string; detail: string };
+
+/** Every provider row on screen, in order, as it reads. */
+export function providerRows(): RowReading[] {
+  const cell = (row: Element, slot: string) => row.querySelector(`[data-slot="${slot}"]`)?.textContent ?? "";
+  return Array.from(document.querySelectorAll('[role="listitem"]')).map((row) => ({
+    name: cell(row, "name"),
+    status: cell(row, "status"),
+    slot: cell(row, "mark") || (row.querySelector('[data-slot="default"] button')?.textContent ?? ""),
+    detail: cell(row, "detail"),
+  }));
 }
 
 /** Presses "Install Docker Desktop": the launcher asks for Docker's install (`calls` records it). */

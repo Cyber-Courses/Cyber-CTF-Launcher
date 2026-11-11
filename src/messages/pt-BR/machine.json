@@ -34,6 +34,11 @@
     "fix": "Corrigir",
     "useServer": "Usar um servidor",
     "useDefault": "Usar por padrão",
+    "defaultMark": "Padrão",
+    "defaultHint": {
+      "docker": "Os labs de contêiner rodam nesta engine.",
+      "vm": "Os labs de VM rodam neste hipervisor."
+    },
     "notTestedYet": "ainda não testado",
     "tested": "testado {ago}",
     "lastTestFailed": "último teste falhou {ago}",
@@ -43,23 +48,28 @@
       "ready": "Pronto",
       "testFailed": "Teste falhou",
       "noPermission": "Sem permissão",
-      "engineStopped": "Engine parada",
+      "stopped": "Parado",
       "needsSetup": "Requer configuração",
-      "running": "Rodando",
-      "installed": "Instalado",
       "cantRunHere": "Não roda aqui"
+    },
+    "statusHint": {
+      "ready": {
+        "docker": "A engine está rodando e sua conta pode usá-la: labs de contêiner podem rodar nela.",
+        "vm": "Instalado, com o Vagrant e o plugin dele: labs de VM podem rodar nele."
+      },
+      "testFailed": "Parece pronto, mas o último autoteste falhou: use Testar para ver o motivo.",
+      "noPermission": "A engine está rodando, mas sua conta ainda não pode usá-la.",
+      "stopped": "Instalado, mas a engine não está rodando: inicie-a para rodar labs nela.",
+      "needsSetup": "Falta instalar algo de que ele precisa: Corrigir configura isso.",
+      "cantRunHere": "Instalado, mas esta máquina não consegue rodá-lo: a linha abaixo do nome explica o motivo."
     },
     "docker": {
       "denied": "O Docker está rodando, mas este usuário não pode usá-lo: adicione-se ao grupo docker, depois saia da sessão e entre de novo.",
       "stopped": "Uma engine de contêineres está instalada, mas não está rodando. Inicie-a para rodar labs."
     },
-    "engine": {
-      "runningIdle": "Os labs usam {engine} por padrão."
-    },
     "vm": {
       "automatic": " (automático, mude em Configurações)",
-      "vagrantMissing": "Falta o Vagrant ou o plugin Vagrant do hypervisor.",
-      "installedIdle": "Os labs rodam em {provider} por padrão."
+      "vagrantMissing": "Falta o Vagrant ou o plugin Vagrant do hypervisor."
     },
     "details": "Detalhes",
     "detail": {
@@ -72,10 +82,6 @@
       "installedWithPlugin": "instalado · {plugin}",
       "pluginMissing": "falta o plugin {plugin}",
       "utilityMissing": "instalado · {plugin} · Vagrant VMware Utility não está rodando"
-    },
-    "badge": {
-      "current": "atual",
-      "default": "padrão"
     }
   },
   "empty": {

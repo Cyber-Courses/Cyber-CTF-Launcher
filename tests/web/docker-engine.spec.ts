@@ -15,8 +15,8 @@ const rowCell = (page: Page, title: string) =>
   main(page)
     .getByRole("button", { name: `Open ${title}`, exact: true })
     .locator("xpath=..");
-/** The Machine page's Container labs row. */
-const containerRow = (page: Page) => main(page).getByText("Container labs", { exact: true }).locator("xpath=ancestor::div[contains(@class,'border-t')][1]");
+/** The Machine page's row of the engine container labs use (the first provider). */
+const containerRow = (page: Page) => main(page).getByRole("list", { name: "Providers" }).getByRole("listitem").first();
 
 async function expectOverviewDown(page: Page) {
   await expect(main(page)).toContainText("Set up Docker to start running labs.");
@@ -46,7 +46,7 @@ async function expectEngineStoppedInDialog(page: Page) {
   await expect(pageTitle(page)).toHaveText("Blind orders");
   await main(page).getByRole("button", { name: "Start lab", exact: true }).click();
   const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-  const here = where.getByRole("radio", { name: /This machine On your system/ });
+  const here = where.getByRole("radio", { name: /On your system/ });
   await expect(here).toContainText("Engine stopped");
   await expect(here).toHaveAttribute("aria-checked", "true");
   await where.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -61,7 +61,7 @@ test.describe("Docker engine states", () => {
     await navButton(page, "Machine").click();
     await expect(pageTitle(page)).toHaveText("Machine");
     await expect(main(page)).toContainText("1 lab type needs setup");
-    await expect(containerRow(page)).toContainText("Engine stopped");
+    await expect(containerRow(page)).toContainText("Stopped");
     await expect(containerRow(page)).toContainText("A container engine is installed but not running. Start it to run labs.");
     await expect(containerRow(page).getByRole("button", { name: "Fix", exact: true })).toBeVisible();
     // VM labs are fine: UTM on this Apple Silicon Mac.

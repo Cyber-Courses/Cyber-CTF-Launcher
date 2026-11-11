@@ -34,6 +34,11 @@
     "fix": "Arreglar",
     "useServer": "Usar un servidor",
     "useDefault": "Usar por defecto",
+    "defaultMark": "Predeterminado",
+    "defaultHint": {
+      "docker": "Los labs de contenedores se ejecutan en este motor.",
+      "vm": "Los labs de VM se ejecutan en este hipervisor."
+    },
     "notTestedYet": "aún sin probar",
     "tested": "probado {ago}",
     "lastTestFailed": "la última prueba falló {ago}",
@@ -43,23 +48,28 @@
       "ready": "Listo",
       "testFailed": "Prueba fallida",
       "noPermission": "Sin permiso",
-      "engineStopped": "Motor detenido",
+      "stopped": "Detenido",
       "needsSetup": "Requiere configuración",
-      "running": "En ejecución",
-      "installed": "Instalado",
       "cantRunHere": "No puede ejecutarse aquí"
+    },
+    "statusHint": {
+      "ready": {
+        "docker": "Su motor está en marcha y tu cuenta puede usarlo: los labs de contenedores pueden ejecutarse en él.",
+        "vm": "Instalado, con Vagrant y su plugin: los labs de VM pueden ejecutarse en él."
+      },
+      "testFailed": "Parece listo, pero su última autoprueba falló: pulsa Probar para ver por qué.",
+      "noPermission": "Su motor está en marcha, pero tu cuenta aún no puede usarlo.",
+      "stopped": "Instalado, pero su motor no está en marcha: inícialo para ejecutar labs en él.",
+      "needsSetup": "Le falta algo por instalar: Arreglar lo configura.",
+      "cantRunHere": "Instalado, pero esta máquina no puede ejecutarlo: la línea bajo su nombre explica por qué."
     },
     "docker": {
       "denied": "Docker está en ejecución, pero este usuario no puede usarlo: añádete al grupo docker y luego cierra sesión y vuelve a entrar.",
       "stopped": "Hay un motor de contenedores instalado pero no está en ejecución. Inícialo para ejecutar labs."
     },
-    "engine": {
-      "runningIdle": "Los labs usan {engine} por defecto."
-    },
     "vm": {
       "automatic": " (automático, cámbialo en Ajustes)",
-      "vagrantMissing": "Falta Vagrant o el plugin de Vagrant del hipervisor.",
-      "installedIdle": "Los labs se ejecutan en {provider} por defecto."
+      "vagrantMissing": "Falta Vagrant o el plugin de Vagrant del hipervisor."
     },
     "details": "Detalles",
     "detail": {
@@ -72,10 +82,6 @@
       "installedWithPlugin": "instalado · {plugin}",
       "pluginMissing": "falta el plugin {plugin}",
       "utilityMissing": "instalado · {plugin} · Vagrant VMware Utility no está en marcha"
-    },
-    "badge": {
-      "current": "actual",
-      "default": "predeterminado"
     }
   },
   "empty": {

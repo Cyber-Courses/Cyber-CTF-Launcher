@@ -34,6 +34,11 @@
     "fix": "Corriger",
     "useServer": "Utiliser un serveur",
     "useDefault": "Utiliser par défaut",
+    "defaultMark": "Par défaut",
+    "defaultHint": {
+      "docker": "Les labs conteneurs tournent sur ce moteur.",
+      "vm": "Les labs VM tournent sur cet hyperviseur."
+    },
     "notTestedYet": "pas encore testé",
     "tested": "testé {ago}",
     "lastTestFailed": "dernier test échoué {ago}",
@@ -43,23 +48,28 @@
       "ready": "Prêt",
       "testFailed": "Test échoué",
       "noPermission": "Accès refusé",
-      "engineStopped": "Moteur arrêté",
+      "stopped": "Arrêté",
       "needsSetup": "À configurer",
-      "running": "En marche",
-      "installed": "Installé",
       "cantRunHere": "Ne peut pas tourner ici"
+    },
+    "statusHint": {
+      "ready": {
+        "docker": "Son moteur tourne et votre compte peut l'utiliser : les labs conteneurs peuvent y tourner.",
+        "vm": "Installé, avec Vagrant et son plugin : les labs VM peuvent y tourner."
+      },
+      "testFailed": "Il semble prêt, mais son dernier autotest a échoué : relancez Tester pour voir pourquoi.",
+      "noPermission": "Son moteur tourne, mais votre compte ne peut pas encore l'utiliser.",
+      "stopped": "Installé, mais son moteur ne tourne pas : démarrez-le pour y lancer des labs.",
+      "needsSetup": "Il lui manque quelque chose : Corriger l'installe.",
+      "cantRunHere": "Installé, mais cette machine ne peut pas le faire tourner : la ligne sous son nom dit pourquoi."
     },
     "docker": {
       "denied": "Docker tourne, mais cet utilisateur n'a pas le droit de l'utiliser : ajoutez-vous au groupe docker, puis déconnectez-vous et reconnectez-vous.",
       "stopped": "Un moteur de conteneurs est installé mais ne tourne pas. Démarrez-le pour lancer des labs."
     },
-    "engine": {
-      "runningIdle": "Les labs utilisent {engine} par défaut."
-    },
     "vm": {
       "automatic": " (automatique, modifiable dans Réglages)",
-      "vagrantMissing": "Vagrant ou le plugin Vagrant de l'hyperviseur est manquant.",
-      "installedIdle": "Les labs tournent sur {provider} par défaut."
+      "vagrantMissing": "Vagrant ou le plugin Vagrant de l'hyperviseur est manquant."
     },
     "details": "Détails",
     "detail": {
@@ -72,10 +82,6 @@
       "installedWithPlugin": "installé · {plugin}",
       "pluginMissing": "plugin {plugin} manquant",
       "utilityMissing": "installé · {plugin} · Vagrant VMware Utility ne tourne pas"
-    },
-    "badge": {
-      "current": "actuel",
-      "default": "par défaut"
     }
   },
   "empty": {

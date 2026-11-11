@@ -2021,12 +2021,14 @@ areas:
             - src/features/machine/machine-interaction.test.tsx > says a failed engine switch in a toast and re-checks the machine
             - src/features/machine/machine-interaction.test.tsx > starts the engine once however often Start is pressed while it starts
             - src/features/machine/setup-steps/setup-steps.test.tsx > starts a stopped engine, and offers its site when that fails
+          web:
+            - machine-providers.spec.ts > line up in columns, and the default moves without moving a name or a status
           setup:
             - engine:<id>
         rig:
           - machine-setup
         gaps:
-          web: the dev-mock specs show the stopped/denied states but never press Start or switch engines
+          web: machine-providers.spec switches engines on the dev mock (machine=many); no web spec presses Start
           desktop: no spec starts or switches an engine
           integration: the setup run records engine:<id> only when its plan starts or switches one; a bare Debian plan installs Docker Engine and asks a new login instead, so neither command is known to have run for real; macOS multi-engine never run
           setup: the setup run records engine:<id> only when its plan starts or switches an engine; no run is known to have done either
@@ -2051,6 +2053,7 @@ areas:
             - src/features/machine/machine-screen.test.tsx > tests each hypervisor on its own, keeps its result on its row, and makes it the default from the row
             - src/features/machine/machine-screen.test.tsx > explains a blocked hypervisor
           web:
+            - machine-providers.spec.ts > line up in columns, and the default moves without moving a name or a status
             - servers-cloud.spec.ts > shows its heading, its providers' avatars and its one action
             - servers-cloud.spec.ts > Machine's empty state offers a server instead
           desktop:
@@ -2065,6 +2068,24 @@ areas:
         gaps:
           desktop: a hypervisor row is only looked up to press Test (needs CYBERCTF_TEST_VM_PROVIDER; skips without it); its stated readiness is never compared with the machine
           integration: detection checked on a real machine only through the Debian setup run (libvirt); VirtualBox, QEMU, Hyper-V, UTM, VMware, Parallels detection never on a real host
+
+      - id: machine.provider-rows
+        what: Every engine and hypervisor installed is a row of one table on the Machine page, its status in the same words whichever is the default (Ready, Test failed, No permission, Stopped, Needs setup, Can't run here) with a tooltip saying what it means, the Default mark or Use by default in a slot of its own, then its action; making another one the default or opening a test moves no name, status or column, in every language.
+        pages:
+          - tab:machine
+        tests:
+          unit:
+            - src/features/machine/provider-row.test.tsx
+            - src/features/machine/machine-screen.test.tsx > lists every engine found, each with its own state and test
+            - src/features/machine/machine-screen.test.tsx > lists every hypervisor installed, each with its own state
+            - src/features/machine/machine-screen.test.tsx > marks the hypervisor chosen in Settings, not the first installed one
+          web:
+            - machine-providers.spec.ts > line up in columns, and the default moves without moving a name or a status
+            - machine-providers.spec.ts > opening a row's test keeps every column where it was
+            - machine-providers.spec.ts > each status says what it means in a tooltip, on hover and on keyboard focus
+            - a11y.spec.ts > the Machine screen with several providers of each kind passes too
+        gaps:
+          web: the layout is measured in Chromium only; the desktop app's WebKit (macOS, Linux) and WebView2 never run machine-providers.spec
 
       - id: machine.metrics
         what: Live CPU, memory and disk use of this machine on the Machine page (and the low-disk warning), with a dash when they can't be read.

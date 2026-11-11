@@ -74,6 +74,19 @@ for (const theme of ["dark", "light"] as const) {
       });
     }
 
+    // The Machine page with a row in every state (machine=many), a status tooltip open and a
+    // row's test open: the status words, the Default mark and "Use by default" in each theme.
+    test("the Machine screen with several providers of each kind passes too", async ({ page }) => {
+      await openApp(page, "&machine=many&deploying=none");
+      await navButton(page, "Machine").click();
+      const providers = page.locator("main").getByRole("list", { name: "Providers" });
+      await expect(providers.locator(':scope > [role="listitem"]')).toHaveCount(6);
+      await providers.getByRole("button", { name: "Test", exact: true }).first().click();
+      await providers.locator('[data-slot="status"]').last().focus();
+      await animationsFinished(page);
+      expect(await violations(page)).toEqual([]);
+    });
+
     test("a running lab's page, with its diagram, passes too", async ({ page }) => {
       await openLab(page, "Invoice portal API");
       // The diagram fades in once laid out (it waits at opacity 0 till then, which no animation

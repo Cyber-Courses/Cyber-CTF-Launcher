@@ -1,7 +1,7 @@
 // This machine in the browser preview: its system check (down until the test lets it come back,
 // with `hold=check`), the one-click installs (an installer's output, then the tool reported
 // installed; the first fails with `install=fail`), the self-tests and the setup window.
-import type { Need, SystemReport, UtilityState } from "@/lib/tauri";
+import type { DockerEngine, Need, SystemReport, UtilityState } from "@/lib/tauri";
 import { argText, fail, send, sleep } from "@/lib/dev-mock/command";
 import type { BrowserHandler, Live } from "@/lib/dev-mock/live";
 import { scenarioReport } from "@/lib/dev-mock/scenario";
@@ -87,8 +87,15 @@ const systemCheck: BrowserHandler = async (_args, { sc, live }) => {
   }
   // `hold=pm`: missing until the test lets it show up.
   const pm = sc.held.includes("pm") ? !live.holds.isHeld("pm") : null;
-  return withSetup(withReady(withInstalls(scenarioReport(sc), live.installed, { pm })));
+  return withSetup(withReady(withEngine(withInstalls(scenarioReport(sc), live.installed, { pm }), live.engine)));
 };
+
+/** The report once Docker was pointed at `engine` ("Use by default"), when it runs: its context
+ *  is the current one, and labs run on it. */
+function withEngine(r: SystemReport, engine: DockerEngine | null): SystemReport {
+  if (!engine || !r.dockerEngines.some((e) => e.engine === engine && e.running)) return r;
+  return { ...r, dockerEngine: engine, dockerEngines: r.dockerEngines.map((e) => ({ ...e, current: e.engine === engine })) };
+}
 
 /** The report's ready hypervisors, as the core works them out (providers::ready): the local ones
  *  available, with Vagrant. */
@@ -141,6 +148,11 @@ export const machineHandlers: Record<string, BrowserHandler> = {
     return { outcome: "placed", path: MANAGED_OVFTOOL, needsRosetta: false };
   },
   machine_selftest: selftest,
+  docker_use_engine: async (args, { live }) => {
+    await sleep(150);
+    live.engine = argText(args?.engine) as DockerEngine;
+    return null;
+  },
   machine_open_setup: (args) => {
     const step = args?.step ? `?step=${argText(args.step)}` : "";
     const provider = step && args?.provider ? `&provider=${argText(args.provider)}` : "";
