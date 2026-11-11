@@ -300,6 +300,17 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **VirtualBox on Linux gets the running kernel's headers, and is ready only with its driver
+  loaded.** The guided setup's VirtualBox install on Debian, Ubuntu and Kali now brings the headers
+  of the kernel the computer runs (with the compiler and the flavour's header package), without
+  VirtualBox's recommends (a PDF viewer, Qt's translations, X11 tools). On a machine not restarted
+  since a kernel update, whose package sources no longer have the running kernel's headers, it
+  brings the newer kernel with its headers and the setup asks for a restart, after which the
+  driver is built. The machine check no longer reads an installed VirtualBox as ready while its
+  kernel driver isn't loaded: it says what to install, build or sign, or that a restart is due.
+  Before, the newest kernel's headers came instead, the driver couldn't be built, and VirtualBox
+  looked ready until a VM failed to start (#279).
+
 - **The tools a killed deploy worker ran are ended by the lab's next operation.** A worker killed
   mid-start (Activity Monitor, Task Manager, a crash) left its `docker compose up` or `vagrant up`
   running to its end, and the next start waited on Vagrant's machine lock. With Isothrum's ledger
