@@ -158,8 +158,8 @@ pub async fn lab_cloud_preview(app: AppHandle, id: String, source: LabSource) ->
 /// with no machines of its own (cloud services).
 #[tauri::command]
 pub async fn lab_requirements(app: AppHandle, id: String, source: LabSource) -> Result<Option<lab::Requirements>> {
-    let spec = lab::spec_at(&AppDirs::from(&app), &id, source.checked()).await?;
-    Ok(lab::requirements(&spec))
+    let lab = lab::lab_at(&AppDirs::from(&app), &id, source.checked()).await?;
+    Ok(lab::requirements(&lab))
 }
 
 /// A lab's source: its repository at the catalogue's pinned commit. Every command that reads a

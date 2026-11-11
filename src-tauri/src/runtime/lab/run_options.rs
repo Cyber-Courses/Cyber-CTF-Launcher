@@ -125,7 +125,7 @@ fn generated(lab: &Lab, runtime: Runtime, host: &str) -> RunOptions {
     let docker_vm_local: Vec<Provider> = local.iter().copied().filter(|p| variants(Target::DockerVm).contains(&p.id())).collect();
     // The lab's own VMs here: on an emulator only, when they are built for another CPU.
     let vm_local: Vec<Provider> = local.iter().copied().filter(|p| !emulated || p.is_emulator()).collect();
-    let mut paths = Paths { lab, targets: isoloom_spec::effective(&spec), tiers: tiers::run_tiers(), refused: Vec::new() };
+    let mut paths = Paths { lab, targets: lab.possible(), tiers: tiers::run_tiers(), refused: Vec::new() };
     let mut out = RunOptions { emulated, ..RunOptions::default() };
     match runtime {
         Runtime::Docker => {
@@ -158,8 +158,8 @@ fn clouds(target: Target) -> Vec<Provider> {
     Provider::CLOUDS.into_iter().filter(|c| variants(target).contains(&c.id())).collect()
 }
 
-/// Builds a lab's launch paths: the targets its spec generates, each path's badge from Isoloom's
-/// tiers, and what Isoloom refuses on a provider (`refused`).
+/// Builds a lab's launch paths: the targets Isoloom can run it on ([`Lab::possible`]), each path's
+/// badge from Isoloom's tiers, and what Isoloom refuses on a provider (`refused`).
 struct Paths<'a> {
     lab: &'a Lab,
     targets: Vec<Target>,

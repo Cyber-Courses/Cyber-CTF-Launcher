@@ -277,12 +277,13 @@ pub struct Requirements {
     pub max: Resources,
 }
 
-/// The lab's minimum-to-run requirements, sized per target it can run on (a container reserves
-/// less than a VM) and reported as the lightest-to-heaviest range. `None` for a spec with no
-/// machines (cloud services), which has no footprint of its own to size.
-pub fn requirements(spec: &Spec) -> Option<Requirements> {
-    let mut sizes: Vec<isoloom_spec::Totals> =
-        isoloom_spec::effective(spec).into_iter().map(|t| isoloom_spec::totals_for(spec, t)).filter(|t| t.machines > 0).collect();
+/// The lab's minimum-to-run requirements, sized per target it can run on ([`Lab::possible`], as
+/// Isoloom generates it: a container reserves less than a VM) and reported as the
+/// lightest-to-heaviest range. `None` for a lab with no machines (cloud services), which has no
+/// footprint of its own to size.
+pub fn requirements(lab: &Lab) -> Option<Requirements> {
+    let spec = lab.spec();
+    let mut sizes: Vec<isoloom_spec::Totals> = lab.possible().into_iter().map(|t| isoloom_spec::totals_for(&spec, t)).filter(|t| t.machines > 0).collect();
     sizes.sort_by_key(|t| t.memory_mb);
     Some(Requirements { min: (*sizes.first()?).into(), max: (*sizes.last()?).into() })
 }
@@ -481,16 +482,16 @@ mod tests {
     fn requirements_size_a_single_form_lab_as_one_value() {
         // SPEC's web machine is a container only (app.image), so every form it runs is a Docker
         // one: all container-sized, and the lightest-to-heaviest range collapses to one value.
-        let r = requirements(&parse(SPEC).unwrap()).expect("a lab with a machine has requirements");
+        let r = requirements(&parsed(SPEC).unwrap()).expect("a lab with a machine has requirements");
         assert_eq!(r.min, r.max);
         assert_eq!(r.min.memory_mb, isoloom_spec::CONTAINER_MEMORY_MB);
     }
 
     #[test]
     fn a_cloud_services_lab_has_no_machine_footprint() {
-        let spec = parse("version: 1\nname: t\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { region: us-east-1 }\n  outputs: { app: app_url }\n")
+        let lab = parsed("version: 1\nname: t\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { region: us-east-1 }\n  outputs: { app: app_url }\n")
             .unwrap();
-        assert!(requirements(&spec).is_none());
+        assert!(requirements(&lab).is_none());
     }
 
     #[test]
