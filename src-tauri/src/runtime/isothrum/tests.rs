@@ -102,7 +102,7 @@ fn ps(containers: Containers, all: bool, host_port: u16) -> String {
         Containers::Stopped => "exited",
     };
     let publisher = format!(r#"{{"URL":"127.0.0.1","PublishedPort":{host_port},"TargetPort":80,"Protocol":"tcp"}}"#);
-    [("web", publisher.as_str()), ("isoloom-probe-amd64", "")]
+    [("web", publisher.as_str()), ("isoloom-probe", "")]
         .iter()
         .map(|(service, publishers)| format!(r#"{{"Service":"{service}","State":"{state}","Health":"","ExitCode":0,"Publishers":[{publishers}]}}"#))
         .collect::<Vec<_>>()
@@ -158,7 +158,8 @@ async fn the_lab_page_reads_the_runners_status() {
     assert_eq!((web.state.as_str(), web.ip.as_str(), web.infra), ("running", "10.30.0.10", false));
     assert_eq!(web.ports.iter().map(|p| (p.target, p.published)).collect::<Vec<_>>(), [(80, 8080)]);
     assert_eq!(web.services.iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.ports.clone())).collect::<Vec<_>>(), [("web", "web", vec![80])]);
-    assert!(s.machines.iter().find(|m| m.name == "isoloom-probe-amd64").is_some_and(|m| m.infra), "Isoloom's probe is plumbing");
+    // Isoloom 2.1.0 names the probe job of the computer's own architecture `isoloom-probe`.
+    assert!(s.machines.iter().find(|m| m.name == "isoloom-probe").is_some_and(|m| m.infra), "Isoloom's probe is plumbing");
     assert!(s.machines.iter().all(|m| m.name != "isoloom-check"), "a check runner that never ran isn't listed");
     assert_eq!(s.networks.iter().map(|n| (n.name.as_str(), n.subnet.as_str(), n.internal)).collect::<Vec<_>>(), [("lab", "10.30.0.0/24", false)]);
 }

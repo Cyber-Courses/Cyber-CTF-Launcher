@@ -150,8 +150,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
-- Bundles Isoloom 2.0.0 and Isothrum 2.0.0 from crates.io, which write and read the run
-  manifest's version 1. Their changelogs list what changed.
+- Bundles Isoloom 2.1.0 and Isothrum 2.1.0 from crates.io, which write and read the run
+  manifest's version 1. Their changelogs list what changed; for the launcher: a container lab
+  runs on the computer's own CPU architecture unless its spec pins one (a Linux Arm host ran
+  nothing: `exec format error`), a lab's start no longer pulls an image the lab builds itself, a
+  read-write shared folder in a VirtualBox VM is writable by the attack box's player, and a lab's
+  image download that the network cut is tried again.
 
 - **A desktop attack VM never locks its screen.** Kali's screen lockers don't start for `player`,
   the screen never blanks, and the session doesn't lock on suspend or a switch of user, so the

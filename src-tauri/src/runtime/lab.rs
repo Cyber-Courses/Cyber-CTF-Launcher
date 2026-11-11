@@ -435,7 +435,6 @@ mod tests {
     const BUILT_WITH_INIT: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  database:\n    networks: { lab: 32 }\n    ports: { mysql: 3306 }\n    setup: [build/database/evidence.sh]\n    app: { build: build/database }\n  web:\n    networks: { lab: 31 }\n    ports: { web: { port: 80, protocol: http } }\n    setup: [seed.sh]\n    app: { image: nginx:1.27 }\n";
 
     #[test]
-    #[ignore = "passes once Isoloom 2.1.0 is pinned (a180941d); on 2.0.0 the job has no build: drop this line with the pin bump"]
     fn an_init_job_of_a_machine_that_builds_its_image_is_rendered_buildable_so_the_start_pulls_nothing_for_it() {
         // Regression (#266): with Isoloom 2.0.0 the init job ran the built image with `image:`
         // alone, so the start's `docker compose pull --ignore-buildable` (Isothrum's pull step)
