@@ -136,7 +136,7 @@ struct Slot {
 impl Slot {
     /// Lab `lab_id`'s slot.
     async fn of(dirs: &AppDirs, lab_id: &str) -> Result<Slot> {
-        let labs = dirs.data()?.join("labs");
+        let labs = crate::runtime::paths::labs_root(dirs)?;
         let dir = labs.join(lab_id);
         Ok(Slot { labs, dir, in_use: runtime::subnets_in_use(lab_id).await })
     }

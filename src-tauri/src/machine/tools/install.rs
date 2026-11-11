@@ -17,6 +17,7 @@ use super::steps::{Step, command_line, run_step, run_steps};
 use super::uninstall;
 use crate::error::{Error, Result};
 use crate::platform::policy::{self, Key};
+use crate::runtime::providers::Provider;
 
 /// A tool the guided setup installs, as the webview names it.
 #[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
@@ -55,10 +56,9 @@ pub enum Dependency {
 
 impl Dependency {
     /// Whether it exists on `os` (`std::env::consts::OS`): a hypervisor where
-    /// [`Provider::runs_on`](crate::runtime::providers::Provider::runs_on) says, WSL on Windows,
+    /// [`Provider::runs_on`] says, WSL on Windows,
     /// every other tool anywhere. An install or a removal elsewhere is refused ([`not_here`]).
     pub fn runs_on(self, os: &str) -> bool {
-        use crate::runtime::providers::Provider;
         match self {
             Dependency::Wsl => os == "windows",
             Dependency::Utm => Provider::Utm.runs_on(os),
@@ -69,7 +69,7 @@ impl Dependency {
     }
 
     /// Its name on this OS, as the setup installs it here (Docker Engine on Linux, from Docker's
-    /// repository; Docker Desktop elsewhere): what a message and Settings' list of installed
+    /// repository or the distribution's `docker.io`; Docker Desktop elsewhere): what a message and Settings' list of installed
     /// tools call it.
     pub fn name(self) -> &'static str {
         self.name_on(std::env::consts::OS)
@@ -82,16 +82,16 @@ impl Dependency {
             Dependency::Docker => "Docker Desktop",
             Dependency::Vagrant => "Vagrant",
             Dependency::Terraform => "Terraform",
-            Dependency::Virtualbox => "VirtualBox",
-            Dependency::Qemu => "QEMU",
-            Dependency::Utm => "UTM",
-            Dependency::Libvirt => "libvirt",
+            Dependency::Virtualbox => Provider::Virtualbox.label(),
+            Dependency::Qemu => Provider::Qemu.label(),
+            Dependency::Utm => Provider::Utm.label(),
+            Dependency::Libvirt => Provider::Libvirt.label(),
             Dependency::Awscli => "AWS CLI",
             Dependency::Azurecli => "Azure CLI",
             Dependency::Gcloud => "Google Cloud CLI",
             Dependency::Wsl => "WSL 2",
             Dependency::VmwareUtility => "Vagrant VMware Utility",
-            Dependency::Hyperv => "Hyper-V",
+            Dependency::Hyperv => Provider::Hyperv.label(),
         }
     }
 }

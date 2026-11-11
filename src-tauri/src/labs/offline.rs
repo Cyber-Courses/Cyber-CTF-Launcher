@@ -73,7 +73,7 @@ fn offline_spec(base: &Path, lab_id: &str, user: Option<&str>) -> Result<Launch>
     if kept.runtime == Runtime::Cloud {
         return Err(Error::Invalid("A cloud lab runs in your cloud account: it can't start offline.".into()));
     }
-    if !crate::runtime::lab::installed_at(&base.join("labs").join(lab_id), &kept.commit) {
+    if !crate::runtime::lab::installed_at(&crate::runtime::paths::labs_root_in(base).join(lab_id), &kept.commit) {
         return Err(Error::Invalid("The copy of this lab installed here isn't the one last started online, so it can't start offline.".into()));
     }
     Ok(Launch { lab_id: kept.lab_id, runtime: kept.runtime, repository: kept.repository, commit: kept.commit, env: Vec::new() })

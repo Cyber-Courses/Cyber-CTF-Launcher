@@ -97,7 +97,7 @@ pub(crate) fn running_by_host(dirs: &AppDirs) -> HashMap<String, u32> {
 /// runner yet that still hold resources there. A record that can't be read is an error.
 pub(crate) fn leftovers_on(dirs: &AppDirs, id: &str) -> Result<usize> {
     let base = dirs.data()?;
-    let elsewhere = |lab: &str| marked_host(&base.join("labs").join(lab)).as_deref() != Some(id);
+    let elsewhere = |lab: &str| marked_host(&crate::runtime::paths::labs_root_in(base).join(lab)).as_deref() != Some(id);
     let runs = crate::runtime::isothrum::records(&crate::runtime::paths::runner_home(dirs)?)?
         .into_iter()
         .filter(|r| r.host_label.as_deref() == Some(id) && r.state != isothrum_runner::RunState::Absent)
@@ -119,7 +119,7 @@ pub(crate) fn leftovers_on(dirs: &AppDirs, id: &str) -> Result<usize> {
 /// a `.cyberctf-host` marker in its directory while it runs on a host (written on start,
 /// cleared on stop), so this is filesystem-only: no host calls, no credentials.
 fn lab_markers(dirs: &AppDirs) -> Vec<String> {
-    dirs.data().map(|d| markers_in(&d.join("labs"))).unwrap_or_default()
+    crate::runtime::paths::labs_root(dirs).map(|d| markers_in(&d)).unwrap_or_default()
 }
 
 /// `lab_markers` for the labs folder `labs`.

@@ -47,6 +47,20 @@ pub(crate) fn deploys_dir(dirs: &AppDirs) -> Result<PathBuf> {
     Ok(d)
 }
 
+/// Where installed labs live: `<app data>/labs/`, each in `<lab id>/`.
+///
+/// # Errors
+///
+/// No data folder.
+pub(crate) fn labs_root(dirs: &AppDirs) -> Result<PathBuf> {
+    Ok(labs_root_in(dirs.data()?))
+}
+
+/// [`labs_root`] under the app data folder `base`.
+pub(crate) fn labs_root_in(base: &Path) -> PathBuf {
+    base.join("labs")
+}
+
 /// An installed lab's folder.
 pub(crate) fn lab_dir(dirs: &AppDirs, id: &str) -> Result<PathBuf> {
     validate_id(id)?;
@@ -67,7 +81,7 @@ pub(super) fn lab_dir_in(base: &Path, id: &str) -> Result<PathBuf> {
 
 /// Lab `id`'s folder under the app data folder `base`, when it is installed.
 fn installed_in(base: &Path, id: &str) -> Option<PathBuf> {
-    Some(base.join("labs").join(id)).filter(|dir| dir.is_dir())
+    Some(labs_root_in(base).join(id)).filter(|dir| dir.is_dir())
 }
 
 /// The ids with a Terraform deployment under the app data folder `base` (valid ids only): the

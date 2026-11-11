@@ -34,7 +34,7 @@ pub struct Imported {
 ///
 /// No data folder.
 pub(crate) fn list(dirs: &AppDirs) -> crate::error::Result<Vec<Imported>> {
-    let labs = dirs.data()?.join("labs");
+    let labs = crate::runtime::paths::labs_root(dirs)?;
     // No labs folder yet: nothing installed.
     let Ok(entries) = std::fs::read_dir(&labs) else { return Ok(Vec::new()) };
     let mut found: Vec<Imported> = entries

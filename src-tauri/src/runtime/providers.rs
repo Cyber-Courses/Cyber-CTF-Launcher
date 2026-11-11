@@ -146,17 +146,7 @@ impl Provider {
 
     /// Remote providers run VMs on another host and need connection settings.
     pub fn is_remote(self) -> bool {
-        matches!(
-            self,
-            Provider::VmwareEsxi
-                | Provider::Proxmox
-                | Provider::Aws
-                | Provider::Azure
-                | Provider::Gcp
-                | Provider::DigitalOcean
-                | Provider::Linode
-                | Provider::Oci
-        )
+        Provider::SERVERS.contains(&self) || Provider::CLOUDS.contains(&self)
     }
 
     /// Whether it runs VMs built for another CPU (emulated, slowly): QEMU runs an x86 lab on an
@@ -525,8 +515,8 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
             None
         },
     };
-    let reason = unavailable_reason(provider, vagrant_installed, detection);
-    let needs = needs(vagrant_installed, plugin_installed, utility);
+    let needs = needs(vagrant_installed, detection.plugin_installed, detection.utility);
+    let reason = unavailable_reason(provider, &needs, detection);
     let account_lacks = detection.account;
 
     Some(ProviderStatus {
@@ -549,7 +539,7 @@ pub const LIBVIRT_GROUPS: [&str; 2] = ["libvirt", "kvm"];
 /// What `detect` found out about one provider: the per-provider facts `unavailable_reason` reads
 /// to name the first layer that is missing (the hypervisor, its plugin, an admin right). Grouped
 /// so the check reads one value rather than a handful of flags that always travel together;
-/// whether Vagrant is installed at all is global, so it stays a separate argument.
+/// what is still to install (Vagrant, global, among it) is the check's other argument.
 #[derive(Clone, Copy)]
 struct Detection<'a> {
     /// Whether the hypervisor's background service is wedged (a probe call timed out).
@@ -580,13 +570,13 @@ pub enum AccountLacks {
     NewLogin,
 }
 
-/// Why a provider can't be used here (None: it can), from whether Vagrant is installed and what
-/// `detect` found out about the provider: Vagrant missing first, then what is wrong with the
+/// Why a provider can't be used here (None: it can), from what is still to install for it
+/// (`needs`, the [`needs`] its status carries too, computed once) and what `detect` found out
+/// about the provider: Vagrant missing first, then what is wrong with the
 /// hypervisor itself (nothing setup installs mends that), then the first of its [`needs`]. So it
 /// is `None` only when nothing is needed: readiness and the setup steps can't disagree.
-fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> Option<Unavailable> {
-    let Detection { unresponsive, hypervisor, hypervisor_version, plugin, plugin_installed, plugin_version, utility, account } = detection;
-    let needs = needs(vagrant_installed, plugin_installed, utility);
+fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'_>) -> Option<Unavailable> {
+    let Detection { unresponsive, hypervisor, hypervisor_version, plugin, plugin_version, utility, account, .. } = detection;
     let plugin = || plugin.unwrap_or("?").to_owned();
     if needs.contains(&Need::Vagrant) {
         Some(Unavailable::VagrantMissing)
@@ -619,6 +609,11 @@ fn unavailable_reason(provider: Provider, vagrant_installed: bool, detection: De
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// [`unavailable_reason`] with the needs [`detect_one`] reads for `detection`.
+    fn reason_of(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> Option<Unavailable> {
+        unavailable_reason(provider, &needs(vagrant_installed, detection.plugin_installed, detection.utility), detection)
+    }
 
     /// The plugin names alone, as the checks before versions mattered read them.
     fn parse_plugins(out: &str) -> Vec<String> {
@@ -694,17 +689,17 @@ mod tests {
         // The plugin the failure was seen with: setup installs it again, which updates it.
         assert_eq!(plugin_too_old(Provider::Utm, Some("0.1.6")), Some(("0.1.6", "0.2.0")));
         assert_eq!(
-            unavailable_reason(Provider::Utm, true, detection(Some("4.7.5"), Some("0.1.6"), false)),
+            reason_of(Provider::Utm, true, detection(Some("4.7.5"), Some("0.1.6"), false)),
             Some(Unavailable::PluginTooOld { plugin: "vagrant_utm".into(), version: "0.1.6".into(), min: "0.2.0".into() })
         );
         // A UTM the plugin refuses, said before the plugin (updating the plugin wouldn't help).
         assert_eq!(
-            unavailable_reason(Provider::Utm, true, detection(Some("4.5.1"), Some("0.1.6"), false)),
+            reason_of(Provider::Utm, true, detection(Some("4.5.1"), Some("0.1.6"), false)),
             Some(Unavailable::HypervisorTooOld { name: "UTM".into(), version: "4.5.1".into(), min: "4.6.5".into() })
         );
         // Recent enough, or no version to judge: nothing stands in the way.
-        assert_eq!(unavailable_reason(Provider::Utm, true, detection(Some("4.7.5"), Some("0.2.0"), true)), None);
-        assert_eq!(unavailable_reason(Provider::Utm, true, detection(None, None, true)), None);
+        assert_eq!(reason_of(Provider::Utm, true, detection(Some("4.7.5"), Some("0.2.0"), true)), None);
+        assert_eq!(reason_of(Provider::Utm, true, detection(None, None, true)), None);
         assert_eq!(plugin_too_old(Provider::Utm, None), None);
         // Other providers aren't held to a version.
         assert_eq!(plugin_too_old(Provider::Qemu, Some("0.1.0")), None);
@@ -880,7 +875,7 @@ mod tests {
     #[test]
     fn the_first_missing_layer_is_the_reason() {
         let r = |p, vagrant, stuck, hv, plugin, installed| {
-            unavailable_reason(
+            reason_of(
                 p,
                 vagrant,
                 Detection {
@@ -905,10 +900,10 @@ mod tests {
             utility: None,
             account: needs_admin.then_some(AccountLacks::HypervAdmin),
         };
-        assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(true)), Some(Unavailable::HypervNeedsAdmin));
+        assert_eq!(reason_of(Provider::Hyperv, true, hyperv(true)), Some(Unavailable::HypervNeedsAdmin));
         let said = Unavailable::HypervNeedsAdmin.message();
         assert!(said.contains("Hyper-V Administrators") && said.contains("Allow my account"));
-        assert_eq!(unavailable_reason(Provider::Hyperv, true, hyperv(false)), None);
+        assert_eq!(reason_of(Provider::Hyperv, true, hyperv(false)), None);
         assert_eq!(r(Provider::Virtualbox, false, true, Some(false), None, false), Some(Unavailable::VagrantMissing));
         assert_eq!(r(Provider::Virtualbox, true, true, Some(true), None, true), Some(Unavailable::VirtualboxStuck));
         assert_eq!(r(Provider::Virtualbox, true, false, Some(false), None, true), Some(Unavailable::NotInstalled { program: Some("VBoxManage".into()) }));
@@ -936,10 +931,10 @@ mod tests {
             utility: None,
             account: relogin.then_some(AccountLacks::NewLogin),
         };
-        assert_eq!(unavailable_reason(Provider::Libvirt, true, libvirt(true)), Some(Unavailable::NewLogin));
-        assert_eq!(unavailable_reason(Provider::Libvirt, true, libvirt(false)), kvm_problem());
+        assert_eq!(reason_of(Provider::Libvirt, true, libvirt(true)), Some(Unavailable::NewLogin));
+        assert_eq!(reason_of(Provider::Libvirt, true, libvirt(false)), kvm_problem());
         // Vagrant missing still comes first: the setup installs it in the same pass.
-        assert_eq!(unavailable_reason(Provider::Libvirt, false, libvirt(true)), Some(Unavailable::VagrantMissing));
+        assert_eq!(reason_of(Provider::Libvirt, false, libvirt(true)), Some(Unavailable::VagrantMissing));
     }
 
     /// A VMware detection: Fusion or Workstation installed, the plugin and the utility as given.
@@ -967,7 +962,7 @@ mod tests {
                 for utility in [None, Some(UtilityState::Missing), Some(UtilityState::Stopped), Some(UtilityState::Running)] {
                     let detection = Detection { utility, ..vmware(plugin_installed, UtilityState::Running) };
                     let needs = needs(vagrant, plugin_installed, utility);
-                    let reason = unavailable_reason(Provider::VmwareDesktop, vagrant, detection);
+                    let reason = reason_of(Provider::VmwareDesktop, vagrant, detection);
                     assert_eq!(reason.is_none(), needs.is_empty(), "vagrant {vagrant}, plugin {plugin_installed}, utility {utility:?}: {reason:?} / {needs:?}");
                 }
             }
@@ -980,14 +975,14 @@ mod tests {
         assert!(Provider::VmwareDesktop.needs_vmware_utility());
         assert!(Provider::ALL.iter().chain(&Provider::CLOUDS).filter(|p| **p != Provider::VmwareDesktop).all(|p| !p.needs_vmware_utility()));
         // The plugin alone isn't enough (the loop: setup put the plugin in, labs still couldn't run).
-        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Missing)), Some(Unavailable::VmwareUtilityMissing));
-        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Stopped)), Some(Unavailable::VmwareUtilityStopped));
+        assert_eq!(reason_of(Provider::VmwareDesktop, true, vmware(true, UtilityState::Missing)), Some(Unavailable::VmwareUtilityMissing));
+        assert_eq!(reason_of(Provider::VmwareDesktop, true, vmware(true, UtilityState::Stopped)), Some(Unavailable::VmwareUtilityStopped));
         // The plugin first: it is what setup installs first.
         assert_eq!(
-            unavailable_reason(Provider::VmwareDesktop, true, vmware(false, UtilityState::Missing)),
+            reason_of(Provider::VmwareDesktop, true, vmware(false, UtilityState::Missing)),
             Some(Unavailable::PluginMissing { plugin: "vagrant-vmware-desktop".into() })
         );
-        assert_eq!(unavailable_reason(Provider::VmwareDesktop, true, vmware(true, UtilityState::Running)), None);
+        assert_eq!(reason_of(Provider::VmwareDesktop, true, vmware(true, UtilityState::Running)), None);
     }
 
     /// Fusion or Workstation installed (`vmrun` answers), Vagrant installed, with `plugins`.

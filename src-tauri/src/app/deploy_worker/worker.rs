@@ -159,7 +159,7 @@ async fn run_logged(app: &AppHandle, job: Job) -> i32 {
             let _ = writeln!(file, "{line}");
         }
     };
-    let launch = brings_up(&job.op);
+    let launch = sets_launch_verdict(&job.op);
     // The lab is this worker's for the whole job (download and install included): the app's
     // own operations on it (a stop, the expiry reaper) wait or step aside meanwhile. A lock that
     // can't be taken fails the job: running unlocked is what it is there to prevent.
@@ -199,9 +199,10 @@ fn open_log(path: &std::path::Path) -> Option<std::fs::File> {
     crate::platform::private_fs::append(path).inspect_err(|e| log::warn!("the deploy log {} can't be written: {e}", path.display())).ok()
 }
 
-/// Whether `op` brings the lab up, its verdict then saying whether it came up
-/// (`files::Files::launch_status`): a launch, from the catalogue or a local folder, and a resume.
-fn brings_up(op: &Op) -> bool {
+/// Whether `op`'s verdict is also the lab's launch verdict (`files::Files::launch_status`, whether
+/// it came up): a launch, from the catalogue or a local folder, and a resume. Not a provisioning
+/// run, which `Action::brings_up` counts as bringing the lab up but which works on a lab already up.
+fn sets_launch_verdict(op: &Op) -> bool {
     matches!(op, Op::Launch | Op::LaunchLocal { .. } | Op::Resume { .. })
 }
 
@@ -241,7 +242,7 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
 
 #[cfg(test)]
 mod tests {
-    use super::{brings_up, conclude, status_line};
+    use super::{conclude, sets_launch_verdict, status_line};
     use crate::app::deploy_worker::files::{self, read_job};
     use crate::app::deploy_worker::files::{Files, verdict};
     use crate::app::deploy_worker::{Job, Op};
@@ -435,10 +436,10 @@ mod tests {
     #[test]
     fn a_launch_and_a_resume_say_whether_the_lab_came_up_a_pause_or_a_provisioning_run_doesnt() {
         use crate::runtime::{Park, Runtime};
-        assert!(brings_up(&Op::Launch));
-        assert!(brings_up(&Op::LaunchLocal { src: "/labs/web".into() }));
-        assert!(brings_up(&Op::Resume { runtime: Runtime::Vm }));
-        assert!(!brings_up(&Op::Park { runtime: Runtime::Docker, mode: Park::Pause }));
-        assert!(!brings_up(&Op::Provision { runtime: Runtime::Vm, machine: None }));
+        assert!(sets_launch_verdict(&Op::Launch));
+        assert!(sets_launch_verdict(&Op::LaunchLocal { src: "/labs/web".into() }));
+        assert!(sets_launch_verdict(&Op::Resume { runtime: Runtime::Vm }));
+        assert!(!sets_launch_verdict(&Op::Park { runtime: Runtime::Docker, mode: Park::Pause }));
+        assert!(!sets_launch_verdict(&Op::Provision { runtime: Runtime::Vm, machine: None }));
     }
 }

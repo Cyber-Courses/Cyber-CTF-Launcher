@@ -18,9 +18,10 @@ use std::time::{Duration, Instant};
 
 use super::Workload;
 use crate::error::{Error, Result};
-use crate::machine::{labs_dir, selftest};
+use crate::machine::selftest;
 use crate::platform::AppDirs;
 use crate::platform::exec::run_env_timed;
+use crate::runtime::paths::labs_root as labs_dir;
 
 /// `vagrant global-status` talks to VirtualBox, which can be wedged: past this it is given up.
 const GLOBAL_STATUS_TIMEOUT: Duration = Duration::from_secs(30);
@@ -144,11 +145,11 @@ pub(super) async fn stop(dirs: &AppDirs, id: &str) -> Result<()> {
         vec![selftest::work_dir(dirs, "vm")?]
     } else {
         let lab = labs_dir(dirs)?.join(id);
-        let out = crate::runtime::lab::out(&lab);
+        let vagrant_dir = |runtime| crate::runtime::lab::vagrant_dir(&lab, runtime);
         // And an older version's attack VM ([`LEGACY_ATTACK_VM_DIR`]), so a lab stopped after an
         // upgrade does not leave it behind. The Vagrantfile filter below skips it when there is
         // none.
-        vec![out.join("vagrant"), out.join("docker-vm"), lab.join(LEGACY_ATTACK_VM_DIR)]
+        vec![vagrant_dir(crate::runtime::Runtime::Vm), vagrant_dir(crate::runtime::Runtime::Docker), lab.join(LEGACY_ATTACK_VM_DIR)]
     };
     let vagrant_dirs: Vec<PathBuf> = vagrant_dirs.into_iter().filter(|d| d.join("Vagrantfile").is_file()).collect();
     if vagrant_dirs.is_empty() {

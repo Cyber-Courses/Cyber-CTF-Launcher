@@ -8,13 +8,3 @@ pub mod storage;
 pub mod system;
 pub mod tools;
 pub mod workloads;
-
-use std::path::PathBuf;
-
-use crate::error::Result;
-use crate::platform::AppDirs;
-
-/// Where installed labs live: `<app data>/labs/<lab id>/`.
-fn labs_dir(dirs: &AppDirs) -> Result<PathBuf> {
-    Ok(dirs.data()?.join("labs"))
-}

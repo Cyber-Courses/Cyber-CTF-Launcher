@@ -121,8 +121,10 @@ fn dir_size(path: &Path) -> u64 {
 /// The boxes a lab's Vagrantfiles name: its generated ones (one VM per machine, or Docker in one
 /// VM); the attack box of a VM lab is a machine of the lab, so its box is among them.
 fn lab_boxes(dir: &Path) -> Vec<String> {
-    let out = crate::runtime::lab::out(dir);
-    [out.join("vagrant"), out.join("docker-vm")].iter().flat_map(|d| vagrantfile_boxes(&d.join("Vagrantfile"))).collect()
+    [crate::runtime::Runtime::Vm, crate::runtime::Runtime::Docker]
+        .iter()
+        .flat_map(|r| vagrantfile_boxes(&crate::runtime::lab::vagrant_dir(dir, *r).join("Vagrantfile")))
+        .collect()
 }
 
 /// Records as the app's what a lab start on this machine downloaded: the images its Compose file

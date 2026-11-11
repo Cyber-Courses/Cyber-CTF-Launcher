@@ -66,7 +66,7 @@ async fn tracked<T>(dirs: &AppDirs, kind: Kind, op: impl std::future::Future<Out
     match kind {
         Kind::Docker => owned::tracked(dirs.clone(), &[IMAGE.to_string()], &[], op).await,
         Kind::Vm => {
-            let boxes: Vec<String> = vm::TEST_PROVIDERS.iter().flat_map(|p| candidate_boxes(*p, arm()).iter().map(ToString::to_string)).collect();
+            let boxes: Vec<String> = vm::test_providers().flat_map(|p| candidate_boxes(p, arm()).iter().map(ToString::to_string)).collect();
             owned::tracked(dirs.clone(), &[], &boxes, op).await
         }
     }

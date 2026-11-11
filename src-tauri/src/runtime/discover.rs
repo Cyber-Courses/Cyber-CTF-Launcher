@@ -222,7 +222,7 @@ async fn scan(dirs: &AppDirs) -> Vec<String> {
         Err(e) => log::warn!("running-labs scan: docker ps failed: {e}"),
     }
     // Hypervisors: their running VMs, named after the installed labs.
-    let by_name = dirs.data().map(|d| lab_names(&d.join("labs"))).unwrap_or_default();
+    let by_name = super::paths::labs_root(dirs).map(|d| lab_names(&d)).unwrap_or_default();
     ids.extend(vm_lab_ids(&by_name).await);
     let ids: Vec<String> = ids.into_iter().collect();
     log::debug!("running-labs scan: {} running lab(s) {:?}", ids.len(), ids);
