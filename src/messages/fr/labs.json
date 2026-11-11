@@ -158,6 +158,7 @@
   },
   "row": {
     "open": "Ouvrir {title}",
+    "openImported": "Ouvrir {title}, importé d'un dossier",
     "emulated": "émulé",
     "emulatedHint": "Conçu pour un autre processeur : s’exécute en émulation (plus lent)",
     "runningOn": "En cours sur : {where}",

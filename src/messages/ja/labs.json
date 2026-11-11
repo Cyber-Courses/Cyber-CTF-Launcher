@@ -158,6 +158,7 @@
   },
   "row": {
     "open": "{title} を開く",
+    "openImported": "{title} を開く（フォルダーから読み込み済み）",
     "emulated": "エミュレーション",
     "emulatedHint": "別の CPU 向けにビルドされています：エミュレーションで実行されます（低速）",
     "runningOn": "実行場所：{where}",

@@ -158,6 +158,7 @@
   },
   "row": {
     "open": "{title} öffnen",
+    "openImported": "{title} öffnen, aus einem Ordner importiert",
     "emulated": "emuliert",
     "emulatedHint": "Für eine andere CPU gebaut: läuft emuliert (langsamer)",
     "runningOn": "Läuft auf: {where}",

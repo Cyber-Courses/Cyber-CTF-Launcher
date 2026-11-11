@@ -14,7 +14,6 @@ import {
   dockerUp,
   finish,
   forceVisible,
-  goTo,
   importedLabs,
   invokeCmd,
   LAB_START_MS,
@@ -23,6 +22,7 @@ import {
   localLabName,
   mainText,
   openApp,
+  openImportedLab,
   results,
   sleep,
   STOP_MS,
@@ -98,10 +98,7 @@ try {
     interval: 3000,
     timeoutMsg: `the lab was never imported as ${ID}`,
   });
-  await goTo(b, "Labs");
-  const open = await b.$(`main button[aria-label=${JSON.stringify(`Open ${title}`)}]`);
-  await open.waitForClickable({ timeout: 60000 });
-  await open.click();
+  await openImportedLab(b, title);
   await waitLabPageRunning(b, LAB_START_MS);
 
   await r.step("box-up", "the attack box runs on the lab network, with an address", async () => {

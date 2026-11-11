@@ -107,7 +107,7 @@ function RowLine(props: LabRowProps & { onAskStop: () => void }) {
         setup={setup}
         running={running}
         failed={phase === "failed" ? stateLabel : null}
-        openLabel={t("labs.row.open", { title: lab.title })}
+        openLabel={t(lab.imported ? "labs.row.openImported" : "labs.row.open", { title: lab.title })}
         onOpen={() => {
           props.onOpen(lab);
         }}

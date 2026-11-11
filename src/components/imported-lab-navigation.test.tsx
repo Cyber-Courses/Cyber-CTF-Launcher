@@ -73,7 +73,7 @@ describe("an imported lab in the lists", () => {
     await user.click(within(sidebar()).getByRole("button", { name: /^Labs/ }));
     await flush(80);
     expect(await screen.findByText("Imported from a folder")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Open Supplier portal API" }));
+    await user.click(screen.getByRole("button", { name: "Open Supplier portal API, imported from a folder" }));
     await flush(80);
     expect(await screen.findByRole("heading", { name: "Supplier portal API" })).toBeTruthy();
   });
@@ -81,7 +81,7 @@ describe("an imported lab in the lists", () => {
   it("is a row of the Overview's running labs that opens its page", async () => {
     const user = userEvent.setup();
     await withImported([invoice]);
-    await user.click(await screen.findByRole("button", { name: "Open Supplier portal API" }));
+    await user.click(await screen.findByRole("button", { name: "Open Supplier portal API, imported from a folder" }));
     await flush(80);
     expect(await screen.findByRole("heading", { name: "Supplier portal API" })).toBeTruthy();
   });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ComponentProps } from "react";
-import { act, render, renderHook, screen, within } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HealthBanner, useLabCheck } from "@/features/labs/lab-health";
@@ -524,6 +524,18 @@ describe("LabRow", () => {
     render(<LabRow lab={lab} loggedIn hostArch="x86_64" {...h} situation={situation} {...props} />);
     return h;
   }
+
+  it("names an imported lab's Open button apart from a catalogue row of the same title", () => {
+    // Regression: the Labs screen named both "Open Supplier portal API" once the fixture lab was
+    // imported beside its catalogue entry, and the desktop specs' selector found two buttons.
+    installTauri();
+    renderRow();
+    expect(screen.getByRole("button", { name: "Open Invoice portal API" })).toBeTruthy();
+    cleanup();
+    renderRow({ lab: { ...lab, imported: { objectives: null, problems: [] } } });
+    expect(screen.getByRole("button", { name: "Open Invoice portal API, imported from a folder" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open Invoice portal API" })).toBeNull();
+  });
 
   it("opens a running lab's URL and asks before stopping it", async () => {
     let yes = false;

@@ -655,6 +655,28 @@ export function waitLabPageRunning(b, timeout) {
 export async function stopLeftover(b, r) {
   if (!(await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting())) return;
   const leftover = leftoverIsTheRuns(runRoot());
+/**
+ * Opens the lab titled `title` from the "Imported from a folder" list of the Labs screen (the
+ * row's own name, "Open <title>, imported from a folder": the catalogue may list a lab of the
+ * same title, whose row is named "Open <title>"), and waits for its page.
+ */
+export async function openImportedLab(b, title, timeout = 60000) {
+  await goTo(b, "Labs");
+  const open = await b.$(`main button[aria-label=${JSON.stringify(`Open ${title}, imported from a folder`)}]`);
+  await open.waitForClickable({ timeout, timeoutMsg: `no imported lab ${JSON.stringify(title)} to open on the Labs screen` });
+  await open.click();
+  await b.waitUntil(
+    async () =>
+      (
+        await b
+          .$("main h1")
+          .getText()
+          .catch(() => "")
+      ).includes(title),
+    { timeout: 30000, timeoutMsg: `the page of the imported ${title} never opened` },
+  );
+}
+
   if (!leftover.ok) r.skipAll(`the lab already runs here: ${leftover.why}`);
   console.log("the lab is up (or half up) from an earlier spec: stopping it first");
   await stopAndRemoveOnPage(b);

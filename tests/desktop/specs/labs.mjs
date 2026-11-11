@@ -22,6 +22,7 @@ import {
   localLabName,
   mainText,
   openApp,
+  openImportedLab,
   openLabFromList,
   results,
   sleep,
@@ -105,19 +106,7 @@ try {
     });
     if (imported && title) {
       await r.step("imported-page", "its page opens from the list, with what its .ctf/ folder defines", async () => {
-        const open = await b.$(`main button[aria-label=${JSON.stringify(`Open ${title}`)}]`);
-        await open.waitForClickable({ timeout: 30000 });
-        await open.click();
-        await b.waitUntil(
-          async () =>
-            (
-              await b
-                .$("main h1")
-                .getText()
-                .catch(() => "")
-            ).includes(title),
-          { timeout: 30000, timeoutMsg: "its page never opened" },
-        );
+        await openImportedLab(b, title);
         if (existsSync(join(LAB, ".ctf", "objectives.json")) && !/Objectives/.test(await mainText(b)))
           throw new Error("the lab has .ctf/objectives.json but its page shows no Objectives");
       });
