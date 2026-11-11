@@ -36,4 +36,12 @@ min: string, } } | { "code": "pluginMissing", "args": {
 /**
  * The plugin's name.
  */
-plugin: string, } } | { "code": "vmwareUtilityStopped" } | { "code": "vmwareUtilityMissing" };
+plugin: string, } } | { "code": "vmwareUtilityStopped" } | { "code": "vmwareUtilityMissing" } | { "code": "virtualboxDriver", "args": { 
+/**
+ * The running kernel (`uname -r`).
+ */
+kernel: string, } } | { "code": "kernelRestart", "args": { 
+/**
+ * The newer kernel installed (`uname -r` once it runs).
+ */
+kernel: string, } };

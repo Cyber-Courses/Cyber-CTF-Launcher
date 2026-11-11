@@ -1,7 +1,7 @@
 use super::shapes::{self, bare};
 use super::*;
 use crate::machine::system::Tool;
-use crate::runtime::providers::UtilityState;
+use crate::runtime::providers::{Unavailable, UtilityState};
 
 const BOTH: [SetupPath; 2] = [SetupPath::Docker, SetupPath::Vm];
 
@@ -130,6 +130,36 @@ fn libvirt_joined_since_logging_in_asks_for_a_new_login_after_the_rest() {
     let mut r = shapes::debian_libvirt_without_plugin();
     r.groups_pending = vec!["docker".into()];
     assert_eq!(options(&r, false).hypervisors.iter().find(|h| h.provider == Provider::Libvirt).unwrap().get, []);
+}
+
+#[test]
+fn virtualboxs_driver_waiting_for_the_newer_kernel_ends_the_pass_with_a_restart() {
+    // Regression (the rig's bare Debian 13): the install couldn't build VirtualBox's driver for the
+    // running kernel, whose headers the archive no longer had; VirtualBox read as ready and the
+    // self-test's VM found no driver. Now it waits for the restart into the kernel its install
+    // brought, which ends the pass as a restart (`again: reboot`), and it isn't passed over.
+    let r = shapes::debian_virtualbox_awaits_restart();
+    let restart = Action::Blocked { reason: Unavailable::KernelRestart { kernel: "6.12.116+deb13-amd64".into() } };
+    assert_eq!(get_of(&r, Provider::Virtualbox), std::slice::from_ref(&restart));
+    assert!(restart.ends_pass());
+    let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Virtualbox, Provider::Libvirt]));
+    assert_eq!(p.hypervisor, Some(Provider::Virtualbox), "a restart is how it is set up, not a reason to pass it over");
+    assert_eq!(
+        steps(&p),
+        [
+            "virtualbox: blocked VirtualBox's kernel driver is built for the newer kernel installed with it (6.12.116+deb13-amd64): restart the computer to start that kernel, then re-check."
+        ]
+    );
+    assert!(p.steps.last().unwrap().action.ends_pass());
+    // A driver that a restart doesn't mend still can't run here.
+    let mut stuck = shapes::debian_virtualbox_awaits_restart();
+    for p in stuck.vm_providers.iter_mut().filter(|p| p.provider == Provider::Virtualbox) {
+        p.reason = Some(Unavailable::VirtualboxDriver { kernel: "6.12.116+deb13-amd64".into() });
+    }
+    stuck.setup = options(&stuck, false);
+    assert!(!get_of(&stuck, Provider::Virtualbox)[0].ends_pass());
+    let p = plan_of(&stuck, &wanted(&[SetupPath::Vm], &[Provider::Virtualbox, Provider::Libvirt]));
+    assert!(p.passed_over[0].1.starts_with("can't run here: VirtualBox's kernel driver (vboxdrv) isn't loaded"), "{:?}", p.passed_over);
 }
 
 #[test]

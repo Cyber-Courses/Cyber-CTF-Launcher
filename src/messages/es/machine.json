@@ -379,6 +379,8 @@
     "pluginTooOld": "El plugin de Vagrant `{plugin}` {version} es demasiado antiguo: se necesita {min} o posterior. Instálalo de nuevo para actualizarlo.",
     "pluginMissing": "El plugin de Vagrant `{plugin}` no está instalado.",
     "vmwareUtilityStopped": "Vagrant VMware Utility está instalado, pero su servicio no se está ejecutando: instálalo de nuevo (eso lo reinicia), o reinicia el equipo.",
-    "vmwareUtilityMissing": "Vagrant VMware Utility no está instalado: es el servicio de HashiCorp a través del cual el plugin de VMware maneja VMware."
+    "vmwareUtilityMissing": "Vagrant VMware Utility no está instalado: es el servicio de HashiCorp a través del cual el plugin de VMware maneja VMware.",
+    "virtualboxDriver": "El controlador del kernel de VirtualBox (vboxdrv) no está cargado en este kernel ({kernel}), así que VirtualBox no puede iniciar VM. Instala las cabeceras del kernel (linux-headers-{kernel} en Debian y Ubuntu), compila el controlador (sudo /sbin/vboxconfig para el VirtualBox de Oracle, sudo dpkg-reconfigure virtualbox-dkms para el de tu distribución) y vuelve a comprobar. Con Secure Boot activado, el controlador debe estar firmado para poder cargarse.",
+    "kernelRestart": "El controlador del kernel de VirtualBox se compila para el kernel más reciente instalado con él ({kernel}): reinicia el equipo para arrancar ese kernel y vuelve a comprobar."
   }
 }

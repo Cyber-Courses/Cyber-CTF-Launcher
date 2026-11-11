@@ -7,12 +7,14 @@ use serde::Deserialize;
 use super::{Action, HypervisorOption, ManualReason, Options, engines_on, local, vagrant_steps};
 use crate::machine::system::SystemReport;
 use crate::machine::system::docker::Engine;
-use crate::runtime::providers::Provider;
+use crate::runtime::providers::{Provider, Unavailable};
 
 impl Action {
-    /// Whether it ends a setup pass: what follows waits for the restart or the new login.
+    /// Whether it ends a setup pass: what follows waits for the restart or the new login. A
+    /// hypervisor blocked until the computer restarts (VirtualBox's driver, built for the newer
+    /// kernel its install brought) ends it too, as a restart.
     pub fn ends_pass(&self) -> bool {
-        matches!(self, Action::Restart { .. } | Action::Relogin)
+        matches!(self, Action::Restart { .. } | Action::Relogin | Action::Blocked { reason: Unavailable::KernelRestart { .. } })
     }
 }
 
@@ -66,7 +68,8 @@ fn not_settable(option: &HypervisorOption) -> Option<String> {
         Action::Manual { reason: ManualReason::Distribution, .. } => {
             Some(format!("this distribution isn't supported by the guided setup yet: install {} yourself", option.provider.label()))
         }
-        Action::Blocked { reason } => Some(format!("can't run here: {reason}")),
+        // A restart sets up one blocked until it (VirtualBox's driver, built for a newer kernel).
+        Action::Blocked { reason } if !action.ends_pass() => Some(format!("can't run here: {reason}")),
         _ => None,
     })
 }

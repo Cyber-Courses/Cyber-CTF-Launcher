@@ -226,6 +226,21 @@ pub(crate) fn mac_ready() -> SystemReport {
     })
 }
 
+/// Debian once the setup installed VirtualBox and Vagrant on a machine running a kernel older than
+/// its package sources' (not restarted since an update): the running kernel's headers were gone,
+/// so the install brought the newer kernel with its headers, and VirtualBox's driver waits for the
+/// restart into it.
+pub(crate) fn debian_virtualbox_awaits_restart() -> SystemReport {
+    let mut r = with(bare_debian(), false, |r| hypervisor(r, Provider::Virtualbox, true));
+    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Virtualbox) {
+        p.available = false;
+        p.reason = Some(Unavailable::KernelRestart { kernel: "6.12.116+deb13-amd64".into() });
+    }
+    r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
+    r.setup = super::options(&r, false);
+    r
+}
+
 /// Every shape, by the name the webview's tests know it by.
 pub(crate) fn all() -> Vec<(&'static str, SystemReport)> {
     vec![

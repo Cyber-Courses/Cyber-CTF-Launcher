@@ -58,6 +58,20 @@ pub enum Unavailable {
     /// The Vagrant VMware Utility, HashiCorp's service the VMware plugin drives VMware through,
     /// isn't installed.
     VmwareUtilityMissing,
+    /// VirtualBox is installed, but its kernel driver (`vboxdrv`) isn't loaded on the running
+    /// kernel (Linux), so no VM starts: never built (the kernel's headers missing), or refused
+    /// (Secure Boot).
+    VirtualboxDriver {
+        /// The running kernel (`uname -r`).
+        kernel: String,
+    },
+    /// VirtualBox's kernel driver waits for a restart (Linux): the package sources no longer have
+    /// the running kernel's headers, so its install brought a newer kernel with its headers, which
+    /// the driver is built for when the computer starts that kernel.
+    KernelRestart {
+        /// The newer kernel installed (`uname -r` once it runs).
+        kernel: String,
+    },
 }
 
 impl Unavailable {
@@ -84,6 +98,12 @@ impl Unavailable {
                 "The Vagrant VMware Utility is installed, but its service isn't running: install it again (that restarts it), or restart the computer.".into()
             }
             Unavailable::VmwareUtilityMissing => "The Vagrant VMware Utility is not installed: HashiCorp's service the VMware plugin drives VMware through.".into(),
+            Unavailable::VirtualboxDriver { kernel } => format!(
+                "VirtualBox's kernel driver (vboxdrv) isn't loaded on this kernel ({kernel}), so VirtualBox can't start VMs. Install the kernel's headers (linux-headers-{kernel} on Debian and Ubuntu), build the driver (sudo /sbin/vboxconfig for Oracle's VirtualBox, sudo dpkg-reconfigure virtualbox-dkms for your distribution's), then re-check. With Secure Boot on, the driver must be signed before it loads."
+            ),
+            Unavailable::KernelRestart { kernel } => {
+                format!("VirtualBox's kernel driver is built for the newer kernel installed with it ({kernel}): restart the computer to start that kernel, then re-check.")
+            }
         }
     }
 }
@@ -129,6 +149,8 @@ mod tests {
             Unavailable::PluginMissing { plugin: s("vagrant-libvirt") },
             Unavailable::VmwareUtilityStopped,
             Unavailable::VmwareUtilityMissing,
+            Unavailable::VirtualboxDriver { kernel: s("6.12.86+deb13-amd64") },
+            Unavailable::KernelRestart { kernel: s("6.12.116+deb13-amd64") },
         ]
     }
 

@@ -299,6 +299,7 @@ use vagrant_needs::fake_utility;
 pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
 
 mod unavailable;
+mod vbox_driver;
 pub use unavailable::Unavailable;
 pub(crate) use unavailable::kvm_problem;
 
@@ -511,7 +512,9 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
         },
     };
     let needs = needs(vagrant_installed, detection.plugin_installed, detection.utility);
-    let reason = unavailable_reason(provider, &needs, detection);
+    // VBoxManage answers without VirtualBox's kernel driver, which every VM needs (Linux).
+    let reason = unavailable_reason(provider, &needs, detection)
+        .or_else(|| (provider == Provider::Virtualbox && hypervisor == Some(true)).then(vbox_driver::problem).flatten());
     let account_lacks = detection.account;
 
     Some(ProviderStatus {

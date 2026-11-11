@@ -326,6 +326,7 @@ fn would(action: &Action) -> Option<String> {
             }
         ),
         Action::Relogin => "would sign out and back in".to_owned(),
+        Action::Blocked { reason } if action.ends_pass() => format!("would restart the computer: {reason}"),
         Action::Manual { .. } | Action::Blocked { .. } => return None,
     })
 }

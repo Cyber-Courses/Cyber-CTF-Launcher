@@ -379,6 +379,8 @@
     "pluginTooOld": "Le plugin Vagrant `{plugin}` {version} est trop ancien : {min} ou plus récent est nécessaire. Installez-le à nouveau pour le mettre à jour.",
     "pluginMissing": "Le plugin Vagrant `{plugin}` n'est pas installé.",
     "vmwareUtilityStopped": "Le Vagrant VMware Utility est installé, mais son service ne tourne pas : installez-le à nouveau (cela le redémarre), ou redémarrez l'ordinateur.",
-    "vmwareUtilityMissing": "Le Vagrant VMware Utility n'est pas installé : c'est le service de HashiCorp par lequel le plugin VMware pilote VMware."
+    "vmwareUtilityMissing": "Le Vagrant VMware Utility n'est pas installé : c'est le service de HashiCorp par lequel le plugin VMware pilote VMware.",
+    "virtualboxDriver": "Le pilote noyau de VirtualBox (vboxdrv) n'est pas chargé sur ce noyau ({kernel}) : VirtualBox ne peut pas démarrer de VM. Installez les en-têtes du noyau (linux-headers-{kernel} sur Debian et Ubuntu), compilez le pilote (sudo /sbin/vboxconfig pour le VirtualBox d'Oracle, sudo dpkg-reconfigure virtualbox-dkms pour celui de votre distribution), puis vérifiez à nouveau. Avec Secure Boot activé, le pilote doit être signé avant de pouvoir se charger.",
+    "kernelRestart": "Le pilote noyau de VirtualBox est compilé pour le noyau plus récent installé avec lui ({kernel}) : redémarrez l'ordinateur pour démarrer ce noyau, puis vérifiez à nouveau."
   }
 }
