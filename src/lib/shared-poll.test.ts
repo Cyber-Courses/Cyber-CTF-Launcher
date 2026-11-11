@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
+import { createPoll, sharedPoll, useSharedPoll } from "@/lib/shared-poll";
 import { structurallyEqual } from "@/lib/equal";
 
 /** Puts the window on or off screen, as the browser does. */
@@ -146,6 +146,25 @@ describe("sharedPoll", () => {
     pending[3].resolve("fourth");
     await vi.advanceTimersByTimeAsync(0);
     expect(poll.get()).toBe("fourth");
+    off();
+  });
+
+  it("drops a read in flight at a reset: it neither publishes nor holds the next read back", async () => {
+    const { read, pending } = deferredReads<string>();
+    const poll = createPoll({ read, ms: 1000, initial: "none" });
+    const off = poll.subscribe(() => {});
+    expect(read).toHaveBeenCalledTimes(1);
+    poll.reset();
+    expect(poll.get()).toBe("none");
+    // The read from before the reset answers: dropped, and not counted as in flight.
+    pending[0].resolve("before");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(poll.get()).toBe("none");
+    void poll.refresh();
+    expect(read).toHaveBeenCalledTimes(2);
+    pending[1].resolve("after");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(poll.get()).toBe("after");
     off();
   });
 
