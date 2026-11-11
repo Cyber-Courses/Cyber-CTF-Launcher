@@ -392,7 +392,8 @@
     "steps": "ステップ",
     "step": "ステップ {n}",
     "hint": "ヒント {n}",
-    "revealHint": "ヒント {n}/{total} を表示"
+    "revealHint": "ヒント {n}/{total} を表示",
+    "unread": "目標を読み込めませんでした（{why}）。"
   },
   "reapFailed": {
     "title": "自動停止で {title} を削除できませんでした",

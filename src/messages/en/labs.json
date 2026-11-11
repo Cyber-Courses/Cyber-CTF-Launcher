@@ -392,7 +392,8 @@
     "steps": "Steps",
     "step": "Step {n}",
     "hint": "Hint {n}",
-    "revealHint": "Reveal hint {n} of {total}"
+    "revealHint": "Reveal hint {n} of {total}",
+    "unread": "The objectives couldn't be read ({why})."
   },
   "reapFailed": {
     "title": "Auto-stop couldn’t destroy {title}",

@@ -31,8 +31,8 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
   const { lab, status } = p;
   return (
     <aside className="h-fit min-w-0 space-y-5 lg:sticky lg:top-2">
-      {/* A backend without the objectives API: the lab's question, as before. */}
-      {page.objectives.state.kind === "unavailable" && lab.question && <ObjectivePanel question={lab.question} />}
+      {/* The objectives couldn't be read: why, and the lab's question in their place. */}
+      {page.objectives.state.kind === "unavailable" && <ObjectivePanel question={lab.question} unread={page.objectives.state.why} />}
 
       {/* VM labs on a server host have no attacker yet (their networks live on that host). */}
       {!s.isCloud && (s.isDocker || !s.remote) && (

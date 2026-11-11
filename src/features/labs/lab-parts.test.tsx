@@ -4,6 +4,7 @@ import { act, render, renderHook, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HealthBanner, useLabCheck } from "@/features/labs/lab-health";
+import { ObjectivePanel } from "@/features/labs/lab-detail/page-parts";
 import { LabRow } from "@/features/labs/lab-row";
 import { IDLE_ROW, type RowSituation } from "@/features/labs/lab-row-state";
 import { askPortMode, PortModePrompt } from "@/features/labs/port-mode-prompt";
@@ -722,5 +723,17 @@ describe("LabRow", () => {
     installTauri();
     renderRow({ deploying: true });
     expect(screen.getByText("Starting…")).toBeTruthy();
+  });
+});
+
+describe("ObjectivePanel", () => {
+  it("says why the objectives couldn't be read, under the lab's question or on its own", () => {
+    // Regression: any failure to read them read as an older backend, the page saying nothing.
+    const { unmount } = render(<ObjectivePanel question="Read the admin's flag." unread="The Cyber CTF API answered 503" />);
+    expect(document.body.textContent).toContain("Read the admin's flag.");
+    expect(document.body.textContent).toContain("The objectives couldn't be read (The Cyber CTF API answered 503).");
+    unmount();
+    render(<ObjectivePanel question={null} unread="No connection" />);
+    expect(document.body.textContent).toContain("The objectives couldn't be read (No connection).");
   });
 });

@@ -392,7 +392,8 @@
     "steps": "Pasos",
     "step": "Paso {n}",
     "hint": "Pista {n}",
-    "revealHint": "Mostrar pista {n} de {total}"
+    "revealHint": "Mostrar pista {n} de {total}",
+    "unread": "No se pudieron leer los objetivos ({why})."
   },
   "reapFailed": {
     "title": "La parada automática no pudo destruir {title}",

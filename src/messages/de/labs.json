@@ -392,7 +392,8 @@
     "steps": "Schritte",
     "step": "Schritt {n}",
     "hint": "Hinweis {n}",
-    "revealHint": "Hinweis {n} von {total} anzeigen"
+    "revealHint": "Hinweis {n} von {total} anzeigen",
+    "unread": "Die Ziele konnten nicht gelesen werden ({why})."
   },
   "reapFailed": {
     "title": "Der automatische Stopp konnte {title} nicht entfernen",

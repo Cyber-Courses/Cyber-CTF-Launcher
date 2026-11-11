@@ -392,7 +392,8 @@
     "steps": "Étapes",
     "step": "Étape {n}",
     "hint": "Indice {n}",
-    "revealHint": "Afficher l'indice {n} sur {total}"
+    "revealHint": "Afficher l'indice {n} sur {total}",
+    "unread": "Les objectifs n'ont pas pu être lus ({why})."
   },
   "reapFailed": {
     "title": "L’arrêt automatique n’a pas pu détruire {title}",

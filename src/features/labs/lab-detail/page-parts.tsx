@@ -21,13 +21,14 @@ export function BackLink({ onBack }: { onBack: () => void }) {
   );
 }
 
-/** The question the lab's evidence answers. */
-export function ObjectivePanel({ question }: { question: string }) {
+/** The question the lab's evidence answers, and why the objectives in its place couldn't be read. */
+export function ObjectivePanel({ question, unread }: { question: string | null; unread?: string }) {
   const t = useT();
   return (
     <Panel>
       <PanelHeader title={t("labs.detail.objective")} meta={t("labs.detail.evidence")} />
-      <p className="px-4 py-3.5 text-[0.8125rem] leading-relaxed text-foreground">{question}</p>
+      {question && <p className="px-4 py-3.5 text-[0.8125rem] leading-relaxed text-foreground">{question}</p>}
+      {unread && <p className="px-4 pb-3.5 text-[0.75rem] text-muted-foreground first:pt-3.5">{t("labs.objectives.unread", { why: unread })}</p>}
     </Panel>
   );
 }
