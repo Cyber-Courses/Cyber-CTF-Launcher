@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-node-pnpm
       - name: Tests with coverage
         run: pnpm exec vitest run --coverage
@@ -45,7 +45,7 @@ jobs:
             const row = (k) => `| ${k[0].toUpperCase() + k.slice(1)} | ${t[k].pct}% | ${t[k].covered} / ${t[k].total} | ${gap(k)} |`;
             console.log(["### Frontend coverage", "", "| Metric | Covered | Count | Floor | Gap |", "| --- | --- | --- | --- | --- |", ...["lines", "statements", "functions", "branches"].map(row)].join("\n"));
           ' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: web-coverage

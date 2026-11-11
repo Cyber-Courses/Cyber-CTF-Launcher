@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-node-pnpm
       # Tauri's JS packages and Rust crates must share a major/minor, or `tauri build` refuses. That
       # check otherwise only runs at release time (release.yml, on a tag, after a long build), so run
@@ -53,7 +53,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: startsWith(matrix.os, 'ubuntu')
         uses: ./.github/actions/apt-deps
       - uses: ./.github/actions/setup-rust
@@ -79,7 +79,7 @@ jobs:
       - if: startsWith(matrix.os, 'ubuntu')
         uses: ./.github/actions/setup-node-pnpm
       - if: startsWith(matrix.os, 'ubuntu')
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-machete
       - name: Quality
@@ -106,10 +106,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-deny@0.20.2
       - run: cargo deny --manifest-path src-tauri/Cargo.toml check advisories bans licenses sources
