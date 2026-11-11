@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,8 +27,27 @@ const HERE = import.meta.dirname;
 const RUNNER = join(HERE, "run.mjs");
 const unix = process.platform !== "win32";
 const dirs: string[] = [];
+/** Folders the fake apps write their pids in (`FAKE_PIDS`): whatever a test left running ends. */
+const pidDirs: string[] = [];
+
+/** Whether process `pid` is alive. */
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 afterEach(() => {
+  for (const d of pidDirs.splice(0))
+    for (const pid of existsSync(d) ? readdirSync(d).map(Number) : [])
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* gone */
+      }
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
@@ -249,8 +268,83 @@ setInterval(() => {}, 1000);`,
   return bin;
 }
 
+/**
+ * An app that won't go when asked: it ignores SIGTERM, serves WebDriver's /status on
+ * TAURI_WEBDRIVER_PORT and, once listening, writes its pid in FAKE_PIDS. Started by a spec (the
+ * snippet `launches`), or by a test as another app holding the port.
+ */
+function stubbornApp(): { script: string; pids: string } {
+  const dir = mkdtempSync(join(tmpdir(), "desktop-stubborn-"));
+  dirs.push(dir);
+  const pids = join(dir, "pids");
+  mkdirSync(pids);
+  pidDirs.push(pids);
+  const script = join(dir, "stubborn.mjs");
+  writeFileSync(
+    script,
+    `import { createServer } from "node:http";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+process.on("SIGTERM", () => {});
+createServer((req, res) => res.end("{}")).listen(Number(process.env.TAURI_WEBDRIVER_PORT), "127.0.0.1", () =>
+  writeFileSync(join(process.env.FAKE_PIDS, String(process.pid)), ""),
+);
+setInterval(() => {}, 1000);`,
+  );
+  return { script, pids };
+}
+
+/** A spec's lines that start the stubborn app (FAKE_APP) and wait for it to answer: in the spec's
+ *  process group, or `detached` in one of its own (out of the runner's reach). */
+const launches = (detached = false) => `{
+  const { spawn } = await import("node:child_process");
+  const app = spawn(process.execPath, [process.env.FAKE_APP], { stdio: "ignore", detached: ${detached ? "true" : "false"} });
+  ${detached ? "app.unref();" : ""}
+  for (let i = 0; i < 100; i++) {
+    if (await fetch("http://127.0.0.1:" + process.env.TAURI_WEBDRIVER_PORT + "/status").then(() => true, () => false)) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  console.log("ok: app (0s) up");
+}`;
+
+/** A spec's lines that bind the WebDriver port, as the next app would: a failed check if they can't. */
+const binds = `{
+  const { createServer } = await import("node:net");
+  const free = await new Promise((done) => {
+    const s = createServer();
+    s.once("error", () => done(false));
+    s.listen(Number(process.env.TAURI_WEBDRIVER_PORT), "127.0.0.1", () => s.close(() => done(true)));
+  });
+  if (!free) {
+    console.log("FAILED: bind (0s) the port is still held");
+    process.exit(1);
+  }
+  console.log("ok: bind (0s) the port is free");
+}`;
+
+/** The pids the stubborn apps wrote in `pids`. */
+const pidsIn = (pids: string) => readdirSync(pids).map(Number);
+
 /** The runner on a fake plan with a fake app and a fake docker (`dockerUp`: whether it answers). */
 function runRunner(planDir: string, args: string[], { dockerUp = true, env = {} }: { dockerUp?: boolean; env?: Record<string, string> } = {}) {
+  const { dir, clean, results } = runnerSetup({ dockerUp, env });
+  const r = spawnSync(process.execPath, [RUNNER, "--plan", planDir, "--results", results, ...args], { env: clean, encoding: "utf8", timeout: 60000 });
+  return { status: r.status, out: r.stdout + r.stderr, records: readRecords(results), dir };
+}
+
+/** The records the runner wrote in `results`. */
+function readRecords(results: string): Record<string, unknown>[] {
+  return existsSync(results)
+    ? readFileSync(results, "utf8")
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l) as Record<string, unknown>)
+    : [];
+}
+
+/** A folder for one run of the runner: its fake app, docker and vagrant, its lab and its environment. */
+function runnerSetup({ dockerUp = true, env = {} }: { dockerUp?: boolean; env?: Record<string, string> } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "desktop-run-"));
   dirs.push(dir);
   const app = fakeApp(dir);
@@ -280,15 +374,7 @@ function runRunner(planDir: string, args: string[], { dockerUp = true, env = {} 
     TMPDIR: dir,
     ...env,
   };
-  const r = spawnSync(process.execPath, [RUNNER, "--plan", planDir, "--results", results, ...args], { env: clean, encoding: "utf8", timeout: 60000 });
-  const records = existsSync(results)
-    ? readFileSync(results, "utf8")
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .map((l) => JSON.parse(l) as Record<string, unknown>)
-    : [];
-  return { status: r.status, out: r.stdout + r.stderr, records, dir };
+  return { dir, clean, results };
 }
 
 const verdicts = (records: Record<string, unknown>[]): Record<string, [unknown, unknown]> =>
@@ -430,6 +516,81 @@ describe.skipIf(!unix)("run.mjs on a fake plan", () => {
     const kept = readdirSync(r.dir).filter((f) => f.startsWith("cyberctf-e2e."));
     expect(kept.length).toBe(1);
     expect(r.out).toContain(`kept: the run's folder`);
+  });
+});
+
+describe.skipIf(!unix)("run.mjs and the apps a spec leaves", () => {
+  it("ends a spec's app with the spec, at its cap or when it exits, though it ignores SIGTERM", () => {
+    const app = stubbornApp();
+    const planDir = fakePlan({
+      capped: { body: `${launches()}\nsetTimeout(() => {}, 60000);` },
+      left: { body: `${binds}\n${launches()}\nprocess.exit(0);` },
+      after: { body: `${binds}\nprocess.exit(0);` },
+    });
+    const r = runRunner(planDir, ["--all"], { env: { FAKE_APP: app.script, FAKE_PIDS: app.pids } });
+    expect(verdicts(r.records), r.out).toEqual({
+      capped: ["fail", expect.stringMatching(/^exceeded its 4 s: /) as unknown],
+      left: ["pass", ""],
+      after: ["pass", ""],
+    });
+    expect(pidsIn(app.pids).length).toBe(2);
+    expect(pidsIn(app.pids).filter(alive)).toEqual([]);
+  });
+
+  it("fails the case and ends the run when the port stays held, rather than driving that app", () => {
+    const app = stubbornApp();
+    const planDir = fakePlan({
+      escapes: { body: `${launches(true)}\nprocess.exit(0);` },
+      next: { body: `${binds}\nprocess.exit(0);` },
+      last: { body: 'console.log("ok: it (0s) fine"); process.exit(0);' },
+    });
+    const port = String(40000 + Math.floor(Math.random() * 20000));
+    const r = runRunner(planDir, ["--all", "--port-wait", "1"], { env: { FAKE_APP: app.script, FAKE_PIDS: app.pids, TAURI_WEBDRIVER_PORT: port } });
+    expect(r.status, r.out).toBe(1);
+    const held = new RegExp(`^the previous app still holds port ${port}( \\(pid \\d+.*\\))?$`);
+    expect(verdicts(r.records)).toEqual({
+      escapes: ["pass", ""],
+      next: ["fail", expect.stringMatching(held) as unknown],
+      last: ["skip", expect.stringMatching(new RegExp(`^the previous app still holds port ${port}.*: the run ended$`)) as unknown],
+    });
+    expect(r.out).not.toContain("ok: bind");
+  });
+
+  it("refuses to run while another app answers on the port", async () => {
+    const app = stubbornApp();
+    const port = String(40000 + Math.floor(Math.random() * 20000));
+    const other = spawn(process.execPath, [app.script], { stdio: "ignore", env: { ...process.env, TAURI_WEBDRIVER_PORT: port, FAKE_PIDS: app.pids } });
+    for (let i = 0; i < 100 && pidsIn(app.pids).length === 0; i++) await new Promise((res) => setTimeout(res, 100));
+    try {
+      const r = runRunner(fakePlan({ a: { body: 'console.log("ok: it (0s) fine"); process.exit(0);' } }), ["--all", "--port-wait", "1"], {
+        env: { TAURI_WEBDRIVER_PORT: port },
+      });
+      expect(r.status, r.out).toBe(2);
+      expect(r.out).toContain(`the previous app still holds port ${port}`);
+      expect(r.out).toContain("the run would drive that app instead of its own");
+      expect(r.records).toEqual([]);
+    } finally {
+      other.kill("SIGKILL");
+    }
+  });
+
+  it("ends the running spec's app when the run is stopped from outside", async () => {
+    const app = stubbornApp();
+    const planDir = fakePlan({ hangs: { body: `${launches()}\nsetTimeout(() => {}, 60000);` } });
+    const { clean, results } = runnerSetup({ env: { FAKE_APP: app.script, FAKE_PIDS: app.pids, CYBERCTF_TEST_DESKTOP_TIMEOUT: "30" } });
+    const runner = spawn(process.execPath, [RUNNER, "--plan", planDir, "--results", results, "--all"], { env: clean, stdio: "ignore" });
+    const exited = new Promise<number | null>((res) => {
+      runner.on("exit", (code) => {
+        res(code);
+      });
+    });
+    for (let i = 0; i < 150 && pidsIn(app.pids).length === 0; i++) await new Promise((res) => setTimeout(res, 100));
+    expect(pidsIn(app.pids).length).toBe(1);
+    runner.kill("SIGTERM");
+    expect(await exited).toBe(143);
+    const [pid] = pidsIn(app.pids);
+    for (let i = 0; i < 30 && alive(pid); i++) await new Promise((res) => setTimeout(res, 100));
+    expect(alive(pid)).toBe(false);
   });
 });
 

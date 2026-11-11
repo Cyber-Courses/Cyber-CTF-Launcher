@@ -17,7 +17,11 @@
 // skips the cases that would start it again, each naming that failure. Every case is killed past
 // its cap (5 minutes; the Machine page's 8). An app that dies (WebDriver refused) is started again
 // once to see whether it can come up at all; a second death, or none, ends the run with that
-// reason, the cases left skipped.
+// reason, the cases left skipped. One app at a time: each spec runs in a process group of its own,
+// ended with everything in it (its apps, their helpers) when it exits, at its cap, or when the run
+// is stopped (SIGINT, SIGTERM, SIGHUP); the next app waits for the WebDriver port to be free
+// (lib/host.mjs, 10 s at most), and a port still held fails the case and ends the run rather
+// than driving the app that holds it.
 //
 // Safe on a machine someone uses: the app keeps all of its own in a folder made for the run
 // (CYBERCTF_WDIO_ROOT), removed at the end; every clean-up acts only on what the run made, by
@@ -34,7 +38,8 @@
 //   TAURI_WEBDRIVER_PORT           the app's embedded WebDriver port (4445)
 //   ONLY, SKIP, STRICT             as every suite runner (scripts/lib/suite.sh)
 // Exit status: 0 nothing failed (and no skip under STRICT), 1 a spec failed, 2 the runner itself
-// couldn't run. `--plan <dir>` reads another cases.tsv and specs/ (the runner's own tests).
+// couldn't run. `--plan <dir>` reads another cases.tsv and specs/, `--port-wait <s>` waits that long
+// for the port instead of 10 s (the runner's own tests).
 import { execFileSync, spawn } from "node:child_process";
 import {
   appendFileSync,
@@ -53,6 +58,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PORT_FREE_S, portStillHeld, waitPortFree } from "./lib/host.mjs";
 import { projects, record as recordMachine, runFolders, runTool } from "./lib/owned.mjs";
 import {
   DEAD_APP,
@@ -86,7 +92,7 @@ const say = (what) => console.log(`\n==== ${what}`);
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 // --- Arguments -----------------------------------------------------------------------------
-const args = { group: "", only: "", results: "", list: false, plan: HERE };
+const args = { group: "", only: "", results: "", list: false, plan: HERE, portWait: PORT_FREE_S };
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
   const next = () => process.argv[++i] ?? die(`${a} needs a value`);
@@ -96,6 +102,7 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (a === "--results") args.results = next();
   else if (a === "--list") args.list = true;
   else if (a === "--plan") args.plan = next();
+  else if (a === "--port-wait") args.portWait = Number(next());
   else if (a === "--knobs") {
     const file = next();
     if (!existsSync(file)) die(`no knobs file: ${file}`);
@@ -254,6 +261,21 @@ function killPid(pid) {
     /* gone already */
   }
 }
+/** Process group `pid` (a spec's, the preflight's app: each the leader of its own) ended, with
+ *  everything in it, whatever it does with SIGTERM; on Windows the process and its tree. */
+function endGroup(pid) {
+  if (!pid) return;
+  if (WINDOWS) return killPid(pid);
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    /* nothing left in it */
+  }
+}
+/** The port free for the next app, waited for (`--port-wait`); null when it is, else why not. */
+async function portWhy() {
+  return (await waitPortFree(PORT, args.portWait)) ? null : portStillHeld(PORT);
+}
 /** The deploy workers whose job is in the run's folder, stopped; whether any was. */
 function stopDeployWorkers() {
   if (WINDOWS) {
@@ -299,11 +321,21 @@ function cleanupLab(final = false) {
 const otherCopy = () => (engineWhy === null && LAB_ID && projects(RUN_ROOT).theirs.includes(`cyberctf-${LAB_ID}`) ? `cyberctf-${LAB_ID}` : "");
 
 // --- The app ---------------------------------------------------------------------------------
+/** What the app logs when its WebDriver server can't listen (tauri-plugin-wdio-webdriver): it
+ *  runs on without it, and whatever else answers on the port is driven instead. */
+const BIND_FAILED = /Failed to bind WebDriver server/;
 /** Launches the app once and waits for its embedded WebDriver server (APP_UP_S); null when it
  *  answered, else why not (its output's last lines). */
 async function appComesUp(log) {
+  const held = await portWhy();
+  if (held) return `${held}: the run would drive that app instead of its own`;
   const out = [];
-  const proc = spawn(APP, [], { env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+  const proc = spawn(APP, [], {
+    env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT) },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+    detached: !WINDOWS,
+  });
   proc.stdout.on("data", (d) => out.push(String(d)));
   proc.stderr.on("data", (d) => out.push(String(d)));
   mkdirSync(join(FOLDERS.records, "apps"), { recursive: true });
@@ -318,9 +350,10 @@ async function appComesUp(log) {
     if (!up) await new Promise((r) => setTimeout(r, 1000));
   }
   const exited = proc.exitCode;
-  killPid(proc.pid);
+  endGroup(proc.pid);
   writeFileSync(log, out.join(""));
   stopRunApps();
+  if (up && BIND_FAILED.test(out.join(""))) return `the app couldn't bind its WebDriver port ${PORT}: ${failureTail(out.join(""), 4)}`;
   if (up) return null;
   const tail = failureTail(out.join(""), 8);
   return exited !== null
@@ -441,6 +474,8 @@ function caseEnv(c) {
   if (c.case === "vm-scan") env.CYBERCTF_TEST_SCAN_LAB = LAB_ID;
   return env;
 }
+/** The running spec's process (its group's leader), 0 between specs. */
+let running = 0;
 /** `node specs/<spec>.mjs` for case `c`, its output in its log, killed past its cap: its exit
  *  status (null when killed) and its log's text. */
 function runSpec(c) {
@@ -448,22 +483,29 @@ function runSpec(c) {
   const cap = capOf(c);
   return new Promise((done) => {
     const chunks = [];
+    // A process group of its own (Unix): the spec, the apps it launches and their helpers end
+    // together, whichever way the spec does.
     const proc = spawn(process.execPath, [join(args.plan, "specs", `${c.spec}.mjs`)], {
       cwd: ROOT,
       env: { ...process.env, ...caseEnv(c) },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
+      detached: !WINDOWS,
     });
+    running = proc.pid;
     proc.stdout.on("data", (d) => chunks.push(String(d)));
     proc.stderr.on("data", (d) => chunks.push(String(d)));
     let killed = false;
     const timer = setTimeout(() => {
       killed = true;
       chunks.push(`\nrun.mjs: ${c.case} exceeded its ${cap}s\n`);
-      killPid(proc.pid);
+      endGroup(proc.pid);
     }, cap * 1000);
     proc.on("exit", (code) => {
       clearTimeout(timer);
+      // What the spec left running in its group (an app it never stopped) goes with it.
+      endGroup(proc.pid);
+      running = 0;
       const text = chunks.join("");
       writeFileSync(log, text);
       done({ code: killed ? null : code, text, log, cap });
@@ -488,6 +530,15 @@ async function runCase(c) {
   }
   stopRunApps();
   cleanupLab();
+  // The previous app's port, free before this case's app, or the case would drive that one.
+  const held = await portWhy();
+  if (held) {
+    say(`${c.case}: ${held}`);
+    record({ name: c.case, status: "FAIL", seconds: 0, detail: held, form: c.form, provider: providerOf(c) });
+    state.verdict(c.case, "FAIL", held);
+    ended = `${held}: the run ended`;
+    return null;
+  }
   say(c.case);
   const start = Date.now();
   const { code, text, log, cap } = await runSpec(c);
@@ -512,6 +563,24 @@ async function runCase(c) {
 }
 
 // --- The run -----------------------------------------------------------------------------------
+// Stopped from outside (the rig's cap, a Ctrl-C): the running spec's group, the run's apps, its
+// labs and its folder go as at the end, so no app outlives the run holding the port.
+let stopping = false;
+function stopped(signal) {
+  if (stopping) return;
+  stopping = true;
+  console.log(`\nrun.mjs: stopped by ${signal}: ending the running spec and the run's apps`);
+  endGroup(running);
+  stopRunApps();
+  dropUtmVm();
+  cleanupLab(true);
+  dropRunRoot();
+  process.exit(signal === "SIGINT" ? 130 : 143);
+}
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => stopped(signal));
+// Any other way out (die()) ends the running spec's group too.
+process.on("exit", () => endGroup(running));
+
 say(`app: ${APP}`);
 say(`lab: ${LAB}${LAB_OK ? ` (${LAB_NAME}, id ${LAB_ID})` : " (not a lab folder)"}`);
 const preflight = await appComesUp(join(LOGS, "preflight.log"));

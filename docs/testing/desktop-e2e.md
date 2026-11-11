@@ -96,6 +96,15 @@ that runs out fails with its own reason first. An app that dies under a spec (We
 `ECONNREFUSED`) is started again once, to see whether it comes up at all; a second death, or none,
 ends the run with that reason, the specs left skipped.
 
+One app at a time answers on the WebDriver port (`TAURI_WEBDRIVER_PORT`, 4445). Each spec runs in
+a process group of its own, ended with all it holds (its apps, whatever they started) when the spec
+exits, at its cap, or when the run itself is stopped (SIGINT, SIGTERM, SIGHUP; on Windows
+`taskkill /T`). Before each app, the runner's and each launch in a spec, the port is waited for,
+10 s at most (`lib/host.mjs`): an app that can't bind it runs on without its server, and the spec
+would drive whatever still answers there, another copy of the app among them, without its own
+knobs. A port still held fails the case (`the previous app still holds port 4445 (pid …: …)`) and
+ends the run, the cases left skipped; held before the run starts, it refuses to run.
+
 The cases fall into four groups (`cases.tsv`'s last column; `--group <name>`, `-Group`), for a
 caller that runs them as parallel jobs, each on a machine of its own; a group holds the providers
 of what its specs need, so `launch` is in two:

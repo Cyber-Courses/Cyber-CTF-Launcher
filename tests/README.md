@@ -13,7 +13,8 @@ tests/
   desktop/cases.tsv      the desktop cases, in the runner's order: id, spec, form, knobs, groups
   desktop/specs/         one spec a file, `<spec>.mjs`, its needs declared on its first lines
   desktop/lib/           what the specs share (support.mjs), what a run owns (owned.mjs), the plan (plan.mjs:
-                         the cases, the needs, the groups, the verdicts a need not met gives)
+                         the cases, the needs, the groups, the verdicts a need not met gives), the app's
+                         WebDriver port (host.mjs: free, held by whom, waited for)
   web/                   the Playwright specs against the dev mock (`pnpm dev:web`), `<area>.spec.ts`, and their fixtures
   audit/run.sh           the leftover audit: a snapshot of the machine before and after a run, their diff
                          (snapshot.ps1: Windows; snapshot-server.sh: Proxmox, ESXi); leftovers.md is its contract

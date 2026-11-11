@@ -11,6 +11,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
 import { appExit, startEnded, stuckLabReport } from "./diagnose.mjs";
+import { portStillHeld, waitPortFree } from "./host.mjs";
 
 export { runContainers } from "./owned.mjs";
 
@@ -64,11 +65,14 @@ const launched = new Set();
  * Launch the app and wait for its embedded WebDriver server to accept connections. `env` is added
  * to the app's environment (a seed lab, a dead Docker socket, a dead backend), `args` to its
  * command line (a `cyberctf://` link, as the system opens one). The returned child carries
- * `output()`, the app's stdout and stderr so far, for a failure report.
+ * `output()`, the app's stdout and stderr so far, for a failure report. The port is waited for
+ * first (an app just stopped lets it go): one still held, or an app that couldn't bind it, fails
+ * the launch rather than leaving the spec to drive whatever answers there.
  */
 export async function launchApp({ env = {}, args = [] } = {}) {
   const bin = appBinary();
   if (!existsSync(bin)) throw new Error(`app binary not found (build with --features wdio): ${bin}`);
+  if (!(await waitPortFree(PORT))) throw new Error(portStillHeld(PORT));
   const proc = spawn(bin, args, {
     env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT), ...env },
     stdio: ["ignore", "pipe", "pipe"],
@@ -81,6 +85,10 @@ export async function launchApp({ env = {}, args = [] } = {}) {
   proc.output = () => out;
   for (let i = 0; i < 60; i++) {
     if (proc.exitCode !== null) throw new Error(`app exited (code ${proc.exitCode}) before the server came up:\n${out.slice(-800)}`);
+    if (/Failed to bind WebDriver server/.test(out)) {
+      stopApp(proc);
+      throw new Error(`the app couldn't bind its WebDriver port ${PORT}: ${out.slice(-800)}`);
+    }
     try {
       const r = await fetch(`http://127.0.0.1:${PORT}/status`);
       if (r.ok) return proc;
