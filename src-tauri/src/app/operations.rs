@@ -260,9 +260,10 @@ mod tests {
         assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), log);
         worker.kill().unwrap();
         worker.wait().unwrap();
-        // Gone: no longer listed, its log still readable.
+        // Gone without a verdict: no longer listed, its log still readable, ending with how it ended.
         assert_eq!(listed(), None);
-        assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), log);
+        let read = wait(lab_deploy_log(t.dirs(), id.into())).unwrap();
+        assert!(read.starts_with(log) && read.contains("The deploy stopped before it finished"), "{read}");
     }
 
     #[test]
@@ -279,7 +280,10 @@ mod tests {
         assert!(wait(active_operations(t.dirs())).iter().all(|o| o.lab_id != id));
         assert!(!wait(busy_labs(t.dirs())).contains(&id.to_string()));
         assert!(!dir.join(format!("{id}.pid")).exists(), "swept");
-        assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), "Pulling images\n");
+        // Its job, which it never ended, is settled: its log says how it ended, its job file goes.
+        let read = wait(lab_deploy_log(t.dirs(), id.into())).unwrap();
+        assert!(read.starts_with("Pulling images\n") && read.contains("The deploy stopped before it finished"), "{read}");
+        assert!(!dir.join(format!("{id}.json")).exists(), "the job file (its launch token) is gone");
     }
 
     #[cfg(unix)]

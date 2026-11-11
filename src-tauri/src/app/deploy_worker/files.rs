@@ -45,13 +45,55 @@ impl Files {
 
     /// Whether this lab's last finished launch or resume failed (none still running, a launch
     /// status whose [`verdict`] is an error). A failed pause or provisioning run doesn't count.
+    /// A worker that died without a verdict is settled first ([`Files::settle_lost`]).
     pub fn failed(&self) -> bool {
         if self.worker().is_some_and(|w| alive(&w)) {
             return false;
         }
+        self.settle_lost();
         std::fs::read_to_string(&self.launch_status).is_ok_and(|s| verdict(&s).is_err())
     }
+
+    /// Whether a worker took the job and died without ending it: its job file is still there
+    /// (a worker removes it as it ends, whatever its verdict), no verdict was written, and no
+    /// live worker holds the pidfile, nor one just claimed (empty: a start writes the job before
+    /// its worker's pid). Killed (SIGKILL, the Activity Monitor), crashed, or the computer off.
+    fn lost(&self) -> bool {
+        let claimed = std::fs::read(&self.pid).is_ok_and(|b| b.is_empty());
+        self.job.is_file() && !self.status.exists() && !claimed && !self.worker().is_some_and(|w| alive(&w))
+    }
+
+    /// Settles the job of a worker that died without a verdict ([`Files::lost`]), as its own end
+    /// would have ([`super::worker`]'s `conclude`): its failure in its log, as its verdict and,
+    /// for an operation that brings the lab up, as the lab's launch verdict (the lab read as
+    /// running, whatever its start left half set up, until a start that went through), and its
+    /// job file, which carries the launch token, removed. Nothing for a job that ended.
+    pub(super) fn settle_lost(&self) {
+        if !self.lost() {
+            return;
+        }
+        let op = read_job(&self.job).map(|j| j.op).unwrap_or_default();
+        let e = Error::Invalid(LOST.into());
+        log::warn!("deploy worker for {} ended without a verdict: settled as failed", self.job.display());
+        if let Ok(mut log) = crate::platform::private_fs::append(&self.log) {
+            use std::io::Write as _;
+            let _ = writeln!(log, "{}", crate::runtime::deploy_log::failed_line(&e));
+        }
+        let (status, _) = status_line::<()>(&Err(e));
+        if super::worker::sets_launch_verdict(&op)
+            && let Err(e) = std::fs::write(&self.launch_status, &status)
+        {
+            log::error!("couldn't write the launch status {}: {e}", self.launch_status.display());
+        }
+        if let Err(e) = std::fs::write(&self.status, status) {
+            log::error!("couldn't write the deploy status {}: {e}", self.status.display());
+        }
+        remove_job(&self.job);
+    }
 }
+
+/// What a job whose worker died without a verdict says (`Files::settle_lost`).
+pub(super) const LOST: &str = "The deploy stopped before it finished: its background process ended without a result (it was killed, it crashed, or the computer was turned off). Stop the lab to clear what it left, then start it again.";
 
 /// What a status file says for a result, and the worker's exit code that goes with it: `ok`, or
 /// the error as the webview gets it (`error: {"code":…,"message":…}`), its code read back by
@@ -205,6 +247,59 @@ pub(crate) mod tests {
         // A pidfile naming no live worker doesn't hide the verdict.
         std::fs::write(&f.pid, "4000000000").unwrap();
         assert!(f.failed());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_launch_whose_worker_was_killed_is_a_failed_launch_and_its_token_is_removed() {
+        // Regression: a worker killed mid-launch (SIGKILL, a crash, the computer off) wrote no
+        // verdict. Its lab read as running on whatever its start had brought up, set up or not,
+        // and its job file, with the launch token in it, stayed on disk.
+        let dir = temp_dir("lost");
+        let f = Files::of(&dir, "lab-1");
+        std::fs::write(&f.launch_status, "ok").unwrap();
+        std::fs::write(&f.job, serde_json::to_vec(&Job::on_lab("lab-1", super::super::Op::Launch)).unwrap()).unwrap();
+        std::fs::write(&f.log, "Starting the lab…\n").unwrap();
+        std::fs::write(&f.pid, "4000000000").unwrap();
+        assert!(f.failed(), "the killed launch is the lab's last launch, and it failed");
+        let said = verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string();
+        assert_eq!(said, LOST);
+        assert!(verdict(&std::fs::read_to_string(&f.launch_status).unwrap()).is_err());
+        assert!(!f.job.exists(), "the launch token goes with it");
+        assert!(std::fs::read_to_string(&f.log).unwrap().ends_with(&format!("{}\n", crate::runtime::deploy_log::failed_line(&Error::Invalid(LOST.into())))));
+        // Settled once: a start again then writes its own verdict.
+        std::fs::write(&f.launch_status, "ok").unwrap();
+        assert!(!f.failed());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_killed_pause_is_its_own_failure_not_the_labs_launch() {
+        let dir = temp_dir("lost-park");
+        let f = Files::of(&dir, "lab-1");
+        std::fs::write(&f.launch_status, "ok").unwrap();
+        let park = super::super::Op::Park { runtime: crate::runtime::Runtime::Vm, mode: crate::runtime::Park::Pause };
+        std::fs::write(&f.job, serde_json::to_vec(&Job::on_lab("lab-1", park)).unwrap()).unwrap();
+        assert!(!f.failed(), "the lab's last launch went through");
+        assert!(verdict(&std::fs::read_to_string(&f.status).unwrap()).is_err(), "the pause's verdict is its failure");
+        assert!(!f.job.exists());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn a_job_still_being_started_or_one_that_ended_is_not_lost() {
+        let dir = temp_dir("not-lost");
+        let f = Files::of(&dir, "lab-1");
+        std::fs::write(&f.job, serde_json::to_vec(&Job::on_lab("lab-1", super::super::Op::Launch)).unwrap()).unwrap();
+        // Claimed: its pidfile is empty until the worker's pid is written.
+        std::fs::write(&f.pid, "").unwrap();
+        assert!(!f.failed());
+        assert!(f.job.exists() && !f.status.exists(), "nothing written for a worker that is starting");
+        // Ended with its verdict: nothing more to write.
+        std::fs::remove_file(&f.pid).unwrap();
+        std::fs::write(&f.status, "ok").unwrap();
+        f.settle_lost();
+        assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "ok");
         std::fs::remove_dir_all(dir).ok();
     }
 

@@ -333,7 +333,12 @@ fn running_in(d: &Path) -> Vec<String> {
             Some(w) if alive(&w) => out.push(key),
             // Just claimed, its worker not started yet (see `claim`): not stale.
             None if std::fs::read(&p).is_ok_and(|b| b.is_empty()) => {}
-            _ => remove_pidfile(&p),
+            _ => {
+                remove_pidfile(&p);
+                // A worker that died without ending its job: its verdict written for it, its
+                // job (and the launch token in it) gone.
+                Files::of(d, &key).settle_lost();
+            }
         }
     }
     out.sort();

@@ -130,6 +130,9 @@ pub async fn tail(spawned: &Spawned, mut log: impl FnMut(String)) -> Result<()> 
 /// it wrote (a crash's message lands there, on its stderr), also in the app's log with where its
 /// own log is. It said only "stopped without a result", and nothing in the app's log said more.
 fn lost(spawned: &Spawned, last_line: Option<&str>) -> Error {
+    // Its verdict and the lab's, as the worker would have written them: the lab page reads them
+    // after a reload or a relaunch, when this error is long gone.
+    spawned.files.settle_lost();
     let how = ended(spawned.exit.get());
     log::warn!("deploy worker {} ended without a verdict: it {how}; its output is in {}", spawned.worker.pid, spawned.files.log.display());
     let said = last_line.map(|l| format!(" Its last line: {}", l.trim())).unwrap_or_default();

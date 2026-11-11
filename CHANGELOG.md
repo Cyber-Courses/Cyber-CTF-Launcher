@@ -274,6 +274,15 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A lab whose deploy worker was killed reads as failed, and its launch token is removed.** A
+  worker killed mid-start (Activity Monitor, Task Manager, a crash, the computer switched off)
+  wrote no verdict: the lab read as running on whatever its start had brought up, set up or not,
+  and its job file, with the launch token in it, stayed on disk. The app now writes the verdict a
+  dead worker left out when it finds it (following it, listing the running workers, or reading
+  the lab's status): "The deploy stopped before it finished…", the lab's last launch failed, the
+  job file removed, and the failure says to stop the lab to clear what it left. Isothrum's runner
+  now also takes a run whose operation's process died as failed, so its next start clears what
+  it left instead of saying the lab already runs.
 - **A slow download of a container lab's images no longer reads as Docker running out of
   resources.** Starting a lab with the attack box (an 11 GB image) on a slow connection was stopped
   with "The lab's `up` step didn't finish within 30 minutes … check the resources of Docker, the

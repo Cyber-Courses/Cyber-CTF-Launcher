@@ -202,7 +202,7 @@ fn open_log(path: &std::path::Path) -> Option<std::fs::File> {
 /// Whether `op`'s verdict is also the lab's launch verdict (`files::Files::launch_status`, whether
 /// it came up): a launch, from the catalogue or a local folder, and a resume. Not a provisioning
 /// run, which `Action::brings_up` counts as bringing the lab up but which works on a lab already up.
-fn sets_launch_verdict(op: &Op) -> bool {
+pub(super) fn sets_launch_verdict(op: &Op) -> bool {
     matches!(op, Op::Launch | Op::LaunchLocal { .. } | Op::Resume { .. })
 }
 
