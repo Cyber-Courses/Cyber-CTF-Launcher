@@ -219,7 +219,7 @@ mod tests {
     fn spawned(tag: &str) -> (crate::testing::TempDir, Spawned) {
         let dir = crate::testing::temp_dir(tag);
         let files = crate::app::deploy_worker::files::Files::of(&dir, "lab-1");
-        let worker = crate::app::deploy_worker::process::Worker { pid: 4_000_000_000, started: None };
+        let worker = crate::app::deploy_worker::process::Worker { pid: 4_000_000_000, started: None, identity: None };
         (dir, Spawned { files, worker, exit: crate::app::deploy_worker::process::Exit::default() })
     }
 

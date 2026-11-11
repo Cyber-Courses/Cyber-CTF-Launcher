@@ -11,31 +11,43 @@ use super::files::{self, Files, read_worker, write_job};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 
+mod identity;
 mod terraform;
+pub use identity::Identity;
 use terraform::interrupt_terraform;
 
-/// A worker process as its pidfile records it: its id and, when it could be read, its start
-/// time (seconds since the epoch, as the OS reports it). The start time tells the worker from
-/// an unrelated process that got its id after it was gone (Windows recycles ids quickly).
+/// A worker process as its pidfile records it: its id and, when they could be read, its start
+/// time (seconds since the epoch, as the OS reports it) and its [`Identity`] (its boot and its
+/// start within it, which the clock can't move). They tell the worker from an unrelated process
+/// that got its id after it was gone (Windows recycles ids quickly).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Worker {
     pub pid: u32,
     pub started: Option<u64>,
+    pub identity: Option<Identity>,
 }
 
 impl Worker {
-    /// A pidfile's text: `<pid> <start time>`, or a bare `<pid>` (older versions).
+    /// A pidfile's text: `<pid> <start time> <identity>`, or `<pid> <start time>`, or a bare
+    /// `<pid>` (older versions).
     pub fn parse(text: &str) -> Option<Worker> {
         let mut words = text.split_whitespace();
         let pid = words.next()?.parse().ok()?;
-        Some(Worker { pid, started: words.next().and_then(|s| s.parse().ok()) })
+        let started = words.next().and_then(|s| s.parse().ok());
+        Some(Worker { pid, started, identity: started.and(words.next()).and_then(Identity::parse) })
+    }
+
+    /// The worker `pid` as the OS describes it now (`seen`).
+    fn of(pid: u32, seen: Option<&Observed>) -> Worker {
+        Worker { pid, started: seen.map(|o| o.started), identity: seen.and_then(|o| o.identity) }
     }
 
     /// The pidfile's text for this worker.
     fn line(&self) -> String {
-        match self.started {
-            Some(t) => format!("{} {t}", self.pid),
-            None => self.pid.to_string(),
+        match (self.started, self.identity) {
+            (Some(t), Some(id)) => format!("{} {t} {id}", self.pid),
+            (Some(t), None) => format!("{} {t}", self.pid),
+            (None, _) => self.pid.to_string(),
         }
     }
 }
@@ -108,7 +120,7 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
         spawned => spawned.map_err(Error::Io)?,
     };
     let pid = child.id();
-    let worker = Worker { pid, started: observe(pid).map(|o| o.started) };
+    let worker = Worker::of(pid, observe(pid).as_ref());
     pidfile.write_all(worker.line().as_bytes()).map_err(Error::Io)?;
     drop(pidfile);
     let exit = reap(child, f.pid.clone());
@@ -192,8 +204,11 @@ enum AppJob {
 /// A process as the OS describes it right now.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Observed {
-    /// When it started (seconds since the epoch).
+    /// When it started (seconds since the epoch). On Linux computed from the boot time, which
+    /// moves with the clock: [`Observed::identity`] doesn't.
     pub started: u64,
+    /// Its boot and its start within it, when the OS gives them.
+    pub identity: Option<Identity>,
     /// Exited but not reaped yet (or being torn down).
     pub zombie: bool,
     /// Its command line, arguments joined by spaces (empty when the OS wouldn't say).
@@ -252,6 +267,7 @@ fn observe_once(pid: u32) -> Option<Observed> {
     let p = sys.process(pid)?;
     Some(Observed {
         started: p.start_time(),
+        identity: identity::of(pid.as_u32()),
         zombie: matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead),
         cmdline: p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" "),
         exe: p.exe().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()),
@@ -259,7 +275,9 @@ fn observe_once(pid: u32) -> Option<Observed> {
 }
 
 /// Start times read twice can differ by the rounding of the boot time: within this many
-/// seconds they are the same process.
+/// seconds they are the same process. Only for a worker or a process without an [`Identity`]:
+/// on Linux the start time moves with the clock, so a clock set an hour forward made a live
+/// worker read as another process.
 const START_SLACK: u64 = 2;
 
 /// Whether `worker` is a live deploy worker: running (not a zombie), this app's `deploy --job`
@@ -274,7 +292,7 @@ pub fn alive(worker: &Worker) -> bool {
 /// that stand a process in for a worker.
 #[cfg(all(test, unix))]
 pub(crate) fn pidfile_line(pid: u32) -> String {
-    Worker { pid, started: observe(pid).map(|o| o.started) }.line()
+    Worker::of(pid, observe(pid).as_ref()).line()
 }
 
 /// Whether `pid` now presents as a live worker — it has exec'd and its command line shows
@@ -292,8 +310,12 @@ fn is_live_worker(worker: &Worker, seen: Option<&Observed>, this_exe: Option<&st
     if seen.zombie {
         return false;
     }
-    if worker.started.is_some_and(|t| seen.started.abs_diff(t) > START_SLACK) {
-        return false;
+    match (worker.identity, seen.identity) {
+        // Its boot and its start within it, which no clock moves: the very process, or not.
+        (Some(recorded), Some(now)) if recorded != now => return false,
+        (Some(_), Some(_)) => {}
+        _ if worker.started.is_some_and(|t| seen.started.abs_diff(t) > START_SLACK) => return false,
+        _ => {}
     }
     // A pidfile without a start time (older versions) can only be matched by what the process
     // looks like: another program that got the id, whatever its arguments say, is not a worker.
@@ -592,7 +614,7 @@ mod tests {
     }
 
     fn seen(started: u64, cmdline: &str) -> Observed {
-        Observed { started, zombie: false, cmdline: cmdline.into(), exe: Some("cyberctf-desktop".into()) }
+        Observed { started, identity: None, zombie: false, cmdline: cmdline.into(), exe: Some("cyberctf-desktop".into()) }
     }
 
     const WORKER: &str = "/usr/bin/cyberctf-desktop deploy --job /data/deploys/lab-1.json";
@@ -602,7 +624,7 @@ mod tests {
         // Regression: on Windows a pidfile left by a worker long gone named whatever process got
         // its id next, and Stop taskkilled that unrelated process (and its tree). The start time
         // recorded with the pid tells them apart.
-        let w = Worker { pid: 4242, started: Some(1_760_000_000) };
+        let w = Worker { pid: 4242, started: Some(1_760_000_000), identity: None };
         assert!(is_live_worker(&w, Some(&seen(1_760_000_000, WORKER)), None));
         assert!(is_live_worker(&w, Some(&seen(1_760_000_001, WORKER)), None), "rounding");
         assert!(!is_live_worker(&w, Some(&seen(1_760_090_000, WORKER)), None), "another process with the same id");
@@ -611,7 +633,7 @@ mod tests {
         let zombie = Observed { zombie: true, ..seen(1_760_000_000, WORKER) };
         assert!(!is_live_worker(&w, Some(&zombie), None));
         // A pidfile from an older version (no start time) still needs a worker's command line.
-        let legacy = Worker { pid: 4242, started: None };
+        let legacy = Worker { pid: 4242, started: None, identity: None };
         assert!(is_live_worker(&legacy, Some(&seen(1, WORKER)), None));
         assert!(!is_live_worker(&legacy, Some(&seen(1, "/usr/bin/firefox")), None));
         // Arguments the OS won't give: the same program as this app, or nothing.
@@ -620,11 +642,41 @@ mod tests {
         assert!(!is_live_worker(&w, Some(&Observed { exe: None, ..seen(1_760_000_000, "") }), None));
     }
 
+    /// Regression (C4): on Linux the start time the OS reports is computed from the boot time,
+    /// itself the wall clock minus the uptime, so a clock set an hour forward (NTP, by hand, a VM
+    /// restored) moved a live worker's start an hour: it read as another process, its pidfile
+    /// was swept and its job settled as lost. Its identity (its boot and its start within it,
+    /// as the kernel stored them) doesn't move with the clock.
+    #[test]
+    fn a_clock_jump_leaves_a_live_worker_alive_and_a_recycled_pid_still_dead() {
+        let identity = Some(Identity { boot: 0xab, start: 987_654 });
+        let w = Worker { pid: 4242, started: Some(1_760_000_000), identity };
+        // The wall clock set an hour forward, then an hour back, since the worker started.
+        for jumped in [1_760_003_600, 1_759_996_400] {
+            assert!(is_live_worker(&w, Some(&Observed { identity, ..seen(jumped, WORKER) }), None), "{jumped}");
+        }
+        // Another process that got the id, whatever its start time reads as.
+        let other = Some(Identity { boot: 0xab, start: 990_000 });
+        assert!(!is_live_worker(&w, Some(&Observed { identity: other, ..seen(1_760_000_000, WORKER) }), None));
+        let next_boot = Some(Identity { boot: 0xcd, start: 987_654 });
+        assert!(!is_live_worker(&w, Some(&Observed { identity: next_boot, ..seen(1_760_000_000, WORKER) }), None));
+        // A pidfile written before identities (or an OS that gives none): the start time, as before.
+        let older = Worker { identity: None, ..w };
+        assert!(is_live_worker(&older, Some(&Observed { identity, ..seen(1_760_000_001, WORKER) }), None));
+        assert!(!is_live_worker(&older, Some(&Observed { identity, ..seen(1_760_003_600, WORKER) }), None));
+    }
+
     #[test]
     fn pidfile_lines_read_back() {
-        for w in [Worker { pid: 7, started: Some(1_760_000_000) }, Worker { pid: 7, started: None }] {
+        let identity = Some(Identity { boot: u128::MAX, start: 987_654 });
+        for w in [
+            Worker { pid: 7, started: Some(1_760_000_000), identity },
+            Worker { pid: 7, started: Some(1_760_000_000), identity: None },
+            Worker { pid: 7, started: None, identity: None },
+        ] {
             assert_eq!(Worker::parse(&w.line()), Some(w));
         }
+        assert_eq!(Worker::parse("7 1760000000 nope").and_then(|w| w.identity), None);
         assert_eq!(Worker::parse("  "), None);
     }
 
@@ -640,14 +692,14 @@ mod tests {
     #[test]
     fn a_finished_or_foreign_process_is_not_alive() {
         // This test binary is alive but isn't a worker; a reaped child is gone.
-        let me = Worker { pid: std::process::id(), started: observe(std::process::id()).map(|o| o.started) };
+        let me = Worker { pid: std::process::id(), started: observe(std::process::id()).map(|o| o.started), identity: None };
         assert!(me.started.is_some(), "the OS describes this very process");
         assert!(!alive(&me));
         let mut child =
             if cfg!(windows) { std::process::Command::new("cmd").args(["/C", "exit"]).spawn() } else { std::process::Command::new("true").spawn() }.unwrap();
         let pid = child.id();
         child.wait().unwrap();
-        assert!(!alive(&Worker { pid, started: None }));
+        assert!(!alive(&Worker { pid, started: None, identity: None }));
     }
 
     #[cfg(unix)]
@@ -688,12 +740,19 @@ mod tests {
     fn a_live_worker_is_alive_only_with_its_own_start_time() {
         let mut child = fake_worker();
         let pid = child.id();
-        let started = observe(pid).unwrap().started;
-        assert!(alive(&Worker { pid, started: Some(started) }));
-        assert!(!alive(&Worker { pid, started: Some(started - 3600) }));
+        let seen = observe(pid).unwrap();
+        let started = seen.started;
+        assert!(alive(&Worker { pid, started: Some(started), identity: None }));
+        assert!(!alive(&Worker { pid, started: Some(started - 3600), identity: None }));
+        // With its identity, the start time the OS reports may move with the clock (C4).
+        let worker = Worker::of(pid, Some(&seen));
+        assert!(worker.identity.is_some(), "the OS gives this worker's identity");
+        assert!(alive(&Worker { started: Some(started - 3600), ..worker }));
+        let other = worker.identity.map(|id| Identity { start: id.start + 1, ..id });
+        assert!(!alive(&Worker { identity: other, ..worker }));
         child.kill().unwrap();
         child.wait().unwrap();
-        assert!(!alive(&Worker { pid, started: Some(started) }));
+        assert!(!alive(&Worker { pid, started: Some(started), identity: None }));
     }
 
     #[test]
@@ -716,7 +775,7 @@ mod tests {
         let dir = crate::testing::temp_dir("claim-live");
         let f = Files::of(&dir, "lab-1");
         let mut child = fake_worker();
-        let worker = Worker { pid: child.id(), started: observe(child.id()).map(|o| o.started) };
+        let worker = Worker { pid: child.id(), started: observe(child.id()).map(|o| o.started), identity: None };
         std::fs::write(&f.pid, worker.line()).unwrap();
         let err = claim(&f).unwrap_err().to_string();
         assert!(err.contains("already in progress"), "{err}");
@@ -872,7 +931,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_dead_pid_is_gone_at_once() {
-        assert!(gone_within(&Worker { pid: 4_000_000_000, started: None }, 3).await);
+        assert!(gone_within(&Worker { pid: 4_000_000_000, started: None, identity: None }, 3).await);
     }
 
     #[test]
@@ -880,8 +939,9 @@ mod tests {
         // Regression: with a legacy pidfile (no start time) and a recycled id, `kubectl ... deploy --job x`
         // kept the lab "in progress" and got Stop's SIGTERM; the OS names its executable, which isn't
         // this app's, and that is enough.
-        let legacy = Worker { pid: 4242, started: None };
-        let foreign = Observed { started: 1, zombie: false, cmdline: "/usr/bin/kubectl rollout deploy --job x".into(), exe: Some("kubectl".into()) };
+        let legacy = Worker { pid: 4242, started: None, identity: None };
+        let foreign =
+            Observed { started: 1, identity: None, zombie: false, cmdline: "/usr/bin/kubectl rollout deploy --job x".into(), exe: Some("kubectl".into()) };
         assert!(!is_live_worker(&legacy, Some(&foreign), Some("cyberctf-desktop")));
     }
 
@@ -915,7 +975,7 @@ mod tests {
         assert!(!alive(&w), "{w:?} is not the worker started at {started}");
         // A bare pid prefix is some other (or no) process.
         let prefix: u32 = pid.to_string()[..1].parse().unwrap();
-        assert!(!alive(&Worker { pid: prefix, started: None }));
+        assert!(!alive(&Worker { pid: prefix, started: None, identity: None }));
         child.kill().unwrap();
         child.wait().unwrap();
     }

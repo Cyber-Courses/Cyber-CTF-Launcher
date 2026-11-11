@@ -111,3 +111,24 @@ pub fn terminate(pid: u32) {
         }
     }
 }
+
+/// When process `pid` was created (`GetProcessTimes`, 100 ns ticks since 1601): stored by the
+/// kernel at its creation, so a clock set later doesn't move it. None for a process gone or not
+/// readable.
+pub fn process_created(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    let zero = || FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+    let (mut created, mut exited, mut kernel, mut user) = (zero(), zero(), zero(), zero());
+    // SAFETY: a process handle opened, used and closed here; the four FILETIMEs are writable.
+    let read = unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return None;
+        }
+        let read = GetProcessTimes(process, &raw mut created, &raw mut exited, &raw mut kernel, &raw mut user);
+        CloseHandle(process);
+        read
+    };
+    (read != 0).then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
+}

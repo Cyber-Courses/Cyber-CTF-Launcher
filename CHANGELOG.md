@@ -296,6 +296,14 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A clock jump no longer makes a starting lab's worker read as lost.** A deploy worker was
+  recognised by its start time, which Linux computes from the wall clock: once the clock jumped
+  (NTP, set by hand, a VM restored), the live worker read as another process, its pidfile was
+  swept and its start settled as lost while it ran on. It is now recognised by its boot and its
+  start within it, as the kernel stored them (Linux: `/proc/<pid>/stat` and the boot id; macOS:
+  the start stored at the fork and `kern.bootsessionuuid`; Windows: the creation time and the boot
+  number). Pidfiles written before keep the start-time match.
+
 - **A lab whose deploy worker was killed reads as failed, and its launch token is removed.** A
   worker killed mid-start (Activity Monitor, Task Manager, a crash, the computer switched off)
   wrote no verdict: the lab read as running on whatever its start had brought up, set up or not,

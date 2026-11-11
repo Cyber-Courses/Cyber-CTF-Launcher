@@ -1,4 +1,5 @@
-//! libc: process liveness, process-group signals, and the password database.
+//! libc: process liveness, process-group signals, a process's start (macOS), and the password
+//! database.
 
 /// Whether process `pid` exists, by signal 0 (nothing is sent): it does when the signal could be
 /// sent, or was refused (another user's process). An id that would name a group (0, or past
@@ -56,6 +57,42 @@ pub fn login_name() -> Option<String> {
         let pw = libc::getpwuid(libc::getuid());
         if pw.is_null() { None } else { std::ffi::CStr::from_ptr((*pw).pw_name).to_str().ok().map(str::to_string) }
     }
+}
+
+/// When process `pid` started, as the kernel stored it at its fork (seconds and microseconds since
+/// the epoch, `proc_bsdinfo`'s `pbi_start_tv*`, the start time `kinfo_proc` reports too). Stored,
+/// not computed from the boot time: a clock set later doesn't move it. None for a process gone
+/// or not readable.
+#[cfg(target_os = "macos")]
+pub fn process_start(pid: u32) -> Option<(u64, u64)> {
+    let pid = libc::c_int::try_from(pid).ok().filter(|p| *p > 0)?;
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+    let size = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).ok()?;
+    // SAFETY: `info` is a writable `proc_bsdinfo` of `size` bytes, which PROC_PIDTBSDINFO fills.
+    let read = unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, info.as_mut_ptr().cast(), size) };
+    if read != size {
+        return None;
+    }
+    // SAFETY: proc_pidinfo wrote the whole struct (it returned its size); it started zeroed.
+    let info = unsafe { info.assume_init() };
+    Some((info.pbi_start_tvsec, info.pbi_start_tvusec))
+}
+
+/// This boot's id (`kern.bootsessionuuid`), new at every boot and unmoved by the clock (unlike
+/// `kern.boottime`, which the kernel shifts when the clock is set, to keep the uptime true).
+#[cfg(target_os = "macos")]
+pub fn boot_session() -> Option<String> {
+    let name = c"kern.bootsessionuuid";
+    let mut buf = [0u8; 64];
+    let mut len = buf.len();
+    // SAFETY: a NUL-terminated name; `buf` is writable for `len` bytes, and `len` receives the
+    // length written.
+    let code = unsafe { libc::sysctlbyname(name.as_ptr(), buf.as_mut_ptr().cast(), &raw mut len, std::ptr::null_mut(), 0) };
+    if code != 0 {
+        return None;
+    }
+    let text = buf.get(..len)?;
+    std::ffi::CStr::from_bytes_until_nul(text).ok().and_then(|s| s.to_str().ok()).map(str::to_owned)
 }
 
 #[cfg(test)]

@@ -10,7 +10,10 @@ use super::*;
 use crate::testing::proptest_support::config;
 
 fn worker() -> impl Strategy<Value = Worker> {
-    (any::<u32>(), proptest::option::of(any::<u64>())).prop_map(|(pid, started)| Worker { pid, started })
+    let identity = proptest::option::of((any::<u128>(), any::<u64>()).prop_map(|(boot, start)| Identity { boot, start }));
+    (any::<u32>(), proptest::option::of(any::<u64>()), identity)
+        // An identity is written only after a start time.
+        .prop_map(|(pid, started, identity)| Worker { pid, started, identity: started.and(identity) })
 }
 
 proptest! {

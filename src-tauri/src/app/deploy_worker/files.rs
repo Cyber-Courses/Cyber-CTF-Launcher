@@ -229,9 +229,9 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("x.pid");
         std::fs::write(&p, "4242\n").unwrap();
-        assert_eq!(read_worker(&p), Some(Worker { pid: 4242, started: None }));
+        assert_eq!(read_worker(&p), Some(Worker { pid: 4242, started: None, identity: None }));
         std::fs::write(&p, "4242 1760000000\n").unwrap();
-        assert_eq!(read_worker(&p), Some(Worker { pid: 4242, started: Some(1_760_000_000) }));
+        assert_eq!(read_worker(&p), Some(Worker { pid: 4242, started: Some(1_760_000_000), identity: None }));
         std::fs::write(&p, "nope").unwrap();
         assert_eq!(read_worker(&p), None);
         std::fs::write(&p, "").unwrap();
@@ -326,11 +326,11 @@ pub(crate) mod tests {
         let dir = temp_dir("pid-odd");
         let p = dir.join("x.pid");
         for (text, want) in [
-            (" 4242 \r\n", Some(Worker { pid: 4242, started: None })),
-            ("4242\t1760000000\n", Some(Worker { pid: 4242, started: Some(1_760_000_000) })),
-            ("4242 176", Some(Worker { pid: 4242, started: Some(176) })),
-            ("4242 x", Some(Worker { pid: 4242, started: None })),
-            ("42", Some(Worker { pid: 42, started: None })),
+            (" 4242 \r\n", Some(Worker { pid: 4242, started: None, identity: None })),
+            ("4242\t1760000000\n", Some(Worker { pid: 4242, started: Some(1_760_000_000), identity: None })),
+            ("4242 176", Some(Worker { pid: 4242, started: Some(176), identity: None })),
+            ("4242 x", Some(Worker { pid: 4242, started: None, identity: None })),
+            ("42", Some(Worker { pid: 42, started: None, identity: None })),
             ("-1", None),
             ("4294967296", None),
             ("\u{feff}4242", None),

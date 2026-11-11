@@ -4238,6 +4238,18 @@ areas:
         gaps:
           integration: no scenario deletes a running lab's files on the real engine
 
+      - id: resilience.clock-jump
+        what: "The clock jumps (NTP, set by hand, a VM restored) while a lab starts: its deploy worker is still recognised as alive, by its boot and its start within it as the kernel stored them, so its job is never settled as lost (tests/resilience.md C4)."
+        host: false
+        tests:
+          unit:
+            - src-tauri/src/app/deploy_worker/process.rs > a_clock_jump_leaves_a_live_worker_alive_and_a_recycled_pid_still_dead
+            - src-tauri/src/app/deploy_worker/process.rs > a_live_worker_is_alive_only_with_its_own_start_time
+            - src-tauri/src/app/deploy_worker/process/identity.rs > a_proc_stat_line_gives_its_start_in_ticks_since_boot
+            - src-tauri/src/app/deploy_worker/process/identity.rs > a_process_keeps_its_identity_and_another_has_its_own
+        gaps:
+          integration: "no scenario sets the clock: rig proposal resilience-clock-jump (+1 h mid-start, Linux)"
+
       - id: resilience.port-taken
         what: "A port the lab publishes held by another process at start: refused naming the port, nothing started, and a start once it is free works (tests/resilience.md N3)."
         host: true

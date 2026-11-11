@@ -5,7 +5,7 @@
 Every feature the launcher offers its user, area by area, and how well each test tier checks it. The registry is
 [features.yml](features.yml); [README.md](README.md#the-feature-registry) says how a feature or a test is added.
 
-**189 features: 64 Strong, 125 Partial, 0 Unchecked.**
+**190 features: 64 Strong, 126 Partial, 0 Unchecked.**
 
 - A tier: ✔ its tests check the feature's behaviour; ◐ they check part of it (what is missing is under the table); ✖ no test.
 - **Strong**: unit tests, and a tier above that covers it: a real-host one (desktop E2E, integration, setup, package) when the feature depends on the
@@ -61,7 +61,7 @@ Every feature the launcher offers its user, area by area, and how well each test
 | [Auto-update](#auto-update)                                                   | 2        | 0      | 2       | 0         |
 | [Diagnostics and logs](#diagnostics-and-logs)                                 | 3        | 0      | 3       | 0         |
 | [Install, upgrade, uninstall](#install-upgrade-uninstall)                     | 3        | 0      | 3       | 0         |
-| [What a player does that breaks a lab](#what-a-player-does-that-breaks-a-lab) | 11       | 3      | 8       | 0         |
+| [What a player does that breaks a lab](#what-a-player-does-that-breaks-a-lab) | 12       | 3      | 9       | 0         |
 
 ## Account and sign-in
 
@@ -944,7 +944,7 @@ What the partial and missing tiers leave out:
 
 ## What a player does that breaks a lab
 
-11 features: 3 Strong, 8 Partial, 0 Unchecked.
+12 features: 3 Strong, 9 Partial, 0 Unchecked.
 
 | Feature                                                                                                                                                                                                                                                                                                                                | Platforms | Unit | Web E2E | Desktop E2E | Integration | Setup | Package | Rig | Level       |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- | ------- | ----------- | ----------- | ----- | ------- | --- | ----------- |
@@ -958,6 +958,7 @@ What the partial and missing tiers leave out:
 | `resilience.stop-during-start` Stop pressed while the lab starts: the start ends, the lab is taken down and reads as stopped, nothing left, and a start again works (tests/resilience.md S2).                                                                                                                                          | all       | ✔    | ✖       | ✔           | ✖           | ✖     | ✖       | –   | **Strong**  |
 | `resilience.docker-stopped` Docker quit or stopped while a lab starts: the start says Docker isn't running, and a start once it is back works (tests/resilience.md T1).                                                                                                                                                                | all       | ✔    | ✖       | ✖           | ◐           | ✖     | ✖       | –   | **Partial** |
 | `resilience.files-deleted` The lab's generated files deleted while it runs: made again, so its page still sees it and its Stop takes it down; with its whole folder gone, the Stop says what may still run (tests/resilience.md F1, F2).                                                                                               | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –   | **Partial** |
+| `resilience.clock-jump` The clock jumps (NTP, set by hand, a VM restored) while a lab starts: its deploy worker is still recognised as alive, by its boot and its start within it as the kernel stored them, so its job is never settled as lost (tests/resilience.md C4).                                                             | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –   | **Partial** |
 | `resilience.port-taken` A port the lab publishes held by another process at start: refused naming the port, nothing started, and a start once it is free works (tests/resilience.md N3).                                                                                                                                               | all       | ✖    | ✖       | ✖           | ✔           | ✖     | ✖       | –   | **Partial** |
 
 What the partial and missing tiers leave out:
@@ -970,6 +971,7 @@ What the partial and missing tiers leave out:
 - `resilience.window-closed-mid-start`: Unit ✖ covered by the deploy worker's design only (it is no child of the window)
 - `resilience.docker-stopped`: Integration ◐ throwaway machines only (CYBERCTF_TEST_RESILIENCE_THROWAWAY, the OS's stop and start commands as knobs)
 - `resilience.files-deleted`: Integration ✖ no scenario deletes a running lab's files on the real engine
+- `resilience.clock-jump`: Integration ✖ no scenario sets the clock: rig proposal resilience-clock-jump (+1 h mid-start, Linux)
 
 <details><summary>The tests</summary>
 
@@ -983,6 +985,7 @@ What the partial and missing tiers leave out:
 - `resilience.stop-during-start`: Unit: `src-tauri/src/app/deploy_worker.rs > nothing_starts_on_a_lab_while_it_stops`. Desktop E2E: `stop-during-start`.
 - `resilience.docker-stopped` (docker): Unit: `src-tauri/src/runtime/isothrum/errors.rs > docker_stopped_while_a_step_ran_reads_as_a_stopped_engine_on_this_machine_only`. Integration: `resilience-docker-daemon-stopped`.
 - `resilience.files-deleted`: Unit: `src-tauri/src/runtime/isothrum/tests.rs > a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_still_reach_it`, `src-tauri/src/runtime/isothrum/tests.rs > a_running_lab_whose_whole_folder_is_gone_says_what_is_left`.
+- `resilience.clock-jump`: Unit: `src-tauri/src/app/deploy_worker/process.rs > a_clock_jump_leaves_a_live_worker_alive_and_a_recycled_pid_still_dead`, `src-tauri/src/app/deploy_worker/process.rs > a_live_worker_is_alive_only_with_its_own_start_time`, `src-tauri/src/app/deploy_worker/process/identity.rs > a_proc_stat_line_gives_its_start_in_ticks_since_boot`, `src-tauri/src/app/deploy_worker/process/identity.rs > a_process_keeps_its_identity_and_another_has_its_own`.
 - `resilience.port-taken` (docker): Integration: `resilience-docker-port-taken`.
 
 </details>
