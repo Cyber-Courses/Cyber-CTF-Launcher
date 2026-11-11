@@ -55,6 +55,8 @@ describe("command errors", () => {
     expect(Object.keys(en.errors.codes).sort()).toEqual(
       [
         "alreadyInProgress",
+        "boxDownloadFailed",
+        "boxDownloadStalled",
         "commandFailed",
         "dockerDenied",
         "dockerDeniedWindows",

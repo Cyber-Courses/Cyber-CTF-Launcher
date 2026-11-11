@@ -54,6 +54,14 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::Timeout { step, timed_out } => timed_out_step(&step, &timed_out),
         // The lab's images, pulled before its containers start: a slow connection, not the
         // resources of Docker, the hypervisor or the server.
+        // A Vagrant box, downloaded before its VMs boot, in a step of its own (`boxes-<step>`).
+        RunnerError::DownloadStalled { step, after_s, .. } if is_box_download(&step) => {
+            Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) })
+        }
+        // Vagrant ends its sentences with a period; the message adds its own.
+        RunnerError::DownloadFailed { step, reason } if is_box_download(&step) => {
+            Error::coded(Code::BoxDownloadFailed { reason: reason.trim().trim_end_matches('.').to_owned() })
+        }
         RunnerError::DownloadStalled { after_s, .. } => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
         RunnerError::DownloadFailed { reason, .. } => Error::coded(Code::DownloadFailed { reason: reason.trim().to_owned() }),
         RunnerError::ToolTooOld { tool, found, required } => Error::Invalid(format!(
@@ -77,6 +85,12 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         }
         other => by_code(&other),
     }
+}
+
+/// Whether a download step is the one that fetches the boxes a Vagrant start boots: the runner
+/// names it `boxes-<step>`, after the step it downloads for (`boxes-up`).
+fn is_box_download(step: &str) -> bool {
+    step.starts_with("boxes-")
 }
 
 /// The failures whose wording needs nothing but their code (their message is kept otherwise).
@@ -368,6 +382,28 @@ mod tests {
         // A step that ran out of time still says to check the resources.
         let up = TimedOut::NoProgress { after_s: 1800, last_line: None };
         assert!(said(RunnerError::Timeout { step: "up".into(), timed_out: up }).1.contains("the resources of Docker"));
+    }
+
+    /// Regression: a Vagrant box download that stalled or failed (the runner's `boxes-<step>`)
+    /// was told as "the lab's images", a container lab's words.
+    #[test]
+    fn a_vm_box_download_that_stalled_or_failed_is_said_as_the_box() {
+        let stalled = RunnerError::DownloadStalled { step: "boxes-up".into(), after_s: 900, last_line: Some("box: Progress: 41% (Rate: 0/s)".into()) };
+        let (code, text) = said(stalled);
+        assert_eq!(code, Code::BoxDownloadStalled { minutes: 15 });
+        assert_eq!(
+            text,
+            "Downloading the lab's VM box stopped making progress (nothing new for 15 minutes), so it was stopped. Check your internet connection, then try again."
+        );
+        let failed = RunnerError::DownloadFailed { step: "boxes-up".into(), reason: "The box 'bento/debian-12' could not be found.\n".into() };
+        let (code, text) = said(failed);
+        assert_eq!(code, Code::BoxDownloadFailed { reason: "The box 'bento/debian-12' could not be found".into() });
+        assert_eq!(text, "Couldn't download the lab's VM box: The box 'bento/debian-12' could not be found. Check your internet connection, then try again.");
+        // A manifest's own download step, or the images' pull, is still the lab's images.
+        for step in ["pull-up", "pull-start", "boxes"] {
+            let (code, _) = said(RunnerError::DownloadStalled { step: step.into(), after_s: 60, last_line: None });
+            assert_eq!(code, Code::DownloadStalled { minutes: 1 }, "{step}");
+        }
     }
 
     #[test]

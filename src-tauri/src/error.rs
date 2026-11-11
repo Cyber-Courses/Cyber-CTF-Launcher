@@ -123,6 +123,17 @@ pub enum Code {
         /// Why, in the container engine's words.
         reason: String,
     },
+    /// Downloading the lab's VM box (Vagrant's), before its VMs start, showed no progress for
+    /// `minutes`, so it was stopped.
+    BoxDownloadStalled {
+        /// How long it went without progress, in minutes.
+        minutes: u64,
+    },
+    /// The lab's VM box (Vagrant's) couldn't be downloaded, before its VMs start.
+    BoxDownloadFailed {
+        /// Why, in Vagrant's words.
+        reason: String,
+    },
     /// A lab that runs only in a cloud account was started with none picked.
     PickCloudAccount,
     /// A VM lab was started on this machine with no hypervisor here to run it on.
@@ -195,8 +206,9 @@ impl Code {
             }
             Code::ToolMissing { tool } => format!("`{tool}` is not installed or not on PATH"),
             Code::CommandFailed { command, stderr } => format!("`{command}` failed: {stderr}"),
-            Code::DownloadStalled { minutes } => images_stalled(*minutes),
-            Code::DownloadFailed { reason } => format!("Couldn't download the lab's images: {reason}. Check your internet connection, then try again."),
+            Code::DownloadStalled { .. } | Code::DownloadFailed { .. } | Code::BoxDownloadStalled { .. } | Code::BoxDownloadFailed { .. } => {
+                download_message(self)
+            }
             Code::PickCloudAccount => "This lab runs in your cloud account: pick one of your cloud accounts to start it on.".into(),
             Code::NoHypervisor => {
                 "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account."
@@ -209,11 +221,19 @@ impl Code {
     }
 }
 
-/// A download of the lab's images that showed no progress for `minutes`.
-fn images_stalled(minutes: u64) -> String {
-    format!(
-        "Downloading the lab's images stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again: what was already downloaded is kept."
-    )
+/// The message of a download that stalled or failed (`code`): the lab's images, or its VM box.
+fn download_message(code: &Code) -> String {
+    match code {
+        Code::DownloadStalled { minutes } => format!(
+            "Downloading the lab's images stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again: what was already downloaded is kept."
+        ),
+        Code::DownloadFailed { reason } => format!("Couldn't download the lab's images: {reason}. Check your internet connection, then try again."),
+        Code::BoxDownloadStalled { minutes } => format!(
+            "Downloading the lab's VM box stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again."
+        ),
+        Code::BoxDownloadFailed { reason } => format!("Couldn't download the lab's VM box: {reason}. Check your internet connection, then try again."),
+        other => other.message(),
+    }
 }
 
 /// "2 labs are still on this account: stop them before changing its region."
@@ -479,11 +499,13 @@ mod tests {
             Code::NoHypervisor => 28,
             Code::DownloadStalled { .. } => 29,
             Code::DownloadFailed { .. } => 30,
+            Code::BoxDownloadStalled { .. } => 31,
+            Code::BoxDownloadFailed { .. } => 32,
         }
     }
 
     /// How many forms [`form`] tells apart.
-    const FORMS: usize = 31;
+    const FORMS: usize = 33;
 
     #[test]
     fn every_form_has_a_sample() {
@@ -522,6 +544,8 @@ mod tests {
             Code::CommandFailed { command: "vagrant up".into(), stderr: "locked".into() },
             Code::DownloadStalled { minutes: 15 },
             Code::DownloadFailed { reason: "toomanyrequests: You have reached your pull rate limit".into() },
+            Code::BoxDownloadStalled { minutes: 15 },
+            Code::BoxDownloadFailed { reason: "The box 'bento/debian-12' could not be found".into() },
             Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() },
             Code::PickCloudAccount,
             Code::NoHypervisor,

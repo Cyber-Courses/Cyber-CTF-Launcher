@@ -57,6 +57,12 @@ describe("failureKind", () => {
     expect(failureKind("Couldn't download the lab's images: write /var/lib/docker/tmp: no space left on device.", "downloadFailed")).toBe("disk");
   });
 
+  it("reads a VM box download that stalled as the network, and one that failed by Vagrant's words", () => {
+    expect(failureKind("Le téléchargement de la box de VM du lab n'avançait plus", "boxDownloadStalled")).toBe("network");
+    expect(failureKind("Couldn't download the lab's VM box: Could not resolve host: vagrantcloud.com.", "boxDownloadFailed")).toBe("network");
+    expect(failureKind("Couldn't download the lab's VM box: No space left on device.", "boxDownloadFailed")).toBe("disk");
+  });
+
   it("names the operations it reports", () => {
     expect(failureTitleKey("stop")).toBe("labs.failure.title.stop");
     expect(failureTitleKey("provision")).toBe("labs.failure.title.provision");

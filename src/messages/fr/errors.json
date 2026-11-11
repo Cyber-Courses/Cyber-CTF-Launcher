@@ -15,6 +15,8 @@
     "commandFailed": "{command} a échoué : {stderr}",
     "downloadStalled": "Le téléchargement des images du lab n'avançait plus (rien de nouveau depuis {minutes} minutes), il a donc été arrêté. Vérifiez votre connexion Internet, puis réessayez : ce qui est déjà téléchargé est conservé.",
     "downloadFailed": "Impossible de télécharger les images du lab : {reason}. Vérifiez votre connexion Internet, puis réessayez.",
+    "boxDownloadStalled": "Le téléchargement de la box de VM du lab n'avançait plus (rien de nouveau depuis {minutes} minutes), il a donc été arrêté. Vérifiez votre connexion Internet, puis réessayez.",
+    "boxDownloadFailed": "Impossible de télécharger la box de VM du lab : {reason}. Vérifiez votre connexion Internet, puis réessayez.",
     "signInCancelled": "Connexion annulée.",
     "signInDenied": "La connexion a été refusée sur Cyber Auth, vous êtes donc toujours déconnecté. Reconnectez-vous et autorisez Cyber CTF pour continuer.",
     "signInCodeUnavailable": "La connexion avec un code n'est pas encore disponible. Copiez plutôt le lien de connexion dans n'importe quel navigateur, sur cette machine ou une autre.",

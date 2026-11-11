@@ -80,6 +80,14 @@ minutes: number, } } | { "code": "downloadFailed", "args": {
 /**
  * Why, in the container engine's words.
  */
+reason: string, } } | { "code": "boxDownloadStalled", "args": { 
+/**
+ * How long it went without progress, in minutes.
+ */
+minutes: number, } } | { "code": "boxDownloadFailed", "args": { 
+/**
+ * Why, in Vagrant's words.
+ */
 reason: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" } | { "code": "turnedOffByPolicy", "args": { 
 /**
  * The policy setting's name.

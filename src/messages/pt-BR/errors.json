@@ -15,6 +15,8 @@
     "commandFailed": "{command} falhou: {stderr}",
     "downloadStalled": "O download das imagens do lab parou de avançar (nada novo em {minutes} minutos), então foi interrompido. Verifique sua conexão com a internet e tente de novo: o que já foi baixado é mantido.",
     "downloadFailed": "Não foi possível baixar as imagens do lab: {reason}. Verifique sua conexão com a internet e tente de novo.",
+    "boxDownloadStalled": "O download da box de VM do lab parou de avançar (nada novo em {minutes} minutos), então foi interrompido. Verifique sua conexão com a internet e tente de novo.",
+    "boxDownloadFailed": "Não foi possível baixar a box de VM do lab: {reason}. Verifique sua conexão com a internet e tente de novo.",
     "signInCancelled": "Login cancelado.",
     "signInDenied": "O login foi recusado no Cyber Auth, então você continua desconectado. Entre de novo e permita o Cyber CTF para continuar.",
     "signInCodeUnavailable": "Entrar com um código ainda não está disponível. Copie o link de login em qualquer navegador, nesta máquina ou em outra.",

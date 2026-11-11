@@ -1056,6 +1056,24 @@ areas:
           integration: the scenarios pull real images, so the Get images phase runs for real, but none provokes a stalled or failed pull; the runner's own pull-phase tests are Isothrum's, outside this repository
         note: The download-phase fix (f69e4bd9) gave the stall and the failure their own codes, downloadStalled and downloadFailed, in the six languages.
 
+
+      - id: lab-run.box-download
+        what: A VM lab's Vagrant boxes are downloaded in a step of their own, shown as the lab page's Get boxes phase; a download that stops making progress or fails says so in the box's own words (the minutes without progress and the network hint, or Vagrant's reason), not the lab's images.
+        providers:
+          - libvirt
+          - qemu
+          - virtualbox
+          - hyperv
+          - utm
+        host: true
+        tests:
+          unit:
+            - src-tauri/src/runtime/isothrum/errors.rs > a_vm_box_download_that_stalled_or_failed_is_said_as_the_box
+            - src/features/labs/deploy-log.test.ts > gives the boxes downloaded before a Vagrant start their own step, the lab's download its own
+            - src/features/labs/failure-hints.test.ts > reads a VM box download that stalled as the network, and one that failed by Vagrant's words
+            - src/lib/errors.test.ts > "boxDownloadStalled"
+        gaps:
+          integration: no scenario cuts the network while a box downloads (rig proposal resilience-network-drop)
       - id: lab-run.interrupted-deploy-recovery
         what: Quitting or killing the app mid-deploy never cuts it short (detached worker); quit asks first, and a reopened app shows a coherent state and offers to clean up an interrupted start.
         host: true

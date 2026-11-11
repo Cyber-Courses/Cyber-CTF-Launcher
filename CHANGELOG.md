@@ -296,6 +296,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A VM box download that stalls or fails says so as the box.** The boxes a Vagrant start boots
+  are downloaded in a step of their own (`boxes-<step>`); one that stopped making progress or
+  failed was told as "the lab's images". It now reads "Downloading the lab's VM box stopped making
+  progress (nothing new for 15 minutes) …" or "Couldn't download the lab's VM box: <Vagrant's
+  reason> …", with the network hint, in every language.
+
 - **A clock jump no longer makes a starting lab's worker read as lost.** A deploy worker was
   recognised by its start time, which Linux computes from the wall clock: once the clock jumped
   (NTP, set by hand, a VM restored), the live worker read as another process, its pidfile was
