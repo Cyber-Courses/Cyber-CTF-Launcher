@@ -58,7 +58,7 @@ describe("deriveSteps", () => {
 
   it("reads Terraform's init, apply and host setup", () => {
     expect(
-      steps(["Initializing the backend...", "aws_instance.lab: Creating...", "aws_instance.lab: Creation complete", "Waiting for the lab host", "other"]),
+      steps(["Initializing the backend...", "aws_instance.lab: Creating...", "aws_instance.lab: Creation complete", "the lab host is ready", "other"]),
     ).toEqual([
       ["tf-init", "labs.deploy.steps.tfInit", 1],
       ["tf-apply", "labs.deploy.steps.tfApply", 2],

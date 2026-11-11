@@ -72,8 +72,7 @@ function terraformStepper(t: T): Stepper {
     if (/Initializing|terraform init|Installing|Finding .* versions|Reusing previous/.test(l)) return { id: "tf-init", label: t("labs.deploy.steps.tfInit") };
     if (/Creating\.\.\.|Creation complete|Still creating|Destroying|Apply complete|Plan:|will perform|Modif/.test(l))
       return { id: "tf-apply", label: t("labs.deploy.steps.tfApply") };
-    if (/Waiting for the lab host|running:|install Docker|cloud-init|bootstrap|is ready|ready/i.test(l))
-      return { id: "tf-ready", label: t("labs.deploy.steps.tfReady") };
+    if (/running:|install Docker|cloud-init|bootstrap|ready/i.test(l)) return { id: "tf-ready", label: t("labs.deploy.steps.tfReady") };
     return { id: last?.id ?? "tf-init", label: last?.label ?? t("labs.deploy.steps.tfInit") };
   };
 }

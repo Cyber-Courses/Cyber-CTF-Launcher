@@ -252,9 +252,14 @@ fn write_provider_names(dir: &Path) {
     let listed = |providers: &[Provider]| providers.iter().map(|p| format!("\"{}\"", p.id())).collect::<Vec<_>>().join(", ");
     let (servers, clouds) = (listed(&Provider::SERVERS), listed(&Provider::CLOUDS));
     let doc_clouds = "/** The cloud accounts labs run in, in the launcher's order (Rust's `Provider::CLOUDS`). */";
+    let os_names = crate::platform::OS_NAMES.iter().fold(String::new(), |mut l, (id, name)| {
+        let _ = write!(l, " {id}: \"{name}\",");
+        l
+    });
+    let os_doc = "/** Each OS's name, by the machine report's id for it (Rust's `platform::OS_NAMES`). */";
     let doc_on = "/** The names an OS changes (Rust's `Provider::label_on`): VMware's desktop hypervisor is Fusion on\n *  macOS and Workstation elsewhere. */";
     let text = format!(
-        "{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>> = {{\n{on}}};\n\n{doc_local}\nexport const LOCAL_PROVIDERS: readonly Provider[] = [{}];\n\n{doc_emulators}\nexport const EMULATORS: readonly Provider[] = [{}];\n\n{doc_servers}\nexport const SERVER_PROVIDERS = [{servers}] as const satisfies readonly Provider[];\n\n{doc_clouds}\nexport const CLOUD_PROVIDERS = [{clouds}] as const satisfies readonly Provider[];\n",
+        "{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>> = {{\n{on}}};\n\n{doc_local}\nexport const LOCAL_PROVIDERS: readonly Provider[] = [{}];\n\n{doc_emulators}\nexport const EMULATORS: readonly Provider[] = [{}];\n\n{doc_servers}\nexport const SERVER_PROVIDERS = [{servers}] as const satisfies readonly Provider[];\n\n{doc_clouds}\nexport const CLOUD_PROVIDERS = [{clouds}] as const satisfies readonly Provider[];\n\n{os_doc}\nexport const OS_NAMES: Partial<Record<string, string>> = {{{os_names} }};\n",
         ids(|p| !p.is_remote()),
         ids(|p| p.is_emulator()),
     );

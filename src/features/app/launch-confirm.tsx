@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Cloud, Laptop, Server, ShieldAlert } from "lucide-react";
+import { Cloud, Laptop, Server, ShieldAlert, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { confirmLaunch, type LaunchConfirmRequest } from "@/lib/tauri";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -13,8 +13,10 @@ import { useT } from "@/lib/i18n";
 type Request = LaunchConfirmRequest;
 type Place = Request["place"];
 
-const PLACES: readonly Place[] = ["here", "server", "cloud"];
-const ICONS = { here: Laptop, server: Server, cloud: Cloud } as const;
+// Every place the backend can ask about has its icon (a new one fails to compile here), and the
+// prompt lists them in this order.
+const ICONS = { here: Laptop, server: Server, cloud: Cloud } satisfies Record<Place, LucideIcon>;
+const PLACES = Object.keys(ICONS) as Place[];
 
 /** How long before the agent stops waiting (the request's `expiresAtMs`) the prompt stops taking
  *  an answer, so one given at the very end isn't lost on its way. */

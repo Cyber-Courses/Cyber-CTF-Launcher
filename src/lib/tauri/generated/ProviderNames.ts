@@ -39,3 +39,6 @@ export const SERVER_PROVIDERS = ["proxmox", "vmware_esxi"] as const satisfies re
 
 /** The cloud accounts labs run in, in the launcher's order (Rust's `Provider::CLOUDS`). */
 export const CLOUD_PROVIDERS = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"] as const satisfies readonly Provider[];
+
+/** Each OS's name, by the machine report's id for it (Rust's `platform::OS_NAMES`). */
+export const OS_NAMES: Partial<Record<string, string>> = { macos: "macOS", windows: "Windows", linux: "Linux", };

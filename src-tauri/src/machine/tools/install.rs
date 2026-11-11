@@ -314,11 +314,7 @@ fn plan(dep: Dependency) -> Result<Vec<Step>> {
 
 /// Why `dep` can't be installed or removed on this OS: it doesn't run here ([`Dependency::runs_on`]).
 pub(super) fn not_here(dep: Dependency) -> Error {
-    let os = match std::env::consts::OS {
-        "macos" => "macOS",
-        "windows" => "Windows",
-        _ => "Linux",
-    };
+    let os = crate::platform::os_name(std::env::consts::OS);
     Error::Invalid(format!("{} doesn't run on {os}: there is nothing of it to install or remove here.", dep.name()))
 }
 

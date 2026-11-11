@@ -10,6 +10,10 @@ describe("failureKind", () => {
       ["listen tcp 0.0.0.0:8443: bind: address already in use", "ports"],
       ["permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock", "dockerAccess"],
       ["Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?", "docker"],
+      // Each alternative alone: Docker's bind error without "port is already allocated", the
+      // daemon's question without its "cannot connect".
+      ["Error response from daemon: driver failed programming external connectivity: Bind for 127.0.0.1:3306 failed", "ports"],
+      ["error during connect: Is the docker daemon running?", "docker"],
       ["write /var/lib/docker/tmp: no space left on device", "disk"],
       ["error sending request for url (https://api.cyberctf.org/graphql)", "network"],
       ["Couldn't download the Terraform provider plugins (the first run needs internet).", "network"],

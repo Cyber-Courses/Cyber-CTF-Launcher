@@ -27,7 +27,7 @@ export function DeployPanel({ ops, labs, onOpen }: { ops: ActiveOperation[]; lab
             <span className="truncate">{one ? titleOf(one.labId) : t("home.deploy.inProgress")}</span>
           </>
         }
-        meta={one ? operationLabel(one).replace(/…$/, "").toLowerCase() : t("home.running.labs", { count: ops.length })}
+        meta={one ? operationLabel(one) : t("home.running.labs", { count: ops.length })}
         action={
           oneLab && (
             <Button

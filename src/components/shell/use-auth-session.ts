@@ -15,6 +15,19 @@ import { translate } from "@/lib/i18n";
 const SIGNED_IN_POLL_MS = 30_000;
 const SIGNED_OUT: AuthStatus = { loggedIn: false, name: null, email: null };
 
+/** A window's first read of the session, into `set`: a failure is logged and reads as signed out,
+ *  so the window offers to sign in rather than waiting on a session it can't read. The app shell's
+ *  and the first-run setup's one first read. */
+export function readSessionOnce(set: (status: AuthStatus) => void): void {
+  authStatus()
+    .then(set)
+    .catch(
+      warn("reading the sign-in", () => {
+        set(SIGNED_OUT);
+      }),
+    );
+}
+
 /**
  * The player's session, as this window knows it (null until first read).
  *
@@ -69,18 +82,10 @@ export function useAuthSession() {
     emit(AUTH_CHANGED_EVENT).catch(warn("Couldn't tell the other windows about the sign-in"));
   }, []);
 
-  /** The first read: a failure reads as signed out. */
-  const init = useCallback(
-    () =>
-      void authStatus()
-        .then(setAuth)
-        .catch(
-          warn("reading the sign-in", () => {
-            setAuth(SIGNED_OUT);
-          }),
-        ),
-    [],
-  );
+  /** The first read (see [`readSessionOnce`]). */
+  const init = useCallback(() => {
+    readSessionOnce(setAuth);
+  }, []);
 
   return { auth, setAuth, changed, init, reread };
 }

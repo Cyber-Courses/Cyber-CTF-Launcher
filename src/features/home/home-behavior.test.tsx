@@ -177,7 +177,8 @@ describe("DeployPanel", () => {
     // Its title, not its slug or id.
     expect(screen.getByText("GOAD Light")).toBeTruthy();
     expect(screen.queryByText("goad-light")).toBeNull();
-    expect(screen.getByText("provisioning srv02")).toBeTruthy();
+    // The operation as the sidebar says it; the machine keeps its own case (it was "srv02").
+    expect(screen.getByText("Provisioning SRV02…")).toBeTruthy();
     expect(screen.getByText("TASK [users]")).toBeTruthy();
     expect(screen.getByText("SRV02")).toBeTruthy();
     const views = screen.getAllByRole("button", { name: /view/i });

@@ -3,13 +3,13 @@ import type { LastTest } from "@/lib/settings";
 import { cantRun, labHypervisor, localHypervisors } from "@/features/machine/hypervisors";
 import type { LabKind } from "@/features/machine/machine-parts";
 import { GB } from "@/lib/format";
+import { OS_NAMES } from "@/lib/tauri/generated/ProviderNames";
 
 // What the Machine page says about this machine, as pure functions of the system report, the
 // live metrics and the last self-tests.
 
-const OS_NAMES: Partial<Record<string, string>> = { macos: "macOS", windows: "Windows", linux: "Linux" };
-
-/** An OS's name, by the machine report's id for it (`macos`, `windows`, `linux`). */
+/** An OS's name, by the machine report's id for it (`macos`, `windows`, `linux`): Rust's table
+ *  (`platform::OS_NAMES`), the one the launcher's messages use too. */
 export const osName = (os: string): string => OS_NAMES[os] ?? os;
 
 /** Free memory each lab type wants to start comfortably. */
