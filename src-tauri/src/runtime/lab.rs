@@ -443,26 +443,35 @@ mod tests {
         // localhost/isoloom/invoice-portal-api-1-database:latest"). Isoloom 2.1.0 (a180941d)
         // gives the job the machine's `build:` too, so the pull leaves it out and `up --build`
         // builds once for both. Rendered through the pinned Isoloom crates: the pin holds it.
-        let dir = lab(BUILT_WITH_INIT);
-        std::fs::create_dir_all(dir.join("build/database")).unwrap();
-        std::fs::write(dir.join("build/database/Dockerfile"), "FROM mysql:8.0\n").unwrap();
-        std::fs::write(dir.join("build/database/evidence.sh"), "#!/bin/sh\n").unwrap();
-        std::fs::write(dir.join("seed.sh"), "#!/bin/sh\n").unwrap();
-        prepare(&dir, Target::Docker).unwrap();
-        let compose = std::fs::read_to_string(compose_file(&dir)).unwrap();
-        let file: serde_yaml_ng::Value = serde_yaml_ng::from_str(&compose).unwrap();
-        let services = file["services"].as_mapping().unwrap_or_else(|| panic!("no services in\n{compose}"));
-        let service = |name: &str| services.get(name).unwrap_or_else(|| panic!("no service {name} in\n{compose}"));
-        let (database, job) = (service("database"), service("isoloom-init-database-1"));
-        let built = database["image"].as_str().unwrap_or_default();
-        assert!(built.starts_with("localhost/isoloom/") && database["build"].is_mapping(), "the machine builds its image: {database:?}");
-        assert_eq!(job["image"].as_str(), Some(built), "the job runs the image the machine builds");
-        // `pull --ignore-buildable` skips a service with a `build`; a `pull_policy` wouldn't do,
-        // as the pull's `--policy` overrides it.
-        assert_eq!(job["build"], database["build"], "the job is as buildable as the machine, with its build:\n{compose}");
-        let web = service("isoloom-init-web-1");
-        assert!(web["build"].is_null() && web["image"].as_str() == Some("nginx:1.27"), "a pulled image's job is pulled: {web:?}");
-        std::fs::remove_dir_all(dir).unwrap();
+        // Also as an instance (`.cyberctf-instance`), the app's own path for an installed lab: its
+        // files under `.isoloom-<n>/`, its images named `<lab>-<n>-<machine>` (the rig's start of
+        // instance 7 pulled `localhost/isoloom/invoice-portal-api-7-database`).
+        for instance in [None, Some(7)] {
+            let dir = lab(BUILT_WITH_INIT);
+            std::fs::create_dir_all(dir.join("build/database")).unwrap();
+            std::fs::write(dir.join("build/database/Dockerfile"), "FROM mysql:8.0\n").unwrap();
+            std::fs::write(dir.join("build/database/evidence.sh"), "#!/bin/sh\n").unwrap();
+            std::fs::write(dir.join("seed.sh"), "#!/bin/sh\n").unwrap();
+            if let Some(n) = instance {
+                std::fs::write(dir.join(INSTANCE_MARKER), n.to_string()).unwrap();
+            }
+            prepare(&dir, Target::Docker).unwrap();
+            let compose = std::fs::read_to_string(compose_file(&dir)).unwrap();
+            let file: serde_yaml_ng::Value = serde_yaml_ng::from_str(&compose).unwrap();
+            let services = file["services"].as_mapping().unwrap_or_else(|| panic!("no services in\n{compose}"));
+            let service = |name: &str| services.get(name).unwrap_or_else(|| panic!("no service {name} in\n{compose}"));
+            let (database, job) = (service("database"), service("isoloom-init-database-1"));
+            let built = database["image"].as_str().unwrap_or_default();
+            let named = instance.map_or("localhost/isoloom/t-database".to_owned(), |n| format!("localhost/isoloom/t-{n}-database"));
+            assert!(built == named && database["build"].is_mapping(), "the machine builds its image ({instance:?}): {database:?}");
+            assert_eq!(job["image"].as_str(), Some(built), "the job runs the image the machine builds ({instance:?})");
+            // `pull --ignore-buildable` skips a service with a `build`; a `pull_policy` wouldn't
+            // do, as the pull's `--policy` overrides it.
+            assert_eq!(job["build"], database["build"], "the job is as buildable as the machine, with its build: ({instance:?})\n{compose}");
+            let web = service("isoloom-init-web-1");
+            assert!(web["build"].is_null() && web["image"].as_str() == Some("nginx:1.27"), "a pulled image's job is pulled ({instance:?}): {web:?}");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
     }
 
     #[test]
