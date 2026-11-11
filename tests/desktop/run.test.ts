@@ -16,6 +16,7 @@ import {
   readPlan,
   selectCases,
   skipReason,
+  withoutSecrets,
 } from "./lib/plan.mjs";
 
 // The desktop end-to-end's plan (cases.tsv, the specs' declared needs, the groups; lib/plan.mjs)
@@ -317,7 +318,7 @@ describe.skipIf(!unix)("run.mjs on a fake plan", () => {
     expect(r.out).toMatch(/\n1 failed, 2 skipped|\n0 failed, 2 skipped/);
     expect(existsSync(join(r.dir, "logs", "a.log"))).toBe(true);
     // The run's folder went with the run.
-    expect(readdirSync(r.dir).filter((f) => f.startsWith("cyberctf-e2e-"))).toEqual([]);
+    expect(readdirSync(r.dir).filter((f) => f.startsWith("cyberctf-e2e."))).toEqual([]);
   });
 
   it("a need a case provides: its failure skips every case needing it, naming the failure; a pass meets it", () => {
@@ -426,8 +427,37 @@ describe.skipIf(!unix)("run.mjs on a fake plan", () => {
     expect(r.status, r.out).toBe(0);
     expect(r.records.find((x) => x.case === "a/session")?.reason).toBe("");
     expect(r.out).toContain('ok: session (0s) {"accessToken":"t"} mode 0');
-    const kept = readdirSync(r.dir).filter((f) => f.startsWith("cyberctf-e2e-"));
+    const kept = readdirSync(r.dir).filter((f) => f.startsWith("cyberctf-e2e."));
     expect(kept.length).toBe(1);
     expect(r.out).toContain(`kept: the run's folder`);
+  });
+});
+
+describe("the apps' logs", () => {
+  it("are kept without the lines that may name a secret", () => {
+    expect(withoutSecrets("started\nthe launch token is abc\nPassword: x\nfailed: no engine\n")).toBe("started\nfailed: no engine\n");
+    expect(withoutSecrets("")).toBe("");
+  });
+
+  it.skipIf(!unix)("are copied beside the specs' logs before the run's folder goes, the signed-out run's too, never home/", () => {
+    const writes = `import { mkdirSync, writeFileSync } from "node:fs";
+const root = process.env.CYBERCTF_WDIO_ROOT;
+for (const dir of ["app/logs", "app/deploys", "signed-out/app/logs", "home/.cyberctf"]) mkdirSync(root + "/" + dir, { recursive: true });
+writeFileSync(root + "/app/logs/cyberctf.log", "the app started\\nsession token t\\nthe lab failed\\n");
+writeFileSync(root + "/app/deploys/local-lab.log", "deploying\\n");
+writeFileSync(root + "/signed-out/app/logs/cyberctf.log", "signed out\\n");
+writeFileSync(root + "/home/.cyberctf/secrets.log", "never copied\\n");
+console.log("FAILED: it (1s) the lab failed"); process.exit(1);`;
+    const r = runRunner(fakePlan({ a: { body: writes } }), ["--all"]);
+    expect(r.status).toBe(1);
+    const app = join(r.dir, "logs", "app");
+    expect(readFileSync(join(app, "logs", "cyberctf.log"), "utf8")).toBe("the app started\nthe lab failed\n");
+    expect(readFileSync(join(app, "deploys", "local-lab.log"), "utf8")).toBe("deploying\n");
+    expect(readFileSync(join(app, "signed-out", "logs", "cyberctf.log"), "utf8")).toBe("signed out\n");
+    expect(existsSync(join(r.dir, "logs", "home"))).toBe(false);
+    expect(existsSync(join(app, "home"))).toBe(false);
+    expect(r.out).toContain(`the apps' logs: 3 under ${app}`);
+    // The run's folder went all the same.
+    expect(readdirSync(r.dir).filter((f) => f.startsWith("cyberctf-e2e."))).toEqual([]);
   });
 });

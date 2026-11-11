@@ -11,7 +11,8 @@
 //!   build (a release keeps the first two in the keychain otherwise). The tools' own homes
 //!   (Docker's contexts, Vagrant's boxes, SSH keys) stay the user's: the labs run on them;
 //! - on macOS, where the system places a webview's data itself, the webviews use a data store of
-//!   their own ([`WEBVIEW_STORE`]), the test runs' and never the user's;
+//!   the run's own ([`webview_store_of`]: one a run, never the user's), so nothing a run's pages
+//!   stored (a lab's last run, a spec's hooks) shows in the next run;
 //! - nothing registered with the system (the `cyberctf://` scheme), no Store build's files moved.
 //!
 //! The app shell points Tauri's folders and the windows there (`app::test_root_config`); the rest
@@ -24,9 +25,17 @@ use std::path::{Path, PathBuf};
 /// The variable naming the run's folder.
 pub const VAR: &str = "CYBERCTF_WDIO_ROOT";
 
-/// The data store of the webviews of a run's app on macOS: one for every run, apart from the
-/// user's (the store's identifier, 16 bytes).
-pub const WEBVIEW_STORE: [u8; 16] = *b"cyberctf-e2e-run";
+/// The data store of the webviews of a run's app on macOS (the store's identifier, 16 bytes):
+/// the run's own, from its folder (the first 16 bytes of the path's SHA-256; a run's folder is
+/// made fresh for it), apart from the user's and from every other run's: what one run's pages
+/// stored never shows in the next (a fresh run said "last run 3 days ago" from a shared store).
+pub fn webview_store_of(root: &Path) -> [u8; 16] {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
+    let mut id = [0; 16];
+    id.copy_from_slice(&digest[..16]);
+    id
+}
 
 /// The run's folder, when this is a `wdio` build started with one.
 pub fn root() -> Option<PathBuf> {
@@ -54,7 +63,7 @@ pub fn home(root: &Path) -> PathBuf {
 
 /// The data store a new window's webview uses: the run's, in a run's app; the default otherwise.
 pub fn webview_store() -> Option<[u8; 16]> {
-    root().map(|_| WEBVIEW_STORE)
+    root().map(|root| webview_store_of(&root))
 }
 
 #[cfg(test)]
@@ -77,5 +86,15 @@ mod tests {
         assert_eq!(webview_store(), None);
         let dir = absolute();
         assert_eq!((app_dir(&dir), home(&dir)), (dir.join("app"), dir.join("home")));
+    }
+
+    #[test]
+    fn each_run_has_a_webview_store_of_its_own() {
+        let (a, b) = (absolute(), absolute());
+        assert_eq!(webview_store_of(&a), webview_store_of(&a), "the same run keeps its store across its windows");
+        assert_ne!(webview_store_of(&a), webview_store_of(&b), "another run's store is another");
+        assert_ne!(webview_store_of(&a), [0; 16], "never the nil identifier, which WebKit refuses");
+        // The signed-out spec's folder, under the run's, is a run of its own.
+        assert_ne!(webview_store_of(&a), webview_store_of(&a.join("signed-out")));
     }
 }

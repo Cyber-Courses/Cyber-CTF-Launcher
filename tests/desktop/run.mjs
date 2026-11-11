@@ -47,6 +47,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -65,6 +66,7 @@ import {
   selectCases,
   skipReason,
   summaryLine,
+  withoutSecrets,
 } from "./lib/plan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -163,10 +165,38 @@ function skipCase(c, why) {
 // platform/test_root.rs); records/ is the runner's (lib/owned.mjs). Made fresh under the system's
 // temporary folder, its real path (Docker records the Compose files' paths; macOS's TMPDIR is
 // under a link), removed at the end unless CYBERCTF_TEST_DESKTOP_KEEP.
-const RUN_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "cyberctf-e2e-")));
+const RUN_ROOT = realpathSync(mkdtempSync(join(tmpdir(), "cyberctf-e2e.")));
 process.env.CYBERCTF_WDIO_ROOT = RUN_ROOT;
 const FOLDERS = runFolders(RUN_ROOT);
+/** The apps' logs (the app's own and its labs' deploy logs: every `*.log` under `<root>/app`, and
+ *  under the signed-out run's), copied beside the specs' logs (`<logs>/app/`, their paths kept)
+ *  before the run's folder goes, so a failed spec's evidence outlives it. Never `home/` (the
+ *  session, the secrets); a line naming a password, a token or a key is left out (plan.mjs). */
+function saveAppLogs() {
+  const copied = [];
+  for (const [from, to] of [
+    [FOLDERS.app, join(LOGS, "app")],
+    [join(RUN_ROOT, "signed-out", "app"), join(LOGS, "app", "signed-out")],
+  ]) {
+    for (const f of logFilesUnder(from)) {
+      const dest = join(to, f.slice(from.length + 1));
+      mkdirSync(dirname(dest), { recursive: true });
+      writeFileSync(dest, withoutSecrets(readFileSync(f, "utf8")));
+      copied.push(dest);
+    }
+  }
+  if (copied.length) console.log(`the apps' logs: ${copied.length} under ${join(LOGS, "app")}`);
+}
+/** Every `*.log` under `dir`, up to 20 MB each. */
+function logFilesUnder(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith(".log"))
+    .map((e) => join(e.parentPath, e.name))
+    .filter((f) => statSync(f).size < 20_000_000);
+}
 function dropRunRoot() {
+  saveAppLogs();
   if (KEEP) console.log(`kept: the run's folder ${RUN_ROOT} (CYBERCTF_TEST_DESKTOP_KEEP)`);
   else {
     rmSync(RUN_ROOT, { recursive: true, force: true });

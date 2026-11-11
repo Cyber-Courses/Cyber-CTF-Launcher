@@ -62,7 +62,9 @@ With `--results <file>` (`-Results` on Windows) the runner also appends a JSON r
 per check there, and `--list` (`-List`) prints its cases, each with its knobs, groups and needs
 ([tests/README.md](../../tests/README.md#results)).
 Its exit status: 0 nothing failed, 1 a spec failed, 2 the runner itself couldn't run; `STRICT=1`
-fails a skip. Logs: `tests/desktop/.state/logs/<spec>.log`.
+fails a skip. Logs: `tests/desktop/.state/logs/<spec>.log`, and the apps' own logs under
+`tests/desktop/.state/logs/app/` (copied from the run's folder before it goes, without the lines
+that may name a secret).
 
 ## Needs, caps and groups
 

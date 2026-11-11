@@ -202,6 +202,18 @@ export function jsonRecord({ name, status, seconds, reason, form = "", provider 
  *  @returns {string} */
 export const summaryLine = ({ name, status, seconds, detail }) => `${name.padEnd(20)} ${status.padEnd(5)} ${String(seconds).padStart(6)}s  ${detail}`;
 
+/** A line of an app's log that may name a secret (a password, a token, a key): left out of the
+ *  copy the run keeps, as the test rig's own copier leaves it out. */
+export const SECRET_LINE = /password|passwd|token|secret|private key/i;
+
+/** `text` without the lines that may name a secret (SECRET_LINE), a line break kept at the end.
+ *  @param {string} text
+ *  @returns {string} */
+export function withoutSecrets(text) {
+  const kept = text.split("\n").filter((l) => !SECRET_LINE.test(l));
+  return kept.join("\n");
+}
+
 /** The last lines of a log that say what went wrong, for a failure's reason: the app's output
  *  tail a spec printed, else the log's last lines, on one line.
  *  @param {string} log

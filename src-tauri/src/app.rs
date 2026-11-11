@@ -139,7 +139,7 @@ fn app_builder(proxy_note: Option<String>) -> tauri::Builder<AppRuntime> {
 fn test_root_config(config: &mut tauri::Config, root: &std::path::Path) {
     config.app.app_directories_override = Some(tauri::utils::config::AppDirectoriesOverride::Root(platform::test_root::app_dir(root)));
     for window in &mut config.app.windows {
-        window.data_store_identifier = Some(platform::test_root::WEBVIEW_STORE);
+        window.data_store_identifier = Some(platform::test_root::webview_store_of(root));
     }
 }
 
@@ -367,7 +367,8 @@ mod tests {
         context.config_mut().identifier = format!("com.cyberctf.unit-test.{}-{}", std::process::id(), rand::random::<u64>());
         context.config_mut().app.windows.push(tauri::utils::config::WindowConfig::default());
         super::test_root_config(context.config_mut(), &root);
-        assert!(context.config().app.windows.iter().all(|w| w.data_store_identifier == Some(crate::platform::test_root::WEBVIEW_STORE)));
+        let store = crate::platform::test_root::webview_store_of(&root);
+        assert!(context.config().app.windows.iter().all(|w| w.data_store_identifier == Some(store)));
         let app = tauri::test::mock_builder().build(context).expect("mock app");
         let paths = app.path();
         let app_dir = root.join("app");

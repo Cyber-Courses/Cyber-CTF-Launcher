@@ -132,9 +132,14 @@ never reads or changes their labs, settings, session or secrets, and it removes 
   run's, and otherwise names the others and leaves them all. The apps stopped between specs are
   the ones the run launched (`records/apps/<pid>`) and their deploy workers, never another copy
   of the same binary.
-- **Afterwards.** The folder is removed when the run ends, interrupted or not (the run's labs
+- **Afterwards.** The apps' logs (the app's own and its labs' deploy logs, every `*.log` under
+  `app/`, the signed-out run's too; never `home/`, and a line naming a password, a token or a key
+  left out) are copied beside the specs' logs (`tests/desktop/.state/logs/app/`), whatever the
+  verdicts. Then the folder is removed when the run ends, interrupted or not (the run's labs
   taken down first), unless `CYBERCTF_TEST_DESKTOP_KEEP` is set: then the fixture lab stays up
-  and the folder stays, its path in the summary.
+  and the folder stays, its path in the summary. On macOS the webviews' data store is the run's
+  own (its identifier made from the run's folder), so nothing a run's pages stored shows in the
+  next run.
 
 ## Results
 
