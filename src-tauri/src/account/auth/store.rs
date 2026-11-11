@@ -5,7 +5,8 @@
 //! re-prompts for access on each run ("...wants to use your confidential information").
 //! A file avoids that churn while developing. (A signed release build, with a stable code
 //! signature + keychain-access-group, prompts at most once.) Both stores are built in every
-//! build, so each is checked and tested; `cfg!(debug_assertions)` picks one.
+//! build, so each is checked and tested; [`in_a_file`] picks one: a test, whatever profile built
+//! it, keeps the session in a file too, never in the system's keychain.
 
 use serde::{Deserialize, Serialize};
 
@@ -26,10 +27,11 @@ pub(super) struct Session {
     pub picture: Option<String>,
 }
 
-/// Whether this build keeps the session in a file (a dev build, or an end-to-end run's app,
-/// `platform::test_root`) rather than the keychain.
+/// Whether this build keeps the session in a file (a dev build, a test build whatever its
+/// profile, or an end-to-end run's app, `platform::test_root`) rather than the keychain: a test
+/// binary built with a release-like profile (the rig's `rig`) has no debug assertions.
 fn in_a_file() -> bool {
-    cfg!(debug_assertions) || crate::platform::test_root::root().is_some()
+    cfg!(debug_assertions) || cfg!(test) || crate::platform::test_root::root().is_some()
 }
 
 /// The keychain entry holding the session, or its head when it is split (see [`split_chunks`]).
@@ -274,6 +276,13 @@ pub(super) async fn clear() -> Result<()> {
 #[cfg(test)]
 mod chunk_tests {
     use super::*;
+
+    #[test]
+    fn a_test_keeps_the_session_in_a_file_whatever_profile_built_it() {
+        // `cargo test --profile rig` (a release) has no debug assertions: the keychain, before.
+        assert!(in_a_file(), "a test reaches the system keychain");
+        assert!(session_file().is_some());
+    }
 
     #[test]
     fn a_session_too_long_for_one_windows_credential_is_split_and_joined_back() {

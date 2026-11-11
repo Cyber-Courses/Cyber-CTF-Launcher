@@ -4,8 +4,8 @@
 //! binary and the keychain would re-prompt on each run (as the sign-in session's store does). Both
 //! stores are built in every build, so each is checked and tested; [`in_a_file`] picks one. An
 //! end-to-end run's app (`platform::test_root`) keeps them in the file too, under the run's folder;
-//! a unit test's, in a file of its own (`use_test_file`, else one per test thread, removed with
-//! it), never the player's.
+//! a test's, whatever profile built it, in a file of its own (`use_test_file`, else one per test
+//! thread, removed with it), never the player's keychain or file.
 //!
 //! A keychain call blocks: the OS may show its unlock prompt and wait for the player. Called
 //! from an async worker, it runs through [`blocking`], so the worker's other tasks move on to
@@ -15,10 +15,12 @@ use super::profile::HostProfile;
 use crate::error::{Code, Error, Result};
 use crate::platform::keychain;
 
-/// Whether this build keeps the secrets in a file (a dev build, or an end-to-end run's app)
-/// rather than the keychain.
+/// Whether this build keeps the secrets in a file (a dev build, a test build whatever its profile,
+/// or an end-to-end run's app) rather than the keychain. A test binary built with a release-like
+/// profile (the rig's `rig`) has no debug assertions, and went to the system's keychain: the real
+/// Secret Service on a headless Linux clone, which refused.
 fn in_a_file() -> bool {
-    cfg!(debug_assertions) || crate::platform::test_root::root().is_some()
+    cfg!(debug_assertions) || cfg!(test) || crate::platform::test_root::root().is_some()
 }
 
 /// The secret stored for `id`. None stored is [`Code::NoPasswordStored`]; a store that can't be
@@ -233,7 +235,12 @@ mod tests {
         std::fs::remove_dir_all(home).unwrap();
     }
 
-    #[cfg(debug_assertions)]
+    #[test]
+    fn a_test_keeps_the_secrets_in_a_file_whatever_profile_built_it() {
+        // `cargo test --profile rig` (a release) has no debug assertions: the keychain, before.
+        assert!(in_a_file(), "a test reaches the system keychain");
+    }
+
     #[test]
     fn a_named_secret_is_kept_beside_the_hosts_and_deleted_alone() {
         let home = home();
@@ -252,7 +259,6 @@ mod tests {
         std::fs::remove_dir_all(home).unwrap();
     }
 
-    #[cfg(debug_assertions)]
     #[test]
     fn a_secrets_file_that_doesnt_parse_is_an_error_and_is_never_written_over() {
         // Regression: it read as no secrets, so saving one host's secret erased every other's.
