@@ -59,13 +59,14 @@ function npmPackages(): NpmLicensed[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** The licence and notice files a package ships, as `name: text`. */
+/** The licence and notice files a package ships, as `name: text`. A package folder that can't be
+ *  read is an error, never a package that "ships no licence file". */
 export function licenseFiles(dir: string): string[] {
   let names: string[];
   try {
     names = readdirSync(dir);
-  } catch {
-    return [];
+  } catch (e) {
+    throw new Error(`can't read the package folder ${dir}: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
   }
   return names
     .filter((n) => /^(licen[cs]e|copying|notice)([.-].*)?$/i.test(n))

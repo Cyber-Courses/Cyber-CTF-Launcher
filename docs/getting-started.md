@@ -33,7 +33,7 @@ install asks for your password or an administrator's approval through your syste
 4. **Test container labs**: starts a tiny two-container lab, checks it works, then deletes it.
 5. **Attack machine**: pick the toolset of the attack box, the machine you attack labs from. Its
    image is a large download; you can change it later in Settings > Labs.
-6. **Virtual machines, Vagrant, VM test**: optional. Only VM labs need them; skip them for now.
+6. **Virtual machines**, **Provisioning** and **Test VM labs**: optional. Only VM labs need them; skip them for now.
 
 You can come back to any step later from the **Machine** page.
 

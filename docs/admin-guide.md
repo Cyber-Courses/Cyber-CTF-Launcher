@@ -13,7 +13,8 @@ In short:
   bundle them.
 - It needs **Cyber CTF's online services** (sign-in, the lab catalogue, starting a lab). It cannot
   run air-gapped.
-- The app installs **per user** (NSIS, macOS, AppImage) or **per machine** (MSI, `.deb`). The
+- The app installs **per user** (NSIS, the Microsoft Store, AppImage) or **per machine** (MSI, the
+  macOS DMG or Homebrew cask, `.deb`). The
   tools labs need are installed on demand, each through the OS's own elevation prompt.
 - Machine-wide settings an administrator can enforce are in the
   [policy reference](reference/policy.md).

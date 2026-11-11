@@ -9,14 +9,18 @@ import { helpAsked } from "./lib/cli.ts";
 
 /** GitHub's anchor for a heading: lowercase, punctuation dropped, spaces to hyphens. */
 export function slug(heading: string): string {
-  return heading
-    .trim()
-    .toLowerCase()
-    .replace(/<[^>]*>/g, "")
-    .replace(/[`*_~]/g, "")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/[^\p{L}\p{N}\s-]/gu, "")
-    .replace(/\s/g, "-");
+  return (
+    heading
+      .trim()
+      .toLowerCase()
+      .replace(/<[^>]*>/g, "")
+      // Emphasis marks go; an underscore inside a word (`lab_dir`) stays, as GitHub keeps it.
+      .replace(/[`*~]/g, "")
+      .replace(/(^|\s)_+|_+(?=\s|$)/g, "$1")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+      .replace(/\s/g, "-")
+  );
 }
 
 /** The anchors of a Markdown file's headings (repeated ones get -1, -2, as on GitHub). */

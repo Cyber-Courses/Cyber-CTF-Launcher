@@ -1,5 +1,6 @@
 // The quality ratchet (`pnpm quality`): clippy, ESLint, the source scans, jscpd and knip, counted
-// per rule and per area and held to quality-baseline.json. Any error fails; a count above the
+// per rule and per area and held to quality-baseline.json, with `cargo machete`'s unused crates an
+// error. Any error fails; a count above the
 // baseline fails; a count below it is reported, to lock in with `--update`.
 //
 //   pnpm quality                 check
@@ -12,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { helpAsked } from "../lib/cli.ts";
+import { parseArgs } from "./args.ts";
 import { type Baseline, ratchet, readBaseline, writeBaseline } from "./baseline.ts";
 import { runClippy, runMachete } from "./clippy.ts";
 import { eslintExceptions, lintedFiles, runEslint } from "./eslint.ts";
@@ -60,13 +62,18 @@ function list(m: Measure, prefix: string): void {
   for (const f of all) console.log(`${areaOf(f.file)}\t${f.rule}\t${f.file}:${String(f.line)}\t${f.message}`);
 }
 
-async function main(args: readonly string[]): Promise<number> {
+async function main(argv: readonly string[]): Promise<number> {
+  const args = parseArgs(argv);
+  if ("error" in args) {
+    console.error(args.error);
+    return 2;
+  }
   const { measured, errors } = await measure();
-  if (args[0] === "--list") list(measured, args[1] ?? "");
+  if (args.list !== null) list(measured, args.list);
   const before = readBaseline(BASELINE);
   const now = toBaseline(measured, before);
   console.log(`Violations outside runtime/ (${process.platform}):\n${summary(now)}`);
-  const { write, failures, notes } = ratchet(now, before, process.platform, { update: args.includes("--update"), force: args.includes("--force") });
+  const { write, failures, notes } = ratchet(now, before, process.platform, { update: args.update, force: args.force });
   for (const line of [...errors, ...failures]) console.error(line);
   for (const line of notes) console.log(line);
   if (write) writeBaseline(BASELINE, now);

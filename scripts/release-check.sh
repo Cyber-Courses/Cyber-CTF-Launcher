@@ -40,12 +40,14 @@ NODE_WANTED=$(tr -d '[:space:]' <.nvmrc)
 
 prereqs() {
   local missing=0 tool
-  for tool in node pnpm cargo docker; do
+  for tool in node pnpm cargo; do
     command -v "$tool" >/dev/null || { echo "missing: $tool"; missing=1; }
   done
+  # Docker only for the native layer (SKIP=e2e-native runs what CI runs, without it).
+  if wanted e2e-native; then command -v docker >/dev/null || { echo "missing: docker (or SKIP=e2e-native)"; missing=1; }; fi
   node --version | grep -q "^v${NODE_WANTED}\." || { echo "node $(node --version) in use; .nvmrc asks for $NODE_WANTED (nvm install $NODE_WANTED)"; missing=1; }
   cargo machete --version >/dev/null 2>&1 || { echo "missing: cargo-machete (cargo install cargo-machete); pnpm quality needs it"; missing=1; }
-  docker info >/dev/null 2>&1 || echo "note: docker is not running; e2e-native skips the scenarios that run a lab"
+  if wanted e2e-native && ! docker info >/dev/null 2>&1; then echo "note: docker is not running; e2e-native skips the scenarios that run a lab"; fi
   [ "$missing" -eq 0 ]
 }
 # has <command...>: whether the tool answers --version (a cargo subcommand that isn't installed doesn't).

@@ -35,7 +35,8 @@ describe("third-party: notices", () => {
   it("takes a package's licence and notice files, sorted, and nothing else", () => {
     const dir = packageDir({ "LICENSE.md": "MIT text\n", NOTICE: "Notice text", "COPYING-2": "copying", "README.md": "no", "licensed.js": "no" });
     expect(licenseFiles(dir)).toEqual(["COPYING-2:\n\ncopying", "LICENSE.md:\n\nMIT text", "NOTICE:\n\nNotice text"]);
-    expect(licenseFiles(join(dir, "missing"))).toEqual([]);
+    // Regression: a folder that can't be read read as a package with no licence file.
+    expect(() => licenseFiles(join(dir, "missing"))).toThrow(/can't read the package folder .*missing/);
   });
 
   it("writes each licence text once across a package's copies, else what its package.json declares", () => {

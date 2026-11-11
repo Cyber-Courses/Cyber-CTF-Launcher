@@ -9,6 +9,9 @@ describe("check-doc-links", () => {
     expect(slug("Proxy and custom certificate authorities")).toBe("proxy-and-custom-certificate-authorities");
     expect(slug("Privacy and what is sent")).toBe("privacy-and-what-is-sent");
     expect(slug("The `cyberctf://` scheme, v1.2")).toBe("the-cyberctf-scheme-v12");
+    // GitHub keeps an underscore inside a word; emphasis marks go.
+    expect(slug("The `lab_dir` folder")).toBe("the-lab_dir-folder");
+    expect(slug("An _emphasised_ word")).toBe("an-emphasised-word");
   });
 
   it("numbers repeated headings and skips fenced code", () => {

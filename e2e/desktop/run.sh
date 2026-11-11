@@ -32,7 +32,6 @@
 #   CYBERCTF_TEST_CATALOGUE_LAB, CYBERCTF_TEST_CATALOGUE_VM_LAB, CYBERCTF_TEST_SERVER_ENV,
 #   CYBERCTF_TEST_SERVER_LAB, CYBERCTF_TEST_ATTACK_DESKTOP, CYBERCTF_TEST_REMOVE_TOOL: see each spec
 #   TAURI_WEBDRIVER_PORT        the embedded WebDriver port (4445)
-#   DEV_URL_PORT                where a debug build loads its frontend (3206; a dev server there is reused)
 #   CASE_TIMEOUT                seconds for a spec without a lab in a VM (1800; the VM ones get 3 h)
 #   KEEP                        leave the fixture lab running at the end
 #   ONLY, SKIP, STRICT          as every suite runner (scripts/lib/suite.sh)
@@ -73,7 +72,11 @@ LOGS="$NATIVE_STATE/logs"
 mkdir -p "$LOGS"
 CASE_TIMEOUT=${CASE_TIMEOUT:-1800}
 VM_TIMEOUT=10800
-DEV_URL_PORT=${DEV_URL_PORT:-3206}
+# Where a `cargo build` app loads its frontend from: tauri.conf.json's devUrl, compiled into the
+# app (not a knob: another port would serve a frontend the app never loads). A `next dev` already
+# listening there is reused.
+DEV_URL_PORT=$(sed -n 's|.*"devUrl": *"http://localhost:\([0-9]*\)".*|\1|p' src-tauri/tauri.conf.json)
+[ -n "$DEV_URL_PORT" ] || fail_now "no devUrl port in src-tauri/tauri.conf.json"
 export TAURI_WEBDRIVER_PORT=${TAURI_WEBDRIVER_PORT:-4445}
 OS=$(uname -s)
 
@@ -123,7 +126,7 @@ case "$APP_BIN" in
     if serves "$DEV_URL_PORT"; then
       say "frontend: reusing the dev server on port $DEV_URL_PORT"
     else
-      say "frontend: next dev on port $DEV_URL_PORT (a debug build loads devUrl, not out/)"
+      say "frontend: next dev on port $DEV_URL_PORT (a cargo build app loads devUrl, not out/)"
       set -m
       pnpm exec next dev -p "$DEV_URL_PORT" >"$LOGS/next-dev.log" 2>&1 &
       NEXT_PGID=$!
