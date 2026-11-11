@@ -24,7 +24,7 @@ pub(super) fn lab_status(manifest: &Manifest, status: &Status, marked: Option<Pa
         // The hypervisor (or engine) the run is on, as the runner recorded it: the page names it,
         // and offers Pause only where that provider can suspend (vagrant-qemu can't). A lab on a
         // server or cloud account has its provider set by its own run.
-        provider: status.provider.clone(),
+        provider: status.provider.map(|p| isothrum_runner::wire_name(&p)),
         ..LabStatus::default()
     }
 }

@@ -264,6 +264,7 @@ impl LabRun {
     /// where to start: the lab's message, its host ports filled in. `inputs` are the launch's; a
     /// VM lab runs on `provider`.
     pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+        let provider = provider.map(runner_provider).transpose()?;
         up_with(&self.lab().await?, &self.placed(start_options(inputs, provider)), log).await
     }
 
@@ -331,7 +332,7 @@ impl LabRun {
     /// runner's files only, no tool runs.
     pub(crate) fn recorded_provider(&self) -> Result<Option<String>> {
         let runs = self.runner.runs().map_err(errors::from_runner)?;
-        Ok(runs.into_iter().find(|r| r.name == self.name).and_then(|r| r.provider))
+        Ok(runs.into_iter().find(|r| r.name == self.name).and_then(|r| r.provider).map(|p| isothrum_runner::wire_name(&p)))
     }
 
     /// Runs the lab's set-up again on its running machines (`machine`, or all): its provisioners,
@@ -401,7 +402,7 @@ impl LabRun {
     /// when it runs. A status that can't be read is logged, and taken for a run that runs.
     async fn left_down(&self) -> Option<Option<String>> {
         match self.run_status().await {
-            Ok(Some(status)) if !view::runs(&status) => Some(status.provider),
+            Ok(Some(status)) if !view::runs(&status) => Some(status.provider.map(|p| isothrum_runner::wire_name(&p))),
             Ok(_) => None,
             Err(e) => {
                 log::warn!("couldn't read the run's status after UTM's refusal ({e}): trying the same operation again");
@@ -568,7 +569,7 @@ impl<'a> Inputs<'a> {
 /// A start's options: the launch's `inputs` (its values as secrets, and fixed host ports when the
 /// player chose the lab's own), the hypervisor a VM lab runs on, and a parked run resumed rather
 /// than rebuilt.
-fn start_options(inputs: Inputs<'_>, provider: Option<&str>) -> RunOptions {
+fn start_options(inputs: Inputs<'_>, provider: Option<isoloom_manifest::Provider>) -> RunOptions {
     let mut secrets = Secrets::new();
     for (name, value) in inputs.values {
         secrets.insert(name.clone(), SecretValue::new(value.clone()));
@@ -578,6 +579,13 @@ fn start_options(inputs: Inputs<'_>, provider: Option<&str>) -> RunOptions {
         opts = opts.with_provider(p);
     }
     if inputs.default_ports { opts.with_param(isoloom_manifest::contract::PUBLISH_FIXED, "1") } else { opts }
+}
+
+/// The runner's provider for the launcher's provider id `id` (`virtualbox`, `libvirt`…): the same
+/// names on both sides; one the runner doesn't know is refused rather than dropped, so a start
+/// never lands on a hypervisor the player didn't pick.
+fn runner_provider(id: &str) -> Result<isoloom_manifest::Provider> {
+    isothrum_runner::from_wire_name(id).ok_or_else(|| Error::Invalid(format!("the runner knows no hypervisor `{id}`")))
 }
 
 #[cfg(test)]

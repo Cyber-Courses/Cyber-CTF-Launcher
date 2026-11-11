@@ -105,7 +105,7 @@ fn last_place(dirs: &AppDirs, run: isothrum_runner::RunRecord, runtime: Runtime,
         let kind = server::host_provider(dirs, &host)?.filter(|p| !p.is_cloud());
         return Ok(kind.filter(|k| offers(&options.servers, *k)).map(|_| StartPlace { host: Some(host), ..StartPlace::default() }));
     }
-    let provider = run.provider.as_deref().and_then(Provider::from_id);
+    let provider = run.provider.map(|p| isothrum_runner::wire_name(&p)).as_deref().and_then(Provider::from_id);
     Ok(match (run.target, provider) {
         (Target::Docker, _) if options.docker.is_some() => Some(StartPlace::default()),
         (Target::DockerVm, Some(p)) if offers(&options.docker_vm, p) => Some(StartPlace { provider: Some(p), ..StartPlace::default() }),

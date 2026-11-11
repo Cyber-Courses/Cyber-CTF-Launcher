@@ -276,7 +276,14 @@ fn a_start_gives_the_launch_values_to_the_slots_and_resumes_a_parked_run() {
     assert_eq!(fixed.params.get("ISOLOOM_PUBLISH_FIXED").map(String::as_str), Some("1"));
     assert_eq!(fixed.secrets.iter().count(), 0, "the ports choice is no lab input");
     assert_eq!(opts.provider, None);
-    assert_eq!(start_options(Inputs::default(), Some("virtualbox")).provider.as_deref(), Some("virtualbox"), "a VM lab's hypervisor");
+    let hypervisor = runner_provider("virtualbox").unwrap();
+    assert_eq!(start_options(Inputs::default(), Some(hypervisor)).provider, Some(isoloom_manifest::Provider::Virtualbox), "a VM lab's hypervisor");
+    // Every Vagrant provider the launcher starts a lab on has the runner's name (Proxmox is a
+    // target of its own, never one); anything else is refused.
+    for p in crate::runtime::providers::Provider::ALL.into_iter().filter(|p| *p != crate::runtime::providers::Provider::Proxmox) {
+        assert!(runner_provider(p.id()).is_ok(), "{}", p.id());
+    }
+    assert!(runner_provider("nonsense").is_err());
 }
 
 /// The lab's attack box as the launcher places it on this machine: a container added to the
