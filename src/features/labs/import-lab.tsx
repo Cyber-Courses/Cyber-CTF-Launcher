@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { labLaunchLocal } from "@/lib/tauri";
+import { pickFolder } from "@/lib/pickers";
 import { useT } from "@/lib/i18n";
 import { tell } from "@/lib/failure";
 import { notify } from "@/lib/notify";
@@ -21,9 +21,9 @@ export function ImportLab({ hint }: { hint?: string } = {}) {
   const [step, setStep] = useState<string | null>(null);
 
   const pick = () => {
-    open({ directory: true, multiple: false, title: t("labs.import.pick") })
+    pickFolder({ title: t("labs.import.pick") })
       .then((picked) => {
-        if (typeof picked !== "string") return;
+        if (picked === null) return;
         setBusy(true);
         setStep(null);
         return (

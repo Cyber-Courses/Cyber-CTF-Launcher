@@ -24,6 +24,23 @@ describe("confirmDestructive", () => {
     expect(await confirmDestructive(question)).toBe(false);
   });
 
+  it("is answered by the GUI e2e's hook, with no dialog opened: confirm is a yes, cancel a no", async () => {
+    // Regression: the specs patched the webview's `invoke` to answer the dialog, which Tauri
+    // defines read-only, so the real dialog opened under the e2e and nothing could press it.
+    const calls = installTauri();
+    localStorage.setItem("__wdio_confirm__", "confirm");
+    try {
+      expect(await confirmDestructive(question)).toBe(true);
+      localStorage.setItem("__wdio_confirm__", "cancel");
+      expect(await confirmDestructive(question)).toBe(false);
+    } finally {
+      localStorage.removeItem("__wdio_confirm__");
+    }
+    expect(dialogsAsked(calls)).toHaveLength(0);
+    expect(await confirmDestructive(question)).toBe(true);
+    expect(dialogsAsked(calls)).toHaveLength(1);
+  });
+
   it("asks one question at a time: a second press while one is open is a no", async () => {
     let answer: (label: string) => void = () => {};
     const calls = installTauri({ "plugin:dialog|message": () => new Promise<string>((r) => (answer = r)) });

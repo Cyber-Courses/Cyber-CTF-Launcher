@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { ExternalLink, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Requirement } from "@/features/machine/setup-steps/parts";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { PROVIDER_NAMES, PROVIDER_NAMES_ON, ovftoolPlace, type OvftoolLocation, type OvftoolPlaced, type SystemReport } from "@/lib/tauri";
 import { openExternal } from "@/lib/failure";
+import { pickFolder } from "@/lib/pickers";
 import { describeError } from "@/lib/errors";
 import { useT, type T } from "@/lib/i18n";
 
@@ -57,8 +57,8 @@ function usePlaceOvftool(onRefresh: () => void) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
   const place = async () => {
-    const folder = await open({ directory: true, multiple: false, title: t("servers.setup.tools.pickOvftool") });
-    if (typeof folder !== "string") return;
+    const folder = await pickFolder({ title: t("servers.setup.tools.pickOvftool") });
+    if (folder === null) return;
     setBusy(true);
     setNote({ text: t("servers.setup.tools.placing"), ok: true });
     try {

@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { sharedFolderGet, sharedFolderOpen, sharedFolderSet, type SharedFolder } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 import { warn } from "@/lib/failure";
+import { pickFolder } from "@/lib/pickers";
 import { describeError } from "@/lib/errors";
 
 /** The shared folder setting: read once, saved on each change, its folder picked or opened; a
@@ -35,9 +35,9 @@ function useSharedFolder(onSaved?: () => void) {
   };
   // The picker couldn't open (a denied permission): said, not dropped.
   const choose = () => {
-    open({ directory: true, multiple: false, defaultPath: state?.path || undefined, title: t("settings.sharedFolder.pick") })
+    pickFolder({ defaultPath: state?.path || undefined, title: t("settings.sharedFolder.pick") })
       .then((picked) => {
-        if (typeof picked === "string") save(true, picked);
+        if (picked !== null) save(true, picked);
       })
       .catch(fail);
   };

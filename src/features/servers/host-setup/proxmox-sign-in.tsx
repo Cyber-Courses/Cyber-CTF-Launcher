@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { KeyRound, Network } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
@@ -12,6 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import type { SignIn } from "@/features/servers/host-setup/setup-model";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { warn } from "@/lib/failure";
+import { pickFile } from "@/lib/pickers";
 import { useT } from "@/lib/i18n";
 
 // Proxmox's sign-in step: SSH key (the launcher then makes its own API token on the node), API
@@ -60,9 +60,9 @@ function SshKeyFields({ s }: { s: HostSetup }) {
   const t = useT();
   const { sshKey, setSshKey } = s.login;
   const pick = () => {
-    open({ multiple: false, directory: false, defaultPath: sshKey.path || undefined, title: t("servers.setup.connection.sshKeyPick") })
+    pickFile({ defaultPath: sshKey.path || undefined, title: t("servers.setup.connection.sshKeyPick") })
       .then((path) => {
-        if (typeof path === "string") setSshKey("path", path);
+        if (path !== null) setSshKey("path", path);
       })
       .catch(warn("choosing an SSH key"));
   };

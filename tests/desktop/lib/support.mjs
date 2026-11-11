@@ -225,21 +225,14 @@ export function localLabName(lab) {
 
 /**
  * Answers the app's destructive confirmations (`confirmDestructive`, src/lib/confirm.ts) from now
- * on, in this window, with their confirm button (`answer` "cancel": with Cancel): they open the
- * system's own dialog, which WebDriver can't press, so the webview's dialog call is answered
- * before it reaches the core. Called again, it answers the new way.
+ * on, in every window, with their confirm button (`answer` "cancel": with Cancel): they open the
+ * system's own dialog, which WebDriver can't press, so a build with the e2e hooks reads the
+ * answer from the `__wdio_confirm__` key instead of asking. Called again, it answers the new
+ * way; `prepare` drops it when the next app starts.
  */
 export async function confirmSystemDialogs(b, answer = "confirm") {
   await b.execute((a) => {
-    const internals = window.__TAURI_INTERNALS__;
-    internals.__answer = a;
-    if (internals.__confirming) return;
-    const invoke = internals.invoke.bind(internals);
-    internals.invoke = (cmd, args, options) =>
-      cmd === "plugin:dialog|message" && args?.buttons?.OkCancelCustom
-        ? Promise.resolve(args.buttons.OkCancelCustom[internals.__answer === "cancel" ? 1 : 0])
-        : invoke(cmd, args, options);
-    internals.__confirming = true;
+    localStorage.setItem("__wdio_confirm__", a);
   }, answer);
 }
 
@@ -571,19 +564,16 @@ export async function importedLabs(b) {
 // --- System dialogs and windows ---------------------------------------------------------------
 
 /**
- * Answers the app's folder and file pickers (`open` of the dialog plugin) with `path` from now
- * on, in this window: the system's picker is a window WebDriver can't drive, so the webview's
- * call is answered before it reaches the core, as `confirmSystemDialogs` answers confirmations.
- * Called again, it answers with the new path.
+ * Answers the app's folder and file pickers (`pickFolder`, `pickFile`: src/lib/pickers.ts) with
+ * `path` from now on, in every window: the system's picker is a window WebDriver can't drive,
+ * so a build with the e2e hooks reads the answer from the `__wdio_pick__` key instead of opening
+ * one, as `confirmSystemDialogs` answers confirmations. (The webview's `invoke` can't be patched
+ * from here: Tauri defines it read-only, and an assignment to it silently did nothing.) Called
+ * again, it answers with the new path; `prepare` drops it when the next app starts.
  */
 export async function answerPickers(b, path) {
   await b.execute((p) => {
-    const internals = window.__TAURI_INTERNALS__;
-    internals.__pickPath = p;
-    if (internals.__picking) return;
-    const invoke = internals.invoke.bind(internals);
-    internals.invoke = (cmd, args, options) => (cmd === "plugin:dialog|open" ? Promise.resolve(internals.__pickPath) : invoke(cmd, args, options));
-    internals.__picking = true;
+    localStorage.setItem("__wdio_pick__", p);
   }, path);
 }
 
