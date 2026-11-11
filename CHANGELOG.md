@@ -311,6 +311,17 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   Before, the newest kernel's headers came instead, the driver couldn't be built, and VirtualBox
   looked ready until a VM failed to start (#279).
 
+- **QEMU on Linux runs labs with KVM.** The guided setup's QEMU install adds the player to the group
+  `/dev/kvm` belongs to (`kvm` on Debian, Ubuntu, Kali and openSUSE) and asks for the new login that
+  applies it, as the libvirt install and the docker group do. The machine check reads QEMU as ready
+  on Linux only once this account can open `/dev/kvm`, saying which group to join otherwise. Before,
+  QEMU looked ready and every lab's VM was refused: "Could not access KVM kernel module: Permission
+  denied" (#277).
+- **The VM self-test proves what a lab needs on QEMU.** Its test VM boots with the hypervisor's
+  acceleration, as the labs' VMs do, instead of falling back to software emulation without KVM,
+  where it passed and no lab could start; when no hypervisor is ready it says what keeps the
+  preferred one from running VMs (#278).
+
 - **The tools a killed deploy worker ran are ended by the lab's next operation.** A worker killed
   mid-start (Activity Monitor, Task Manager, a crash) left its `docker compose up` or `vagrant up`
   running to its end, and the next start waited on Vagrant's machine lock. With Isothrum's ledger
