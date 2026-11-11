@@ -7,6 +7,7 @@
     "overMany": "{count} contas passaram do orçamento mensal. Novos labs nelas ficam bloqueados até você aumentar o orçamento ou até o próximo mês.",
     "runningNow": "Rodando agora",
     "billingWhileRunning": "cobrados enquanto rodam",
+    "catalogueUnread": "Não foi possível carregar o catálogo de labs ({why}), então um lab rodando em uma das suas contas pode não aparecer em Rodando agora.",
     "autoStops": "para sozinho {time}",
     "stop": "Parar",
     "loading": "Carregando…",

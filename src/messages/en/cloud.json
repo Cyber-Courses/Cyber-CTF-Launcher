@@ -7,6 +7,7 @@
     "overMany": "{count} accounts are over their monthly budget. New labs there are blocked until you raise the budget or next month.",
     "runningNow": "Running now",
     "billingWhileRunning": "billing while they run",
+    "catalogueUnread": "Couldn't load the lab catalogue ({why}), so a lab running on one of your accounts may be missing from Running now.",
     "autoStops": "auto-stops {time}",
     "stop": "Stop",
     "loading": "Loading…",

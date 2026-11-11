@@ -7,6 +7,7 @@
     "overMany": "{count} Konten haben ihr Monatsbudget überschritten. Neue Labs dort sind gesperrt, bis du das Budget erhöhst oder der nächste Monat beginnt.",
     "runningNow": "Läuft gerade",
     "billingWhileRunning": "kostenpflichtig, solange sie laufen",
+    "catalogueUnread": "Der Lab-Katalog ließ sich nicht laden ({why}), daher fehlt unter Läuft gerade vielleicht ein Lab, das in einem deiner Konten läuft.",
     "autoStops": "stoppt automatisch {time}",
     "stop": "Stoppen",
     "loading": "Wird geladen…",

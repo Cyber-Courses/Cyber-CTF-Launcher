@@ -7,6 +7,7 @@
     "overMany": "{count} cuentas han superado su presupuesto mensual. Los nuevos labs ahí quedan bloqueados hasta que subas el presupuesto o empiece el próximo mes.",
     "runningNow": "En ejecución",
     "billingWhileRunning": "se facturan mientras se ejecutan",
+    "catalogueUnread": "No se pudo cargar el catálogo de labs ({why}), así que puede faltar en En ejecución un lab que se ejecuta en una de tus cuentas.",
     "autoStops": "se detiene {time}",
     "stop": "Detener",
     "loading": "Cargando…",

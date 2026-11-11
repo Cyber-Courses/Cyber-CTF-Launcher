@@ -19,7 +19,7 @@ import { useT } from "@/lib/i18n";
 export function CloudScreen() {
   const t = useT();
   const page = useCloudPage();
-  const { hosts, error, running } = page;
+  const { hosts, error, labsError, running } = page;
   const setUp = () => {
     page.openSetup();
   };
@@ -37,6 +37,7 @@ export function CloudScreen() {
         }
       />
       {error && <NoticePanel tone="fail">{error}</NoticePanel>}
+      {labsError && <NoticePanel tone="fail">{t("cloud.screen.catalogueUnread", { why: labsError })}</NoticePanel>}
       <OverBudgetNotice over={page.over} />
       {running.length > 0 && <RunningCloudLabs labs={running} statuses={page.statuses} isBusy={page.isBusy} onStop={page.stopLab} />}
       <Accounts page={page} onSetup={setUp} />

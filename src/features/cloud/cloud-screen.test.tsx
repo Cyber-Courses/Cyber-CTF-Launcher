@@ -47,6 +47,15 @@ async function removeAccount(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("CloudScreen", () => {
+  it("says the catalogue couldn't be loaded, since a lab billing on an account would be missing from Running now", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    installTauri({ api_query: failsWith("the website is offline") });
+    await renderScreen();
+    expect(document.body.textContent).toContain(
+      "Couldn't load the lab catalogue (the website is offline), so a lab running on one of your accounts may be missing from Running now.",
+    );
+  });
+
   it("lists only the cloud accounts, and offers the providers not connected apart from them", async () => {
     const calls = installTauri();
     await renderScreen();

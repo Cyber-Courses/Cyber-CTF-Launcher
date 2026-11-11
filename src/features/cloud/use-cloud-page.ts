@@ -40,7 +40,9 @@ export function useCloudPage() {
   const { tests, test } = useHostTests();
   const budgeted = useMemo(() => (list ? budgetedAccounts(list.hosts, list.budgets) : []), [list]);
   const spend = useMonthSpend(budgeted);
-  const { labs, statuses, refreshStatus } = useLabs();
+  // A catalogue that can't be loaded is said: the labs running on an account would be missing
+  // from Running now without a word, while they bill.
+  const { labs, error: labsError, statuses, refreshStatus } = useLabs();
   // Through the shared lab actions: the lab reads busy everywhere (this list, Labs, its page)
   // until its status after the stop is read, so Stop can't be pressed twice.
   const { runs, stop } = useLabActions(refreshStatus, allHosts ?? NO_HOSTS);
@@ -68,6 +70,8 @@ export function useCloudPage() {
   return {
     hosts,
     error,
+    /** Why the lab catalogue couldn't be loaded, when it couldn't. */
+    labsError,
     tests,
     spend,
     statuses,
