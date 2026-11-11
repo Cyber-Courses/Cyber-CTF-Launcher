@@ -32,6 +32,6 @@ describe("eslintExceptions", () => {
 describe("linted", () => {
   it("lints the folders pnpm lint names, the repository's own among them", () => {
     expect(linted(JSON.stringify({ scripts: { lint: "eslint src --cache e2e" } }))).toEqual(["src", "e2e"]);
-    expect(linted(fs.readFileSync(path.join(import.meta.dirname, "../../package.json"), "utf8"))).toEqual(["src", "scripts", "e2e"]);
+    expect(linted(fs.readFileSync(path.join(import.meta.dirname, "../../package.json"), "utf8"))).toEqual(["src", "scripts", "tests"]);
   });
 });

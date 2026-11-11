@@ -5,7 +5,7 @@
 //! up), run the lab's own checks and assert they pass, park and resume it, then stop it and assert
 //! nothing of it is left. The lab's own checks are the solve/graded proof the brief allows.
 //!
-//! Opt-in (it needs Docker and the labs' own images); `scripts/integration-tests.sh` runs it as the
+//! Opt-in (it needs Docker and the labs' own images); `tests/integration/run.sh` runs it as the
 //! `corpus-docker` scenario, skipped while `CYBERCTF_TEST_DOCKER_LABS` isn't set:
 //!
 //! ```text

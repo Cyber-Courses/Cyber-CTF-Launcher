@@ -19,7 +19,7 @@
 # audit, shellcheck and actionlint (when installed, as lint-infra.yml runs them), pins (every
 # action pinned to a commit SHA), store-listings (the app's JSON and the Microsoft Store listing,
 # as lint-infra.yml checks them; needs python3), e2e-mock (Playwright against the dev mock), e2e-native
-# (e2e/desktop/run.sh, which has its own knobs).
+# (tests/desktop/run.sh, which has its own knobs).
 #
 # Knobs:
 #   RUST_LINES_FLOOR    the Rust line coverage floor (default: coverage.yml's, read from there)
@@ -70,9 +70,9 @@ rust_cov() {
 e2e_mock() {
   if serves "${DEV_URL_PORT:-3206}"; then
     echo "reusing the dev server on port ${DEV_URL_PORT:-3206}"
-    E2E_PORT=${DEV_URL_PORT:-3206} pnpm exec playwright test
+    E2E_PORT=${DEV_URL_PORT:-3206} pnpm test:web
   else
-    pnpm exec playwright test
+    pnpm test:web
   fi
 }
 
@@ -112,8 +112,8 @@ else
 fi
 step e2e-mock e2e_mock
 case "$(uname -s)" in
-  Darwin | Linux) nested e2e-native e2e/desktop/run.sh ;;
-  *) skip e2e-native "run e2e/desktop/run.ps1 on Windows" ;;
+  Darwin | Linux) nested e2e-native tests/desktop/run.sh ;;
+  *) skip e2e-native "run tests/desktop/run.ps1 on Windows" ;;
 esac
 
 suite_end "release check"

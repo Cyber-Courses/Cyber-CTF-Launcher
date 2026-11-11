@@ -3,7 +3,7 @@ name: Native GUI e2e
 # The real app binary (`pnpm tauri build`, which embeds the static export, with the embedded
 # WebDriver server, `--features wdio`, and the frontend's test hooks, `NEXT_PUBLIC_WDIO=1`) driven
 # through its own window under Xvfb, against the runner's Docker engine: the scenarios in
-# e2e/desktop/, as scripts/release/release-check.sh runs them on a developer machine
+# tests/desktop/, as scripts/release/release-check.sh runs them on a developer machine
 # (docs/testing/release-check.md).
 # Manual for now: the scenarios build the fixture lab's images and take a while, and a Linux
 # runner has no hypervisor, so the VM scan is skipped here (a Mac with UTM runs it locally).
@@ -46,11 +46,11 @@ jobs:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           LIBGL_ALWAYS_SOFTWARE: "1"
           RUST_BACKTRACE: "1"
-        run: xvfb-run -a dbus-run-session -- e2e/desktop/run.sh
+        run: xvfb-run -a dbus-run-session -- pnpm test:desktop
       - name: Upload scenario logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: native-e2e-logs
-          path: e2e/desktop/.state/logs
+          path: tests/desktop/.state/logs
           if-no-files-found: ignore

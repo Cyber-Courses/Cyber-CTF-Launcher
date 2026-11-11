@@ -1,6 +1,6 @@
 //! Real labs, end to end, on the real tools: Docker, local hypervisors, cloud accounts and
 //! servers, driven through the launcher's own code. Every test here is opt-in (`#[ignore]`): it
-//! reads its knobs from `CYBERCTF_TEST_*` and returns early without them. `scripts/integration-tests.sh`
+//! reads its knobs from `CYBERCTF_TEST_*` and returns early without them. `tests/integration/run.sh`
 //! runs them by tier; docs/testing/integration.md says what each one guards against.
 
 mod attack_box;
@@ -101,7 +101,7 @@ fn scenario_files() -> Vec<(String, String)> {
         .collect()
 }
 
-/// Every opt-in scenario is run by something: `scripts/integration-tests.sh`, a workflow (by its
+/// Every opt-in scenario is run by something: `tests/integration/run.sh`, a workflow (by its
 /// name or its module's), or the testing docs that say how to run it by hand. One that nothing
 /// named (the Docker corpus) was never run.
 #[cfg(test)]
@@ -112,7 +112,7 @@ mod reached {
     fn every_opt_in_scenario_is_run_by_the_runner_a_workflow_or_the_docs() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let read = |p: &Path| std::fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
-        let mut runners = read(&root.join("scripts/integration-tests.sh"));
+        let mut runners = read(&root.join("tests/integration/run.sh"));
         for doc in ["docs/testing/release-check.md", "docs/testing/integration.md"] {
             runners.push_str(&read(&root.join(doc)));
         }
@@ -132,7 +132,7 @@ mod reached {
                 }
             }
         }
-        assert!(unrun.is_empty(), "name these in scripts/integration-tests.sh, a workflow or docs/testing: {unrun:?}");
+        assert!(unrun.is_empty(), "name these in tests/integration/run.sh, a workflow or docs/testing: {unrun:?}");
     }
 }
 

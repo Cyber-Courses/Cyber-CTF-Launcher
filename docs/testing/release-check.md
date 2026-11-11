@@ -4,7 +4,8 @@ One command runs every layer of tests the launcher has, including the one CI can
 prints one verdict per step:
 
 ```sh
-scripts/release/release-check.sh          # or: pnpm release-check
+scripts/release/release-check.sh                     # or: pnpm release-check
+SKIP=e2e-native scripts/release/release-check.sh     # what CI runs, without the native layer: pnpm check
 ```
 
 It keeps going after a failure, so a single run lists everything that is wrong. `ONLY="…"` and
@@ -39,8 +40,8 @@ the end of this page have been done for what the release changes.
 | `actionlint`      | `actionlint`                              | a mistake in the workflows, as `lint-infra.yml` runs it; skipped when not installed                                                                               |
 | `pins`            | `scripts/check/infra.sh pins`             | an action not pinned to a full commit SHA (a tag can be moved to new code)                                                                                        |
 | `store-listings`  | `.github/scripts/check-store-listings.py` | a message catalogue or Store listing that doesn't parse, a listing over Partner Center's limits or naming a missing image; skipped without `python3`              |
-| `e2e-mock`        | `playwright test`                         | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n   |
-| `e2e-native`      | `e2e/desktop/run.sh`                      | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                            |
+| `e2e-mock`        | `pnpm test:web`                           | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n   |
+| `e2e-native`      | `tests/desktop/run.sh`                    | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                            |
 
 Next allows one dev server per checkout (its dev lock), so when one already serves port 3206
 (`pnpm tauri dev`, or the native runner's), the `e2e-mock` step runs Playwright against it
@@ -54,7 +55,7 @@ to CI.
 
 ## The native layer
 
-`e2e/desktop/run.sh` drives the real app binary through its embedded WebDriver server;
+`tests/desktop/run.sh` drives the real app binary through its embedded WebDriver server;
 [desktop-e2e.md](desktop-e2e.md) has its scenarios, knobs and why an app from `cargo build` needs the dev server.
 
 ## What stays manual
@@ -63,7 +64,7 @@ Not in the gate, run when the release touches them:
 
 - `packaging/windows/smoke-test.ps1`: the NSIS installer on Windows (paths with spaces, second
   instance, corrupt settings, read-only data folder, uninstall keeps data).
-- The integration tests, `scripts/integration-tests.sh` ([integration.md](integration.md)): real labs on
+- The integration tests, `tests/integration/run.sh` ([integration.md](integration.md)): real labs on
   Docker, local VMs, an AWS account and servers (`infra/test-servers/` makes throwaway ones), with
   the attack box on each form. Run it when the release touches running labs.
 - The other ignored Rust tests that need real tools: `real_flag_labs_the_flag_contract_holds_on_the_runner` (the flag

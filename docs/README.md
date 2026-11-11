@@ -35,7 +35,7 @@ the way in: what the launcher is, how to install it, and what it needs.
 | ------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | [Contributing](../CONTRIBUTING.md)                      | set-up, the gates, the tests, commits and pull requests                         |
 | [Architecture](architecture.md)                         | where labs run and what runs them, the code's layout, what is done              |
-| [Testing](testing/README.md)                            | the test layers, where a new test goes, and the conventions                     |
+| [Testing](../tests/README.md)                           | the test tiers, what each needs, where a new test goes, and the conventions     |
 | [The release check](testing/release-check.md)           | the gate before a release                                                       |
 | [Desktop end-to-end](testing/desktop-e2e.md)            | the desktop end-to-end specs                                                    |
 | [Integration tests](testing/integration.md)             | the integration tests and what each scenario guards against                     |

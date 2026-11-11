@@ -34,7 +34,7 @@ jobs:
       # The static export; it also generates the route types tsc checks against.
       - run: pnpm build
       - run: pnpm exec tsc --noEmit
-      - run: pnpm exec eslint src scripts e2e
+      - run: pnpm lint
       - run: pnpm format:check
       # Every relative link and #anchor in the Markdown resolves.
       - run: pnpm check:docs

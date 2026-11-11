@@ -15,7 +15,7 @@ use crate::platform::unwind::{CatchUnwind, panic_message};
 use crate::runtime::attack_machine::{self, Placed};
 use crate::runtime::{LabStatus, docker, isothrum, launch, lifecycle};
 
-/// How a test says it returned because a knob it needs isn't set: `scripts/integration-tests.sh`
+/// How a test says it returned because a knob it needs isn't set: `tests/integration/run.sh`
 /// records the scenario as skipped on this line, where cargo counts the early return as a pass.
 pub(crate) const SKIPPED: &str = "integration test skipped, not set:";
 
@@ -279,8 +279,8 @@ mod tests {
     #[test]
     fn an_unset_knob_is_none_and_said_as_the_runner_reads_it() {
         assert_eq!(knob("CYBERCTF_TEST_NEVER_SET_BY_ANYONE"), None);
-        // scripts/integration-tests.sh records a scenario as skipped on this line.
-        assert!(include_str!("../../../scripts/integration-tests.sh").contains(&format!("KNOB_UNSET=\"{SKIPPED}\"")));
+        // tests/integration/run.sh records a scenario as skipped on this line.
+        assert!(include_str!("../../../tests/integration/run.sh").contains(&format!("KNOB_UNSET=\"{SKIPPED}\"")));
     }
 
     /// A probe runs as the account the box's console opens as: the console's own switch to it is

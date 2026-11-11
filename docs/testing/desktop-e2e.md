@@ -5,16 +5,16 @@ built in with `--features wdio`, never in a release build): no external driver, 
 run on Linux, Windows and macOS. One entry point a system:
 
 ```sh
-e2e/desktop/run.sh --all                                   # Linux, macOS
-e2e/desktop/run.sh --specs "smoke settings" --knobs ~/.config/cyberctf-test/e2e.env
-e2e/desktop/run.sh --app path/to/cyberctf-desktop          # an app already built
-e2e/desktop/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # .deb, .rpm or .AppImage, unpacked
+tests/desktop/run.sh --all                                   # Linux, macOS
+tests/desktop/run.sh --specs "smoke settings" --knobs ~/.config/cyberctf-test/e2e.env
+tests/desktop/run.sh --app path/to/cyberctf-desktop          # an app already built
+tests/desktop/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # .deb, .rpm or .AppImage, unpacked
 ```
 
 ```powershell
-pwsh -File e2e\desktop\run.ps1 -All                        # Windows, in the desktop session
-pwsh -File e2e\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\.config\cyberctf-test\e2e.env
-pwsh -File e2e\desktop\run.ps1 -Package path\to\Cyber.CTF_1.8.9_x64_en-US.msi   # or the NSIS setup .exe
+pwsh -File tests\desktop\run.ps1 -All                        # Windows, in the desktop session
+pwsh -File tests\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\.config\cyberctf-test\e2e.env
+pwsh -File tests\desktop\run.ps1 -Package path\to\Cyber.CTF_1.8.9_x64_en-US.msi   # or the NSIS setup .exe
 ```
 
 Without `--app` or `--package` the runner builds the app with `cargo build --features wdio` and
@@ -25,7 +25,7 @@ from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A pac
 (the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). Before the specs, the runner
 starts the app once and stops with a clear message when no WebDriver server answers. It checks out
 the fixture lab (the Invoice Portal API lab, under `infra/test-servers/.state/labs`, or
-`e2e\desktop\.state\labs` on Windows) unless `CYBERCTF_TEST_LOCAL_LAB` names one.
+`tests\desktop\.state\labs` on Windows) unless `CYBERCTF_TEST_LOCAL_LAB` names one.
 
 ## Results
 
@@ -44,13 +44,13 @@ as each spec ends and prints the summary of `scripts/lib/suite.sh`, a line per s
 check, named `<spec>/<check>` (counted once, under the spec):
 
 ```text
-   title-bar            ok        41s  e2e/desktop/.state/logs/title-bar.log
+   title-bar            ok        41s  tests/desktop/.state/logs/title-bar.log
    title-bar/controls   ok         3s  the main window's header ends with Minimize, Maximize and Close
    form-vm              skip       0s  no hypervisor named: set CYBERCTF_TEST_VM_PROVIDER (...)
 ```
 
 Its exit status: 0 nothing failed, 1 a spec failed, 2 the runner itself couldn't run; `STRICT=1`
-fails a skip. Logs: `e2e/desktop/.state/logs/<spec>.log`.
+fails a skip. Logs: `tests/desktop/.state/logs/<spec>.log`.
 
 ## Knobs
 
@@ -150,14 +150,14 @@ so in the check line.
 | `server-lab`        | Add server, the setup window filled from the settings file (tools installed from it when missing), Save and test passing, the VM test, the server listed and Online, a catalogue lab started, running and removed there, the server removed     |
 | `cleanup`           | Settings > Maintenance: Clean up answered Cancel removes nothing, answered Remove says what it freed; a named installed tool removed                                                                                                            |
 
-The specs are `e2e/desktop/specs/<name>.mjs` and share `e2e/desktop/support.mjs`; a new one is a
+The specs are `tests/desktop/specs/<name>.mjs` and share `tests/desktop/lib/support.mjs`; a new one is a
 short `.mjs` there (its checks through `results()`, its skips through `skipAll`) plus a line in
 `run.sh` and `run.ps1` and a row above.
 
 On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` (or a Hyper-V VM
 `<lab>-<machine>` on Windows) yourself, `<lab>` being the installed lab's isoloom name plus
 `-<instance>` when `labs/<id>/.cyberctf-instance` holds a number, and run
-`e2e/desktop/specs/vm-scan.mjs` with `CYBERCTF_EXPECT_LAB=<lab id>`.
+`tests/desktop/specs/vm-scan.mjs` with `CYBERCTF_EXPECT_LAB=<lab id>`.
 
 ## On the test rig
 
@@ -176,11 +176,11 @@ CYBERCTF_TEST_SERVER_ENV=/home/vagrant/.config/cyberctf-test/rig-proxmox.env
 Then, from the launcher's checkout in the clone:
 
 ```sh
-xvfb-run -a dbus-run-session -- e2e/desktop/run.sh --all --knobs ~/.config/cyberctf-test/e2e.env
+xvfb-run -a dbus-run-session -- tests/desktop/run.sh --all --knobs ~/.config/cyberctf-test/e2e.env
 ```
 
 ```powershell
-pwsh -File e2e\desktop\run.ps1 -All -Knobs $HOME\.config\cyberctf-test\e2e.env
+pwsh -File tests\desktop\run.ps1 -All -Knobs $HOME\.config\cyberctf-test\e2e.env
 ```
 
 The summary's lines are the suite format the rig's Linux runner already reads

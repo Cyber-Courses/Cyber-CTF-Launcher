@@ -93,24 +93,3 @@ describe("a runner's steps", () => {
     expect(out).toBe("The three.sh runner.\n\n  three.sh [--help]\n");
   });
 });
-
-describe("an integration scenario's verdict", () => {
-  /** scripts/integration-tests.sh's `docker-lab` alone, with a `cargo` that answers `script`. */
-  function scenario(script: string) {
-    const dir = mkdtempSync(join(tmpdir(), "scenario-test-"));
-    dirs.push(dir);
-    writeFileSync(join(dir, "cargo"), `#!/bin/sh\n${script}\n`);
-    chmodSync(join(dir, "cargo"), 0o755);
-    const path = `${dir}:${process.env.PATH ?? ""}`;
-    const r = run(join(import.meta.dirname, "..", "integration-tests.sh"), { PATH: path, ISOLOOM: dir, LOGS: dir, ONLY: "docker-lab" });
-    return verdict(r.out, "docker-lab");
-  }
-
-  it("is ok when the test passed, skip when it returned for a knob not set, FAIL when it failed", () => {
-    expect(scenario(`echo "test result: ok. 1 passed; 0 failed"`)).toBe("ok");
-    expect(scenario(`echo "integration test skipped, not set: CYBERCTF_TEST_HELLO_LAB"; echo "test result: ok. 1 passed; 0 failed"`)).toBe("skip");
-    expect(scenario(`echo "test result: FAILED. 0 passed; 1 failed"; exit 101`)).toBe("FAIL");
-    // A filter that matched no test ran nothing: not a pass.
-    expect(scenario(`echo "test result: ok. 0 passed; 0 failed"`)).toBe("FAIL");
-  });
-});

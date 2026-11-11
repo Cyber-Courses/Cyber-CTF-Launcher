@@ -4,14 +4,14 @@ What only the real tools show: a lab on real Docker, Vagrant, hypervisors and cl
 One command runs it, one verdict per scenario:
 
 ```sh
-scripts/integration-tests.sh                       # the local tier (pnpm test:integration)
-TIERS="local aws" scripts/integration-tests.sh     # and the AWS tier: billed while it runs, ~20 minutes
-TIERS=server scripts/integration-tests.sh          # a lab on a Proxmox / ESXi host
-ONLY="box-docker box-vm" scripts/integration-tests.sh
+tests/integration/run.sh                       # the local tier (pnpm test:integration)
+TIERS="local aws" tests/integration/run.sh     # and the AWS tier: billed while it runs, ~20 minutes
+TIERS=server tests/integration/run.sh          # a lab on a Proxmox / ESXi host
+ONLY="box-docker box-vm" tests/integration/run.sh
 ```
 
 Each scenario is an opt-in Rust test (`#[ignore]`, so `cargo test` never runs it), given the
-knobs it needs; its output is in `.integration-tests/<scenario>.log`, its checks (`ok:` / `FAILED:`) on
+knobs it needs; its output is in `tests/integration/.state/logs/<scenario>.log`, its checks (`ok:` / `FAILED:`) on
 the screen. The labs are Isoloom's examples (`ISOLOOM`, default `../isoloom`). Run it before a
 release that touches running labs, after a change to Isoloom or Isothrum, and after any field bug
 in the tiers below (then add the scenario that would have caught it).
@@ -79,7 +79,7 @@ without a window: `integration_tests::setup::the_guided_setup_readies_this_machi
 what the setup window would (the same plan, `machine::setup`, through the same functions as the
 window's commands), one action at a time with its own log, then checks each wanted tool ready by
 the machine report, runs the Docker and VM self-tests and starts and stops an example lab. It
-installs real tools as an administrator, so it is not in `scripts/integration-tests.sh`: the test
+installs real tools as an administrator, so it is not in `tests/integration/run.sh`: the test
 rig's `setup` suite runs it from the built test binary, pass after pass (a pass ends at WSL's
 restart or the docker group's new login), and gives its knobs (`CYBERCTF_TEST_SETUP_PATHS`,
 `_HYPERVISORS`, `_REPORT`, `_LOGS`, `_LAB`; the test's module documentation says each). Without

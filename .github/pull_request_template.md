@@ -4,11 +4,11 @@
 
 ## How it was tested
 
-<!-- The tests added or run (pnpm check, cargo test, pnpm e2e, a real lab…). -->
+<!-- The tests added or run (pnpm test, pnpm test:web, pnpm test:desktop, a real lab…). -->
 
 ## Checklist
 
-- [ ] `pnpm format` passes, and so does `SKIP=e2e-native pnpm release-check` (what CI runs; see
+- [ ] `pnpm format` passes, and so does `pnpm check` (what CI runs; see
       [CONTRIBUTING.md](../CONTRIBUTING.md#the-gates))
 - [ ] `CHANGELOG.md` has a line under **Unreleased** (when a user or an administrator would notice)
 - [ ] The docs the change makes wrong are updated (README, `docs/`)

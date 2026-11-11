@@ -37,21 +37,22 @@ without Git's `usr\bin`); their other assertions still run.
 
 ## Run the tests
 
-| What                                                           | Command                                           |
-| -------------------------------------------------------------- | ------------------------------------------------- |
-| Frontend unit and component tests                              | `pnpm test`                                       |
-| Rust unit tests                                                | `cargo test --manifest-path src-tauri/Cargo.toml` |
-| The UI in Chromium against the dev mock (Playwright)           | `pnpm e2e`                                        |
-| The real app through its embedded WebDriver (Docker, a VM)     | `pnpm e2e:desktop`                                |
-| Real labs on Docker and local VMs (`TIERS="local aws server"`) | `pnpm test:integration`                           |
-| Everything, one verdict per step: the gate before a release    | `pnpm release-check`                              |
+| What                                                              | Command                 |
+| ----------------------------------------------------------------- | ----------------------- |
+| Unit tests: the frontend's, the scripts' and the Rust ones        | `pnpm test`             |
+| The UI in Chromium against the dev mock (Playwright)              | `pnpm test:web`         |
+| The real app through its embedded WebDriver (Docker, a VM)        | `pnpm test:desktop`     |
+| Real labs on Docker and local VMs (more tiers: `tests/README.md`) | `pnpm test:integration` |
+| What CI runs, one verdict per step                                | `pnpm check`            |
+| Everything, the desktop end-to-end too: the gate before a release | `pnpm release-check`    |
 
-[docs/testing/](docs/testing/README.md) says what each layer proves and where a new test goes.
+[tests/README.md](tests/README.md) says what each tier proves and needs, how to run it, and where a
+new test goes.
 Every runner script takes `--help`.
 
 ## The gates
 
-A pull request must pass what CI runs. `pnpm release-check` runs all of it on your machine, one
+A pull request must pass what CI runs. `pnpm check` runs all of it on your machine, one
 verdict per step ([docs/testing/release-check.md](docs/testing/release-check.md) lists them):
 versions, the docs' links, formatting, types, ESLint, the build, the quality ratchet, the unit
 tests with the coverage floors, the committed bindings, clippy for the other platforms, `cargo
@@ -63,8 +64,9 @@ runner step that skipped some of its own steps, reads `skip`, not `ok`. Before y
 
 ```bash
 pnpm format                            # Prettier (TypeScript, CSS, Markdown) and rustfmt
-SKIP=e2e-native pnpm release-check     # what CI runs (the native end-to-end needs a desktop
-                                       # session, Docker and a hypervisor: add it when you can)
+pnpm check                             # what CI runs (pnpm release-check adds the native
+                                       # end-to-end, which needs a desktop session, Docker and a
+                                       # hypervisor: run it when you can)
 ```
 
 - **The quality ratchet** (`pnpm quality`, `quality-baseline.json`): a count of lint warnings,

@@ -9,9 +9,9 @@ import tseslint from "typescript-eslint";
 // count may go down, never up; once it reaches zero the rule goes back to "error" here.
 
 /** Every TypeScript file ESLint checks. */
-const CODE = ["src/**/*.{ts,tsx}", "scripts/**/*.ts"];
+const CODE = ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "tests/**/*.test.ts"];
 /** Tests and their helpers. */
-const TESTS = ["src/**/*.test.{ts,tsx}", "src/test/**", "scripts/**/*.test.ts"];
+const TESTS = ["src/**/*.test.{ts,tsx}", "src/test/**", "scripts/**/*.test.ts", "tests/**/*.test.ts"];
 /** Next.js entry points, which must be default exports. */
 const ENTRY_POINTS = ["src/app/**/{page,layout,error,global-error,not-found,loading}.tsx"];
 

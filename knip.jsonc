@@ -1,10 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // The quality ratchet runs it by path from node_modules (scripts/quality/node-tools.ts).
-  // webdriverio drives the native GUI e2e harness in e2e/desktop/ (not part of the app bundle).
+  // webdriverio drives the native GUI e2e harness in tests/desktop/ (not part of the app bundle).
   "ignoreDependencies": ["jscpd", "webdriverio"],
-  // Loaded by a <script> tag in src/app/layout.tsx, which knip doesn't read; e2e/desktop/ is the
+  // Loaded by a <script> tag in src/app/layout.tsx, which knip doesn't read; tests/desktop/ is the
   // native GUI e2e harness, run on its own, not imported by the app.
   // src/vendor/novnc/ is noVNC as released: the screen window imports its RFB client only.
-  "ignore": ["public/appearance.js", "e2e/desktop/**", "src/vendor/**"],
+  "ignore": ["public/appearance.js", "tests/desktop/**", "src/vendor/**"],
 }
