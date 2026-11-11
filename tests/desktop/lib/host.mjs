@@ -1,11 +1,15 @@
-// The app's WebDriver port on this machine, as the desktop end-to-end's runner and specs see it:
+// What the desktop end-to-end's runner and specs read of this machine. The app's WebDriver port:
 // whether it is free to bind, what holds it, and a wait for it to be freed. One app answers on it
 // at a time (TAURI_WEBDRIVER_PORT); an app that can't bind it runs on without its server, so a
 // spec would drive whatever still answers there (an earlier app, another copy of the app) without
 // the knobs it started its own with. The runner (run.mjs) and the specs' launches (support.mjs)
-// wait for it before each app instead, and stop with what holds it. No dependency of its own, so
-// the runner loads it before webdriverio.
+// wait for it before each app instead, and stop with what holds it. And where the Docker CLI finds
+// its plugins (Compose), which a spec's Docker config of its own must keep. No dependency of its
+// own, so the runner loads it before webdriverio.
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -59,3 +63,26 @@ export function portHolder(port, platform = process.platform) {
 /** Why the next app can't be started: `port` is still held after the wait; who holds it, when
  *  the system says. */
 export const portStillHeld = (port, holder = portHolder(port)) => `the previous app still holds port ${port}${holder ? ` (${holder})` : ""}`;
+
+/**
+ * The folders the Docker CLI finds its plugins in through its config folder, which a
+ * `DOCKER_CONFIG` of a spec's own hides: `<config>/cli-plugins` (`$DOCKER_CONFIG`, else
+ * `~/.docker`) and the config's own `cliPluginsExtraDirs`, the ones there. Docker Desktop on macOS
+ * keeps Compose there alone; without it `docker compose --project-name x ps` is the Docker CLI's
+ * `unknown flag: --project-name`, a missing Compose rather than the engine the spec stops.
+ * @param {Record<string, string | undefined>} env
+ * @param {string} home
+ * @returns {string[]}
+ */
+export function dockerPluginDirs(env = process.env, home = homedir()) {
+  const config = env.DOCKER_CONFIG || (home ? join(home, ".docker") : "");
+  if (!config) return [];
+  let extra = [];
+  try {
+    const listed = JSON.parse(readFileSync(join(config, "config.json"), "utf8")).cliPluginsExtraDirs;
+    if (Array.isArray(listed)) extra = listed.filter((d) => typeof d === "string");
+  } catch {
+    /* no config, or one that doesn't read: its plugin folder alone */
+  }
+  return [...new Set([join(config, "cli-plugins"), ...extra])].filter((d) => existsSync(d));
+}

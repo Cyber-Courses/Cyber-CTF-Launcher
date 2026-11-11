@@ -11,7 +11,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
 import { appExit, startEnded, stuckLabReport } from "./diagnose.mjs";
-import { portStillHeld, waitPortFree } from "./host.mjs";
+import { dockerPluginDirs, portStillHeld, waitPortFree } from "./host.mjs";
 
 export { runContainers } from "./owned.mjs";
 
@@ -44,14 +44,18 @@ export const STOP_MS = capMs(0.4);
  * `DOCKER_CONFIG` whose config.json names no current context. The second half matters: the app
  * deliberately follows the user's Docker context (`docker context use`, what Docker Desktop sets)
  * over an inherited `DOCKER_HOST`, so on a machine with a context the dead socket alone is ignored
- * and the real engine answers. Fresh folder per call, under the run's folder (`CYBERCTF_WDIO_ROOT`,
- * which the runner removes at the end) when there is one, so it never stays in the temp folder.
+ * and the real engine answers. The config keeps the user's plugin folders (`cliPluginsExtraDirs`,
+ * host.mjs `dockerPluginDirs`): an engine down leaves Compose installed, and without them Docker
+ * Desktop's Compose isn't found and a lab's `docker compose` reads as the Docker CLI's unknown
+ * flag. Fresh folder per call, under the run's folder (`CYBERCTF_WDIO_ROOT`, which the runner
+ * removes at the end) when there is one, so it never stays in the temp folder.
  */
 export function deadDockerEnv() {
   const parent = process.env.CYBERCTF_WDIO_ROOT || tmpdir();
   mkdirSync(parent, { recursive: true });
+  const plugins = dockerPluginDirs();
   const dir = mkdtempSync(join(parent, "cyberctf-nodocker-"));
-  writeFileSync(join(dir, "config.json"), "{}\n");
+  writeFileSync(join(dir, "config.json"), `${JSON.stringify(plugins.length ? { cliPluginsExtraDirs: plugins } : {})}\n`);
   return { DOCKER_HOST: "unix:///nonexistent/docker.sock", DOCKER_CONFIG: dir };
 }
 
