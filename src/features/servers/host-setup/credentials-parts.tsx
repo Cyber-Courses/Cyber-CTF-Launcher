@@ -46,11 +46,11 @@ export function SignedInNote({ s, children }: { s: HostSetup; children: ReactNod
       {children}
       <button
         type="button"
-        onClick={s.signIn}
-        disabled={s.signingIn}
+        onClick={s.accounts.signIn}
+        disabled={s.accounts.signingIn}
         className="ml-auto shrink-0 text-[0.6875rem] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
       >
-        {s.signingIn ? t("servers.setup.credentials.signingIn") : t("servers.setup.credentials.switchAccount")}
+        {s.accounts.signingIn ? t("servers.setup.credentials.signingIn") : t("servers.setup.credentials.switchAccount")}
       </button>
     </Note>
   );
@@ -73,7 +73,7 @@ export function SignInNote({ hint, label, onSignIn, signingIn }: { hint: ReactNo
  *  cloud's own sign-in). A failure keeps its log, ending on why. */
 export function SignInLog({ s, onRetry }: { s: HostSetup; onRetry: () => void }) {
   const t = useT();
-  if (s.signInState === "cancelled")
+  if (s.accounts.signInState === "cancelled")
     return (
       <Note role="status" className="flex flex-wrap items-center gap-2">
         <CircleSlash className="size-3.5 shrink-0 text-muted-foreground" />
@@ -83,12 +83,12 @@ export function SignInLog({ s, onRetry }: { s: HostSetup; onRetry: () => void })
         </Button>
       </Note>
     );
-  if (!s.signInLog) return null;
+  if (!s.accounts.signInLog) return null;
   return (
     <>
-      <LogConsole lines={s.signInLog} running={s.signingIn} title={t("servers.setup.credentials.signInLog")} collapseOnDone />
-      {s.signingIn && (
-        <Button variant="ghost" size="xs" onClick={s.cancelSignIn}>
+      <LogConsole lines={s.accounts.signInLog} running={s.accounts.signingIn} title={t("servers.setup.credentials.signInLog")} collapseOnDone />
+      {s.accounts.signingIn && (
+        <Button variant="ghost" size="xs" onClick={s.accounts.cancelSignIn}>
           {t("servers.setup.credentials.cancelSignIn")}
         </Button>
       )}
@@ -103,9 +103,9 @@ export function SecretInput({ s, placeholder = "" }: { s: HostSetup; placeholder
   return (
     <Input
       type="password"
-      value={s.v.password ?? ""}
+      value={s.form.v.password ?? ""}
       onChange={(e) => {
-        s.set("password", e.target.value || null);
+        s.form.set("password", e.target.value || null);
       }}
       placeholder={s.secretKept ? t("servers.setup.connection.keepPlaceholder") : placeholder}
       autoComplete="off"

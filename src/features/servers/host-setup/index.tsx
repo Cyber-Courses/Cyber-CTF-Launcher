@@ -34,7 +34,9 @@ export function HostSetupPage({
 }) {
   const t = useT();
   const s = useHostSetup({ initial, providerChosen, report, onRefresh, onSaved, onDone });
-  const { i, cloud, steps, key, title } = s;
+  const { title } = s;
+  const { cloud } = s.traits;
+  const { i, steps, key } = s.nav;
   return (
     <>
       <div>

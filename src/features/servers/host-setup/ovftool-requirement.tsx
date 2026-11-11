@@ -81,7 +81,8 @@ function usePlaceOvftool(onRefresh: () => void) {
  *  ships it, the standalone download, or a download already unpacked, placed by the app. */
 export function OvftoolRequirement({ s }: { s: HostSetup }) {
   const t = useT();
-  const { report, ovftoolOk, canInstallTools, onRefresh } = s;
+  const { report, onRefresh } = s;
+  const { ovftoolOk, canInstallTools } = s.tools;
   const { busy, note, choose } = usePlaceOvftool(onRefresh);
   const hypervisor = ovftoolHypervisor(report);
   return (

@@ -12,7 +12,9 @@ import { CLOUD_PROVIDERS, PROVIDER_NAMES } from "@/lib/tauri";
 
 export function ProviderStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { onDone, cloudProvider, pickProvider, next } = s;
+  const { onDone, cloudProvider } = s;
+  const { pickProvider } = s.form;
+  const { next } = s.nav;
   return (
     <Step icon={Cloud} title={t("servers.setup.provider.title")} description={t("servers.setup.provider.description")}>
       <RadioList label={t("servers.setup.provider.label")}>

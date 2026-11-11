@@ -72,26 +72,34 @@ export function useHostSetup({ initial, providerChosen, report, onRefresh, onSav
   const connecting = useConnect(payload, form.setV, signIn.setMadeWith, onSaved, stepper.next);
   const title = setupTitle({ saved: saving.saved, test: saving.test, editing, cloud: traits.cloud, initialName: initial.name });
 
+  // Grouped by concern: each step reads the groups it needs.
   return {
     report,
     onRefresh,
     onDone,
-    ...form,
     editing,
     cloudProvider,
-    ...traits,
-    ...accounts,
-    ...stepper,
-    ...signIn,
-    ...connecting,
     payload,
     serverOk: serverReady(v),
     connectionOk: connectionReady(v, keepsSecret(initial, v), v.provider === "proxmox" && signIn.signInMethod === "sshKey" ? signIn.sshKey : null),
     secretKept: keepsSecret(initial, v),
-    ...tools,
-    ...machineTools(v.provider, report),
-    ...saving,
     title: t(`servers.setup.titles.${title.key}`, { name: title.name }),
+    /** The form's values and the helpers that change them. */
+    form,
+    /** What the chosen provider is: a cloud (which one), a token or CLI sign-in, its defaults. */
+    traits,
+    /** The cloud accounts' sign-ins and what they see (profiles, subscriptions, projects). */
+    accounts,
+    /** The steps this setup takes, and where the player is among them. */
+    nav: stepper,
+    /** How a Proxmox setup signs in, and its SSH key. */
+    login: signIn,
+    /** Leaving the Connection step (an SSH key sign-in makes its token there). */
+    connect: connecting,
+    /** The tools this server type needs here, and their install with its log. */
+    tools: { ...tools, ...machineTools(v.provider, report) },
+    /** Saving the host and testing it. */
+    save: saving,
   };
 }
 

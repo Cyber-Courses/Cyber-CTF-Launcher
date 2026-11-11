@@ -11,7 +11,10 @@ import { DEFAULT_AUTO_STOP_HOURS } from "@/lib/tauri";
 
 export function OptionsStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, saving, error, text, connectionOk, back, saveAndTest } = s;
+  const { connectionOk } = s;
+  const { v, text } = s.form;
+  const { back } = s.nav;
+  const { saving, error, saveAndTest } = s.save;
   const nameKey = v.provider === "azure" || v.provider === "gcp" ? v.provider : "aws";
   return (
     <Step icon={Cloud} title={t("servers.setup.options.title")} description={t("servers.setup.options.description")}>
@@ -36,7 +39,7 @@ export function OptionsStep({ s }: { s: HostSetup }) {
 /** How long a lab's instance lives: the usual choices, or never. */
 function AutoStopField({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, set } = s;
+  const { v, set } = s.form;
   // A saved auto-stop the list lacks (72 h, say) is shown as itself, not as "1 hour".
   const hours = [...new Set([1, 2, 4, 8, 12, 24, ...(v.autoStopHours ? [v.autoStopHours] : [])])].sort((a, b) => a - b);
   return (
@@ -61,7 +64,8 @@ function AutoStopField({ s }: { s: HostSetup }) {
 /** AWS: the monthly budget, and this month's spend so far when the CLI could read it. */
 function BudgetField({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, mtdCost, set } = s;
+  const { v, set } = s.form;
+  const { mtdCost } = s.accounts;
   const usd = (n: number) => formatUsd(n, t.locale);
   const limit = v.monthlyLimit ?? null;
   return (

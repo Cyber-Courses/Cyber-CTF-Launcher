@@ -21,7 +21,8 @@ function usePlacementChoices(s: HostSetup) {
   const first = useRef(s);
   const [read, setRead] = useState<Read>({ state: "reading" });
   useEffect(() => {
-    const { payload, setV } = first.current;
+    const { payload } = first.current;
+    const { setV } = first.current.form;
     let live = true;
     serverProxmoxPlacement(payload)
       .then((placement) => {
@@ -53,14 +54,14 @@ export function ProxmoxPlacementFields({ s }: { s: HostSetup }) {
       </p>
     );
   if (read.state === "failed") return <ManualPlacement s={s} error={read.error} />;
-  const node = read.placement.nodes.find((n) => n.name === s.v.node) ?? read.placement.nodes[0];
+  const node = read.placement.nodes.find((n) => n.name === s.form.v.node) ?? read.placement.nodes[0];
   return <PlacementChoices s={s} placement={read.placement} node={node} />;
 }
 
 /** One drop-down per choice, the node's options in it. */
 function PlacementChoices({ s, placement, node }: { s: HostSetup; placement: ProxmoxPlacement; node: ProxmoxNodeChoices }) {
   const t = useT();
-  const { v, set, setV } = s;
+  const { v, set, setV } = s.form;
   const pick = (k: "datastore" | "imageStorage" | "snippetStorage" | "network") => (e: React.ChangeEvent<HTMLSelectElement>) => {
     set(k, e.target.value);
   };
@@ -125,7 +126,7 @@ function StorageSelect({
 /** The API couldn't be read: why, and the fields to type by hand (blank = the defaults). */
 function ManualPlacement({ s, error }: { s: HostSetup; error: string }) {
   const t = useT();
-  const { text } = s;
+  const { text } = s.form;
   return (
     <>
       <Note className="mb-3 text-muted-foreground">{t("servers.setup.placement.readFailed", { error })}</Note>

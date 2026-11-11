@@ -12,15 +12,16 @@ import { useT } from "@/lib/i18n";
 /** Azure: the CLI sign-in, then the subscription it gives access to (or one pasted). */
 export function AzureCredentials({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, azureSubs } = s;
+  const { v } = s.form;
+  const { azureSubs } = s.accounts;
   return (
     <div className="space-y-3">
-      {s.azureError && !s.azureChecking && (
+      {s.accounts.azureError && !s.accounts.azureChecking && (
         <p role="alert" className="text-[0.75rem] break-words text-destructive">
-          {t("servers.setup.credentials.azureReadFailed", { error: s.azureError })}
+          {t("servers.setup.credentials.azureReadFailed", { error: s.accounts.azureError })}
         </p>
       )}
-      {s.azureChecking ? (
+      {s.accounts.azureChecking ? (
         <CheckingNote>{t("servers.setup.credentials.checkingAzure")}</CheckingNote>
       ) : azureSubs.length > 0 ? (
         <>
@@ -28,12 +29,12 @@ export function AzureCredentials({ s }: { s: HostSetup }) {
           <SignedInNote s={s}>
             <span className="text-muted-foreground">{t("servers.setup.credentials.signedInAzure")}</span>
           </SignedInNote>
-          <SignInLog s={s} onRetry={s.signIn} />
+          <SignInLog s={s} onRetry={s.accounts.signIn} />
           <Field label={t("servers.setup.credentials.subscription")}>
             <Select
               value={v.username}
               onChange={(e) => {
-                s.set("username", e.target.value);
+                s.form.set("username", e.target.value);
               }}
             >
               {!v.username && <option value="">{t("servers.setup.credentials.chooseSubscription")}</option>}
@@ -51,12 +52,12 @@ export function AzureCredentials({ s }: { s: HostSetup }) {
           <SignInNote
             hint={<span className="text-muted-foreground">{t("servers.setup.credentials.azureSignInHint")}</span>}
             label={t("servers.setup.credentials.azureSignIn")}
-            onSignIn={s.signIn}
-            signingIn={s.signingIn}
+            onSignIn={s.accounts.signIn}
+            signingIn={s.accounts.signingIn}
           />
-          <SignInLog s={s} onRetry={s.signIn} />
+          <SignInLog s={s} onRetry={s.accounts.signIn} />
           <Field label={t("servers.setup.credentials.subscriptionId")} hint={t("servers.setup.credentials.orPaste")}>
-            <Input {...s.text("username")} placeholder="00000000-0000-0000-0000-000000000000" />
+            <Input {...s.form.text("username")} placeholder="00000000-0000-0000-0000-000000000000" />
           </Field>
         </>
       )}
@@ -70,26 +71,26 @@ export function GcpCredentials({ s }: { s: HostSetup }) {
   return (
     <div className="space-y-3">
       {/* A list that couldn't be read: the others still show, and the reason does too. */}
-      {s.gcpError && !s.gcpChecking && (
+      {s.accounts.gcpError && !s.accounts.gcpChecking && (
         <p role="alert" className="text-[0.75rem] break-words text-destructive">
-          {t("servers.setup.credentials.gcpReadFailed", { error: s.gcpError })}
+          {t("servers.setup.credentials.gcpReadFailed", { error: s.accounts.gcpError })}
         </p>
       )}
-      {s.gcpChecking ? (
+      {s.accounts.gcpChecking ? (
         <CheckingNote>{t("servers.setup.credentials.checkingGcloud")}</CheckingNote>
-      ) : s.gcpEmail ? (
-        <GcpAccount s={s} email={s.gcpEmail} />
+      ) : s.accounts.gcpEmail ? (
+        <GcpAccount s={s} email={s.accounts.gcpEmail} />
       ) : (
         <>
           <SignInNote
             hint={<span className="text-muted-foreground">{t("servers.setup.credentials.gcpSignInHint")}</span>}
             label={t("servers.setup.credentials.gcpSignIn")}
-            onSignIn={s.signIn}
-            signingIn={s.signingIn}
+            onSignIn={s.accounts.signIn}
+            signingIn={s.accounts.signingIn}
           />
-          <SignInLog s={s} onRetry={s.signIn} />
+          <SignInLog s={s} onRetry={s.accounts.signIn} />
           <Field label={t("servers.setup.credentials.billingAccount")} hint={t("servers.setup.credentials.orType")}>
-            <Input {...s.text("username")} placeholder="0X0X0X-0X0X0X-0X0X0X" />
+            <Input {...s.form.text("username")} placeholder="0X0X0X-0X0X0X-0X0X0X" />
           </Field>
         </>
       )}
@@ -100,7 +101,7 @@ export function GcpCredentials({ s }: { s: HostSetup }) {
 /** Signed in to Google Cloud: who as, its log, then the billing account and organization. */
 function GcpAccount({ s, email }: { s: HostSetup; email: string }) {
   const t = useT();
-  const { v } = s;
+  const { v } = s.form;
   return (
     <>
       <SignedInNote s={s}>
@@ -109,17 +110,17 @@ function GcpAccount({ s, email }: { s: HostSetup; email: string }) {
           <span className="text-foreground">{email}</span>
         </span>
       </SignedInNote>
-      <SignInLog s={s} onRetry={s.signIn} />
-      {s.gcpBilling.length > 0 ? (
+      <SignInLog s={s} onRetry={s.accounts.signIn} />
+      {s.accounts.gcpBilling.length > 0 ? (
         <Field label={t("servers.setup.credentials.billingAccount")} hint={t("servers.setup.credentials.billingHint")}>
           <Select
             value={v.username}
             onChange={(e) => {
-              s.set("username", e.target.value);
+              s.form.set("username", e.target.value);
             }}
           >
             {!v.username && <option value="">{t("servers.setup.credentials.chooseBilling")}</option>}
-            {s.gcpBilling.map((b) => (
+            {s.accounts.gcpBilling.map((b) => (
               <option key={b.id} value={b.id} disabled={!b.open}>
                 {b.name ? `${b.name} (${b.id})` : b.id}
                 {b.open ? "" : ` ${t("servers.setup.credentials.closed")}`}
@@ -129,18 +130,18 @@ function GcpAccount({ s, email }: { s: HostSetup; email: string }) {
         </Field>
       ) : (
         <Field label={t("servers.setup.credentials.billingAccount")} hint={t("servers.setup.credentials.billingNone")}>
-          <Input {...s.text("username")} placeholder="0X0X0X-0X0X0X-0X0X0X" />
+          <Input {...s.form.text("username")} placeholder="0X0X0X-0X0X0X-0X0X0X" />
         </Field>
       )}
       <Field label={t("servers.setup.credentials.organization")}>
         <Select
           value={v.node ?? ""}
           onChange={(e) => {
-            s.set("node", e.target.value || null);
+            s.form.set("node", e.target.value || null);
           }}
         >
           <option value="">{t("servers.setup.credentials.noOrganization")}</option>
-          {s.gcpOrgs.map((o) => (
+          {s.accounts.gcpOrgs.map((o) => (
             <option key={o.id} value={o.id}>
               {o.name ? `${o.name} (${o.id})` : o.id}
             </option>

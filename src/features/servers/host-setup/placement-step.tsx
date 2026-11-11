@@ -10,7 +10,9 @@ import { useT } from "@/lib/i18n";
 
 export function PlacementStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, saving, error, set, text, back, saveAndTest } = s;
+  const { v, set, text } = s.form;
+  const { back } = s.nav;
+  const { saving, error, saveAndTest } = s.save;
   return (
     <Step icon={HardDrive} title={t("servers.setup.placement.title")} description={t("servers.setup.placement.description")}>
       {v.provider === "proxmox" ? (

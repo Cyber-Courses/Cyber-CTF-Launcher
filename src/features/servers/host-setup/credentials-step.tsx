@@ -15,7 +15,9 @@ import { PROVIDER_NAMES } from "@/lib/tauri";
  *  CLI or AWS access keys; then the region its labs run in. */
 export function CredentialsStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { error, connectionOk, next, back } = s;
+  const { connectionOk } = s;
+  const { next, back } = s.nav;
+  const { error } = s.save;
   return (
     <Step icon={Cloud} title={stepTitle(s, t)} description={stepDescription(s, t)}>
       <Credentials s={s} />
@@ -30,25 +32,25 @@ export function CredentialsStep({ s }: { s: HostSetup }) {
 
 /** The chosen cloud's sign-in. */
 function Credentials({ s }: { s: HostSetup }) {
-  if (s.oci) return <OciCredentials s={s} />;
-  if (s.tokenCloud) return <TokenCredentials s={s} />;
-  if (s.azure) return <AzureCredentials s={s} />;
-  if (s.gcp) return <GcpCredentials s={s} />;
-  return s.v.useCliCreds ? <AwsCliCredentials s={s} /> : <AccessKeyCredentials s={s} />;
+  if (s.traits.oci) return <OciCredentials s={s} />;
+  if (s.traits.tokenCloud) return <TokenCredentials s={s} />;
+  if (s.traits.azure) return <AzureCredentials s={s} />;
+  if (s.traits.gcp) return <GcpCredentials s={s} />;
+  return s.form.v.useCliCreds ? <AwsCliCredentials s={s} /> : <AccessKeyCredentials s={s} />;
 }
 
 /** Where the labs run: the cloud's regions, and a saved one the list lacks shown as itself. */
 function RegionField({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v } = s;
+  const { v } = s.form;
   const regions = REGIONS[s.cloudProvider];
   return (
     <div className="mt-3">
-      <Field label={s.azure ? t("servers.setup.credentials.location") : t("servers.setup.credentials.region")}>
+      <Field label={s.traits.azure ? t("servers.setup.credentials.location") : t("servers.setup.credentials.region")}>
         <Select
           value={v.host}
           onChange={(e) => {
-            s.set("host", e.target.value);
+            s.form.set("host", e.target.value);
           }}
         >
           {v.host && !regions.some(([code]) => code === v.host) && <option value={v.host}>{v.host}</option>}
@@ -63,21 +65,21 @@ function RegionField({ s }: { s: HostSetup }) {
   );
 }
 
-const tokenCloudName = (s: HostSetup) => PROVIDER_NAMES[s.digitalocean ? "digitalocean" : "linode"];
+const tokenCloudName = (s: HostSetup) => PROVIDER_NAMES[s.traits.digitalocean ? "digitalocean" : "linode"];
 
 function stepTitle(s: HostSetup, t: T) {
-  if (s.azure) return t("servers.setup.credentials.titles.azure");
-  if (s.gcp) return t("servers.setup.credentials.titles.gcp");
-  if (s.digitalocean) return t("servers.setup.credentials.titles.digitalocean");
-  if (s.linode) return t("servers.setup.credentials.titles.linode");
-  if (s.oci) return PROVIDER_NAMES.oci;
-  return s.v.useCliCreds ? "AWS CLI" : t("servers.setup.credentials.titles.accessKeys");
+  if (s.traits.azure) return t("servers.setup.credentials.titles.azure");
+  if (s.traits.gcp) return t("servers.setup.credentials.titles.gcp");
+  if (s.traits.digitalocean) return t("servers.setup.credentials.titles.digitalocean");
+  if (s.traits.linode) return t("servers.setup.credentials.titles.linode");
+  if (s.traits.oci) return PROVIDER_NAMES.oci;
+  return s.form.v.useCliCreds ? "AWS CLI" : t("servers.setup.credentials.titles.accessKeys");
 }
 
 function stepDescription(s: HostSetup, t: T) {
-  if (s.azure) return t("servers.setup.credentials.descriptions.azure");
-  if (s.gcp) return t("servers.setup.credentials.descriptions.gcp");
-  if (s.tokenCloud) return t("servers.setup.credentials.descriptions.token", { cloud: tokenCloudName(s) });
-  if (s.oci) return t("servers.setup.credentials.descriptions.oci");
-  return s.v.useCliCreds ? t("servers.setup.credentials.descriptions.awsCli") : t("servers.setup.credentials.descriptions.accessKeys");
+  if (s.traits.azure) return t("servers.setup.credentials.descriptions.azure");
+  if (s.traits.gcp) return t("servers.setup.credentials.descriptions.gcp");
+  if (s.traits.tokenCloud) return t("servers.setup.credentials.descriptions.token", { cloud: tokenCloudName(s) });
+  if (s.traits.oci) return t("servers.setup.credentials.descriptions.oci");
+  return s.form.v.useCliCreds ? t("servers.setup.credentials.descriptions.awsCli") : t("servers.setup.credentials.descriptions.accessKeys");
 }

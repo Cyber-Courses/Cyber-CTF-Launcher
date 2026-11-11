@@ -13,7 +13,9 @@ import { useT } from "@/lib/i18n";
 
 export function TestStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { onDone, saved, test, runTest, v } = s;
+  const { onDone } = s;
+  const { v } = s.form;
+  const { saved, test, runTest } = s.save;
   // Each part checked (a cloud's checklist, the parts of a Proxmox setup made with an SSH key).
   const parts = test !== null && test !== "testing" ? test.checks : [];
   // Once Proxmox answers as a launch needs, a real throwaway lab proves it can run one: a new

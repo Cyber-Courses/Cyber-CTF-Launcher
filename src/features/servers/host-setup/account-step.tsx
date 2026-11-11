@@ -10,7 +10,9 @@ import { useT } from "@/lib/i18n";
 
 export function AccountStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { onDone, v, i, set, next, back } = s;
+  const { onDone } = s;
+  const { v, set } = s.form;
+  const { i, next, back } = s.nav;
   return (
     <Step icon={Cloud} title={t("servers.setup.account.title")} description={t("servers.setup.account.description")}>
       <Note className="mb-4 flex items-start gap-2.5">

@@ -17,7 +17,9 @@ import { useT } from "@/lib/i18n";
 /** Proxmox's first connection step: the server itself (name, address, API port). */
 export function ServerStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, serverOk, next, back } = s;
+  const { serverOk } = s;
+  const { v } = s.form;
+  const { next, back } = s.nav;
   return (
     <Step icon={Server} title={t("servers.setup.server.title", { kind: PROVIDER_NAMES[v.provider] })} description={t("servers.setup.server.description")}>
       <AddressFields s={s} />
@@ -32,7 +34,9 @@ export function ServerStep({ s }: { s: HostSetup }) {
  *  and SSH login here. */
 export function ConnectionStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, connectionOk, next, back } = s;
+  const { connectionOk } = s;
+  const { v } = s.form;
+  const { next, back } = s.nav;
   if (v.provider === "proxmox") return <ProxmoxSignIn s={s} signInFields={<SignInFields s={s} />} authorizeKey={<AuthorizeKeyNote />} />;
   return (
     <Step
@@ -52,7 +56,8 @@ export function ConnectionStep({ s }: { s: HostSetup }) {
 /** The server's name, address and port. */
 function AddressFields({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, kind, set, text } = s;
+  const { v, set, text } = s.form;
+  const { kind } = s.traits;
   const proxmox = v.provider === "proxmox";
   return (
     <div className="grid gap-3 sm:grid-cols-[1fr_1fr_6.875rem]">
@@ -86,7 +91,9 @@ function AddressFields({ s }: { s: HostSetup }) {
  *  secret), kept in the keychain. */
 function SignInFields({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, kind, text, signInMethod } = s;
+  const { v, text } = s.form;
+  const { kind } = s.traits;
+  const { signInMethod } = s.login;
   const proxmox = v.provider === "proxmox";
   const isToken = proxmox && signInMethod === "token";
   return (

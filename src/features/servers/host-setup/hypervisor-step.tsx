@@ -10,7 +10,8 @@ import { useT } from "@/lib/i18n";
 
 export function HypervisorStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { v, setV, next } = s;
+  const { v, setV } = s.form;
+  const { next } = s.nav;
   return (
     <Step icon={Server} title={t("servers.setup.hypervisor.title")} description={t("servers.setup.hypervisor.description")}>
       <RadioList label={t("servers.setup.hypervisor.label")}>

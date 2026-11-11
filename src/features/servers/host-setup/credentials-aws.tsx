@@ -19,20 +19,25 @@ export function AwsCliCredentials({ s }: { s: HostSetup }) {
       {tooOld ? (
         <AwsCliTooOld s={s} version={tooOld} />
       ) : (
-        <SignInNote hint={<AwsIdentity s={s} />} label={t("servers.setup.credentials.browserSignIn")} onSignIn={s.awsSignIn} signingIn={s.signingIn} />
+        <SignInNote
+          hint={<AwsIdentity s={s} />}
+          label={t("servers.setup.credentials.browserSignIn")}
+          onSignIn={s.accounts.awsSignIn}
+          signingIn={s.accounts.signingIn}
+        />
       )}
-      <SignInLog s={s} onRetry={s.awsSignIn} />
-      {s.profiles.length > 0 && (
+      <SignInLog s={s} onRetry={s.accounts.awsSignIn} />
+      {s.accounts.profiles.length > 0 && (
         <Field label={t("servers.setup.credentials.profile")}>
           <Select
-            value={s.v.awsProfile ?? ""}
+            value={s.form.v.awsProfile ?? ""}
             onChange={(e) => {
-              s.set("awsProfile", e.target.value || null);
+              s.form.set("awsProfile", e.target.value || null);
             }}
           >
             <option value="">default</option>
             {/* "default" is the first option already; the CLI lists it among the others too. */}
-            {s.profiles
+            {s.accounts.profiles
               .filter((p) => p !== "default")
               .map((p) => (
                 <option key={p} value={p}>
@@ -49,18 +54,18 @@ export function AwsCliCredentials({ s }: { s: HostSetup }) {
 /** Who the chosen AWS profile is signed in as: being checked, the identity, or nobody. */
 function AwsIdentity({ s }: { s: HostSetup }) {
   const t = useT();
-  if (s.checkingId)
+  if (s.accounts.checkingId)
     return (
       <span className="flex items-center gap-1.5 text-muted-foreground">
         <Spinner className="size-3.5" /> {t("servers.setup.credentials.checking")}
       </span>
     );
-  if (s.awsIdentity)
+  if (s.accounts.awsIdentity)
     return (
       <span className="flex min-w-0 items-center gap-1.5">
         <CheckCircle2 className="size-3.5 shrink-0 text-success" />
         <span className="text-muted-foreground">{t("servers.setup.credentials.signedInAs")}</span>
-        <span className="truncate text-foreground">{s.awsIdentity}</span>
+        <span className="truncate text-foreground">{s.accounts.awsIdentity}</span>
       </span>
     );
   return <span className="text-muted-foreground">{t("servers.setup.credentials.notSignedInProfile")}</span>;

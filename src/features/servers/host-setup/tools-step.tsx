@@ -18,7 +18,11 @@ const logTitle = (t: T, tool: string | null) => (tool ? t("servers.setup.tools.i
 
 export function ToolsStep({ s }: { s: HostSetup }) {
   const t = useT();
-  const { report, onRefresh, onDone, v, i, pluginLog, toolLabel, cloudProvider, cloud, next, back, toolBusy, cloudHasCli, toolsOk } = s;
+  const { report, onRefresh, onDone, cloudProvider } = s;
+  const { v } = s.form;
+  const { cloud } = s.traits;
+  const { i, next, back } = s.nav;
+  const { pluginLog, toolLabel, toolBusy, cloudHasCli, toolsOk } = s.tools;
   return (
     <Step
       icon={HardDrive}
@@ -44,7 +48,7 @@ export function ToolsStep({ s }: { s: HostSetup }) {
           <TerraformRequirement s={s} detail={report.terraform.installed ? null : t("servers.setup.tools.terraformProxmox")} />
         )}
       </div>
-      {s.installsOff && !toolsOk && <InstallsOffNote className="mt-2" />}
+      {s.tools.installsOff && !toolsOk && <InstallsOffNote className="mt-2" />}
       {pluginLog && (
         <div className="mt-3">
           <LogConsole lines={pluginLog} running={toolBusy} title={logTitle(t, toolLabel)} />
@@ -73,7 +77,8 @@ export function ToolsStep({ s }: { s: HostSetup }) {
 /** A cloud account's tools: its CLI (for the clouds that sign in with one), then Terraform. */
 function CloudTools({ s }: { s: HostSetup }) {
   const t = useT();
-  const { cloudProvider, canInstallTools, installTool, cloudCli, cloudCliTool, cloudCliOk, terraformOk } = s;
+  const { cloudProvider } = s;
+  const { canInstallTools, installTool, cloudCli, cloudCliTool, cloudCliOk, terraformOk } = s.tools;
   return (
     <>
       {cloudCli && (
@@ -104,7 +109,8 @@ function CloudTools({ s }: { s: HostSetup }) {
  *  VMware's desktop hypervisor). */
 function EsxiTools({ s }: { s: HostSetup }) {
   const t = useT();
-  const { report, canInstallTools, installTool, vagrantOk, esxiPluginOk, esxiPlugin } = s;
+  const { report } = s;
+  const { canInstallTools, installTool, vagrantOk, esxiPluginOk, esxiPlugin } = s.tools;
   const plugin = esxiPlugin ?? "";
   return (
     <>
@@ -150,7 +156,8 @@ function EsxiTools({ s }: { s: HostSetup }) {
 /** Terraform, with its version once installed; `detail` says why it's needed while it isn't. */
 function TerraformRequirement({ s, detail }: { s: HostSetup; detail: string | null }) {
   const t = useT();
-  const { report, terraformOk, canInstallTools, installTool } = s;
+  const { report } = s;
+  const { terraformOk, canInstallTools, installTool } = s.tools;
   return (
     <Requirement
       ok={terraformOk}

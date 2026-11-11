@@ -20,7 +20,10 @@ import { useT } from "@/lib/i18n";
 /** Proxmox's second connection step: how the launcher signs in, SSH key first. */
 export function ProxmoxSignIn({ s, signInFields, authorizeKey }: { s: HostSetup; signInFields: ReactNode; authorizeKey: ReactNode }) {
   const t = useT();
-  const { signInMethod, setSignInMethod, connectionOk, connect, connecting, connectError, back } = s;
+  const { connectionOk } = s;
+  const { back } = s.nav;
+  const { signInMethod, setSignInMethod } = s.login;
+  const { connect, connecting, connectError } = s.connect;
   const methods: { value: SignIn; label: string }[] = [
     { value: "sshKey", label: t("servers.setup.connection.methodSshKey") },
     { value: "token", label: t("servers.setup.connection.methodToken") },
@@ -55,7 +58,7 @@ export function ProxmoxSignIn({ s, signInFields, authorizeKey }: { s: HostSetup;
  *  the launcher will do with them on save. */
 function SshKeyFields({ s }: { s: HostSetup }) {
   const t = useT();
-  const { sshKey, setSshKey } = s;
+  const { sshKey, setSshKey } = s.login;
   const pick = () => {
     open({ multiple: false, directory: false, defaultPath: sshKey.path || undefined, title: t("servers.setup.connection.sshKeyPick") })
       .then((path) => {

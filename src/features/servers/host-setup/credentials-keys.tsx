@@ -16,7 +16,7 @@ export function OciCredentials({ s }: { s: HostSetup }) {
   return (
     <div className="space-y-3">
       <Note className="flex flex-wrap items-center gap-2">
-        {s.ociCfg?.configured ? (
+        {s.accounts.ociCfg?.configured ? (
           <span className="flex items-center gap-1.5 text-success">
             <CheckCircle2 className="size-3.5" /> {t("servers.setup.credentials.ociFound")}
           </span>
@@ -28,7 +28,7 @@ export function OciCredentials({ s }: { s: HostSetup }) {
         </ExternalLinkButton>
       </Note>
       <Field label={t("servers.setup.credentials.compartment")} hint={t("servers.setup.credentials.compartmentHint")}>
-        <Input {...s.text("username")} placeholder="ocid1.compartment.oc1..…" />
+        <Input {...s.form.text("username")} placeholder="ocid1.compartment.oc1..…" />
       </Field>
     </div>
   );
@@ -40,12 +40,12 @@ export function TokenCredentials({ s }: { s: HostSetup }) {
   return (
     <div className="space-y-3">
       <Field label={t("servers.setup.credentials.apiToken")} hint={t("servers.setup.credentials.apiTokenHint")}>
-        <SecretInput s={s} placeholder={s.digitalocean ? "dop_v1_…" : "…"} />
+        <SecretInput s={s} placeholder={s.traits.digitalocean ? "dop_v1_…" : "…"} />
       </Field>
       <p className="text-[0.75rem] text-muted-foreground">
         {t("servers.setup.credentials.noToken")}{" "}
-        <ExternalLinkButton url={s.digitalocean ? "https://cloud.digitalocean.com/account/api/tokens" : "https://cloud.linode.com/profile/tokens"}>
-          {t("servers.setup.credentials.createToken", { cloud: PROVIDER_NAMES[s.digitalocean ? "digitalocean" : "linode"] })}
+        <ExternalLinkButton url={s.traits.digitalocean ? "https://cloud.digitalocean.com/account/api/tokens" : "https://cloud.linode.com/profile/tokens"}>
+          {t("servers.setup.credentials.createToken", { cloud: PROVIDER_NAMES[s.traits.digitalocean ? "digitalocean" : "linode"] })}
         </ExternalLinkButton>
       </p>
     </div>
@@ -59,7 +59,7 @@ export function AccessKeyCredentials({ s }: { s: HostSetup }) {
     <>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label={t("servers.setup.credentials.accessKeyId")} hint={t("servers.setup.credentials.accessKeyHint")}>
-          <Input {...s.text("username")} placeholder="AKIA…" />
+          <Input {...s.form.text("username")} placeholder="AKIA…" />
         </Field>
         <Field label={t("servers.setup.credentials.secretKey")} hint={t("servers.setup.connection.keychainHint")}>
           <SecretInput s={s} />
