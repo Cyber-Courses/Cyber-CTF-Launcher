@@ -336,6 +336,22 @@ fn a_link_inside_the_folder_is_copied_as_a_link_and_one_leading_out_left_out() {
     let _ = std::fs::remove_dir_all(to.parent().unwrap());
 }
 
+/// Sets folder `dir`'s modification time to `to`. Unix changes it through any handle; Windows
+/// opens a folder only with backup semantics, and changes its times only through a handle that
+/// may write attributes (`File::open` asks for neither: "Access is denied").
+fn backdate(dir: &Path, to: SystemTime) {
+    #[cfg(windows)]
+    let handle = {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        std::fs::OpenOptions::new().access_mode(FILE_WRITE_ATTRIBUTES).custom_flags(FILE_FLAG_BACKUP_SEMANTICS).open(dir).unwrap()
+    };
+    #[cfg(not(windows))]
+    let handle = std::fs::File::open(dir).unwrap();
+    handle.set_modified(to).unwrap();
+}
+
 #[test]
 fn a_leftover_of_an_interrupted_placement_is_removed_once_old() {
     let dir = fresh("leftovers");
@@ -345,7 +361,7 @@ fn a_leftover_of_an_interrupted_placement_is_removed_once_old() {
     remove_leftovers(&dir);
     assert!(leftover.exists(), "a young one may be another placement's");
     let old = SystemTime::now() - LEFTOVER_AFTER - Duration::from_secs(1);
-    std::fs::File::open(&leftover).unwrap().set_modified(old).unwrap();
+    backdate(&leftover, old);
     remove_leftovers(&dir);
     assert!(!leftover.exists());
     assert!(dir.join("ovftool").exists(), "the placed copy stays");
