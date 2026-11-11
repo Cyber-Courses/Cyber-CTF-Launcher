@@ -350,11 +350,16 @@ launcher never asks for or stores a password itself.
   or `google-cloud-sdk`. (Earlier versions put some of the keys under `/usr/share/keyrings/`.)
   Removing a tool from Settings > Maintenance leaves its repository and key in place.
 - On Ubuntu, Debian, Raspbian and the distributions built on them, Docker comes from Docker's
-  repository for the Ubuntu or Debian release the system is built on. Where that repository has no
-  packages for the release (Kali's rolling one, Devuan's, a release newer than Docker serves yet),
-  the launcher installs the distribution's own Docker (`docker.io` and its Compose), from the
-  distribution's own signed archive, and adds no repository or key. On any other distribution,
-  or one without apt, it installs nothing and links to Docker's own instructions.
+  repository for the Ubuntu or Debian release the system is built on. Only where that repository
+  answers that it has no packages for the release (an HTTP 404 for its `Release` file: Kali's
+  rolling one, Devuan's, a release newer than Docker serves yet) does the launcher install the
+  distribution's own Docker (`docker.io` and its Compose), from the distribution's own signed
+  archive, adding no repository or key. When `download.docker.com` can't be reached (no network,
+  a proxy that refuses it, a timeout or a server error), the install stops and says it couldn't
+  reach it; nothing is installed. The repository checks of Terraform, Vagrant, the Vagrant VMware
+  Utility and VirtualBox work the same way, stopping with a link to the vendor's page on a 404.
+  On any other distribution, or one without apt, it installs nothing and links to Docker's own
+  instructions.
 - The AWS CLI goes to `/usr/local/aws-cli`, after its signature is checked.
 
 **macOS.** Tools come from Homebrew, which must be installed first; casks open their vendor's

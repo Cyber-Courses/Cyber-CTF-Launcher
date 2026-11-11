@@ -76,25 +76,45 @@ struct VendorRepo {
     /// `/etc/apt/sources.list.d/<name>.list`.
     name: &'static str,
     /// Where to install from instead when the repository has no packages for this release; none
-    /// for a suite every release shares.
+    /// for a suite every release shares, or a release the caller has checked already.
     by_hand: Option<&'static str>,
 }
 
-/// Sets up `r` for apt, the same way for every vendor: the suite checked when releases have their
-/// own, the key downloaded, checked against its fingerprint and only then made a keyring under
-/// `/etc/apt/keyrings`, the source restricted to this machine's architecture and to that key, and
-/// apt's lists updated. `--batch --yes`: a second run (after a partial one) overwrites the
-/// keyring instead of asking on a terminal it doesn't have. Runs in [`PRIVATE_WORKDIR`].
+/// `release_served <repo> <suite>`: whether apt repository `<repo>` has packages for `<suite>`,
+/// by its `Release` file. A 2xx answer is yes and a 404 no; anything else (no answer at all: a
+/// DNS failure, a proxy, a timeout; or a server error) stops the script saying the repository
+/// couldn't be reached, so a network fault is never taken for a release the vendor doesn't serve.
+#[cfg(any(target_os = "linux", test))]
+const RELEASE_SERVED: &str = r#"release_served() { served=$(curl -s -o /dev/null -w '%{http_code}' "$1/dists/$2/Release" || true); case "$served" in 2??) return 0 ;; 404) return 1 ;; *) echo "Couldn't reach $1 (HTTP ${served:-none}). Check this machine's internet access or proxy, then try again." >&2; exit 1 ;; esac; }"#;
+
+/// curl, then [`RELEASE_SERVED`]: what a script needs before it asks a vendor's repository
+/// anything.
+#[cfg(any(target_os = "linux", test))]
+fn fetch_prelude() -> String {
+    format!("{NEED_CURL}; {RELEASE_SERVED}")
+}
+
+/// [`apt_repo_setup`] after [`fetch_prelude`]: a vendor's apt repository on a machine that may
+/// lack curl.
 #[cfg(any(target_os = "linux", test))]
 fn apt_repo_script(r: &VendorRepo) -> String {
+    format!("{}; {}", fetch_prelude(), apt_repo_setup(r))
+}
+
+/// Sets up `r` for apt, the same way for every vendor: the suite checked when releases have their
+/// own ([`RELEASE_SERVED`]), the key downloaded, checked against its fingerprint and only then
+/// made a keyring under `/etc/apt/keyrings`, the source restricted to this machine's architecture
+/// and to that key, and apt's lists updated. `--batch --yes`: a second run (after a partial one)
+/// overwrites the keyring instead of asking on a terminal it doesn't have. Runs in
+/// [`PRIVATE_WORKDIR`], after [`fetch_prelude`].
+#[cfg(any(target_os = "linux", test))]
+fn apt_repo_setup(r: &VendorRepo) -> String {
     let VendorRepo { vendor, fingerprint, key_url, repo, suite, component, name, by_hand } = r;
     let suite_check = by_hand.map(|url| {
-        format!(
-            r#"; served=$(curl -s -o /dev/null -w '%{{http_code}}' "$repo/dists/{suite}/Release" || true); case "$served" in 2??) ;; 404) echo "{vendor} has no packages for {suite} yet. Install it from {url}" >&2; exit 1 ;; *) echo "Couldn't reach $repo (HTTP ${{served:-none}}). Check this machine's internet access or proxy, then try again." >&2; exit 1 ;; esac"#
-        )
+        format!(r#"; release_served "$repo" "{suite}" || {{ echo "{vendor} has no packages for {suite} yet. Install it from {url}" >&2; exit 1; }}"#)
     });
     format!(
-        r#"{NEED_CURL}; repo="{repo}"{suite_check}; {NEED_GPG}; curl -fsSL "{key_url}" -o "$d/key"; {check}; install -m 0755 -d /etc/apt/keyrings; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /etc/apt/keyrings/{name}.gpg "$d/key"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/{name}.gpg] $repo {suite} {component}" > /etc/apt/sources.list.d/{name}.list; apt-get update"#,
+        r#"repo="{repo}"{suite_check}; {NEED_GPG}; curl -fsSL "{key_url}" -o "$d/key"; {check}; install -m 0755 -d /etc/apt/keyrings; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /etc/apt/keyrings/{name}.gpg "$d/key"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/{name}.gpg] $repo {suite} {component}" > /etc/apt/sources.list.d/{name}.list; apt-get update"#,
         suite_check = suite_check.unwrap_or_default(),
         check = check_keys(&[fingerprint], vendor),
     )
@@ -169,7 +189,8 @@ pub fn virtualbox_script() -> String {
 /// Docker's release key (`docker@docker.com`, Docker Release (CE deb)), the one download.docker.com
 /// serves at `/linux/{ubuntu,debian,raspbian}/gpg` and signs its `InRelease` files with (from its
 /// signing subkey D3306A018370199E527AE7997EA0A9C3F273FCD8); keyserver.ubuntu.com has the same.
-/// Its repository is one per distro (`$dist`, see [`DOCKER_DIST`]).
+/// Its repository is one per distro (`$dist`, see [`DOCKER_DIST`]), whose release is checked there
+/// (a release it doesn't serve gets the distribution's own Docker), so not again here.
 #[cfg(any(target_os = "linux", test))]
 const DOCKER: VendorRepo = VendorRepo {
     vendor: "Docker",
@@ -179,7 +200,7 @@ const DOCKER: VendorRepo = VendorRepo {
     suite: "$codename",
     component: "stable",
     name: "docker",
-    by_hand: Some("https://docs.docker.com/engine/install/"),
+    by_hand: None,
 };
 
 /// Docker Engine, then the player into the `docker` group so the CLI can reach the daemon without
@@ -189,17 +210,19 @@ const DOCKER: VendorRepo = VendorRepo {
 /// On Ubuntu, Debian and Raspbian, and their derivatives (on the Ubuntu or Debian release they are
 /// built on, when they say it), it sets up Docker's apt repository, the way Docker documents it,
 /// with Docker's key checked against its pinned fingerprint. Where that repository has no packages
-/// for the release (Kali's rolling one, Devuan's, a Debian or Ubuntu newer than Docker serves yet),
-/// it installs the distribution's own Docker (`docker.io` and its Compose), signed by the
-/// distribution's own keys. Elsewhere it stops and says where to get Docker: Docker's convenience
+/// for the release (Kali's rolling one, Devuan's, a Debian or Ubuntu newer than Docker serves yet:
+/// its `Release` file answers 404), it installs the distribution's own Docker (`docker.io` and its Compose), signed by the
+/// distribution's own keys. When download.docker.com can't be reached, it stops and says so. Elsewhere
+/// it stops and says where to get Docker: Docker's convenience
 /// script (get.docker.com) can't be held to a key (it fetches the key and installs what it signed
 /// in one go), so it never runs as root from here.
 #[cfg(any(target_os = "linux", test))]
 pub fn docker_script(user: Option<&str>) -> String {
     use std::fmt::Write as _;
     let mut s = format!(
-        "{PRIVATE_WORKDIR}; {NEED_CURL}; {DOCKER_SERVES}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'Cyber CTF installs Docker on Debian, Ubuntu and the distributions built on them. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; if [ -n \"$own\" ]; then {DISTRIBUTION_DOCKER}; else {}; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi",
-        apt_repo_script(&DOCKER)
+        "{PRIVATE_WORKDIR}; {}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'Cyber CTF installs Docker on Debian, Ubuntu and the distributions built on them. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; if [ -n \"$own\" ]; then {DISTRIBUTION_DOCKER}; else {}; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi",
+        fetch_prelude(),
+        apt_repo_setup(&DOCKER)
     );
     if let Some(u) = user.filter(|u| valid_user(u)) {
         let _ = write!(s, "; usermod -aG docker {u}; echo 'Added {u} to the docker group: log out and back in (or restart) for it to apply.'");
@@ -207,19 +230,15 @@ pub fn docker_script(user: Option<&str>) -> String {
     s
 }
 
-/// Whether Docker's apt repository for distribution `$1` has packages for release `$2` (its
-/// `Release` file answers).
-#[cfg(any(target_os = "linux", test))]
-const DOCKER_SERVES: &str = r#"docker_serves() { curl -fsI "https://download.docker.com/linux/$1/dists/$2/Release" >/dev/null 2>&1; }"#;
-
 /// Which of Docker's apt repositories fits this system (`$dist`, empty when none does) and its
-/// codename there; `$own` set when that repository has no packages for it, so the distribution's
-/// own Docker is installed. A derivative is known by `ID_LIKE`, on its base's release: Ubuntu's
+/// codename there; `$own` set when that repository has no packages for it ([`RELEASE_SERVED`]: a
+/// 404, never an unreachable server, which stops the script), so the distribution's own Docker is
+/// installed. A derivative is known by `ID_LIKE`, on its base's release: Ubuntu's
 /// (`UBUNTU_CODENAME`, Mint), Debian's (`DEBIAN_CODENAME`, LMDE), else its own (Kali, Devuan),
 /// which Docker doesn't serve. Raspbian Trixie has none of Docker's: Debian's serves it (as
 /// get.docker.com does).
 #[cfg(any(target_os = "linux", test))]
-const DOCKER_DIST: &str = r#". /etc/os-release; dist=""; own=""; codename="${VERSION_CODENAME:-}"; case "$ID" in ubuntu|debian|raspbian) dist="$ID";; *) case " ${ID_LIKE:-} " in *" ubuntu "*) dist=ubuntu;; *" debian "*) dist=debian; codename="${DEBIAN_CODENAME:-$codename}";; esac;; esac; [ "$dist" != ubuntu ] || codename="${UBUNTU_CODENAME:-$codename}"; [ "$dist$codename" != raspbiantrixie ] || dist=debian; command -v apt-get >/dev/null || dist=""; if [ -n "$dist" ] && ! docker_serves "$dist" "$codename"; then own=1; fi"#;
+const DOCKER_DIST: &str = r#". /etc/os-release; dist=""; own=""; codename="${VERSION_CODENAME:-}"; case "$ID" in ubuntu|debian|raspbian) dist="$ID";; *) case " ${ID_LIKE:-} " in *" ubuntu "*) dist=ubuntu;; *" debian "*) dist=debian; codename="${DEBIAN_CODENAME:-$codename}";; esac;; esac; [ "$dist" != ubuntu ] || codename="${UBUNTU_CODENAME:-$codename}"; [ "$dist$codename" != raspbiantrixie ] || dist=debian; command -v apt-get >/dev/null || dist=""; if [ -n "$dist" ] && ! release_served "https://download.docker.com/linux/$dist" "$codename"; then own=1; fi"#;
 
 /// The distribution's own Docker: `docker.io`, and its Compose plugin (`docker-compose-v2` on
 /// Ubuntu, `docker-compose` on Debian and Kali), from the distribution's archive.
@@ -453,7 +472,7 @@ mod tests {
             let source = format!("signed-by=/etc/apt/keyrings/{name}.gpg] $repo {} {}\" > /etc/apt/sources.list.d/{name}.list", repo.suite, repo.component);
             assert!(s.contains(&format!("deb [arch=$(dpkg --print-architecture) {source}")), "{s}");
             assert!(!s.contains("/usr/share/keyrings"), "{s}");
-            assert_eq!(s.contains(r#""$repo/dists/{suite}/Release""#.replace("{suite}", repo.suite).as_str()), repo.by_hand.is_some(), "{s}");
+            assert_eq!(s.contains(&format!(r#"release_served "$repo" "{}""#, repo.suite)), repo.by_hand.is_some(), "{s}");
         }
     }
 
@@ -484,32 +503,63 @@ mod tests {
         }
     }
 
+    /// Runs `script` with [`RELEASE_SERVED`] defined and a `curl` that answers HTTP status `http`:
+    /// its stdout and stderr.
+    #[cfg(unix)]
+    fn with_release_answer(http: &str, script: &str) -> (String, String) {
+        let bin = std::env::temp_dir().join(format!("cyberctf-curl-{}-{}", std::process::id(), rand::random::<u32>()));
+        std::fs::create_dir_all(&bin).unwrap();
+        let fake = bin.join("curl");
+        std::fs::write(&fake, format!("#!/bin/sh\nprintf '%s' '{http}'\n")).unwrap();
+        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("set -e; {RELEASE_SERVED}; {script}"))
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .output()
+            .unwrap();
+        std::fs::remove_dir_all(&bin).unwrap();
+        (String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned())
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_repository_check_says_no_packages_only_when_the_release_has_none() {
         // Regression: any curl failure (curl missing, no network) read as "no packages for trixie".
-        let check = |http: &str| {
-            let bin = std::env::temp_dir().join(format!("cyberctf-curl-{}-{}", std::process::id(), rand::random::<u32>()));
-            std::fs::create_dir_all(&bin).unwrap();
-            let fake = bin.join("curl");
-            std::fs::write(&fake, format!("#!/bin/sh\nprintf '%s' '{http}'\n")).unwrap();
-            std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-            let s = apt_repo_script(&HASHICORP);
-            let snippet = &s[s.find("; served=").unwrap() + 2..s.find("; command -v gpg").unwrap()];
-            let out = std::process::Command::new("sh")
-                .arg("-c")
-                .arg(format!("repo=https://apt.example; codename=trixie; {snippet}; echo went-on"))
-                .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
-                .output()
-                .unwrap();
-            std::fs::remove_dir_all(&bin).unwrap();
-            (String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned())
-        };
+        let s = apt_repo_script(&HASHICORP);
+        let snippet = &s[s.find("; release_served \"$repo\"").unwrap() + 2..s.find("; command -v gpg").unwrap()];
+        let check = |http: &str| with_release_answer(http, &format!("repo=https://apt.example; codename=trixie; {snippet}; echo went-on"));
         assert_eq!(check("200").0.trim(), "went-on");
         let missing = check("404").1;
         assert!(missing.starts_with("HashiCorp has no packages for trixie yet"), "{missing}");
         let unreachable = check("000").1;
         assert!(unreachable.starts_with("Couldn't reach https://apt.example (HTTP 000)") && !unreachable.contains("no packages"), "{unreachable}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dockers_repository_check_gives_the_distributions_docker_only_on_a_404() {
+        // Regression: any failure of Docker's probe (DNS, a proxy, a timeout) installed docker.io,
+        // saying Docker's repository had no packages for the release.
+        let dir = std::env::temp_dir().join(format!("cyberctf-docker-probe-{}-{}", std::process::id(), rand::random::<u32>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let release = dir.join("os-release");
+        std::fs::write(&release, "ID=debian\nVERSION_CODENAME=trixie\n").unwrap();
+        let probe = DOCKER_DIST.replace("/etc/os-release", &release.display().to_string()).replace("command -v apt-get >/dev/null", "true");
+        let check = |http: &str| with_release_answer(http, &format!("{probe}; echo \"$dist/$codename/$own\""));
+        assert_eq!(check("200").0.trim(), "debian/trixie/");
+        assert_eq!(check("404").0.trim(), "debian/trixie/1");
+        for unreachable in ["000", "407", "503"] {
+            let (out, err) = check(unreachable);
+            assert!(out.is_empty(), "went on after HTTP {unreachable}: {out}");
+            assert!(err.starts_with(&format!("Couldn't reach https://download.docker.com/linux/debian (HTTP {unreachable})")), "{err}");
+        }
+        // The script asks once, and defines the probe before it asks.
+        let s = docker_script(None);
+        assert_eq!(s.matches(NEED_CURL).count(), 1, "{s}");
+        assert_eq!(s.matches("release_served()").count(), 1, "{s}");
+        assert!(s.find("release_served()").unwrap() < s.find("! release_served").unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -653,8 +703,7 @@ mod tests {
         assert!(DOCKER_DIST.contains(". /etc/os-release;") && DOCKER_DIST.contains("command -v apt-get >/dev/null"));
         let probe = DOCKER_DIST.replace("/etc/os-release", &release.display().to_string()).replace("command -v apt-get >/dev/null", "true");
         // Docker's repository as it is: the releases it serves, per distribution.
-        let serves =
-            r#"docker_serves() { case "$1/$2" in debian/bookworm|debian/trixie|ubuntu/jammy|ubuntu/noble|raspbian/bookworm) return 0;; esac; return 1; }"#;
+        let serves = r#"release_served() { case "$1/$2" in */debian/bookworm|*/debian/trixie|*/ubuntu/jammy|*/ubuntu/noble|*/raspbian/bookworm) return 0;; esac; return 1; }"#;
         let pick = |os: &str| {
             std::fs::write(&release, os).unwrap();
             let out = std::process::Command::new("sh").arg("-c").arg(format!("set -e; {serves}; {probe}; echo \"$dist/$codename/$own\"")).output().unwrap();
@@ -684,7 +733,7 @@ mod tests {
     #[test]
     fn where_dockers_repository_has_no_release_the_distributions_own_docker_and_compose_go_in() {
         let s = docker_script(Some("ada"));
-        let own = &s[s.find("if [ -n \"$own\" ]; then").unwrap()..s.find("; else command -v curl").unwrap()];
+        let own = &s[s.find("if [ -n \"$own\" ]; then").unwrap()..s.find("; else repo=").unwrap()];
         assert!(
             own.contains("apt-get install -y docker.io") && own.contains("docker-compose-v2") && own.contains("apt-get install -y docker-compose"),
             "{own}"

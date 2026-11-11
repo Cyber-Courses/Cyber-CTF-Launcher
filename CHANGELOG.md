@@ -510,6 +510,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   provisioning runs: a Stop (which runs in the app) could be cut off mid-teardown, leaving a cloud
   lab's resources billing. The update and the quit prompt now ask the same rule, which counts
   every lab operation in flight.
+- **A Docker install that can't reach Docker's server says so instead of installing the
+  distribution's Docker.** On Ubuntu, Debian and their derivatives, any failure of the check of
+  Docker's repository (no network, a proxy, a timeout) read as "Docker's apt repository has no
+  packages" for the release, and the distribution's older `docker.io` went in. Only an answer that
+  the release isn't served does that now; anything else stops, saying download.docker.com couldn't
+  be reached.
 
 ### Security
 
