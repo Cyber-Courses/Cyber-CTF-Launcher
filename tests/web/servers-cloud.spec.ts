@@ -43,20 +43,26 @@ test.describe("servers and cloud", () => {
 });
 
 // Each page's empty state, through the shared EmptyState: a region named by its h3, the providers
-// it takes as a group of avatars (named for screen readers and in tooltips, no text; past five a
+// it takes as a group of avatars (named for screen readers and in tooltips, no text; past eight a
 // "+N"), and the one action that fills the page (the header has no copy of it then). `servers=none`,
 // `cloud=none`: no saved server or cloud account; `machine=fresh`: no engine or hypervisor installed
 // (on the mock's Apple Silicon Mac).
 test.describe("empty states", () => {
   const pages = [
     { nav: "Servers", query: "&servers=none", title: "No server connected", action: "Add server", avatars: ["Proxmox", "VMware ESXi"] },
-    { nav: "Cloud", query: "&cloud=none", title: "No cloud account connected", action: "Set up cloud provider", avatars: ["AWS", "Azure", "Google Cloud"] },
+    {
+      nav: "Cloud",
+      query: "&cloud=none",
+      title: "No cloud account connected",
+      action: "Set up cloud provider",
+      avatars: ["AWS", "Azure", "Google Cloud", "DigitalOcean", "Linode", "Oracle Cloud"],
+    },
     {
       nav: "Machine",
       query: "&machine=fresh",
       title: "No provider installed",
       action: "Add a provider",
-      avatars: ["Docker Desktop", "OrbStack", "Colima", "VirtualBox", "VMware Fusion", "2 more: UTM, Parallels"],
+      avatars: ["Docker Desktop", "OrbStack", "Colima", "VirtualBox", "VMware Fusion", "UTM", "Parallels"],
     },
   ];
   for (const p of pages) {
@@ -94,7 +100,7 @@ test.describe("empty states", () => {
     await navButton(page, "Machine").click();
     const machine = page.locator("main").getByRole("region", { name: "No provider installed" });
     await expect(machine.getByRole("img", { name: "VMware Fusion" })).toHaveText("VF");
-    await expect(machine.getByRole("img", { name: /^2 more/ })).toHaveText("+2");
+    await expect(machine.getByRole("img", { name: "Parallels" })).toHaveText("PD");
   });
 
   test("Machine's empty state offers a server instead", async ({ page }) => {

@@ -16,6 +16,8 @@ import { formatAgo, formatBytes, formatBytesOf, formatUptime } from "@/lib/forma
 import { LOCALES, setLocalePreference } from "@/lib/i18n";
 import { getLastTest, getVmProvider, setAttackImage, setLastTest, setVmProvider, type LastTest } from "@/lib/settings";
 import type { SelfTestEvent, SystemReport } from "@/lib/tauri";
+import { enginesFor } from "@/features/machine/setup-steps/engines";
+import { localHypervisors, providerLabel } from "@/features/machine/hypervisors";
 import type { SelfTestResult } from "@/features/machine/use-self-test";
 import { freshReport, hypervisorStatus as hv, hypervisors, readyReport, stoppedDockerReport, withNeeds, withSetup } from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, rejectWith, stream } from "@/test/tauri";
@@ -730,12 +732,15 @@ describe("MachineScreen", () => {
     expect(screen.queryByText("Providers")).toBeNull();
     const empty = screen.getByRole("region", { name: "No provider installed" });
     expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No provider installed");
-    // What Add a provider offers on this Linux machine, as avatars named for screen readers.
-    const offered = within(empty)
-      .getAllByRole("img")
-      .map((a) => a.getAttribute("aria-label"))
-      .join(", ");
-    expect(offered).toMatch(/Docker.*VirtualBox/);
+    // Exactly what Add a provider offers on this Linux machine (the report's engines, then its
+    // hypervisors), every one an avatar named for screen readers.
+    const report = freshReport("linux");
+    expect(
+      within(empty)
+        .getAllByRole("img")
+        .map((a) => a.getAttribute("aria-label")),
+    ).toEqual([...enginesFor(report).map((e) => e.name), ...localHypervisors(report).map((p) => providerLabel(p, report.os))]);
+    expect(within(empty).queryByText(/^\+\d/)).toBeNull();
     expect(screen.queryByRole("button", { name: /^(fix|test|add)$/i })).toBeNull();
     expect(screen.getAllByRole("button", { name: /add a provider/i })).toHaveLength(1);
     await user.click(within(empty).getByRole("button", { name: /add a provider/i }));

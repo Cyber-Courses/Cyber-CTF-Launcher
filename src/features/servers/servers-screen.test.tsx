@@ -8,7 +8,7 @@ import { HostRow, type HostView } from "@/features/servers/host-row";
 import { SELFTEST_PLAN, ServerSelfTest, selfTestOutcome } from "@/features/servers/server-self-test";
 import { loadVmTests } from "@/features/servers/vm-tests";
 import { answer } from "@/lib/dev-mock";
-import { SELFTEST_STEPS, type ServerHost, type ServerList, type ServerTest, type SystemReport } from "@/lib/tauri";
+import { PROVIDER_NAMES, SELFTEST_STEPS, SERVER_PROVIDERS, type ServerHost, type ServerList, type ServerTest, type SystemReport } from "@/lib/tauri";
 import { freshReport } from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, rejects, stream, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -302,6 +302,7 @@ describe("ServerScreen", () => {
     // The servers it takes, as avatars before Add server: Proxmox's logo, ESXi's initials "ES" (there is
     // no VMware mark), named for screen readers and in tooltips, never as text.
     const avatars = within(empty).getAllByRole("img");
+    expect(avatars.map((a) => a.getAttribute("aria-label"))).toEqual(SERVER_PROVIDERS.map((id) => PROVIDER_NAMES[id]));
     expect(avatars.map((a) => a.getAttribute("aria-label"))).toEqual(["Proxmox", "VMware ESXi"]);
     expect(avatars.map((a) => a.textContent)).toEqual(["", "ES"]);
     expect(must(avatars[0].querySelector("img"), "Proxmox's logo").getAttribute("src")).toBe("/brands/proxmox-icon.svg");

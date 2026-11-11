@@ -3,20 +3,20 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AvatarGroup } from "@/components/ui/avatar";
 
-const names = ["Docker Desktop", "OrbStack", "Colima", "VirtualBox", "VMware Fusion", "UTM", "Parallels"];
+const names = ["AWS", "Azure", "Google Cloud", "DigitalOcean", "Linode", "Oracle Cloud", "Proxmox", "VMware ESXi", "UTM", "Parallels"];
 
 describe("AvatarGroup", () => {
-  it("shows five, then the rest as one +N avatar that names them", () => {
+  it("shows eight, then the rest as one +N avatar that names them", () => {
     render(<AvatarGroup items={names.map((name) => ({ name }))} />);
     const avatars = screen.getAllByRole("img");
-    expect(avatars.map((a) => a.getAttribute("aria-label"))).toEqual([...names.slice(0, 5), "2 more: UTM, Parallels"]);
+    expect(avatars.map((a) => a.getAttribute("aria-label"))).toEqual([...names.slice(0, 8), "2 more: UTM, Parallels"]);
     expect(avatars.at(-1)?.textContent).toBe("+2");
     expect(screen.getAllByRole("tooltip", { hidden: true }).at(-1)?.textContent).toBe("UTM, Parallels");
   });
 
   it("shows every one, with no count, up to the maximum", () => {
-    render(<AvatarGroup items={names.slice(0, 5).map((name) => ({ name }))} />);
-    expect(screen.getAllByRole("img")).toHaveLength(5);
+    render(<AvatarGroup items={names.slice(0, 8).map((name) => ({ name }))} />);
+    expect(screen.getAllByRole("img")).toHaveLength(8);
     expect(document.body.textContent).not.toMatch(/\+\d/);
   });
 

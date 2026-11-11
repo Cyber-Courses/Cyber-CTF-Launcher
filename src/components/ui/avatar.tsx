@@ -35,7 +35,7 @@ function Avatar({ item }: { item: AvatarItem }) {
 
 /** Avatars stacked after shadcn/ui's group: overlapping a little, each ringed in the background's
  *  colour so the overlap reads; past `max`, the rest as one "+N" avatar naming them. */
-export function AvatarGroup({ items, max = 5, className }: { items: AvatarItem[]; max?: number; className?: string }) {
+export function AvatarGroup({ items, max = 8, className }: { items: AvatarItem[]; max?: number; className?: string }) {
   const t = useT();
   const shown = items.slice(0, max);
   const rest = items.slice(shown.length);

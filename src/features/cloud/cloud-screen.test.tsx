@@ -9,7 +9,7 @@ import { unconnectedProviders } from "@/features/cloud/cloud-model";
 import type { Lab } from "@/features/labs/use-labs";
 import { answer } from "@/lib/dev-mock";
 import { invoiceStatus } from "@/lib/dev-mock/labs";
-import type { LabStatus, ServerHost, ServerList, ServerTest } from "@/lib/tauri";
+import { CLOUD_PROVIDERS, PROVIDER_NAMES, type LabStatus, type ServerHost, type ServerList, type ServerTest } from "@/lib/tauri";
 import { answersDialog, commands, dialogsAsked, installTauri, rejects, type Call } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
 
@@ -96,11 +96,17 @@ describe("CloudScreen", () => {
     // Connect row under it, and no other button.
     const empty = screen.getByRole("region", { name: "No cloud account connected" });
     expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No cloud account connected");
+    // Every cloud the core runs labs on (its list, so one added there shows here), none hidden.
     expect(
       within(empty)
         .getAllByRole("img")
         .map((a) => a.getAttribute("aria-label")),
-    ).toEqual(["AWS", "Azure", "Google Cloud"]);
+    ).toEqual(CLOUD_PROVIDERS.map((id) => PROVIDER_NAMES[id]));
+    expect(
+      within(empty)
+        .getAllByRole("img")
+        .map((a) => a.getAttribute("aria-label")),
+    ).toEqual(["AWS", "Azure", "Google Cloud", "DigitalOcean", "Linode", "Oracle Cloud"]);
     expect(
       within(empty)
         .getAllByRole("button")
