@@ -92,17 +92,22 @@ describe("CloudScreen", () => {
     await removeAccount(user);
     expect(argsOf(calls, "server_remove")).toEqual([{ id: aws.id }]);
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-    // The empty state, with every main provider's logo in it, a shortcut into its setup, before
-    // the one Set up: no Connect row of its own under it.
+    // The empty state, with every main provider's logo as an avatar, then the one Set up: no
+    // Connect row under it, and no other button.
     const empty = screen.getByRole("region", { name: "No cloud account connected" });
     expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No cloud account connected");
-    expect(within(empty).getByRole("button", { name: /set up cloud provider/i })).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "Connect a cloud provider" })).toBeNull();
     expect(
       within(empty)
-        .getAllByRole("button", { name: /^Connect / })
-        .map((b) => b.getAttribute("aria-label")),
-    ).toEqual(["Connect AWS", "Connect Azure", "Connect Google Cloud"]);
+        .getAllByRole("img")
+        .map((a) => a.getAttribute("aria-label")),
+    ).toEqual(["AWS", "Azure", "Google Cloud"]);
+    expect(
+      within(empty)
+        .getAllByRole("button")
+        .map((b) => b.textContent.trim()),
+    ).toEqual(["Set up cloud provider"]);
+    expect(screen.queryByRole("region", { name: "Connect a cloud provider" })).toBeNull();
+    expect(screen.queryAllByRole("button", { name: /^Connect / })).toHaveLength(0);
   });
 
   it("reads this month's spend for an account with a budget and warns when it is over", async () => {
@@ -244,7 +249,7 @@ describe("CloudScreen", () => {
     expect(screen.getByText("no window")).toBeTruthy();
   });
 
-  it("shows the empty state without accounts, connecting a main provider or any other", async () => {
+  it("shows the empty state without accounts, its one Set up opening the setup's provider choice", async () => {
     const calls = installTauri({ server_list: () => ({ default: null, hosts: [sample().hosts[0]], budgets: {} }) });
     const user = userEvent.setup();
     await renderScreen();
@@ -253,13 +258,9 @@ describe("CloudScreen", () => {
     // One "set up" button, in the empty state (none in the header).
     const setUp = screen.getAllByRole("button", { name: /set up cloud provider/i });
     expect(setUp).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: "Connect AWS" }));
     await user.click(setUp[0]);
     await flush();
-    expect(argsOf(calls, "server_open_setup")).toEqual([
-      { id: null, kind: "cloud", provider: "aws" },
-      { id: null, kind: "cloud" },
-    ]);
+    expect(argsOf(calls, "server_open_setup")).toEqual([{ id: null, kind: "cloud" }]);
   });
 
   it("shows loading, then the list error", async () => {

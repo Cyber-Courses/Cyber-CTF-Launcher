@@ -23,5 +23,8 @@
     "running": "実行中",
     "installed": "インストール済み",
     "recommended": "おすすめ"
+  },
+  "avatars": {
+    "more": "ほか {count} 件: {names}"
   }
 }

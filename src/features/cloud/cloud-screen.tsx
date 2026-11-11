@@ -58,7 +58,7 @@ function OverBudgetNotice({ over }: { over: ServerHost[] }) {
   );
 }
 
-/** The accounts: loading, the empty state while there is none (the main providers in it), else
+/** The accounts: loading, the empty state while there is none (the main providers' logos), else
  *  the connected accounts, then apart from them the main providers not connected yet. */
 function Accounts({ page, onSetup }: { page: CloudPage; onSetup: () => void }) {
   const t = useT();
@@ -73,7 +73,7 @@ function Accounts({ page, onSetup }: { page: CloudPage; onSetup: () => void }) {
         </div>
       </Panel>
     );
-  if (page.hosts.length === 0) return <CloudEmptyState onSetup={onSetup} onConnect={connect} />;
+  if (page.hosts.length === 0) return <CloudEmptyState onSetup={onSetup} />;
   return (
     <>
       <AccountsPanel

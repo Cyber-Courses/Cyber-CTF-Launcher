@@ -43,34 +43,58 @@ test.describe("servers and cloud", () => {
 });
 
 // Each page's empty state, through the shared EmptyState: a region named by its h3, the providers
-// it takes as logos, and the one action that fills the page (the header has no copy of it then). `servers=none`, `cloud=none`:
-// no saved server or cloud account; `machine=fresh`: no engine or hypervisor installed.
+// it takes as a group of avatars (named for screen readers and in tooltips, no text; past five a
+// "+N"), and the one action that fills the page (the header has no copy of it then). `servers=none`,
+// `cloud=none`: no saved server or cloud account; `machine=fresh`: no engine or hypervisor installed
+// (on the mock's Apple Silicon Mac).
 test.describe("empty states", () => {
   const pages = [
-    { nav: "Servers", query: "&servers=none", title: "No server connected", action: "Add server", marks: ["Proxmox", "VMware ESXi"] },
-    { nav: "Cloud", query: "&cloud=none", title: "No cloud account connected", action: "Set up cloud provider", marks: ["AWS", "Azure", "Google Cloud"] },
-    { nav: "Machine", query: "&machine=fresh", title: "No provider installed", action: "Add a provider", marks: ["Docker Desktop", "UTM"] },
+    { nav: "Servers", query: "&servers=none", title: "No server connected", action: "Add server", avatars: ["Proxmox", "VMware ESXi"] },
+    { nav: "Cloud", query: "&cloud=none", title: "No cloud account connected", action: "Set up cloud provider", avatars: ["AWS", "Azure", "Google Cloud"] },
+    {
+      nav: "Machine",
+      query: "&machine=fresh",
+      title: "No provider installed",
+      action: "Add a provider",
+      avatars: ["Docker Desktop", "OrbStack", "Colima", "VirtualBox", "VMware Fusion", "2 more: UTM, Parallels"],
+    },
   ];
   for (const p of pages) {
-    test(`${p.nav} shows its heading and its one action`, async ({ page }) => {
+    test(`${p.nav} shows its heading, its providers' avatars and its one action`, async ({ page }) => {
       await openApp(page, p.query);
       await navButton(page, p.nav).click();
       await expect(pageTitle(page)).toHaveText(p.nav);
       const empty = page.locator("main").getByRole("region", { name: p.title });
       await expect(empty.getByRole("heading", { level: 3, name: p.title })).toBeVisible();
-      for (const name of p.marks) await expect(empty.locator("ul li").filter({ hasText: name }).first()).toBeVisible();
+      await expect(empty.getByRole("img")).toHaveCount(p.avatars.length);
+      for (const [n, name] of p.avatars.entries()) await expect(empty.getByRole("img").nth(n)).toHaveAccessibleName(name);
       await expect(empty.getByRole("button", { name: p.action })).toBeVisible();
       await expect(page.locator("main").getByRole("button", { name: p.action })).toHaveCount(1);
     });
   }
 
-  test("Cloud's logos open the setup on their provider, with no Connect row apart", async ({ page, context }) => {
+  test("an avatar names its provider in a tooltip on hover; Cloud's are no buttons and it has no Connect row", async ({ page }) => {
     await openApp(page, "&cloud=none");
     await navButton(page, "Cloud").click();
     await expect(page.locator("main").getByRole("region", { name: "Connect a cloud provider" })).toHaveCount(0);
     const empty = page.locator("main").getByRole("region", { name: "No cloud account connected" });
-    const [setup] = await Promise.all([context.waitForEvent("page"), empty.getByRole("button", { name: "Connect Azure" }).click()]);
-    await expect(setup).toHaveURL(/\/server-setup\?kind=cloud&provider=azure&mock&cloud=none$/);
+    await expect(empty.getByRole("button")).toHaveCount(1);
+    const azure = empty.getByRole("img", { name: "Azure" });
+    const tip = azure.locator("xpath=following-sibling::*[@role='tooltip']");
+    await expect(tip).toHaveCSS("opacity", "0");
+    await azure.hover();
+    await expect(tip).toHaveCSS("opacity", "1");
+    await expect(tip).toHaveText("Azure");
+  });
+
+  test("ESXi, VMware Fusion and Parallels show their initials", async ({ page }) => {
+    await openApp(page, "&servers=none&machine=fresh");
+    await navButton(page, "Servers").click();
+    await expect(page.locator("main").getByRole("img", { name: "VMware ESXi" })).toHaveText("ES");
+    await navButton(page, "Machine").click();
+    const machine = page.locator("main").getByRole("region", { name: "No provider installed" });
+    await expect(machine.getByRole("img", { name: "VMware Fusion" })).toHaveText("VF");
+    await expect(machine.getByRole("img", { name: /^2 more/ })).toHaveText("+2");
   });
 
   test("Machine's empty state offers a server instead", async ({ page }) => {

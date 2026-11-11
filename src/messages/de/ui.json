@@ -23,5 +23,8 @@
     "running": "läuft",
     "installed": "installiert",
     "recommended": "empfohlen"
+  },
+  "avatars": {
+    "more": "{count} weitere: {names}"
   }
 }

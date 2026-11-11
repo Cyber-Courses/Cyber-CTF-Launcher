@@ -299,10 +299,12 @@ describe("ServerScreen", () => {
     // The empty state carries the one Add server: the header has none of its own then.
     const empty = screen.getByRole("region", { name: "No server connected" });
     expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No server connected");
-    // The servers it takes, as decoration before Add server: Proxmox's logo, ESXi's neutral glyph.
-    const marks = must(empty.querySelector("ul[aria-hidden]"), "the servers' marks");
-    expect([...marks.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Proxmox", "VMware ESXi"]);
-    expect([...marks.querySelectorAll("img")].map((i) => i.getAttribute("src"))).toEqual(["/brands/proxmox-icon.svg"]);
+    // The servers it takes, as avatars before Add server: Proxmox's logo, ESXi's initials "ES" (there is
+    // no VMware mark), named for screen readers and in tooltips, never as text.
+    const avatars = within(empty).getAllByRole("img");
+    expect(avatars.map((a) => a.getAttribute("aria-label"))).toEqual(["Proxmox", "VMware ESXi"]);
+    expect(avatars.map((a) => a.textContent)).toEqual(["", "ES"]);
+    expect(must(avatars[0].querySelector("img"), "Proxmox's logo").getAttribute("src")).toBe("/brands/proxmox-icon.svg");
     expect(screen.getAllByRole("button", { name: /add server/i })).toHaveLength(1);
     await user.click(within(empty).getByRole("button", { name: /add server/i }));
     await flush();

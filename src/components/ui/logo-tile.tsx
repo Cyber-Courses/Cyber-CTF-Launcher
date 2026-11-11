@@ -8,16 +8,19 @@ const PAD = { sm: "p-1", md: "p-1.5" } as const;
  * white logo tile (white in every mode, so dark artwork stays legible), an app icon (`fill`)
  * filling the square itself, or, for a provider without a mark we may ship (VMware's needs
  * Broadcom's approval; Hyper-V's and Parallels' have rules of their own), a neutral server glyph
- * on glass. Decorative: the provider's name is always beside it.
+ * on glass. Decorative: the provider's name is beside it, or its accessible name around it.
+ * `round`: the mark fills its parent as a circle (an Avatar's image), padded unless it fills.
  */
-export function LogoTile({ src, fill = false, size = "md" }: { src?: string; fill?: boolean; size?: "sm" | "md" }) {
+export function LogoTile({ src, fill = false, size = "md", round = false }: { src?: string; fill?: boolean; size?: "sm" | "md"; round?: boolean }) {
+  const box = round ? "size-full rounded-full" : BOX[size];
+  const pad = round ? "p-1.5" : PAD[size];
   if (!src)
     return (
-      <span className={`flex shrink-0 items-center justify-center bg-glass-2 text-muted-foreground shadow-[inset_0_0_0_1px_var(--input)] ${BOX[size]}`}>
+      <span className={`flex shrink-0 items-center justify-center bg-glass-2 text-muted-foreground shadow-[inset_0_0_0_1px_var(--input)] ${box}`}>
         <Server className={size === "sm" ? "size-3.5" : "size-4"} />
       </span>
     );
   // eslint-disable-next-line @next/next/no-img-element -- static export, plain asset
-  const mark = <img src={src} alt="" className={fill ? `${BOX[size]} shrink-0 object-contain` : "size-full object-contain"} draggable={false} />;
-  return fill ? mark : <span className={`logo-tile flex shrink-0 items-center justify-center ${BOX[size]} ${PAD[size]}`}>{mark}</span>;
+  const mark = <img src={src} alt="" className={fill ? `${box} shrink-0 object-contain` : "size-full object-contain"} draggable={false} />;
+  return fill ? mark : <span className={`logo-tile flex shrink-0 items-center justify-center ${box} ${pad}`}>{mark}</span>;
 }

@@ -14,7 +14,7 @@ const LOGOS: Partial<Record<Provider, string>> = {
 };
 
 /** A hypervisor's mark (its logo shipped above, or none). */
-const hypervisorLogo = (provider: Provider | null | undefined): string | undefined => (provider ? LOGOS[provider] : undefined);
+export const hypervisorLogo = (provider: Provider | null | undefined): string | undefined => (provider ? LOGOS[provider] : undefined);
 
 /** A hypervisor's logo on a white logo tile (white in every mode) (like the container engines), or a neutral icon. */
 export function HypervisorLogo({ provider, size = "md" }: { provider: Provider | null | undefined; size?: "sm" | "md" }) {
