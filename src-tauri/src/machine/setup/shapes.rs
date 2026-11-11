@@ -177,30 +177,26 @@ pub(crate) fn debian_libvirt_without_kvm() -> SystemReport {
 /// Debian once the setup installed libvirt and Vagrant: the player joined the libvirt and kvm
 /// groups, which apply from the next login, so libvirt can't be used yet.
 pub(crate) fn debian_libvirt_awaits_relogin() -> SystemReport {
-    let mut r = with(bare_debian(), false, |r| {
-        hypervisor(r, Provider::Libvirt, false);
-        r.groups_pending = vec!["libvirt".into(), "kvm".into()];
-    });
-    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Libvirt) {
-        p.available = false;
-        p.reason = Some(Unavailable::NewLogin { group: "libvirt".into() });
-        p.account_lacks = Some(crate::runtime::providers::AccountLacks::NewLogin);
-    }
-    r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
-    r.setup = super::options(&r, false);
-    r
+    awaits_relogin(Provider::Libvirt, false, &["libvirt", "kvm"], "libvirt")
 }
 
 /// Debian once the setup installed QEMU and Vagrant: the QEMU install added the player to the kvm
 /// group (`/dev/kvm` is `root:kvm 0660` there), which applies from the next login.
 pub(crate) fn debian_qemu_awaits_relogin() -> SystemReport {
+    let kvm = crate::runtime::providers::kvm_group();
+    awaits_relogin(Provider::Qemu, true, &[kvm.as_str()], &kvm)
+}
+
+/// Debian with `provider` installed (its plugin as `plugin`) and the player in `groups` since
+/// logging in: `provider` waits for the new login that applies `group`.
+fn awaits_relogin(provider: Provider, plugin: bool, groups: &[&str], group: &str) -> SystemReport {
     let mut r = with(bare_debian(), false, |r| {
-        hypervisor(r, Provider::Qemu, true);
-        r.groups_pending = vec![crate::runtime::providers::kvm_group()];
+        hypervisor(r, provider, plugin);
+        r.groups_pending = groups.iter().map(|g| (*g).to_owned()).collect();
     });
-    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Qemu) {
+    for p in r.vm_providers.iter_mut().filter(|p| p.provider == provider) {
         p.available = false;
-        p.reason = Some(Unavailable::NewLogin { group: crate::runtime::providers::kvm_group() });
+        p.reason = Some(Unavailable::NewLogin { group: group.to_owned() });
         p.account_lacks = Some(crate::runtime::providers::AccountLacks::NewLogin);
     }
     r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);

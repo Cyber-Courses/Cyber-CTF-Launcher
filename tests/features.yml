@@ -2734,7 +2734,9 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/setup/tests.rs > a_mac_with_docker_and_no_vagrant_sets_up_only_the_vm_path
-            - src-tauri/src/machine/selftest/vm.rs > qemu_test_vm_falls_back_to_software_emulation_without_kvm
+            - src-tauri/src/machine/selftest/vm.rs > the_qemu_test_vm_boots_with_the_acceleration_the_labs_ask_for
+            - src-tauri/src/machine/setup/tests.rs > qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test
+            - src-tauri/src/machine/tools/scripts.rs > qemu_install_adds_the_player_to_the_group_that_opens_dev_kvm
             - src-tauri/src/machine/tools/install.rs > macos_installs_through_homebrew
           integration:
             - setup

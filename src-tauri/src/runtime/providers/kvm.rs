@@ -39,6 +39,7 @@ pub(crate) fn kvm_group() -> String {
 
 /// The name of group `gid` in `etc_group` (`/etc/group`'s text), when it is one a player joins
 /// (not root's); else `kvm`.
+#[cfg(any(unix, test))]
 fn group_of(gid: Option<u32>, etc_group: &str) -> String {
     gid.filter(|g| *g != 0)
         .and_then(|gid| {
