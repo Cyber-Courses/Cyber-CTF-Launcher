@@ -31,8 +31,8 @@ pub(super) fn low_memory_warning(needed_mb: u64, available_mb: u64) -> Option<St
 /// one network only; UTM's Vagrant plugin gives a VM no private network, so a lab with a network
 /// (every lab) can't run as VMs on UTM; a TPM runs on VirtualBox, libvirt and Hyper-V only; a
 /// container's host folders aren't shared into a helper VM everywhere.
-pub(super) fn check_provider(prepared: &lab::Prepared, target: lab::Target, provider: super::Provider) -> Result<()> {
-    match lab::refusal_on(&prepared.lab, target, provider) {
+pub(super) fn check_provider(lab: &lab::Lab, target: lab::Target, provider: super::Provider) -> Result<()> {
+    match lab::refusal_on(lab, target, provider) {
         Some(why) => Err(Error::Invalid(format!(
             "This lab can't run on {} yet: {why}. Run it on another hypervisor, a server or in your cloud account.",
             provider.label_on(std::env::consts::OS)

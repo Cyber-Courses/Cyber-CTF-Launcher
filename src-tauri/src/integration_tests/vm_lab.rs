@@ -153,6 +153,10 @@ async fn a_vm_lab_runs_end_to_end_through_the_runner() {
         serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "virtualbox".into()))).unwrap();
     let id = format!("vm-{}", rand::random::<u16>());
     let dir = install_copy(Path::new(&src), &id);
+    if super::support::refused_by_launcher(&dir, crate::runtime::lab::Target::Vagrant, provider) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return;
+    }
     let home = std::env::temp_dir().join(format!("cyberctf-runner-{id}"));
     let lab = Lab { dir, id, home, provider };
     let mut failures = Vec::new();

@@ -65,6 +65,10 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
     // Installed as the launcher installs a lab: under the app data folder, nothing generated.
     let dir = t.data().join("labs").join(&id);
     lab::copy_tree(Path::new(&src), &dir).unwrap_or_else(|e| panic!("copy {src} to {}: {e}", dir.display()));
+    // One VM per machine is Isoloom's vagrant target.
+    if super::support::refused_by_launcher(&dir, lab::Target::Vagrant, provider) {
+        return;
+    }
     let started = std::time::Instant::now();
     let mut f = Vec::new();
     scenario(

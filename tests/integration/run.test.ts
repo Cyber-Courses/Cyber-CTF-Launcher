@@ -169,6 +169,23 @@ describe("--results", () => {
     }
   });
 
+  it("records a scenario the launcher refuses on its provider as skipped, the launcher's words its reason", () => {
+    // The UTM pass: a lab whose VM is on a network can't run on UTM (support::refused_by_launcher).
+    const out = join(folder(), "results.jsonl");
+    const said = "This lab can't run on UTM yet: `web` is on a network, and vagrant_utm gives a VM no private network.";
+    const cargo = `echo "integration test skipped, refused by the launcher: ${said.replaceAll("`", "\\`")}"; echo "test result: ok. 1 passed; 0 failed"`;
+    runner(cargo, { ONLY: "vm-lab", CYBERCTF_TEST_VM_PROVIDER: "utm" }, ["--results", out]);
+    const record = JSON.parse(readFileSync(out, "utf8")) as Record<string, unknown>;
+    expect(record).toMatchObject({ case: "vm-lab", result: "skip", form: "vm", provider: "utm", reason: said });
+    // A start the launcher refuses later, on a provider it takes, is the scenario's failure.
+    const failed = join(folder(), "results.jsonl");
+    runner(`echo "FAILED: it starts: This lab can't run on UTM yet"; echo "test result: FAILED. 0 passed; 1 failed"; exit 101`, { ONLY: "vm-lab" }, [
+      "--results",
+      failed,
+    ]);
+    expect(JSON.parse(readFileSync(failed, "utf8"))).toMatchObject({ case: "vm-lab", result: "fail" });
+  });
+
   it("records a scenario its tier can't run here as skipped, with why", () => {
     const out = join(folder(), "results.jsonl");
     const env = { CYBERCTF_TEST_INTEGRATION_TIERS: "server", CYBERCTF_TEST_ESXI_HOST: "", CYBERCTF_TEST_ESXI_PASSWORD: "", ONLY: "server-lab-esxi" };

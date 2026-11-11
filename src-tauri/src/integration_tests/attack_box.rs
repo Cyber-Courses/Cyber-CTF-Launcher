@@ -97,6 +97,15 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
         "vm" => (lab::Target::Vagrant, true),
         other => panic!("no form {other}"),
     };
+    let on_vm = match form.as_str() {
+        "docker-vm" => Some(lab::Target::DockerVm),
+        "vm" => Some(lab::Target::Vagrant),
+        _ => None,
+    };
+    if on_vm.is_some_and(|target| super::support::refused_by_launcher(&dir, target, provider)) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return;
+    }
     // The lab's run on this machine, in the form under test.
     let run = || match form.as_str() {
         "docker" => isothrum::LabRun::docker(&home, &dir, &id),

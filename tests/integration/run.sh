@@ -89,6 +89,9 @@ SUITE_SHOW='^(ok|FAILED):|panicked'
 # How a test says it returned early for a knob that isn't set (integration_tests::support::SKIPPED,
 # which a unit test holds to this line): cargo counts that return as a pass.
 KNOB_UNSET="integration test skipped, not set:"
+# How it says it returned because the launcher refuses its lab on the provider it was given
+# (integration_tests::support::REFUSED): skipped, the launcher's words the reason.
+REFUSED="integration test skipped, refused by the launcher:"
 
 BOX=integration_tests::attack_box
 LOCAL_BOX="$BOX::the_attack_box_is_a_machine_of_the_lab_on_every_local_form"
@@ -143,11 +146,12 @@ listing() {
 }
 
 # scenario <id> <form> <provider> <test> [VAR=value...]: the opt-in test, alone, with its knobs. It
-# passes when the test ran and passed; a test that returned early for a missing knob is skipped,
-# and so is every scenario while NOT_HERE says why the tier can't run. The form and the provider
+# passes when the test ran and passed; a test that returned early for a missing knob, or because the
+# launcher refuses its lab on that provider (a VM on a network, on UTM), is skipped, and so is every
+# scenario while NOT_HERE says why the tier can't run. The form and the provider
 # (empty where none applies) go to its record.
 scenario() {
-  local name=$1 form=$2 provider=$3 test=$4 start=$SECONDS log unset
+  local name=$1 form=$2 provider=$3 test=$4 start=$SECONDS log unset refused
   shift 4
   if [ -n "$LISTING" ]; then
     listing "$name" "$form" "$test"
@@ -162,8 +166,11 @@ scenario() {
   if logged "$name" "$log" 0 env "$@" cargo test -q --lib -- --ignored --nocapture --test-threads=1 --exact "$test" &&
     grep -q "test result: ok. 1 passed" "$log"; then
     unset=$(grep -F "$KNOB_UNSET" "$log" | head -1)
+    refused=$(grep -F "$REFUSED" "$log" | head -1)
     if [ -n "$unset" ]; then
       record "$name" skip $((SECONDS - start)) "${unset#"$KNOB_UNSET" } isn't set" "$form" "$provider" "$log"
+    elif [ -n "$refused" ]; then
+      record "$name" skip $((SECONDS - start)) "${refused#"$REFUSED" }" "$form" "$provider" "$log"
     else
       record "$name" ok $((SECONDS - start)) "" "$form" "$provider" "$log"
     fi

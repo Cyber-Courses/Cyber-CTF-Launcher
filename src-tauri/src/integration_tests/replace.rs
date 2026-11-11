@@ -58,6 +58,16 @@ async fn a_running_lab_is_not_replaced_under_it() {
     // Installed as the launcher installs a lab: under the app data folder.
     let dir = t.data().join("labs").join(&id);
     lab::copy_tree(src, &dir).unwrap_or_else(|e| panic!("copy {} to {}: {e}", src.display(), dir.display()));
+    let on_vm = match form.as_str() {
+        "docker-vm" => Some(lab::Target::DockerVm),
+        "vm" => Some(lab::Target::Vagrant),
+        _ => None,
+    };
+    if let (Some(target), Some(provider)) = (on_vm, provider)
+        && super::support::refused_by_launcher(&dir, target, provider)
+    {
+        return;
+    }
     let started = std::time::Instant::now();
     let mut f = Vec::new();
     let to = Destination { provider, ..Destination::default() };

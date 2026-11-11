@@ -15,6 +15,27 @@ use crate::platform::unwind::{CatchUnwind, panic_message};
 /// records the scenario as skipped on this line, where cargo counts the early return as a pass.
 pub(crate) const SKIPPED: &str = "integration test skipped, not set:";
 
+/// How a test says it returned because the launcher refuses its lab on the provider it was given
+/// (Isoloom's own rule, as the launch says it: a lab whose VMs are on a network can't run on UTM,
+/// whose Vagrant provider gives a VM no private network): `tests/integration/run.sh` records the
+/// scenario as skipped, with the launcher's words as the reason. The scenario was never started.
+pub(crate) const REFUSED: &str = "integration test skipped, refused by the launcher:";
+
+/// Whether the launcher refuses to start the lab installed in `dir` as `target` on `provider`,
+/// before anything runs, through the launch's own check ([`crate::runtime::launch::refusal_here`]):
+/// said on the test's output ([`REFUSED`], the refusal's words) so the test returning on it is
+/// recorded as skipped. Any other refusal, or one the launch makes later, is the scenario's
+/// failure as before. A lab that can't be read isn't refused here: its start says why.
+pub(crate) fn refused_by_launcher(dir: &std::path::Path, target: crate::runtime::lab::Target, provider: crate::runtime::providers::Provider) -> bool {
+    match crate::runtime::launch::refusal_here(dir, target, provider) {
+        Ok(Some(why)) => {
+            println!("{REFUSED} {why}");
+            true
+        }
+        Ok(None) | Err(_) => false,
+    }
+}
+
 /// Knobs renamed to `CYBERCTF_TEST_<AREA>_<WHAT>` whose old names the workspace's test rig still
 /// sets: (new, old). The old name is read when the new one isn't set. Remove each pair once the rig
 /// sets the new name (tests/README.md, "Knobs").
@@ -95,6 +116,32 @@ mod tests {
         assert!(OLD_NAMES.iter().all(|(new, old)| new.starts_with("CYBERCTF_TEST_") && old.starts_with("CYBERCTF_TEST_") && new != old));
         // tests/integration/run.sh records a scenario as skipped on this line.
         assert!(include_str!("../../../tests/integration/run.sh").contains(&format!("KNOB_UNSET=\"{SKIPPED}\"")));
+        // And as skipped, with the launcher's words, on this one.
+        assert!(include_str!("../../../tests/integration/run.sh").contains(&format!("REFUSED=\"{REFUSED}\"")));
+    }
+
+    /// The lab both forms of which take a private network (as Isoloom's solo-web's VM does).
+    const NETWORKED: &str = "version: 1\nname: both\nnetworks:\n  lab: { cidr: 10.70.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n    app: { image: nginx:1.27, steps: [{ run: setup.sh }] }\n";
+
+    #[test]
+    fn a_lab_the_launcher_refuses_on_a_provider_is_skipped_with_its_words_and_one_it_runs_is_not() {
+        use crate::runtime::lab::Target;
+        use crate::runtime::providers::Provider;
+        let t = crate::testing::test_app::TestApp::new();
+        let dir = t.lab("networked", &[("isoloom.yml", NETWORKED), ("setup.sh", "true\n")]);
+        // UTM: refused, as the start itself refuses it, and nothing is generated for it.
+        let why = crate::runtime::launch::refusal_here(&dir, Target::Vagrant, Provider::Utm).unwrap().expect("refused on UTM");
+        assert!(why.to_string().starts_with("This lab can't run on UTM yet: ") && why.to_string().contains("vagrant_utm"), "{why}");
+        assert!(refused_by_launcher(&dir, Target::Vagrant, Provider::Utm));
+        assert!(!dir.join(".isoloom").exists(), "the check generates nothing");
+        // A hypervisor the lab runs on: not refused, so the scenario runs, and a start that
+        // fails there is its failure.
+        for provider in [Provider::Virtualbox, Provider::Libvirt, Provider::Qemu] {
+            assert!(!refused_by_launcher(&dir, Target::Vagrant, provider), "{provider:?}");
+        }
+        // Not a lab at all: not a refusal of the provider; the start says why, as a failure.
+        let empty = t.lab("empty", &[]);
+        assert!(!refused_by_launcher(&empty, Target::Vagrant, Provider::Utm));
     }
 
     #[tokio::test]

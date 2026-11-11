@@ -208,7 +208,7 @@ async fn start_here(
 pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let VmStart { provider, inputs } = start;
     let prepared = lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
-    check_provider(&prepared, lab::Target::DockerVm, provider)?;
+    check_provider(&prepared.lab, lab::Target::DockerVm, provider)?;
     mark_local_vm(dir, Some(provider))?;
     log(super::deploy_log::in_local_vm(provider.id()));
     if provider == Provider::Utm {
@@ -278,13 +278,22 @@ pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     let prepared = lab::prepare(dir, lab::Target::Vagrant)?;
     // A container lab's VM form leaves no local-VM mark behind: that one names docker-vm.
     mark_local_vm(dir, None)?;
-    check_provider(&prepared, lab::Target::Vagrant, provider)?;
+    check_provider(&prepared.lab, lab::Target::Vagrant, provider)?;
     warn_if_low_memory(&prepared.spec, log);
     if provider == Provider::Qemu {
         check_qemu(&prepared, log).await?;
     }
     isothrum::LabRun::vm(home, dir, id)?.start(inputs, provider.id(), log).await?;
     mark_parked(dir, None)
+}
+
+/// Why the launcher refuses to start the lab installed in `dir` as `target` (Isoloom's `vagrant`
+/// or `docker-vm`) on the local hypervisor `provider`, before anything runs: the refusal
+/// [`start_vm_run`] and [`start_docker_in_vm_run`] make, read from the lab's spec alone (nothing
+/// generated). None when it would start there. What the integration tests skip on, saying why.
+#[cfg(test)]
+pub(crate) fn refusal_here(dir: &Path, target: lab::Target, provider: Provider) -> Result<Option<Error>> {
+    Ok(check_provider(&lab::lab(dir)?, target, provider).err())
 }
 
 /// Checks the lab's instance against the networks Docker has now (an install with Docker down

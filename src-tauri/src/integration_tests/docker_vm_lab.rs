@@ -61,6 +61,10 @@ async fn a_container_lab_runs_in_a_local_vm_end_to_end() {
         serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "virtualbox".into()))).unwrap();
     let id = format!("dvm-{}", rand::random::<u16>());
     let dir = install_copy(Path::new(&src), &id);
+    if super::support::refused_by_launcher(&dir, crate::runtime::lab::Target::DockerVm, provider) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return;
+    }
     let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
     let started = std::time::Instant::now();
     let mut f = Vec::new();

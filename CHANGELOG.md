@@ -8,6 +8,10 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **The integration runner records a lab the launcher refuses on a hypervisor as skipped.** A VM
+  scenario whose lab can't run on the hypervisor it is given (a VM on a network, on UTM) checks the
+  launch's own refusal before it starts anything, and is recorded `skip` with the launcher's words,
+  where it was a failure in a few seconds.
 - **The attack box's credentials, on the lab page and its screen.** The box's `player` account
   now has a password, made by the launcher for each box it adds (20 random lowercase letters and
   digits without look-alikes, in four groups), so a prompt no longer leaves the player stuck: a
