@@ -16,7 +16,7 @@ on:
       - "src/messages/**"
       - "packaging/store/**"
   push:
-    branches: [main, dev]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -37,9 +37,9 @@ jobs:
         # compromised release asset can't run unverified in CI. Bump ACTIONLINT_VERSION and both
         # checksums together (from the release's actionlint_<version>_checksums.txt).
         env:
-          ACTIONLINT_VERSION: "1.7.7"
-          ACTIONLINT_SHA256_AMD64: "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
-          ACTIONLINT_SHA256_ARM64: "401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256_AMD64: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          ACTIONLINT_SHA256_ARM64: "325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6"
         run: |
           set -euo pipefail
           case "$(uname -m)" in
