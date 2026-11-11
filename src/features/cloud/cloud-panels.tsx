@@ -108,7 +108,7 @@ export function AccountsPanel({
 }
 
 /** The main providers not connected yet, each a button that opens the setup on it. */
-export function ProviderButtons({ providers, onConnect }: { providers: typeof MAIN_PROVIDERS; onConnect: (provider: CloudProvider) => void }) {
+function ProviderButtons({ providers, onConnect }: { providers: typeof MAIN_PROVIDERS; onConnect: (provider: CloudProvider) => void }) {
   const t = useT();
   return (
     <div className="flex flex-wrap gap-2">

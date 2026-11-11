@@ -29,7 +29,6 @@
     },
     "providers": "Provedores",
     "providersMeta": "o que roda labs nesta máquina",
-    "providersEmpty": "Nada instalado ainda. Adicione um provedor para rodar labs nesta máquina.",
     "test": "Testar",
     "hideTest": "Ocultar teste",
     "fix": "Corrigir",
@@ -78,6 +77,10 @@
       "current": "atual",
       "default": "padrão"
     }
+  },
+  "empty": {
+    "title": "Nenhum provedor instalado",
+    "description": "Instale um mecanismo de contêineres ou um hipervisor para rodar labs nesta máquina."
   },
   "running": {
     "title": "Rodando agora",

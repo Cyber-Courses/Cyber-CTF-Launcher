@@ -29,7 +29,6 @@
     },
     "providers": "Providers",
     "providersMeta": "what runs labs on this machine",
-    "providersEmpty": "Nothing installed yet. Add a provider to run labs on this machine.",
     "test": "Test",
     "hideTest": "Hide test",
     "fix": "Fix",
@@ -78,6 +77,10 @@
       "current": "current",
       "default": "default"
     }
+  },
+  "empty": {
+    "title": "No provider installed",
+    "description": "Install a container engine or a hypervisor to run labs on this machine."
   },
   "running": {
     "title": "Running now",

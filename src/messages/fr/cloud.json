@@ -19,23 +19,9 @@
     "autoStopAfter": "arrêt auto après {hours} h",
     "noAutoStop": "pas d'arrêt auto"
   },
-  "firstRun": {
-    "title": "Lancez des labs dans votre propre compte cloud",
-    "body": "Une instance jetable par lab, détruite quand vous l'arrêtez. Fonctionne sur AWS, Azure, Google Cloud, DigitalOcean, Linode ou Oracle Cloud.",
-    "steps": {
-      "connect": {
-        "title": "Connectez un compte",
-        "body": "Des clés d'accès ou vos identifiants de la CLI AWS, et une région."
-      },
-      "pick": {
-        "title": "Choisissez-le sur un lab",
-        "body": "Terraform crée une instance, joignable en SSH depuis votre IP."
-      },
-      "stop": {
-        "title": "Attaquez, puis arrêtez",
-        "body": "Arrêter détruit l'instance, la facturation s'arrête donc avec elle."
-      }
-    }
+  "empty": {
+    "title": "Aucun compte cloud connecté",
+    "description": "Connectez votre propre compte cloud pour lancer chaque lab sur une instance jetable, détruite quand vous l'arrêtez."
   },
   "account": {
     "apiToken": "jeton d'API",

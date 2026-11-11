@@ -19,23 +19,9 @@
     "autoStopAfter": "parada automática tras {hours} h",
     "noAutoStop": "sin parada automática"
   },
-  "firstRun": {
-    "title": "Ejecuta labs en tu propia cuenta en la nube",
-    "body": "Una instancia desechable por lab, destruida al detenerlo. Funciona en AWS, Azure, Google Cloud, DigitalOcean, Linode u Oracle Cloud.",
-    "steps": {
-      "connect": {
-        "title": "Conecta una cuenta",
-        "body": "Claves de acceso o tus credenciales de AWS CLI, y una región."
-      },
-      "pick": {
-        "title": "Elígela en un lab",
-        "body": "Terraform crea una instancia, accesible por SSH desde tu IP."
-      },
-      "stop": {
-        "title": "Ataca y luego Detén",
-        "body": "Detener destruye la instancia, así que la facturación se detiene con ella."
-      }
-    }
+  "empty": {
+    "title": "Ninguna cuenta en la nube conectada",
+    "description": "Conecta tu propia cuenta en la nube para ejecutar cada lab en una instancia desechable, destruida al detenerlo."
   },
   "account": {
     "apiToken": "Token de API",

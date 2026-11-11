@@ -15,8 +15,8 @@ import { useT } from "@/lib/i18n";
 
 /** Title, readiness strip (setup left, OS, uptime) and "Add a provider", which opens the provider
  *  picker: what this machine can run but doesn't have (as the Servers page's "Add server" opens
- *  the server setup). */
-export function MachineHeader({ report, m, needsSetup }: { report: SystemReport; m: MachineMetrics | null; needsSetup: number }) {
+ *  the server setup). Not with `canAdd` false: the page's empty state carries it then. */
+export function MachineHeader({ report, m, needsSetup, canAdd }: { report: SystemReport; m: MachineMetrics | null; needsSetup: number; canAdd: boolean }) {
   const t = useT();
   const openSetup = useOpenSetup();
   return (
@@ -29,15 +29,17 @@ export function MachineHeader({ report, m, needsSetup }: { report: SystemReport;
         </>
       }
       actions={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            openSetup("add");
-          }}
-        >
-          <Plus className="size-3.5" /> {t("machine.screen.addProvider")}
-        </Button>
+        canAdd && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              openSetup("add");
+            }}
+          >
+            <Plus className="size-3.5" /> {t("machine.screen.addProvider")}
+          </Button>
+        )
       }
     />
   );

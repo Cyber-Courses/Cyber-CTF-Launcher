@@ -29,7 +29,6 @@
     },
     "providers": "Proveedores",
     "providersMeta": "lo que ejecuta labs en esta máquina",
-    "providersEmpty": "Aún no hay nada instalado. Añade un proveedor para ejecutar labs en esta máquina.",
     "test": "Probar",
     "hideTest": "Ocultar prueba",
     "fix": "Arreglar",
@@ -78,6 +77,10 @@
       "current": "actual",
       "default": "predeterminado"
     }
+  },
+  "empty": {
+    "title": "Ningún proveedor instalado",
+    "description": "Instala un motor de contenedores o un hipervisor para ejecutar labs en esta máquina."
   },
   "running": {
     "title": "En ejecución",

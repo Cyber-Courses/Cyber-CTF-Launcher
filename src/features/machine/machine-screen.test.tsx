@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DownloadsPanel } from "@/features/machine/downloads-panel";
@@ -718,18 +718,25 @@ describe("MachineScreen", () => {
   it("warns about low disk space and counts what needs setup", async () => {
     const calls = installTauri({ machine_metrics: () => metrics({ diskUsed: 490 * GB }) });
     const user = userEvent.setup();
-    render(<MachineScreen report={freshReport("linux")} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
+    const onNavigate = vi.fn();
+    render(<MachineScreen report={freshReport("linux")} onRefresh={vi.fn()} onNavigate={onNavigate} />);
     await flush(50);
     expect(text()).toContain("Low disk space");
     expect(text()).toContain("10 GB free");
     expect(text()).toContain("2 lab types need setup");
     expect(text()).toContain("Linux x86_64");
-    // Nothing installed: no provider rows, one line pointing at the header's button.
-    expect(text()).toContain("Nothing installed yet.");
+    // Nothing installed: no provider rows; the empty state stands for them and carries the one
+    // Add a provider (none in the header then), and a server as the way around.
+    expect(screen.queryByText("Providers")).toBeNull();
+    const empty = screen.getByRole("region", { name: "No provider installed" });
+    expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No provider installed");
     expect(screen.queryByRole("button", { name: /^(fix|test|add)$/i })).toBeNull();
-    await user.click(button(/add a provider/i));
+    expect(screen.getAllByRole("button", { name: /add a provider/i })).toHaveLength(1);
+    await user.click(within(empty).getByRole("button", { name: /add a provider/i }));
     await flush();
     expect(calls.find((c) => c.cmd === "machine_open_setup")?.args).toEqual({ step: "add", provider: null });
+    await user.click(within(empty).getByRole("button", { name: "Use a server" }));
+    expect(onNavigate).toHaveBeenCalledWith("server");
   });
 
   it("names an unknown OS as-is and counts one lab type", async () => {
@@ -770,7 +777,7 @@ describe("MachineScreen", () => {
     await flush(50);
     const providers = must(screen.getByText("Providers").closest("section, div")?.parentElement, "the Providers panel").textContent;
     expect(providers).toContain("Docker Desktop");
-    expect(providers).not.toContain("Nothing installed yet.");
+    expect(screen.queryByRole("region", { name: "No provider installed" })).toBeNull();
     for (const name of ["OrbStack", "Colima", "VirtualBox", "VMware", "UTM", "Not on this machine", "Use a server"]) expect(providers).not.toContain(name);
   });
 

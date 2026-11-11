@@ -28,6 +28,7 @@ import { report } from "@/lib/dev-mock/sample";
  *    stream an installer's output and succeed: the next system check reports the tool installed.
  *  - `deploying=none`: no lab is deploying at load (GOAD Light otherwise is).
  *  - `cloud=none`: no cloud account saved (until one is saved in the setup).
+ *  - `servers=none`: no Proxmox or ESXi server saved (until one is saved in the setup).
  *  - `managed`: this computer's administrator turned every policy switch on (no website agent,
  *    in-app updates, tool installs, cloud labs or privileged labs).
  *  - `link=<url>`: the app was opened with this link (`cyberctf://labs/<slug>`).
@@ -56,6 +57,7 @@ export type Scenario = {
   installFails: boolean;
   noDeploying: boolean;
   noCloud: boolean;
+  noServers: boolean;
   /** An administrator's policy turns every switch off (`managed`): Settings says so. */
   managed: boolean;
   link: string | null;
@@ -79,6 +81,7 @@ export function scenarioFrom(search: string): Scenario {
     installFails: q.get("install") === "fail",
     noDeploying: q.get("deploying") === "none",
     noCloud: q.get("cloud") === "none",
+    noServers: q.get("servers") === "none",
     managed: q.has("managed"),
     link: q.get("link"),
   };

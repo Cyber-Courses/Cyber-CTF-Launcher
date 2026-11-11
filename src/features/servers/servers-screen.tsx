@@ -39,16 +39,19 @@ export function ServerScreen({ report = null, onNavigate }: { report?: SystemRep
         title={t("servers.screen.title")}
         lead={t("servers.screen.lead")}
         actions={
-          <>
-            {hosts && hosts.length > 0 && (
-              <Button variant="outline" size="sm" onClick={page.testAll} disabled={summary.anyTesting}>
-                {summary.anyTesting ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />} {t("servers.screen.testAll")}
+          // With no server yet, the empty state below carries Add server.
+          hosts?.length === 0 ? undefined : (
+            <>
+              {hosts && (
+                <Button variant="outline" size="sm" onClick={page.testAll} disabled={summary.anyTesting}>
+                  {summary.anyTesting ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />} {t("servers.screen.testAll")}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={add}>
+                <Plus className="size-3.5" /> {t("servers.screen.addServer")}
               </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={add}>
-              <Plus className="size-3.5" /> {t("servers.screen.addServer")}
-            </Button>
-          </>
+            </>
+          )
         }
       />
 

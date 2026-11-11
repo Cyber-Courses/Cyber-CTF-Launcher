@@ -92,7 +92,10 @@ describe("CloudScreen", () => {
     await removeAccount(user);
     expect(argsOf(calls, "server_remove")).toEqual([{ id: aws.id }]);
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-    expect(screen.getByText("Run labs in your own cloud account")).toBeTruthy();
+    // The empty state, then the same Connect row the accounts have under them, with every provider.
+    const empty = screen.getByRole("region", { name: "No cloud account connected" });
+    expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No cloud account connected");
+    expect(within(empty).getByRole("button", { name: /set up cloud provider/i })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /^Connect / }).map((b) => b.getAttribute("aria-label"))).toEqual([
       "Connect AWS",
       "Connect Azure",
@@ -239,13 +242,13 @@ describe("CloudScreen", () => {
     expect(screen.getByText("no window")).toBeTruthy();
   });
 
-  it("shows the first run without accounts, connecting a main provider or any other", async () => {
+  it("shows the empty state without accounts, connecting a main provider or any other", async () => {
     const calls = installTauri({ server_list: () => ({ default: null, hosts: [sample().hosts[0]], budgets: {} }) });
     const user = userEvent.setup();
     await renderScreen();
-    expect(screen.getByText("Run labs in your own cloud account")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "No cloud account connected" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-    // One "set up" button, in the first run (none in the header).
+    // One "set up" button, in the empty state (none in the header).
     const setUp = screen.getAllByRole("button", { name: /set up cloud provider/i });
     expect(setUp).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "Connect AWS" }));

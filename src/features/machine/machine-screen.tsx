@@ -11,6 +11,7 @@ import { HypervisorRows } from "@/features/machine/hypervisor-rows";
 import { MachineDetails } from "@/features/machine/machine-details";
 import { LowDiskCallout, MachineHeader, UsageCards } from "@/features/machine/machine-sections";
 import { dockerState, setupCount, usage, vmSetup } from "@/features/machine/machine-status";
+import { MachineEmptyState } from "@/features/machine/machine-empty-state";
 import { DownloadsPanel } from "@/features/machine/downloads-panel";
 import { RunningNowPanel } from "@/features/machine/running-now-panel";
 import { useMachineMetrics } from "@/features/machine/use-machine-metrics";
@@ -52,13 +53,15 @@ export function MachineScreen({
   const preferred = useVmProvider();
   const vm = vmSetup(report, preferred, tests.last.vm);
   const needsSetup = setupCount(dockerState(report, tests.last.docker), vm.state);
+  // No engine or hypervisor installed: the empty state stands for the providers, with Add a provider.
+  const noProvider = report.dockerEngines.length === 0 && !vm.hasHypervisor;
   // A row's Fix or Test opens the guided setup at that step (the header's button, at its choice).
   const fix = useOpenSetup();
 
   return (
     <div className="space-y-5">
-      <MachineHeader report={report} m={m} needsSetup={needsSetup} />
-      <MachineBody report={report} m={m} vm={vm} tests={tests} onFix={fix} onRefresh={onRefresh} onNavigate={onNavigate} />
+      <MachineHeader report={report} m={m} needsSetup={needsSetup} canAdd={!noProvider} />
+      <MachineBody report={report} m={m} vm={vm} noProvider={noProvider} tests={tests} onFix={fix} onRefresh={onRefresh} onNavigate={onNavigate} />
     </div>
   );
 }
@@ -68,6 +71,7 @@ function MachineBody({
   report,
   m,
   vm,
+  noProvider,
   tests,
   onFix,
   onRefresh,
@@ -76,6 +80,7 @@ function MachineBody({
   report: SystemReport;
   m: MachineMetrics | null;
   vm: ReturnType<typeof vmSetup>;
+  noProvider: boolean;
   tests: ReturnType<typeof useLabTests>;
   onFix: (step: string, provider?: Provider) => void;
   onRefresh: () => void | Promise<void>;
@@ -96,25 +101,23 @@ function MachineBody({
     onFix,
     onRefresh,
   });
+  const toServers = () => {
+    onNavigate("server");
+  };
   return (
     <>
       <UsageCards m={m} />
       <LowDiskCallout m={m} />
       {/* The providers: every container engine and hypervisor installed here, nothing for the rest. */}
-      <Panel>
-        <PanelHeader title={t("machine.screen.providers")} meta={t("machine.screen.providersMeta")} />
-        {report.dockerEngines.length === 0 && !vm.hasHypervisor && (
-          <p className="px-4 py-3.5 text-[0.8125rem] text-muted-foreground">{t("machine.screen.providersEmpty")}</p>
-        )}
-        <EngineRows {...rowProps("docker")} />
-        <HypervisorRows
-          {...rowProps("vm")}
-          vm={vm}
-          onUseServer={() => {
-            onNavigate("server");
-          }}
-        />
-      </Panel>
+      {noProvider ? (
+        <MachineEmptyState onUseServer={toServers} />
+      ) : (
+        <Panel>
+          <PanelHeader title={t("machine.screen.providers")} meta={t("machine.screen.providersMeta")} />
+          <EngineRows {...rowProps("docker")} />
+          <HypervisorRows {...rowProps("vm")} vm={vm} onUseServer={toServers} />
+        </Panel>
+      )}
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <RunningNowPanel refreshKey={now} />
         <DownloadsPanel />

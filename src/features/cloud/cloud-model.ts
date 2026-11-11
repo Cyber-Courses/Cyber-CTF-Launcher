@@ -3,7 +3,7 @@ import type { Lab } from "@/features/labs/use-labs";
 
 // The Cloud page's logic, as pure functions of the saved accounts, their spend and the labs.
 
-/** The providers offered up front: the first-run tiles, and a "connect" row each until connected. */
+/** The providers offered up front: a "connect" button each until connected. */
 export const MAIN_PROVIDERS = (["aws", "azure", "gcp"] satisfies CloudProvider[]).map((id) => ({ id, label: PROVIDER_NAMES[id] }));
 
 /** The main providers with no account among `accounts`, offered apart from them to connect. */

@@ -19,23 +19,9 @@
     "autoStopAfter": "parada automática após {hours} h",
     "noAutoStop": "sem parada automática"
   },
-  "firstRun": {
-    "title": "Rode labs na sua própria conta de nuvem",
-    "body": "Uma instância descartável por lab, destruída quando você a para. Roda na AWS, Azure, Google Cloud, DigitalOcean, Linode ou Oracle Cloud.",
-    "steps": {
-      "connect": {
-        "title": "Conecte uma conta",
-        "body": "Chaves de acesso ou suas credenciais da AWS CLI, e uma região."
-      },
-      "pick": {
-        "title": "Escolha-a num lab",
-        "body": "O Terraform cria uma instância, acessível por SSH a partir do seu IP."
-      },
-      "stop": {
-        "title": "Ataque e depois pare",
-        "body": "Parar destrói a instância, então a cobrança para junto."
-      }
-    }
+  "empty": {
+    "title": "Nenhuma conta de nuvem conectada",
+    "description": "Conecte sua própria conta de nuvem para rodar cada lab em uma instância descartável, destruída quando você o para."
   },
   "account": {
     "apiToken": "Token de API",

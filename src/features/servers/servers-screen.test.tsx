@@ -295,6 +295,13 @@ describe("ServerScreen", () => {
     const onNavigate = await renderScreen(vi.fn(), freshReport());
     expect(document.body.textContent).not.toContain("Test all");
     expect(screen.queryByText("Hosts")).toBeNull();
+    // The empty state carries the one Add server: the header has none of its own then.
+    const empty = screen.getByRole("region", { name: "No server connected" });
+    expect(within(empty).getByRole("heading", { level: 3 }).textContent).toBe("No server connected");
+    expect(screen.getAllByRole("button", { name: /add server/i })).toHaveLength(1);
+    await user.click(within(empty).getByRole("button", { name: /add server/i }));
+    await flush();
+    expect(argsOf(calls, "server_open_setup")).toEqual([{ id: null, kind: "server" }]);
     await user.click(button(/set up this machine/i));
     expect(onNavigate).toHaveBeenCalledWith("machine");
     expect(commands(calls)).not.toContain("server_test");

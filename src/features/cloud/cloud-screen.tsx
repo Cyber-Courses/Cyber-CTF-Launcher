@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { NoticePanel } from "@/components/ui/notice-panel";
 import { PageHeader } from "@/components/ui/page-header";
 import { Spinner } from "@/components/ui/spinner";
-import { FirstRun } from "@/features/cloud/first-run";
+import { CloudEmptyState } from "@/features/cloud/cloud-empty-state";
 import { AccountsPanel, BudgetPanel, ConnectProviders, RunningCloudLabs } from "@/features/cloud/cloud-panels";
 import { unconnectedProviders } from "@/features/cloud/cloud-model";
 import { useCloudPage, type CloudPage } from "@/features/cloud/use-cloud-page";
@@ -58,8 +58,8 @@ function OverBudgetNotice({ over }: { over: ServerHost[] }) {
   );
 }
 
-/** The accounts: loading, the first run while there is none, else the connected accounts, then
- *  apart from them the main providers not connected yet. */
+/** The accounts: loading, the empty state while there is none, else the connected accounts; then
+ *  apart from them the main providers not connected yet (all of them while there is none). */
 function Accounts({ page, onSetup }: { page: CloudPage; onSetup: () => void }) {
   const t = useT();
   const connect = (provider: CloudProvider) => {
@@ -73,18 +73,21 @@ function Accounts({ page, onSetup }: { page: CloudPage; onSetup: () => void }) {
         </div>
       </Panel>
     );
-  if (page.hosts.length === 0) return <FirstRun onSetup={onSetup} onConnect={connect} />;
   return (
     <>
-      <AccountsPanel
-        accounts={page.hosts}
-        tests={page.tests}
-        budgets={page.budgets}
-        spend={page.spend}
-        onTest={page.test}
-        onEdit={page.openSetup}
-        onRemove={page.remove}
-      />
+      {page.hosts.length === 0 ? (
+        <CloudEmptyState onSetup={onSetup} />
+      ) : (
+        <AccountsPanel
+          accounts={page.hosts}
+          tests={page.tests}
+          budgets={page.budgets}
+          spend={page.spend}
+          onTest={page.test}
+          onEdit={page.openSetup}
+          onRemove={page.remove}
+        />
+      )}
       <ConnectProviders providers={unconnectedProviders(page.hosts)} onConnect={connect} />
     </>
   );

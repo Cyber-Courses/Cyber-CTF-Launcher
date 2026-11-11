@@ -29,7 +29,6 @@
     },
     "providers": "Anbieter",
     "providersMeta": "führt Labs auf diesem Rechner aus",
-    "providersEmpty": "Noch nichts installiert. Füge einen Anbieter hinzu, um Labs auf diesem Rechner auszuführen.",
     "test": "Testen",
     "hideTest": "Test ausblenden",
     "fix": "Beheben",
@@ -78,6 +77,10 @@
       "current": "aktuell",
       "default": "Standard"
     }
+  },
+  "empty": {
+    "title": "Kein Anbieter installiert",
+    "description": "Installiere eine Container-Engine oder einen Hypervisor, um Labs auf diesem Rechner auszuführen."
   },
   "running": {
     "title": "Läuft gerade",

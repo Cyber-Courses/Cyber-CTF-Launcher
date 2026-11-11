@@ -70,7 +70,7 @@ describe("CloudScreen", () => {
     expect(commands(calls)).toContain("server_list");
   });
 
-  it("shows the first-run setup without accounts", async () => {
+  it("shows the empty state without accounts", async () => {
     const calls = installTauri({ server_list: () => ({ default: null, hosts: [] }) });
     const user = userEvent.setup();
     render(<CloudScreen />);

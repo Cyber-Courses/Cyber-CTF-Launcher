@@ -40,8 +40,11 @@ export function saveError(h: Host): string | null {
 }
 
 /** The saved servers and cloud accounts: those saved in the preview, else the sample ones (without
- *  the cloud account under `cloud=none`). */
+ *  the cloud account under `cloud=none`, without the servers under `servers=none`). */
 export function hostsOf(sc: Scenario): Host[] {
-  const sample = (answer("server_list", undefined) as { hosts: Host[] }).hosts;
-  return savedHosts() ?? (sc.noCloud ? sample.filter((h) => h.provider !== "aws") : sample);
+  const isServer = (h: Host) => h.provider === "proxmox" || h.provider === "vmware_esxi";
+  const sample = (answer("server_list", undefined) as { hosts: Host[] }).hosts.filter(
+    (h) => !(sc.noCloud && h.provider === "aws") && !(sc.noServers && isServer(h)),
+  );
+  return savedHosts() ?? sample;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { answer, scenarioFrom, scenarioReport } from "@/lib/dev-mock";
+import { hostsOf } from "@/lib/dev-mock/hosts";
 import type { LabStatus, ServerList, SystemReport } from "@/lib/tauri";
 
 // The preview and the end-to-end tests run on the dev mock's answers: each has every field the
@@ -26,5 +27,15 @@ describe("the dev mock answers like the core", () => {
     for (const h of (answer("server_list", undefined) as ServerList).hosts) {
       for (const field of ["monthlyLimit", "gcpProject", "useCliCreds", "awsProfile"]) expect(h, `${h.id}.${field}`).toHaveProperty(field);
     }
+  });
+});
+
+describe("the preview's saved hosts", () => {
+  const providers = (search: string) => hostsOf(scenarioFrom(search)).map((h) => h.provider);
+  it("are the sample's, less the cloud account with cloud=none and the servers with servers=none", () => {
+    expect(providers("?mock")).toEqual(["proxmox", "vmware_esxi", "aws"]);
+    expect(providers("?mock&cloud=none")).toEqual(["proxmox", "vmware_esxi"]);
+    expect(providers("?mock&servers=none")).toEqual(["aws"]);
+    expect(providers("?mock&servers=none&cloud=none")).toEqual([]);
   });
 });
