@@ -62,8 +62,8 @@
     "restartNow": "Redémarrer",
     "updating": "Mise à jour…",
     "update": "Mettre à jour",
-    "waitForDeploys": "La mise à jour redémarre Cyber CTF. Attendez la fin du déploiement de vos labs.",
-    "deployingUnknown": "Impossible de savoir si un lab est en cours de déploiement : la mise à jour attend. Réessayez dans un instant."
+    "waitForLabs": "La mise à jour redémarre Cyber CTF. Attendez que vos labs aient fini de démarrer, de s'arrêter ou de se mettre en pause.",
+    "busyUnknown": "Impossible de savoir si un lab démarre ou s'arrête : la mise à jour attend. Réessayez dans un instant."
   },
   "error": {
     "title": "Une erreur est survenue",

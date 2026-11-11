@@ -35,8 +35,8 @@ export const OPERATION_STATUS: Partial<Record<string, string>> = {
 
 /**
  * The labs the backend deploys among `ops`, the operations in flight, as each says (Rust's
- * `ActiveOperation::deploying`: what `deploying_labs` answers), read from the one poll of the
- * operations rather than a second one.
+ * `ActiveOperation::deploying`), read from the one poll of the operations rather than a second
+ * one.
  */
 export function deployingOf(ops: ReadonlyMap<string, ActiveOperation>): Set<string> {
   return new Set([...ops.values()].filter((o) => o.deploying).map((o) => o.labId));
@@ -52,6 +52,15 @@ export function deployingOf(ops: ReadonlyMap<string, ActiveOperation>): Set<stri
 export function useDeployingLabs(enabled = true): Set<string> {
   const ops = useActiveOperations(enabled);
   return useMemo(() => deployingOf(ops), [ops]);
+}
+
+/**
+ * Whether any lab operation is in flight, in the app or a deploy worker, of any kind (a stop and
+ * a pause too): the operations listed are exactly Rust's `busy_labs`, the rule an update install
+ * waits on, read from the one poll.
+ */
+export function useLabsBusy(): boolean {
+  return useActiveOperations().size > 0;
 }
 
 /** The labs deploying in the backend as last read (empty while nothing reads them). */

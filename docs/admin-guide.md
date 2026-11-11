@@ -108,8 +108,10 @@ The launcher's own updater checks
 starts and, when a newer version exists, shows a banner. Nothing is installed until the user
 clicks **Update** (or **Install update** in Settings > About). It installs only a package signed
 with the launcher's update key (minisign; the public key is in `src-tauri/tauri.conf.json`), and
-it waits while a lab is deploying. On Windows the update runs the same kind of installer as the
-installed one (NSIS or MSI); the MSI needs administrator rights. For a managed fleet, deploy new
+it waits while any lab operation runs (a start, a stop, a pause or a provisioning run, in the app
+or in a deploy worker), because installing quits every Cyber CTF process. On Windows the update
+runs the same kind of installer as the installed one (NSIS or MSI); the MSI needs administrator
+rights. For a managed fleet, deploy new
 versions with your own tooling and see the [policy reference](reference/policy.md) for turning the
 updater off.
 

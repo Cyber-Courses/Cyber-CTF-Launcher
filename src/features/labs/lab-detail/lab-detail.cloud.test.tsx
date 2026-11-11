@@ -28,7 +28,7 @@ const status = labStatus;
 const flush = () => flushUi(30);
 const renderGoat = (props: Partial<Parameters<typeof LabDetail>[0]> = {}) => renderLabPage(goat, props);
 
-const idle = { deploying_labs: () => [], active_operations: () => [] };
+const idle = { busy_labs: () => [], active_operations: () => [] };
 
 describe("LabDetail, a cloud lab", () => {
   it("starts on one of the player's accounts of its cloud, its cost said first", async () => {

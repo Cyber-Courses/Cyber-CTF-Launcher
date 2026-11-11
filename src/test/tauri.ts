@@ -26,7 +26,7 @@ const streams =
   };
 
 /** `active_operations` answering a deploy worker's launch on each of `ids`, as the backend reports
- *  a lab it deploys (`deploying_labs` lists them too). */
+ *  a lab it deploys (`busy_labs` lists them too). */
 export const deployingOps =
   (ids: () => string[]): Handler =>
   () =>

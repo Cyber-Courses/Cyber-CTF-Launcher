@@ -23,7 +23,7 @@ import { flush } from "@/test/ui";
 const picker = vi.hoisted(() => ({ answer: (): Promise<unknown> => Promise.resolve(null) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: () => picker.answer() }));
 
-const idle = { deploying_labs: () => [], active_operations: () => [] };
+const idle = { busy_labs: () => [], active_operations: () => [] };
 const blind = testLab("lab-sqli", { title: "Blind orders", runtime: { runtime: "DOCKER", architectures: ["x86_64"], providers: [] } });
 const goat: Lab = testLab("lab-goat", {
   title: "EC2 SSRF",

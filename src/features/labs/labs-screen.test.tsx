@@ -20,7 +20,7 @@ const props = {
   openLab: { slug: null, tick: 0 },
   onDetailChange: vi.fn(),
 };
-const idle: Record<string, Handler> = { deploying_labs: () => [], active_operations: () => [] };
+const idle: Record<string, Handler> = { busy_labs: () => [], active_operations: () => [] };
 const titles = rowTitles;
 
 describe("Labs list", () => {

@@ -30,7 +30,7 @@ const installImported = (imported: () => ImportedLab[]) =>
     machine_workloads: () => [{ id: ID, kind: "docker", count: 1, memBytes: 0, provider: null }],
     running_labs: () => [ID],
     lab_status: (a) => (a?.id === ID ? running : upStatus([], { running: false })),
-    deploying_labs: () => [],
+    busy_labs: () => [],
     active_operations: () => [],
   });
 

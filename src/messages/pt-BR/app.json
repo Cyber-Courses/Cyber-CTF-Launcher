@@ -25,7 +25,7 @@
     "close": "Fechar"
   },
   "quitGuard": {
-    "title": "Um lab ainda está sendo implantado",
+    "title": "Um lab ainda está iniciando ou parando",
     "body": {
       "one": "Um lab está em andamento no app. Sair agora pode deixar máquinas criadas pela metade, e um lab numa conta de nuvem continua sendo cobrado até ser destruído. Deixe-o terminar em segundo plano (o app fecha sozinho quando acabar, ou no máximo depois de uma hora), continue aguardando ou saia mesmo assim. Sair de novo em até 20 segundos também força a saída.",
       "other": "{count} labs estão em andamento no app. Sair agora pode deixar máquinas criadas pela metade, e um lab numa conta de nuvem continua sendo cobrado até ser destruído. Deixe-os terminar em segundo plano (o app fecha sozinho quando acabar, ou no máximo depois de uma hora), continue aguardando ou saia mesmo assim. Sair de novo em até 20 segundos também força a saída."

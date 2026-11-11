@@ -114,18 +114,23 @@ describe("AboutSection", () => {
     expect(button(/check for updates/i).hasAttribute("disabled")).toBe(false);
   });
 
-  it("holds an update back while a lab is deploying", async () => {
-    installTauri({ deploying_labs: () => ["web-sqli"], active_operations: deployingOps(() => ["web-sqli"]) });
+  // A stop runs in the app, never in a worker, and isn't a deploy: the update waits all the same
+  // (installing would cut its teardown off).
+  it.each([
+    ["deploying", deployingOps(() => ["web-sqli"])],
+    ["only stopping", () => [{ labId: "web-sqli", op: "stop", machine: null, deploying: false, step: null }]],
+  ])("holds an update back while a lab is %s", async (_, operations) => {
+    installTauri({ busy_labs: () => ["web-sqli"], active_operations: operations });
     const downloadAndInstall = vi.fn(async () => {});
     updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall });
     await checkForUpdates();
-    expect(text()).toContain("Wait until your labs finish deploying");
+    expect(text()).toContain("Wait until your labs finish starting, stopping or pausing");
     expect(button(/install update/i).hasAttribute("disabled")).toBe(true);
     expect(downloadAndInstall).not.toHaveBeenCalled();
   });
 
   it("installs an available update and restarts", async () => {
-    const calls = installTauri({ deploying_labs: () => [], active_operations: () => [] });
+    const calls = installTauri({ busy_labs: () => [], active_operations: () => [] });
     const downloadAndInstall = vi.fn(async () => {});
     updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall });
     const user = await checkForUpdates();
@@ -143,7 +148,7 @@ describe("AboutSection", () => {
   });
 
   it("offers the update again when its install fails", async () => {
-    const calls = installTauri({ deploying_labs: () => [], active_operations: () => [] });
+    const calls = installTauri({ busy_labs: () => [], active_operations: () => [] });
     updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall: () => Promise.reject(new Error("bad signature")) });
     const user = await checkForUpdates();
     await user.click(button(/install update/i));

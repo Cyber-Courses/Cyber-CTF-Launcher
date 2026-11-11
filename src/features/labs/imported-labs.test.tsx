@@ -53,7 +53,7 @@ const statusStrip = () => screen.getAllByText(/^(Running|Not started)$/)[0].clos
 
 /** The page of `lab` in `status`, once its first reads are in; the commands it invoked. */
 async function openPage(lab: ImportedLab, status: LabStatus = running) {
-  const calls = installTauri({ lab_status: () => status, deploying_labs: () => [], active_operations: () => [] });
+  const calls = installTauri({ lab_status: () => status, busy_labs: () => [], active_operations: () => [] });
   renderLabPage(importedLab(lab), { status, loggedIn: false });
   await flush(40);
   return calls;

@@ -63,7 +63,7 @@ type Answers = {
   lab_default_place: LabStartPlace;
   lab_run_options: LabRunOptions;
   running_labs: string[];
-  deploying_labs: string[];
+  busy_labs: string[];
   active_operations: ActiveOperation[];
   lab_deploy_log: string;
   lab_tools: LabTool[];

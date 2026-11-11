@@ -102,7 +102,7 @@ describe("lab page actions during a worker operation", () => {
   it("disables Stop & remove while the backend reports an operation in flight (after a reload)", async () => {
     installTauri({
       lab_status: () => status(),
-      deploying_labs: () => ["lab-w"],
+      busy_labs: () => ["lab-w"],
       // A worker's operation: its job names the runtime.
       active_operations: () => [{ labId: "lab-w", op: "provision", machine: null, deploying: true, step: null, runtime: "DOCKER" }],
     });

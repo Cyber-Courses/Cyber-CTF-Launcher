@@ -167,9 +167,9 @@ export const labLaunchLocal = (path: string, onLog: (line: string) => void) => i
  *  it (title, description, category, difficulty, challenges) and which of those files can't be read. */
 export const importedLabs = () => invoke<ImportedLab[]>("imported_labs");
 
-/** The lab ids currently starting or stopping in the backend. Read on load to rehydrate the
- *  "starting" state after a window reload, which loses the in-memory deploy store. */
-export const deployingLabs = () => invoke<string[]>("deploying_labs");
+/** The labs with any operation in flight (a start, a stop, a park, a provisioning run), in the
+ *  app or a deploy worker: what an update install waits for (Rust's `busy_labs`). */
+export const busyLabs = () => invoke<string[]>("busy_labs");
 
 /** Every lab operation in flight right now: workers and in-process ones. */
 export const activeOperations = () => invoke<ActiveOperation[]>("active_operations");

@@ -62,8 +62,8 @@
     "restartNow": "Jetzt neu starten",
     "updating": "Wird aktualisiert…",
     "update": "Aktualisieren",
-    "waitForDeploys": "Das Update startet Cyber CTF neu. Warte, bis deine Labs fertig bereitgestellt sind.",
-    "deployingUnknown": "Es ließ sich nicht prüfen, ob ein Lab bereitgestellt wird, daher wartet das Update. Versuche es gleich noch einmal."
+    "waitForLabs": "Das Update startet Cyber CTF neu. Warte, bis deine Labs fertig gestartet, gestoppt oder pausiert sind.",
+    "busyUnknown": "Es ließ sich nicht prüfen, ob ein Lab gerade startet oder stoppt, daher wartet das Update. Versuche es gleich noch einmal."
   },
   "error": {
     "title": "Etwas ist schiefgelaufen",

@@ -25,7 +25,7 @@
     "close": "Schließen"
   },
   "quitGuard": {
-    "title": "Ein Lab wird noch bereitgestellt",
+    "title": "Ein Lab startet oder stoppt noch",
     "body": {
       "one": "In der App wird gerade an einem Lab gearbeitet. Wenn du jetzt beendest, können halb erstellte Maschinen zurückbleiben, und ein Lab in einem Cloud-Konto verursacht Kosten, bis es abgebaut ist. Lass es im Hintergrund fertig laufen (die App schließt sich danach von selbst, spätestens nach einer Stunde), warte weiter oder beende trotzdem. Ein erneutes Beenden innerhalb von 20 Sekunden beendet ebenfalls sofort.",
       "other": "In der App wird gerade an {count} Labs gearbeitet. Wenn du jetzt beendest, können halb erstellte Maschinen zurückbleiben, und ein Lab in einem Cloud-Konto verursacht Kosten, bis es abgebaut ist. Lass sie im Hintergrund fertig laufen (die App schließt sich danach von selbst, spätestens nach einer Stunde), warte weiter oder beende trotzdem. Ein erneutes Beenden innerhalb von 20 Sekunden beendet ebenfalls sofort."

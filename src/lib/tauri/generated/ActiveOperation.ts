@@ -14,8 +14,9 @@ op: "launch" | "resume" | "pause" | "shutdown" | "provision" | "stop",
  */
 machine: string | null, 
 /**
- * Whether the lab counts as deploying ([`deploying_labs`]): under a deploy worker, whatever
- * its operation, or brought up in this process (a launch, a resume or a provisioning run).
+ * Whether the UI shows the lab as deploying: under a deploy worker, whatever its operation,
+ * or brought up in this process (a launch, a resume or a provisioning run). Every operation
+ * listed is in flight ([`busy_labs`]), deploying or not.
  */
 deploying: boolean, 
 /**

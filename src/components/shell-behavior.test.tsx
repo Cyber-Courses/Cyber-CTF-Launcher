@@ -35,7 +35,7 @@ afterEach(() => {
 
 // The banner with no lab deploying (the dev mock's sample data has one mid-deploy, which holds
 // the update back: see "waits for running deploys" below).
-const idleTauri = (overrides: Parameters<typeof installTauri>[0] = {}) => installTauri({ deploying_labs: () => [], active_operations: () => [], ...overrides });
+const idleTauri = (overrides: Parameters<typeof installTauri>[0] = {}) => installTauri({ busy_labs: () => [], active_operations: () => [], ...overrides });
 
 describe("UpdateBanner", () => {
   /** The banner, once its check answered, after the player clicked Update. */
@@ -59,12 +59,12 @@ describe("UpdateBanner", () => {
 
   it("waits for running deploys: installing would end them", async () => {
     let deploying = ["web-sqli"];
-    idleTauri({ deploying_labs: () => deploying, active_operations: deployingOps(() => deploying) });
+    idleTauri({ busy_labs: () => deploying, active_operations: deployingOps(() => deploying) });
     const downloadAndInstall = vi.fn(() => Promise.resolve());
     updater.pending = { version: "1.5.0", downloadAndInstall };
     render(<UpdateBanner />);
     await flush();
-    expect(screen.getByRole("status").textContent).toContain("Wait until your labs finish deploying");
+    expect(screen.getByRole("status").textContent).toContain("Wait until your labs finish starting, stopping or pausing");
     const button = screen.getByRole("button", { name: "Update" });
     expect(button.hasAttribute("disabled")).toBe(true);
     // A deploy that starts after the last poll is still caught when Update is clicked.

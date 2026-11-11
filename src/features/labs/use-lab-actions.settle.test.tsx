@@ -24,7 +24,7 @@ afterEach(() => {
 describe("useLabActions: the status read after an operation", () => {
   it("lets the lab settle after 20 s when the read never answers", async () => {
     vi.useFakeTimers();
-    installTauri({ deploying_labs: () => [], active_operations: () => [] });
+    installTauri({ busy_labs: () => [], active_operations: () => [] });
     // A refresh that hangs: the backend never answers the status read.
     const refresh = vi.fn(() => new Promise<void>(() => {}));
     const { result } = renderHook(() => useLabActions(refresh, []));

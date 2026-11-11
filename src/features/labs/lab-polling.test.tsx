@@ -19,7 +19,6 @@ vi.mock("@/lib/tauri", () => ({
   },
   runningLabs: () => Promise.resolve([...world.scan]),
   activeOperations: () => Promise.resolve(world.ops),
-  deployingLabs: () => Promise.resolve([]),
 }));
 
 const lab = (id: string) => ({ id, slug: id, title: id, runtime: { runtime: "DOCKER", architectures: [], providers: [] } }) as unknown as Lab;

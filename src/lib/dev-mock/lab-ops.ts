@@ -185,7 +185,7 @@ export const labHandlers: Record<string, BrowserHandler> = {
   lab_status: (args, { live }) => statusOf(labArg(args), live),
   running_labs: (_args, { live }) => [...live.running],
   machine_workloads: workloads,
-  deploying_labs: (args, { sc, live }) => [...new Set([...(sc.noDeploying ? [] : (answer("deploying_labs", args) as string[])), ...live.ops.keys()])],
+  busy_labs: (args, { sc, live }) => [...new Set([...(sc.noDeploying ? [] : (answer("busy_labs", args) as string[])), ...live.ops.keys()])],
   active_operations: (args, { sc, live }) => [
     ...(sc.noDeploying ? [] : (answer("active_operations", args) as unknown[])),
     ...[...live.ops].map(([labId, op]) => ({ labId, op, machine: null, step: null })),

@@ -66,10 +66,11 @@ pub async fn imported_labs(app: AppHandle) -> Result<Vec<labs::imported::Importe
     labs::imported::list(&AppDirs::from(&app))
 }
 
-/// The labs a deploy worker is running an operation on.
+/// The labs with any operation in flight, in this process or a deploy worker: what an update
+/// install waits for (see [`operations::busy_labs`]).
 #[tauri::command]
-pub async fn deploying_labs(app: AppHandle) -> Vec<String> {
-    operations::deploying_labs(AppDirs::from(&app)).await
+pub async fn busy_labs(app: AppHandle) -> Vec<String> {
+    operations::busy_labs(AppDirs::from(&app)).await
 }
 
 /// Every lab operation in flight, here or in a deploy worker.

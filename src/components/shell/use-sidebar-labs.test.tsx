@@ -14,12 +14,12 @@ const count = (calls: Call[], cmd: string) => commands(calls).filter((c) => c ==
 describe("useSidebarLabs", () => {
   it("lists a lab the running scan sees, from the window's one scan: no workload scan, no poll of the deploys of its own", async () => {
     let running = ["lab-invoice"];
-    const calls = installTauri({ running_labs: () => running, active_operations: () => [], deploying_labs: () => [] });
+    const calls = installTauri({ running_labs: () => running, active_operations: () => [], busy_labs: () => [] });
     const { result, rerender } = renderHook(({ inFlight }) => useSidebarLabs(true, inFlight), { initialProps: { inFlight: NONE } });
     await flush(50);
     expect(result.current.active.map((l) => l.id)).toEqual(["lab-invoice"]);
     expect(count(calls, "machine_workloads")).toBe(0);
-    expect(count(calls, "deploying_labs")).toBe(0);
+    expect(count(calls, "busy_labs")).toBe(0);
     // An operation ends: the scan is read again at once, so a lab just stopped drops out.
     const before = count(calls, "running_labs");
     running = [];

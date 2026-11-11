@@ -82,7 +82,7 @@ const up: LabStatus = {
   networks: [{ name: "default", subnet: "10.42.0.0/24", internal: false }],
 };
 
-const idle = { deploying_labs: () => [], active_operations: () => [] };
+const idle = { busy_labs: () => [], active_operations: () => [] };
 
 function renderDetail(props: Partial<Parameters<typeof LabDetail>[0]> = {}) {
   const handlers = { onBack: vi.fn(), onStart: vi.fn(), onStop: vi.fn(), onPark: vi.fn(), onResume: vi.fn(), onProvision: vi.fn() };
@@ -275,7 +275,7 @@ describe("a deploy with no log here", () => {
   it("shows the backend's step and counts from when the operation was first seen", async () => {
     const step = "Configure SRV02 (ansible 41/88)";
     installTauri({
-      deploying_labs: () => [goad.id],
+      busy_labs: () => [goad.id],
       active_operations: () => [{ labId: goad.id, op: "launch", machine: "SRV02", deploying: true, step }],
       lab_deploy_log: () => "",
       lab_status: () => stopped,

@@ -505,6 +505,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   running, its run record unreadable, its files no longer able to be generated again), the lab
   page went on showing the last state it had read, with no word of it. It now says, at the top,
   that the state couldn't be read and why, until a read succeeds.
+- **An update waits for a lab that is stopping or pausing, not only one that is starting.** The
+  update install quits every Cyber CTF process, but it waited only for starts, resumes and
+  provisioning runs: a Stop (which runs in the app) could be cut off mid-teardown, leaving a cloud
+  lab's resources billing. The update and the quit prompt now ask the same rule, which counts
+  every lab operation in flight.
 
 ### Security
 

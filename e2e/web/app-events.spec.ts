@@ -46,7 +46,7 @@ test.describe("deep links", () => {
 test.describe("quit guard", () => {
   test("quitting during a deploy asks first: keep waiting, Escape, or finish in the background", async ({ page }) => {
     await openApp(page);
-    const guard = page.getByRole("alertdialog", { name: "A lab is still deploying" });
+    const guard = page.getByRole("alertdialog", { name: "A lab is still starting or stopping" });
 
     await emitEvent(page, "quit-blocked", 2);
     await expect(guard).toBeVisible();

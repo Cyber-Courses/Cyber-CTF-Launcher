@@ -232,7 +232,7 @@ pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result
 /// whether a deploy worker runs a lab operation (the app shell's to say).
 pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>, workers: bool) -> Result<u64> {
     // A lab operation running may still use the plugins its `init` linked: they stay then.
-    let busy = crate::runtime::active_deploys() > 0 || workers;
+    let busy = !crate::runtime::busy_labs().is_empty() || workers;
     clean(&owned::path(&dirs)?, &extra_images, vagrant_home().as_deref(), !busy).await
 }
 

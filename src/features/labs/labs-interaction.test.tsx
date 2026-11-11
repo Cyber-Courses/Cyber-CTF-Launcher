@@ -24,7 +24,7 @@ const status = labStatus;
 const settled: Record<string, Handler> = {
   // The dev mock opens a browser tab for it; jsdom has none.
   server_open_setup: () => null,
-  deploying_labs: () => [],
+  busy_labs: () => [],
   active_operations: () => [],
   server_list: () => ({ default: null, hosts: [] }),
 };

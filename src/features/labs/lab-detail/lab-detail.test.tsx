@@ -39,7 +39,7 @@ const status = (p: Partial<LabStatus>) =>
   upStatus([machine("api"), machine("db", "running", { ip: "10.42.0.4", services: [{ name: "postgres", kind: "database", ports: [5432] }] })], p);
 
 // The dev mock reports GOAD mid-deploy; these tests want it settled.
-const idle = { deploying_labs: () => [], active_operations: () => [] };
+const idle = { busy_labs: () => [], active_operations: () => [] };
 
 const flush = () => flushUi(30);
 const renderDetail = (props: Partial<Parameters<typeof LabDetail>[0]> = {}) => renderLabPage(dockerLab, props);

@@ -49,25 +49,23 @@ impl Action {
     }
 }
 
-/// The labs with an operation in flight right now, each with its in-flight count (a lab can be
-/// re-entered). The app reads this to warn before quitting mid-deploy (interrupting a cloud
-/// `terraform apply` leaves billable resources behind, a VM/Docker run half-created), and the UI
-/// reads it to rehydrate the "this lab is starting" state after a window reload: the map lives in
-/// this long-lived process, so a reloaded webview that lost its own deploy state can ask which
-/// labs are still deploying and show that instead of a bare Start button.
+/// The labs with an operation in flight in this process right now, each with its in-flight count
+/// (a lab can be re-entered). The app reads this to warn before quitting mid-operation
+/// (interrupting a cloud `terraform apply` or `destroy` leaves billable resources behind, a
+/// VM/Docker run half-created), and the UI reads it to rehydrate a lab's operation after a window
+/// reload: the map lives in this long-lived process, so a reloaded webview that lost its own
+/// deploy state can ask what each lab is doing and show that instead of a bare Start button.
 fn in_flight() -> &'static Mutex<HashMap<String, (Action, usize)>> {
     static IN_FLIGHT: OnceLock<Mutex<HashMap<String, (Action, usize)>>> = OnceLock::new();
     IN_FLIGHT.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Total start/stop operations in flight, across all labs.
-pub fn active_deploys() -> usize {
-    in_flight().lock().map_or(0, |m| m.values().map(|(_, n)| n).sum())
-}
-
-/// The labs being started right now (in this process), deduplicated.
-pub fn deploying_labs() -> Vec<String> {
-    labs_with(Action::brings_up)
+/// The labs with an operation of any kind in flight in this process (a start, a resume, a
+/// provisioning run, a stop or a park), each once: what a quit would cut off. The one rule for "a
+/// lab operation is running here"; with the deploy workers' labs it is what an update install
+/// waits for (`app::operations::busy_labs`).
+pub fn busy_labs() -> Vec<String> {
+    labs_with(|_| true)
 }
 
 /// Every in-process operation right now: the lab and what it is doing.
@@ -176,7 +174,7 @@ fn try_lock_lab_at(file: Option<&Path>, id: &str) -> Result<Option<LabLock>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, DeployGuard, active_actions, active_deploys, deploying_labs, stopping, try_lock_lab_at};
+    use super::{Action, DeployGuard, active_actions, busy_labs, stopping, try_lock_lab_at};
     use crate::runtime::Park;
 
     async fn lock_lab(id: &str) -> super::LabLock {
@@ -188,12 +186,20 @@ mod tests {
     }
 
     #[test]
-    fn every_guard_counts_as_an_operation_in_flight() {
-        // Other tests hold guards of their own meanwhile: only a lower bound holds.
-        let a = DeployGuard::new("inflight-test-count-a", Action::Launch);
-        let b = DeployGuard::new("inflight-test-count-b", Action::Stop);
-        assert!(active_deploys() >= 2);
-        drop((a, b));
+    fn every_kind_of_operation_makes_its_lab_busy() {
+        // A stop and a park count as much as a start: quitting or updating cuts each of them off
+        // (a stop's `terraform destroy` on a cloud account most of all).
+        let ids = ["inflight-test-busy-launch", "inflight-test-busy-stop", "inflight-test-busy-park", "inflight-test-busy-provision"];
+        let actions = [Action::Launch, Action::Stop, Action::Park(Park::Shutdown), Action::Provision];
+        let guards: Vec<_> = ids.iter().zip(actions).map(|(id, a)| DeployGuard::new(id, a)).collect();
+        // Other tests hold guards of their own meanwhile: look at this test's labs only.
+        let busy = |id: &str| busy_labs().iter().any(|l| l == id);
+        assert!(ids.iter().all(|id| busy(id)));
+        // A lab re-entered is listed once.
+        let again = DeployGuard::new(ids[0], Action::Launch);
+        assert_eq!(busy_labs().iter().filter(|l| *l == ids[0]).count(), 1);
+        drop((guards, again));
+        assert!(ids.iter().all(|id| !busy(id)));
     }
 
     // The registry is process-wide: each test uses its own lab ids and only looks at those.
@@ -205,11 +211,10 @@ mod tests {
     fn guard_marks_the_lab_until_the_last_one_drops() {
         let id = "inflight-test-nested";
         let first = DeployGuard::new(id, Action::Launch);
-        assert!(deploying_labs().contains(&id.to_string()));
+        assert_eq!(action_of(id), Some(Action::Launch));
         // A stop entered while the start is still in flight names the state.
         let second = DeployGuard::new(id, Action::Stop);
         assert_eq!(action_of(id), Some(Action::Stop));
-        assert!(!deploying_labs().contains(&id.to_string()));
         drop(second);
         assert_eq!(action_of(id), Some(Action::Stop), "still one operation in flight");
         drop(first);
@@ -221,7 +226,7 @@ mod tests {
         let id = "inflight-test-park";
         let g = DeployGuard::new(id, Action::Park(Park::Pause));
         assert_eq!(action_of(id), Some(Action::Park(Park::Pause)));
-        assert!(!deploying_labs().contains(&id.to_string()));
+        assert!(!Action::Park(Park::Pause).brings_up() && Action::Park(Park::Pause) != Action::Stop);
         drop(g);
         assert_eq!(action_of(id), None);
     }
@@ -233,7 +238,7 @@ mod tests {
         let id = "inflight-test-panic";
         let crashed = std::thread::spawn(move || {
             let _guard = DeployGuard::new(id, Action::Launch);
-            assert!(deploying_labs().contains(&id.to_string()));
+            assert!(busy_labs().contains(&id.to_string()));
             panic!("a step blew up");
         })
         .join();

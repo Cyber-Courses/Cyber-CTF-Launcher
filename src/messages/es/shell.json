@@ -62,8 +62,8 @@
     "restartNow": "Reiniciar",
     "updating": "Actualizando…",
     "update": "Actualizar",
-    "waitForDeploys": "La actualización reinicia Cyber CTF. Espera a que tus labs terminen de desplegarse.",
-    "deployingUnknown": "No se pudo saber si un lab se está desplegando, así que la actualización espera. Inténtalo de nuevo en un momento."
+    "waitForLabs": "La actualización reinicia Cyber CTF. Espera a que tus labs terminen de iniciarse, detenerse o pausarse.",
+    "busyUnknown": "No se pudo saber si un lab se está iniciando o deteniendo, así que la actualización espera. Inténtalo de nuevo en un momento."
   },
   "error": {
     "title": "Algo salió mal",

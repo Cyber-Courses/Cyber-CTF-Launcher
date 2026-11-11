@@ -88,7 +88,7 @@ function dualLabOnCloud(id: string, account: { id: string; name: string; provide
 
 // Settled: nothing deploying, no servers (Start then starts right away for a Docker lab).
 const quiet: Record<string, Handler> = {
-  deploying_labs: () => [],
+  busy_labs: () => [],
   active_operations: () => [],
   server_list: () => ({ default: null, hosts: [] }),
 };

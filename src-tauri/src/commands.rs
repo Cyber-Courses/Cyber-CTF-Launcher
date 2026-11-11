@@ -116,7 +116,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         server::server_month_to_date_cost,
         server::server_selftest,
         setup_window::server_open_setup,
-        labs::deploying_labs,
+        labs::busy_labs,
         app::restart_app,
         labs::active_operations,
         labs::lab_deploy_log,

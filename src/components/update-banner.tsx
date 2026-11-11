@@ -5,7 +5,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Button } from "@/components/ui/button";
 import { managedSettings } from "@/lib/tauri";
 import { installAndRestart, restartOnUpdate } from "@/lib/install-update";
-import { useDeployingLabs } from "@/features/labs/runs/operations";
+import { useLabsBusy } from "@/features/labs/runs/operations";
 import { cn } from "@/lib/utils";
 import { ignore } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
@@ -60,8 +60,8 @@ export function UpdateBanner() {
   const t = useT();
   const { update, phase, install } = useUpdate();
   // Installing quits every Cyber CTF process, the deploy workers included (the installer ends
-  // them by name on Windows), so an update waits for running deploys to finish.
-  const deploying = useDeployingLabs().size > 0;
+  // them by name on Windows), so an update waits for every lab operation to finish.
+  const busy = useLabsBusy();
 
   if (!update) return null;
 
@@ -69,7 +69,7 @@ export function UpdateBanner() {
     <div role="status" className="flex h-10 shrink-0 items-center gap-2.5 border-b border-border bg-jewel/[0.06] px-6 text-[0.8125rem]">
       <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", phase === "error" ? "bg-destructive" : "bg-jewel")} />
       <span className="min-w-0 flex-1 truncate text-foreground">
-        <UpdateMessage phase={phase} deploying={deploying} version={update.version} />
+        <UpdateMessage phase={phase} busy={busy} version={update.version} />
       </span>
       {phase === "ready" ? (
         <Button
@@ -88,7 +88,7 @@ export function UpdateBanner() {
           onClick={() => {
             void install();
           }}
-          disabled={phase === "downloading" || deploying}
+          disabled={phase === "downloading" || busy}
         >
           {phase === "downloading" ? t("shell.update.updating") : t("shell.update.update")}
         </Button>
@@ -98,10 +98,10 @@ export function UpdateBanner() {
 }
 
 /** What the banner says: installed, failed, waiting for the deploys, or the version on offer. */
-function UpdateMessage({ phase, deploying, version }: { phase: Phase; deploying: boolean; version: string }) {
+function UpdateMessage({ phase, busy, version }: { phase: Phase; busy: boolean; version: string }) {
   const t = useT();
   if (phase === "ready") return t("shell.update.installed");
   if (phase === "error") return t("shell.update.failed");
-  if (deploying && phase === "idle") return t("shell.update.waitForDeploys");
+  if (busy && phase === "idle") return t("shell.update.waitForLabs");
   return t.rich("shell.update.available", { version: (v) => <span className="font-mono text-[0.75rem]">{v}</span> }, { version });
 }

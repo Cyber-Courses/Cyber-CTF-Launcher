@@ -280,7 +280,7 @@ export async function invokeWhenIdle(b, cmd, args, timeoutMs = 240000) {
 export async function waitSettled(b, id, timeoutMs = 240000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const busy = await invokeCmd(b, "deploying_labs").catch(() => null);
+    const busy = await invokeCmd(b, "busy_labs").catch(() => null);
     if (!Array.isArray(busy) || !busy.includes(id)) return;
     await sleep(2000);
   }

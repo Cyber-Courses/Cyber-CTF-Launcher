@@ -84,4 +84,5 @@ and the proxy. A lab you already installed and started before can still start: t
 ## Updates
 
 "Couldn't reach the update server": the launcher can't reach `github.com`. It keeps working on the
-installed version. An update waits until no lab is deploying, because installing restarts the app.
+installed version. An update waits until no lab is starting, stopping, pausing or being provisioned, because
+installing restarts the app and would cut that operation off.

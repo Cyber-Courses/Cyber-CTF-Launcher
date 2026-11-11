@@ -12,11 +12,11 @@ use tauri::Manager;
 
 use crate::runtime;
 
-/// Set once the user confirms quitting while a deploy is in progress, so the close/exit handlers
+/// Set once the user confirms quitting while a lab operation is in progress, so the close/exit handlers
 /// stop intercepting and let the app go.
 static FORCE_QUIT: AtomicBool = AtomicBool::new(false);
 /// Set while the app finishes in the background with its windows hidden (`linger_quit`); a
-/// relaunch clears it, so the app stays open instead of exiting once the deploys are done.
+/// relaunch clears it, so the app stays open instead of exiting once the operations are done.
 static LINGERING: AtomicBool = AtomicBool::new(false);
 
 /// When the last quit prompt was shown, so a second quit right after it means "quit anyway":
@@ -24,11 +24,12 @@ static LINGERING: AtomicBool = AtomicBool::new(false);
 static QUIT_PROMPTED_AT: Mutex<Option<Instant>> = Mutex::new(None);
 const QUIT_AGAIN_WINDOW: Duration = Duration::from_secs(20);
 
-/// How long a lingering app waits for its in-app deploys before exiting anyway.
+/// How long a lingering app waits for its in-app operations before exiting anyway.
 const LINGER_CAP: Duration = Duration::from_secs(60 * 60);
 
 /// Quit by finishing in the background: the windows go away now; the process exits once the
-/// in-app deploys (the fallback when no worker could be started) are done.
+/// lab operations of this process ([`runtime::busy_labs`]: a stop, a park, or a start when no
+/// worker could be started) are done.
 pub fn linger_quit(app: AppHandle) {
     for (_, w) in app.webview_windows() {
         let _ = w.hide();
@@ -38,7 +39,7 @@ pub fn linger_quit(app: AppHandle) {
         // Bounded: a wedged operation (a hung VBoxManage) must not keep an invisible app alive
         // for good. Past the cap it exits anyway; a detached worker would have been unaffected.
         let deadline = Instant::now() + LINGER_CAP;
-        while runtime::active_deploys() > 0 && Instant::now() < deadline && LINGERING.load(Ordering::SeqCst) {
+        while !runtime::busy_labs().is_empty() && Instant::now() < deadline && LINGERING.load(Ordering::SeqCst) {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
         // Relaunched meanwhile (the windows are back): stay open.
@@ -49,7 +50,7 @@ pub fn linger_quit(app: AppHandle) {
     });
 }
 
-/// The user chose to quit anyway from the "a lab is still deploying" prompt: stop intercepting
+/// The user chose to quit anyway from the "a lab operation is still running" prompt: stop intercepting
 /// and exit.
 pub fn force_quit(app: &AppHandle) {
     exit_now(app);
@@ -73,12 +74,13 @@ fn should_prompt(visible: bool, prompted_at: Option<Instant>) -> bool {
     visible && !insisting
 }
 
-/// If an in-app operation is in progress (and the user hasn't already confirmed), keep the app
-/// open and ask the frontend to confirm. Returns true when the quit was intercepted. Nothing is
+/// If a lab operation runs in this process ([`runtime::busy_labs`], a stop as much as a start) and
+/// the user hasn't already confirmed, keep the app open and ask the frontend to confirm. Returns true when the quit was intercepted. Nothing is
 /// intercepted when no window could show the prompt (the app already lingers hidden), nor on a
 /// second quit within a few seconds of the prompt: that is the user insisting.
 pub fn intercept(app: &AppHandle) -> bool {
-    if FORCE_QUIT.load(Ordering::SeqCst) || runtime::active_deploys() == 0 {
+    let busy = runtime::busy_labs().len();
+    if FORCE_QUIT.load(Ordering::SeqCst) || busy == 0 {
         return false;
     }
     let visible = app.webview_windows().values().any(|w| w.is_visible().unwrap_or(false));
@@ -88,7 +90,7 @@ pub fn intercept(app: &AppHandle) -> bool {
         return false;
     }
     *prompted = Some(Instant::now());
-    crate::app::events::emit(app, crate::app::events::QUIT_BLOCKED, runtime::active_deploys());
+    crate::app::events::emit(app, crate::app::events::QUIT_BLOCKED, busy);
     if let Some(w) = app.get_webview_window(crate::app::window::MAIN) {
         let _ = w.set_focus();
     }

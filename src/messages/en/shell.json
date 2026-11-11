@@ -62,8 +62,8 @@
     "restartNow": "Restart now",
     "updating": "Updating…",
     "update": "Update",
-    "waitForDeploys": "Updating restarts Cyber CTF. Wait until your labs finish deploying.",
-    "deployingUnknown": "Couldn't tell whether a lab is deploying, so the update waits. Try again in a moment."
+    "waitForLabs": "Updating restarts Cyber CTF. Wait until your labs finish starting, stopping or pausing.",
+    "busyUnknown": "Couldn't tell whether a lab is starting or stopping, so the update waits. Try again in a moment."
   },
   "error": {
     "title": "Something went wrong",

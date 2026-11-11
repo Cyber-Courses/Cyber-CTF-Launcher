@@ -11,9 +11,10 @@ import { useT } from "@/lib/i18n";
 import { tell } from "@/lib/failure";
 
 /**
- * When the user tries to quit while a lab is still deploying, the Rust side holds the window
- * open and emits `quit-blocked`; this shows a confirmation so an in-flight deploy (a cloud
- * apply especially, which keeps billing if cut off) isn't interrupted by accident.
+ * When the user tries to quit while a lab operation runs in the app (Rust's `busy_labs`: a start,
+ * a stop, a pause), the Rust side holds the window open and emits `quit-blocked` with how many
+ * labs; this shows a confirmation so an operation in flight (a cloud apply or destroy especially,
+ * which leaves billable resources if cut off) isn't interrupted by accident.
  */
 export function QuitGuard() {
   const t = useT();

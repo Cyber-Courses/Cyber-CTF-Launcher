@@ -9,7 +9,7 @@ import { flush as flushUi } from "@/test/ui";
 // The lab page says where a running lab runs, the same way in its header and its Details.
 
 const flush = () => flushUi(30);
-const idle = { deploying_labs: () => [], active_operations: () => [] };
+const idle = { busy_labs: () => [], active_operations: () => [] };
 
 describe("LabDetail, where it runs", () => {
   it("names the engine a container lab runs on here, recorded at launch", async () => {

@@ -8,11 +8,13 @@ use super::deploy_worker::{self, Op};
 use crate::platform::AppDirs;
 use crate::runtime::{self, Action, Runtime};
 
-/// The labs currently starting or stopping. The UI reads this on load to rehydrate the "this lab
-/// is starting" state after a window reload: the deploy keeps running in this process even when
-/// the webview reloaded and lost its own in-memory deploy state.
-pub async fn deploying_labs(dirs: AppDirs) -> Vec<String> {
-    or_logged(off_main(move || merge_unique(runtime::deploying_labs(), deploy_worker::running(&dirs))).await)
+/// The labs with any operation in flight: every one of this process ([`runtime::busy_labs`]: a
+/// start, a provisioning run, a stop, a park), then those a deploy worker runs. Installing an
+/// update quits every Cyber CTF process, the workers included, so it waits while this isn't
+/// empty: a stop cut off mid-`terraform destroy` leaves billable resources behind as surely as a
+/// launch. The same labs as [`active_operations`] lists, without reading each worker's log.
+pub async fn busy_labs(dirs: AppDirs) -> Vec<String> {
+    or_logged(off_main(move || merge_unique(runtime::busy_labs(), deploy_worker::running(&dirs))).await)
 }
 
 /// Runs `f` on a blocking thread. These commands are polled every 2 s by every window, and each
@@ -51,8 +53,9 @@ pub struct ActiveOperation {
     op: &'static str,
     /// The machine a provisioning run targets, when one.
     machine: Option<String>,
-    /// Whether the lab counts as deploying ([`deploying_labs`]): under a deploy worker, whatever
-    /// its operation, or brought up in this process (a launch, a resume or a provisioning run).
+    /// Whether the UI shows the lab as deploying: under a deploy worker, whatever its operation,
+    /// or brought up in this process (a launch, a resume or a provisioning run). Every operation
+    /// listed is in flight ([`busy_labs`]), deploying or not.
     deploying: bool,
     /// The last meaningful line of the operation's log (detached workers only).
     step: Option<String>,
@@ -190,11 +193,27 @@ mod tests {
         assert_eq!(listed(), Some(ActiveOperation { lab_id: id.into(), op: "shutdown", machine: None, deploying: false, step: None, runtime: None }));
         drop(guard);
         assert_eq!(listed(), None);
-        // A resume in this process deploys, as `deploying_labs` says.
+        // A resume in this process deploys.
         let guard = crate::runtime::DeployGuard::new(id, Action::Resume);
         assert_eq!(listed().map(|o| (o.op, o.deploying)), Some(("resume", true)));
-        assert!(crate::runtime::deploying_labs().contains(&id.to_string()));
         drop(guard);
+    }
+
+    #[test]
+    fn a_stop_or_a_park_in_this_process_keeps_its_lab_busy() {
+        // What an update install waits for: a stop runs in this process, never in a worker, and
+        // quitting mid-`terraform destroy` leaves billable resources behind.
+        let t = crate::testing::test_app::TestApp::new();
+        let busy = |id: &str| wait(busy_labs(t.dirs())).iter().any(|l| l == id);
+        for (id, action) in [("operations-test-busy-stop", Action::Stop), ("operations-test-busy-park", Action::Park(Park::Pause))] {
+            assert!(!busy(id));
+            let guard = crate::runtime::DeployGuard::new(id, action);
+            assert!(busy(id), "{action:?} isn't counted");
+            // The same labs the sidebar lists as operations in flight.
+            assert!(wait(active_operations(t.dirs())).iter().any(|o| o.lab_id == id));
+            drop(guard);
+            assert!(!busy(id));
+        }
     }
 
     #[cfg(unix)]
@@ -217,7 +236,7 @@ mod tests {
             listed(),
             Some(ActiveOperation { lab_id: id.into(), op: "launch", machine: None, deploying: true, step: Some("web: Booting VM...".into()), runtime: None })
         );
-        assert!(wait(deploying_labs(t.dirs())).contains(&id.to_string()));
+        assert!(wait(busy_labs(t.dirs())).contains(&id.to_string()));
         assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), log);
         worker.kill().unwrap();
         worker.wait().unwrap();
@@ -238,7 +257,7 @@ mod tests {
         std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
         std::fs::write(dir.join(format!("{id}.log")), "Pulling images\n").unwrap();
         assert!(wait(active_operations(t.dirs())).iter().all(|o| o.lab_id != id));
-        assert!(!wait(deploying_labs(t.dirs())).contains(&id.to_string()));
+        assert!(!wait(busy_labs(t.dirs())).contains(&id.to_string()));
         assert!(!dir.join(format!("{id}.pid")).exists(), "swept");
         assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), "Pulling images\n");
     }
@@ -257,7 +276,7 @@ mod tests {
         // Its job file cut short (a full disk, a crash while it was written).
         std::fs::write(dir.join(format!("{id}.json")), "{\"lab_id\":\"operations-test-trunc").unwrap();
         std::fs::write(dir.join(format!("{id}.log")), "==> web: Booting VM...\n").unwrap();
-        let deploying = wait(deploying_labs(t.dirs())).contains(&id.to_string());
+        let deploying = wait(busy_labs(t.dirs())).contains(&id.to_string());
         let listed = wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
         worker.kill().unwrap();
         worker.wait().unwrap();

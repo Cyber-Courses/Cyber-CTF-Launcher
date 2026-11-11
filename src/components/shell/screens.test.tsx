@@ -93,7 +93,7 @@ describe("HomeScreen", () => {
   });
 
   it("shows a signed-out player on a fresh machine", async () => {
-    installTauri({ running_labs: () => [], deploying_labs: () => [], active_operations: () => [] });
+    installTauri({ running_labs: () => [], busy_labs: () => [], active_operations: () => [] });
     render(<HomeScreen report={freshReport()} auth={{ loggedIn: false, name: null, email: null }} onNavigate={vi.fn()} />);
     await flush(50);
     expect(document.body.textContent).toMatch(/sign in/i);

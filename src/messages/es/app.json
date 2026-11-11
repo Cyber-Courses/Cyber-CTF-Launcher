@@ -25,7 +25,7 @@
     "close": "Cerrar"
   },
   "quitGuard": {
-    "title": "Un lab aún se está desplegando",
+    "title": "Un lab aún se está iniciando o deteniendo",
     "body": {
       "one": "Se está trabajando en un lab dentro de la app. Salir ahora puede dejar máquinas a medio crear, y un lab en una cuenta en la nube sigue facturando hasta que se elimina. Deja que termine en segundo plano (la app se cierra sola al acabar, o como mucho al cabo de una hora), sigue esperando o sal de todos modos. Salir de nuevo en los 20 segundos siguientes también sale de todos modos.",
       "other": "Se está trabajando en {count} labs dentro de la app. Salir ahora puede dejar máquinas a medio crear, y un lab en una cuenta en la nube sigue facturando hasta que se elimina. Deja que terminen en segundo plano (la app se cierra sola al acabar, o como mucho al cabo de una hora), sigue esperando o sal de todos modos. Salir de nuevo en los 20 segundos siguientes también sale de todos modos."

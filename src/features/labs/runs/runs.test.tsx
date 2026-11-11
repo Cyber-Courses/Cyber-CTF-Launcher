@@ -230,7 +230,7 @@ describe("operations", () => {
     const deploying = renderHook(() => useDeployingLabs());
     await flush();
     expect([...deploying.result.current]).toEqual(["lab-w"]);
-    expect(commands(calls)).not.toContain("deploying_labs");
+    expect(commands(calls)).not.toContain("busy_labs");
   });
 
   it("polls the labs deploying and the operations in flight", async () => {
