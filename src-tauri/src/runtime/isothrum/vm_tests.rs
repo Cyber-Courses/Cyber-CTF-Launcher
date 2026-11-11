@@ -280,7 +280,7 @@ fn esxi_env() -> Vec<(String, String)> {
 
 #[test]
 fn an_esxi_place_takes_the_hosts_settings_as_params_and_its_password_as_the_connection() {
-    let place = EsxiPlace::from_env("esxi-lab", &esxi_env());
+    let place = EsxiPlace::from_env("esxi-lab", "ESXi lab", &esxi_env());
     assert_eq!(place.label, "esxi-lab");
     let names: Vec<&str> = place.params.iter().map(|(k, _)| k.as_str()).collect();
     assert_eq!(names, ["ESXI_HOSTNAME", "ESXI_HOSTPORT", "ESXI_USERNAME", "ESXI_DATASTORE", "ESXI_VIRTUAL_NETWORK"]);
@@ -288,13 +288,13 @@ fn an_esxi_place_takes_the_hosts_settings_as_params_and_its_password_as_the_conn
     assert!(!format!("{place:?}").contains("pw\""), "never shown: {place:?}");
     // A server with no datastore or network set: those params are left to their defaults.
     let bare: Vec<(String, String)> = esxi_env().into_iter().filter(|(k, _)| k != "ESXI_DATASTORE" && k != "ESXI_VIRTUAL_NETWORK").collect();
-    assert_eq!(EsxiPlace::from_env("esxi-lab", &bare).params.len(), 3);
+    assert_eq!(EsxiPlace::from_env("esxi-lab", "ESXi lab", &bare).params.len(), 3);
 }
 
 #[tokio::test]
 async fn a_vm_lab_runs_on_an_esxi_host_through_the_runner() {
     let f = Fixture::new();
-    let run = f.esxi_run(EsxiPlace::from_env("esxi-lab", &esxi_env()));
+    let run = f.esxi_run(EsxiPlace::from_env("esxi-lab", "ESXi lab", &esxi_env()));
     let mut log = Vec::new();
     run.up(Inputs::values(&[("CTF_FLAG_MAIN".into(), "flag{v}".into())]), Some("vmware_esxi"), &mut |l| log.push(l)).await.unwrap();
     let up = f.fake.last("vagrant up --provider vmware_esxi").unwrap();
@@ -317,4 +317,31 @@ async fn a_vm_lab_runs_on_an_esxi_host_through_the_runner() {
     for call in f.fake.calls().iter().filter(|c| c.program == "vagrant" && c.args != ["--version"]) {
         assert_eq!(call.env("ESXI_PASSWORD"), Some("pw"), "{}", call.line());
     }
+}
+
+/// The fake Vagrant, whose ESXi host refuses its password once the model holds `password changed`.
+fn esxi_refusing(states: &Mutex<BTreeMap<String, String>>, call: &Call) -> Reply {
+    let mut s = locked(states);
+    if s.contains_key("password changed") && call.program == "vagrant" && call.args.first().is_some_and(|a| a != "--version") {
+        return Reply::fail(
+            1,
+            "ESXi host access : Verify password in Vagrantfile is correct.\nUnable to connect to ESXi host! Error: Authentication failed for user root@172.16.1.20",
+        );
+    }
+    vagrant(&mut s, call)
+}
+
+/// Regression (tests/resilience.md N4): an ESXi host's password changed showed as Vagrant's raw
+/// failure; the lab page now says to update it in Servers, naming the server as Servers does.
+#[tokio::test]
+async fn an_esxi_password_changed_says_to_update_it_in_servers() {
+    let f: Fixture = Scripted::answered_by(Home::new("-vm", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), esxi_refusing);
+    let run = f.esxi_run(EsxiPlace::from_env("esxi-lab", "ESXi lab", &esxi_env()));
+    run.up(Inputs::values(&[("CTF_FLAG_MAIN".into(), "flag{v}".into())]), Some("vmware_esxi"), &mut |_| {}).await.unwrap();
+    f.model().insert("password changed".into(), String::new());
+    let err = run.status().await.err().unwrap();
+    assert_eq!(err.code(), crate::error::Code::ServerAuthFailed { server: "ESXi lab".into() });
+    assert_eq!(err.to_string(), "Cyber CTF can't sign in to ESXi lab: its token was revoked or its password changed. Update it in Servers.");
+    let stop = run.down(&mut |_| {}).await.unwrap_err();
+    assert_eq!(stop.code(), crate::error::Code::ServerAuthFailed { server: "ESXi lab".into() });
 }

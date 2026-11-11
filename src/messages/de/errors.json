@@ -17,6 +17,7 @@
     "downloadFailed": "Die Images des Labs konnten nicht heruntergeladen werden: {reason}. Prüfe deine Internetverbindung und versuche es erneut.",
     "boxDownloadStalled": "Der Download der VM-Box des Labs kam nicht mehr voran ({minutes} Minuten lang nichts Neues) und wurde deshalb abgebrochen. Prüfe deine Internetverbindung und versuche es erneut.",
     "boxDownloadFailed": "Die VM-Box des Labs konnte nicht heruntergeladen werden: {reason}. Prüfe deine Internetverbindung und versuche es erneut.",
+    "serverAuthFailed": "Cyber CTF kann sich nicht bei {server} anmelden: Sein Token wurde widerrufen oder sein Passwort geändert. Aktualisiere es unter Server.",
     "signInCancelled": "Anmeldung abgebrochen.",
     "signInDenied": "Die Anmeldung wurde bei Cyber Auth abgelehnt, du bist also weiterhin abgemeldet. Melde dich erneut an und erlaube Cyber CTF, um fortzufahren.",
     "signInCodeUnavailable": "Die Anmeldung mit einem Code ist noch nicht verfügbar. Kopiere stattdessen den Anmeldelink in einen beliebigen Browser, auf diesem oder einem anderen Rechner.",

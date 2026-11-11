@@ -122,6 +122,8 @@ pub(crate) fn record_of(dirs: &crate::platform::AppDirs, id: &str) -> Result<Opt
 pub(crate) struct EsxiPlace {
     /// The server's id.
     pub(crate) label: String,
+    /// The server's name, as Servers shows it.
+    pub(crate) name: String,
     /// The host's settings, by the manifest's param names.
     pub(crate) params: Vec<(String, String)>,
     password: SecretValue,
@@ -134,12 +136,13 @@ impl std::fmt::Debug for EsxiPlace {
 }
 
 impl EsxiPlace {
-    /// Server `label`'s place, from the environment the launcher keeps for its labs
-    /// (`lab::esxi_env`'s names): the settings the manifest takes, and the password.
-    pub(crate) fn from_env(label: &str, env: &[(String, String)]) -> EsxiPlace {
+    /// Server `label`'s place (`name` in Servers), from the environment the launcher keeps for its
+    /// labs (`lab::esxi_env`'s names): the settings the manifest takes, and the password.
+    pub(crate) fn from_env(label: &str, name: &str, env: &[(String, String)]) -> EsxiPlace {
         let value = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
         EsxiPlace {
             label: label.to_owned(),
+            name: name.to_owned(),
             params: lab::esxi::PARAMS.iter().filter_map(|name| value(name).map(|v| ((*name).to_owned(), v))).collect(),
             password: SecretValue::new(value(lab::esxi::PASSWORD).unwrap_or_default()),
         }
@@ -326,7 +329,7 @@ impl LabRun {
     /// `lab`'s status, read by the runner, one read of the run at a time in the app
     /// ([`one_read`]): the lab page's and the attack box's never ask Vagrant at once.
     async fn read(&self, lab: &Running<'_>) -> Result<Status> {
-        one_read::status(&self.dir.join(self.name.as_str()), || async { lab.status().await.map_err(errors::from_runner) }).await
+        one_read::status(&self.dir.join(self.name.as_str()), || async { lab.status().await.map_err(|e| self.said(errors::from_runner(e))) }).await
     }
 
     /// The provider the run's record says it runs on, none before it ever ran: read from the
@@ -341,7 +344,7 @@ impl LabRun {
     /// file keeps the value it was written with.
     pub(crate) async fn provision(&self, machine: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
-        when_unlocked(log, move |sink| async move { lab.provision(machine, opts, &sink).await }).await.map_err(errors::from_runner)
+        when_unlocked(log, move |sink| async move { lab.provision(machine, opts, &sink).await }).await.map_err(|e| self.said(errors::from_runner(e)))
     }
 
     /// Runs the lab's checks; not available when it declares none (nothing runs then).

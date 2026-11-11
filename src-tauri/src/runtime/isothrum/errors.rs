@@ -64,6 +64,8 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         }
         RunnerError::DownloadStalled { after_s, .. } => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
         RunnerError::DownloadFailed { reason, .. } => Error::coded(Code::DownloadFailed { reason: reason.trim().to_owned() }),
+        // Named by the address the run's settings give until [`on_server`] names it as Servers does.
+        RunnerError::ServerAuthFailed { server, .. } => Error::coded(Code::ServerAuthFailed { server: server.unwrap_or_else(|| "the server".into()) }),
         RunnerError::ToolTooOld { tool, found, required } => Error::Invalid(format!(
             "This lab needs {} {required} or later, and this computer has {found}. Update it, then start the lab again.",
             tool_name(&tool)
@@ -84,6 +86,15 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
         }
         other => by_code(&other),
+    }
+}
+
+/// `e`, a failure of a run on the server named `name` in Servers: a refused sign-in names it so,
+/// for the player to find it there.
+pub(crate) fn on_server(e: Error, name: &str) -> Error {
+    match e.code() {
+        Code::ServerAuthFailed { .. } => Error::coded(Code::ServerAuthFailed { server: name.to_owned() }),
+        _ => e,
     }
 }
 
@@ -404,6 +415,25 @@ mod tests {
             let (code, _) = said(RunnerError::DownloadStalled { step: step.into(), after_s: 60, last_line: None });
             assert_eq!(code, Code::DownloadStalled { minutes: 1 }, "{step}");
         }
+    }
+
+    /// Regression (tests/resilience.md N4): a revoked Proxmox token or a changed ESXi password
+    /// showed only as the step's raw failure.
+    #[test]
+    fn a_server_refusing_the_credentials_says_to_update_them_in_servers() {
+        let refused = RunnerError::ServerAuthFailed {
+            step: "up".into(),
+            server: Some("10.0.0.5".into()),
+            reason: "received an HTTP 401 response - Reason: authentication failure".into(),
+        };
+        let (code, _) = said(refused);
+        assert_eq!(code, Code::ServerAuthFailed { server: "10.0.0.5".into() });
+        let named = on_server(from_runner(RunnerError::ServerAuthFailed { step: "status".into(), server: None, reason: "401".into() }), "Home lab");
+        assert_eq!(named.code(), Code::ServerAuthFailed { server: "Home lab".into() });
+        assert_eq!(named.to_string(), "Cyber CTF can't sign in to Home lab: its token was revoked or its password changed. Update it in Servers.");
+        // Any other failure keeps its own words.
+        let other = on_server(from_runner(RunnerError::NotRunning { run: "r".into() }), "Home lab");
+        assert!(!other.to_string().contains("sign in"), "{other}");
     }
 
     #[test]

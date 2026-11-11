@@ -134,6 +134,12 @@ pub enum Code {
         /// Why, in Vagrant's words.
         reason: String,
     },
+    /// The server the lab runs on (Proxmox, ESXi) refused its saved credentials: its API token
+    /// was revoked, or its password changed.
+    ServerAuthFailed {
+        /// The server, by its name in Servers.
+        server: String,
+    },
     /// A lab that runs only in a cloud account was started with none picked.
     PickCloudAccount,
     /// A VM lab was started on this machine with no hypervisor here to run it on.
@@ -209,6 +215,7 @@ impl Code {
             Code::DownloadStalled { .. } | Code::DownloadFailed { .. } | Code::BoxDownloadStalled { .. } | Code::BoxDownloadFailed { .. } => {
                 download_message(self)
             }
+            Code::ServerAuthFailed { server } => server_refused(server),
             Code::PickCloudAccount => "This lab runs in your cloud account: pick one of your cloud accounts to start it on.".into(),
             Code::NoHypervisor => {
                 "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account."
@@ -219,6 +226,11 @@ impl Code {
             }
         }
     }
+}
+
+/// The server `server` refused the lab's saved credentials.
+fn server_refused(server: &str) -> String {
+    format!("Cyber CTF can't sign in to {server}: its token was revoked or its password changed. Update it in Servers.")
 }
 
 /// The message of a download that stalled or failed (`code`): the lab's images, or its VM box.
@@ -501,11 +513,12 @@ mod tests {
             Code::DownloadFailed { .. } => 30,
             Code::BoxDownloadStalled { .. } => 31,
             Code::BoxDownloadFailed { .. } => 32,
+            Code::ServerAuthFailed { .. } => 33,
         }
     }
 
     /// How many forms [`form`] tells apart.
-    const FORMS: usize = 33;
+    const FORMS: usize = 34;
 
     #[test]
     fn every_form_has_a_sample() {
@@ -546,6 +559,7 @@ mod tests {
             Code::DownloadFailed { reason: "toomanyrequests: You have reached your pull rate limit".into() },
             Code::BoxDownloadStalled { minutes: 15 },
             Code::BoxDownloadFailed { reason: "The box 'bento/debian-12' could not be found".into() },
+            Code::ServerAuthFailed { server: "Home lab Proxmox".into() },
             Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() },
             Code::PickCloudAccount,
             Code::NoHypervisor,

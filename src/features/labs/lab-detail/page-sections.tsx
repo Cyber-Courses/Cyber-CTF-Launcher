@@ -12,7 +12,7 @@ import { DeploymentPanel } from "@/features/labs/lab-detail/deployment-panel";
 import { HeaderActions } from "@/features/labs/lab-detail/header-actions";
 import { deployDestination } from "@/features/labs/lab-detail/labels";
 import { cloudView, networkView, removing, type HeaderMode } from "@/features/labs/lab-detail/lab-state";
-import { FailureNotice, ReapFailedNotice, StatusReadNotice } from "@/features/labs/lab-detail/failure-notice";
+import { FailureNotice, ReapFailedNotice, StatusReadNotice, useOpenServer } from "@/features/labs/lab-detail/failure-notice";
 import { NetworkPanel } from "@/features/labs/lab-detail/network-panel";
 import { Dimmed } from "@/features/labs/lab-detail/page-parts";
 import { ObserversPanel } from "@/features/labs/lab-detail/observers-panel";
@@ -103,6 +103,7 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
   // progress is, and its own failure says what went wrong. The next read after it says the rest.
   const readError = useLabState("statusErrors")[p.lab.id];
   const statusError = s.deploying ? undefined : readError;
+  const openServer = useOpenServer(p.status?.hostId);
   return (
     <>
       {failure && failure.key !== dismissed && (
@@ -116,12 +117,13 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           // nor a server run: there the hint is to free the port, not to randomise it.
           canRandomPorts={s.isDocker && !s.remote && s.place !== "local_vm"}
           stillUp={failure.op === "stop" && s.running}
+          onOpenServer={openServer}
           onDismiss={() => {
             setDismissed(failure.key);
           }}
         />
       )}
-      {statusError !== undefined && <StatusReadNotice title={p.lab.title} error={statusError} />}
+      {statusError !== undefined && <StatusReadNotice title={p.lab.title} error={statusError} onOpenServer={openServer} />}
       {p.status?.reapError && <ReapFailedNotice title={p.lab.title} error={p.status.reapError} />}
       {p.lab.imported?.problems.map((problem) => (
         <NoticePanel key={problem.file} tone="warn">

@@ -35,6 +35,11 @@ impl LabRun {
     /// `e`, an operation's failure on this run, as the player reads it: on this machine's Docker,
     /// the engine stopped while a step ran is said as such ([`errors::engine_stopped`]).
     pub(super) fn said(&self, e: Error) -> Error {
-        if self.kind == Kind::Docker && self.esxi.is_none() { errors::engine_stopped(e) } else { e }
+        match &self.esxi {
+            // On an ESXi server: a refused sign-in names it as Servers does.
+            Some(place) => errors::on_server(e, &place.name),
+            None if self.kind == Kind::Docker => errors::engine_stopped(e),
+            None => e,
+        }
     }
 }

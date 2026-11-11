@@ -63,6 +63,11 @@ describe("failureKind", () => {
     expect(failureKind("Couldn't download the lab's VM box: No space left on device.", "boxDownloadFailed")).toBe("disk");
   });
 
+  it("reads a server refusing its saved credentials by its code, in any language", () => {
+    expect(failureKind("Cyber CTF ne peut pas se connecter à Home lab", "serverAuthFailed")).toBe("serverAuth");
+    expect(failureKind("received an HTTP 401 response", "toolMissing")).toBe("tool");
+  });
+
   it("names the operations it reports", () => {
     expect(failureTitleKey("stop")).toBe("labs.failure.title.stop");
     expect(failureTitleKey("provision")).toBe("labs.failure.title.provision");

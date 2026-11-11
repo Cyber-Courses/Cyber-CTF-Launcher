@@ -17,6 +17,7 @@
     "downloadFailed": "Couldn't download the lab's images: {reason}. Check your internet connection, then try again.",
     "boxDownloadStalled": "Downloading the lab's VM box stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again.",
     "boxDownloadFailed": "Couldn't download the lab's VM box: {reason}. Check your internet connection, then try again.",
+    "serverAuthFailed": "Cyber CTF can't sign in to {server}: its token was revoked or its password changed. Update it in Servers.",
     "signInCancelled": "Sign-in cancelled.",
     "signInDenied": "Sign-in was declined at Cyber Auth, so you're still signed out. Sign in again and allow Cyber CTF to continue.",
     "signInCodeUnavailable": "Signing in with a code isn't available yet. Copy the sign-in link into any browser instead, on this machine or another.",

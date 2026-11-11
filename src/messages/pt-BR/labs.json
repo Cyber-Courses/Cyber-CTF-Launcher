@@ -424,6 +424,7 @@
     "stillUp": "Parte do lab ainda está rodando. Tente de novo; o log de implantação mostra o que falhou.",
     "dismiss": "Dispensar",
     "portHeldBy": "Em uso por {holder}. Pare-o e inicie o lab novamente.",
+    "openServer": "Abrir as configurações do servidor",
     "hint": {
       "ports": "Uma porta que este lab publica já está em uso nesta máquina. Pare o que a usa, ou inicie-o com portas aleatórias se o lab não precisar exatamente dessa porta.",
       "portsVm": "Uma porta que este lab encaminha para esta máquina está em uso. Libere-a (pare o app ou o lab que a usa) e inicie o lab novamente.",
@@ -432,7 +433,8 @@
       "signedOut": "Sua sessão terminou. Entre novamente e tente de novo.",
       "network": "Não foi possível acessar um download ou a API do Cyber CTF. Verifique sua conexão com a internet e tente de novo.",
       "disk": "Esta máquina está sem espaço em disco. Libere um pouco (a página Máquina lista as imagens que os labs guardam) e tente de novo.",
-      "tool": "Falta aqui uma ferramenta de que este lab precisa. Instale-a pela página Máquina e tente de novo."
+      "tool": "Falta aqui uma ferramenta de que este lab precisa. Instale-a pela página Máquina e tente de novo.",
+      "serverAuth": "O servidor recusou as credenciais que o Cyber CTF tem para ele. Abra as configurações dele, informe o novo token ou senha e tente de novo."
     }
   },
   "offline": {

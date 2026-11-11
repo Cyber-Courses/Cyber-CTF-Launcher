@@ -88,7 +88,11 @@ minutes: number, } } | { "code": "boxDownloadFailed", "args": {
 /**
  * Why, in Vagrant's words.
  */
-reason: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" } | { "code": "turnedOffByPolicy", "args": { 
+reason: string, } } | { "code": "serverAuthFailed", "args": { 
+/**
+ * The server, by its name in Servers.
+ */
+server: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" } | { "code": "turnedOffByPolicy", "args": { 
 /**
  * The policy setting's name.
  */

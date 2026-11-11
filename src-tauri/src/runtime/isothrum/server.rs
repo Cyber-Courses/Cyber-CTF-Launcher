@@ -72,7 +72,7 @@ impl ServerRun {
     /// Brings the lab up on `place` from its generated files, and says where to start. `env` is
     /// the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &ServerPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        super::up_with(&self.running().await?, &options(place, env), log).await
+        super::up_with(&self.running().await?, &options(place, env), log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
     /// Removes everything the run created on the server, with the params it was applied with
@@ -80,17 +80,17 @@ impl ServerRun {
     pub(crate) async fn down(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
         let lab = self.running().await?;
         let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.down(&options(place, &[]), &sink)).await.map_err(errors::from_runner)
+        progress::follow(log, lines, lab.down(&options(place, &[]), &sink)).await.map_err(|e| errors::on_server(errors::from_runner(e), &place.name))
     }
 
     /// Brings the running lab up to date with its regenerated files, on `place`.
     pub(crate) async fn update(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        self.update_with(&options(place, &[]), log).await
+        self.update_with(&options(place, &[]), log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
     /// Takes `machine` out of the running lab on `place`, ahead of its removal from its files.
     pub(crate) async fn retire(&self, place: &ServerPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        self.retire_with(machine, &options(place, &[]), log).await
+        self.retire_with(machine, &options(place, &[]), log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
     /// The lab as its page shows it, on the server `place` names.
@@ -99,7 +99,7 @@ impl ServerRun {
             return Ok(LabStatus { place: Some(Place::Server), ..LabStatus::default() });
         }
         let lab = self.running().await?;
-        let status = lab.status().await.map_err(errors::from_runner)?;
+        let status = lab.status().await.map_err(|e| errors::on_server(errors::from_runner(e), &place.name))?;
         let shown = view::lab_status(lab.manifest(), &status, None);
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
     }
@@ -107,12 +107,12 @@ impl ServerRun {
     /// `machine`'s graphical console, Proxmox's own through its API, signed in with `place`'s
     /// credentials.
     pub(crate) async fn screen(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_runner::Console> {
-        self.graphical_console(machine, connection_of(place)).await
+        self.graphical_console(machine, connection_of(place)).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
     /// What opens `machine` in the server's own web console, on `place`.
     pub(crate) async fn native(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        self.native_console(machine, connection_of(place)).await
+        self.native_console(machine, connection_of(place)).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
     /// Runs the lab's checks over SSH; not available when it declares none.

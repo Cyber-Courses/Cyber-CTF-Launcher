@@ -4271,6 +4271,24 @@ areas:
         gaps:
           integration: "no scenario sets the clock: rig proposal resilience-clock-jump (+1 h mid-start, Linux)"
 
+      - id: resilience.server-credentials
+        what: "A Proxmox API token revoked, or an ESXi password changed, while a lab runs there: the lab page says Cyber CTF can't sign in to the server (by its name in Servers) and to update it there, with a button to the server's settings, on a failed operation and on a status read (tests/resilience.md N4)."
+        host: true
+        providers:
+          - proxmox
+          - vmware_esxi
+        tests:
+          unit:
+            - src-tauri/src/runtime/isothrum/errors.rs > a_server_refusing_the_credentials_says_to_update_them_in_servers
+            - src-tauri/src/runtime/isothrum/vm_tests.rs > an_esxi_password_changed_says_to_update_it_in_servers
+            - src/features/labs/lab-detail/failure-notice.test.tsx > says so under the failed start, with its settings a click away
+            - src/features/labs/lab-detail/failure-notice.test.tsx > says so when the lab's state can't be read, and opens the server's own settings
+            - src/features/labs/failure-hints.test.ts > reads a server refusing its saved credentials by its code, in any language
+            - src/lib/errors.test.ts > "serverAuthFailed"
+        gaps:
+          integration: "needs a real server whose credentials are changed: rig proposals resilience-pve-token-revoked, resilience-esxi-password-changed"
+        note: Isothrum maps the servers' refusals (HTTP 401/403, Terraform's Proxmox provider, ovftool, vagrant-vmware-esxi's SSH) to server_auth_failed, tested with its fakes (server_auth.rs, driver/vagrant/tests/disruptions.rs, run/tests/terraform/on_server.rs).
+
       - id: resilience.port-taken
         what: "A port the lab publishes held by another process at start: refused naming the port, nothing started, and a start once it is free works (tests/resilience.md N3)."
         host: true

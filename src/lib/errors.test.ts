@@ -75,6 +75,7 @@ describe("command errors", () => {
         "placementLockedHost",
         "portInUse",
         "reapNoHost",
+        "serverAuthFailed",
         "sessionExpired",
         "signInCancelled",
         "signInCodeUnavailable",

@@ -17,6 +17,7 @@
     "downloadFailed": "Impossible de télécharger les images du lab : {reason}. Vérifiez votre connexion Internet, puis réessayez.",
     "boxDownloadStalled": "Le téléchargement de la box de VM du lab n'avançait plus (rien de nouveau depuis {minutes} minutes), il a donc été arrêté. Vérifiez votre connexion Internet, puis réessayez.",
     "boxDownloadFailed": "Impossible de télécharger la box de VM du lab : {reason}. Vérifiez votre connexion Internet, puis réessayez.",
+    "serverAuthFailed": "Cyber CTF ne peut pas se connecter à {server} : son jeton a été révoqué ou son mot de passe a changé. Mettez-le à jour dans Serveurs.",
     "signInCancelled": "Connexion annulée.",
     "signInDenied": "La connexion a été refusée sur Cyber Auth, vous êtes donc toujours déconnecté. Reconnectez-vous et autorisez Cyber CTF pour continuer.",
     "signInCodeUnavailable": "La connexion avec un code n'est pas encore disponible. Copiez plutôt le lien de connexion dans n'importe quel navigateur, sur cette machine ou une autre.",

@@ -17,6 +17,7 @@
     "downloadFailed": "No se pudieron descargar las imágenes del lab: {reason}. Revisa tu conexión a Internet e inténtalo de nuevo.",
     "boxDownloadStalled": "La descarga de la box de VM del lab dejó de avanzar ({minutes} minutos sin nada nuevo), así que se detuvo. Revisa tu conexión a Internet e inténtalo de nuevo.",
     "boxDownloadFailed": "No se pudo descargar la box de VM del lab: {reason}. Revisa tu conexión a Internet e inténtalo de nuevo.",
+    "serverAuthFailed": "Cyber CTF no puede iniciar sesión en {server}: su token se revocó o su contraseña cambió. Actualízalo en Servidores.",
     "signInCancelled": "Inicio de sesión cancelado.",
     "signInDenied": "El inicio de sesión se rechazó en Cyber Auth, así que sigues sin sesión. Vuelve a iniciar sesión y permite Cyber CTF para continuar.",
     "signInCodeUnavailable": "Iniciar sesión con un código aún no está disponible. Copia el enlace de inicio de sesión en cualquier navegador, en esta máquina u otra.",

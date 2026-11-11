@@ -1,12 +1,14 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Settings2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CalloutRow } from "@/features/machine/machine-parts";
 import { failureHintKey, failureTitleKey, type FailureKind } from "@/features/labs/failure-hints";
 import type { LabOperation } from "@/features/labs/lab-detail/lab-state";
 import { useT } from "@/lib/i18n";
-import { describeError, type CommandError } from "@/lib/errors";
+import { describeError, errorCode, type CommandError } from "@/lib/errors";
+import { serverOpenSetup } from "@/lib/tauri";
+import { toast } from "@/lib/toast";
 
 /**
  * The last operation on the lab failed: said right under the header, beside its actions (at the
@@ -21,6 +23,7 @@ export function FailureNotice({
   holder = null,
   canRandomPorts = true,
   stillUp,
+  onOpenServer,
   onDismiss,
 }: {
   /** The lab's title. */
@@ -36,6 +39,8 @@ export function FailureNotice({
   canRandomPorts?: boolean;
   /** The lab still runs (a stop that failed). */
   stillUp: boolean;
+  /** Opens the settings of the server the lab runs on (none: it runs on no saved server). */
+  onOpenServer?: () => void;
   onDismiss: () => void;
 }) {
   const t = useT();
@@ -57,7 +62,30 @@ export function FailureNotice({
       {kind === "ports" && holder && <span className="mt-1 block text-foreground">{t("labs.failure.portHeldBy", { holder })}</span>}
       {hintKey && <span className="mt-1 block text-foreground">{t(hintKey)}</span>}
       {stillUp && <span className="mt-1 block">{t("labs.failure.stillUp")}</span>}
+      {kind === "serverAuth" && onOpenServer && <OpenServerButton onOpen={onOpenServer} />}
     </CalloutRow>
+  );
+}
+
+/** Opens the settings of the saved server `hostId` (the one the lab runs on), whose window takes
+ *  a new token or password; none for a lab on no saved server. */
+export function useOpenServer(hostId: string | null | undefined): (() => void) | undefined {
+  const t = useT();
+  if (!hostId) return undefined;
+  return () => {
+    serverOpenSetup(hostId, "server").catch((e: unknown) => {
+      toast(t("labs.failure.openServer"), describeError(e, t), "fail");
+    });
+  };
+}
+
+/** The server refused its saved credentials: the way to its settings, to give the new ones. */
+function OpenServerButton({ onOpen }: { onOpen: () => void }) {
+  const t = useT();
+  return (
+    <Button variant="outline" size="xs" className="mt-2" onClick={onOpen}>
+      <Settings2 /> {t("labs.failure.openServer")}
+    </Button>
   );
 }
 
@@ -66,11 +94,13 @@ export function FailureNotice({
  * able to be generated again): what the page shows may be stale, so the reason is said at the top
  * until a read succeeds.
  */
-export function StatusReadNotice({ title, error }: { title: string; error: unknown }) {
+export function StatusReadNotice({ title, error, onOpenServer }: { title: string; error: unknown; onOpenServer?: () => void }) {
   const t = useT();
   return (
     <CalloutRow tone="fail" title={t("labs.statusError.title", { title })}>
       <span className="block break-words font-mono text-[0.6875rem]">{describeError(error, t)}</span>
+      {/* The server refused its credentials (a token revoked): read again once they're updated. */}
+      {errorCode(error) === "serverAuthFailed" && onOpenServer && <OpenServerButton onOpen={onOpenServer} />}
     </CalloutRow>
   );
 }

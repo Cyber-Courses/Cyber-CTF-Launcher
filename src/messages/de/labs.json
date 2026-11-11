@@ -424,6 +424,7 @@
     "stillUp": "Ein Teil des Labs läuft noch. Versuche es erneut; das Bereitstellungsprotokoll zeigt, was fehlgeschlagen ist.",
     "dismiss": "Ausblenden",
     "portHeldBy": "Belegt von {holder} – beende es und starte das Lab dann erneut.",
+    "openServer": "Servereinstellungen öffnen",
     "hint": {
       "ports": "Ein Port, den dieses Lab veröffentlicht, ist auf diesem Rechner belegt. Beende, was ihn nutzt, oder starte es mit zufälligen Ports, wenn das Lab nicht genau diesen Port braucht.",
       "portsVm": "Ein Port, den dieses Lab auf diesen Rechner weiterleitet, ist belegt. Gib ihn frei (beende die App oder das Lab, das ihn nutzt), und starte das Lab dann erneut.",
@@ -432,7 +433,8 @@
       "signedOut": "Deine Sitzung ist abgelaufen. Melde dich erneut an und versuche es dann noch einmal.",
       "network": "Ein Download oder die Cyber-CTF-API war nicht erreichbar. Prüfe deine Internetverbindung und versuche es dann erneut.",
       "disk": "Auf diesem Rechner ist kein Speicherplatz mehr frei. Gib welchen frei (die Seite Rechner listet die Images der Labs) und versuche es dann erneut.",
-      "tool": "Ein Werkzeug, das dieses Lab braucht, fehlt hier. Installiere es auf der Seite Rechner und versuche es dann erneut."
+      "tool": "Ein Werkzeug, das dieses Lab braucht, fehlt hier. Installiere es auf der Seite Rechner und versuche es dann erneut.",
+      "serverAuth": "Der Server hat die Zugangsdaten abgelehnt, die Cyber CTF für ihn hat. Öffne seine Einstellungen, gib sein neues Token oder Passwort ein und versuche es dann erneut."
     }
   },
   "offline": {

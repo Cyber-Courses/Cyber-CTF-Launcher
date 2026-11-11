@@ -424,6 +424,7 @@
     "stillUp": "Une partie du lab tourne encore. Réessayez ; le journal de déploiement indique ce qui a échoué.",
     "dismiss": "Masquer",
     "portHeldBy": "Utilisé par {holder}. Arrêtez-le, puis démarrez le lab à nouveau.",
+    "openServer": "Ouvrir les réglages du serveur",
     "hint": {
       "ports": "Un port que publie ce lab est déjà pris sur cette machine. Arrêtez ce qui l'utilise, ou démarrez-le sur des ports aléatoires si le lab n'a pas besoin de ce port précis.",
       "portsVm": "Un port que ce lab redirige vers cette machine est pris. Libérez-le (arrêtez l'app ou le lab qui l'utilise), puis démarrez le lab à nouveau.",
@@ -432,7 +433,8 @@
       "signedOut": "Votre session a expiré. Reconnectez-vous, puis réessayez.",
       "network": "Un téléchargement, ou l’API Cyber CTF, est injoignable. Vérifiez votre connexion Internet, puis réessayez.",
       "disk": "Cette machine manque d’espace disque. Libérez-en (la page Machine liste les images gardées par les labs), puis réessayez.",
-      "tool": "Un outil dont ce lab a besoin manque ici. Installez-le depuis la page Machine, puis réessayez."
+      "tool": "Un outil dont ce lab a besoin manque ici. Installez-le depuis la page Machine, puis réessayez.",
+      "serverAuth": "Le serveur a refusé les identifiants que Cyber CTF a pour lui. Ouvrez ses réglages, saisissez son nouveau jeton ou mot de passe, puis réessayez."
     }
   },
   "offline": {

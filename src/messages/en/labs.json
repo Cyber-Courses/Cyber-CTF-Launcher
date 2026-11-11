@@ -424,6 +424,7 @@
     "stillUp": "Part of the lab is still up. Try again; the deployment log says what failed.",
     "dismiss": "Dismiss",
     "portHeldBy": "Held by {holder}. Stop it, then start the lab again.",
+    "openServer": "Open server settings",
     "hint": {
       "ports": "A port this lab publishes is taken on this machine. Stop whatever uses it, or start it with random ports if the lab doesn't need that exact port.",
       "portsVm": "A port this lab forwards to this machine is taken. Free it (stop the app or lab using it), then start the lab again.",
@@ -432,7 +433,8 @@
       "signedOut": "Your session ended. Sign in again, then retry.",
       "network": "Something it downloads, or the Cyber CTF API, couldn’t be reached. Check your internet connection, then retry.",
       "disk": "This machine is out of disk space. Free some (the Machine page lists the images labs keep), then retry.",
-      "tool": "A tool this lab needs is missing here. Install it from the Machine page, then retry."
+      "tool": "A tool this lab needs is missing here. Install it from the Machine page, then retry.",
+      "serverAuth": "The server refused the credentials Cyber CTF has for it. Open its settings, give its new token or password, then retry."
     }
   },
   "offline": {

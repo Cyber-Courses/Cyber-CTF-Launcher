@@ -296,6 +296,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **A server that refuses its saved credentials says so, with the way to fix it.** A Proxmox API
+  token revoked, or an ESXi host's password changed, showed only as the step's raw failure. The
+  runner now reports the server's refusal (`server_auth_failed`), and the lab page says "Cyber CTF
+  can't sign in to <server>: its token was revoked or its password changed. Update it in Servers."
+  (the server by its name in Servers), with **Open server settings**, on a failed start, stop or
+  park and on a status that can't be read, in every language.
+
 - **A container stopped outside the app can be started again from the lab page.** A Docker lab
   with a container stopped by `docker stop` or Docker Desktop's Stop was offered Reset only, though
   a resume brings it back as it is (Compose starts its stopped services). The health banner now

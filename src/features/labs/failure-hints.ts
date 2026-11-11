@@ -8,7 +8,7 @@ import type { LabOperation } from "@/features/labs/runs/operations";
 // print (Docker's bind error, a full disk, a download that failed) has no code: it is recognised
 // by their words.
 
-export type FailureKind = "ports" | "docker" | "dockerAccess" | "signedOut" | "network" | "disk" | "tool";
+export type FailureKind = "ports" | "docker" | "dockerAccess" | "signedOut" | "network" | "disk" | "tool" | "serverAuth";
 
 const BY_CODE: Partial<Record<ErrorCode, FailureKind>> = {
   portInUse: "ports",
@@ -23,6 +23,8 @@ const BY_CODE: Partial<Record<ErrorCode, FailureKind>> = {
   downloadStalled: "network",
   // The same for a VM lab's Vagrant box.
   boxDownloadStalled: "network",
+  // The server the lab runs on refused its saved token or password: its settings are the fix.
+  serverAuthFailed: "serverAuth",
 };
 
 // The tools' own words, most specific first: the daemon's "permission denied" before its "cannot
