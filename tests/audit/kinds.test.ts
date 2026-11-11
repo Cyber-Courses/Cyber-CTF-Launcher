@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -61,8 +61,9 @@ describe("snapshot.sh, run for real", () => {
   });
 
   /** snapshot.sh with `docker` answering `script` on PATH, HOME and TMPDIR its own (`only`: its
-   *  --only groups). */
-  function snapshot(docker: string, only = "") {
+   *  --only groups; `tmpLink`: TMPDIR a symlink to the temp folder, as macOS's /tmp is). The
+   *  snapshot, and the TMPDIR it was given. */
+  function snapshot(docker: string, { only = "", tmpLink = false } = {}) {
     const dir = mkdtempSync(join(tmpdir(), "audit-snapshot-test-"));
     dirs.push(dir);
     const bin = join(dir, "bin");
@@ -71,22 +72,33 @@ describe("snapshot.sh, run for real", () => {
     mkdirSync(join(dir, "home"));
     writeFileSync(join(bin, "docker"), `#!/bin/sh\n${docker}\n`);
     chmodSync(join(bin, "docker"), 0o755);
+    const tmp = tmpLink ? join(dir, "tmp-link") : join(dir, "tmp");
+    if (tmpLink) symlinkSync(join(dir, "tmp"), tmp);
     const env = {
       ...process.env,
       PATH: `${bin}:${process.env.PATH ?? ""}`,
       HOME: join(dir, "home"),
-      TMPDIR: join(dir, "tmp"),
+      TMPDIR: tmp,
       XDG_DATA_HOME: "",
       VAGRANT_HOME: "",
     };
     const args = [join(HERE, "snapshot.sh"), "--out", join(dir, "snap.json"), ...(only ? ["--only", only] : [])];
     const r = spawnSync("bash", args, { env, encoding: "utf8" });
     expect(r.status, r.stderr).toBe(0);
-    return readSnapshot(readFileSync(join(dir, "snap.json"), "utf8"), "snap.json");
+    return { snap: readSnapshot(readFileSync(join(dir, "snap.json"), "utf8"), "snap.json"), tmp };
   }
 
+  /** The temp-folder probe's entries in `tmp`, by name. snapshot.sh looks in /tmp and /var/tmp
+   *  too, whatever TMPDIR says, so what other runs left there (a CI runner's
+   *  /tmp/cyberctf-tests-*, scripts/check/temp-leaks.ts) is left out. */
+  const tempFolders = (snap: ReturnType<typeof snapshot>["snap"], tmp: string) =>
+    parseProbe(snap.probes.find((p) => p.kind === "temp-folder") ?? { kind: "temp-folder", tool: "", status: "", note: "", output: "" }, 0)
+      .map((i) => i.name)
+      .filter((name) => name.startsWith(`${tmp}/`))
+      .map((name) => name.slice(tmp.length + 1));
+
   it("records every probe with a known kind and status, each readable by its parser", () => {
-    const snap = snapshot("exit 1");
+    const { snap, tmp } = snapshot("exit 1");
     expect(snap.os).toMatch(/^(linux|macos)$/);
     for (const p of snap.probes) {
       expect(Object.keys(PARSERS)).toContain(p.kind);
@@ -98,13 +110,14 @@ describe("snapshot.sh, run for real", () => {
       status: "missing",
       note: "Docker isn't running (docker version has no server)",
     });
-    expect(
-      parseProbe(snap.probes.find((p) => p.kind === "temp-folder") ?? { kind: "temp-folder", tool: "", status: "", note: "", output: "" }, 0).map((i) =>
-        i.name.split("/").pop(),
-      ),
-    ).toEqual(["cyberctf-e2e.Ab12Cd"]);
+    expect(tempFolders(snap, tmp)).toEqual(["cyberctf-e2e.Ab12Cd"]);
     // A whole machine's snapshot: a few seconds alone, more beside the other test files.
   }, 90_000);
+
+  it("looks into a temp folder that is a symlink, as macOS's /tmp is", () => {
+    const { snap, tmp } = snapshot("exit 1", { only: "files", tmpLink: true });
+    expect(tempFolders(snap, tmp)).toEqual(["cyberctf-e2e.Ab12Cd"]);
+  });
 
   it("keeps a tool's JSON whole through its own escaping: quotes, backslashes, tabs, line breaks", () => {
     const line = JSON.stringify({ id: "c1", name: '/we"ird\\name', created: "2026-11-11T12:00:00Z", labels: { "a\tb": "x" }, state: "running" });
@@ -115,8 +128,8 @@ describe("snapshot.sh, run for real", () => {
   inspect*) printf '%s\\n' '${line.replaceAll("'", "'\\''")}' ;;
   *) ;;
 esac`,
-      "docker",
-    );
+      { only: "docker" },
+    ).snap;
     const probe = snap.probes.find((p) => p.kind === "docker-container");
     expect(probe?.status).toBe("ok");
     expect(parseProbe(probe ?? { kind: "", tool: "", status: "", note: "", output: "" }, 0)[0]).toMatchObject({ key: "c1", name: 'we"ird\\name' });

@@ -191,9 +191,11 @@ files_probes() {
   while IFS= read -r d; do [ -d "$d" ] && dirs+=("$d"); done < <(data_dirs)
   : >"$WORK/files"
   # The temp folders the stack names (tests/leftovers.md, "Files"), at the top of each temp folder.
+  # -H: a temp folder that is a symlink is searched, not listed as itself (macOS's /tmp is one, to
+  # /private/tmp, which find alone never looks into).
   for d in "${TMPDIR:-/tmp}" /tmp /var/tmp; do
     [ -d "$d" ] || continue
-    find "$d" -mindepth 1 -maxdepth 1 \( -name 'cyberctf*' -o -name '.cyberctf*' -o -name 'org_cyberctf*' -o -name 'isothrum*' -o -name 'isoloom*' \) 2>/dev/null
+    find -H "$d" -mindepth 1 -maxdepth 1 \( -name 'cyberctf*' -o -name '.cyberctf*' -o -name 'org_cyberctf*' -o -name 'isothrum*' -o -name 'isoloom*' \) 2>/dev/null
   done | sort -u >"$WORK/temp"
   probe temp-folder cat cat "$WORK/temp"
   if [ "${#dirs[@]}" -eq 0 ]; then
