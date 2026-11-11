@@ -22,7 +22,7 @@
 # (e2e/desktop/run.sh, which has its own knobs).
 #
 # Knobs:
-#   RUST_LINES_FLOOR    the Rust line coverage floor (default: coverage.yml's)
+#   RUST_LINES_FLOOR    the Rust line coverage floor (default: coverage.yml's, read from there)
 #   DEV_URL_PORT        a dev server Playwright reuses when it answers there (default: 3206)
 #   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
@@ -33,8 +33,9 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 suite_help "$0" "$@"
 cd "$ROOT" || exit 2
 use_nvmrc_node "$ROOT"
-# The line floor coverage.yml enforces; kept in one place there, mirrored here.
-RUST_LINES_FLOOR=${RUST_LINES_FLOOR:-82.7}
+# The line floor coverage.yml enforces, read from it: kept in one place.
+RUST_LINES_FLOOR=${RUST_LINES_FLOOR:-$(sed -n 's/^ *RUST_LINES_FLOOR: *"\{0,1\}\([0-9.]*\)"\{0,1\} *$/\1/p' .github/workflows/coverage.yml)}
+[ -n "$RUST_LINES_FLOOR" ] || { echo "no RUST_LINES_FLOOR in .github/workflows/coverage.yml" >&2; exit 2; }
 NODE_WANTED=$(tr -d '[:space:]' <.nvmrc)
 
 prereqs() {
@@ -49,20 +50,6 @@ prereqs() {
 }
 # has <command...>: whether the tool answers --version (a cargo subcommand that isn't installed doesn't).
 has() { "$@" --version >/dev/null 2>&1; }
-# Every action in the workflows is pinned to a full commit SHA, its version in a comment, as
-# lint-infra.yml checks (a tag or branch can be moved to new code).
-actions_pinned() {
-  local unpinned
-  unpinned=$(grep -nE '^\s*(- )?uses:' .github/workflows/*.yml .github/actions/*/action.yml | grep -vE 'uses: \./' | grep -vE 'uses: [^@[:space:]]+@[0-9a-f]{40} # \S')
-  [ -z "$unpinned" ] || { echo "$unpinned"; echo "pin these actions to a full commit SHA, with the version in a comment (uses: owner/repo@<sha> # vX.Y.Z)"; return 1; }
-}
-# Lints the repository's shell scripts with shellcheck, as lint-infra.yml does (test fixtures under
-# testdata/ aren't scripts). Read into an array line by line: bash 3.2 has no mapfile.
-shellcheck_scripts() {
-  local scripts=() f
-  while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files '*.sh' '*.bash' 'images/attack-box/bashrc.cyberctf' ':(exclude)*/testdata/*')
-  shellcheck --severity=warning --external-sources "${scripts[@]}"
-}
 # The command types the Rust tests rewrite (ts_bindings.rs) are the ones committed, as ci.yml checks.
 bindings_committed() {
   local changed
@@ -110,9 +97,9 @@ else
 fi
 step audit pnpm audit --prod
 # lint-infra.yml's checks of the files around the app.
-if command -v shellcheck >/dev/null; then step shellcheck shellcheck_scripts; else skip shellcheck "shellcheck not installed (https://www.shellcheck.net)"; fi
+if command -v shellcheck >/dev/null; then step shellcheck scripts/check-infra.sh shellcheck; else skip shellcheck "shellcheck not installed (https://www.shellcheck.net)"; fi
 if command -v actionlint >/dev/null; then step actionlint actionlint -color; else skip actionlint "actionlint not installed (https://github.com/rhysd/actionlint)"; fi
-step pins actions_pinned
+step pins scripts/check-infra.sh pins
 if command -v python3 >/dev/null; then
   step store-listings python3 .github/scripts/check-store-listings.py
 else

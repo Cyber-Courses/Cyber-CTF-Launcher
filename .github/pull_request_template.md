@@ -8,7 +8,8 @@
 
 ## Checklist
 
-- [ ] `pnpm format` and `pnpm check` pass
+- [ ] `pnpm format` passes, and so does `SKIP=e2e-native pnpm release-check` (what CI runs; see
+      [CONTRIBUTING.md](../CONTRIBUTING.md#the-gates))
 - [ ] `CHANGELOG.md` has a line under **Unreleased** (when a user or an administrator would notice)
 - [ ] The docs the change makes wrong are updated (README, `docs/`)
 - [ ] Generated command types (`src/lib/tauri/generated/`) are committed when a Rust struct changed
