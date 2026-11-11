@@ -54,7 +54,7 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
 
   /** The AWS CLI's browser sign-in for the chosen profile, then who it signed in as. */
   const awsSignIn = () => {
-    void cliSignIn.run("AWS", async (onLog) => {
+    void cliSignIn.run(PROVIDER_NAMES.aws, async (onLog) => {
       await awsLogin(v.awsProfile ?? null, onLog);
       const id = await awsCliIdentity(v.awsProfile ?? undefined);
       awsAccount.setAwsIdentity(id);

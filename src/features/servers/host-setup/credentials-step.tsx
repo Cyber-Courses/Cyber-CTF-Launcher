@@ -9,6 +9,7 @@ import { AwsCliCredentials } from "@/features/servers/host-setup/credentials-aws
 import { REGIONS } from "@/features/servers/host-setup/setup-model";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT, type T } from "@/lib/i18n";
+import { PROVIDER_NAMES } from "@/lib/tauri";
 
 /** How the chosen cloud signs in: an OCI config, an API token, the Azure or GCP CLI, the AWS
  *  CLI or AWS access keys; then the region its labs run in. */
@@ -62,14 +63,14 @@ function RegionField({ s }: { s: HostSetup }) {
   );
 }
 
-const tokenCloudName = (s: HostSetup) => (s.digitalocean ? "DigitalOcean" : "Linode");
+const tokenCloudName = (s: HostSetup) => PROVIDER_NAMES[s.digitalocean ? "digitalocean" : "linode"];
 
 function stepTitle(s: HostSetup, t: T) {
   if (s.azure) return t("servers.setup.credentials.titles.azure");
   if (s.gcp) return t("servers.setup.credentials.titles.gcp");
   if (s.digitalocean) return t("servers.setup.credentials.titles.digitalocean");
   if (s.linode) return t("servers.setup.credentials.titles.linode");
-  if (s.oci) return "Oracle Cloud";
+  if (s.oci) return PROVIDER_NAMES.oci;
   return s.v.useCliCreds ? "AWS CLI" : t("servers.setup.credentials.titles.accessKeys");
 }
 

@@ -6,7 +6,7 @@ import { ExternalLink, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Requirement } from "@/features/machine/setup-steps/parts";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
-import { ovftoolPlace, type OvftoolLocation, type OvftoolPlaced, type SystemReport } from "@/lib/tauri";
+import { PROVIDER_NAMES, PROVIDER_NAMES_ON, ovftoolPlace, type OvftoolLocation, type OvftoolPlaced, type SystemReport } from "@/lib/tauri";
 import { openExternal } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
 import { useT, type T } from "@/lib/i18n";
@@ -21,9 +21,11 @@ const OVFTOOL_URL = "https://developer.broadcom.com/tools/open-virtualization-fo
  *  a Mac, Workstation on an x64 PC (Windows or Linux; there is none for Arm). */
 function ovftoolHypervisor(report: Pick<SystemReport, "os" | "arch"> | null): { name: string; url: string } | null {
   if (!report) return null;
-  if (report.os === "macos") return { name: "VMware Fusion", url: FUSION_URL };
+  // VMware's desktop hypervisor as the core names it on this OS: Fusion on a Mac, Workstation elsewhere.
+  const name = (os: "macos" | "windows" | "linux") => PROVIDER_NAMES_ON[os].vmware_desktop ?? PROVIDER_NAMES.vmware_desktop;
+  if (report.os === "macos") return { name: name(report.os), url: FUSION_URL };
   const x64 = report.arch === "x86_64";
-  if (x64 && (report.os === "windows" || report.os === "linux")) return { name: "VMware Workstation", url: WORKSTATION_URL };
+  if (x64 && (report.os === "windows" || report.os === "linux")) return { name: name(report.os), url: WORKSTATION_URL };
   return null;
 }
 

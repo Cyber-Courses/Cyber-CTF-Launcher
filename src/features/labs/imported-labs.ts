@@ -2,6 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { importedLabs, type ImportedLab } from "@/lib/tauri";
+import { IMPORTED_LAB_PREFIX } from "@/lib/tauri/generated/LabIds";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import { refreshStatus, useLabState } from "@/features/labs/lab-store";
 import { useDeployingLabs } from "@/features/labs/runs/operations";
@@ -13,11 +14,8 @@ import { registerReset } from "@/lib/module-state";
 // what their page shows comes from their own `.ctf/` folder, read by the core from the installed
 // copy (`imported_labs`), and they run as containers on this machine only.
 
-/** How an imported lab's id starts (`local-<name>`, the core's `labs::imported::PREFIX`). */
-const PREFIX = "local-";
-
-/** Whether `id` is an imported lab's. */
-export const isImportedId = (id: string) => id.startsWith(PREFIX);
+/** Whether `id` is an imported lab's (`local-<name>`, the core's `IMPORTED_LAB_PREFIX`). */
+export const isImportedId = (id: string) => id.startsWith(IMPORTED_LAB_PREFIX);
 
 /** Where an imported lab runs: as containers, here (the import starts it so, and nothing else). */
 const RUNTIME: LabRuntimeInfo = { runtime: "DOCKER", architectures: [], providers: [], docker: true, vm: false, cloud: false };

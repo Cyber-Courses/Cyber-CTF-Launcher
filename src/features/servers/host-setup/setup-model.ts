@@ -108,7 +108,7 @@ export function initialSignIn(v: ServerHostInput): SignIn {
 
 /** The SSH key sign-in a setup starts from: the saved one, else root on port 22, its key to pick. */
 export function initialSshKey(v: ServerHostInput): SshKeySignIn {
-  return v.sshKey ?? { path: "", user: "root", port: 22 };
+  return v.sshKey ?? { path: "", user: SERVER_USER.proxmox, port: 22 };
 }
 
 /** A port a field may hold: empty (the default) or a whole TCP port number. */

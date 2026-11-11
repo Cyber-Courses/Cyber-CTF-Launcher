@@ -5,6 +5,7 @@ import { Field, Input, Note } from "@/features/servers/host-setup/form";
 import { ExternalLinkButton, SecretInput } from "@/features/servers/host-setup/credentials-parts";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { useT } from "@/lib/i18n";
+import { PROVIDER_NAMES } from "@/lib/tauri";
 
 // The clouds that sign in with a key or token kept on this machine: Oracle Cloud's API key,
 // a DigitalOcean or Linode API token, an AWS access key pair.
@@ -44,7 +45,7 @@ export function TokenCredentials({ s }: { s: HostSetup }) {
       <p className="text-[0.75rem] text-muted-foreground">
         {t("servers.setup.credentials.noToken")}{" "}
         <ExternalLinkButton url={s.digitalocean ? "https://cloud.digitalocean.com/account/api/tokens" : "https://cloud.linode.com/profile/tokens"}>
-          {t("servers.setup.credentials.createToken", { cloud: s.digitalocean ? "DigitalOcean" : "Linode" })}
+          {t("servers.setup.credentials.createToken", { cloud: PROVIDER_NAMES[s.digitalocean ? "digitalocean" : "linode"] })}
         </ExternalLinkButton>
       </p>
     </div>

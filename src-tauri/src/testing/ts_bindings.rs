@@ -101,6 +101,7 @@ fn write_values(dir: &Path) {
     write_setup_shapes(dir);
     write_error_codes(dir);
     write_patterns(dir);
+    write_lab_ids(dir);
 }
 
 /// The file of the machines the setup's plan is tested on ([`machine::setup::shapes`]), each as
@@ -306,6 +307,17 @@ fn write_patterns(dir: &Path) {
 /// The generated file of the input patterns (values, not types).
 const PATTERNS: &str = "Patterns";
 
+/// The file of how the core tells a lab's id apart: an imported lab's starts with
+/// [`crate::labs::imported::PREFIX`] (not a type: imported by its path, not from the index).
+fn write_lab_ids(dir: &Path) {
+    let doc = "/** How an imported lab's id starts, `local-<name>` (Rust's `labs::imported::PREFIX`). */";
+    let prefix = serde_json::to_string(crate::labs::imported::PREFIX).unwrap();
+    fs::write(dir.join(format!("{LAB_IDS}.ts")), format!("{HEADER}\n{doc}\nexport const IMPORTED_LAB_PREFIX = {prefix};\n")).unwrap();
+}
+
+/// The generated file of the lab id prefixes (a value, not a type).
+const LAB_IDS: &str = "LabIds";
+
 /// The `.ts` files in `dir` (none when it doesn't exist), by name.
 fn ts_files(dir: &Path) -> Vec<std::ffi::OsString> {
     let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
@@ -349,6 +361,7 @@ fn write_index(dir: &Path) {
                 && n != SETUP_SHAPES
                 && n != ERROR_CODES
                 && n != PATTERNS
+                && n != LAB_IDS
         })
         .collect();
     names.sort();
