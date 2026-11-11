@@ -9,10 +9,20 @@
 #   CYBERCTF_TEST_INTEGRATION_TIERS="local aws" tests/integration/run.sh   and the AWS tier (billed while it runs)
 #   CYBERCTF_TEST_INTEGRATION_TIERS=server tests/integration/run.sh        a lab on a Proxmox / ESXi host (infra/test-servers)
 #   ONLY="attack-box-docker attack-box-vm" tests/integration/run.sh
+#   tests/integration/run.sh --only vm-lab@virtualbox                   one scenario on one hypervisor (the rig's shard)
 #   tests/integration/run.sh --results results.jsonl                    and a JSON record per scenario there
 #   tests/integration/run.sh --list                                     the scenarios and the knobs each reads
 #
+# Fail fast: each scenario is killed past its cap (8 minutes; the attack-box ones 10, until the
+# goldens carry their images), and once a scenario fails on the platform itself (the launcher's
+# own refusals: a lab that can't run on that hypervisor, an architecture it doesn't support, a
+# tool or plugin not installed, a hypervisor not responding, Docker not running), the provider's
+# remaining scenarios are skipped with that failure as their reason; a failure in the lab fails
+# that scenario alone.
+#
 # Options:
+#   --only <scenario>[@<provider>]  only that scenario (as ONLY), on that hypervisor (as
+#                       CYBERCTF_TEST_VM_PROVIDER, and the docker-vm one); may repeat
 #   --results <file>    append a JSON record per scenario to <file> (tests/README.md, "Results")
 #   --list              print a JSON line per scenario (its id, tier, form, test and knobs) and exit
 #   -h, --help          this
@@ -20,6 +30,7 @@
 # Knobs:
 #   CYBERCTF_TEST_INTEGRATION_TIERS  local, aws, server (default: local)
 #   CYBERCTF_TEST_INTEGRATION_LOGS   where each scenario's log goes (default: tests/integration/.state/logs)
+#   CYBERCTF_TEST_INTEGRATION_TIMEOUT seconds a scenario may take (480; the attack-box ones 600)
 #   CYBERCTF_TEST_ISOLOOM_DIR        an Isoloom checkout, for its example labs (default: ../isoloom)
 #   CYBERCTF_TEST_VM_PROVIDER        the hypervisor for VM labs (default: qemu)
 #   CYBERCTF_TEST_DOCKER_VM_PROVIDER the one for a container lab in a VM (default: utm on macOS, else
@@ -46,6 +57,18 @@ while [ $# -gt 0 ]; do
   case $1 in
     --results) suite_results_to integration "${2:?--results needs a file}"; shift ;;
     --list) LISTING=1 ;;
+    --only)
+      # <scenario>@<provider>: the scenario as ONLY, the provider as the hypervisor knobs (none, or
+      # `docker`, names no hypervisor).
+      only=${2:?--only needs a scenario}
+      ONLY="${ONLY:+$ONLY }${only%%@*}"
+      case $only in
+        *@docker | *@) ;;
+        *@*) export CYBERCTF_TEST_VM_PROVIDER=${only#*@} CYBERCTF_TEST_DOCKER_VM_PROVIDER=${only#*@} ;;
+      esac
+      export ONLY
+      shift
+      ;;
     *) echo "run.sh: unknown argument: $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -92,6 +115,16 @@ KNOB_UNSET="integration test skipped, not set:"
 # How it says it returned because the launcher refuses its lab on the provider it was given
 # (integration_tests::support::REFUSED): skipped, the launcher's words the reason.
 REFUSED="integration test skipped, refused by the launcher:"
+# How a failed check or a panic says the platform itself failed the scenario, in the launcher's
+# own words (runtime/launch/local.rs's refusal, runtime/providers/unavailable.rs's reasons, a
+# missing tool, Docker down, an architecture a hypervisor doesn't run; a unit test in
+# integration_tests/support.rs holds this to them): once seen on a provider, its remaining
+# scenarios are skipped with that line as the reason.
+PLATFORM_FAILURE="This lab can't run on|is not supported on|is not installed|was not found|Not installed\.|isn't responding|isn't turned on|isn't available on this machine|is too old|service isn't running|drives Hyper-V only for|added to the libvirt group|can't use /dev/kvm|Docker isn't running"
+# Seconds a scenario may take: CAP, and BOX_CAP for the attack-box ones (their images are pulled
+# until the rig's goldens carry them).
+CAP=${CYBERCTF_TEST_INTEGRATION_TIMEOUT:-480}
+BOX_CAP=${CYBERCTF_TEST_INTEGRATION_TIMEOUT:-600}
 
 BOX=integration_tests::attack_box
 LOCAL_BOX="$BOX::the_attack_box_is_a_machine_of_the_lab_on_every_local_form"
@@ -164,13 +197,40 @@ listing() {
     "$(json_str "$1")" "$(json_str "$TIER")" "$(json_str "$2")" "$(json_str "$3")" "$(json_words "$(reads "$3")")"
 }
 
-# scenario <id> <form> <provider> <test> [VAR=value...]: the opt-in test, alone, with its knobs. It
-# passes when the test ran and passed; a test that returned early for a missing knob, or because the
-# launcher refuses its lab on that provider (a VM on a network, on UTM), is skipped, and so is every
-# scenario while NOT_HERE says why the tier can't run. The form and the provider
-# (empty where none applies) go to its record.
+# platform_failed <provider>: why the provider (`docker` for none) failed on the platform earlier
+# in this run, empty while it hasn't (set by platform_failure).
+platform_failed() {
+  local var="PLATFORM_FAILED_${1:-docker}"
+  printf '%s' "${!var:-}"
+}
+# platform_failure <provider> <log>: the line of a failed scenario's log that says the platform
+# itself failed it (PLATFORM_FAILURE, among its failed checks and panics), kept for the
+# provider's scenarios after it; nothing when the failure was the lab's.
+platform_failure() {
+  local line
+  line=$(grep -E '^FAILED:|panicked' "$2" 2>/dev/null | grep -m 1 -E "$PLATFORM_FAILURE")
+  [ -n "$line" ] || return 0
+  printf -v "PLATFORM_FAILED_${1:-docker}" '%s' "$line"
+}
+# capped <command...>: the command in a process group of its own, killed whole (cargo and the test
+# binary, which holds the VMs) when `logged` ends it past its cap.
+capped() {
+  local pid
+  set -m
+  "$@" &
+  pid=$!
+  set +m
+  trap 'kill -- -'"$pid"' 2>/dev/null' TERM
+  wait "$pid"
+}
+# scenario <id> <form> <provider> <test> [VAR=value...]: the opt-in test, alone, with its knobs,
+# capped. It passes when the test ran and passed; a test that returned early for a missing knob,
+# or because the launcher refuses its lab on that provider (a VM on a network, on UTM), is
+# skipped, and so is every scenario while NOT_HERE says why the tier can't run, or once a scenario
+# on the same provider failed on the platform itself (platform_failure). The form and the
+# provider (empty where none applies) go to its record.
 scenario() {
-  local name=$1 form=$2 provider=$3 test=$4 start=$SECONDS log unset refused
+  local name=$1 form=$2 provider=$3 test=$4 start=$SECONDS log unset refused cap earlier
   shift 4
   if [ -n "$LISTING" ]; then
     listing "$name" "$form" "$test"
@@ -180,9 +240,15 @@ scenario() {
     skip "$name" "$NOT_HERE" "$form" "$provider"
     return 0
   fi
+  earlier=$(platform_failed "$provider")
+  if [ -n "$earlier" ]; then
+    skip "$name" "${provider:-docker} failed on the platform earlier in this run: $earlier" "$form" "$provider"
+    return 0
+  fi
   wanted "$name" || return 0
   log="$LOGS/$name.log"
-  if logged "$name" "$log" 0 env "$@" cargo test -q --lib -- --ignored --nocapture --test-threads=1 --exact "$test" &&
+  case $name in attack-box-*) cap=$BOX_CAP ;; *) cap=$CAP ;; esac
+  if logged "$name" "$log" "$cap" capped env "$@" cargo test -q --lib -- --ignored --nocapture --test-threads=1 --exact "$test" &&
     grep -q "test result: ok. 1 passed" "$log"; then
     unset=$(grep -F "$KNOB_UNSET" "$log" | head -1)
     refused=$(grep -F "$REFUSED" "$log" | head -1)
@@ -194,14 +260,21 @@ scenario() {
       record "$name" ok $((SECONDS - start)) "" "$form" "$provider" "$log"
     fi
   else
-    record "$name" FAIL $((SECONDS - start)) "$(failure_of "$log")" "$form" "$provider" "$log"
+    record "$name" FAIL $((SECONDS - start)) "$(failure_of "$name" "$log")" "$form" "$provider" "$log"
+    platform_failure "$provider" "$log"
   fi
 }
-# failure_of <log>: what a failed scenario's log says first (a failed check, a panic), else the log.
+# failure_of <name> <log>: what a failed scenario's log says first (a failed check, a panic),
+# its cap when it ran past it, else the log.
 failure_of() {
-  local first
-  first=$(grep -m 1 -E '^FAILED:|panicked' "$1" 2>/dev/null)
-  echo "${first:-see $1}"
+  local first over
+  first=$(grep -m 1 -E '^FAILED:|panicked' "$2" 2>/dev/null)
+  over=$(grep -m 1 "^suite: $1 exceeded its" "$2" 2>/dev/null)
+  if [ -n "$over" ]; then
+    echo "${over#suite: "$1" }${first:+ ($first)}"
+  else
+    echo "${first:-see $2}"
+  fi
 }
 # unset_of <VAR...>: those of the settings named that aren't set, space-separated.
 unset_of() {

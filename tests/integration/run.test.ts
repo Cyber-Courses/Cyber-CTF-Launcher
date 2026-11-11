@@ -32,12 +32,15 @@ function runner(cargo: string, env: Record<string, string>, args: string[] = [])
     SKIP: "",
     STRICT: "",
     SUITE_NESTED: "",
+    CYBERCTF_TEST_INTEGRATION_TIMEOUT: "",
+    CYBERCTF_TEST_VM_PROVIDER: "",
+    CYBERCTF_TEST_DOCKER_VM_PROVIDER: "",
     CYBERCTF_TEST_ISOLOOM_DIR: dir,
     CYBERCTF_TEST_INTEGRATION_LOGS: dir,
     ...env,
   };
   const r = spawnSync("bash", [RUNNER, ...args], { env: { ...clean, PATH: `${dir}:${process.env.PATH ?? ""}` }, encoding: "utf8" });
-  return { status: r.status, out: r.stdout + r.stderr };
+  return { status: r.status, out: r.stdout + r.stderr, dir };
 }
 
 /** The verdict a summary line gives `step`. */
@@ -53,6 +56,34 @@ describe("an integration scenario's verdict", () => {
     expect(scenario(`echo "test result: FAILED. 0 passed; 1 failed"; exit 101`)).toBe("FAIL");
     // A filter that matched no test ran nothing: not a pass.
     expect(scenario(`echo "test result: ok. 0 passed; 0 failed"`)).toBe("FAIL");
+  });
+
+  it("is FAIL, saying so, when the test ran past its cap, cargo and what it ran killed", () => {
+    // A cargo that would run for a minute, under a cap of 2 s (the runner looks every 2 s).
+    const r = runner(`echo "FAILED: nothing yet"; sleep 60 & echo $! > "$CYBERCTF_TEST_INTEGRATION_LOGS/sleeper"; wait`, {
+      ONLY: "docker-lab-hello-stack",
+      CYBERCTF_TEST_INTEGRATION_TIMEOUT: "2",
+    });
+    expect(verdict(r.out, "docker-lab-hello-stack")).toBe("FAIL");
+    expect(r.out).toMatch(/docker-lab-hello-stack +FAIL +\d+s {2}exceeded its 2s \(FAILED: nothing yet\)/);
+    // The test binary's children went with it: nothing of the lab's start is left running.
+    const sleeper = Number(readFileSync(join(r.dir, "sleeper"), "utf8").trim());
+    expect(() => process.kill(sleeper, 0)).toThrow();
+  });
+
+  it("takes --only <scenario>@<provider>: that scenario alone, on that hypervisor", () => {
+    const out = join(folder(), "results.jsonl");
+    runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "vm-lab@virtualbox", "--results", out]);
+    runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "attack-box-docker@docker", "--only", "docker-vm-lab@hyperv", "--results", out]);
+    const records = readFileSync(out, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(records.map((r) => [r.case, r.provider, r.result])).toEqual([
+      ["vm-lab", "virtualbox", "pass"],
+      ["attack-box-docker", "", "pass"],
+      ["docker-vm-lab", "hyperv", "pass"],
+    ]);
   });
 
   it("reads a knob by its old name while the test rig sets that one", () => {
@@ -187,6 +218,66 @@ describe("--results", () => {
     ]);
     expect(JSON.parse(readFileSync(failed, "utf8"))).toMatchObject({ case: "vm-lab", result: "fail" });
   });
+
+  it(
+    "skips a provider's remaining scenarios once one failed on the platform itself, naming the failure; a lab's failure fails its scenario alone",
+    { timeout: 180000 },
+    () => {
+      const out = join(folder(), "results.jsonl");
+      // vm-lab fails with the launcher's own refusal of UTM: the VM scenarios after it on UTM are
+      // skipped with that line, the docker ones (no provider) and those on another hypervisor run.
+      const refusal = "FAILED: it starts: This lab can't run on UTM yet: `web` is on a network, and vagrant_utm gives a VM no private network.";
+      const cargo = `case "$*" in *integration_tests::vm_lab::*) echo "${refusal.replaceAll("`", "\\`")}"; echo "test result: FAILED. 0 passed; 1 failed"; exit 101 ;; *) echo "test result: ok. 1 passed; 0 failed" ;; esac`;
+      runner(
+        cargo,
+        {
+          ONLY: "attack-box-vm docker-lab-hello-stack vm-lab per-machine replace-docker-vm replace-vm resilience-docker-port-taken resilience-vm-destroyed resilience-vm-killed-provisioning",
+          CYBERCTF_TEST_VM_PROVIDER: "utm",
+          CYBERCTF_TEST_DOCKER_VM_PROVIDER: "qemu",
+        },
+        ["--results", out],
+      );
+      const records = readFileSync(out, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as Record<string, unknown>);
+      const of = (name: string) => records.find((r) => r.case === name);
+      expect(of("vm-lab")).toMatchObject({ result: "fail", provider: "utm", reason: refusal });
+      for (const later of ["per-machine", "replace-vm", "resilience-vm-destroyed", "resilience-vm-killed-provisioning"])
+        expect(of(later), later).toMatchObject({
+          result: "skip",
+          provider: "utm",
+          reason: `utm failed on the platform earlier in this run: ${refusal}`,
+          seconds: 0,
+        });
+      for (const other of ["attack-box-vm", "docker-lab-hello-stack", "replace-docker-vm", "resilience-docker-port-taken"])
+        expect(of(other), other).toMatchObject({ result: "pass" });
+      // Docker is a provider of its own: Docker down ends its scenarios.
+      const down = join(folder(), "results.jsonl");
+      const docker = `case "$*" in *hello_stack*) echo "thread 'main' panicked: Docker isn't running. Start your container engine"; exit 101 ;; *) echo "test result: ok. 1 passed; 0 failed" ;; esac`;
+      runner(docker, { ONLY: "docker-lab-hello-stack docker-lab-segmented vm-lab", CYBERCTF_TEST_VM_PROVIDER: "libvirt" }, ["--results", down]);
+      const after = readFileSync(down, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as Record<string, unknown>);
+      expect(after.map((r) => [r.case, r.result])).toEqual([
+        ["docker-lab-hello-stack", "fail"],
+        ["docker-lab-segmented", "skip"],
+        ["vm-lab", "pass"],
+      ]);
+      expect(after[1]?.reason).toMatch(/^docker failed on the platform earlier in this run: .*Docker isn't running/);
+      // A failure in the lab itself is that scenario's alone.
+      const lab = join(folder(), "results.jsonl");
+      const broken = `case "$*" in *integration_tests::vm_lab::*) echo "FAILED: the web machine answers: connection refused"; echo "test result: FAILED. 0 passed; 1 failed"; exit 101 ;; *) echo "test result: ok. 1 passed; 0 failed" ;; esac`;
+      runner(broken, { ONLY: "vm-lab per-machine", CYBERCTF_TEST_VM_PROVIDER: "libvirt" }, ["--results", lab]);
+      expect(
+        readFileSync(lab, "utf8")
+          .trim()
+          .split("\n")
+          .map((l) => (JSON.parse(l) as Record<string, unknown>).result),
+      ).toEqual(["fail", "pass"]);
+    },
+  );
 
   it("records a scenario its tier can't run here as skipped, with why", () => {
     const out = join(folder(), "results.jsonl");

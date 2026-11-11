@@ -120,6 +120,43 @@ mod tests {
         assert!(include_str!("../../../tests/integration/run.sh").contains(&format!("REFUSED=\"{REFUSED}\"")));
     }
 
+    /// The runner's `PLATFORM_FAILURE` pattern, which ends a provider's scenarios once one failed
+    /// on the platform itself: it matches each of the launcher's own refusals of the platform,
+    /// and not a failure in the lab.
+    #[test]
+    fn the_runner_knows_the_launchers_platform_refusals() {
+        use crate::runtime::providers::Unavailable;
+        let runner = include_str!("../../../tests/integration/run.sh");
+        let pattern = runner.lines().find_map(|l| l.strip_prefix("PLATFORM_FAILURE=\"")).and_then(|l| l.strip_suffix('"')).expect("PLATFORM_FAILURE in run.sh");
+        let re = regex::Regex::new(pattern).unwrap();
+        let platform = [
+            Unavailable::VagrantMissing.message(),
+            Unavailable::VirtualboxStuck.message(),
+            Unavailable::HypervOff.message(),
+            Unavailable::HypervNeedsAdmin.message(),
+            Unavailable::NotInstalled { program: Some("VBoxManage".into()) }.message(),
+            Unavailable::NotInstalled { program: None }.message(),
+            Unavailable::NewLogin.message(),
+            Unavailable::NoKvm.message(),
+            Unavailable::KvmDenied.message(),
+            Unavailable::HypervisorTooOld { name: "VirtualBox".into(), version: "6.1".into(), min: "7.0".into() }.message(),
+            Unavailable::PluginTooOld { plugin: "vagrant-libvirt".into(), version: "0.1".into(), min: "0.12".into() }.message(),
+            Unavailable::PluginMissing { plugin: "vagrant-qemu".into() }.message(),
+            Unavailable::VmwareUtilityStopped.message(),
+            Unavailable::VmwareUtilityMissing.message(),
+            crate::error::Error::ToolMissing { tool: "qemu-system-x86_64" }.to_string(),
+            crate::error::Error::coded(crate::error::Code::DockerNotRunning).to_string(),
+            "This lab can't run on UTM yet: `web` is on a network. Run it on another hypervisor, a server or in your cloud account.".to_string(),
+            "FAILED: it starts: platform architecture x86 is not supported on ARM".to_string(),
+        ];
+        for said in platform {
+            assert!(re.is_match(&said), "not a platform failure to the runner: {said}");
+        }
+        for lab in ["FAILED: the web machine answers: connection refused", "thread 'main' panicked at 'the lab's init container exited 1'", "FAILED: nothing left: a VM is still listed"] {
+            assert!(!re.is_match(lab), "a lab failure read as the platform's: {lab}");
+        }
+    }
+
     /// The lab both forms of which take a private network (as Isoloom's solo-web's VM does).
     const NETWORKED: &str = "version: 1\nname: both\nnetworks:\n  lab: { cidr: 10.70.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n    app: { image: nginx:1.27, steps: [{ run: setup.sh }] }\n";
 

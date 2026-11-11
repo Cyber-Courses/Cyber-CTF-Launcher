@@ -23,7 +23,19 @@ check and runs the teardown after it. A lab one scenario leaves behind fails the
 UTM VM still registered made every later docker-vm import fail).
 
 `--results <file>` appends a JSON record per scenario there, and `--list` prints the scenarios with
-the knobs each reads ([tests/README.md](../../tests/README.md#results)).
+the knobs each reads ([tests/README.md](../../tests/README.md#results)). `--only <scenario>@<provider>`
+runs one scenario on one hypervisor (`vm-lab@virtualbox`: the test rig's finest shard; `@docker`
+or no `@` names none).
+
+The runner fails fast. Each scenario is killed past its cap, 8 minutes
+(`CYBERCTF_TEST_INTEGRATION_TIMEOUT`; the `attack-box-*` ones get 10 while their images are
+pulled on every run), cargo and the test binary with the VMs it holds. And once a scenario fails
+on the platform itself, in the launcher's own words (a lab that can't run on that hypervisor, an
+architecture it doesn't support, a tool or plugin not installed, a hypervisor not responding,
+Docker not running: `PLATFORM_FAILURE` in `run.sh`, which a unit test in
+`integration_tests/support.rs` holds to the launcher's messages), the remaining scenarios on that
+provider are skipped with that failure as their reason; a failure in the lab fails its scenario
+alone.
 
 A scenario's id is its file's name and, for a file of several, the form or lab it runs:
 `attack-box-vm` is `integration_tests/attack_box.rs` on the VM form.
