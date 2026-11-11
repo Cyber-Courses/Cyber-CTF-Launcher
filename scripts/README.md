@@ -24,6 +24,8 @@ with their tests: [`tests/README.md`](../tests/README.md) says what each tier pr
 
 Source `lib/suite.sh`, call `suite_help "$0" "$@"` first, run each step with `step` (in the open)
 or `logged` plus `record` (into a log, with a time limit), and end with `suite_end "<title>"`, which
-prints the verdicts and sets the exit status. Keep the header comment current: it is the
+prints the verdicts and sets the exit status. A test runner a caller reads takes `--results
+<file>` and calls `suite_results_to <suite> <file>`: each verdict is then a JSON record there too
+(tests/README.md, "Results"). Keep the header comment current: it is the
 runner's `--help`. Scripts run under bash 3.2 (macOS) as well as Linux's, with
 `set -uo pipefail`, and pass shellcheck (CI's `lint-infra.yml`).

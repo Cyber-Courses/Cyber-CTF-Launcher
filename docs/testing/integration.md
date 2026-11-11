@@ -22,6 +22,9 @@ a panic included: each runs through `support::scenario`, which records the panic
 check and runs the teardown after it. A lab one scenario leaves behind fails the ones after it (a
 UTM VM still registered made every later docker-vm import fail).
 
+`--results <file>` appends a JSON record per scenario there, and `--list` prints the scenarios with
+the knobs each reads ([tests/README.md](../../tests/README.md#results)).
+
 A scenario's id is its file's name and, for a file of several, the form or lab it runs:
 `attack-box-vm` is `integration_tests/attack_box.rs` on the VM form.
 [tests/README.md](../../tests/README.md#knobs) lists every knob.

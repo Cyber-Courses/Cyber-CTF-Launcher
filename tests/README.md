@@ -9,8 +9,9 @@ outside: the integration runner, the desktop and the web end-to-end.
 tests/
   integration/run.sh     the integration runner: the opt-in scenarios of src-tauri/src/integration_tests/, by tier
   desktop/run.sh         the desktop end-to-end on Linux and macOS (run.ps1: Windows)
+  desktop/cases.tsv      the desktop cases, in the runners' order: id, spec, form, knobs
   desktop/specs/         one spec a file, `<spec>.mjs`
-  desktop/lib/           what the specs share (support.mjs), the smoke's launchers
+  desktop/lib/           what the specs share (support.mjs), run.ps1's library (suite.ps1), the smoke's launchers
   web/                   the Playwright specs against the dev mock, `<area>.spec.ts`, and their fixtures
 ```
 
@@ -84,6 +85,44 @@ suite runners' selection (`scripts/lib/suite.sh`).
 the new one. `TAURI_WEBDRIVER_PORT` (the embedded WebDriver's port, 4445) and `CYBERBACKEND_URL`
 (the backend `offline-start`'s relay forwards to) are the app's own settings, which the desktop
 runner and specs pass on.
+
+## Results
+
+A caller that drives these tiers (the workspace's test rig) reads their results, not their
+screen. Each entry point appends **one JSON line per check** to a file it is given, and lists its
+cases with the knobs each reads, so a renamed case or knob fails the caller's own check, not a
+night's run:
+
+| Entry point                                                   | Results                                                                              | Listing                                                    |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `tests/integration/run.sh`                                    | `--results <file>`, a line a scenario                                                | `--list`                                                   |
+| `tests/desktop/run.sh`, `run.ps1`                             | `--results <file>` (`-Results`), a line a spec and a line a check (`<spec>/<check>`) | `--list` (`-List`), from `desktop/cases.tsv`               |
+| the guided setup (`integration_tests::setup`, a `cargo test`) | `CYBERCTF_TEST_RESULTS=<file>`, a line an item                                       | in the integration runner's `--list` (tier `bare-machine`) |
+
+```json
+{ "suite": "integration", "case": "vm-lab", "provider": "qemu", "form": "vm", "result": "pass", "reason": "", "seconds": 612, "log": "…/vm-lab.log" }
+```
+
+- `suite`: `integration`, `desktop` or `setup`; `case`: the scenario, spec or item, as `--list`
+  names it (a desktop check: `<spec>/<check>`, not counted again in its spec's verdict).
+- `provider`: the hypervisor, cloud (`aws`) or server (`proxmox`, `esxi`) it ran on; `form`: the
+  form its lab ran in (`docker`, `docker-vm`, `vm`, `per-machine`, `cloud-docker`, `cloud-vm`, or
+  the desktop's `container`); each empty where none applies.
+- `result`: `pass`, `fail` or `skip`; `reason`: why it failed or was skipped (a setup item's:
+  `<status>: <note>`, its status `installed`, `present`, `failed`, `skipped` or `again`, the last
+  a pass that ends for a `reboot` or a `relogin`); `seconds`; `log`: its log.
+
+The file is appended to, never truncated, so one file can gather a whole run. A listing line:
+
+```json
+{"suite":"integration","case":"vm-lab","tier":"local","form":"vm","test":"integration_tests::vm_lab::a_vm_lab_runs_end_to_end_through_the_runner","knobs":["CYBERCTF_TEST_VM_LAB","CYBERCTF_TEST_VM_PROVIDER","CYBERCTF_TEST_VM_INPUTS"]}
+{"suite":"desktop","case":"lab-form-vm","spec":"lab-form","form":"vm","knobs":["CYBERCTF_TEST_LAB_FORM","CYBERCTF_TEST_CATALOGUE_LAB","CYBERCTF_TEST_CATALOGUE_VM_LAB","CYBERCTF_TEST_VM_PROVIDER"]}
+```
+
+Unit tests hold both to the code: `tests/integration/run.test.ts` (each listed test exists, every
+knob a scenario reads is listed), `tests/desktop/run.test.ts` (`cases.tsv` against the specs and
+both runners), `scripts/lib/suite.test.ts` and `integration_tests/support/results.rs` (the
+records).
 
 ## Platforms
 

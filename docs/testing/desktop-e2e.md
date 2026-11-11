@@ -49,6 +49,8 @@ check, named `<spec>/<check>` (counted once, under the spec):
    lab-form-vm              skip       0s  no hypervisor named: set CYBERCTF_TEST_VM_PROVIDER (...)
 ```
 
+With `--results <file>` (`-Results` on Windows) the runner also appends a JSON record per spec and
+per check there, and `--list` (`-List`) prints its cases ([tests/README.md](../../tests/README.md#results)).
 Its exit status: 0 nothing failed, 1 a spec failed, 2 the runner itself couldn't run; `STRICT=1`
 fails a skip. Logs: `tests/desktop/.state/logs/<spec>.log`.
 
@@ -168,8 +170,8 @@ xvfb-run -a dbus-run-session -- tests/desktop/run.sh --all --knobs ~/.config/cyb
 pwsh -File tests\desktop\run.ps1 -All -Knobs $HOME\.config\cyberctf-test\e2e.env
 ```
 
-The summary's lines are the suite format the rig's Linux runner already reads
-(`name ok|FAIL|skip <n>s detail`); each spec's check lines come with it as `<spec>/<check>`.
+The rig reads the records `--results` writes ([tests/README.md](../../tests/README.md#results)):
+a line per spec, and a line per check as `<spec>/<check>`; the summary on screen says the same.
 
 ## Why the runner does what it does
 

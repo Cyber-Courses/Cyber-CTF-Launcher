@@ -1,0 +1,37 @@
+# The desktop end-to-end's cases, in the order run.sh and run.ps1 run them: a case's id, its spec
+# (specs/<spec>.mjs), the form it runs a lab in (- for none) and the knobs it reads (- for none).
+# Both runners' --list print it; tests/desktop/run.test.ts holds it to the runners and the specs.
+# Tab-separated.
+smoke	smoke	-	-
+title-bar	title-bar	-	-
+settings	settings	-	-
+onboarding	onboarding	-	-
+setup-screens	setup-screens	-	-
+machine	machine	-	CYBERCTF_TEST_VM_PROVIDER
+labs	labs	-	CYBERCTF_TEST_LOCAL_LAB CYBERCTF_TEST_CATALOGUE_LAB
+deep-link	deep-link	-	-
+fail-offline	fail-offline	-	-
+fail-badlab	fail-badlab	-	-
+fail-signedout	fail-signedout	-	-
+fail-docker	fail-docker	-	CYBERCTF_TEST_LOCAL_LAB
+launch	launch	-	CYBERCTF_TEST_LOCAL_LAB
+restart	restart	-	CYBERCTF_TEST_LOCAL_LAB
+stop	stop	-	CYBERCTF_TEST_LOCAL_LAB
+launch-ui	launch-ui	-	CYBERCTF_TEST_LOCAL_LAB
+kill-mid-deploy	kill-mid-deploy	-	CYBERCTF_TEST_LOCAL_LAB
+attack-box	attack-box	-	CYBERCTF_TEST_LOCAL_LAB
+attack-shell	attack-shell	-	CYBERCTF_TEST_LOCAL_LAB
+stop-with-box	stop-with-box	-	CYBERCTF_TEST_LOCAL_LAB
+park-resume	park-resume	-	CYBERCTF_TEST_LOCAL_LAB
+reimport-running	reimport-running	-	CYBERCTF_TEST_LOCAL_LAB
+attack-on-stopped	attack-on-stopped	-	-
+lab-actions	lab-actions	-	CYBERCTF_TEST_CATALOGUE_LAB
+offline-start	offline-start	-	CYBERCTF_TEST_CATALOGUE_LAB
+lab-form-container	lab-form	container	CYBERCTF_TEST_LAB_FORM CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_CATALOGUE_VM_LAB CYBERCTF_TEST_VM_PROVIDER
+lab-form-docker-vm	lab-form	docker-vm	CYBERCTF_TEST_LAB_FORM CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_CATALOGUE_VM_LAB CYBERCTF_TEST_VM_PROVIDER
+lab-form-vm	lab-form	vm	CYBERCTF_TEST_LAB_FORM CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_CATALOGUE_VM_LAB CYBERCTF_TEST_VM_PROVIDER
+lab-form-per-machine	lab-form	per-machine	CYBERCTF_TEST_LAB_FORM CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_CATALOGUE_VM_LAB CYBERCTF_TEST_VM_PROVIDER
+screens	screens	-	CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_CATALOGUE_VM_LAB CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_BOX_DESKTOP
+vm-scan	vm-scan	-	CYBERCTF_TEST_SCAN_LAB
+server-lab	server-lab	-	CYBERCTF_TEST_SERVER_ENV CYBERCTF_TEST_SERVER_LAB CYBERCTF_TEST_CATALOGUE_LAB CYBERCTF_TEST_PVE_HOST CYBERCTF_TEST_PVE_TOKEN_ID CYBERCTF_TEST_PVE_TOKEN_SECRET CYBERCTF_TEST_PVE_NODE CYBERCTF_TEST_PVE_STORAGE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_ESXI_HOST CYBERCTF_TEST_ESXI_PASSWORD CYBERCTF_TEST_ESXI_USER CYBERCTF_TEST_ESXI_DATASTORE CYBERCTF_TEST_ESXI_NETWORK
+cleanup	cleanup	-	CYBERCTF_TEST_CLEANUP_TOOL

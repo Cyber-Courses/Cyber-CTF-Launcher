@@ -12,6 +12,8 @@
 #   tests/desktop/run.sh --app path/to/cyberctf-desktop        # an app already built (no build here)
 #   tests/desktop/run.sh --skip-build                          # the debug build as it is
 #   tests/desktop/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # or an .AppImage, an .rpm
+#   tests/desktop/run.sh --results results.jsonl               # and a JSON record per spec and check
+#   tests/desktop/run.sh --list                                # the cases and the knobs each reads
 #
 # Options:
 #   --all                 every spec (the default)
@@ -23,6 +25,9 @@
 #   --package <file>      a .deb, .rpm or .AppImage of such a build: unpacked here, not installed
 #   --skip-build          use the debug build as it is (it loads devUrl, served here)
 #   --knobs <file>        KEY=value lines (read literally, never sourced), exported first
+#   --results <file>      append a JSON record per spec and per check to <file> (tests/README.md,
+#                         "Results")
+#   --list                print a JSON line per case (cases.tsv: its id, spec, form and knobs) and exit
 #
 # Knobs (environment, or the knobs file; tests/README.md has each spec's):
 #   CYBERCTF_TEST_DESKTOP_APP     the app (default: the wdio `cargo build`, built here)
@@ -46,6 +51,28 @@ suite_help "$0" "$@"
 
 fail_now() { printf 'run.sh: %s\n' "$*" >&2; exit 2; }
 
+# The cases, in the order this runs them: id, spec, form and knobs (cases.tsv says more).
+CASES="$HERE/tests/desktop/cases.tsv"
+# case_field <case> <column>: that column of the case's row (2 spec, 3 form, 4 knobs; - for none).
+case_field() { awk -F'\t' -v c="$1" -v n="$2" '$1 == c { print ($n == "-" ? "" : $n) }' "$CASES"; }
+# case_form <case>, case_provider <case>: what its record says it ran on (the hypervisor, for a
+# case that reads one).
+case_form() { case_field "$1" 3; }
+case_provider() {
+  case " $(case_field "$1" 4) " in *" CYBERCTF_TEST_VM_PROVIDER "*) echo "${CYBERCTF_TEST_VM_PROVIDER:-}" ;; esac
+}
+# list_cases: a JSON line per case.
+list_cases() {
+  local id spec form knobs
+  while IFS=$'\t' read -r id spec form knobs; do
+    case $id in '' | '#'*) continue ;; esac
+    [ "$form" != - ] || form=""
+    [ "$knobs" != - ] || knobs=""
+    printf '{"suite":"desktop","case":%s,"spec":%s,"form":%s,"knobs":%s}\n' \
+      "$(json_str "$id")" "$(json_str "$spec")" "$(json_str "$form")" "$(json_words "$knobs")"
+  done <"$CASES"
+}
+
 # Arguments: everything else stays a knob.
 PACKAGE=""
 SKIP_BUILD=""
@@ -56,6 +83,8 @@ while [ $# -gt 0 ]; do
     --app) CYBERCTF_TEST_DESKTOP_APP=${2:?--app needs a path}; SKIP_BUILD=1; shift ;;
     --package) PACKAGE=${2:?--package needs a file}; SKIP_BUILD=1; shift ;;
     --skip-build) SKIP_BUILD=1 ;;
+    --results) suite_results_to desktop "${2:?--results needs a file}"; shift ;;
+    --list) list_cases; exit 0 ;;
     --knobs)
       [ -f "${2:-}" ] || fail_now "no knobs file: ${2:-}"
       while IFS= read -r line || [ -n "$line" ]; do
@@ -199,28 +228,11 @@ esac
 SUITE_SHOW='^(ok|FAILED|skipped):'
 stale_apps() { pkill -f "$APP_BIN" 2>/dev/null && sleep 1; }
 
-# check_rows <spec> <log>: a summary line per check the spec printed (`<spec>/<check>`), which
-# the summary's readers (the test rig) take as they take a spec's; not counted again.
-check_rows() {
-  local spec=$1 log=$2 line status id secs note
-  while IFS= read -r line; do
-    status=${line%%:*}
-    line=${line#*: }
-    id=${line%% *}
-    line=${line#* (}
-    secs=${line%%s)*}
-    note=${line#*s) }
-    [ "$id" = spec ] && continue
-    case $status in ok) ;; FAILED) status=FAIL ;; skipped) status=skip ;; esac
-    SUITE_RESULTS+=("$(printf '%-20s %-5s %6ss  %s' "$spec/$id" "$status" "$secs" "$note")")
-  done < <(grep -E '^(ok|FAILED|skipped): [^ ]+ \([0-9]+s\) ' "$log")
-}
-
 # run_logged <name> <timeout> <command...>: one spec, alone (no app left from before), its output
 # in its log, killed past its timeout. Exit 0 passes, 2 skips (its `skipped: spec` line says why),
-# anything else fails; then a summary line per check it printed.
+# anything else fails; then a summary line per check it printed (step_checks). Each with its record.
 run_logged() {
-  local name=$1 limit=$2 start=$SECONDS log rc why
+  local name=$1 limit=$2 start=$SECONDS log rc why form provider
   shift 2
   wanted "$name" || return 0
   stale_apps
@@ -228,15 +240,17 @@ run_logged() {
   logged "$name" "$log" "$limit" "$@"
   rc=$?
   stale_apps
+  form=$(case_form "$name")
+  provider=$(case_provider "$name")
   case $rc in
-    0) record "$name" ok $((SECONDS - start)) "$log" ;;
+    0) record "$name" ok $((SECONDS - start)) "$log" "$form" "$provider" "$log" ;;
     2)
       why=$(sed -n 's/^skipped: spec (0s) //p' "$log" | head -n 1)
-      record "$name" skip $((SECONDS - start)) "${why:-skipped (see $log)}"
+      record "$name" skip $((SECONDS - start)) "${why:-skipped (see $log)}" "$form" "$provider" "$log"
       ;;
-    *) record "$name" FAIL $((SECONDS - start)) "$log (exit $rc)" ;;
+    *) record "$name" FAIL $((SECONDS - start)) "$log (exit $rc)" "$form" "$provider" "$log" ;;
   esac
-  check_rows "$name" "$log"
+  step_checks "$name" "$log" "$form" "$provider"
 }
 # run_spec <name> <spec file> <timeout> [VAR=value...]: tests/desktop/specs/<file>.mjs with those knobs.
 run_spec() {
@@ -245,6 +259,8 @@ run_spec() {
   run_logged "$name" "$limit" env "$@" node "tests/desktop/specs/$file.mjs"
 }
 spec() { run_spec "$1" "$1" "$CASE_TIMEOUT"; }
+# skip_case <case> <why>: the case skipped, its record saying its form and provider.
+skip_case() { skip "$1" "$2" "$(case_form "$1")" "$(case_provider "$1")"; }
 
 # UTM on a Mac: a started VM named `<lab> · <machine>` is what the running-labs scan looks for, where
 # `<lab>` is the installed lab's VM-name prefix: its isoloom name plus `-<instance>` when the lab holds
@@ -263,11 +279,11 @@ drop_utm_vm() {
 vm_scan() {
   wanted vm-scan || return 0
   if [ "$OS" != Darwin ]; then
-    skip vm-scan "the UTM fixture is macOS only; elsewhere start a libvirt/Hyper-V VM named for the lab and run tests/desktop/specs/vm-scan.mjs with CYBERCTF_TEST_SCAN_LAB"
+    skip_case vm-scan "the UTM fixture is macOS only; elsewhere start a libvirt/Hyper-V VM named for the lab and run tests/desktop/specs/vm-scan.mjs with CYBERCTF_TEST_SCAN_LAB"
     return
   fi
-  [ -x "$UTMCTL" ] || { skip vm-scan "UTM is not installed"; return; }
-  [ -d "$LABS_DIR/$LAB_ID" ] || { skip vm-scan "the lab is not installed under $LABS_DIR (the launch spec imports it)"; return; }
+  [ -x "$UTMCTL" ] || { skip_case vm-scan "UTM is not installed"; return; }
+  [ -d "$LABS_DIR/$LAB_ID" ] || { skip_case vm-scan "the lab is not installed under $LABS_DIR (the launch spec imports it)"; return; }
   local arch vm prefix instance
   arch=$(uname -m | sed 's/^arm64$/aarch64/')
   prefix="$LAB_NAME"
@@ -283,7 +299,7 @@ vm_scan() {
     -e "set vm to make new virtual machine with properties {backend:qemu, configuration:{name:\"$vm\", architecture:\"$arch\", memory:256, cpu cores:1}}" \
     -e 'start vm' \
     -e 'return id of vm' \
-    -e 'end tell' 2>"$LOGS/utm-fixture.log") || { skip vm-scan "could not create the UTM fixture VM ($(tail -1 "$LOGS/utm-fixture.log"))"; return; }
+    -e 'end tell' 2>"$LOGS/utm-fixture.log") || { skip_case vm-scan "could not create the UTM fixture VM ($(tail -1 "$LOGS/utm-fixture.log"))"; return; }
   for _ in $(seq 1 15); do
     "$UTMCTL" status "$UTM_VM_ID" 2>/dev/null | grep -q started && break
     sleep 2
@@ -370,7 +386,7 @@ if [ "$DOCKER_OK" -eq 1 ]; then
   done
   run_spec lab-form-container lab-form "$CASE_TIMEOUT" CYBERCTF_TEST_LAB_FORM=container
 else
-  for s in $DOCKER_SPECS; do skip "$s" "docker is not running"; done
+  for s in $DOCKER_SPECS; do skip_case "$s" "docker is not running"; done
 fi
 run_spec lab-form-docker-vm lab-form "$VM_TIMEOUT" CYBERCTF_TEST_LAB_FORM=docker-vm
 run_spec lab-form-vm lab-form "$VM_TIMEOUT" CYBERCTF_TEST_LAB_FORM=vm

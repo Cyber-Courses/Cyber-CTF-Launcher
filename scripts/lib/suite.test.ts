@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -91,5 +91,59 @@ describe("a runner's steps", () => {
     const { status, out } = run(three(), {}, ["--help"]);
     expect(status).toBe(0);
     expect(out).toBe("The three.sh runner.\n\n  three.sh [--help]\n");
+  });
+});
+
+describe("a runner's results", () => {
+  /** A runner writing its records to a file of its own: the records, parsed. */
+  function records(body: string, env: Record<string, string> = {}) {
+    const path = runner("records.sh", `suite_results_to demo results.jsonl\n${body}\nsuite_end "records"`);
+    const dir = mkdtempSync(join(tmpdir(), "suite-results-"));
+    dirs.push(dir);
+    const r = spawnSync("bash", [path], { cwd: dir, env: { ...process.env, ONLY: "", SKIP: "", STRICT: "", SUITE_NESTED: "", ...env }, encoding: "utf8" });
+    const text = readFileSync(join(dir, "results.jsonl"), "utf8");
+    return {
+      status: r.status,
+      lines: text
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => JSON.parse(l) as Record<string, unknown>),
+    };
+  }
+
+  it("are a JSON line per verdict, the contract's fields in order, appended where the runner was started", () => {
+    const { lines } = records(`step a true\nrecord b FAIL 7 "exit 1" vm libvirt /logs/b.log\nskip c "no tool" docker`);
+    expect(lines).toEqual([
+      { suite: "demo", case: "a", provider: "", form: "", result: "pass", reason: "", seconds: 0, log: "" },
+      { suite: "demo", case: "b", provider: "libvirt", form: "vm", result: "fail", reason: "exit 1", seconds: 7, log: "/logs/b.log" },
+      { suite: "demo", case: "c", provider: "", form: "docker", result: "skip", reason: "no tool", seconds: 0, log: "" },
+    ]);
+    expect(Object.keys(lines[0] ?? {})).toEqual(["suite", "case", "provider", "form", "result", "reason", "seconds", "log"]);
+  });
+
+  it("keep a reason's quotes, backslashes and tabs, and make it one line", () => {
+    const { lines } = records(`record a FAIL 1 $'the "lab"\\\\ said:\\tno\\nmore\\r\\x1b[31m'`);
+    expect(lines[0]?.reason).toBe('the "lab"\\ said:\tno more [31m');
+  });
+
+  it("give a step's checks a line each, named <step>/<check>, not counted again", () => {
+    const log = `printf '%s\\n' 'ok: start (3s) it runs' 'FAILED: stop (9s) left a VM' 'skipped: spec (0s) whole' 'noise' > "$PWD/spec.log"`;
+    const { status, lines } = records(`${log}\nrecord s ok 12 "" vm qemu "$PWD/spec.log"\nstep_checks s "$PWD/spec.log" vm qemu`);
+    expect(lines.map((l) => [l.case, l.result, l.seconds, l.reason, l.form, l.provider])).toEqual([
+      ["s", "pass", 12, "", "vm", "qemu"],
+      ["s/start", "pass", 3, "", "vm", "qemu"],
+      ["s/stop", "fail", 9, "left a VM", "vm", "qemu"],
+    ]);
+    // The failed check isn't counted: the spec passed.
+    expect(status).toBe(0);
+  });
+
+  it("are written only when asked for", () => {
+    const path = runner("quiet.sh", `step a true\nsuite_end "quiet"`);
+    const dir = mkdtempSync(join(tmpdir(), "suite-quiet-"));
+    dirs.push(dir);
+    spawnSync("bash", [path], { cwd: dir, encoding: "utf8" });
+    expect(readdirSync(dir)).toEqual([]);
   });
 });

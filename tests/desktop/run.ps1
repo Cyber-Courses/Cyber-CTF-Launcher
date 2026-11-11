@@ -8,6 +8,8 @@ an SSH session): the app opens windows, and Docker Desktop and the credential st
   pwsh -File tests\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\.config\cyberctf-test\e2e.env
   pwsh -File tests\desktop\run.ps1 -App C:\path\to\cyberctf-desktop.exe
   pwsh -File tests\desktop\run.ps1 -Package C:\path\to\Cyber.CTF_1.8.9_x64_en-US.msi
+  pwsh -File tests\desktop\run.ps1 -Results results.jsonl
+  pwsh -File tests\desktop\run.ps1 -List
 
 -All        every spec (the default)
 -Specs      only these specs (space-separated, as ONLY)
@@ -17,6 +19,10 @@ an SSH session): the app opens windows, and Docker Desktop and the credential st
             silently into the run's folder) of such a build
 -Knobs      a KEY=value file (read literally), set in the environment first
 -SkipBuild  use the debug build as it is
+-Results    append a JSON record per spec and per check to this file (run.sh's --results;
+            tests/README.md, "Results")
+-List       print a JSON line per case (cases.tsv: its id, spec, form and knobs) and exit (run.sh's
+            --list)
 
 Knobs: as run.sh's (CYBERCTF_TEST_LOCAL_LAB, CYBERCTF_TEST_ACCOUNT_SESSION,
 CYBERCTF_TEST_VM_PROVIDER, CYBERCTF_TEST_SERVER_ENV, ...; tests/README.md lists each). Exit status: 0 nothing failed (and
@@ -28,10 +34,16 @@ param(
   [string]$App = "",
   [string]$Package = "",
   [string]$Knobs = "",
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  [string]$Results = "",
+  [switch]$List
 )
 $ErrorActionPreference = "Continue"
 $Repo = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
+. (Join-Path $PSScriptRoot "lib\suite.ps1")
+Read-Case (Join-Path $PSScriptRoot "cases.tsv")
+if ($List) { Get-CaseList; exit 0 }
+if ($Results) { Initialize-ResultsFile $Results }
 Set-Location $Repo
 $State = Join-Path $Repo "tests\desktop\.state"
 $Logs = Join-Path $State "logs"
@@ -57,26 +69,10 @@ $DevPort = ((Get-Content (Join-Path $Repo "src-tauri\tauri.conf.json") -Raw | Co
 $CaseTimeout = if ($env:CYBERCTF_TEST_DESKTOP_TIMEOUT) { [int]$env:CYBERCTF_TEST_DESKTOP_TIMEOUT } else { 1800 }
 $VmTimeout = 10800
 
-function Wanted([string]$name) {
-  if ($env:ONLY -and -not (" $($env:ONLY) ").Contains(" $name ")) { return $false }
-  if ($env:SKIP -and (" $($env:SKIP) ").Contains(" $name ")) { return $false }
-  return $true
-}
-
-# --- Results (scripts/lib/suite.sh's format, which the rig reads) ------------------------------
-$Results = New-Object System.Collections.Generic.List[string]
-$script:Failed = 0
-$script:Skipped = 0
-function Record([string]$name, [string]$status, [int]$secs, [string]$detail, [switch]$NotCounted) {
-  $Results.Add(("{0,-20} {1,-5} {2,6}s  {3}" -f $name, $status, $secs, $detail))
-  if ($NotCounted) { return }
-  if ($status -eq "FAIL") { $script:Failed++ }
-  if ($status -eq "skip") { $script:Skipped++ }
-}
 function Skip-Spec([string]$name, [string]$why) {
-  if (-not (Wanted $name)) { return }
+  if (-not (Test-Wanted $name)) { return }
   Say "${name}: skipped ($why)"
-  Record $name "skip" 0 $why
+  Add-Result $name "skip" 0 $why (Get-CaseForm $name) (Get-CaseProvider $name)
 }
 
 # --- The app ----------------------------------------------------------------------------------
@@ -173,7 +169,7 @@ function Clear-Lab([switch]$Final) {
 # Invoke-Logged <name> <timeout> <knobs hashtable> <program> <args>: alone, its output in its log,
 # killed past its timeout; exit 0 passes, 2 skips (its `skipped: spec` line says why).
 function Invoke-Logged([string]$name, [int]$limit, [hashtable]$vars, [string]$program, [string[]]$arguments) {
-  if (-not (Wanted $name)) { return }
+  if (-not (Test-Wanted $name)) { return }
   Stop-App
   Say $name
   $log = Join-Path $Logs "$name.log"
@@ -194,18 +190,15 @@ function Invoke-Logged([string]$name, [int]$limit, [hashtable]$vars, [string]$pr
   $lines = Select-String -Path $log -Pattern '^(ok|FAILED|skipped): ' | ForEach-Object { $_.Line }
   if ($lines) { $lines | ForEach-Object { Write-Host "   $_" } } else { Get-Content $log -Tail 4 | ForEach-Object { Write-Host "   $_" } }
   $secs = [int]((Get-Date) - $start).TotalSeconds
-  if ($rc -eq 0) { Record $name "ok" $secs $log }
+  $form = Get-CaseForm $name
+  $provider = Get-CaseProvider $name
+  if ($rc -eq 0) { Add-Result $name "ok" $secs $log $form $provider $log }
   elseif ($rc -eq 2) {
     $why = ($lines | Where-Object { $_ -like "skipped: spec (0s) *" } | Select-Object -First 1)
     if ($why) { $why = $why.Substring("skipped: spec (0s) ".Length) } else { $why = "skipped (see $log)" }
-    Record $name "skip" $secs $why
-  } else { Record $name "FAIL" $secs "$log (exit $rc)" }
-  foreach ($l in $lines) {
-    if ($l -match '^(ok|FAILED|skipped): (\S+) \((\d+)s\) (.*)$' -and $Matches[2] -ne "spec") {
-      $status = switch ($Matches[1]) { "ok" { "ok" } "FAILED" { "FAIL" } default { "skip" } }
-      Record "$name/$($Matches[2])" $status ([int]$Matches[3]) $Matches[4] -NotCounted
-    }
-  }
+    Add-Result $name "skip" $secs $why $form $provider $log
+  } else { Add-Result $name "FAIL" $secs "$log (exit $rc)" $form $provider $log }
+  Add-CheckResult $name $lines $form $provider $log
 }
 function Invoke-Spec([string]$name, [string]$file = "", [int]$limit = 0, [hashtable]$vars = @{}) {
   if (-not $file) { $file = $name }
@@ -264,7 +257,7 @@ try {
 }
 
 Say "desktop e2e, logs in $Logs"
-foreach ($l in $Results) { Write-Host "   $l" }
+foreach ($l in $script:SummaryLines) { Write-Host "   $l" }
 Write-Host ""
 Write-Host "$($script:Failed) failed, $($script:Skipped) skipped"
 if ($script:Failed -gt 0) { exit 1 }

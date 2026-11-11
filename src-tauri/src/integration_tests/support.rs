@@ -1,11 +1,13 @@
 //! What the real-lab tests share: a scenario's run (its checks, then its teardown whatever happens
 //! in them: [`scenario`]), its knobs, its checks (each failure collected, so the lab is always
 //! stopped after) and its log; by concern, a lab installed for a test and run through the runner,
-//! and what a lab leaves on Docker ([`lab`]), and the attack box driven as the lab page drives it,
-//! through the console the lab page opens ([`attack_box`]).
+//! and what a lab leaves on Docker ([`lab`]), the attack box driven as the lab page drives it,
+//! through the console the lab page opens ([`attack_box`]), and the JSON records an entry point
+//! the test rig calls writes for it ([`results`]).
 
 pub(crate) mod attack_box;
 pub(crate) mod lab;
+pub(crate) mod results;
 
 use crate::platform::unwind::{CatchUnwind, panic_message};
 

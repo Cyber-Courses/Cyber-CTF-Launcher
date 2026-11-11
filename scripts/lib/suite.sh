@@ -2,8 +2,8 @@
 # Shared by the repo's suite runners (scripts/release/release-check.sh,
 # scripts/check/other-platforms.sh, tests/integration/run.sh, tests/desktop/run.sh): which steps
 # run (ONLY / SKIP), one verdict line per step, a step run in the open or logged with a time limit,
-# Node from .nvmrc, --help from the runner's header, and the summary that sets the exit status.
-# Sourced, never run:
+# Node from .nvmrc, --help from the runner's header, the summary that sets the exit status, and
+# for a caller that reads them, a JSON record per step (suite_results_to). Sourced, never run:
 #
 #   . "$(dirname "$0")/lib/suite.sh"
 #   suite_help "$0" "$@"
@@ -56,9 +56,13 @@ wanted() {
 # serves <port>: whether a web server answers on this machine's port (a dev server to reuse).
 serves() { curl -fsS -o /dev/null "http://127.0.0.1:$1/"; }
 
-# record <step> <ok|FAIL|skip> <seconds> <detail>: one line of the summary.
+# record <step> <ok|FAIL|skip> <seconds> <detail> [form] [provider] [log]: one line of the summary,
+# and the step's JSON record when the run writes them (suite_results_to), the detail its reason.
 record() {
   SUITE_RESULTS+=("$(printf '%-20s %-5s %6ss  %s' "$1" "$2" "$3" "$4")")
+  local reason=$4
+  [ "$2" != ok ] || reason=""
+  suite_json "$1" "$2" "$3" "$reason" "${5:-}" "${6:-}" "${7:-}"
   case $2 in
     FAIL) SUITE_FAILED=$((SUITE_FAILED + 1)) ;;
     skip) SUITE_SKIPPED=$((SUITE_SKIPPED + 1)) ;;
@@ -67,11 +71,11 @@ record() {
 
 say() { printf '\n==== %s\n' "$*"; }
 
-# skip <step> <reason>
+# skip <step> <reason> [form] [provider]
 skip() {
   wanted "$1" || return 0
   say "$1: skipped ($2)"
-  record "$1" skip 0 "$2"
+  record "$1" skip 0 "$2" "${3:-}" "${4:-}"
 }
 
 # step <step> <command...>: runs it in the open (its output is the detail) and records the verdict.
@@ -141,6 +145,85 @@ use_nvmrc_node() {
   else
     echo "warning: using node $(node --version 2>/dev/null || echo none); .nvmrc asks for $want"
   fi
+}
+
+# --- Results for a caller: JSON Lines --------------------------------------------------------
+# A test runner given `--results <file>` (suite_results_to) appends one record per verdict there,
+# each on its own line, for a caller that reads them (the test rig; tests/README.md, "Results"):
+#
+#   {"suite":"integration","case":"vm-lab","provider":"qemu","form":"vm","result":"pass",
+#    "reason":"","seconds":612,"log":"/…/vm-lab.log"}
+#
+# `result` is pass, fail or skip; `reason` says why a case failed or was skipped; `provider` and
+# `form` are empty where they don't apply.
+
+# json_str <text>: <text> as a JSON string: quotes and backslashes escaped, tabs kept as \t, line
+# breaks made spaces, other control characters dropped (a tool's colours).
+json_str() {
+  local s=$1 bs='\' q='"'
+  s=${s//"$bs"/"$bs$bs"}
+  s=${s//"$q"/"$bs$q"}
+  s=${s//$'\t'/"$bs"t}
+  s=${s//$'\n'/ }
+  s=${s//$'\r'/ }
+  s=$(printf '%s' "$s" | LC_ALL=C tr -d '\000-\010\013\014\016-\037\177')
+  printf '"%s"' "$s"
+}
+
+# json_words <words>: the space-separated words as a JSON array of strings.
+json_words() {
+  local w out=""
+  for w in $1; do out="$out,$(json_str "$w")"; done
+  printf '[%s]' "${out#,}"
+}
+
+# suite_results_to <suite> <file>: this run's records go to <file> (appended, made absolute: the
+# runner changes folders), as suite <suite>.
+suite_results_to() {
+  SUITE_NAME=$1
+  case $2 in
+    /*) SUITE_RESULTS_FILE=$2 ;;
+    *) SUITE_RESULTS_FILE="$PWD/$2" ;;
+  esac
+  mkdir -p "$(dirname "$SUITE_RESULTS_FILE")" && : >>"$SUITE_RESULTS_FILE" || {
+    echo "can't write the results to $SUITE_RESULTS_FILE" >&2
+    exit 2
+  }
+}
+
+# suite_json <case> <ok|FAIL|skip> <seconds> <reason> [form] [provider] [log]: the case's record,
+# when the run writes them.
+suite_json() {
+  [ -n "${SUITE_RESULTS_FILE:-}" ] || return 0
+  local result
+  case $2 in
+    ok) result=pass ;;
+    FAIL) result=fail ;;
+    *) result=skip ;;
+  esac
+  printf '{"suite":%s,"case":%s,"provider":%s,"form":%s,"result":"%s","reason":%s,"seconds":%d,"log":%s}\n' \
+    "$(json_str "${SUITE_NAME:-}")" "$(json_str "$1")" "$(json_str "${6:-}")" "$(json_str "${5:-}")" "$result" \
+    "$(json_str "$4")" "$3" "$(json_str "${7:-}")" >>"$SUITE_RESULTS_FILE"
+}
+# step_checks <step> <log> [form] [provider]: a summary line per check the step printed as
+# `ok|FAILED|skipped: <check> (<seconds>s) <what was seen>` (the desktop specs' lines,
+# tests/desktop/lib/support.mjs), named `<step>/<check>` and not counted again; each its JSON record
+# too. The `spec` check (a whole spec skipped) is the step's own line.
+step_checks() {
+  local step=$1 log=$2 line status id secs note
+  while IFS= read -r line; do
+    status=${line%%:*}
+    line=${line#*: }
+    id=${line%% *}
+    line=${line#* (}
+    secs=${line%%s)*}
+    note=${line#*s) }
+    [ "$id" = spec ] && continue
+    case $status in ok) ;; FAILED) status=FAIL ;; skipped) status=skip ;; esac
+    SUITE_RESULTS+=("$(printf '%-20s %-5s %6ss  %s' "$step/$id" "$status" "$secs" "$note")")
+    if [ "$status" = ok ]; then note=""; fi
+    suite_json "$step/$id" "$status" "$secs" "$note" "${3:-}" "${4:-}" "$log"
+  done < <(grep -E '^(ok|FAILED|skipped): [^ ]+ \([0-9]+s\) ' "$log")
 }
 
 # suite_end <title>: the summary, and the exit status: 1 on a failure, or on a skip under STRICT;

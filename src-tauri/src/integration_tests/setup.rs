@@ -10,19 +10,24 @@
 //! - `CYBERCTF_TEST_SETUP_PATHS`: the lab types to set up, `docker,vm`;
 //! - `CYBERCTF_TEST_SETUP_HYPERVISORS`: the hypervisors to try, in order (`libvirt,virtualbox`):
 //!   the first the setup can set up is set up, each other one reported (`skipped` and why);
-//! - `CYBERCTF_TEST_SETUP_REPORT`: the file each item's line is appended to, as it goes (a crash
-//!   still leaves what was done);
 //! - `CYBERCTF_TEST_SETUP_LOGS`: a folder for each action's log, and the machine reports before,
 //!   after each action, and after;
 //! - `CYBERCTF_TEST_SETUP_LAB`: an Isoloom example lab, started and stopped once the machine is
-//!   ready (optional).
+//!   ready (optional);
+//! - `CYBERCTF_TEST_RESULTS`: the file each item's record is appended to, as it goes (a crash
+//!   still leaves what was done), in the format of every test runner's `--results`
+//!   (tests/README.md, "Results"; [`support::results`](super::support::results));
+//! - `CYBERCTF_TEST_SETUP_REPORT`: the same items as `@@setup` lines, the report's format before
+//!   the records, while the test rig reads it (remove once it reads the records).
 //!
-//! A line per item: `@@setup<TAB>item<TAB>status<TAB>seconds<TAB>note`, the status `installed`
-//! (done in this pass), `present` (there already, or ready), `failed` (the note names its log),
-//! `skipped` (the note says why) or `again` (note `reboot` or `relogin`: the pass ends there,
-//! passing, and the next one picks up after the restart or the new login). The items: `wsl`,
-//! `docker`, `engine:<id>`, `vagrant`, `<hypervisor>`, `plugin:<name>`, `vmware-utility`, then
-//! `ready:<tool>`, `selftest:docker`, `selftest:vm`, `lab:<name>`.
+//! An item's status is `installed` (done in this pass), `present` (there already, or ready),
+//! `failed` (the note names its log), `skipped` (the note says why) or `again` (note `reboot` or
+//! `relogin`: the pass ends there, passing, and the next one picks up after the restart or the new
+//! login). Its record: suite `setup`, case the item, provider the hypervisor the pass sets up,
+//! result `pass` (installed, present), `fail` or `skip` (skipped, again), reason
+//! `<status>: <note>`. Its `@@setup` line: `@@setup<TAB>item<TAB>status<TAB>seconds<TAB>note`. The
+//! items: `wsl`, `docker`, `engine:<id>`, `vagrant`, `<hypervisor>`, `plugin:<name>`,
+//! `vmware-utility`, then `ready:<tool>`, `selftest:docker`, `selftest:vm`, `lab:<name>`.
 //!
 //! It never waits on a prompt of its own: the installs elevate the way the app does (UAC through
 //! winget and PowerShell, pkexec on Linux), which the rig answers (an elevated scheduled task, a
@@ -31,7 +36,7 @@
 //!
 //! ```text
 //! CYBERCTF_TEST_SETUP_PATHS=docker,vm CYBERCTF_TEST_SETUP_HYPERVISORS=libvirt,virtualbox \
-//! CYBERCTF_TEST_SETUP_REPORT=setup.tsv CYBERCTF_TEST_SETUP_LOGS=setup-logs \
+//! CYBERCTF_TEST_RESULTS=setup.jsonl CYBERCTF_TEST_SETUP_LOGS=setup-logs \
 //! CYBERCTF_TEST_SETUP_LAB=<isoloom checkout>/examples/hello-stack \
 //! cargo test --lib -- --ignored --exact integration_tests::setup::the_guided_setup_readies_this_machine --nocapture --test-threads=1
 //! ```
@@ -41,6 +46,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use super::support::lab::install_copy;
+use super::support::results::{self, Record, Verdict};
 use super::support::{check, scenario};
 use crate::machine::selftest::{self, Kind};
 use crate::machine::setup::{Action, ManualReason, Plan, SetupPath, Step, Wanted, plan};
@@ -53,13 +59,15 @@ use crate::runtime::{isothrum, launch, lifecycle};
 /// The test's knobs.
 struct Knobs {
     wanted: Wanted,
-    report: PathBuf,
+    /// Where the records go (`CYBERCTF_TEST_RESULTS`), and the `@@setup` lines (the old report).
+    results: Option<PathBuf>,
+    report: Option<PathBuf>,
     logs: PathBuf,
     lab: Option<PathBuf>,
 }
 
 impl Knobs {
-    /// The knobs from the environment; none without the paths, the report and the logs.
+    /// The knobs from the environment; none without the paths and the logs.
     fn from_env() -> Option<Knobs> {
         let var = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
         let paths = super::support::knob("CYBERCTF_TEST_SETUP_PATHS")?;
@@ -75,7 +83,8 @@ impl Knobs {
             .collect();
         Some(Knobs {
             wanted: Wanted { paths, engine: None, hypervisors },
-            report: PathBuf::from(var("CYBERCTF_TEST_SETUP_REPORT")?),
+            results: var(results::RESULTS).map(PathBuf::from),
+            report: var("CYBERCTF_TEST_SETUP_REPORT").map(PathBuf::from),
             logs: PathBuf::from(var("CYBERCTF_TEST_SETUP_LOGS")?),
             lab: var("CYBERCTF_TEST_SETUP_LAB").map(PathBuf::from),
         })
@@ -93,6 +102,15 @@ enum Status {
 }
 
 impl Status {
+    /// The status's verdict in a record: a pass that ends for a restart is a skip, saying so.
+    fn verdict(self) -> Verdict {
+        match self {
+            Status::Installed | Status::Present => Verdict::Pass,
+            Status::Failed => Verdict::Fail,
+            Status::Skipped | Status::Again => Verdict::Skip,
+        }
+    }
+
     fn word(self) -> &'static str {
         match self {
             Status::Installed => "installed",
@@ -104,15 +122,23 @@ impl Status {
     }
 }
 
-/// One item's line: `@@setup<TAB>item<TAB>status<TAB>seconds<TAB>note`, the note on one line.
-fn line(item: &str, status: Status, seconds: u64, note: &str) -> String {
+/// The note on one line.
+fn one_line(note: &str) -> String {
     let note: String = note.chars().map(|c| if matches!(c, '\t' | '\r' | '\n') { ' ' } else { c }).collect();
-    format!("@@setup\t{item}\t{}\t{seconds}\t{}", status.word(), note.trim())
+    note.trim().to_owned()
 }
 
-/// Where the pass writes: its report, line by line, and its logs folder.
+/// One item's line in the old report: `@@setup<TAB>item<TAB>status<TAB>seconds<TAB>note`.
+fn line(item: &str, status: Status, seconds: u64, note: &str) -> String {
+    format!("@@setup\t{item}\t{}\t{seconds}\t{}", status.word(), one_line(note))
+}
+
+/// Where the pass writes: its records (and the old report), item by item, and its logs folder.
 struct Out {
-    report: PathBuf,
+    results: Option<PathBuf>,
+    report: Option<PathBuf>,
+    /// The hypervisor the pass sets up, its records' provider ("" for none).
+    hypervisor: String,
     logs: PathBuf,
     /// The items that failed, for the test's verdict.
     failed: Vec<String>,
@@ -121,13 +147,46 @@ struct Out {
 }
 
 impl Out {
-    /// Appends an item's line to the report (and prints it), at once: a crash keeps it.
+    /// Where `knobs` say the pass writes, nothing written yet.
+    fn new(knobs: &Knobs) -> Out {
+        Out {
+            results: knobs.results.clone(),
+            report: knobs.report.clone(),
+            hypervisor: String::new(),
+            logs: knobs.logs.clone(),
+            failed: Vec::new(),
+            written: 0,
+        }
+    }
+
+    /// One item's record: on the pass's hypervisor, the reason its status and note, its log the
+    /// logs folder.
+    fn record(&self, item: &str, status: Status, seconds: u64, note: &str) -> Record {
+        Record {
+            suite: "setup".to_owned(),
+            case: item.to_owned(),
+            provider: self.hypervisor.clone(),
+            form: String::new(),
+            result: status.verdict(),
+            reason: format!("{}: {}", status.word(), one_line(note)),
+            seconds,
+            log: self.logs.display().to_string(),
+        }
+    }
+
+    /// Appends an item's record (and its old report line) and prints it, at once: a crash keeps it.
     fn line(&mut self, item: &str, status: Status, seconds: u64, note: &str) {
-        let text = line(item, status, seconds, note);
-        println!("{text}");
-        let appended = std::fs::OpenOptions::new().create(true).append(true).open(&self.report).and_then(|mut f| writeln!(f, "{text}"));
-        if let Err(e) = appended {
-            panic!("appending to {}: {e}", self.report.display());
+        let record = self.record(item, status, seconds, note);
+        println!("{}", record.line());
+        if let Some(file) = &self.results {
+            results::append(file, &record);
+        }
+        if let Some(report) = &self.report {
+            let text = line(item, status, seconds, note);
+            let appended = std::fs::OpenOptions::new().create(true).append(true).open(report).and_then(|mut f| writeln!(f, "{text}"));
+            if let Err(e) = appended {
+                panic!("appending to {}: {e}", report.display());
+            }
         }
         if status == Status::Failed {
             self.failed.push(format!("{item}: {note}"));
@@ -388,13 +447,14 @@ fn report_hypervisors(out: &mut Out, first: &Plan, wanted: &Wanted) {
 async fn the_guided_setup_readies_this_machine() {
     let Some(knobs) = Knobs::from_env() else { return };
     std::fs::create_dir_all(&knobs.logs).unwrap_or_else(|e| panic!("creating {}: {e}", knobs.logs.display()));
-    let mut out = Out { report: knobs.report.clone(), logs: knobs.logs.clone(), failed: Vec::new(), written: 0 };
+    let mut out = Out::new(&knobs);
     let dirs = dirs();
 
     let before = system::system_check(dirs.clone()).await;
     out.save_report("report-before", &before);
     // The hypervisor this pass sets up: the first wanted one the setup can set up here.
     let first = plan(&before, &before.setup, &knobs.wanted);
+    out.hypervisor = first.hypervisor.map_or_else(String::new, |h| h.id().to_owned());
     report_hypervisors(&mut out, &first, &knobs.wanted);
     let wanted = Wanted { hypervisors: first.hypervisor.into_iter().collect(), ..knobs.wanted.clone() };
     let items = first.items.clone();
@@ -453,6 +513,25 @@ async fn the_guided_setup_readies_this_machine() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_items_record_says_its_status_and_the_pass_hypervisor() {
+        let knobs = Knobs { wanted: Wanted::default(), results: None, report: None, logs: PathBuf::from("setup-logs"), lab: None };
+        let mut out = Out::new(&knobs);
+        out.hypervisor = "libvirt".into();
+        let r = out.record("docker", Status::Installed, 42, "Docker installed");
+        assert_eq!(
+            r.line(),
+            r#"{"suite":"setup","case":"docker","provider":"libvirt","form":"","result":"pass","reason":"installed: Docker installed","seconds":42,"log":"setup-logs"}"#
+        );
+        assert_eq!(
+            (out.record("wsl", Status::Again, 0, "reboot").result, out.record("wsl", Status::Again, 0, "reboot").reason),
+            (Verdict::Skip, "again: reboot".into())
+        );
+        assert_eq!(out.record("vagrant", Status::Failed, 3, "exited with 1:\n\tE: no\r\n").reason, "failed: exited with 1:  E: no");
+        assert_eq!(out.record("ready:docker", Status::Present, 0, "29.1").result, Verdict::Pass);
+        assert_eq!(out.record("selftest:vm", Status::Skipped, 0, "no hypervisor is ready").result, Verdict::Skip);
+    }
 
     #[test]
     fn a_line_is_tab_separated_on_one_line() {
