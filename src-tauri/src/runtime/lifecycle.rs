@@ -22,9 +22,10 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     refuse_cloud_park(runtime)?;
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
     let run = local_run(dirs, dir, id, runtime, "Pausing a lab on a server host isn't available yet. Stop it instead.")?;
-    // A container lab in one local VM is paused (its state saved), never shut down.
-    if !shuts_down(run.target()) {
-        refuse_vm_shutdown(mode)?;
+    // Only what the page is offered for this run ([`controls`]): a pause of containers on Docker
+    // would be carried out as a shut down, and QEMU refuses one.
+    if let Some(why) = park_refusal(mode, run.target(), run.recorded_provider()?.as_deref()) {
+        return Err(Error::Refused(why.into()));
     }
     run.park(mode, &mut log).await?;
     mark_parked(dir, Some(mode))?;
@@ -54,17 +55,25 @@ fn refuse_cloud_park(runtime: Runtime) -> Result<()> {
 /// Why a cloud-services lab isn't parked.
 const CLOUD_PARK: &str = "A cloud lab can't be paused: stop it to end what it costs, and start it again later.";
 
-/// Inside the VM the containers don't restart on their own after a power-off, so a container
-/// lab in a VM is paused (its state saved), never shut down.
-fn refuse_vm_shutdown(mode: Park) -> Result<()> {
-    if mode == Park::Shutdown {
-        return Err(Error::Invalid("A container lab running in a VM can be paused, not shut down.".into()));
+/// Why a run on this machine for `target`, on `provider`, can't be parked in `mode`: the
+/// [`local_controls`] it is offered don't hold that mode's control. None when they do.
+fn park_refusal(mode: Park, target: lab::Target, provider: Option<&str>) -> Option<&'static str> {
+    let control = match mode {
+        Park::Pause => Control::Pause,
+        Park::Shutdown => Control::Shutdown,
+    };
+    if local_controls(target, provider).contains(&control) {
+        return None;
     }
-    Ok(())
+    Some(match mode {
+        Park::Shutdown => "A container lab running in a VM can be paused, not shut down.",
+        Park::Pause if target == lab::Target::Docker => "A container lab on Docker has no state to save: shut it down instead.",
+        Park::Pause => "QEMU can't pause a lab: shut it down instead.",
+    })
 }
 
-/// Whether a run on this machine for `target` can be shut down: not a container lab in one
-/// VM ([`refuse_vm_shutdown`]).
+/// Whether a run on this machine for `target` can be shut down: not a container lab in one VM,
+/// whose containers don't restart on their own after a power-off (it is paused, its state saved).
 fn shuts_down(target: lab::Target) -> bool {
     target != lab::Target::DockerVm
 }
@@ -85,16 +94,20 @@ fn pauses(target: lab::Target, provider: Option<&str>) -> bool {
 /// where nothing runs.
 pub(crate) fn controls(host: Option<&Host>, provider: Option<&str>) -> Vec<Control> {
     match host {
-        Some(Host::Local(run)) => {
-            let (target, vms) = (run.target(), run.target() == lab::Target::Vagrant);
-            [(pauses(target, provider), Control::Pause), (shuts_down(target), Control::Shutdown), (vms, Control::Provision), (vms, Control::Repair)]
-                .into_iter()
-                .filter_map(|(offered, c)| offered.then_some(c))
-                .collect()
-        }
+        Some(Host::Local(run)) => local_controls(run.target(), provider),
         Some(Host::Esxi { run, .. }) if run.target() == lab::Target::Vagrant => vec![Control::Provision],
         Some(_) | None => Vec::new(),
     }
+}
+
+/// [`controls`] for a run on this machine for `target`, on `provider`: the one rule [`park`]
+/// holds too.
+fn local_controls(target: lab::Target, provider: Option<&str>) -> Vec<Control> {
+    let vms = target == lab::Target::Vagrant;
+    [(pauses(target, provider), Control::Pause), (shuts_down(target), Control::Shutdown), (vms, Control::Provision), (vms, Control::Repair)]
+        .into_iter()
+        .filter_map(|(offered, c)| offered.then_some(c))
+        .collect()
 }
 
 /// The last line of a park.
@@ -276,9 +289,7 @@ pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_first: imp
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        LabRef, Park, clear_parked, park_lab, parked_message, provision_lab, provision_target, refuse_cloud_park, refuse_vm_shutdown, resume_lab, stop_lab,
-    };
+    use super::{LabRef, Park, clear_parked, park_lab, park_refusal, parked_message, provision_lab, provision_target, refuse_cloud_park, resume_lab, stop_lab};
     use crate::platform::exec::fake::Tools;
     use crate::runtime::paths::{mark_parked, parked};
 
@@ -387,11 +398,32 @@ mod tests {
     }
 
     #[test]
-    fn a_container_lab_in_a_vm_pauses_but_never_shuts_down() {
-        assert!(refuse_vm_shutdown(Park::Pause).is_ok());
-        assert!(refuse_vm_shutdown(Park::Shutdown).unwrap_err().to_string().contains("paused, not shut down"));
+    fn a_lab_is_parked_only_in_a_mode_its_page_is_offered() {
+        use crate::runtime::lab::Target;
+        // A container lab in one VM pauses, never shuts down.
+        assert_eq!(park_refusal(Park::Pause, Target::DockerVm, Some("virtualbox")), None);
+        assert!(park_refusal(Park::Shutdown, Target::DockerVm, Some("virtualbox")).unwrap().contains("paused, not shut down"));
+        // Regression: a pause of containers on Docker was carried out as a shut down and
+        // announced as a pause, and a pause on QEMU went to a `vagrant suspend` it refuses.
+        assert!(park_refusal(Park::Pause, Target::Docker, Some("docker")).unwrap().contains("shut it down instead"));
+        assert_eq!(park_refusal(Park::Shutdown, Target::Docker, Some("docker")), None);
+        assert!(park_refusal(Park::Pause, Target::Vagrant, Some("qemu")).unwrap().starts_with("QEMU can't pause"));
+        assert_eq!(park_refusal(Park::Shutdown, Target::Vagrant, Some("qemu")), None);
+        assert_eq!(park_refusal(Park::Pause, Target::Vagrant, Some("virtualbox")), None);
         assert!(parked_message(Park::Pause).starts_with("Lab paused."));
         assert!(parked_message(Park::Shutdown).starts_with("Lab shut down."));
+    }
+
+    #[tokio::test]
+    async fn a_pause_of_containers_on_docker_is_refused_before_anything_runs() {
+        let t = TestApp::new();
+        let spec = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
+        t.lab("t", &[("isoloom.yml", spec)]);
+        let tools = Tools::rules(&[]);
+        let err = park_lab(&t.dirs(), "t", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err();
+        assert!(matches!(err, crate::error::Error::Refused(_)) && err.to_string().contains("shut it down instead"), "{err}");
+        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+        assert_eq!(parked(&t.data().join("labs/t")), None, "not recorded as paused");
     }
 
     #[test]
