@@ -403,6 +403,7 @@ mod tests {
             interfaces: Vec::new(),
             services: Vec::new(),
             infra: false,
+            console: None,
         };
         let status = |web: &str| LabStatus { running: true, machines: vec![machine("web", web), machine(NAME, "running")], ..LabStatus::default() };
         // Not added: a machine of that name is the lab's own.

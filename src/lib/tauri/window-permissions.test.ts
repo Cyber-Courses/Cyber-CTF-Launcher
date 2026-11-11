@@ -27,6 +27,7 @@ const WINDOWS: Record<string, string[]> = {
   "server-setup-window": [LAYOUT, "app/server-setup/page.tsx"],
   "machine-setup-window": [LAYOUT, "app/machine-setup/page.tsx"],
   "shell-window": [LAYOUT, "app/shell/page.tsx"],
+  "screen-window": [LAYOUT, "app/screen/page.tsx"],
 };
 
 const sorted = (s: Set<string> | undefined) => [...(s ?? [])].sort();
@@ -47,6 +48,15 @@ describe("window permissions", () => {
     for (const [set, allowed] of sets) {
       if (set !== "shell-window") expect(pty.filter((c) => allowed.has(c))).toEqual([]);
     }
+  });
+
+  it("keeps a machine's screen, and its password, to the screen windows", () => {
+    const screen = ["screen_connect", "screen_open_rdp", "screen_password"];
+    for (const [set, allowed] of sets) {
+      if (set !== "screen-window") expect(screen.filter((c) => allowed.has(c))).toEqual([]);
+    }
+    // And a screen window reaches nothing else: no terminal, no lab operation.
+    expect(sorted(sets.get("screen-window"))).toEqual([...screen].sort());
   });
 
   it("lets every window minimize, maximize and close itself from its own title bar, on Linux and Windows only", () => {

@@ -22,6 +22,7 @@ import type {
   LabRunRefusalCause,
   LabService,
   LabStartPlace,
+  LabConsole,
   LabControl,
   LabStatus,
   LabTool,
@@ -29,6 +30,7 @@ import type {
   Provider,
   Runtime,
   SharedFolder,
+  ScreenConnection,
   TermEvent,
 } from "@/lib/tauri/generated";
 import type { DockerEngine } from "@/lib/tauri/machine";
@@ -53,6 +55,7 @@ export type {
   LabInterface,
   LabMachine,
   LabNetwork,
+  LabConsole,
   LabControl,
   LabOutput,
   LabPlace,
@@ -67,6 +70,7 @@ export type {
   LabTool,
   Park,
   Runtime,
+  ScreenConnection,
   SharedFolder,
   TermEvent,
 };
@@ -180,6 +184,19 @@ export const forceQuit = () => invokeUnit("force_quit");
 
 /** Opens (or focuses) the shell window for a lab. */
 export const terminalWindow = (id: string, runtime: Runtime, title: string) => invokeUnit("terminal_window", { id, runtime, title });
+
+/** Opens (or focuses) the screen window of a lab machine (its graphical console). */
+export const screenWindow = (id: string, runtime: Runtime, machine: string, title: string) => invokeUnit("screen_window", { id, runtime, machine, title });
+
+/** The screen of the calling screen window's machine: VNC through the window's bridge, or RDP for the
+ *  system's client. */
+export const screenConnect = () => invoke<ScreenConnection>("screen_connect");
+
+/** Opens the calling screen window's Remote Desktop in the system's client. */
+export const screenOpenRdp = () => invokeUnit("screen_open_rdp");
+
+/** The calling screen window's Remote Desktop password, to copy on request. */
+export const screenPassword = () => invoke<string>("screen_password");
 
 /** The shell a terminal opens, and its size in cells. */
 export type TerminalSpec = { id: string; runtime: Runtime; cols: number; rows: number };

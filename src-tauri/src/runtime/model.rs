@@ -50,6 +50,28 @@ pub struct Machine {
     /// the controller is known by its name.)
     #[serde(default)]
     pub infra: bool,
+    /// Its graphical console (its screen), as the lab's run offers it where it runs: `vnc` or
+    /// `rdp`, or `none` and why. `None` when the run says nothing of it (a container).
+    #[serde(default)]
+    pub console: Option<Console>,
+}
+
+/// A machine's graphical console as the lab's run offers it.
+#[derive(Serialize, Debug, PartialEq, Eq, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabConsole")]
+pub struct Console {
+    /// `vnc`, `rdp`, or `none`.
+    pub protocol: String,
+    /// Why there is none, or what it needs, in the run's words.
+    pub note: Option<String>,
+}
+
+impl Console {
+    /// The runner's offer of a machine's console, in the lab page's words.
+    pub(crate) fn of(offer: &isothrum_runner::ConsoleOffer) -> Console {
+        Console { protocol: super::isothrum::protocol_word(offer.protocol).to_owned(), note: offer.note.clone() }
+    }
 }
 
 /// One service inside a machine, as declared by the lab.

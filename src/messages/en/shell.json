@@ -88,5 +88,30 @@
     "shellEndedWithCode": "The shell ended (exit {code}).",
     "reconnect": "Reconnect",
     "close": "Close"
+  },
+  "vmScreen": {
+    "state": {
+      "connecting": "connecting…",
+      "showing": "screen",
+      "rdp": "remote desktop",
+      "unavailable": "no screen",
+      "failed": "connection lost",
+      "ended": "closed"
+    },
+    "connecting": "Connecting to the machine's screen…",
+    "noViewer": "The window couldn't start its screen viewer.",
+    "securityFailure": "The machine's screen refused the password it was given.",
+    "lost": "The connection to the machine's screen was lost.",
+    "unavailable": "This machine has no screen to show",
+    "retry": "Try again",
+    "passwordCopied": "Password copied: paste it when the Remote Desktop asks.",
+    "rdpTitle": "This machine's screen opens in Remote Desktop",
+    "rdpHint": "It opens in {client}. Keep this window open while you use it: closing it ends the connection.",
+    "noClient": "No Remote Desktop app is installed. On a Mac, install Windows App from the App Store; on Linux, FreeRDP (xfreerdp) or Remmina. Then try again.",
+    "tunnelled": "It goes through an encrypted SSH tunnel from this computer, which closes with this window.",
+    "openFailed": "Couldn't open the Remote Desktop app",
+    "openRdp": "Open in {client}",
+    "copyPassword": "Copy password",
+    "closed": "The screen was closed."
   }
 }

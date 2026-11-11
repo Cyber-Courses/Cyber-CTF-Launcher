@@ -138,6 +138,44 @@ pub fn open_shell(app: &AppHandle, id: &str, runtime: Runtime, title: &str) -> R
     Ok(())
 }
 
+/// Opens (or focuses) the screen window of `which`'s machine, titled after the lab's `title`: its
+/// session's bridge bound first, and the window's content security policy letting it connect to
+/// that bridge alone (`connect-src ws://127.0.0.1:<port>`); closing it ends the session.
+pub async fn open_screen(app: &AppHandle, which: crate::screen::Which, title: &str) -> Result<()> {
+    let (label, page) = crate::screen::window(&which)?;
+    if focus_existing(app, &label) {
+        return Ok(());
+    }
+    let machine = which.machine.clone();
+    let port = crate::screen::start(&label, which).await?;
+    let fail = |e: tauri::Error| Error::Invalid(format!("could not open the screen window: {e}"));
+    let built = builder(app, &label, page).map(|b| {
+        b.title(format!("{machine} · {}", terminal::window_title(title)))
+            .inner_size(1100.0, 720.0)
+            .min_inner_size(480.0, 320.0)
+            .resizable(true)
+            .on_web_resource_request(move |_, response| {
+                let csp = response.headers().get("Content-Security-Policy").and_then(|v| v.to_str().ok()).map(|c| crate::screen::csp_with_bridge(c, port));
+                if let Some(value) = csp.and_then(|c| tauri::http::HeaderValue::from_str(&c).ok()) {
+                    response.headers_mut().insert("Content-Security-Policy", value);
+                }
+            })
+    });
+    let window = match built.and_then(tauri::WebviewWindowBuilder::build) {
+        Ok(w) => w,
+        Err(e) => {
+            crate::screen::close(&label);
+            return Err(fail(e));
+        }
+    };
+    window.on_window_event(move |e| {
+        if matches!(e, tauri::WindowEvent::Destroyed) {
+            crate::screen::close(&label);
+        }
+    });
+    Ok(())
+}
+
 /// Brings the main window back (it may be hidden while the app finishes in the background, or
 /// minimized).
 pub fn reveal_main(app: &AppHandle) {
@@ -177,6 +215,23 @@ mod tests {
         assert!(w.url().unwrap().as_str().ends_with("shell?id=sqli&runtime=DOCKER"), "{}", w.url().unwrap());
         open("sqli").unwrap();
         assert_eq!(t.handle().webview_windows().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_screen_window_opens_once_per_machine_with_its_session() {
+        let t = TestApp::new();
+        let which = |machine: &str| crate::screen::Which { id: "winlab".into(), runtime: Runtime::Vm, machine: machine.into() };
+        assert!(open_screen(t.handle(), which("a b"), "GOAD").await.is_err());
+        assert!(t.handle().webview_windows().is_empty());
+        open_screen(t.handle(), which("dc01"), "GOAD").await.unwrap();
+        let w = t.handle().get_webview_window("screen-winlab:dc01").expect("the screen window");
+        assert!(w.url().unwrap().as_str().ends_with("screen?id=winlab&runtime=VM&machine=dc01"), "{}", w.url().unwrap());
+        assert!(crate::screen::has_session("screen-winlab:dc01"), "its bridge is bound");
+        open_screen(t.handle(), which("dc01"), "GOAD").await.unwrap();
+        assert_eq!(t.handle().webview_windows().len(), 1);
+        w.destroy().unwrap();
+        crate::screen::close("screen-winlab:dc01");
+        assert!(!crate::screen::has_session("screen-winlab:dc01"));
     }
 
     #[test]

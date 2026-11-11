@@ -12,6 +12,7 @@ import { labRuntime } from "@/features/labs/lab-runtime";
 import { placeOf } from "@/features/labs/place";
 import { useObjectives } from "@/features/labs/objectives/use-objectives";
 import { useLabPageState } from "@/features/labs/lab-detail/use-lab-page-state";
+import { useLabScreen } from "@/features/labs/lab-detail/use-lab-screen";
 import { useLabShell } from "@/features/labs/lab-detail/use-lab-shell";
 import { useLabTools } from "@/features/labs/lab-detail/use-lab-tools";
 import { usePageActions } from "@/features/labs/lab-detail/use-page-actions";
@@ -137,6 +138,7 @@ export function useLabDetail(p: LabDetailProps) {
   // The lab's catalogue runtime: the backend resolves the form it runs in (`local_runtime`).
   const runtime = labRuntime(rt);
   const shell = useLabShell(lab.id, lab.title, runtime);
+  const screen = useLabScreen(lab.id, lab.title, runtime);
   const box = useShownBox(useLabAttackBox(lab.id, s, runtime), removing(s));
   const [check, clearCheck] = useLabCheck(lab.id, runtime, { running: s.running, downCount: s.down.length });
   const tools = useLabTools(lab.id, s.running && !s.isCloud, runtime);
@@ -157,6 +159,7 @@ export function useLabDetail(p: LabDetailProps) {
     run,
     preview,
     shell,
+    screen,
     box,
     check,
     tools,

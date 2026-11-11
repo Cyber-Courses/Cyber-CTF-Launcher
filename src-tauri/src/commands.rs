@@ -11,6 +11,7 @@ pub(crate) mod app;
 mod cloud;
 pub(crate) mod labs;
 mod machine;
+mod screen;
 pub(crate) mod server;
 mod setup_window;
 mod shared_folder;
@@ -94,6 +95,10 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         terminal::terminal_resize,
         terminal::terminal_close,
         terminal::terminal_window,
+        screen::screen_window,
+        screen::screen_connect,
+        screen::screen_open_rdp,
+        screen::screen_password,
         shared_folder::shared_folder_get,
         shared_folder::shared_folder_set,
         shared_folder::shared_folder_open,

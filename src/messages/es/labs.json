@@ -231,6 +231,7 @@
     "vmHint": "Tu máquina Kali en el lab: una VM entre las del lab, en la red del lab, con las herramientas de Kali (se instalan en su primer arranque). Abre su shell para atacar los objetivos.",
     "containerHint": "Tu máquina en el lab: un contenedor entre los del lab, en la red del lab, con la imagen de attack box elegida en Ajustes. Abre su shell para atacar los objetivos desde dentro del lab.",
     "openShell": "Abrir shell de ataque",
+    "openScreen": "Abrir pantalla",
     "working": "Trabajando…",
     "stop": "Detener máquina de ataque",
     "start": "Iniciar máquina de ataque",
@@ -436,5 +437,14 @@
   },
   "statusError": {
     "title": "No se pudo leer el estado de {title}"
+  },
+  "screens": {
+    "title": "Pantallas",
+    "open": "Pantalla",
+    "openOf": "Abrir la pantalla de {machine}",
+    "none": "Sin pantalla: {why}",
+    "notRunning": "Su pantalla se abre cuando está en marcha.",
+    "vnc": "Su pantalla, en una ventana",
+    "rdp": "Su Escritorio remoto, en tu aplicación de Escritorio remoto"
   }
 }

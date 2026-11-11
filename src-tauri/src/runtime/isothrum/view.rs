@@ -49,6 +49,7 @@ fn machine(manifest: &Manifest, m: &MachineStatus) -> Machine {
         interfaces,
         services: declared.iter().map(service).collect(),
         infra: m.role != Role::Member,
+        console: m.console.as_ref().map(super::super::Console::of),
     }
 }
 

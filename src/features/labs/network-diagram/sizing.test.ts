@@ -13,6 +13,7 @@ const api: Machine = {
   interfaces: [{ network: "default", ip: "10.0.0.2" }],
   services: [],
   infra: false,
+  console: null,
 };
 
 describe("shellSize", () => {

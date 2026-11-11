@@ -12,6 +12,7 @@ mod labs;
 mod machine;
 mod platform;
 mod runtime;
+mod screen;
 mod shared_folder;
 mod terminal;
 #[cfg(test)]

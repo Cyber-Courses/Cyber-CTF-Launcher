@@ -27,6 +27,7 @@ const machine = (name: string, over: Partial<Machine> = {}): Machine => ({
   interfaces: [{ network: "default", ip: "10.42.0.3" }],
   services: [],
   infra: false,
+  console: null,
   ...over,
 });
 

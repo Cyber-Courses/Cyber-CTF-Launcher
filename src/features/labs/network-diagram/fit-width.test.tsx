@@ -34,6 +34,7 @@ const machine = (name: string, i: number): Machine => ({
   interfaces: [{ network: "default", ip: `10.42.0.${String(i + 2)}` }],
   services: [],
   infra: false,
+  console: null,
 });
 const wideLab = ["a", "b", "c", "d"].map(machine);
 

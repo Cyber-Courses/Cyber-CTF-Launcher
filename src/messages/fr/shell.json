@@ -88,5 +88,30 @@
     "shellEndedWithCode": "Le shell s'est terminé (code {code}).",
     "reconnect": "Reconnecter",
     "close": "Fermer"
+  },
+  "vmScreen": {
+    "state": {
+      "connecting": "connexion…",
+      "showing": "écran",
+      "rdp": "bureau à distance",
+      "unavailable": "pas d'écran",
+      "failed": "connexion perdue",
+      "ended": "fermé"
+    },
+    "connecting": "Connexion à l'écran de la machine…",
+    "noViewer": "La fenêtre n'a pas pu démarrer son afficheur d'écran.",
+    "securityFailure": "L'écran de la machine a refusé le mot de passe donné.",
+    "lost": "La connexion à l'écran de la machine a été perdue.",
+    "unavailable": "Cette machine n'a pas d'écran à afficher",
+    "retry": "Réessayer",
+    "passwordCopied": "Mot de passe copié : collez-le quand le Bureau à distance le demande.",
+    "rdpTitle": "L'écran de cette machine s'ouvre dans le Bureau à distance",
+    "rdpHint": "Il s'ouvre dans {client}. Gardez cette fenêtre ouverte pendant que vous l'utilisez : la fermer met fin à la connexion.",
+    "noClient": "Aucune application de Bureau à distance n'est installée. Sur Mac, installez Windows App depuis l'App Store ; sous Linux, FreeRDP (xfreerdp) ou Remmina. Puis réessayez.",
+    "tunnelled": "Il passe par un tunnel SSH chiffré depuis cet ordinateur, qui se ferme avec cette fenêtre.",
+    "openFailed": "Impossible d'ouvrir l'application de Bureau à distance",
+    "openRdp": "Ouvrir dans {client}",
+    "copyPassword": "Copier le mot de passe",
+    "closed": "L'écran a été fermé."
   }
 }

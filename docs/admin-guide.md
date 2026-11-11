@@ -203,11 +203,13 @@ and the AWS CLI download against AWS's signing key, before anything is installed
 
 ### Local ports
 
-| Port                                | Bound to    | What                                                                                                                                        |
-| ----------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 47290, else 47291, else 47292 (TCP) | `127.0.0.1` | the sign-in redirect (RFC 8252), only while a sign-in waits (at most 5 minutes)                                                             |
-| a free port chosen by the OS (TCP)  | `127.0.0.1` | after a website launch, a probe the website reads to check the lab runs on the same machine as the browser (one answer, at most 10 minutes) |
-| free ports chosen by the OS (TCP)   | `127.0.0.1` | relays to an ESXi host on the local network, on macOS, while a lab on it runs                                                               |
+| Port                                | Bound to    | What                                                                                                                                                      |
+| ----------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 47290, else 47291, else 47292 (TCP) | `127.0.0.1` | the sign-in redirect (RFC 8252), only while a sign-in waits (at most 5 minutes)                                                                           |
+| a free port chosen by the OS (TCP)  | `127.0.0.1` | after a website launch, a probe the website reads to check the lab runs on the same machine as the browser (one answer, at most 10 minutes)               |
+| free ports chosen by the OS (TCP)   | `127.0.0.1` | relays to an ESXi host on the local network, on macOS, while a lab on it runs                                                                             |
+| a free port chosen by the OS (TCP)  | `127.0.0.1` | a machine's screen window's bridge, while the window is open: one viewer, the app's own page, with a one-time token                                       |
+| free ports chosen by the OS (TCP)   | `127.0.0.1` | a lab VM's graphical console (libvirt, QEMU, VMware, VirtualBox), or an SSH tunnel to a cloud Windows VM's Remote Desktop while its screen window is open |
 
 Labs publish their own ports on the machine (Docker port mappings, VM port forwards), as their
 definitions say.

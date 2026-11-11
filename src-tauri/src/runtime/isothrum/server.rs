@@ -104,6 +104,16 @@ impl ServerRun {
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
     }
 
+    /// `machine`'s graphical console, Proxmox's own through its API, signed in with `place`'s
+    /// credentials.
+    pub(crate) async fn screen(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_runner::Console> {
+        let mut connection = Secrets::new();
+        for (k, v) in place.vars.iter().filter(|(k, _)| SECRET_VARS.contains(&k.as_str())) {
+            connection.insert(k.clone(), SecretValue::new(v.clone()));
+        }
+        self.graphical_console(machine, connection).await
+    }
+
     /// Runs the lab's checks over SSH; not available when it declares none.
     pub(crate) async fn check(&self) -> Result<Check> {
         super::checks_of(&self.running().await?, &RunOptions::new()).await

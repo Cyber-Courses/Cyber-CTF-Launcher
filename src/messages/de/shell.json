@@ -88,5 +88,30 @@
     "shellEndedWithCode": "Die Shell wurde beendet (Exit-Code {code}).",
     "reconnect": "Neu verbinden",
     "close": "Schließen"
+  },
+  "vmScreen": {
+    "state": {
+      "connecting": "verbinde…",
+      "showing": "Bildschirm",
+      "rdp": "Remotedesktop",
+      "unavailable": "kein Bildschirm",
+      "failed": "Verbindung verloren",
+      "ended": "geschlossen"
+    },
+    "connecting": "Verbinde mit dem Bildschirm der Maschine…",
+    "noViewer": "Das Fenster konnte seine Bildschirmanzeige nicht starten.",
+    "securityFailure": "Der Bildschirm der Maschine hat das übergebene Passwort abgelehnt.",
+    "lost": "Die Verbindung zum Bildschirm der Maschine ist abgebrochen.",
+    "unavailable": "Diese Maschine hat keinen Bildschirm zum Anzeigen",
+    "retry": "Erneut versuchen",
+    "passwordCopied": "Passwort kopiert: Füge es ein, wenn der Remotedesktop danach fragt.",
+    "rdpTitle": "Der Bildschirm dieser Maschine öffnet sich im Remotedesktop",
+    "rdpHint": "Er öffnet sich in {client}. Lass dieses Fenster offen, solange du ihn nutzt: Schließen beendet die Verbindung.",
+    "noClient": "Es ist keine Remotedesktop-App installiert. Auf dem Mac installiere Windows App aus dem App Store, unter Linux FreeRDP (xfreerdp) oder Remmina. Dann versuche es erneut.",
+    "tunnelled": "Er läuft durch einen verschlüsselten SSH-Tunnel von diesem Computer, der sich mit diesem Fenster schließt.",
+    "openFailed": "Die Remotedesktop-App konnte nicht geöffnet werden",
+    "openRdp": "In {client} öffnen",
+    "copyPassword": "Passwort kopieren",
+    "closed": "Der Bildschirm wurde geschlossen."
   }
 }

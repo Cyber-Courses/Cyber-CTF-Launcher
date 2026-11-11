@@ -76,6 +76,7 @@ const up: LabStatus = {
       interfaces: [{ network: "default", ip: "10.42.0.3" }],
       services: [],
       infra: false,
+      console: null,
     },
   ],
   networks: [{ name: "default", subnet: "10.42.0.0/24", internal: false }],

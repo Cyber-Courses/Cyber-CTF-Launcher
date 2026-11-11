@@ -104,6 +104,7 @@ function vmStatus(p: Placement): LabStatus {
       interfaces: [{ network: "lab", ip: m.ip }],
       services: [{ name: "ldap", kind: "directory", ports: [389] }],
       infra: false,
+      console: null,
     })),
   };
 }
@@ -144,6 +145,7 @@ function startedStatus(id: string): LabStatus {
         interfaces: [{ network: "default", ip: "10.43.0.2" }],
         services: [{ name: "dashboard", kind: "web", ports: [443] }],
         infra: false,
+        console: null,
       },
     ],
   };

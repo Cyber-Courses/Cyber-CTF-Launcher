@@ -56,6 +56,7 @@ permissions = [
   "allow-open-settings",
   "allow-restart-app",
   "allow-running-labs",
+  "allow-screen-window",
   "allow-server-capacity",
   "allow-server-list",
   "allow-server-month-to-date-cost",
@@ -171,4 +172,13 @@ permissions = [
   "allow-terminal-open",
   "allow-terminal-resize",
   "allow-terminal-write",
+]
+
+[[set]]
+identifier = "screen-window"
+description = "A lab machine's screen window: its machine's console (VNC in the window, RDP in the system's client) and the RDP account's password, copied on request."
+permissions = [
+  "allow-screen-connect",
+  "allow-screen-open-rdp",
+  "allow-screen-password",
 ]

@@ -16,6 +16,12 @@ Files in this repository under other licences
   Authors, under the SIL Open Font License 1.1 (src/app/fonts/Newsreader-OFL.txt).
 - public/brands/utm.png: the UTM logo, under the Apache License 2.0
   (public/brands/utm.LICENSE).
+- src/vendor/novnc/: noVNC 1.6.0's core library, Copyright (C) The noVNC
+  authors (src/vendor/novnc/AUTHORS), under the Mozilla Public License 2.0
+  (src/vendor/novnc/LICENSE.MPL-2.0), unmodified; its source is
+  https://github.com/novnc/noVNC/tree/v1.6.0. It includes pako,
+  Copyright (C) 2014-2016 Vitaly Puzrin, under the MIT
+  licence (src/vendor/novnc/vendor/pako/LICENSE).
 
 Trademarks
 ----------

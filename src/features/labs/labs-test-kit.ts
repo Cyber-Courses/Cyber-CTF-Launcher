@@ -48,6 +48,7 @@ export const labMachine = (name: string, state = "running", p: Partial<LabMachin
   interfaces: [],
   services: [],
   infra: false,
+  console: null,
   ...p,
 });
 

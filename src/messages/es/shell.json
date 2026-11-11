@@ -88,5 +88,30 @@
     "shellEndedWithCode": "La shell ha terminado (código {code}).",
     "reconnect": "Reconectar",
     "close": "Cerrar"
+  },
+  "vmScreen": {
+    "state": {
+      "connecting": "conectando…",
+      "showing": "pantalla",
+      "rdp": "escritorio remoto",
+      "unavailable": "sin pantalla",
+      "failed": "conexión perdida",
+      "ended": "cerrada"
+    },
+    "connecting": "Conectando con la pantalla de la máquina…",
+    "noViewer": "La ventana no pudo iniciar su visor de pantalla.",
+    "securityFailure": "La pantalla de la máquina rechazó la contraseña que recibió.",
+    "lost": "Se perdió la conexión con la pantalla de la máquina.",
+    "unavailable": "Esta máquina no tiene pantalla que mostrar",
+    "retry": "Reintentar",
+    "passwordCopied": "Contraseña copiada: pégala cuando el Escritorio remoto la pida.",
+    "rdpTitle": "La pantalla de esta máquina se abre en Escritorio remoto",
+    "rdpHint": "Se abre en {client}. Mantén esta ventana abierta mientras lo usas: cerrarla termina la conexión.",
+    "noClient": "No hay ninguna aplicación de Escritorio remoto instalada. En Mac, instala Windows App desde la App Store; en Linux, FreeRDP (xfreerdp) o Remmina. Luego reintenta.",
+    "tunnelled": "Pasa por un túnel SSH cifrado desde este equipo, que se cierra con esta ventana.",
+    "openFailed": "No se pudo abrir la aplicación de Escritorio remoto",
+    "openRdp": "Abrir en {client}",
+    "copyPassword": "Copiar contraseña",
+    "closed": "La pantalla se cerró."
   }
 }

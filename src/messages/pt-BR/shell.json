@@ -88,5 +88,30 @@
     "shellEndedWithCode": "O shell foi encerrado (código {code}).",
     "reconnect": "Reconectar",
     "close": "Fechar"
+  },
+  "vmScreen": {
+    "state": {
+      "connecting": "conectando…",
+      "showing": "tela",
+      "rdp": "área de trabalho remota",
+      "unavailable": "sem tela",
+      "failed": "conexão perdida",
+      "ended": "fechada"
+    },
+    "connecting": "Conectando à tela da máquina…",
+    "noViewer": "A janela não conseguiu iniciar o visualizador de tela.",
+    "securityFailure": "A tela da máquina recusou a senha recebida.",
+    "lost": "A conexão com a tela da máquina foi perdida.",
+    "unavailable": "Esta máquina não tem tela para mostrar",
+    "retry": "Tentar novamente",
+    "passwordCopied": "Senha copiada: cole-a quando a Área de Trabalho Remota pedir.",
+    "rdpTitle": "A tela desta máquina abre na Área de Trabalho Remota",
+    "rdpHint": "Ela abre no {client}. Mantenha esta janela aberta enquanto usa: fechá-la encerra a conexão.",
+    "noClient": "Nenhum aplicativo de Área de Trabalho Remota está instalado. No Mac, instale o Windows App pela App Store; no Linux, o FreeRDP (xfreerdp) ou o Remmina. Depois tente novamente.",
+    "tunnelled": "Ela passa por um túnel SSH criptografado a partir deste computador, que fecha junto com esta janela.",
+    "openFailed": "Não foi possível abrir o aplicativo de Área de Trabalho Remota",
+    "openRdp": "Abrir no {client}",
+    "copyPassword": "Copiar senha",
+    "closed": "A tela foi fechada."
   }
 }

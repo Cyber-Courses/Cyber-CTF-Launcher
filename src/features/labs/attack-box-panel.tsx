@@ -1,6 +1,6 @@
 "use client";
 
-import { Crosshair, Play, Square, Terminal } from "lucide-react";
+import { Crosshair, Monitor, Play, Square, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LogConsole } from "@/components/ui/log-console";
 import { CopyValue } from "@/components/ui/copy-value";
@@ -20,12 +20,15 @@ export function AttackBoxPanel({
   host,
   onShell,
   shellReady,
+  onScreen,
 }: {
   box: AttackBox;
   running: boolean;
   host: string | null;
   onShell?: () => void;
   shellReady?: boolean;
+  /** Opens the box's screen (its graphical console), when it has one that opens now. */
+  onScreen?: () => void;
 }) {
   const t = useT();
   const { status, busy, log, name, vm } = box;
@@ -55,17 +58,32 @@ export function AttackBoxPanel({
       )}
       <div className="space-y-3 border-t border-border p-4">
         <p className="text-[0.75rem] leading-relaxed text-muted-foreground">{t(vm ? "labs.attackBox.vmHint" : "labs.attackBox.containerHint")}</p>
-        {onShell && shellReady && (
-          <Button variant="primary" size="sm" className="w-full" onClick={onShell}>
-            <Terminal className="size-3.5" /> {t("labs.attackBox.openShell")}
-          </Button>
-        )}
+        <WaysIn onShell={shellReady ? onShell : undefined} onScreen={onScreen} />
         {running && <BoxControls box={box} />}
         {(busy || log.some(isFailedLine)) && log.length > 0 && (
           <LogConsole lines={log} running={busy} title={vm ? t("labs.attackBox.attackVm") : t("labs.attackBox.attackBox")} />
         )}
       </div>
     </Panel>
+  );
+}
+
+/** The box's ways in: its shell, and its screen when it has one. */
+function WaysIn({ onShell, onScreen }: { onShell?: () => void; onScreen?: () => void }) {
+  const t = useT();
+  return (
+    <>
+      {onShell && (
+        <Button variant="primary" size="sm" className="w-full" onClick={onShell}>
+          <Terminal className="size-3.5" /> {t("labs.attackBox.openShell")}
+        </Button>
+      )}
+      {onScreen && (
+        <Button variant="outline" size="sm" className="w-full" onClick={onScreen}>
+          <Monitor className="size-3.5" /> {t("labs.attackBox.openScreen")}
+        </Button>
+      )}
+    </>
   );
 }
 

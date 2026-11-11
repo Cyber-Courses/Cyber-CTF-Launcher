@@ -65,4 +65,10 @@ impl OpenedRun {
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<isothrum_runner::ShellCommand> {
         self.running().await?.console_command(machine, user).map_err(errors::from_runner)
     }
+
+    /// `machine`'s graphical console (its screen), as the runner reaches it with the place's
+    /// `connection` (a server's API credentials; none for a cloud's, whose consoles need none).
+    pub(crate) async fn graphical_console(&self, machine: &str, connection: isothrum_runner::Secrets) -> Result<isothrum_runner::Console> {
+        self.running().await?.with_connection(connection).graphical_console(machine).await.map_err(errors::from_runner)
+    }
 }

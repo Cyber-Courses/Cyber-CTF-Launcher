@@ -139,8 +139,8 @@ describe("reset", () => {
         lab={lab("lab-s")}
         status={status({
           machines: [
-            { name: "api", state: "running", image: "x", ip: "10.0.0.2", ports: [], interfaces: [], services: [], infra: false },
-            { name: "db", state: "exited", image: "x", ip: "", ports: [], interfaces: [], services: [], infra: false },
+            { name: "api", state: "running", image: "x", ip: "10.0.0.2", ports: [], interfaces: [], services: [], infra: false, console: null },
+            { name: "db", state: "exited", image: "x", ip: "", ports: [], interfaces: [], services: [], infra: false, console: null },
           ],
         })}
         loggedIn

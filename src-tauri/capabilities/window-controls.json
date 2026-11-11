@@ -11,7 +11,8 @@
     "settings",
     "machine-setup",
     "server-setup",
-    "shell-*"
+    "shell-*",
+    "screen-*"
   ],
   "permissions": [
     "core:window:allow-minimize",

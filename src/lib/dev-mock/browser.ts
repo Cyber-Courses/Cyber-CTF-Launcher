@@ -9,7 +9,7 @@ import type { BrowserHandler, Context } from "@/lib/dev-mock/live";
 import { machineHandlers } from "@/lib/dev-mock/machine";
 import { answer, UNMANAGED } from "@/lib/dev-mock/sample";
 import { isSignedIn, sessionExpired, setSignedIn } from "@/lib/dev-mock/session";
-import { terminalHandlers } from "@/lib/dev-mock/terminal";
+import { screenHandlers, terminalHandlers } from "@/lib/dev-mock/terminal";
 import type { Args } from "@/lib/dev-mock/types";
 import type { DeviceCode, ManagedSettings } from "@/lib/tauri";
 import type { CommandError } from "@/lib/tauri/generated";
@@ -135,7 +135,16 @@ const windowHandlers: Record<string, BrowserHandler> = {
 // A Map, not an object lookup: a command named like an Object.prototype member is answered by
 // the sample data.
 const HANDLERS = new Map<string, BrowserHandler>(
-  Object.entries({ ...eventHandlers, ...machineHandlers, ...accountHandlers, ...labHandlers, ...terminalHandlers, ...serverHandlers, ...windowHandlers }),
+  Object.entries({
+    ...eventHandlers,
+    ...machineHandlers,
+    ...accountHandlers,
+    ...labHandlers,
+    ...terminalHandlers,
+    ...screenHandlers,
+    ...serverHandlers,
+    ...windowHandlers,
+  }),
 );
 
 /** The browser preview's answer to `cmd`. */

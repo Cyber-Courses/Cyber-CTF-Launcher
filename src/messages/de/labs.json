@@ -231,6 +231,7 @@
     "vmHint": "Deine Kali-Maschine im Lab: eine VM unter denen des Labs, im Lab-Netzwerk, mit den Kali-Tools (sie werden beim ersten Start installiert). Öffne ihre Shell, um die Ziele anzugreifen.",
     "containerHint": "Deine Maschine im Lab: ein Container unter denen des Labs, im Lab-Netzwerk, aus dem in den Einstellungen gewählten Attack-Box-Image. Öffne ihre Shell, um die Ziele von innerhalb des Labs anzugreifen.",
     "openShell": "Angreifer-Shell öffnen",
+    "openScreen": "Bildschirm öffnen",
     "working": "In Arbeit…",
     "stop": "Attack box stoppen",
     "start": "Attack box starten",
@@ -436,5 +437,14 @@
   },
   "statusError": {
     "title": "Der Zustand von {title} konnte nicht gelesen werden"
+  },
+  "screens": {
+    "title": "Bildschirme",
+    "open": "Bildschirm",
+    "openOf": "Bildschirm von {machine} öffnen",
+    "none": "Kein Bildschirm: {why}",
+    "notRunning": "Ihr Bildschirm öffnet sich, sobald sie läuft.",
+    "vnc": "Ihr Bildschirm, in einem Fenster",
+    "rdp": "Ihr Remotedesktop, in deiner Remotedesktop-App"
   }
 }

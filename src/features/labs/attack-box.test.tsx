@@ -23,6 +23,8 @@ const box = (p: Partial<AttackStatus> = {}): AttackStatus => ({
   networks: ["default"],
   defaultNetwork: "default",
   vm: false,
+  machine: "attackbox",
+  console: null,
   ...p,
 });
 const count = (calls: Call[], cmd: string) => calls.filter((c) => c.cmd === cmd).length;
@@ -94,6 +96,30 @@ describe("useAttackBox", () => {
     expect(result.current.name).toBe("cyberctf/attack-box");
     await act(() => result.current.start());
     expect(calls.find((c) => c.cmd === "attack_box_attach")?.args).toMatchObject({ pick: { image: null } });
+  });
+
+  it("offers the box's screen beside its shell when it has one", async () => {
+    installTauri({ attack_box_status: () => box() });
+    const onScreen = vi.fn();
+    const user = userEvent.setup();
+    const shown: AttackBox = {
+      status: box({ running: true }),
+      busy: false,
+      log: [],
+      start: async () => {},
+      stop: async () => {},
+      vm: true,
+      name: "Kali Linux",
+      networks: [],
+      network: null,
+      defaultNetwork: "default",
+      setNetwork: () => {},
+    };
+    const { rerender } = render(<AttackBoxPanel box={shown} running host={null} onShell={() => {}} shellReady onScreen={onScreen} />);
+    await user.click(screen.getByRole("button", { name: /Open screen/ }));
+    expect(onScreen).toHaveBeenCalledOnce();
+    rerender(<AttackBoxPanel box={shown} running host={null} onShell={() => {}} shellReady />);
+    expect(screen.queryByRole("button", { name: /Open screen/ })).toBeNull();
   });
 
   it("names the Kali VM the launcher adds to a lab running as VMs, and takes it out", async () => {

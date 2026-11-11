@@ -87,3 +87,26 @@ export const terminalHandlers: Record<string, BrowserHandler> = {
     return null;
   },
 };
+
+/** A lab machine's screen window: in the browser it has no machine to draw, so it shows a Remote
+ *  Desktop's panel (the one state it can show without a VNC server). */
+export const screenHandlers: Record<string, BrowserHandler> = {
+  screen_window: (args) => {
+    const q = new URLSearchParams({ id: argText(args?.id), runtime: argText(args?.runtime), machine: argText(args?.machine) });
+    openWindow(`/screen?${q.toString()}`);
+    return null;
+  },
+  screen_connect: () => ({
+    protocol: "rdp",
+    url: null,
+    password: null,
+    address: "127.0.0.1:3390",
+    user: "isoloom",
+    hasPassword: true,
+    client: "Windows App",
+    note: null,
+    tunnelled: true,
+  }),
+  screen_open_rdp: () => null,
+  screen_password: () => "dev-mock-password",
+};

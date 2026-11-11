@@ -141,6 +141,7 @@ export const invoiceStatus: LabStatus = {
         { name: "admin", kind: "web", ports: [9090] },
       ],
       infra: false,
+      console: null,
     },
     {
       name: "postgres",
@@ -151,6 +152,7 @@ export const invoiceStatus: LabStatus = {
       interfaces: [{ network: "default", ip: "10.42.0.4" }],
       services: [{ name: "postgres", kind: "database", ports: [5432] }],
       infra: false,
+      console: null,
     },
     {
       name: "cache",
@@ -161,6 +163,7 @@ export const invoiceStatus: LabStatus = {
       interfaces: [{ network: "default", ip: "10.42.0.5" }],
       services: [],
       infra: false,
+      console: null,
     },
     {
       name: "billing-worker",
@@ -174,6 +177,7 @@ export const invoiceStatus: LabStatus = {
       ],
       services: [{ name: "invoice-jobs", kind: "worker", ports: [] }],
       infra: false,
+      console: null,
     },
     {
       name: "ledger-db",
@@ -184,6 +188,7 @@ export const invoiceStatus: LabStatus = {
       interfaces: [{ network: "billing", ip: "10.42.1.11" }],
       services: [{ name: "ledger", kind: "database", ports: [3306] }],
       infra: false,
+      console: null,
     },
     {
       name: "payroll",
@@ -194,6 +199,7 @@ export const invoiceStatus: LabStatus = {
       interfaces: [{ network: "finance", ip: "10.42.2.20" }],
       services: [{ name: "payroll-web", kind: "web", ports: [80] }],
       infra: false,
+      console: null,
     },
     {
       name: "backup",
@@ -204,6 +210,7 @@ export const invoiceStatus: LabStatus = {
       interfaces: [{ network: "finance", ip: "10.42.2.21" }],
       services: [{ name: "sftp", kind: "ssh", ports: [22] }],
       infra: false,
+      console: null,
     },
   ],
 };

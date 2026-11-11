@@ -231,6 +231,7 @@
     "vmHint": "Votre machine Kali dans le lab : une VM parmi celles du lab, sur le réseau du lab, avec les outils de Kali (installés à son premier démarrage). Ouvrez son shell pour attaquer les cibles.",
     "containerHint": "Votre machine dans le lab : un conteneur parmi ceux du lab, sur le réseau du lab, depuis l'image d'attack box choisie dans les Réglages. Ouvrez son shell pour attaquer les cibles depuis l’intérieur du lab.",
     "openShell": "Ouvrir le shell attaquant",
+    "openScreen": "Ouvrir l'écran",
     "working": "En cours…",
     "stop": "Arrêter l’attack box",
     "start": "Démarrer l’attack box",
@@ -436,5 +437,14 @@
   },
   "statusError": {
     "title": "Impossible de lire l’état de {title}"
+  },
+  "screens": {
+    "title": "Écrans",
+    "open": "Écran",
+    "openOf": "Ouvrir l'écran de {machine}",
+    "none": "Pas d'écran : {why}",
+    "notRunning": "Son écran s'ouvre quand elle tourne.",
+    "vnc": "Son écran, dans une fenêtre",
+    "rdp": "Son Bureau à distance, dans votre application de Bureau à distance"
   }
 }

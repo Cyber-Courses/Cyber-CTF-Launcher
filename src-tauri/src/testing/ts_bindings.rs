@@ -85,6 +85,7 @@ fn generate(dir: &Path) {
         runtime::proxmox::placement::Placement,
         shared_folder::SharedFolderInfo,
         terminal::TermEvent,
+        crate::screen::Connection,
     );
     write_values(dir);
     write_index(dir);

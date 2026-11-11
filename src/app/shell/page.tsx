@@ -3,13 +3,13 @@
 import "@xterm/xterm/css/xterm.css";
 import { Suspense, useCallback, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { RotateCw, SquareTerminal } from "lucide-react";
+import { SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/toaster";
 import { DevMockGate } from "@/components/dev-mock-gate";
+import { WindowEndedBar } from "@/components/window-ended-bar";
 import { WindowTitleBar } from "@/components/window-title-bar";
-import { tell, warn } from "@/lib/failure";
+import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import { labAttackShell, type Runtime } from "@/lib/tauri";
 import { oneOf } from "@/lib/local-store";
@@ -97,27 +97,9 @@ function TitleBar({ state, onOpenOutside }: { state: ShellState; onOpenOutside: 
 /** Under an ended or failed session: why, Reconnect and Close. */
 function EndedBar({ state, onReconnect }: { state: Extract<ShellState, { kind: "ended" | "failed" }>; onReconnect: () => void }) {
   const t = useT();
-  return (
-    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 border-t border-border bg-background/95 px-4 py-2.5 text-[0.8125rem]">
-      <span className={state.kind === "failed" ? "text-destructive" : "text-muted-foreground"}>
-        {state.kind === "failed" ? state.message : state.code ? t("shell.terminal.shellEndedWithCode", { code: state.code }) : t("shell.terminal.shellEnded")}
-      </span>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={onReconnect}>
-          <RotateCw className="size-3.5" /> {t("shell.terminal.reconnect")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            getCurrentWindow().close().catch(warn("closing the window"));
-          }}
-        >
-          {t("shell.terminal.close")}
-        </Button>
-      </div>
-    </div>
-  );
+  const message =
+    state.kind === "failed" ? state.message : state.code ? t("shell.terminal.shellEndedWithCode", { code: state.code }) : t("shell.terminal.shellEnded");
+  return <WindowEndedBar failed={state.kind === "failed"} message={message} retry={t("shell.terminal.reconnect")} onRetry={onReconnect} />;
 }
 
 export default function ShellWindow() {

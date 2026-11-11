@@ -148,6 +148,15 @@ impl Host {
         }
     }
 
+    /// `machine`'s graphical console (its screen), wherever the lab runs.
+    pub(crate) async fn graphical_console(&self, dirs: &AppDirs, machine: &str) -> Result<isothrum_runner::Console> {
+        match self {
+            Host::Local(run) | Host::Esxi { run, .. } => run.graphical_console(machine).await,
+            Host::Cloud { run, .. } => run.graphical_console(machine, isothrum_runner::Secrets::new()).await,
+            Host::Server { run, conn } => run.screen(&Self::server_place(dirs, run, conn).await?, machine).await,
+        }
+    }
+
     /// Runs the lab's checks where it runs (a cloud's and a server's over SSH, an ESXi host's
     /// from its controller); none to run beside cloud services ([`Host::has_machines`]).
     pub(crate) async fn check(&self) -> Result<docker::Check> {

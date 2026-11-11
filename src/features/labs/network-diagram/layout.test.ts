@@ -16,6 +16,7 @@ const machine = (name: string, ip: string, published: number[]): Machine => ({
   interfaces: [{ network: "default", ip }],
   services: [],
   infra: false,
+  console: null,
 });
 
 describe("published port tabs", () => {

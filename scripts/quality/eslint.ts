@@ -47,13 +47,17 @@ export function eslintExceptions(root: string, files: readonly string[]): Except
   return out;
 }
 
+/** The folders ESLint ignores inside the linted ones (eslint.config.mjs): the generated command
+ *  types and the vendored libraries, whose comments are their authors', not exceptions of ours. */
+const UNLINTED = new Set(["generated", "vendor"]);
+
 /** The TypeScript and JavaScript files under the linted folders, repository-relative. */
 export function lintedFiles(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
       const rel = `${dir}/${entry.name}`;
-      if (entry.isDirectory() && entry.name !== "generated") walk(rel);
+      if (entry.isDirectory() && !UNLINTED.has(entry.name)) walk(rel);
       else if (/\.(m?[jt]sx?)$/.test(entry.name)) out.push(rel);
     }
   };

@@ -8,6 +8,16 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **A lab machine's screen, in its own window.** The lab page's Screens list each VM whose run
+  offers a graphical console, with a Screen button (and why one has none: UTM's SPICE, VirtualBox
+  without its extension pack, a cloud Linux VM), and the attack box's card has one. A VNC screen
+  (libvirt, QEMU, VMware, Proxmox) is drawn in the window by noVNC 1.6.0 (vendored, MPL-2.0)
+  through the window's own loopback WebSocket bridge: one viewer, a one-time token, the app's own
+  `Origin` and the bridge's `Host` only, and that window's content security policy lets it reach
+  that port alone. A Remote Desktop (VirtualBox's, a cloud Windows VM's through an SSH tunnel)
+  opens in the system's client (Remote Desktop Connection, Windows App, FreeRDP, Remmina) on a
+  `.rdp` file with no password; its password is copied on request. A new `screen-windows`
+  capability grants those windows their three commands only.
 - **A lab page for a lab imported from a folder, built from what the folder defines.** An
   imported lab (`local-<name>`) is listed under **Imported from a folder** on the Labs screen, and
   its entry under **Running** in the sidebar, its row on the Overview and the command palette open

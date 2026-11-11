@@ -61,7 +61,7 @@ pub use isothrum_runner::ShellCommand;
 pub(crate) use launch::start;
 pub(crate) use launch::{Destination, Downloads, Placement, check_destination, downloads, policy_allows, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
-pub use model::{Control, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
+pub use model::{Console, Control, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
 #[cfg(test)]
 pub use paths::LOCAL_VM_MARKER;
 pub(crate) use paths::deploys_dir;
@@ -142,6 +142,7 @@ pub(crate) mod test_support {
             ports: Vec::new(),
             interfaces: Vec::new(),
             services: Vec::new(),
+            console: None,
         }
     }
 

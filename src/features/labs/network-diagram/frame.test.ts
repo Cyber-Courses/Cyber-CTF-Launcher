@@ -15,6 +15,7 @@ const machine = (name: string, ip: string, network = "default"): Machine => ({
   interfaces: [{ network, ip }],
   services: [],
   infra: false,
+  console: null,
 });
 
 async function framed(machines: Machine[], networks: { name: string; subnet: string; internal: boolean }[]) {

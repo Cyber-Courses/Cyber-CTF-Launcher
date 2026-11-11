@@ -79,6 +79,37 @@ back. Without one, the box is `attackbox` on the lab's first network (or the one
 picks). Isoloom and Isothrum know nothing of the attack box: the launcher composes their general
 features (`.cyberctf-overlay.yml`, update, retire, the console).
 
+## A machine's screen
+
+A lab VM whose run offers a graphical console (its screen, keyboard and mouse) has a Screen
+button on the lab page (Screens, and the attack box's card): it opens the machine's screen in its
+own window, beside the attack box's shell window. Isoloom writes, for each VM, which console it
+has under each provider and why there is none where there isn't
+(`machines[].consoles`, its [capability matrix](https://github.com/isoloom/isoloom/blob/main/docs/matrix.md#graphical-consoles));
+the lab page shows that reason instead of a button. Isothrum reaches it
+(`Running::graphical_console`) on this computer's loopback, opening an SSH tunnel where the
+console sits behind a machine of the run (a cloud Windows VM's Remote Desktop).
+
+- **VNC** (libvirt, QEMU, VMware Workstation and Fusion, Proxmox):
+  the window draws it with noVNC (vendored, `src/vendor/novnc/`). The webview never reaches the
+  console itself: the window's own bridge (`screen/bridge.rs`), a WebSocket server on
+  `127.0.0.1` at a free port, relays it. The bridge is bound when the window opens, and the
+  window's content security policy lets it connect to that port alone
+  (`connect-src ws://127.0.0.1:<port>`, added to that window's pages only). It takes one viewer,
+  with a one-time token, from the app's own page (its `Origin`, exactly) addressed to its own
+  loopback address (its `Host`): a website, or another program without the token, gets nothing.
+  Proxmox's console is its API's VNC websocket, which the bridge opens with the server's
+  credentials and the session's ticket.
+- **RDP** (VirtualBox's remote display, a cloud Windows VM's Remote Desktop): the window opens
+  the system's client on a `.rdp` file naming the loopback address and the account, never a
+  password: Windows' Remote Desktop Connection, on a Mac Windows App (or Microsoft Remote
+  Desktop), on Linux FreeRDP or Remmina; the window says what to install when there is none.
+  The account's password stays in the launcher until the learner copies it ("Copy password");
+  only FreeRDP is given it, on its standard input. The `.rdp` file is owner-only, and goes with
+  the window.
+
+Closing the window ends its session: the bridge stops, and a tunnel to the console closes.
+
 ## Labs imported from a folder
 
 **Labs > Import a lab** runs a lab that isn't published: pick a folder with an `isoloom.yml`, and
