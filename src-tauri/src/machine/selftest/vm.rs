@@ -31,6 +31,23 @@ pub(super) async fn test_provider(preferred: Option<Provider>) -> Option<Provide
     providers::pick(preferred, &providers::ready_here().await)
 }
 
+/// Why no local hypervisor can run the test VM, of `statuses` ([`providers::detect`]'s): what keeps
+/// the preferred one (else the first one installed) from running VMs, in the words the machine
+/// check uses (`/dev/kvm` this account can't open, a group that applies from the next login…).
+fn none_ready(preferred: Option<Provider>, statuses: &[providers::ProviderStatus]) -> String {
+    let installed = |s: &&providers::ProviderStatus| !s.remote && s.hypervisor == Some(true);
+    let blocked = statuses
+        .iter()
+        .filter(installed)
+        .find(|s| Some(s.provider) == preferred)
+        .or_else(|| statuses.iter().find(installed))
+        .and_then(|s| s.reason.as_ref().map(|why| (s.provider, why)));
+    match blocked {
+        Some((p, why)) => format!("{} can't run VMs here: {why}", p.label()),
+        None => "no local hypervisor with its Vagrant plugin is installed".to_owned(),
+    }
+}
+
 /// A read-only command that only succeeds when the hypervisor's service is up and usable
 /// by this user (not just installed).
 fn responds(p: Provider) -> Option<(&'static str, &'static [&'static str])> {
@@ -98,13 +115,13 @@ fn box_listed(list: &str, name: &str, provider: &str, arm: bool) -> bool {
     })
 }
 
-/// `no_kvm`: a Linux host without a usable /dev/kvm. vagrant-qemu asks for `accel=kvm` with
-/// `cpu=host` there, which QEMU refuses; the test VM falls back to software emulation (slow,
-/// but it boots and the check says something true).
+/// The test VM boots as a lab's VMs do: on QEMU with the hypervisor's acceleration (vagrant-qemu's
+/// default, `accel=kvm` on Linux, as every lab's Vagrantfile asks), never software emulation,
+/// which booted without `/dev/kvm` and passed where no lab could start.
 /// `ip`: the VM's address on a private network, when it gets one. `dir`: the test's folder, which
 /// a VirtualBox VM's description names, so a VM an earlier test left is known as the test's
 /// ([`leftover`]).
-fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>, dir: &Path) -> String {
+fn vagrantfile(p: Provider, bx: &str, ip: Option<&str>, dir: &Path) -> String {
     let mut v = format!(
         "Vagrant.configure(\"2\") do |config|\n  config.vm.box = \"{bx}\"\n  config.vm.hostname = \"cyberctf-selftest\"\n  config.vm.boot_timeout = 600\n  config.vm.synced_folder \".\", \"/vagrant\", disabled: true\n"
     );
@@ -127,7 +144,6 @@ fn vagrantfile(p: Provider, bx: &str, no_kvm: bool, ip: Option<&str>, dir: &Path
         Provider::Hyperv => format!("    h.vmname = \"{VM_NAME}\"\n"),
         Provider::Utm => format!("    h.name = \"{VM_NAME}\"\n"),
         // vagrant-qemu's default is 4G, much more than a test VM needs.
-        Provider::Qemu if no_kvm => "    h.memory = \"1G\"\n    h.machine = \"q35,accel=tcg\"\n    h.cpu = \"max\"\n".to_string(),
         Provider::Qemu => "    h.memory = \"1G\"\n".to_string(),
         _ => String::new(),
     };
@@ -245,7 +261,9 @@ async fn host_provider(preferred: Option<Provider>, r: &Reporter) -> Result<Prov
 
     let provider = r
         .step("provider", "A hypervisor is ready", async {
-            let p = test_provider(preferred).await.ok_or_else(|| Error::Invalid("no local hypervisor with its Vagrant plugin is installed".into()))?;
+            let Some(p) = test_provider(preferred).await else {
+                return Err(Error::Invalid(none_ready(preferred, &providers::detect(true).await)));
+            };
             Ok((p, Some(p.id().to_string())))
         })
         .await?;
@@ -269,8 +287,7 @@ async fn host_provider(preferred: Option<Provider>, r: &Reporter) -> Result<Prov
 async fn boot_and_exec(dir: &Path, provider: Provider, bx: &str, ip: Option<&'static str>, r: &Reporter) -> Result<()> {
     let mut inside = None;
     r.step("boot", "Boot the test VM", async {
-        let no_kvm = cfg!(target_os = "linux") && providers::kvm_problem().is_some();
-        std::fs::write(dir.join("Vagrantfile"), vagrantfile(provider, bx, no_kvm, ip, dir))?;
+        std::fs::write(dir.join("Vagrantfile"), vagrantfile(provider, bx, ip, dir))?;
         let steps = [Step::new(&["up", "--provider", provider.id()]), Step::new(&["ssh", "-c", &uname_command()])];
         let vagrant = Vagrant::new(dir, &[], provider == Provider::Hyperv);
         let batch = vagrant.batch(&steps, |e| {
@@ -344,11 +361,11 @@ mod tests {
             _ => ok(""),
         });
         assert_eq!(free_ip().await, Some("192.168.56.249"));
-        let v = vagrantfile(Provider::Virtualbox, "x", false, free_ip().await, Path::new("/t"));
+        let v = vagrantfile(Provider::Virtualbox, "x", free_ip().await, Path::new("/t"));
         assert!(v.contains("ip: \"192.168.56.249\"") && !v.contains(".250"), "{v}");
         let _all = Tools::rules(&[]);
         assert_eq!(free_ip().await, None, "every address answers");
-        assert!(!vagrantfile(Provider::Virtualbox, "x", false, None, Path::new("/t")).contains("private_network"));
+        assert!(!vagrantfile(Provider::Virtualbox, "x", None, Path::new("/t")).contains("private_network"));
     }
 
     #[test]
@@ -357,20 +374,40 @@ mod tests {
         assert_eq!(uname_line("Connection to x closed.\n"), "");
         assert_eq!(uname_command(), "echo cyberctf-uname:$(uname -srm)");
         assert!(
-            vagrantfile(Provider::Hyperv, "x", false, Some(VM_IPS[0]), Path::new("/t"))
+            vagrantfile(Provider::Hyperv, "x", Some(VM_IPS[0]), Path::new("/t"))
                 .contains("config.vm.network \"public_network\", bridge: ENV[\"ISOLOOM_HYPERV_SWITCH\"]")
         );
-        assert!(!vagrantfile(Provider::Virtualbox, "x", false, Some(VM_IPS[0]), Path::new("/t")).contains("public_network"));
+        assert!(!vagrantfile(Provider::Virtualbox, "x", Some(VM_IPS[0]), Path::new("/t")).contains("public_network"));
     }
 
     #[test]
-    fn qemu_test_vm_falls_back_to_software_emulation_without_kvm() {
-        let with_kvm = vagrantfile(Provider::Qemu, "generic/alpine319", false, Some(VM_IPS[0]), Path::new("/t"));
-        assert!(with_kvm.contains("h.memory = \"1G\"") && !with_kvm.contains("accel=tcg"), "{with_kvm}");
-        let without = vagrantfile(Provider::Qemu, "generic/alpine319", true, Some(VM_IPS[0]), Path::new("/t"));
-        assert!(without.contains("h.machine = \"q35,accel=tcg\"") && without.contains("h.cpu = \"max\""), "{without}");
-        // Other providers are unaffected.
-        assert!(!vagrantfile(Provider::Virtualbox, "x", true, Some(VM_IPS[0]), Path::new("/t")).contains("accel"));
+    fn the_qemu_test_vm_boots_with_the_acceleration_the_labs_ask_for() {
+        // Regression: without a usable /dev/kvm the test VM fell back to software emulation
+        // (`accel=tcg`) and passed on Debian 13, where every lab's `accel=kvm` was refused.
+        let v = vagrantfile(Provider::Qemu, "generic/alpine319", Some(VM_IPS[0]), Path::new("/t"));
+        assert!(v.contains("h.memory = \"1G\"") && !v.contains("h.machine") && !v.contains("accel") && !v.contains("h.cpu"), "{v}");
+    }
+
+    #[test]
+    fn no_hypervisor_ready_says_what_keeps_the_preferred_one_from_running_vms() {
+        use crate::runtime::providers::{ProviderStatus, Unavailable};
+        let status = |provider, reason: Option<Unavailable>| ProviderStatus {
+            provider,
+            remote: false,
+            available: reason.is_none(),
+            hypervisor: Some(true),
+            plugin: None,
+            plugin_installed: true,
+            utility: None,
+            needs: Vec::new(),
+            reason,
+            account_lacks: None,
+        };
+        let kvm = Unavailable::KvmDenied { group: "kvm".into() };
+        let statuses = [status(Provider::Virtualbox, Some(Unavailable::VirtualboxStuck)), status(Provider::Qemu, Some(kvm.clone()))];
+        assert_eq!(none_ready(Some(Provider::Qemu), &statuses), format!("QEMU can't run VMs here: {kvm}"));
+        assert!(none_ready(None, &statuses).starts_with("VirtualBox can't run VMs here: "), "the first installed one");
+        assert_eq!(none_ready(Some(Provider::Qemu), &[]), "no local hypervisor with its Vagrant plugin is installed");
     }
 
     #[test]
@@ -401,8 +438,8 @@ mod tests {
 
     #[test]
     fn the_test_vm_is_on_a_private_network_where_the_provider_has_one() {
-        assert!(vagrantfile(Provider::Virtualbox, "x", false, Some(VM_IPS[0]), Path::new("/t")).contains(VM_IPS[0]));
-        assert!(!vagrantfile(Provider::Utm, "x", false, Some(VM_IPS[0]), Path::new("/t")).contains(VM_IPS[0]));
+        assert!(vagrantfile(Provider::Virtualbox, "x", Some(VM_IPS[0]), Path::new("/t")).contains(VM_IPS[0]));
+        assert!(!vagrantfile(Provider::Utm, "x", Some(VM_IPS[0]), Path::new("/t")).contains(VM_IPS[0]));
         assert_eq!(ping_args("10.0.0.1")[4], "10.0.0.1");
     }
 
@@ -426,7 +463,7 @@ mod tests {
 
     #[test]
     fn a_virtualbox_test_vm_carries_its_folder_so_a_leftover_is_known_as_the_tests() {
-        let v = vagrantfile(Provider::Virtualbox, "x", false, None, Path::new(r"C:\Users\O'Brien\selftest\vm"));
+        let v = vagrantfile(Provider::Virtualbox, "x", None, Path::new(r"C:\Users\O'Brien\selftest\vm"));
         assert!(v.contains(r#"h.customize ["modifyvm", :id, "--description", 'cyberctf-selftest:C:\\Users\\O\'Brien\\selftest\\vm']"#), "{v}");
     }
 
@@ -474,7 +511,7 @@ mod tests {
             (Provider::Hyperv, "h.vmname = "),
             (Provider::Utm, "h.name = "),
         ] {
-            let v = vagrantfile(p, "box/x", false, Some(VM_IPS[0]), Path::new("/t"));
+            let v = vagrantfile(p, "box/x", Some(VM_IPS[0]), Path::new("/t"));
             assert!(v.contains(needle) && v.contains(&format!("config.vm.provider \"{}\"", p.id())), "{v}");
             assert!(v.starts_with("Vagrant.configure") && v.ends_with("end\n"));
         }
