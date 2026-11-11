@@ -377,14 +377,18 @@ fn the_build_script_reads_cargos_variables_when_it_runs() {
 /// Regression: the dev window loads `devUrl` while `pnpm dev` started Next on its default port,
 /// which Next moves elsewhere when another server already holds it (another project's dev server
 /// on 3000): the window then showed that other server. The dev script names the very port
-/// `devUrl` loads, and naming it is what makes Next refuse a busy port instead of moving.
+/// `devUrl` loads, and naming it is what makes Next refuse a busy port instead of moving. It
+/// names the loopback address too, which Next otherwise doesn't listen on alone (it takes every
+/// interface): another machine on the network must not reach the app's dev server.
 #[test]
 fn the_dev_window_loads_the_port_the_dev_server_is_told_to_take() {
     let conf: serde_json::Value = serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
     let dev_url = conf["build"]["devUrl"].as_str().unwrap();
-    let port = dev_url.rsplit(':').next().unwrap().trim_end_matches('/');
+    let (host, port) = dev_url.trim_start_matches("http://").trim_end_matches('/').split_once(':').unwrap();
     let package: serde_json::Value = serde_json::from_str(include_str!("../../../package.json")).unwrap();
     let dev = package["scripts"]["dev"].as_str().unwrap();
-    assert_eq!(dev, format!("next dev --port {port}"), "devUrl is {dev_url}");
+    assert_eq!(host, "127.0.0.1", "devUrl is {dev_url}: the loopback address, not `localhost`, which may resolve to ::1 first");
+    assert_eq!(dev, format!("next dev --hostname {host} --port {port}"), "devUrl is {dev_url}");
     assert_ne!(port, "3000", "Next's default, the port other projects' dev servers take");
+    assert_eq!(crate::screen::bridge::DEV_SERVER_ORIGIN, dev_url, "the screen bridge lets the dev window's origin in");
 }

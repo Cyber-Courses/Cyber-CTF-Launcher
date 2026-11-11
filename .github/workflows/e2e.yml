@@ -1,7 +1,8 @@
 name: E2E
 
 # UI end-to-end tests (Playwright, Chromium): the frontend in a browser with the Tauri commands
-# answered by the dev mock (src/lib/dev-mock/). Playwright starts `next dev` itself.
+# answered by the dev mock (src/lib/dev-mock/). Playwright starts the browser preview itself
+# (`pnpm dev:web`).
 
 on:
   pull_request:

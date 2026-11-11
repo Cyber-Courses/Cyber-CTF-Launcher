@@ -23,7 +23,6 @@
 #
 # Knobs:
 #   RUST_LINES_FLOOR    the Rust line coverage floor (default: coverage.yml's, read from there)
-#   DEV_URL_PORT        a dev server Playwright reuses when it answers there (default: 3206)
 #   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
 
@@ -65,16 +64,6 @@ rust_cov() {
   cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml &&
     cargo llvm-cov report --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines "$RUST_LINES_FLOOR"
 }
-# Next's dev lock allows one dev server per checkout: when one already serves the app's devUrl
-# port (`pnpm tauri dev`, or e2e-native's), Playwright runs against it instead of starting its own.
-e2e_mock() {
-  if serves "${DEV_URL_PORT:-3206}"; then
-    echo "reusing the dev server on port ${DEV_URL_PORT:-3206}"
-    CYBERCTF_TEST_WEB_PORT=${DEV_URL_PORT:-3206} pnpm test:web
-  else
-    pnpm test:web
-  fi
-}
 
 step prereqs prereqs
 step install pnpm install --frozen-lockfile
@@ -111,7 +100,7 @@ if command -v python3 >/dev/null; then
 else
   skip store-listings "python3 not installed"
 fi
-step e2e-mock e2e_mock
+step e2e-mock pnpm test:web
 case "$(uname -s)" in
   Darwin | Linux) nested e2e-native tests/desktop/run.sh ;;
   *) skip e2e-native "run tests/desktop/run.ps1 on Windows" ;;

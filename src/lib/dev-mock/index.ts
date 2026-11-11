@@ -1,11 +1,11 @@
 /**
- * Browser preview of the UI (development only): `pnpm dev`, then open
- * http://localhost:3000/?mock. Outside Tauri there is no Rust core, so this answers the
+ * Browser preview of the UI (development only): `pnpm dev:web`, then open
+ * http://127.0.0.1:3207/?mock. Outside Tauri there is no Rust core, so this answers the
  * commands the screens call with plausible sample data (sample.ts: a signed-in player, two
  * running labs, a server, an AWS account), changed as the preview is used (browser.ts) under the
  * switches in the URL (scenario.ts); Settings and the server setup open in new tabs. Never loaded
- * in a production build or inside the app. The labs and their objectives are in labs.ts and
- * objectives.ts.
+ * in a production build, by the app's own dev server (`pnpm dev`) or inside the app. The labs
+ * and their objectives are in labs.ts and objectives.ts.
  */
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { clearOnboarded, markOnboarded } from "@/lib/onboarded-flag";

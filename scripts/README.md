@@ -1,9 +1,9 @@
 # Scripts
 
 The repo's own tooling, by purpose: `check/` the repository checks, `quality/` the ratchet,
-`release/` what a release runs, `features/` the feature registry's check and generator, `lib/` what the runners share. Gates and suites run on a
-developer machine, and the checks CI runs. Each runner takes `--help`, which prints its header
-(what it does, its knobs).
+`release/` what a release runs, `features/` the feature registry's check and generator, `dev/` the
+browser preview, `lib/` what the runners share. Gates and suites run on a developer machine, and
+the checks CI runs. Each runner takes `--help`, which prints its header (what it does, its knobs).
 
 | Script                     | Run with                                  | What it does                                                                                                                    |
 | -------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -15,6 +15,7 @@ developer machine, and the checks CI runs. Each runner takes `--help`, which pri
 | `quality/`                 | `pnpm quality`                            | the ratchet in `quality-baseline.json`: clippy, ESLint warnings, duplication, dead code, unused crates                          |
 | `release/release-check.sh` | `pnpm release-check`                      | the gate before a release: CI's pull-request checks but the Terraform templates', plus the native e2e, one per step             |
 | `release/third-party.ts`   | `pnpm notices`, `pnpm sbom`               | THIRD_PARTY_NOTICES (cargo-about + the npm licences) and the CycloneDX SBOMs a release ships                                    |
+| `dev/web.ts`               | `pnpm dev:web`                            | the browser preview: `next dev` with the dev mock built in, on 127.0.0.1:3207 (`--port` for another)                            |
 | `lib/suite.sh`             | (sourced)                                 | what every suite runner shares: `ONLY` / `SKIP` / `STRICT`, verdicts, logged steps, Node from `.nvmrc`                          |
 | `lib/cli.ts`               | (imported)                                | what the TypeScript runners share: `--help` prints the header comment, as `suite_help` does                                     |
 

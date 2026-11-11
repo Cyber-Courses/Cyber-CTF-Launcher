@@ -114,7 +114,7 @@ VM_TIMEOUT=10800
 # Where a `cargo build` app loads its frontend from: tauri.conf.json's devUrl, compiled into the
 # app (not a knob: another port would serve a frontend the app never loads). A `next dev` already
 # listening there is reused.
-DEV_URL_PORT=$(sed -n 's|.*"devUrl": *"http://localhost:\([0-9]*\)".*|\1|p' src-tauri/tauri.conf.json)
+DEV_URL_PORT=$(sed -n 's|.*"devUrl": *"http://[^:]*:\([0-9]*\)".*|\1|p' src-tauri/tauri.conf.json)
 [ -n "$DEV_URL_PORT" ] || fail_now "no devUrl port in src-tauri/tauri.conf.json"
 export TAURI_WEBDRIVER_PORT=${TAURI_WEBDRIVER_PORT:-4445}
 OS=$(uname -s)
@@ -168,7 +168,7 @@ case "$APP_BIN" in
     else
       say "frontend: next dev on port $DEV_URL_PORT (a cargo build app loads devUrl, not out/)"
       set -m
-      pnpm exec next dev -p "$DEV_URL_PORT" >"$LOGS/next-dev.log" 2>&1 &
+      pnpm exec next dev --hostname 127.0.0.1 --port "$DEV_URL_PORT" >"$LOGS/next-dev.log" 2>&1 &
       NEXT_PGID=$!
       set +m
       for _ in $(seq 1 90); do

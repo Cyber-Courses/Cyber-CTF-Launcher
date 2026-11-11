@@ -574,6 +574,14 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   use, one of which starts the lab folder a `localStorage` key names, were mounted in every
   build. They are now built only into a development frontend, or a build made for those tests
   (`NEXT_PUBLIC_WDIO=1`).
+- **The development servers listen on this computer alone, and the app's serves its window
+  only.** `pnpm dev`, the server `pnpm tauri dev` loads, listened on every network interface, so
+  any device on the network could load the interface, Next's dev endpoints and the source maps.
+  It now listens on 127.0.0.1 (`devUrl` is `http://127.0.0.1:3206`), and a browser that opens it
+  gets a notice instead of a page that crashed on its first Tauri call. The browser preview on
+  sample data is its own command, `pnpm dev:web` (127.0.0.1:3207, `?mock`), the only server
+  built with the dev mock; Playwright runs against it. A release still has no server: the app
+  embeds the static export.
 - **Kali's archive keys are checked before a Debian attack VM trusts them.** Where Kali has no VM
   image for the computer's CPU, the attack VM is a Debian VM made Kali; it downloaded Kali's
   archive keyring straight into apt's keyrings, trusted on TLS alone. The keyring is now checked

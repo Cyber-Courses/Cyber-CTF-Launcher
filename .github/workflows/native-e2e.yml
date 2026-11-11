@@ -33,7 +33,7 @@ jobs:
           placeholder-frontend: "false"
       # `tauri build`, not `cargo build --release`: only the Tauri CLI turns on the
       # `custom-protocol` feature that embeds out/; a plain cargo build loads devUrl
-      # (localhost:3206), which nothing serves here. Its beforeBuildCommand (`pnpm build`) exports
+      # (127.0.0.1:3206), which nothing serves here. Its beforeBuildCommand (`pnpm build`) exports
       # the frontend with NEXT_PUBLIC_WDIO=1, which keeps the __wdio_* hooks the scenarios call.
       - name: Build the wdio app with its frontend
         env:

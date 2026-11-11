@@ -5,7 +5,7 @@
   "identifier": "org.cyberctf.desktop",
   "build": {
     "frontendDist": "../out",
-    "devUrl": "http://localhost:3206",
+    "devUrl": "http://127.0.0.1:3206",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },

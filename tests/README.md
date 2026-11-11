@@ -13,7 +13,7 @@ tests/
   desktop/specs/         one spec a file, `<spec>.mjs`
   desktop/lib/           what the specs share (support.mjs), what a run owns (owned.mjs), the run's folder
                          (run-root.sh; run.ps1's in suite.ps1), the smoke's launchers
-  web/                   the Playwright specs against the dev mock, `<area>.spec.ts`, and their fixtures
+  web/                   the Playwright specs against the dev mock (`pnpm dev:web`), `<area>.spec.ts`, and their fixtures
   features.yml           the feature registry: every feature the user sees, and the tests that check it per tier
   FEATURES.md            made from it (`pnpm features`): how well each feature is checked, the biggest gaps first
   features-rig.json      the test rig's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
@@ -83,7 +83,7 @@ suite runners' selection (`scripts/lib/suite.sh`).
 | `CYBERCTF_TEST_SCAN_LAB`                                                               | `vm-scan` (the runner sets it on a Mac)                                       | the id of the lab the running-labs scan must find                                                                        | `CYBERCTF_EXPECT_LAB`                        |
 | `CYBERCTF_TEST_BOX_DESKTOP`                                                            | `screens`                                                                     | `1`: also the attack box's desktop and its Screen (about 1 GB more)                                                      | `CYBERCTF_TEST_ATTACK_DESKTOP`               |
 | `CYBERCTF_TEST_CLEANUP_TOOL`                                                           | `cleanup`                                                                     | a tool Settings lists as installed by Cyber CTF, to remove                                                               | `CYBERCTF_TEST_REMOVE_TOOL`                  |
-| `CYBERCTF_TEST_WEB_PORT`                                                               | Playwright                                                                    | the port of the dev server it starts or reuses (default 3210)                                                            | `E2E_PORT`                                   |
+| `CYBERCTF_TEST_WEB_PORT`                                                               | Playwright                                                                    | the port of the browser preview (`pnpm dev:web`) it starts or reuses (default 3210)                                      | `E2E_PORT`                                   |
 
 \* The old name is still read, as the workspace's test rig sets it: remove it once the rig sets
 the new one. `TAURI_WEBDRIVER_PORT` (the embedded WebDriver's port, 4445), `CYBERBACKEND_URL`

@@ -44,9 +44,9 @@ the end of this page have been done for what the release changes.
 | `e2e-mock`        | `pnpm test:web`                           | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n     |
 | `e2e-native`      | `tests/desktop/run.sh`                    | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                              |
 
-Next allows one dev server per checkout (its dev lock), so when one already serves port 3206
-(`pnpm tauri dev`, or the native runner's), the `e2e-mock` step runs Playwright against it
-instead of starting its own on port 3210.
+Playwright starts the browser preview (`pnpm dev:web`) on port 3210, or reuses one already there;
+the preview builds into its own folder (`.next-web`), so it runs beside `pnpm tauri dev` and the
+native runner's dev server, which never serve the mock.
 
 Every step but the last is what CI runs on a pull request (`ci.yml`, `web-coverage.yml`,
 `coverage.yml`, `e2e.yml`, and `lint-infra.yml` when the pull request touches the files it checks),

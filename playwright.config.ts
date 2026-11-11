@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // UI end-to-end tests: the frontend in a plain browser, with the Tauri commands answered by the
-// dev mock (src/lib/dev-mock/, `?mock` in the URL). The mock is development only (a production
-// build never loads it), so the tests run against `next dev`, not the static export.
+// dev mock (src/lib/dev-mock/, `?mock` in the URL). Only the browser preview's dev server
+// (`pnpm dev:web`, scripts/dev/web.ts) has the mock: not a production build, nor the app's own
+// dev server, which shows a browser a notice. So the tests run against `pnpm dev:web`.
 const PORT = Number(process.env.CYBERCTF_TEST_WEB_PORT ?? 3210);
 const CI = !!process.env.CI;
 
@@ -17,7 +18,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: CI ? [["github"], ["html", { open: "never" }], ["list"]] : [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: `http://127.0.0.1:${PORT}`,
     viewport: { width: 1280, height: 800 },
     locale: "en-US",
     timezoneId: "Europe/Paris",
@@ -26,8 +27,8 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } } }],
   webServer: {
-    command: `pnpm exec next dev -p ${PORT}`,
-    url: `http://localhost:${PORT}/?mock`,
+    command: `pnpm dev:web --port ${String(PORT)}`,
+    url: `http://127.0.0.1:${String(PORT)}/?mock`,
     reuseExistingServer: !CI,
     timeout: 180_000,
     stdout: "ignore",

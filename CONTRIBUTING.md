@@ -24,9 +24,28 @@ You need:
 ```bash
 pnpm install
 pnpm tauri dev          # the app, with hot reload
-pnpm dev                # the UI alone in a browser, on sample data: http://localhost:3206/?mock
+pnpm dev:web            # the UI alone in a browser, on sample data: http://127.0.0.1:3207/?mock
 pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'   # local installers, unsigned
 ```
+
+`pnpm tauri dev` starts the app's own dev server (`pnpm dev`, port 3206, `devUrl` in
+`src-tauri/tauri.conf.json`). It serves the app's window, not browsers:
+
+- A release has no server at all: the app embeds the static export (`out/`) and serves it through
+  Tauri's own protocol, so nothing listens on a port for the UI.
+- Both dev servers listen on 127.0.0.1 only, never on the network, and Next refuses its dev
+  bundles and endpoints to any other origin than `localhost` and that address.
+- A browser that opens the app's dev server gets a notice instead of the app; the dev mock is in
+  the browser preview's server alone (`pnpm dev:web`, built with `NEXT_PUBLIC_DEV_MOCK=1`, whose
+  `?mock` answers the Tauri commands with sample data).
+
+What it can't promise: that only the app's window reads the dev server. A page can't prove to a
+server that it runs inside Tauri, and Tauri sends nothing a dev server could check (no header or
+token: on the desktop the window loads `devUrl` directly), and a static export has no Next proxy
+(middleware) to check one with. Any program on the same machine can read its pages and bundles,
+the source included, as it can read the checkout itself. And Next checks the origin of a request
+for its dev bundles, not the `Host` it names, so a website in a browser on this machine that
+rebinds its own name to 127.0.0.1 could still read them while the dev server runs.
 
 A plain `pnpm tauri build` also writes the signed updater files, which needs the release signing
 key. Debug builds keep the sign-in session and the server secrets in files under `~/.cyberctf/`
@@ -42,7 +61,7 @@ without Git's `usr\bin`); their other assertions still run.
 | What                                                              | Command                 |
 | ----------------------------------------------------------------- | ----------------------- |
 | Unit tests: the frontend's, the scripts' and the Rust ones        | `pnpm test`             |
-| The UI in Chromium against the dev mock (Playwright)              | `pnpm test:web`         |
+| The UI in Chromium against the dev mock (Playwright, `dev:web`)   | `pnpm test:web`         |
 | The real app through its embedded WebDriver (Docker, a VM)        | `pnpm test:desktop`     |
 | Real labs on Docker and local VMs (more tiers: `tests/README.md`) | `pnpm test:integration` |
 | What CI runs, one verdict per step                                | `pnpm check`            |

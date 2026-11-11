@@ -52,11 +52,14 @@ impl std::fmt::Debug for Target {
     }
 }
 
+/// The Next dev server a dev build's window loads: `tauri.conf.json`'s `devUrl`.
+pub(crate) const DEV_SERVER_ORIGIN: &str = "http://127.0.0.1:3206";
+
 /// The origins the app's own pages have: macOS's and Linux's `WebKit` (`tauri://localhost`),
 /// Windows' `WebView2` (`http`, or `https` with Tauri's HTTPS scheme), and in a dev build (`dev`)
 /// the Next dev server.
 fn origin_allowed_in(origin: &str, dev: bool) -> bool {
-    matches!(origin, "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost") || (dev && origin == "http://localhost:3206")
+    matches!(origin, "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost") || (dev && origin == DEV_SERVER_ORIGIN)
 }
 
 /// Constant-time string equality, so the token check doesn't leak through timing.
@@ -394,10 +397,11 @@ mod tests {
         assert_eq!(judge(&req, Some("other"), 4100, false), Err(Refusal::Token));
         assert_eq!(judge(&req, None, 4100, false), Err(Refusal::Token), "spent");
         assert_eq!(judge(&request(4100, "", "tauri://localhost"), Some("t0k"), 4100, false), Err(Refusal::Token));
-        for origin in ["https://evil.example", "null", "tauri://localhost.evil", "http://localhost:3206"] {
+        for origin in ["https://evil.example", "null", "tauri://localhost.evil", "http://127.0.0.1:3206", "http://localhost:3206"] {
             assert_eq!(judge(&request(4100, "t0k", origin), Some("t0k"), 4100, false), Err(Refusal::Origin), "{origin}");
         }
-        assert!(judge(&request(4100, "t0k", "http://localhost:3206"), Some("t0k"), 4100, true).is_ok(), "the dev server, in a dev build");
+        assert!(judge(&request(4100, "t0k", "http://127.0.0.1:3206"), Some("t0k"), 4100, true).is_ok(), "the dev server, in a dev build");
+        assert_eq!(judge(&request(4100, "t0k", "http://localhost:3206"), Some("t0k"), 4100, true), Err(Refusal::Origin), "not the address it listens on");
         let rebound = req.replace("Host: 127.0.0.1:4100", "Host: attacker.example:4100");
         assert_eq!(judge(&rebound, Some("t0k"), 4100, false), Err(Refusal::Host));
         assert_eq!(judge(&req, Some("t0k"), 4101, false), Err(Refusal::Host), "another port");

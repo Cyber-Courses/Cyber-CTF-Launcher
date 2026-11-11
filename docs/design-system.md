@@ -26,7 +26,7 @@ The product jewel is **Cyber CTF emerald**. This file describes the system as it
 | `src/components/window-title-bar.tsx`           | `WindowTitleBar` (a secondary window's header row) and `WindowControls` (the window's buttons), see Windows below                                          |
 | `src/components/brand/mark.tsx`                 | `CtfMark`, the layered up-chevron, coloured by `--mark-top` / `--mark-base`                                                                                |
 | `src/components/ui/*`                           | The primitives below                                                                                                                                       |
-| `src/lib/dev-mock/`                             | Development only: `pnpm dev` then `http://localhost:3206/?mock` previews every screen in a browser with sample data                                        |
+| `src/lib/dev-mock/`                             | Development only: `pnpm dev:web` then `http://127.0.0.1:3207/?mock` previews every screen in a browser with sample data                                    |
 
 ## Modes
 
