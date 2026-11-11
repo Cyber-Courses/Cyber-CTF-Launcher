@@ -6,7 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import { closeIfSettings, showInMainWindow } from "@/lib/app-events";
 import { AppearanceSync, useAppearance } from "@/lib/appearance";
 import { LOCALES, getLocale, getLocalePreference, setLocalePreference, translate, useFormat, useLocale, useT, type Locale } from "@/lib/i18n";
-import { isMac, useIsMac } from "@/lib/platform";
+import { isMac } from "@/lib/platform";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { setVmProvider } from "@/lib/settings";
 import { useVmProvider } from "@/lib/use-vm-provider";
@@ -177,10 +177,8 @@ describe("platform", () => {
   it("tells macOS from the rest", () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
     expect(isMac()).toBe(true);
-    expect(renderHook(() => useIsMac()).result.current).toBe(true);
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (X11; Linux x86_64)");
     expect(isMac()).toBe(false);
-    expect(renderHook(() => useIsMac()).result.current).toBe(false);
   });
 });
 

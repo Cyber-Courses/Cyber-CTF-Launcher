@@ -18,7 +18,7 @@ import { runningUnlisted } from "@/features/labs/lab-row-state";
 import { CheckFailed } from "@/features/machine/check-failed";
 import { getLastRun } from "@/features/labs/runs/last-run";
 import { useActiveOperations } from "@/features/labs/runs/operations";
-import { assessRam } from "@/features/home/capacity";
+import { isLowRam } from "@/features/home/capacity";
 import type { ActiveOperation, AuthStatus, LabStatus, MachineMetrics, SystemReport } from "@/lib/tauri";
 import { useStableCallback } from "@/lib/use-stable-callback";
 import type { Tab } from "@/components/shell/shell-model";
@@ -148,7 +148,6 @@ export function HomeScreen({ report, checkError = null, onRetryCheck, auth, onNa
   // "Now" for the "last run" labels and the greeting, taken once per visit.
   const [now] = useState(() => Date.now());
   const dockerReady = dockerReadiness(report);
-  const capacity = metrics ? assessRam(metrics.memTotal) : null;
   const openLab = (slug: string) => {
     onNavigate("labs", slug);
   };
@@ -165,7 +164,7 @@ export function HomeScreen({ report, checkError = null, onRetryCheck, auth, onNa
       <HomeHeader auth={auth} now={now} dockerReady={dockerReady} running={runningCount} checkFailed={!report && !!checkError} onBrowse={browse} />
       {!report && checkError && onRetryCheck && <CheckFailed error={checkError} onRetry={onRetryCheck} />}
       <UsageStats metrics={metrics} history={history} failed={metricsFailed} />
-      {capacity && capacity.level === "low" && <LowRamCallout capacity={capacity} onNavigate={onNavigate} />}
+      {metrics && isLowRam(metrics.memTotal) && <LowRamCallout memTotalBytes={metrics.memTotal} onNavigate={onNavigate} />}
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <RunningPanel running={runningCount} containers={o.labContainers}>

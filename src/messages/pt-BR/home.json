@@ -35,14 +35,6 @@
     "total": "{total} GB",
     "cloud": "Nuvem",
     "server": "Servidor",
-    "ok": {
-      "title": "Pronta para labs",
-      "detail": "RAM de sobra para labs de contêiner e a maioria dos labs de VM."
-    },
-    "tight": {
-      "title": "Suficiente para labs de contêiner",
-      "detail": "Labs pesados com várias VMs ou a imagem completa do Exegol podem ficar lentos aqui."
-    },
     "low": {
       "title": "Pouca RAM para labs",
       "detail": "Os labs podem ter dificuldade nesta máquina. Para labs mais pesados, rode-os na nuvem ou num servidor."

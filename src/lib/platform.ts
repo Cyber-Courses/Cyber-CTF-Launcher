@@ -8,11 +8,6 @@ export const isMac = () => typeof navigator !== "undefined" && navigator.userAge
 
 const noSubscription = () => () => {};
 
-/** `isMac()` for rendering: false on the server render, then the real answer. */
-export function useIsMac() {
-  return useSyncExternalStore(noSubscription, isMac, () => false);
-}
-
 /**
  * Who draws this window's frame. On every system the page's header row is the title bar (it drags
  * the window); what differs is who draws the window's buttons:

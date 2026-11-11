@@ -6,7 +6,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { CalloutRow, StatCard } from "@/features/machine/machine-parts";
 import { usage, type UsageHistory } from "@/features/machine/machine-status";
 import { greetingKey, heroStatus } from "@/features/home/home-model";
-import type { Capacity } from "@/features/home/capacity";
 import { machineOpenSetup, type AuthStatus, type MachineMetrics } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { useFormat, useT } from "@/lib/i18n";
@@ -104,15 +103,15 @@ export function UsageStats({ metrics, history, failed = false }: { metrics: Mach
 }
 
 /** Too little RAM for labs: says so and points to a cloud or server instead. */
-export function LowRamCallout({ capacity, onNavigate }: { capacity: Capacity; onNavigate: (tab: "cloud" | "server") => void }) {
+export function LowRamCallout({ memTotalBytes, onNavigate }: { memTotalBytes: number; onNavigate: (tab: "cloud" | "server") => void }) {
   const t = useT();
   const format = useFormat();
   return (
     <CalloutRow
       tone="warn"
       icon={<TriangleAlert className="size-4" />}
-      title={capacity.title}
-      meta={t("home.capacity.total", { total: format.number(capacity.totalGB, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}
+      title={t("home.capacity.low.title")}
+      meta={t("home.capacity.total", { total: format.number(memTotalBytes / 1e9, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}
       actions={
         <>
           <Button
@@ -136,7 +135,7 @@ export function LowRamCallout({ capacity, onNavigate }: { capacity: Capacity; on
         </>
       }
     >
-      {capacity.detail}
+      {t("home.capacity.low.detail")}
     </CalloutRow>
   );
 }

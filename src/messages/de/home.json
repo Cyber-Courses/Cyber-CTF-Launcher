@@ -35,14 +35,6 @@
     "total": "{total} GB",
     "cloud": "Cloud",
     "server": "Server",
-    "ok": {
-      "title": "Bereit für Labs",
-      "detail": "Genug RAM für Container-Labs und die meisten VM-Labs."
-    },
-    "tight": {
-      "title": "Genug für Container-Labs",
-      "detail": "Schwere Multi-VM-Labs oder das volle Exegol-Image laufen hier eventuell langsam."
-    },
     "low": {
       "title": "Wenig RAM für Labs",
       "detail": "Labs könnten auf diesem Rechner Probleme haben. Führe schwerere Labs in der Cloud oder auf einem Server aus."

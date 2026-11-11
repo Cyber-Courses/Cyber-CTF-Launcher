@@ -2,7 +2,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assessRam } from "@/features/home/capacity";
+import { isLowRam } from "@/features/home/capacity";
 import { DeployPanel } from "@/features/home/deploy-panel";
 import { HomeScreen } from "@/features/home/home-screen";
 import { JumpBackPanel } from "@/features/home/jump-back-panel";
@@ -259,18 +259,14 @@ describe("MachineSummaryPanel", () => {
   });
 });
 
-describe("assessRam", () => {
+describe("isLowRam", () => {
   it.each([
-    [32, "ok"],
-    [16, "ok"],
-    [12, "tight"],
-    [4, "low"],
-  ])("%d GB is %s", (gb, level) => {
-    const c = assessRam(gb * GB);
-    expect(c.level).toBe(level);
-    expect(c.totalGB).toBe(gb);
-    expect(c.title).not.toContain("home.capacity");
-    expect(c.detail).not.toContain("home.capacity");
+    [32, false],
+    [8, false],
+    [7.9, true],
+    [4, true],
+  ])("%d GB is low: %s", (gb, low) => {
+    expect(isLowRam(gb * GB)).toBe(low);
   });
 });
 
