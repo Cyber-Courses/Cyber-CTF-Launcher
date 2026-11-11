@@ -111,6 +111,11 @@
     "openFailed": "Impossible d'ouvrir l'application de Bureau à distance",
     "openRdp": "Ouvrir dans {client}",
     "copyPassword": "Copier le mot de passe",
-    "closed": "L'écran a été fermé."
+    "closed": "L'écran a été fermé.",
+    "signIn": "Connexion",
+    "signInTitle": "Se connecter à l’attack box",
+    "signInHint": "Là où son écran demande un mot de passe (un verrouillage, une connexion), connectez-vous en {user} avec ce mot de passe.",
+    "user": "Utilisateur",
+    "password": "Mot de passe"
   }
 }

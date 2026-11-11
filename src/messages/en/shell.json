@@ -111,6 +111,11 @@
     "openFailed": "Couldn't open the Remote Desktop app",
     "openRdp": "Open in {client}",
     "copyPassword": "Copy password",
-    "closed": "The screen was closed."
+    "closed": "The screen was closed.",
+    "signIn": "Sign-in",
+    "signInTitle": "Sign in to the attack box",
+    "signInHint": "Where its screen asks for a password (a lock, a login), sign in as {user} with this password.",
+    "user": "User",
+    "password": "Password"
   }
 }

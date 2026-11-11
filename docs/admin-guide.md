@@ -287,9 +287,10 @@ account, with nothing left to destroy them: stop labs first.
 
 **Keychain.** Secrets are kept in the OS credential store under the service `org.cyberctf.desktop`:
 the sign-in session (`session`, and `session.1`, `session.2`… when it is long) and one entry per
-server or cloud account with a stored password or key (`server:<id>`). On Windows the Credential
-Manager shows them as generic credentials named `session.org.cyberctf.desktop`,
-`server:<id>.org.cyberctf.desktop`; on Linux they are in the Secret Service (GNOME Keyring,
+server or cloud account with a stored password or key (`server:<id>`), and one per attack box
+with the password of its player account (`attack-box:<lab>`, deleted when the box is taken out).
+On Windows the Credential Manager shows them as generic credentials named
+`session.org.cyberctf.desktop`, `server:<id>.org.cyberctf.desktop`; on Linux they are in the Secret Service (GNOME Keyring,
 KWallet), which must be running for the user to stay signed in. Tokens never reach the app's web
 view or a file.
 
@@ -415,8 +416,8 @@ The log folder (table above) holds `cyberctf.log` and one `deploy-<lab>.log` per
 2 MB with four files kept. What a lab operation's tools printed, and a deploy worker's crash
 message, is in `deploys/<lab>.log` in the data folder, the previous operation's in
 `deploys/<lab>.previous.log`. The level is `info`; set `CYBERCTF_LOG` (`error`, `warn`, `info`,
-`debug` or `trace`) in the app's environment for another. Tokens, passwords, credentials in URLs
-and values under secret-sounding names are redacted from every line. **Settings > About** has **Diagnostics > Copy** (the
+`debug` or `trace`) in the app's environment for another. Tokens, passwords, credentials in URLs,
+values under secret-sounding names and the attack boxes' passwords are redacted from every line. **Settings > About** has **Diagnostics > Copy** (the
 version, the OS and the machine's setup status, for a support request) and **Log files > Open
 folder**. Logs name labs, servers and paths: read them before sending them outside.
 

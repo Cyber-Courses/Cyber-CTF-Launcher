@@ -1,7 +1,8 @@
 //! The attack box as a machine of the lab, on this machine, end to end, in each local form: a
 //! lab started as the lab page starts it, the box added (the lab regenerated with it, the run
 //! brought up to date), a shell in the box opened as the player's account and reaching a lab
-//! machine, the box taken out, the lab stopped, nothing of it left. Opt-in (it needs Docker, or
+//! machine, the password the launcher keeps for that account taken by `su` in the box, the box
+//! taken out, the lab stopped, nothing of it left. Opt-in (it needs Docker, or
 //! Vagrant and a hypervisor):
 //!
 //! ```text
@@ -25,7 +26,7 @@
 
 use std::path::Path;
 
-use super::support::attack_box::{add_box, box_reaches, in_box, remove_box};
+use super::support::attack_box::{add_box, box_reaches, in_box, password_works, remove_box};
 use super::support::lab::{install_copy, leftovers};
 use super::support::{check, log, scenario};
 use crate::platform::AppDirs;
@@ -35,12 +36,13 @@ use crate::runtime::launch::{CloudStart, Inputs, VmStart, start_cloud_run, start
 use crate::runtime::providers::Provider;
 use crate::runtime::{isothrum, lab, lifecycle};
 
-/// The box added to the running lab, reaching `target` from a shell in it, then taken out; with
-/// the shared folder on (Settings, as [`shared_folder`] turns it on), that folder seen both ways
-/// from inside the box.
+/// The box added to the running lab, reaching `target` from a shell in it, its player account
+/// signing in with the password the launcher keeps, then taken out; with the shared folder on
+/// (Settings, as [`shared_folder`] turns it on), that folder seen both ways from inside the box.
 pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
     add_box(placed, dirs, attack_machine::default_image(), l, f).await;
     box_reaches(placed, target, "once added", f).await;
+    password_works(placed, "once added", f).await;
     match crate::shared_folder::current(dirs) {
         Ok(Some(folder)) => shared_both_ways(placed, &folder, f).await,
         Ok(None) => {}

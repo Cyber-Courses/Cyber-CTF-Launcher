@@ -1742,6 +1742,39 @@ areas:
           - attack-box:vm
           - desktop-e2e
 
+      - id: attack-box.credentials
+        what: The box's player account has a password the launcher makes for each box and keeps in the keychain; the lab page's Credentials row and the box's Screen window (Sign-in) show it masked, with show and copy, for wherever the box asks (its screen's lock or login, su, SSH).
+        host: true
+        commands:
+          - attack_box_sign_in
+          - screen_sign_in
+        tests:
+          unit:
+            - src-tauri/src/runtime/attack_machine/sign_in.rs
+            - src-tauri/src/runtime/attack_machine.rs > each_box_gets_its_own_password_its_hash_in_a_root_only_file_never_on_a_command_line
+            - src-tauri/src/runtime/attack_machine.rs > a_screen_window_gets_the_sign_in_of_the_box_alone
+            - src-tauri/src/runtime/server/secrets.rs > a_named_secret_is_kept_beside_the_hosts_and_deleted_alone
+            - src-tauri/src/platform/redact.rs > a_registered_secret_is_replaced_wherever_it_shows
+            - src-tauri/src/commands/labs.rs > the_attack_box_sign_in_is_the_kept_password_of_the_box_and_none_without_one
+            - src-tauri/src/commands/screen.rs > the_attack_box_screen_alone_gets_its_sign_in
+            - src/features/labs/attack-box.test.tsx > shows the box's credentials, the password masked until Show
+            - src/features/labs/attack-box.test.tsx > reads the box's sign-in once it is up
+            - src/app/screen/sign-in.test.tsx
+            - src/components/ui/secret-value.test.tsx
+          integration:
+            - attack-box-docker
+            - attack-box-docker-vm
+            - attack-box-vm
+            - attack-box-aws-docker
+            - attack-box-aws-vm
+        rig:
+          - attack-box:docker
+          - attack-box:docker-vm
+          - attack-box:vm
+        gaps:
+          desktop: no spec reads the Credentials row or the Sign-in popover in the app
+          integration: su only; the screen locker, LightDM's login and SSH with the password are never driven
+
       - id: attack-box.shared-folder
         what: A folder on this computer shared with the attack box at /shared (Settings, on/off, pick, open), both ways.
         providers:
@@ -1790,6 +1823,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/attack_machine.rs > a_desktop_box_gets_xfce_and_the_player_signed_in_after_its_account
+            - src-tauri/src/runtime/attack_machine.rs > a_desktop_box_never_locks_its_screen
             - src/features/settings/attack-desktop.test.tsx
             - src/features/labs/attack-box.test.tsx > gives a VM box Kali
           desktop:

@@ -324,6 +324,15 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
     .await
 }
 
+/// How the player signs in to lab `id`'s attack box where it asks for a password (its screen's
+/// login, `su`, SSH): its account and the password the launcher keeps for it; none when the lab
+/// has no box, or the launcher keeps no password for it. The lab page's Credentials row.
+#[tauri::command]
+pub async fn attack_box_sign_in(app: AppHandle, id: String) -> Result<Option<attack_machine::SignIn>> {
+    let dir = lab_dir(&AppDirs::from(&app), &id)?;
+    attack_machine::sign_in(&dir, None)
+}
+
 /// Opens the attack box shell of a running lab in the system terminal, on the command the runner
 /// builds (it alone knows the Compose project and files, the Vagrant define).
 #[tauri::command]
@@ -337,8 +346,8 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 mod tests {
     use super::{AttachPick, LabSource, check_image, lines, valid_machine_name};
     use super::{
-        attack_box_attach, attack_box_detach, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_cloud_preview, lab_default_place, lab_launch,
-        lab_launch_local, lab_park, lab_provision, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools, running_labs,
+        attack_box_attach, attack_box_detach, attack_box_sign_in, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_cloud_preview,
+        lab_default_place, lab_launch, lab_launch_local, lab_park, lab_provision, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools, running_labs,
     };
     use crate::platform::exec::fake::Tools;
     use crate::runtime::{Park, Runtime, providers::Provider, server};
@@ -577,6 +586,22 @@ mod tests {
         log("Starting…".into());
         log("Done".into());
         assert_eq!(*sink.lock().unwrap(), ["\"Starting…\"", "\"Done\""]);
+    }
+
+    #[tokio::test]
+    async fn the_attack_box_sign_in_is_the_kept_password_of_the_box_and_none_without_one() {
+        use crate::runtime::attack_machine::{self, Cpu, Kind, PLAYER};
+        let t = TestApp::new();
+        let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
+        let sign_in = || attack_box_sign_in(t.handle().clone(), "web".into());
+        assert_eq!(sign_in().await.unwrap(), None, "no box");
+        attack_machine::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
+        let got = sign_in().await.unwrap().expect("the box's sign-in");
+        assert_eq!(got.user, PLAYER);
+        assert_eq!(got.password.len(), 23);
+        attack_machine::remove(&dir).unwrap();
+        assert_eq!(sign_in().await.unwrap(), None, "taken out: forgotten");
+        assert!(attack_box_sign_in(t.handle().clone(), "../x".into()).await.is_err(), "a bad id");
     }
 
     #[tokio::test]

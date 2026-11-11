@@ -7,8 +7,10 @@ import { CopyValue } from "@/components/ui/copy-value";
 import { KeyValue, Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-pill";
 import { Spinner } from "@/components/ui/spinner";
+import { PasswordValue } from "@/features/labs/password-value";
 import type { AttackBox } from "@/features/labs/use-attack-box";
 import { useT } from "@/lib/i18n";
+import type { SignIn } from "@/lib/tauri";
 import { isFailedLine } from "@/lib/log-marks";
 
 /** The attack box card in the lab page's side rail. The box is one more machine of the lab,
@@ -31,7 +33,7 @@ export function AttackBoxPanel({
   onScreen?: () => void;
 }) {
   const t = useT();
-  const { status, busy, log, name, vm } = box;
+  const { status, busy, log, name, vm, signIn } = box;
   const tone = status?.running ? "ok" : busy ? "warn" : "muted";
   return (
     <Panel>
@@ -56,8 +58,12 @@ export function AttackBoxPanel({
           <CopyValue text={status.ip} />
         </KeyValue>
       )}
+      {status?.running && signIn && <Credentials signIn={signIn} />}
       <div className="space-y-3 border-t border-border p-4">
         <p className="text-[0.75rem] leading-relaxed text-muted-foreground">{t(vm ? "labs.attackBox.vmHint" : "labs.attackBox.containerHint")}</p>
+        {status?.running && signIn && (
+          <p className="text-[0.75rem] leading-relaxed text-muted-foreground">{t("labs.attackBox.credentialsHint", { user: signIn.user })}</p>
+        )}
         <WaysIn onShell={shellReady ? onShell : undefined} onScreen={onScreen} />
         {running && <BoxControls box={box} />}
         {(busy || log.some(isFailedLine)) && log.length > 0 && (
@@ -65,6 +71,20 @@ export function AttackBoxPanel({
         )}
       </div>
     </Panel>
+  );
+}
+
+/** How the player signs in where the box asks for a password: its account, and its password
+ *  masked until Show. */
+function Credentials({ signIn }: { signIn: SignIn }) {
+  const t = useT();
+  return (
+    <KeyValue k={t("labs.attackBox.credentials")}>
+      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+        <CopyValue text={signIn.user} />
+        <PasswordValue password={signIn.password} />
+      </span>
+    </KeyValue>
   );
 }
 

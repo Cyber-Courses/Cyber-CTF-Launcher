@@ -184,6 +184,7 @@ const machineCommands = {
     plugins: [{ name: "Terraform provider plugins", bytes: 0.6 * GB }],
   }),
   attack_box_status: () => attackBox(),
+  attack_box_sign_in: () => ({ user: "player", password: "dev-mock-password" }),
   image_download_size: () => 4.1 * GB,
   installed_tools: () => [],
   shared_folder_get: () => sharedFolder,

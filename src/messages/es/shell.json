@@ -111,6 +111,11 @@
     "openFailed": "No se pudo abrir la aplicación de Escritorio remoto",
     "openRdp": "Abrir en {client}",
     "copyPassword": "Copiar contraseña",
-    "closed": "La pantalla se cerró."
+    "closed": "La pantalla se cerró.",
+    "signIn": "Inicio de sesión",
+    "signInTitle": "Iniciar sesión en la attack box",
+    "signInHint": "Donde su pantalla pida una contraseña (un bloqueo, un inicio de sesión), inicia sesión como {user} con esta contraseña.",
+    "user": "Usuario",
+    "password": "Contraseña"
   }
 }

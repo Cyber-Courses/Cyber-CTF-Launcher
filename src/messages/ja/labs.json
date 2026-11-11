@@ -238,7 +238,12 @@
     "start": "アタックボックスを起動",
     "attaching": "アタックボックスを起動中…",
     "removing": "アタックボックスを削除中…",
-    "autoAttachFailed": "ラボと一緒にアタックボックスを追加できませんでした"
+    "autoAttachFailed": "ラボと一緒にアタックボックスを追加できませんでした",
+    "credentials": "認証情報",
+    "credentialsHint": "ボックスがパスワードを求めたとき（画面、su、SSH）は、{user} としてこのパスワードでサインインしてください。sudo では求められません。",
+    "showPassword": "パスワードを表示",
+    "hidePassword": "パスワードを隠す",
+    "copyPassword": "パスワードをコピー"
   },
   "actions": {
     "labRunning": "✓ ラボが実行中です",

@@ -11,6 +11,7 @@ import type { ActiveOperation, AttackStatus, Runtime } from "@/lib/tauri";
 import { DEFAULT_ATTACK_IMAGE, setAttackDesktop, setAttackImage, setAutoAttackBox } from "@/lib/settings";
 import { commands, installTauri, stream, type Call } from "@/test/tauri";
 import { flush } from "@/test/ui";
+import { expectMaskedPassword } from "@/test/secret";
 import { rejectWith } from "@/features/labs/labs-test-kit";
 import { setCatalogue } from "@/features/labs/lab-store";
 import type { Lab } from "@/features/labs/use-labs";
@@ -127,6 +128,7 @@ describe("useAttackBox", () => {
       network: null,
       defaultNetwork: "default",
       setNetwork: () => {},
+      signIn: null,
     };
     const { rerender } = render(<AttackBoxPanel box={shown} running host={null} onShell={() => {}} shellReady onScreen={onScreen} />);
     await user.click(screen.getByRole("button", { name: /Open screen/ }));
@@ -407,6 +409,7 @@ describe("AttackBoxPanel", () => {
     network: null,
     defaultNetwork: "",
     setNetwork: vi.fn(),
+    signIn: null,
     ...p,
   });
 
@@ -504,5 +507,60 @@ describe("AttackBoxPanel", () => {
     expect(screen.getByText("Attack VM")).toBeTruthy();
     expect(screen.getByText("this machine's default box")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Start attack box/ })).toBeTruthy();
+  });
+
+  const PASSWORD = "k7mpq-zrt4w-hn8xc-ls2vd";
+
+  it("shows the box's credentials, the password masked until Show, copied either way", async () => {
+    const user = userEvent.setup();
+    const up = fake({ status: box({ running: true, ip: "10.30.0.77" }), signIn: { user: "player", password: PASSWORD } });
+    render(<AttackBoxPanel box={up} running host={null} />);
+    expect(screen.getByText("Credentials")).toBeTruthy();
+    expect(screen.getByText("player")).toBeTruthy();
+    expect(screen.getByText(/Sign in as player with this password wherever the box asks/)).toBeTruthy();
+    await expectMaskedPassword(user, PASSWORD);
+  });
+
+  it("has no credentials row for a box the launcher keeps no password for, nor for one that isn't up", () => {
+    const { rerender } = render(<AttackBoxPanel box={fake({ status: box({ running: true, ip: "10.30.0.77" }) })} running host={null} />);
+    expect(screen.queryByText("Credentials")).toBeNull();
+    rerender(<AttackBoxPanel box={fake({ status: box(), signIn: { user: "player", password: PASSWORD } })} running host={null} />);
+    expect(screen.queryByText("Credentials")).toBeNull();
+  });
+});
+
+describe("useAttackBox's sign-in", () => {
+  it("reads the box's sign-in once it is up, and again when it comes back up", async () => {
+    let password = "first-password-0000";
+    let running = true;
+    const calls = installTauri({
+      attack_box_status: () => box({ running, ip: running ? "10.42.0.9" : "" }),
+      attack_box_sign_in: () => ({ user: "player", password }),
+    });
+    const { result, rerender } = renderHook((p: { running: boolean }) => useAttackBox("ab-sign-in", { running: p.running, runtime: "DOCKER" }), {
+      initialProps: { running: true },
+    });
+    await flush();
+    expect(calls.find((c) => c.cmd === "attack_box_sign_in")?.args).toEqual({ id: "ab-sign-in" });
+    expect(result.current.signIn).toEqual({ user: "player", password: "first-password-0000" });
+    // The lab goes down and up again with a new box: its new password is read.
+    running = false;
+    rerender({ running: false });
+    await flush();
+    expect(result.current.signIn).toBeNull();
+    running = true;
+    password = "second-password-000";
+    rerender({ running: true });
+    await flush();
+    expect(result.current.signIn?.password).toBe("second-password-000");
+    expect(count(calls, "attack_box_sign_in")).toBe(2);
+  });
+
+  it("has none for a box the launcher keeps no password for", async () => {
+    installTauri({ attack_box_status: () => box({ running: true, ip: "10.42.0.9" }), attack_box_sign_in: () => null });
+    const { result } = renderHook(() => useAttackBox("ab-no-sign-in", { running: true, runtime: "DOCKER" }));
+    await flush();
+    expect(result.current.status?.running).toBe(true);
+    expect(result.current.signIn).toBeNull();
   });
 });

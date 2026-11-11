@@ -1,8 +1,11 @@
-//! Each host's secret (password, API token or access key): the OS keychain in release builds,
-//! a 0600 JSON file in debug builds, since every `tauri dev` rebuild is a new unsigned binary
-//! and the keychain would re-prompt on each run (as the sign-in session's store does). Both
+//! The launcher's secrets: each host's (password, API token or access key), and each attack box's
+//! password for its player account ([`get_named`], under its own name). The OS keychain in release
+//! builds, a 0600 JSON file in debug builds, since every `tauri dev` rebuild is a new unsigned
+//! binary and the keychain would re-prompt on each run (as the sign-in session's store does). Both
 //! stores are built in every build, so each is checked and tested; [`in_a_file`] picks one. An
-//! end-to-end run's app (`platform::test_root`) keeps them in the file too, under the run's folder.
+//! end-to-end run's app (`platform::test_root`) keeps them in the file too, under the run's folder;
+//! a unit test's, in a file of its own (`use_test_file`, else one per test process), never the
+//! player's.
 //!
 //! A keychain call blocks: the OS may show its unlock prompt and wait for the player. Called
 //! from an async worker, it runs through [`blocking`], so the worker's other tasks move on to
@@ -22,32 +25,56 @@ fn in_a_file() -> bool {
 /// read (a locked keychain, its unlock prompt dismissed, a secrets file that doesn't parse) says
 /// why instead.
 pub(crate) fn get_secret(id: &str) -> Result<String> {
-    if in_a_file() { found(dev_file::read()?.remove(id)) } else { blocking(|| keychain::get(&entry_name(id))).and_then(found) }
+    read(id, &entry_name(id)).and_then(found)
 }
 
 /// Keeps `secret` for host `id`: in the keychain, in a file in a debug build ([`in_a_file`]).
 pub(crate) fn set_secret(id: &str, secret: &str) -> Result<()> {
-    if in_a_file() {
-        let mut map = dev_file::read()?;
-        map.insert(id.to_string(), secret.to_string());
-        dev_file::write(&map)
-    } else {
-        blocking(|| keychain::set(&entry_name(id), secret))
-    }
+    write(id, &entry_name(id), secret)
 }
 
 /// Deletes the secret stored for `id`; one that isn't there is deleted already. A store that
 /// refuses (a locked keychain, its prompt dismissed) says so.
 pub(crate) fn delete_secret(id: &str) -> Result<()> {
+    remove(id, &entry_name(id))
+}
+
+/// The secret kept under `name` (a keychain entry of that name, a key of the file), none when
+/// there is none; a store that can't be read says why, never "none".
+pub(crate) fn get_named(name: &str) -> Result<Option<String>> {
+    read(name, name)
+}
+
+/// Keeps `secret` under `name`.
+pub(crate) fn set_named(name: &str, secret: &str) -> Result<()> {
+    write(name, name, secret)
+}
+
+/// Deletes the secret kept under `name`; one that isn't there is deleted already.
+pub(crate) fn delete_named(name: &str) -> Result<()> {
+    remove(name, name)
+}
+
+/// The secret under `key` in the file, or keychain entry `entry`.
+fn read(key: &str, entry: &str) -> Result<Option<String>> {
+    if in_a_file() { Ok(dev_file::read()?.remove(key)) } else { blocking(|| keychain::get(entry)) }
+}
+
+/// Keeps `secret` under `key` in the file, or keychain entry `entry`.
+fn write(key: &str, entry: &str, secret: &str) -> Result<()> {
     if in_a_file() {
-        let mut map = dev_file::read()?;
-        if map.remove(id).is_some() {
-            dev_file::write(&map)?;
-        }
-        Ok(())
+        dev_file::edit(|map| {
+            map.insert(key.to_owned(), secret.to_owned());
+            true
+        })
     } else {
-        blocking(|| keychain::delete(&entry_name(id)))
+        blocking(|| keychain::set(entry, secret))
     }
+}
+
+/// Deletes the secret under `key` in the file, or keychain entry `entry`.
+fn remove(key: &str, entry: &str) -> Result<()> {
+    if in_a_file() { dev_file::edit(|map| map.remove(key).is_some()) } else { blocking(|| keychain::delete(entry)) }
 }
 
 /// The secret a host connects with: empty for hosts that sign in through their own CLI (see
@@ -88,13 +115,15 @@ mod dev_file {
         pub(super) static TEST_FILE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
     }
 
+    /// The secrets file: a test's own (see `use_test_file`), else under the home folder; a test
+    /// process's home is a folder of its own in the temporary folder, never the player's.
     fn path() -> Result<PathBuf> {
         #[cfg(test)]
         if let Some(file) = TEST_FILE.with(|f| f.borrow().clone()) {
             return Ok(file);
         }
-        let home = crate::platform::own_home().ok_or_else(|| Error::Invalid("no home directory".into()))?;
-        Ok(file_in(&home))
+        let home = if cfg!(test) { Some(std::env::temp_dir().join(format!("cyberctf-test-home-{}", std::process::id()))) } else { crate::platform::own_home() };
+        Ok(file_in(&home.ok_or_else(|| Error::Invalid("no home directory".into()))?))
     }
 
     /// The secrets file under a home folder.
@@ -117,8 +146,14 @@ mod dev_file {
         serde_json::from_str(&raw).map_err(|e| Error::Invalid(format!("the secrets file {} isn't readable: {e}", path.display())))
     }
 
-    pub(super) fn write(map: &BTreeMap<String, String>) -> Result<()> {
-        write_at(&path()?, map)
+    /// Changes the secrets with `change`, written back when it says it changed them: one change
+    /// at a time in this process, so two never write over each other's.
+    pub(super) fn edit(change: impl FnOnce(&mut BTreeMap<String, String>) -> bool) -> Result<()> {
+        static EDITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _one = EDITING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = path()?;
+        let mut map = read_at(&path)?;
+        if change(&mut map) { write_at(&path, &map) } else { Ok(()) }
     }
 
     /// Writes the secrets to `path` whole (a crash leaves the previous file), the file and its
@@ -192,6 +227,25 @@ mod tests {
         crate::platform::private_fs::tests::assert_private_with_folder(&file);
         let names: Vec<_> = std::fs::read_dir(file.parent().unwrap()).unwrap().flatten().map(|e| e.file_name()).collect();
         assert_eq!(names, ["dev-server-secrets.json"], "written whole, no temporary file left");
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_named_secret_is_kept_beside_the_hosts_and_deleted_alone() {
+        let home = home();
+        let file = dev_file::file_in(&home);
+        use_test_file(file.clone());
+        set_secret("ab12", "host").unwrap();
+        assert_eq!(get_named("attack-box:t").unwrap(), None, "none kept yet");
+        set_named("attack-box:t", "box").unwrap();
+        assert_eq!(get_named("attack-box:t").unwrap().as_deref(), Some("box"));
+        delete_named("attack-box:t").unwrap();
+        delete_named("attack-box:t").unwrap();
+        assert_eq!(get_named("attack-box:t").unwrap(), None);
+        assert_eq!(get_secret("ab12").unwrap(), "host", "the host's secret stays");
+        #[cfg(unix)]
+        crate::platform::private_fs::tests::assert_private_with_folder(&file);
         std::fs::remove_dir_all(home).unwrap();
     }
 

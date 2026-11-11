@@ -238,7 +238,12 @@
     "start": "Iniciar máquina de ataque",
     "attaching": "Iniciando la máquina de ataque…",
     "removing": "Eliminando la máquina de ataque…",
-    "autoAttachFailed": "No se pudo añadir la attack box con el lab"
+    "autoAttachFailed": "No se pudo añadir la attack box con el lab",
+    "credentials": "Credenciales",
+    "credentialsHint": "Inicia sesión como {user} con esta contraseña donde la box pida una: su pantalla, su, SSH. sudo no pide ninguna.",
+    "showPassword": "Mostrar contraseña",
+    "hidePassword": "Ocultar contraseña",
+    "copyPassword": "Copiar contraseña"
   },
   "actions": {
     "labRunning": "✓ El lab está en ejecución",

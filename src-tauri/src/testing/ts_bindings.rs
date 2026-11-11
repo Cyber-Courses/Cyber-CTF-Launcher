@@ -64,6 +64,7 @@ fn generate(dir: &Path) {
         tools::uninstall::Installed,
         runtime::Check,
         runtime::AttackStatus,
+        runtime::attack_machine::SignIn,
         runtime::LabStatus,
         runtime::Park,
         runtime::Preview,

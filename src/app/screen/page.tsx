@@ -14,6 +14,7 @@ import { toast } from "@/lib/toast";
 import { useT } from "@/lib/i18n";
 import { screenOpenRdp, screenPassword, type ScreenConnection } from "@/lib/tauri";
 import { useScreen, type ScreenState } from "@/app/screen/use-screen";
+import { SignInPopover } from "@/app/screen/sign-in";
 
 /** A lab machine's screen window (opened by `screen_window`): its VNC screen drawn by noVNC through
  *  the window's own loopback bridge, or its Remote Desktop opened in the system's client. */
@@ -35,6 +36,7 @@ function Screen() {
         <span data-tauri-drag-region className="mr-auto truncate font-mono text-[0.75rem] text-muted-foreground">
           {machine} · {t(`shell.vmScreen.state.${state.kind}`)}
         </span>
+        <SignInPopover />
       </WindowTitleBar>
       <div className="relative min-h-0 flex-1 bg-black">
         <div ref={host} className={vnc ? "h-full w-full" : "hidden"} data-testid="screen-host" />

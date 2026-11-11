@@ -10,6 +10,7 @@ permissions = [
   "allow-api-query",
   "allow-attack-box-attach",
   "allow-attack-box-detach",
+  "allow-attack-box-sign-in",
   "allow-attack-box-status",
   "allow-auth-login",
   "allow-auth-login-cancel",
@@ -176,9 +177,10 @@ permissions = [
 
 [[set]]
 identifier = "screen-window"
-description = "A lab machine's screen window: its machine's console (VNC in the window, RDP in the system's client) and the RDP account's password, copied on request."
+description = "A lab machine's screen window: its machine's console (VNC in the window, RDP in the system's client), the RDP account's password, copied on request, and the attack box's sign-in where its screen asks."
 permissions = [
   "allow-screen-connect",
   "allow-screen-open-rdp",
   "allow-screen-password",
+  "allow-screen-sign-in",
 ]

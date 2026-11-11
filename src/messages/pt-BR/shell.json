@@ -111,6 +111,11 @@
     "openFailed": "Não foi possível abrir o aplicativo de Área de Trabalho Remota",
     "openRdp": "Abrir no {client}",
     "copyPassword": "Copiar senha",
-    "closed": "A tela foi fechada."
+    "closed": "A tela foi fechada.",
+    "signIn": "Entrar",
+    "signInTitle": "Entrar na attack box",
+    "signInHint": "Onde a tela dela pedir uma senha (um bloqueio, um login), entre como {user} com esta senha.",
+    "user": "Usuário",
+    "password": "Senha"
   }
 }

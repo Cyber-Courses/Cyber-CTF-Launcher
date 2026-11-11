@@ -1,10 +1,12 @@
 //! Secrets kept out of what the app writes down for people to read and send on: the log files
 //! and the command lines a setup log shows. A line is matched against the shapes secrets take
 //! (an `Authorization` scheme, a password in a URL, a value under a secret-sounding name, a JWT,
-//! an AWS access key id) and each secret is replaced, the rest of the line kept.
+//! an AWS access key id) and each secret is replaced, the rest of the line kept. A secret of no
+//! such shape that the app holds (an attack box's password) is [`register`]ed: it is replaced
+//! wherever it shows.
 
 use std::borrow::Cow;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, PoisonError, RwLock};
 
 use regex::Regex;
 
@@ -33,9 +35,33 @@ const PATTERNS: [(&str, &str); 5] = [
 static RULES: LazyLock<Vec<(Regex, String)>> =
     LazyLock::new(|| PATTERNS.iter().filter_map(|(pattern, replacement)| Some((Regex::new(pattern).ok()?, replacement.replace("{R}", REDACTED)))).collect());
 
+/// The secrets the app holds, each replaced as it is ([`register`]).
+static KNOWN: RwLock<Vec<String>> = RwLock::new(Vec::new());
+
+/// The shortest secret [`register`] takes: a shorter one would replace ordinary words.
+const SHORTEST: usize = 8;
+
+/// Redacts `secret` from every line from now on, in this process: a value the app holds (an
+/// attack box's password) that no pattern would recognise. One shorter than 8 characters is
+/// refused (it would replace ordinary words); registering it again changes nothing.
+pub fn register(secret: &str) {
+    if secret.chars().count() < SHORTEST {
+        return;
+    }
+    let mut known = KNOWN.write().unwrap_or_else(PoisonError::into_inner);
+    if !known.iter().any(|k| k == secret) {
+        known.push(secret.to_owned());
+    }
+}
+
 /// `line` with every secret in it replaced by `[redacted]`; borrowed when there was none.
 pub fn redact(line: &str) -> Cow<'_, str> {
     let mut out = Cow::Borrowed(line);
+    for secret in KNOWN.read().unwrap_or_else(PoisonError::into_inner).iter() {
+        if out.contains(secret.as_str()) {
+            out = Cow::Owned(out.replace(secret.as_str(), REDACTED));
+        }
+    }
     for (pattern, replacement) in RULES.iter() {
         if let Cow::Owned(replaced) = pattern.replace_all(&out, replacement.as_str()) {
             out = Cow::Owned(replaced);
@@ -65,6 +91,19 @@ mod tests {
         for (line, expected) in cases {
             assert_eq!(redact(line), expected, "{line}");
         }
+    }
+
+    #[test]
+    fn a_registered_secret_is_replaced_wherever_it_shows() {
+        let secret = "k7mpq-zrt4w-hn8xc-ls2vd";
+        let line = format!("su ok, typed {secret} at the prompt, {secret}!");
+        assert_eq!(redact(&line), line, "not known yet: no pattern takes it");
+        register(secret);
+        register(secret);
+        assert_eq!(redact(&line), "su ok, typed [redacted] at the prompt, [redacted]!");
+        assert_eq!(KNOWN.read().unwrap().iter().filter(|k| *k == secret).count(), 1, "kept once");
+        register("short");
+        assert!(matches!(redact("a short line"), Cow::Borrowed(_)), "too short to register: words stay");
     }
 
     #[test]

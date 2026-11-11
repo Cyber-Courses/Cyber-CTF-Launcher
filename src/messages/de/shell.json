@@ -111,6 +111,11 @@
     "openFailed": "Die Remotedesktop-App konnte nicht geöffnet werden",
     "openRdp": "In {client} öffnen",
     "copyPassword": "Passwort kopieren",
-    "closed": "Der Bildschirm wurde geschlossen."
+    "closed": "Der Bildschirm wurde geschlossen.",
+    "signIn": "Anmeldung",
+    "signInTitle": "Bei der Attack-Box anmelden",
+    "signInHint": "Wo ihr Bildschirm ein Passwort verlangt (eine Sperre, eine Anmeldung), melde dich als {user} mit diesem Passwort an.",
+    "user": "Benutzer",
+    "password": "Passwort"
   }
 }

@@ -238,7 +238,12 @@
     "start": "Iniciar attack box",
     "attaching": "Iniciando a attack box…",
     "removing": "Removendo a attack box…",
-    "autoAttachFailed": "Não foi possível adicionar a attack box com o lab"
+    "autoAttachFailed": "Não foi possível adicionar a attack box com o lab",
+    "credentials": "Credenciais",
+    "credentialsHint": "Entre como {user} com esta senha sempre que a box pedir uma: na tela dela, no su, por SSH. O sudo não pede nenhuma.",
+    "showPassword": "Mostrar senha",
+    "hidePassword": "Ocultar senha",
+    "copyPassword": "Copiar senha"
   },
   "actions": {
     "labRunning": "✓ Lab rodando",

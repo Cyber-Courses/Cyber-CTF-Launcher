@@ -82,6 +82,7 @@ export type * from "./ServerTest";
 export type * from "./SetupAction";
 export type * from "./SetupOptions";
 export type * from "./SharedFolder";
+export type * from "./SignIn";
 export type * from "./SshKeySignIn";
 export type * from "./Storage";
 export type * from "./StoredItem";

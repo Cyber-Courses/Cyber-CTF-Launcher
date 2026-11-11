@@ -26,6 +26,7 @@ import type {
   ServerList,
   ServerTest,
   SharedFolder,
+  SignIn,
   Storage,
   SystemReport,
   Workload,
@@ -43,6 +44,7 @@ type Answers = {
   installed_tools: InstalledTool[];
   image_download_size: number | null;
   attack_box_status: AttackStatus;
+  attack_box_sign_in: SignIn | null;
   shared_folder_get: SharedFolder;
   shared_folder_set: SharedFolder;
   server_list: ServerList;

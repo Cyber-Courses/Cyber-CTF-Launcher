@@ -31,6 +31,7 @@ import type {
   Runtime,
   SharedFolder,
   ScreenConnection,
+  SignIn,
   TermEvent,
 } from "@/lib/tauri/generated";
 import type { DockerEngine } from "@/lib/tauri/machine";
@@ -72,6 +73,7 @@ export type {
   Runtime,
   ScreenConnection,
   SharedFolder,
+  SignIn,
   TermEvent,
 };
 
@@ -135,6 +137,10 @@ export const attackBoxAttach = (id: string, runtime: Runtime, pick: AttackPick, 
 
 /** Takes the attack box back out of the running lab. */
 export const attackBoxDetach = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeStreaming("attack_box_detach", { id, runtime }, onLog);
+
+/** How the player signs in to the lab's attack box where it asks for a password (its screen, su,
+ *  SSH): its account and the password the launcher keeps for it; null when it keeps none. */
+export const attackBoxSignIn = (id: string) => invoke<SignIn | null>("attack_box_sign_in", { id });
 
 /** Opens the attack box shell in the system terminal, on the command the runner builds. */
 export const labAttackShell = (id: string, runtime: Runtime) => invokeUnit("lab_attack_shell", { id, runtime });
@@ -200,6 +206,10 @@ export const screenOpenRdp = () => invokeUnit("screen_open_rdp");
 
 /** The calling screen window's Remote Desktop password, to copy on request. */
 export const screenPassword = () => invoke<string>("screen_password");
+
+/** How the player signs in where the calling screen window's machine asks, when it is the lab's
+ *  attack box; null for any other machine. */
+export const screenSignIn = () => invoke<SignIn | null>("screen_sign_in");
 
 /** The shell a terminal opens, and its size in cells. */
 export type TerminalSpec = { id: string; runtime: Runtime; cols: number; rows: number };

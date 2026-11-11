@@ -51,7 +51,7 @@ describe("window permissions", () => {
   });
 
   it("keeps a machine's screen, and its password, to the screen windows", () => {
-    const screen = ["screen_connect", "screen_open_rdp", "screen_password"];
+    const screen = ["screen_connect", "screen_open_rdp", "screen_password", "screen_sign_in"];
     for (const [set, allowed] of sets) {
       if (set !== "screen-window") expect(screen.filter((c) => allowed.has(c))).toEqual([]);
     }

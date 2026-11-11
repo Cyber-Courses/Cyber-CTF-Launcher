@@ -29,8 +29,8 @@ export function useCopy(text: string, { showFor, failure }: { showFor: number; f
 
 /** A value with a one-click copy. Shows a check for a moment after copying. `label` is what is
  *  displayed when it should differ from the copied `text` (e.g. show `:56235`, copy the full
- *  `http://127.0.0.1:56235`). `title` replaces the "Copy <text>" tooltip (a masked secret must
- *  not show in it). */
+ *  `http://127.0.0.1:56235`). `title` replaces the "Copy <text>" tooltip and names the button (a
+ *  masked secret must show in neither). */
 export function CopyValue({ text, label, title, className }: { text: string; label?: string; title?: string; className?: string }) {
   const t = useT();
   const { copied, copy } = useCopy(text, { showFor: 1200, failure: t("errors.clipboard") });
@@ -38,6 +38,7 @@ export function CopyValue({ text, label, title, className }: { text: string; lab
     <button
       type="button"
       title={title ?? t("ui.copy.title", { text })}
+      aria-label={title}
       onClick={copy}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-xs bg-glass px-1.5 py-0.5 font-mono text-[0.75rem] text-foreground shadow-[inset_0_0_0_1px_var(--border)] transition-colors hover:bg-glass-2",

@@ -51,7 +51,9 @@ You can come back to any step later from the **Machine** page.
 When the lab is up, its page shows the network and its machines, with the attack box among them.
 Select **Open attacker shell** for a terminal on it, inside the lab's network. The folder
 `~/CyberCTF/shared` on your computer is shared with the attack box: put tools in, take results
-out.
+out. Its **Credentials** row has its account, `player`, and a password made for that box: use them
+wherever the box asks you to sign in (its screen, `su`, SSH). `sudo` asks for no password. A
+desktop attack VM's Screen window has the same in its toolbar, under **Sign-in**.
 
 Solve the lab's objectives; your progress is saved to your Cyber CTF account.
 

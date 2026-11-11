@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { attackBoxDetach, attackBoxStatus, type AttackStatus, type Runtime } from "@/lib/tauri";
+import { attackBoxDetach, attackBoxSignIn, attackBoxStatus, type AttackStatus, type Runtime, type SignIn } from "@/lib/tauri";
 import { attackImageLabel, getAttackImage } from "@/lib/settings";
 import { attachAttackBox } from "@/features/labs/attack-box-attach";
 import { translate } from "@/lib/i18n";
-import { ignore } from "@/lib/failure";
+import { ignore, warn } from "@/lib/failure";
 import { usePoll } from "@/lib/use-poll";
 import { structurallyEqual } from "@/lib/equal";
 import { useLatest } from "@/lib/use-latest";
@@ -47,6 +47,28 @@ function useAttackBoxStatus(labId: string, runtime: Runtime, active: boolean) {
   return { status, setStatus, refresh };
 }
 
+/** How the player signs in to the box where it asks for a password (its screen, su, SSH), read
+ *  each time the box comes up (a box added again has a new password): null while it is down, or
+ *  when the launcher keeps no password for it. */
+function useAttackBoxSignIn(labId: string, up: boolean) {
+  const [read, setRead] = useState<{ labId: string; signIn: SignIn | null } | null>(null);
+  const key = up ? labId : null;
+  useEffect(() => {
+    if (key === null) return;
+    let live = true;
+    attackBoxSignIn(key)
+      .then((signIn) => {
+        if (live) setRead({ labId: key, signIn });
+      })
+      .catch(warn("the attack box's password couldn't be read"));
+    return () => {
+      live = false;
+      setRead(null);
+    };
+  }, [key]);
+  return read?.labId === key ? read.signIn : null;
+}
+
 /** An attach or detach of the box, with its streamed log; the status is read again after it. */
 function useAttackBoxRun(refresh: () => void) {
   const [busy, setBusy] = useState(false);
@@ -75,8 +97,9 @@ function useAttackBoxRun(refresh: () => void) {
  * (`vm`: a Kali VM among a lab running as VMs, a container lab run as one VM per machine included;
  * otherwise a container from the attack box image in Settings). The learner picks which lab
  * network to join when the backend offers more than one (`networks`: none when the lab declares
- * where the player sits), `defaultNetwork` until they do. `holding` = a lab operation (start,
- * shut down, stop…) is in flight: nothing is read or attached meanwhile.
+ * where the player sits), `defaultNetwork` until they do. `signIn` is how the player signs in to
+ * the running box where it asks for a password. `holding` = a lab operation (start, shut down,
+ * stop…) is in flight: nothing is read or attached meanwhile.
  */
 export function useAttackBox(labId: string, { running, holding = false, runtime }: { running: boolean; holding?: boolean; runtime: Runtime }) {
   const active = running && !holding;
@@ -105,7 +128,8 @@ export function useAttackBox(labId: string, { running, holding = false, runtime 
     [run, labId, runtime, setStatus],
   );
   const defaultNetwork = status?.defaultNetwork ?? "";
-  return { status, busy, log, start, stop, vm, name, networks: status?.networks ?? [], network, defaultNetwork, setNetwork };
+  const signIn = useAttackBoxSignIn(labId, !!status?.running);
+  return { status, busy, log, start, stop, vm, name, networks: status?.networks ?? [], network, defaultNetwork, setNetwork, signIn };
 }
 
 export type AttackBox = ReturnType<typeof useAttackBox>;

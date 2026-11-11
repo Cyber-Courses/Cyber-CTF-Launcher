@@ -283,7 +283,7 @@ mod tests {
         assert!(line.contains(&format!(" exec --user {PLAYER} {NAME} sh -c ")), "a container: exec as the account: {line}");
         let compose = std::fs::read_dir(&shell.cwd).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|x| x == "yml"));
         let compose: String = compose.map(|p| std::fs::read_to_string(p).unwrap()).collect();
-        assert!(compose.contains(&format!("account={PLAYER} shared=/shared sh -c")), "the box makes its account where it starts: {compose}");
+        assert!(compose.contains(&format!("account={PLAYER} shared=/shared password_hash=")), "the box makes its account where it starts: {compose}");
 
         let dir = lab("os: debian@12");
         super::super::add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, None).unwrap();

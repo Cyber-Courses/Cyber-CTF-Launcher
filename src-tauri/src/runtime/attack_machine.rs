@@ -6,13 +6,16 @@
 //! the lab's first network. What it runs is the launcher's: the attack image picked in Settings
 //! ([`default_image`] unless the learner picked another) beside containers, Kali with its toolset
 //! among VMs. On every form the player works as [`PLAYER`], an account of the box with sudo (its
-//! shell opens as it). Where the lab runs, and how the box goes in and out of its run: [`locate`],
-//! [`Placed`]; the box as the lab page shows it: [`AttackStatus`].
+//! shell opens as it) and a password of the box's own for wherever the box asks for one (its
+//! screen, `su`, SSH): [`mod@sign_in`]. Where the lab runs, and how the box goes in and out of its
+//! run: [`locate`], [`Placed`]; the box as the lab page shows it: [`AttackStatus`].
 
 mod place;
+mod sign_in;
 mod status;
 
 pub(crate) use place::{Pick, Placed, locate};
+pub use sign_in::SignIn;
 pub(crate) use status::AttackStatus;
 
 use std::path::Path;
@@ -26,20 +29,29 @@ use crate::error::{Error, Result};
 pub(crate) const NAME: &str = "attackbox";
 
 /// The account the player works as in the box, whatever its form: its shell opens as it, in its
-/// home, with sudo and no password. The box makes it ([`PLAYER_ACCOUNT`]); the attack box image has
-/// it already (`images/attack-box/Dockerfile`, which a test holds to this name).
+/// home, with sudo that asks no password, and a password of its box's own ([`mod@sign_in`]) where
+/// something else asks (the screen locker, a login, `su`, SSH). The box makes it
+/// ([`PLAYER_ACCOUNT`]); the attack box image has it already (`images/attack-box/Dockerfile`,
+/// which a test holds to this name), without a password.
 pub(crate) const PLAYER: &str = "player";
 
-/// The script that makes [`PLAYER`] in the box, as root, where it is missing, and lets it write in
-/// the shared folder: the image's build runs it, and the launcher where the box starts or is set
-/// up ([`player_account`]).
+/// The script that makes [`PLAYER`] in the box, as root, where it is missing, lets it write in
+/// the shared folder and gives it its password: the image's build runs it, and the launcher where
+/// the box starts or is set up ([`player_account`]).
 const PLAYER_ACCOUNT: &str = include_str!("../../../images/attack-box/player-account.sh");
 
-/// [`PLAYER_ACCOUNT`] for [`PLAYER`], with the shared folder at its mount point: one `sh -c`
-/// command, the script's comments and blank lines left out.
+/// [`PLAYER_ACCOUNT`] for [`PLAYER`], with the shared folder at its mount point and its password's
+/// hash in the box's root-only file ([`sign_in::HASH_FILE`], which the box's spec places): one
+/// `sh -c` command, the script's comments and blank lines left out. The command names the file,
+/// never the password nor its hash: the script hands the hash to `chpasswd` on its standard input.
 fn player_account() -> String {
     let script: Vec<&str> = PLAYER_ACCOUNT.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')).collect();
-    format!("account={PLAYER} shared={} sh -c {}", crate::shared_folder::MOUNT_POINT, shell_words::quote(&script.join("\n")))
+    format!(
+        "account={PLAYER} shared={} password_hash={} sh -c {}",
+        crate::shared_folder::MOUNT_POINT,
+        sign_in::HASH_FILE,
+        shell_words::quote(&script.join("\n"))
+    )
 }
 
 /// What a container box runs: [`player_account`] (a box whose image predates the account gets it;
@@ -124,18 +136,41 @@ const DISK_GB: u32 = 40;
 
 /// What a box with a desktop adds to its set-up, once the player's account is in: Kali's XFCE
 /// desktop (about 1 GB to download, 3 GB on its disk) and `LightDM` signing [`PLAYER`] in, so its
-/// screen (the lab page's Screen) shows the player's desktop. The account and its sudo rules stay
-/// as [`PLAYER_ACCOUNT`] makes them.
-const DESKTOP: &str = r"apt-get install -y $keep kali-desktop-xfce lightdm
-# LightDM signs the player in to XFCE, on the VM's own screen.
+/// screen (the lab page's Screen) shows the player's desktop; and no screen lock: neither of
+/// Kali's lockers starts for the player, and the session never blanks the screen nor locks it
+/// (idle, on suspend, on a switch of user), so the player isn't locked out mid-exercise. The
+/// account, its sudo rules and its password stay as [`PLAYER_ACCOUNT`] makes them: `LightDM`'s login
+/// after a logout takes that password, as would a locker started by hand.
+const DESKTOP: &str = r#"apt-get install -y $keep kali-desktop-xfce lightdm
+# LightDM signs the player in to XFCE, on the VM's own screen; its X server never blanks it.
 mkdir -p /etc/lightdm/lightdm.conf.d
-printf '[Seat:*]\nautologin-user=player\nautologin-user-timeout=0\nautologin-session=xfce\nuser-session=xfce\n' > /etc/lightdm/lightdm.conf.d/50-cyberctf-autologin.conf
+printf '[Seat:*]\nautologin-user=player\nautologin-user-timeout=0\nautologin-session=xfce\nuser-session=xfce\nxserver-command=X -s 0 -dpms\n' > /etc/lightdm/lightdm.conf.d/50-cyberctf-autologin.conf
 groupadd -f -r autologin
 usermod -a -G autologin player
+# No screen lock: Kali's lockers don't start for the player, and at each sign-in the session
+# turns off blanking, the screensaver's lock, the power manager's and the session's own.
+mkdir -p /home/player/.config/autostart
+for locker in light-locker xfce4-screensaver; do
+  printf '[Desktop Entry]\nHidden=true\n' > "/home/player/.config/autostart/$locker.desktop"
+done
+chown -R player: /home/player/.config
+cat > /usr/local/bin/cyberctf-no-screen-lock <<'NOLOCK'
+#!/bin/sh
+xset s off -dpms
+off() { xfconf-query -c "$1" -p "$2" -n -t bool -s false; }
+off xfce4-screensaver /saver/enabled
+off xfce4-screensaver /lock/enabled
+off xfce4-power-manager /xfce4-power-manager/dpms-enabled
+off xfce4-power-manager /xfce4-power-manager/lock-screen-suspend-hibernate
+off xfce4-session /shutdown/LockScreen
+exit 0
+NOLOCK
+chmod 0755 /usr/local/bin/cyberctf-no-screen-lock
+printf '[Desktop Entry]\nType=Application\nName=No screen lock\nExec=/usr/local/bin/cyberctf-no-screen-lock\nNoDisplay=true\n' > /etc/xdg/autostart/cyberctf-no-screen-lock.desktop
 systemctl set-default graphical.target
 systemctl enable lightdm
 systemctl restart lightdm
-";
+"#;
 
 /// The memory (MB) and CPUs a box with a desktop gets: XFCE beside Kali's tools wants more than a
 /// VM's default.
@@ -242,7 +277,8 @@ pub(crate) fn networks(dir: &Path) -> Result<Networks> {
 }
 
 /// Adds the box to the lab in `dir` as `kind`, at its seat ([`seat`]; `network` is the player's
-/// pick when the lab declares none).
+/// pick when the lab declares none), with a new password for its player account ([`mod@sign_in`]):
+/// kept by the launcher, its hash placed in the box for its set-up.
 pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, shared: Option<&Path>) -> Result<()> {
     let Seat { name, networks, replaces } = seat(&lab::load(dir)?, network)?;
     let networks = networks.iter().map(|(n, o)| format!("{n:?}: {o}")).collect::<Vec<_>>().join(", ");
@@ -271,15 +307,35 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
     if let (Kind::Container { .. }, Value::Mapping(m)) = (kind, &mut machine) {
         m.insert("command".into(), container_command().into());
     }
-    overlay::add_machine(dir, &name, machine, overlay::Adding { replaces, attack_box: true })
+    if let Value::Mapping(m) = &mut machine {
+        m.insert("files".into(), Value::Sequence(vec![sign_in::hash_file(&sign_in::new(dir)?)]));
+    }
+    let added = overlay::add_machine(dir, &name, machine, overlay::Adding { replaces, attack_box: true });
+    if added.is_err() {
+        sign_in::forget(dir);
+    }
+    added
 }
 
-/// Takes the box out of the lab in `dir` (a lab's own access machine it stood in for comes back).
+/// Takes the box out of the lab in `dir` (a lab's own access machine it stood in for comes back),
+/// its password forgotten.
 pub(crate) fn remove(dir: &Path) -> Result<()> {
     if let Some(name) = overlay::attack_box(dir)? {
         overlay::remove_machine(dir, &name)?;
+        sign_in::forget(dir);
     }
     Ok(crate::platform::fs::remove_if_present(&dir.join(SETUP_FILE))?)
+}
+
+/// How the player signs in to the box of the lab in `dir` where it asks: [`PLAYER`] and the
+/// password the launcher keeps for it. None when the lab has no box, when `machine` (a screen
+/// window's) isn't the box, or when the launcher keeps no password for it.
+pub(crate) fn sign_in(dir: &Path, machine: Option<&str>) -> Result<Option<SignIn>> {
+    let Some(name) = overlay::attack_box(dir)? else { return Ok(None) };
+    if machine.is_some_and(|m| m != name) {
+        return Ok(None);
+    }
+    Ok(sign_in::kept(dir)?.map(|password| SignIn { user: PLAYER.to_owned(), password }))
 }
 
 /// The lab's status with its attack box set apart: the box has its own status and panel, and
@@ -457,7 +513,7 @@ mod tests {
         // the box had no account of the player's.
         let script = setup_script(false);
         let toolset = script.find("install -y $keep kali-linux-headless").unwrap();
-        let account = script.find(&format!("account={PLAYER} shared={} sh -c ", crate::shared_folder::MOUNT_POINT)).unwrap();
+        let account = script.find(&format!("account={PLAYER} shared={} password_hash=", crate::shared_folder::MOUNT_POINT)).unwrap();
         assert!(toolset < account, "sudo is in before the account is given it: {script}");
         assert!(script.contains("NOPASSWD: ALL") && script.contains("--create-home"), "{script}");
         assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
@@ -512,6 +568,91 @@ mod tests {
         let smoke = std::fs::read_to_string(image.join("smoke-test.sh")).unwrap();
         assert!(smoke.contains(&format!("\nplayer={PLAYER}\n")), "{smoke}");
         assert!(smoke.contains(r#"[ "$(docker exec --user "$player" "$name" whoami)" = "$player" ]"#), "{smoke}");
+    }
+
+    /// Every file under `dir`, read as text (one that isn't text read as empty).
+    fn every_file(dir: &Path) -> String {
+        let mut text = String::new();
+        let mut todo = vec![dir.to_path_buf()];
+        while let Some(d) = todo.pop() {
+            for path in std::fs::read_dir(&d).unwrap().map(|e| e.unwrap().path()) {
+                if path.is_dir() {
+                    todo.push(path);
+                } else {
+                    text.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+                }
+            }
+        }
+        text
+    }
+
+    #[test]
+    fn each_box_gets_its_own_password_its_hash_in_a_root_only_file_never_on_a_command_line() {
+        // The set-up reads the hash from the file into chpasswd's standard input: the command
+        // that runs it names the file only, so neither the password nor its hash shows in `ps`.
+        let script = PLAYER_ACCOUNT;
+        assert!(script.contains(r#"{ printf '%s:' "$account"; cat "$password_hash"; } | chpasswd -e"#), "{script}");
+        assert!(player_account().contains(&format!(" password_hash={} sh -c ", sign_in::HASH_FILE)), "{}", player_account());
+        let mut seen = Vec::new();
+        // Generated for every target the box goes to: the file is placed on each.
+        let containers = [lab::Target::Docker, lab::Target::DockerVm, lab::Target::CloudDocker];
+        let vms = [lab::Target::Vagrant, lab::Target::CloudVm];
+        for (kind, targets) in [(Kind::Container { image: "kalilinux/kali-rolling" }, &containers[..]), (Kind::Vm { desktop: true }, &vms[..])] {
+            let dir = web_lab();
+            add_at(&dir, kind, Cpu::Lab, None).unwrap();
+            let SignIn { user, password } = sign_in(&dir, None).unwrap().expect("a password kept for the box");
+            assert_eq!(user, PLAYER);
+            let files = layer_machine(&dir)["files"].clone();
+            let [file] = files.as_sequence().unwrap().as_slice() else { panic!("{files:?}") };
+            assert_eq!((file["path"].as_str(), file["mode"].as_str()), (Some(sign_in::HASH_FILE), Some("0400")), "root's only: {file:?}");
+            let hash = file["content"].as_str().unwrap().trim_end().to_owned();
+            assert!(hash.starts_with("$6$") && !hash.contains(&password), "{kind:?}: a SHA-512 crypt hash, not the password");
+            let setup = match kind {
+                Kind::Container { .. } => layer_machine(&dir)["command"].as_str().unwrap().to_owned(),
+                Kind::Vm { .. } => std::fs::read_to_string(dir.join(SETUP_FILE)).unwrap(),
+            };
+            assert!(setup.contains(&player_account()), "{kind:?}: the set-up gives the account its password");
+            assert!(!setup.contains(&password) && !setup.contains(&hash), "{kind:?}: neither on its command line");
+            for target in targets {
+                lab::prepare(&dir, *target).unwrap_or_else(|e| panic!("{kind:?} on {target:?}: {e}"));
+            }
+            let everything = every_file(&dir);
+            assert!(!everything.contains(&password), "{kind:?}: the password is in none of the lab's files");
+            seen.push(password);
+            remove(&dir).unwrap();
+            assert_eq!(sign_in(&dir, None).unwrap(), None, "{kind:?}: forgotten with the box");
+        }
+        assert_ne!(seen[0], seen[1], "one password per box");
+    }
+
+    #[test]
+    fn a_screen_window_gets_the_sign_in_of_the_box_alone() {
+        let dir = web_lab();
+        assert_eq!(sign_in(&dir, None).unwrap(), None, "no box, no sign-in");
+        add_at(&dir, Kind::Vm { desktop: true }, Cpu::Lab, None).unwrap();
+        assert!(sign_in(&dir, Some(NAME)).unwrap().is_some(), "the box's screen");
+        assert_eq!(sign_in(&dir, Some("web")).unwrap(), None, "a target's screen: not the box's password");
+        remove(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_desktop_box_never_locks_its_screen() {
+        let script = setup_script(true);
+        for off in [
+            "xserver-command=X -s 0 -dpms",
+            "for locker in light-locker xfce4-screensaver",
+            "Hidden=true",
+            "xset s off -dpms",
+            "off xfce4-screensaver /lock/enabled",
+            "off xfce4-power-manager /xfce4-power-manager/lock-screen-suspend-hibernate",
+            "off xfce4-session /shutdown/LockScreen",
+            "/etc/xdg/autostart/cyberctf-no-screen-lock.desktop",
+        ] {
+            assert!(script.contains(off), "{off}: {script}");
+        }
+        assert!(DESKTOP.contains(&format!("/home/{PLAYER}/.config/autostart")), "the launcher's player account");
+        assert!(crate::platform::sh_parses(&script), "not valid sh: {script}");
+        assert!(!setup_script(false).contains("no-screen-lock"), "a headless box has no screen to lock");
     }
 
     #[test]

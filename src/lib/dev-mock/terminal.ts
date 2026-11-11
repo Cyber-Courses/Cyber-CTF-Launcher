@@ -109,4 +109,5 @@ export const screenHandlers: Record<string, BrowserHandler> = {
   }),
   screen_open_rdp: () => null,
   screen_password: () => "dev-mock-password",
+  screen_sign_in: () => ({ user: "player", password: "dev-mock-password" }),
 };

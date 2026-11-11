@@ -66,6 +66,22 @@ virtiofs), the account takes that user's uid, and it joins the folder's group (a
 folder mounted for `vagrant`), so it writes there as that user or group may. Root stays the
 image's own user.
 
+The account also has a password, for wherever the box asks for one: a desktop box's screen locker
+or LightDM's login after a logout, a VM's console login on its Screen, `su`, SSH where the box's
+`sshd` takes passwords. The launcher makes a new one each time it adds a box
+(`attack_machine/sign_in.rs`): 20 random characters of lowercase letters and digits without
+look-alikes, in four groups (`k7mpq-zrt4w-hn8xc-ls2vd`, 100 bits). It keeps it with its other
+secrets (the OS keychain, `attack-box:<lab>`; a 0600 file in a dev build), registers it with the
+log redaction, and forgets it when the box is taken out. The box gets only its SHA-512 crypt hash,
+as a root-only file of its spec (`files: [{ path: /etc/cyberctf/player-password, content, mode:
+"0400" }]`, a Compose config for a container, Isoloom's files step before a VM's set-up), which
+`player-account.sh` hands to `chpasswd -e` on its standard input: the password is in none of the
+lab's or the run's files, and neither it nor its hash is on a command line. A container box sets
+it at each start, as it makes the account. The lab page shows it in the attack box's
+**Credentials** row (masked until **Show**, copied with a click), and the box's Screen window in
+its toolbar's **Sign-in** popover (`attack_box_sign_in`, `screen_sign_in`). Sudo still asks for
+none. A box added before this has no password, and no Credentials row.
+
 | Form               | The box                                                                                                                                                   |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Containers         | a container from the attack image picked in Settings, on the lab's network                                                                                |
@@ -82,8 +98,13 @@ features (`.cyberctf-overlay.yml`, update, retire, the console).
 A VM box runs headless unless Settings choose its desktop (Settings, Attack box, "Attack VM
 desktop"): its set-up then installs Kali's XFCE desktop and LightDM, which signs `player` in
 (about 1 GB more to download, 3 GB more on its disk), and the VM gets 4 GB of memory and 2 CPUs.
-Its Screen shows that desktop. The `player` account and its sudo rule stay as they are. A
-container box is always headless: no desktop is offered for it.
+Its Screen shows that desktop. The `player` account, its sudo rule and its password stay as they
+are. The desktop never locks the player out: neither of Kali's screen lockers (`light-locker`,
+`xfce4-screensaver`) starts for `player`, the X server never blanks the screen, and at each
+sign-in the session turns off the screensaver's lock, the power manager's lock on suspend and the
+session's lock on a switch of user (`/usr/local/bin/cyberctf-no-screen-lock`). Should a prompt
+still show (a logout, a locker started by hand), the password takes it. A container box is
+always headless: no desktop is offered for it.
 
 ## A machine's screen
 

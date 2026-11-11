@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
 import { CopyValue } from "@/components/ui/copy-value";
+import { SecretValue } from "@/components/ui/secret-value";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { labCloudPreview, type CloudPreview, type LabOutput } from "@/lib/tauri";
@@ -78,23 +78,18 @@ export function CloudLaunchNote({ read, autoStopHours }: { read: CloudPreviewRea
 /** One output: copyable, a secret masked until asked. */
 function OutputRow({ output }: { output: LabOutput }) {
   const t = useT();
-  const [shown, setShown] = useState(!output.sensitive);
+  const { name, value } = output;
   return (
     <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-[0.8125rem] first:border-t-0">
-      <span className="shrink-0 font-mono text-[0.75rem] text-muted-foreground">{output.name}</span>
+      <span className="shrink-0 font-mono text-[0.75rem] text-muted-foreground">{name}</span>
       <span className="flex min-w-0 items-center gap-1.5">
-        <CopyValue text={output.value} label={shown ? undefined : "••••••••"} title={shown ? undefined : t("labs.cloud.copySecret", { name: output.name })} />
-        {output.sensitive && (
-          <button
-            type="button"
-            onClick={() => {
-              setShown((s) => !s);
-            }}
-            className="text-faint transition-colors hover:text-foreground"
-            aria-label={t(shown ? "labs.cloud.hide" : "labs.cloud.show", { name: output.name })}
-          >
-            {shown ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-          </button>
+        {output.sensitive ? (
+          <SecretValue
+            text={value}
+            labels={{ show: t("labs.cloud.show", { name }), hide: t("labs.cloud.hide", { name }), copy: t("labs.cloud.copySecret", { name }) }}
+          />
+        ) : (
+          <CopyValue text={value} />
         )}
       </span>
     </div>

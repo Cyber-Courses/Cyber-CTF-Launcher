@@ -3,15 +3,19 @@
 # login shell and sudo without a password. Where the shared folder ("$shared", mounted from the
 # computer running the lab) belongs to a user the box doesn't have, the account takes that user's
 # uid, and it joins the folder's group: the player writes there as that computer's user does.
+# Where the launcher gave the account a password, "$password_hash" is a root-only file holding its
+# crypt(3) hash: handed to chpasswd on its standard input, so neither the password nor its hash is
+# ever on a command line. The screen locker, a login, su and SSH take that password; sudo asks none.
 #
 # Run when the image is built (no shared folder then), at each start of a container box (its image
 # may predate the account, or the folder's owner may differ from the image's), and once when a VM
 # box is set up. The launcher names the account (`attack_machine::PLAYER`) and the folder.
 #
-#   account=<name> [shared=<folder>] sh player-account.sh
+#   account=<name> [shared=<folder>] [password_hash=<file>] sh player-account.sh
 set -e
 : "${account:?the account to make}"
 shared=${shared:-}
+password_hash=${password_hash:-}
 
 owner=0
 group=0
@@ -47,3 +51,7 @@ fi
 mkdir -p /etc/sudoers.d
 echo "$account ALL=(ALL:ALL) NOPASSWD: ALL" > "/etc/sudoers.d/$account"
 chmod 0440 "/etc/sudoers.d/$account"
+
+if [ -n "$password_hash" ] && [ -s "$password_hash" ]; then
+  { printf '%s:' "$account"; cat "$password_hash"; } | chpasswd -e || echo "player-account: $account's password couldn't be set" >&2
+fi

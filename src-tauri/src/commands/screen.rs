@@ -1,6 +1,6 @@
 //! A lab machine's screen window's commands: the main window opens one, the window asks for its
-//! machine's console (VNC shown in it through its bridge; RDP opened in the system's client) and
-//! the RDP account's password, copied on request.
+//! machine's console (VNC shown in it through its bridge; RDP opened in the system's client), the
+//! RDP account's password, copied on request, and the attack box's sign-in where its screen asks.
 
 use tauri::Manager;
 
@@ -48,6 +48,16 @@ pub fn screen_password(window: WebviewWindow) -> Result<String> {
     screen::password(window.label())
 }
 
+/// How the player signs in to this window's machine where its screen asks (the screen locker,
+/// `LightDM`'s or the console's login), when it is the lab's attack box: its account and the
+/// password the launcher keeps for it. None for any other machine.
+#[tauri::command]
+pub fn screen_sign_in(window: WebviewWindow) -> Result<Option<crate::runtime::attack_machine::SignIn>> {
+    let which = screen::which(window.label())?;
+    let dir = paths::lab_dir(&AppDirs::from(window.app_handle()), &which.id)?;
+    crate::runtime::attack_machine::sign_in(&dir, Some(&which.machine))
+}
+
 /// The system's Remote Desktop client, when this computer has one.
 fn client() -> Option<rdp::Client> {
     let home = crate::platform::home_dir();
@@ -86,6 +96,31 @@ mod tests {
         let tools = crate::platform::exec::fake::Tools::rules(&[]);
         assert!(screen_open_rdp(w).is_err());
         assert_eq!(tools.calls(), Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn the_attack_box_screen_alone_gets_its_sign_in() {
+        use crate::runtime::attack_machine::{self, Cpu, Kind, NAME, PLAYER};
+        let t = TestApp::new();
+        let spec = "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n";
+        let dir = t.lab("signin", &[("isoloom.yml", spec)]);
+        attack_machine::add(&dir, Kind::Vm { desktop: true }, Cpu::Lab, None, None).unwrap();
+        let app = t.handle();
+        let sign_in = |machine: &str| {
+            let label = format!("screen-signin:{machine}");
+            let which = crate::screen::Which { id: "signin".into(), runtime: Runtime::Vm, machine: machine.into() };
+            async move {
+                window::open_screen(app, which, "Sign in").await.unwrap();
+                let got = screen_sign_in(app.get_webview_window(&label).unwrap());
+                crate::screen::close(&label);
+                got
+            }
+        };
+        let box_screen = sign_in(NAME).await.unwrap().expect("the box's sign-in");
+        assert_eq!(box_screen.user, PLAYER);
+        assert_eq!(Some(box_screen), attack_machine::sign_in(&dir, None).unwrap(), "the password the launcher keeps");
+        assert_eq!(sign_in("web").await.unwrap(), None, "a target's screen gets none");
+        attack_machine::remove(&dir).unwrap();
     }
 
     #[tokio::test]

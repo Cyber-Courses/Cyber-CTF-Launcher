@@ -238,7 +238,12 @@
     "start": "Start attack box",
     "attaching": "Starting the attack box…",
     "removing": "Removing the attack box…",
-    "autoAttachFailed": "The attack box couldn't be added with the lab"
+    "autoAttachFailed": "The attack box couldn't be added with the lab",
+    "credentials": "Credentials",
+    "credentialsHint": "Sign in as {user} with this password wherever the box asks for one: its screen, su, SSH. sudo asks for none.",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "copyPassword": "Copy password"
   },
   "actions": {
     "labRunning": "✓ Lab is running",

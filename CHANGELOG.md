@@ -8,6 +8,17 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **The attack box's credentials, on the lab page and its screen.** The box's `player` account
+  now has a password, made by the launcher for each box it adds (20 random lowercase letters and
+  digits without look-alikes, in four groups), so a prompt no longer leaves the player stuck: a
+  desktop box's screen locker or login after a logout, a VM's console login, `su`, SSH. The lab
+  page's attack box card has a **Credentials** row (`player` and the password, masked until
+  **Show**, copied with a click), and the box's Screen window a **Sign-in** popover in its toolbar.
+  The password is kept in the OS keychain (`attack-box:<lab>`), forgotten with the box, and
+  redacted from the logs; the box gets only its SHA-512 crypt hash, in a root-only file its set-up
+  hands to `chpasswd` on standard input, never on a command line. `sudo` still asks for none. A box
+  added before this has no password and shows no row.
+
 - **A lab machine's screen, in its own window.** The lab page's Screens list each VM whose run
   offers a graphical console, with a Screen button (and why one has none: Parallels, VirtualBox
   without its extension pack, a cloud Linux VM), and the attack box's card has one. A VNC screen
@@ -108,6 +119,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   attack box among VMs is now always Kali, made by the launcher.
 
 ### Changed
+
+- **A desktop attack VM never locks its screen.** Kali's screen lockers don't start for `player`,
+  the screen never blanks, and the session doesn't lock on suspend or a switch of user, so the
+  player isn't locked out mid-exercise; a login prompt that still shows takes the box's password.
 
 - **A Windows lab with a flag or another input runs on no cloud.** Isoloom sets a Windows
   machine in the cloud up during Terraform's apply, before the runner delivers its inputs, so AWS
