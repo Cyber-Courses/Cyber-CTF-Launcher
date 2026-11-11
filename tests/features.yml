@@ -881,7 +881,8 @@ areas:
             - src/features/failure-states.test.tsx > offers no random-ports retry when the clash was a VM here
           web:
             - "coded-errors.spec.ts > a port in use: the port named, the hint, and Retry with random ports starts the lab"
-            - persistence.spec.ts > the lab ports picked in Settings are the start dialog
+            - persistence.spec.ts > the lab ports picked in Settings are what a start uses
+            - lab-flow.spec.ts > search, open, start, watch the steps, open the shell, stop
             - lab-flow.spec.ts > a failed start shows the error, and starting again works
         gaps:
           integration: no scenario provokes a real port clash; lsof/ss parsing only unit-tested on canned output, Windows holder lookup untested
@@ -2014,7 +2015,6 @@ areas:
             - src/features/machine/machine-screen.test.tsx > re-reads the machine when the window regains focus
           web:
             - resilience.spec.ts > is said where the report is needed, and Try again recovers
-            - persistence.spec.ts > the Health and Setup views switch, and the setup checklist says what is done
             - persistence.spec.ts > a fresh Windows machine lists what to set up
             - failures.spec.ts > a failed machine check offers Try again
           desktop:
@@ -2251,7 +2251,8 @@ areas:
             - src/features/machine/machine-screen.test.tsx > runs on demand, ticks its steps and records a pass
             - src/features/machine/setup-steps/setup-steps.test.tsx > prefetches each test
           web:
-            - "machine-setup.spec.ts > a ready machine: every step from the Machine page"
+            - "machine-setup.spec.ts > a ready machine: each lab type's path starts where the machine stands"
+            - "machine-setup.spec.ts > a fresh Mac: container labs install their engine, then test it"
           desktop:
             - machine/container-test
           setup:
@@ -2321,6 +2322,7 @@ areas:
             - src/features/machine/machine-interaction.test.tsx > says so when the setup window can
           web:
             - machine-setup.spec.ts > Fix opens the window at its step, a later Fix jumps there
+            - persistence.spec.ts > a fresh Windows machine lists what to set up
           desktop:
             - machine/add-provider
             - machine/guided-open
@@ -2362,7 +2364,7 @@ areas:
             - src/features/machine/step-boundary.test.tsx
             - src/features/machine/machine-interaction.test.tsx > holds Back and Continue while a self-test runs on its step
           web:
-            - "machine-setup.spec.ts > a ready machine: every step from the Machine page"
+            - "machine-setup.spec.ts > a ready machine: each lab type's path starts where the machine stands"
             - resilience.spec.ts > Settings and the setup windows at their minimum sizes
           desktop:
             - machine/guided-open
@@ -2464,6 +2466,7 @@ areas:
             - src/features/settings/settings-rows.test.tsx > installs a missing Vagrant add-on, streaming its log, then re-checks
           web:
             - "machine-setup.spec.ts > a fresh Mac: the package manager is detected"
+            - machine-setup.spec.ts > Fix opens the window at its step, a later Fix jumps there, and a failed install says why
           integration:
             - setup
           setup:
@@ -2586,7 +2589,7 @@ areas:
             - src/features/machine/setup-steps/follows-the-plan.test.tsx > installs the engine the plan installs, starts the one it starts
             - src/features/machine/setup-steps/setup-steps.test.tsx > installs the recommended engine, then asks to finish in its installer
           web:
-            - machine-setup.spec.ts > Fix opens the window at its step, a later Fix jumps there, and a failed install says why
+            - "machine-setup.spec.ts > a fresh Mac: container labs install their engine, then test it"
           integration:
             - setup
           setup:
@@ -2801,6 +2804,7 @@ areas:
             - src/features/machine/setup-steps/follows-the-plan.test.tsx
           web:
             - "machine-setup.spec.ts > a fresh Mac: the package manager is detected, then each install streams"
+            - "machine-setup.spec.ts > a fresh Mac: container labs install their engine, then test it"
           integration:
             - setup
           setup:
@@ -3501,7 +3505,7 @@ areas:
           - desktop-e2e
 
       - id: settings.lab-ports
-        what: Choose how labs take host ports (default, random, ask) in Settings > Labs; the start dialog then uses it as its default.
+        what: Choose how labs take host ports (default, random, ask) in Settings > Labs; a start then uses it without asking.
         host: false
         pages:
           - settings:labs
@@ -3512,7 +3516,7 @@ areas:
             - src/features/labs/use-lab-actions.test.tsx > uses the port mode remembered in Settings without asking
             - src/lib/lib.test.ts > reads only known port modes
           web:
-            - persistence.spec.ts > the lab ports picked in Settings are the start dialog's default
+            - persistence.spec.ts > the lab ports picked in Settings are what a start uses, without asking
             - persistence.spec.ts > the Saved mark is only there after a change
         gaps:
           desktop: not set in the desktop specs
