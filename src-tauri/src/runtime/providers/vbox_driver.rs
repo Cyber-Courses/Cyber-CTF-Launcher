@@ -11,7 +11,7 @@ use super::Unavailable;
 /// Why VirtualBox's kernel driver doesn't run on this machine; None when it is loaded, off Linux,
 /// or when it can't be told (`/proc` unreadable).
 pub(super) fn problem() -> Option<Unavailable> {
-    if !cfg!(target_os = "linux") {
+    if !cfg!(target_os = "linux") || super::kvm::devices_assumed_ready() {
         return None;
     }
     let modules = std::fs::read_to_string("/proc/modules").ok()?;

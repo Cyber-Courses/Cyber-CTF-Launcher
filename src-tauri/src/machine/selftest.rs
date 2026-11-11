@@ -239,6 +239,9 @@ mod tests {
     #[tokio::test]
     async fn the_vm_test_boots_pings_and_deletes_a_vm() {
         use crate::platform::exec::fake::{Tools, ok};
+        // The hypervisors are the fakes': this host's /dev/kvm and VirtualBox driver don't count
+        // (a Linux CI runner has neither usable).
+        crate::runtime::providers::assume_devices_ready();
         let t = crate::testing::test_app::TestApp::new();
         let boxes = "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\ngeneric/alpine319 (libvirt, 4.3.12)\nbento/debian-12 (parallels, 1)\nbento/debian-12 (vmware_desktop, 1)\ngeneric/alpine319 (qemu, 1)\ngeneric/alpine319 (hyperv, 1)\nutm/bookworm (utm, 1)\n";
         let tools = Tools::new(move |program, args| match (program, args) {

@@ -302,10 +302,10 @@ mod unavailable;
 mod vbox_driver;
 pub use unavailable::Unavailable;
 mod kvm;
-#[cfg(test)]
-pub(crate) use kvm::kvm_group;
 pub(crate) use kvm::kvm_problem;
 use kvm::new_login_group;
+#[cfg(test)]
+pub(crate) use kvm::{assume_devices_ready, kvm_group};
 pub use kvm::{login_groups, uses_kvm};
 
 /// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.

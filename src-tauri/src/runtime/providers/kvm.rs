@@ -8,6 +8,9 @@ use super::{Provider, Unavailable};
 /// vagrant-qemu boot KVM guests (QEMU with `accel=kvm`, as every lab asks on Linux), so they need
 /// `/dev/kvm`, and the player must be allowed to open it.
 pub(crate) fn kvm_problem() -> Option<Unavailable> {
+    if devices_assumed_ready() {
+        return None;
+    }
     let dev = std::path::Path::new(KVM_DEVICE);
     if !dev.exists() {
         return Some(Unavailable::NoKvm);
@@ -20,6 +23,33 @@ pub(crate) fn kvm_problem() -> Option<Unavailable> {
 
 /// The KVM device.
 const KVM_DEVICE: &str = "/dev/kvm";
+
+#[cfg(test)]
+thread_local! {
+    /// A test's word that this host's devices (`/dev/kvm`, VirtualBox's driver) are usable.
+    static DEVICES_READY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// For a test whose hypervisors are fakes (the tools answer as told): takes this host's devices
+/// (`/dev/kvm`, VirtualBox's driver) as usable on the test's thread, whatever the machine running
+/// the tests has (a CI runner's `/dev/kvm` is often root's alone, and no driver is loaded).
+#[cfg(test)]
+pub(crate) fn assume_devices_ready() {
+    DEVICES_READY.with(|ready| ready.set(true));
+}
+
+/// Whether a test said this host's devices are usable ([`assume_devices_ready`]); never outside
+/// the tests.
+pub(super) fn devices_assumed_ready() -> bool {
+    #[cfg(test)]
+    {
+        DEVICES_READY.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        false
+    }
+}
 
 /// The group a player joins to open `/dev/kvm`: the one it belongs to (`kvm` wherever a
 /// distribution makes it `0660`), else `kvm`, the name every distribution gives it.
