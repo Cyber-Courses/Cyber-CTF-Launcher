@@ -158,3 +158,14 @@ tauri = { version = "2.12.0", features = ["test"] }
 isothrum-runner = { version = "2.0.0", features = ["fake"] }
 # A test's temp folder, removed when it drops, a failed test's too (`testing::temp_dir`).
 tempfile = "3"
+
+# The test rig's prebuilt set (the workspace's rig/lib/ci/prebuilt.py builds with --profile rig):
+# release behaviour, built fast: no LTO, many codegen units, no debug info, opt-level 2. The rig
+# tests what the app does, not how fast its binary is; a release stays `release`.
+[profile.rig]
+inherits = "release"
+lto = false
+codegen-units = 16
+debug = 0
+incremental = false
+opt-level = 2
