@@ -327,6 +327,18 @@ pub(crate) fn remove(dir: &Path) -> Result<()> {
     Ok(crate::platform::fs::remove_if_present(&dir.join(SETUP_FILE))?)
 }
 
+/// Deletes the password kept for the box of the lab in `dir`, whether or not the box is in the lab
+/// now: the lab itself is being removed, and its keychain entry must not outlive it. None kept, or
+/// no keychain here at all, is deleted already; a store that refuses (a locked keychain) says why.
+pub(crate) fn forget_password(dir: &Path) -> Result<()> {
+    sign_in::delete(dir)
+}
+
+/// The name the password of the box of the lab in `dir` is kept under (`attack-box:<lab id>`).
+pub(crate) fn password_entry(dir: &Path) -> String {
+    sign_in::entry(dir)
+}
+
 /// How the player signs in to the box of the lab in `dir` where it asks: [`PLAYER`] and the
 /// password the launcher keeps for it. None when the lab has no box, when `machine` (a screen
 /// window's) isn't the box, or when the launcher keeps no password for it.

@@ -475,7 +475,7 @@
     "removed": "{title} removido",
     "removedImported": "A pasta de onde você o importou não foi alterada.",
     "partialTitle": "{title} removido, mas alguns arquivos ficaram",
-    "partialBody": "O Cyber CTF não conseguiu apagá-los, talvez porque outro programa os mantém abertos. Feche-o e apague-os manualmente:\n\n{paths}",
+    "partialBody": "O Cyber CTF não conseguiu apagar estes itens (um arquivo que outro programa mantém aberto, um chaveiro bloqueado). Você pode apagá-los manualmente:\n\n{paths}",
     "failed": "Não foi possível remover o lab"
   }
 }

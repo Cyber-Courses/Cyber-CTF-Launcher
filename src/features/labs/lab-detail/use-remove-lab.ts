@@ -43,7 +43,7 @@ function sayRemoved(t: T, lab: Lab, { left }: LabRemoval) {
     toast(t("labs.uninstall.removed", { title: lab.title }), lab.imported ? t("labs.uninstall.removedImported") : undefined);
     return Promise.resolve();
   }
-  const paths = left.map((l) => `${l.path} (${l.error})`).join("\n");
+  const paths = left.map((l) => `${l.path}: ${l.error}`).join("\n");
   return warnInDialog({ title: t("labs.uninstall.partialTitle", { title: lab.title }), message: t("labs.uninstall.partialBody", { paths }) });
 }
 

@@ -475,7 +475,7 @@
     "removed": "{title} removed",
     "removedImported": "The folder you imported it from is untouched.",
     "partialTitle": "{title} removed, but some files stayed",
-    "partialBody": "Cyber CTF couldn't delete these, maybe because another program holds them open. Close it, then delete them by hand:\n\n{paths}",
+    "partialBody": "Cyber CTF couldn't delete these (a file another program holds open, a locked keychain). You can delete them by hand:\n\n{paths}",
     "failed": "Couldn't remove the lab"
   }
 }

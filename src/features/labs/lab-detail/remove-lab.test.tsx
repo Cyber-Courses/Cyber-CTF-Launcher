@@ -113,7 +113,7 @@ describe("Remove lab", () => {
     await flush();
     const [, said] = dialogsAsked(calls);
     expect(said.title).toBe("Supplier portal removed, but some files stayed");
-    expect(said.message).toMatch(/delete them by hand:\n\n\/data\/runs\/cyberctf-local-supplier-portal \(Resource busy \(os error 16\)\)$/);
+    expect(said.message).toMatch(/delete them by hand:\n\n\/data\/runs\/cyberctf-local-supplier-portal: Resource busy \(os error 16\)$/);
     expect(toasts).toEqual([]);
     expect(page.onBack).toHaveBeenCalledTimes(1);
   });

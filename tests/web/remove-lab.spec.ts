@@ -83,7 +83,7 @@ test.describe("remove lab", () => {
     await expect.poll(() => said.length).toBe(2);
     expect(said[0]).toContain("Remove Supplier portal from this computer?");
     expect(said[1]).toContain("Supplier portal removed, but some files stayed");
-    expect(said[1]).toContain("runs/cyberctf-local-supplier-portal (Resource busy (os error 16))");
+    expect(said[1]).toContain("runs/cyberctf-local-supplier-portal: Resource busy (os error 16)");
     await expect(main(page).getByRole("textbox", { name: "Search labs and skills" })).toBeVisible();
     await expect(main(page)).not.toContainText("Imported from a folder");
   });

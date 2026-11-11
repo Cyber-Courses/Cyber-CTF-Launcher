@@ -2,8 +2,9 @@
 //! release unpacked) and every record the app keeps for it under its data folder: the runner's run
 //! folder (its record, its event log, what it last saw, Vagrant's state of it), the deployments of
 //! the launcher's own Terraform path, the deploy workers' job, logs and verdicts, an update's or an
-//! import's leftover copies, and a catalogue lab's source kept for an offline start. The generated
-//! project (Compose files, Vagrantfiles, run manifest) is inside the copy and goes with it.
+//! import's leftover copies, a catalogue lab's source kept for an offline start, and the password
+//! kept for its attack box (the OS keychain's `attack-box:<lab id>`). The generated project
+//! (Compose files, Vagrantfiles, run manifest) is inside the copy and goes with it.
 //!
 //! Nothing outside the app's data folder is touched. An imported lab's own folder, the one it was
 //! imported from, is the player's: the copy keeps no link out of itself (`TreeLinks`), and a
@@ -47,7 +48,8 @@ pub struct Leftover {
 /// files of the lab's deploy worker once the lab is held, or refuses while a worker runs on it (the
 /// app shell runs the workers). The lab's copy is moved aside first, all or nothing: a copy that
 /// won't move (a file in it held open on Windows) refuses the removal with nothing deleted. What
-/// can't be deleted after that is in the answer, the lab gone from the app all the same.
+/// can't be deleted after that is in the answer, the lab gone from the app all the same: its
+/// attack box's password too, which a keychain that refuses leaves behind.
 ///
 /// # Errors
 ///
@@ -71,8 +73,18 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str, worker_files: impl FnOnce()
         return Err(Error::coded(Code::LabRunningHere));
     }
     let extra = worker_files()?;
-    let (base, id) = (dirs.data()?.to_path_buf(), id.to_owned());
-    blocking(move || remove_files(&base, &id, &extra, rename_retrying, delete)).await
+    let (base, owned) = (dirs.data()?.to_path_buf(), id.to_owned());
+    let mut removal = blocking(move || remove_files(&base, &owned, &extra, rename_retrying, delete)).await?;
+    // Its attack box's password, once the lab is gone (a removal refused above keeps it with the
+    // lab). A keychain that refuses (locked) leaves it, listed for the player to delete: never a
+    // reason to keep the lab, which a computer with a broken keychain could then never remove.
+    // No keychain at all, or no password kept, is nothing to delete.
+    if let Err(e) = runtime::attack_machine::forget_password(&dir) {
+        log::warn!("removing lab {id}: its attack box's password stayed in the keychain: {e}");
+        let entry = runtime::attack_machine::password_entry(&dir);
+        removal.left.push(Leftover { path: format!("the attack box's password is still in the keychain ({entry})"), error: e.to_string() });
+    }
+    Ok(removal)
 }
 
 /// The folder lab `id`'s copy is moved to under `labs` while it is deleted: hidden from every

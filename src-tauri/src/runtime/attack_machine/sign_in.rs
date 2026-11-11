@@ -71,7 +71,7 @@ fn hash(password: &str) -> Result<String> {
 }
 
 /// Its store's name for the box of the lab in `dir` (the lab's folder, named after its id).
-fn entry(dir: &Path) -> String {
+pub(super) fn entry(dir: &Path) -> String {
     format!("attack-box:{}", dir.file_name().map(|n| n.to_string_lossy()).unwrap_or_default())
 }
 
@@ -95,10 +95,16 @@ pub(super) fn kept(dir: &Path) -> Result<Option<String>> {
     Ok(password)
 }
 
+/// Deletes the password kept for the box of the lab in `dir`; none kept is deleted already. A store
+/// that refuses (a locked keychain) says why.
+pub(super) fn delete(dir: &Path) -> Result<()> {
+    secrets::delete_named(&entry(dir))
+}
+
 /// Forgets the box's password, once it is out of the lab in `dir`. A store that refuses (a locked
 /// keychain) leaves it there, said in the log: a box is still taken out.
 pub(super) fn forget(dir: &Path) {
-    if let Err(e) = secrets::delete_named(&entry(dir)) {
+    if let Err(e) = delete(dir) {
         log::warn!("couldn't forget the attack box's password: {e}");
     }
 }

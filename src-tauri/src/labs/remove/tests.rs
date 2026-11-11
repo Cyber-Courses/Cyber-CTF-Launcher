@@ -193,3 +193,54 @@ fn an_earlier_removals_leftover_copy_goes_with_this_one() {
     assert!(!dir.exists() && !earlier.exists());
 }
 
+/// This test's own secrets file (never the player's): where the attack box passwords are kept.
+fn own_secrets() -> PathBuf {
+    let file = std::env::temp_dir().join(format!("cyberctf-remove-secrets-{}", rand::random::<u32>())).join("secrets.json");
+    crate::runtime::server::secrets::use_test_file(file.clone());
+    file
+}
+
+#[tokio::test]
+async fn the_attack_boxs_password_goes_with_the_lab_and_stays_while_the_removal_is_refused() {
+    use crate::runtime::server::secrets::{get_named, set_named};
+    let t = TestApp::new();
+    let _file = own_secrets();
+    let dir = t.lab("local-password", &[("isoloom.yml", SPEC)]);
+    t.lab("local-other", &[("isoloom.yml", SPEC)]);
+    set_named("attack-box:local-password", "k7mpq-zrt4w-hn8xc-ls2vd").unwrap();
+    set_named("attack-box:local-other", "abcde-fghij-kmnpq-rstuv").unwrap();
+    // Refused (still up): the password stays with the lab.
+    record_run(t.data(), "local-password", None, "docker", "ready");
+    assert_eq!(remove(&t.dirs(), "local-password", || Ok(Vec::new())).await.unwrap_err().code(), Code::LabRunningHere);
+    assert!(get_named("attack-box:local-password").unwrap().is_some());
+    // Removed: its password went too, another lab's stayed.
+    record_run(t.data(), "local-password", None, "docker", "absent");
+    assert_eq!(remove(&t.dirs(), "local-password", || Ok(Vec::new())).await.unwrap(), Removal::default());
+    assert!(!dir.exists());
+    assert_eq!(get_named("attack-box:local-password").unwrap(), None);
+    assert!(get_named("attack-box:local-other").unwrap().is_some());
+    // A lab whose box never had a password is removed all the same.
+    let bare = t.lab("local-bare", &[("isoloom.yml", SPEC)]);
+    assert_eq!(remove(&t.dirs(), "local-bare", || Ok(Vec::new())).await.unwrap(), Removal::default());
+    assert!(!bare.exists());
+}
+
+#[tokio::test]
+async fn a_password_store_that_refuses_leaves_the_password_listed_and_the_lab_removed() {
+    let t = TestApp::new();
+    let file = own_secrets();
+    // A secrets file that doesn't parse: the store can't delete from it (as a locked keychain can't).
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "{").unwrap();
+    let dir = t.lab("local-store", &[("isoloom.yml", SPEC)]);
+    let worker = records(t.data(), "local-store");
+    let removal = remove(&t.dirs(), "local-store", || Ok(worker.clone())).await.unwrap();
+    // The lab and its records went all the same.
+    assert!(!dir.exists() && worker.iter().all(|f| !f.exists()));
+    assert!(!t.data().join("runs").join("cyberctf-local-store").exists());
+    // The password alone stayed, said with why, for the player to delete.
+    let [left] = removal.left.as_slice() else { panic!("{removal:?}") };
+    assert_eq!(left.path, "the attack box's password is still in the keychain (attack-box:local-store)");
+    assert!(left.error.contains("isn't readable"), "{}", left.error);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{", "the store as it was");
+}

@@ -475,7 +475,7 @@
     "removed": "{title} entfernt",
     "removedImported": "Der Ordner, aus dem du es importiert hast, wurde nicht angerührt.",
     "partialTitle": "{title} entfernt, aber einige Dateien sind geblieben",
-    "partialBody": "Cyber CTF konnte diese nicht löschen, vielleicht weil ein anderes Programm sie geöffnet hält. Schließe es und lösche sie dann von Hand:\n\n{paths}",
+    "partialBody": "Cyber CTF konnte diese nicht löschen (eine Datei, die ein anderes Programm geöffnet hält, ein gesperrter Schlüsselbund). Du kannst sie von Hand löschen:\n\n{paths}",
     "failed": "Das Lab konnte nicht entfernt werden"
   }
 }

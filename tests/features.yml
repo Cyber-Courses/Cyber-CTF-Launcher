@@ -465,7 +465,7 @@ areas:
           desktop: needs CYBERCTF_TEST_LOCAL_LAB and Docker; the page check only looks for Objectives when the lab has objectives.json
 
       - id: imports.remove-lab
-        what: Remove lab, on a stopped lab's page (an imported lab, or a catalogue lab installed here), deletes the app's copy and every record it keeps for it, never the folder it was imported from; asked first, disabled ("Stop the lab first") and refused by the core while the lab is up, parked or busy; back on the list with a toast, files left behind listed.
+        what: Remove lab, on a stopped lab's page (an imported lab, or a catalogue lab installed here), deletes the app's copy and every record it keeps for it (its attack box's keychain password too, listed when a keychain refuses), never the folder it was imported from; asked first, disabled ("Stop the lab first") and refused by the core while the lab is up, parked or busy; back on the list with a toast, files left behind listed.
         host: false
         commands:
           - lab_remove

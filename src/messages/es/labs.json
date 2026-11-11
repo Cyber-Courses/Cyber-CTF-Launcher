@@ -475,7 +475,7 @@
     "removed": "{title} quitado",
     "removedImported": "La carpeta desde la que lo importaste no se ha tocado.",
     "partialTitle": "{title} quitado, pero quedaron algunos archivos",
-    "partialBody": "Cyber CTF no pudo borrarlos, quizá porque otro programa los tiene abiertos. Ciérralo y bórralos a mano:\n\n{paths}",
+    "partialBody": "Cyber CTF no pudo borrar esto (un archivo que otro programa tiene abierto, un llavero bloqueado). Puedes borrarlo a mano:\n\n{paths}",
     "failed": "No se pudo quitar el lab"
   }
 }

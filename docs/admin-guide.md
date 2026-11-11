@@ -288,7 +288,8 @@ account, with nothing left to destroy them: stop labs first.
 **Keychain.** Secrets are kept in the OS credential store under the service `org.cyberctf.desktop`:
 the sign-in session (`session`, and `session.1`, `session.2`… when it is long) and one entry per
 server or cloud account with a stored password or key (`server:<id>`), and one per attack box
-with the password of its player account (`attack-box:<lab>`, deleted when the box is taken out).
+with the password of its player account (`attack-box:<lab>`, deleted when the box is taken out or
+the lab is removed; a locked keychain keeps it, and the removal lists it to delete by hand).
 On Windows the Credential Manager shows them as generic credentials named
 `session.org.cyberctf.desktop`, `server:<id>.org.cyberctf.desktop`; on Linux they are in the Secret Service (GNOME Keyring,
 KWallet), which must be running for the user to stay signed in. Tokens never reach the app's web

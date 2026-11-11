@@ -180,6 +180,10 @@ data folder (`labs::remove`):
   them still holding resources: that counts as the lab still being up);
 - its deploy worker's job, logs and verdicts in `<app data>/deploys/`;
 - a catalogue lab's source kept for an offline start, `<app data>/offline/<lab id>.json`.
+- the password kept for its attack box (the OS keychain's `attack-box:<lab id>`), once the rest is
+  gone. A keychain that refuses (locked) leaves it, listed with why for you to delete by hand, and
+  the lab is removed all the same; no keychain at all (Linux without a Secret Service) has nothing
+  to delete.
 
 The folder an imported lab came from is never touched: the copy keeps no link out of itself, and a
 removal deletes a link, never what it points at. Two things stay: the lab's empty lock file in

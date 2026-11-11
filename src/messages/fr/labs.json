@@ -475,7 +475,7 @@
     "removed": "{title} retiré",
     "removedImported": "Le dossier d'où vous l'avez importé n'a pas été touché.",
     "partialTitle": "{title} retiré, mais des fichiers sont restés",
-    "partialBody": "Cyber CTF n'a pas pu les supprimer, peut-être parce qu'un autre programme les garde ouverts. Fermez-le, puis supprimez-les à la main :\n\n{paths}",
+    "partialBody": "Cyber CTF n'a pas pu supprimer ces éléments (un fichier qu'un autre programme garde ouvert, un trousseau verrouillé). Vous pouvez les supprimer à la main :\n\n{paths}",
     "failed": "Impossible de retirer le lab"
   }
 }
