@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { check, compare, jsVersions, rustVersions } from "./check-tauri-versions.ts";
+import { check, compare, jsVersions, rustVersions } from "./tauri-versions.ts";
 
 // Excerpts shaped as the real lockfiles are: pnpm-lock.yaml's `packages:` and `snapshots:` keys
 // (a peer suffix on some), and Cargo.lock's `[[package]]` entries.
@@ -40,7 +40,7 @@ name = "tauri-plugin-fs"
 version = "2.5.0"
 `;
 
-describe("check-tauri-versions", () => {
+describe("check/tauri-versions", () => {
   it("reads the resolved @tauri-apps versions from the pnpm lockfile, a peer suffix and all", () => {
     const js = jsVersions(PNPM_LOCK);
     expect([...js].map(([name, v]) => [name, v.raw])).toEqual([

@@ -51,6 +51,6 @@ next-env.d.ts
 /e2e/desktop/.state/
 .integration-tests/
 
-# release artifacts written by scripts/third-party.ts (pnpm notices / pnpm sbom)
+# release artifacts written by scripts/release/third-party.ts (pnpm notices / pnpm sbom)
 /THIRD_PARTY_NOTICES
 /sbom/

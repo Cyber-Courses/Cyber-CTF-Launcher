@@ -4,7 +4,7 @@ One command runs every layer of tests the launcher has, including the one CI can
 prints one verdict per step:
 
 ```sh
-scripts/release-check.sh          # or: pnpm release-check
+scripts/release/release-check.sh          # or: pnpm release-check
 ```
 
 It keeps going after a failure, so a single run lists everything that is wrong. `ONLY="…"` and
@@ -31,13 +31,13 @@ the end of this page have been done for what the release changes.
 | `unit-rust`       | `cargo test`                              | the Rust tests that need no real tool (external tools are scripted through `platform/exec/fake.rs`), the module conventions among them (`testing/source_scan.rs`) |
 | `bindings`        | `git status` of `src/lib/tauri/generated` | the TypeScript command types the Rust tests rewrote differ from those committed                                                                                   |
 | `docs-rust`       | `cargo doc --document-private-items`      | an intra-doc link that resolves to nothing, or a stray HTML tag in a doc comment, as `ci.yml` checks on each platform                                             |
-| `other-platforms` | `scripts/check-other-platforms.sh`        | clippy and rustdoc for Linux and Windows, CI's matrix: the code behind another OS's `#[cfg]`; skipped without `rustup`                                            |
+| `other-platforms` | `scripts/check/other-platforms.sh`        | clippy and rustdoc for Linux and Windows, CI's matrix: the code behind another OS's `#[cfg]`; skipped without `rustup`                                            |
 | `coverage-rust`   | `cargo llvm-cov`                          | the Rust line floor `coverage.yml` enforces; skipped when `cargo-llvm-cov` is not installed                                                                       |
 | `deny`            | `cargo deny check`                        | a Rust dependency with an advisory, a licence `src-tauri/deny.toml` doesn't allow, or another source; skipped when `cargo-deny` is not installed                  |
 | `audit`           | `pnpm audit --prod`                       | a known vulnerability in a shipped npm dependency                                                                                                                 |
-| `shellcheck`      | `scripts/check-infra.sh shellcheck`       | a warning in the repository's shell scripts, as `lint-infra.yml` runs it; skipped when not installed                                                              |
+| `shellcheck`      | `scripts/check/infra.sh shellcheck`       | a warning in the repository's shell scripts, as `lint-infra.yml` runs it; skipped when not installed                                                              |
 | `actionlint`      | `actionlint`                              | a mistake in the workflows, as `lint-infra.yml` runs it; skipped when not installed                                                                               |
-| `pins`            | `scripts/check-infra.sh pins`             | an action not pinned to a full commit SHA (a tag can be moved to new code)                                                                                        |
+| `pins`            | `scripts/check/infra.sh pins`             | an action not pinned to a full commit SHA (a tag can be moved to new code)                                                                                        |
 | `store-listings`  | `.github/scripts/check-store-listings.py` | a message catalogue or Store listing that doesn't parse, a listing over Partner Center's limits or naming a missing image; skipped without `python3`              |
 | `e2e-mock`        | `playwright test`                         | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n   |
 | `e2e-native`      | `e2e/desktop/run.sh`                      | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                            |

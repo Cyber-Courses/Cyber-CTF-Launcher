@@ -57,9 +57,9 @@ jobs:
       # Every action is pinned to a full commit SHA (a tag or branch can be moved to new code,
       # which then runs with this repo's secrets), with its version in a comment for updates.
       # Covers the composite actions under .github/actions/ as well as the workflows.
-      # scripts/check-infra.sh, which pnpm release-check runs too.
+      # scripts/check/infra.sh, which pnpm release-check runs too.
       - name: Actions pinned to commit SHAs
-        run: scripts/check-infra.sh pins
+        run: scripts/check/infra.sh pins
 
   terraform:
     runs-on: ubuntu-latest
@@ -109,11 +109,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # Warnings and errors fail; style notes (info) don't. Intentional exceptions are marked
       # in the scripts with `# shellcheck disable=...` and a reason.
-      # scripts/check-infra.sh, which pnpm release-check runs too.
+      # scripts/check/infra.sh, which pnpm release-check runs too.
       - run: |
           set -euo pipefail
           shellcheck --version
-          scripts/check-infra.sh shellcheck
+          scripts/check/infra.sh shellcheck
 
   json-and-store:
     runs-on: ubuntu-latest

@@ -4,7 +4,7 @@
 # behind, one verdict per spec and one line per check, then the summary. Each spec skips, saying
 # why, when a knob it needs is missing (a lab folder, a hypervisor, a server, a signed-in
 # session), so the whole set runs anywhere and reports pass, fail or skip honestly. Part of
-# scripts/release-check.sh; the test rig's entry point (docs/testing/desktop-e2e.md says what each
+# scripts/release/release-check.sh; the test rig's entry point (docs/testing/desktop-e2e.md says what each
 # spec proves and needs).
 #
 #   e2e/desktop/run.sh --all                                 # every spec (the default)

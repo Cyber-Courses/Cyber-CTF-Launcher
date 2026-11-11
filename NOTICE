@@ -8,7 +8,7 @@ Third-party software
 The installers include open source components (Rust crates and npm packages)
 under their own licences. Each release ships their full notices in
 THIRD_PARTY_NOTICES, beside the installers on the GitHub release; to produce
-them from a checkout, run `pnpm notices` (scripts/third-party-notices.ts).
+them from a checkout, run `pnpm notices` (scripts/release/third-party.ts).
 
 Files in this repository under other licences
 ---------------------------------------------

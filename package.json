@@ -13,18 +13,18 @@
     "format": "pnpm format:check --write && cargo fmt --manifest-path src-tauri/Cargo.toml",
     "format:check": "prettier --check \"{src,scripts,e2e}/**/*.{ts,tsx,css,mjs}\" \"{*,docs/**/*,infra/**/*,scripts/**/*}.md\"",
     "typecheck": "next typegen && tsc --noEmit",
-    "check:tauri": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check-tauri-versions.ts",
-    "check:docs": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check-doc-links.ts",
+    "check:tauri": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check/tauri-versions.ts",
+    "check:docs": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check/doc-links.ts",
     "check": "pnpm check:tauri && pnpm check:docs && pnpm format:check && pnpm typecheck && cargo fmt --manifest-path src-tauri/Cargo.toml --check && pnpm quality && vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
     "quality": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/quality/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
     "e2e:desktop": "e2e/desktop/run.sh",
-    "release-check": "scripts/release-check.sh",
+    "release-check": "scripts/release/release-check.sh",
     "test:integration": "scripts/integration-tests.sh",
-    "notices": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/third-party.ts notices",
-    "sbom": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/third-party.ts sbom"
+    "notices": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/release/third-party.ts notices",
+    "sbom": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/release/third-party.ts sbom"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",

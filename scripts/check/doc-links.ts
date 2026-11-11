@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 
-import { helpAsked } from "./lib/cli.ts";
+import { helpAsked } from "../lib/cli.ts";
 
 /** GitHub's anchor for a heading: lowercase, punctuation dropped, spaces to hyphens. */
 export function slug(heading: string): string {
@@ -97,4 +97,4 @@ function check(): number {
   return broken;
 }
 
-if (process.argv[1]?.endsWith("check-doc-links.ts") && !helpAsked(import.meta.url, process.argv.slice(2))) process.exit(check() > 0 ? 1 : 0);
+if (process.argv[1]?.endsWith("doc-links.ts") && !helpAsked(import.meta.url, process.argv.slice(2))) process.exit(check() > 0 ? 1 : 0);

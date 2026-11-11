@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Shared by the repo's suite runners (scripts/release-check.sh, scripts/integration-tests.sh,
-# scripts/check-other-platforms.sh, e2e/desktop/run.sh): which steps run (ONLY / SKIP), one verdict line per step, a step run in
+# Shared by the repo's suite runners (scripts/release/release-check.sh, scripts/integration-tests.sh,
+# scripts/check/other-platforms.sh, e2e/desktop/run.sh): which steps run (ONLY / SKIP), one verdict line per step, a step run in
 # the open or logged with a time limit, Node from .nvmrc, --help from the runner's header, and the
 # summary that sets the exit status. Sourced, never run:
 #

@@ -18,11 +18,11 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { helpAsked } from "./lib/cli.ts";
+import { helpAsked } from "../lib/cli.ts";
 
 const MANIFEST = "src-tauri/Cargo.toml";
-const ABOUT_CONFIG = "scripts/third-party/about.toml";
-const ABOUT_TEMPLATE = "scripts/third-party/about.hbs";
+const ABOUT_CONFIG = "scripts/release/third-party/about.toml";
+const ABOUT_TEMPLATE = "scripts/release/third-party/about.hbs";
 const RULE = "-".repeat(80);
 
 /** One npm package as `pnpm licenses list --json` reports it. */
@@ -168,7 +168,7 @@ export function npmSbomOf(root: NpmNode & { name: string }, packages: NpmLicense
     version: 1,
     metadata: {
       timestamp,
-      tools: { components: [{ type: "application", name: "scripts/third-party.ts" }] },
+      tools: { components: [{ type: "application", name: "scripts/release/third-party.ts" }] },
       component: { type: "application", "bom-ref": rootRef, name: root.name, version: root.version, licenses: [cdxLicense("Apache-2.0")] },
     },
     components: [...components.values()].sort((a, b) => String(a["bom-ref"]).localeCompare(String(b["bom-ref"]))),

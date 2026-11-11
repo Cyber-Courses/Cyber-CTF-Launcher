@@ -1,5 +1,5 @@
 # cargo-about: the licences of the Rust crates the launcher ships, for THIRD_PARTY_NOTICES
-# (scripts/third-party.ts). Keep `accepted` in line with src-tauri/deny.toml, which enforces it.
+# (scripts/release/third-party.ts). Keep `accepted` in line with src-tauri/deny.toml, which enforces it.
 accepted = [
   "0BSD",
   "Apache-2.0",

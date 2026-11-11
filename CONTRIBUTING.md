@@ -70,7 +70,7 @@ SKIP=e2e-native pnpm release-check     # what CI runs (the native end-to-end nee
 - **The quality ratchet** (`pnpm quality`, `quality-baseline.json`): a count of lint warnings,
   duplication or dead code may go down, never up.
 - **Other platforms**: code behind another OS's `#[cfg]` is compiled only on that OS; CI's matrix
-  lints and tests it there. `scripts/check-other-platforms.sh` runs clippy for Linux and Windows
+  lints and tests it there. `scripts/check/other-platforms.sh` runs clippy for Linux and Windows
   from any machine first (no tests: those need the platform).
 - **Generated types**: `cargo test` rewrites the TypeScript types of the Tauri commands
   (`src/lib/tauri/generated/`) from the Rust structs ([ts-rs](https://github.com/Aleph-Alpha/ts-rs));

@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 # The engineering standard's lints (thresholds in clippy.toml): clippy's default groups and
 # `pedantic` are denied, and so is every lint listed here, so a plain `cargo clippy` fails on any of
-# them on every platform (macOS, Windows, Linux; `scripts/check-other-platforms.sh` checks the other
+# them on every platform (macOS, Windows, Linux; `scripts/check/other-platforms.sh` checks the other
 # two). A lint the code can't meet yet goes at "warn": the quality ratchet (`pnpm quality`,
 # quality-baseline.json) counts it, its count may go down, never up, and at zero it moves to "deny".
 [lints.rust]

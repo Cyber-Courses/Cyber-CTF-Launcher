@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { anchors, brokenLinks, links, slug } from "./check-doc-links.ts";
+import { anchors, brokenLinks, links, slug } from "./doc-links.ts";
 
-describe("check-doc-links", () => {
+describe("check/doc-links", () => {
   it("makes a heading's anchor the way GitHub does", () => {
     expect(slug("Proxy and custom certificate authorities")).toBe("proxy-and-custom-certificate-authorities");
     expect(slug("Privacy and what is sent")).toBe("privacy-and-what-is-sent");

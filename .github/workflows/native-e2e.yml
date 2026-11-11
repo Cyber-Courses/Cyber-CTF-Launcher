@@ -3,7 +3,8 @@ name: Native GUI e2e
 # The real app binary (`pnpm tauri build`, which embeds the static export, with the embedded
 # WebDriver server, `--features wdio`, and the frontend's test hooks, `NEXT_PUBLIC_WDIO=1`) driven
 # through its own window under Xvfb, against the runner's Docker engine: the scenarios in
-# e2e/desktop/, as scripts/release-check.sh runs them on a developer machine (docs/testing/release-check.md).
+# e2e/desktop/, as scripts/release/release-check.sh runs them on a developer machine
+# (docs/testing/release-check.md).
 # Manual for now: the scenarios build the fixture lab's images and take a while, and a Linux
 # runner has no hypervisor, so the VM scan is skipped here (a Mac with UTM runs it locally).
 # Promote to a schedule once a few manual runs are green.

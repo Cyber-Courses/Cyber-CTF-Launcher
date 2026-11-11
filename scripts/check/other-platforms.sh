@@ -6,8 +6,8 @@
 # probe and write empty objects take their place, which is enough for `cargo check`, never for a
 # build.
 #
-#   scripts/check-other-platforms.sh                  every other platform
-#   ONLY="linux" scripts/check-other-platforms.sh
+#   scripts/check/other-platforms.sh                  every other platform
+#   ONLY="linux" scripts/check/other-platforms.sh
 #
 # Steps: linux (x86_64-unknown-linux-gnu), windows (x86_64-pc-windows-msvc), each followed by its
 # -docs step (rustdoc, every intra-doc link resolving with that platform's items). Needs rustup (a
@@ -18,8 +18,8 @@
 #   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
 
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
-# shellcheck source=lib/suite.sh
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+# shellcheck source=../lib/suite.sh
 . "$ROOT/scripts/lib/suite.sh"
 suite_help "$0" "$@"
 cd "$ROOT/src-tauri" || exit 2

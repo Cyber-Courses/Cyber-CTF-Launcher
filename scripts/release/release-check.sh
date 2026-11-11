@@ -8,13 +8,13 @@
 # (other-platforms, e2e-native) that skipped some of its own steps is recorded `skip`, not `ok`.
 # docs/testing/release-check.md says what each step proves.
 #
-#   scripts/release-check.sh                     the whole gate (pnpm release-check)
-#   ONLY="unit-web e2e-mock" scripts/release-check.sh
-#   SKIP="e2e-native" scripts/release-check.sh   what CI covers, without the native layer
+#   scripts/release/release-check.sh                     the whole gate (pnpm release-check)
+#   ONLY="unit-web e2e-mock" scripts/release/release-check.sh
+#   SKIP="e2e-native" scripts/release/release-check.sh   what CI covers, without the native layer
 #
 # Steps, in order: prereqs, install, versions, docs, format, types, lint, build, quality, unit-web
 # (with the coverage floors), unit-rust, bindings (the generated types the Rust tests rewrote are
-# committed), docs-rust (rustdoc's intra-doc links), other-platforms (clippy for Linux and Windows, scripts/check-other-platforms.sh;
+# committed), docs-rust (rustdoc's intra-doc links), other-platforms (clippy for Linux and Windows, scripts/check/other-platforms.sh;
 # needs rustup), coverage-rust (when cargo-llvm-cov is installed), deny (when cargo-deny is),
 # audit, shellcheck and actionlint (when installed, as lint-infra.yml runs them), pins (every
 # action pinned to a commit SHA), store-listings (the app's JSON and the Microsoft Store listing,
@@ -27,8 +27,8 @@
 #   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
 
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
-# shellcheck source=lib/suite.sh
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+# shellcheck source=../lib/suite.sh
 . "$ROOT/scripts/lib/suite.sh"
 suite_help "$0" "$@"
 cd "$ROOT" || exit 2
@@ -93,7 +93,7 @@ step bindings bindings_committed
 # platforms' are other-platforms' -docs steps).
 step docs-rust env RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags" cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items --lib
 # CI's clippy matrix for the other platforms, from here: the code behind their `#[cfg]`.
-if command -v rustup >/dev/null; then nested other-platforms scripts/check-other-platforms.sh; else skip other-platforms "rustup not installed (https://rustup.rs)"; fi
+if command -v rustup >/dev/null; then nested other-platforms scripts/check/other-platforms.sh; else skip other-platforms "rustup not installed (https://rustup.rs)"; fi
 if has cargo llvm-cov; then step coverage-rust rust_cov; else skip coverage-rust "cargo-llvm-cov not installed (cargo install cargo-llvm-cov)"; fi
 if has cargo deny; then
   step deny cargo deny --manifest-path src-tauri/Cargo.toml check advisories bans licenses sources
@@ -102,9 +102,9 @@ else
 fi
 step audit pnpm audit --prod
 # lint-infra.yml's checks of the files around the app.
-if command -v shellcheck >/dev/null; then step shellcheck scripts/check-infra.sh shellcheck; else skip shellcheck "shellcheck not installed (https://www.shellcheck.net)"; fi
+if command -v shellcheck >/dev/null; then step shellcheck scripts/check/infra.sh shellcheck; else skip shellcheck "shellcheck not installed (https://www.shellcheck.net)"; fi
 if command -v actionlint >/dev/null; then step actionlint actionlint -color; else skip actionlint "actionlint not installed (https://github.com/rhysd/actionlint)"; fi
-step pins scripts/check-infra.sh pins
+step pins scripts/check/infra.sh pins
 if command -v python3 >/dev/null; then
   step store-listings python3 .github/scripts/check-store-listings.py
 else

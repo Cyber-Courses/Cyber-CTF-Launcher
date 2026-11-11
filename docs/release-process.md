@@ -31,7 +31,7 @@ git push origin vX.Y.Z
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `preflight`   | the Tauri JS/Rust versions agree; on a tag, **every signing secret is set**, or the release stops here                                                                            |
 | `prepare`     | creates the draft GitHub release (through the `cyber-ctf-creator` GitHub App)                                                                                                     |
-| `third-party` | `pnpm notices` and `pnpm sbom` ([scripts/third-party.ts](../scripts/third-party.ts)): THIRD_PARTY_NOTICES and the CycloneDX SBOMs, attached to the release                        |
+| `third-party` | `pnpm notices` and `pnpm sbom` ([scripts/release/third-party.ts](../scripts/release/third-party.ts)): THIRD_PARTY_NOTICES and the CycloneDX SBOMs, attached to the release        |
 | `release`     | builds on five runners (macOS universal, Linux x64 and arm64 on Ubuntu 22.04, Windows x64 and Arm64), signs, **verifies the signatures**, uploads to the draft; notarizes the DMG |
 | `attest`      | `SHA256SUMS` of every asset, and a build provenance attestation of each                                                                                                           |
 | `publish`     | takes the draft live (tags only)                                                                                                                                                  |
