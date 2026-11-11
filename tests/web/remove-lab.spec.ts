@@ -10,11 +10,12 @@ const main = (page: Page) => page.locator("main");
 const removeButton = (page: Page) => main(page).getByRole("button", { name: "Remove lab", exact: true });
 const toasts = (page: Page) => page.locator("[aria-live=polite]");
 
-/** Opens the imported lab from the list's Imported panel. */
+/** Opens the imported lab from the list's Imported panel, by its row's name (`labs.openImported`:
+ *  "Open <title>, imported from a folder", apart from a catalogue row of the same title). */
 async function openImported(page: Page) {
   await navButton(page, "Labs").click();
   await expect(main(page)).toContainText("Imported from a folder");
-  await main(page).getByRole("button", { name: "Open Supplier portal", exact: true }).click();
+  await main(page).getByRole("button", { name: "Open Supplier portal, imported from a folder", exact: true }).click();
   await expect(pageTitle(page)).toHaveText("Supplier portal");
 }
 
@@ -42,7 +43,7 @@ test.describe("remove lab", () => {
     await expect(toasts(page)).toContainText("The folder you imported it from is untouched.");
     await expect(main(page).getByRole("textbox", { name: "Search labs and skills" })).toBeVisible();
     await expect(main(page)).not.toContainText("Imported from a folder");
-    await expect(main(page).getByRole("button", { name: "Open Supplier portal" })).toHaveCount(0);
+    await expect(main(page).getByRole("button", { name: "Open Supplier portal, imported from a folder" })).toHaveCount(0);
   });
 
   test("a running lab can't be removed until it is stopped", async ({ page }) => {
