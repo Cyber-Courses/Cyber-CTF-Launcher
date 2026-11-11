@@ -26,7 +26,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm exec playwright install --with-deps chromium
+      # Chromium alone, from Playwright's CDN: the runner image already has every library it needs
+      # (--with-deps only added fonts for scripts the UI doesn't use), and apt's Ubuntu mirrors,
+      # when the runners can't reach them, held the job until its timeout. A library the image ever
+      # lacks fails the browser's launch, naming it.
+      - run: pnpm exec playwright install chromium
       - run: pnpm test:web
       - name: Upload report and traces
         if: failure()
