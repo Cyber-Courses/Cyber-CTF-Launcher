@@ -183,7 +183,24 @@ pub(crate) fn debian_libvirt_awaits_relogin() -> SystemReport {
     });
     for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Libvirt) {
         p.available = false;
-        p.reason = Some(Unavailable::NewLogin);
+        p.reason = Some(Unavailable::NewLogin { group: "libvirt".into() });
+        p.account_lacks = Some(crate::runtime::providers::AccountLacks::NewLogin);
+    }
+    r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
+    r.setup = super::options(&r, false);
+    r
+}
+
+/// Debian once the setup installed QEMU and Vagrant: the QEMU install added the player to the kvm
+/// group (`/dev/kvm` is `root:kvm 0660` there), which applies from the next login.
+pub(crate) fn debian_qemu_awaits_relogin() -> SystemReport {
+    let mut r = with(bare_debian(), false, |r| {
+        hypervisor(r, Provider::Qemu, true);
+        r.groups_pending = vec![crate::runtime::providers::kvm_group()];
+    });
+    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Qemu) {
+        p.available = false;
+        p.reason = Some(Unavailable::NewLogin { group: crate::runtime::providers::kvm_group() });
         p.account_lacks = Some(crate::runtime::providers::AccountLacks::NewLogin);
     }
     r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
@@ -253,6 +270,7 @@ pub(crate) fn all() -> Vec<(&'static str, SystemReport)> {
         ("debianLibvirtWithoutPlugin", debian_libvirt_without_plugin()),
         ("debianLibvirtWithoutKvm", debian_libvirt_without_kvm()),
         ("debianLibvirtAwaitsRelogin", debian_libvirt_awaits_relogin()),
+        ("debianQemuAwaitsRelogin", debian_qemu_awaits_relogin()),
         ("bareFedora", bare_fedora()),
         ("macDockerWithoutVagrant", mac_docker_without_vagrant()),
         ("macTwoEngines", mac_two_engines()),

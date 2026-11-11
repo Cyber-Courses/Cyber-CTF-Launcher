@@ -120,7 +120,7 @@ REFUSED="integration test skipped, refused by the launcher:"
 # missing tool, Docker down, an architecture a hypervisor doesn't run; a unit test in
 # integration_tests/support.rs holds this to them): once seen on a provider, its remaining
 # scenarios are skipped with that line as the reason.
-PLATFORM_FAILURE="This lab can't run on|is not supported on|is not installed|was not found|Not installed\.|isn't responding|isn't turned on|isn't available on this machine|is too old|service isn't running|drives Hyper-V only for|added to the libvirt group|can't use /dev/kvm|Docker isn't running"
+PLATFORM_FAILURE="This lab can't run on|is not supported on|is not installed|was not found|Not installed\.|isn't responding|isn't turned on|isn't available on this machine|is too old|service isn't running|drives Hyper-V only for|group since you logged in|can't use /dev/kvm|Docker isn't running"
 # Seconds a scenario may take: CAP, and BOX_CAP for the attack-box ones (their images are pulled
 # until the rig's goldens carry them).
 CAP=${CYBERCTF_TEST_INTEGRATION_TIMEOUT:-480}

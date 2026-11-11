@@ -8,7 +8,15 @@ export type Unavailable = { "code": "vagrantMissing" } | { "code": "virtualboxSt
 /**
  * The program looked for, which wasn't found; None for a hypervisor found otherwise.
  */
-program: string | null, } } | { "code": "newLogin" } | { "code": "noKvm" } | { "code": "kvmDenied" } | { "code": "hypervisorTooOld", "args": { 
+program: string | null, } } | { "code": "newLogin", "args": { 
+/**
+ * The group joined.
+ */
+group: string, } } | { "code": "noKvm" } | { "code": "kvmDenied", "args": { 
+/**
+ * The group `/dev/kvm` belongs to.
+ */
+group: string, } } | { "code": "hypervisorTooOld", "args": { 
 /**
  * The hypervisor's name.
  */

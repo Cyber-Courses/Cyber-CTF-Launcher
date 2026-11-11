@@ -301,7 +301,12 @@ pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
 mod unavailable;
 mod vbox_driver;
 pub use unavailable::Unavailable;
-pub(crate) use unavailable::kvm_problem;
+mod kvm;
+#[cfg(test)]
+pub(crate) use kvm::kvm_group;
+pub(crate) use kvm::kvm_problem;
+use kvm::new_login_group;
+pub use kvm::{login_groups, uses_kvm};
 
 /// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.
 fn hyperv_enabled() -> bool {
@@ -486,11 +491,10 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
     // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
     let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::platform::exec::may_manage_hyperv();
 
-    // libvirt's socket and /dev/kvm are its group's: added to them since logging in (the libvirt
-    // install does it), the player can't use them before logging in again.
-    let relogin = provider == Provider::Libvirt
-        && hypervisor == Some(true)
-        && crate::platform::exec::groups_pending().await.iter().any(|g| LIBVIRT_GROUPS.contains(&g.as_str()));
+    // libvirt's socket and /dev/kvm are their groups': added to them since logging in (the
+    // libvirt and QEMU installs do it), the player can't use them before logging in again.
+    let joined = login_groups(provider, std::env::consts::OS);
+    let relogin = !joined.is_empty() && hypervisor == Some(true) && crate::platform::exec::groups_pending().await.iter().any(|g| joined.contains(g));
 
     // VMware's plugin drives VMware through HashiCorp's utility service, installed on its own.
     let utility = if provider.needs_vmware_utility() { Some(vmware_utility().await) } else { None };
@@ -539,9 +543,6 @@ async fn virtualbox_stuck() -> bool {
     crate::platform::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], VBOX_SERVICE_WAIT).await.is_err_and(|e| timed_out(&e))
 }
 
-/// The groups libvirt's socket and `/dev/kvm` are opened through.
-pub const LIBVIRT_GROUPS: [&str; 2] = ["libvirt", "kvm"];
-
 /// What `detect` found out about one provider: the per-provider facts `unavailable_reason` reads
 /// to name the first layer that is missing (the hypervisor, its plugin, an admin right). Grouped
 /// so the check reads one value rather than a handful of flags that always travel together;
@@ -572,7 +573,8 @@ struct Detection<'a> {
 pub enum AccountLacks {
     /// The right to manage Hyper-V (Hyper-V only).
     HypervAdmin,
-    /// A new login: it joined libvirt's groups since logging in (libvirt only).
+    /// A new login: it joined libvirt's groups, or `/dev/kvm`'s (QEMU on Linux), since logging
+    /// in.
     NewLogin,
 }
 
@@ -595,8 +597,8 @@ fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'
     } else if hypervisor == Some(false) {
         Some(Unavailable::NotInstalled { program: provider.probe().map(|(program, _)| program.to_owned()) })
     } else if account == Some(AccountLacks::NewLogin) {
-        Some(Unavailable::NewLogin)
-    } else if let Some(why) = (provider == Provider::Libvirt).then(kvm_problem).flatten() {
+        Some(Unavailable::NewLogin { group: new_login_group(provider) })
+    } else if let Some(why) = uses_kvm(provider, std::env::consts::OS).then(kvm_problem).flatten() {
         Some(why)
     } else if let Some((name, version, min)) = hypervisor_too_old(provider, hypervisor_version) {
         Some(Unavailable::HypervisorTooOld { name: name.into(), version: version.into(), min: min.into() })
@@ -950,10 +952,41 @@ mod tests {
             utility: None,
             account: relogin.then_some(AccountLacks::NewLogin),
         };
-        assert_eq!(reason_of(Provider::Libvirt, true, libvirt(true)), Some(Unavailable::NewLogin));
+        assert_eq!(reason_of(Provider::Libvirt, true, libvirt(true)), Some(Unavailable::NewLogin { group: "libvirt".into() }));
         assert_eq!(reason_of(Provider::Libvirt, true, libvirt(false)), kvm_problem());
         // Vagrant missing still comes first: the setup installs it in the same pass.
         assert_eq!(reason_of(Provider::Libvirt, false, libvirt(true)), Some(Unavailable::VagrantMissing));
+    }
+
+    #[test]
+    fn qemu_on_linux_needs_the_kvm_device_the_labs_boot_with() {
+        // Regression: QEMU read as ready on Debian 13 for a player outside the kvm group
+        // (/dev/kvm root:kvm 0660): the VM self-test fell back to software emulation and passed,
+        // then every lab's `-machine q35,accel=kvm` failed ("Could not access KVM kernel module:
+        // Permission denied").
+        let qemu = |relogin: bool| Detection {
+            unresponsive: false,
+            hypervisor: Some(true),
+            hypervisor_version: None,
+            plugin: Some("vagrant-qemu"),
+            plugin_installed: true,
+            plugin_version: None,
+            utility: None,
+            account: relogin.then_some(AccountLacks::NewLogin),
+        };
+        assert!(uses_kvm(Provider::Qemu, "linux") && !uses_kvm(Provider::Qemu, "macos") && !uses_kvm(Provider::Qemu, "windows"));
+        if cfg!(target_os = "linux") {
+            assert_eq!(reason_of(Provider::Qemu, true, qemu(false)), kvm_problem(), "whatever this machine's /dev/kvm says");
+            assert_eq!(reason_of(Provider::Qemu, true, qemu(true)), Some(Unavailable::NewLogin { group: kvm_group() }));
+        } else {
+            // HVF on a Mac, WHPX on Windows: no /dev/kvm to open.
+            assert_eq!(reason_of(Provider::Qemu, true, qemu(false)), None);
+        }
+        assert_eq!(login_groups(Provider::Qemu, "linux"), [kvm_group()]);
+        assert_eq!(login_groups(Provider::Qemu, "macos"), Vec::<String>::new());
+        let libvirt = login_groups(Provider::Libvirt, "linux");
+        assert!(libvirt.iter().any(|g| g == "libvirt") && libvirt.contains(&kvm_group()), "{libvirt:?}");
+        assert_eq!(login_groups(Provider::Virtualbox, "linux"), Vec::<String>::new());
     }
 
     /// A VMware detection: Fusion or Workstation installed, the plugin and the utility as given.

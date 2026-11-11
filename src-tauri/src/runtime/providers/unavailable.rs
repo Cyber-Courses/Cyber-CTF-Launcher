@@ -24,12 +24,21 @@ pub enum Unavailable {
         /// The program looked for, which wasn't found; None for a hypervisor found otherwise.
         program: Option<String>,
     },
-    /// The player joined libvirt's groups since logging in: they apply from the next login.
-    NewLogin,
+    /// The player joined `group` since logging in (libvirt's, or the group `/dev/kvm` is opened
+    /// through, for QEMU): it applies from the next login.
+    NewLogin {
+        /// The group joined.
+        group: String,
+    },
     /// This machine has no `/dev/kvm`: virtualization is off in the firmware, or there is none.
     NoKvm,
-    /// `/dev/kvm` exists, but this account can't open it.
-    KvmDenied,
+    /// `/dev/kvm` exists, but this account can't open it: it isn't in `group`, the one
+    /// `/dev/kvm` belongs to (`kvm` on Debian, Ubuntu, Kali and openSUSE, whose `/dev/kvm` is
+    /// `0660`; Fedora's and Arch's is `0666`, open to everyone).
+    KvmDenied {
+        /// The group `/dev/kvm` belongs to.
+        group: String,
+    },
     /// The hypervisor is older than its Vagrant plugin drives.
     HypervisorTooOld {
         /// The hypervisor's name.
@@ -86,9 +95,9 @@ impl Unavailable {
             Unavailable::HypervNeedsAdmin => "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator.".into(),
             Unavailable::NotInstalled { program: Some(program) } => format!("`{program}` was not found."),
             Unavailable::NotInstalled { program: None } => "Not installed.".into(),
-            Unavailable::NewLogin => "You were added to the libvirt group since you logged in: log out and back in (or restart) for it to apply.".into(),
+            Unavailable::NewLogin { group } => format!("You were added to the {group} group since you logged in: log out and back in (or restart) for it to apply."),
             Unavailable::NoKvm => "KVM isn't available on this machine (no /dev/kvm): turn on virtualization in the firmware, or use another hypervisor.".into(),
-            Unavailable::KvmDenied => "You can't use /dev/kvm yet: add yourself to the kvm and libvirt groups, then sign out and back in.".into(),
+            Unavailable::KvmDenied { group } => format!("You can't use /dev/kvm yet: add yourself to the {group} group, then sign out and back in."),
             Unavailable::HypervisorTooOld { name, version, min } => format!("{name} {version} is too old: {min} or later is needed. Update {name}, then re-check."),
             Unavailable::PluginTooOld { plugin, version, min } => {
                 format!("Vagrant plugin `{plugin}` {version} is too old: {min} or later is needed. Install it again to update it.")
@@ -114,19 +123,6 @@ impl std::fmt::Display for Unavailable {
     }
 }
 
-/// Why libvirt can't run VMs here although `virsh` is installed: vagrant-libvirt boots KVM
-/// guests, so it needs `/dev/kvm`, and the player must be allowed to open it.
-pub(crate) fn kvm_problem() -> Option<Unavailable> {
-    let dev = std::path::Path::new("/dev/kvm");
-    if !dev.exists() {
-        return Some(Unavailable::NoKvm);
-    }
-    if std::fs::OpenOptions::new().read(true).write(true).open(dev).is_err() {
-        return Some(Unavailable::KvmDenied);
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,9 +137,9 @@ mod tests {
             Unavailable::HypervNeedsAdmin,
             Unavailable::NotInstalled { program: Some(s("virsh")) },
             Unavailable::NotInstalled { program: None },
-            Unavailable::NewLogin,
+            Unavailable::NewLogin { group: s("libvirt") },
             Unavailable::NoKvm,
-            Unavailable::KvmDenied,
+            Unavailable::KvmDenied { group: s("kvm") },
             Unavailable::HypervisorTooOld { name: s("UTM"), version: s("4.4.5"), min: s("4.5.0") },
             Unavailable::PluginTooOld { plugin: s("vagrant_utm"), version: s("0.1.0"), min: s("0.1.4") },
             Unavailable::PluginMissing { plugin: s("vagrant-libvirt") },

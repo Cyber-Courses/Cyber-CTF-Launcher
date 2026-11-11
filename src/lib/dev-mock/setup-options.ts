@@ -71,8 +71,17 @@ const cantRun = (p: ProviderStatus) => p.hypervisor === true && !p.available && 
 /** The groups libvirt's socket and /dev/kvm are opened through (Rust's `LIBVIRT_GROUPS`). */
 const LIBVIRT_GROUPS = ["libvirt", "kvm"];
 
+/** The groups a player joins to use `provider` on `os` (Rust's `login_groups`): libvirt's, and
+ *  /dev/kvm's for QEMU on Linux (`kvm`, its usual name; the core reads the device's own). */
+function loginGroups(provider: Provider, os: string): string[] {
+  if (provider === "libvirt") return LIBVIRT_GROUPS;
+  if (provider === "qemu" && os === "linux") return ["kvm"];
+  return [];
+}
+
 function get(r: Machine, p: ProviderStatus, hypervRestart: boolean): SetupAction[] {
-  if (p.hypervisor === true && p.provider === "libvirt" && r.groupsPending.some((g) => LIBVIRT_GROUPS.includes(g))) return [{ kind: "relogin" }];
+  const groups = loginGroups(p.provider, r.os);
+  if (p.hypervisor === true && r.groupsPending.some((g) => groups.includes(g))) return [{ kind: "relogin" }];
   if (p.hypervisor === true) return cantRun(p) && p.reason ? [{ kind: "blocked", reason: p.reason }] : [];
   if (p.provider === "hyperv" && hypervRestart) return [{ kind: "restart", feature: "hyperv" }];
   const dependency = installable(p.provider, r.os);

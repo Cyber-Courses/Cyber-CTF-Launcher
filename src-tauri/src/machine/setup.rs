@@ -57,7 +57,7 @@ pub enum Action {
         feature: WindowsFeature,
     },
     /// Signs out and back in: a group the player was added to (Linux's `docker`, `libvirt` and
-    /// `kvm`) applies from the next login.
+    /// `kvm`, the libvirt and QEMU installs' too) applies from the next login.
     Relogin,
     /// Not something the setup does here: the player gets it (`dependency`, when it is one the
     /// setup installs elsewhere; from `url`, when there is one), then checks the machine again.
@@ -255,12 +255,14 @@ pub fn cant_run(p: &ProviderStatus) -> bool {
 }
 
 /// What gets hypervisor `p` here: nothing once it is installed (a new login when the player joined
-/// libvirt's groups since logging in; else why it still can't run); the restart Hyper-V waits for
+/// its groups since logging in, libvirt's or `/dev/kvm`'s; else why it still can't run); the restart Hyper-V waits for
 /// once the setup turned it on (`hyperv_restart`); its install; else its vendor's site.
 fn hypervisor_get(r: &SystemReport, p: &ProviderStatus, hyperv_restart: bool) -> Vec<Action> {
     if p.hypervisor == Some(true) {
-        let joined = r.groups_pending.iter().any(|g| crate::runtime::providers::LIBVIRT_GROUPS.contains(&g.as_str()));
-        if p.provider == Provider::Libvirt && joined {
+        // The groups its install added the player to (libvirt's, /dev/kvm's) apply from the next
+        // login: the setup asks for it, as it does for the docker group.
+        let groups = crate::runtime::providers::login_groups(p.provider, r.os);
+        if r.groups_pending.iter().any(|g| groups.contains(g)) {
             return vec![Action::Relogin];
         }
         return match &p.reason {

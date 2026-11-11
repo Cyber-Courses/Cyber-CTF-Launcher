@@ -9,7 +9,8 @@ use serde::Deserialize;
 use super::scripts::fetch_and_open;
 #[cfg(target_os = "linux")]
 use super::scripts::{
-    awscli_script, azurecli_script, docker_script, gcloud_script, libvirt_script, terraform_script, vagrant_script, virtualbox_script, vmware_utility_script,
+    awscli_script, azurecli_script, docker_script, gcloud_script, libvirt_script, qemu_script, terraform_script, vagrant_script, virtualbox_script,
+    vmware_utility_script,
 };
 #[cfg(any(target_os = "macos", windows))]
 use super::steps::step;
@@ -268,7 +269,8 @@ fn linux_plan_with(dep: Dependency, apt: bool) -> Result<Vec<Step>> {
         // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
         Dependency::Terraform => vec![root(terraform_script())],
         Dependency::Virtualbox => vec![root(virtualbox_script())],
-        Dependency::Qemu => vec![root("apt-get update && apt-get install -y qemu-system qemu-utils".into())],
+        // The player joins /dev/kvm's group: the labs' VMs boot with KVM.
+        Dependency::Qemu => vec![root(qemu_script(crate::platform::exec::login_name().as_deref()))],
         Dependency::Libvirt => vec![root(libvirt_script(crate::platform::exec::login_name().as_deref()))],
         // Cloud CLIs: AWS CLI v2 from Amazon's signed bundle, in a private temporary directory;
         // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.

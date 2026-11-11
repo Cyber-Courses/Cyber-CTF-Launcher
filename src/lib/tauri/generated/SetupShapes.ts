@@ -3,7 +3,7 @@ import type { SystemReport } from "./SystemReport";
 
 /** Machines as the machine check reports them, with the setup options the core works out for each (Rust's
  *  `machine::setup::shapes`): what the setup window's tests render it on. */
-export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | "windowsDockerStopped" | "windowsHypervWaitsForRestart" | "bareDebian" | "debianDockerDenied" | "debianLibvirtWithoutPlugin" | "debianLibvirtWithoutKvm" | "debianLibvirtAwaitsRelogin" | "bareFedora" | "macDockerWithoutVagrant" | "macTwoEngines" | "macVmwareWithoutItsParts" | "macReady", SystemReport> = {
+export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | "windowsDockerStopped" | "windowsHypervWaitsForRestart" | "bareDebian" | "debianDockerDenied" | "debianLibvirtWithoutPlugin" | "debianLibvirtWithoutKvm" | "debianLibvirtAwaitsRelogin" | "debianQemuAwaitsRelogin" | "bareFedora" | "macDockerWithoutVagrant" | "macTwoEngines" | "macVmwareWithoutItsParts" | "macReady", SystemReport> = {
   "bareWindows": {
     "os": "windows",
     "arch": "x86_64",
@@ -2211,7 +2211,10 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "plugin"
         ],
         "reason": {
-          "code": "newLogin"
+          "code": "newLogin",
+          "args": {
+            "group": "libvirt"
+          }
         },
         "accountLacks": "newLogin"
       },
@@ -2377,6 +2380,270 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "plugin": "vagrant-qemu"
             }
           ]
+        }
+      ]
+    }
+  },
+  "debianQemuAwaitsRelogin": {
+    "os": "linux",
+    "arch": "x86_64",
+    "pkgManager": {
+      "name": "apt",
+      "installed": true,
+      "version": "apt 2.9.8 (amd64)"
+    },
+    "docker": {
+      "installed": false,
+      "version": null
+    },
+    "dockerRunning": false,
+    "dockerDenied": false,
+    "dockerDeniedHint": null,
+    "dockerEngine": null,
+    "dockerEnginesRunning": [],
+    "dockerEngines": [],
+    "dockerCompose": {
+      "installed": false,
+      "version": null
+    },
+    "vagrant": {
+      "installed": true,
+      "version": "Vagrant 2.4.9"
+    },
+    "terraform": {
+      "installed": false,
+      "version": null
+    },
+    "ovftool": {
+      "installed": false,
+      "version": null
+    },
+    "ovftoolLocation": null,
+    "cloudClis": {
+      "aws": {
+        "installed": false,
+        "version": null
+      },
+      "azure": {
+        "installed": false,
+        "version": null
+      },
+      "gcloud": {
+        "installed": false,
+        "version": null
+      }
+    },
+    "vmProviders": [
+      {
+        "provider": "virtualbox",
+        "remote": false,
+        "available": false,
+        "hypervisor": false,
+        "plugin": null,
+        "pluginInstalled": true,
+        "utility": null,
+        "needs": [],
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
+      },
+      {
+        "provider": "vmware_desktop",
+        "remote": false,
+        "available": false,
+        "hypervisor": false,
+        "plugin": "vagrant-vmware-desktop",
+        "pluginInstalled": false,
+        "utility": "missing",
+        "needs": [
+          "plugin",
+          "vmwareUtility"
+        ],
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
+      },
+      {
+        "provider": "libvirt",
+        "remote": false,
+        "available": false,
+        "hypervisor": false,
+        "plugin": "vagrant-libvirt",
+        "pluginInstalled": false,
+        "utility": null,
+        "needs": [
+          "plugin"
+        ],
+        "reason": {
+          "code": "notInstalled",
+          "args": {
+            "program": null
+          }
+        },
+        "accountLacks": null
+      },
+      {
+        "provider": "qemu",
+        "remote": false,
+        "available": false,
+        "hypervisor": true,
+        "plugin": "vagrant-qemu",
+        "pluginInstalled": true,
+        "utility": null,
+        "needs": [],
+        "reason": {
+          "code": "newLogin",
+          "args": {
+            "group": "kvm"
+          }
+        },
+        "accountLacks": "newLogin"
+      },
+      {
+        "provider": "vmware_esxi",
+        "remote": true,
+        "available": false,
+        "hypervisor": null,
+        "plugin": "vagrant-vmware-esxi",
+        "pluginInstalled": false,
+        "utility": null,
+        "needs": [
+          "plugin"
+        ],
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-vmware-esxi"
+          }
+        },
+        "accountLacks": null
+      },
+      {
+        "provider": "proxmox",
+        "remote": true,
+        "available": false,
+        "hypervisor": null,
+        "plugin": "vagrant-proxmox",
+        "pluginInstalled": false,
+        "utility": null,
+        "needs": [
+          "plugin"
+        ],
+        "reason": {
+          "code": "pluginMissing",
+          "args": {
+            "plugin": "vagrant-proxmox"
+          }
+        },
+        "accountLacks": null
+      }
+    ],
+    "readyHypervisors": [],
+    "wsl": null,
+    "groupsPending": [
+      "kvm"
+    ],
+    "setup": {
+      "wsl": [],
+      "recommendedEngine": "docker-engine",
+      "engine": "docker-engine",
+      "engines": [
+        {
+          "engine": "docker-desktop",
+          "actions": [
+            {
+              "kind": "manual",
+              "reason": "vendor",
+              "dependency": null,
+              "url": "https://www.docker.com/products/docker-desktop/"
+            }
+          ]
+        },
+        {
+          "engine": "docker-engine",
+          "actions": [
+            {
+              "kind": "install",
+              "dependency": "docker"
+            }
+          ]
+        },
+        {
+          "engine": "colima",
+          "actions": [
+            {
+              "kind": "manual",
+              "reason": "vendor",
+              "dependency": null,
+              "url": "https://github.com/abiosoft/colima"
+            }
+          ]
+        }
+      ],
+      "hypervisor": "qemu",
+      "hypervisors": [
+        {
+          "provider": "virtualbox",
+          "get": [
+            {
+              "kind": "install",
+              "dependency": "virtualbox"
+            }
+          ],
+          "vagrant": []
+        },
+        {
+          "provider": "vmware_desktop",
+          "get": [
+            {
+              "kind": "manual",
+              "reason": "vendor",
+              "dependency": null,
+              "url": "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"
+            }
+          ],
+          "vagrant": [
+            {
+              "kind": "plugin",
+              "plugin": "vagrant-vmware-desktop"
+            },
+            {
+              "kind": "install",
+              "dependency": "vmware-utility"
+            }
+          ]
+        },
+        {
+          "provider": "libvirt",
+          "get": [
+            {
+              "kind": "install",
+              "dependency": "libvirt"
+            }
+          ],
+          "vagrant": [
+            {
+              "kind": "plugin",
+              "plugin": "vagrant-libvirt"
+            }
+          ]
+        },
+        {
+          "provider": "qemu",
+          "get": [
+            {
+              "kind": "relogin"
+            }
+          ],
+          "vagrant": []
         }
       ]
     }

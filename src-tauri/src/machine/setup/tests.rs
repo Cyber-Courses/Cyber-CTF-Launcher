@@ -163,6 +163,25 @@ fn virtualboxs_driver_waiting_for_the_newer_kernel_ends_the_pass_with_a_restart(
 }
 
 #[test]
+fn qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test() {
+    // Regression: the QEMU install never added the player to the kvm group (Debian 13's /dev/kvm
+    // is root:kvm 0660), and nothing asked for the login that applies it: the self-test fell back
+    // to software emulation and every lab's `accel=kvm` was refused.
+    let r = shapes::debian_qemu_awaits_relogin();
+    assert_eq!(get_of(&r, Provider::Qemu), [Action::Relogin]);
+    let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Qemu]));
+    assert_eq!(p.hypervisor, Some(Provider::Qemu), "a new login is how it is set up, not a reason to pass it over");
+    assert_eq!(steps(&p).last().map(String::as_str), Some("qemu: relogin"), "{:?}", steps(&p));
+    // On a Mac QEMU runs on HVF: a group pending is no reason to log in again.
+    let mut mac = shapes::debian_qemu_awaits_relogin();
+    mac.os = "macos";
+    for p in mac.vm_providers.iter_mut().filter(|p| p.provider == Provider::Qemu) {
+        (p.available, p.reason, p.account_lacks) = (true, None, None);
+    }
+    assert_eq!(options(&mac, false).hypervisors.iter().find(|h| h.provider == Provider::Qemu).unwrap().get, []);
+}
+
+#[test]
 fn a_linux_without_apt_is_told_to_install_each_tool_itself_instead_of_a_failing_apt_command() {
     // Regression: Fedora, openSUSE and Arch were offered the apt installs, which failed.
     let r = shapes::bare_fedora();

@@ -501,11 +501,15 @@ describe("VM step", () => {
     render(
       <Step
         step="vm"
-        report={{ ...readyReport(), os: "linux", vmProviders: [hv({ provider: "libvirt", available: false, reason: { code: "kvmDenied" } })] }}
+        report={{
+          ...readyReport(),
+          os: "linux",
+          vmProviders: [hv({ provider: "libvirt", available: false, reason: { code: "kvmDenied", args: { group: "kvm" } } })],
+        }}
       />,
     );
     expect(text()).toContain("Installed, but it can't run here.");
-    expect(text()).toContain("You can't use /dev/kvm yet: add yourself to the kvm and libvirt groups");
+    expect(text()).toContain("You can't use /dev/kvm yet: add yourself to the kvm group");
   });
 });
 

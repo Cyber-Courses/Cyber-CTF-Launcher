@@ -363,10 +363,39 @@ pub fn libvirt_script(user: Option<&str>) -> String {
     if let Some(u) = user.filter(|u| valid_user(u)) {
         let _ = write!(
             s,
-            "; usermod -aG libvirt {u}; if getent group kvm >/dev/null; then usermod -aG kvm {u}; fi; echo 'Added {u} to the libvirt group: log out and back in (or restart) for it to apply.'"
+            "; usermod -aG libvirt {u}; {}; echo 'Added {u} to the libvirt group: log out and back in (or restart) for it to apply.'",
+            join_kvm_group(u, KVM_DEVICE)
         );
     }
     s
+}
+
+/// QEMU and its disk tools, then the player into the group `/dev/kvm` belongs to, so vagrant-qemu
+/// boots VMs with KVM (`accel=kvm`, as every lab's Vagrantfile asks on Linux) without root; the
+/// group applies from the next login.
+#[cfg(any(target_os = "linux", test))]
+pub fn qemu_script(user: Option<&str>) -> String {
+    let mut s = "apt-get update && apt-get install -y qemu-system qemu-utils".to_string();
+    if let Some(u) = user.filter(|u| valid_user(u)) {
+        s.push_str("; ");
+        s.push_str(&join_kvm_group(u, KVM_DEVICE));
+    }
+    s
+}
+
+/// The KVM device.
+#[cfg(any(target_os = "linux", test))]
+const KVM_DEVICE: &str = "/dev/kvm";
+
+/// Player `u` into the group `dev` (the KVM device) belongs to, saying so: `kvm` where a
+/// distribution makes it `0660` (Debian, Ubuntu, Kali, openSUSE); joining it does no harm where
+/// it is `0666` (Fedora, Arch). Without the device (virtualization off in the firmware), or when it
+/// is root's, the `kvm` group, where the distribution has one.
+#[cfg(any(target_os = "linux", test))]
+fn join_kvm_group(u: &str, dev: &str) -> String {
+    format!(
+        "g=$(stat -c %G {dev} 2>/dev/null || true); case \"$g\" in ''|root|UNKNOWN) g=kvm;; esac; if getent group \"$g\" >/dev/null; then usermod -aG \"$g\" {u} && echo \"Added {u} to the $g group, which opens {dev}: log out and back in (or restart) for it to apply.\"; fi"
+    )
 }
 
 /// A login name safe to put in a shell script unquoted.
@@ -402,9 +431,49 @@ mod tests {
         }
         assert!(!s.contains("usermod"));
         let s = libvirt_script(Some("ada"));
-        assert!(s.contains("usermod -aG libvirt ada") && s.contains("usermod -aG kvm ada"), "{s}");
+        assert!(s.contains("usermod -aG libvirt ada") && s.contains(&join_kvm_group("ada", "/dev/kvm")), "{s}");
         assert!(!libvirt_script(Some("a; rm -rf /")).contains("usermod"));
         assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
+    }
+
+    #[test]
+    fn qemu_install_adds_the_player_to_the_group_that_opens_dev_kvm() {
+        // Regression: the QEMU install added nobody to the kvm group, so on Debian 13 (/dev/kvm
+        // root:kvm 0660) every lab's `accel=kvm` was refused: "Could not access KVM kernel module:
+        // Permission denied".
+        let s = qemu_script(Some("ada"));
+        assert!(s.starts_with("apt-get update && apt-get install -y qemu-system qemu-utils; "), "{s}");
+        assert!(s.ends_with(&join_kvm_group("ada", "/dev/kvm")), "{s}");
+        assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
+        assert_eq!(qemu_script(None), "apt-get update && apt-get install -y qemu-system qemu-utils");
+        assert!(!qemu_script(Some("a; rm -rf /")).contains("usermod"));
+    }
+
+    /// What [`join_kvm_group`] does on a system whose `stat` says `owner` owns the device (empty:
+    /// no device) and whose groups are `groups`: the `usermod` it ran, if any, and what it said.
+    fn joined(owner: &str, groups: &[&str]) -> (String, String) {
+        let fakes = format!(
+            "stat() {{ [ -n '{owner}' ] && echo '{owner}' || return 1; }}; getent() {{ for g in {}; do [ \"$g\" = \"$2\" ] && return 0; done; return 1; }}; usermod() {{ echo \"usermod $*\" >&2; }};",
+            groups.join(" ")
+        );
+        let out = std::process::Command::new("sh").arg("-c").arg(format!("{fakes} {}", join_kvm_group("ada", "/dev/kvm"))).output().unwrap();
+        assert!(out.status.success(), "{out:?}");
+        (String::from_utf8_lossy(&out.stderr).trim().to_owned(), String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    }
+
+    #[test]
+    fn the_kvm_group_joined_is_the_devices_on_every_distribution() {
+        // Debian, Ubuntu, Kali, openSUSE: /dev/kvm root:kvm 0660.
+        let (ran, said) = joined("kvm", &["root", "kvm"]);
+        assert_eq!(ran, "usermod -aG kvm ada");
+        assert_eq!(said, "Added ada to the kvm group, which opens /dev/kvm: log out and back in (or restart) for it to apply.");
+        // A distribution's own group for it.
+        assert_eq!(joined("hypervisor", &["kvm", "hypervisor"]).0, "usermod -aG hypervisor ada");
+        // Fedora and Arch (root:kvm 0666), or no device yet: the kvm group where there is one.
+        assert_eq!(joined("root", &["kvm"]).0, "usermod -aG kvm ada");
+        assert_eq!(joined("", &["kvm"]).0, "usermod -aG kvm ada");
+        // No such group: nobody is added, and the install still succeeds.
+        assert_eq!(joined("", &["root"]), (String::new(), String::new()));
     }
 
     #[test]
