@@ -16,20 +16,29 @@ test.describe("server setup", () => {
     await navButton(page, "Servers").click();
     const [setup] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Add server" }).click()]);
 
-    await expect(stepOf(setup)).toHaveText("Step 1 of 5");
+    await expect(stepOf(setup)).toHaveText("Step 1 of 6");
     await expect(setup.getByRole("radio", { name: /^Proxmox/ })).toHaveAttribute("aria-checked", "true");
     await button(setup, "Continue").click();
-    await expect(stepOf(setup)).toHaveText("Step 2 of 5");
+    await expect(stepOf(setup)).toHaveText("Step 2 of 6");
     await expect(setup.getByText("Terraform", { exact: true })).toBeVisible();
     await button(setup, "Continue").click();
 
-    // Connection: Continue waits for the host, the user and the password.
-    await expect(stepOf(setup)).toHaveText("Step 3 of 5");
-    await expect(setup.getByRole("heading", { level: 2, name: "Connect to Proxmox" })).toBeVisible();
+    // The server: Continue waits for its address.
+    await expect(stepOf(setup)).toHaveText("Step 3 of 6");
+    await expect(setup.getByRole("heading", { level: 2, name: "Your Proxmox server" })).toBeVisible();
     const next = button(setup, "Continue");
     await expect(next).toBeDisabled();
     await field(setup, "Name").fill("garage-pve");
     await field(setup, "Host").fill("https://10.0.0.5:8006");
+    await expect(next).toBeEnabled();
+    await next.click();
+
+    // How the launcher signs in (an SSH key first): with a password, Continue waits for the user
+    // and the password.
+    await expect(stepOf(setup)).toHaveText("Step 4 of 6");
+    await expect(setup.getByRole("heading", { level: 2, name: "Connect to Proxmox" })).toBeVisible();
+    await expect(setup.getByRole("radio", { name: "SSH key" })).toHaveAttribute("aria-checked", "true");
+    await setup.getByRole("radio", { name: "Password" }).click();
     await expect(next).toBeDisabled();
     await field(setup, "Username").fill("root");
     await expect(next).toBeDisabled();
@@ -37,25 +46,33 @@ test.describe("server setup", () => {
     await expect(next).toBeEnabled();
     await next.click();
 
-    // Placement, then Back: the connection fields are as typed.
-    await expect(stepOf(setup)).toHaveText("Step 4 of 5");
-    await field(setup, "Node").fill("pve2");
+    // Placement, read from the node (another bridge picked), then Back: the sign-in and the
+    // server are as typed.
+    await expect(stepOf(setup)).toHaveText("Step 5 of 6");
+    const bridge = setup.getByRole("combobox", { name: /^Bridge/ });
+    await bridge.selectOption("vmbr0");
     await button(setup, "Back").click();
-    await expect(stepOf(setup)).toHaveText("Step 3 of 5");
-    await expect(field(setup, "Name")).toHaveValue("garage-pve");
-    await expect(field(setup, "Host")).toHaveValue("https://10.0.0.5:8006");
+    await expect(stepOf(setup)).toHaveText("Step 4 of 6");
+    await expect(setup.getByRole("radio", { name: "Password" })).toHaveAttribute("aria-checked", "true");
     await expect(field(setup, "Username")).toHaveValue("root");
     await expect(field(setup, "Password")).toHaveValue("s3cret");
+    await button(setup, "Back").click();
+    await expect(stepOf(setup)).toHaveText("Step 3 of 6");
+    await expect(field(setup, "Name")).toHaveValue("garage-pve");
+    await expect(field(setup, "Host")).toHaveValue("https://10.0.0.5:8006");
     await button(setup, "Continue").click();
-    await expect(field(setup, "Node")).toHaveValue("pve2");
+    await button(setup, "Continue").click();
+    await expect(bridge).toHaveValue("vmbr0");
 
     // The core refuses the address with a scheme, then the user without a realm: said each time,
     // and the step stays.
     await button(setup, "Save and test").click();
     await expect(setup.getByText("host must be a hostname or IP address, without https:// or a path")).toBeVisible();
-    await expect(stepOf(setup)).toHaveText("Step 4 of 5");
+    await expect(stepOf(setup)).toHaveText("Step 5 of 6");
+    await button(setup, "Back").click();
     await button(setup, "Back").click();
     await field(setup, "Host").fill("10.0.0.5");
+    await button(setup, "Continue").click();
     await button(setup, "Continue").click();
     await button(setup, "Save and test").click();
     await expect(setup.getByText("Proxmox users include a realm, e.g. root@pam")).toBeVisible();
@@ -65,7 +82,7 @@ test.describe("server setup", () => {
     await button(setup, "Save and test").click();
 
     // Saved and tested.
-    await expect(stepOf(setup)).toHaveText("Step 5 of 5");
+    await expect(stepOf(setup)).toHaveText("Step 6 of 6");
     await expect(setup.getByRole("heading", { level: 1, name: "garage-pve connected" })).toBeVisible();
     await expect(setup.getByText(/^Connected/)).toBeVisible();
     await expect(button(setup, "Done")).toBeVisible();

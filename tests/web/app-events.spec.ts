@@ -78,6 +78,8 @@ test.describe("website launch confirmation", () => {
       place: "cloud",
       target: "AWS sandbox",
       privileged: false,
+      // The agent waits a few minutes for the answer.
+      expiresAtMs: Date.now() + 5 * 60_000,
     };
     const confirm = page.getByRole("alertdialog", { name: "Confirm a lab launch from the website" });
 

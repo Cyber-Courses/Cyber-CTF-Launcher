@@ -4,7 +4,9 @@ import { test, expect, openApp, navButton, pageTitle, forceCommands, releaseForc
 // machine check. The dev mock answers everything else (Invoice portal API runs, GOAD Light
 // deploys on a server).
 
-const PORT_CLASH = "Host port 8080 is already in use on this machine (another lab or app holds it). Stop whatever uses it, or start the lab with random ports.";
+// Docker's own words when a port is taken under it (no code: the hint knows them by their words).
+const PORT_CLASH =
+  "Error response from daemon: driver failed programming external connectivity on endpoint web: Bind for 0.0.0.0:8080 failed: port is already allocated";
 
 const main = (page: import("@playwright/test").Page) => page.locator("main");
 const sidebar = (page: import("@playwright/test").Page) => page.locator("aside");
@@ -57,7 +59,7 @@ test.describe("failure states", () => {
     await openApp(page);
     await navButton(page, "Labs").click();
     await main(page).getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
-    const diagram = main(page).getByText("Your machine", { exact: true });
+    const diagram = main(page).locator(".react-flow");
     await expect(diagram).toBeVisible();
     const asked = answerConfirm(page, true);
     await page.getByRole("button", { name: "Stop & remove" }).click();
