@@ -26,7 +26,7 @@ const renderPanel = (props: Partial<Parameters<typeof WhereItRunsPanel>[0]> = {}
       hostArch="x86_64"
       readyVms={["virtualbox"]}
       hosts={HOSTS}
-      options={null}
+      optionsRead={{ value: null, pending: false, error: null }}
       native
       emulates={false}
       isDocker={false}
@@ -36,6 +36,21 @@ const renderPanel = (props: Partial<Parameters<typeof WhereItRunsPanel>[0]> = {}
   );
 
 describe("WhereItRunsPanel", () => {
+  it("says the run options are being read, or why they couldn't be, instead of the catalogue's guess", async () => {
+    installTauri();
+    // Regression: until the backend's run options arrived (or when they failed) the places came
+    // from the catalogue alone, without the policy, so a place the policy turns off read "ready".
+    const reading = renderPanel({ optionsRead: { value: null, pending: true, error: null } });
+    await flush();
+    expect(document.body.textContent).toContain("Reading where this lab can run…");
+    expect(screen.queryByText("VM on this machine")).toBeNull();
+    reading.unmount();
+    renderPanel({ optionsRead: { value: null, pending: false, error: "the spec couldn't be fetched" } });
+    await flush();
+    expect(document.body.textContent).toContain("Couldn't read where this lab can run (the spec couldn't be fetched).");
+    expect(screen.queryByText("VM on this machine")).toBeNull();
+  });
+
   it("marks the places the lab can't run as not available", async () => {
     installTauri();
     renderPanel();

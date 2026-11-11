@@ -311,6 +311,8 @@
     "objective": "Objectif",
     "evidence": "preuve",
     "whereItRuns": "Où il s’exécute",
+    "placesReading": "Lecture des endroits où ce lab peut tourner…",
+    "placesUnread": "Impossible de lire où ce lab peut tourner ({why}).",
     "notAvailable": "Indisponible pour ce lab",
     "na": "n/d",
     "installHypervisor": "Installer un hyperviseur",

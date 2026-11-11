@@ -66,7 +66,7 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
           hostArch={p.hostArch}
           readyVms={p.readyVms ?? []}
           hosts={page.run.hosts}
-          options={page.run.runOptions}
+          optionsRead={page.run.runOptionsRead}
           native={s.native}
           emulates={s.emulates}
           isDocker={s.isDocker}

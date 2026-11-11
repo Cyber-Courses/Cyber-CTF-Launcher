@@ -59,8 +59,9 @@ export function useRunTarget(
   // A container lab here: its host ports (Settings' choice first).
   const [ports, setPorts] = useState<PortMode>(() => getPortMode() ?? "random");
   // Every way the lab starts, and where it starts with nothing picked: the backend's answers.
-  const options = useLabRunOptions(lab.id, rt);
-  const place = useLabAnswer(lab.id, rt, askDefaultPlace);
+  const optionsRead = useLabRunOptions(lab.id, rt);
+  const options = optionsRead.value;
+  const place = useLabAnswer(lab.id, rt, askDefaultPlace).value;
   // The VM forms a container lab can run here as, and the hypervisors each can run on.
   const vm = useLocalVmChoice(rt, { readyVms, options }, isDocker, setRunOn);
   const { localVm, localVms, perMachineVm, perMachineVms, perMachine, pickProvider } = vm;
@@ -84,8 +85,11 @@ export function useRunTarget(
   return {
     hosts,
     hostOk,
-    /** The lab's run options (each place's launch path and badge); null while they load. */
+    /** The lab's run options (each place's launch path and badge); null while they load, or when
+     *  they couldn't be read. */
     runOptions: options,
+    /** The run options as read: still being read, or why they couldn't be. */
+    runOptionsRead: optionsRead,
     runOn,
     setRunOn,
     /** The step flow: where the dialog is, what each step picks, Back (see usePickerSteps). */

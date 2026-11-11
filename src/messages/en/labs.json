@@ -309,6 +309,8 @@
     "objective": "Objective",
     "evidence": "evidence",
     "whereItRuns": "Where it runs",
+    "placesReading": "Reading where this lab can run…",
+    "placesUnread": "Couldn't read where this lab can run ({why}).",
     "systemRequirements": "Needs",
     "requirementsSummary": "{cpu} vCPU · {ram} GB RAM · {disk} GB disk",
     "notAvailable": "Not available for this lab",

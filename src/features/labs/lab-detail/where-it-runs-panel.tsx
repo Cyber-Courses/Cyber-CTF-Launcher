@@ -6,6 +6,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-pill";
 import { runPlaces } from "@/features/labs/lab-runtime";
 import { PLACE_ICONS } from "@/features/labs/run-place-icons";
+import type { LabAnswer } from "@/features/labs/use-lab-answer";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { labRequirements, type LabRequirements, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,29 @@ function PlaceRow({ place, t }: { place: ReturnType<typeof runPlaces>[number]; t
   );
 }
 
+/** Every place the lab could run and its state, once the backend's run options are read (they
+ *  apply the administrator's policy, which the catalogue doesn't know): until then a line says
+ *  they are being read, and a failure is said with why, never read as the catalogue's guess. A lab
+ *  without a source to read them from (imported from a folder) goes by its runtime alone. */
+function Places({
+  runtime,
+  hostArch,
+  emulates,
+  setup,
+  read,
+}: {
+  runtime: LabRuntimeInfo;
+  hostArch: string;
+  emulates: boolean;
+  setup: { readyVms: Provider[]; hosts: ServerHost[] };
+  read: LabAnswer<LabRunOptions>;
+}) {
+  const t = useT();
+  if (read.pending) return <p className="px-4 py-2.5 text-[0.8125rem] text-muted-foreground">{t("labs.detail.placesReading")}</p>;
+  if (read.error) return <p className="px-4 py-2.5 text-[0.8125rem] text-destructive">{t("labs.detail.placesUnread", { why: read.error })}</p>;
+  return runPlaces(runtime, hostArch, emulates, { ...setup, options: read.value }).map((place) => <PlaceRow key={place.key} place={place} t={t} />);
+}
+
 /** Before it runs, the aside would otherwise be empty for a VM lab: say what the lab is and
  *  where it can run, and what it needs, so the page reads as complete at rest. */
 export function WhereItRunsPanel({
@@ -87,7 +111,7 @@ export function WhereItRunsPanel({
   hostArch,
   readyVms,
   hosts,
-  options,
+  optionsRead,
   native,
   emulates,
   isDocker,
@@ -99,10 +123,10 @@ export function WhereItRunsPanel({
   hostArch: string;
   /** The local hypervisors ready on this machine, so "VM here" reads as ready, not "install one". */
   readyVms: Provider[];
-  /** The saved servers and cloud accounts, and the lab's run options (null while they load): the
-   *  page's own reads, which the launch picker shows too. */
+  /** The saved servers and cloud accounts, and the lab's run options as read (still being read,
+   *  or why they couldn't be): the page's own reads, which the launch picker shows too. */
   hosts: ServerHost[];
-  options: LabRunOptions | null;
+  optionsRead: LabAnswer<LabRunOptions>;
   native: boolean;
   emulates: boolean;
   isDocker: boolean;
@@ -116,9 +140,7 @@ export function WhereItRunsPanel({
     <Panel>
       <PanelHeader title={t("labs.detail.whereItRuns")} meta={meta} />
       <div>
-        {runPlaces(runtime, hostArch, emulates, { readyVms, hosts, options }).map((place) => (
-          <PlaceRow key={place.key} place={place} t={t} />
-        ))}
+        <Places runtime={runtime} hostArch={hostArch} emulates={emulates} setup={{ readyVms, hosts }} read={optionsRead} />
         {requirements && (
           <div className="flex items-center gap-2.5 border-t border-border px-4 py-2 text-[0.8125rem]">
             <Cpu className="size-3.5 shrink-0 text-faint" />

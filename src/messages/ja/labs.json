@@ -311,6 +311,8 @@
     "objective": "目標",
     "evidence": "証拠",
     "whereItRuns": "実行場所",
+    "placesReading": "このラボを実行できる場所を読み取っています…",
+    "placesUnread": "このラボを実行できる場所を読み取れませんでした（{why}）。",
     "notAvailable": "このラボでは利用できません",
     "na": "該当なし",
     "installHypervisor": "ハイパーバイザーをインストール",
