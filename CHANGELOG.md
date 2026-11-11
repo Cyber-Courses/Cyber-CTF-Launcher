@@ -296,6 +296,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **The tools a killed deploy worker ran are ended by the lab's next operation.** A worker killed
+  mid-start (Activity Monitor, Task Manager, a crash) left its `docker compose up` or `vagrant up`
+  running to its end, and the next start waited on Vagrant's machine lock. With Isothrum's ledger
+  of each operation's tools, the next operation on the lab (a Stop, a start again) ends what the
+  killed one left first, and nothing it didn't start.
+
 - **A lab VM deleted in Proxmox's web UI shows gone.** A Proxmox lab's page read its run's own
   Terraform state, which still held the VM: it read as running until the next stop. The status
   now asks the server's API where each VM stands, signed in with the server's saved token or

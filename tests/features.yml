@@ -4192,7 +4192,7 @@ areas:
           integration: throwaway machines only (CYBERCTF_TEST_RESILIENCE_THROWAWAY, CYBERCTF_TEST_RESILIENCE_VM_KILL)
 
       - id: resilience.killed-start
-        what: "The deploy worker (or the process running the start) killed mid-start: the start says it stopped without a result, the lab reads as failed, not running, its launch token is removed, and a Stop then a start bring it back (tests/resilience.md A3)."
+        what: "The deploy worker (or the process running the start) killed mid-start: the start says it stopped without a result, the lab reads as failed, not running, its launch token is removed, the tools it ran (docker compose, vagrant, terraform) are ended by the next operation, and a Stop then a start bring it back (tests/resilience.md A3, A4)."
         host: true
         tests:
           unit:
@@ -4207,7 +4207,7 @@ areas:
             - kill-worker
         gaps:
           desktop: kill-worker kills with SIGKILL, so it skips on Windows
-          integration: the tools a killed start ran outlive it (their own process groups); the scenarios wait for them, nothing ends them (tests/resilience.md A4)
+          integration: "the scenarios don't check that the tools the killed start ran are ended by the next operation (tests/resilience.md A4); Isothrum's ledger tests hold it with real child processes"
 
       - id: resilience.window-closed-mid-start
         what: "The window closed while a lab starts: the start goes on in its worker, and the reopened app shows the lab running (tests/resilience.md A1)."
