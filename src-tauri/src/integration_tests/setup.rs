@@ -65,6 +65,9 @@ use crate::platform::AppDirs;
 use crate::runtime::providers::{Provider, UtilityState};
 use crate::runtime::{isothrum, launch, lifecycle};
 
+/// What each installed item leaves on the machine, for a caller's leftover audit.
+mod leaves;
+
 /// The test's knobs.
 struct Knobs {
     wanted: Wanted,
@@ -155,6 +158,9 @@ struct Out {
     /// The hypervisor the pass sets up, its records' provider ("" for none).
     hypervisor: String,
     logs: PathBuf,
+    /// The entry's own folder (`setup_root`), which an installed item's record names among what
+    /// it leaves.
+    root: PathBuf,
     /// The items that failed, for the test's verdict.
     failed: Vec<String>,
     /// How many logs and reports were written, for their order in the folder.
@@ -169,13 +175,15 @@ impl Out {
             report: knobs.report.clone(),
             hypervisor: String::new(),
             logs: knobs.logs.clone(),
+            root: setup_root(),
             failed: Vec::new(),
             written: 0,
         }
     }
 
     /// One item's record: on the pass's hypervisor, the reason its status and note, its log the
-    /// logs folder.
+    /// logs folder, and for an item installed in this pass, what the install leaves on the
+    /// machine on purpose ([`leaves`]), in the leftover audit's words.
     fn record(&self, item: &str, status: Status, seconds: u64, note: &str) -> Record {
         Record {
             suite: "setup".to_owned(),
@@ -186,6 +194,7 @@ impl Out {
             reason: format!("{}: {}", status.word(), one_line(note)),
             seconds,
             log: self.logs.display().to_string(),
+            leaves: if status == Status::Installed { leaves::of(item, std::env::consts::OS, &self.root) } else { Vec::new() },
         }
     }
 
@@ -244,10 +253,16 @@ impl Log {
     }
 }
 
+/// The entry's own folder, under the system's temporary folder: the app's folders for the pass
+/// (`dirs`); kept from pass to pass, and named among what an installed item leaves.
+fn setup_root() -> PathBuf {
+    std::env::temp_dir().join("cyberctf-guided-setup")
+}
+
 /// The app's folders for the pass: kept from pass to pass (the WSL and Hyper-V marks, what the
 /// setup installed), as a player's app keeps them.
 fn dirs() -> AppDirs {
-    let root = std::env::temp_dir().join("cyberctf-guided-setup");
+    let root = setup_root();
     let (data, cache) = (root.join("data"), root.join("cache"));
     for dir in [&data, &cache] {
         std::fs::create_dir_all(dir).unwrap_or_else(|e| panic!("creating {}: {e}", dir.display()));
@@ -628,10 +643,24 @@ mod tests {
         let mut out = Out::new(&knobs);
         out.hypervisor = "libvirt".into();
         let r = out.record("docker", Status::Installed, 42, "Docker installed");
-        assert_eq!(
-            r.line(),
-            r#"{"suite":"setup","case":"docker","provider":"libvirt","form":"","result":"pass","reason":"installed: Docker installed","seconds":42,"log":"setup-logs"}"#
+        let line = r.line();
+        assert!(
+            line.starts_with(r#"{"suite":"setup","case":"docker","provider":"libvirt","form":"","result":"pass","reason":"installed: Docker installed","seconds":42,"log":"setup-logs","leaves":["#),
+            "{line}"
         );
+        // An installed item says what it leaves, on this system, the entry's own folder last.
+        assert_eq!(r.leaves, leaves::of("docker", std::env::consts::OS, &setup_root()));
+        assert_eq!(r.leaves.last().map(|l| (l.kind.as_str(), l.name.clone())), Some(("temp-folder", setup_root().display().to_string())));
+        if std::env::consts::OS == "linux" {
+            assert!(r.leaves.iter().any(|l| l.kind == "route" && l.name == "172.17.0.0/16 dev docker0"), "{:?}", r.leaves);
+        }
+        // Anything else leaves nothing: present already, failed, skipped, a pass that ends.
+        for (status, note) in
+            [(Status::Present, "29.1"), (Status::Failed, "exited"), (Status::Skipped, "why"), (Status::Again, "reboot"), (Status::CheckOnly, "would install")]
+        {
+            let r = out.record("docker", status, 0, note);
+            assert!(r.leaves.is_empty() && !r.line().contains("leaves"), "{status:?}: {}", r.line());
+        }
         assert_eq!(
             (out.record("wsl", Status::Again, 0, "reboot").result, out.record("wsl", Status::Again, 0, "reboot").reason),
             (Verdict::Skip, "again: reboot".into())

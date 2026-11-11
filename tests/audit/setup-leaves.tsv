@@ -1,0 +1,65 @@
+# What the guided setup leaves on a machine on purpose, by the item it installs, in the leftover
+# audit's own words (tests/leftovers.md, "What the guided setup leaves"): item (as the headless
+# setup entry's records name it, `*` and `?` allowed)<TAB>os (linux, macos, windows or any)<TAB>
+# kind (kinds.ts)<TAB>glob on the name the report shows (allowlist.tsv's)<TAB>why it stays. The
+# entry (integration_tests::setup) puts each `installed:` record's rows in its `leaves`, so a
+# caller's allowances come from the records, not from a table of its own; the entry's own temp
+# folder is added there with its real path. kinds.test.ts holds the kinds and systems to kinds.ts.
+launcher	linux	os-registration	/usr/share/applications/Cyber CTF.desktop	the launcher's package (its .deb) registers the app's desktop entry
+launcher	linux	os-registration	*/.local/share/applications/cyberctf-desktop-handler.desktop	the installed app registers the cyberctf:// handler when a player first opens it
+launcher	windows	os-registration	HKCU\Software\Classes\cyberctf	the launcher's installer registers the cyberctf:// handler
+launcher	windows	os-registration	*\Start Menu\Programs\Cyber CTF.lnk	the launcher's installer puts its shortcut in the Start menu (not probed by the snapshot yet)
+launcher	windows	os-registration	HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\*Cyber CTF*	the launcher's installer registers its uninstall entry (not probed by the snapshot yet)
+docker	linux	route	172.17.0.0/16 dev docker0	the Docker engine's default bridge, routed as long as the engine runs
+docker	linux	iptables-rule	*DOCKER*	the Docker engine's firewall chains (DOCKER, DOCKER-USER, DOCKER-FORWARD, …) and the rules that jump to them
+docker	linux	iptables-rule	* docker0 *	the Docker engine's masquerade and forwarding rules for its default bridge
+docker	linux	iptables-rule	filter :FORWARD DROP	the Docker engine sets the FORWARD chain's policy to DROP
+docker	linux	iptables-rule	filter :* ACCEPT	the filter table's base chains, which the engine's first rule creates on a machine without any
+docker	linux	iptables-rule	nat :* ACCEPT	the nat table's base chains, which the engine's first rule creates on a machine without any
+docker	linux	nft-table	table ip filter	the filter table iptables-nft creates for the Docker engine's rules
+docker	linux	nft-table	table ip nat	the nat table iptables-nft creates for the Docker engine's rules
+docker	linux	nft-table	table ip6 filter	the same for IPv6
+docker	linux	nft-table	table ip6 nat	the same for IPv6
+docker	linux	nft-table	table * docker*	the Docker engine's own nftables tables (its nftables firewall backend)
+docker	macos	process	* com.docker.*	Docker Desktop's own processes, which run while the engine does
+docker	macos	process	*Docker Desktop*	Docker Desktop's app
+docker	macos	listening-port	*docker*	Docker Desktop's own sockets
+docker	windows	process	* com.docker.*	Docker Desktop's own processes, which run while the engine does
+docker	windows	process	*Docker Desktop*	Docker Desktop's app
+docker	windows	listening-port	*docker*	Docker Desktop's own sockets
+engine:docker-desktop	macos	process	* com.docker.*	Docker Desktop's own processes, started with the engine
+engine:docker-desktop	macos	process	*Docker Desktop*	Docker Desktop's app
+engine:docker-desktop	macos	listening-port	*docker*	Docker Desktop's own sockets
+engine:docker-desktop	windows	process	* com.docker.*	Docker Desktop's own processes, started with the engine
+engine:docker-desktop	windows	process	*Docker Desktop*	Docker Desktop's app
+engine:docker-desktop	windows	listening-port	*docker*	Docker Desktop's own sockets
+wsl	windows	hyperv-switch	WSL*	WSL 2's virtual switch, made when WSL is turned on
+wsl	windows	route	* vEthernet (WSL*	the route of WSL 2's virtual switch
+libvirt	linux	route	192.168.122.0/24 dev virbr0	libvirt's default network's bridge, routed as long as the network is up
+libvirt	linux	libvirt-network	default	libvirt's default network, defined by its package
+libvirt	linux	libvirt-pool	default	libvirt's default storage pool, which the VMs' disks go in
+libvirt	linux	iptables-rule	*LIBVIRT*	libvirt's firewall chains (LIBVIRT_INP, _OUT, _FWO, _FWI, _FWX, _PRT) and their rules
+libvirt	linux	iptables-rule	* virbr0 *	libvirt's rules for its default network's bridge
+libvirt	linux	nft-table	table * libvirt*	libvirt's own nftables tables (its nftables firewall backend)
+libvirt	linux	nft-table	table ip mangle	the mangle table iptables-nft creates for libvirt's checksum rules
+libvirt	linux	nft-table	table ip6 mangle	the same for IPv6
+qemu	linux	route	192.168.122.0/24 dev virbr0	libvirt comes with QEMU on this distribution: its default network's bridge
+qemu	linux	libvirt-network	default	libvirt's default network, defined by its package
+qemu	linux	libvirt-pool	default	libvirt's default storage pool
+qemu	linux	iptables-rule	*LIBVIRT*	libvirt's firewall chains and their rules
+qemu	linux	iptables-rule	* virbr0 *	libvirt's rules for its default network's bridge
+qemu	linux	nft-table	table * libvirt*	libvirt's own nftables tables
+qemu	linux	nft-table	table ip mangle	the mangle table iptables-nft creates for libvirt's checksum rules
+qemu	linux	nft-table	table ip6 mangle	the same for IPv6
+hyperv	windows	hyperv-switch	Default Switch	Hyper-V's Default Switch, made when Hyper-V is turned on
+hyperv	windows	route	* vEthernet (Default Switch)	the Default Switch's NAT route
+virtualbox	linux	vbox-hostonly	vboxnet*	the host-only adapter the self-test's private network makes, which Vagrant never removes
+virtualbox	linux	route	* dev vboxnet*	the host-only adapter's route
+virtualbox	macos	vbox-hostonly	vboxnet*	the host-only adapter the self-test's private network makes, which Vagrant never removes
+virtualbox	macos	vbox-hostonly	vagrantnet-*	VirtualBox 7's host-only network Vagrant makes on a Mac
+virtualbox	macos	route	* vboxnet*	the host-only adapter's route
+virtualbox	windows	vbox-hostonly	VirtualBox Host-Only*	the host-only adapter the self-test's private network makes, which Vagrant never removes
+virtualbox	windows	route	* VirtualBox Host-Only*	the host-only adapter's route
+vmware-utility	any	process	*vagrant-vmware-utility*	the Vagrant VMware Utility's service, which runs from its install on
+selftest:vm	linux	libvirt-network	vagrant-libvirt	vagrant-libvirt's management network, made by the self-test's first VM and kept for the next
+selftest:vm	linux	route	192.168.121.0/24 dev virbr*	the management network's bridge, routed as long as the network is up

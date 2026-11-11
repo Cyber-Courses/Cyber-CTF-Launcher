@@ -167,6 +167,11 @@ night's run:
 - `result`: `pass`, `fail` or `skip`; `reason`: why it failed or was skipped (a setup item's:
   `<status>: <note>`, its status `installed`, `present`, `failed`, `skipped` or `again`, the last
   a pass that ends for a `reboot` or a `relogin`); `seconds`; `log`: its log.
+- `leaves`, on a setup item's `installed:` record only: what the install leaves on the machine on
+  purpose, a list of `{"kind", "name"}` in the leftover audit's words (a kind of
+  [leftovers.md](leftovers.md), a glob on the name its report shows:
+  `[{"kind":"route","name":"172.17.0.0/16 dev docker0"}, {"kind":"temp-folder","name":"/tmp/cyberctf-guided-setup"}]`),
+  for a caller's audit to allow ([leftovers.md](leftovers.md#what-the-guided-setup-leaves)).
 
 The file is appended to, never truncated, so one file can gather a whole run. A listing line:
 

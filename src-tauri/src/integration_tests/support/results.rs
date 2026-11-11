@@ -38,6 +38,18 @@ pub(crate) struct Record {
     pub(crate) seconds: u64,
     /// Where its log is; empty when it has none of its own.
     pub(crate) log: String,
+    /// What the check left on the machine on purpose, for a caller's leftover audit to allow
+    /// (the guided setup's `installed:` items); left out of the line when there is nothing.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) leaves: Vec<Leaves>,
+}
+
+/// One thing a check leaves on the machine on purpose, in the leftover audit's words
+/// (tests/leftovers.md): its kind, and a glob on the name the audit's report shows.
+#[derive(Clone, PartialEq, Eq, Debug, serde::Serialize)]
+pub(crate) struct Leaves {
+    pub(crate) kind: String,
+    pub(crate) name: String,
 }
 
 impl Record {
@@ -72,6 +84,7 @@ mod tests {
             reason: reason.into(),
             seconds: 42,
             log: "setup-logs".into(),
+            leaves: Vec::new(),
         }
     }
 
@@ -80,6 +93,13 @@ mod tests {
         assert_eq!(
             record("installed: Docker installed").line(),
             r#"{"suite":"setup","case":"docker","provider":"libvirt","form":"","result":"pass","reason":"installed: Docker installed","seconds":42,"log":"setup-logs"}"#
+        );
+        // What it leaves, when it leaves something, after the contract's fields.
+        let leaves = vec![Leaves { kind: "route".into(), name: "172.17.0.0/16 dev docker0".into() }];
+        assert!(
+            Record { leaves, ..record("installed: Docker installed") }
+                .line()
+                .ends_with(r#","log":"setup-logs","leaves":[{"kind":"route","name":"172.17.0.0/16 dev docker0"}]}"#)
         );
         // A note on several lines, with quotes, stays one line of valid JSON.
         let line = record("exited with 1:\n\t\"E: no\"").line();

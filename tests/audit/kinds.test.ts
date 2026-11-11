@@ -137,3 +137,31 @@ esac`,
     expect(snap.probes.map((p) => p.kind)).toEqual(["docker-container", "docker-network", "docker-volume", "docker-image"]);
   });
 });
+
+describe("what the guided setup leaves (setup-leaves.tsv)", () => {
+  const rows = read("setup-leaves.tsv")
+    .split("\n")
+    .filter((l) => l && !l.startsWith("#"))
+    .map((l) => {
+      const [item = "", os = "", kind = "", name = "", reason = ""] = l.split("\t");
+      return { item, os, kind, name, reason };
+    });
+
+  it("names a kind of the listing on a system that reads it, a name and a reason, a row each", () => {
+    expect(rows.length).toBeGreaterThan(40);
+    for (const r of rows) {
+      const kind = KINDS.find((k) => k.kind === r.kind);
+      expect(kind, `${r.item}: ${r.kind}`).toBeDefined();
+      expect(["linux", "macos", "windows", "any"], `${r.item}: ${r.os}`).toContain(r.os);
+      if (r.os !== "any") expect(kind?.on, `${r.item}: ${r.kind} isn't read on ${r.os}`).toContain(r.os);
+      expect(r.name, r.item).not.toBe("");
+      expect(r.reason, r.item).not.toBe("");
+    }
+    // The paths the setup sets up each leave something: the engine, each hypervisor, the launcher.
+    for (const item of ["launcher", "docker", "libvirt", "qemu", "virtualbox", "hyperv", "wsl"])
+      expect(
+        rows.some((r) => r.item === item),
+        item,
+      ).toBe(true);
+  });
+});

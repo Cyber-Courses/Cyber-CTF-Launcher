@@ -165,6 +165,24 @@ The launcher also appends its public key to the node's `~/.ssh/authorized_keys` 
 set up, kept for its next lab. In a cloud, every resource is tagged `isoloom-expires-at`, and the
 launcher's reaper destroys an expired run; the audit doesn't reach clouds.
 
+## What the guided setup leaves
+
+A machine the guided setup readied keeps what it installed: that is the point, not a leftover.
+[`tests/audit/setup-leaves.tsv`](audit/setup-leaves.tsv) says what each item the setup installs
+leaves, in the audit's own words (the item as the setup's records name it, the system, the kind,
+a glob on the name the report shows, why it stays): the launcher's package its desktop entry
+(`os-registration`), a Docker engine its bridge's route, its firewall chains and tables, libvirt
+(and QEMU, which brings it) its default network and pool, its bridge's route and chains, Hyper-V
+its Default Switch and the switch's NAT route, VirtualBox the host-only adapter its self-test
+makes, WSL 2 its switch, Docker Desktop its processes and sockets, the self-test's first VM
+vagrant-libvirt's management network. The headless setup entry (`integration_tests::setup`,
+`CYBERCTF_TEST_RESULTS`) puts those rows, and its own temp folder (`temp-folder`,
+`<temp>/cyberctf-guided-setup`, its real path), in each `installed:` record's `leaves`, so a
+caller's allowances (`tests/audit/run.sh diff --allow`) come from the records of the passes that
+ran, never from a table of the caller's own; an item it finds `present`, or a self-test and a lab
+that leave nothing beyond the allowlist, carry none. `kinds.test.ts` holds the table's kinds and
+systems to the listing; the entry's own tests hold what each path leaves.
+
 ## Known gaps, from the code
 
 What the code says will be left, until a run says otherwise:
