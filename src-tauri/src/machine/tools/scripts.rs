@@ -176,12 +176,31 @@ const ORACLE: VendorRepo = VendorRepo {
     by_hand: Some("https://www.virtualbox.org/wiki/Linux_Downloads"),
 };
 
+/// What builds a kernel driver here, as `$build` (packages for apt): the compiler, make, perl and
+/// kmod (`modprobe`), the running kernel's own headers (`linux-headers-$(uname -r)`), and its
+/// flavour's header package, which brings each later kernel's headers with it
+/// (`linux-headers-amd64` on Debian and Kali, `linux-headers-generic` on Ubuntu: the release's
+/// tail that has a header package). When the package sources no longer have the running kernel's
+/// headers (a machine not restarted since a kernel update: Debian's archive drops older kernels'),
+/// the flavour's kernel comes with its headers and `$reboot` is set: the driver is built when the
+/// computer starts that kernel (VirtualBox's `vboxdrv.sh start`, DKMS at the kernel's install).
+/// Requesting the flavour's headers alone, as VirtualBox's recommends did, brought that newer
+/// kernel's headers but not the running one's, so the driver never built. The other families
+/// name them otherwise, where the guided setup doesn't install yet (it installs through apt):
+/// Fedora `kernel-devel-$(uname -r)`, openSUSE `kernel-default-devel`, Arch `linux-headers`.
+#[cfg(any(target_os = "linux", test))]
+const KERNEL_BUILD: &str = r#"kver="$(uname -r)"; flavour=""; f="$kver"; while [ "${f#*-}" != "$f" ]; do f="${f#*-}"; if apt-cache policy "linux-headers-$f" 2>/dev/null | grep -q 'Candidate: [0-9]'; then flavour="$f"; break; fi; done; build="gcc make perl kmod"; reboot=""; if apt-cache policy "linux-headers-$kver" 2>/dev/null | grep -q 'Candidate: [0-9]'; then build="$build linux-headers-$kver${flavour:+ linux-headers-$flavour}"; elif [ -n "$flavour" ]; then build="$build linux-image-$flavour linux-headers-$flavour"; reboot=1; else echo "VirtualBox builds its kernel driver with the running kernel's headers (linux-headers-$kver), which this machine's package sources don't have. Update the kernel, restart the computer, then install VirtualBox again." >&2; exit 1; fi"#;
+
 /// The distro's own `virtualbox` when it has one (Ubuntu), else Oracle's apt repo and its newest
-/// `virtualbox-X.Y` (Debian ships none in main, so `apt-get install virtualbox` failed).
+/// `virtualbox-X.Y` (Debian ships none in main, so `apt-get install virtualbox` failed); with what
+/// builds its kernel driver ([`KERNEL_BUILD`]), and without its recommends: a PDF viewer, Qt's
+/// translations and the newest kernel's headers (and so that kernel) came with them, which a
+/// headless VirtualBox that Vagrant drives never uses. When the running kernel's headers were gone,
+/// it says the driver waits for a restart.
 #[cfg(any(target_os = "linux", test))]
 pub fn virtualbox_script() -> String {
     format!(
-        r#"{PRIVATE_WORKDIR}; apt-get update; if apt-cache policy virtualbox 2>/dev/null | grep -q 'Candidate: [0-9]'; then apt-get install -y virtualbox; exit 0; fi; {CODENAME}; {}; pkg="$(apt-cache search --names-only '^virtualbox-[0-9]+\.[0-9]+$' | awk '{{print $1}}' | sort -V | tail -n 1)"; [ -n "$pkg" ] || {{ echo "No VirtualBox package found in Oracle's repo. Install it from https://www.virtualbox.org/wiki/Linux_Downloads" >&2; exit 1; }}; apt-get install -y "$pkg""#,
+        r#"{PRIVATE_WORKDIR}; apt-get update; {KERNEL_BUILD}; if apt-cache policy virtualbox 2>/dev/null | grep -q 'Candidate: [0-9]'; then apt-get install -y --no-install-recommends virtualbox $build; else {CODENAME}; {}; pkg="$(apt-cache search --names-only '^virtualbox-[0-9]+\.[0-9]+$' | awk '{{print $1}}' | sort -V | tail -n 1)"; [ -n "$pkg" ] || {{ echo "No VirtualBox package found in Oracle's repo. Install it from https://www.virtualbox.org/wiki/Linux_Downloads" >&2; exit 1; }}; apt-get install -y --no-install-recommends "$pkg" $build; fi; [ -z "$reboot" ] || echo "VirtualBox is installed. This computer runs a kernel ($kver) whose headers its package sources no longer have, so the newer kernel came with its headers: restart the computer to start it, and VirtualBox's driver is built then.""#,
         apt_repo_script(&ORACLE)
     )
 }
@@ -520,6 +539,86 @@ mod tests {
             .unwrap();
         std::fs::remove_dir_all(&bin).unwrap();
         (String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned())
+    }
+
+    /// Runs [`KERNEL_BUILD`] on a machine running kernel `running`, whose package sources have
+    /// `packages`: its `$build` and `$reboot`, else its stderr.
+    #[cfg(unix)]
+    fn kernel_build(running: &str, packages: &[&str]) -> Result<(String, String), String> {
+        let bin = std::env::temp_dir().join(format!("cyberctf-kernel-{}-{}", std::process::id(), rand::random::<u32>()));
+        std::fs::create_dir_all(&bin).unwrap();
+        let fake = |name: &str, body: String| {
+            std::fs::write(bin.join(name), body).unwrap();
+            std::fs::set_permissions(bin.join(name), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        };
+        fake("uname", format!("#!/bin/sh\necho '{running}'\n"));
+        // `apt-cache policy <package>`: a candidate when the sources have it, none otherwise.
+        let known = packages.iter().map(|p| format!("'{p}'")).collect::<Vec<_>>().join(" ");
+        fake(
+            "apt-cache",
+            format!(
+                "#!/bin/sh\nfor p in {known}; do [ \"$2\" = \"$p\" ] && {{ echo \"$p:\"; echo '  Candidate: 1.0-1'; exit 0; }}; done\necho \"$2:\"; echo '  Candidate: (none)'\n"
+            ),
+        );
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("set -e; {KERNEL_BUILD}; echo \"$build|$reboot\""))
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .output()
+            .unwrap();
+        std::fs::remove_dir_all(&bin).unwrap();
+        let said = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+        }
+        let (build, reboot) = said.split_once('|').unwrap();
+        Ok((build.to_owned(), reboot.to_owned()))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn virtualbox_builds_its_driver_with_the_running_kernels_headers_or_waits_for_the_newer_kernel() {
+        // Regression (the rig's bare Debian 13, running 6.12.86 while the archive had 6.12.116):
+        // VirtualBox's recommends brought linux-headers-amd64, the newest kernel's headers (and that
+        // kernel), never the running one's, so its driver couldn't be built and VirtualBox read as
+        // installed with no driver.
+        let debian = "6.12.86+deb13-amd64";
+        let headers = format!("linux-headers-{debian}");
+        assert_eq!(
+            kernel_build(debian, &[&headers, "linux-headers-amd64"]).unwrap(),
+            ("gcc make perl kmod linux-headers-6.12.86+deb13-amd64 linux-headers-amd64".into(), String::new())
+        );
+        // Gone from the sources: the flavour's kernel and headers, and a restart.
+        assert_eq!(kernel_build(debian, &["linux-headers-amd64"]).unwrap(), ("gcc make perl kmod linux-image-amd64 linux-headers-amd64".into(), "1".into()));
+        // A flavour of its own (Debian's cloud kernel), Ubuntu's, Kali's.
+        assert_eq!(
+            kernel_build("6.12.86+deb13-cloud-amd64", &["linux-headers-cloud-amd64", "linux-headers-amd64"]).unwrap().0,
+            "gcc make perl kmod linux-image-cloud-amd64 linux-headers-cloud-amd64"
+        );
+        assert_eq!(
+            kernel_build("6.8.0-45-generic", &["linux-headers-6.8.0-45-generic", "linux-headers-generic"]).unwrap().0,
+            "gcc make perl kmod linux-headers-6.8.0-45-generic linux-headers-generic"
+        );
+        assert_eq!(
+            kernel_build("6.12.25-amd64", &["linux-headers-amd64"]).unwrap(),
+            ("gcc make perl kmod linux-image-amd64 linux-headers-amd64".into(), "1".into())
+        );
+        // Neither: it stops, saying so, before anything is installed.
+        let none = kernel_build(debian, &[]).unwrap_err();
+        assert!(none.starts_with("VirtualBox builds its kernel driver with the running kernel's headers (linux-headers-6.12.86+deb13-amd64)"), "{none}");
+    }
+
+    #[test]
+    fn virtualbox_installs_without_its_recommends_with_what_builds_its_driver() {
+        // Regression: its recommends brought a PDF viewer, Qt's translations and the newest
+        // kernel (325 MB, 154 packages on the rig's bare Debian 13), and no driver.
+        let s = virtualbox_script();
+        assert!(s.contains("apt-get install -y --no-install-recommends virtualbox $build;"), "{s}");
+        assert!(s.contains(r#"apt-get install -y --no-install-recommends "$pkg" $build;"#), "{s}");
+        assert!(!s.contains("apt-get install -y virtualbox") && !s.contains(r#"apt-get install -y "$pkg""#), "{s}");
+        assert!(s.find(KERNEL_BUILD).unwrap() < s.find("--no-install-recommends").unwrap(), "{s}");
+        assert!(s.ends_with("restart the computer to start it, and VirtualBox's driver is built then.\""), "{s}");
+        assert!(crate::platform::sh_parses(&s), "{s}");
     }
 
     #[cfg(unix)]
