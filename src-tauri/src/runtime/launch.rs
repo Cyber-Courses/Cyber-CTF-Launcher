@@ -283,9 +283,6 @@ pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     if provider == Provider::Qemu {
         check_qemu(&prepared, log).await?;
     }
-    if provider == Provider::Utm {
-        check_utm(log).await?;
-    }
     isothrum::LabRun::vm(home, dir, id)?.start(inputs, provider.id(), log).await?;
     mark_parked(dir, None)
 }
