@@ -1,0 +1,18 @@
+# What a run of the launcher's stack may leave on a machine, each with why (tests/leftovers.md,
+# "Kept by design"). kind<TAB>where (clone, shared or any)<TAB>glob on the name the report shows
+# (`*`, `?`, `[0-9]`; `!` first: may NOT leave, the first entry that matches deciding)<TAB>reason.
+# A caller adds its own with `--allow <file>`, in the same format.
+docker-image	any	*	the images a lab pulls or builds stay, the launcher's cache (recorded in storage.json; the Machine page's Clean up removes them)
+docker-volume	any	* (persistent)	a volume a lab marks persistent (isoloom.persistent) outlives its stop on purpose
+vagrant-box	any	*	the boxes a VM lab or the guided setup's self-test downloads stay, the launcher's cache (the Machine page's Clean up removes them)
+libvirt-volume	any	*_vagrant_box_image_*	vagrant-libvirt's copy of a box in the storage pool: the box cache, kept for the next VM
+vbox-vm	any	*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]*	the master VM Vagrant imports from a box for linked clones (`<box>_<ms>_<n>`): the box cache, kept for the next VM
+vbox-hostonly	any	vboxnet*	the host-only adapter Vagrant makes for a private network (the setup self-test's 192.168.56.0/24): Vagrant never removes it and the next VM reuses it
+vbox-hostonly	any	vagrantnet-*	VirtualBox 7's host-only network Vagrant makes on a Mac for a private network: Vagrant never removes it and the next VM reuses it
+vbox-dhcp	any	HostInterfaceNetworking-vboxnet*	the DHCP server of the host-only adapter above: Vagrant never removes it and the next VM reuses it
+run-file	any	*/runs/*/lock	Isothrum's lock of a run, kept with its record (runs/<run>/record.json) by design: the OS releases it when its holder exits
+run-file	any	*/slots.lock	Isothrum's lock of the slots, the app's: kept by design, released by the OS
+run-file	any	*/storage.lock	the lock of storage.json (the launcher's record of its downloads), the app's: kept by design
+run-file	any	*/installed-tools.lock	the lock of installed-tools.json (the tools the guided setup installed), the app's: kept by design
+run-file	any	*/labs/.instances.lock	the lock of the labs' instance numbers, the app's: kept by design
+proxmox-token	any	*!cyberctf-*	the launcher's own API token on a node, made when the node is set up (one a launcher key) and kept for its next lab

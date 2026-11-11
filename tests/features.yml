@@ -2893,6 +2893,27 @@ areas:
           desktop: needs CYBERCTF_TEST_CLEANUP_TOOL and a tool the run's app installed; skips without it
           integration: no tier removes a tool on a real machine (the setup suite installs but never uninstalls)
 
+      - id: cleanup.leaves-no-trace
+        what: Labs stopped and removed leave nothing on the machine or server beyond what is kept by design (the download cache, a lab's persistent volumes, the app's own data); no container, network, volume, VM, process, listening port, temp file, credential, firewall rule or server object of a run stays.
+        providers:
+          - docker
+          - libvirt
+          - qemu
+          - virtualbox
+          - hyperv
+          - utm
+          - parallels
+          - proxmox
+          - esxi
+        host: true
+        tests:
+          unit:
+            - tests/audit/inventory.test.ts
+            - tests/audit/diff.test.ts
+            - tests/audit/kinds.test.ts
+        gaps:
+          unit: the leftover audit's own logic (its parsers on recorded outputs, the diff, the allowlist, a run's scope on a shared machine); the audit itself is an entry point the rig runs around every suite (tests/leftovers.md), whose cells the rig's matrix has no column for yet
+
   - id: servers
     title: Servers
     features:

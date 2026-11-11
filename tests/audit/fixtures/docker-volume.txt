@@ -1,0 +1,2 @@
+{"name":"3f1bbda44747f314e8e2d9c0b32ccf622b76f35bc3e592b3a6a110fe63955eb8","created":"2026-11-11T13:05:24Z","labels":{"com.docker.volume.anonymous":""},"mountpoint":"/var/lib/docker/volumes/3f1bbda4/_data"}
+{"name":"cyberctf-hello_data","created":"2026-11-11T13:05:24Z","labels":{"com.docker.compose.project":"cyberctf-hello","com.docker.compose.volume":"data","isoloom.environment":"hello-stack","isoloom.managed":"true","isoloom.persistent":"true"},"mountpoint":"/var/lib/docker/volumes/cyberctf-hello_data/_data"}

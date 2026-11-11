@@ -1,0 +1,3 @@
+system hello-vm_web
+system cyberctf-rig-debian
+session own-vm

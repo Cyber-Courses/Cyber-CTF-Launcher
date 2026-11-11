@@ -1,0 +1,1 @@
+[{"userid": "root@pam", "enable": 1, "tokens": [{"tokenid": "rig-20261111-120000-proxmox-lab", "privsep": 0}, {"tokenid": "cyberctf-1a2b3c4d", "privsep": 0}]}, {"userid": "isoloom@pve", "enable": 1}]

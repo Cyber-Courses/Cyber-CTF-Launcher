@@ -1,0 +1,4 @@
+ 8640 02-17:21:19 /home/player/.local/share/org.cyberctf.desktop/runs/cyberctf-cloud/.terraform/providers/registry.terraform.io/hashicorp/aws/6.67.0/linux_amd64/terraform-provider-aws_v6.67.0_x5
+21462       01:49 vagrant ssh --no-tty --command cd /opt/isoloom && sudo -E docker compose --project-name hello-stack --file .isoloom/docker/compose.yml up --detach default
+30001       00:05 /usr/bin/cyber-ctf-desktop deploy --job /home/player/.local/share/org.cyberctf.desktop/deploys/hello.json
+now 1794312000

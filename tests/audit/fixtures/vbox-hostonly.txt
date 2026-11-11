@@ -1,0 +1,14 @@
+Name:            vagrantnet-vbox1
+GUID:            15b5d4ba-d6e1-4ef8-a3d2-c49036898961
+
+State:           Enabled
+NetworkMask:     255.255.255.0
+LowerIP:         192.168.56.0
+UpperIP:         192.168.56.0
+VBoxNetworkName: hostonly-vagrantnet-vbox1
+
+Name:            vboxnet0
+GUID:            786f6276-656e-4074-8000-0a0027000000
+DHCP:            Disabled
+IPAddress:       192.168.56.1
+NetworkMask:     255.255.255.0

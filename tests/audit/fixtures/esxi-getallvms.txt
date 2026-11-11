@@ -1,0 +1,2 @@
+Vmid               Name                              File                              Guest OS          Version   Annotation
+1      iso1-web                     [datastore1] iso1-web/iso1-web.vmx                  debian12_64Guest   vmx-21              

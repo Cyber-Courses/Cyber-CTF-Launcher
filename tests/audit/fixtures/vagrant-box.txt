@@ -1,0 +1,2 @@
+bento-VAGRANTSLASH-debian-12/202510.26.0/arm64/utm
+generic-VAGRANTSLASH-alpine319/4.3.12/virtualbox

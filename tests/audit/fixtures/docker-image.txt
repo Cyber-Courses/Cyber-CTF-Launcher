@@ -1,0 +1,2 @@
+{"Containers":"0","CreatedAt":"2026-11-11 10:11:19 +0100 CET","CreatedSince":"4 hours ago","Digest":"<none>","ID":"sha256:2935715917441b389d6433dde97dd0833cf91cd979510af90efba8a234e663b7","Repository":"localhost/isoloom/hello-stack-web","SharedSize":"N/A","Size":"21MB","Tag":"latest","UniqueSize":"N/A"}
+{"Containers":"1","CreatedAt":"2025-10-08 20:12:01 +0000 UTC","CreatedSince":"13 months ago","Digest":"<none>","ID":"sha256:0b8a1c","Repository":"busybox","SharedSize":"N/A","Size":"1.5MB","Tag":"1.37.0-musl","UniqueSize":"N/A"}

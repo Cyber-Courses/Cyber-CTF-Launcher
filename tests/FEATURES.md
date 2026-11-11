@@ -48,7 +48,7 @@ Every feature the launcher offers its user, area by area, and how well each test
 | [The VM screen](#the-vm-screen)                                        | 3        | 0      | 3       | 0         |
 | [This machine](#this-machine)                                          | 13       | 6      | 7       | 0         |
 | [Guided machine setup](#guided-machine-setup)                          | 18       | 6      | 12      | 0         |
-| [Maintenance and clean-up](#maintenance-and-clean-up)                  | 3        | 1      | 2       | 0         |
+| [Maintenance and clean-up](#maintenance-and-clean-up)                  | 4        | 1      | 3       | 0         |
 | [Servers](#servers)                                                    | 12       | 3      | 9       | 0         |
 | [Cloud accounts](#cloud-accounts)                                      | 11       | 1      | 10      | 0         |
 | [Administrators and networks](#administrators-and-networks)            | 2        | 0      | 2       | 0         |
@@ -555,25 +555,28 @@ What the partial and missing tiers leave out:
 
 ## Maintenance and clean-up
 
-3 features: 1 Strong, 2 Partial, 0 Unchecked.
+4 features: 1 Strong, 3 Partial, 0 Unchecked.
 
-| Feature                                                                                                                                                                                            | Platforms | Unit | Web E2E | Desktop E2E | Integration | Setup | Package | Rig                         | Level       |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- | ------- | ----------- | ----------- | ----- | ------- | --------------------------- | ----------- |
-| `cleanup.maintenance` Settings > Maintenance gathers what still runs here, the lab downloads and the tools Cyber CTF installed, to clean them up.                                                  | all       | ✔    | ◐       | ✔           | ✖           | ✖     | ✖       | Linux ·, macOS ·, Windows · | **Strong**  |
-| `cleanup.remove-downloads` Clean up lab downloads (images, boxes, shared plugins) after a system confirmation; only what Cyber CTF itself downloaded is removed, and the panel says what it freed. | all       | ✔    | ✖       | ◐           | ◐           | ✖     | ✖       | Linux ·, macOS ·, Windows · | **Partial** |
-| `cleanup.installed-tools` List the tools Cyber CTF installed and remove one (winget, Homebrew, apt/pkexec, the VirtualBox uninstaller), after a system confirmation, with its log.                 | all       | ✔    | ✖       | ◐           | ✖           | ✖     | ✖       | Linux ·, macOS ·, Windows · | **Partial** |
+| Feature                                                                                                                                                                                                                                                                                                                         | Platforms | Unit | Web E2E | Desktop E2E | Integration | Setup | Package | Rig                         | Level       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- | ------- | ----------- | ----------- | ----- | ------- | --------------------------- | ----------- |
+| `cleanup.maintenance` Settings > Maintenance gathers what still runs here, the lab downloads and the tools Cyber CTF installed, to clean them up.                                                                                                                                                                               | all       | ✔    | ◐       | ✔           | ✖           | ✖     | ✖       | Linux ·, macOS ·, Windows · | **Strong**  |
+| `cleanup.remove-downloads` Clean up lab downloads (images, boxes, shared plugins) after a system confirmation; only what Cyber CTF itself downloaded is removed, and the panel says what it freed.                                                                                                                              | all       | ✔    | ✖       | ◐           | ◐           | ✖     | ✖       | Linux ·, macOS ·, Windows · | **Partial** |
+| `cleanup.installed-tools` List the tools Cyber CTF installed and remove one (winget, Homebrew, apt/pkexec, the VirtualBox uninstaller), after a system confirmation, with its log.                                                                                                                                              | all       | ✔    | ✖       | ◐           | ✖           | ✖     | ✖       | Linux ·, macOS ·, Windows · | **Partial** |
+| `cleanup.leaves-no-trace` Labs stopped and removed leave nothing on the machine or server beyond what is kept by design (the download cache, a lab's persistent volumes, the app's own data); no container, network, volume, VM, process, listening port, temp file, credential, firewall rule or server object of a run stays. | all       | ◐    | ✖       | ✖           | ✖           | ✖     | ✖       | –                           | **Partial** |
 
 What the partial and missing tiers leave out:
 
 - `cleanup.maintenance`: Web E2E ◐ only fits the section in a small window; no behaviour
 - `cleanup.remove-downloads`: Web E2E ✖ no spec presses Clean up; Desktop E2E ◐ cleanup/downloads is skipped whenever the panel lists a download the run didn't make (usually the case on a used machine); Integration ◐ real removal is an opt-in Docker test outside the runner; removing Vagrant boxes never runs for real
 - `cleanup.installed-tools`: Desktop E2E ◐ needs CYBERCTF_TEST_CLEANUP_TOOL and a tool the run's app installed; skips without it; Integration ✖ no tier removes a tool on a real machine (the setup suite installs but never uninstalls)
+- `cleanup.leaves-no-trace`: Unit ◐ the leftover audit's own logic (its parsers on recorded outputs, the diff, the allowlist, a run's scope on a shared machine); the audit itself is an entry point the rig runs around every suite (tests/leftovers.md), whose cells the rig's matrix has no column for yet
 
 <details><summary>The tests</summary>
 
 - `cleanup.maintenance`: Unit: `src/features/settings/settings-interaction.test.tsx > shows the tools in the Maintenance section of the settings window`. Web E2E: `resilience.spec.ts > Settings and the setup windows at their minimum sizes`. Desktop E2E: `cleanup/section`. Rig: `desktop-e2e`.
 - `cleanup.remove-downloads` (docker, libvirt, qemu, virtualbox, hyperv, utm, vmware, parallels): Unit: `src-tauri/src/machine/storage.rs > clean_up_removes_only_the_apps_downloads_and_forgets_what_went`, `src-tauri/src/machine/storage.rs > a_removal_that_fails_says_why_the_item_stayed`, `src-tauri/src/machine/storage.rs > a_download_recorded_during_a_clean_up_is_kept`, `src-tauri/src/machine/storage/owned.rs > only_what_appeared_during_the_operation_is_claimed`, `src/features/machine/machine-interaction.test.tsx > asks once and removes once however often Clean up is pressed`, `src/features/machine/machine-screen.test.tsx > lists the downloads and frees space once the system dialog confirms it`. Desktop E2E: `cleanup/downloads-cancel`, `cleanup/downloads`. Integration: `src-tauri/src/machine/storage.rs > real_docker_clean_up_keeps_the_players_image`. Rig: `desktop-e2e`.
 - `cleanup.installed-tools`: Unit: `src-tauri/src/machine/tools/uninstall.rs > only_a_tool_missing_before_and_found_after_counts_as_ours`, `src-tauri/src/machine/tools/uninstall.rs > a_removal_runs_as_root_as_an_install_does`, `src-tauri/src/machine/tools/uninstall.rs > every_windows_tool_is_removed_through_winget`, `src-tauri/src/machine/tools/uninstall.rs > every_macos_tool_has_a_way_out`, `src/features/settings/settings-rows.test.tsx > removes a tool only once the system dialog confirms it, then re-reads the list`, `src/features/settings/settings-interaction.test.tsx > streams the removal log, keeps every Remove off while it runs`. Desktop E2E: `cleanup/tool-remove`. Rig: `desktop-e2e`.
+- `cleanup.leaves-no-trace` (docker, libvirt, qemu, virtualbox, hyperv, utm, parallels, proxmox, esxi): Unit: `tests/audit/inventory.test.ts`, `tests/audit/diff.test.ts`, `tests/audit/kinds.test.ts`.
 
 </details>
 

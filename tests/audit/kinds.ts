@@ -1,0 +1,65 @@
+// The kinds of resource the leftover audit compares, for its `--list`: each with the systems whose
+// snapshot reads it, the tool it asks and what it is. tests/leftovers.md is the same list, with what
+// of each the stack makes; kinds.test.ts holds the two, the parsers and the snapshot scripts to it.
+
+/** A kind: where it's read (`linux`, `macos`, `windows`, `proxmox`, `esxi`), by which tool, what. */
+export type Kind = { kind: string; on: string[]; tool: string; what: string };
+
+const ALL = ["linux", "macos", "windows"];
+
+export const KINDS: Kind[] = [
+  { kind: "docker-container", on: ALL, tool: "docker", what: "containers, with their Compose project and Isoloom lab labels" },
+  { kind: "docker-network", on: ALL, tool: "docker", what: "networks (a lab's segments)" },
+  { kind: "docker-volume", on: ALL, tool: "docker", what: "volumes, named and anonymous" },
+  { kind: "docker-image", on: ALL, tool: "docker", what: "images pulled or built (the launcher's cache: allowed)" },
+  { kind: "vagrant-machine", on: ALL, tool: "vagrant", what: "Vagrant's machine index (global-status), every machine a Vagrantfile made" },
+  { kind: "vagrant-box", on: ALL, tool: "vagrant", what: "Vagrant's boxes (the launcher's cache: allowed)" },
+  { kind: "vagrant-dotfolder", on: ALL, tool: "find", what: "`.vagrant` folders under the launcher's data and the run's folders" },
+  { kind: "run-file", on: ALL, tool: "find", what: "pid, lock and socket files under the launcher's data and the run's folders" },
+  { kind: "temp-folder", on: ALL, tool: "find", what: "the stack's temp folders (`cyberctf*`, `isothrum*`, `isoloom*`)" },
+  {
+    kind: "os-registration",
+    on: ALL,
+    tool: "find / registry",
+    what: "what the stack registers with the system: the cyberctf:// handler's desktop entry, a launch agent, a RunOnce entry",
+  },
+  { kind: "process", on: ALL, tool: "ps", what: "the stack's processes: the app, deploy workers, the screen bridge, Vagrant, VM processes, tunnels" },
+  { kind: "listening-port", on: ALL, tool: "ss / lsof", what: "listening TCP sockets, with their process" },
+  { kind: "hosts-entry", on: ALL, tool: "hosts file", what: "the hosts file's entries" },
+  { kind: "route", on: ALL, tool: "ip / netstat", what: "network routes (host routes left out)" },
+  { kind: "keychain-item", on: ALL, tool: "security / secret-tool / cmdkey", what: "the credential store's items of the launcher's services (names only)" },
+  { kind: "nft-table", on: ["linux"], tool: "nft", what: "nftables' tables (root)" },
+  { kind: "iptables-rule", on: ["linux"], tool: "iptables-save", what: "iptables' chains and rules (root)" },
+  { kind: "pf-anchor", on: ["macos"], tool: "pf.conf", what: "pf's anchors, as files and in pf.conf" },
+  { kind: "libvirt-domain", on: ["linux"], tool: "virsh", what: "libvirt's domains, system and session" },
+  { kind: "libvirt-network", on: ["linux"], tool: "virsh", what: "libvirt's networks" },
+  { kind: "libvirt-pool", on: ["linux"], tool: "virsh", what: "libvirt's storage pools" },
+  { kind: "libvirt-volume", on: ["linux"], tool: "virsh", what: "libvirt's volumes (a box's image: allowed)" },
+  { kind: "vbox-vm", on: ALL, tool: "VBoxManage", what: "VirtualBox's VMs" },
+  { kind: "vbox-hostonly", on: ALL, tool: "VBoxManage", what: "VirtualBox's host-only adapters and networks" },
+  { kind: "vbox-natnet", on: ALL, tool: "VBoxManage", what: "VirtualBox's NAT networks" },
+  { kind: "vbox-dhcp", on: ALL, tool: "VBoxManage", what: "VirtualBox's DHCP servers" },
+  { kind: "utm-vm", on: ["macos"], tool: "utmctl", what: "UTM's VMs (read while UTM runs)" },
+  { kind: "parallels-vm", on: ["macos"], tool: "prlctl", what: "Parallels Desktop's VMs" },
+  { kind: "hyperv-vm", on: ["windows"], tool: "Hyper-V", what: "Hyper-V's VMs" },
+  { kind: "hyperv-switch", on: ["windows"], tool: "Hyper-V", what: "Hyper-V's virtual switches" },
+  { kind: "hyperv-nat", on: ["windows"], tool: "NetNat", what: "Windows' NAT networks (a Hyper-V lab's)" },
+  { kind: "hyperv-vhd", on: ["windows"], tool: "Hyper-V", what: "virtual disks in Hyper-V's default folder and attached to VMs" },
+  { kind: "portproxy", on: ["windows"], tool: "netsh", what: "netsh's port proxies (a Hyper-V lab's published ports)" },
+  { kind: "firewall-rule", on: ["windows"], tool: "NetSecurity", what: "Windows Firewall's rules" },
+  { kind: "proxmox-vm", on: ["proxmox"], tool: "qm", what: "a Proxmox node's VMs and templates" },
+  { kind: "proxmox-ct", on: ["proxmox"], tool: "pct", what: "a Proxmox node's containers" },
+  { kind: "proxmox-sdn-zone", on: ["proxmox"], tool: "pvesh", what: "SDN zones" },
+  { kind: "proxmox-sdn-vnet", on: ["proxmox"], tool: "pvesh", what: "SDN VNets" },
+  { kind: "proxmox-network", on: ["proxmox"], tool: "pvesh", what: "the node's network interfaces and bridges" },
+  { kind: "proxmox-pool", on: ["proxmox"], tool: "pvesh", what: "resource pools" },
+  { kind: "proxmox-user", on: ["proxmox"], tool: "pvesh", what: "users" },
+  { kind: "proxmox-token", on: ["proxmox"], tool: "pvesh", what: "every user's API tokens" },
+  { kind: "proxmox-ipset", on: ["proxmox"], tool: "pvesh", what: "the cluster firewall's IP sets" },
+  { kind: "proxmox-mapping", on: ["proxmox"], tool: "pvesh", what: "directory mappings (a lab's shared folders)" },
+  { kind: "proxmox-volume", on: ["proxmox"], tool: "pvesm", what: "every storage's disks, images and ISOs" },
+  { kind: "esxi-vm", on: ["esxi"], tool: "vim-cmd", what: "an ESXi host's VMs" },
+  { kind: "esxi-portgroup", on: ["esxi"], tool: "esxcli", what: "standard port groups" },
+  { kind: "esxi-vswitch", on: ["esxi"], tool: "esxcli", what: "standard virtual switches" },
+  { kind: "esxi-file", on: ["esxi"], tool: "ls", what: "the datastores' top folders and files (a VM's folder, an uploaded image)" },
+];

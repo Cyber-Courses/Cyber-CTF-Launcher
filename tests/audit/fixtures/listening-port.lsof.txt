@@ -1,0 +1,12 @@
+p645
+cControlCenter
+f9
+n*:7000
+f10
+n*:7000
+p48488
+cqemu-system-aarch64
+f20
+n127.0.0.1:8080
+f21
+n*:64810

@@ -1,0 +1,2 @@
+{"ProcessId":4120,"Name":"vmwp.exe","CommandLine":"\"C:\\Windows\\System32\\vmwp.exe\" 6B1A9A4C-0000","CreationDate":"2026-11-11T12:00:00.0000000Z"}
+{"ProcessId":5200,"Name":"cyber-ctf-desktop.exe","CommandLine":"\"C:\\Program Files\\Cyber CTF\\cyber-ctf-desktop.exe\" deploy --job C:\\Users\\vagrant\\AppData\\Roaming\\org.cyberctf.desktop\\deploys\\cyberctf-hello.json","CreationDate":"2026-11-11T12:01:00.0000000Z"}

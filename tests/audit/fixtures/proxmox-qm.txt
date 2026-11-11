@@ -1,0 +1,3 @@
+      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID       
+       100 iso1-web             running    2048              10.00 4242      
+       101 iso1-isoloom-router  stopped    512                2.00 0         

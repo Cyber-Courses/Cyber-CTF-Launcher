@@ -14,6 +14,8 @@ tests/
   desktop/lib/           what the specs share (support.mjs), what a run owns (owned.mjs), the run's folder
                          (run-root.sh; run.ps1's in suite.ps1), the smoke's launchers
   web/                   the Playwright specs against the dev mock (`pnpm dev:web`), `<area>.spec.ts`, and their fixtures
+  audit/run.sh           the leftover audit: a snapshot of the machine before and after a run, their diff
+                         (snapshot.ps1: Windows; snapshot-server.sh: Proxmox, ESXi); leftovers.md is its contract
   features.yml           the feature registry: every feature the user sees, and the tests that check it per tier
   FEATURES.md            made from it (`pnpm features`): how well each feature is checked, the biggest gaps first
   features-rig.json      the test rig's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
@@ -136,13 +138,14 @@ night's run:
 | `tests/integration/run.sh`                                    | `--results <file>`, a line a scenario                                                | `--list`                                                   |
 | `tests/desktop/run.sh`, `run.ps1`                             | `--results <file>` (`-Results`), a line a spec and a line a check (`<spec>/<check>`) | `--list` (`-List`), from `desktop/cases.tsv`               |
 | the guided setup (`integration_tests::setup`, a `cargo test`) | `CYBERCTF_TEST_RESULTS=<file>`, a line an item                                       | in the integration runner's `--list` (tier `bare-machine`) |
+| the leftover audit (`tests/audit/run.sh diff`)                | `--results <file>`, a line a kind of resource ([leftovers.md](leftovers.md))         | `--list`                                                   |
 
 ```json
 { "suite": "integration", "case": "vm-lab", "provider": "qemu", "form": "vm", "result": "pass", "reason": "", "seconds": 612, "log": "…/vm-lab.log" }
 ```
 
-- `suite`: `integration`, `desktop` or `setup`; `case`: the scenario, spec or item, as `--list`
-  names it (a desktop check: `<spec>/<check>`, not counted again in its spec's verdict).
+- `suite`: `integration`, `desktop`, `setup` or `audit`; `case`: the scenario, spec, item or kind of
+  resource, as `--list` names it (a desktop check: `<spec>/<check>`, not counted again in its spec's verdict).
 - `provider`: the hypervisor, cloud (`aws`) or server (`proxmox`, `esxi`) it ran on; `form`: the
   form its lab ran in (`docker`, `docker-vm`, `vm`, `per-machine`, `cloud-docker`, `cloud-vm`, or
   the desktop's `container`); each empty where none applies.
