@@ -524,6 +524,19 @@ mod tests {
         c.get_argv().iter().map(|a| a.to_string_lossy().into_owned()).collect()
     }
 
+    /// `c`'s argv with its program as the name it was asked for: on Windows the PTY runs the file
+    /// PATH and PATHEXT find for a bare name (`C:\Windows\system32\docker.exe` for `docker`, see
+    /// [`windows_program`]), on other platforms the name itself. Compared by file stem, ignoring
+    /// case as Windows does.
+    fn argv_by_name(c: &CommandBuilder) -> Vec<String> {
+        let mut argv = argv(c);
+        if let Some(program) = argv.first_mut() {
+            let stem = std::path::Path::new(program.as_str()).file_stem().map(|s| s.to_string_lossy().to_lowercase());
+            *program = stem.unwrap_or_default();
+        }
+        argv
+    }
+
     #[test]
     fn the_pty_runs_the_runners_command_in_its_folder() {
         // The runner builds the command (program + args + the run's folder); the PTY runs it as
@@ -531,11 +544,11 @@ mod tests {
         let dir = std::env::temp_dir();
         let env = vec![("VAGRANT_DOTFILE_PATH".to_owned(), "/runs/x/vagrant".to_owned())];
         let c = pty_command(&ShellCommand::new("vagrant", ["ssh", "isoloom-controller"], dir.clone()).with_env(env));
-        assert_eq!(argv(&c), ["vagrant", "ssh", "isoloom-controller"]);
+        assert_eq!(argv_by_name(&c), ["vagrant", "ssh", "isoloom-controller"]);
         assert_eq!(c.get_cwd().map(std::path::PathBuf::from), Some(dir.clone()));
         assert_eq!(c.get_env("VAGRANT_DOTFILE_PATH").map(|v| v.to_string_lossy().into_owned()).as_deref(), Some("/runs/x/vagrant"), "Vagrant finds the VM");
         let d = pty_command(&ShellCommand::new("docker", ["compose", "exec", "kali", "bash"], dir.clone()));
-        assert_eq!(argv(&d), ["docker", "compose", "exec", "kali", "bash"]);
+        assert_eq!(argv_by_name(&d), ["docker", "compose", "exec", "kali", "bash"]);
     }
 
     #[test]
