@@ -337,8 +337,9 @@ fn destination<'a>(dirs: &AppDirs, runtime: Runtime, to: &Destination<'a>) -> Re
     }
 }
 
-/// The per-machine form is a pick for this machine.
-pub(super) const PER_MACHINE_HERE_ONLY: &str = "One VM per machine is a way to run the lab on this machine: on a server, the lab runs as it is published.";
+/// The per-machine form runs on this machine or a cloud account, not on a server.
+pub(super) const PER_MACHINE_NOT_ON_SERVERS: &str =
+    "One VM per machine runs on this machine or a cloud account: on a server (ESXi, Proxmox), the lab runs as it is published.";
 
 /// What a start downloads to this machine, for the layer above to record as the app's (Storage
 /// cleans what the app downloaded): container images, Vagrant boxes.

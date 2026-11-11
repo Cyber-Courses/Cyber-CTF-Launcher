@@ -239,7 +239,7 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
     let tools = Tools::rules(&[]);
     let to = Destination { host: Some("pve1"), per_machine_vm: true, ..Destination::default() };
     let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
-    assert_eq!(err, super::PER_MACHINE_HERE_ONLY);
+    assert_eq!(err, super::PER_MACHINE_NOT_ON_SERVERS);
     assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
     // UTM: Isoloom refuses the vagrant target there (vagrant_utm gives a VM no private network),
     // so the start is refused with its reason, before UTM is even opened.
@@ -257,7 +257,7 @@ fn one_vm_per_machine_runs_on_every_cloud_and_on_no_server() {
         assert!(per_machine_runs_on(Some(cloud)).is_ok(), "{cloud:?}");
     }
     for server in [Some(Provider::Proxmox), Some(Provider::VmwareEsxi), None] {
-        assert_eq!(per_machine_runs_on(server).unwrap_err().to_string(), super::PER_MACHINE_HERE_ONLY, "{server:?}");
+        assert_eq!(per_machine_runs_on(server).unwrap_err().to_string(), super::PER_MACHINE_NOT_ON_SERVERS, "{server:?}");
     }
 }
 
@@ -468,7 +468,7 @@ fn a_start_with_nowhere_to_run_is_refused_by_its_code_before_anything_is_downloa
     // ESXi or Proxmox picked with no host.
     assert!(check(Runtime::Vm, here(Some(Provider::Proxmox))).unwrap_err().to_string().contains("pick a server host"));
     // One VM per machine on a server rather than a cloud account.
-    assert_eq!(check(Runtime::Docker, per_machine(None, Some("pve"))).unwrap_err().to_string(), super::PER_MACHINE_HERE_ONLY);
+    assert_eq!(check(Runtime::Docker, per_machine(None, Some("pve"))).unwrap_err().to_string(), super::PER_MACHINE_NOT_ON_SERVERS);
     assert!(check(Runtime::Docker, per_machine(None, Some("aws1"))).is_ok());
     // A start on a cloud account under DisableCloudLaunches, which needs no spec.
     let _policy = Override::with(&[Key::DisableCloudLaunches]);

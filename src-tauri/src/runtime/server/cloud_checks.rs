@@ -42,7 +42,7 @@ pub(super) fn last_line(s: &str) -> &str {
 }
 
 /// The detail of a CLI check the cloud refused: `refused` when stderr carries one of `markers`
-/// (signed out, no access), else "<cloud> check failed: <last line>".
+/// (signed out, no access), else "`<cloud>` check failed: `<last line>`".
 fn refusal(stderr: &str, markers: &[&str], refused: &str, cloud: &str) -> String {
     if markers.iter().any(|m| stderr.contains(m)) { refused.to_string() } else { format!("{cloud} check failed: {}", last_line(stderr)) }
 }

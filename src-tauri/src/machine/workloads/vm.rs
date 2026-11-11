@@ -29,8 +29,8 @@ const GLOBAL_STATUS_TIMEOUT: Duration = Duration::from_secs(30);
 /// Providers whose machines run elsewhere (a server host), not on this machine.
 const REMOTE_PROVIDERS: [&str; 2] = ["vmware_esxi", "proxmox"];
 
-/// How long a `vagrant global-status` answer stands: the sidebar and the Machine page each poll
-/// the workloads every few seconds, and each scan is a Vagrant (Ruby) start, a second or two of CPU
+/// How long a `vagrant global-status` answer stands: the Machine page's Running now polls the
+/// workloads every few seconds, and each scan is a Vagrant (Ruby) start, a second or two of CPU
 /// on Windows. Vagrant's answer is its own cache anyway (see above).
 const GLOBAL_STATUS_FRESH: Duration = Duration::from_secs(30);
 

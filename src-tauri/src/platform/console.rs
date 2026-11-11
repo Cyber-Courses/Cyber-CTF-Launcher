@@ -7,7 +7,7 @@
 //!
 //! The target must take Ctrl+C. A process started in a process group of its own, as the deploy
 //! worker is, starts with Ctrl+C ignored, and the programs it starts inherit that: the worker
-//! takes it again first ([`let_tools_take_ctrl_c`]).
+//! takes it again first (`let_tools_take_ctrl_c`).
 
 /// The pid when this process was started as an interrupter (`<exe> interrupt --pid <pid>`).
 #[cfg(any(windows, test))]

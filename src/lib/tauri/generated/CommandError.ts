@@ -2,7 +2,7 @@
 
 /**
  * An error as the webview receives it: `{ code, args?, message }`. `message` is English and
- * always there, for the log and for the codes the UI says as they come ([`Code::OWN_MESSAGE`]).
+ * always there, for the log and for the codes the UI says as they come (`Code::OWN_MESSAGE`).
  */
 export type CommandError = { 
 /**

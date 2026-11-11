@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// What went wrong, as the UI knows it: a code it can branch on and say in the player's
 /// language, with the values its message needs. `Other` and the refusals are the codes the UI
-/// shows as the error's own (English) message ([`Code::OWN_MESSAGE`]).
+/// shows as the error's own (English) message (`Code::OWN_MESSAGE`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(tag = "code", content = "args", rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[ts(rename = "ErrorCode")]
@@ -133,7 +133,7 @@ impl Code {
     pub const OWN_MESSAGE: [Code; 3] = [Code::Other, Code::Refused, Code::RefusedBeforeActing];
 
     /// The English message, for the log and for a UI without this code's translation; for a code
-    /// of [`Code::OWN_MESSAGE`], what is said when an error has none of its own.
+    /// of `Code::OWN_MESSAGE`, what is said when an error has none of its own.
     fn message(&self) -> String {
         match self {
             Code::Other => "Something went wrong.".into(),
@@ -300,7 +300,7 @@ impl Error {
 }
 
 /// An error as the webview receives it: `{ code, args?, message }`. `message` is English and
-/// always there, for the log and for the codes the UI says as they come ([`Code::OWN_MESSAGE`]).
+/// always there, for the log and for the codes the UI says as they come (`Code::OWN_MESSAGE`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[ts(rename = "CommandError")]
 pub struct Wire {

@@ -14,7 +14,7 @@
 #
 # Steps, in order: prereqs, install, versions, docs, format, types, lint, build, quality, unit-web
 # (with the coverage floors), unit-rust, bindings (the generated types the Rust tests rewrote are
-# committed), other-platforms (clippy for Linux and Windows, scripts/check-other-platforms.sh;
+# committed), docs-rust (rustdoc's intra-doc links), other-platforms (clippy for Linux and Windows, scripts/check-other-platforms.sh;
 # needs rustup), coverage-rust (when cargo-llvm-cov is installed), deny (when cargo-deny is),
 # audit, shellcheck and actionlint (when installed, as lint-infra.yml runs them), pins (every
 # action pinned to a commit SHA), store-listings (the app's JSON and the Microsoft Store listing,
@@ -87,6 +87,9 @@ step quality pnpm quality
 step unit-web pnpm exec vitest run --coverage
 step unit-rust cargo test --manifest-path src-tauri/Cargo.toml
 step bindings bindings_committed
+# Every intra-doc link resolves on this machine's items, as ci.yml's Docs step (the other
+# platforms' are other-platforms' -docs steps).
+step docs-rust env RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags" cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items --lib
 # CI's clippy matrix for the other platforms, from here: the code behind their `#[cfg]`.
 if command -v rustup >/dev/null; then nested other-platforms scripts/check-other-platforms.sh; else skip other-platforms "rustup not installed (https://rustup.rs)"; fi
 if has cargo llvm-cov; then step coverage-rust rust_cov; else skip coverage-rust "cargo-llvm-cov not installed (cargo install cargo-llvm-cov)"; fi

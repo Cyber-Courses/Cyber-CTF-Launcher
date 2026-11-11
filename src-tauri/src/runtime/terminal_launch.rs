@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 /// The POSIX command line that runs `command` in its folder: `cd <cwd> && exec <program> <args>`
 /// (the `exec` so leaving the shell ends it, no extra process in between), through `env` with
 /// the variables the command needs (a Vagrant run's state folder), when it has any. Unix
-/// terminals only (Windows uses [`windows_line`]); the tests exercise it on every platform.
+/// terminals only (Windows uses `windows_line`); the tests exercise it on every platform.
 #[cfg(any(unix, test))]
 fn command_line(command: &ShellCommand) -> String {
     let mut words = Vec::new();

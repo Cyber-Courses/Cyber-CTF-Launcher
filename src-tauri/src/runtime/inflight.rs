@@ -13,7 +13,7 @@ use crate::platform::AppDirs;
 use tokio::sync::OwnedMutexGuard;
 
 /// What is in flight for a lab. Told apart so the UI never calls a lab being stopped
-/// "deploying", and the sidebar names each operation as it is ([`Action::name`]).
+/// "deploying", and the sidebar names each operation as it is ([`Action::operation`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Action {
     /// A launch: the lab's machines created and set up.

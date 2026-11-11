@@ -265,10 +265,12 @@ fn parse_oci_config(text: &str) -> OciConfig {
 /// sign-in, the one Terraform uses, ran out on its own: a launch asks for that one first (see
 /// `sign_in_question`), and would be refused.
 pub async fn gcp_account() -> Option<String> {
-    let email = run_cli("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).await.ok().as_deref().and_then(non_empty)?;
-    run_cli("gcloud", &["auth", "print-access-token", "--quiet"]).await.ok()?;
+    let accounts =
+        answered("the active Google Cloud account", run_cli("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).await)?;
+    let email = non_empty(&accounts)?;
+    answered("a Google Cloud access token", run_cli("gcloud", &["auth", "print-access-token", "--quiet"]).await)?;
     let (program, question) = sign_in_question(crate::runtime::providers::Provider::Gcp)?;
-    run_cli(program, question).await.ok()?;
+    answered("Google Cloud's application-default sign-in", run_cli(program, question).await)?;
     Some(email)
 }
 
@@ -384,8 +386,12 @@ mod tests {
             ["auth", "application-default", "print-access-token"] => fail("Reauthentication failed. cannot prompt during non-interactive execution."),
             _ => None,
         });
+        crate::testing::logs::take_warnings();
         assert_eq!(gcp_account().await, None);
         assert!(tools.called("gcloud auth application-default print-access-token"), "{:?}", tools.calls());
+        // Said in the log, as its siblings' failures are: it dropped them with `.ok()?`.
+        let said = crate::testing::logs::take_warnings();
+        assert!(said.iter().any(|w| w.contains("Google Cloud's application-default sign-in") && w.contains("Reauthentication failed")), "{said:?}");
     }
 
     #[tokio::test]

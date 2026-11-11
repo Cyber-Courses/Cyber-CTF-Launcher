@@ -9,7 +9,8 @@
 #   scripts/check-other-platforms.sh                  every other platform
 #   ONLY="linux" scripts/check-other-platforms.sh
 #
-# Steps: linux (x86_64-unknown-linux-gnu), windows (x86_64-pc-windows-msvc). Needs rustup (a
+# Steps: linux (x86_64-unknown-linux-gnu), windows (x86_64-pc-windows-msvc), each followed by its
+# -docs step (rustdoc, every intra-doc link resolving with that platform's items). Needs rustup (a
 # Rust from Homebrew or a distribution can't add targets): without it the run stops. A target that
 # isn't installed is skipped (rustup target add <triple>).
 #
@@ -69,20 +70,23 @@ exit 0
 EOF
 chmod +x "$FAKES"/*
 
-# lint <step> <target triple>: clippy on every target of the crate, warnings denied.
+# lint <step> <target triple>: clippy on every target of the crate, warnings denied; then, as
+# <step>-docs, rustdoc with broken intra-doc links and stray HTML tags denied.
 lint() {
-  local name=$1 triple=$2 var
-  wanted "$name" || return 0
+  local name=$1 triple=$2 var cross
   if ! grep -qx "$triple" <<<"$INSTALLED"; then
     skip "$name" "rustup target add $triple"
+    skip "$name-docs" "rustup target add $triple"
     return 0
   fi
   var=$(echo "$triple" | tr '-' '_')
-  step "$name" env PKG_CONFIG="$FAKES/pkg-config" PKG_CONFIG_ALLOW_CROSS=1 \
-    "CC_$var=$FAKES/cc" "CXX_$var=$FAKES/cc" "AR_$var=$FAKES/ar" "RC_$var=$FAKES/rc" \
-    cargo clippy --target "$triple" --all-targets -- -D warnings
+  cross=(env PKG_CONFIG="$FAKES/pkg-config" PKG_CONFIG_ALLOW_CROSS=1 "CC_$var=$FAKES/cc" "CXX_$var=$FAKES/cc" "AR_$var=$FAKES/ar" "RC_$var=$FAKES/rc")
+  step "$name" "${cross[@]}" cargo clippy --target "$triple" --all-targets -- -D warnings
+  step "$name-docs" "${cross[@]}" RUSTDOCFLAGS="$RUSTDOC_DENY" cargo doc --target "$triple" --no-deps --document-private-items --lib
 }
 
+# What rustdoc denies, as ci.yml's Docs step.
+RUSTDOC_DENY="-D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags"
 lint linux x86_64-unknown-linux-gnu
 lint windows x86_64-pc-windows-msvc
 suite_end "other platforms"

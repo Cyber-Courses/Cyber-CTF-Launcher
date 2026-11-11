@@ -243,13 +243,14 @@ pub async fn docker_start_engine(engine: String) -> Result<()> {
         let _ = docker_use_engine(engine.clone()).await;
         match daemon_os().await {
             Ok(_) => return Ok(()),
-            // Up now, but not for this account: say so instead of waiting out the 3 minutes.
+            // Up now, but not for this account: say so instead of waiting out the whole wait.
             Err(e) if docker_denied(&e) => return Err(docker_denied_error()),
             Err(_) => {}
         }
         tokio::time::sleep(START_POLL).await;
     }
-    Err(Error::Invalid(format!("{engine} didn't answer within 3 minutes. Check its window, then re-check.")))
+    let minutes = (START_POLL * START_TRIES).as_secs() / 60;
+    Err(Error::Invalid(format!("{engine} didn't answer within {minutes} minutes. Check its window, then re-check.")))
 }
 
 /// Opens the engine's app, or runs its CLI, on this OS.

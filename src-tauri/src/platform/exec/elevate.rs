@@ -19,12 +19,12 @@
 //!   marker lines carrying a random token (`start i`, `end i <exit code>`, `skip i`);
 //! - a watcher (a runspace of the script's own process) ends the whole process tree when the
 //!   batch folder gets a `cancel` file (the caller gave up, or Vagrant asked a question nobody can
-//!   answer), when the launcher process is gone, or after [`DEADLINE`], and says why in a `reason`
+//!   answer), when the launcher process is gone, or after `script::DEADLINE`, and says why in a `reason`
 //!   file.
 //!
-//! The launcher follows that log as it grows ([`follow_batch`]), turns it back into the same events
+//! The launcher follows that log as it grows (`collect::follow_batch`), turns it back into the same events
 //! a batch run step by step reports, and waits for the process. Declining the UAC prompt
-//! (`ERROR_CANCELLED`) gives a plain-language error ([`launch_error`]).
+//! (`ERROR_CANCELLED`) gives a plain-language error (`launch_error`).
 
 #[cfg(any(windows, test))]
 mod collect;

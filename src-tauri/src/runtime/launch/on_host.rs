@@ -3,7 +3,7 @@
 
 use super::super::paths::local_runtime;
 use super::{
-    AppDirs, Error, Inputs, LabRef, PER_MACHINE_HERE_ONLY, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, mark_per_machine_vm, runner_home,
+    AppDirs, Error, Inputs, LabRef, PER_MACHINE_NOT_ON_SERVERS, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, mark_per_machine_vm, runner_home,
     server,
 };
 
@@ -53,7 +53,7 @@ pub(super) async fn start_on_server(
 pub(super) fn per_machine_runs_on(provider: Option<Provider>) -> Result<()> {
     match provider {
         Some(p) if p.is_cloud() => Ok(()),
-        _ => Err(Error::Refused(PER_MACHINE_HERE_ONLY.into())),
+        _ => Err(Error::Refused(PER_MACHINE_NOT_ON_SERVERS.into())),
     }
 }
 

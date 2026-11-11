@@ -413,7 +413,7 @@ fn signal_group(pid: u32, signal: libc::c_int) {
 }
 
 /// Ends the worker `pid` and what it started (`taskkill /T /F`); a `taskkill` that can't run or
-/// fails is logged, as [`signal_group`]'s refusals are.
+/// fails is logged, as `signal_group`'s refusals are.
 #[cfg(windows)]
 fn taskkill(pid: u32) {
     match crate::platform::exec::headless_std(std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"])).status() {

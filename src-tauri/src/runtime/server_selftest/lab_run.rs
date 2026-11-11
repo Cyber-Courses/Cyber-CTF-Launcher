@@ -66,7 +66,7 @@ pub(super) async fn clear_kept<R: TestRun, F: Future<Output = Result<R>>>(work: 
 }
 
 /// The test proper: the lab prepared (`prepare`: written, its run opened, and what to say of it),
-/// then [`test`] with `course`. A preparation that failed reached nothing on the server, so it
+/// then [`test()`] with `course`. A preparation that failed reached nothing on the server, so it
 /// leaves nothing to remove.
 pub(super) async fn prepared_test<R: TestRun>(r: &Reporter, prepare: impl Future<Output = Result<(R, Option<String>)>>, course: impl Course) -> Ran {
     match r.step(PREPARE.0, PREPARE.1, prepare).await {

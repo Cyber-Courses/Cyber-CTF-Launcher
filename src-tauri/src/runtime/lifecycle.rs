@@ -21,7 +21,7 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     let _deploy = DeployGuard::new(id, Action::Park(mode));
     refuse_cloud_park(runtime)?;
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
-    let run = local_run(dirs, dir, id, runtime, "Pausing a lab on a server host isn't available yet. Stop it instead.")?;
+    let run = local_run(dirs, dir, id, runtime, "Pausing a lab on a server or a cloud account isn't available. Stop it instead.")?;
     // Only what the page is offered for this run ([`controls`]): a pause of containers on Docker
     // would be carried out as a shut down, and QEMU refuses one.
     if let Some(why) = park_refusal(mode, run.target(), run.recorded_provider()?.as_deref()) {
@@ -127,7 +127,7 @@ async fn resume(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, mut log:
     let _deploy = DeployGuard::new(id, Action::Resume);
     refuse_cloud_park(runtime)?;
     policy_allows(dirs, runtime, None, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
-    let run = local_run(dirs, dir, id, runtime, "This lab was parked on a server host; resuming there isn't available yet.")?;
+    let run = local_run(dirs, dir, id, runtime, "A lab on a server or a cloud account isn't parked, so there is nothing to resume: start it again.")?;
     log("Resuming the lab…".into());
     // The runner resumes a parked run as it was; when nothing is left of it, it drops the parked
     // mark and reports `NothingToResume`, so the page offers a fresh start.
@@ -305,9 +305,9 @@ mod tests {
         server::mark_lab(&dir, Some(&host)).unwrap();
         let tools = Tools::rules(&[]);
         let err = park_lab(&t.dirs(), "web", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err().to_string();
-        assert!(err.starts_with("Pausing a lab on a server host"), "{err}");
+        assert!(err.starts_with("Pausing a lab on a server or a cloud account"), "{err}");
         let err = resume_lab(&t.dirs(), "web", Runtime::Docker, |_| {}).await.unwrap_err().to_string();
-        assert!(err.contains("parked on a server host"), "{err}");
+        assert!(err.contains("on a server or a cloud account isn't parked"), "{err}");
         let err = provision_lab(&t.dirs(), "web", Runtime::Vm, None, |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("Proxmox or a cloud"), "{err}");
         assert_eq!(tools.calls(), Vec::<String>::new());

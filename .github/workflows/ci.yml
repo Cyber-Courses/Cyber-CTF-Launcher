@@ -66,6 +66,12 @@ jobs:
       # by the quality ratchet, the Quality step below.
       - name: Lint
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
+      # Every intra-doc link resolves and no doc comment holds a stray HTML tag, with this
+      # platform's own items (pnpm release-check runs it for this machine, Linux and Windows).
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags
+        run: cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items --lib
       # The quality ratchet (`pnpm quality`, also part of `pnpm check`): clippy as JSON, ESLint, the
       # source scans, jscpd, knip and cargo machete, held to quality-baseline.json; a count above the
       # baseline fails. It needs the clippy toolchain and the Node tooling together, so it runs on

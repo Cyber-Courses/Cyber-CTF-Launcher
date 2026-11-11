@@ -5,7 +5,7 @@
 //!   system's proxy (System Settings > Network > Proxies, or an MDM profile, as `scutil --proxy`
 //!   reports it) is put into this process's environment at startup, which every child inherits.
 //!   A proxy auto-config (PAC) file can't be put into variables: the log says so.
-//! - pkexec (Linux installs) clears the environment: [`assignments`] hands the variables to the
+//! - pkexec (Linux installs) clears the environment: `assignments` hands the variables to the
 //!   root command explicitly.
 
 /// The proxy variables, both cases: tools read one or the other (curl and apt the lowercase

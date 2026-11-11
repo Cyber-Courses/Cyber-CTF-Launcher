@@ -10,7 +10,7 @@ pub fn write(path: &Path, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
     write_as(path, contents.as_ref(), Access::Usual)
 }
 
-/// [`write`] for a file only this user may read (0600 on Unix, from the temporary file on), such
+/// [`write()`] for a file only this user may read (0600 on Unix, from the temporary file on), such
 /// as a session's tokens.
 pub fn write_private(path: &Path, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
     write_as(path, contents.as_ref(), Access::Private)
