@@ -267,7 +267,7 @@ fn parse_oci_config(text: &str) -> OciConfig {
 pub async fn gcp_account() -> Option<String> {
     let email = run_cli("gcloud", &["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).await.ok().as_deref().and_then(non_empty)?;
     run_cli("gcloud", &["auth", "print-access-token", "--quiet"]).await.ok()?;
-    let (program, question) = sign_in_question("gcp")?;
+    let (program, question) = sign_in_question(crate::runtime::providers::Provider::Gcp)?;
     run_cli(program, question).await.ok()?;
     Some(email)
 }

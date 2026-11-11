@@ -161,13 +161,14 @@ impl CloudRun {
     /// failure of the question (no such CLI here, the network) is left to the change itself,
     /// which says what is wrong.
     pub(crate) async fn signed_in(&self, place: &CloudPlace) -> Result<()> {
-        let Some((program, args)) = sign_in_question(&self.cloud) else { return Ok(()) };
+        let Some(cloud) = crate::runtime::server::terraform_provider(&self.cloud) else { return Ok(()) };
+        let Some((program, args)) = sign_in_question(cloud) else { return Ok(()) };
         let mut env = place.tf_env.clone();
-        if let Some(region) = place.region.as_ref().filter(|_| self.cloud == "aws") {
+        if let Some(region) = place.region.as_ref().filter(|_| cloud == crate::runtime::providers::Provider::Aws) {
             env.push(("AWS_REGION".to_owned(), region.clone()));
         }
         match crate::platform::exec::run_env_timed(program, args, None, &env, SIGN_IN_WAIT).await {
-            Err(Error::CommandFailed { stderr, .. }) => errors::expired_sign_in(&stderr, Some(&self.cloud)).map_or(Ok(()), Err),
+            Err(Error::CommandFailed { stderr, .. }) => errors::expired_sign_in(&stderr, Some(cloud)).map_or(Ok(()), Err),
             _ => Ok(()),
         }
     }

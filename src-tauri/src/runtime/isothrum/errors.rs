@@ -5,6 +5,8 @@
 use isothrum_runner::{Error as RunnerError, ErrorCode, TimedOut};
 
 use crate::error::{Code, Error};
+use crate::runtime::providers::Provider;
+use crate::runtime::server::kind::{KINDS, kind};
 
 /// Whether `e` is a change of a run refused before acting on it: refused as such (the run isn't
 /// up, a value it needs is missing or unusable — the runner checks the launch's values before it
@@ -129,33 +131,21 @@ const EXPIRED_SIGN_IN: [&str; 21] = [
     "notauthenticated",
 ];
 
-/// A cloud by the launcher's Terraform target for it (`aws`, `azure`, `gcp`, `oci`, …): its name,
-/// and how its sign-in is made again.
-fn sign_in_of(cloud: &str) -> Option<(&'static str, &'static str)> {
-    Some(match cloud {
-        "aws" => ("AWS", "`aws login`, or `aws sso login`"),
-        "azure" => ("Azure", "`az login`"),
-        "gcp" => ("Google Cloud", "`gcloud auth application-default login`"),
-        "oci" => ("Oracle Cloud", "`oci session authenticate`, or check `~/.oci/config`"),
-        "digitalocean" => ("DigitalOcean", "check the account's API token in Settings"),
-        "linode" => ("Linode", "check the account's API token in Settings"),
-        _ => return None,
-    })
+/// A cloud that signs in through its CLI: its name, and how its sign-in is made again (its row's,
+/// [`crate::runtime::server::kind::CliSignIn`]).
+fn sign_in_of(cloud: Provider) -> Option<(&'static str, &'static str)> {
+    kind(cloud)?.cli_sign_in.as_ref().map(|s| (cloud.label(), s.again))
 }
 
-/// The cloud a Terraform failure comes from, by its provider's name in the message.
-fn cloud_in(reason: &str) -> Option<&'static str> {
-    [("hashicorp/aws", "aws"), ("hashicorp/azurerm", "azure"), ("hashicorp/google", "gcp"), ("oracle/oci", "oci")]
-        .into_iter()
-        .find(|(provider, _)| reason.contains(provider))
-        .map(|(_, cloud)| cloud)
+/// The cloud a Terraform failure comes from, by its Terraform provider's name in the message.
+fn cloud_in(reason: &str) -> Option<Provider> {
+    KINDS.iter().find(|k| k.cli_sign_in.as_ref().is_some_and(|s| reason.contains(s.terraform_provider))).map(|k| k.provider)
 }
 
 /// The launcher's word for a cloud tool's `reason` when it says the account's sign-in ran out or
-/// is missing (`cloud`: the launcher's Terraform target for it, when known): sign in again,
-/// then try again, a refusal before acting (nothing could change without the sign-in); `None`
-/// for any other failure.
-pub(crate) fn expired_sign_in(reason: &str, cloud: Option<&str>) -> Option<Error> {
+/// is missing (`cloud`, when known): sign in again, then try again, a refusal before acting
+/// (nothing could change without the sign-in); `None` for any other failure.
+pub(crate) fn expired_sign_in(reason: &str, cloud: Option<Provider>) -> Option<Error> {
     let lower = reason.to_ascii_lowercase();
     if !EXPIRED_SIGN_IN.iter().any(|s| lower.contains(s)) {
         return None;
@@ -249,6 +239,17 @@ mod tests {
     }
 
     #[test]
+    fn a_cloud_is_known_by_its_terraform_provider_and_named_by_its_label() {
+        assert_eq!(cloud_in("provider[\"registry.terraform.io/hashicorp/azurerm\"]"), Some(Provider::Azure));
+        assert_eq!(cloud_in("provider[\"registry.terraform.io/oracle/oci\"]"), Some(Provider::Oci));
+        assert_eq!(cloud_in("nothing of a cloud"), None);
+        assert_eq!(sign_in_of(Provider::Gcp).map(|(name, _)| name), Some("Google Cloud"));
+        // A cloud signed in with a stored API token has no CLI sign-in to make again.
+        assert_eq!(sign_in_of(Provider::DigitalOcean), None);
+        assert_eq!(sign_in_of(Provider::Linode), None);
+    }
+
+    #[test]
     fn the_lifecycle_refusals_say_what_to_do() {
         let (code, text) = said(RunnerError::AlreadyRunning { run: "cyberctf-web".into() });
         assert_eq!((code, text.as_str()), (Code::Refused, "This lab is already running on this machine. Stop it before starting it again."));
@@ -259,14 +260,18 @@ mod tests {
         let said_expired = said(RunnerError::ToolFailed { step: "destroy".into(), reason: expired.into() }).1;
         assert!(said_expired.starts_with("Your sign-in to AWS has expired") && said_expired.contains("`aws login`"), "{said_expired}");
         for (reason, cloud, again) in [
-            ("ERROR: AADSTS700082: The refresh token has expired due to inactivity. Please run 'az login'", "azure", "`az login`"),
-            ("Reauthentication failed. cannot prompt during non-interactive execution.", "gcp", "`gcloud auth application-default login`"),
-            ("ServiceError: NotAuthenticated: The required information to complete authentication was not provided", "oci", "`oci session authenticate`"),
+            ("ERROR: AADSTS700082: The refresh token has expired due to inactivity. Please run 'az login'", Provider::Azure, "`az login`"),
+            ("Reauthentication failed. cannot prompt during non-interactive execution.", Provider::Gcp, "`gcloud auth application-default login`"),
+            (
+                "ServiceError: NotAuthenticated: The required information to complete authentication was not provided",
+                Provider::Oci,
+                "`oci session authenticate`",
+            ),
         ] {
             let said = expired_sign_in(reason, Some(cloud)).expect("an expired sign-in").to_string();
-            assert!(said.contains(again), "{said}");
+            assert!(said.contains(again) && said.contains(cloud.label()), "{said}");
         }
-        assert!(expired_sign_in("Error: creating EC2 Instance: InsufficientInstanceCapacity", Some("aws")).is_none());
+        assert!(expired_sign_in("Error: creating EC2 Instance: InsufficientInstanceCapacity", Some(Provider::Aws)).is_none());
         let stalled = TimedOut::NoProgress { after_s: 1800, last_line: Some("web Downloading 1.121GB".into()) };
         assert_eq!(
             said(RunnerError::Timeout { step: "up".into(), timed_out: stalled }).1,
@@ -362,7 +367,7 @@ mod tests {
         // already: refused before acting, whatever they say.
         for refused in [
             from_runner(RunnerError::NotRunning { run: "r".into() }),
-            expired_sign_in("Error: login session has expired", Some("aws")).expect("an expired sign-in"),
+            expired_sign_in("Error: login session has expired", Some(Provider::Aws)).expect("an expired sign-in"),
             from_runner(RunnerError::Locked { run: "r".into() }),
             from_runner(RunnerError::ToolMissing { step: "tools".into(), tool: "vagrant".into() }),
             from_runner(RunnerError::AlreadyRunning { run: "r".into() }),

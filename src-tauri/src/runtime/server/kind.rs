@@ -1,8 +1,10 @@
 //! Each kind of host in one table: what a profile's shared fields mean for it (`host` is an
 //! address or a region, `username` a login, a key id or the account labs are created in,
 //! `datastore` a size on a cloud), how it is checked, which Terraform target and size variable
-//! its labs use, what secret the keychain keeps for it, and the environment Terraform gets.
-//! Adding a provider is adding a row here, not editing a `match` in every file.
+//! its labs use, what secret the keychain keeps for it, the environment Terraform gets, and how a
+//! cloud CLI's sign-in is checked and made again. A new provider is a row here, plus what is its
+//! own elsewhere: its setup's checks (`cloud_checks`), its cost reading (`budget`), and the lab
+//! variables and the Isoloom module its labs take.
 
 use super::contract::{aws_env, azure_env, digitalocean_env, linode_env, no_env};
 use super::input::{
@@ -10,6 +12,7 @@ use super::input::{
     valid_region, valid_subscription,
 };
 use super::profile::HostProfile;
+use super::sign_in::AWS_WHO_AM_I;
 use crate::runtime::providers::Provider;
 
 /// What a profile's `host` field holds.
@@ -67,6 +70,17 @@ pub struct Shape {
     pub message: &'static str,
 }
 
+/// A cloud whose sign-in is its own CLI's: how a launch, the account's Test and the setup tell it
+/// still holds, and what a refusal tells the player to run when it doesn't.
+pub struct CliSignIn {
+    /// The CLI and the question asked of it ([`super::sign_in::sign_in_question`]).
+    pub question: (&'static str, &'static [&'static str]),
+    /// How the sign-in is made again, as a refusal says it.
+    pub again: &'static str,
+    /// Its Terraform provider's name, as a failure's message gives it (`hashicorp/aws`).
+    pub terraform_provider: &'static str,
+}
+
 /// One kind of host.
 pub struct Kind {
     /// The provider these hosts are.
@@ -90,6 +104,9 @@ pub struct Kind {
     /// The raw environment Terraform gets (credentials the provider reads itself), from the
     /// profile and its secret.
     pub terraform_env: fn(&HostProfile, &str) -> Vec<(String, String)>,
+    /// How its sign-in is checked and made again, for a cloud that signs in through its CLI. None
+    /// for a server, and for a cloud signed in with a stored API token, which doesn't run out.
+    pub cli_sign_in: Option<CliSignIn>,
 }
 
 const fn shape(valid: fn(&str) -> bool, message: &'static str) -> Shape {
@@ -109,6 +126,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: None,
         secret: Secret::Password,
         terraform_env: no_env,
+        cli_sign_in: None,
     },
     Kind {
         provider: Provider::Proxmox,
@@ -121,6 +139,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: None,
         secret: Secret::Password,
         terraform_env: no_env,
+        cli_sign_in: None,
     },
     Kind {
         provider: Provider::Aws,
@@ -133,6 +152,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("instance_type"),
         secret: Secret::AccessKey,
         terraform_env: aws_env,
+        cli_sign_in: Some(CliSignIn { question: ("aws", &AWS_WHO_AM_I), again: "`aws login`, or `aws sso login`", terraform_provider: "hashicorp/aws" }),
     },
     Kind {
         provider: Provider::Azure,
@@ -145,6 +165,11 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("size"),
         secret: Secret::None,
         terraform_env: azure_env,
+        cli_sign_in: Some(CliSignIn {
+            question: ("az", &["account", "get-access-token", "--output", "none"]),
+            again: "`az login`",
+            terraform_provider: "hashicorp/azurerm",
+        }),
     },
     Kind {
         provider: Provider::Gcp,
@@ -158,6 +183,11 @@ pub const KINDS: [Kind; 8] = [
         secret: Secret::None,
         // The google provider uses gcloud's ADC; the project comes as a variable (see `gcp`).
         terraform_env: no_env,
+        cli_sign_in: Some(CliSignIn {
+            question: ("gcloud", &["auth", "application-default", "print-access-token"]),
+            again: "`gcloud auth application-default login`",
+            terraform_provider: "hashicorp/google",
+        }),
     },
     Kind {
         provider: Provider::DigitalOcean,
@@ -170,6 +200,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("size"),
         secret: Secret::ApiToken,
         terraform_env: digitalocean_env,
+        cli_sign_in: None,
     },
     Kind {
         provider: Provider::Linode,
@@ -182,6 +213,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("type"),
         secret: Secret::ApiToken,
         terraform_env: linode_env,
+        cli_sign_in: None,
     },
     Kind {
         provider: Provider::Oci,
@@ -194,6 +226,11 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("instance_type"),
         secret: Secret::None,
         terraform_env: no_env,
+        cli_sign_in: Some(CliSignIn {
+            question: ("oci", &["iam", "region", "list", "--output", "json"]),
+            again: "`oci session authenticate`, or check `~/.oci/config`",
+            terraform_provider: "oracle/oci",
+        }),
     },
 ];
 
@@ -216,7 +253,7 @@ impl Kind {
     /// and GCP's. None for a server, a token cloud, and OCI, whose config file signs in.
     #[cfg(test)]
     pub fn cli(&self) -> Option<&'static str> {
-        matches!(self.sign_in(), "accessKeys" | "cliSignIn").then(|| super::sign_in::sign_in_question(self.provider.id()).map(|(program, _)| program)).flatten()
+        matches!(self.sign_in(), "accessKeys" | "cliSignIn").then(|| self.cli_sign_in.as_ref().map(|s| s.question.0)).flatten()
     }
 }
 

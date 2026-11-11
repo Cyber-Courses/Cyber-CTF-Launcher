@@ -295,7 +295,7 @@ fn gcp_sign_in(r: Result<String>) -> First<()> {
 pub(super) async fn test_gcp(h: &HostProfile) -> TestResult {
     let started = Instant::now();
     let mut checks: Vec<Check> = Vec::new();
-    if let Some((program, question)) = sign_in_question("gcp")
+    if let Some((program, question)) = sign_in_question(crate::runtime::providers::Provider::Gcp)
         && let Err(done) = gcp_sign_in(run_cli(program, question).await).settle(&mut checks, started)
     {
         return done;
