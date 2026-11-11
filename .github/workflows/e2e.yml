@@ -2,12 +2,15 @@ name: E2E
 
 # UI end-to-end tests (Playwright, Chromium): the frontend in a browser with the Tauri commands
 # answered by the dev mock (src/lib/dev-mock/). Playwright starts the browser preview itself
-# (`pnpm dev:web`).
+# (`pnpm dev:web`). Every spec runs; a failing one, or one that passes only on its retry
+# (playwright.config.ts), fails the job. A release tag runs it too (release.yml), before anything
+# is built.
 
 on:
   pull_request:
   push:
     branches: [main, dev]
+  workflow_call:
 
 concurrency:
   group: e2e-${{ github.ref }}

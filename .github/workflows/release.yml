@@ -74,12 +74,17 @@ jobs:
             exit 1
           fi
 
+  # The web end-to-end suite (e2e.yml): tags don't trigger it, and main takes direct pushes, so a
+  # release is where a red suite is stopped. The draft, and every build after it, wait on it.
+  e2e:
+    uses: ./.github/workflows/e2e.yml
+
   # The draft release, made once before the builds: each platform job only uploads to it.
   # Created with the org's cyber-ctf-creator app: on v0.3.8 GITHUB_TOKEN was refused creating it
   # ("Resource not accessible by integration") on every attempt, while uploading to an existing
   # draft and publishing it still worked.
   prepare:
-    needs: preflight
+    needs: [preflight, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:

@@ -11,7 +11,10 @@ export default defineConfig({
   testDir: "./tests/web",
   fullyParallel: true,
   forbidOnly: CI,
+  // On CI a test gets one retry, for the report's trace, but one that passes only on its retry
+  // still fails the run: a flaky test is fixed, not left to rot behind a green check.
   retries: CI ? 1 : 0,
+  failOnFlakyTests: CI,
   // `next dev` compiles each route on first request: a few workers keep it responsive.
   workers: CI ? 2 : 3,
   timeout: 60_000,
