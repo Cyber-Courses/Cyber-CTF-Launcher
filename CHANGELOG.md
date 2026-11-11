@@ -291,6 +291,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 - **Docker quit while a lab starts says so.** A container lab whose Docker stopped during its
   start said "`lab step up` failed: Cannot connect to the Docker daemon…"; it now says Docker isn't
   running and to start it, as the start's own check does.
+- **A running lab whose generated files were deleted can still be stopped.** Deleting the lab's
+  `.isoloom-<n>/` folder while it ran made its page read it as stopped, and its Stop said "Nothing
+  to remove" and left its containers or VMs running. The files are made again from the lab's
+  spec; with the lab's whole folder gone, the Stop says what may still run, by name.
 - **A slow download of a container lab's images no longer reads as Docker running out of
   resources.** Starting a lab with the attack box (an 11 GB image) on a slow connection was stopped
   with "The lab's `up` step didn't finish within 30 minutes … check the resources of Docker, the

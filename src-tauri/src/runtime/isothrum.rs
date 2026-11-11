@@ -276,7 +276,7 @@ impl LabRun {
         // nothing, so there is nothing to remove: a clean no-op, as the launcher's own Docker path
         // tolerates "no resource to remove". Without this, tearing down a failed launch errors on
         // the missing run.json.
-        if !self.manifest().exists() {
+        if !self.files_back()? {
             log("Nothing to remove: the run has no files.".into());
             return Ok(());
         }
@@ -315,7 +315,7 @@ impl LabRun {
     /// The lab as its page shows it; not running before its files were ever generated.
     pub(crate) async fn status(&self) -> Result<LabStatus> {
         let place = if matches!(self.kind, Kind::Vm | Kind::DockerVm) { Place::LocalVm } else { Place::Container };
-        if !self.manifest().is_file() {
+        if !self.files_back()? {
             return Ok(LabStatus { place: Some(place), ..LabStatus::default() });
         }
         let lab = self.lab().await?;
@@ -419,7 +419,7 @@ impl LabRun {
 
     /// The run's status as the runner reports it; None before the lab's files exist.
     pub(crate) async fn run_status(&self) -> Result<Option<Status>> {
-        if !self.manifest().is_file() {
+        if !self.files_back()? {
             return Ok(None);
         }
         let lab = self.lab().await?;

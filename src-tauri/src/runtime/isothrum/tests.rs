@@ -538,3 +538,30 @@ fn a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out() {
     let stopped = view::lab_status(&manifest, &status("absent", "stopped"), None);
     assert_eq!(stopped.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["db"]);
 }
+
+#[tokio::test]
+async fn a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_still_reach_it() {
+    // Regression: the player deleted the lab's generated folder while it ran. Its page read it as
+    // stopped, and its Stop said "Nothing to remove" and left its containers running.
+    let f = Fixture::new();
+    let _tools = Tools::rules(&[]);
+    let run = f.up().await;
+    std::fs::remove_file(lab::docker_manifest(&f.home.dir)).unwrap();
+    assert!(run.status().await.unwrap().running, "the page still sees it");
+    let mut lines = Vec::new();
+    run.down(&mut |l| lines.push(l)).await.unwrap();
+    assert!(!lines.iter().any(|l| l.starts_with("Nothing to remove")), "{lines:?}");
+    assert!(f.fake.last(" down --volumes").is_some(), "its containers were taken down");
+    assert!(!run.status().await.unwrap().running);
+}
+
+#[tokio::test]
+async fn a_running_lab_whose_whole_folder_is_gone_says_what_is_left() {
+    let f = Fixture::new();
+    let _tools = Tools::rules(&[]);
+    let run = f.up().await;
+    std::fs::remove_dir_all(&f.home.dir).unwrap();
+    let err = run.down(&mut |_| {}).await.unwrap_err().to_string();
+    assert!(err.starts_with("This lab's files are gone (") && err.contains("cyberctf-web"), "{err}");
+    assert!(f.fake.last(" down --volumes").is_none(), "nothing could be run on it");
+}
