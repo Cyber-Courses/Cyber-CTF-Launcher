@@ -80,7 +80,7 @@ where
     } else {
         let runs_here = |p: &Provider| offers(&options.vms, *p);
         let ready: Vec<Provider> = ready().await.into_iter().filter(runs_here).collect();
-        preferred.filter(|p| ready.contains(p)).or_else(|| ready.first().copied())
+        super::providers::pick(preferred, &ready)
     };
     if let Some(last) = last {
         return Ok(StartPlace { hypervisor, ..last });

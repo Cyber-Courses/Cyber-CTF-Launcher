@@ -433,7 +433,15 @@ pub fn ready(statuses: &[ProviderStatus], vagrant_installed: bool) -> Vec<Provid
     if !vagrant_installed {
         return Vec::new();
     }
-    statuses.iter().filter(|p| !p.remote && p.available && p.hypervisor != Some(false)).map(|p| p.provider).collect()
+    // `available` holds only where the hypervisor is there: one that isn't has a reason.
+    statuses.iter().filter(|p| !p.remote && p.available).map(|p| p.provider).collect()
+}
+
+/// The hypervisor VM labs run on, of the `ready` ones ([`ready`]): `preferred` (the player's
+/// Settings choice) when it is ready, else the first ready one. The one rule the VM self-test and
+/// a lab's default place use.
+pub fn pick(preferred: Option<Provider>, ready: &[Provider]) -> Option<Provider> {
+    preferred.filter(|p| ready.contains(p)).or_else(|| ready.first().copied())
 }
 
 /// What the machine check finds for each provider this machine can run (its OS and CPU), the
@@ -615,6 +623,15 @@ mod tests {
     /// The plugin names alone, as the checks before versions mattered read them.
     fn parse_plugins(out: &str) -> Vec<String> {
         parse_plugin_versions(out).into_iter().map(|(name, _)| name).collect()
+    }
+
+    #[test]
+    fn the_preferred_hypervisor_is_picked_when_ready_else_the_first_ready_one() {
+        let ready = [Provider::Virtualbox, Provider::Qemu];
+        assert_eq!(pick(Some(Provider::Qemu), &ready), Some(Provider::Qemu));
+        assert_eq!(pick(Some(Provider::Parallels), &ready), Some(Provider::Virtualbox), "not ready: the first ready one");
+        assert_eq!(pick(None, &ready), Some(Provider::Virtualbox));
+        assert_eq!(pick(Some(Provider::Qemu), &[]), None);
     }
 
     #[test]

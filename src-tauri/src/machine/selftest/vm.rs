@@ -25,12 +25,10 @@ const VM_NAME: &str = "CyberCTF test VM";
 /// Pings (1 s apart) for the VM to answer on the lab network.
 const PING_TRIES: u32 = 5;
 
-/// The local provider the VM test uses: the preferred one (Settings) when it's ready,
-/// else the first one whose hypervisor and plugin are ready.
+/// The local provider the VM test uses ([`providers::pick`] of the hypervisors ready here, Vagrant
+/// included): the preferred one (Settings) when it's ready, else the first ready one.
 pub(super) async fn test_provider(preferred: Option<Provider>) -> Option<Provider> {
-    let ready: Vec<Provider> =
-        providers::detect(true).await.iter().filter(|s| !s.remote && s.available && s.hypervisor != Some(false)).map(|s| s.provider).collect();
-    preferred.filter(|p| ready.contains(p)).or_else(|| ready.first().copied())
+    providers::pick(preferred, &providers::ready_here().await)
 }
 
 /// A read-only command that only succeeds when the hypervisor's service is up and usable
@@ -324,6 +322,16 @@ async fn network(provider: Provider, ip: Option<&'static str>, r: &Reporter) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_vm_test_picks_no_hypervisor_without_vagrant() {
+        // Regression: the test's own copy of "ready" never asked whether Vagrant was there, and
+        // picked a hypervisor whose every Vagrant call would then fail.
+        use crate::platform::exec::fake::{Tools, ok};
+        let tools = Tools::new(|program, _| if program == "vagrant" { None } else { ok("") });
+        assert_eq!(test_provider(Some(Provider::Virtualbox)).await, None);
+        assert!(tools.called("vagrant --version"), "{:?}", tools.calls());
+    }
 
     #[tokio::test]
     async fn the_test_vm_takes_an_address_nothing_answers_on_yet() {
