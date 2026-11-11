@@ -479,12 +479,7 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
     // The hypervisor's own version, where its plugin is particular about it (UTM).
     let hypervisor_version = if hypervisor == Some(true) { provider.hypervisor_version().await } else { None };
 
-    // Installed is not the same as working: `VBoxManage --version` never talks to VirtualBox's
-    // service (VBoxSVC), which can wedge so that every real call hangs (a deploy then sits on
-    // "Bringing machine up" forever). Ask it something that needs the service, briefly.
-    let unresponsive = provider == Provider::Virtualbox
-        && hypervisor == Some(true)
-        && crate::platform::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], VBOX_SERVICE_WAIT).await.is_err_and(|e| timed_out(&e));
+    let unresponsive = provider == Provider::Virtualbox && hypervisor == Some(true) && virtualbox_stuck().await;
 
     // Vagrant's Hyper-V provider refuses every command (status reads too) from an account
     // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
@@ -531,6 +526,14 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
         reason,
         account_lacks,
     })
+}
+
+/// Whether VirtualBox's service (`VBoxSVC`) is wedged. Installed is not the same as working:
+/// `VBoxManage --version` never talks to the service, which can wedge so that every real call
+/// hangs (a deploy then sits on "Bringing machine up" forever). Asks it something that needs the
+/// service, briefly: stuck only when the app's own timeout cut the answer short.
+async fn virtualbox_stuck() -> bool {
+    crate::platform::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], VBOX_SERVICE_WAIT).await.is_err_and(|e| timed_out(&e))
 }
 
 /// The groups libvirt's socket and `/dev/kvm` are opened through.
@@ -859,17 +862,30 @@ mod tests {
     async fn virtualbox_reads_as_not_responding_only_when_the_apps_timeout_cut_it_short() {
         // Regression: any `VBoxManage list runningvms` failure whose text said "timed out" (the
         // tool's own words) read as VirtualBox's service being stuck.
+        // The probe is asked directly: VirtualBox has no build for Windows on Arm, so `detect`
+        // doesn't report it there at all (the check below), whatever the probe says.
         use crate::platform::exec::fake::{Tools, fail, ok};
-        let reason = |runningvms: &'static str| async move {
-            let _tools = Tools::new(move |program, args| match (program, args) {
+        let tools = |runningvms: &'static str| {
+            Tools::new(move |program, args| match (program, args) {
                 ("VBoxManage", ["list", "runningvms"]) => fail(runningvms),
                 ("VBoxManage", _) => ok("7.1.4\n"),
                 _ => ok(""),
-            });
-            detect(true).await.into_iter().find(|s| s.provider == Provider::Virtualbox).and_then(|s| s.reason)
+            })
         };
-        assert_ne!(reason("VBoxManage: error: the guest session timed out").await, Some(Unavailable::VirtualboxStuck));
-        assert_eq!(reason("timed out after 8s").await, Some(Unavailable::VirtualboxStuck));
+        let stuck = |runningvms: &'static str| async move {
+            let _tools = tools(runningvms);
+            virtualbox_stuck().await
+        };
+        assert!(!stuck("VBoxManage: error: the guest session timed out").await, "the tool's own words");
+        assert!(stuck("timed out after 8s").await, "the app's timeout");
+        // And `detect` says so wherever VirtualBox applies; where it doesn't, it says nothing.
+        let _tools = tools("timed out after 8s");
+        let virtualbox = detect(true).await.into_iter().find(|s| s.provider == Provider::Virtualbox);
+        if Provider::Virtualbox.applicable() {
+            assert_eq!(virtualbox.and_then(|s| s.reason), Some(Unavailable::VirtualboxStuck));
+        } else {
+            assert!(virtualbox.is_none(), "{:?}", virtualbox.map(|s| s.reason));
+        }
     }
 
     #[test]
