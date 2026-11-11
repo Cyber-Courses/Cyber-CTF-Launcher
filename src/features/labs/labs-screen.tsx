@@ -98,9 +98,20 @@ function useLabsScreen({ loggedIn, report, openLab, onDetailChange }: ViewProps)
   const vmProvider = useVmProvider();
   const readyVms = useMemo(() => (report ? preferredFirst(report.readyHypervisors, vmProvider) : []), [report, vmProvider]);
   const shown = useFilteredLabs(labs, filters, statuses, completed);
-  const detail = openable && detailSlug ? openable.find((l) => l.slug === detailSlug) : undefined;
+  const detail = useOpenDetail(openable, detailSlug, !labs);
   useDetailTitle(detail?.title ?? null, onDetailChange);
   return { ...catalogue, statuses, actions, operations, detailSlug, setDetailSlug, filters, setFilters, servers, readyVms, shown, detail };
+}
+
+/** The open lab (`slug`) among the `openable` ones. While the catalogue is `reloading` (a sign-in
+ *  or a sign-out reads it again), the lab open before stays open: its page isn't swapped for a
+ *  loading one and back, which would drop what it was doing (the start a "Sign in to start"
+ *  carries on once signed in). */
+function useOpenDetail(openable: Lab[] | null, slug: string | null, reloading: boolean): Lab | undefined {
+  const found = openable && slug ? openable.find((l) => l.slug === slug) : undefined;
+  const [last, setLast] = useState<Lab | undefined>(found);
+  if (found && found !== last) setLast(found);
+  return found ?? (reloading && slug && last?.slug === slug ? last : undefined);
 }
 
 /** The rows' context: the screen's state and its stable handlers (the rows are memoized). */

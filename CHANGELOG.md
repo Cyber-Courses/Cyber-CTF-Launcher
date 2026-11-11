@@ -303,6 +303,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   `.isoloom-<n>/` folder while it ran made its page read it as stopped, and its Stop said "Nothing
   to remove" and left its containers or VMs running. The files are made again from the lab's
   spec; with the lab's whole folder gone, the Stop says what may still run, by name.
+- **"Sign in to start" on a lab's page goes on into the start again.** Once signed in, the
+  catalogue is read again for the account, and while it loaded the lab's page was swapped for a
+  loading one and back, which dropped the start the player had asked for: they were left in front
+  of the Start button they had already pressed. The open lab's page now stays while the catalogue
+  reloads, and "Where should it run?" opens as soon as the sign-in goes through.
 - **A slow download of a container lab's images no longer reads as Docker running out of
   resources.** Starting a lab with the attack box (an 11 GB image) on a slow connection was stopped
   with "The lab's `up` step didn't finish within 30 minutes … check the resources of Docker, the
