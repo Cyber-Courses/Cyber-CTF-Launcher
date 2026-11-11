@@ -294,10 +294,13 @@ cleanup_lab() {
     say "cleanup: docker compose -p cyberctf-$LAB_ID down"
     docker compose -p "cyberctf-$LAB_ID" down --remove-orphans >/dev/null 2>&1
   fi
+  # One id per line: each removed (the ids passed as one word failed with more than one), and
+  # the next scenario never starts on what is left.
   local leftovers
-  leftovers=$(docker ps -q --filter "name=$LAB_ID" 2>/dev/null)
-  [ -n "$leftovers" ] && docker rm -f "$leftovers" >/dev/null 2>&1
-  return 0
+  leftovers=$(docker ps -aq --filter "name=$LAB_ID")
+  [ -z "$leftovers" ] || printf '%s\n' "$leftovers" | xargs docker rm -f >/dev/null
+  leftovers=$(docker ps -aq --filter "name=$LAB_ID")
+  [ -z "$leftovers" ] || fail_now "containers of $LAB_ID are left after the clean-up: $(echo "$leftovers" | tr '\n' ' ')"
 }
 
 on_exit() {

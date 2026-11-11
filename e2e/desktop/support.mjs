@@ -275,15 +275,29 @@ export async function invokeWhenIdle(b, cmd, args, timeoutMs = 240000) {
   }
 }
 
-/** Wait until lab `id` is no longer mid-deploy (its launch worker has finished), so a lifecycle
- *  command won't race the launch for the per-lab lock. Polls the app's own deploying-labs list. */
+/** Wait until lab `id` has no operation in flight (its launch worker has finished), so a
+ *  lifecycle command won't race the launch for the per-lab lock. Polls the app's own `busy_labs`;
+ *  a failed read is tried again, never taken for "settled", and a lab still busy at the deadline
+ *  fails the scenario. */
 export async function waitSettled(b, id, timeoutMs = 240000) {
   const deadline = Date.now() + timeoutMs;
+  let failure = null;
   while (Date.now() < deadline) {
-    const busy = await invokeCmd(b, "busy_labs").catch(() => null);
-    if (!Array.isArray(busy) || !busy.includes(id)) return;
+    let busy;
+    try {
+      busy = await invokeCmd(b, "busy_labs");
+      failure = null;
+    } catch (e) {
+      failure = e;
+      await sleep(2000);
+      continue;
+    }
+    if (!Array.isArray(busy)) throw new Error(`busy_labs answered ${JSON.stringify(busy)}, not a list of labs`);
+    if (!busy.includes(id)) return;
     await sleep(2000);
   }
+  const why = failure ? ` (busy_labs last failed: ${failure instanceof Error ? failure.message : String(failure)})` : "";
+  throw new Error(`${id} still had an operation in flight after ${String(timeoutMs / 1000)} s${why}`);
 }
 
 /** Stop the app process. */
