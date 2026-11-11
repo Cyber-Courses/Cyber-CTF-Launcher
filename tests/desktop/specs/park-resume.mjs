@@ -1,8 +1,9 @@
-// Normal lifecycle: a running container lab parks and resumes. Launch the local lab, confirm it
-// runs, lab_park{pause} and confirm nothing of the lab is running any more (Docker park stops the
-// containers, keeping them), lab_resume and confirm it runs again, then stop. Drives the real
-// lab_park / lab_resume commands (the lab page's Pause / Resume) against a local lab, which has no
-// detail-page buttons of its own.
+// Normal lifecycle: a running container lab shuts down and resumes. Launch the local lab, confirm it
+// runs; a Pause is refused, as the lab page offers none for containers on Docker (they have no
+// state to save: lifecycle's park_refusal), and leaves the lab running; lab_park{shutdown} then
+// leaves nothing of the lab running (Docker stops the containers, keeping them), lab_resume runs
+// it again, then stop. Drives the real lab_park / lab_resume commands (the lab page's Shut down /
+// Resume) against a local lab, which has no detail-page buttons of its own.
 import { finish, goTo, invokeWhenIdle, labContainers, localLab, mainText, openApp, results, sleep, waitForLab, waitSettled } from "../lib/support.mjs";
 
 const r = results();
@@ -32,17 +33,30 @@ try {
   // The launch worker holds the per-lab lock a little past the point the Overview shows "running";
   // wait for it to settle so park isn't refused for an operation already in progress.
   await waitSettled(b, id);
-  await invokeWhenIdle(b, "lab_park", { id, runtime: "DOCKER", mode: "pause" });
+  const refusal = await invokeWhenIdle(b, "lab_park", { id, runtime: "DOCKER", mode: "pause" }).then(
+    () => null,
+    (e) => e.message,
+  );
+  const afterPause = states(id);
+  r.check(
+    "pause-refused",
+    refusal !== null && /shut it down instead/i.test(refusal) && runningCount(afterPause) === runningCount(before),
+    refusal === null
+      ? `a Pause of containers on Docker was carried out: ${JSON.stringify(afterPause)}`
+      : `refused (${refusal}); still running: ${afterPause.join(", ")}`,
+  );
+
+  await invokeWhenIdle(b, "lab_park", { id, runtime: "DOCKER", mode: "shutdown" });
   await sleep(1500);
   const parked = states(id);
-  if (runningCount(parked) !== 0) throw new Error(`lab_park left container(s) running: ${JSON.stringify(parked)}`);
-  console.log("parked (nothing running); states:", JSON.stringify(parked));
+  if (runningCount(parked) !== 0) throw new Error(`lab_park{shutdown} left container(s) running: ${JSON.stringify(parked)}`);
+  console.log("shut down (nothing running); states:", JSON.stringify(parked));
 
   await invokeWhenIdle(b, "lab_resume", { id, runtime: "DOCKER" });
   await sleep(1500);
   const resumed = states(id);
   if (runningCount(resumed) === 0) throw new Error(`lab_resume did not bring the lab back: ${JSON.stringify(resumed)}`);
-  r.pass("park-resume", `parked (nothing running), then resumed; states: ${resumed.join(", ")}`);
+  r.pass("park-resume", `shut down (nothing running), then resumed; states: ${resumed.join(", ")}`);
 
   // Teardown only; the verdict above already stands. run.sh's cleanup_lab tears the lab down
   // regardless, so a stop that races the resume's lock here is not a failure.

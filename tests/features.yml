@@ -757,6 +757,7 @@ areas:
             - "vm-labs.spec.ts > on this machine: up, pause, resume, provision one machine again, stop"
           desktop:
             - park-resume
+            - park-resume/pause-refused
             - lab-actions/pause
             - lab-actions/resume
           integration:
@@ -770,7 +771,7 @@ areas:
           - vm
           - desktop-e2e
         gaps:
-          desktop: "park-resume calls lab_park with mode pause on a Docker lab, which lifecycle now refuses (041c9cd8: 'shut it down instead'): the spec is stale and should fail; lab-actions' pause/resume skip on a container lab, whose page now offers no Pause, and it never drives Shut down"
+          desktop: "container labs only, through the commands (park-resume: a Pause refused, Shut down and Resume; needs CYBERCTF_TEST_LOCAL_LAB); lab-actions' pause/resume skip on a container lab, whose page offers no Pause, and no spec presses Shut down on the page or pauses a VM lab"
           integration: no park/resume for docker-vm or per-machine; QEMU's pause refusal untested on a real host
 
       - id: lab-run.provision-again
@@ -1004,6 +1005,33 @@ areas:
         gaps:
           desktop: no spec reads the deploy steps or log on the page; busy_labs is only polled as a wait helper
           integration: launch-commands streams the log but asserts only the outcome
+
+      - id: lab-run.image-download
+        what: A container lab's images are pulled in a step of their own, shown as the lab page's Get images phase; a pull that stops making progress or fails says so (the minutes without progress and the network hint, or Docker's reason), not that Docker ran out of resources.
+        providers:
+          - docker
+        host: true
+        tests:
+          unit:
+            - src-tauri/src/runtime/isothrum/errors.rs > a_download_that_stalled_or_failed_says_so_not_the_resources
+            - src-tauri/src/runtime/isothrum/tests.rs > an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull
+            - src/features/labs/deploy-log.test.ts > the runner's pull before the containers start is the images phase, its progress in it
+            - src/features/labs/deploy-steps.test.tsx > starts over on a new run, and ticks the running step's time on its own
+            - src/features/labs/failure-hints.test.ts > reads a download of the lab's images that stalled as the network, and one that failed by Docker's words
+            - src/lib/errors.test.ts > "downloadStalled"
+          web:
+            - lab-flow.spec.ts > search, open, start, watch the steps, open the shell, stop
+          integration:
+            - docker-lab-hello-stack
+            - docker-lab-segmented
+            - attack-box-docker
+        rig:
+          - container
+          - attack-box:docker
+        gaps:
+          web: lab-flow only sees the Get images step; no dev-mock flag makes a pull stall or fail
+          integration: the scenarios pull real images, so the Get images phase runs for real, but none provokes a stalled or failed pull; the runner's own pull-phase tests are Isothrum's, outside this repository
+        note: The download-phase fix (f69e4bd9) gave the stall and the failure their own codes, downloadStalled and downloadFailed, in the six languages.
 
       - id: lab-run.interrupted-deploy-recovery
         what: Quitting or killing the app mid-deploy never cuts it short (detached worker); quit asks first, and a reopened app shows a coherent state and offers to clean up an interrupted start.
@@ -2023,7 +2051,7 @@ areas:
             - src/features/machine/machine-screen.test.tsx > tests each hypervisor on its own, keeps its result on its row, and makes it the default from the row
             - src/features/machine/machine-screen.test.tsx > explains a blocked hypervisor
           web:
-            - servers-cloud.spec.ts > shows its heading and its one action
+            - servers-cloud.spec.ts > shows its heading, its providers' avatars and its one action
             - servers-cloud.spec.ts > Machine's empty state offers a server instead
           desktop:
             - machine/page
@@ -2272,7 +2300,7 @@ areas:
             - src/features/machine/machine-setup.test.tsx > an engine installed from the picker stays listed
             - src/features/machine/machine-setup.test.tsx > a hypervisor installed from the picker asks for Vagrant and its plugin
           web:
-            - servers-cloud.spec.ts > shows its heading and its one action
+            - servers-cloud.spec.ts > shows its heading, its providers' avatars and its one action
           desktop:
             - machine/add-provider
         rig:
@@ -2807,7 +2835,7 @@ areas:
             - src/features/servers/use-server-list.test.tsx
           web:
             - servers-cloud.spec.ts > Servers lists the hosts
-            - servers-cloud.spec.ts > shows its heading and its one action
+            - servers-cloud.spec.ts > shows its heading, its providers' avatars and its one action
           desktop:
             - setup-screens
             - server-lab/listed
@@ -3086,7 +3114,7 @@ areas:
             - src/features/servers/host-setup/host-wizard-interaction.test.tsx > leaves a cloud account with a running lab listed
           web:
             - servers-cloud.spec.ts > Cloud lists the accounts
-            - servers-cloud.spec.ts > Cloud's logos open the setup on their provider
+            - servers-cloud.spec.ts > Set up cloud provider opens the cloud setup
           desktop:
             - setup-screens
         rig:
@@ -3696,7 +3724,7 @@ areas:
     title: Empty states
     features:
       - id: empty.servers-and-cloud
-        what: With no server or no cloud account, Servers and Cloud each show one empty state with the providers' logos (Proxmox, ESXi; AWS, Azure, Google Cloud...) and their one action; a cloud logo opens the setup on that provider.
+        what: With no server or no cloud account, Servers and Cloud each show one empty state with the providers it takes as avatars (Proxmox, ESXi; every cloud it runs labs on, up to eight then +N, each named in a tooltip) and its one action, Set up opening the setup's provider choice.
         host: false
         tests:
           unit:
@@ -3704,10 +3732,12 @@ areas:
             - src/components/ui/logo-tile.test.tsx
             - src/components/shell/screens.test.tsx > offers to add the first server
             - src/features/servers/servers-screen.test.tsx > offers the first server, and a local hypervisor when this machine can't run VMs
-            - src/features/cloud/cloud-screen.test.tsx > shows the empty state without accounts, connecting a main provider or any other
+            - src/features/cloud/cloud-screen.test.tsx > shows the empty state without accounts, its one Set up opening the setup's provider choice
+            - src/components/ui/avatar.test.tsx
           web:
-            - servers-cloud.spec.ts > shows its heading and its one action
-            - servers-cloud.spec.ts > Cloud's logos open the setup on their provider, with no Connect row apart
+            - servers-cloud.spec.ts > shows its heading, its providers' avatars and its one action
+            - "servers-cloud.spec.ts > an avatar names its provider in a tooltip on hover; Cloud's are no buttons and it has no Connect row"
+            - servers-cloud.spec.ts > ESXi, VMware Fusion and Parallels show their initials
             - a11y.spec.ts > the empty ${tab} screen passes too
         gaps:
           desktop: no spec forces the empty Servers or Cloud screen in the real app
@@ -3721,7 +3751,7 @@ areas:
             - src/components/shell/screens.test.tsx > lists what a fresh machine is missing
           web:
             - servers-cloud.spec.ts > Machine's empty state offers a server instead
-            - servers-cloud.spec.ts > shows its heading and its one action
+            - servers-cloud.spec.ts > shows its heading, its providers' avatars and its one action
         gaps:
           desktop: the rig's machines have providers installed; never seen on a bare machine
 

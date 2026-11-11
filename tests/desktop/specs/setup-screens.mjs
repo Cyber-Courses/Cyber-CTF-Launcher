@@ -1,7 +1,8 @@
-// Setup: the Servers and Cloud screens render and offer their setup entry points. The wizards they
-// open run in a separate OS window the embedded WebDriver cannot reach, so this asserts the list
-// screens themselves — their titles and the "Add server" / "Set up cloud provider" buttons — and
-// that the shell stays usable (a signed-out machine with no hosts configured).
+// Setup: the Servers and Cloud screens render and offer their setup entry points: their titles and
+// the "Add server" / "Set up cloud provider" buttons, on a signed-out machine with no hosts
+// configured, the shell staying usable. It doesn't open the wizards: the `server-lab` spec drives
+// the server setup window (`switchToWindow(b, "server-setup")`), and the web specs
+// (setup-wizards.spec.ts) the server and cloud setups against the dev mock.
 import { finish, goTo, mainText, openApp, results } from "../lib/support.mjs";
 
 const r = results();
