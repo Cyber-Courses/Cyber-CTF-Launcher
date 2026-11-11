@@ -4,8 +4,8 @@
 //! binary and the keychain would re-prompt on each run (as the sign-in session's store does). Both
 //! stores are built in every build, so each is checked and tested; [`in_a_file`] picks one. An
 //! end-to-end run's app (`platform::test_root`) keeps them in the file too, under the run's folder;
-//! a unit test's, in a file of its own (`use_test_file`, else one per test process), never the
-//! player's.
+//! a unit test's, in a file of its own (`use_test_file`, else one per test thread, removed with
+//! it), never the player's.
 //!
 //! A keychain call blocks: the OS may show its unlock prompt and wait for the player. Called
 //! from an async worker, it runs through [`blocking`], so the worker's other tasks move on to
@@ -116,13 +116,16 @@ mod dev_file {
     }
 
     /// The secrets file: a test's own (see `use_test_file`), else under the home folder; a test
-    /// process's home is a folder of its own in the temporary folder, never the player's.
+    /// thread's home is a folder of its own in the temporary folder, never the player's.
     fn path() -> Result<PathBuf> {
         #[cfg(test)]
         if let Some(file) = TEST_FILE.with(|f| f.borrow().clone()) {
             return Ok(file);
         }
-        let home = if cfg!(test) { Some(std::env::temp_dir().join(format!("cyberctf-test-home-{}", std::process::id()))) } else { crate::platform::own_home() };
+        #[cfg(test)]
+        let home = Some(crate::testing::thread_dir("test-home"));
+        #[cfg(not(test))]
+        let home = crate::platform::own_home();
         Ok(file_in(&home.ok_or_else(|| Error::Invalid("no home directory".into()))?))
     }
 

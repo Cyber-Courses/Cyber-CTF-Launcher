@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use super::*;
 use crate::error::Result;
 
@@ -23,11 +21,10 @@ pub(crate) fn tarball(entries: &[(&str, &[u8])]) -> Vec<u8> {
 
 #[test]
 fn extracts_without_the_top_level_folder() {
-    let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+    let dir = crate::testing::temp_dir("extract");
     extract(&tarball(&[("lab-abc/docker-compose.yml", b"services: {}"), ("lab-abc/evidence/claim.sh", b"#!/bin/sh")]), &dir).unwrap();
     assert_eq!(std::fs::read_to_string(dir.join("docker-compose.yml")).unwrap(), "services: {}");
     assert!(dir.join("evidence/claim.sh").is_file());
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -43,9 +40,8 @@ fn names_windows_cant_hold_are_told_apart() {
 #[cfg(windows)]
 #[test]
 fn a_lab_archive_with_a_name_windows_cant_hold_is_refused_plainly() {
-    let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+    let dir = crate::testing::temp_dir("extract");
     let err = extract(&tarball(&[("lab-abc/ok.txt", b"x"), ("lab-abc/notes ", b"y")]), &dir).unwrap_err().to_string();
-    let _ = std::fs::remove_dir_all(&dir);
     assert!(err.contains("can't be installed on Windows") && err.contains("ending in a space"), "{err}");
 }
 
@@ -57,11 +53,10 @@ fn links_and_the_top_level_folder_entry_are_skipped() {
     link.set_size(0);
     builder.append_link(&mut link, "lab-abc/passwd", "/etc/passwd").unwrap();
     let gz = builder.into_inner().unwrap().finish().unwrap();
-    let dest = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+    let dest = crate::testing::temp_dir("extract");
     extract(&gz, &dest).unwrap();
     assert!(dest.join("docs").is_dir());
     assert!(std::fs::symlink_metadata(dest.join("passwd")).is_err());
-    std::fs::remove_dir_all(dest).unwrap();
 }
 
 #[test]
@@ -78,7 +73,7 @@ fn an_internal_symlink_is_recreated_a_tree_escaping_one_is_not() {
     out.set_size(0);
     builder.append_link(&mut out, "lab-abc/escape", "../../../outside").unwrap();
     let gz = builder.into_inner().unwrap().finish().unwrap();
-    let dest = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+    let dest = crate::testing::temp_dir("extract");
     extract(&gz, &dest).unwrap();
     if cfg!(unix) {
         let here = std::fs::symlink_metadata(dest.join("here"));
@@ -86,7 +81,6 @@ fn an_internal_symlink_is_recreated_a_tree_escaping_one_is_not() {
         assert_eq!(std::fs::read_link(dest.join("here")).unwrap(), std::path::Path::new("contracts"));
     }
     assert!(std::fs::symlink_metadata(dest.join("escape")).is_err(), "the escaping link is left out");
-    std::fs::remove_dir_all(dest).unwrap();
 }
 
 #[cfg(unix)]
@@ -103,28 +97,25 @@ fn a_chain_of_links_reading_as_internal_but_resolving_outside_is_left_out() {
         builder.append_link(&mut link, at, target).unwrap();
     }
     let gz = builder.into_inner().unwrap().finish().unwrap();
-    let outside = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
-    std::fs::create_dir_all(&outside).unwrap();
+    let outside = crate::testing::temp_dir("extract");
     std::fs::write(outside.join("secret"), "s").unwrap();
     let dest = outside.join("lab");
     extract(&gz, &dest).unwrap();
     assert!(dest.join("sub/a").is_symlink(), "an internal link is kept");
     assert!(std::fs::symlink_metadata(dest.join("b")).is_err(), "the chain to the secret is left out");
     assert!(dest.join("ok").is_dir(), "a chain that stays inside is kept");
-    std::fs::remove_dir_all(outside).unwrap();
 }
 
 #[test]
 fn rejects_path_traversal_in_archives() {
-    let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+    let dir = crate::testing::temp_dir("extract");
     let err = extract(&tarball(&[("lab-abc/../../evil", b"x")]), &dir);
     assert!(err.is_err());
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn an_archive_unpacking_past_the_limit_is_refused() {
-    let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+    let dir = crate::testing::temp_dir("extract");
     // Highly compressible, like a gzip bomb: 3 MiB of zeros in a few KiB.
     let zeros = vec![0u8; 3 * 1024 * 1024];
     let archive = tarball(&[("lab-abc/a.bin", &zeros), ("lab-abc/b.bin", &zeros)]);
@@ -136,7 +127,6 @@ fn an_archive_unpacking_past_the_limit_is_refused() {
     let _ = std::fs::remove_dir_all(&dir);
     extract_within(&archive, &dir, 6 * 1024 * 1024).unwrap();
     assert_eq!(std::fs::metadata(dir.join("b.bin")).unwrap().len(), zeros.len() as u64);
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -144,11 +134,9 @@ fn an_empty_archive_installs_nothing_and_fails_nothing() {
     let dir = extract_to(&[]).unwrap();
     // The destination is created by the caller (`stage`); nothing appears on its own.
     assert!(!dir.exists() || std::fs::read_dir(&dir).unwrap().next().is_none());
-    let _ = std::fs::remove_dir_all(dir);
     // An entry that is only the top-level folder name (no slash) is the folder itself: skipped.
     let dir = extract_to(&[("lab-abc", b"not a file we want")]).unwrap();
     assert!(!dir.exists() || std::fs::read_dir(&dir).unwrap().next().is_none());
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -158,7 +146,6 @@ fn paths_outside_the_top_folder_land_inside_the_destination_or_are_refused() {
     let dir = extract_to(&[("/etc/passwd", b"x"), ("../evil", b"y")]).unwrap();
     assert_eq!(std::fs::read_to_string(dir.join("etc/passwd")).unwrap(), "x");
     assert_eq!(std::fs::read_to_string(dir.join("evil")).unwrap(), "y");
-    std::fs::remove_dir_all(dir).unwrap();
     // A `..` anywhere after the top folder is refused, wherever it sits.
     for path in ["lab-abc/a/../b", "lab-abc/..", "lab-abc/a/b/../../../c"] {
         let err = extract_to(&[(path, b"x")]).unwrap_err().to_string();
@@ -167,7 +154,6 @@ fn paths_outside_the_top_folder_land_inside_the_destination_or_are_refused() {
     // A `.` in the middle is nothing; a backslash is a plain character on Unix, not a separator.
     let dir = extract_to(&[("lab-abc/./a", b"x")]).unwrap();
     assert!(dir.join("a").is_file());
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -176,7 +162,6 @@ fn a_top_folder_with_a_leading_dot_is_stripped_too() {
     // that way installed under `<dest>/<repo>-<sha>/`, where nothing looks.
     let dir = extract_to(&[("./lab-abc/isoloom.yml", b"name: x")]).unwrap();
     assert!(dir.join("isoloom.yml").is_file(), "{:?}", std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect::<Vec<_>>());
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -186,10 +171,9 @@ fn a_file_under_a_path_that_is_a_file_fails_cleanly_and_a_truncated_archive_fail
     // Cut mid-stream: an error, never a lab installed from half an archive.
     let big = vec![7u8; 20_000];
     let gz = tarball(&[("lab-abc/isoloom.yml", b"name: x"), ("lab-abc/big", &big)]);
-    let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+    let dir = crate::testing::temp_dir("extract");
     assert!(extract(&gz[..gz.len() / 2], &dir).is_err());
     assert!(extract(b"not a gzip at all", &dir).is_err());
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -208,11 +192,10 @@ fn long_unicode_paths_and_hard_links_in_an_archive() {
     link.set_size(0);
     builder.append_link(&mut link, "lab-abc/alias", &deep).unwrap();
     let gz = builder.into_inner().unwrap().finish().unwrap();
-    let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+    let dir = crate::testing::temp_dir("extract");
     extract(&gz, &dir).unwrap();
     assert_eq!(std::fs::read_to_string(dir.join(&deep["lab-abc/".len()..])).unwrap(), "ok");
     assert!(std::fs::symlink_metadata(dir.join("alias")).is_err(), "a hard link is skipped");
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 /// A gzip tar builder with the lab's top folder `lab-abc/` and one `subdir/` already in it, so
@@ -228,7 +211,8 @@ fn tarball_with_dir(subdir: &str) -> tar::Builder<flate2::write::GzEncoder<Vec<u
     builder
 }
 
-fn extract_to(entries: &[(&str, &[u8])]) -> Result<PathBuf> {
-    let dir = std::env::temp_dir().join(format!("cyberctf-extract-{}", rand::random::<u32>()));
+/// `entries` extracted into a fresh folder, removed when dropped.
+fn extract_to(entries: &[(&str, &[u8])]) -> Result<crate::testing::TempDir> {
+    let dir = crate::testing::temp_dir("extract");
     extract(&tarball(entries), &dir).map(|()| dir)
 }

@@ -546,7 +546,7 @@ mod tests {
         std::fs::write(dir.join("docker"), "#!/bin/sh").unwrap();
         std::fs::write(dir.join("docker.exe"), "MZ").unwrap();
         std::fs::write(dir.join("az.cmd"), "@echo off").unwrap();
-        let dirs = [dir.join("missing"), dir.clone()];
+        let dirs = [dir.join("missing"), dir.to_path_buf()];
         let find = |p: &str| windows_program(p, &dirs, DEFAULT_PATHEXT, std::path::Path::is_file);
         assert_eq!(find("docker"), dir.join("docker.exe"));
         assert_eq!(find("az"), dir.join("az.cmd"), "a .cmd wrapper, as PATHEXT lists it");

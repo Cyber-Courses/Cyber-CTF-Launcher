@@ -2,13 +2,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { rustSources, scanRust } from "./rust-scan.ts";
+
+/** The roots `tree` made, removed after each test. */
+const roots: string[] = [];
+afterEach(() => {
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+});
 
 /** `files` (path → text) written under a fresh temporary root's `src-tauri/src`; the root. */
 function tree(files: Record<string, string>): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rust-scan-"));
+  roots.push(root);
   for (const [rel, text] of Object.entries(files)) {
     const full = path.join(root, "src-tauri/src", rel);
     fs.mkdirSync(path.dirname(full), { recursive: true });

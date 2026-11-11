@@ -143,6 +143,8 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
     )
     .await;
     let _ = std::fs::remove_dir_all(&dir);
+    // Regression: the runner's home stayed in the temp folder after every run.
+    let _ = std::fs::remove_dir_all(&home);
     assert!(f.is_empty(), "{f:#?}");
 }
 

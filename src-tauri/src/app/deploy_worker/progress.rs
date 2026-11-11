@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(buf.rest(), None);
     }
 
-    fn spawned(tag: &str) -> (std::path::PathBuf, Spawned) {
+    fn spawned(tag: &str) -> (crate::testing::TempDir, Spawned) {
         let dir = crate::testing::temp_dir(tag);
         let files = crate::app::deploy_worker::files::Files::of(&dir, "lab-1");
         let worker = crate::app::deploy_worker::process::Worker { pid: 4_000_000_000, started: None };

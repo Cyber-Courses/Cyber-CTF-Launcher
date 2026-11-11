@@ -104,9 +104,10 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// A fresh sandbox holding the destination, so anything written next to it shows.
-fn sandbox() -> (PathBuf, PathBuf) {
-    let root = std::env::temp_dir().join(format!("cyberctf-extract-prop-{}", rand::random::<u64>()));
+/// A fresh sandbox holding the destination, so anything written next to it shows; removed when
+/// dropped.
+fn sandbox() -> (crate::testing::TempDir, PathBuf) {
+    let root = crate::testing::temp_dir("extract-prop");
     let dest = root.join("box").join("dest");
     std::fs::create_dir_all(&dest).unwrap();
     (root, dest)
@@ -130,7 +131,6 @@ proptest! {
             let rel = p.strip_prefix(&dest).unwrap_or(p.as_path());
             !symlink_target_within_tree(rel, &target)
         }).collect();
-        let _ = std::fs::remove_dir_all(&root);
         prop_assert!(outside.is_empty(), "written outside: {:?}", outside);
         prop_assert!(escaping.is_empty(), "links escaping dest: {:?}", escaping);
     }
@@ -150,7 +150,6 @@ proptest! {
         let _ = extract(&input, &dest);
         let mut all = Vec::new();
         walk(&root, &mut all);
-        let _ = std::fs::remove_dir_all(&root);
         prop_assert!(all.iter().all(|p| p.starts_with(&dest) || *p == root.join("box")));
     }
 
@@ -172,13 +171,12 @@ proptest! {
         let lead = if dot { "./" } else { "" };
         let mut entries = vec![Entry { path: format!("{lead}{top}/"), kind: tar::EntryType::Directory, link: String::new(), data: Vec::new() }];
         entries.extend(files.iter().map(|(p, data)| Entry { path: format!("{lead}{top}/{}", p.join("/")), kind: tar::EntryType::Regular, link: String::new(), data: data.clone() }));
-        let (root, dest) = sandbox();
+        let (_root, dest) = sandbox();
         let res = extract(&tarball(&entries), &dest);
         let mut read = Vec::new();
         for p in files.keys() {
             read.push(std::fs::read(p.iter().fold(dest.clone(), |d, c| d.join(c))).ok());
         }
-        let _ = std::fs::remove_dir_all(&root);
         prop_assert!(res.is_ok(), "{:?}", res);
         for (got, want) in read.iter().zip(files.values()) {
             prop_assert_eq!(got.as_ref(), Some(want));

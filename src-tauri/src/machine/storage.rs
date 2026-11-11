@@ -298,8 +298,7 @@ mod tests {
 
     #[test]
     fn reads_boxes_from_vagrantfiles() {
-        let dir = std::env::temp_dir().join("cyberctf-vf-test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::testing::temp_dir("vf-test");
         let vf = dir.join("Vagrantfile");
         std::fs::write(&vf, "Vagrant.configure('2') do |c|\n  c.vm.box = \"bento/debian-12\"\n  dc.vm.box = 'gusztavvargadr/windows-server'\nend\n").unwrap();
         assert_eq!(vagrantfile_boxes(&vf), vec!["bento/debian-12", "gusztavvargadr/windows-server"]);

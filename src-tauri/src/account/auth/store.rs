@@ -104,14 +104,13 @@ fn decode(head: String, mut piece: impl FnMut(usize) -> std::result::Result<Opti
 
 pub(super) fn dev_session_path() -> Option<std::path::PathBuf> {
     // Unit tests never read or replace the developer's own session, nor each other's: each test
-    // thread has its own (a `#[tokio::test]` runs its tasks on its one thread, and the file is
-    // resolved there, before any blocking thread, see `session_file`).
-    if cfg!(test) {
-        let thread: String = format!("{:?}", std::thread::current().id()).chars().filter(char::is_ascii_digit).collect();
-        let run = std::env::temp_dir().join(format!("cyberctf-test-session-{}", std::process::id()));
-        return Some(run.join(thread).join("dev-session.json"));
-    }
-    home_session_path()
+    // thread has its own, removed when the thread ends (a `#[tokio::test]` runs its tasks on its
+    // one thread, and the file is resolved there, before any blocking thread, see `session_file`).
+    #[cfg(test)]
+    let path = Some(crate::testing::thread_dir("test-session").join("dev-session.json"));
+    #[cfg(not(test))]
+    let path = home_session_path();
+    path
 }
 
 /// The dev session file a read, save or clear goes to (none when the keychain keeps the

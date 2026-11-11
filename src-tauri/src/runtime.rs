@@ -187,10 +187,10 @@ pub(crate) mod test_support {
         std::fs::write(dir.join("record.json"), record.to_string()).unwrap();
     }
 
-    /// A temp lab folder holding `spec` as its `isoloom.yml`, for tests that load a lab from disk.
-    pub(crate) fn write_lab(spec: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("cyberctf-lab-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(&dir).unwrap();
+    /// A temp lab folder holding `spec` as its `isoloom.yml`, for tests that load a lab from disk;
+    /// removed when dropped.
+    pub(crate) fn write_lab(spec: &str) -> crate::testing::TempDir {
+        let dir = crate::testing::temp_dir("lab");
         std::fs::write(dir.join("isoloom.yml"), spec).unwrap();
         dir
     }

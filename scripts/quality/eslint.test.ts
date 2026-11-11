@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { eslintExceptions, linted } from "./eslint.ts";
 
@@ -12,6 +12,9 @@ const DISABLE = ["eslint", "-disable"].join("");
 describe("eslintExceptions", () => {
   it("lists each disable comment, with whether it says why", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "eslint-exceptions-"));
+    onTestFinished(() => {
+      fs.rmSync(root, { recursive: true, force: true });
+    });
     const lines = [
       `// ${DISABLE}-next-line react-hooks/set-state-in-effect -- read once on mount`,
       `const a = 1; // ${DISABLE}-line no-console`,

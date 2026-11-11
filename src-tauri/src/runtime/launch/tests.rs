@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{
     Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, downloads, local_run, low_memory_warning, parse_ipv4, per_machine_runs_on,
@@ -123,7 +121,7 @@ fn only_internet_addresses_are_public() {
     }
 }
 
-fn lab(spec: &str) -> PathBuf {
+fn lab(spec: &str) -> crate::testing::TempDir {
     crate::runtime::test_support::write_lab(spec)
 }
 

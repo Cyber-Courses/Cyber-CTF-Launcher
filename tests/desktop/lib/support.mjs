@@ -29,10 +29,13 @@ export const PORT = Number(process.env.TAURI_WEBDRIVER_PORT || 4445);
  * `DOCKER_CONFIG` whose config.json names no current context. The second half matters: the app
  * deliberately follows the user's Docker context (`docker context use`, what Docker Desktop sets)
  * over an inherited `DOCKER_HOST`, so on a machine with a context the dead socket alone is ignored
- * and the real engine answers. Fresh folder per call.
+ * and the real engine answers. Fresh folder per call, under the run's folder (`CYBERCTF_WDIO_ROOT`,
+ * which the runner removes at the end) when there is one, so it never stays in the temp folder.
  */
 export function deadDockerEnv() {
-  const dir = mkdtempSync(join(tmpdir(), "cyberctf-nodocker-"));
+  const parent = process.env.CYBERCTF_WDIO_ROOT || tmpdir();
+  mkdirSync(parent, { recursive: true });
+  const dir = mkdtempSync(join(parent, "cyberctf-nodocker-"));
   writeFileSync(join(dir, "config.json"), "{}\n");
   return { DOCKER_HOST: "unix:///nonexistent/docker.sock", DOCKER_CONFIG: dir };
 }

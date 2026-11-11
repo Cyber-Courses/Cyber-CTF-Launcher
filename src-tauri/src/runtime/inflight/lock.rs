@@ -112,7 +112,7 @@ pub(crate) mod tests {
         })
     }
 
-    fn lock_file(tag: &str) -> (PathBuf, PathBuf) {
+    fn lock_file(tag: &str) -> (PathBuf, crate::testing::TempDir) {
         let dir = crate::testing::temp_dir(tag);
         (path_in(&dir, "lab-1"), dir)
     }

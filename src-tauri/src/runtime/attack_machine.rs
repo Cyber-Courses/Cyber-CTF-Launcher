@@ -508,7 +508,7 @@ mod tests {
 
     /// The box's spec in the launcher's layer over the lab in `dir`, as written.
     /// A lab of one Debian VM, `web`, on `lan`.
-    fn web_lab() -> std::path::PathBuf {
+    fn web_lab() -> crate::testing::TempDir {
         crate::runtime::test_support::write_lab(
             "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n",
         )
