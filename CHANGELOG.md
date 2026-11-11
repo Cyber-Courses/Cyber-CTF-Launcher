@@ -228,6 +228,27 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **Why a hypervisor can't run labs is said in the app's language.** The Machine page, the
+  setup's VM step and Settings showed the core's English reason in every language; they now say
+  it in the six. **Allow my account** is offered only when the account lacks the right to manage
+  Hyper-V, not for any Hyper-V that isn't ready (Vagrant missing, say).
+- **A lab's Stop in the list offers the lab page's Shut down for a VM lab run here.** The row
+  judged whether a lab can be shut down by where it runs, never in a VM here; it now asks the same
+  controls the lab page does.
+- **A lab check that couldn't run says so.** When a machine of a running lab went down, a check
+  that failed to run (the runner busy, the lab out of reach) read as the lab no longer solvable.
+- **A launch with nowhere to run is refused before anything is downloaded**, saying why in the
+  app's language: a cloud lab with no account picked, a VM lab with no hypervisor here.
+- **A failure read back after a reload gets its hint.** A deploy that ran through a window reload
+  or a relaunch is known by its error's code, so its hint (a port taken, Docker not running, …)
+  shows whatever the error's wording.
+- **A lab page says why its objectives couldn't be read**, instead of showing only the lab's
+  question as for an older backend.
+- **Settings names the installed tools as the setup installed them** (Docker Engine on Linux,
+  Docker Desktop elsewhere), and an operation the app ran itself shows in the sidebar as what it is
+  (a shutdown, a resume or a provisioning run, not a pause or a launch).
+- **An empty machine name is refused** before a provisioning run starts.
+
 - **The attack box's shell opens as the player's own account, `player`, on every form.** It
   opened as whatever account the way in logs in as: root in a container, `vagrant` in a VM (on
   Windows' Hyper-V as elsewhere), a cloud image's user on a server or in a cloud account. The box
