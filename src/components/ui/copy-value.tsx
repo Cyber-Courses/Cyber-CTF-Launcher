@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
+import { useFlash } from "@/lib/use-flash";
 
 /** The clipboard: missing outside a secure context, though the DOM types say it's always there. */
 const clipboard = (): Clipboard | undefined => navigator.clipboard;
@@ -12,17 +12,9 @@ const clipboard = (): Clipboard | undefined => navigator.clipboard;
 /** Copies `text` on demand, then marks it copied for `showFor` ms; a failure is told under
  *  `failure`. The clipboard is missing outside a secure context: nothing happens then. */
 export function useCopy(text: string, { showFor, failure }: { showFor: number; failure: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, flashCopied] = useFlash(showFor);
   const copy = () => {
-    clipboard()
-      ?.writeText(text)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => {
-          setCopied(false);
-        }, showFor);
-      })
-      .catch(tell(failure));
+    clipboard()?.writeText(text).then(flashCopied).catch(tell(failure));
   };
   return { copied, copy };
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { listen } from "@tauri-apps/api/event";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -228,6 +228,27 @@ describe("AboutSection", () => {
     await user.click(button(/^\s*copy$/i));
     await flush();
     expect(writeText.mock.calls[1][0]).toContain("Docker: not installed");
+  });
+
+  // Regression: the "Copied" timer outlived the section and fired after this file's environment
+  // was torn down (`ReferenceError: window is not defined` from about-section.tsx in CI).
+  it("leaves no timer behind once the section is gone after a copy", async () => {
+    installTauri();
+    stubClipboard();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const { unmount } = render(<AboutSection version="1" report={null} agent={null} updates="inApp" />);
+      fireEvent.click(button(/^\s*copy$/i));
+      await act(async () => {
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+      expect(text()).toContain("Copied");
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("stays quiet when the clipboard is unavailable", async () => {

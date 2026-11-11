@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Check, Copy, FolderOpen, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,24 +17,20 @@ import { ignore, tell } from "@/lib/failure";
 import { emit } from "@tauri-apps/api/event";
 import { closeIfSettings, REPLAY_ONBOARDING_EVENT } from "@/lib/app-events";
 import { useFormat, useT } from "@/lib/i18n";
+import { useFlash } from "@/lib/use-flash";
 
 /* ------------------------------------------------------------------ about */
 
 /** Copies the diagnostics for a bug report; they stay in English: they go to support. */
 function DiagnosticsRow({ version, report, agent }: { version: string | null; report: SystemReport | null; agent: AgentInfo | null }) {
   const t = useT();
-  const [copied, setCopied] = useState(false);
+  const [copied, flashCopied] = useFlash(1600);
   const copy = () => {
     const text = diagnosticsText(version, report, agent, { attackImage: getAttackImage(), vmProvider: getVmProvider() });
     // Inside the chain, so a webview without the clipboard API fails here too, quietly.
     Promise.resolve()
       .then(() => navigator.clipboard.writeText(text))
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => {
-          setCopied(false);
-        }, 1600);
-      }, ignore("the clipboard is unavailable"));
+      .then(flashCopied, ignore("the clipboard is unavailable"));
   };
   return (
     <Row
