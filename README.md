@@ -1,5 +1,7 @@
 # Cyber CTF
 
+[![CI](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/ci.yml?query=branch%3Amain)
+
 The desktop launcher for [Cyber CTF](https://www.cyberctf.org) labs: hands-on, deliberately
 vulnerable environments for learning offensive and defensive security. It runs each lab, with an
 attack box to work from, on your own computer (Docker or virtual machines), on your own Proxmox or

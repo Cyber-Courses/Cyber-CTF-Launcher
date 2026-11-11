@@ -1,0 +1,51 @@
+#!/bin/sh
+# pre-push: over the commits being pushed, gitleaks (a secret never reaches the remote; without
+# gitleaks the push is refused, not left unscanned) and the attribution check (a commit made with
+# --no-verify), then the repository's quickest static gate (repo.sh's gate, given the files those
+# commits add or change: what CI would refuse first). Under a minute; the heavier gates stay in CI.
+#
+# git gives the refs on stdin, one a line: <local ref> <local sha> <remote ref> <remote sha>.
+# HOOKS_GITLEAKS names the gitleaks to run (the hooks' test points it at a missing one).
+# shellcheck source-path=SCRIPTDIR
+set -u
+HOOK=pre-push
+# shellcheck source=lib.sh
+. "$(dirname "$0")/lib.sh"
+# shellcheck source=repo.sh
+. "$(dirname "$0")/repo.sh"
+
+zero=0000000000000000000000000000000000000000
+gitleaks=${HOOKS_GITLEAKS:-gitleaks}
+if ! command -v "$gitleaks" >/dev/null 2>&1; then
+  refuse "gitleaks isn't installed, and the push isn't scanned without it:" \
+    "brew install gitleaks    (or https://github.com/gitleaks/gitleaks#installing)"
+fi
+
+pushing=0
+touched=
+while read -r _ local_sha _ remote_sha; do
+  [ "$local_sha" != "$zero" ] || continue # a branch being deleted
+  if [ "$remote_sha" = "$zero" ]; then
+    # A new branch: its commits no remote has yet.
+    range="$local_sha --not --remotes"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  # shellcheck disable=SC2086 # the range is git's own words
+  if found=$(git log --format=%B $range | attribution_lines); then
+    refuse "a commit being pushed carries an attribution line (git rebase -i and reword it):" "$found"
+  fi
+  if ! "$gitleaks" git . --log-opts="$range" --redact --no-banner --exit-code 1; then
+    refuse "gitleaks finds a secret in the commits being pushed (above, redacted): take it out of" \
+      "those commits (git rebase -i), rotate it, then push again"
+  fi
+  # shellcheck disable=SC2086
+  touched="$touched
+$(git log --format=%H $range | while read -r commit; do git diff-tree --no-commit-id --name-only -r --diff-filter=ACMR "$commit"; done)"
+  pushing=1
+done
+
+if [ "$pushing" -eq 1 ]; then
+  gate "$(printf '%s\n' "$touched" | grep . | sort -u)"
+fi
+exit 0

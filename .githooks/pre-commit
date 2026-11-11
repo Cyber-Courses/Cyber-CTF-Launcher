@@ -1,0 +1,27 @@
+#!/bin/sh
+# pre-commit: no staged file over 5 MB unless Git LFS holds it (the pointer is what's committed
+# then), and the staged files are formatted (repo.sh's format_staged: the formatters this
+# repository uses, over the staged files only, so it takes a moment).
+# shellcheck source-path=SCRIPTDIR
+set -u
+HOOK=pre-commit
+# shellcheck source=lib.sh
+. "$(dirname "$0")/lib.sh"
+# shellcheck source=repo.sh
+. "$(dirname "$0")/repo.sh"
+
+limit=$((5 * 1024 * 1024))
+big=$(staged_files | while IFS= read -r f; do
+  size=$(git cat-file -s ":$f") || continue
+  [ "$size" -gt "$limit" ] || continue
+  # No case here: bash 3.2 (macOS's sh) misparses a pattern's ")" inside "$(...)".
+  if git check-attr filter -- "$f" | grep -q ': filter: lfs$'; then continue; fi
+  printf '%s (%s MB)\n' "$f" $((size / 1024 / 1024))
+done)
+if [ -n "$big" ]; then
+  refuse "a staged file is over 5 MB and Git LFS doesn't hold it (git lfs track it, or leave it out):" "$big"
+fi
+
+files=$(staged_files)
+[ -z "$files" ] || format_staged "$files"
+exit 0

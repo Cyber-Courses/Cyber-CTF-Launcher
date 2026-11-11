@@ -2,13 +2,14 @@ name: Lint infrastructure
 
 # Static checks of the files around the app: the workflows (actionlint, with shellcheck on their
 # run: scripts), the Terraform templates the launcher writes at run time, the repo's shell
-# scripts, and the JSON the app and the Microsoft Store listing ship (with Partner Center's
-# limits, which otherwise only fail at release time).
+# scripts, the git hooks' test, and the JSON the app and the Microsoft Store listing ship (with
+# Partner Center's limits, which otherwise only fail at release time).
 
 on:
   pull_request:
     paths:
       - ".github/**"
+      - ".githooks/**"
       - "**/*.tf"
       - "**/*.hcl"
       - "**/*.sh"
@@ -114,6 +115,29 @@ jobs:
           set -euo pipefail
           shellcheck --version
           scripts/check/infra.sh shellcheck
+
+  hooks:
+    # The git hooks (.githooks/, CONTRIBUTING.md "Git hooks"), tested in a throwaway repository
+    # with the gitleaks the pre-push runs. The shellcheck job covers their scripts.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: "8.30.0"
+      GITLEAKS_SHA256: "79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install gitleaks
+        # The pinned release tarball, its sha256 checked before it runs (from the release's
+        # gitleaks_<version>_checksums.txt). Bump the version and the checksum together.
+        run: |
+          set -euo pipefail
+          tarball="$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - run: .githooks/test.sh
 
   json-and-store:
     runs-on: ubuntu-latest

@@ -57,6 +57,24 @@ checkout made before it may need `git add --renormalize .` once. The tests that 
 Linux and macOS install scripts with `sh -n` skip that part where no `sh` is on `PATH` (Windows
 without Git's `usr\bin`); their other assertions still run.
 
+## Git hooks
+
+`.githooks/` holds the repository's git hooks, and `pnpm install` turns them on
+(`git config core.hooksPath .githooks`, through `package.json`'s `prepare`; a checkout's worktrees
+share the setting). They are POSIX sh and quick:
+
+- `commit-msg` refuses a message with an assistant's attribution (`Co-Authored-By`,
+  `Claude-Session`, "Generated with", 🤖): the history carries none.
+- `pre-commit` refuses a staged file over 5 MB that Git LFS doesn't hold, and checks the staged
+  files' formatting (Prettier, rustfmt).
+- `pre-push` runs [gitleaks](https://github.com/gitleaks/gitleaks) over the commits being pushed
+  (`brew install gitleaks`; without it the push is refused, not left unscanned), the attribution
+  check over them, and CI's first refusals (`pnpm format:check`, `cargo fmt --check`), in a few
+  seconds. The heavier gates stay in CI.
+
+`.githooks/test.sh` tests them in a throwaway repository; CI runs it (`lint-infra.yml`'s `hooks`
+job). `git commit --no-verify` skips a hook when you must; the push still checks the commits.
+
 ## Run the tests
 
 | What                                                              | Command                 |

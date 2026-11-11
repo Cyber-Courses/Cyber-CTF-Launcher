@@ -22,10 +22,11 @@ case "${1:-}" in
     }
     ;;
   shellcheck)
-    # Real scripts only: test fixtures under testdata/ are sample inputs. Read line by line: bash
-    # 3.2 has no mapfile. Intentional exceptions are marked in the scripts with a reason.
+    # Real scripts only: test fixtures under testdata/ are sample inputs. The git hooks
+    # (.githooks/) have no extension. Read line by line: bash 3.2 has no mapfile. Intentional
+    # exceptions are marked in the scripts with a reason.
     scripts=()
-    while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files '*.sh' '*.bash' 'images/attack-box/bashrc.cyberctf' ':(exclude)*/testdata/*')
+    while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files '*.sh' '*.bash' 'images/attack-box/bashrc.cyberctf' '.githooks/*' ':(exclude)*/testdata/*')
     shellcheck --severity=warning --external-sources "${scripts[@]}"
     ;;
   -h | --help)

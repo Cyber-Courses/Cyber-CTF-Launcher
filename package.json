@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3206",
     "dev:web": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/dev/web.ts",
+    "prepare": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/dev/hooks.ts",
     "build": "next build",
     "lint": "eslint src scripts tests",
     "format": "pnpm format:check --write && cargo fmt --manifest-path src-tauri/Cargo.toml",
