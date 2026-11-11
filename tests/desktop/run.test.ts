@@ -61,6 +61,15 @@ describe("the desktop cases", () => {
     for (const c of all) expect(c.case === c.spec || c.case === `${c.spec}-${c.form}`, c.case).toBe(true);
   });
 
+  it("are specs Node can load, each of them", () => {
+    // Nothing else reads them before the runner starts one (ESLint takes the TypeScript tests
+    // only): cleanup.mjs declared `listed` twice and never ran.
+    for (const spec of readdirSync(join(HERE, "specs"))) {
+      const check = spawnSync(process.execPath, ["--check", join(HERE, "specs", spec)], { encoding: "utf8" });
+      expect(check.status, `${spec}: ${check.stderr}`).toBe(0);
+    }
+  });
+
   it("list the knobs each spec reads", () => {
     for (const c of cases()) expect([...c.knobs].sort(), c.case).toEqual(knobsOf(c.spec));
   });

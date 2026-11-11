@@ -87,8 +87,8 @@ try {
     });
   }
 
-  const listed = await b.$('//*[normalize-space()="Tools Cyber CTF installed"]').isExisting();
-  if (!listed) r.skip("tool-remove", "no tool installed by Cyber CTF here");
+  const toolsListed = await b.$('//*[normalize-space()="Tools Cyber CTF installed"]').isExisting();
+  if (!toolsListed) r.skip("tool-remove", "no tool installed by Cyber CTF here");
   else if (!TOOL) r.skip("tool-remove", `name one to remove with CYBERCTF_TEST_CLEANUP_TOOL (listed: ${(await toolNames(b)).join(", ")})`);
   else {
     await r.step("tool-remove", `${TOOL} removed from Settings (confirmed)`, async () => {
