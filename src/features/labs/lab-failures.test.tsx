@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import type React from "react";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ImportLab } from "@/features/labs/import-lab";
+import { LabBrief } from "@/features/labs/lab-brief";
 import { RowAction } from "@/features/labs/lab-row-actions";
 import { SignInBanner } from "@/features/labs/labs-list";
 import { useLabActions } from "@/features/labs/use-lab-actions";
@@ -223,7 +224,8 @@ describe("a sign-in that can't start", () => {
 });
 
 describe("a cloud lab whose cost preview can't be read", () => {
-  it("says the lab gives no estimate instead of a cost", async () => {
+  it("says the estimate couldn't be read and why, never that the lab gives none", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     installTauri({ ...idle, lab_cloud_preview: rejects({ code: "other", message: "git fetch failed" }) });
     const user = userEvent.setup();
     renderLabPage(goat, { status: labStatus() });
@@ -232,6 +234,25 @@ describe("a cloud lab whose cost preview can't be read", () => {
     expect(document.body.textContent).not.toContain("$0.02");
     await user.click(screen.getByRole("button", { name: /Start lab/ }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("This lab gives no cost estimate.")).toBeTruthy();
+    expect(dialog.textContent).toContain("Couldn't read the lab's cost estimate (git fetch failed). Its resources are billed all the same.");
+    expect(dialog.textContent).not.toContain("This lab gives no cost estimate.");
+  });
+});
+
+describe("a lab whose brief can't be read", () => {
+  it("says the brief couldn't be read and why, never that the lab has none", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    installTauri({ api_query: rejects({ code: "other", message: "the website is offline" }) });
+    render(<LabBrief labId="lab-sqli" />);
+    await flush();
+    expect(document.body.textContent).toContain("Couldn't read the brief (the website is offline).");
+    expect(document.body.textContent).not.toContain("No briefing for this lab yet.");
+  });
+
+  it("says a lab without a brief has none", async () => {
+    installTauri({ api_query: () => ({ labs: [{ contentMd: null }] }) });
+    render(<LabBrief labId="lab-sqli" />);
+    await flush();
+    expect(document.body.textContent).toContain("No briefing for this lab yet.");
   });
 });

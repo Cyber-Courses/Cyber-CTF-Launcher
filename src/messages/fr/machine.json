@@ -83,6 +83,7 @@
     "title": "En cours",
     "inUse": "{size} utilisés",
     "empty": "Rien ne tourne.",
+    "readFailed": "Impossible de lire ce qui tourne sur cette machine ({why}).",
     "setupTest": "Test de configuration",
     "containers": {
       "one": "{count} conteneur",

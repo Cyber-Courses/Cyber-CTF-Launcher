@@ -8,10 +8,10 @@ import { RunOnDialog, RunOnPicker } from "@/features/labs/run-on";
 import type { RunTarget } from "@/features/labs/run-target";
 import type { RunTargetChoice } from "@/features/labs/lab-detail/use-run-target";
 import type { Lab } from "@/features/labs/use-labs";
-import { CloudLaunchNote } from "@/features/labs/cloud-panel";
+import { CloudLaunchNote, type CloudPreviewRead } from "@/features/labs/cloud-panel";
 import { cloudNames } from "@/features/labs/lab-runtime";
 import { joinOr } from "@/features/labs/lab-readiness";
-import { serverOpenSetup, type CloudPreview } from "@/lib/tauri";
+import { serverOpenSetup } from "@/lib/tauri";
 import { tell } from "@/lib/failure";
 import { useT, type T } from "@/lib/i18n";
 
@@ -19,8 +19,9 @@ type StartLabProps = {
   lab: Lab;
   run: RunTargetChoice;
   isDocker: boolean;
-  /** A cloud lab: its cost and inputs (`preview`, once read). Null for the other labs. */
-  cloud?: { preview: CloudPreview | null } | null;
+  /** A cloud lab: its cost and inputs as read (`preview` once read, or why it couldn't be). Null
+   *  for the other labs. */
+  cloud?: CloudPreviewRead | null;
   loggedIn: boolean;
   busy: boolean;
   dockerRunning: boolean | null;
@@ -147,7 +148,7 @@ function StartDialog({
       {run.steps.isLastStep && !cloud && run.runOn.kind !== "host" && <RememberToggle run={run} />}
       {cloud && (
         <div className="mt-4">
-          <CloudLaunchNote preview={cloud.preview} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
+          <CloudLaunchNote read={cloud} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
         </div>
       )}
     </RunOnDialog>

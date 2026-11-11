@@ -63,7 +63,7 @@ export function LabHeaderActions({ mode, page, props: p, onRemove }: { mode: Hea
           lab={p.lab}
           run={page.run}
           isDocker={s.isDocker}
-          cloud={s.isCloud ? { preview: page.preview } : null}
+          cloud={s.isCloud ? page.preview : null}
           loggedIn={p.loggedIn}
           busy={page.busy}
           dockerRunning={p.dockerRunning ?? null}

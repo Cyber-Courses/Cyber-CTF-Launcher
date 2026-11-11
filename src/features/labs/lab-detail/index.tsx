@@ -33,7 +33,7 @@ export function LabDetail(props: LabDetailProps) {
   const meta = runtimeWord(t, s);
   const placement = deployPlacement(s, { busy: page.busy, failed: s.deployFailed });
   // The lab's own hourly estimate, for the aside.
-  const cost = s.isCloud ? costEstimate(t, page.preview?.hourlyUsd) : null;
+  const cost = s.isCloud ? costEstimate(t, page.preview.preview?.hourlyUsd) : null;
   const deploy = <LabDeployment page={page} />;
   // On a wide window the diagram takes the page's full width, above the main column and the rail,
   // so a wide lab is drawn whole instead of scrolling sideways beside the rail.

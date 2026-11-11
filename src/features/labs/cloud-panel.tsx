@@ -9,6 +9,7 @@ import { labCloudPreview, type CloudPreview, type LabOutput } from "@/lib/tauri"
 import { useT, type T } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
 import { warn } from "@/lib/failure";
+import { describeError } from "@/lib/errors";
 
 /** "about $0.02 an hour (about $0.08 until it auto-stops in 4 h)" from a lab's own estimate. */
 export function costEstimate(t: T, hourlyUsd: number | null | undefined, autoStopHours?: number | null): string | null {
@@ -17,10 +18,14 @@ export function costEstimate(t: T, hourlyUsd: number | null | undefined, autoSto
   return autoStopHours ? t("labs.cloud.untilAutoStop", { hourly, usd: formatUsd(hourlyUsd * autoStopHours, t.locale), hours: autoStopHours }) : hourly;
 }
 
-/** A cloud lab's cost and inputs, from its spec at the catalogue's commit (null until read, or
- *  for a lab that isn't cloud services). */
-export function useCloudPreview(labId: string, rt: LabRuntimeInfo | null): CloudPreview | null {
-  const [preview, setPreview] = useState<CloudPreview | null>(null);
+/** A cloud lab's preview as read: its cost and inputs (null until read, or for a lab that isn't
+ *  cloud services), or why it couldn't be read. */
+export type CloudPreviewRead = { preview: CloudPreview | null; error: string | null };
+
+/** A cloud lab's cost and inputs, from its spec at the catalogue's commit; a failed read is kept
+ *  as its reason, never taken for a lab without an estimate. */
+export function useCloudPreview(labId: string, rt: LabRuntimeInfo | null): CloudPreviewRead {
+  const [read, setRead] = useState<CloudPreviewRead>({ preview: null, error: null });
   const cloud = rt?.runtime === "CLOUD";
   const repository = rt?.repository;
   const commit = rt?.commit;
@@ -28,35 +33,43 @@ export function useCloudPreview(labId: string, rt: LabRuntimeInfo | null): Cloud
     if (!cloud || !repository || !commit) return;
     let alive = true;
     labCloudPreview(labId, repository, commit)
-      .then((p) => {
-        if (alive) setPreview(p);
+      .then((preview) => {
+        if (alive) setRead({ preview, error: null });
       })
-      .catch(
-        warn("reading the cloud lab's preview", () => {
-          if (alive) setPreview(null);
-        }),
-      );
+      .catch((e: unknown) => {
+        warn("reading the cloud lab's preview")(e);
+        if (alive) setRead({ preview: null, error: describeError(e) });
+      });
     return () => {
       alive = false;
     };
   }, [cloud, labId, repository, commit]);
-  return preview;
+  return read;
+}
+
+/** What the launch dialog says of the estimate: the cost, that the estimate couldn't be read and
+ *  why, or that the lab gives none. */
+function estimateNote(t: T, { preview, error }: CloudPreviewRead, autoStopHours: number | null): string {
+  if (error) return t("labs.cloud.estimateUnread", { why: error });
+  const cost = costEstimate(t, preview?.hourlyUsd, autoStopHours);
+  return cost ? t("labs.cloud.estimate", { cost }) : t("labs.cloud.noEstimate");
 }
 
 /**
  * Before a cloud lab starts, in the launch dialog: what it costs and what it does in the
- * player's account, so the click that spends money is an informed one.
+ * player's account, so the click that spends money is an informed one. A preview that couldn't
+ * be read is said as such, not as a lab without an estimate.
  */
-export function CloudLaunchNote({ preview, autoStopHours }: { preview: CloudPreview | null; autoStopHours: number | null }) {
+export function CloudLaunchNote({ read, autoStopHours }: { read: CloudPreviewRead; autoStopHours: number | null }) {
   const t = useT();
-  const cost = costEstimate(t, preview?.hourlyUsd, autoStopHours);
+  const { preview } = read;
   return (
     <div className="space-y-1.5 rounded-panel bg-glass px-3.5 py-3 text-[0.75rem] leading-relaxed text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)]">
       <p>
         <b className="text-foreground">{t("labs.cloud.billed")}</b>{" "}
         {autoStopHours ? t("labs.cloud.costsUntilAutoStop", { hours: autoStopHours }) : t("labs.cloud.costsUntilStop")}
       </p>
-      <p>{cost ? t("labs.cloud.estimate", { cost }) : t("labs.cloud.noEstimate")}</p>
+      <p>{estimateNote(t, read, autoStopHours)}</p>
       {preview?.allowList && <p>{t("labs.cloud.allowList")}</p>}
     </div>
   );

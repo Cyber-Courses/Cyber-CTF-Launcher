@@ -83,6 +83,7 @@
     "title": "Running now",
     "inUse": "{size} in use",
     "empty": "Nothing running.",
+    "readFailed": "Couldn't read what runs on this machine ({why}).",
     "setupTest": "Setup test",
     "containers": {
       "one": "{count} container",

@@ -83,6 +83,7 @@
     "title": "En ejecución",
     "inUse": "{size} en uso",
     "empty": "Nada en ejecución.",
+    "readFailed": "No se pudo leer lo que se ejecuta en esta máquina ({why}).",
     "setupTest": "Prueba de configuración",
     "containers": {
       "one": "{count} contenedor",

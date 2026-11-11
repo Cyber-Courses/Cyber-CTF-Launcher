@@ -30,7 +30,8 @@
   "brief": {
     "title": "Briefing",
     "loading": "Cargando el briefing…",
-    "empty": "Este lab aún no tiene briefing. Inícialo y ponte manos a la obra."
+    "empty": "Este lab aún no tiene briefing. Inícialo y ponte manos a la obra.",
+    "readFailed": "No se pudo leer el briefing ({why})."
   },
   "health": {
     "down": {
@@ -354,6 +355,7 @@
     "costsUntilAutoStop": "El lab crea allí sus servicios, que cuestan dinero hasta que lo detengas. El launcher los elimina tras {hours} h, pero solo si está abierto: detén el lab antes de cerrarlo.",
     "estimate": "Coste estimado: {cost}. Es la estimación del propio lab; tu nube factura el importe real.",
     "noEstimate": "Este lab no da una estimación de coste.",
+    "estimateUnread": "No se pudo leer la estimación de coste del lab ({why}). Sus recursos se facturan igualmente.",
     "allowList": "Solo deja entrar tu IP pública.",
     "show": "Mostrar {name}",
     "hide": "Ocultar {name}",

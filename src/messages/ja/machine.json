@@ -83,6 +83,7 @@
     "title": "実行中",
     "inUse": "{size} 使用中",
     "empty": "実行中のものはありません。",
+    "readFailed": "このマシンで実行中のものを読み取れませんでした（{why}）。",
     "setupTest": "セットアップテスト",
     "containers": {
       "one": "{count} 個のコンテナ",

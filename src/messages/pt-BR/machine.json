@@ -83,6 +83,7 @@
     "title": "Rodando agora",
     "inUse": "{size} em uso",
     "empty": "Nada rodando.",
+    "readFailed": "Não foi possível ler o que está rodando nesta máquina ({why}).",
     "setupTest": "Teste de configuração",
     "containers": {
       "one": "{count} contêiner",

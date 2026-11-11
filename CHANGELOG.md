@@ -516,6 +516,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   packages" for the release, and the distribution's older `docker.io` went in. Only an answer that
   the release isn't served does that now; anything else stops, saying download.docker.com couldn't
   be reached.
+- **A read that failed is said as one.** When a cloud lab's estimate couldn't be read, the launch
+  dialog said "This lab gives no cost estimate" on the click that starts billing; a brief that
+  couldn't be read read as "No briefing for this lab yet"; and a Machine page whose list of what
+  runs couldn't be read said "Nothing running", dropping the list it had shown. Each now says it
+  couldn't read it, and why; the Machine page keeps the list last read.
 
 ### Security
 

@@ -591,13 +591,34 @@ describe("RunningNowPanel", () => {
     expect(text()).not.toContain("Invoice portal API");
   });
 
-  it("says nothing runs, also when the list can't be read", async () => {
-    installTauri({
-      machine_workloads: () => {
-        rejectWith("docker is not running");
-      },
-    });
-    render(<RunningNowPanel refreshKey={null} />);
+  it("says a list that can't be read couldn't be read, keeping the one last read, and says nothing runs only when nothing does", async () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let answer: () => unknown = () => {
+      rejectWith("docker is not running");
+    };
+    installTauri({ machine_workloads: () => answer(), api_query: () => ({ labs: [] }) });
+    const { rerender } = render(<RunningNowPanel refreshKey={0} />);
+    await flush();
+    expect(text()).toContain("Couldn't read what runs on this machine (docker is not running).");
+    expect(text()).not.toContain("Nothing running.");
+    expect(warned).toHaveBeenCalled();
+    // Read: the list, the failure gone.
+    answer = () => [{ id: "lab-invoice", kind: "docker", count: 1, memBytes: 0, provider: null }];
+    rerender(<RunningNowPanel refreshKey={1} />);
+    await flush();
+    expect(screen.getByText("Invoice")).toBeTruthy();
+    expect(text()).not.toContain("Couldn't read");
+    // A failed read afterwards keeps that list, and says the read failed.
+    answer = () => {
+      rejectWith("docker is not running");
+    };
+    rerender(<RunningNowPanel refreshKey={2} />);
+    await flush();
+    expect(screen.getByText("Invoice")).toBeTruthy();
+    expect(text()).toContain("Couldn't read what runs on this machine (docker is not running).");
+    // Nothing running, read: said as such.
+    answer = () => [];
+    rerender(<RunningNowPanel refreshKey={3} />);
     await flush();
     expect(text()).toContain("Nothing running.");
   });

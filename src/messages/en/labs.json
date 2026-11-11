@@ -30,7 +30,8 @@
   "brief": {
     "title": "Brief",
     "loading": "Loading the brief…",
-    "empty": "No briefing for this lab yet. Start it and dig in."
+    "empty": "No briefing for this lab yet. Start it and dig in.",
+    "readFailed": "Couldn't read the brief ({why})."
   },
   "health": {
     "down": {
@@ -354,6 +355,7 @@
     "costsUntilAutoStop": "The lab creates its services there and they cost money until you stop it. The launcher removes them after {hours} h, but only while it is open: stop the lab before you quit it.",
     "estimate": "Estimated cost: {cost}. The lab's own estimate; your cloud bills the real amount.",
     "noEstimate": "This lab gives no cost estimate.",
+    "estimateUnread": "Couldn't read the lab's cost estimate ({why}). Its resources are billed all the same.",
     "allowList": "It lets in your public IP only.",
     "show": "Show {name}",
     "hide": "Hide {name}",

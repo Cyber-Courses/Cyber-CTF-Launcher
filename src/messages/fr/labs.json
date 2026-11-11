@@ -30,7 +30,8 @@
   "brief": {
     "title": "Brief",
     "loading": "Chargement du brief…",
-    "empty": "Pas encore de brief pour ce lab. Démarrez-le et plongez dedans."
+    "empty": "Pas encore de brief pour ce lab. Démarrez-le et plongez dedans.",
+    "readFailed": "Impossible de lire le brief ({why})."
   },
   "health": {
     "down": {
@@ -354,6 +355,7 @@
     "costsUntilAutoStop": "Le lab y crée ses services, qui coûtent de l’argent jusqu’à ce que vous l’arrêtiez. Le launcher les supprime après {hours} h, mais seulement s’il est ouvert : arrêtez le lab avant de le quitter.",
     "estimate": "Coût estimé : {cost}. C’est l’estimation du lab ; votre cloud facture le montant réel.",
     "noEstimate": "Ce lab ne donne pas d’estimation de coût.",
+    "estimateUnread": "Impossible de lire l'estimation du coût du lab ({why}). Ses ressources sont facturées quand même.",
     "allowList": "Il n’autorise que votre IP publique.",
     "show": "Afficher {name}",
     "hide": "Masquer {name}",

@@ -10,24 +10,31 @@ import { providerName } from "@/features/machine/hypervisors";
 import { ListSkeleton } from "@/features/machine/machine-parts";
 import { useT } from "@/lib/i18n";
 import { apiQuery, machineWorkloadStop, machineWorkloads, type Workload } from "@/lib/tauri";
-import { ignore, tell } from "@/lib/failure";
+import { ignore, tell, warn } from "@/lib/failure";
+import { describeError } from "@/lib/errors";
 import { formatBytes, prettyLabId } from "@/lib/format";
 import { usePoll } from "@/lib/use-poll";
 
 /** What's running on this machine (Docker and Vagrant), with a Stop per lab. Polled every 8s,
- *  and again whenever `refreshKey` changes (e.g. after a setup test). */
+ *  and again whenever `refreshKey` changes (e.g. after a setup test). A failed read is said, and
+ *  the list last read stays: it is never taken for nothing running. */
 export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
   const t = useT();
   const [workloads, setWorkloads] = useState<Workload[] | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
   const [stopping, setStopping] = useState<string | null>(null);
   // One workloads read at a time: the read shells out to docker/vagrant and can be slow, so the
   // 8s poll must not stack reads on top of one still in flight.
   const load = usePoll(machineWorkloads, 8000, {
     serial: true,
     restartKey: refreshKey,
-    onValue: setWorkloads,
-    onError: () => {
-      setWorkloads([]);
+    onValue: (w) => {
+      setWorkloads(w);
+      setReadError(null);
+    },
+    onError: (e) => {
+      warn("reading what runs on this machine")(e);
+      setReadError(describeError(e));
     },
   });
 
@@ -56,7 +63,8 @@ export function RunningNowPanel({ refreshKey }: { refreshKey: unknown }) {
         title={t("machine.running.title")}
         meta={labMem > 0 ? <span className="tabular-nums">{t("machine.running.inUse", { size: formatBytes(labMem) })}</span> : undefined}
       />
-      {workloads === null && <ListSkeleton />}
+      {readError && <p className="px-4 py-3 text-[0.8125rem] text-destructive">{t("machine.running.readFailed", { why: readError })}</p>}
+      {workloads === null && !readError && <ListSkeleton />}
       {workloads?.length === 0 && <p className="px-4 py-3.5 text-[0.8125rem] text-muted-foreground">{t("machine.running.empty")}</p>}
       {workloads?.map((w) => (
         <WorkloadRow

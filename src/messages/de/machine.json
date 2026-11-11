@@ -83,6 +83,7 @@
     "title": "Läuft gerade",
     "inUse": "{size} belegt",
     "empty": "Nichts läuft.",
+    "readFailed": "Es ließ sich nicht lesen, was auf diesem Rechner läuft ({why}).",
     "setupTest": "Einrichtungstest",
     "containers": {
       "one": "{count} Container",

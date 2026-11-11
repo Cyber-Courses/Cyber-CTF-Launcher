@@ -30,7 +30,8 @@
   "brief": {
     "title": "Briefing",
     "loading": "Briefing wird geladen…",
-    "empty": "Für dieses Lab gibt es noch kein Briefing. Starte es und leg los."
+    "empty": "Für dieses Lab gibt es noch kein Briefing. Starte es und leg los.",
+    "readFailed": "Das Briefing ließ sich nicht lesen ({why})."
   },
   "health": {
     "down": {
@@ -354,6 +355,7 @@
     "costsUntilAutoStop": "Das Lab legt dort seine Dienste an, und sie kosten Geld, bis du es stoppst. Der Launcher entfernt sie nach {hours} h, aber nur, solange er geöffnet ist: Stoppe das Lab, bevor du ihn beendest.",
     "estimate": "Geschätzte Kosten: {cost}. Die Schätzung des Labs; deine Cloud berechnet den tatsächlichen Betrag.",
     "noEstimate": "Dieses Lab gibt keine Kostenschätzung an.",
+    "estimateUnread": "Die Kostenschätzung des Labs ließ sich nicht lesen ({why}). Seine Ressourcen werden trotzdem berechnet.",
     "allowList": "Es lässt nur deine öffentliche IP zu.",
     "show": "{name} anzeigen",
     "hide": "{name} verbergen",
