@@ -62,12 +62,24 @@ pub struct Console {
     pub protocol: String,
     /// Why there is none, or what it needs, in the run's words.
     pub note: Option<String>,
+    /// Why it can't be shown now though the machine runs (its VM was started without a screen,
+    /// it doesn't answer), in the run's words: the page then offers no Screen button.
+    pub unavailable: Option<String>,
+    /// The hypervisor's own app this computer has to show the machine in ("VirtualBox"), beside
+    /// the built-in viewer; none where the lab's provider has none or this computer lacks it.
+    pub native_app: Option<String>,
 }
 
 impl Console {
-    /// The runner's offer of a machine's console, in the lab page's words.
-    pub(crate) fn of(offer: &isothrum_runner::ConsoleOffer) -> Console {
-        Console { protocol: super::isothrum::protocol_word(offer.protocol).to_owned(), note: offer.note.clone() }
+    /// The runner's offer of a machine's console, in the lab page's words, with the app this
+    /// computer has to open it in (`native_app`, [`crate::screen::native::installed`]).
+    pub(crate) fn of(offer: &isothrum_runner::ConsoleOffer, native_app: Option<&str>) -> Console {
+        Console {
+            protocol: super::isothrum::protocol_word(offer.protocol).to_owned(),
+            note: offer.note.clone(),
+            unavailable: offer.unavailable.clone(),
+            native_app: native_app.map(str::to_owned),
+        }
     }
 }
 

@@ -139,6 +139,18 @@ pub(super) fn close() -> Vec<u8> {
     frame(0x8, &[])
 }
 
+/// A close frame saying the bridge's end failed (1011), and why (cut to the 123 bytes a control
+/// frame's reason may take, on a character boundary).
+pub(super) fn close_because(reason: &str) -> Vec<u8> {
+    let mut end = reason.len().min(123);
+    while !reason.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut payload = 1011u16.to_be_bytes().to_vec();
+    payload.extend_from_slice(reason.get(..end).unwrap_or_default().as_bytes());
+    frame(0x8, &payload)
+}
+
 /// An unmasked, final frame of `opcode` holding `payload`.
 fn frame(opcode: u8, payload: &[u8]) -> Vec<u8> {
     let mut out = vec![0x80 | opcode];

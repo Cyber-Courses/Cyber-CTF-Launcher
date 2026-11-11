@@ -197,6 +197,10 @@ export const terminalWindow = (id: string, runtime: Runtime, title: string) => i
 /** Opens (or focuses) the screen window of a lab machine (its graphical console). */
 export const screenWindow = (id: string, runtime: Runtime, machine: string, title: string) => invokeUnit("screen_window", { id, runtime, machine, title });
 
+/** Opens lab `id`'s running VM `machine` in its hypervisor's own app ("Open in VirtualBox"), or its
+ *  web console in the browser. */
+export const screenOpenNative = (id: string, runtime: Runtime, machine: string) => invokeUnit("screen_open_native", { id, runtime, machine });
+
 /** The screen of the calling screen window's machine: VNC through the window's bridge, or RDP for the
  *  system's client. */
 export const screenConnect = () => invoke<ScreenConnection>("screen_connect");

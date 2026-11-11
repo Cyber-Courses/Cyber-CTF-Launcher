@@ -13,11 +13,12 @@ use super::super::{Interface, LabStatus, Machine, Network, Park, Place, Port, Se
 /// shut down; its URL is its entry output, once it runs.
 pub(super) fn lab_status(manifest: &Manifest, status: &Status, marked: Option<Park>) -> LabStatus {
     let running = runs(status);
+    let native = crate::screen::native::installed_here(status.native.as_ref());
     let url = status.outputs.iter().find(|o| o.role == OutputRole::Entry && !o.sensitive).and_then(|o| o.value.clone()).filter(|_| running);
     LabStatus {
         running,
         parked: (status.state == RunState::Parked && !running).then(|| marked.unwrap_or(Park::Shutdown)),
-        machines: status.machines.iter().filter(|m| m.state != MachineState::Absent).map(|m| machine(manifest, m)).collect(),
+        machines: status.machines.iter().filter(|m| m.state != MachineState::Absent).map(|m| machine(manifest, m, native.as_deref())).collect(),
         networks: status.networks.iter().map(|n| Network { name: n.name.clone(), subnet: n.cidr.clone(), internal: !n.internet }).collect(),
         url,
         place: Some(Place::Container),
@@ -35,9 +36,10 @@ pub(super) fn runs(status: &Status) -> bool {
 }
 
 /// One machine: its state as Docker words it, its addresses, its TCP ports with the host port
-/// each got (0: not published), and what it serves. Isoloom's own machines (jobs, probes, route
-/// keepers, the access stand-in, observers) are plumbing: hidden from the diagram, never "down".
-fn machine(manifest: &Manifest, m: &MachineStatus) -> Machine {
+/// each got (0: not published), what it serves, and its screen (with `native`, the app this
+/// computer has to open it in). Isoloom's own machines (jobs, probes, route keepers, the access
+/// stand-in, observers) are plumbing: hidden from the diagram, never "down".
+fn machine(manifest: &Manifest, m: &MachineStatus, native: Option<&str>) -> Machine {
     let declared = manifest.machines.iter().find(|d| d.name.as_str() == m.name).map(|d| d.ports.as_slice()).unwrap_or_default();
     let interfaces: Vec<Interface> = m.addresses.iter().map(|(network, ip)| Interface { network: network.clone(), ip: ip.clone() }).collect();
     Machine {
@@ -48,7 +50,7 @@ fn machine(manifest: &Manifest, m: &MachineStatus) -> Machine {
         interfaces,
         services: declared.iter().map(service).collect(),
         infra: m.role != Role::Member,
-        console: m.console.as_ref().map(super::super::Console::of),
+        console: m.console.as_ref().map(|c| super::super::Console::of(c, native)),
     }
 }
 

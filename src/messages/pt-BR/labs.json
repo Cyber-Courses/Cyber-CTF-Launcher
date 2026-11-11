@@ -233,6 +233,7 @@
     "containerHint": "Sua máquina no lab: um contêiner entre os do lab, na rede do lab, a partir da imagem de attack box escolhida nas Configurações. Abra o shell dela para atacar os alvos de dentro do lab.",
     "openShell": "Abrir shell do atacante",
     "openScreen": "Abrir tela",
+    "openNative": "Abrir no {app}",
     "working": "Em andamento…",
     "stop": "Parar attack box",
     "start": "Iniciar attack box",
@@ -451,8 +452,12 @@
     "title": "Telas",
     "open": "Tela",
     "openOf": "Abrir a tela de {machine}",
+    "openNative": "Abrir no {app}",
+    "openNativeOf": "Abrir {machine} no {app}",
     "none": "Sem tela: {why}",
     "notRunning": "A tela abre quando ela estiver em execução.",
+    "busy": "Sendo preparada: a tela abre quando terminar.",
+    "unavailable": "Sem tela no momento: {why}",
     "vnc": "A tela dela, em uma janela",
     "rdp": "A Área de Trabalho Remota dela, no seu aplicativo de Área de Trabalho Remota"
   }

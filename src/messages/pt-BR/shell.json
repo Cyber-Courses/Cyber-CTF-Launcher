@@ -101,6 +101,8 @@
     "noViewer": "A janela não conseguiu iniciar o visualizador de tela.",
     "securityFailure": "A tela da máquina recusou a senha recebida.",
     "lost": "A conexão com a tela da máquina foi perdida.",
+    "noAnswer": "A tela da VM não respondeu em {address}.",
+    "noAnswerAnywhere": "A tela da VM não respondeu.",
     "unavailable": "Esta máquina não tem tela para mostrar",
     "retry": "Tentar novamente",
     "passwordCopied": "Senha copiada: cole-a quando a Área de Trabalho Remota pedir.",

@@ -69,6 +69,13 @@ describe("deriveLabState: contradictory inputs", () => {
     expect([esxi.remote, esxi.canPause, esxi.canShutdown, esxi.canProvision]).toEqual([true, false, false, true]);
   });
 
+  it("a machine another process is setting up is busy, not down", () => {
+    // Regression: the attack box's start held `attackbox` in Vagrant; the runner now says it is
+    // busy, which must not read as a machine that went down (and offer to start it).
+    const up = derive({ status: status({ running: true, machines: [machine("web", "running"), machine("attackbox", "busy")] }) });
+    expect(up.down).toEqual([]);
+  });
+
   it("a parked lab lists none of its machines as down", () => {
     // Regression: `down` (machines that went down while the lab runs) also listed a paused or
     // shut-down lab's machines.

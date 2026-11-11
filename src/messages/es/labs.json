@@ -233,6 +233,7 @@
     "containerHint": "Tu máquina en el lab: un contenedor entre los del lab, en la red del lab, con la imagen de attack box elegida en Ajustes. Abre su shell para atacar los objetivos desde dentro del lab.",
     "openShell": "Abrir shell de ataque",
     "openScreen": "Abrir pantalla",
+    "openNative": "Abrir en {app}",
     "working": "Trabajando…",
     "stop": "Detener máquina de ataque",
     "start": "Iniciar máquina de ataque",
@@ -451,8 +452,12 @@
     "title": "Pantallas",
     "open": "Pantalla",
     "openOf": "Abrir la pantalla de {machine}",
+    "openNative": "Abrir en {app}",
+    "openNativeOf": "Abrir {machine} en {app}",
     "none": "Sin pantalla: {why}",
     "notRunning": "Su pantalla se abre cuando está en marcha.",
+    "busy": "Se está preparando: su pantalla se abre cuando termine.",
+    "unavailable": "Sin pantalla por ahora: {why}",
     "vnc": "Su pantalla, en una ventana",
     "rdp": "Su Escritorio remoto, en tu aplicación de Escritorio remoto"
   }

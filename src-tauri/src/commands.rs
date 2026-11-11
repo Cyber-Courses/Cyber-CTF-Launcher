@@ -97,6 +97,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         terminal::terminal_close,
         terminal::terminal_window,
         screen::screen_window,
+        screen::screen_open_native,
         screen::screen_connect,
         screen::screen_open_rdp,
         screen::screen_password,

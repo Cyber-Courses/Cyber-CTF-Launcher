@@ -101,6 +101,8 @@
     "noViewer": "Das Fenster konnte seine Bildschirmanzeige nicht starten.",
     "securityFailure": "Der Bildschirm der Maschine hat das übergebene Passwort abgelehnt.",
     "lost": "Die Verbindung zum Bildschirm der Maschine ist abgebrochen.",
+    "noAnswer": "Der Bildschirm der VM hat unter {address} nicht geantwortet.",
+    "noAnswerAnywhere": "Der Bildschirm der VM hat nicht geantwortet.",
     "unavailable": "Diese Maschine hat keinen Bildschirm zum Anzeigen",
     "retry": "Erneut versuchen",
     "passwordCopied": "Passwort kopiert: Füge es ein, wenn der Remotedesktop danach fragt.",

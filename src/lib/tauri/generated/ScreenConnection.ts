@@ -18,7 +18,8 @@ url: string | null,
  */
 password: string | null, 
 /**
- * RDP: the loopback address the client connects to.
+ * Where the screen answers on this computer's loopback (the RDP client connects there; the
+ * VNC viewer's error names it); none for Proxmox's console, reached through its API.
  */
 address: string | null, 
 /**

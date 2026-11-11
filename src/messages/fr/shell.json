@@ -101,6 +101,8 @@
     "noViewer": "La fenêtre n'a pas pu démarrer son afficheur d'écran.",
     "securityFailure": "L'écran de la machine a refusé le mot de passe donné.",
     "lost": "La connexion à l'écran de la machine a été perdue.",
+    "noAnswer": "L'écran de la VM n'a pas répondu à {address}.",
+    "noAnswerAnywhere": "L'écran de la VM n'a pas répondu.",
     "unavailable": "Cette machine n'a pas d'écran à afficher",
     "retry": "Réessayer",
     "passwordCopied": "Mot de passe copié : collez-le quand le Bureau à distance le demande.",

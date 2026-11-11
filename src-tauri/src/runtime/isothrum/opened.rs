@@ -71,4 +71,10 @@ impl OpenedRun {
     pub(crate) async fn graphical_console(&self, machine: &str, connection: isothrum_runner::Secrets) -> Result<isothrum_runner::Console> {
         self.running().await?.with_connection(connection).graphical_console(machine).await.map_err(errors::from_runner)
     }
+
+    /// What opens running VM `machine` in its hypervisor's own app (a server's web console), as
+    /// the runner says with the place's `connection`.
+    pub(crate) async fn native_console(&self, machine: &str, connection: isothrum_runner::Secrets) -> Result<isothrum_runner::NativeConsole> {
+        self.running().await?.with_connection(connection).native_console(machine).await.map_err(errors::from_runner)
+    }
 }

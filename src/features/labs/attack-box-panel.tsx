@@ -1,6 +1,6 @@
 "use client";
 
-import { Crosshair, Monitor, Play, Square, Terminal } from "lucide-react";
+import { AppWindow, Crosshair, Monitor, Play, Square, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LogConsole } from "@/components/ui/log-console";
 import { CopyValue } from "@/components/ui/copy-value";
@@ -23,6 +23,8 @@ export function AttackBoxPanel({
   onShell,
   shellReady,
   onScreen,
+  nativeApp,
+  onNative,
 }: {
   box: AttackBox;
   running: boolean;
@@ -31,6 +33,10 @@ export function AttackBoxPanel({
   shellReady?: boolean;
   /** Opens the box's screen (its graphical console), when it has one that opens now. */
   onScreen?: () => void;
+  /** The box's hypervisor's own app this computer has ("VirtualBox"), once the box runs. */
+  nativeApp?: string | null;
+  /** Opens the box in that app. */
+  onNative?: () => void;
 }) {
   const t = useT();
   const { status, busy, log, name, vm, signIn } = box;
@@ -64,7 +70,7 @@ export function AttackBoxPanel({
         {status?.running && signIn && (
           <p className="text-[0.75rem] leading-relaxed text-muted-foreground">{t("labs.attackBox.credentialsHint", { user: signIn.user })}</p>
         )}
-        <WaysIn onShell={shellReady ? onShell : undefined} onScreen={onScreen} />
+        <WaysIn onShell={shellReady ? onShell : undefined} onScreen={onScreen} nativeApp={nativeApp ?? null} onNative={onNative} />
         {running && <BoxControls box={box} />}
         {(busy || log.some(isFailedLine)) && log.length > 0 && (
           <LogConsole lines={log} running={busy} title={vm ? t("labs.attackBox.attackVm") : t("labs.attackBox.attackBox")} />
@@ -88,8 +94,8 @@ function Credentials({ signIn }: { signIn: SignIn }) {
   );
 }
 
-/** The box's ways in: its shell, and its screen when it has one. */
-function WaysIn({ onShell, onScreen }: { onShell?: () => void; onScreen?: () => void }) {
+/** The box's ways in: its shell, its screen when it has one, and its hypervisor's own app. */
+function WaysIn({ onShell, onScreen, nativeApp, onNative }: { onShell?: () => void; onScreen?: () => void; nativeApp: string | null; onNative?: () => void }) {
   const t = useT();
   return (
     <>
@@ -101,6 +107,11 @@ function WaysIn({ onShell, onScreen }: { onShell?: () => void; onScreen?: () => 
       {onScreen && (
         <Button variant="outline" size="sm" className="w-full" onClick={onScreen}>
           <Monitor className="size-3.5" /> {t("labs.attackBox.openScreen")}
+        </Button>
+      )}
+      {nativeApp && onNative && (
+        <Button variant="ghost" size="sm" className="w-full" onClick={onNative}>
+          <AppWindow className="size-3.5" /> {t("labs.attackBox.openNative", { app: nativeApp })}
         </Button>
       )}
     </>

@@ -39,7 +39,8 @@ pub(super) fn status_of(status: &Status, name: &str, vm: bool) -> AttackStatus {
     let running = machine.is_some_and(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy));
     let joined = machine.filter(|_| running).and_then(|m| m.addresses.iter().next());
     let (lab_network, ip) = joined.map(|(network, ip)| (network.clone(), ip.clone())).unwrap_or_default();
-    let console = machine.and_then(|m| m.console.as_ref()).map(crate::runtime::Console::of);
+    let native = crate::screen::native::installed_here(status.native.as_ref());
+    let console = machine.and_then(|m| m.console.as_ref()).map(|c| crate::runtime::Console::of(c, native.as_deref()));
     AttackStatus { running, ip, lab_network, vm, machine: name.to_owned(), console, ..AttackStatus::default() }
 }
 
@@ -74,11 +75,21 @@ mod tests {
         assert!(!status_of(&vm_lab("running"), "nobody", false).running, "no such machine: no box");
     }
 
+    /// Regression: the box's start, in the deploy worker, held `attackbox` in Vagrant, and the
+    /// page's status poll failed with Vagrant's lock refusal. The runner now says the machine is
+    /// busy: the box isn't up yet, and nothing of it is an error.
+    #[test]
+    fn a_box_another_process_is_setting_up_is_not_up_yet() {
+        let busy = status_of(&vm_lab("busy"), "kali", true);
+        assert_eq!((busy.running, busy.ip.as_str()), (false, ""));
+        assert!(busy.console.is_some(), "its screen is offered once it runs");
+    }
+
     #[test]
     fn the_box_carries_its_machine_and_its_screen() {
         let up = status_of(&vm_lab("running"), "kali", true);
         assert_eq!(up.machine, "kali");
-        assert_eq!(up.console, Some(crate::runtime::Console { protocol: "vnc".into(), note: None }));
+        assert_eq!(up.console, Some(crate::runtime::Console { protocol: "vnc".into(), note: None, unavailable: None, native_app: None }));
         assert_eq!(status_of(&vm_lab("running"), "web", false).console, None, "a machine whose run says nothing of its screen");
     }
 }

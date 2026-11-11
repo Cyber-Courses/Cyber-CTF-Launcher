@@ -157,6 +157,16 @@ impl Host {
         }
     }
 
+    /// What opens running VM `machine` in its hypervisor's own app, wherever the lab runs (a
+    /// cloud's VMs have none).
+    pub(crate) async fn native_console(&self, dirs: &AppDirs, machine: &str) -> Result<isothrum_runner::NativeConsole> {
+        match self {
+            Host::Local(run) | Host::Esxi { run, .. } => run.native_console(machine).await,
+            Host::Cloud { run, .. } => run.native_console(machine, isothrum_runner::Secrets::new()).await,
+            Host::Server { run, conn } => run.native(&Self::server_place(dirs, run, conn).await?, machine).await,
+        }
+    }
+
     /// Runs the lab's checks where it runs (a cloud's and a server's over SSH, an ESXi host's
     /// from its controller); none to run beside cloud services ([`Host::has_machines`]).
     pub(crate) async fn check(&self) -> Result<docker::Check> {

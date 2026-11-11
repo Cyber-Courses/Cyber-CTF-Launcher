@@ -111,8 +111,9 @@ export function deriveLabState(i: LabStateInput) {
   // Machines that went down while the lab runs. Not while it's starting or stopping: machines
   // come up one after another then (a web server waits for its database), and that's normal.
   // The controller is powered off by design once the lab is built: never "down".
-  // Nor while it is parked or down altogether: then every machine is off, by design.
-  const down = deploying || !running ? [] : machines.filter((m) => !m.infra && m.state !== "running");
+  // Nor while it is parked or down altogether: then every machine is off, by design. A machine
+  // another process is acting on ("busy": the attack box's start provisioning it) isn't down.
+  const down = deploying || !running ? [] : machines.filter((m) => !m.infra && m.state !== "running" && m.state !== "busy");
   const isDocker = isContainerLab(rt);
   const remote = !!status?.host;
   // Where it actually ran, as the backend reports it (its marker survives a failed start, so this

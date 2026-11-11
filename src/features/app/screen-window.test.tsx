@@ -36,6 +36,7 @@ vi.mock("@/vendor/novnc/core/rfb.js", () => ({
 }));
 
 const { default: ScreenWindow } = await import("@/app/screen/page");
+const { SHOW_WITHIN_MS } = await import("@/app/screen/use-screen");
 
 const VNC: ScreenConnection = {
   protocol: "vnc",
@@ -95,6 +96,35 @@ describe("the screen window", () => {
     expect(commands(calls).filter((c) => c === "screen_connect")).toHaveLength(2);
     expect(made[0].disconnected).toBe(true);
     expect(made).toHaveLength(2);
+  });
+
+  it("says where the screen didn't answer when the bridge closes before it ever shows", async () => {
+    made.length = 0;
+    installTauri({ screen_connect: () => ({ ...VNC, address: "127.0.0.1:5903" }) });
+    render(<ScreenWindow />);
+    await flush();
+    fire(made[0], "disconnect", { clean: false });
+    await flush();
+    expect(screen.getByText("The VM's screen didn't answer at 127.0.0.1:5903.")).toBeTruthy();
+    expect(screen.getByText("dc01 · connection lost")).toBeTruthy();
+  });
+
+  it("never spins for good: a screen that doesn't show in time says so and stops connecting", async () => {
+    made.length = 0;
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      installTauri({ screen_connect: () => ({ ...VNC, address: "127.0.0.1:5901" }) });
+      render(<ScreenWindow />);
+      await flush();
+      expect(screen.getByText("Connecting to the machine's screen…")).toBeTruthy();
+      vi.advanceTimersByTime(SHOW_WITHIN_MS);
+      await flush();
+      expect(screen.getByText("The VM's screen didn't answer at 127.0.0.1:5901.")).toBeTruthy();
+      expect(screen.queryByText("Connecting to the machine's screen…")).toBeNull();
+      expect(made[0].disconnected).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says why a machine has no screen", async () => {

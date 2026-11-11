@@ -233,6 +233,7 @@
     "containerHint": "Deine Maschine im Lab: ein Container unter denen des Labs, im Lab-Netzwerk, aus dem in den Einstellungen gewählten Attack-Box-Image. Öffne ihre Shell, um die Ziele von innerhalb des Labs anzugreifen.",
     "openShell": "Angreifer-Shell öffnen",
     "openScreen": "Bildschirm öffnen",
+    "openNative": "In {app} öffnen",
     "working": "In Arbeit…",
     "stop": "Attack box stoppen",
     "start": "Attack box starten",
@@ -451,8 +452,12 @@
     "title": "Bildschirme",
     "open": "Bildschirm",
     "openOf": "Bildschirm von {machine} öffnen",
+    "openNative": "In {app} öffnen",
+    "openNativeOf": "{machine} in {app} öffnen",
     "none": "Kein Bildschirm: {why}",
     "notRunning": "Ihr Bildschirm öffnet sich, sobald sie läuft.",
+    "busy": "Wird eingerichtet: Ihr Bildschirm öffnet sich, sobald das erledigt ist.",
+    "unavailable": "Gerade kein Bildschirm: {why}",
     "vnc": "Ihr Bildschirm, in einem Fenster",
     "rdp": "Ihr Remotedesktop, in deiner Remotedesktop-App"
   }

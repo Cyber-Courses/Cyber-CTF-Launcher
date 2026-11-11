@@ -11,7 +11,10 @@
 //! fresh token, spent by the first viewer that connects with it.
 //!
 //! - **A VNC port** of the loopback ([`Target::Tcp`]): the viewer's frames are unwrapped onto
-//!   the TCP connection, its bytes wrapped into binary frames back.
+//!   the TCP connection, its bytes wrapped into binary frames back. A port that doesn't accept
+//!   within [`CONNECT_LIMIT`], or a server that says nothing within [`ANSWER_LIMIT`] (a VNC
+//!   server speaks first), closes the viewer's connection saying where it didn't answer: the
+//!   viewer never waits on it for good.
 //! - **Proxmox VE's VNC websocket** ([`Target::WebSocket`]): the bridge opens it with the header
 //!   that signs it in (TLS unverified only when the server's connection says so), then relays the
 //!   frames both ways as they are (the viewer's are masked, as Proxmox wants a client's).
@@ -145,6 +148,13 @@ pub(crate) fn judge(req: &str, token: Option<&str>, port: u16, dev: bool) -> std
 /// How long a connection gets to send its request.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long the machine's screen gets to accept the bridge's connection.
+pub(crate) const CONNECT_LIMIT: Duration = Duration::from_secs(10);
+
+/// How long a VNC server gets to say its version once connected, and Proxmox's websocket to
+/// switch protocols.
+pub(crate) const ANSWER_LIMIT: Duration = Duration::from_secs(15);
+
 /// The largest request the bridge reads.
 const MAX_REQUEST: usize = 8 * 1024;
 
@@ -261,15 +271,43 @@ async fn read_request(socket: &mut TcpStream) -> std::io::Result<Option<(String,
     }
 }
 
-/// Relays the viewer on `socket` (with `pending` bytes already read) to the VNC port `at`.
-async fn relay_tcp(socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) -> std::io::Result<()> {
-    let vnc = TcpStream::connect(at).await?;
+/// The VNC server at `at`, connected, and the first bytes it said: within [`CONNECT_LIMIT`] and
+/// [`ANSWER_LIMIT`], else why not, in the player's words.
+async fn answering(at: SocketAddr) -> std::result::Result<(TcpStream, Vec<u8>), String> {
+    let mut vnc = match tokio::time::timeout(CONNECT_LIMIT, TcpStream::connect(at)).await {
+        Ok(Ok(vnc)) => vnc,
+        Ok(Err(e)) => return Err(format!("the VM's screen didn't answer at {at}: {e}")),
+        Err(_) => return Err(format!("the VM's screen didn't answer at {at} within {} s", CONNECT_LIMIT.as_secs())),
+    };
+    let mut first = vec![0u8; 1024];
+    match tokio::time::timeout(ANSWER_LIMIT, vnc.read(&mut first)).await {
+        Ok(Ok(0)) => Err(format!("the VM's screen at {at} closed the connection before it said anything")),
+        Ok(Ok(n)) => {
+            first.truncate(n);
+            Ok((vnc, first))
+        }
+        Ok(Err(e)) => Err(format!("the VM's screen at {at} failed: {e}")),
+        Err(_) => Err(format!("the VM's screen at {at} accepted the connection but said nothing within {} s", ANSWER_LIMIT.as_secs())),
+    }
+}
+
+/// Relays the viewer on `socket` (with `pending` bytes already read) to the VNC port `at`; one
+/// that doesn't answer closes the viewer's connection saying why.
+async fn relay_tcp(mut socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) -> std::io::Result<()> {
+    let (vnc, first) = match answering(at).await {
+        Ok(answered) => answered,
+        Err(why) => {
+            let _ = socket.write_all(&ws::close_because(&why)).await;
+            return Err(std::io::Error::other(why));
+        }
+    };
     let (mut vnc_in, mut vnc_out) = vnc.into_split();
     let (mut viewer_in, viewer_out) = socket.into_split();
     let viewer_out = Arc::new(tokio::sync::Mutex::new(viewer_out));
     let to_viewer = {
         let viewer_out = Arc::clone(&viewer_out);
         async move {
+            viewer_out.lock().await.write_all(&ws::binary(&first)).await?;
             let mut buf = vec![0u8; 64 * 1024];
             loop {
                 let n = vnc_in.read(&mut buf).await?;
@@ -326,8 +364,21 @@ struct Upstream<'a> {
 
 /// Relays the viewer on `socket` (with `pending` bytes already read) to the websocket `to`,
 /// frames as they are.
-async fn relay_websocket(socket: TcpStream, pending: Vec<u8>, to: &Upstream<'_>) -> std::io::Result<()> {
-    let upstream = open_websocket(to.url, to.header, to.insecure, to.protocol).await.map_err(std::io::Error::other)?;
+async fn relay_websocket(mut socket: TcpStream, pending: Vec<u8>, to: &Upstream<'_>) -> std::io::Result<()> {
+    let opened = tokio::time::timeout(CONNECT_LIMIT + ANSWER_LIMIT, open_websocket(to.url, to.header, to.insecure, to.protocol)).await;
+    let upstream = match opened {
+        Ok(Ok(upstream)) => upstream,
+        Ok(Err(e)) => {
+            let why = format!("Proxmox VE's console didn't answer: {e}");
+            let _ = socket.write_all(&ws::close_because(&why)).await;
+            return Err(std::io::Error::other(why));
+        }
+        Err(_) => {
+            let why = format!("Proxmox VE's console didn't answer within {} s", (CONNECT_LIMIT + ANSWER_LIMIT).as_secs());
+            let _ = socket.write_all(&ws::close_because(&why)).await;
+            return Err(std::io::Error::other(why));
+        }
+    };
     let (mut up_in, mut up_out) = tokio::io::split(upstream);
     let (mut viewer_in, mut viewer_out) = socket.into_split();
     up_out.write_all(&pending).await?;
@@ -464,6 +515,43 @@ mod tests {
         let (_, again) = connect(port, &token, "tauri://localhost").await;
         assert!(again.starts_with("HTTP/1.1 403"), "the token was spent: {again}");
         drop(bridge);
+    }
+
+    /// The bridge to a VNC port that refuses, and to one that accepts but never speaks: the viewer's
+    /// connection is closed saying where the screen didn't answer, never left waiting.
+    #[tokio::test]
+    async fn a_screen_that_doesnt_answer_closes_the_viewers_connection_saying_why() {
+        let bridge = Bridge::bind().await.unwrap();
+        // A port nothing listens on: bound, then freed.
+        let free = TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+        let token = bridge.arm(Target::Tcp(free));
+        let (mut viewer, head) = connect(bridge.port(), &token, "tauri://localhost").await;
+        assert!(head.starts_with("HTTP/1.1 101"), "{head}");
+        let closed = close_reason(&mut viewer).await;
+        assert!(closed.starts_with(&format!("the VM's screen didn't answer at {free}")), "{closed}");
+        drop(bridge);
+
+        let silent = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let at = silent.local_addr().unwrap();
+        let accepting = tokio::spawn(async move { silent.accept().await.map(|(s, _)| s) });
+        let bridge = Bridge::bind().await.unwrap();
+        let token = bridge.arm(Target::Tcp(at));
+        let (mut viewer, _) = connect(bridge.port(), &token, "tauri://localhost").await;
+        tokio::time::pause();
+        let closed = close_reason(&mut viewer).await;
+        assert_eq!(closed, format!("the VM's screen at {at} accepted the connection but said nothing within 15 s"));
+        accepting.abort();
+    }
+
+    /// The reason of the close frame the bridge sends (status 1011).
+    async fn close_reason(s: &mut TcpStream) -> String {
+        let mut head = [0u8; 2];
+        s.read_exact(&mut head).await.unwrap();
+        assert_eq!(head[0], 0x88, "a close frame");
+        let mut payload = vec![0u8; usize::from(head[1] & 0x7F)];
+        s.read_exact(&mut payload).await.unwrap();
+        assert_eq!(&payload[..2], &1011u16.to_be_bytes());
+        String::from_utf8(payload[2..].to_vec()).unwrap()
     }
 
     /// One frame from the bridge (unmasked): its payload.

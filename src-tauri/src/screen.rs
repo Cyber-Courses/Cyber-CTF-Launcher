@@ -5,6 +5,7 @@
 //! runner opened to the console closes.
 
 pub(crate) mod bridge;
+pub(crate) mod native;
 pub(crate) mod rdp;
 mod ws;
 
@@ -97,7 +98,8 @@ pub(crate) struct Connection {
     pub(crate) url: Option<String>,
     /// VNC: the password the viewer answers the server with.
     pub(crate) password: Option<String>,
-    /// RDP: the loopback address the client connects to.
+    /// Where the screen answers on this computer's loopback (the RDP client connects there; the
+    /// VNC viewer's error names it); none for Proxmox's console, reached through its API.
     pub(crate) address: Option<String>,
     /// RDP: the account to sign in as.
     pub(crate) user: Option<String>,
@@ -195,7 +197,10 @@ pub(crate) fn connect(label: &str, reached: Reached, client: Option<&rdp::Client
                     protocol: Protocol::Vnc,
                     url: Some(format!("ws://127.0.0.1:{}/{token}", session.bridge.port())),
                     password: reached.password.clone(),
-                    address: None,
+                    address: match &reached.at {
+                        bridge::Target::Tcp(at) => Some(at.to_string()),
+                        bridge::Target::WebSocket { .. } => None,
+                    },
                     user: None,
                     has_password: false,
                     client: None,

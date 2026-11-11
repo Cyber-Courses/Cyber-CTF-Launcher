@@ -8,7 +8,7 @@ use crate::app::window;
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::{Runtime, host, paths};
-use crate::screen::{self, Protocol, Reached, Which, rdp};
+use crate::screen::{self, Protocol, Reached, Which, native, rdp};
 use crate::{AppHandle, WebviewWindow};
 
 /// Opens the screen window of lab `id`'s machine `machine`, titled after the lab's `title`.
@@ -30,6 +30,30 @@ pub async fn screen_connect(window: WebviewWindow) -> Result<screen::Connection>
         let reached = Reached::of(located.graphical_console(&dirs, &which.machine).await?)?;
         let client = (reached.protocol == Protocol::Rdp).then(client).flatten();
         screen::connect(&label, reached, client.as_ref())
+    })
+    .await
+}
+
+/// Opens lab `id`'s running VM `machine` in its hypervisor's own app ("Open in VirtualBox"): the
+/// first way the runner gives that this computer has, run without a shell, or its web console in
+/// the default browser. Boxed: the runner's futures are large.
+#[tauri::command]
+pub async fn screen_open_native(app: AppHandle, id: String, runtime: Runtime, machine: String) -> Result<()> {
+    Box::pin(async move {
+        let dirs = AppDirs::from(&app);
+        let dir = paths::lab_dir(&dirs, &id)?;
+        let located = host::locate(&dirs, &dir, &id, runtime)?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
+        let console = located.native_console(&dirs, &machine).await?;
+        let home = crate::platform::home_dir();
+        let launch = native::pick(&console.ways, std::env::consts::OS, home.as_deref(), std::path::Path::exists, native::on_path)
+            .ok_or_else(|| Error::Invalid(format!("{} isn't installed on this computer", console.app)))?;
+        match launch {
+            native::Launch::Program { program, args } => native::run(&program, &args).await,
+            native::Launch::Url(url) => {
+                use tauri_plugin_opener::OpenerExt as _;
+                app.opener().open_url(url, None::<&str>).map_err(|e| Error::Invalid(format!("couldn't open {}'s console: {e}", console.app)))
+            }
+        }
     })
     .await
 }
@@ -121,6 +145,15 @@ mod tests {
         assert_eq!(Some(box_screen), attack_machine::sign_in(&dir, None).unwrap(), "the password the launcher keeps");
         assert_eq!(sign_in("web").await.unwrap(), None, "a target's screen gets none");
         attack_machine::remove(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_lab_that_is_not_installed_opens_in_no_app() {
+        let t = TestApp::new();
+        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let err = screen_open_native(t.handle().clone(), "gone".into(), Runtime::Vm, "web".into()).await.unwrap_err();
+        assert_eq!(err.to_string(), "lab `gone` is not installed");
+        assert!(tools.calls().is_empty(), "nothing ran: {:?}", tools.calls());
     }
 
     #[tokio::test]

@@ -233,6 +233,7 @@
     "containerHint": "Votre machine dans le lab : un conteneur parmi ceux du lab, sur le réseau du lab, depuis l'image d'attack box choisie dans les Réglages. Ouvrez son shell pour attaquer les cibles depuis l’intérieur du lab.",
     "openShell": "Ouvrir le shell attaquant",
     "openScreen": "Ouvrir l'écran",
+    "openNative": "Ouvrir dans {app}",
     "working": "En cours…",
     "stop": "Arrêter l’attack box",
     "start": "Démarrer l’attack box",
@@ -451,8 +452,12 @@
     "title": "Écrans",
     "open": "Écran",
     "openOf": "Ouvrir l'écran de {machine}",
+    "openNative": "Ouvrir dans {app}",
+    "openNativeOf": "Ouvrir {machine} dans {app}",
     "none": "Pas d'écran : {why}",
     "notRunning": "Son écran s'ouvre quand elle tourne.",
+    "busy": "En cours de préparation : son écran s'ouvre une fois terminé.",
+    "unavailable": "Pas d'écran pour l'instant : {why}",
     "vnc": "Son écran, dans une fenêtre",
     "rdp": "Son Bureau à distance, dans votre application de Bureau à distance"
   }

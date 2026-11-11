@@ -101,6 +101,8 @@
     "noViewer": "La ventana no pudo iniciar su visor de pantalla.",
     "securityFailure": "La pantalla de la máquina rechazó la contraseña que recibió.",
     "lost": "Se perdió la conexión con la pantalla de la máquina.",
+    "noAnswer": "La pantalla de la VM no respondió en {address}.",
+    "noAnswerAnywhere": "La pantalla de la VM no respondió.",
     "unavailable": "Esta máquina no tiene pantalla que mostrar",
     "retry": "Reintentar",
     "passwordCopied": "Contraseña copiada: pégala cuando el Escritorio remoto la pida.",

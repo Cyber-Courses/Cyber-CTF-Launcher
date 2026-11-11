@@ -233,6 +233,7 @@
     "containerHint": "Your machine in the lab: a container among the lab's, on the lab network, from the attack box image picked in Settings. Open its shell to attack the targets from inside the lab.",
     "openShell": "Open attacker shell",
     "openScreen": "Open screen",
+    "openNative": "Open in {app}",
     "working": "Working…",
     "stop": "Stop attack box",
     "start": "Start attack box",
@@ -451,8 +452,12 @@
     "title": "Screens",
     "open": "Screen",
     "openOf": "Open {machine}'s screen",
+    "openNative": "Open in {app}",
+    "openNativeOf": "Open {machine} in {app}",
     "none": "No screen: {why}",
     "notRunning": "Its screen opens once it runs.",
+    "busy": "Being set up: its screen opens once that's done.",
+    "unavailable": "No screen right now: {why}",
     "vnc": "Its screen, in a window",
     "rdp": "Its Remote Desktop, in your Remote Desktop app"
   }

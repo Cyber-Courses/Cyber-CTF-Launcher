@@ -24,13 +24,36 @@ function provisionControl(page: LabPage, busy: boolean) {
   };
 }
 
+/** The attack box's ways into its screen, once it runs and its start is done: the built-in
+ *  viewer where its run offers a screen that answers now, and its hypervisor's own app where this
+ *  computer has it. */
+function boxWays({ box, screen }: LabPage): { onScreen?: () => void; nativeApp: string | null; onNative?: () => void } {
+  const up = !!box.status?.running && !box.busy;
+  const machine = box.status?.machine ?? "";
+  const c = box.status?.console ?? null;
+  const shows = up && !!c && c.protocol !== "none" && !c.unavailable;
+  const nativeApp = up ? (c?.nativeApp ?? null) : null;
+  return {
+    onScreen: shows
+      ? () => {
+          screen.open(machine);
+        }
+      : undefined,
+    nativeApp,
+    onNative: nativeApp
+      ? () => {
+          screen.openNative(machine);
+        }
+      : undefined,
+  };
+}
+
 /** The side rail: the plain question, the attack box, where it runs (stopped) or its details
  *  (running), and the sign-in note. */
 export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; props: LabDetailProps; meta: string; cost: string | null }) {
   const t = useT();
   const { s, box, shell, screen, busy } = page;
-  // The attack box's screen opens once it runs and its start is done, where its run offers one.
-  const boxScreen = !!box.status?.running && !box.busy && !!box.status.console && box.status.console.protocol !== "none";
+  const ways = boxWays(page);
   const { lab, status } = p;
   return (
     <aside className="h-fit min-w-0 space-y-5 lg:sticky lg:top-2">
@@ -48,13 +71,9 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
             // The shell only into a box that runs, wherever the lab is, once its start is done (a
             // box made as a machine of the lab is set up during that start).
             shellReady={!!box.status?.running && !box.busy}
-            onScreen={
-              boxScreen && box.status
-                ? () => {
-                    screen.open(box.status?.machine ?? "");
-                  }
-                : undefined
-            }
+            onScreen={ways.onScreen}
+            nativeApp={ways.nativeApp}
+            onNative={ways.onNative}
           />
         </Dimmed>
       )}
@@ -83,7 +102,7 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
 
       {s.running && status && (
         <Dimmed on={removing(s)}>
-          <ScreensPanel machines={status.machines} onOpen={screen.open} error={screen.error} />
+          <ScreensPanel machines={status.machines} onOpen={screen.open} onOpenNative={screen.openNative} error={screen.error} />
         </Dimmed>
       )}
       {!p.loggedIn && !lab.imported && <p className="px-1 text-[0.75rem] text-muted-foreground">{t("labs.detail.signInToRun")}</p>}

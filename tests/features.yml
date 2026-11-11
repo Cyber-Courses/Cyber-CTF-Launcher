@@ -1541,6 +1541,7 @@ areas:
             - src/features/labs/lab-parts.test.tsx > settles the check when another machine goes down while it runs
             - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > offers Start them where the backend can bring machines back
             - src/features/labs/lab-detail/lab-state.edge.test.ts > a parked lab lists none of its machines as down
+            - src/features/labs/lab-detail/lab-state.edge.test.ts > a machine another process is setting up is busy, not down
           desktop:
             - lab-actions/down
         rig:
@@ -1553,6 +1554,7 @@ areas:
           unit:
             - src/features/labs/screens-panel.test.tsx
             - src-tauri/src/runtime/attack_machine/status.rs > the_box_carries_its_machine_and_its_screen
+            - src-tauri/src/runtime/attack_machine/status.rs > a_box_another_process_is_setting_up_is_not_up_yet
           desktop:
             - screens/panel
             - screens/screen-none
@@ -1927,6 +1929,9 @@ areas:
             - src-tauri/src/screen/ws.rs > an_unmasked_reserved_or_huge_frame_is_refused
             - src-tauri/src/commands/screen.rs > a_window_with_no_session_reaches_no_screen
             - src/features/app/screen-window.test.tsx > connects its viewer to the bridge
+            - src-tauri/src/screen/bridge.rs > a_screen_that_doesnt_answer_closes_the_viewers_connection_saying_why
+            - src/features/app/screen-window.test.tsx > says where the screen didn't answer when the bridge closes before it ever shows
+            - "src/features/app/screen-window.test.tsx > never spins for good: a screen that doesn't show in time says so"
           desktop:
             - screens/screen
             - screens/box-desktop
@@ -1937,6 +1942,28 @@ areas:
         gaps:
           desktop: needs a signed-in account and a hypervisor with VNC (libvirt/QEMU); skips otherwise
           integration: the bridge against a real VNC server is opt-in; Proxmox's API websocket console never run
+
+      - id: screen.native
+        what: Open a running VM in its hypervisor's own app beside the built-in viewer (VirtualBox, Hyper-V's Virtual Machine Connection, virt-viewer, VMware, Parallels Desktop, UTM, or ESXi's and Proxmox VE's web console), offered only where this computer has that app; none for vagrant-qemu.
+        providers:
+          - virtualbox
+          - hyperv
+          - libvirt
+          - vmware
+          - parallels
+          - utm
+          - esxi
+          - proxmox
+        host: true
+        commands:
+          - screen_open_native
+        tests:
+          unit:
+            - src-tauri/src/screen/native.rs
+            - src-tauri/src/commands/screen.rs > a_lab_that_is_not_installed_opens_in_no_app
+            - src/features/labs/screens-panel.test.tsx > offers Open in the hypervisor's app beside the Screen, for a running VM only
+        gaps:
+          unit: what opens each provider's app is tested in Isothrum with its fake engines; no app is ever opened for real
 
       - id: screen.rdp
         what: A machine with Remote Desktop (VirtualBox, a cloud Windows VM) opens in the system's RDP client from the Screen window; Copy password on request.

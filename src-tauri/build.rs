@@ -71,6 +71,7 @@ const COMMANDS: &[&str] = &[
     "restart_app",
     "running_labs",
     "screen_connect",
+    "screen_open_native",
     "screen_open_rdp",
     "screen_password",
     "screen_sign_in",

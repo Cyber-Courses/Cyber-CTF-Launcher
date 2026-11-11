@@ -19,7 +19,13 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   MIT OR Apache-2.0), in a root-only file its set-up
   hands to `chpasswd` on standard input, never on a command line. `sudo` still asks for none. A box
   added before this has no password and shows no row.
-
+- **Open in VirtualBox (or the lab's own hypervisor app).** Beside a running VM's Screen, on the lab
+  page and the attack box, a button opens it in its hypervisor's own app where this computer has
+  it: VirtualBox, Hyper-V's Virtual Machine Connection, virt-viewer (else remote-viewer), VMware
+  Fusion or Workstation, Parallels Desktop, UTM, or the web console of ESXi or Proxmox VE in the
+  browser; vagrant-qemu has no app, so none is offered. The runner says what opens it
+  (`native_console`); the launcher runs the first way this computer has, without a shell. The
+  built-in viewer stays the default.
 - **A lab machine's screen, in its own window.** The lab page's Screens list each VM whose run
   offers a graphical console, with a Screen button (and why one has none: Parallels, VirtualBox
   without its extension pack, a cloud Linux VM), and the attack box's card has one. A VNC screen
@@ -273,6 +279,19 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   says "Downloading the lab's images stopped making progress", and one that fails says "Couldn't
   download the lab's images:" with Docker's reason, in the app's six languages, with the network
   hint. A step that runs out of time still says to check the network and the resources.
+- **A lab's status no longer turns red while another process is adding a VM.** With the attack
+  box's start provisioning `attackbox` in the deploy worker, the page's status poll failed with
+  Vagrant's lock refusal, `MachineActionLockedError` ("An action 'read_state' was attempted on
+  the machine 'attackbox', …"). The runner now reports that machine as busy, the others as last
+  read: the page says it is being set up (not down), offers no screen for it meanwhile, and reads
+  it again on the next poll.
+- **The Screen button is offered only for a screen that is there now.** A VM's screen is offered
+  once it runs and the runner found its console answering; otherwise the page says why (a
+  vagrant-qemu VM started before screens were given one says to restart it). A screen asked for
+  while the lab was being changed no longer waits on Vagrant's locks.
+- **The screen window never spins for good.** The bridge gives the VM's screen 10 s to accept and
+  15 s to speak, and the viewer 30 s to show it; past that, the window says where the screen
+  didn't answer (`The VM's screen didn't answer at 127.0.0.1:5903.`) with Try again.
 - **Why a hypervisor can't run labs is said in the app's language.** The Machine page, the
   setup's VM step and Settings showed the core's English reason in every language; they now say
   it in the six. **Allow my account** is offered only when the account lacks the right to manage

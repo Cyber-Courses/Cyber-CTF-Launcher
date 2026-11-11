@@ -101,6 +101,8 @@
     "noViewer": "The window couldn't start its screen viewer.",
     "securityFailure": "The machine's screen refused the password it was given.",
     "lost": "The connection to the machine's screen was lost.",
+    "noAnswer": "The VM's screen didn't answer at {address}.",
+    "noAnswerAnywhere": "The VM's screen didn't answer.",
     "unavailable": "This machine has no screen to show",
     "retry": "Try again",
     "passwordCopied": "Password copied: paste it when the Remote Desktop asks.",

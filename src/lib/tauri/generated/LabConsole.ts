@@ -11,4 +11,14 @@ protocol: string,
 /**
  * Why there is none, or what it needs, in the run's words.
  */
-note: string | null, };
+note: string | null, 
+/**
+ * Why it can't be shown now though the machine runs (its VM was started without a screen,
+ * it doesn't answer), in the run's words: the page then offers no Screen button.
+ */
+unavailable: string | null, 
+/**
+ * The hypervisor's own app this computer has to show the machine in ("VirtualBox"), beside
+ * the built-in viewer; none where the lab's provider has none or this computer lacks it.
+ */
+nativeApp: string | null, };

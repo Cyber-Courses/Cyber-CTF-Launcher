@@ -107,17 +107,27 @@ impl ServerRun {
     /// `machine`'s graphical console, Proxmox's own through its API, signed in with `place`'s
     /// credentials.
     pub(crate) async fn screen(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_runner::Console> {
-        let mut connection = Secrets::new();
-        for (k, v) in place.vars.iter().filter(|(k, _)| SECRET_VARS.contains(&k.as_str())) {
-            connection.insert(k.clone(), SecretValue::new(v.clone()));
-        }
-        self.graphical_console(machine, connection).await
+        self.graphical_console(machine, connection_of(place)).await
+    }
+
+    /// What opens `machine` in the server's own web console, on `place`.
+    pub(crate) async fn native(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_runner::NativeConsole> {
+        self.native_console(machine, connection_of(place)).await
     }
 
     /// Runs the lab's checks over SSH; not available when it declares none.
     pub(crate) async fn check(&self) -> Result<Check> {
         super::checks_of(&self.running().await?, &RunOptions::new()).await
     }
+}
+
+/// The connection slots `place`'s secrets fill (the server's API credentials).
+fn connection_of(place: &ServerPlace) -> Secrets {
+    let mut connection = Secrets::new();
+    for (k, v) in place.vars.iter().filter(|(k, _)| SECRET_VARS.contains(&k.as_str())) {
+        connection.insert(k.clone(), SecretValue::new(v.clone()));
+    }
+    connection
 }
 
 /// The options of an operation on `place`: its variables as params (its secret as the

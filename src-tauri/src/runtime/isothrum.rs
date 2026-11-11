@@ -435,6 +435,11 @@ impl LabRun {
     pub(crate) async fn graphical_console(&self, machine: &str) -> Result<isothrum_runner::Console> {
         self.lab().await?.graphical_console(machine).await.map_err(errors::from_runner)
     }
+
+    /// What opens running VM `machine` in its hypervisor's own app, as the runner says.
+    pub(crate) async fn native_console(&self, machine: &str) -> Result<isothrum_runner::NativeConsole> {
+        self.lab().await?.native_console(machine).await.map_err(errors::from_runner)
+    }
 }
 
 /// A graphical console's protocol (a run's offer, the runner's console) in the launcher's words:

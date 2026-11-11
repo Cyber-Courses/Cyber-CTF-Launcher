@@ -58,6 +58,7 @@ permissions = [
   "allow-restart-app",
   "allow-running-labs",
   "allow-screen-window",
+  "allow-screen-open-native",
   "allow-server-capacity",
   "allow-server-list",
   "allow-server-month-to-date-cost",

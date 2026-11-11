@@ -108,6 +108,7 @@ export const screenHandlers: Record<string, BrowserHandler> = {
     tunnelled: true,
   }),
   screen_open_rdp: () => null,
+  screen_open_native: () => null,
   screen_password: () => "dev-mock-password",
   screen_sign_in: () => ({ user: "player", password: "dev-mock-password" }),
 };
