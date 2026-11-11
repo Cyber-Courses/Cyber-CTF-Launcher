@@ -1,10 +1,14 @@
+#[cfg(debug_assertions)]
 use std::path::Path;
 
 use super::*;
 use crate::runtime::server::HOST_MARKER;
 use crate::runtime::server::hosts::tests::{host, store};
 
-/// A Proxmox form signing in with the SSH key at `key`.
+/// A Proxmox form signing in with the SSH key at `key`. Its tests run over the dev secret store,
+/// a debug build's alone: so does this, or a release build's test target (the rig's `rig` profile)
+/// finds it unused.
+#[cfg(debug_assertions)]
 fn ssh_key_input(key: &Path) -> HostInput {
     serde_json::from_value(serde_json::json!({
         "id": null, "name": "Garage", "provider": "proxmox", "host": "10.0.0.50", "port": 8006, "username": "",

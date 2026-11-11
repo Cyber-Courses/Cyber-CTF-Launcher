@@ -482,7 +482,10 @@ mod tests {
     }
 
     /// Each test thread has its own session file, `UNSAVED` and `EXPIRED`, but `SESSION_WRITE` is
-    /// the process's: the tests that wait on it run one at a time.
+    /// the process's: the tests that wait on it run one at a time. Those tests run over the dev
+    /// session store, a debug build's alone: so does what they share, or a release build's test
+    /// target (the rig's `rig` profile) finds it unused.
+    #[cfg(debug_assertions)]
     static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     /// The commands over the dev session store (a file of this test run's own).
@@ -532,16 +535,19 @@ mod tests {
     }
 
     /// A session whose access token needs a refresh, and the tokens a refresh answers with.
+    #[cfg(debug_assertions)]
     fn expiring() -> Session {
         Session { access_token: "old".into(), refresh_token: Some("r1".into()), expires_at: unix_secs() + 10, ..session() }
     }
 
+    #[cfg(debug_assertions)]
     fn renewed(access: &str) -> TokenResponse {
         TokenResponse { access_token: access.into(), refresh_token: Some("r2".into()), expires_in: Some(3600), id_token: None }
     }
 
     /// A refresh started in the background that is in flight when this returns, and answers once
     /// the returned sender says so.
+    #[cfg(debug_assertions)]
     async fn refresh_in_flight() -> (tokio::task::JoinHandle<Result<String>>, tokio::sync::oneshot::Sender<()>) {
         let (started_tx, started) = tokio::sync::oneshot::channel();
         let (release, released) = tokio::sync::oneshot::channel::<()>();
