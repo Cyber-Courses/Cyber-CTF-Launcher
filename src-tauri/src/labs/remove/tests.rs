@@ -193,11 +193,12 @@ fn an_earlier_removals_leftover_copy_goes_with_this_one() {
     assert!(!dir.exists() && !earlier.exists());
 }
 
-/// This test's own secrets file (never the player's): where the attack box passwords are kept.
-fn own_secrets() -> PathBuf {
-    let file = std::env::temp_dir().join(format!("cyberctf-remove-secrets-{}", rand::random::<u32>())).join("secrets.json");
-    crate::runtime::server::secrets::use_test_file(file.clone());
-    file
+/// This test's own secrets file (never the player's), where the attack box passwords are kept,
+/// in a folder removed when the returned guard drops.
+fn own_secrets() -> crate::testing::TempDir {
+    let dir = crate::testing::temp_dir("remove-secrets");
+    crate::runtime::server::secrets::use_test_file(dir.join("secrets.json"));
+    dir
 }
 
 #[tokio::test]
@@ -228,9 +229,9 @@ async fn the_attack_boxs_password_goes_with_the_lab_and_stays_while_the_removal_
 #[tokio::test]
 async fn a_password_store_that_refuses_leaves_the_password_listed_and_the_lab_removed() {
     let t = TestApp::new();
-    let file = own_secrets();
+    let secrets = own_secrets();
+    let file = secrets.join("secrets.json");
     // A secrets file that doesn't parse: the store can't delete from it (as a locked keychain can't).
-    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, "{").unwrap();
     let dir = t.lab("local-store", &[("isoloom.yml", SPEC)]);
     let worker = records(t.data(), "local-store");
