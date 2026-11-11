@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
-import { startEnded, stuckLabReport } from "./diagnose.mjs";
+import { appExit, startEnded, stuckLabReport } from "./diagnose.mjs";
 
 export { runContainers } from "./owned.mjs";
 
@@ -445,8 +445,14 @@ export function stopApp(proc) {
   }
 }
 
-/** End the session and stop the app; safe when either never came up. */
+/**
+ * End the session and stop the app; safe when either never came up. An app that had already
+ * ended is said, with the tail of what it printed: the spec's own failure (`ECONNREFUSED`) only
+ * says the app was gone, never why.
+ */
 export async function finish(b, proc) {
+  const exit = appExit(proc);
+  if (exit) console.log(`${exit} before the spec ended; its output tail:`, typeof proc.output === "function" ? proc.output().slice(-800) : "(not kept)");
   if (b) await b.deleteSession().catch(() => {});
   stopApp(proc);
 }

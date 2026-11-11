@@ -64,3 +64,18 @@ export function stuckLabReport(id, { status, operations, log, error = null }) {
   if (error) parts.push(`(the app couldn't be asked everything: ${error})`);
   return `${id}: ${parts.length ? parts.join("; ") : "nothing could be read"}`;
 }
+
+/**
+ * How the app process ended, for a spec's report: null while it runs (or when there is none),
+ * else its exit code or the signal that ended it. A spec's WebDriver calls fail with
+ * `ECONNREFUSED` once the app is gone, which says nothing of why; the app's own exit, and the
+ * tail of what it printed, does.
+ * @param {{ exitCode: number | null, signalCode?: string | null } | null | undefined} proc
+ * @returns {string | null}
+ */
+export function appExit(proc) {
+  if (!proc) return null;
+  if (proc.signalCode) return `the app was ended by ${proc.signalCode}`;
+  if (proc.exitCode !== null && proc.exitCode !== undefined) return `the app exited with code ${String(proc.exitCode)}`;
+  return null;
+}

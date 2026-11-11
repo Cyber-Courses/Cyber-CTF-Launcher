@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { logTail, startEnded, stuckLabReport } from "./lib/diagnose.mjs";
+import { appExit, logTail, startEnded, stuckLabReport } from "./lib/diagnose.mjs";
 
 // What a spec says of a lab that never showed running (lib/diagnose.mjs): the words a failed
 // check's reason carries, so the rig's one-line reason says which it was: a start still in
@@ -67,5 +67,15 @@ describe("logTail", () => {
     expect(logTail("", 3)).toBe("");
     expect(logTail(null as unknown as string)).toBe("");
     expect(logTail(Array.from({ length: 10 }, (_, i) => `line ${String(i)}`).join("\n"))).toBe("line 4 | line 5 | line 6 | line 7 | line 8 | line 9");
+  });
+});
+
+describe("appExit", () => {
+  it("says how the app ended, and nothing while it runs", () => {
+    expect(appExit({ exitCode: null, signalCode: null })).toBeNull();
+    expect(appExit(null)).toBeNull();
+    expect(appExit({ exitCode: 1, signalCode: null })).toBe("the app exited with code 1");
+    expect(appExit({ exitCode: -1073741819, signalCode: null })).toBe("the app exited with code -1073741819");
+    expect(appExit({ exitCode: null, signalCode: "SIGSEGV" })).toBe("the app was ended by SIGSEGV");
   });
 });
