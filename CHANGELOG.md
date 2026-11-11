@@ -288,6 +288,9 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   a healthy lab without it and offered no way back; it is now shown `gone`, with the page's health
   banner and its reset. A resume no longer brings the lab back without it (Isothrum): it says
   which machines are gone, and a start again builds the lab afresh.
+- **Docker quit while a lab starts says so.** A container lab whose Docker stopped during its
+  start said "`lab step up` failed: Cannot connect to the Docker daemon…"; it now says Docker isn't
+  running and to start it, as the start's own check does.
 - **A slow download of a container lab's images no longer reads as Docker running out of
   resources.** Starting a lab with the attack box (an 11 GB image) on a slow connection was stopped
   with "The lab's `up` step didn't finish within 30 minutes … check the resources of Docker, the

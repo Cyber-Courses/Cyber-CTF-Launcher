@@ -98,6 +98,28 @@ fn by_code(e: &RunnerError) -> Error {
     }
 }
 
+/// What Docker's CLI says when its engine doesn't answer: stopped, or quit while a step ran (on
+/// Windows, its named pipe gone).
+const ENGINE_DOWN: [&str; 3] = ["cannot connect to the docker daemon", "is the docker daemon running", "error during connect"];
+
+/// `e`, a container lab's step on this machine's Docker that failed, as the player reads it: the
+/// engine stopped while the step ran (Docker Desktop quit, the service stopped) is said as a
+/// stopped engine, as the start's own probe says it, not as the step's failure. Only for a lab on
+/// this machine's Docker: a container lab in a VM runs its Docker inside the VM.
+pub(super) fn engine_stopped(e: Error) -> Error {
+    match &e {
+        Error::CommandFailed { stderr, .. } => {
+            let said = stderr.to_ascii_lowercase();
+            if ENGINE_DOWN.iter().any(|m| said.contains(m)) && !said.contains("permission denied") && !said.contains("access is denied") {
+                Error::coded(Code::DockerNotRunning)
+            } else {
+                e
+            }
+        }
+        _ => e,
+    }
+}
+
 /// A tool as the player knows it (`vagrant` is Vagrant).
 fn tool_name(tool: &str) -> String {
     match tool {
@@ -235,6 +257,25 @@ mod tests {
         assert_eq!(said(down).0, Code::DockerNotRunning);
         let denied = RunnerError::ToolFailed { step: "tools".into(), reason: "`docker` doesn't answer: permission denied while trying to connect".into() };
         assert!(matches!(said(denied).0, Code::DockerDenied { .. } | Code::DockerDeniedWindows { .. }));
+    }
+
+    #[test]
+    fn docker_stopped_while_a_step_ran_reads_as_a_stopped_engine_on_this_machine_only() {
+        // Regression: Docker Desktop quit while the lab's `compose up` ran, and the lab said "`lab
+        // step up` failed: Cannot connect to the Docker daemon…" rather than to start Docker.
+        for stderr in [
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+            "error during connect: Get \"http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.47/containers/json\": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.",
+        ] {
+            let failed = from_runner(RunnerError::ToolFailed { step: "up".into(), reason: stderr.into() });
+            assert_eq!(engine_stopped(failed).code(), Code::DockerNotRunning, "{stderr}");
+        }
+        // A daemon that answers but refuses this account, or any other failure, keeps its words.
+        let denied =
+            from_runner(RunnerError::ToolFailed { step: "up".into(), reason: "error during connect: open //./pipe/docker_engine: Access is denied.".into() });
+        assert!(matches!(engine_stopped(denied).code(), Code::CommandFailed { .. }));
+        let other = from_runner(RunnerError::ToolFailed { step: "up".into(), reason: "exit status 1".into() });
+        assert!(matches!(engine_stopped(other).code(), Code::CommandFailed { .. }));
     }
 
     #[test]

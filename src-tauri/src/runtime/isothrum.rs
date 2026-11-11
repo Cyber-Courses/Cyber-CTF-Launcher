@@ -15,6 +15,7 @@
 
 mod cloud;
 pub(crate) mod errors;
+mod gone;
 mod import;
 mod one_read;
 mod opened;
@@ -265,7 +266,7 @@ impl LabRun {
     /// VM lab runs on `provider`.
     pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let provider = provider.map(runner_provider).transpose()?;
-        up_with(&self.lab().await?, &self.placed(start_options(inputs, provider)), log).await
+        up_with(&self.lab().await?, &self.placed(start_options(inputs, provider)), log).await.map_err(|e| self.said(e))
     }
 
     /// Removes everything the run created: containers, networks, volumes, its pinned ports; or
@@ -280,7 +281,7 @@ impl LabRun {
             return Ok(());
         }
         let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
-        when_unlocked(log, move |sink| async move { lab.down(opts, &sink).await }).await.map_err(errors::from_runner)
+        when_unlocked(log, move |sink| async move { lab.down(opts, &sink).await }).await.map_err(|e| self.said(errors::from_runner(e)))
     }
 
     /// Parks the lab, keeping what it created: Docker only stops containers, so both of the
@@ -294,7 +295,7 @@ impl LabRun {
             (Kind::Vm | Kind::DockerVm, Park::Pause) => isothrum_runner::Park::Pause,
             _ => isothrum_runner::Park::Shutdown,
         };
-        when_unlocked(log, move |sink| async move { lab.park(mode, opts, &sink).await }).await.map_err(errors::from_runner)
+        when_unlocked(log, move |sink| async move { lab.park(mode, opts, &sink).await }).await.map_err(|e| self.said(errors::from_runner(e)))
     }
 
     /// Starts the parked lab again. When nothing is left of it, the launcher's parked mark goes
@@ -307,7 +308,7 @@ impl LabRun {
                 paths::mark_parked(&self.dir, None)?;
                 Err(errors::from_runner(e))
             }
-            Err(e) => Err(errors::from_runner(e)),
+            Err(e) => Err(self.said(errors::from_runner(e))),
         }
     }
 
