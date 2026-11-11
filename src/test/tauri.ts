@@ -33,11 +33,14 @@ export const deployingOps =
     ids().map((labId) => ({ labId, op: "launch", machine: null, deploying: true, step: null, runtime: "DOCKER" }));
 
 /** The system dialog `confirmDestructive` asks in, answered with its confirm button (`yes`) or
- *  its Cancel: `installTauri({ "plugin:dialog|message": answersDialog(false) })`. */
+ *  its Cancel: `installTauri({ "plugin:dialog|message": answersDialog(false) })`. A dialog that
+ *  only says something (`warnInDialog`) is closed with its Ok. */
 export const answersDialog =
   (yes: boolean): Handler =>
   (args) => {
-    const [ok, cancel] = (args?.buttons as { OkCancelCustom: [string, string] }).OkCancelCustom;
+    const buttons = args?.buttons as { OkCancelCustom: [string, string] } | undefined;
+    if (!buttons) return "Ok";
+    const [ok, cancel] = buttons.OkCancelCustom;
     return yes ? ok : cancel;
   };
 

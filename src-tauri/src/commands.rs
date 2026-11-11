@@ -74,6 +74,8 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         labs::lab_launch,
         labs::imported_labs,
         labs::lab_launch_local,
+        labs::lab_installed,
+        labs::lab_remove,
         labs::lab_stop,
         labs::lab_park,
         labs::lab_resume,

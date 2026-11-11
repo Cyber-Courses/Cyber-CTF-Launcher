@@ -460,5 +460,22 @@
     "unavailable": "Gerade kein Bildschirm: {why}",
     "vnc": "Ihr Bildschirm, in einem Fenster",
     "rdp": "Ihr Remotedesktop, in deiner Remotedesktop-App"
+  },
+  "uninstall": {
+    "title": "Auf diesem Computer",
+    "noteImported": "Cyber CTF führt dieses Lab aus seiner eigenen Kopie aus, die beim Import entstanden ist. Entfernen löscht diese Kopie; der Ordner, aus dem du es importiert hast, bleibt erhalten.",
+    "noteCatalogue": "Cyber CTF behält die Dateien dieses Labs seit seinem ersten Start hier. Entfernen gibt den Platz frei; der nächste Start lädt das Lab erneut herunter.",
+    "button": "Lab entfernen",
+    "removing": "Wird entfernt…",
+    "stopFirst": "Stoppe zuerst das Lab",
+    "confirmTitle": "{title} von diesem Computer entfernen?",
+    "confirmBodyImported": "Cyber CTF löscht seine Kopie des Labs und alles, was es hier dafür aufbewahrt: Ausführungsdaten, erzeugte Dateien und Deploy-Logs. Der Ordner, aus dem du es importiert hast, bleibt unverändert.",
+    "confirmBodyCatalogue": "Cyber CTF löscht die heruntergeladenen Dateien des Labs und alles, was es hier dafür aufbewahrt: Ausführungsdaten, erzeugte Dateien und Deploy-Logs. Dein Fortschritt bleibt in deinem Cyber CTF-Konto, und der nächste Start lädt das Lab erneut herunter.",
+    "confirm": "Lab entfernen",
+    "removed": "{title} entfernt",
+    "removedImported": "Der Ordner, aus dem du es importiert hast, wurde nicht angerührt.",
+    "partialTitle": "{title} entfernt, aber einige Dateien sind geblieben",
+    "partialBody": "Cyber CTF konnte diese nicht löschen, vielleicht weil ein anderes Programm sie geöffnet hält. Schließe es und lösche sie dann von Hand:\n\n{paths}",
+    "failed": "Das Lab konnte nicht entfernt werden"
   }
 }

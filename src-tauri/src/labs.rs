@@ -17,6 +17,7 @@ pub(crate) mod ctf;
 pub(crate) mod imported;
 mod launch_env;
 mod offline;
+pub(crate) mod remove;
 
 use archive::extract;
 use launch_env::{EnvVar, launch_env};

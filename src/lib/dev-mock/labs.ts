@@ -1,4 +1,4 @@
-import type { LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
+import type { ImportedLab, LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
 import { argText } from "@/lib/dev-mock/command";
 import { objectivesAnswer } from "@/lib/dev-mock/objectives";
 import type { Args, Handlers } from "@/lib/dev-mock/types";
@@ -229,6 +229,22 @@ export const stopped: LabStatus = {
   message: null,
 };
 
+/** The lab imported from a folder the preview's `imported` switch installs: what its `.ctf/`
+ *  folder says of it. */
+export const importedSample: ImportedLab = {
+  id: "local-supplier-portal",
+  name: "supplier-portal",
+  metadata: {
+    title: "Supplier portal",
+    description: "An unpublished lab, imported from its folder: a supplier API that trusts its invoice numbers.",
+    category: "web",
+    difficulty: 1,
+    capabilities: ["IDOR"],
+  },
+  objectives: null,
+  problems: [],
+};
+
 /** The lab commands: their status, a cloud lab's preview, what runs and deploys. */
 export const labCommands = {
   lab_status: (args) => (args?.id === "lab-invoice" ? invoiceStatus : stopped),
@@ -251,8 +267,11 @@ export const labCommands = {
   active_operations: () => [{ labId: "lab-goad", op: "launch", machine: "SRV02", deploying: true, step: "Configure SRV02 (ansible 41/88)" }],
   lab_deploy_log: () => "",
   lab_tools: () => [{ name: "Burp Suite", image: null, addresses: [{ network: "default", ip: "10.42.0.9" }], publish: null }],
-  // No lab imported from a folder in the sample.
+  // No lab imported from a folder in the sample (the preview's `imported` switch adds one).
   imported_labs: () => [],
+  // The running sample lab is the one installed here.
+  lab_installed: (args) => args?.id === "lab-invoice",
+  lab_remove: () => ({ left: [] }),
   lab_check: () => ({ available: true, ok: true, output: "", results: [{ name: "api", from: "attacker", ok: true, reason: "" }] }),
 } satisfies Handlers;
 

@@ -460,5 +460,22 @@
     "unavailable": "Pas d'écran pour l'instant : {why}",
     "vnc": "Son écran, dans une fenêtre",
     "rdp": "Son Bureau à distance, dans votre application de Bureau à distance"
+  },
+  "uninstall": {
+    "title": "Sur cet ordinateur",
+    "noteImported": "Cyber CTF lance ce lab depuis sa propre copie, faite lors de l'import. Retirer le lab supprime cette copie ; le dossier d'où vous l'avez importé est conservé.",
+    "noteCatalogue": "Cyber CTF garde les fichiers de ce lab ici depuis son premier démarrage. Retirer le lab libère cet espace ; le prochain démarrage le télécharge de nouveau.",
+    "button": "Retirer le lab",
+    "removing": "Retrait…",
+    "stopFirst": "Arrêtez d'abord le lab",
+    "confirmTitle": "Retirer {title} de cet ordinateur ?",
+    "confirmBodyImported": "Cyber CTF supprime sa copie du lab et tout ce qu'il garde pour lui ici : ses traces d'exécution, ses fichiers générés et ses journaux de déploiement. Le dossier d'où vous l'avez importé reste tel quel.",
+    "confirmBodyCatalogue": "Cyber CTF supprime les fichiers téléchargés du lab et tout ce qu'il garde pour lui ici : ses traces d'exécution, ses fichiers générés et ses journaux de déploiement. Votre progression reste dans votre compte Cyber CTF, et le prochain démarrage télécharge le lab de nouveau.",
+    "confirm": "Retirer le lab",
+    "removed": "{title} retiré",
+    "removedImported": "Le dossier d'où vous l'avez importé n'a pas été touché.",
+    "partialTitle": "{title} retiré, mais des fichiers sont restés",
+    "partialBody": "Cyber CTF n'a pas pu les supprimer, peut-être parce qu'un autre programme les garde ouverts. Fermez-le, puis supprimez-les à la main :\n\n{paths}",
+    "failed": "Impossible de retirer le lab"
   }
 }

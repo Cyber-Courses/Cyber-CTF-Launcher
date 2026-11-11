@@ -173,7 +173,7 @@ async fn lock_lab_at(file: Option<&Path>, id: &str) -> Result<LabLock> {
 
 /// [`lock_lab`] without waiting: `None` while another operation (of this process or another)
 /// holds the lab.
-pub(super) fn try_lock_lab(dirs: &AppDirs, id: &str) -> Result<Option<LabLock>> {
+pub(crate) fn try_lock_lab(dirs: &AppDirs, id: &str) -> Result<Option<LabLock>> {
     try_lock_lab_at(Some(&lock::path(dirs, id)?), id)
 }
 

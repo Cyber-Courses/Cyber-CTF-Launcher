@@ -460,5 +460,22 @@
     "unavailable": "Sin pantalla por ahora: {why}",
     "vnc": "Su pantalla, en una ventana",
     "rdp": "Su Escritorio remoto, en tu aplicación de Escritorio remoto"
+  },
+  "uninstall": {
+    "title": "En este equipo",
+    "noteImported": "Cyber CTF ejecuta este lab desde su propia copia, hecha al importarlo. Quitar el lab borra esa copia; la carpeta desde la que lo importaste se conserva.",
+    "noteCatalogue": "Cyber CTF guarda aquí los archivos de este lab desde su primer inicio. Quitar el lab libera ese espacio; el próximo inicio lo vuelve a descargar.",
+    "button": "Quitar lab",
+    "removing": "Quitando…",
+    "stopFirst": "Detén el lab primero",
+    "confirmTitle": "¿Quitar {title} de este equipo?",
+    "confirmBodyImported": "Cyber CTF borra su copia del lab y todo lo que guarda de él aquí: sus registros de ejecución, archivos generados y registros de despliegue. La carpeta desde la que lo importaste queda tal cual.",
+    "confirmBodyCatalogue": "Cyber CTF borra los archivos descargados del lab y todo lo que guarda de él aquí: sus registros de ejecución, archivos generados y registros de despliegue. Tu progreso sigue en tu cuenta de Cyber CTF, y el próximo inicio vuelve a descargar el lab.",
+    "confirm": "Quitar lab",
+    "removed": "{title} quitado",
+    "removedImported": "La carpeta desde la que lo importaste no se ha tocado.",
+    "partialTitle": "{title} quitado, pero quedaron algunos archivos",
+    "partialBody": "Cyber CTF no pudo borrarlos, quizá porque otro programa los tiene abiertos. Ciérralo y bórralos a mano:\n\n{paths}",
+    "failed": "No se pudo quitar el lab"
   }
 }

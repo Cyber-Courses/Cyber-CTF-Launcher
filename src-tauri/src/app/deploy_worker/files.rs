@@ -38,6 +38,11 @@ impl Files {
         }
     }
 
+    /// Every one of them: what a removal of the lab deletes.
+    pub fn all(&self) -> Vec<PathBuf> {
+        [&self.job, &self.log, &self.previous_log, &self.pid, &self.status, &self.launch_status].into_iter().cloned().collect()
+    }
+
     /// The worker its pidfile names, if any.
     pub fn worker(&self) -> Option<Worker> {
         read_worker(&self.pid)

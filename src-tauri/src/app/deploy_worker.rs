@@ -193,6 +193,19 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
     Ok(process::spawn(app, job, pidfile))
 }
 
+/// The files of lab `id`'s worker, for the lab's removal (which holds the lab, so no new worker
+/// starts): refused while a worker runs on it, or is being started (its pidfile claimed). Checked
+/// as a start checks, so one racing it either claimed its pidfile first or finds the lab held.
+pub fn idle_files(dirs: &AppDirs, id: &str) -> Result<Vec<std::path::PathBuf>> {
+    let _one_at_a_time = STARTING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let f = files::of(dirs, id)?;
+    // `running` clears a stale pidfile: one still there is a live worker's, or one being started.
+    if running(dirs).iter().any(|k| k == id) || f.pid.exists() {
+        return Err(Error::coded(Code::AlreadyInProgress));
+    }
+    Ok(f.all())
+}
+
 /// Whether the lab's last finished launch failed (see [`files::last_deploy_failed`]).
 pub fn last_deploy_failed(dirs: &AppDirs, lab_id: &str) -> bool {
     files::last_deploy_failed(dirs, lab_id)

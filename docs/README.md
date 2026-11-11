@@ -24,10 +24,10 @@ the way in: what the launcher is, how to install it, and what it needs.
 
 ## Understand it
 
-| Page                                        | Kind        | What it covers                                                                                                                  |
-| ------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| [Running labs](running-labs.md)             | explanation | where and how a lab runs: places and forms, the files that say where it is, the attack box, imported labs, accounts and servers |
-| [Training apps](reference/training-apps.md) | reference   | deliberately vulnerable apps a lab can run (DVWA, Juice Shop): their pinned images, ready to paste                              |
+| Page                                        | Kind        | What it covers                                                                                                                                  |
+| ------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Running labs](running-labs.md)             | explanation | where and how a lab runs: places and forms, the files that say where it is, the attack box, imported labs, removing a lab, accounts and servers |
+| [Training apps](reference/training-apps.md) | reference   | deliberately vulnerable apps a lab can run (DVWA, Juice Shop): their pinned images, ready to paste                                              |
 
 ## Develop it
 

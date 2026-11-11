@@ -13,6 +13,7 @@ import type {
   GcpOrganization,
   HostCapacity,
   ImportedLab,
+  LabRemoval,
   InstalledTool,
   LabCheck,
   LabRequirements,
@@ -70,6 +71,8 @@ type Answers = {
   lab_deploy_log: string;
   lab_tools: LabTool[];
   imported_labs: ImportedLab[];
+  lab_installed: boolean;
+  lab_remove: LabRemoval;
   lab_check: LabCheck;
   managed_settings: ManagedSettings;
 };

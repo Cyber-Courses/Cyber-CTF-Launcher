@@ -16,6 +16,7 @@ import type {
   LabOutput,
   LabPlace,
   LabPort,
+  LabRemoval,
   LabRequirements,
   LabRunOptions,
   LabRunPath,
@@ -61,6 +62,7 @@ export type {
   LabOutput,
   LabPlace,
   LabPort,
+  LabRemoval,
   LabRequirements,
   LabRunOptions,
   LabRunPath,
@@ -172,6 +174,15 @@ export const labLaunchLocal = (path: string, onLog: (line: string) => void) => i
 /** The labs imported from a folder installed here, each with what its own `.ctf/` folder says of
  *  it (title, description, category, difficulty, challenges) and which of those files can't be read. */
 export const importedLabs = () => invoke<ImportedLab[]>("imported_labs");
+
+/** Whether a lab is installed here: whether it has anything for `labRemove` to remove. */
+export const labInstalled = (id: string) => invoke<boolean>("lab_installed", { id });
+
+/** Removes a lab from this computer: the app's copy of it and everything the app keeps for it
+ *  (its run's records, its generated files, its deploy logs), never the folder an imported lab
+ *  came from. Refused while anything of it is up or an operation runs on it; what couldn't be
+ *  deleted is in the answer's `left`. */
+export const labRemove = (id: string) => invoke<LabRemoval>("lab_remove", { id });
 
 /** The labs with any operation in flight (a start, a stop, a park, a provisioning run), in the
  *  app or a deploy worker: what an update install waits for (Rust's `busy_labs`). */

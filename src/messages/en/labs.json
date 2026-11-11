@@ -460,5 +460,22 @@
     "unavailable": "No screen right now: {why}",
     "vnc": "Its screen, in a window",
     "rdp": "Its Remote Desktop, in your Remote Desktop app"
+  },
+  "uninstall": {
+    "title": "On this computer",
+    "noteImported": "Cyber CTF runs this lab from its own copy, made when you imported it. Removing the lab deletes that copy; the folder you imported it from is kept.",
+    "noteCatalogue": "Cyber CTF keeps this lab's files here since its first start. Removing the lab frees that space; the next start downloads it again.",
+    "button": "Remove lab",
+    "removing": "Removing…",
+    "stopFirst": "Stop the lab first",
+    "confirmTitle": "Remove {title} from this computer?",
+    "confirmBodyImported": "Cyber CTF deletes its copy of the lab and everything it keeps for it here: its run records, generated files and deploy logs. The folder you imported it from is kept as it is.",
+    "confirmBodyCatalogue": "Cyber CTF deletes the lab's downloaded files and everything it keeps for it here: its run records, generated files and deploy logs. Your progress stays in your Cyber CTF account, and the next start downloads the lab again.",
+    "confirm": "Remove lab",
+    "removed": "{title} removed",
+    "removedImported": "The folder you imported it from is untouched.",
+    "partialTitle": "{title} removed, but some files stayed",
+    "partialBody": "Cyber CTF couldn't delete these, maybe because another program holds them open. Close it, then delete them by hand:\n\n{paths}",
+    "failed": "Couldn't remove the lab"
   }
 }

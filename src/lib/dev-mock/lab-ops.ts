@@ -128,6 +128,7 @@ function stopLines(id: string): string[] {
 
 const launch: BrowserHandler = (args, ctx) => {
   const id = labArg(args, "labId");
+  ctx.live.here.add(id);
   const runtime = labRuntime(id);
   // A container lab picked as one VM per machine starts as a VM lab would.
   if (runtime === "DOCKER" && args?.perMachineVm === true) return launchElsewhere(id, "VM", args, ctx);
@@ -183,6 +184,22 @@ const workloads: BrowserHandler = (args, { live }) => {
   return [...kept, ...started.map((id) => ({ id, kind: "docker", count: 1, memBytes: 0.3 * GB, provider: null }))];
 };
 
+/** A lab removed from this computer, refused as the core refuses it while something of it is up
+ *  or an operation runs on it; with `remove=partial`, one of its files stays. */
+const remove: BrowserHandler = (args, { sc, live }) => {
+  const id = labArg(args);
+  if (!live.here.has(id)) fail(`lab \`${id}\` is not installed`);
+  if (live.ops.has(id)) fail("Another operation on this lab is already in progress; wait for it to finish.", "alreadyInProgress");
+  if (live.running.has(id) || live.placed.has(id))
+    fail("This lab is still running on this machine (or its machines are still there). Stop it, then try again.", "labRunningHere");
+  live.here.delete(id);
+  live.imported = live.imported.filter((l) => l.id !== id);
+  const left = sc.removeLeaves
+    ? [{ path: `~/Library/Application Support/com.cyberctf.desktop/runs/cyberctf-${id}`, error: "Resource busy (os error 16)" }]
+    : [];
+  return { left };
+};
+
 /** The lab commands: their status, what runs and deploys, and the operations on them. */
 export const labHandlers: Record<string, BrowserHandler> = {
   lab_status: (args, { live }) => statusOf(labArg(args), live),
@@ -198,4 +215,7 @@ export const labHandlers: Record<string, BrowserHandler> = {
   lab_park: park,
   lab_resume: resume,
   lab_provision: provision,
+  imported_labs: (_args, { live }) => live.imported,
+  lab_installed: (args, { live }) => live.here.has(labArg(args)),
+  lab_remove: remove,
 };

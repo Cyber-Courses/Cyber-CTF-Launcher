@@ -66,6 +66,21 @@ pub async fn imported_labs(app: AppHandle) -> Result<Vec<labs::imported::Importe
     labs::imported::list(&AppDirs::from(&app))
 }
 
+/// Whether lab `id` is installed here: whether it has anything to remove (see [`lab_remove`]).
+#[tauri::command]
+pub async fn lab_installed(app: AppHandle, id: String) -> Result<bool> {
+    Ok(installed_lab_dir(&AppDirs::from(&app), &id)?.is_some())
+}
+
+/// Removes lab `id` from this computer: the app's copy of it and everything the app keeps for it,
+/// never the folder an imported lab came from; refused while anything of it is up or an operation
+/// runs on it (see [`labs::remove`]). What couldn't be deleted is in the answer.
+#[tauri::command]
+pub async fn lab_remove(app: AppHandle, id: String) -> Result<labs::remove::Removal> {
+    let dirs = AppDirs::from(&app);
+    labs::remove::remove(&dirs, &id, || deploy_worker::idle_files(&dirs, &id)).await
+}
+
 /// The labs with any operation in flight, in this process or a deploy worker: what an update
 /// install waits for (see [`operations::busy_labs`]).
 #[tauri::command]
@@ -347,7 +362,8 @@ mod tests {
     use super::{AttachPick, LabSource, check_image, lines, valid_machine_name};
     use super::{
         attack_box_attach, attack_box_detach, attack_box_sign_in, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_cloud_preview,
-        lab_default_place, lab_launch, lab_launch_local, lab_park, lab_provision, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools, running_labs,
+        lab_default_place, lab_installed, lab_launch, lab_launch_local, lab_park, lab_provision, lab_remove, lab_resume, lab_run_options, lab_status, lab_stop,
+        lab_tools, running_labs,
     };
     use crate::platform::exec::fake::Tools;
     use crate::runtime::{Park, Runtime, providers::Provider, server};
@@ -379,6 +395,29 @@ mod tests {
         assert_eq!(lab.metadata.as_ref().map(|m| m.title.as_str()), Some("Supplier portal API"));
         assert_eq!(lab.objectives, None);
         assert_eq!(lab.problems.iter().map(|p| (p.file.as_str(), p.error.as_str())).collect::<Vec<_>>(), [("objectives.json", "not a JSON object")]);
+    }
+
+    #[tokio::test]
+    async fn an_installed_lab_is_removed_with_its_workers_files_and_refused_while_a_worker_runs() {
+        let t = TestApp::new();
+        let app = || t.handle().clone();
+        assert!(!lab_installed(app(), "local-t".into()).await.unwrap());
+        assert_eq!(lab_remove(app(), "local-t".into()).await.unwrap_err().to_string(), "lab `local-t` is not installed");
+        assert!(lab_installed(app(), "../x".into()).await.is_err());
+        let dir = t.lab("local-t", &[("isoloom.yml", SPEC)]);
+        assert!(lab_installed(app(), "local-t".into()).await.unwrap());
+        let deploys = crate::runtime::deploys_dir(&t.dirs()).unwrap();
+        // A worker being started on it (its pidfile claimed, empty): refused, nothing deleted.
+        std::fs::write(deploys.join("local-t.pid"), "").unwrap();
+        std::fs::write(deploys.join("local-t.log"), "the last deploy").unwrap();
+        assert_eq!(lab_remove(app(), "local-t".into()).await.unwrap_err().code(), crate::error::Code::AlreadyInProgress);
+        assert!(dir.is_dir() && deploys.join("local-t.log").is_file());
+        // No worker: the lab goes, with its worker's files.
+        std::fs::remove_file(deploys.join("local-t.pid")).unwrap();
+        let removal = lab_remove(app(), "local-t".into()).await.unwrap();
+        assert!(removal.left.is_empty(), "{removal:?}");
+        assert!(!dir.exists() && !deploys.join("local-t.log").exists());
+        assert!(!lab_installed(app(), "local-t".into()).await.unwrap());
     }
 
     #[tokio::test]

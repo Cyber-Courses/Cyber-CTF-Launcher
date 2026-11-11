@@ -453,14 +453,36 @@ areas:
             - src-tauri/src/labs/imported.rs > only_imported_labs_are_listed_each_with_its_own_ctf_folder
             - src-tauri/src/commands/labs.rs > imported_labs_are_the_local_ones_with_what_their_ctf_folder_defines
             - src/features/failure-states.test.tsx > is listed on the Overview as imported, not as a catalogue outage
+          web:
+            - remove-lab.spec.ts > an imported lab is removed once asked
           desktop:
             - labs/imported-list
             - labs/imported-page
         rig:
           - desktop-e2e
         gaps:
-          web: no imported lab in the dev mock's specs
+          web: the dev mock's imported lab is listed and its page opens; its .ctf objectives and a bad .ctf file are unit-only
           desktop: needs CYBERCTF_TEST_LOCAL_LAB and Docker; the page check only looks for Objectives when the lab has objectives.json
+
+      - id: imports.remove-lab
+        what: Remove lab, on a stopped lab's page (an imported lab, or a catalogue lab installed here), deletes the app's copy and every record it keeps for it, never the folder it was imported from; asked first, disabled ("Stop the lab first") and refused by the core while the lab is up, parked or busy; back on the list with a toast, files left behind listed.
+        host: false
+        commands:
+          - lab_remove
+          - lab_installed
+        tests:
+          unit:
+            - src-tauri/src/labs/remove/tests.rs
+            - src-tauri/src/commands/labs.rs > an_installed_lab_is_removed_with_its_workers_files_and_refused_while_a_worker_runs
+            - src/features/labs/lab-detail/remove-lab.test.tsx
+            - src/lib/confirm.test.ts > warnInDialog
+          web:
+            - remove-lab.spec.ts > an imported lab is removed once asked
+            - remove-lab.spec.ts > a running lab can't be removed until it is stopped
+            - remove-lab.spec.ts > a removal that leaves files behind says which
+        gaps:
+          unit: a copy held open on Windows is a rename refused by a test double, not a real held file
+          desktop: no desktop case removes a real lab
 
       - id: imports.legacy-deployment-handover
         what: After an upgrade, a Proxmox or cloud lab the launcher started on its old Terraform path is handed to the Isothrum runner once, or the player is told to remove it by hand.

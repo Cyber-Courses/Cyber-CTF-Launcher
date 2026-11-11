@@ -1,11 +1,11 @@
 // What the browser preview changes as it is used: labs started and stopped, where they run, the
 // failures still to come, the steps a test still holds. And the statuses the labs report
 // meanwhile. (The sign-in is shared by the preview's tabs: session.ts.)
-import type { DockerEngine, LabControl, LabStatus } from "@/lib/tauri";
+import type { DockerEngine, ImportedLab, LabControl, LabStatus } from "@/lib/tauri";
 import { argText, send, sleep } from "@/lib/dev-mock/command";
 import { type Holds, holdsOf, isHoldable } from "@/lib/dev-mock/holds";
 import type { Host } from "@/lib/dev-mock/hosts";
-import { extraLabs, invoiceStatus, labs, stopped } from "@/lib/dev-mock/labs";
+import { extraLabs, importedSample, invoiceStatus, labs, stopped } from "@/lib/dev-mock/labs";
 import { answer } from "@/lib/dev-mock/sample";
 import type { Scenario } from "@/lib/dev-mock/scenario";
 import type { Args } from "@/lib/dev-mock/types";
@@ -32,6 +32,10 @@ export type Live = {
   engine: DockerEngine | null;
   /** Container labs started here on their own host ports (`defaultPorts`), not random ones. */
   ownPorts: Set<string>;
+  /** The labs installed here (started at least once, or imported), until removed. */
+  here: Set<string>;
+  /** The labs imported from a folder installed here. */
+  imported: ImportedLab[];
 };
 
 /** The preview's state at load, as the scenario sets it. */
@@ -46,6 +50,8 @@ export function liveFrom(sc: Scenario): Live {
     placed: new Map(),
     engine: null,
     ownPorts: new Set(),
+    here: new Set([...(answer("running_labs", undefined) as string[]), ...(sc.imported ? [importedSample.id] : [])]),
+    imported: sc.imported ? [importedSample] : [],
   };
 }
 

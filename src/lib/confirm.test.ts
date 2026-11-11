@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { confirmDestructive } from "@/lib/confirm";
+import { confirmDestructive, warnInDialog } from "@/lib/confirm";
 import { answersDialog, dialogsAsked, installTauri, rejectWith } from "@/test/tauri";
 
 const question = { title: "Remove AWS sandbox?", message: "Its keys are deleted.", confirm: "Remove account" };
@@ -32,5 +32,15 @@ describe("confirmDestructive", () => {
     answer("Remove account");
     expect(await first).toBe(true);
     expect(dialogsAsked(calls)).toHaveLength(1);
+  });
+});
+
+describe("warnInDialog", () => {
+  it("says it in the system dialog, a warning with only its Ok, and never throws", async () => {
+    const calls = installTauri();
+    await warnInDialog({ title: "Some files stayed", message: "/data/runs/x" });
+    expect(calls.find((c) => c.cmd === "plugin:dialog|message")?.args).toMatchObject({ title: "Some files stayed", message: "/data/runs/x", kind: "warning" });
+    installTauri({ "plugin:dialog|message": () => rejectWith("no window") });
+    await expect(warnInDialog({ title: "Some files stayed", message: "/data/runs/x" })).resolves.toBeUndefined();
   });
 });

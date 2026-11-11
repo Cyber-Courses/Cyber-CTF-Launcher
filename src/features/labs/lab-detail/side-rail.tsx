@@ -7,6 +7,8 @@ import { removing } from "@/features/labs/lab-detail/lab-state";
 import { Dimmed, ObjectivePanel } from "@/features/labs/lab-detail/page-parts";
 import type { LabDetailProps, LabPage } from "@/features/labs/lab-detail/use-lab-detail";
 import { WhereItRunsPanel } from "@/features/labs/lab-detail/where-it-runs-panel";
+import { RemoveLabPanel } from "@/features/labs/lab-detail/remove-lab-panel";
+import { useRemoveLab } from "@/features/labs/lab-detail/use-remove-lab";
 import { useT } from "@/lib/i18n";
 
 /** The DetailsPanel's "run provisioning again" control, when this lab can be provisioned again. */
@@ -49,12 +51,16 @@ function boxWays({ box, screen }: LabPage): { onScreen?: () => void; nativeApp: 
 }
 
 /** The side rail: the plain question, the attack box, where it runs (stopped) or its details
- *  (running), and the sign-in note. */
+ *  (running), the lab's files here (Remove lab, once it is installed), and the sign-in note. */
 export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; props: LabDetailProps; meta: string; cost: string | null }) {
   const t = useT();
   const { s, box, shell, screen, busy } = page;
   const ways = boxWays(page);
   const { lab, status } = p;
+  // Read again as the lab's state changes: a start installs a catalogue lab.
+  const removal = useRemoveLab(lab, s.phase, p.onBack);
+  // Nothing of it may be up, nor an operation run on it: stop it first.
+  const blocked = s.running || s.deploying || !!s.parked || s.interrupted || busy;
   return (
     <aside className="h-fit min-w-0 space-y-5 lg:sticky lg:top-2">
       {/* The objectives couldn't be read: why, and the lab's question in their place. */}
@@ -105,6 +111,7 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
           <ScreensPanel machines={status.machines} onOpen={screen.open} onOpenNative={screen.openNative} error={screen.error} />
         </Dimmed>
       )}
+      {removal.installed && <RemoveLabPanel imported={!!lab.imported} blocked={blocked} removing={removal.removing} onRemove={() => void removal.remove()} />}
       {!p.loggedIn && !lab.imported && <p className="px-1 text-[0.75rem] text-muted-foreground">{t("labs.detail.signInToRun")}</p>}
     </aside>
   );

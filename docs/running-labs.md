@@ -1,8 +1,8 @@
 # Running labs
 
 How the launcher runs a lab, wherever it runs: the forms a lab takes in each place, the files
-that say where a lab is, the attack box, the labs imported from a folder, and the accounts and
-servers it reaches.
+that say where a lab is, the attack box, the labs imported from a folder, removing a lab, and the
+accounts and servers it reaches.
 
 A lab describes itself once, in an `isoloom.yml`. For each place the launcher asks
 [Isoloom](https://www.isoloom.com) to generate that place's files (`lab::prepare`, into the lab's
@@ -163,6 +163,37 @@ page with why ("metadata.json can't be read: …"); the other file is still read
 Without a `.ctf/` folder the page is the lab itself: its name, state, deployment steps and log,
 network diagram, where it runs, the attack box, and Stop, Open in browser and the shell. A stopped
 imported lab starts again by importing its folder again, which picks up any change made to it.
+
+## Removing a lab from this computer
+
+A stopped lab's page has **On this computer > Remove lab**: an imported lab always (it is
+installed), a catalogue lab once it has been started here. It asks first, in the system's dialog,
+naming the lab, then deletes the app's copy of it and everything the app keeps for it under its
+data folder (`labs::remove`):
+
+- the copy, `<app data>/labs/<lab id>/`, with the project generated in it (Compose files,
+  Vagrantfiles, the run manifest), and an update's or an import's leftover `.<lab id>.staging` and
+  `.<lab id>.old`;
+- the runner's run folder, `<app data>/runs/cyberctf-<lab id>/` (its record, its event log, what it
+  last saw, Vagrant's state of it);
+- the Terraform deployments an older launcher left in `<app data>/deployments/<lab id>/` (none of
+  them still holding resources: that counts as the lab still being up);
+- its deploy worker's job, logs and verdicts in `<app data>/deploys/`;
+- a catalogue lab's source kept for an offline start, `<app data>/offline/<lab id>.json`.
+
+The folder an imported lab came from is never touched: the copy keeps no link out of itself, and a
+removal deletes a link, never what it points at. Two things stay: the lab's empty lock file in
+`deploys/` (every operation on the lab shares it, so deleting it could let two run at once), and
+the images and boxes its starts downloaded, which Settings > Maintenance > Cleanup removes once no
+lab uses them. A catalogue lab's progress is in the Cyber CTF account; its next start downloads it
+again.
+
+Remove lab is disabled, with "Stop the lab first", while anything of the lab is up (running,
+starting, parked, or machines left by a start that was cut off) or an operation runs on it, and the
+core refuses it then too, called directly or not. The copy is first moved aside whole: a file in it
+held open (Windows) refuses the removal with nothing deleted. Anything that can't be deleted after
+that is listed in a dialog with why; the lab is gone from the app either way. The page then goes
+back to the Labs list, with a toast.
 
 ## Accounts and servers
 

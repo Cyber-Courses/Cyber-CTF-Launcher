@@ -53,6 +53,7 @@ fn generate(dir: &Path) {
         cloud::OciConfig,
         error::Wire,
         labs::imported::Imported,
+        labs::remove::Removal,
         machine::selftest::Kind,
         machine::storage::Storage,
         machine::system::SystemReport,

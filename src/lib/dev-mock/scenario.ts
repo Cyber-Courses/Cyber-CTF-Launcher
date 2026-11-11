@@ -35,6 +35,8 @@ import { report } from "@/lib/dev-mock/sample";
  *  - `managed`: this computer's administrator turned every policy switch on (no website agent,
  *    in-app updates, tool installs, cloud labs or privileged labs).
  *  - `link=<url>`: the app was opened with this link (`cyberctf://labs/<slug>`).
+ *  - `imported`: a lab imported from a folder is installed (Supplier portal, stopped).
+ *  - `remove=partial`: removing a lab leaves one of its files behind, as one held open would.
  * Labs started or stopped here stay so until a reload: Docker labs stream a Compose log, VM labs
  * a Vagrant log (on this machine's hypervisor or a saved server; pause, shut down, resume and
  * re-run provisioning work), and cloud labs a Terraform log (outputs and an auto-stop). The
@@ -66,6 +68,10 @@ export type Scenario = {
   /** An administrator's policy turns every switch off (`managed`): Settings says so. */
   managed: boolean;
   link: string | null;
+  /** A lab imported from a folder is installed (`imported`). */
+  imported: boolean;
+  /** Removing a lab leaves a file behind (`remove=partial`). */
+  removeLeaves: boolean;
 };
 
 export function scenarioFrom(search: string): Scenario {
@@ -90,6 +96,8 @@ export function scenarioFrom(search: string): Scenario {
     noServers: q.get("servers") === "none",
     managed: q.has("managed"),
     link: q.get("link"),
+    imported: q.has("imported"),
+    removeLeaves: q.get("remove") === "partial",
   };
 }
 

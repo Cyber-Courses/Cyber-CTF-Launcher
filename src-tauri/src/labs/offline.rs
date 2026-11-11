@@ -36,7 +36,7 @@ struct Kept {
 }
 
 /// Where lab `lab_id`'s kept source is, under the app data folder `base`.
-fn kept_path(base: &Path, lab_id: &str) -> PathBuf {
+pub(super) fn kept_path(base: &Path, lab_id: &str) -> PathBuf {
     base.join("offline").join(format!("{lab_id}.json"))
 }
 

@@ -13,3 +13,8 @@ export function getLastRun(id: string): number | null {
   const n = v ? Number(v) : NaN;
   return Number.isFinite(n) ? n : null;
 }
+
+/** Forgets a lab's "last launched" time: the lab was removed from this computer. */
+export const forgetLastRun = (id: string) => {
+  writeStored(KEY(id), null);
+};

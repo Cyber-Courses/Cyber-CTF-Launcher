@@ -38,6 +38,16 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   browser; vagrant-qemu has no app, so none is offered. The runner says what opens it
   (`native_console`); the launcher runs the first way this computer has, without a shell. The
   built-in viewer stays the default.
+- **Remove lab, on a lab's page.** A stopped lab's page has **On this computer > Remove lab**: an
+  imported lab always, a catalogue lab once it has been started here. It asks first, naming the
+  lab, then deletes the app's copy of it and everything the app keeps for it (the runner's run
+  folder, an older launcher's emptied Terraform deployments, the deploy worker's job, logs and
+  verdicts, leftover update copies, a catalogue lab's offline source) and goes back to the Labs
+  list with a toast. The folder an imported lab came from is never touched, and a catalogue lab's
+  progress stays in the account. It is disabled ("Stop the lab first") while anything of the lab
+  is up, parked or left over, or an operation runs on it, and the core's new `lab_remove` refuses
+  it then too. A file held open in the copy refuses the removal with nothing deleted; what can't
+  be deleted after that is listed with why.
 - **A lab machine's screen, in its own window.** The lab page's Screens list each VM whose run
   offers a graphical console, with a Screen button (and why one has none: Parallels, VirtualBox
   without its extension pack, a cloud Linux VM), and the attack box's card has one. A VNC screen

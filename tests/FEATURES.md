@@ -5,7 +5,7 @@
 Every feature the launcher offers its user, area by area, and how well each test tier checks it. The registry is
 [features.yml](features.yml); [README.md](README.md#the-feature-registry) says how a feature or a test is added.
 
-**188 features: 63 Strong, 125 Partial, 0 Unchecked.**
+**189 features: 64 Strong, 125 Partial, 0 Unchecked.**
 
 - A tier: ✔ its tests check the feature's behaviour; ◐ they check part of it (what is missing is under the table); ✖ no test.
 - **Strong**: unit tests, and a tier above that covers it: a real-host one (desktop E2E, integration, setup, package) when the feature depends on the
@@ -40,7 +40,7 @@ Every feature the launcher offers its user, area by area, and how well each test
 | [Account and sign-in](#account-and-sign-in)                                   | 7        | 4      | 3       | 0         |
 | [Website links and launches](#website-links-and-launches)                     | 4        | 0      | 4       | 0         |
 | [Catalogue, lab install and update](#catalogue-lab-install-and-update)        | 9        | 4      | 5       | 0         |
-| [Imported labs](#imported-labs)                                               | 3        | 0      | 3       | 0         |
+| [Imported labs](#imported-labs)                                               | 4        | 1      | 3       | 0         |
 | [Running a lab](#running-a-lab)                                               | 25       | 9      | 16      | 0         |
 | [Hypervisors and engines](#hypervisors-and-engines)                           | 8        | 2      | 6       | 0         |
 | [The lab page](#the-lab-page)                                                 | 9        | 5      | 4       | 0         |
@@ -170,24 +170,27 @@ What the partial and missing tiers leave out:
 
 ## Imported labs
 
-3 features: 0 Strong, 3 Partial, 0 Unchecked.
+4 features: 1 Strong, 3 Partial, 0 Unchecked.
 
-| Feature                                                                                                                                                                                                             | Platforms | Unit | Web E2E | Desktop E2E | Integration | Setup | Package | Rig                          | Level       |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- | ------- | ----------- | ----------- | ----- | ------- | ---------------------------- | ----------- |
-| `imports.import-folder` Import a lab from a local folder (Import a lab, system folder picker); it starts at once, a folder without a lab is refused, and cancelling the picker starts nothing.                      | all       | ✔    | ✖       | ◐           | ◐           | ✖     | ✖       | Linux ✅, macOS ·, Windows · | **Partial** |
-| `imports.imported-labs` Imported labs are listed under "Imported from a folder" (Labs, Overview, sidebar) and get a page built from their .ctf/ folder (title, brief, read-only objectives), a bad .ctf file named. | all       | ✔    | ✖       | ◐           | ✖           | ✖     | ✖       | Linux ·, macOS ·, Windows ·  | **Partial** |
-| `imports.legacy-deployment-handover` After an upgrade, a Proxmox or cloud lab the launcher started on its old Terraform path is handed to the Isothrum runner once, or the player is told to remove it by hand.     | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –                            | **Partial** |
+| Feature                                                                                                                                                                                                                                                                                                                                                                           | Platforms | Unit | Web E2E | Desktop E2E | Integration | Setup | Package | Rig                          | Level       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- | ------- | ----------- | ----------- | ----- | ------- | ---------------------------- | ----------- |
+| `imports.import-folder` Import a lab from a local folder (Import a lab, system folder picker); it starts at once, a folder without a lab is refused, and cancelling the picker starts nothing.                                                                                                                                                                                    | all       | ✔    | ✖       | ◐           | ◐           | ✖     | ✖       | Linux ✅, macOS ·, Windows · | **Partial** |
+| `imports.imported-labs` Imported labs are listed under "Imported from a folder" (Labs, Overview, sidebar) and get a page built from their .ctf/ folder (title, brief, read-only objectives), a bad .ctf file named.                                                                                                                                                               | all       | ✔    | ◐       | ◐           | ✖           | ✖     | ✖       | Linux ·, macOS ·, Windows ·  | **Partial** |
+| `imports.remove-lab` Remove lab, on a stopped lab's page (an imported lab, or a catalogue lab installed here), deletes the app's copy and every record it keeps for it, never the folder it was imported from; asked first, disabled ("Stop the lab first") and refused by the core while the lab is up, parked or busy; back on the list with a toast, files left behind listed. | all       | ◐    | ✔       | ✖           | ✖           | ✖     | ✖       | –                            | **Strong**  |
+| `imports.legacy-deployment-handover` After an upgrade, a Proxmox or cloud lab the launcher started on its old Terraform path is handed to the Isothrum runner once, or the player is told to remove it by hand.                                                                                                                                                                   | all       | ✔    | ✖       | ✖           | ✖           | ✖     | ✖       | –                            | **Partial** |
 
 What the partial and missing tiers leave out:
 
 - `imports.import-folder`: Web E2E ✖ no spec imports a folder (the dev mock has no picker answer); Desktop E2E ◐ needs CYBERCTF_TEST_LOCAL_LAB and Docker; skips without them; container labs only; fail-badlab checks only that the app stays usable and nothing runs, not the message; Integration ◐ launch-commands is Docker only; no VM-form import
-- `imports.imported-labs`: Web E2E ✖ no imported lab in the dev mock's specs; Desktop E2E ◐ needs CYBERCTF_TEST_LOCAL_LAB and Docker; the page check only looks for Objectives when the lab has objectives.json
+- `imports.imported-labs`: Web E2E ◐ the dev mock's imported lab is listed and its page opens; its .ctf objectives and a bad .ctf file are unit-only; Desktop E2E ◐ needs CYBERCTF_TEST_LOCAL_LAB and Docker; the page check only looks for Objectives when the lab has objectives.json
+- `imports.remove-lab`: Unit ◐ a copy held open on Windows is a rename refused by a test double, not a real held file; Desktop E2E ✖ no desktop case removes a real lab
 - `imports.legacy-deployment-handover`: Web E2E ✖ not user-visible beyond a log/notice; no spec; Integration ✖ never run against a real old deployment on Proxmox or a cloud
 
 <details><summary>The tests</summary>
 
 - `imports.import-folder` (docker): Unit: `src/features/labs/lab-failures.test.tsx > says the import failed when the folder picker fails, and offers to import again`, `src/features/labs/lab-failures.test.tsx > says the import failed when the lab can't start, with the reason`, `src/features/labs/lab-failures.test.tsx > starts nothing when the player cancels the picker`, `src-tauri/src/labs.rs > a_folder_without_a_lab_has_no_local_id`, `src-tauri/src/commands/labs.rs > lab_launch_local_refuses_a_folder_without_a_lab`. Desktop E2E: `labs/import`, `labs/imported-runs`, `labs/imported-stop`, `launch-ui`, `fail-badlab`. Integration: `launch-commands`. Rig: `desktop-e2e`, `container`.
-- `imports.imported-labs`: Unit: `src/features/labs/imported-labs.test.tsx`, `src/components/imported-lab-navigation.test.tsx`, `src-tauri/src/labs/ctf.rs`, `src-tauri/src/labs/imported.rs > only_imported_labs_are_listed_each_with_its_own_ctf_folder`, `src-tauri/src/commands/labs.rs > imported_labs_are_the_local_ones_with_what_their_ctf_folder_defines`, `src/features/failure-states.test.tsx > is listed on the Overview as imported, not as a catalogue outage`. Desktop E2E: `labs/imported-list`, `labs/imported-page`. Rig: `desktop-e2e`.
+- `imports.imported-labs`: Unit: `src/features/labs/imported-labs.test.tsx`, `src/components/imported-lab-navigation.test.tsx`, `src-tauri/src/labs/ctf.rs`, `src-tauri/src/labs/imported.rs > only_imported_labs_are_listed_each_with_its_own_ctf_folder`, `src-tauri/src/commands/labs.rs > imported_labs_are_the_local_ones_with_what_their_ctf_folder_defines`, `src/features/failure-states.test.tsx > is listed on the Overview as imported, not as a catalogue outage`. Web E2E: `remove-lab.spec.ts > an imported lab is removed once asked`. Desktop E2E: `labs/imported-list`, `labs/imported-page`. Rig: `desktop-e2e`.
+- `imports.remove-lab`: Unit: `src-tauri/src/labs/remove/tests.rs`, `src-tauri/src/commands/labs.rs > an_installed_lab_is_removed_with_its_workers_files_and_refused_while_a_worker_runs`, `src/features/labs/lab-detail/remove-lab.test.tsx`, `src/lib/confirm.test.ts > warnInDialog`. Web E2E: `remove-lab.spec.ts > an imported lab is removed once asked`, `remove-lab.spec.ts > a running lab can't be removed until it is stopped`, `remove-lab.spec.ts > a removal that leaves files behind says which`.
 - `imports.legacy-deployment-handover` (proxmox, aws, azure, gcp): Unit: `src-tauri/src/runtime/isothrum/import/tests.rs`, `src-tauri/src/runtime/isothrum/import/record.rs`.
 
 </details>

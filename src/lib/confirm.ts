@@ -1,4 +1,4 @@
-import { ask } from "@tauri-apps/plugin-dialog";
+import { ask, message as say } from "@tauri-apps/plugin-dialog";
 import { translate } from "@/lib/i18n";
 import { tell } from "@/lib/failure";
 
@@ -25,5 +25,18 @@ export async function confirmDestructive({ title, message, confirm }: Confirmati
     return false;
   } finally {
     asking = false;
+  }
+}
+
+/**
+ * Says something the player must read before going on (what an action couldn't finish), in the
+ * system's dialog, which stays until it is closed: a toast would be gone before a list of paths
+ * is read. One that couldn't open is told as a toast instead.
+ */
+export async function warnInDialog({ title, message }: { title: string; message: string }): Promise<void> {
+  try {
+    await say(message, { title, kind: "warning" });
+  } catch (e) {
+    tell(title)(e);
   }
 }

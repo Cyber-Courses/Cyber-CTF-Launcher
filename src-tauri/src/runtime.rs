@@ -54,8 +54,8 @@ pub use docker::{LEGACY_ATTACK_BOX_SUFFIXES, lab_of_project, legacy_attack_box_n
 #[cfg(test)]
 pub(crate) use inflight::DeployGuard;
 pub(crate) use inflight::lock as lab_file_lock;
-pub(crate) use inflight::lock_lab;
 pub use inflight::{Action, Operation, active_actions, busy_labs, stopping};
+pub(crate) use inflight::{lock_lab, try_lock_lab};
 pub use isothrum_runner::ShellCommand;
 #[cfg(test)]
 pub(crate) use launch::start;
