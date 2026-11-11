@@ -381,7 +381,7 @@ enum LocalRun {
 fn local_run(runtime: Runtime, provider: Option<Provider>, per_machine_vm: bool) -> Result<LocalRun> {
     match runtime {
         Runtime::Docker if per_machine_vm => {
-            let provider = provider.filter(|p| !p.is_remote()).ok_or_else(|| Error::Invalid("One VM per machine needs a hypervisor on this machine".into()))?;
+            let provider = provider.filter(|p| !p.is_remote()).ok_or_else(|| Error::Refused("One VM per machine needs a hypervisor on this machine".into()))?;
             Ok(LocalRun::Vm(provider))
         }
         Runtime::Docker => Ok(match provider.filter(|p| !p.is_remote()) {
@@ -391,7 +391,7 @@ fn local_run(runtime: Runtime, provider: Option<Provider>, per_machine_vm: bool)
         Runtime::Vm => {
             let provider = provider.ok_or_else(|| Error::coded(Code::NoHypervisor))?;
             if provider.is_remote() {
-                return Err(Error::Invalid("pick a server host to run on ESXi or Proxmox".into()));
+                return Err(Error::Refused("pick a server host to run on ESXi or Proxmox".into()));
             }
             Ok(LocalRun::Vm(provider))
         }

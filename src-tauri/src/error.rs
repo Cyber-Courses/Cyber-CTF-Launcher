@@ -265,10 +265,18 @@ impl Error {
     }
 
     /// Whether the operation was refused before it changed anything (the lab still up where it
-    /// would be replaced or started again): the lab's last verdict stays what it was, and a failed
-    /// start has nothing of its own to undo.
+    /// would be replaced or started again, a policy that turns it off, a start with nowhere to
+    /// run): the lab's last verdict stays what it was, and a failed start has nothing of its own
+    /// to undo.
     pub fn is_refusal(&self) -> bool {
-        matches!(self, Error::Refused(_) | Error::Coded { code: Code::LabRunningHere | Code::LabRunningOn { .. } | Code::TurnedOffByPolicy { .. }, .. })
+        matches!(
+            self,
+            Error::Refused(_)
+                | Error::Coded {
+                    code: Code::LabRunningHere | Code::LabRunningOn { .. } | Code::TurnedOffByPolicy { .. } | Code::PickCloudAccount | Code::NoHypervisor,
+                    ..
+                }
+        )
     }
 
     /// The code the UI knows this error by.

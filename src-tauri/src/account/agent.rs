@@ -403,6 +403,8 @@ mod tests {
         assert!(undoes(&Error::Invalid("unhealthy".into()), false));
         assert!(!undoes(&Error::Invalid("unhealthy".into()), true), "the lab was there before");
         assert!(!undoes(&Error::Refused("still running on AWS".into()), false), "refused before anything changed");
+        assert!(!undoes(&Error::coded(crate::error::Code::NoHypervisor), false), "nowhere to run: nothing started");
+        assert!(!undoes(&Error::coded(crate::error::Code::PickCloudAccount), false), "nowhere to run: nothing started");
     }
 
     #[test]

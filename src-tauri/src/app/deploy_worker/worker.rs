@@ -385,6 +385,21 @@ mod tests {
     }
 
     #[test]
+    fn a_launch_with_nowhere_to_run_leaves_the_last_launch_verdict() {
+        // Regression: no cloud account picked or no hypervisor here was written as the lab's
+        // failed launch, so a lab still running elsewhere read as not running.
+        let dir = crate::testing::temp_dir("conclude-nowhere");
+        let f = Files::of(&dir, "lab-1");
+        std::fs::write(&f.launch_status, "ok").unwrap();
+        for code in [crate::error::Code::PickCloudAccount, crate::error::Code::NoHypervisor] {
+            conclude(&f, &Err::<(), _>(Error::coded(code.clone())), true, |_| {});
+            assert_eq!(verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().code(), code);
+            assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok", "{code:?}");
+        }
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn concluding_writes_the_verdict_and_drops_the_pidfile() {
         let dir = crate::testing::temp_dir("conclude");
         let f = Files::of(&dir, "lab-1");
