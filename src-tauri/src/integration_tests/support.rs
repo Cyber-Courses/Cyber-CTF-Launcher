@@ -152,7 +152,11 @@ mod tests {
         for said in platform {
             assert!(re.is_match(&said), "not a platform failure to the runner: {said}");
         }
-        for lab in ["FAILED: the web machine answers: connection refused", "thread 'main' panicked at 'the lab's init container exited 1'", "FAILED: nothing left: a VM is still listed"] {
+        for lab in [
+            "FAILED: the web machine answers: connection refused",
+            "thread 'main' panicked at 'the lab's init container exited 1'",
+            "FAILED: nothing left: a VM is still listed",
+        ] {
             assert!(!re.is_match(lab), "a lab failure read as the platform's: {lab}");
         }
     }
