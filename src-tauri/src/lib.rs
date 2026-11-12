@@ -37,6 +37,12 @@ pub(crate) type WebviewWindow = tauri::WebviewWindow<AppRuntime>;
 /// When Tauri can't build the app (its embedded configuration is broken).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> tauri::Result<()> {
+    // rustls's crypto provider, before any TLS or random use: ring. The default, AWS-LC, seeds
+    // its generator from CPU jitter and aborts the process when the jitter source fails its
+    // health test (aws-lc-sys 0.46, tree_jitter_initialize_once: abort(), no message): on a
+    // nested Windows 11 VM about one launch in five ended with 0xC0000409, the dumps all on that
+    // path (2026-11-12). A second install (a test harness's) is no error.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     // Before any tool starts: none holds what started the app (#299).
     #[cfg(windows)]
     platform::sys::keep_std_handles();

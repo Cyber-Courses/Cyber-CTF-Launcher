@@ -103,6 +103,12 @@ flate2 = "1.1.10"
 tar = "0.4.46"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 reqwest = { version = "0.13", features = ["json", "form"] }
+# rustls's crypto provider ring, installed at start (lib.rs): the default, AWS-LC, seeds its
+# random generator from CPU jitter and aborts the process when the jitter source fails its health
+# test (aws-lc-sys 0.46's tree_jitter_initialize_once): on a nested Windows 11 VM about one
+# launch in five ended with 0xC0000409 and no message (2026-11-12). AWS-LC stays linked (reqwest's
+# and the updater plugin's features) and unused.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
 # layered crates, the published crates.io 2.0 line. Only `src/runtime/lab/` calls them:
