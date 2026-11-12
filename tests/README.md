@@ -61,6 +61,7 @@ suite runners' selection (`scripts/lib/suite.sh`).
 | `CYBERCTF_TEST_VM_INPUTS`                                                              | `vm-lab`, `per-machine`, `replace-vm`                                         | a VM lab's launch values, `NAME=value,…`                                                                                                                                          |                                              |
 | `CYBERCTF_TEST_AWS_REGION`                                                             | the AWS tier, the AWS account test                                            | the region (default `eu-west-3`)                                                                                                                                                  | the runner's `AWS_REGION`                    |
 | `CYBERCTF_TEST_CLOUD_REAL_IP`                                                          | the AWS tier (the runner sets it)                                             | `1`: a cloud lab's firewall opens to this machine's real public address (unit tests use a documentation one)                                                                      | `CYBERCTF_TEST_REAL_PUBLIC_IP`               |
+| `CYBERCTF_TEST_APP_ROOT`                                                               | the integration scenarios (the runner sets it)                                | the folder a scenario's app keeps its folders in (`TestApp::scenario`): the scenario's temp folder, a lab's runs and VM disks with it                                             |                                              |
 | `CYBERCTF_TEST_BOX_LAB`, `_FORM`, `_TARGET`                                            | `attack-box-*`                                                                | the lab, the form (`docker`, `docker-vm`, `vm`, `cloud-docker`, `cloud-vm`), the machine the box reaches (default `web`)                                                          |                                              |
 | `CYBERCTF_TEST_BOX_SHARED_FOLDER`                                                      | `attack-box-*`                                                                | a folder shared with the box, seen both ways (unset: off)                                                                                                                         | `CYBERCTF_TEST_SHARED_FOLDER`\*              |
 | `CYBERCTF_TEST_BOX_IMAGE`                                                              | `docker-lab-*`                                                                | the attack box's image (default Kali's)                                                                                                                                           | `CYBERCTF_TEST_ATTACK_BOX`                   |
@@ -231,10 +232,14 @@ A unit test removes what it writes in the temp folder: a Rust test takes its fol
 in `afterEach` or `onTestFinished`. `pnpm check:temp-leaks` runs the unit tests with a temp folder
 of their own and fails on anything left in it; CI and `pnpm check` run them through it. An
 integration scenario (`tests/integration/run.sh`) runs with a temp folder of its own
-(`/tmp/cyberctf-it.XXXXXX`, which its log names) that goes when it ends, killed past its cap too,
-with any process still running from it (a daemonized VM or QEMU hub): a lab's copy, the runner's
-home and a test thread's folder never pile up in the machine's temp folder. The guided setup's
-scenario keeps the system's, where its folder lasts from pass to pass.
+(`cyberctf-it.XXXXXX` in TMPDIR, or in /tmp on macOS and when TMPDIR isn't set; its log names it)
+that goes when it ends, killed past its cap too, with any process still running from it (a
+daemonized VM or QEMU hub) and, past its cap, the VirtualBox VMs its labs' Vagrant state names: a
+lab's copy, the runner's home, a test thread's folder and the scenario's app's folders
+(`TestApp::scenario`, rooted there by `CYBERCTF_TEST_APP_ROOT`; a lab's runs and its VMs' disks
+with them) never pile up on the machine. The folder holds VM disks: on a Linux whose /tmp is a
+tmpfs (Debian 13's), set TMPDIR to a folder on disk. The guided setup's scenario keeps the
+system's, where its folder lasts from pass to pass.
 
 ## The feature registry
 

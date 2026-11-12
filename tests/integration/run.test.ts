@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -144,6 +144,55 @@ describe("an integration scenario's verdict", () => {
     const ended = runner(cargo, { ONLY: "attack-box-vm", CASE: "pass", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: "20" });
     expect(verdict(ended.out, "attack-box-vm")).toBe("ok");
     expect(existsSync(join(ended.dir, "vbox.calls"))).toBe(false);
+  });
+
+  it("gives its app's folders a root in its temp folder, so a capped one's lab runs and VirtualBox VMs go with it (#308)", { timeout: 60000 }, () => {
+    // The test's app (TestApp::scenario) keeps a lab's runs in its data folder under the root, as
+    // Isoloom lays them out: runs/<lab>/vagrant, Vagrant's state, naming the VirtualBox VM by its id.
+    const machine = folder();
+    const id = "3dba93af-6c1d-4f4e-9a59-0d1f0e6c2b17";
+    const vbox = [
+      "#!/bin/sh",
+      'echo "$*" >>"$CYBERCTF_TEST_INTEGRATION_LOGS/vbox.calls"',
+      `case "$1 $2" in "showvminfo ${id}") echo 'name="supplier-portal-api - web"' ;; showvminfo*) exit 1 ;; esac`,
+    ].join("\n");
+    const cargo = [
+      'echo "$TMPDIR" >"$CYBERCTF_TEST_INTEGRATION_LOGS/temp"',
+      'echo "$CYBERCTF_TEST_APP_ROOT" >"$CYBERCTF_TEST_INTEGRATION_LOGS/root"',
+      `printf '%s\\n' '${vbox.replaceAll("'", "'\\''")}' >"$(dirname "$0")/VBoxManage"`,
+      'chmod +x "$(dirname "$0")/VBoxManage"',
+      'state="$CYBERCTF_TEST_APP_ROOT/com.cyberctf.unit-test.1-2/runs/pm-1/vagrant/machines/web/virtualbox"',
+      `mkdir -p "$state" && echo ${id} >"$state/id"`,
+      "sleep 30",
+    ].join("\n");
+    const r = runner(cargo, { ONLY: "per-machine", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: "2" });
+    expect(verdict(r.out, "per-machine")).toBe("FAIL");
+    const temp = readFileSync(join(r.dir, "temp"), "utf8").trim();
+    expect(readFileSync(join(r.dir, "root"), "utf8").trim(), "the scenario's temp folder").toBe(temp);
+    expect(readFileSync(join(r.dir, "vbox.calls"), "utf8").split("\n").filter(Boolean)).toEqual([
+      `showvminfo ${id} --machinereadable`,
+      `controlvm ${id} poweroff`,
+      `unregistervm ${id} --delete`,
+    ]);
+    expect(existsSync(temp), `${temp} is left`).toBe(false);
+  });
+
+  it("makes its temp folder in TMPDIR, a folder on disk where /tmp is a tmpfs, but in /tmp for macOS's own", () => {
+    const cargo = 'echo "$TMPDIR" >"$CYBERCTF_TEST_INTEGRATION_LOGS/temp"; echo "test result: ok. 1 passed; 0 failed"';
+    const temp = (tmp: string) => {
+      const r = runner(cargo, { ONLY: "docker-lab-hello-stack", TMPDIR: tmp });
+      expect(verdict(r.out, "docker-lab-hello-stack"), tmp).toBe("ok");
+      return readFileSync(join(r.dir, "temp"), "utf8").trim();
+    };
+    // The test rig's Linux clones: TMPDIR on their disk (Debian 13's /tmp is a tmpfs of half the RAM).
+    const disk = mkdtempSync("/tmp/integration-test-");
+    dirs.push(disk);
+    expect(temp(disk)).toMatch(new RegExp(`^${realpathSync(disk)}/cyberctf-it\\.[A-Za-z0-9]{6}$`));
+    // macOS's own (/var/folders/…/T/), too long a path for a socket made in the folder; one that
+    // isn't a Unix path.
+    for (const tmp of ["/var/folders/xy/abc/T/", "C:\\Users\\me\\AppData\\Local\\Temp"]) {
+      expect(temp(tmp), tmp).toMatch(new RegExp(`^${realpathSync("/tmp")}/cyberctf-it\\.[A-Za-z0-9]{6}$`));
+    }
   });
 
   it("takes --only <scenario>@<provider>: that scenario alone, on that hypervisor", () => {

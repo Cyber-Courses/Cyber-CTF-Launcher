@@ -53,7 +53,7 @@ async fn a_running_lab_is_not_replaced_under_it() {
     };
     let src = Path::new(&src);
     let newer = tarball(src).unwrap_or_else(|e| panic!("the lab's tarball: {e}"));
-    let t = TestApp::new();
+    let t = TestApp::scenario();
     let id = format!("replace-{}", rand::random::<u16>());
     // Installed as the launcher installs a lab: under the app data folder.
     let dir = t.data().join("labs").join(&id);

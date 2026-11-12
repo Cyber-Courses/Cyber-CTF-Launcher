@@ -28,7 +28,7 @@ fn up(s: &LabStatus) -> bool {
 async fn a_local_lab_launches_and_tears_down_through_the_commands() {
     let Some(src) = super::support::knob("CYBERCTF_TEST_LOCAL_LAB") else { return };
     let src = std::path::PathBuf::from(src);
-    let t = crate::testing::test_app::TestApp::new();
+    let t = crate::testing::test_app::TestApp::scenario();
     let app = t.handle().clone();
     let dirs = crate::platform::AppDirs::from(&app);
     let id = local_id(&src).expect("a lab folder with an isoloom.yml");

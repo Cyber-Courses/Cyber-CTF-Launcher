@@ -13,12 +13,15 @@
 #   tests/integration/run.sh --results results.jsonl                    and a JSON record per scenario there
 #   tests/integration/run.sh --list                                     the scenarios and the knobs each reads
 #
-# Each scenario runs with a temp folder of its own (TMPDIR, TMP and TEMP: `/tmp/cyberctf-it.XXXXXX`,
-# short, as a Unix socket's path must fit in 104 bytes), which its log names and which goes when it
-# ends, passed, failed or killed past its cap: what a test makes there (a lab's copy, the runner's
-# home, a test thread's folder) never piles up in the machine's temp folder, and a process still
-# running from it (a VM or a QEMU hub a killed test started, daemonized) is stopped first. The
-# guided setup's scenario keeps the system's: its folder is kept from pass to pass.
+# Each scenario runs with a temp folder of its own (TMPDIR, TMP and TEMP: `cyberctf-it.XXXXXX` in
+# TMPDIR, else in /tmp), which its log names and which goes when it ends, passed, failed or killed
+# past its cap: what a test makes there (a lab's copy, the runner's home, a test thread's folder,
+# its app's folders: CYBERCTF_TEST_APP_ROOT) never piles up on the machine, and a process still
+# running from it (a VM or a QEMU hub a killed test started, daemonized) is stopped first. It holds
+# the labs' runs, their VMs' disks among them: on a Linux whose /tmp is a tmpfs (Debian 13's: half
+# the RAM), set TMPDIR to a folder on disk. macOS's own TMPDIR (/var/folders/…) isn't used: too long
+# for the Unix sockets made there (104 bytes). The guided setup's scenario keeps the system's: its
+# folder is kept from pass to pass.
 #
 # Fail fast: each scenario is killed past its cap (8 minutes; the attack-box ones 10, until the
 # goldens carry their images), and once a scenario fails on the platform itself (the launcher's
@@ -232,9 +235,12 @@ stop_running() {
   return 0
 }
 # scenario_temp: a fresh temp folder for a scenario, its real path (macOS's /tmp is a link; Docker
-# records the Compose files' paths), in SCENARIO_TEMP.
+# records the Compose files' paths), in SCENARIO_TEMP. In TMPDIR when that is an absolute path (the
+# test rig's Linux clones set one on their disk) but macOS's own, else in /tmp.
 scenario_temp() {
-  SCENARIO_TEMP=$(cd "$(mktemp -d /tmp/cyberctf-it.XXXXXX)" && pwd -P)
+  local base=${TMPDIR:-/tmp}
+  case $base in /var/folders/* | /private/var/folders/* | [!/]*) base=/tmp ;; esac
+  SCENARIO_TEMP=$(cd "$(mktemp -d "${base%/}/cyberctf-it.XXXXXX")" && pwd -P)
   SCENARIO_TEMP_NATIVE=$SCENARIO_TEMP
   if command -v cygpath >/dev/null 2>&1; then SCENARIO_TEMP_NATIVE=$(cygpath -w "$SCENARIO_TEMP"); fi
 }
@@ -262,11 +268,12 @@ drop_temp() {
   return 0
 }
 # drop_vbox <folder> <log>: the VirtualBox VMs Vagrant made for the folder's labs (each machine's
-# .vagrant/machines/<machine>/virtualbox/id), each one still registered powered off and deleted
-# (`VBoxManage controlvm poweroff`, `unregistervm --delete`), the log saying so. Vagrant puts them
-# in ~/VirtualBox VMs, outside the folder, and VBoxHeadless names a UUID alone, so stopping what
-# names the folder never reached them: a capped attack-box-vm on VirtualBox left its VM running
-# (`solo-web - attackbox`, the test rig's studio, 2026-11-12). Read before the folder goes.
+# <state>/machines/<machine>/virtualbox/id, the state folder a run's `vagrant` under its runner
+# home's runs/<lab>, or a Vagrantfile's .vagrant), each one still registered powered off and
+# deleted (`VBoxManage controlvm poweroff`, `unregistervm --delete`), the log saying so. Vagrant
+# puts them in ~/VirtualBox VMs, outside the folder, and VBoxHeadless names a UUID alone, so
+# stopping what names the folder never reached them: a capped attack-box-vm on VirtualBox left its
+# VM running (`solo-web - attackbox`, the test rig's studio, 2026-11-12). Read before the folder goes.
 drop_vbox() {
   local dir=$1 log=$2 file id name
   command -v VBoxManage >/dev/null 2>&1 || return 0
@@ -279,7 +286,7 @@ drop_vbox() {
     VBoxManage controlvm "$id" poweroff >>"$log" 2>&1
     sleep 2
     VBoxManage unregistervm "$id" --delete >>"$log" 2>&1 || echo "suite: couldn't delete the VirtualBox VM $name ($id)" >>"$log"
-  done < <(find "$dir" -maxdepth 10 -path '*/.vagrant/machines/*/virtualbox/id' -type f 2>/dev/null)
+  done < <(find "$dir" -maxdepth 10 -path '*/machines/*/virtualbox/id' -type f 2>/dev/null)
   return 0
 }
 # capped <command...>: the command in a process group of its own, killed whole (cargo and the test
@@ -318,12 +325,14 @@ scenario() {
   wanted "$name" || return 0
   log="$LOGS/$name.log"
   case $name in attack-box-*) cap=$BOX_CAP ;; *) cap=$CAP ;; esac
-  # Its own temp folder (TMPDIR for Unix's tools, TMP and TEMP for Windows'), but the guided
-  # setup's, kept from pass to pass in the system's.
+  # Its own temp folder (TMPDIR for Unix's tools, TMP and TEMP for Windows'), its app's folders
+  # there too (CYBERCTF_TEST_APP_ROOT, read by the test's TestApp::scenario: a lab's runs, Vagrant's
+  # state and a VM's disks, go with the folder, where the system's place kept a capped scenario's
+  # VMs running, #308), but the guided setup's, kept from pass to pass in the system's.
   local temp=()
   if [ "$test" != "$SETUP" ]; then
     scenario_temp
-    temp=("TMPDIR=$SCENARIO_TEMP" "TMP=$SCENARIO_TEMP_NATIVE" "TEMP=$SCENARIO_TEMP_NATIVE")
+    temp=("TMPDIR=$SCENARIO_TEMP" "TMP=$SCENARIO_TEMP_NATIVE" "TEMP=$SCENARIO_TEMP_NATIVE" "CYBERCTF_TEST_APP_ROOT=$SCENARIO_TEMP_NATIVE")
   fi
   logged "$name" "$log" "$cap" capped env ${temp[@]+"${temp[@]}"} "$@" cargo test -q --lib -- --ignored --nocapture --test-threads=1 --exact "$test"
   passed=$?

@@ -162,3 +162,57 @@ mod teardown {
         assert!(unguarded.is_empty(), "run the scenario through support::scenario: {unguarded:?}");
     }
 }
+
+/// A scenario's app is `TestApp::scenario`, whose folders the runner puts in the scenario's temp
+/// folder, so its lab's runs (Vagrant's `.vagrant`, a VM's disks) go with that folder, a capped
+/// scenario's VMs ended first. A `TestApp::new` keeps them in the system's place, out of the
+/// runner's reach: a capped scenario's VMware VMs kept running from Application Support (#308).
+/// The unit tests (`mod tests`) keep `TestApp::new`, and so does a cloud scenario.
+#[cfg(test)]
+mod app_root {
+    use std::path::Path;
+
+    /// The files whose scenario keeps its app in the system's place, each with why.
+    const KEEPS_THE_SYSTEMS_PLACE: &[(&str, &str)] = &[(
+        "attack_box.rs",
+        "its AWS scenario: past its cap the cloud lab still bills, and its run's state, which destroys it, must outlive the scenario's folder",
+    )];
+
+    /// What `code` runs before its unit tests (`mod tests`, last in a file).
+    fn outside_unit_tests(code: &str) -> &str {
+        code.split("\nmod tests {").next().unwrap_or(code)
+    }
+
+    #[test]
+    fn a_scenarios_app_keeps_its_folders_in_the_scenarios_temp_folder() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
+        let mut found = Vec::new();
+        let mut dirs = vec![root.clone()];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                    continue;
+                }
+                let name = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+                if path.extension().is_none_or(|x| x != "rs") || KEEPS_THE_SYSTEMS_PLACE.iter().any(|(f, _)| *f == name) {
+                    continue;
+                }
+                if outside_unit_tests(&std::fs::read_to_string(&path).unwrap()).contains("TestApp::new(") {
+                    found.push(name);
+                }
+            }
+        }
+        assert!(found.is_empty(), "a scenario's app is TestApp::scenario(), not TestApp::new(): {found:?}");
+    }
+
+    #[test]
+    fn a_unit_tests_app_is_told_from_a_scenarios() {
+        let file = "async fn a_lab_runs() {\n    let t = TestApp::scenario();\n}\n\n#[cfg(test)]\nmod tests {\n    fn f() { let t = TestApp::new(); }\n}\n";
+        assert!(!outside_unit_tests(file).contains("TestApp::new("));
+        assert!(outside_unit_tests(&file.replace("scenario()", "new()")).contains("TestApp::new("));
+        // Every exemption names its reason.
+        assert!(KEEPS_THE_SYSTEMS_PLACE.iter().all(|(_, why)| !why.is_empty()));
+    }
+}

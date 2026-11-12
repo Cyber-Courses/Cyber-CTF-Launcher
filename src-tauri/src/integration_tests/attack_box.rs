@@ -180,6 +180,8 @@ async fn the_attack_box_is_a_machine_of_an_aws_lab() {
     let per_machine = std::env::var("CYBERCTF_TEST_BOX_FORM").is_ok_and(|f| f == "cloud-vm");
     let region = std::env::var("CYBERCTF_TEST_AWS_REGION").unwrap_or_else(|_| "eu-west-3".into());
     let target = std::env::var("CYBERCTF_TEST_BOX_TARGET").unwrap_or_else(|_| "web".into());
+    // The system's place, not the scenario's temp folder (TestApp::scenario): past its cap the
+    // cloud lab still bills, and its run's state, which destroys it, must outlive that folder.
     let t = TestApp::new();
     let dirs = t.dirs();
     let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true, "host": region }));
