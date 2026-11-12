@@ -303,6 +303,11 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **The Overview no longer piles up `docker` processes while Docker doesn't answer.** It read the
+  machine's usage every 3 s whether or not the last read had ended, and each read asks Docker how
+  many containers run: with Docker Desktop still starting, about eight `docker ps` waited at once.
+  It reads one at a time now, as the Machine page did (#300).
+
 - **The guided setup installs Docker Desktop on a clean Windows 11.** Its installs asked every
   source winget has, the Microsoft Store's too, and that source's certificate check fails on a
   fresh App Installer (`0x8a15005e`, "The server certificate did not match any of the expected

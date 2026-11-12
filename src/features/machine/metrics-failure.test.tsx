@@ -24,6 +24,16 @@ describe("useMachineMetrics", () => {
     expect(result.current.history).toEqual({ cpu: [], mem: [], disk: [] });
   });
 
+  it("reads one at a time: a read Docker holds up isn't stacked on", async () => {
+    // Regression (a Windows on Arm rig clone, Docker Desktop starting): the Overview read every
+    // 3 s from each read's start, each read a `docker ps` that hung until its timeout, so they
+    // stacked, eight at a time, and a killed app left them behind.
+    const calls = installTauri({ machine_metrics: () => new Promise(() => {}) });
+    renderHook(() => useMachineMetrics(10));
+    await flush(200);
+    expect(calls.filter((c) => c.cmd === "machine_metrics")).toHaveLength(1);
+  });
+
   it("clears the failure once a read answers", async () => {
     let fail = true;
     installTauri({

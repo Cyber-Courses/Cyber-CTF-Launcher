@@ -46,7 +46,7 @@ export function MachineScreen({
 }) {
   useRefreshOnFocus(onRefresh);
   // Live usage (the stat cards show meters; the Overview keeps the sparkline history).
-  const { metrics: m } = useMachineMetrics(2500, { serial: true });
+  const { metrics: m } = useMachineMetrics(2500);
   const tests = useLabTests();
   // The hypervisor chosen in Settings (a row's "Use by default" changes it): the page follows.
   const preferred = useVmProvider();
