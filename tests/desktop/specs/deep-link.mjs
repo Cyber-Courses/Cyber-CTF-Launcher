@@ -6,23 +6,27 @@
 // account) and an imported one when one is installed. A link to no lab, or not to a lab, leaves
 // the app usable where it was. How the system routes the scheme to the app (the installers'
 // registration, a second launch handed to the first) is the packaging smoke's.
-import { finish, goTo, importedLabs, invokeCmd, mainButton, mainText, openApp, results, sleep } from "../lib/support.mjs";
+import { finish, goTo, importedLabs, invokeCmd, linkTargets, mainButton, mainText, openApp, results, sleep } from "../lib/support.mjs";
+import { labRows } from "../lib/page.mjs";
 
 export const needs = [];
 const r = results();
 const ARGV_LINKS = process.platform !== "darwin";
 
-/** The page's title, once it is `title`'s; false when it never got there. */
-const showsLab = (b, title) =>
+/** Whether the page shows `lab`'s page (its title, and a catalogue lab's Brief or an imported
+ *  lab's none: lab-detail/index.tsx), once it does; false when it never got there. The Brief tells
+ *  two labs of one title apart, the fixture imported from a catalogue lab's folder. */
+const showsLab = (b, lab) =>
   b
     .waitUntil(
-      async () =>
-        (
-          await b
-            .$("main h1")
-            .getText()
-            .catch(() => "")
-        ).includes(title),
+      async () => {
+        const title = await b
+          .$("main h1")
+          .getText()
+          .catch(() => "");
+        if (!title.includes(lab.title)) return false;
+        return (await b.$('//main//h3[normalize-space()="Brief"]').isExisting()) === (lab.kind === "catalogue");
+      },
       { timeout: 30000, interval: 1000 },
     )
     .then(() => true)
@@ -33,21 +37,15 @@ const openLink = (b, url) => invokeCmd(b, "plugin:event|emit", { event: "deep-li
 let proc;
 let b;
 try {
-  // The labs to link to: the catalogue's first, and an imported one.
+  // The labs to link to: the catalogue's first whose title no imported lab shares, and an imported
+  // one (linkTargets). The list puts the imported labs first: its first row was the imported
+  // fixture, taken for a catalogue lab titled "Supplier portal API, imported from a folder" (its
+  // button's name), a page no link shows.
   ({ proc, b } = await openApp());
   await goTo(b, "Labs");
-  const targets = [];
-  // The list's first row: `$$`, since WebdriverIO 10 refuses a `$` that matches several (which
-  // read as no catalogue, leaving only an imported lab to link to).
-  const rows = () => b.$$("main button[data-row-open]");
-  if (await b.waitUntil(async () => (await rows()).length > 0, { timeout: 60000, interval: 1000 }).catch(() => false)) {
-    const first = (await rows())[0];
-    const title = (await first.getAttribute("aria-label")).replace(/^Open /, "");
-    const slug = (await (await first.$("./following-sibling::span[1]")).getText()).split(/\s/)[0];
-    targets.push({ kind: "catalogue", title, slug });
-  }
-  const imported = (await importedLabs(b))[0];
-  if (imported) targets.push({ kind: "imported", title: imported.title, slug: imported.id });
+  await b.waitUntil(async () => (await b.$$("main button[data-row-open]")).length > 0, { timeout: 60000, interval: 1000 }).catch(() => false);
+  const rows = await b.execute(labRows).catch(() => []);
+  const targets = linkTargets(rows, await importedLabs(b));
   await finish(b, proc);
   b = null;
   proc = null;
@@ -57,7 +55,7 @@ try {
   let shown;
   if (ARGV_LINKS) {
     ({ proc, b } = await openApp({ args: [`cyberctf://labs/${lab.slug}`] }));
-    shown = await showsLab(b, lab.title);
+    shown = await showsLab(b, lab);
     r.check("launch-link", shown, `opened with cyberctf://labs/${lab.slug}, the app shows ${lab.title}'s page (${lab.kind})`);
   } else {
     // macOS hands a link to the app as an event, never on its command line: the lab's page the
@@ -65,7 +63,7 @@ try {
     ({ proc, b } = await openApp());
     r.skip("launch-link", "macOS hands a link to the app as an event, not on its command line (the running-link checks cover the page's side)");
     await openLink(b, `cyberctf://labs/${lab.slug}`);
-    shown = await showsLab(b, lab.title);
+    shown = await showsLab(b, lab);
   }
   // Read on the lab's page the link showed, once its actions are drawn (they follow its title).
   const offered =
@@ -84,7 +82,7 @@ try {
 
   await goTo(b, "Overview");
   await openLink(b, `cyberctf://labs/${other.slug}`);
-  r.check("running-link", await showsLab(b, other.title), `a link opened while the app runs shows ${other.title}'s page (${other.kind})`);
+  r.check("running-link", await showsLab(b, other), `a link opened while the app runs shows ${other.title}'s page (${other.kind})`);
 
   await goTo(b, "Overview");
   await openLink(b, "cyberctf://labs/no-such-lab-e2e");

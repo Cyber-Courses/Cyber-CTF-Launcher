@@ -30,6 +30,21 @@ export function terminalText(doc = document) {
 }
 
 /**
+ * The rows of the Labs list on this page, in its order (the labs imported from a folder first):
+ * each one's open button's name (`label`: "Open <title>", or "Open <title>, imported from a
+ * folder"), its title (the button's text) and its slug (the first word of the line under it). Run
+ * in the page (`b.execute(labRows)`).
+ * @returns {{ label: string, title: string, slug: string }[]}
+ */
+export function labRows() {
+  return Array.from(document.querySelectorAll("main button[data-row-open]")).map((open) => ({
+    label: open.getAttribute("aria-label") || "",
+    title: (open.textContent || "").trim(),
+    slug: ((open.nextElementSibling && open.nextElementSibling.textContent) || "").trim().split(/\s/)[0],
+  }));
+}
+
+/**
  * The second press of a double-click on the element at `selector`, sent as the system sends it: a
  * `mousedown` with `detail` 2, on which Tauri's drag-region handler (its drag.js) toggles the
  * window's maximize; the first press, `detail` 1, would start a window drag. The press lands on a

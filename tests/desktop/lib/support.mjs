@@ -648,6 +648,23 @@ export function secondCopy(containers) {
   return twice.length ? `a service runs more than once: ${twice.join(", ")}` : null;
 }
 
+/**
+ * The labs the deep-link spec links to, from the Labs list's rows (`labRows`, lib/page.mjs) and
+ * the labs imported here (`importedLabs`): the catalogue's first lab whose title no imported lab
+ * shares, then the first imported lab. A row "Open <title>, imported from a folder" is an imported
+ * lab's, listed before the catalogue's; and a lab imported from a catalogue lab's folder (the
+ * fixture, Supplier portal API) keeps its title, so a catalogue lab of the same title would leave
+ * the page's title unable to say which of the two a link showed.
+ */
+export function linkTargets(rows, imported) {
+  const importedTitles = new Set(imported.map((l) => l.title));
+  const catalogue = rows.find((r) => !r.label.endsWith(", imported from a folder") && !importedTitles.has(r.title));
+  const targets = [];
+  if (catalogue) targets.push({ kind: "catalogue", title: catalogue.title, slug: catalogue.slug });
+  if (imported.length > 0) targets.push({ kind: "imported", title: imported[0].title, slug: imported[0].id });
+  return targets;
+}
+
 /** The VMs a hypervisor lists here, by name; null when this one can't be asked. */
 export function hypervisorVms(provider) {
   const run = (cmd, args) => {
