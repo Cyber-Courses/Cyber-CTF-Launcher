@@ -23,33 +23,21 @@ const r = results();
 let proc;
 let b;
 try {
-  proc = await launchApp({ env: {} });
+  // Not onboarded from the start: the wdio build seeds the storage before the page's scripts run
+  // (launchApp's `storage`; readOnboarded() is `=== "1"`, so "0" reads as not onboarded), and no
+  // reload: the seed script runs once per launch, keyed by a `__wdio_` mark, and a spec that
+  // cleared those keys and reloaded (this one, until 2026-11-12) had the seed run again with the
+  // default, onboarded, and never saw the Welcome step.
+  proc = await launchApp({ env: {}, storage: { "cyberctf.onboarded": "0" } });
   b = await connect();
-  // Force not-onboarded so the wizard renders. readOnboarded() is `=== "1"`, so "0" reads as not
-  // onboarded. The wry webview sometimes drops a localStorage write across refresh (it flushes to
-  // disk async and the reload can re-read the stale value), so set it, let it flush, refresh, and
-  // retry until the Welcome step's "Get started" CTA is up (wizard-only; the shell's Overview also
-  // says "Welcome to Cyber CTF", so anchor on the button, not the copy).
-  let shown = false;
-  for (let attempt = 0; attempt < 4 && !shown; attempt++) {
-    await b.execute(() => {
-      try {
-        for (const k of Object.keys(localStorage)) if (k.startsWith("__wdio_")) localStorage.removeItem(k);
-        localStorage.setItem("cyberctf.onboarded", "0");
-        localStorage.setItem("cyberctf.locale", "en");
-      } catch {
-        /* storage unavailable */
-      }
-    });
-    await sleep(500);
-    await b.refresh();
-    await forceVisible(b);
-    shown = await b
-      .$("button*=Get started")
-      .waitForClickable({ timeout: 10000 })
-      .then(() => true)
-      .catch(() => false);
-  }
+  await forceVisible(b);
+  // The Welcome step's "Get started" CTA (wizard-only; the shell's Overview also says "Welcome
+  // to Cyber CTF", so anchor on the button, not the copy).
+  const shown = await b
+    .$("button*=Get started")
+    .waitForClickable({ timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
   if (!shown) throw new Error(`onboarding Welcome never rendered (shell shown=${await b.$("aside nav").isExisting()}; main=${(await main(b)).slice(0, 140)})`);
   console.log("onboarding: wizard shown");
   await (await b.$("button*=Get started")).click();
