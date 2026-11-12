@@ -19,6 +19,7 @@ import {
   LAB_START_MS,
   labContainers,
   labDown,
+  labPageRunning,
   localLab,
   localLabName,
   mainText,
@@ -156,9 +157,9 @@ try {
     await stop.waitForClickable({ timeout: 30000 });
     await stop.click();
     // The removal is the box's retire, then an update that runs the lab up again (`up --wait`,
-    // ~20 s on the rig), all under the lab's lock but no operation busy_labs lists. The panel shows
-    // the box gone from the retire on, its Start attack box disabled until the removal ends: that
-    // button enabled again is the removal done, the lab settled.
+    // ~20 s on the rig), a lab operation (`detach`, #312). The panel shows the box gone from the
+    // retire on, its Start attack box disabled until the removal ends: that button enabled again
+    // is the removal done, the lab settled.
     await waitAwake(
       b,
       async () => {
@@ -169,8 +170,13 @@ try {
     );
     const left = labContainers(ID).filter((c) => /attackbox/.test(c.name));
     if (left.length) throw new Error(`the box's container is left: ${left.map((c) => `${c.name} ${c.state}`).join(", ")}`);
-    // The page reads the lab's status again after the removal: Running within a few polls.
-    const shown = await waitAwake(b, async () => /\bRunning\b/.test(await mainText(b)), { timeout: 30000, interval: 2000, timeoutMsg: "no Running" }).then(
+    // The page reads the lab's status again after the removal: running within a few polls, as
+    // every spec reads it (`labPageRunning`: Stop & remove offered and enabled, no Resume). Not
+    // the word in the page's text, whose elements run together with no space between them: the
+    // header's "Supplier portal APIRunning" has no word boundary before "Running", so a lab whose
+    // title ends in a letter never matched `\bRunning\b` (the rig's ubuntu2404 e2e:lab, its page
+    // showing the lab running).
+    const shown = await waitAwake(b, () => labPageRunning(b), { timeout: 30000, interval: 2000, timeoutMsg: "not running" }).then(
       () => true,
       () => false,
     );
