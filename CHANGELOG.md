@@ -150,7 +150,7 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
-- Bundles Isoloom 2.1.5 and Isothrum 2.1.3 from crates.io, which write and read the run
+- Bundles Isoloom 2.1.6 and Isothrum 2.1.3 from crates.io, which write and read the run
   manifest's version 1. Their changelogs list what changed; for the launcher: a container lab
   runs on the computer's own CPU architecture unless its spec pins one (a Linux Arm host ran
   nothing: `exec format error`), a lab's start no longer pulls an image the lab builds itself, a
@@ -162,9 +162,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   copy's start failed), an attack box added to a running VM lab on QEMU no longer cuts the
   lab's machines off their network (the network's hub was started again on new ports, and the
   box reached nothing), a lab started on its own ports whose port another lab or program
-  already holds starts on a free one instead of failing "port in use", and a container lab that
+  already holds starts on a free one instead of failing "port in use", a container lab that
   keeps a volume no longer leaves an anonymous Docker volume behind at each start and stop (a
-  database image's own data volume).
+  database image's own data volume), and a VM lab on QEMU on Linux checks for `mkisofs` before it
+  creates anything instead of failing at its first VM.
 
 - **A desktop attack VM never locks its screen.** Kali's screen lockers don't start for `player`,
   the screen never blanks, and the session doesn't lock on suspend or a switch of user, so the
