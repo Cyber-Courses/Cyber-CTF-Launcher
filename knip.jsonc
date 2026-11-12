@@ -3,6 +3,9 @@
   // The quality ratchet runs it by path from node_modules (scripts/quality/node-tools.ts).
   // webdriverio drives the native GUI e2e harness in tests/desktop/ (not part of the app bundle).
   "ignoreDependencies": ["jscpd", "webdriverio"],
+  // PowerShell, which tests/audit/kinds.test.ts runs when the machine has it (snapshot.ps1's
+  // patterns in PowerShell itself): a system's program, never a dependency.
+  "ignoreBinaries": ["pwsh"],
   // Loaded by a <script> tag in src/app/layout.tsx, which knip doesn't read; tests/desktop/ is the
   // native GUI e2e harness, run on its own, not imported by the app.
   // src/vendor/novnc/ is noVNC as released: the screen window imports its RFB client only.
