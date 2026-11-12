@@ -108,10 +108,10 @@ serde_yaml_ng = "0.10.0"
 # layered crates, the published crates.io 2.0 line. Only `src/runtime/lab/` calls them:
 # the spec (`isoloom-spec`), the backends' registry and the resolved snapshot
 # (`isoloom-targets`).
-isoloom-spec = "2.1.6"
-isoloom-targets = "2.1.6"
+isoloom-spec = "2.1.7"
+isoloom-targets = "2.1.7"
 # The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
-isoloom-manifest = "2.1.6"
+isoloom-manifest = "2.1.7"
 # The Isothrum runner: executes the run manifest Isoloom writes; every lab runs through it
 # (`runtime/isothrum`). The published crates.io 2.0 line.
 isothrum-runner = "2.1.3"
