@@ -6,9 +6,9 @@ import { remote } from "webdriverio";
 import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
 import { appExit, startEnded, stuckLabReport } from "./diagnose.mjs";
 import { dockerPluginDirs, engineSilence, portStillHeld, runBounded, waitPortFree } from "./host.mjs";
@@ -84,8 +84,13 @@ export async function launchApp({ env = {}, args = [], storage = {} } = {}) {
   launched.add(proc);
   recordApp(proc.pid, bin);
   let out = "";
-  proc.stdout.on("data", (d) => (out += d));
-  proc.stderr.on("data", (d) => (out += d));
+  const record = appOutputFile(proc.pid);
+  proc.stdout.on("data", (d) => ((out += d), record?.write(d)));
+  proc.stderr.on("data", (d) => ((out += d), record?.write(d)));
+  proc.on("exit", (code, signal) => {
+    const hex = code !== null && code > 255 ? ` (0x${(code >>> 0).toString(16).toUpperCase()})` : "";
+    record?.end(`\n[app ${proc.pid} exit code=${code}${hex} signal=${signal} at ${new Date().toISOString()}]\n`);
+  });
   proc.output = () => out;
   for (let i = 0; i < 60; i++) {
     if (proc.exitCode !== null) throw new Error(`app exited (code ${proc.exitCode}) before the server came up:\n${out.slice(-800)}`);
@@ -103,6 +108,22 @@ export async function launchApp({ env = {}, args = [], storage = {} } = {}) {
   }
   stopApp(proc);
   throw new Error(`embedded WebDriver server never came up on ${PORT}:\n${out.slice(-800)}`);
+}
+
+/** Where the app's stdout and stderr go as they come, when the runner gives a logs folder
+ *  (CYBERCTF_TEST_DESKTOP_LOGS): `app-output/<spec>-<pid>.txt`, its exit code appended. What a
+ *  Rust abort or stack overflow says reaches stderr alone, and the app's log file never has it. */
+function appOutputFile(pid) {
+  const logs = process.env.CYBERCTF_TEST_DESKTOP_LOGS;
+  if (!logs || !pid) return null;
+  try {
+    const dir = join(logs, "app-output");
+    mkdirSync(dir, { recursive: true });
+    const spec = basename(process.argv[1] || "spec").replace(/\.[cm]?js$/, "");
+    return createWriteStream(join(dir, `${spec}-${pid}.txt`), { flags: "a" });
+  } catch {
+    return null;
+  }
 }
 
 /** Records an app this run launched (`<root>/records/apps/<pid>`, its binary inside), so the
@@ -172,6 +193,8 @@ export async function openApp({ env = {}, storage = {}, args = [] } = {}) {
     return { proc, b };
   } catch (e) {
     stopApp(proc);
+    const ended = proc.exitCode !== null ? `app ${proc.pid} exited with code ${proc.exitCode}` : `app ${proc.pid} still up`;
+    e.message = `${e.message}\n${ended}; its output tail:\n${proc.output().slice(-800)}`;
     throw e;
   }
 }
