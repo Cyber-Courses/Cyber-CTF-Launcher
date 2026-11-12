@@ -506,6 +506,39 @@ export function stopApp(proc) {
   }
 }
 
+/** Whether app `proc` has ended, or ends within `ms`. */
+export function appEnds(proc, ms) {
+  return new Promise((resolve) => {
+    if (proc.exitCode !== null || proc.signalCode) {
+      resolve(true);
+      return;
+    }
+    const ended = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      proc.off("exit", ended);
+      resolve(proc.exitCode !== null);
+    }, ms);
+    proc.once("exit", ended);
+  });
+}
+
+/**
+ * Clicks `el`, a button that may end the app (Close on the main window): the app can quit while
+ * the embedded server answers the click, whose request then fails (ECONNREFUSED, the connection
+ * reset). That failure is the click done when the app (`proc`) ends within `ms`; otherwise it is
+ * thrown.
+ */
+export async function clickThatMayQuit(el, proc, ms = 5000) {
+  try {
+    await el.click();
+  } catch (e) {
+    if (!(await appEnds(proc, ms))) throw e;
+  }
+}
+
 /**
  * End the session and stop the app; safe when either never came up. An app that had already
  * ended is said, with the tail of what it printed: the spec's own failure (`ECONNREFUSED`) only

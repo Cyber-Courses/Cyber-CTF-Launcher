@@ -4,7 +4,7 @@
 // own bar and Close. Each button is checked by what the window then is (`is_maximized`,
 // `is_minimized`, the window gone, the app quit), not by the button's look. macOS keeps the
 // system's frame and traffic lights: skipped there.
-import { closeWindow, finish, goTo, openApp, invokeCmd, ownFrame, results, sleep, switchToWindow } from "../lib/support.mjs";
+import { appEnds, clickThatMayQuit, closeWindow, finish, goTo, openApp, invokeCmd, ownFrame, results, sleep, switchToWindow } from "../lib/support.mjs";
 import { doubleClickPress, TITLE_BAR } from "../lib/page.mjs";
 
 export const needs = ["own-frame"];
@@ -73,19 +73,24 @@ try {
 
   await (await control(b, "Minimize")).click();
   r.check("minimize", await becomes(b, "minimized", true), "Minimize minimizes the window");
-  // Back up, so the last check can press Close: WebDriver's Set Window Rect restores a window.
+  // Back up before the last check, so Close is pressed on a window that shows: WebDriver's Set
+  // Window Rect restores a minimized window.
   await b.setWindowRect(null, null, 1280, 820).catch(() => {});
+  if (!(await becomes(b, "minimized", false))) console.log("the window still reads minimized after Set Window Rect: Close is pressed on it as it is");
   await sleep(1500);
 
   // Close on the main window quits the app when nothing is deploying (the quit guard holds it
-  // otherwise: src-tauri/src/app/quit.rs).
-  await (await control(b, "Close")).click();
-  const quit = await new Promise((resolve) => {
-    if (proc.exitCode !== null) resolve(true);
-    proc.once("exit", () => resolve(true));
-    setTimeout(() => resolve(proc.exitCode !== null), 20000);
-  });
+  // otherwise: src-tauri/src/app/quit.rs). The app quits while the embedded server answers the
+  // click, so the click's own request can fail (ECONNREFUSED: the rig's Ubuntu run took that for
+  // the spec's error, the app gone with code 0): the app's end is the verdict.
+  await clickThatMayQuit(await control(b, "Close"), proc);
+  const quit = await appEnds(proc, 20000);
   r.check("main-close", quit, "Close on the main window quits the app (nothing deploying)");
+  if (quit) {
+    // Ended on purpose: no session left to end, and no app that "died under the spec".
+    b = null;
+    proc = null;
+  }
 } catch (e) {
   r.fail("error", e.message);
   if (proc) console.log("app out tail:", proc.output().slice(-600));

@@ -1,10 +1,42 @@
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { containersChanged, labDown, linkTargets, mainButton, results, secondCopy } from "./lib/support.mjs";
+import { appEnds, clickThatMayQuit, containersChanged, labDown, linkTargets, mainButton, results, secondCopy } from "./lib/support.mjs";
 
 // The specs' shared selectors (lib/support.mjs), as WebdriverIO gets them.
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("a click on a button that may end the app", () => {
+  /** An app's process: running until `end()`. */
+  const app = () => {
+    const proc = Object.assign(new EventEmitter(), { exitCode: null as number | null, signalCode: null as string | null });
+    const end = (code = 0) => {
+      proc.exitCode = code;
+      proc.emit("exit", code);
+    };
+    return { proc, end };
+  };
+  // jarvis, ubuntu2404-quick e2e.shell title-bar: Close on the main window, the app gone with
+  // code 0 while the embedded server answered, the click's request refused.
+  const refused = new Error('Request failed with error code ECONNREFUSED when running "element/e517cf5f/click" with method "POST"');
+
+  it("is done when its request fails as the app quits", async () => {
+    const { proc, end } = app();
+    const el = { click: () => Promise.reject(refused) };
+    setTimeout(end, 50);
+    await expect(clickThatMayQuit(el, proc, 2000)).resolves.toBeUndefined();
+    await expect(appEnds(proc, 10)).resolves.toBe(true);
+  });
+
+  it("fails as its request did when the app runs on, and passes when it answers", async () => {
+    const { proc } = app();
+    await expect(clickThatMayQuit({ click: () => Promise.reject(refused) }, proc, 50)).rejects.toThrow("ECONNREFUSED");
+    await expect(clickThatMayQuit({ click: () => Promise.resolve() }, proc, 50)).resolves.toBeUndefined();
+    await expect(appEnds(proc, 20)).resolves.toBe(false);
+    expect(proc.listenerCount("exit")).toBe(0);
+  });
 });
 
 describe("a spec's failed step", () => {
