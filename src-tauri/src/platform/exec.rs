@@ -594,6 +594,63 @@ mod tests {
         assert!(fake::gone(child).await, "the tool's child {child} outlived the app that started it");
     }
 
+    /// The app's stand-in for the test below, its output piped to the test: it keeps its standard
+    /// handles as the app does at start, starts a long tool outside any job (as one started as
+    /// the app died is, #299), its pid to `CYBERCTF_TREE_FILE`, and exits without waiting on it.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "run as a child process by a_tool_left_running_doesnt_hold_the_apps_output"]
+    #[allow(clippy::zombie_processes, reason = "the tool is left running on purpose; the test ends it")]
+    fn std_handles_owner_helper() {
+        use std::os::windows::process::CommandExt;
+        crate::platform::sys::keep_std_handles();
+        let tool = std::process::Command::new("ping")
+            .args(["-n", "60", "127.0.0.1"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .unwrap();
+        std::fs::write(std::env::var("CYBERCTF_TREE_FILE").unwrap(), tool.id().to_string()).unwrap();
+    }
+
+    /// Regression (a Windows on Arm rig clone): a `docker` the app left running held the pipes of
+    /// what started it, and the E2E harness waited on them until the docker was killed by hand.
+    /// std hands a child every inheritable handle of its parent; the app keeps its own standard
+    /// handles to itself, so its output ends when it does, whatever it left running.
+    #[cfg(windows)]
+    #[test]
+    fn a_tool_left_running_doesnt_hold_the_apps_output() {
+        use std::io::Read;
+        let file = std::env::temp_dir().join(format!("cyberctf-std-handles-{}", rand::random::<u32>()));
+        let mut owner = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "platform::exec::tests::std_handles_owner_helper", "--ignored", "--nocapture", "--test-threads", "1"])
+            .env("CYBERCTF_TREE_FILE", &file)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let (tx, ended) = std::sync::mpsc::channel();
+        for mut pipe in [Box::new(owner.stdout.take().unwrap()) as Box<dyn Read + Send>, Box::new(owner.stderr.take().unwrap())] {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = pipe.read_to_end(&mut Vec::new());
+                let _ = tx.send(());
+            });
+        }
+        let exited = owner.wait().unwrap();
+        let tool = std::fs::read_to_string(&file).ok().and_then(|t| t.trim().parse::<u32>().ok());
+        let _ = std::fs::remove_file(&file);
+        let closed = (0..2).all(|_| ended.recv_timeout(Duration::from_secs(10)).is_ok());
+        if let Some(pid) = tool {
+            crate::platform::sys::terminate(pid);
+        }
+        assert!(exited.success() && tool.is_some(), "the stand-in failed ({exited}) or started no tool");
+        assert!(closed, "the app's output stayed open after it exited: the tool it left running held it");
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn output_that_isnt_utf8_is_read_lossily_and_the_tool_runs_on() {

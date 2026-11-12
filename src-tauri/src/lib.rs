@@ -37,5 +37,8 @@ pub(crate) type WebviewWindow = tauri::WebviewWindow<AppRuntime>;
 /// When Tauri can't build the app (its embedded configuration is broken).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> tauri::Result<()> {
+    // Before any tool starts: none holds what started the app (#299).
+    #[cfg(windows)]
+    platform::sys::keep_std_handles();
     app::run()
 }

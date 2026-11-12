@@ -10,6 +10,26 @@ pub use elevation::{ElevatedProcess, in_hyperv_admins, is_elevated, launch_eleva
 pub use job::{Job, process_created, resume_threads_of, terminate};
 pub use registry::{Hive, delete_user_registry_value, registry_key_exists, registry_string, registry_value_exists, registry_values, set_user_registry_string};
 
+/// Keeps this process's own standard input, output and error to itself. std starts a child with
+/// every inheritable handle of its parent, so each tool held whatever the app was started with:
+/// a tool left running as the app died, outside its job (#299), held the pipes of what started
+/// the app open, a test harness waiting for their end for good. A tool gets pipes of its own; one
+/// given these on purpose (`Stdio::inherit`) still gets them, as std duplicates them for it.
+pub fn keep_std_handles() {
+    use windows_sys::Win32::Foundation::{HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation};
+    use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
+    for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: plain Win32 calls on this process's own standard handles, none closed here; a
+        // missing one (a windowed app started without them) is skipped.
+        unsafe {
+            let handle = GetStdHandle(which);
+            if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
+}
+
 /// Sets this process's `PATH`, which the tools it starts inherit; at any time.
 pub fn set_path(path: &OsStr) {
     // SAFETY: on Windows `set_var` is sound from any thread (std documents it as "always safe to
