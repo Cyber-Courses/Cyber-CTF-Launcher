@@ -107,7 +107,7 @@ fn app_builder(proxy_note: Option<String>) -> tauri::Builder<AppRuntime> {
     // for. Behind the `wdio` feature, so a release build carries neither.
     #[cfg(feature = "wdio")]
     {
-        builder = builder.plugin(tauri_plugin_wdio::init()).plugin(tauri_plugin_wdio_webdriver::init());
+        builder = builder.plugin(tauri_plugin_wdio::init()).plugin(tauri_plugin_wdio_webdriver::init()).plugin(wdio_storage_plugin());
     }
     builder
         // Quitting mid-deploy can leave resources running (a cloud apply keeps billing). Hold the
@@ -159,6 +159,67 @@ fn worker_job(args: impl IntoIterator<Item = String>) -> Option<PathBuf> {
     match args.as_slice() {
         [_, deploy, flag, job, ..] if deploy == "deploy" && flag == "--job" => Some(PathBuf::from(job)),
         _ => None,
+    }
+}
+
+/// Under the `wdio` feature only: `CYBERCTF_WDIO_STORAGE`, a JSON object of strings, written into
+/// the webview's localStorage before the page's own scripts run (a plugin's initialization script,
+/// once per launch: later documents, a reload or another window, find the launch's mark and leave
+/// the storage alone), so an e2e spec opens the app already set up (onboarded, its locale, its
+/// knobs) instead of setting the storage and reloading the page: on Windows that reload ended
+/// the app by fast fail (0xC0000409) in about two specs of five, seconds after it opened.
+#[cfg(feature = "wdio")]
+fn wdio_storage_plugin() -> tauri::plugin::TauriPlugin<crate::AppRuntime> {
+    let builder = tauri::plugin::Builder::new("wdio-storage");
+    match std::env::var("CYBERCTF_WDIO_STORAGE").ok().and_then(|json| wdio_storage_script(&json, std::process::id())) {
+        Some(script) => builder.js_init_script(script).build(),
+        None => builder.build(),
+    }
+}
+
+/// The initialization script that seeds localStorage with `json`'s items (an object of strings;
+/// anything else, or nothing, seeds nothing), keyed by the launch's `mark` so it runs once per
+/// launch. The items reach the page as a JSON literal, never as script.
+fn wdio_storage_script(json: &str, mark: u32) -> Option<String> {
+    let items: serde_json::Map<String, serde_json::Value> = serde_json::from_str(json).ok()?;
+    if items.is_empty() || !items.values().all(serde_json::Value::is_string) {
+        return None;
+    }
+    let literal = serde_json::to_string(&items).ok()?;
+    Some(format!(
+        "(() => {{ try {{ if (localStorage.getItem('__wdio_storage_mark__') === '{mark}') return; \
+         for (const k of Object.keys(localStorage)) if (k.startsWith('__wdio_')) localStorage.removeItem(k); \
+         for (const [k, v] of Object.entries({literal})) localStorage.setItem(k, v); \
+         localStorage.setItem('__wdio_storage_mark__', '{mark}'); }} catch (_) {{}} }})();"
+    ))
+}
+
+#[cfg(test)]
+mod wdio_storage_tests {
+    use super::wdio_storage_script;
+
+    #[test]
+    fn seeds_an_object_of_strings_once_per_launch() {
+        let script = wdio_storage_script(r#"{"cyberctf.onboarded": "1", "cyberctf.locale": "en"}"#, 42).unwrap();
+        assert!(script.contains(r"localStorage.getItem('__wdio_storage_mark__') === '42'"));
+        assert!(script.contains(r#"{"cyberctf.onboarded":"1","cyberctf.locale":"en"}"#));
+        assert!(script.contains("k.startsWith('__wdio_')"));
+    }
+
+    #[test]
+    fn seeds_nothing_from_anything_else() {
+        assert!(wdio_storage_script("", 1).is_none());
+        assert!(wdio_storage_script("{}", 1).is_none());
+        assert!(wdio_storage_script(r#"{"a": 1}"#, 1).is_none());
+        assert!(wdio_storage_script(r#"["a"]"#, 1).is_none());
+        assert!(wdio_storage_script("alert(1)", 1).is_none());
+    }
+
+    #[test]
+    fn a_value_is_a_json_literal_never_script() {
+        let script = wdio_storage_script(r#"{"k": "</script><script>alert(1)</script>"}"#, 1).unwrap();
+        assert!(script.contains(r#""k":"</script><script>alert(1)</script>""#));
+        assert!(!script.contains("</script><script>alert(1)</script>'"));
     }
 }
 

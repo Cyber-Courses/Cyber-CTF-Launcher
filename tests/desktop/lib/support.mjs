@@ -73,12 +73,12 @@ const launched = new Set();
  * first (an app just stopped lets it go): one still held, or an app that couldn't bind it, fails
  * the launch rather than leaving the spec to drive whatever answers there.
  */
-export async function launchApp({ env = {}, args = [] } = {}) {
+export async function launchApp({ env = {}, args = [], storage = {} } = {}) {
   const bin = appBinary();
   if (!existsSync(bin)) throw new Error(`app binary not found (build with --features wdio): ${bin}`);
   if (!(await waitPortFree(PORT))) throw new Error(portStillHeld(PORT));
   const proc = spawn(bin, args, {
-    env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT), ...env },
+    env: { ...process.env, TAURI_WEBDRIVER_PORT: String(PORT), CYBERCTF_WDIO_STORAGE: JSON.stringify(storageItems(storage)), ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   launched.add(proc);
@@ -126,29 +126,16 @@ export async function connect() {
   });
 }
 
-/**
- * Skip onboarding, pin English, add `storage` (the `__wdio_*` hooks), reload, and wait for the
- * shell's navigation. The locale is pinned because the scripts match English copy.
- */
-export async function prepare(b, storage = {}) {
-  await b.execute((items) => {
-    try {
-      // The webview's storage outlives the app: a hook an earlier scenario set (the attack-box
-      // panel's lab, say) would otherwise mount again in this one, in every window.
-      for (const k of Object.keys(localStorage)) if (k.startsWith("__wdio_")) localStorage.removeItem(k);
-      localStorage.setItem("cyberctf.onboarded", "1");
-      localStorage.setItem("cyberctf.locale", "en");
-      for (const [k, v] of Object.entries(items)) localStorage.setItem(k, v);
-    } catch {
-      /* storage unavailable: the shell still renders */
-    }
-  }, storage);
-  // The shell rendered before the reload: a reload while the page is still loading (its first
-  // render, its machine checks in flight) ended the app on Windows with a silent fail-fast
-  // (0xC0000409) in about two specs of five, seconds after it opened (the rig's x64 row,
-  // 2026-11-12), with nothing in its log or on its stderr.
-  await b.$("aside nav").waitForExist({ timeout: 25000 });
-  await b.refresh();
+/** The localStorage items a spec's app starts with: onboarded, English, and the spec's own. The
+ *  app's wdio build writes them before the page's scripts run (CYBERCTF_WDIO_STORAGE, once per
+ *  launch, the `__wdio_` hooks of an earlier run cleared first). No reload: on Windows, reloading
+ *  the page right after the app opened ended it by fast fail in about two specs of five. */
+export function storageItems(items = {}) {
+  return { "cyberctf.onboarded": "1", "cyberctf.locale": "en", ...items };
+}
+
+/** The shell up, and the page believing its window visible. */
+async function prepare(b) {
   await b.$("aside nav").waitForExist({ timeout: 25000 });
   await forceVisible(b);
 }
@@ -178,10 +165,10 @@ export async function forceVisible(b) {
 
 /** Launch, connect and prepare in one go; the app is stopped again if the session can't open. */
 export async function openApp({ env = {}, storage = {}, args = [] } = {}) {
-  const proc = await launchApp({ env, args });
+  const proc = await launchApp({ env, args, storage });
   try {
     const b = await connect();
-    await prepare(b, storage);
+    await prepare(b);
     return { proc, b };
   } catch (e) {
     stopApp(proc);

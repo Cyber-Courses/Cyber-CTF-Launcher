@@ -101,9 +101,12 @@ suite runners' selection (`scripts/lib/suite.sh`).
 
 \* The old name is still read, as the workspace's test rig sets it: remove it once the rig sets
 the new one. `TAURI_WEBDRIVER_PORT` (the embedded WebDriver's port, 4445), `CYBERBACKEND_URL`
-(the backend `offline-start`'s relay forwards to) and `CYBERCTF_WDIO_ROOT` (the run's folder,
-[below](#a-desktop-runs-own-folder)) are the app's own settings, which the desktop runner and specs
-pass on.
+(the backend `offline-start`'s relay forwards to), `CYBERCTF_WDIO_ROOT` (the run's folder,
+[below](#a-desktop-runs-own-folder)) and `CYBERCTF_WDIO_STORAGE` (a JSON object of strings the
+`wdio` build writes into the webview's localStorage before the page's scripts run, once per launch:
+the specs' `onboarded`, `locale` and `__wdio_` hooks, so a spec opens the app set up without
+reloading the page, which ended the app on Windows) are the app's own settings, which the desktop
+runner and specs pass on.
 
 ## A desktop run's own folder
 
