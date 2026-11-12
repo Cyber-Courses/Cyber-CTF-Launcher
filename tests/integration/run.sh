@@ -13,6 +13,13 @@
 #   tests/integration/run.sh --results results.jsonl                    and a JSON record per scenario there
 #   tests/integration/run.sh --list                                     the scenarios and the knobs each reads
 #
+# Each scenario runs with a temp folder of its own (TMPDIR, TMP and TEMP: `/tmp/cyberctf-it.XXXXXX`,
+# short, as a Unix socket's path must fit in 104 bytes), which its log names and which goes when it
+# ends, passed, failed or killed past its cap: what a test makes there (a lab's copy, the runner's
+# home, a test thread's folder) never piles up in the machine's temp folder, and a process still
+# running from it (a VM or a QEMU hub a killed test started, daemonized) is stopped first. The
+# guided setup's scenario keeps the system's: its folder is kept from pass to pass.
+#
 # Fail fast: each scenario is killed past its cap (8 minutes; the attack-box ones 10, until the
 # goldens carry their images), and once a scenario fails on the platform itself (the launcher's
 # own refusals: a lab that can't run on that hypervisor, an architecture it doesn't support, a
@@ -212,6 +219,46 @@ platform_failure() {
   [ -n "$line" ] || return 0
   printf -v "PLATFORM_FAILED_${1:-docker}" '%s' "$line"
 }
+# The temp folder of the scenario running (scenario_temp), and Windows' own path for it under Git
+# Bash. A runner stopped midway stops that scenario (logged's SUITE_RUNNING) and drops its folder.
+SCENARIO_TEMP=""
+SCENARIO_TEMP_NATIVE=""
+trap 'stop_running; drop_temp "$SCENARIO_TEMP" /dev/null' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# stop_running: the scenario `logged` runs, if any, ended (capped kills its process group).
+stop_running() {
+  [ -n "${SUITE_RUNNING:-}" ] && kill "$SUITE_RUNNING" 2>/dev/null && sleep 1
+  return 0
+}
+# scenario_temp: a fresh temp folder for a scenario, its real path (macOS's /tmp is a link; Docker
+# records the Compose files' paths), in SCENARIO_TEMP.
+scenario_temp() {
+  SCENARIO_TEMP=$(cd "$(mktemp -d /tmp/cyberctf-it.XXXXXX)" && pwd -P)
+  SCENARIO_TEMP_NATIVE=$SCENARIO_TEMP
+  if command -v cygpath >/dev/null 2>&1; then SCENARIO_TEMP_NATIVE=$(cygpath -w "$SCENARIO_TEMP"); fi
+}
+# drop_temp <folder> <log>: a scenario's temp folder gone, what it left with it: a process still
+# naming it (a VM, a QEMU hub: daemonized, they outlive a killed test's process group) is stopped
+# first (TERM, then KILL), then the folder removed; the log says so.
+drop_temp() {
+  local dir=$1 log=$2 pids
+  [ -n "$dir" ] && [ -d "$dir" ] || return 0
+  # By the folder's own name (random), whichever path to it a process was given (/tmp or /private/tmp).
+  pids=$(pgrep -f -- "${dir##*/}" 2>/dev/null | tr '\n' ' ')
+  if [ -n "${pids// /}" ]; then
+    echo "suite: stopping what still runs from the scenario's temp folder: $pids" >>"$log"
+    # shellcheck disable=SC2086 # one pid a word
+    kill $pids 2>/dev/null
+    sleep 2
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null
+  fi
+  rm -rf "$dir"
+  [ -d "$dir" ] && echo "suite: couldn't remove all of the scenario's temp folder $dir" >>"$log"
+  [ "$dir" = "$SCENARIO_TEMP" ] && SCENARIO_TEMP=""
+  return 0
+}
 # capped <command...>: the command in a process group of its own, killed whole (cargo and the test
 # binary, which holds the VMs) when `logged` ends it past its cap.
 capped() {
@@ -230,7 +277,7 @@ capped() {
 # on the same provider failed on the platform itself (platform_failure). The form and the
 # provider (empty where none applies) go to its record.
 scenario() {
-  local name=$1 form=$2 provider=$3 test=$4 start=$SECONDS log unset refused cap earlier
+  local name=$1 form=$2 provider=$3 test=$4 start=$SECONDS log unset refused cap earlier passed
   shift 4
   if [ -n "$LISTING" ]; then
     listing "$name" "$form" "$test"
@@ -248,8 +295,20 @@ scenario() {
   wanted "$name" || return 0
   log="$LOGS/$name.log"
   case $name in attack-box-*) cap=$BOX_CAP ;; *) cap=$CAP ;; esac
-  if logged "$name" "$log" "$cap" capped env "$@" cargo test -q --lib -- --ignored --nocapture --test-threads=1 --exact "$test" &&
-    grep -q "test result: ok. 1 passed" "$log"; then
+  # Its own temp folder (TMPDIR for Unix's tools, TMP and TEMP for Windows'), but the guided
+  # setup's, kept from pass to pass in the system's.
+  local temp=()
+  if [ "$test" != "$SETUP" ]; then
+    scenario_temp
+    temp=("TMPDIR=$SCENARIO_TEMP" "TMP=$SCENARIO_TEMP_NATIVE" "TEMP=$SCENARIO_TEMP_NATIVE")
+  fi
+  logged "$name" "$log" "$cap" capped env ${temp[@]+"${temp[@]}"} "$@" cargo test -q --lib -- --ignored --nocapture --test-threads=1 --exact "$test"
+  passed=$?
+  if [ -n "$SCENARIO_TEMP" ]; then
+    echo "suite: the scenario's temp folder was $SCENARIO_TEMP" >>"$log"
+    drop_temp "$SCENARIO_TEMP" "$log"
+  fi
+  if [ "$passed" -eq 0 ] && grep -q "test result: ok. 1 passed" "$log"; then
     unset=$(grep -F "$KNOB_UNSET" "$log" | head -1)
     refused=$(grep -F "$REFUSED" "$log" | head -1)
     if [ -n "$unset" ]; then

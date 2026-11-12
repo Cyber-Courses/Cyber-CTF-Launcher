@@ -115,6 +115,9 @@ logged() {
   say "$name"
   "$@" >"$log" 2>&1 &
   pid=$!
+  # The step running, for a runner stopped midway to end it (tests/integration/run.sh).
+  # shellcheck disable=SC2034 # read by the runner that sources this
+  SUITE_RUNNING=$pid
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$limit" -gt 0 ] && [ "$waited" -ge "$limit" ]; then
       echo "suite: $name exceeded its ${limit}s" >>"$log"
@@ -126,6 +129,8 @@ logged() {
   done
   wait "$pid"
   rc=$?
+  # shellcheck disable=SC2034 # read by the runner that sources this
+  SUITE_RUNNING=""
   if [ -n "${SUITE_SHOW:-}" ]; then grep -E "$SUITE_SHOW" "$log" | sed 's/^/   /'; else tail -n 4 "$log" | sed 's/^/   /'; fi
   return "$rc"
 }

@@ -71,6 +71,41 @@ describe("an integration scenario's verdict", () => {
     expect(() => process.kill(sleeper, 0)).toThrow();
   });
 
+  it("runs in a temp folder of its own that goes when it ends, passed, failed or killed past its cap, with what still runs from it", { timeout: 60000 }, () => {
+    // The machine's temp folder, as the runner is given it: the scenario's test makes a lab's copy,
+    // the runner's home and a test thread's folder in its own; one also leaves a VM running from it
+    // that ignores the cap's TERM, as a daemonized QEMU outlives the test's process group.
+    const machine = folder();
+    const cargo = [
+      'echo "$TMPDIR" >"$CYBERCTF_TEST_INTEGRATION_LOGS/temp"',
+      'mkdir -p "$TMPDIR/cyberctf-box-1-home/runs" "$TMPDIR/cyberctf-vm-2" "$TMPDIR/cyberctf-test-home-AB12CD"',
+      'case "$CASE" in',
+      '  pass) echo "test result: ok. 1 passed; 0 failed" ;;',
+      '  fail) echo "test result: FAILED. 0 passed; 1 failed"; exit 101 ;;',
+      `  hang) (trap '' TERM; exec sh -c 'sleep 30; :' "$TMPDIR/cyberctf-vm-2/qemu") & echo $! >"$CYBERCTF_TEST_INTEGRATION_LOGS/vm"; sleep 30 ;;`,
+      "esac",
+    ].join("\n");
+    const ours = () => readdirSync(machine).filter((n) => n.startsWith("cyberctf"));
+    for (const [kase, result] of [
+      ["pass", "ok"],
+      ["fail", "FAIL"],
+      ["hang", "FAIL"],
+    ]) {
+      const r = runner(cargo, { ONLY: "docker-lab-hello-stack", CASE: kase, TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: "2" });
+      expect(verdict(r.out, "docker-lab-hello-stack"), kase).toBe(result);
+      const temp = readFileSync(join(r.dir, "temp"), "utf8").trim();
+      expect(temp, kase).toMatch(/\/cyberctf-it\.[A-Za-z0-9]{6}$/);
+      expect(existsSync(temp), `${kase}: ${temp} is left`).toBe(false);
+      expect(ours(), kase).toEqual([]);
+      // Its log names it: the leftover audit takes a folder a run's log names as the run's.
+      expect(readFileSync(join(r.dir, "docker-lab-hello-stack.log"), "utf8"), kase).toContain(`suite: the scenario's temp folder was ${temp}`);
+      if (kase === "hang") {
+        const vm = Number(readFileSync(join(r.dir, "vm"), "utf8").trim());
+        expect(() => process.kill(vm, 0), "the VM running from it is stopped").toThrow();
+      }
+    }
+  });
+
   it("takes --only <scenario>@<provider>: that scenario alone, on that hypervisor", () => {
     const out = join(folder(), "results.jsonl");
     runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "vm-lab@virtualbox", "--results", out]);

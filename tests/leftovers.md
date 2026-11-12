@@ -192,6 +192,10 @@ What the code says will be left, until a run says otherwise:
   folder are never removed (`vagrant-dotfolder`), and a hub whose VM never got an id is never
   stopped (`process`).
 - Isothrum's `project.tgz` in a run's folder has no removal.
+- An integration test run outside `tests/integration/run.sh` (`cargo test -- --ignored …`) and
+  killed midway leaves its lab's copy (`cyberctf-<id>`) and runner home (`cyberctf-<id>-home`) in
+  the temp folder: the runner gives each scenario a temp folder of its own and removes it, but a
+  test removes its folders itself only when it ends.
 - Clean-up of leftover VMs covers VirtualBox and Parallels only: a libvirt domain or network, a
   VMware VM or a Hyper-V switch left by an interrupted `vagrant destroy` stays.
 - `tests/desktop/lib/owned.mjs` looks for a run's Vagrant machines under `app/labs`, while the

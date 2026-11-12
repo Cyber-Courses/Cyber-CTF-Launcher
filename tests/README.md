@@ -229,7 +229,12 @@ A failure found in the field goes to the lowest level that can reproduce it:
 A unit test removes what it writes in the temp folder: a Rust test takes its folder from
 `testing::temp_dir` (removed when it drops, a failed test's too), a TypeScript one removes its own
 in `afterEach` or `onTestFinished`. `pnpm check:temp-leaks` runs the unit tests with a temp folder
-of their own and fails on anything left in it; CI and `pnpm check` run them through it.
+of their own and fails on anything left in it; CI and `pnpm check` run them through it. An
+integration scenario (`tests/integration/run.sh`) runs with a temp folder of its own
+(`/tmp/cyberctf-it.XXXXXX`, which its log names) that goes when it ends, killed past its cap too,
+with any process still running from it (a daemonized VM or QEMU hub): a lab's copy, the runner's
+home and a test thread's folder never pile up in the machine's temp folder. The guided setup's
+scenario keeps the system's, where its folder lasts from pass to pass.
 
 ## The feature registry
 

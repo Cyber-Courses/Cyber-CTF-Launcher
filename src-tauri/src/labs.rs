@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn staging_carries_the_lab_its_commit_and_its_instance_but_no_stale_place() {
-        let labs = std::env::temp_dir().join(format!("cyberctf-stage-{}", rand::random::<u32>()));
+        let labs = crate::testing::temp_dir("stage");
         let dir = labs.join("invoice");
         let sha = "0123456789abcdef0123456789abcdef01234567";
         std::fs::create_dir_all(&dir).unwrap();
@@ -573,12 +573,11 @@ mod tests {
         assert!(runtime::lab::installed_at(&dir, sha));
         assert!(!runtime::lab::installed_at(&dir, "ffffffffffffffffffffffffffffffffffffffff"));
         assert!(!labs.join(".invoice.old").exists(), "the old copy is cleared");
-        std::fs::remove_dir_all(labs).unwrap();
     }
 
     #[test]
     fn a_failed_update_that_cant_put_the_old_copy_back_says_where_it_is() {
-        let labs = std::env::temp_dir().join(format!("cyberctf-swap-back-{}", rand::random::<u32>()));
+        let labs = crate::testing::temp_dir("swap-back");
         let (dir, staging, old) = (labs.join("invoice"), labs.join(".invoice.staging"), labs.join(".invoice.old"));
         for (d, v) in [(&dir, "old"), (&staging, "new")] {
             std::fs::create_dir_all(d).unwrap();
@@ -595,7 +594,6 @@ mod tests {
         let err = swap_in_with(&staging, &dir, rename).unwrap_err().to_string();
         assert!(!err.contains("put the installed copy back"), "{err}");
         assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "old");
-        std::fs::remove_dir_all(labs).unwrap();
     }
 
     /// Windows: a file of the installed lab open in another program (no delete sharing, like an
@@ -606,7 +604,7 @@ mod tests {
     fn an_update_with_a_file_held_open_keeps_the_installed_lab_whole() {
         use std::os::windows::fs::OpenOptionsExt;
         const FILE_SHARE_READ: u32 = 1;
-        let labs = std::env::temp_dir().join(format!("cyberctf-swap-{}", rand::random::<u32>()));
+        let labs = crate::testing::temp_dir("swap");
         let (dir, staging) = (labs.join("invoice"), labs.join(".invoice.staging"));
         for (d, v) in [(&dir, "old"), (&staging, "new")] {
             std::fs::create_dir_all(d.join("sub")).unwrap();
@@ -626,7 +624,6 @@ mod tests {
         swap_in(&staging, &dir).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("sub").join("disk.vmdk")).unwrap(), "new");
         assert!(!staging.exists() && !labs.join(".invoice.old").exists());
-        std::fs::remove_dir_all(labs).unwrap();
     }
 
     const SPEC: &str = "version: 1\nname: invoice\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n";
@@ -733,11 +730,8 @@ mod tests {
     fn a_folder_without_a_lab_has_no_local_id() {
         // The lab id of a local import comes from its spec; a folder with no isoloom.yml is not a
         // lab, so `lab_launch_local` (the command) refuses before it ever reaches the runner.
-        let dir = std::env::temp_dir().join(format!("cyberctf-notalab-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::testing::temp_dir("notalab");
         let err = local_id(&dir);
-        let _ = std::fs::remove_dir_all(&dir);
         assert!(err.is_err(), "a folder with no isoloom.yml is not a lab");
     }
 
@@ -749,8 +743,8 @@ mod tests {
         use crate::platform::exec::fake::Tools;
         use crate::runtime::test_support::record_run;
         let t = crate::testing::test_app::TestApp::new();
-        let src = std::env::temp_dir().join(format!("cyberctf-import-src-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(&src).unwrap();
+        // Removed when the test ends, a failed assertion included (it was left after one).
+        let src = crate::testing::temp_dir("import-src");
         std::fs::write(src.join("isoloom.yml"), SPEC).unwrap();
         let _tools = Tools::rules(&[]);
         let log = |_: String| {};
@@ -771,7 +765,6 @@ mod tests {
         record_run(t.data(), "local-invoice", Some("esxi1"), "vagrant", "absent");
         install_local(&t.dirs(), "local-invoice", &src, &log).await.unwrap();
         assert!(!dir.join("mine").exists());
-        let _ = std::fs::remove_dir_all(&src);
     }
 
     #[tokio::test]
@@ -815,7 +808,7 @@ mod tests {
 
     #[test]
     fn a_leftover_staging_folder_is_replaced_whole_and_an_installed_marker_is_trimmed() {
-        let labs = std::env::temp_dir().join(format!("cyberctf-stage-{}", rand::random::<u32>()));
+        let labs = crate::testing::temp_dir("stage");
         let dir = labs.join("lab");
         let staging = labs.join(".lab.staging");
         std::fs::create_dir_all(staging.join("old")).unwrap();
@@ -827,7 +820,6 @@ mod tests {
         std::fs::write(staging.join(runtime::lab::COMMIT_MARKER), format!("  {SHA}\r\n")).unwrap();
         assert!(runtime::lab::installed_at(&staging, SHA));
         assert!(!runtime::lab::installed_at(&staging, &SHA.to_uppercase()));
-        std::fs::remove_dir_all(labs).unwrap();
     }
 
     #[tokio::test]
