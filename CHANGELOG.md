@@ -303,6 +303,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **The guided setup installs Docker Desktop on a clean Windows 11.** Its installs asked every
+  source winget has, the Microsoft Store's too, and that source's certificate check fails on a
+  fresh App Installer (`0x8a15005e`, "The server certificate did not match any of the expected
+  values"), which stopped Docker Desktop's install, as it would have any other tool's. The setup's
+  installs and removals now ask winget's own source alone (`--source winget`), which has every
+  package the setup installs (#296).
+
 - **Docker 26 and older no longer read as running when their daemon doesn't answer.** Debian's
   `docker.io` (26.1.5 on Debian 13) and other Docker 26 or older CLIs exit without an error from
   `docker info` when the daemon is stopped or unreachable. The machine check took that as Docker

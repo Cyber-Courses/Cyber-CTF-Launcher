@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::install::Dependency;
-use super::steps::{Step, run_steps, step};
+#[cfg(not(windows))]
+use super::steps::step;
+use super::steps::{Step, run_steps};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 
@@ -303,7 +305,7 @@ fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>
 #[cfg(target_os = "windows")]
 fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
     match (dep, super::install::winget_package(dep)) {
-        (_, Some(id)) => Ok(vec![step("winget", &["uninstall", "-e", "--id", id])]),
+        (_, Some(id)) => Ok(vec![super::install::winget("uninstall", id, &[])]),
         (Dependency::VmwareUtility, None) => Ok(vec![super::vmware_utility::windows_uninstall()]),
         (Dependency::Wsl, None) => Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
         (Dependency::Hyperv, None) => Err(Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into())),
@@ -564,7 +566,9 @@ mod tests {
             Dependency::Azurecli,
             Dependency::Gcloud,
         ] {
-            assert_eq!(plan(dep, Some("/x/VirtualBox.dmg")).unwrap()[0].program, "winget", "{dep:?}");
+            let steps = plan(dep, Some("/x/VirtualBox.dmg")).unwrap();
+            assert_eq!(steps[0].program, "winget", "{dep:?}");
+            assert!(steps[0].args.windows(2).any(|w| w == ["--source", "winget"]), "{dep:?}: {:?}", steps[0].args);
         }
         // Not in winget: its MSI removed by its product code.
         assert_eq!(plan(Dependency::VmwareUtility, None).unwrap()[0].program, "powershell");

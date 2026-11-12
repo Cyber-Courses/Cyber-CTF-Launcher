@@ -178,6 +178,18 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
     })
 }
 
+/// `winget <verb> <id>`, from the `winget` source alone. Without `--source`, winget asks every
+/// source it has, the Microsoft Store's (`msstore`) too, and one that fails stops the command: on
+/// a clean Windows 11 the Store source's certificate pinning failed (0x8a15005e, "The server
+/// certificate did not match any of the expected values") and Docker Desktop's install with it.
+/// Every package the setup installs is in the `winget` source.
+#[cfg(any(target_os = "windows", test))]
+pub(super) fn winget(verb: &str, id: &str, extra: &[&str]) -> Step {
+    let mut args = vec![verb, "-e", "--id", id, "--source", "winget"];
+    args.extend_from_slice(extra);
+    super::steps::step("winget", &args)
+}
+
 /// The winget package of `dep`, when winget installs it on Windows.
 #[cfg(target_os = "windows")]
 pub(super) fn winget_package(dep: Dependency) -> Option<&'static str> {
@@ -201,7 +213,7 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
         return Err(Error::Invalid("VirtualBox doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.".into()));
     }
     match (dep, winget_package(dep)) {
-        (_, Some(id)) => Ok(vec![step("winget", &["install", "-e", "--id", id, "--accept-source-agreements", "--accept-package-agreements"])]),
+        (_, Some(id)) => Ok(vec![winget("install", id, &["--accept-source-agreements", "--accept-package-agreements"])]),
         // Turns on the WSL and Virtual Machine Platform features and installs the WSL 2 kernel.
         // Elevated through Windows' own UAC prompt; the features need a restart to take effect.
         // `-PassThru` surfaces wsl.exe's own exit code (without it PowerShell exits 0 whatever
@@ -378,6 +390,19 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
 mod tests {
     use super::*;
 
+    /// Regression (rig windows-bare, a clean Windows 11): `winget install -e --id
+    /// Docker.DockerDesktop` without a source failed with 0x8a15005e, the Microsoft Store source's
+    /// certificate pinning failing, in both passes. winget is asked of its own source alone.
+    #[test]
+    fn winget_installs_and_removes_from_its_own_source_alone() {
+        let install = winget("install", "Docker.DockerDesktop", &["--accept-source-agreements", "--accept-package-agreements"]);
+        assert_eq!(
+            command_line(&install),
+            "$ winget install -e --id Docker.DockerDesktop --source winget --accept-source-agreements --accept-package-agreements"
+        );
+        assert_eq!(command_line(&winget("uninstall", "Hashicorp.Vagrant", &[])), "$ winget uninstall -e --id Hashicorp.Vagrant --source winget");
+    }
+
     #[test]
     fn docker_is_named_as_the_setup_installs_it_on_each_os() {
         assert_eq!(Dependency::Docker.name_on("linux"), "Docker Engine");
@@ -496,6 +521,7 @@ mod tests {
                     let steps = p.unwrap();
                     assert_eq!(steps[0].program, "winget");
                     assert!(steps[0].args.contains(&"--accept-package-agreements".to_string()));
+                    assert!(steps[0].args.windows(2).any(|w| w == ["--source", "winget"]), "{dep:?}: {:?}", steps[0].args);
                 }
             }
         }
