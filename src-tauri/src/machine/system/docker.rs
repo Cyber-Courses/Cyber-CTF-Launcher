@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::platform::exec::{docker_denied, docker_denied_error, run, run_read};
+use crate::platform::exec::{docker_denied, docker_denied_error, run, run_read, run_read_env};
 
 /// How long each engine's context may take to answer before it counts as stopped.
 const ENGINE_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
@@ -79,7 +79,27 @@ impl Engine {
 
 /// `docker info`'s operating system line: the daemon answers (for this account).
 pub(super) async fn daemon_os() -> Result<String> {
-    run_read("docker", &["info", "--format", "{{.OperatingSystem}}"], None).await
+    daemon_info("{{.OperatingSystem}}", &[]).await
+}
+
+/// `docker info --format <field>` (`{{.ServerVersion}}`, say), with `env` (a `DOCKER_CONTEXT`):
+/// the daemon answers (for this account). Docker 26 and older (Debian's `docker.io`) exit 0 from
+/// `docker info` when the daemon doesn't answer, saying so on stderr alone with an empty line on
+/// stdout: an empty answer is asked again of `docker version`, which fails with the reason (not
+/// running, or refused to this account).
+pub(crate) async fn daemon_info(field: &str, env: &[(String, String)]) -> Result<String> {
+    let out = run_read_env("docker", &["info", "--format", field], None, env).await?;
+    if answered(&out).is_some() {
+        return Ok(out);
+    }
+    run_read_env("docker", &["version", "--format", "{{.Server.Os}}"], None, env).await?;
+    Err(Error::Invalid(format!("docker info --format {field} answered nothing, though the Docker daemon answers")))
+}
+
+/// A daemon's `docker info` answer, when it gave one: Docker 26 and older print an empty line
+/// (and exit 0) when the daemon doesn't answer.
+fn answered(info: &str) -> Option<&str> {
+    Some(info.trim()).filter(|out| !out.is_empty())
 }
 
 /// Name the running engine from the daemon's OS string and the active CLI context.
@@ -189,7 +209,7 @@ pub(super) async fn engines() -> Vec<EngineStatus> {
     for (name, current) in listed {
         let args = ["--context", name.as_str(), "info", "--format", "{{.OperatingSystem}}"];
         let answer = match tokio::time::timeout(ENGINE_PROBE_TIMEOUT, run_read("docker", &args, None)).await {
-            Ok(Ok(daemon_os)) => Some(daemon_os),
+            Ok(Ok(daemon_os)) => answered(&daemon_os).map(str::to_owned),
             _ => None,
         };
         let engine = match &answer {
@@ -335,6 +355,43 @@ mod tests {
         let found = engines().await;
         assert_eq!(found.len(), 1);
         assert_eq!((found[0].engine.id(), found[0].context.as_str(), found[0].running, found[0].current), ("docker-desktop", "default", true, true));
+    }
+
+    /// Regression (the rig's Debian 13, `docker.io` 26.1.5): with the daemon unreachable,
+    /// `docker info --format …` printed an empty line and exited 0, so the machine check read
+    /// Docker as running ("Docker Engine 26.1.5") while every lab call failed.
+    #[tokio::test]
+    async fn an_empty_docker_info_is_a_daemon_that_doesnt_answer() {
+        let tools = Tools::new(move |program, args| match (program, args) {
+            ("docker", ["context", "ls", ..]) => ok("default\ttrue\n"),
+            ("docker", ["version", ..]) => fail(DOWN),
+            _ => ok("\n"),
+        });
+        let err = daemon_os().await.unwrap_err();
+        assert!(err.to_string().contains("Cannot connect to the Docker daemon"), "{err}");
+        assert!(!docker_denied(&err), "{err}");
+        assert!(tools.called("docker version"), "the reason is asked of docker version: {:?}", tools.calls());
+        let found = engines().await;
+        assert!(found.iter().all(|e| !e.running), "{found:?}");
+        drop(tools);
+        // Refused to this account: the same reply tells it apart.
+        let _tools = Tools::new(|program, args| match (program, args) {
+            ("docker", ["version", ..]) => fail(DENIED),
+            _ => ok(""),
+        });
+        assert!(docker_denied(&daemon_os().await.unwrap_err()));
+    }
+
+    /// A daemon that answers `docker version` but leaves `docker info`'s field empty isn't read
+    /// as up either: there is no answer to go on.
+    #[tokio::test]
+    async fn an_empty_docker_info_from_a_daemon_that_answers_version_is_still_no_answer() {
+        let _tools = Tools::new(|program, args| match (program, args) {
+            ("docker", ["version", ..]) => ok("linux\n"),
+            _ => ok(" \n"),
+        });
+        let err = daemon_info("{{.ServerVersion}}", &[]).await.unwrap_err();
+        assert_eq!(err.to_string(), "docker info --format {{.ServerVersion}} answered nothing, though the Docker daemon answers");
     }
 
     #[tokio::test]

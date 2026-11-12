@@ -6,7 +6,8 @@ use std::time::Duration;
 use super::Reporter;
 use super::downloads::ensure_image;
 use crate::error::{Error, Result};
-use crate::platform::exec::{run_env_timed, run_read_env};
+use crate::machine::system::docker::daemon_info;
+use crate::platform::exec::run_env_timed;
 
 const PROJECT: &str = "cyberctf-selftest";
 pub(crate) const IMAGE: &str = "busybox:1.36";
@@ -62,7 +63,7 @@ pub(super) async fn run_test(dir: &Path, context: Option<&str>, r: &Reporter) ->
 
 async fn steps(dir: &Path, env: &[(String, String)], r: &Reporter) -> Result<()> {
     r.step("engine", "Container engine answers", async {
-        let v = run_read_env("docker", &["info", "--format", "{{.ServerVersion}}"], None, env).await?;
+        let v = daemon_info("{{.ServerVersion}}", env).await?;
         Ok(((), Some(format!("Docker {}", v.trim()))))
     })
     .await?;

@@ -303,6 +303,14 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **Docker 26 and older no longer read as running when their daemon doesn't answer.** Debian's
+  `docker.io` (26.1.5 on Debian 13) and other Docker 26 or older CLIs exit without an error from
+  `docker info` when the daemon is stopped or unreachable. The machine check took that as Docker
+  running, so the header said it was ready while every lab failed to start, and the container
+  self-test passed its engine step. An empty answer now counts as none: the app asks
+  `docker version` for the reason and says Docker isn't running, or isn't open to this account
+  (#291).
+
 - **The guided setup on Linux sets up libvirt or QEMU where KVM holds the CPU's virtualization,
   not VirtualBox.** Since Linux 6.12, KVM turns VT-x or AMD-V on as soon as its module loads, on
   any machine that has it, so no VirtualBox VM can start ("VT-x is being used by another

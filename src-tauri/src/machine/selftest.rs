@@ -196,9 +196,9 @@ mod tests {
     /// probe, the pull, compose and the clean-up, goes to that engine's context.
     #[tokio::test]
     async fn the_container_test_runs_on_the_engine_asked_for() {
-        use crate::platform::exec::fake::{Tools, fail};
+        use crate::platform::exec::fake::{Tools, fail, ok};
         let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::rules(&[("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
+        let tools = Tools::rules(&[("docker info", ok("27.3.1\n")), ("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("orbstack".into()), channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:ok", "pull:running", "pull:fail"]);
@@ -234,6 +234,27 @@ mod tests {
         assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
         assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
         assert!(tools.called("down -v"), "the test lab is torn down even so");
+    }
+
+    /// Regression (the rig's Debian 13, `docker.io` 26.1.5): Docker 26 and older exit 0
+    /// from `docker info --format …` with an empty line when the daemon doesn't answer, and the
+    /// engine step passed ("Docker ") to fail at the pull. It fails with the reason `docker
+    /// version` gives, asked of the same engine.
+    #[tokio::test]
+    async fn an_engine_whose_docker_info_answers_nothing_fails_the_engine_step() {
+        use crate::platform::exec::fake::{Tools, fail, ok};
+        let t = crate::testing::test_app::TestApp::new();
+        let tools = Tools::new(|_, args| match args {
+            ["info", ..] => ok("\n"),
+            ["version", ..] => fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"),
+            _ => ok(""),
+        });
+        let (channel, seen) = events();
+        assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("default".into()), channel).await.is_err());
+        assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
+        assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
+        assert_eq!(tools.env_of("docker version", "DOCKER_CONTEXT").as_deref(), Some("default"));
+        assert!(!tools.called("pull"), "{:?}", tools.calls());
     }
 
     #[tokio::test]
