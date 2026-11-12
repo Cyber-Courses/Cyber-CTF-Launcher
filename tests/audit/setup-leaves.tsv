@@ -38,6 +38,7 @@ engine:docker-desktop	windows	process	*Docker Desktop*	Docker Desktop's app
 engine:docker-desktop	windows	listening-port	*docker*	Docker Desktop's own sockets
 wsl	windows	hyperv-switch	WSL*	WSL 2's virtual switch, made when WSL is turned on
 wsl	windows	route	* vEthernet (WSL*	the route of WSL 2's virtual switch
+wsl	windows	firewall-rule	Windows Subsystem for Linux	the Windows Firewall rule WSL 2's install adds for its networking (the Docker path turns WSL on first)
 libvirt	linux	route	192.168.122.0/24 dev virbr0	libvirt's default network's bridge, routed as long as the network is up
 libvirt	linux	libvirt-network	default	libvirt's default network, defined by its package
 libvirt	linux	libvirt-pool	default	libvirt's default storage pool, which the VMs' disks go in

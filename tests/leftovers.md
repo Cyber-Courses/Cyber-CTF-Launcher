@@ -174,7 +174,7 @@ a glob on the name the report shows, why it stays): the launcher's package its d
 (`os-registration`), a Docker engine its bridge's route, its firewall chains and tables, libvirt
 (and QEMU, which brings it) its default network and pool, its bridge's route and chains, Hyper-V
 its Default Switch and the switch's NAT route, VirtualBox the host-only adapter its self-test
-makes, WSL 2 its switch, Docker Desktop its processes and sockets, the self-test's first VM
+makes, WSL 2 its switch and its firewall rule, Docker Desktop its processes and sockets, the self-test's first VM
 vagrant-libvirt's management network. The headless setup entry (`integration_tests::setup`,
 `CYBERCTF_TEST_RESULTS`) puts those rows, and its own temp folder (`temp-folder`,
 `<temp>/cyberctf-guided-setup`, its real path), in each `installed:` record's `leaves`, so a

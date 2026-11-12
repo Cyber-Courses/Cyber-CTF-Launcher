@@ -128,6 +128,10 @@ mod tests {
         }
         // WSL 2, which the Docker path turns on first on Windows.
         assert!(names("wsl", "windows").contains(&pair("hyperv-switch", "WSL*")));
+        // Its firewall rule, by its whole name (rig windows-bare: the docker path's audit read it
+        // as left once WSL 2 was installed); no other rule.
+        let rules: Vec<_> = names("wsl", "windows").into_iter().filter(|(k, _)| k == "firewall-rule").collect();
+        assert_eq!(rules, [pair("firewall-rule", "Windows Subsystem for Linux")]);
         assert_eq!(names("wsl", "linux"), vec![pair(FOLDER.0, FOLDER.1)]);
     }
 
