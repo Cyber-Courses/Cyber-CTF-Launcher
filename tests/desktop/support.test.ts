@@ -1,7 +1,55 @@
-import { describe, expect, it } from "vitest";
-import { containersChanged, linkTargets, mainButton, secondCopy } from "./lib/support.mjs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { containersChanged, labDown, linkTargets, mainButton, results, secondCopy } from "./lib/support.mjs";
 
 // The specs' shared selectors (lib/support.mjs), as WebdriverIO gets them.
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("a spec's failed step", () => {
+  it("is followed by what the page showed, once the spec says how to read it; a passed one isn't", async () => {
+    const logged: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => logged.push(line));
+    const r = results();
+    // jarvis, ubuntu2404-quick e2e.lab attack-shell: box-stop failed with "the lab no longer shows
+    // running" and nothing said what the page showed instead.
+    await r.step("before", "a step before the page is known", () => Promise.reject(new Error("no page yet")));
+    r.showing(() => Promise.resolve('"Supplier portal API Removing the attack box…"'));
+    await r.step("box-stop", "Stop attack box takes the box away; the lab keeps running", () => Promise.reject(new Error("the lab no longer shows running")));
+    await r.step("ok", "a step that passes", () => Promise.resolve("fine"));
+    r.showing(() => Promise.reject(new Error("the window is gone")));
+    await r.step("gone", "a step whose page can't be read", () => Promise.reject(new Error("failed")));
+    expect(logged.map((l) => l.replace(/ \(\d+s\)/, ""))).toEqual([
+      "FAILED: before a step before the page is known: no page yet",
+      "FAILED: box-stop Stop attack box takes the box away; the lab keeps running: the lab no longer shows running",
+      'box-stop: the page showed: "Supplier portal API Removing the attack box…"',
+      "ok: ok fine",
+      "FAILED: gone a step whose page can't be read: failed",
+      "gone: the page showed: (unreadable: the window is gone)",
+    ]);
+    expect(r.failed).toBe(3);
+  });
+});
+
+describe("whether a lab is down, from its containers", () => {
+  const p = "cyberctf-local-invoice-portal-api";
+  const c = (service: string, state: string) => ({ name: `${p}-${service}-1`, state });
+  const jobs = [c("isoloom-init-database-1", "exited"), c("isoloom-probe", "exited")];
+
+  it("is not while a service of its runs, its one-shot jobs exited by design and the attack box gone", () => {
+    expect(labDown([c("web", "running"), c("database", "running"), ...jobs])).toBeNull();
+    expect(labDown([c("web", "exited"), c("database", "running"), ...jobs])).toBeNull();
+  });
+
+  it("is, saying how, when none of its services runs: the box's removal took the lab with it", () => {
+    expect(labDown([c("web", "exited"), c("database", "exited"), ...jobs, c("attackbox", "running")])).toBe(
+      `none of its services runs: ${p}-web-1 exited, ${p}-database-1 exited`,
+    );
+    expect(labDown(jobs)).toBe("no container of its services is left");
+    expect(labDown([])).toBe("no container of its services is left");
+  });
+});
 
 describe("the labs the deep-link spec links to", () => {
   // jarvis, debian13-quick, e2e.shell deep-link: the Labs list once the fixture was imported (its

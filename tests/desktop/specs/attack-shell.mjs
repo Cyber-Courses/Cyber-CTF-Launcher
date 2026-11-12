@@ -18,13 +18,13 @@ import {
   invokeCmd,
   LAB_START_MS,
   labContainers,
+  labDown,
   localLab,
   localLabName,
   mainText,
   openApp,
   openImportedLab,
   results,
-  sleep,
   STOP_MS,
   stopAndRemoveOnPage,
   switchToWindow,
@@ -90,6 +90,8 @@ let b;
 let marker = null;
 try {
   ({ proc, b } = await openApp({ storage: { __wdio_launch_local__: LAB } }));
+  // A failed step says what the window then showed (its main pane; the shell window has none).
+  r.showing(async () => JSON.stringify((await mainText(b)).replace(/\s+/g, " ").trim().slice(0, 1500)));
   let title = null;
   await b.waitUntil(async () => (title = (await importedLabs(b)).find((l) => l.id === ID)?.title ?? null) !== null, {
     timeout: LAB_START_MS,
@@ -153,15 +155,33 @@ try {
     const stop = await sideButton(b, "Stop attack box");
     await stop.waitForClickable({ timeout: 30000 });
     await stop.click();
-    await waitAwake(b, async () => /Start attack box|not started/.test(await panel(b)), {
-      timeout: STOP_MS,
-      interval: 3000,
-      timeoutMsg: "the box never stopped",
-    });
-    await sleep(2000);
+    // The removal is the box's retire, then an update that runs the lab up again (`up --wait`,
+    // ~20 s on the rig), all under the lab's lock but no operation busy_labs lists. The panel shows
+    // the box gone from the retire on, its Start attack box disabled until the removal ends: that
+    // button enabled again is the removal done, the lab settled.
+    await waitAwake(
+      b,
+      async () => {
+        const start = await sideButton(b, "Start attack box");
+        return (await start.isExisting()) && (await start.isEnabled());
+      },
+      { timeout: STOP_MS, interval: 3000, timeoutMsg: "the box's removal never ended: Start attack box never came back enabled" },
+    );
     const left = labContainers(ID).filter((c) => /attackbox/.test(c.name));
     if (left.length) throw new Error(`the box's container is left: ${left.map((c) => `${c.name} ${c.state}`).join(", ")}`);
-    if (!(await mainText(b)).match(/\bRunning\b/)) throw new Error("the lab no longer shows running");
+    // The page reads the lab's status again after the removal: Running within a few polls.
+    const shown = await waitAwake(b, async () => /\bRunning\b/.test(await mainText(b)), { timeout: 30000, interval: 2000, timeoutMsg: "no Running" }).then(
+      () => true,
+      () => false,
+    );
+    if (!shown) {
+      const down = labDown(labContainers(ID));
+      throw new Error(
+        down
+          ? `the lab is down once the box's removal ended: ${down} (the app's or Isoloom's: taking the box out took the lab with it)`
+          : "the lab's page no longer says Running once the box's removal ended, though its containers run",
+      );
+    }
   });
   await stopAndRemoveOnPage(b).catch((e) => console.log("(cleanup: Stop & remove:", e.message + ")"));
 } catch (e) {

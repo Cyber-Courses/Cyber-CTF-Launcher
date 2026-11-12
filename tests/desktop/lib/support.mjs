@@ -539,6 +539,7 @@ export const SKIPPED = 2;
 export function results() {
   let failed = 0;
   let mark = Date.now();
+  let showing = null;
   const line = (status, id, text) => {
     const secs = Math.round((Date.now() - mark) / 1000);
     mark = Date.now();
@@ -557,7 +558,8 @@ export function results() {
       return ok;
     },
     skip: (id, why) => line("skipped", id, why),
-    /** Runs `fn`; its answer (or `what`) is the ok line, what it throws the FAILED one. */
+    /** Runs `fn`; its answer (or `what`) is the ok line, what it throws the FAILED one, followed,
+     *  once `showing` is given, by what the page showed then. */
     step: async (id, what, fn) => {
       try {
         const seen = await fn();
@@ -565,8 +567,19 @@ export function results() {
         return true;
       } catch (e) {
         r.fail(id, `${what}: ${e?.message ?? e}`);
+        if (showing) {
+          const shown = await Promise.resolve()
+            .then(showing)
+            .catch((x) => `(unreadable: ${x?.message ?? x})`);
+          console.log(`${id}: the page showed: ${shown}`);
+        }
         return false;
       }
+    },
+    /** From now on, a failed step is followed in the log by `read()`'s answer: what the page
+     *  showed (the main pane's text, say), so a failure says what was on the screen. */
+    showing: (read) => {
+      showing = read;
     },
     /** The whole spec skipped: one line, the apps it launched stopped, and exit. */
     skipAll: (why) => {
@@ -610,6 +623,15 @@ export function docker(...args) {
 /** Whether a Docker engine answers here: `docker info` names its version (an exit 0 with an empty
  *  line is Docker 26's for a daemon that doesn't answer: engineSilence, host.mjs). */
 export const dockerUp = () => engineSilence(runBounded("docker", ["info", "--format", "{{.ServerVersion}}"], DOCKER_CALL_MS), DOCKER_CALL_MS / 1000) === null;
+
+/** Why lab containers `cs` (`labContainers`) say the lab is down: none of its services runs (its
+ *  one-shot jobs, `isoloom-init-*` and `isoloom-probe`, exit by design, and the attack box isn't
+ *  one of the lab's); null while one does. */
+export function labDown(cs) {
+  const services = cs.filter((c) => !/-isoloom-|-attackbox-/.test(c.name));
+  if (services.some((c) => c.state === "running")) return null;
+  return services.length ? `none of its services runs: ${services.map((c) => `${c.name} ${c.state}`).join(", ")}` : "no container of its services is left";
+}
 
 /** The containers of lab `id` (its Compose project, `cyberctf-<id>`): name and state each. */
 export function labContainers(id) {
