@@ -143,6 +143,11 @@ export async function prepare(b, storage = {}) {
       /* storage unavailable: the shell still renders */
     }
   }, storage);
+  // The shell rendered before the reload: a reload while the page is still loading (its first
+  // render, its machine checks in flight) ended the app on Windows with a silent fail-fast
+  // (0xC0000409) in about two specs of five, seconds after it opened (the rig's x64 row,
+  // 2026-11-12), with nothing in its log or on its stderr.
+  await b.$("aside nav").waitForExist({ timeout: 25000 });
   await b.refresh();
   await b.$("aside nav").waitForExist({ timeout: 25000 });
   await forceVisible(b);
