@@ -235,6 +235,26 @@ describe("the allowlist", () => {
     expect(allowanceFor(item("proxmox-token", "root@pam!cyberctf-1a2b3c4d"), "clone", allowlist)).toBeDefined();
   });
 
+  it("keeps Docker's raw table and its two base chains, exactly, and no rule of it", () => {
+    // ubuntu2404-quick e2e:lab (Docker preinstalled in the golden): dockerd made iptables-nft's raw
+    // table on the lab's first published port, and the audit read it as left.
+    for (const [kind, name] of [
+      ["nft-table", "table ip raw"],
+      ["iptables-rule", "raw :PREROUTING ACCEPT"],
+      ["iptables-rule", "raw :OUTPUT ACCEPT"],
+    ]) {
+      expect(allowanceFor(item(kind, name), "clone", allowlist), name).toBeDefined();
+    }
+    for (const [kind, name] of [
+      ["nft-table", "table ip6 raw"],
+      ["nft-table", "table inet cyberctf"],
+      ["iptables-rule", "raw :PREROUTING DROP"],
+      ["iptables-rule", "raw -A PREROUTING -d 172.18.0.2/32 ! -i br-0a1b2c3d4e5f -j DROP"],
+    ]) {
+      expect(allowanceFor(item(kind, name), "clone", allowlist), name).toBeUndefined();
+    }
+  });
+
   it("keeps the host-only adapter's route with the adapter, on each system, and no other route", () => {
     // jarvis, debian13-quick, e2e:vm: the VirtualBox self-test's vboxnet0 was allowed, its route
     // read as left ("192.168.56.0/24 dev vboxnet0").

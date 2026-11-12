@@ -4,6 +4,9 @@
 # A caller adds its own with `--allow <file>`, in the same format.
 docker-image	any	*	the images a lab pulls or builds stay, the launcher's cache (recorded in storage.json; the Machine page's Clean up removes them)
 docker-volume	any	* (persistent)	a volume a lab marks persistent (isoloom.persistent) outlives its stop on purpose
+nft-table	any	table ip raw	the raw table iptables-nft creates when Docker Engine 28 or later publishes its first port (it drops traffic to a container's address from outside its bridge there): Docker's own, made once and kept while Docker runs
+iptables-rule	any	raw :PREROUTING ACCEPT	that raw table's base chain, made with it by Docker Engine 28 or later
+iptables-rule	any	raw :OUTPUT ACCEPT	that raw table's other base chain, made with it by Docker Engine 28 or later
 vagrant-box	any	*	the boxes a VM lab or the guided setup's self-test downloads stay, the launcher's cache (the Machine page's Clean up removes them)
 libvirt-volume	any	*_vagrant_box_image_*	vagrant-libvirt's copy of a box in the storage pool: the box cache, kept for the next VM
 vbox-vm	any	*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]*	the master VM Vagrant imports from a box for linked clones (`<box>_<ms>_<n>`): the box cache, kept for the next VM
