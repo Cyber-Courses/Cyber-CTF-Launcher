@@ -5,6 +5,7 @@
 // `is_minimized`, the window gone, the app quit), not by the button's look. macOS keeps the
 // system's frame and traffic lights: skipped there.
 import { closeWindow, finish, goTo, openApp, invokeCmd, ownFrame, results, sleep, switchToWindow } from "../lib/support.mjs";
+import { doubleClickPress, TITLE_BAR } from "../lib/page.mjs";
 
 export const needs = ["own-frame"];
 const r = results();
@@ -28,7 +29,7 @@ try {
     for (const name of ["Minimize", "Maximize", "Close"]) {
       if (!(await (await control(b, name)).isExisting())) throw new Error(`no ${name} button in [data-window-controls]`);
     }
-    if ((await b.$$("[data-tauri-drag-region]")).length === 0) throw new Error("no drag region in the header");
+    if ((await b.$$(TITLE_BAR)).length !== 1) throw new Error(`the main column's header isn't a drag region (${TITLE_BAR})`);
   });
 
   await (await control(b, "Maximize")).click();
@@ -37,11 +38,17 @@ try {
   await (await control(b, "Restore")).click();
   r.check("restore", await becomes(b, "maximized", false), "Restore brings the window back to its size");
 
-  // Tauri's own handler on any `data-tauri-drag-region`: a double-click toggles the maximize.
-  const header = await b.$("main [data-tauri-drag-region], header [data-tauri-drag-region], [data-tauri-drag-region]");
-  await header.doubleClick();
-  const doubled = await becomes(b, "maximized", true);
-  r.check("double-click", doubled, "a double-click on the header maximizes the window");
+  // Tauri's own handler on a `data-tauri-drag-region` (its drag.js) toggles the maximize on a
+  // double-click's second press, `detail` 2. The embedded WebDriver gives every press `detail` 1,
+  // so its doubleClick reads as two drags: the second press is sent in the page instead, at a point
+  // of the header with nothing clickable over it (doubleClickPress).
+  const pressed = await b.execute(doubleClickPress, TITLE_BAR).catch(() => null);
+  const doubled = pressed !== null && (await becomes(b, "maximized", true));
+  r.check(
+    "double-click",
+    doubled,
+    pressed ? "a double-click on the header maximizes the window" : `no point of the header (${TITLE_BAR}) is a drag region with nothing clickable over it`,
+  );
   if (doubled) {
     await (await control(b, "Restore")).click();
     await becomes(b, "maximized", false);

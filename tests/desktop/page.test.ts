@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
-import { terminalText } from "./lib/page.mjs";
+import { screen as rendered, render } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AppShell } from "@/components/app-shell";
+import { installTauri } from "@/test/tauri";
+import { flush } from "@/test/ui";
+import { terminalText, TITLE_BAR } from "./lib/page.mjs";
 
-// What the specs read of the app's page in the page itself (lib/page.mjs), against the markup the
-// app draws.
+// What the specs read of the app's page in the page itself, and the selectors they find its parts
+// by (lib/page.mjs), against the markup the app draws.
+
+type Tauri = { isTauri?: boolean };
 
 /** xterm.js's DOM renderer: one `<div>` of `<span>`s per row under `.xterm-rows`. */
 function xtermRows(rows: string[][]) {
@@ -24,6 +31,34 @@ function xtermRows(rows: string[][]) {
 
 afterEach(() => {
   document.body.replaceChildren();
+  delete (globalThis as Tauri).isTauri;
+  vi.restoreAllMocks();
+});
+
+describe("the main window's title bar", () => {
+  const AGENTS = {
+    windows: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+    linux: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+  };
+
+  it.each(["linux", "windows"] as const)("is the main column's header alone on %s, where the window has three drag regions", async (os) => {
+    localStorage.setItem("cyberctf.onboarded", "1");
+    installTauri();
+    (globalThis as Tauri).isTauri = true;
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(AGENTS[os]);
+    render(createElement(AppShell));
+    await rendered.findByRole("navigation");
+    await flush(50);
+    const bars = document.querySelectorAll(TITLE_BAR);
+    expect(bars).toHaveLength(1);
+    expect(bars[0]).toBe(document.querySelector("main")?.firstElementChild);
+    expect(bars[0].querySelector("[data-window-controls]")).not.toBeNull();
+    // The rig's title-bar spec (debian13-quick e2e.shell, Windows on Arm): the selector it gave
+    // WebdriverIO's strict `$`, which "resolved to 3 elements": the sidebar's top row, the header and
+    // the window buttons' spacer in it.
+    const before = "main [data-tauri-drag-region], header [data-tauri-drag-region], [data-tauri-drag-region]";
+    expect(document.querySelectorAll(before)).toHaveLength(3);
+  });
 });
 
 describe("the terminal's text", () => {
