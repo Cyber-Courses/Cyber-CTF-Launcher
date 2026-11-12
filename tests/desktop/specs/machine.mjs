@@ -24,6 +24,7 @@ import {
   switchToWindow,
   waitAwake,
 } from "../lib/support.mjs";
+import { utmUnreachable } from "../lib/host.mjs";
 
 export const needs = [];
 const r = results();
@@ -66,7 +67,10 @@ try {
     r.check("container-test", outcome.ok, `the container lab test from the engine's row: ${outcome.text.replace(/\s+/g, " ").slice(0, 300)}`);
   } else r.skip("container-test", "no Docker engine answers here");
 
-  if (PROVIDER) {
+  // UTM from an SSH session: the app's Apple events never reach it, and its Test fails at once
+  // (the runner's hypervisor need doesn't gate this check: the page's own Test runs it).
+  if (PROVIDER === "utm" && utmUnreachable()) r.skip("vm-test", utmUnreachable());
+  else if (PROVIDER) {
     const label = LABELS[PROVIDER] ?? PROVIDER;
     const test = await providerTestButton(b, label);
     if (await test.isExisting()) {

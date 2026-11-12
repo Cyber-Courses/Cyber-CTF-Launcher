@@ -61,6 +61,13 @@ describe("UTM from this session", () => {
     expect(utmUnreachable("linux")).toBeNull();
     expect(utmUnreachable("win32")).toBeNull();
   });
+
+  it("gates the Machine page's VM lab test on UTM too, which no runner need covers: it skips with the same reason", () => {
+    // Its Test button runs the test, not the runner's hypervisor need: over SSH it failed at once
+    // ("the VM lab test on UTM: … Failed", the test rig's studio).
+    const code = readFileSync(join(import.meta.dirname, "specs", "machine.mjs"), "utf8");
+    expect(code).toContain('if (PROVIDER === "utm" && utmUnreachable()) r.skip("vm-test", utmUnreachable());');
+  });
 });
 
 describe("the Docker CLI's plugin folders", () => {
