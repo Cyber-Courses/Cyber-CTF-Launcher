@@ -446,6 +446,55 @@ export async function waitSettled(b, id, timeoutMs = STOP_MS) {
   throw new Error(`${id} still had an operation in flight after ${String(timeoutMs / 1000)} s${why}`);
 }
 
+/**
+ * Waits until lab `id` (run as `runtime`) is as its launch leaves it: the launch's worker done,
+ * then the attack box "Start it with each lab" (Settings, on by default) adds up, or none to add
+ * (the setting off, or no run the launcher reaches), then nothing in flight on the lab. The box is
+ * added by the page once the launch's operation is gone (src/features/labs/attack-box-auto.ts), so
+ * `waitSettled` alone can return before its add begins, and a container joins the lab after it. A
+ * box that never comes up fails the wait, saying so.
+ */
+export async function waitLaunchSettled(b, id, { runtime = "DOCKER", timeoutMs = LAB_START_MS } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const left = () => Math.max(deadline - Date.now(), 1000);
+  await waitSettled(b, id, left());
+  const auto = await b.execute(() => {
+    try {
+      return localStorage.getItem("cyberctf.attackbox.auto") !== "false";
+    } catch {
+      return true;
+    }
+  });
+  if (auto) {
+    let seen = null;
+    const done = await eventually(
+      async () => {
+        seen = await invokeCmd(b, "attack_box_status", { id, runtime }, { timeoutMs: 15000 }).catch(() => null);
+        return seen !== null && (seen.running || !seen.reachable);
+      },
+      left(),
+      3000,
+    );
+    if (!done) throw new Error(`the attack box "Start it with each lab" adds to ${id} never came up (its status: ${JSON.stringify(seen)})`);
+  }
+  await waitSettled(b, id, left());
+}
+
+/** What changed of a lab's containers (`labContainers`) from one read to the next, in words
+ *  ("…-web-1 running → exited", "…-attackbox-1 added (running)", "…-web-1 gone (was running)");
+ *  null when nothing did. */
+export function containersChanged(before, after) {
+  const was = new Map(before.map((c) => [c.name, c.state]));
+  const now = new Map(after.map((c) => [c.name, c.state]));
+  const changes = [];
+  for (const [name, state] of was) {
+    if (!now.has(name)) changes.push(`${name} gone (was ${state})`);
+    else if (now.get(name) !== state) changes.push(`${name} ${state} → ${now.get(name)}`);
+  }
+  for (const [name, state] of now) if (!was.has(name)) changes.push(`${name} added (${state})`);
+  return changes.length ? changes.join(", ") : null;
+}
+
 /** Stop the app process. */
 export function stopApp(proc) {
   if (proc && proc.exitCode === null) {

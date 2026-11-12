@@ -1,10 +1,13 @@
 // Normal lifecycle: a running container lab shuts down and resumes. Launch the local lab, confirm it
-// runs; a Pause is refused, as the lab page offers none for containers on Docker (they have no
-// state to save: lifecycle's park_refusal), and leaves the lab running; lab_park{shutdown} then
-// leaves nothing of the lab running (Docker stops the containers, keeping them), lab_resume runs
-// it again, then stop. Drives the real lab_park / lab_resume commands (the lab page's Shut down /
-// Resume) against a local lab, which has no detail-page buttons of its own.
+// runs and wait until it is as its launch leaves it (the attack box "Start it with each lab" adds
+// up too); a Pause is refused, as the lab page offers none for containers on Docker (they have no
+// state to save: lifecycle's park_refusal), and changes nothing of the lab, each container as it
+// was; lab_park{shutdown} then leaves nothing of the lab running (Docker stops the containers,
+// keeping them), lab_resume runs it again, then stop. Drives the real lab_park / lab_resume
+// commands (the lab page's Shut down / Resume) against a local lab, which has no detail-page
+// buttons of its own.
 import {
+  containersChanged,
   finish,
   goTo,
   invokeWhenIdle,
@@ -16,7 +19,7 @@ import {
   results,
   sleep,
   waitForLab,
-  waitSettled,
+  waitLaunchSettled,
 } from "../lib/support.mjs";
 
 export const needs = ["running-lab:fixture"];
@@ -41,23 +44,31 @@ try {
   const id = raw && raw.split("-isoloom-")[0];
   if (!id) throw new Error(`no local lab id on the Overview:\n${main.slice(0, 400)}`);
 
-  const before = states(id);
-  if (runningCount(before) === 0) throw new Error(`no running container before park: ${JSON.stringify(before)}`);
+  // The launch worker holds the per-lab lock a little past the point the Overview shows "running",
+  // and the attack box "Start it with each lab" adds once it ends joins the lab after that: the lab
+  // read once both are done, so a container the box adds is never taken for the refusal's doing.
+  await waitLaunchSettled(b, id);
+  const before = labContainers(id);
+  if (runningCount(before.map((c) => c.state)) === 0) throw new Error(`no running container before park: ${JSON.stringify(before)}`);
 
-  // The launch worker holds the per-lab lock a little past the point the Overview shows "running";
-  // wait for it to settle so park isn't refused for an operation already in progress.
-  await waitSettled(b, id);
   const refusal = await invokeWhenIdle(b, "lab_park", { id, runtime: "DOCKER", mode: "pause" }).then(
     () => null,
     (e) => e.message,
   );
-  const afterPause = states(id);
+  const afterPause = labContainers(id);
+  const changed = containersChanged(before, afterPause);
+  const seen = afterPause.map((c) => `${c.name.replace(`cyberctf-${id}-`, "")} ${c.state}`).join(", ");
+  const refusedAsPause = refusal !== null && /shut it down instead/i.test(refusal);
   r.check(
     "pause-refused",
-    refusal !== null && /shut it down instead/i.test(refusal) && runningCount(afterPause) === runningCount(before),
+    refusedAsPause && changed === null,
     refusal === null
-      ? `a Pause of containers on Docker was carried out: ${JSON.stringify(afterPause)}`
-      : `refused (${refusal}); still running: ${afterPause.join(", ")}`,
+      ? `a Pause of containers on Docker was carried out: ${seen}`
+      : !refusedAsPause
+        ? `refused, but not as a Pause of containers on Docker is: ${refusal}`
+        : changed
+          ? `refused (${refusal}), yet the lab changed: ${changed}`
+          : `refused (${refusal}); nothing of the lab changed: ${seen}`,
   );
 
   await invokeWhenIdle(b, "lab_park", { id, runtime: "DOCKER", mode: "shutdown" });

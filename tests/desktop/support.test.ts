@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mainButton, secondCopy } from "./lib/support.mjs";
+import { containersChanged, mainButton, secondCopy } from "./lib/support.mjs";
 
 // The specs' shared selectors (lib/support.mjs), as WebdriverIO gets them.
 
@@ -34,5 +34,29 @@ describe("a second copy of a lab", () => {
     expect(secondCopy([c("web"), c("web", `${project}-2`)])).toBe(`2 Compose projects: ${project}, ${project}-2`);
     expect(secondCopy([c("web"), c("web", project, 2), c("database")])).toBe("a service runs more than once: web ×2");
     expect(secondCopy([])).toBeNull();
+  });
+});
+
+describe("what changed of a lab's containers", () => {
+  const p = "cyberctf-local-invoice-portal-api";
+  const c = (service: string, state: string) => ({ name: `${p}-${service}-1`, state });
+  // jarvis, debian13-quick, e2e.resilience park-resume: read as soon as the Overview showed the lab
+  // running, then after its Pause was refused, the attack box "Start it with each lab" adds once the
+  // launch ends having joined in between.
+  const launched = [c("web", "running"), c("isoloom-init-database-1", "exited"), c("database", "running"), c("isoloom-probe", "exited")];
+  const withBox = [c("attackbox", "running"), ...launched];
+
+  it("names the box that joined, where the running count only differed: the refused Pause stopped nothing", () => {
+    const running = (cs: { state: string }[]) => cs.filter((x) => x.state === "running").length;
+    expect(running(launched)).not.toBe(running(withBox)); // what the spec took for the refusal's doing
+    expect(containersChanged(launched, withBox)).toBe(`${p}-attackbox-1 added (running)`);
+  });
+
+  it("is nothing for the lab read again as it was, and each container stopped, gone or added otherwise", () => {
+    expect(containersChanged(withBox, [...withBox].reverse())).toBeNull();
+    const after = [c("attackbox", "running"), c("web", "exited"), c("database", "paused"), c("isoloom-probe", "exited"), c("extra", "created")];
+    expect(containersChanged(withBox, after)).toBe(
+      `${p}-web-1 running → exited, ${p}-isoloom-init-database-1-1 gone (was exited), ${p}-database-1 running → paused, ${p}-extra-1 added (created)`,
+    );
   });
 });
