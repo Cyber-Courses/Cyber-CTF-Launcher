@@ -187,6 +187,19 @@ pub(crate) fn debian_qemu_awaits_relogin() -> SystemReport {
     awaits_relogin(Provider::Qemu, true, &[kvm.as_str()], &kvm)
 }
 
+/// Debian with Vagrant, vagrant-qemu and QEMU's `qemu-system` but not `mkisofs`, which QEMU's VMs
+/// need on Linux (QEMU installed before the setup brought genisoimage with it): QEMU reads as not
+/// installed, saying why.
+pub(crate) fn debian_qemu_without_mkisofs() -> SystemReport {
+    let mut r = with(bare_debian(), false, |r| hypervisor(r, Provider::Qemu, true));
+    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Qemu) {
+        (p.hypervisor, p.available, p.reason) = (Some(false), false, Some(Unavailable::MkisofsMissing));
+    }
+    r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
+    r.setup = super::options(&r, false);
+    r
+}
+
 /// Debian with `provider` installed (its plugin as `plugin`) and the player in `groups` since
 /// logging in: `provider` waits for the new login that applies `group`.
 fn awaits_relogin(provider: Provider, plugin: bool, groups: &[&str], group: &str) -> SystemReport {
@@ -267,6 +280,7 @@ pub(crate) fn all() -> Vec<(&'static str, SystemReport)> {
         ("debianLibvirtWithoutKvm", debian_libvirt_without_kvm()),
         ("debianLibvirtAwaitsRelogin", debian_libvirt_awaits_relogin()),
         ("debianQemuAwaitsRelogin", debian_qemu_awaits_relogin()),
+        ("debianQemuWithoutMkisofs", debian_qemu_without_mkisofs()),
         ("bareFedora", bare_fedora()),
         ("macDockerWithoutVagrant", mac_docker_without_vagrant()),
         ("macTwoEngines", mac_two_engines()),

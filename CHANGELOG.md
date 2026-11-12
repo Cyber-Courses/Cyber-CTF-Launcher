@@ -309,6 +309,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **VM labs on QEMU start on Linux.** Vagrant gives each QEMU VM its lab network on a small disk it
+  builds with `mkisofs`, which the guided setup didn't install, so every VM lab on QEMU failed at
+  its first VM ("The executable 'mkisofs' Vagrant is trying to run was not found"). The QEMU
+  install on Linux now adds `genisoimage`, which has it. Where QEMU is there without it, QEMU reads
+  as not installed on the Machine page and in the setup, saying "QEMU VMs need mkisofs", and its
+  install brings it.
+
 - **The lab page shows the lab busy while the attack box is added or removed.** Adding or removing
   the box brings the lab's run up to date, which takes a while and can restart some of the lab's
   machines. The page showed nothing in flight meanwhile, so the lab could flicker to "not running"

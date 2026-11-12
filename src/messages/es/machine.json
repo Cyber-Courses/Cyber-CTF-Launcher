@@ -370,6 +370,7 @@
     "virtualboxStuck": "VirtualBox no responde (su servicio en segundo plano está bloqueado). Cierra VirtualBox y todas las ventanas de VM, o reinicia el equipo, y vuelve a comprobar.",
     "hypervOff": "Hyper-V no está activado (Características de Windows > Hyper-V), o esta edición de Windows no lo tiene.",
     "hypervNeedsAdmin": "Vagrant solo maneja Hyper-V para un administrador o un miembro de Administradores de Hyper-V: elige Permitir mi cuenta (y luego cierra la sesión de Windows y vuelve a entrar), o ejecuta Cyber CTF como administrador.",
+    "mkisofsMissing": "Las VM de QEMU necesitan mkisofs, que no está instalado: Vagrant lo usa para crear el disco que da a cada VM su red del lab. Instala QEMU de nuevo (eso lo añade), o ejecuta sudo apt-get install genisoimage, y vuelve a comprobar.",
     "notInstalled": "No se encontró `{program}`.",
     "notInstalledNoProgram": "No instalado.",
     "newLogin": "Se te añadió al grupo {group} después de iniciar sesión: cierra la sesión y vuelve a entrar (o reinicia) para que se aplique.",

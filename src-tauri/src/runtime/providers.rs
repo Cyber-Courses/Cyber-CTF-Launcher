@@ -300,7 +300,11 @@ pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
 
 mod unavailable;
 mod vbox_driver;
+mod versions;
 pub use unavailable::Unavailable;
+#[cfg(test)]
+use versions::version_at_least;
+use versions::{hypervisor_too_old, parse_plugin_versions, plugin_too_old};
 mod kvm;
 use kvm::holds_virtualization;
 pub(crate) use kvm::kvm_problem;
@@ -319,6 +323,14 @@ fn qemu_binary() -> &'static str {
     if std::env::consts::ARCH == "aarch64" { "qemu-system-aarch64" } else { "qemu-system-x86_64" }
 }
 
+/// Whether `provider`'s VMs need `mkisofs` on `os`: QEMU's on Linux. vagrant-qemu gives a VM on a
+/// lab network (every lab VM on QEMU, through its network's hub) its settings in a cloud-init
+/// seed, an ISO Vagrant's `create_iso` builds, with `mkisofs` on Linux (`hdiutil` on macOS,
+/// which every Mac has). Without it, `vagrant up` fails at the lab's first VM.
+pub(crate) fn needs_mkisofs(provider: Provider, os: &str) -> bool {
+    provider == Provider::Qemu && os == "linux"
+}
+
 /// What the machine check found for one provider: whether a lab's VMs can run on it here, and
 /// what is still missing.
 #[derive(Serialize, TS)]
@@ -331,7 +343,8 @@ pub struct ProviderStatus {
     /// Whether a lab's VMs can run on it now (`reason` says why not).
     pub available: bool,
     /// Whether the hypervisor itself is installed (for Hyper-V, whether the Windows feature is
-    /// on). None where nothing local is checked: a server or a cloud.
+    /// on; for QEMU on Linux, with the `mkisofs` its VMs need, [`needs_mkisofs`]). None where
+    /// nothing local is checked: a server or a cloud.
     pub hypervisor: Option<bool>,
     /// The Vagrant plugin this provider needs, if it is not built in.
     pub plugin: Option<String>,
@@ -351,53 +364,6 @@ pub struct ProviderStatus {
     /// offers the way out by it.
     #[ts(optional = nullable)]
     pub account_lacks: Option<AccountLacks>,
-}
-
-/// Each plugin of `vagrant plugin list` with its version, from lines like `vagrant-libvirt
-/// (0.12.2, global)`; `None` for a line that names no version (a wrapped or cut line).
-pub fn parse_plugin_versions(out: &str) -> Vec<(String, Option<String>)> {
-    out.lines()
-        .filter_map(|l| {
-            let mut words = l.split_whitespace();
-            let name = words.next().filter(|name| name.starts_with("vagrant-") || name.starts_with("vagrant_"))?;
-            let version = words
-                .next()
-                .map(|w| w.trim_matches(|c: char| matches!(c, '(' | ')' | ',')).to_string())
-                .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()));
-            Some((name.to_string(), version))
-        })
-        .collect()
-}
-
-/// Whether version `found` is `min` or later: dot-separated numbers compared in turn, a missing
-/// one as 0 (`4.7` reads as `4.7.0`) and a part that doesn't start with a digit (`beta`) as 0.
-pub fn version_at_least(found: &str, min: &str) -> bool {
-    let numbers = |v: &str| -> Vec<u64> {
-        v.trim().split('.').map(|part| part.chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0)).collect()
-    };
-    let (found, min) = (numbers(found), numbers(min));
-    for i in 0..found.len().max(min.len()) {
-        let (a, b) = (found.get(i).copied().unwrap_or(0), min.get(i).copied().unwrap_or(0));
-        if a != b {
-            return a > b;
-        }
-    }
-    true
-}
-
-/// The version `installed` of `provider`'s plugin when it is older than the one the launcher
-/// drives (`plugin_minimum`), with that minimum; `None` when it is recent enough, unknown, or
-/// the plugin has no minimum.
-fn plugin_too_old(provider: Provider, installed: Option<&str>) -> Option<(&str, &'static str)> {
-    let (version, min) = installed.zip(provider.plugin_minimum())?;
-    (!version_at_least(version, min)).then_some((version, min))
-}
-
-/// The version `installed` of `provider`'s hypervisor when it is older than the one its plugin
-/// drives (`hypervisor_minimum`), with the hypervisor's name and that minimum.
-fn hypervisor_too_old(provider: Provider, installed: Option<&str>) -> Option<(&'static str, &str, &'static str)> {
-    let (version, (name, min)) = installed.zip(provider.hypervisor_minimum())?;
-    (!version_at_least(version, min)).then_some((name, version, min))
 }
 
 async fn tool_present(program: &'static str, args: &[&str]) -> bool {
@@ -468,11 +434,14 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
         return None;
     }
 
-    // The hypervisor layer (the VM software itself).
-    let hypervisor = provider.hypervisor_installed().await;
-    if !provider.offered(hypervisor == Some(true)) {
+    // The hypervisor layer (the VM software itself). QEMU on Linux without `mkisofs` reads as not
+    // installed, with its own reason: its install brings it.
+    let found = provider.hypervisor_installed().await;
+    if !provider.offered(found == Some(true)) {
         return None;
     }
+    let mkisofs_missing = found == Some(true) && needs_mkisofs(provider, std::env::consts::OS) && !tool_present("mkisofs", &["-version"]).await;
+    let hypervisor = if mkisofs_missing { Some(false) } else { found };
 
     // The Vagrant layer (the plugin that drives this provider): present, and not older than
     // the one the launcher drives labs with.
@@ -503,6 +472,7 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
     let detection = Detection {
         unresponsive,
         hypervisor,
+        mkisofs_missing,
         hypervisor_version: hypervisor_version.as_deref(),
         plugin: plugin.as_deref(),
         plugin_installed,
@@ -559,6 +529,9 @@ struct Detection<'a> {
     unresponsive: bool,
     /// Whether the hypervisor is installed; `None` when there is nothing local to probe.
     hypervisor: Option<bool>,
+    /// QEMU is there but not the `mkisofs` its VMs need ([`needs_mkisofs`]), so `hypervisor`
+    /// reads false.
+    mkisofs_missing: bool,
     /// The hypervisor's version, when it is installed and held to one (UTM).
     hypervisor_version: Option<&'a str>,
     /// The Vagrant plugin this provider needs, if it is not built in.
@@ -590,7 +563,7 @@ pub enum AccountLacks {
 /// hypervisor itself (nothing setup installs mends that), then the first of its [`needs`]. So it
 /// is `None` only when nothing is needed: readiness and the setup steps can't disagree.
 fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'_>) -> Option<Unavailable> {
-    let Detection { unresponsive, hypervisor, hypervisor_version, plugin, plugin_version, utility, account, .. } = detection;
+    let Detection { unresponsive, hypervisor, mkisofs_missing, hypervisor_version, plugin, plugin_version, utility, account, .. } = detection;
     let plugin = || plugin.unwrap_or("?").to_owned();
     if needs.contains(&Need::Vagrant) {
         Some(Unavailable::VagrantMissing)
@@ -600,6 +573,8 @@ fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'
         Some(Unavailable::HypervOff)
     } else if account == Some(AccountLacks::HypervAdmin) {
         Some(Unavailable::HypervNeedsAdmin)
+    } else if mkisofs_missing {
+        Some(Unavailable::MkisofsMissing)
     } else if hypervisor == Some(false) {
         Some(Unavailable::NotInstalled { program: provider.probe().map(|(program, _)| program.to_owned()) })
     } else if account == Some(AccountLacks::NewLogin) {
@@ -693,6 +668,7 @@ mod tests {
         let detection = |hypervisor_version, plugin_version, plugin_installed| Detection {
             unresponsive: false,
             hypervisor: Some(true),
+            mkisofs_missing: false,
             hypervisor_version,
             plugin: Some("vagrant_utm"),
             plugin_installed,
@@ -908,6 +884,7 @@ mod tests {
                 Detection {
                     unresponsive: stuck,
                     hypervisor: hv,
+                    mkisofs_missing: false,
                     hypervisor_version: None,
                     plugin,
                     plugin_installed: installed,
@@ -920,6 +897,7 @@ mod tests {
         let hyperv = |needs_admin: bool| Detection {
             unresponsive: false,
             hypervisor: Some(true),
+            mkisofs_missing: false,
             hypervisor_version: None,
             plugin: None,
             plugin_installed: true,
@@ -951,6 +929,7 @@ mod tests {
         let libvirt = |relogin: bool| Detection {
             unresponsive: false,
             hypervisor: Some(true),
+            mkisofs_missing: false,
             hypervisor_version: None,
             plugin: Some("vagrant-libvirt"),
             plugin_installed: true,
@@ -973,6 +952,7 @@ mod tests {
         let qemu = |relogin: bool| Detection {
             unresponsive: false,
             hypervisor: Some(true),
+            mkisofs_missing: false,
             hypervisor_version: None,
             plugin: Some("vagrant-qemu"),
             plugin_installed: true,
@@ -995,11 +975,55 @@ mod tests {
         assert_eq!(login_groups(Provider::Virtualbox, "linux"), Vec::<String>::new());
     }
 
+    #[test]
+    fn qemu_without_mkisofs_says_its_vms_need_it_vagrant_first() {
+        // Regression (the rig's ubuntu2404 attack-box-vm@qemu): QEMU read as ready without
+        // mkisofs, and every VM-form lab failed at its first VM ("The executable 'mkisofs'
+        // Vagrant is trying to run was not found in the PATH variable").
+        assert!(needs_mkisofs(Provider::Qemu, "linux"));
+        for (p, os) in [(Provider::Qemu, "macos"), (Provider::Qemu, "windows"), (Provider::Libvirt, "linux"), (Provider::Virtualbox, "linux")] {
+            assert!(!needs_mkisofs(p, os), "{p:?} on {os}");
+        }
+        let qemu = Detection {
+            unresponsive: false,
+            hypervisor: Some(false),
+            mkisofs_missing: true,
+            hypervisor_version: None,
+            plugin: Some("vagrant-qemu"),
+            plugin_installed: true,
+            plugin_version: None,
+            utility: None,
+            account: None,
+        };
+        assert_eq!(reason_of(Provider::Qemu, true, qemu), Some(Unavailable::MkisofsMissing));
+        assert_eq!(reason_of(Provider::Qemu, false, qemu), Some(Unavailable::VagrantMissing));
+        let said = Unavailable::MkisofsMissing.message();
+        assert!(said.starts_with("QEMU VMs need mkisofs") && said.contains("genisoimage"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn qemu_on_linux_reads_as_not_installed_without_mkisofs_which_its_install_brings() {
+        // The check itself: on Linux, `qemu-system-*` alone is QEMU half installed, so the
+        // Machine page and the guided setup offer its install (which adds genisoimage); elsewhere
+        // mkisofs is never asked for.
+        use crate::platform::exec::fake::{Tools, ok};
+        let tools = Tools::new(|program, _| if program == "mkisofs" { None } else { ok("QEMU emulator version 8.2.2\n") });
+        let plugins = [("vagrant-qemu".to_owned(), Some("0.8.0".to_owned()))];
+        let qemu = detect_one(Provider::Qemu, true, &plugins).await.unwrap();
+        if cfg!(target_os = "linux") {
+            assert_eq!((qemu.hypervisor, qemu.available, qemu.reason), (Some(false), false, Some(Unavailable::MkisofsMissing)));
+        } else {
+            assert_eq!(qemu.hypervisor, Some(true));
+            assert!(!tools.called("mkisofs"), "{:?}", tools.calls());
+        }
+    }
+
     /// A VMware detection: Fusion or Workstation installed, the plugin and the utility as given.
     fn vmware(plugin_installed: bool, utility: UtilityState) -> Detection<'static> {
         Detection {
             unresponsive: false,
             hypervisor: Some(true),
+            mkisofs_missing: false,
             hypervisor_version: None,
             plugin: Some("vagrant-vmware-desktop"),
             plugin_installed,

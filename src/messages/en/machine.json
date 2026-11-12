@@ -370,6 +370,7 @@
     "virtualboxStuck": "VirtualBox isn't responding (its background service is stuck). Quit VirtualBox and any VM windows, or restart the computer, then re-check.",
     "hypervOff": "Hyper-V isn't turned on (Windows Features > Hyper-V), or this edition of Windows doesn't have it.",
     "hypervNeedsAdmin": "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator.",
+    "mkisofsMissing": "QEMU VMs need mkisofs, which isn't installed: Vagrant builds with it the disk that gives each VM its lab network. Install QEMU again (that adds it), or run sudo apt-get install genisoimage, then re-check.",
     "notInstalled": "`{program}` was not found.",
     "notInstalledNoProgram": "Not installed.",
     "newLogin": "You were added to the {group} group since you logged in: log out and back in (or restart) for it to apply.",

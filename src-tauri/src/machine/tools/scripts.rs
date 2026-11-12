@@ -372,10 +372,13 @@ pub fn libvirt_script(user: Option<&str>) -> String {
 
 /// QEMU and its disk tools, then the player into the group `/dev/kvm` belongs to, so vagrant-qemu
 /// boots VMs with KVM (`accel=kvm`, as every lab's Vagrantfile asks on Linux) without root; the
-/// group applies from the next login.
+/// group applies from the next login. With `genisoimage`, which has `mkisofs`: vagrant-qemu gives
+/// a VM on a lab network its settings in a cloud-init seed, an ISO Vagrant builds with `mkisofs`
+/// on Linux ([`crate::runtime::providers::needs_mkisofs`]). Every Debian and Ubuntu release has
+/// the package; Debian's `xorriso` has no `mkisofs`, only `xorrisofs`.
 #[cfg(any(target_os = "linux", test))]
 pub fn qemu_script(user: Option<&str>) -> String {
-    let mut s = "apt-get update && apt-get install -y qemu-system qemu-utils".to_string();
+    let mut s = "apt-get update && apt-get install -y qemu-system qemu-utils genisoimage".to_string();
     if let Some(u) = user.filter(|u| valid_user(u)) {
         s.push_str("; ");
         s.push_str(&join_kvm_group(u, KVM_DEVICE));
@@ -442,11 +445,23 @@ mod tests {
         // root:kvm 0660) every lab's `accel=kvm` was refused: "Could not access KVM kernel module:
         // Permission denied".
         let s = qemu_script(Some("ada"));
-        assert!(s.starts_with("apt-get update && apt-get install -y qemu-system qemu-utils; "), "{s}");
+        assert!(s.starts_with("apt-get update && apt-get install -y qemu-system qemu-utils genisoimage; "), "{s}");
         assert!(s.ends_with(&join_kvm_group("ada", "/dev/kvm")), "{s}");
         assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
-        assert_eq!(qemu_script(None), "apt-get update && apt-get install -y qemu-system qemu-utils");
+        assert_eq!(qemu_script(None), "apt-get update && apt-get install -y qemu-system qemu-utils genisoimage");
         assert!(!qemu_script(Some("a; rm -rf /")).contains("usermod"));
+    }
+
+    #[test]
+    fn qemu_install_brings_the_mkisofs_vagrant_builds_a_vms_network_seed_with() {
+        // Regression (the rig's ubuntu2404 attack-box-vm@qemu): the install was `qemu-system
+        // qemu-utils`, and every VM-form lab failed at its first VM: "The executable 'mkisofs'
+        // Vagrant is trying to run was not found in the PATH variable". `genisoimage` is the
+        // package with /usr/bin/mkisofs on Debian and Ubuntu.
+        for user in [None, Some("ada")] {
+            let s = qemu_script(user);
+            assert!(s.split(';').next().unwrap().split_whitespace().any(|w| w == "genisoimage"), "{s}");
+        }
     }
 
     /// What [`join_kvm_group`] does on a system whose `stat` says `owner` owns the device (empty:

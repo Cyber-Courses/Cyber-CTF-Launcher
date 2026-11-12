@@ -133,6 +133,21 @@ fn libvirt_joined_since_logging_in_asks_for_a_new_login_after_the_rest() {
 }
 
 #[test]
+fn qemu_without_mkisofs_is_installed_again_which_brings_it() {
+    // Regression (the rig's ubuntu2404 attack-box-vm@qemu): QEMU read as set up without the
+    // mkisofs its VMs need on Linux, and every VM-form lab failed at its first VM. Its install
+    // (which adds genisoimage) is the way: the setup runs it, never passes QEMU over.
+    let r = shapes::debian_qemu_without_mkisofs();
+    assert_eq!(get_of(&r, Provider::Qemu), [Action::Install { dependency: Dependency::Qemu }]);
+    let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Qemu]));
+    assert_eq!(p.hypervisor, Some(Provider::Qemu));
+    assert_eq!(steps(&p), ["qemu: install qemu"]);
+    let qemu = r.vm_providers.iter().find(|s| s.provider == Provider::Qemu).unwrap();
+    assert_eq!(qemu.reason, Some(Unavailable::MkisofsMissing));
+    assert!(!r.ready_hypervisors.contains(&Provider::Qemu));
+}
+
+#[test]
 fn virtualboxs_driver_waiting_for_the_newer_kernel_ends_the_pass_with_a_restart() {
     // Regression (the rig's bare Debian 13): the install couldn't build VirtualBox's driver for the
     // running kernel, whose headers the archive no longer had; VirtualBox read as ready and the

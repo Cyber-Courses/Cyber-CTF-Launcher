@@ -24,7 +24,8 @@ remote: boolean,
 available: boolean, 
 /**
  * Whether the hypervisor itself is installed (for Hyper-V, whether the Windows feature is
- * on). None where nothing local is checked: a server or a cloud.
+ * on; for QEMU on Linux, with the `mkisofs` its VMs need, [`needs_mkisofs`]). None where
+ * nothing local is checked: a server or a cloud.
  */
 hypervisor: boolean | null, 
 /**

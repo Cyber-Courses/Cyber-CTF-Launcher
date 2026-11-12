@@ -370,6 +370,7 @@
     "virtualboxStuck": "VirtualBox が応答しません（バックグラウンドサービスが停止しています）。VirtualBox とすべての VM ウィンドウを終了するか、コンピューターを再起動してから、もう一度確認してください。",
     "hypervOff": "Hyper-V が有効になっていません（Windows の機能 > Hyper-V）。または、この Windows エディションには Hyper-V がありません。",
     "hypervNeedsAdmin": "Vagrant が Hyper-V を操作できるのは、管理者または Hyper-V Administrators のメンバーだけです。「自分のアカウントを許可」を選ぶ（その後 Windows からサインアウトして再度サインイン）か、Cyber CTF を管理者として実行してください。",
+    "mkisofsMissing": "QEMU の VM には mkisofs が必要ですが、インストールされていません。Vagrant はこれを使って、各 VM にラボのネットワークを与えるディスクを作成します。QEMU をもう一度インストールする（これで追加されます）か、sudo apt-get install genisoimage を実行してから、もう一度確認してください。",
     "notInstalled": "`{program}` が見つかりませんでした。",
     "notInstalledNoProgram": "インストールされていません。",
     "newLogin": "ログイン後に {group} グループに追加されました。反映するには、ログアウトして再度ログイン（または再起動）してください。",

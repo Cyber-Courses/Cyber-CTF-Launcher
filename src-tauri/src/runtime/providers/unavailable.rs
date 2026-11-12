@@ -19,6 +19,9 @@ pub enum Unavailable {
     /// This account may not manage Hyper-V, which Vagrant needs (an administrator or a member of
     /// Hyper-V Administrators may).
     HypervNeedsAdmin,
+    /// QEMU is installed, but not `mkisofs` (Linux), which Vagrant builds the cloud-init seed that
+    /// gives a QEMU VM its lab network with: QEMU's install brings it (`genisoimage`).
+    MkisofsMissing,
     /// The hypervisor isn't installed.
     NotInstalled {
         /// The program looked for, which wasn't found; None for a hypervisor found otherwise.
@@ -97,6 +100,7 @@ impl Unavailable {
             }
             Unavailable::HypervOff => "Hyper-V isn't turned on (Windows Features > Hyper-V), or this edition of Windows doesn't have it.".into(),
             Unavailable::HypervNeedsAdmin => "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator.".into(),
+            Unavailable::MkisofsMissing => "QEMU VMs need mkisofs, which isn't installed: Vagrant builds with it the disk that gives each VM its lab network. Install QEMU again (that adds it), or run sudo apt-get install genisoimage, then re-check.".into(),
             Unavailable::NotInstalled { program: Some(program) } => format!("`{program}` was not found."),
             Unavailable::NotInstalled { program: None } => "Not installed.".into(),
             Unavailable::NewLogin { group } => format!("You were added to the {group} group since you logged in: log out and back in (or restart) for it to apply."),
@@ -140,6 +144,7 @@ mod tests {
             Unavailable::VirtualboxStuck,
             Unavailable::HypervOff,
             Unavailable::HypervNeedsAdmin,
+            Unavailable::MkisofsMissing,
             Unavailable::NotInstalled { program: Some(s("virsh")) },
             Unavailable::NotInstalled { program: None },
             Unavailable::NewLogin { group: s("libvirt") },
