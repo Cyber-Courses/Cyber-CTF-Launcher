@@ -535,6 +535,65 @@ mod tests {
         assert_cancel_takes_the_tree(&file, timed).await;
     }
 
+    /// The app's stand-in, run as a child process by the test below: it starts a tool the app's
+    /// way (`run_env_timed`, so in a job object of its own), a tool whose long child's pid lands
+    /// in `CYBERCTF_TREE_FILE`, and waits on it until it is killed.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "run as a child process by a_killed_apps_tools_end_with_it"]
+    fn tool_owner_helper() {
+        let file = std::path::PathBuf::from(std::env::var("CYBERCTF_TREE_FILE").unwrap());
+        let (program, args) = parent_of_a_child(&file);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let _ = runtime.block_on(run_env_timed(program, &args, None, &[], Duration::from_secs(300)));
+    }
+
+    /// What a test left running is ended however the test ends: the stand-in's tree, and the
+    /// pids it names, should the job have let them live on.
+    #[cfg(windows)]
+    struct Ends(std::process::Child, Vec<u32>);
+
+    #[cfg(windows)]
+    impl Drop for Ends {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+            for pid in &self.1 {
+                crate::platform::sys::terminate(*pid);
+            }
+        }
+    }
+
+    /// Regression (a Windows on Arm rig clone): `docker` processes the app started outlived it,
+    /// their parent gone. A tool's job ends its tree when the job's last handle closes, which the
+    /// app's own death does: the stand-in is killed as Task Manager's End task or a crash would
+    /// (`TerminateProcess`, no exit of its own), and the tool and its child go with it.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_killed_apps_tools_end_with_it() {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+        let file = std::env::temp_dir().join(format!("cyberctf-owner-tree-{}", rand::random::<u32>()));
+        let owner = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "platform::exec::tests::tool_owner_helper", "--ignored", "--nocapture", "--test-threads", "1"])
+            .env("CYBERCTF_TREE_FILE", &file)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut ends = Ends(owner, Vec::new());
+        let child = wait_for_child_pid(&file).await;
+        let _ = std::fs::remove_file(&file);
+        let mut sys = System::new();
+        sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[Pid::from_u32(child)]), true, ProcessRefreshKind::nothing());
+        let tool = sys.process(Pid::from_u32(child)).and_then(sysinfo::Process::parent).map(Pid::as_u32).expect("the tool's child has its parent");
+        ends.1 = vec![tool, child];
+        ends.0.kill().unwrap();
+        ends.0.wait().unwrap();
+        assert!(fake::gone(tool).await, "the tool {tool} outlived the app that started it");
+        assert!(fake::gone(child).await, "the tool's child {child} outlived the app that started it");
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn output_that_isnt_utf8_is_read_lossily_and_the_tool_runs_on() {
