@@ -618,15 +618,29 @@ export function results() {
     skipAll: (why) => {
       line("skipped", "spec", why);
       for (const p of launched) stopApp(p);
-      process.exit(SKIPPED);
+      exitDrained(SKIPPED);
     },
     get failed() {
       return failed;
     },
     /** Exit with the verdict. */
-    exit: () => process.exit(failed > 0 ? 1 : 0),
+    exit: () => exitDrained(failed > 0 ? 1 : 0),
   };
   return r;
+}
+
+/** `process.exit(code)` once stdout and stderr have drained. On Windows a pipe is written
+ *  asynchronously, and an exit right after `console.log` dropped a spec's last lines: the app's
+ *  output tail after it died (2026-11-12, the x64 E2E on the rig: `app out tail:` never reached
+ *  the spec's log, so an abort left no trace but its exit status). */
+export function exitDrained(code) {
+  process.exitCode = code;
+  let left = 2;
+  const done = () => {
+    if (--left === 0) process.exit(code);
+  };
+  process.stdout.write("", done);
+  process.stderr.write("", done);
 }
 
 // --- Knobs and the machine --------------------------------------------------------------------
