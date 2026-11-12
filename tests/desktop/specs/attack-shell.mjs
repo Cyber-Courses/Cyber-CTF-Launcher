@@ -31,6 +31,7 @@ import {
   waitAwake,
   waitLabPageRunning,
 } from "../lib/support.mjs";
+import { terminalText } from "../lib/page.mjs";
 
 export const needs = ["running-lab:fixture"];
 const r = results();
@@ -46,12 +47,9 @@ const panel = (b) =>
     .getText()
     .catch(() => "");
 const sideButton = (b, label) => b.$(`//main//aside//button[contains(normalize-space(), ${JSON.stringify(label)})]`);
-/** The shell window's terminal, as text, one row a line. */
-const screen = (b) =>
-  b
-    .$(".xterm-rows")
-    .getText()
-    .catch(() => "");
+/** The shell window's terminal, as text, one row a line (read in the page: the embedded server's
+ *  getText runs the rows together, the answer glued to its command). */
+const screen = (b) => b.execute(terminalText).catch(() => "");
 
 /** Types `line` and Enter into the terminal as the keyboard does (its input element). */
 async function typeLine(b, line) {
