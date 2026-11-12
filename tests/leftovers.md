@@ -94,7 +94,7 @@ it leaves only the VM and its port forwards.
 | `libvirt-pool`      | none (the `default` pool is used)                                                                                                                                                                                                                              | none                                                                             |
 | `libvirt-volume`    | a domain's disk and data disks                                                                                                                                                                                                                                 | a box's image (`*_vagrant_box_image_*`): the cache                               |
 | `vbox-vm`           | `<env> - <machine>`, `<env> - isoloom-docker-host`, the self-test's `CyberCTF test VM`                                                                                                                                                                         | the linked-clone master Vagrant imports from a box (`<box>_<ms>_<n>`): the cache |
-| `vbox-hostonly`     | the self-test's private network (192.168.56.0/24) makes `vboxnet<n>` (VirtualBox 7 on a Mac: `vagrantnet-*`); a lab's networks are internal (`intnet`) and make none                                                                                           | the host-only adapter: Vagrant never removes it, the next VM reuses it           |
+| `vbox-hostonly`     | the self-test's private network (192.168.56.0/24) makes `vboxnet<n>` (VirtualBox 7 on a Mac: `vagrantnet-*`; Windows: `VirtualBox Host-Only Ethernet Adapter`) and its route; a lab's networks are internal (`intnet`) and make none                           | the host-only adapter: Vagrant never removes it, the next VM reuses it           |
 | `vbox-dhcp`         | the host-only adapter's `HostInterfaceNetworking-vboxnet<n>`                                                                                                                                                                                                   | the same                                                                         |
 | `vbox-natnet`       | none                                                                                                                                                                                                                                                           | none                                                                             |
 | `utm-vm`            | `<env> - isoloom-docker-host` (UTM runs container labs in a VM only)                                                                                                                                                                                           | none                                                                             |
@@ -127,15 +127,15 @@ runs' webviews share one WebKit data store, `cyberctf-e2e-run`, by design.
 
 ### The network
 
-| Kind            | What the stack makes                                                                                        | Kept by design |
-| --------------- | ----------------------------------------------------------------------------------------------------------- | -------------- |
-| `hosts-entry`   | none                                                                                                        | none           |
-| `route`         | Docker's and libvirt's bridges' routes, going with their networks                                           | none           |
-| `nft-table`     | Docker's and libvirt's tables (Linux)                                                                       | none           |
-| `iptables-rule` | Docker's chains and rules for a lab network (`br-<id>`), going with it                                      | none           |
-| `pf-anchor`     | none (macOS)                                                                                                | none           |
-| `firewall-rule` | none of the launcher's; Windows asks to allow the app on its first listening socket (a rule named after it) | none           |
-| `portproxy`     | a Hyper-V lab's published ports, `127.0.0.1:<port>` (`netsh interface portproxy`), deleted with its VM      | none           |
+| Kind            | What the stack makes                                                                                                                                      | Kept by design                        |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `hosts-entry`   | none                                                                                                                                                      | none                                  |
+| `route`         | Docker's and libvirt's bridges' routes, going with their networks; the VirtualBox host-only adapter's (`* vboxnet<n>`, Windows `* VirtualBox Host-Only*`) | the host-only adapter's, kept with it |
+| `nft-table`     | Docker's and libvirt's tables (Linux)                                                                                                                     | none                                  |
+| `iptables-rule` | Docker's chains and rules for a lab network (`br-<id>`), going with it                                                                                    | none                                  |
+| `pf-anchor`     | none (macOS)                                                                                                                                              | none                                  |
+| `firewall-rule` | none of the launcher's; Windows asks to allow the app on its first listening socket (a rule named after it)                                               | none                                  |
+| `portproxy`     | a Hyper-V lab's published ports, `127.0.0.1:<port>` (`netsh interface portproxy`), deleted with its VM                                                    | none                                  |
 
 Neither the launcher nor Isothrum edits the hosts file, routes, pf, nftables, iptables or sysctl
 on the machine: what segments a lab and blocks its egress runs inside it. These kinds catch a

@@ -234,6 +234,17 @@ describe("the allowlist", () => {
     expect(allowanceFor(item("docker-volume", "cyberctf-hello_data"), "clone", allowlist)).toBeUndefined();
     expect(allowanceFor(item("proxmox-token", "root@pam!cyberctf-1a2b3c4d"), "clone", allowlist)).toBeDefined();
   });
+
+  it("keeps the host-only adapter's route with the adapter, on each system, and no other route", () => {
+    // jarvis, debian13-quick, e2e:vm: the VirtualBox self-test's vboxnet0 was allowed, its route
+    // read as left ("192.168.56.0/24 dev vboxnet0").
+    for (const route of ["192.168.56.0/24 dev vboxnet0", "192.168.56 link vboxnet0", "192.168.56.0/24 via 0.0.0.0 VirtualBox Host-Only Ethernet Adapter"]) {
+      expect(allowanceFor(item("route", route), "clone", allowlist), route).toBeDefined();
+    }
+    expect(allowanceFor(item("vbox-hostonly", "VirtualBox Host-Only Ethernet Adapter #2"), "shared", allowlist)).toBeDefined();
+    expect(allowanceFor(item("route", "10.20.0.0/24 dev br-ccad45594157"), "clone", allowlist)).toBeUndefined();
+    expect(allowanceFor(item("route", "192.168.121.0/24 dev virbr1"), "clone", allowlist)).toBeUndefined();
+  });
 });
 
 describe("the scope's inputs", () => {

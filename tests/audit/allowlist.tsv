@@ -10,6 +10,9 @@ vbox-vm	any	*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_
 vbox-hostonly	any	vboxnet*	the host-only adapter Vagrant makes for a private network (the setup self-test's 192.168.56.0/24): Vagrant never removes it and the next VM reuses it
 vbox-hostonly	any	vagrantnet-*	VirtualBox 7's host-only network Vagrant makes on a Mac for a private network: Vagrant never removes it and the next VM reuses it
 vbox-dhcp	any	HostInterfaceNetworking-vboxnet*	the DHCP server of the host-only adapter above: Vagrant never removes it and the next VM reuses it
+vbox-hostonly	any	VirtualBox Host-Only*	the host-only adapter above as Windows names it (VirtualBox Host-Only Ethernet Adapter, #n after the first): Vagrant never removes it and the next VM reuses it
+route	any	* vboxnet*	the route of the host-only adapter above (the setup self-test's 192.168.56.0/24): up as long as the adapter is, so kept with it
+route	any	* VirtualBox Host-Only*	the same route on Windows, through the adapter as Windows names it: up as long as the adapter is, so kept with it
 run-file	any	*/runs/*/lock	Isothrum's lock of a run, kept with its record (runs/<run>/record.json) by design: the OS releases it when its holder exits
 run-file	any	*/slots.lock	Isothrum's lock of the slots, the app's: kept by design, released by the OS
 run-file	any	*/storage.lock	the lock of storage.json (the launcher's record of its downloads), the app's: kept by design
