@@ -95,6 +95,24 @@ qemu	linux	listening-port	tcp 192.168.122.1:53 (dnsmasq, *)	the same DNS over TC
 qemu	linux	listening-port	udp 0.0.0.0%virbr0:67 (dnsmasq, *)	libvirt's default network's dnsmasq, DHCP for its VMs, bound to virbr0
 hyperv	windows	hyperv-switch	Default Switch	Hyper-V's Default Switch, made when Hyper-V is turned on
 hyperv	windows	route	* vEthernet (Default Switch)	the Default Switch's NAT route
+hyperv	windows	firewall-rule	Hyper-V (RPC)	Hyper-V's own firewall rules, which turning it on adds (its Virtual Machine Management service's RPC)
+hyperv	windows	firewall-rule	Hyper-V (RPC-EPMAP)	Hyper-V's own firewall rules, which turning it on adds (the RPC endpoint mapper for its management)
+hyperv	windows	firewall-rule	Hyper-V (MIG-TCP-In)	Hyper-V's own firewall rules, which turning it on adds (live migration)
+hyperv	windows	firewall-rule	Hyper-V (REMOTE_DESKTOP_TCP_IN)	Hyper-V's own firewall rules, which turning it on adds (VM connection over vmms's port 2179)
+hyperv	windows	firewall-rule	Hyper-V - WMI (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (its WMI management)
+hyperv	windows	firewall-rule	Hyper-V - WMI (TCP-Out)	Hyper-V's own firewall rules, which turning it on adds (its WMI management)
+hyperv	windows	firewall-rule	Hyper-V - WMI (DCOM-In)	Hyper-V's own firewall rules, which turning it on adds (its WMI management)
+hyperv	windows	firewall-rule	Hyper-V - WMI (Async-In)	Hyper-V's own firewall rules, which turning it on adds (its WMI management)
+hyperv	windows	firewall-rule	Hyper-V Management Clients - WMI (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI)
+hyperv	windows	firewall-rule	Hyper-V Management Clients - WMI (TCP-Out)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI)
+hyperv	windows	firewall-rule	Hyper-V Management Clients - WMI (DCOM-In)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI)
+hyperv	windows	firewall-rule	Hyper-V Management Clients - WMI (Async-In)	Hyper-V's own firewall rules, which turning it on adds (its management tools' WMI)
+hyperv	windows	firewall-rule	Hyper-V Replica HTTP Listener (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (Hyper-V Replica)
+hyperv	windows	firewall-rule	Hyper-V Replica HTTPS Listener (TCP-In)	Hyper-V's own firewall rules, which turning it on adds (Hyper-V Replica)
+hyperv	windows	firewall-rule	HNS Container Networking - ICS DNS (TCP-In) - *	the Host Network Service's DNS rule for the Default Switch's network, named after its id
+hyperv	windows	firewall-rule	HNS Container Networking - DNS (UDP-In) - *	the Host Network Service's DNS rule for the Default Switch's network, named after its id
+hyperv	windows	listening-port	:::2179 (vmms, *)	Hyper-V's Virtual Machine Management service, which VM connections reach on port 2179
+hyperv	windows	listening-port	0.0.0.0:2179 (vmms, *)	the same on IPv4
 virtualbox	linux	vbox-hostonly	vboxnet*	the host-only adapter the self-test's private network makes, which Vagrant never removes
 virtualbox	linux	route	* dev vboxnet*	the host-only adapter's route
 virtualbox	macos	vbox-hostonly	vboxnet*	the host-only adapter the self-test's private network makes, which Vagrant never removes

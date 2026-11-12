@@ -272,6 +272,32 @@ describe("what the guided setup leaves (setup-leaves.tsv)", () => {
       for (const [kind, name] of LIBVIRT_LEAVES) expect(allowanceFor(item(kind, name), "clone", allowances(path)), `${path}: ${kind} ${name}`).toBeDefined();
       for (const [kind, name] of NOT_LIBVIRTS) expect(allowanceFor(item(kind, name), "clone", allowances(path)), `${path}: ${kind} ${name}`).toBeUndefined();
     }
+    // What turning Hyper-V on leaves on Windows (windows-bare's setup-hyperv audit): its own
+    // firewall rules, the Host Network Service's two for the Default Switch, vmms on port 2179.
+    const hyperv = rows
+      .filter((r) => r.item === "hyperv" && r.os === "windows")
+      .map((r) => ({ kind: r.kind, where: "any" as const, pattern: r.name, reason: r.reason }));
+    const HYPERV_LEAVES: [string, string][] = [
+      ["firewall-rule", "Hyper-V Replica HTTPS Listener (TCP-In)"],
+      ["firewall-rule", "Hyper-V Management Clients - WMI (DCOM-In)"],
+      ["firewall-rule", "Hyper-V - WMI (Async-In)"],
+      ["firewall-rule", "Hyper-V (REMOTE_DESKTOP_TCP_IN)"],
+      ["firewall-rule", "Hyper-V (RPC-EPMAP)"],
+      ["firewall-rule", "HNS Container Networking - ICS DNS (TCP-In) - C08CB7B8-9B3C-408E-8E30-5E16A3AEB445 - 0"],
+      ["firewall-rule", "HNS Container Networking - DNS (UDP-In) - C08CB7B8-9B3C-408E-8E30-5E16A3AEB445 - 0"],
+      ["listening-port", ":::2179 (vmms, pid 1936)"],
+      ["listening-port", "0.0.0.0:2179 (vmms, pid 1936)"],
+    ];
+    const NOT_HYPERVS: [string, string][] = [
+      ["firewall-rule", "Hyper-V Custom (TCP-In)"],
+      ["firewall-rule", "Cyber CTF"],
+      ["firewall-rule", "HNS Container Networking - SSH (TCP-In) - C08CB7B8-9B3C-408E-8E30-5E16A3AEB445 - 0"],
+      ["listening-port", "0.0.0.0:49670 (svchost, pid 3572)"],
+      ["listening-port", "0.0.0.0:2180 (vmms, pid 1936)"],
+      ["listening-port", "0.0.0.0:2179 (python, pid 7004)"],
+    ];
+    for (const [kind, name] of HYPERV_LEAVES) expect(allowanceFor(item(kind, name), "clone", hyperv), `${kind} ${name}`).toBeDefined();
+    for (const [kind, name] of NOT_HYPERVS) expect(allowanceFor(item(kind, name), "clone", hyperv), `${kind} ${name}`).toBeUndefined();
     // The paths the setup sets up each leave something: the engine, each hypervisor, the launcher.
     for (const item of ["launcher", "docker", "libvirt", "qemu", "virtualbox", "hyperv", "wsl"])
       expect(

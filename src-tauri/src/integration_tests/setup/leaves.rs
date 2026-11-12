@@ -173,10 +173,18 @@ mod tests {
 
     #[test]
     fn the_hyperv_path_leaves_the_default_switch_and_its_nat_route() {
-        assert_eq!(
-            names("hyperv", "windows"),
-            vec![pair("hyperv-switch", "Default Switch"), pair("route", "* vEthernet (Default Switch)"), pair(FOLDER.0, FOLDER.1)]
-        );
+        let leaves = names("hyperv", "windows");
+        assert_eq!(leaves[..2], [pair("hyperv-switch", "Default Switch"), pair("route", "* vEthernet (Default Switch)")]);
+        // Hyper-V's own firewall rules and vmms's listener (windows-bare's setup-hyperv audit):
+        // the 14 Hyper-V rules by their whole names, the Host Network Service's two for the
+        // Default Switch by theirs up to the network's id, port 2179 to vmms alone.
+        let rules: Vec<&str> = leaves.iter().filter(|(k, _)| k == "firewall-rule").map(|(_, n)| n.as_str()).collect();
+        assert_eq!(rules.len(), 16, "{rules:?}");
+        assert!(rules.iter().all(|r| !r.contains('*') || r.starts_with("HNS Container Networking - ")), "{rules:?}");
+        let ports: Vec<&str> = leaves.iter().filter(|(k, _)| k == "listening-port").map(|(_, n)| n.as_str()).collect();
+        assert_eq!(ports, [":::2179 (vmms, *)", "0.0.0.0:2179 (vmms, *)"]);
+        assert_eq!(leaves.last(), Some(&pair(FOLDER.0, FOLDER.1)));
+        assert_eq!(leaves.len(), 2 + 16 + 2 + 1, "{leaves:?}");
         assert_eq!(names("hyperv", "linux"), vec![pair(FOLDER.0, FOLDER.1)]);
     }
 
