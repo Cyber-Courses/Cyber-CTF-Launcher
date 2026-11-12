@@ -920,7 +920,10 @@ mod tests {
         schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen, WindowsFeature::Wsl).await.unwrap();
         assert_eq!(tools.calls(), [SHUTDOWN]);
         assert!(reopen.written());
-        assert_eq!(marked_boot(&t.dirs(), RESTART_MARK), Some(sysinfo::System::boot_time()));
+        // This boot's, as the check reads it (`same_boot`): Windows works the boot time out from
+        // the uptime, a second apart from one call to the next now and then.
+        let marked = marked_boot(&t.dirs(), RESTART_MARK);
+        assert!(marked.is_some_and(|m| same_boot(m, sysinfo::System::boot_time())), "{marked:?}");
         // The other window, or the remounted step, asks again during the countdown: the same
         // restart, no second shutdown, RunOnce left as it is.
         schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen, WindowsFeature::Wsl).await.unwrap();
