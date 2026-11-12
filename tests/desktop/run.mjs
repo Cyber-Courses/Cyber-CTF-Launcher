@@ -58,7 +58,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, waitPortFree } from "./lib/host.mjs";
+import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "./lib/host.mjs";
 import { dropComposeRecord, projects, record as recordMachine, runFolders, runTool } from "./lib/owned.mjs";
 import {
   DEAD_APP,
@@ -383,6 +383,8 @@ const CHECKS = {
   session: () => (SESSION ? null : "no session file: give CYBERCTF_TEST_ACCOUNT_SESSION to the runner (a catalogue lab starts only signed in)"),
   hypervisor: () => {
     if (!PROVIDER) return "no hypervisor named: set CYBERCTF_TEST_VM_PROVIDER (libvirt, virtualbox, hyperv, qemu, utm…)";
+    // UTM from an SSH session: the app's Apple events never reach it (utmctl may still answer).
+    if (PROVIDER === "utm" && utmUnreachable()) return utmUnreachable();
     if (PROVIDER in ASKABLE && hypervisorVms(PROVIDER) === null) return `CYBERCTF_TEST_VM_PROVIDER=${PROVIDER}, but ${ASKABLE[PROVIDER]} doesn't answer here`;
     return null;
   },

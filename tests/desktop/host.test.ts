@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { dockerPluginDirs, engineSilence, portFree, portHolder, portStillHeld, runBounded, waitPortFree } from "./lib/host.mjs";
+import { dockerPluginDirs, engineSilence, portFree, portHolder, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "./lib/host.mjs";
 import { deadDockerEnv } from "./lib/support.mjs";
 
 // What the desktop end-to-end reads of the machine (lib/host.mjs): the app's WebDriver port, and
@@ -45,6 +45,21 @@ describe("the WebDriver port", () => {
     const s = servers.pop();
     await new Promise((done) => s?.close(done));
     expect(await waitPortFree(port, 2)).toBe(true);
+  });
+});
+
+describe("UTM from this session", () => {
+  it("can't be driven from an SSH session on a Mac: the VM specs on it skip, saying why", () => {
+    expect(utmUnreachable("darwin", "Background")).toBe(
+      "can't run here over SSH: no Apple events to UTM (-600): this session isn't the Mac's GUI one (launchctl: Background)",
+    );
+  });
+
+  it("is driven from the GUI session, and isn't asked about elsewhere", () => {
+    expect(utmUnreachable("darwin", "Aqua")).toBeNull();
+    expect(utmUnreachable("darwin", "")).toBeNull();
+    expect(utmUnreachable("linux")).toBeNull();
+    expect(utmUnreachable("win32")).toBeNull();
   });
 });
 

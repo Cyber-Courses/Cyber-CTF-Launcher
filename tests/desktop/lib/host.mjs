@@ -6,7 +6,8 @@
 // wait for it before each app instead, and stop with what holds it. And where the Docker CLI finds
 // its plugins (Compose), which a spec's Docker config of its own must keep. And a program run with
 // a bound, ended with what it started past it (`runBounded`), and whether `docker info` says an
-// engine answers. No dependency of its own, so the runner loads it before webdriverio.
+// engine answers. And whether this session can drive UTM (`utmUnreachable`). No dependency of its
+// own, so the runner loads it before webdriverio.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -60,6 +61,25 @@ export function engineSilence({ out, code, timedOut, missing }, seconds) {
   if (timedOut) return `no answer in ${seconds} s`;
   if (code === 0) return "an empty answer: its daemon doesn't answer";
   return code === null ? "ended" : `exit ${code}`;
+}
+
+/** launchd's name for this process's session on a Mac (`launchctl managername`): `Aqua` for the
+ *  user's GUI one, `Background` for an SSH session's; "" when it can't be read. */
+export function launchdSession() {
+  try {
+    return execFileSync("launchctl", ["managername"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10000 }).trim();
+  } catch {
+    return "";
+  }
+}
+
+/** Why this session can't drive UTM, or null when it can (or it isn't a Mac). The app drives UTM
+ *  with Apple events, which only the GUI session's processes can send: from an SSH session each
+ *  one returns -600 ("Application isn't running") or hangs, and a VM spec on UTM never ended (the
+ *  test rig's studio over SSH). Nothing is sent to UTM to tell. */
+export function utmUnreachable(platform = process.platform, session = platform === "darwin" ? launchdSession() : "") {
+  if (platform !== "darwin" || !session || session === "Aqua") return null;
+  return `can't run here over SSH: no Apple events to UTM (-600): this session isn't the Mac's GUI one (launchctl: ${session})`;
 }
 
 /** How long the port may stay held after an app is ended, before the next app (seconds). */
