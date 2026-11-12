@@ -278,7 +278,11 @@ async fn launch(engine: &str) -> Result<String> {
     match (std::env::consts::OS, engine) {
         ("macos", "docker-desktop") => run("open", &["-a", "Docker"], None).await,
         ("macos", "orbstack") => run("open", &["-a", "OrbStack"], None).await,
-        ("windows", "docker-desktop") => run("cmd", &["/C", "start", "", r"C:\Program Files\Docker\Docker\Docker Desktop.exe"], None).await,
+        // Started on its own, with none of this process's handles: through `cmd /C start` the
+        // app inherited them and kept them open, and a caller waiting for this process's output
+        // (the guided setup's test entry under a redirect) waited for Docker Desktop to quit.
+        #[cfg(windows)]
+        ("windows", "docker-desktop") => crate::platform::exec::launch_detached(r"C:\Program Files\Docker\Docker\Docker Desktop.exe").map(|()| String::new()),
         ("linux", "docker-engine") => run("pkexec", &["systemctl", "start", "docker"], None).await.map_err(|e| match e {
             Error::ToolMissing { .. } => Error::Invalid(crate::machine::tools::steps::NO_PKEXEC.into()),
             e => e,

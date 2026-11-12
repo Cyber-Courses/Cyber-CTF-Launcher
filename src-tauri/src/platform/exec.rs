@@ -82,6 +82,27 @@ pub fn headless_std(cmd: &mut std::process::Command) -> &mut std::process::Comma
     cmd
 }
 
+/// Starts a desktop app and returns at once, the app on its own: no console window, none of this
+/// process's standard handles (a child given them keeps them open as long as it runs, and whoever
+/// waits for this process's output then waits for the app: Docker Desktop, started by the guided
+/// setup under a test harness whose output a script redirected, held the script until the rig's
+/// budget ended it, 2026-11-12), its own process group. Windows only: macOS opens apps with
+/// `open -a`, which returns by itself.
+#[cfg(windows)]
+pub fn launch_detached(program: &str) -> Result<()> {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    std::process::Command::new(program)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+        .spawn()
+        .map(drop)
+        .map_err(|e| Error::Invalid(format!("couldn't start {program}: {e}")))
+}
+
 /// Builds the Command: headless, Windows batch-wrapper tools routed through `cmd /C` so they
 /// resolve, and Docker kept on the engine the user picked.
 fn build(program: &str, args: &[&str]) -> Command {
