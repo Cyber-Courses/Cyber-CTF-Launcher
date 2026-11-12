@@ -168,6 +168,17 @@ describe("the hypervisors' objects", () => {
     expect(names(parse("vbox-dhcp", "vbox-dhcp.txt"))).toEqual(["HostInterfaceNetworking-vboxnet0"]);
   });
 
+  it("reads VMware's virtual networks from its networking file, by vmnet, with their subnet and kind", () => {
+    // The Vagrant VMware Utility added VNET_2 (10.80.0.0/24, host-only) on the M4 Max during a lab,
+    // and no kind read it.
+    expect(parse("vmware-network", "vmware-network.txt").map((n) => [n.key, n.name])).toEqual([
+      ["vmnet1", "vmnet1 172.16.214.0/255.255.255.0 host-only"],
+      ["vmnet2", "vmnet2 10.80.0.0/255.255.255.0 host-only"],
+      ["vmnet8", "vmnet8 192.168.136.0/255.255.255.0 nat"],
+    ]);
+    expect(parse("vmware-network", "hosts.txt")).toEqual([]);
+  });
+
   it("reads UTM's and Parallels' VMs by UUID", () => {
     expect(parse("utm-vm", "utm-vm.txt").map((v) => [v.key, v.name])).toEqual([
       ["6C7E3B58-2D4F-4C1A-9F65-1B2D3C4E5F60", "hello-stack - isoloom-docker-host"],

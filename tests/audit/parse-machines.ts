@@ -48,6 +48,27 @@ const vboxNatNets: Parser = (output) => {
   return vboxBlocks("vbox-natnet", field)(output, 0);
 };
 
+/** VMware's virtual networks, from its `networking` file (Fusion's
+ *  `/Library/Preferences/VMware Fusion/networking`, Workstation's `/etc/vmware/networking` on
+ *  Linux): each `answer VNET_<n>_<setting> <value>` line a setting of network `vmnet<n>`, named
+ *  with its subnet and whether it is host-only or NAT, so one made or readdressed reads as new. */
+const vmwareNetworks: Parser = (output) => {
+  const nets = new Map<string, Map<string, string>>();
+  for (const l of lines(output)) {
+    const m = /^answer VNET_(\d+)_(\w+) (.*)$/.exec(l.trim());
+    if (!m) continue;
+    const settings = nets.get(m[1]) ?? new Map<string, string>();
+    settings.set(m[2], m[3].trim());
+    nets.set(m[1], settings);
+  }
+  return [...nets].map(([n, s]) => {
+    const subnet = s.get("HOSTONLY_SUBNET");
+    const mask = s.get("HOSTONLY_NETMASK");
+    const kind = s.get("NAT") === "yes" ? "nat" : "host-only";
+    return named("vmware-network", `vmnet${n}`, subnet ? `vmnet${n} ${subnet}/${mask ?? "?"} ${kind}` : `vmnet${n} ${kind}`);
+  });
+};
+
 /** A table whose rows carry a UUID and a name (`utmctl list`, `prlctl list -a -o uuid,name`). */
 const uuidTable =
   (kind: string): Parser =>
@@ -139,6 +160,7 @@ export const MACHINE_PARSERS: Record<string, Parser> = {
   "vbox-dhcp": vboxBlocks("vbox-dhcp", "NetworkName"),
   "utm-vm": uuidTable("utm-vm"),
   "parallels-vm": uuidTable("parallels-vm"),
+  "vmware-network": vmwareNetworks,
   "hyperv-vm": winJson("hyperv-vm", "Id", "Name", (o) => ({ created: epoch(o.CreationTime), paths: refs(o.Path) })),
   "hyperv-switch": winJson("hyperv-switch", "Id", "Name"),
   "hyperv-nat": winJson("hyperv-nat", "Name", "Name"),

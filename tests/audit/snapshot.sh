@@ -265,6 +265,19 @@ vbox_probes() {
   probe vbox-dhcp VBoxManage VBoxManage list dhcpservers
 }
 
+# VMware's virtual networks, from its networking file (a world-readable file, no tool): the Vagrant
+# VMware Utility adds a host-only network there for a lab's private network.
+vmware_probes() {
+  local file=/etc/vmware/networking
+  [ "$OS" = macos ] && file="/Library/Preferences/VMware Fusion/networking"
+  if [ -r "$file" ]; then
+    probe vmware-network cat cat "$file"
+  else
+    : >"$WORK/out"
+    emit vmware-network networking missing "no VMware networking file ($file)" "$WORK/out"
+  fi
+}
+
 mac_vm_probes() {
   local utm=/Applications/UTM.app/Contents/MacOS/utmctl
   if [ -x "$utm" ] && pgrep -xq UTM; then
@@ -322,6 +335,7 @@ want process && process_probes
 if want hypervisors; then
   if [ "$OS" = linux ]; then libvirt_probes; else mac_vm_probes; fi
   vbox_probes
+  vmware_probes
 fi
 want network && network_probes
 want credentials && credential_probes

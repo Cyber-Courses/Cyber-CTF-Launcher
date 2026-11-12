@@ -41,6 +41,12 @@ export const KINDS: Kind[] = [
   { kind: "vbox-dhcp", on: ALL, tool: "VBoxManage", what: "VirtualBox's DHCP servers" },
   { kind: "utm-vm", on: ["macos"], tool: "utmctl", what: "UTM's VMs (read while UTM runs)" },
   { kind: "parallels-vm", on: ["macos"], tool: "prlctl", what: "Parallels Desktop's VMs" },
+  {
+    kind: "vmware-network",
+    on: ["linux", "macos"],
+    tool: "networking",
+    what: "VMware's virtual networks (vmnet<n>), from its networking file (Fusion's, Workstation's on Linux)",
+  },
   { kind: "hyperv-vm", on: ["windows"], tool: "Hyper-V", what: "Hyper-V's VMs" },
   { kind: "hyperv-switch", on: ["windows"], tool: "Hyper-V", what: "Hyper-V's virtual switches" },
   { kind: "hyperv-nat", on: ["windows"], tool: "NetNat", what: "Windows' NAT networks (a Hyper-V lab's)" },
