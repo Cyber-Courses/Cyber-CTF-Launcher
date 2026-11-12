@@ -46,6 +46,22 @@ libvirt	linux	iptables-rule	* virbr0 *	libvirt's rules for its default network's
 libvirt	linux	nft-table	table * libvirt*	libvirt's own nftables tables (its nftables firewall backend)
 libvirt	linux	nft-table	table ip mangle	the mangle table iptables-nft creates for libvirt's checksum rules
 libvirt	linux	nft-table	table ip6 mangle	the same for IPv6
+libvirt	linux	nft-table	table ip filter	the filter table iptables-nft creates for libvirt's default network's rules
+libvirt	linux	nft-table	table ip nat	the nat table iptables-nft creates for libvirt's default network's masquerade
+libvirt	linux	nft-table	table ip6 filter	the same for IPv6
+libvirt	linux	nft-table	table ip6 nat	the same for IPv6
+libvirt	linux	iptables-rule	mangle :PREROUTING ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	mangle :INPUT ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	mangle :FORWARD ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	mangle :OUTPUT ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	mangle :POSTROUTING ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+libvirt	linux	iptables-rule	filter :INPUT ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+libvirt	linux	iptables-rule	filter :FORWARD ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+libvirt	linux	iptables-rule	filter :OUTPUT ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+libvirt	linux	iptables-rule	nat :PREROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+libvirt	linux	iptables-rule	nat :INPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+libvirt	linux	iptables-rule	nat :OUTPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+libvirt	linux	iptables-rule	nat :POSTROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
 qemu	linux	route	192.168.122.0/24 dev virbr0	libvirt comes with QEMU on this distribution: its default network's bridge
 qemu	linux	libvirt-network	default	libvirt's default network, defined by its package
 qemu	linux	libvirt-pool	default	libvirt's default storage pool
@@ -54,6 +70,22 @@ qemu	linux	iptables-rule	* virbr0 *	libvirt's rules for its default network's br
 qemu	linux	nft-table	table * libvirt*	libvirt's own nftables tables
 qemu	linux	nft-table	table ip mangle	the mangle table iptables-nft creates for libvirt's checksum rules
 qemu	linux	nft-table	table ip6 mangle	the same for IPv6
+qemu	linux	nft-table	table ip filter	the filter table iptables-nft creates for libvirt's default network's rules
+qemu	linux	nft-table	table ip nat	the nat table iptables-nft creates for libvirt's default network's masquerade
+qemu	linux	nft-table	table ip6 filter	the same for IPv6
+qemu	linux	nft-table	table ip6 nat	the same for IPv6
+qemu	linux	iptables-rule	mangle :PREROUTING ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	mangle :INPUT ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	mangle :FORWARD ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	mangle :OUTPUT ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	mangle :POSTROUTING ACCEPT	a base chain of the mangle table, which libvirt's default network's checksum rule creates
+qemu	linux	iptables-rule	filter :INPUT ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+qemu	linux	iptables-rule	filter :FORWARD ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+qemu	linux	iptables-rule	filter :OUTPUT ACCEPT	a base chain of the filter table, which libvirt's default network's first rule creates
+qemu	linux	iptables-rule	nat :PREROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+qemu	linux	iptables-rule	nat :INPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+qemu	linux	iptables-rule	nat :OUTPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+qemu	linux	iptables-rule	nat :POSTROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
 hyperv	windows	hyperv-switch	Default Switch	Hyper-V's Default Switch, made when Hyper-V is turned on
 hyperv	windows	route	* vEthernet (Default Switch)	the Default Switch's NAT route
 virtualbox	linux	vbox-hostonly	vboxnet*	the host-only adapter the self-test's private network makes, which Vagrant never removes

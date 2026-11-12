@@ -141,6 +141,13 @@ mod tests {
                 ("libvirt-pool", "default"),
                 ("iptables-rule", "*LIBVIRT*"),
                 ("nft-table", "table * libvirt*"),
+                // iptables-nft's tables and base chains for libvirt's default network
+                // (debian13-bare's setup-libvirt audit), each named, no glob.
+                ("nft-table", "table ip filter"),
+                ("nft-table", "table ip6 nat"),
+                ("iptables-rule", "mangle :POSTROUTING ACCEPT"),
+                ("iptables-rule", "filter :FORWARD ACCEPT"),
+                ("iptables-rule", "nat :PREROUTING ACCEPT"),
                 FOLDER,
             ] {
                 assert!(leaves.contains(&pair(kind, name)), "{item} lacks {kind} {name}: {leaves:?}");

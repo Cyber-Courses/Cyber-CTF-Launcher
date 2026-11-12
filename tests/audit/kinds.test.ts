@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { PARSERS, parseProbe, readSnapshot } from "./inventory.ts";
 import { KINDS } from "./kinds.ts";
-import { globRegExp } from "./scope.ts";
+import { type Allowance, allowanceFor, globRegExp } from "./scope.ts";
 
 // The leftover audit's kinds, held together: its listing (kinds.ts), its parsers, the kinds the
 // three snapshot scripts record and the contract (tests/leftovers.md); then snapshot.sh run for
@@ -225,6 +225,43 @@ describe("what the guided setup leaves (setup-leaves.tsv)", () => {
         docker.some((r) => r.kind === kind && globRegExp(r.name).test(name)),
         `${kind} ${name}`,
       ).toBe(true);
+    // What libvirt's default network leaves on Linux through iptables-nft (debian13-bare's
+    // setup-libvirt audit): the filter and nat tables and the base chains of those and of mangle,
+    // exactly; a rule of the launcher's own, or a chain's policy changed, is still reported.
+    const allowances = (item: string): Allowance[] =>
+      rows.filter((r) => r.item === item && r.os === "linux").map((r) => ({ kind: r.kind, where: "any", pattern: r.name, reason: r.reason }));
+    const LIBVIRT_LEAVES: [string, string][] = [
+      ...["table ip filter", "table ip nat", "table ip6 filter", "table ip6 nat", "table ip mangle", "table ip6 mangle"].map((t): [string, string] => [
+        "nft-table",
+        t,
+      ]),
+      ...[
+        "mangle :PREROUTING ACCEPT",
+        "mangle :INPUT ACCEPT",
+        "mangle :FORWARD ACCEPT",
+        "mangle :OUTPUT ACCEPT",
+        "mangle :POSTROUTING ACCEPT",
+        "filter :INPUT ACCEPT",
+        "filter :FORWARD ACCEPT",
+        "filter :OUTPUT ACCEPT",
+        "nat :PREROUTING ACCEPT",
+        "nat :INPUT ACCEPT",
+        "nat :OUTPUT ACCEPT",
+        "nat :POSTROUTING ACCEPT",
+      ].map((r): [string, string] => ["iptables-rule", r]),
+    ];
+    const NOT_LIBVIRTS: [string, string][] = [
+      ["iptables-rule", "nat -A PREROUTING -p tcp -m tcp --dport 8180 -j DNAT --to-destination 10.30.0.10:80"],
+      ["iptables-rule", "filter -A INPUT -p tcp -m tcp --dport 47290 -j ACCEPT"],
+      ["iptables-rule", "filter :FORWARD DROP"],
+      ["iptables-rule", "raw :PREROUTING ACCEPT"],
+      ["nft-table", "table inet cyberctf"],
+    ];
+    const item = (kind: string, name: string) => ({ kind, key: name, name, refs: [], paths: [] });
+    for (const path of ["libvirt", "qemu"]) {
+      for (const [kind, name] of LIBVIRT_LEAVES) expect(allowanceFor(item(kind, name), "clone", allowances(path)), `${path}: ${kind} ${name}`).toBeDefined();
+      for (const [kind, name] of NOT_LIBVIRTS) expect(allowanceFor(item(kind, name), "clone", allowances(path)), `${path}: ${kind} ${name}`).toBeUndefined();
+    }
     // The paths the setup sets up each leave something: the engine, each hypervisor, the launcher.
     for (const item of ["launcher", "docker", "libvirt", "qemu", "virtualbox", "hyperv", "wsl"])
       expect(
