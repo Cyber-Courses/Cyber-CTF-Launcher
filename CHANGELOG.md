@@ -150,12 +150,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
-- Bundles Isoloom 2.1.3 and Isothrum 2.1.3 from crates.io, which write and read the run
+- Bundles Isoloom 2.1.4 and Isothrum 2.1.3 from crates.io, which write and read the run
   manifest's version 1. Their changelogs list what changed; for the launcher: a container lab
   runs on the computer's own CPU architecture unless its spec pins one (a Linux Arm host ran
   nothing: `exec format error`), a lab's start no longer pulls an image the lab builds itself, a
-  read-write shared folder in a VirtualBox VM is writable by the attack box's player, a lab's
-  image download that the network cut is tried again, a VM lab on QEMU downloads each box once
+  read-write shared folder in a VirtualBox VM, and now on QEMU too, is writable by the attack
+  box's player (QEMU refused every account but the VM's first with "Operation not permitted"),
+  a lab's image download that the network cut is tried again, a VM lab on QEMU downloads each box once
   (its libvirt build, which vagrant-qemu boots) instead of twice, two copies of one VM lab
   run side by side on QEMU (each network's hub took ports from the lab's name, so the second
   copy's start failed), an attack box added to a running VM lab on QEMU no longer cuts the
