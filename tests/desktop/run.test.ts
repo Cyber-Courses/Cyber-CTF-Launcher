@@ -353,8 +353,9 @@ function runnerSetup({ dockerUp = true, env = {}, docker }: { dockerUp?: boolean
   dirs.push(dir);
   const app = fakeApp(dir);
   if (env.FAKE_APP_DEAD) writeFileSync(join(dir, "dead"), "");
-  // A docker that answers `info` as asked and knows no Compose project; a vagrant with no boxes.
-  writeFileSync(join(dir, "docker"), docker ?? `#!/bin/sh\ncase "$1" in info) exit ${dockerUp ? "0" : "1"} ;; compose) echo '[]' ;; *) exit 0 ;; esac\n`);
+  // A docker that answers `info` as asked (its version, or Docker 26's empty line for a daemon
+  // that doesn't answer) and knows no Compose project; a vagrant with no boxes.
+  writeFileSync(join(dir, "docker"), docker ?? `#!/bin/sh\ncase "$1" in info) echo ${dockerUp ? "29.0.0" : ""} ;; compose) echo '[]' ;; *) exit 0 ;; esac\n`);
   writeFileSync(join(dir, "vagrant"), "#!/bin/sh\nexit 0\n");
   chmodSync(join(dir, "docker"), 0o755);
   chmodSync(join(dir, "vagrant"), 0o755);

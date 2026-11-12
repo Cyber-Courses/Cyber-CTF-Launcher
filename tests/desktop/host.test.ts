@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { dockerPluginDirs, portFree, portHolder, portStillHeld, waitPortFree } from "./lib/host.mjs";
+import { dockerPluginDirs, engineSilence, portFree, portHolder, portStillHeld, runBounded, waitPortFree } from "./lib/host.mjs";
 import { deadDockerEnv } from "./lib/support.mjs";
 
 // What the desktop end-to-end reads of the machine (lib/host.mjs): the app's WebDriver port, and
@@ -87,5 +87,70 @@ describe("the Docker CLI's plugin folders", () => {
       if (before === undefined) delete process.env.CYBERCTF_WDIO_ROOT;
       else process.env.CYBERCTF_WDIO_ROOT = before;
     }
+  });
+});
+
+describe("a program run with a bound", () => {
+  /** A Node script in a folder of its own, run as the program. */
+  const script = (body: string) => {
+    const file = join(tempDir("bounded-"), "program.mjs");
+    writeFileSync(file, body);
+    return file;
+  };
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it("answers its output and exit code, its stdin the null device", () => {
+    const program = script(`let input = "";
+process.stdin.on("data", (d) => (input += d));
+process.stdin.on("end", () => { console.log("29.0.0 " + JSON.stringify(input)); process.exit(3); });`);
+    expect(runBounded(process.execPath, [program], 10000)).toEqual({ out: '29.0.0 ""\n', code: 3, timedOut: false, missing: false });
+  });
+
+  it("ends a program past its bound with what it started, which held its output open", async () => {
+    // Docker Desktop still starting: the CLI waits ~47 s, and a plugin it runs (Compose) outlives
+    // a docker.exe ended alone, its output still open.
+    const pids = join(tempDir("bounded-pids-"), "helper");
+    const program = script(`import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+const helper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "inherit", "ignore"] });
+writeFileSync(${JSON.stringify(pids)}, String(helper.pid));
+console.log("partial");
+setInterval(() => {}, 1000);`);
+    const start = Date.now();
+    const r = runBounded(process.execPath, [program], 1500);
+    expect(Date.now() - start).toBeLessThan(10000);
+    expect(r).toEqual({ out: "partial\n", code: null, timedOut: true, missing: false });
+    const helper = Number(readFileSync(pids, "utf8"));
+    await expect.poll(() => alive(helper), { timeout: 5000 }).toBe(false);
+  });
+
+  it("says when the program isn't installed", () => {
+    expect(runBounded("cyberctf-no-such-program", [], 5000)).toEqual({ out: "", code: null, timedOut: false, missing: true });
+  });
+});
+
+describe("whether docker info says an engine answers", () => {
+  const info = (p: Partial<{ out: string; code: number | null; timedOut: boolean; missing: boolean }>) => ({
+    out: "",
+    code: 0,
+    timedOut: false,
+    missing: false,
+    ...p,
+  });
+
+  it("is its version named, never an exit 0 alone: Docker 26's answer for a daemon that doesn't answer", () => {
+    expect(engineSilence(info({ out: "29.0.0\n" }), 20)).toBeNull();
+    // Debian 13's docker.io 26.1.5 with a dead DOCKER_HOST (jarvis, debian13-quick e2e.shell, #291).
+    expect(engineSilence(info({ out: "\n" }), 20)).toBe("an empty answer: its daemon doesn't answer");
+    expect(engineSilence(info({ code: null, timedOut: true }), 20)).toBe("no answer in 20 s");
+    expect(engineSilence(info({ code: null, missing: true }), 20)).toBe("not installed");
+    expect(engineSilence(info({ code: 1 }), 20)).toBe("exit 1");
   });
 });

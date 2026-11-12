@@ -11,7 +11,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
 import { appExit, startEnded, stuckLabReport } from "./diagnose.mjs";
-import { dockerPluginDirs, portStillHeld, waitPortFree } from "./host.mjs";
+import { dockerPluginDirs, engineSilence, portStillHeld, runBounded, waitPortFree } from "./host.mjs";
 
 export { runContainers } from "./owned.mjs";
 
@@ -594,18 +594,22 @@ export function localLab() {
 /** The catalogue lab the signed-in scenarios start (its title in the Labs list). */
 export const CATALOGUE_LAB = process.env.CYBERCTF_TEST_CATALOGUE_LAB || "Supplier portal API";
 
+/** The longest a docker call may take: an engine that answers does in a second or two, while
+ *  Docker Desktop still starting fails each call with a 500 only after ~47 s. */
+const DOCKER_CALL_MS = 20000;
+
 /** `docker <args>`, without a shell (so `{{.Names}}` and `^` reach Docker as written on every
- *  system); its output, or null when Docker failed. */
+ *  system), stdin the null device, for at most DOCKER_CALL_MS: past it the CLI is ended with what
+ *  it started, a plugin such as Compose included (runBounded, host.mjs). Its output, or null when
+ *  Docker failed or didn't answer in time. */
 export function docker(...args) {
-  try {
-    return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 60000 });
-  } catch {
-    return null;
-  }
+  const r = runBounded("docker", args, DOCKER_CALL_MS);
+  return r.code === 0 ? r.out : null;
 }
 
-/** Whether a Docker engine answers here. */
-export const dockerUp = () => docker("info", "--format", "{{.ServerVersion}}") !== null;
+/** Whether a Docker engine answers here: `docker info` names its version (an exit 0 with an empty
+ *  line is Docker 26's for a daemon that doesn't answer: engineSilence, host.mjs). */
+export const dockerUp = () => engineSilence(runBounded("docker", ["info", "--format", "{{.ServerVersion}}"], DOCKER_CALL_MS), DOCKER_CALL_MS / 1000) === null;
 
 /** The containers of lab `id` (its Compose project, `cyberctf-<id>`): name and state each. */
 export function labContainers(id) {

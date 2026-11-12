@@ -58,7 +58,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PORT_FREE_S, portStillHeld, waitPortFree } from "./lib/host.mjs";
+import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, waitPortFree } from "./lib/host.mjs";
 import { dropComposeRecord, projects, record as recordMachine, runFolders, runTool } from "./lib/owned.mjs";
 import {
   DEAD_APP,
@@ -375,12 +375,9 @@ const ASKABLE = { libvirt: "virsh", virtualbox: "VBoxManage", hyperv: "Get-VM", 
 let utmVm = "";
 const CHECKS = {
   engine: () => {
-    try {
-      execFileSync("docker", ["info", "--format", "{{.ServerVersion}}"], { stdio: "ignore", timeout: 60000, windowsHide: true });
-      return null;
-    } catch (e) {
-      return `no Docker engine answers here (docker info: ${e.code === "ENOENT" ? "not installed" : (e.message.split("\n")[0] ?? "failed")})`;
-    }
+    // Its version named, not an exit 0 alone: Docker 26 and older answer an empty line then.
+    const why = engineSilence(runBounded("docker", ["info", "--format", "{{.ServerVersion}}"], 60000), 60);
+    return why === null ? null : `no Docker engine answers here (docker info: ${why})`;
   },
   "fixture-lab": () => (LAB_OK ? null : `no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab (${LAB} has no isoloom.yml)`),
   session: () => (SESSION ? null : "no session file: give CYBERCTF_TEST_ACCOUNT_SESSION to the runner (a catalogue lab starts only signed in)"),

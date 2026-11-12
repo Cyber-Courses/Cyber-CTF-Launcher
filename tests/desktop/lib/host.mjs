@@ -4,14 +4,63 @@
 // spec would drive whatever still answers there (an earlier app, another copy of the app) without
 // the knobs it started its own with. The runner (run.mjs) and the specs' launches (support.mjs)
 // wait for it before each app instead, and stop with what holds it. And where the Docker CLI finds
-// its plugins (Compose), which a spec's Docker config of its own must keep. No dependency of its
-// own, so the runner loads it before webdriverio.
-import { execFileSync } from "node:child_process";
+// its plugins (Compose), which a spec's Docker config of its own must keep. And a program run with
+// a bound, ended with what it started past it (`runBounded`), and whether `docker info` says an
+// engine answers. No dependency of its own, so the runner loads it before webdriverio.
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+
+/** The supervisor `runBounded` runs a program under (resolved when asked: a page's test loads this
+ *  module in jsdom, where the module's URL isn't a file's). */
+const bounded = () => fileURLToPath(new URL("./bounded.mjs", import.meta.url));
+
+/**
+ * `program args`, without a shell, stdin the null device, for at most `timeoutMs`: past it, the
+ * program is ended with everything it started (lib/bounded.mjs: taskkill /T on Windows, each
+ * process under it elsewhere), so neither it nor a helper of its (a Docker CLI plugin) outlives
+ * the call or holds its output open. `{ out, code, timedOut, missing }`: its output, its exit code
+ * (null when it was ended or never ran), whether it ran past the bound, whether it isn't installed.
+ * @param {string} program
+ * @param {string[]} args
+ * @param {number} timeoutMs
+ * @returns {{ out: string, code: number | null, timedOut: boolean, missing: boolean }}
+ */
+export function runBounded(program, args, timeoutMs) {
+  const r = spawnSync(process.execPath, [bounded(), String(timeoutMs), program, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    // The supervisor's own bound, should it hang: its answer is then a time-out.
+    timeout: timeoutMs + 20000,
+    killSignal: "SIGKILL",
+    windowsHide: true,
+  });
+  try {
+    return JSON.parse(r.stdout);
+  } catch {
+    return { out: "", code: null, timedOut: true, missing: false };
+  }
+}
+
+/**
+ * Why `docker info --format …` (`runBounded`'s answer, bounded at `seconds`) says no Docker engine
+ * answers here; null when one does, naming something. Docker 26 and older exit 0 with an empty
+ * line when the daemon doesn't answer (#291), so an exit 0 alone isn't an answer.
+ * @param {{ out: string, code: number | null, timedOut: boolean, missing: boolean }} info
+ * @param {number} seconds
+ * @returns {string | null}
+ */
+export function engineSilence({ out, code, timedOut, missing }, seconds) {
+  if (code === 0 && out.trim() !== "") return null;
+  if (missing) return "not installed";
+  if (timedOut) return `no answer in ${seconds} s`;
+  if (code === 0) return "an empty answer: its daemon doesn't answer";
+  return code === null ? "ended" : `exit ${code}`;
+}
 
 /** How long the port may stay held after an app is ended, before the next app (seconds). */
 export const PORT_FREE_S = 10;
