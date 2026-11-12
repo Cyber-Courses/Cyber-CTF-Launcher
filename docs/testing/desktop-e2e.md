@@ -76,8 +76,9 @@ need once:
   Docker engine answers, within a minute), `fixture-lab` (the lab folder), `session`
   (`CYBERCTF_TEST_ACCOUNT_SESSION`), `hypervisor` (`CYBERCTF_TEST_VM_PROVIDER`, and its tool answers
   where one can be asked), `server` (`CYBERCTF_TEST_SERVER_ENV`), `own-frame` (Linux, Windows),
-  `unix`, `utm-fixture-vm` (macOS with UTM: the VM `vm-scan` looks for, made and deleted by the
-  runner).
+  `unix`, `fixture-vm` (the VM `vm-scan` looks for, made and deleted by the runner: a UTM VM on
+  macOS, a libvirt domain on Linux on `qemu:///system`, 256 MiB with no disk and no network;
+  elsewhere the spec can't run, Hyper-V's fixture being a later follow-up).
 - A spec provides the others by passing (`export const provides`): `launch` provides
   `running-lab:fixture` (the fixture lab starts here), `lab-form-container` provides
   `catalogue-lab` (a catalogue lab starts here, signed in), `lab-form-docker-vm` provides `vm-start`

@@ -33,7 +33,7 @@ export const RUNNER_NEEDS = {
   server: "a server's settings (CYBERCTF_TEST_SERVER_ENV)",
   "own-frame": "the app draws its own window frame (Linux, Windows)",
   unix: "a Unix signal reaches the deploy worker (not Windows)",
-  "utm-fixture-vm": "a UTM VM named for the installed fixture lab (macOS with UTM)",
+  "fixture-vm": "a VM named for the installed fixture lab (UTM on macOS, libvirt on Linux)",
 };
 
 /** cases.tsv's rows: each case's id, spec, form, knobs and groups (its declarations still empty).

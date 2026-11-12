@@ -1,5 +1,6 @@
 // The running-labs scan sees a VM lab, on UTM, libvirt or Hyper-V. Prerequisite (set up by the
-// caller, tests/desktop/run.sh does it for UTM on a Mac): an installed lab whose id is CYBERCTF_TEST_SCAN_LAB,
+// caller: tests/desktop/run.sh does it, the `fixture-vm` need, with UTM on a Mac and libvirt on
+// Linux; lib/fixture.mjs): an installed lab whose id is CYBERCTF_TEST_SCAN_LAB,
 // and a VM for it running under the hypervisor, named as the engine names it: `<name> · <machine>`
 // for a UTM VM, `<name>_<machine>` for a libvirt domain (on qemu:///system) or `<name>-<machine>` for
 // a Hyper-V VM, where `<name>` is the lab's isoloom name. Drives the real `running_labs` command, so
@@ -11,7 +12,7 @@ import { connect, deadDockerEnv, finish, launchApp, results, sleep } from "../li
 
 const WANT = process.env.CYBERCTF_TEST_SCAN_LAB || "solo-web";
 
-export const needs = ["running-lab:fixture", "utm-fixture-vm"];
+export const needs = ["running-lab:fixture", "fixture-vm"];
 const r = results();
 let found = false;
 let proc;
