@@ -126,12 +126,34 @@ mod tests {
                 assert!(leaves.iter().all(|(k, _)| k != "route" && k != "iptables-rule"), "{item} on {os}: {leaves:?}");
             }
         }
+        // Docker Desktop's WSL 2 VM runs under Hyper-V's worker process, and the engine writes its
+        // hosts entries (the Docker path's audit on a bare Windows clone, 2026-11-12).
+        for item in ["docker", "engine:docker-desktop"] {
+            let windows = names(item, "windows");
+            for (kind, name) in [("process", "* \"*\\vmwp.exe\" *"), ("hosts-entry", "* *.docker.internal")] {
+                assert!(windows.contains(&pair(kind, name)), "{item} on windows lacks {kind} {name}: {windows:?}");
+            }
+        }
         // WSL 2, which the Docker path turns on first on Windows.
         assert!(names("wsl", "windows").contains(&pair("hyperv-switch", "WSL*")));
         // Its firewall rule, by its whole name (rig windows-bare: the docker path's audit read it
-        // as left once WSL 2 was installed); no other rule.
-        let rules: Vec<_> = names("wsl", "windows").into_iter().filter(|(k, _)| k == "firewall-rule").collect();
-        assert_eq!(rules, [pair("firewall-rule", "Windows Subsystem for Linux")]);
+        // as left once WSL 2 was installed), then Hyper-V's own: WSL 2's install on Windows 11
+        // turns Hyper-V's platform on too, and the Docker path's audit on a bare clone read the
+        // Default Switch, its routes, Hyper-V's 16 rules, vmms's port 2179 and NetBIOS on the
+        // new vEthernet adapters as left (rig windows-bare setup-docker, 2026-11-12).
+        let wsl = names("wsl", "windows");
+        let rules: Vec<_> = wsl.iter().filter(|(k, _)| k == "firewall-rule").cloned().collect();
+        assert_eq!(rules[0], pair("firewall-rule", "Windows Subsystem for Linux"));
+        let hyperv_rules: Vec<_> = names("hyperv", "windows").into_iter().filter(|(k, _)| k == "firewall-rule").collect();
+        assert_eq!(rules[1..], hyperv_rules[..], "WSL 2 leaves Hyper-V's rules too");
+        for (kind, name) in [
+            ("hyperv-switch", "Default Switch"),
+            ("route", "* vEthernet (Default Switch)"),
+            ("listening-port", ":::2179 (vmms, *)"),
+            ("listening-port", "*:139 (System, *"),
+        ] {
+            assert!(wsl.contains(&pair(kind, name)), "wsl on windows lacks {kind} {name}: {wsl:?}");
+        }
         assert_eq!(names("wsl", "linux"), vec![pair(FOLDER.0, FOLDER.1)]);
     }
 
@@ -182,9 +204,10 @@ mod tests {
         assert_eq!(rules.len(), 16, "{rules:?}");
         assert!(rules.iter().all(|r| !r.contains('*') || r.starts_with("HNS Container Networking - ")), "{rules:?}");
         let ports: Vec<&str> = leaves.iter().filter(|(k, _)| k == "listening-port").map(|(_, n)| n.as_str()).collect();
-        assert_eq!(ports, [":::2179 (vmms, *)", "0.0.0.0:2179 (vmms, *)"]);
+        // And NetBIOS on the Default Switch's vEthernet adapter, which Windows opens on every adapter.
+        assert_eq!(ports, [":::2179 (vmms, *)", "0.0.0.0:2179 (vmms, *)", "*:139 (System, *"]);
         assert_eq!(leaves.last(), Some(&pair(FOLDER.0, FOLDER.1)));
-        assert_eq!(leaves.len(), 2 + 16 + 2 + 1, "{leaves:?}");
+        assert_eq!(leaves.len(), 2 + 16 + 3 + 1, "{leaves:?}");
         assert_eq!(names("hyperv", "linux"), vec![pair(FOLDER.0, FOLDER.1)]);
     }
 
