@@ -751,6 +751,27 @@ export async function closeWindow(b, label) {
  *  more than one element (its strict selectors). */
 export const mainButton = (b, ...labels) => b.$(`(//main//button[${labels.map((l) => `normalize-space()=${JSON.stringify(l)}`).join(" or ")}])[1]`);
 
+/** The Test button of the Machine page's provider row whose name holds `name` ("libvirt",
+ *  "VirtualBox"): the row picked by its name cell alone. Any element mentioning the name took a
+ *  button of the nearest div holding one, which for Machine details' "installed · vagrant-libvirt"
+ *  is the whole page, so the libvirt test clicked VirtualBox's (jarvis debian13-quick e2e:vm). */
+export const providerTestButton = (b, name) =>
+  b.$(`(//main//*[@role="listitem"][.//*[@data-slot="name"][contains(normalize-space(), ${JSON.stringify(name)})]]//button[normalize-space()="Test"])[1]`);
+
+/** The self-test panel titled `title` (the Container or VM lab test). */
+export const selfTestPanel = (b, title) => b.$(`(//main//*[@data-selftest-result][.//*[normalize-space()=${JSON.stringify(title)}]])[1]`);
+
+/** How the self-test panel titled `title` ended, `{ ok, text }`, else null: while it runs, or with
+ *  no panel. Read from the panel's `data-selftest-result`, not its words: "Passed" and "Failed"
+ *  share their element with the run's time ("Failed1m 27s"), so no element reads them alone. */
+export async function selfTestOutcome(b, title) {
+  const panel = await selfTestPanel(b, title);
+  if (!(await panel.isExisting())) return null;
+  const result = await panel.getAttribute("data-selftest-result");
+  if (result !== "ok" && result !== "fail") return null;
+  return { ok: result === "ok", text: await panel.getText() };
+}
+
 /** A radio row (`role="radio"`) under `scope` whose text holds `text`. */
 export const radioRow = (scope, text) => scope.$(`.//*[@role="radio"][contains(normalize-space(), ${JSON.stringify(text)})]`);
 

@@ -8,24 +8,27 @@
 // is the integration tests' bare-machine tier (docs/testing/integration.md).
 //
 //   CYBERCTF_TEST_VM_PROVIDER  the hypervisor whose VM lab test to run (none: that check skipped)
-import { capMs, closeWindow, deadDockerEnv, dockerUp, finish, goTo, mainText, openApp, results, switchToWindow, waitAwake } from "../lib/support.mjs";
+import {
+  capMs,
+  closeWindow,
+  deadDockerEnv,
+  dockerUp,
+  finish,
+  goTo,
+  mainText,
+  openApp,
+  providerTestButton,
+  results,
+  selfTestOutcome,
+  selfTestPanel,
+  switchToWindow,
+  waitAwake,
+} from "../lib/support.mjs";
 
 export const needs = [];
 const r = results();
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || "";
 const LABELS = { utm: "UTM", qemu: "QEMU", virtualbox: "VirtualBox", vmware_desktop: "VMware", parallels: "Parallels", libvirt: "libvirt", hyperv: "Hyper-V" };
-
-/** The self-test panel titled `title` once it says Passed or Failed (null while it runs). */
-async function testOutcome(b, title) {
-  const panel = await b.$(
-    `//main//*[normalize-space()=${JSON.stringify(title)}]/ancestor::div[.//*[normalize-space()="Passed" or normalize-space()="Failed" or normalize-space()="Testing"]][1]`,
-  );
-  if (!(await panel.isExisting())) return null;
-  const text = await panel.getText();
-  if (/\bFailed\b/.test(text)) return { ok: false, text };
-  if (/\bPassed\b/.test(text) && !/\bTesting\b/.test(text)) return { ok: true, text };
-  return null;
-}
 
 /** Clicks `button` and waits for the self-test `title` to end; its outcome. */
 async function runSelfTest(b, button, title, timeout) {
@@ -33,13 +36,10 @@ async function runSelfTest(b, button, title, timeout) {
   await button.click();
   let outcome = null;
   try {
-    await waitAwake(b, async () => (outcome = await testOutcome(b, title)) !== null, { timeout, interval: 5000, timeoutMsg: `the ${title} never ended` });
+    await waitAwake(b, async () => (outcome = await selfTestOutcome(b, title)) !== null, { timeout, interval: 5000, timeoutMsg: `the ${title} never ended` });
   } catch (e) {
     // What the panel said when the wait ran out: the step it stood at, so the reason says.
-    const panel = await b
-      .$(`//main//*[normalize-space()=${JSON.stringify(title)}]/ancestor::div[.//*[normalize-space()="Testing"]][1]`)
-      .getText()
-      .catch(() => "");
+    const panel = await (await selfTestPanel(b, title)).getText().catch(() => "");
     throw new Error(`${e.message}${panel ? `; the panel says: ${panel.replace(/\s+/g, " ").slice(0, 400)}` : ""}`);
   }
   return outcome;
@@ -68,9 +68,7 @@ try {
 
   if (PROVIDER) {
     const label = LABELS[PROVIDER] ?? PROVIDER;
-    const test = await b.$(
-      `(//main//*[contains(normalize-space(text()), ${JSON.stringify(label)})]/ancestor::div[.//button[normalize-space()="Test"]][1]//button[normalize-space()="Test"])[1]`,
-    );
+    const test = await providerTestButton(b, label);
     if (await test.isExisting()) {
       const outcome = await runSelfTest(b, test, "VM lab test", capMs(0.5)).catch((e) => ({ ok: false, text: e.message }));
       r.check("vm-test", outcome.ok, `the VM lab test on ${label}: ${outcome.text.replace(/\s+/g, " ").slice(0, 300)}`);

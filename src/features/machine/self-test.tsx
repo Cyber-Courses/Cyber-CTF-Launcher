@@ -54,7 +54,9 @@ export function SelfTest({
   const { events, result, run, times, now, runTest } = useSelfTest(kind, auto, onResult, target);
   const passed = PLAN[kind].filter(({ step }) => events[step]?.state === "ok").length;
   return (
-    <div className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
+    // data-selftest-result: the run's state for the desktop specs, which can't read it from the
+    // status (its words share their element with the elapsed time).
+    <div data-selftest-result={result} className="overflow-hidden rounded-control bg-glass shadow-[inset_0_0_0_1px_var(--border)]">
       <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
         <div className="min-w-0">
           <p className="text-[0.8125rem] font-medium text-foreground">{title}</p>
