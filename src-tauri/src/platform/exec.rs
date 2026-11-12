@@ -600,7 +600,6 @@ mod tests {
     #[cfg(windows)]
     #[test]
     #[ignore = "run as a child process by a_tool_left_running_doesnt_hold_the_apps_output"]
-    #[allow(clippy::zombie_processes, reason = "the tool is left running on purpose; the test ends it")]
     fn std_handles_owner_helper() {
         use std::os::windows::process::CommandExt;
         crate::platform::sys::keep_std_handles();
@@ -613,6 +612,8 @@ mod tests {
             .spawn()
             .unwrap();
         std::fs::write(std::env::var("CYBERCTF_TREE_FILE").unwrap(), tool.id().to_string()).unwrap();
+        // Left running on purpose, never waited on: the test ends it.
+        std::mem::forget(tool);
     }
 
     /// Regression (a Windows on Arm rig clone): a `docker` the app left running held the pipes of
