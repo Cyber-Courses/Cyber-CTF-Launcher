@@ -23,7 +23,7 @@ use crate::machine::system::SystemReport;
 use crate::machine::system::docker::Engine;
 use crate::machine::system::wsl::WslState;
 use crate::machine::tools::install::Dependency;
-use crate::runtime::providers::{Need, Provider, ProviderStatus};
+use crate::runtime::providers::{Need, Provider, ProviderStatus, Unavailable};
 
 /// One thing the setup does, or leaves to the player, on this machine.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
@@ -258,6 +258,11 @@ pub fn cant_run(p: &ProviderStatus) -> bool {
 /// its groups since logging in, libvirt's or `/dev/kvm`'s; else why it still can't run); the restart Hyper-V waits for
 /// once the setup turned it on (`hyperv_restart`); its install; else its vendor's site.
 fn hypervisor_get(r: &SystemReport, p: &ProviderStatus, hyperv_restart: bool) -> Vec<Action> {
+    // Nothing installed mends it (KVM holding the CPU's virtualization, for VirtualBox): never
+    // installed, nor readied, for nothing.
+    if let Some(reason @ Unavailable::KvmHoldsVirtualization) = &p.reason {
+        return vec![Action::Blocked { reason: reason.clone() }];
+    }
     if p.hypervisor == Some(true) {
         // The groups its install added the player to (libvirt's, /dev/kvm's) apply from the next
         // login: the setup asks for it, as it does for the docker group.

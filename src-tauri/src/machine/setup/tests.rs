@@ -162,6 +162,59 @@ fn virtualboxs_driver_waiting_for_the_newer_kernel_ends_the_pass_with_a_restart(
     assert!(p.passed_over[0].1.starts_with("can't run here: VirtualBox's kernel driver (vboxdrv) isn't loaded"), "{:?}", p.passed_over);
 }
 
+/// `r` with VirtualBox's status reading `reason` (installed or not, as `r` has it), the options
+/// worked out again.
+fn virtualbox_reads(mut r: SystemReport, reason: &Unavailable) -> SystemReport {
+    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Virtualbox) {
+        (p.available, p.reason) = (false, Some(reason.clone()));
+    }
+    r.setup = options(&r, false);
+    r
+}
+
+#[test]
+fn the_setups_own_hypervisor_that_cant_run_here_gives_way_to_one_that_can() {
+    // Regression (the rig's debian13-bare setup-full, pass 3): VirtualBox, the setup's own, was
+    // installed but its driver wouldn't load after the restart, and the setup failed with "none of
+    // the offered ones can be set up here" while libvirt and QEMU could be.
+    let stuck = virtualbox_reads(shapes::debian_virtualbox_awaits_restart(), &Unavailable::VirtualboxDriver { kernel: "6.12.116+deb13-amd64".into() });
+    assert_eq!(stuck.setup.hypervisor, Some(Provider::Virtualbox), "still the one installed, as the window shows it");
+    let p = plan_of(&stuck, &wanted(&[SetupPath::Vm], &[]));
+    assert_eq!(p.hypervisor, Some(Provider::Libvirt), "{:?}", p.passed_over);
+    assert!(p.passed_over[0].0 == Provider::Virtualbox && p.passed_over[0].1.starts_with("can't run here: VirtualBox's kernel driver"), "{:?}", p.passed_over);
+    assert!(steps(&p).contains(&"libvirt: install libvirt".to_owned()), "{:?}", steps(&p));
+    // One named by the player is still theirs alone: no other is set up in its place.
+    assert_eq!(plan_of(&stuck, &wanted(&[SetupPath::Vm], &[Provider::Virtualbox])).hypervisor, None);
+}
+
+#[test]
+fn virtualbox_is_never_installed_while_kvm_holds_the_cpus_virtualization() {
+    // Regression (the rig's debian13-bare setup-full, pass 1): Linux 6.12 turns VT-x on as KVM's
+    // module loads, so VirtualBox can't start a VM ("VT-x is being used by another hypervisor");
+    // the setup installed it anyway, asked for a restart for its driver, then dropped it.
+    let r = virtualbox_reads(shapes::bare_debian(), &Unavailable::KvmHoldsVirtualization);
+    let held = Action::Blocked { reason: Unavailable::KvmHoldsVirtualization };
+    assert_eq!(get_of(&r, Provider::Virtualbox), std::slice::from_ref(&held));
+    assert!(!held.ends_pass(), "no restart mends it");
+    assert_eq!(r.setup.hypervisor, Some(Provider::Libvirt), "the window starts on one that can run here");
+    let p = plan_of(&r, &wanted(&BOTH, &[]));
+    assert_eq!(p.hypervisor, Some(Provider::Libvirt));
+    assert!(!steps(&p).iter().any(|s| s.starts_with("virtualbox:")), "{:?}", steps(&p));
+    assert!(!p.steps.iter().any(|s| s.action.ends_pass() && s.item == "virtualbox"), "no restart for VirtualBox");
+    // Installed already: blocked too, and nothing of Vagrant's is set up for it.
+    let installed = virtualbox_reads(with_virtualbox(shapes::bare_debian()), &Unavailable::KvmHoldsVirtualization);
+    assert_eq!(get_of(&installed, Provider::Virtualbox), [held]);
+    assert_eq!(plan_of(&installed, &wanted(&[SetupPath::Vm], &[])).hypervisor, Some(Provider::Libvirt));
+}
+
+/// `r` with VirtualBox installed (Vagrant and its needs as `r` has them).
+fn with_virtualbox(mut r: SystemReport) -> SystemReport {
+    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Virtualbox) {
+        p.hypervisor = Some(true);
+    }
+    r
+}
+
 #[test]
 fn qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test() {
     // Regression: the QEMU install never added the player to the kvm group (Debian 13's /dev/kvm

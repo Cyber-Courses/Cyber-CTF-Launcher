@@ -74,10 +74,23 @@ fn not_settable(option: &HypervisorOption) -> Option<String> {
     })
 }
 
-/// The hypervisor a setup sets up of `wanted` (none given: the setup's own), and why each other
-/// one wanted isn't.
+/// The hypervisor a setup sets up of `wanted`, and why each other one wanted isn't. None given:
+/// the setup's own, else the first other one offered here that can be set up, in the check's
+/// order (VirtualBox while KVM holds the CPU's virtualization, or with a driver that won't load,
+/// gives way to libvirt or QEMU), those before it that can't passed over.
 fn pick_hypervisor(o: &Options, wanted: &[Provider]) -> (Option<Provider>, Vec<(Provider, String)>) {
-    let order: Vec<Provider> = if wanted.is_empty() { o.hypervisor.into_iter().collect() } else { wanted.to_vec() };
+    if wanted.is_empty() {
+        let others = o.hypervisors.iter().map(|h| h.provider).filter(|p| Some(*p) != o.hypervisor);
+        let mut passed_over = Vec::new();
+        for option in o.hypervisor.into_iter().chain(others).filter_map(|p| o.hypervisors.iter().find(|h| h.provider == p)) {
+            match not_settable(option) {
+                Some(why) => passed_over.push((option.provider, why)),
+                None => return (Some(option.provider), passed_over),
+            }
+        }
+        return (None, passed_over);
+    }
+    let order = wanted.to_vec();
     let mut chosen: Option<Provider> = None;
     let mut passed_over = Vec::new();
     for provider in order {

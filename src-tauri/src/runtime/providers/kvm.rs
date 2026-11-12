@@ -24,6 +24,26 @@ pub(crate) fn kvm_problem() -> Option<Unavailable> {
 /// The KVM device.
 const KVM_DEVICE: &str = "/dev/kvm";
 
+/// Why VirtualBox can't start VMs on this machine whatever is installed: KVM holds the CPU's
+/// virtualization extensions ([`Unavailable::KvmHoldsVirtualization`]). None off Linux, when it
+/// doesn't, or can't be told.
+pub(crate) fn holds_virtualization() -> Option<Unavailable> {
+    if !cfg!(target_os = "linux") || devices_assumed_ready() {
+        return None;
+    }
+    let modules = std::fs::read_to_string("/proc/modules").ok()?;
+    let at_load = std::fs::read_to_string("/sys/module/kvm/parameters/enable_virt_at_load").ok();
+    holds(&modules, at_load.as_deref()).then_some(Unavailable::KvmHoldsVirtualization)
+}
+
+/// [`holds_virtualization`], from `/proc/modules`' text and KVM's `enable_virt_at_load` (none
+/// before Linux 6.12, whose KVM takes VT-x only while one of its guests runs): KVM's CPU module
+/// loaded, and turning virtualization on as it loads.
+fn holds(modules: &str, enable_virt_at_load: Option<&str>) -> bool {
+    let loaded = modules.lines().any(|l| matches!(l.split_whitespace().next(), Some("kvm_intel" | "kvm_amd")));
+    loaded && enable_virt_at_load.is_some_and(|v| matches!(v.trim(), "Y" | "y" | "1"))
+}
+
 #[cfg(test)]
 thread_local! {
     /// A test's word that this host's devices (`/dev/kvm`, VirtualBox's driver) are usable.
@@ -118,6 +138,18 @@ pub(super) fn new_login_group(provider: Provider) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kvm_holds_the_cpus_virtualization_once_its_module_turns_it_on_as_it_loads() {
+        // Debian 13 (Linux 6.12), the rig's bare guest: kvm_intel loaded, enable_virt_at_load Y.
+        let modules =
+            "kvm_intel 413696 0 - Live 0x0000000000000000\nkvm 1404928 1 kvm_intel, Live 0x0000000000000000\nirqbypass 12288 1 kvm, Live 0x0000000000000000\n";
+        assert!(holds(modules, Some("Y\n")));
+        assert!(holds(&modules.replace("kvm_intel", "kvm_amd"), Some("Y\n")));
+        assert!(!holds(modules, Some("N\n")), "kvm.enable_virt_at_load=0: only while a KVM guest runs");
+        assert!(!holds(modules, None), "before Linux 6.12: only while a KVM guest runs");
+        assert!(!holds("vboxdrv 696320 2 vboxnetadp, Live 0x0000000000000000\nkvm 1404928 0 - Live 0x0000000000000000\n", Some("Y\n")), "no CPU module");
+    }
 
     #[test]
     fn the_kvm_group_is_the_one_dev_kvm_belongs_to() {

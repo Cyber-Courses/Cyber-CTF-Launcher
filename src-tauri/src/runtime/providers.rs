@@ -302,6 +302,7 @@ mod unavailable;
 mod vbox_driver;
 pub use unavailable::Unavailable;
 mod kvm;
+use kvm::holds_virtualization;
 pub(crate) use kvm::kvm_problem;
 use kvm::new_login_group;
 #[cfg(test)]
@@ -516,8 +517,13 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
         },
     };
     let needs = needs(vagrant_installed, detection.plugin_installed, detection.utility);
-    // VBoxManage answers without VirtualBox's kernel driver, which every VM needs (Linux).
-    let reason = unavailable_reason(provider, &needs, detection)
+    // No VirtualBox VM starts while KVM holds the CPU's virtualization (Linux), installed or not:
+    // said first, as nothing the setup installs mends it. VBoxManage answers without VirtualBox's
+    // kernel driver, which every VM needs (Linux).
+    let reason = (provider == Provider::Virtualbox)
+        .then(holds_virtualization)
+        .flatten()
+        .or_else(|| unavailable_reason(provider, &needs, detection))
         .or_else(|| (provider == Provider::Virtualbox && hypervisor == Some(true)).then(vbox_driver::problem).flatten());
     let account_lacks = detection.account;
 

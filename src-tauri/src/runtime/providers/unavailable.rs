@@ -81,6 +81,10 @@ pub enum Unavailable {
         /// The newer kernel installed (`uname -r` once it runs).
         kernel: String,
     },
+    /// KVM holds the CPU's virtualization extensions (Linux): its module (`kvm_intel`, `kvm_amd`)
+    /// turns them on as it loads (`kvm.enable_virt_at_load`, the default since Linux 6.12), so no
+    /// VirtualBox VM starts ("VT-x is being used by another hypervisor"), installed or not.
+    KvmHoldsVirtualization,
 }
 
 impl Unavailable {
@@ -113,6 +117,7 @@ impl Unavailable {
             Unavailable::KernelRestart { kernel } => {
                 format!("VirtualBox's kernel driver is built for the newer kernel installed with it ({kernel}): restart the computer to start that kernel, then re-check.")
             }
+            Unavailable::KvmHoldsVirtualization => "KVM holds this computer's hardware virtualization (VT-x or AMD-V): Linux turns it on as soon as KVM's module loads (the default since Linux 6.12), so VirtualBox can't start VMs (\"VT-x is being used by another hypervisor\"). Use libvirt or QEMU, which run on KVM; for VirtualBox, unload KVM (sudo modprobe -r kvm_intel kvm_amd) or start Linux with kvm.enable_virt_at_load=0, then re-check.".into(),
         }
     }
 }
@@ -147,6 +152,7 @@ mod tests {
             Unavailable::VmwareUtilityMissing,
             Unavailable::VirtualboxDriver { kernel: s("6.12.86+deb13-amd64") },
             Unavailable::KernelRestart { kernel: s("6.12.116+deb13-amd64") },
+            Unavailable::KvmHoldsVirtualization,
         ]
     }
 

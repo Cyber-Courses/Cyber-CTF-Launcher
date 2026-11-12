@@ -303,6 +303,14 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **The guided setup on Linux sets up libvirt or QEMU where KVM holds the CPU's virtualization,
+  not VirtualBox.** Since Linux 6.12, KVM turns VT-x or AMD-V on as soon as its module loads, on
+  any machine that has it, so no VirtualBox VM can start ("VT-x is being used by another
+  hypervisor"). The machine check now says so for VirtualBox, installed or not, with the way out
+  (libvirt or QEMU, or unloading KVM for VirtualBox); the guided setup starts on a hypervisor that
+  can run here, never installs VirtualBox there, and never asks for a restart for it. Before, it
+  installed VirtualBox, asked for a restart for its driver, then found it couldn't run (#290).
+
 - **A lab removed outside the app no longer blocks its re-import.** When a lab's containers or VMs
   are removed outside Cyber CTF (`docker compose down` by hand, a clean-up tool, a VM deleted in its
   hypervisor's app), its page already said it wasn't running, but a re-import, an update, a

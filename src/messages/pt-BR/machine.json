@@ -381,6 +381,7 @@
     "vmwareUtilityStopped": "O Vagrant VMware Utility está instalado, mas o serviço dele não está rodando: instale-o de novo (isso o reinicia), ou reinicie o computador.",
     "vmwareUtilityMissing": "O Vagrant VMware Utility não está instalado: é o serviço da HashiCorp pelo qual o plugin do VMware controla o VMware.",
     "virtualboxDriver": "O driver de kernel do VirtualBox (vboxdrv) não está carregado neste kernel ({kernel}), então o VirtualBox não consegue iniciar VMs. Instale os cabeçalhos do kernel (linux-headers-{kernel} no Debian e no Ubuntu), compile o driver (sudo /sbin/vboxconfig para o VirtualBox da Oracle, sudo dpkg-reconfigure virtualbox-dkms para o da sua distribuição) e verifique de novo. Com o Secure Boot ativado, o driver precisa ser assinado antes de carregar.",
-    "kernelRestart": "O driver de kernel do VirtualBox é compilado para o kernel mais novo instalado com ele ({kernel}): reinicie o computador para iniciar esse kernel e verifique de novo."
+    "kernelRestart": "O driver de kernel do VirtualBox é compilado para o kernel mais novo instalado com ele ({kernel}): reinicie o computador para iniciar esse kernel e verifique de novo.",
+    "kvmHoldsVirtualization": "O KVM está usando a virtualização de hardware deste computador (VT-x ou AMD-V): o Linux a ativa assim que o módulo do KVM é carregado (o padrão desde o Linux 6.12), então o VirtualBox não consegue iniciar VMs (\"VT-x is being used by another hypervisor\"). Use libvirt ou QEMU, que rodam sobre o KVM; para o VirtualBox, descarregue o KVM (sudo modprobe -r kvm_intel kvm_amd) ou inicie o Linux com kvm.enable_virt_at_load=0 e verifique de novo."
   }
 }
