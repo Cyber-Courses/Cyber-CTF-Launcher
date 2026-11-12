@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { screen as rendered, render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/app-shell";
+import { AttackBoxRows } from "@/features/settings/attack-box-rows";
+import { setAttackDesktop } from "@/lib/settings";
 import { installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
-import { terminalText, TITLE_BAR } from "./lib/page.mjs";
+import { choiceState, terminalText, TITLE_BAR } from "./lib/page.mjs";
 
 // What the specs read of the app's page in the page itself, and the selectors they find its parts
 // by (lib/page.mjs), against the markup the app draws.
@@ -90,5 +93,33 @@ describe("the terminal's text", () => {
     expect(terminalText()).toBe("$ cat /shared/x\nseen-from-the-box");
     document.body.replaceChildren();
     expect(terminalText()).toBe("");
+  });
+});
+
+describe("a choice's state, said by a failed step", () => {
+  // settings/attack-desktop (#319): "Desktop wasn't saved" alone, once under load, without whether
+  // the Settings window had the focus, which option was checked or what was stored.
+  const GROUP = "Attack VM desktop";
+  const KEY = "cyberctf.attackbox.desktop";
+
+  it("says the window's focus, each option of the app's radio group checked or not, the stored setting and the focused element", async () => {
+    setAttackDesktop(false);
+    installTauri();
+    const user = userEvent.setup();
+    render(createElement(AttackBoxRows, { onSaved: () => {} }));
+    await flush();
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const before = choiceState(GROUP, KEY);
+    expect(before).toMatch(new RegExp(`^window focus: false, visibility: ${document.visibilityState}; `));
+    expect(before).toContain(`; ${GROUP}: Headless Default=true, Desktop=false; stored ${KEY}: "false"; focused: none; page: `);
+    // What the window showed, from its start: here the rows above the choice.
+    expect(before).toContain("; page: Attack box image");
+    await user.click(rendered.getByText("Desktop"));
+    expect(choiceState(GROUP, KEY)).toContain(`; ${GROUP}: Headless Default=false, Desktop=true; stored ${KEY}: "true"; focused: radio "Desktop"; `);
+  });
+
+  it("says when the group isn't on the page and nothing is stored", () => {
+    localStorage.removeItem(KEY);
+    expect(choiceState(GROUP, KEY)).toContain(`; ${GROUP}: not on the page; stored ${KEY}: null; focused: none; page: `);
   });
 });

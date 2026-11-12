@@ -8,6 +8,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { choiceState } from "../lib/page.mjs";
 import { answerPickers, closeWindow, finish, goTo, invokeCmd, openApp, results, selectValue, sleep, switchToWindow } from "../lib/support.mjs";
 
 export const needs = [];
@@ -106,6 +107,9 @@ try {
   const desktop = (name) =>
     b.$(`//*[@role="radiogroup"][@aria-label="Attack VM desktop"]//*[@role="radio"][contains(normalize-space(), ${JSON.stringify(name)})]`);
   const stored = () => b.execute(() => localStorage.getItem("cyberctf.attackbox.desktop"));
+  // A failed step says what the window showed: whether it had the focus (its first click after the
+  // folder picker saved nothing once, under load, #319), each option's state and the stored setting.
+  r.showing(() => b.execute(choiceState, "Attack VM desktop", "cyberctf.attackbox.desktop"));
   await r.step("attack-desktop", "Attack VM desktop: Desktop then Headless, each saved", async () => {
     await (await desktop("Desktop")).click();
     await b.waitUntil(async () => (await stored()) === "true", { timeout: 10000, timeoutMsg: "Desktop wasn't saved" });
