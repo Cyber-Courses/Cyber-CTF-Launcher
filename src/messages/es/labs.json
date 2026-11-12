@@ -419,7 +419,9 @@
       "pause": "No se pudo pausar {title}",
       "shutdown": "No se pudo apagar {title}",
       "stop": "No se pudo detener y eliminar {title}",
-      "provision": "No se pudo volver a ejecutar la configuración de {title}"
+      "provision": "No se pudo volver a ejecutar la configuración de {title}",
+      "attach": "No se pudo añadir la máquina de ataque a {title}",
+      "detach": "No se pudo quitar la máquina de ataque de {title}"
     },
     "stillUp": "Parte del lab sigue en marcha. Vuelve a intentarlo; el registro de despliegue indica qué falló.",
     "dismiss": "Descartar",

@@ -196,8 +196,17 @@ describe("operations", () => {
   });
 
   it("names the status shown while every operation runs, in the current language", () => {
-    const ops: ActiveOperation["op"][] = ["launch", "resume", "pause", "shutdown", "provision", "stop"];
-    expect(ops.map((o) => operationStatus(o))).toEqual(["Starting", "Resuming", "Pausing", "Shutting down", "Provisioning", "Stopping"]);
+    const ops: ActiveOperation["op"][] = ["launch", "resume", "pause", "shutdown", "provision", "stop", "attach", "detach"];
+    expect(ops.map((o) => operationStatus(o))).toEqual([
+      "Starting",
+      "Resuming",
+      "Pausing",
+      "Shutting down",
+      "Provisioning",
+      "Stopping",
+      "Adding the attack box",
+      "Removing the attack box",
+    ]);
     // Only a provisioning run leaves the lab in its running phase.
     expect(ops.filter(keepsRunningPhase)).toEqual(["provision"]);
     const en = operationStatus("launch");

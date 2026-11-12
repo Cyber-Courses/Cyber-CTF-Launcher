@@ -316,13 +316,18 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
         let mut log = lines(logs);
         let image = image.unwrap_or_else(|| attack_machine::default_image().to_owned());
-        let attach = run.add(&dirs, attack_machine::Pick { image: &image, desktop }, network.as_deref(), &mut log);
-        // Only an image pulled on this machine is the app's to account for.
-        if !run.pulls_image_here() {
-            return Box::pin(attach).await;
-        }
-        // Boxed: the runner's attach future is large, and tracking it adds to it.
-        Box::pin(crate::machine::storage::owned::tracked(&app, std::slice::from_ref(&image), &[], attach)).await
+        // In flight like every lab operation: the page shows the lab busy and offers nothing that
+        // would collide, while bringing the run up to date may restart some of its machines.
+        let attach = crate::runtime::as_operation(&id, crate::runtime::Action::AttachBox, async {
+            let attach = run.add(&dirs, attack_machine::Pick { image: &image, desktop }, network.as_deref(), &mut log);
+            // Only an image pulled on this machine is the app's to account for.
+            if !run.pulls_image_here() {
+                return Box::pin(attach).await;
+            }
+            // Boxed: the runner's attach future is large, and tracking it adds to it.
+            Box::pin(crate::machine::storage::owned::tracked(&app, std::slice::from_ref(&image), &[], attach)).await
+        });
+        Box::pin(attach).await
     })
     .await
 }
@@ -334,7 +339,11 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
-        with_attack_box(&dirs, &dir, &id, runtime)?.remove(&dirs, &mut lines(logs)).await
+        let run = with_attack_box(&dirs, &dir, &id, runtime)?;
+        // In flight like every lab operation (see `attack_box_attach`). Boxed: the runner's
+        // removal is a large future.
+        let mut log = lines(logs);
+        crate::runtime::as_operation(&id, crate::runtime::Action::DetachBox, Box::pin(run.remove(&dirs, &mut log))).await
     })
     .await
 }

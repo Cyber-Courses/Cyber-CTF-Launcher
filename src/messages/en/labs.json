@@ -419,7 +419,9 @@
       "pause": "Couldn’t pause {title}",
       "shutdown": "Couldn’t shut {title} down",
       "stop": "Couldn’t stop and remove {title}",
-      "provision": "Couldn’t run {title}’s setup again"
+      "provision": "Couldn’t run {title}’s setup again",
+      "attach": "Couldn’t add the attack box to {title}",
+      "detach": "Couldn’t remove the attack box from {title}"
     },
     "stillUp": "Part of the lab is still up. Try again; the deployment log says what failed.",
     "dismiss": "Dismiss",

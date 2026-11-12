@@ -6,7 +6,9 @@
       "pause": "Wird pausiert",
       "shutdown": "Fährt herunter",
       "provision": "Wird provisioniert",
-      "stop": "Wird gestoppt"
+      "stop": "Wird gestoppt",
+      "attach": "Attack box wird hinzugefügt",
+      "detach": "Attack box wird entfernt"
     },
     "label": {
       "provisionMachine": "{machine} wird provisioniert…"

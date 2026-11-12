@@ -419,7 +419,9 @@
       "pause": "Impossible de mettre {title} en pause",
       "shutdown": "Impossible d’éteindre {title}",
       "stop": "Impossible d’arrêter et de supprimer {title}",
-      "provision": "Impossible de relancer la configuration de {title}"
+      "provision": "Impossible de relancer la configuration de {title}",
+      "attach": "Impossible d’ajouter l’attack box à {title}",
+      "detach": "Impossible de retirer l’attack box de {title}"
     },
     "stillUp": "Une partie du lab tourne encore. Réessayez ; le journal de déploiement indique ce qui a échoué.",
     "dismiss": "Masquer",

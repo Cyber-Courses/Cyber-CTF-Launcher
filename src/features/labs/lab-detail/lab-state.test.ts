@@ -50,6 +50,17 @@ describe("deriveLabState", () => {
     expect(derive({ busy: true, acting: "provision", status: status({ running: true }) }).tearingDown).toBe(false);
   });
 
+  it("is busy with the attack box while it goes in or out, though the lab's machines restart meanwhile", () => {
+    // Regression (the rig's ubuntu2404 e2e:lab box-stop): the box's add and removal were no
+    // operation, so the page read the lab as not running while its machines were recreated.
+    for (const op of ["attach", "detach"] as const) {
+      for (const running of [true, false]) {
+        const s = derive({ backendDeploying: true, backendOp: op, status: status({ running }) });
+        expect(s).toMatchObject({ operation: op, phase: "operation", tearingDown: false });
+      }
+    }
+  });
+
   it("keeps the running word while an operation without its own (provision) runs", () => {
     expect(derive({ busy: true, acting: "provision", status: status({ running: true }) }).phase).toBe("running");
   });

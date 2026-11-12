@@ -6,7 +6,9 @@
       "pause": "一時停止中",
       "shutdown": "シャットダウン中",
       "provision": "プロビジョニング中",
-      "stop": "停止中"
+      "stop": "停止中",
+      "attach": "アタックボックスを追加中",
+      "detach": "アタックボックスを削除中"
     },
     "label": {
       "provisionMachine": "{machine} をプロビジョニング中…"

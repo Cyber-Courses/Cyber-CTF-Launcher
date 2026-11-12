@@ -53,8 +53,8 @@ pub struct ActiveOperation {
     /// The machine a provisioning run targets, when one.
     machine: Option<String>,
     /// Whether the UI shows the lab as deploying: under a deploy worker, whatever its operation,
-    /// or brought up in this process (a launch, a resume or a provisioning run). Every operation
-    /// listed is in flight ([`busy_labs`]), deploying or not.
+    /// or brought up in this process (a launch, a resume, a provisioning run, or the attack box
+    /// going in or out). Every operation listed is in flight ([`busy_labs`]), deploying or not.
     deploying: bool,
     /// The last meaningful line of the operation's log (detached workers only).
     step: Option<String>,

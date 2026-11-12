@@ -6,7 +6,9 @@
       "pause": "Pausing",
       "shutdown": "Shutting down",
       "provision": "Provisioning",
-      "stop": "Stopping"
+      "stop": "Stopping",
+      "attach": "Adding the attack box",
+      "detach": "Removing the attack box"
     },
     "label": {
       "provisionMachine": "Provisioning {machine}…"

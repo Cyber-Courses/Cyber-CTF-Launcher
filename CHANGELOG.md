@@ -307,6 +307,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **The lab page shows the lab busy while the attack box is added or removed.** Adding or removing
+  the box brings the lab's run up to date, which takes a while and can restart some of the lab's
+  machines. The page showed nothing in flight meanwhile, so the lab could flicker to "not running"
+  and its other actions stayed offered. Both are now lab operations like a start or a stop: the
+  page, the sidebar and the list say "Adding the attack box…" or "Removing the attack box…", offer
+  nothing that would collide, and an update of the app waits for them.
+
 - **The Overview no longer piles up `docker` processes while Docker doesn't answer.** It read the
   machine's usage every 3 s whether or not the last read had ended, and each read asks Docker how
   many containers run: with Docker Desktop still starting, about eight `docker ps` waited at once.

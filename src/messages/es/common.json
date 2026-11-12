@@ -6,7 +6,9 @@
       "pause": "Pausando",
       "shutdown": "Apagando",
       "provision": "Aprovisionando",
-      "stop": "Deteniendo"
+      "stop": "Deteniendo",
+      "attach": "Añadiendo la máquina de ataque",
+      "detach": "Eliminando la máquina de ataque"
     },
     "label": {
       "provisionMachine": "Aprovisionando {machine}…"

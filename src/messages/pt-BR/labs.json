@@ -419,7 +419,9 @@
       "pause": "Não foi possível pausar {title}",
       "shutdown": "Não foi possível desligar {title}",
       "stop": "Não foi possível parar e remover {title}",
-      "provision": "Não foi possível executar de novo a configuração de {title}"
+      "provision": "Não foi possível executar de novo a configuração de {title}",
+      "attach": "Não foi possível adicionar a attack box a {title}",
+      "detach": "Não foi possível remover a attack box de {title}"
     },
     "stillUp": "Parte do lab ainda está rodando. Tente de novo; o log de implantação mostra o que falhou.",
     "dismiss": "Dispensar",

@@ -27,13 +27,19 @@ pub enum Action {
     /// Pausing or shutting the lab down (by its mode), machines kept: neither a deploy nor a
     /// teardown.
     Park(super::Park),
+    /// The attack box added to the running lab: the run brought up to date with it, which may
+    /// restart some of the lab's machines meanwhile.
+    AttachBox,
+    /// The attack box taken out of the running lab, the same way.
+    DetachBox,
 }
 
 impl Action {
-    /// Whether it brings the lab up (a launch, a resume or a provisioning run): what the UI calls
-    /// deploying.
+    /// Whether it brings the lab up (a launch, a resume or a provisioning run), or its run up to
+    /// date with the attack box going in or out: what the UI calls deploying, the lab page busy
+    /// meanwhile.
     pub fn brings_up(self) -> bool {
-        matches!(self, Action::Launch | Action::Resume | Action::Provision)
+        matches!(self, Action::Launch | Action::Resume | Action::Provision | Action::AttachBox | Action::DetachBox)
     }
 
     /// The operation it is, as the UI names it (`ActiveOperation::op`).
@@ -45,6 +51,8 @@ impl Action {
             Action::Stop => Operation::Stop,
             Action::Park(super::Park::Pause) => Operation::Pause,
             Action::Park(super::Park::Shutdown) => Operation::Shutdown,
+            Action::AttachBox => Operation::Attach,
+            Action::DetachBox => Operation::Detach,
         }
     }
 }
@@ -65,6 +73,10 @@ pub enum Operation {
     Provision,
     /// A stop.
     Stop,
+    /// The attack box being added.
+    Attach,
+    /// The attack box being taken out.
+    Detach,
 }
 
 /// The labs with an operation in flight in this process right now, each with its in-flight count
@@ -133,6 +145,13 @@ impl Drop for DeployGuard {
     }
 }
 
+/// Runs `work` as lab `id`'s operation `action`: listed in flight while it runs ([`busy_labs`], the
+/// page showing it busy), whatever way it ends.
+pub(crate) async fn as_operation<T>(id: &str, action: Action, work: impl std::future::Future<Output = T>) -> T {
+    let _in_flight = DeployGuard::new(id, action);
+    work.await
+}
+
 /// A lab held for one operation: this process's own lock on it, and the lock across processes
 /// (see [`lock`]).
 pub(crate) struct LabLock {
@@ -197,6 +216,25 @@ mod tests {
 
     async fn lock_lab(id: &str) -> super::LabLock {
         super::lock_lab_at(None, id).await.unwrap()
+    }
+
+    /// Regression (the rig's ubuntu2404 e2e:lab box-stop): adding or taking out the attack box
+    /// held the lab's lock for an `up --wait` of some 18 s but was no operation in flight, so the
+    /// page showed nothing busy while the lab's machines could restart under it. Each is one now,
+    /// named as the UI names it, the page busy with it (it brings the run up to date), and gone
+    /// once done, however it ends.
+    #[tokio::test]
+    async fn an_attack_box_change_is_an_operation_in_flight_while_it_runs() {
+        for (action, op) in [(Action::AttachBox, super::Operation::Attach), (Action::DetachBox, super::Operation::Detach)] {
+            let (busy, actions) = super::as_operation("box-op", action, async { (busy_labs(), active_actions()) }).await;
+            assert!(busy.contains(&"box-op".to_owned()), "{busy:?}");
+            assert!(actions.contains(&("box-op".to_owned(), action)), "{actions:?}");
+            assert_eq!(action.operation(), op);
+            assert!(action.brings_up(), "the page shows the lab busy with it");
+            assert!(!busy_labs().contains(&"box-op".to_owned()), "cleared once done");
+        }
+        let failed: Result<(), &str> = super::as_operation("box-op", Action::DetachBox, async { Err("refused") }).await;
+        assert!(failed.is_err() && !busy_labs().contains(&"box-op".to_owned()), "cleared when it fails too");
     }
 
     fn try_lock(file: Option<&std::path::Path>, id: &str) -> Option<super::LabLock> {

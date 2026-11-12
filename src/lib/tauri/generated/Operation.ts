@@ -3,4 +3,4 @@
 /**
  * A lab operation as the UI names it: an [`Action`], a pause and a shut down told apart.
  */
-export type Operation = "launch" | "resume" | "pause" | "shutdown" | "provision" | "stop";
+export type Operation = "launch" | "resume" | "pause" | "shutdown" | "provision" | "stop" | "attach" | "detach";

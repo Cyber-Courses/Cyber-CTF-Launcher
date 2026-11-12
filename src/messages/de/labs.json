@@ -419,7 +419,9 @@
       "pause": "{title} konnte nicht pausiert werden",
       "shutdown": "{title} konnte nicht heruntergefahren werden",
       "stop": "{title} konnte nicht gestoppt und entfernt werden",
-      "provision": "Die Einrichtung von {title} konnte nicht erneut laufen"
+      "provision": "Die Einrichtung von {title} konnte nicht erneut laufen",
+      "attach": "Die Attack box konnte {title} nicht hinzugefügt werden",
+      "detach": "Die Attack box konnte nicht aus {title} entfernt werden"
     },
     "stillUp": "Ein Teil des Labs läuft noch. Versuche es erneut; das Bereitstellungsprotokoll zeigt, was fehlgeschlagen ist.",
     "dismiss": "Ausblenden",
