@@ -139,6 +139,59 @@ esac`,
   });
 });
 
+describe("the stack's processes (snapshot.ps1's $StackProcesses, snapshot.sh's STACK_PROCESSES)", () => {
+  // A machine whose account is `vagrant` (a Vagrant box: the rig's Windows and Linux guests) runs
+  // everything under C:\Users\vagrant\ or /home/vagrant/: Vagrant is the program, never a word of a
+  // path. Each pattern as its script applies it: PowerShell's -match (case-insensitive) on
+  // "<name> <command line>", grep -E on ps's "<pid> <etime> <command>".
+  const windows = /\$StackProcesses = '([^']+)'/.exec(read("snapshot.ps1"))?.[1] ?? "";
+  const unix = /^STACK_PROCESSES='([^']+)'/m.exec(read("snapshot.sh"))?.[1] ?? "";
+  const VAGRANT_WINDOWS = [
+    'vagrant.exe "C:\\Program Files\\Vagrant\\bin\\vagrant.exe" up --provider hyperv',
+    'ruby.exe "C:\\Program Files\\Vagrant\\embedded\\mingw64\\bin\\ruby.exe" "C:\\Program Files\\Vagrant\\embedded\\gems\\gems\\vagrant-2.4.9\\bin\\vagrant" destroy -f',
+    'cyber-ctf-desktop.exe "C:\\Program Files\\Cyber CTF\\cyber-ctf-desktop.exe" deploy --job C:\\Users\\vagrant\\AppData\\Roaming\\org.cyberctf.desktop\\deploys\\a.json',
+  ];
+  const NOT_WINDOWS = [
+    'OneDrive.exe "C:\\Users\\vagrant\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe" /background',
+    'Docker Desktop.exe "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe" --name=gui --user-data-dir="C:\\Users\\vagrant\\AppData\\Roaming\\Docker Desktop"',
+    'pwsh.exe "C:\\Users\\vagrant\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" -NoProfile -File C:\\Users\\vagrant\\rig\\job.ps1',
+  ];
+  const VAGRANT_UNIX = [
+    " 4100    1:15:00 vagrant ssh --command docker compose --project-name cyberctf-hello up",
+    "  200      10:00 /opt/vagrant/embedded/bin/ruby /opt/vagrant/embedded/gems/gems/vagrant-2.4.9/bin/vagrant up --provider qemu",
+    "  201   01-02:03:04 /usr/bin/vagrant destroy -f",
+  ];
+  const NOT_UNIX = [
+    "  300      10:00 /usr/bin/python3 /home/vagrant/rig/agent.py --work /home/vagrant/work",
+    "  301      10:00 sshd: vagrant@pts/0",
+    "  302      10:00 sudo -u vagrant -i",
+  ];
+
+  it("are read from both scripts", () => {
+    expect(windows).not.toBe("");
+    expect(unix).not.toBe("");
+  });
+
+  it("take Vagrant by its program on Windows, never a path under C:\\Users\\vagrant\\", () => {
+    const re = new RegExp(windows, "i");
+    for (const line of VAGRANT_WINDOWS) expect(re.test(line), line).toBe(true);
+    for (const line of NOT_WINDOWS) expect(re.test(line), line).toBe(false);
+  });
+
+  it("do so in PowerShell itself, where it's installed", () => {
+    if (spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"]).status !== 0) return;
+    const lines = [...VAGRANT_WINDOWS, ...NOT_WINDOWS];
+    const script = `$p = '${windows.replaceAll("'", "''")}'; foreach ($l in $input) { if ($l -match $p) { 'yes' } else { 'no' } }`;
+    const r = spawnSync("pwsh", ["-NoProfile", "-Command", script], { input: lines.join("\n"), encoding: "utf8" });
+    expect(r.stdout.trim().split(/\r?\n/)).toEqual([...VAGRANT_WINDOWS.map(() => "yes"), ...NOT_WINDOWS.map(() => "no")]);
+  });
+
+  it("take Vagrant by its program in ps's lines, never a path under /home/vagrant/ (grep -E, as the script)", () => {
+    const r = spawnSync("grep", ["-E", unix], { input: [...VAGRANT_UNIX, ...NOT_UNIX].join("\n") + "\n", encoding: "utf8" });
+    expect(r.stdout.trimEnd().split("\n")).toEqual(VAGRANT_UNIX);
+  });
+});
+
 describe("what the guided setup leaves (setup-leaves.tsv)", () => {
   const rows = read("setup-leaves.tsv")
     .split("\n")
