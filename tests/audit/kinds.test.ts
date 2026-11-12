@@ -249,6 +249,11 @@ describe("what the guided setup leaves (setup-leaves.tsv)", () => {
         "nat :OUTPUT ACCEPT",
         "nat :POSTROUTING ACCEPT",
       ].map((r): [string, string] => ["iptables-rule", r]),
+      // The default network's dnsmasq, which Ubuntu starts at install (ubuntu2404-bare's
+      // setup-libvirt audit): DNS on virbr0's address, DHCP on virbr0.
+      ["listening-port", "udp 192.168.122.1:53 (dnsmasq, pid 5276)"],
+      ["listening-port", "tcp 192.168.122.1:53 (dnsmasq, pid 5276)"],
+      ["listening-port", "udp 0.0.0.0%virbr0:67 (dnsmasq, pid 5276)"],
     ];
     const NOT_LIBVIRTS: [string, string][] = [
       ["iptables-rule", "nat -A PREROUTING -p tcp -m tcp --dport 8180 -j DNAT --to-destination 10.30.0.10:80"],
@@ -256,6 +261,11 @@ describe("what the guided setup leaves (setup-leaves.tsv)", () => {
       ["iptables-rule", "filter :FORWARD DROP"],
       ["iptables-rule", "raw :PREROUTING ACCEPT"],
       ["nft-table", "table inet cyberctf"],
+      // Another listener: on another address or interface, another port, or another program.
+      ["listening-port", "udp 0.0.0.0:53 (dnsmasq, pid 5276)"],
+      ["listening-port", "udp 0.0.0.0%virbr1:67 (dnsmasq, pid 7001)"],
+      ["listening-port", "tcp 192.168.122.1:8080 (python3, pid 7002)"],
+      ["listening-port", "tcp 192.168.122.1:53 (named, pid 7003)"],
     ];
     const item = (kind: string, name: string) => ({ kind, key: name, name, refs: [], paths: [] });
     for (const path of ["libvirt", "qemu"]) {

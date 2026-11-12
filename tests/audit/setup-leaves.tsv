@@ -63,6 +63,9 @@ libvirt	linux	iptables-rule	nat :PREROUTING ACCEPT	a base chain of the nat table
 libvirt	linux	iptables-rule	nat :INPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
 libvirt	linux	iptables-rule	nat :OUTPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
 libvirt	linux	iptables-rule	nat :POSTROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+libvirt	linux	listening-port	udp 192.168.122.1:53 (dnsmasq, *)	the default network's dnsmasq, DNS for its VMs on virbr0's address, up while the network is (Ubuntu starts it at install)
+libvirt	linux	listening-port	tcp 192.168.122.1:53 (dnsmasq, *)	the same DNS over TCP
+libvirt	linux	listening-port	udp 0.0.0.0%virbr0:67 (dnsmasq, *)	the default network's dnsmasq, DHCP for its VMs, bound to virbr0
 qemu	linux	route	192.168.122.0/24 dev virbr0	libvirt comes with QEMU on this distribution: its default network's bridge
 qemu	linux	libvirt-network	default	libvirt's default network, defined by its package
 qemu	linux	libvirt-pool	default	libvirt's default storage pool
@@ -87,6 +90,9 @@ qemu	linux	iptables-rule	nat :PREROUTING ACCEPT	a base chain of the nat table, w
 qemu	linux	iptables-rule	nat :INPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
 qemu	linux	iptables-rule	nat :OUTPUT ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
 qemu	linux	iptables-rule	nat :POSTROUTING ACCEPT	a base chain of the nat table, which libvirt's default network's masquerade creates
+qemu	linux	listening-port	udp 192.168.122.1:53 (dnsmasq, *)	libvirt's default network's dnsmasq, DNS for its VMs on virbr0's address (Ubuntu starts the network at install)
+qemu	linux	listening-port	tcp 192.168.122.1:53 (dnsmasq, *)	the same DNS over TCP
+qemu	linux	listening-port	udp 0.0.0.0%virbr0:67 (dnsmasq, *)	libvirt's default network's dnsmasq, DHCP for its VMs, bound to virbr0
 hyperv	windows	hyperv-switch	Default Switch	Hyper-V's Default Switch, made when Hyper-V is turned on
 hyperv	windows	route	* vEthernet (Default Switch)	the Default Switch's NAT route
 virtualbox	linux	vbox-hostonly	vboxnet*	the host-only adapter the self-test's private network makes, which Vagrant never removes

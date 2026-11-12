@@ -152,6 +152,11 @@ mod tests {
                 ("iptables-rule", "mangle :POSTROUTING ACCEPT"),
                 ("iptables-rule", "filter :FORWARD ACCEPT"),
                 ("iptables-rule", "nat :PREROUTING ACCEPT"),
+                // The default network's dnsmasq, which Ubuntu starts at install (ubuntu2404-bare's
+                // setup-libvirt audit), on virbr0's address and interface only.
+                ("listening-port", "udp 192.168.122.1:53 (dnsmasq, *)"),
+                ("listening-port", "tcp 192.168.122.1:53 (dnsmasq, *)"),
+                ("listening-port", "udp 0.0.0.0%virbr0:67 (dnsmasq, *)"),
                 FOLDER,
             ] {
                 assert!(leaves.contains(&pair(kind, name)), "{item} lacks {kind} {name}: {leaves:?}");
