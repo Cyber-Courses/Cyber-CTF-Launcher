@@ -106,6 +106,46 @@ describe("an integration scenario's verdict", () => {
     }
   });
 
+  it("past its cap, ends its lab's VirtualBox VMs, which live outside its temp folder, before the folder goes", { timeout: 60000 }, () => {
+    // Vagrant keeps a VirtualBox VM in ~/VirtualBox VMs and its id in the lab's .vagrant; a
+    // VirtualBox stood in for by a VBoxManage that knows that one VM and records what it's asked.
+    const machine = folder();
+    const id = "3c32882b-cf96-4a01-a754-ca7386e37b49";
+    const vbox = [
+      "#!/bin/sh",
+      'echo "$*" >>"$CYBERCTF_TEST_INTEGRATION_LOGS/vbox.calls"',
+      `case "$1 $2" in "showvminfo ${id}") echo 'name="solo-web - attackbox"' ;; showvminfo*) exit 1 ;; esac`,
+    ].join("\n");
+    const cargo = [
+      `printf '%s\\n' '${vbox.replaceAll("'", "'\\''")}' >"$(dirname "$0")/VBoxManage"`,
+      'chmod +x "$(dirname "$0")/VBoxManage"',
+      'mkdir -p "$TMPDIR/cyberctf-box-1/.vagrant/machines/attackbox/virtualbox" "$TMPDIR/cyberctf-box-1/.vagrant/machines/web/virtualbox"',
+      `echo ${id} >"$TMPDIR/cyberctf-box-1/.vagrant/machines/attackbox/virtualbox/id"`,
+      'echo 00000000-0000-0000-0000-000000000000 >"$TMPDIR/cyberctf-box-1/.vagrant/machines/web/virtualbox/id"',
+      'case "$CASE" in hang) sleep 30 ;; pass) echo "test result: ok. 1 passed; 0 failed" ;; esac',
+    ].join("\n");
+    const capped = runner(cargo, { ONLY: "attack-box-vm", CASE: "hang", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: "2" });
+    expect(verdict(capped.out, "attack-box-vm")).toBe("FAIL");
+    const calls = readFileSync(join(capped.dir, "vbox.calls"), "utf8").split("\n").filter(Boolean);
+    expect([...calls].sort()).toEqual(
+      [
+        `showvminfo ${id} --machinereadable`,
+        `controlvm ${id} poweroff`,
+        `unregistervm ${id} --delete`,
+        "showvminfo 00000000-0000-0000-0000-000000000000 --machinereadable",
+      ].sort(),
+    );
+    expect(calls.indexOf(`controlvm ${id} poweroff`), "powered off, then deleted").toBeLessThan(calls.indexOf(`unregistervm ${id} --delete`));
+    expect(readFileSync(join(capped.dir, "attack-box-vm.log"), "utf8")).toContain(
+      `suite: stopping the scenario's VirtualBox VM solo-web - attackbox (${id}): powered off and deleted`,
+    );
+    expect(readdirSync(machine).filter((n) => n.startsWith("cyberctf"))).toEqual([]);
+    // A scenario that ended on its own cleaned up after itself, or the leftover audit says what it left.
+    const ended = runner(cargo, { ONLY: "attack-box-vm", CASE: "pass", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: "20" });
+    expect(verdict(ended.out, "attack-box-vm")).toBe("ok");
+    expect(existsSync(join(ended.dir, "vbox.calls"))).toBe(false);
+  });
+
   it("takes --only <scenario>@<provider>: that scenario alone, on that hypervisor", () => {
     const out = join(folder(), "results.jsonl");
     runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "vm-lab@virtualbox", "--results", out]);

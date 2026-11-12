@@ -223,7 +223,7 @@ platform_failure() {
 # Bash. A runner stopped midway stops that scenario (logged's SUITE_RUNNING) and drops its folder.
 SCENARIO_TEMP=""
 SCENARIO_TEMP_NATIVE=""
-trap 'stop_running; drop_temp "$SCENARIO_TEMP" /dev/null' EXIT
+trap 'stop_running; drop_temp "$SCENARIO_TEMP" /dev/null vms' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 # stop_running: the scenario `logged` runs, if any, ended (capped kills its process group).
@@ -238,12 +238,14 @@ scenario_temp() {
   SCENARIO_TEMP_NATIVE=$SCENARIO_TEMP
   if command -v cygpath >/dev/null 2>&1; then SCENARIO_TEMP_NATIVE=$(cygpath -w "$SCENARIO_TEMP"); fi
 }
-# drop_temp <folder> <log>: a scenario's temp folder gone, what it left with it: a process still
-# naming it (a VM, a QEMU hub: daemonized, they outlive a killed test's process group) is stopped
-# first (TERM, then KILL), then the folder removed; the log says so.
+# drop_temp <folder> <log> [vms]: a scenario's temp folder gone, what it left with it: with `vms`
+# (a scenario past its cap, a runner stopped midway) its labs' VirtualBox VMs first (drop_vbox), then
+# a process still naming it (a VM, a QEMU hub: daemonized, they outlive a killed test's process
+# group) is stopped (TERM, then KILL), then the folder removed; the log says so.
 drop_temp() {
   local dir=$1 log=$2 pids
   [ -n "$dir" ] && [ -d "$dir" ] || return 0
+  [ "${3:-}" != vms ] || drop_vbox "$dir" "$log"
   # By the folder's own name (random), whichever path to it a process was given (/tmp or /private/tmp).
   pids=$(pgrep -f -- "${dir##*/}" 2>/dev/null | tr '\n' ' ')
   if [ -n "${pids// /}" ]; then
@@ -257,6 +259,27 @@ drop_temp() {
   rm -rf "$dir"
   [ -d "$dir" ] && echo "suite: couldn't remove all of the scenario's temp folder $dir" >>"$log"
   [ "$dir" = "$SCENARIO_TEMP" ] && SCENARIO_TEMP=""
+  return 0
+}
+# drop_vbox <folder> <log>: the VirtualBox VMs Vagrant made for the folder's labs (each machine's
+# .vagrant/machines/<machine>/virtualbox/id), each one still registered powered off and deleted
+# (`VBoxManage controlvm poweroff`, `unregistervm --delete`), the log saying so. Vagrant puts them
+# in ~/VirtualBox VMs, outside the folder, and VBoxHeadless names a UUID alone, so stopping what
+# names the folder never reached them: a capped attack-box-vm on VirtualBox left its VM running
+# (`solo-web - attackbox`, the test rig's studio, 2026-11-12). Read before the folder goes.
+drop_vbox() {
+  local dir=$1 log=$2 file id name
+  command -v VBoxManage >/dev/null 2>&1 || return 0
+  while IFS= read -r file; do
+    id=$(tr -d '[:space:]' <"$file")
+    [[ $id =~ ^[0-9a-fA-F-]{36}$ ]] || continue
+    name=$(VBoxManage showvminfo "$id" --machinereadable 2>/dev/null | sed -n 's/^name="\(.*\)"$/\1/p')
+    [ -n "$name" ] || continue
+    echo "suite: stopping the scenario's VirtualBox VM $name ($id): powered off and deleted" >>"$log"
+    VBoxManage controlvm "$id" poweroff >>"$log" 2>&1
+    sleep 2
+    VBoxManage unregistervm "$id" --delete >>"$log" 2>&1 || echo "suite: couldn't delete the VirtualBox VM $name ($id)" >>"$log"
+  done < <(find "$dir" -maxdepth 10 -path '*/.vagrant/machines/*/virtualbox/id' -type f 2>/dev/null)
   return 0
 }
 # capped <command...>: the command in a process group of its own, killed whole (cargo and the test
@@ -306,7 +329,9 @@ scenario() {
   passed=$?
   if [ -n "$SCENARIO_TEMP" ]; then
     echo "suite: the scenario's temp folder was $SCENARIO_TEMP" >>"$log"
-    drop_temp "$SCENARIO_TEMP" "$log"
+    # Past its cap, its lab's VirtualBox VMs go with the folder (a test that ended on its own
+    # cleaned up itself, or the leftover audit says what it left).
+    if grep -q "^suite: $name exceeded its" "$log"; then drop_temp "$SCENARIO_TEMP" "$log" vms; else drop_temp "$SCENARIO_TEMP" "$log"; fi
   fi
   if [ "$passed" -eq 0 ] && grep -q "test result: ok. 1 passed" "$log"; then
     unset=$(grep -F "$KNOB_UNSET" "$log" | head -1)
