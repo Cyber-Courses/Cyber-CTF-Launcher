@@ -570,6 +570,35 @@ export function labContainers(id) {
     });
 }
 
+/** Lab `id`'s running containers (its Compose project, `cyberctf-<id>`, and any whose name starts
+ *  so: the lab under another id), each with its Compose project and service, Docker's labels. */
+export function labServices(id) {
+  const format = '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.service"}}';
+  const out = docker("ps", "--format", format, "--filter", `name=^cyberctf-${id}`) ?? "";
+  return out
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => {
+      const [name, project, service] = l.split("\t");
+      return { name, project, service };
+    });
+}
+
+/**
+ * Why `containers` (`labServices`) are more than one copy of a lab, or null when they are one: a
+ * second Compose project (the lab started again under another id) or a service running twice.
+ * A service the copy gains is still that copy: "Start it with each lab" attaches the attack box
+ * (`attackbox`) once the launch ends, so a copy goes from its own services to those and the box.
+ */
+export function secondCopy(containers) {
+  const projects = [...new Set(containers.map((c) => c.project))];
+  if (projects.length > 1) return `${projects.length} Compose projects: ${projects.join(", ")}`;
+  const seen = new Map();
+  for (const c of containers) seen.set(c.service, (seen.get(c.service) ?? 0) + 1);
+  const twice = [...seen].filter(([, n]) => n > 1).map(([service, n]) => `${service} ×${n}`);
+  return twice.length ? `a service runs more than once: ${twice.join(", ")}` : null;
+}
+
 /** The VMs a hypervisor lists here, by name; null when this one can't be asked. */
 export function hypervisorVms(provider) {
   const run = (cmd, args) => {

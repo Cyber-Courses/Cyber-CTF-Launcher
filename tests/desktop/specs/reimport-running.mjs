@@ -6,27 +6,24 @@ import {
   finish,
   goTo,
   invokeCmd,
+  invokeWhenIdle,
   LAB_START_MS,
-  labContainers,
   labRunning,
+  labServices,
   localLab,
   mainText,
   openApp,
   results,
-  sleep,
+  secondCopy,
   STOP_MS,
   waitForLab,
+  waitSettled,
 } from "../lib/support.mjs";
 
 export const needs = ["running-lab:fixture"];
 const r = results();
 const LAB = localLab();
 if (!LAB) r.skipAll("no lab folder: set CYBERCTF_TEST_LOCAL_LAB to an Isoloom lab");
-
-const containers = (id) =>
-  labContainers(id)
-    .filter((c) => c.state === "running")
-    .map((c) => c.name);
 
 let proc;
 let b;
@@ -38,26 +35,33 @@ try {
   const raw = (main.match(/local-[a-z0-9_-]+/) || [])[0];
   const id = raw && raw.split("-isoloom-")[0];
   if (!id) throw new Error(`no local lab id on the Overview:\n${main.slice(0, 400)}`);
-  const before = containers(id);
+  // The launch's worker done. The attack box "Start it with each lab" attaches next holds the lab
+  // a while: the import below waits for the lab to be free (invokeWhenIdle), as the UI's buttons
+  // do, so it is refused (or not) for the lab running, never for being busy.
+  await waitSettled(b, id, LAB_START_MS);
+  const before = labServices(id);
 
-  // Import the same folder again while it runs.
+  // Import the same folder again while it runs, once nothing else holds the lab.
   let refused = false;
   try {
-    await invokeCmd(b, "lab_launch_local", { path: LAB }, { streaming: true, timeoutMs: STOP_MS });
+    await invokeWhenIdle(b, "lab_launch_local", { path: LAB }, LAB_START_MS);
   } catch (e) {
     refused = true;
     console.log("second import refused (acceptable):", e.message.slice(0, 160));
   }
-  await sleep(2500);
+  await waitSettled(b, id, STOP_MS);
 
   // The app is still usable and exactly one copy runs.
   await goTo(b, "Machine");
   await goTo(b, "Overview");
   if (!(await b.$("aside nav").isExisting())) throw new Error("shell unusable after the re-import");
   if (!(await labRunning(b))) throw new Error("the lab no longer shows running after the re-import");
-  const after = containers(id);
-  if (after.length > before.length) throw new Error(`a second copy started: ${before.length} -> ${after.length} containers (${JSON.stringify(after)})`);
-  r.pass("reimport-running", `re-import handled gracefully (refused=${refused}, containers ${before.length}->${after.length}, app usable)`);
+  // One copy: one Compose project, each service once (a copy may gain the attack box meanwhile).
+  const after = labServices(id);
+  const two = secondCopy(after);
+  const names = (cs) => JSON.stringify(cs.map((c) => c.name));
+  if (two) throw new Error(`a second copy started: ${two} (before ${names(before)}, after ${names(after)})`);
+  r.pass("reimport-running", `re-import handled gracefully (refused=${refused}, containers ${before.length}->${after.length}, one copy, app usable)`);
 
   await invokeCmd(b, "lab_stop", { id, runtime: "DOCKER" }, { streaming: true });
 } catch (e) {
