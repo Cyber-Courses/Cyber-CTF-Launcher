@@ -180,6 +180,7 @@ fn wdio_storage_plugin() -> tauri::plugin::TauriPlugin<crate::AppRuntime> {
 /// The initialization script that seeds localStorage with `json`'s items (an object of strings;
 /// anything else, or nothing, seeds nothing), keyed by the launch's `mark` so it runs once per
 /// launch. The items reach the page as a JSON literal, never as script.
+#[cfg(any(feature = "wdio", test))]
 fn wdio_storage_script(json: &str, mark: u32) -> Option<String> {
     let items: serde_json::Map<String, serde_json::Value> = serde_json::from_str(json).ok()?;
     if items.is_empty() || !items.values().all(serde_json::Value::is_string) {
