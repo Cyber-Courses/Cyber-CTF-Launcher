@@ -50,7 +50,7 @@ describe("HomeScreen", () => {
     installTauri({ active_operations: () => [] });
     render(<HomeScreen report={readyReport()} auth={signedIn} onNavigate={vi.fn()} />);
     await flush(50);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Florian");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Ada");
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("Amette");
     expect(document.body.textContent).toMatch(/1 lab running/);
     // Its 7 containers (the dev mock's wide lab), from the lab's own status.

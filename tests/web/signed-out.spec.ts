@@ -18,7 +18,7 @@ test.describe("signed out", () => {
     await openApp(page, "&auth=out");
     // The sidebar: Sign in in place of the account.
     await expect(sidebar(page).getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    await expect(sidebar(page)).not.toContainText("Florian");
+    await expect(sidebar(page)).not.toContainText("Ada");
 
     // The Labs list: one banner above the labs, the count without what is solved (nothing is
     // tracked signed out), the labs still open.
@@ -98,7 +98,7 @@ test.describe("signed out", () => {
     await code.getByRole("button", { name: "Cancel" }).dispatchEvent("click");
     await expect(sidebar(page).getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
     await expect(sidebar(page)).not.toContainText("expired");
-    await expect(sidebar(page)).not.toContainText("Florian");
+    await expect(sidebar(page)).not.toContainText("Ada");
     // Signed in once the browser is done: said once, and the account takes the button's place.
     await sidebar(page).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(sidebar(page).getByText("Continue in your browser")).toBeVisible();
