@@ -11,6 +11,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 - **A tool the setup installed through dnf is removed through dnf.** Cleanup's Remove on Fedora
   ran `apt-get remove` through pkexec, which ended on `apt-get: not found` and kept the record.
 
+### Changed
+
+- Bundles Isothrum 2.1.6: retiring the attack box or detaching an access machine removes its
+  anonymous volumes (every retire of the box left its two behind, 2026-11-13).
+
 ## [1.9.0] — 2026-11-13
 
 ### Added
