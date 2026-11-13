@@ -49,7 +49,16 @@ pub async fn reap_expired_labs(dirs: &AppDirs, report: &Report) {
 async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
     let Ok(home) = super::paths::runner_home(dirs) else { return };
     let Ok(base) = dirs.data() else { return };
-    let account = |host: &str| server::connection(dirs, host).ok().map(|c| c.tf_env);
+    // A connection that can't be read (the keychain refused, a server removed) leaves the lab
+    // for a later sweep, said: silent, auto-stop looked as if it never ran (the review of
+    // 2026-11-13).
+    let account = |host: &str| match server::connection(dirs, host) {
+        Ok(c) => Some(c.tf_env),
+        Err(e) => {
+            log::warn!("auto-stop: no account for the labs on {host}, left for a later sweep: {e}");
+            None
+        }
+    };
     // Each destroy under the lab's per-lab lock, like `hand_to_runner`: a user Stop or install of
     // the lab can't race the reaper's Terraform destroy over the same state. A busy lab is left
     // for a later sweep (inside `reap_expired`).
