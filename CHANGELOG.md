@@ -61,6 +61,12 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   named `Tom&Jerry`, Open shell split its script's path at the `&` and showed "not recognized".
   The script's path stays quoted for both cmd.exe that read it, and the shell's command line
   quotes any word holding a character cmd.exe reads as its own (`&|<>^()`).
+### Fixed
+
+- **A deploy worker whose pidfile can't be written no longer runs beside the app's own deploy.**
+  When the worker started but its pidfile couldn't be written (a full disk), the app fell back to
+  deploying in-process while the worker went on too, so both deployed the same lab. The worker is
+  now ended, and waited for, before the app takes the job over.
 
 ## [1.9.0] — 2026-11-13
 
