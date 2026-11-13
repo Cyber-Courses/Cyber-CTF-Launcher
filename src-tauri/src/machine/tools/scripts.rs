@@ -52,10 +52,13 @@ esac"#
 use crate::platform::root_script::{NEED_CURL, NEED_GPG, PRIVATE_WORKDIR, check_keys};
 
 /// The distro's codename as the vendors' repos name it (`$codename`): an Ubuntu derivative like
-/// Mint uses its Ubuntu base's.
+/// Mint uses its Ubuntu base's. For the Debian family (Debian itself, Kali, Devuan: `ID_LIKE`
+/// without ubuntu), `$debian_base` names the suites to try when a vendor has none for this
+/// codename: the base's (`DEBIAN_CODENAME`, LMDE), then Debian's stable releases, whose packages
+/// a derivative runs (Kali's `kali-rolling` is served by no vendor; HashiCorp serves trixie and
+/// bookworm, 2026-11-12). Empty elsewhere: an Ubuntu release Debian's packages don't fit.
 #[cfg(any(target_os = "linux", test))]
-const CODENAME: &str =
-    r#"codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"; [ -n "$codename" ] || codename="$(lsb_release -cs)""#;
+const CODENAME: &str = r#"codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"; [ -n "$codename" ] || codename="$(lsb_release -cs)"; debian_base="$(. /etc/os-release && case " $ID ${ID_LIKE:-} " in *ubuntu*) ;; *debian*) echo "${DEBIAN_CODENAME:-} trixie bookworm" ;; esac)""#;
 
 /// A vendor's apt repository: where its packages and its signing key are, the key's pinned
 /// fingerprint, and the name its keyring and its source list take here.
@@ -110,8 +113,12 @@ fn apt_repo_script(r: &VendorRepo) -> String {
 #[cfg(any(target_os = "linux", test))]
 fn apt_repo_setup(r: &VendorRepo) -> String {
     let VendorRepo { vendor, fingerprint, key_url, repo, suite, component, name, by_hand } = r;
+    // No packages for this release: the Debian family's fallbacks (`$debian_base`, [`CODENAME`])
+    // in order, the first the vendor serves taken as the suite; none served, the refusal.
     let suite_check = by_hand.map(|url| {
-        format!(r#"; release_served "$repo" "{suite}" || {{ echo "{vendor} has no packages for {suite} yet. Install it from {url}" >&2; exit 1; }}"#)
+        format!(
+            r#"; release_served "$repo" "{suite}" || {{ for alt in ${{debian_base:-}}; do if release_served "$repo" "$alt"; then echo "{vendor} has no packages for {suite}: installing its $alt ones, which this Debian derivative runs."; codename="$alt"; break; fi; done; release_served "$repo" "{suite}" || {{ echo "{vendor} has no packages for {suite} yet. Install it from {url}" >&2; exit 1; }}; }}"#
+        )
     });
     format!(
         r#"repo="{repo}"{suite_check}; {NEED_GPG}; curl -fsSL "{key_url}" -o "$d/key"; {check}; install -m 0755 -d /etc/apt/keyrings; gpg --batch --yes --dearmor --homedir "$d/gnupg" -o /etc/apt/keyrings/{name}.gpg "$d/key"; echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/{name}.gpg] $repo {suite} {component}" > /etc/apt/sources.list.d/{name}.list; apt-get update"#,
@@ -717,6 +724,36 @@ mod tests {
         assert!(missing.starts_with("HashiCorp has no packages for trixie yet"), "{missing}");
         let unreachable = check("000").1;
         assert!(unreachable.starts_with("Couldn't reach https://apt.example (HTTP 000)") && !unreachable.contains("no packages"), "{unreachable}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_debian_derivative_the_vendor_doesnt_serve_takes_its_debian_bases_packages() {
+        // Regression: Kali (kali-rolling) stopped at "HashiCorp has no packages for kali-rolling
+        // yet" (kali-bare's setup-libvirt, 2026-11-12); HashiCorp serves trixie and bookworm.
+        let s = apt_repo_script(&HASHICORP);
+        let snippet = &s[s.find("; release_served \"$repo\"").unwrap() + 2..s.find("; command -v gpg").unwrap()];
+        let bin = std::env::temp_dir().join(format!("cyberctf-curl-{}-{}", std::process::id(), rand::random::<u32>()));
+        std::fs::create_dir_all(&bin).unwrap();
+        let fake = bin.join("curl");
+        std::fs::write(&fake, "#!/bin/sh\ncase \"$*\" in */dists/trixie/*) printf 200 ;; *) printf 404 ;; esac\n").unwrap();
+        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let run = |vars: &str| {
+            let out = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(format!("set -e; {RELEASE_SERVED}; repo=https://apt.example; {vars}; {snippet}; echo \"went-on $codename\""))
+                .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+                .output()
+                .unwrap();
+            (String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned())
+        };
+        let (out, _) = run("codename=kali-rolling; debian_base='trixie bookworm'");
+        assert!(out.contains("has no packages for kali-rolling: installing its trixie ones") && out.trim_end().ends_with("went-on trixie"), "{out}");
+        let (out, err) = run("codename=kali-rolling; debian_base=''");
+        assert!(!out.contains("went-on") && err.starts_with("HashiCorp has no packages for kali-rolling yet"), "{out} / {err}");
+        let (out, err) = run("codename=noble; debian_base='trixie bookworm'; unset debian_base");
+        assert!(!out.contains("went-on") && err.starts_with("HashiCorp has no packages for noble yet"), "{out} / {err}");
+        std::fs::remove_dir_all(&bin).unwrap();
     }
 
     #[cfg(unix)]
