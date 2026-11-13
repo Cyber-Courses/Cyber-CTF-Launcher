@@ -113,7 +113,8 @@ pub(super) enum WorkerExit {
     Failed = 1,
     /// The job file couldn't be read: nothing was deployed.
     NoJob = 2,
-    /// Terminated from outside (SIGTERM's conventional code).
+    /// Terminated from outside (SIGTERM's conventional code; the signal is a Unix one).
+    #[cfg(unix)]
     Terminated = 143,
 }
 
