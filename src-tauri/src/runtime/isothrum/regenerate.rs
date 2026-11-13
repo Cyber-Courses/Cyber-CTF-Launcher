@@ -6,9 +6,8 @@
 //! spec, its instance (`.isoloom-<n>/`) and the launcher's overrides give the same files the new
 //! version would have written at the lab's start.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -16,6 +15,7 @@ use isoloom_manifest::ManifestVersion;
 
 use super::errors::{ADD_AGAIN, EARLIER_FILES};
 use crate::error::{Error, Result};
+use crate::platform::sync::KeyedLocks;
 use crate::runtime::lab;
 
 /// The lock of the lab in `dir`, held while its manifest's version is read and, when it isn't this
@@ -24,8 +24,8 @@ use crate::runtime::lab;
 /// lab's status read never waits on this one's generation (several seconds for a large lab). An
 /// async lock: a read waiting on it gives its thread back meanwhile.
 fn lab_lock(dir: &Path) -> Arc<AsyncMutex<()>> {
-    static LOCKS: Mutex<BTreeMap<PathBuf, Arc<AsyncMutex<()>>>> = Mutex::new(BTreeMap::new());
-    LOCKS.lock().unwrap_or_else(PoisonError::into_inner).entry(dir.to_path_buf()).or_default().clone()
+    static LOCKS: KeyedLocks<PathBuf> = KeyedLocks::new();
+    LOCKS.get(dir)
 }
 
 /// Generates the files of the lab in `dir` for `target` again when its run manifest, `manifest`,

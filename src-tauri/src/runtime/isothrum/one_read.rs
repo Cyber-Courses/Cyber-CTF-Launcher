@@ -11,15 +11,15 @@
 //! The runner itself asks no tool while an operation holds the run, in this process or the deploy
 //! worker ([`isothrum_runner::Status::live`]): this is about the reads between operations.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
 
 use isothrum_runner::Status;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::error::Result;
+use crate::platform::sync::KeyedLocks;
 
 /// The order reads are asked for and begin in, across every run: a read may stand for another
 /// asked for before it began.
@@ -35,8 +35,8 @@ type Last = Option<(u64, Status)>;
 
 /// The turn of run `key`'s reads, holding its last read.
 fn turn(key: &Path) -> Arc<AsyncMutex<Last>> {
-    static TURNS: Mutex<BTreeMap<PathBuf, Arc<AsyncMutex<Last>>>> = Mutex::new(BTreeMap::new());
-    TURNS.lock().unwrap_or_else(PoisonError::into_inner).entry(key.to_path_buf()).or_default().clone()
+    static TURNS: KeyedLocks<PathBuf, Last> = KeyedLocks::new();
+    TURNS.get(key)
 }
 
 /// Run `key`'s status, from `read` when its turn comes, or from the read that ended meanwhile when

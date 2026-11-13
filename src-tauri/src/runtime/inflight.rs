@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::Result;
 use crate::platform::AppDirs;
+use crate::platform::sync::KeyedLocks;
 use tokio::sync::OwnedMutexGuard;
 
 /// What is in flight for a lab. Told apart so the UI never calls a lab being stopped
@@ -161,11 +162,8 @@ pub(crate) struct LabLock {
 
 /// This process's lock on lab `id`.
 fn process_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
-    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
-    // A poisoned registry (a panic while holding it) still hands back the map: the per-lab locks
-    // inside are what guards the real work, and losing the registry would wedge every lab.
-    let mut map = LOCKS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    map.entry(id.to_string()).or_default().clone()
+    static LOCKS: KeyedLocks<String> = KeyedLocks::new();
+    LOCKS.get(id)
 }
 
 /// One operation per lab at a time: install, start, stop and the expiry reaper all take this
