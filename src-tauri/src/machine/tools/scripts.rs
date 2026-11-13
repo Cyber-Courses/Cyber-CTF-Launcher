@@ -642,8 +642,8 @@ mod tests {
 
     #[test]
     fn docker_install_adds_the_player_to_the_docker_group() {
-        let s = docker_script(Some("florianamette"));
-        assert!(s.contains("usermod -aG docker florianamette"), "{s}");
+        let s = docker_script(Some("player"));
+        assert!(s.contains("usermod -aG docker player"), "{s}");
         // A name that isn't a plain login name never reaches the script.
         assert!(!docker_script(Some("a; rm -rf /")).contains("usermod"));
         assert!(!docker_script(None).contains("usermod"));

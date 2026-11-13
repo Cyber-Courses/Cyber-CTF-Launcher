@@ -18,7 +18,7 @@ import { commands, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 
 const GB = 1e9;
-const signedIn: AuthStatus = { loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" };
+const signedIn: AuthStatus = { loggedIn: true, name: "Ada Lovelace", email: "ada@example.org" };
 const signedOut: AuthStatus = { loggedIn: false, name: null, email: null };
 const lab = (id: string, slug: string, title: string, over: Partial<Lab> = {}) =>
   ({

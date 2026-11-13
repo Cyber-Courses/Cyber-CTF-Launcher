@@ -44,7 +44,7 @@ test.describe("onboarding", () => {
       await page.getByRole("button", { name: "Get started" }).click();
       await expect(progress(page)).toHaveText(`2 / ${total} · Sign in`);
       // The step says so (and so does the sign-in's toast, for a moment).
-      await expect(page.getByText("Signed in as Florian Amette").first()).toBeVisible();
+      await expect(page.getByText("Signed in as Ada Lovelace").first()).toBeVisible();
       await forward(page).click();
 
       for (let n = 2; n < total - 1; n++) {
@@ -149,14 +149,14 @@ test.describe("onboarding", () => {
     await page.getByRole("button", { name: "Get started" }).click();
     await page.getByRole("button", { name: "Sign in with your browser" }).click();
     // The step says so (and so does the sign-in's toast, for a moment).
-    await expect(page.getByText("Signed in as Florian Amette").first()).toBeVisible();
+    await expect(page.getByText("Signed in as Ada Lovelace").first()).toBeVisible();
     for (let n = 0; n < 8; n++) {
       await expect(forward(page)).toBeEnabled();
       await forward(page).click();
     }
     await expect(page.getByRole("heading", { level: 1, name: "You’re all set" })).toBeVisible();
     // The step says so (and so does the sign-in's toast, for a moment).
-    await expect(page.getByText("Signed in as Florian Amette").first()).toBeVisible();
+    await expect(page.getByText("Signed in as Ada Lovelace").first()).toBeVisible();
     await page.getByRole("button", { name: "Browse labs" }).click();
     // The shell picked the sign-in up: the account shows in the sidebar, no "Sign in" prompt.
     await expect(pageTitle(page)).toHaveText("Labs");
