@@ -379,6 +379,7 @@
     "hypervisorTooOld": "{name} {version} ist zu alt: {min} oder neuer wird benötigt. Aktualisiere {name} und prüfe dann erneut.",
     "pluginTooOld": "Das Vagrant-Plugin `{plugin}` {version} ist zu alt: {min} oder neuer wird benötigt. Installiere es erneut, um es zu aktualisieren.",
     "pluginMissing": "Das Vagrant-Plugin `{plugin}` ist nicht installiert.",
+    "pluginsUnknown": "Ob das Vagrant-Plugin `{plugin}` installiert ist, lässt sich nicht feststellen: `vagrant plugin list` ist fehlgeschlagen ({reason}). Führe es in einem Terminal aus, um den Grund zu sehen, und prüfe dann erneut.",
     "vmwareUtilityStopped": "Das Vagrant VMware Utility ist installiert, aber sein Dienst läuft nicht: Installiere es erneut (das startet ihn neu) oder starte den Computer neu.",
     "vmwareUtilityMissing": "Das Vagrant VMware Utility ist nicht installiert: der Dienst von HashiCorp, über den das VMware-Plugin VMware steuert.",
     "virtualboxDriver": "Der Kerneltreiber von VirtualBox (vboxdrv) ist auf diesem Kernel ({kernel}) nicht geladen, daher kann VirtualBox keine VMs starten. Installiere die Header des Kernels (linux-headers-{kernel} auf Debian und Ubuntu), baue den Treiber (sudo /sbin/vboxconfig für das VirtualBox von Oracle, sudo dpkg-reconfigure virtualbox-dkms für das deiner Distribution) und prüfe dann erneut. Mit aktivem Secure Boot muss der Treiber signiert sein, bevor er geladen wird.",

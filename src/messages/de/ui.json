@@ -1,7 +1,7 @@
 {
   "confirm": {
     "cancel": "Abbrechen",
-    "failed": "Die Rückfrage ließ sich nicht öffnen, daher wurde nichts geändert"
+    "ok": "OK"
   },
   "copy": {
     "title": "{text} kopieren"
