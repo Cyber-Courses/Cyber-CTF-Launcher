@@ -5,6 +5,7 @@
 use isothrum_runner::{Error as RunnerError, ErrorCode, TimedOut};
 
 use crate::error::{Code, Error};
+use crate::platform::exec::DockerSaid;
 use crate::runtime::providers::Provider;
 use crate::runtime::server::kind::{KINDS, kind};
 
@@ -123,26 +124,12 @@ fn by_code(e: &RunnerError) -> Error {
     }
 }
 
-/// What Docker's CLI says when its engine doesn't answer: stopped, or quit while a step ran (on
-/// Windows, its named pipe gone).
-const ENGINE_DOWN: [&str; 3] = ["cannot connect to the docker daemon", "is the docker daemon running", "error during connect"];
-
 /// `e`, a container lab's step on this machine's Docker that failed, as the player reads it: the
 /// engine stopped while the step ran (Docker Desktop quit, the service stopped) is said as a
 /// stopped engine, as the start's own probe says it, not as the step's failure. Only for a lab on
 /// this machine's Docker: a container lab in a VM runs its Docker inside the VM.
 pub(super) fn engine_stopped(e: Error) -> Error {
-    match &e {
-        Error::CommandFailed { stderr, .. } => {
-            let said = stderr.to_ascii_lowercase();
-            if ENGINE_DOWN.iter().any(|m| said.contains(m)) && !said.contains("permission denied") && !said.contains("access is denied") {
-                Error::coded(Code::DockerNotRunning)
-            } else {
-                e
-            }
-        }
-        _ => e,
-    }
+    if DockerSaid::of_error(&e) == Some(DockerSaid::EngineDown) { Error::coded(Code::DockerNotRunning) } else { e }
 }
 
 /// A tool as the player knows it (`vagrant` is Vagrant).
@@ -221,7 +208,7 @@ fn tool_failed(step: &str, reason: &str) -> Error {
         return expired;
     }
     if step == "tools" && reason.starts_with("`docker` doesn't answer") {
-        return if reason.to_ascii_lowercase().contains("permission denied") {
+        return if DockerSaid::is_refusal(&reason.to_ascii_lowercase()) {
             crate::platform::exec::docker_denied_error()
         } else {
             Error::coded(Code::DockerNotRunning)

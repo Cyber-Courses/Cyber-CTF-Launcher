@@ -6,10 +6,10 @@ use std::future::Future;
 use std::net::IpAddr;
 
 use serde::Serialize;
-use serde_json::Value;
 use ts_rs::TS;
 
-use super::{CallError, HostProfile, IMAGE_STORAGE, SNIPPET_STORAGE, sign_in};
+use super::api::{Iface, Node, Storage};
+use super::{CallError, HostProfile, IMAGE_STORAGE, SNIPPET_STORAGE, read_data, sign_in};
 
 /// The choices a host offers.
 #[derive(Debug, Serialize, PartialEq, Eq, TS)]
@@ -68,20 +68,20 @@ pub async fn read_host(h: &HostProfile, secret: &str, server_ip: Option<IpAddr>)
         super::SignInError::Failed(e) => e,
     })?;
     let session = &session;
-    read(|path| async move { session.call(&path).await }, server_ip).await.map_err(|e| e.to_string())
+    read(|path| async move { session.get(&path).await }, server_ip).await.map_err(|e| e.to_string())
 }
 
-/// The choices, from the API answers `call` gives for a path (`/nodes`, `/nodes/<n>/storage`,
-/// `/nodes/<n>/network?type=any_bridge`).
-pub async fn read<F, Fut>(call: F, server_ip: Option<IpAddr>) -> Result<Placement, CallError>
+/// The choices, from the answers' bodies `get` gives for a path (`/nodes`, `/nodes/<n>/storage`,
+/// `/nodes/<n>/network?type=any_bridge`), each read by [`super::api`].
+pub async fn read<F, Fut>(get: F, server_ip: Option<IpAddr>) -> Result<Placement, CallError>
 where
     F: Fn(String) -> Fut,
-    Fut: Future<Output = Result<Value, CallError>>,
+    Fut: Future<Output = Result<String, CallError>>,
 {
     let mut nodes = Vec::new();
-    for name in node_names(&call("/nodes".into()).await?) {
-        let storages = call(format!("/nodes/{name}/storage")).await?;
-        let bridges = bridges(&call(format!("/nodes/{name}/network?type=any_bridge")).await?);
+    for name in node_names(&read_data::<Vec<Node>>(&get("/nodes".into()).await?)?) {
+        let storages: Vec<Storage> = read_data(&get(format!("/nodes/{name}/storage")).await?)?;
+        let bridges = bridges(&read_data::<Vec<Iface>>(&get(format!("/nodes/{name}/network?type=any_bridge")).await?)?);
         nodes.push(node_choices(name, &storages, bridges, server_ip));
     }
     if nodes.is_empty() {
@@ -91,19 +91,14 @@ where
 }
 
 /// The nodes in `/nodes`, online ones first, by name.
-pub(super) fn node_names(nodes: &Value) -> Vec<String> {
-    let mut list: Vec<(bool, String)> = nodes
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|n| Some((n["status"].as_str().is_some_and(|s| s != "online"), n["node"].as_str()?.to_string())))
-        .collect();
+pub(super) fn node_names(nodes: &[Node]) -> Vec<String> {
+    let mut list: Vec<(bool, String)> = nodes.iter().filter_map(|n| Some((n.status.as_deref().is_some_and(|s| s != "online"), n.node.clone()?))).collect();
     list.sort();
     list.into_iter().map(|(_, n)| n).collect()
 }
 
 /// A node's choices from its storages and bridges.
-pub(super) fn node_choices(name: String, storages: &Value, bridges: Vec<Bridge>, server_ip: Option<IpAddr>) -> NodeChoices {
+pub(super) fn node_choices(name: String, storages: &[Storage], bridges: Vec<Bridge>, server_ip: Option<IpAddr>) -> NodeChoices {
     let disk_storages = storages_with(storages, "images");
     let image_storages = storages_with(storages, "iso");
     let snippet_storages = storages_with(storages, "snippets");
@@ -121,15 +116,8 @@ pub(super) fn node_choices(name: String, storages: &Value, bridges: Vec<Bridge>,
 }
 
 /// The usable storages (enabled and active, when the API says) that accept `content`, by name.
-pub(super) fn storages_with(storages: &Value, content: &str) -> Vec<String> {
-    let mut names: Vec<String> = storages
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|s| s["enabled"].as_u64() != Some(0) && s["active"].as_u64() != Some(0))
-        .filter(|s| s["content"].as_str().unwrap_or_default().split(',').any(|c| c.trim() == content))
-        .filter_map(|s| s["storage"].as_str().map(str::to_string))
-        .collect();
+pub(super) fn storages_with(storages: &[Storage], content: &str) -> Vec<String> {
+    let mut names: Vec<String> = storages.iter().filter(|s| s.usable() && s.contents().iter().any(|c| c == content)).filter_map(|s| s.id.clone()).collect();
     names.sort();
     names
 }
@@ -140,15 +128,13 @@ fn preferred(names: &[String], preferred: &str) -> Option<String> {
 }
 
 /// The bridges in `/nodes/<n>/network?type=any_bridge`, with their address, by name.
-pub(super) fn bridges(ifaces: &Value) -> Vec<Bridge> {
+pub(super) fn bridges(ifaces: &[Iface]) -> Vec<Bridge> {
     let mut list: Vec<Bridge> = ifaces
-        .as_array()
-        .into_iter()
-        .flatten()
+        .iter()
         .filter_map(|i| {
-            let name = i["iface"].as_str()?.to_string();
-            let cidr = i["cidr"].as_str().map(str::to_string).or_else(|| {
-                let (address, netmask) = (i["address"].as_str()?, i["netmask"].as_str()?);
+            let name = i.name.clone()?;
+            let cidr = i.cidr.clone().or_else(|| {
+                let (address, netmask) = (i.address.as_deref()?, i.netmask.as_deref()?);
                 Some(format!("{address}/{netmask}"))
             });
             Some(Bridge { name, cidr })
@@ -186,12 +172,22 @@ pub(super) fn cidr_contains(cidr: &str, ip: IpAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
+
+    /// `json` as the `data` of an answer the API's way.
+    fn body(json: &Value) -> String {
+        json!({ "data": json }).to_string()
+    }
+
+    /// `json`, a list of what a path answers, read.
+    fn listed<T: serde::de::DeserializeOwned>(json: Value) -> Vec<T> {
+        serde_json::from_value(json).unwrap()
+    }
 
     /// The player's server as its API answered on 2026-11-08: one node, `local` and `local-lvm`,
     /// `vmbr0` on 192.168.150.0/24 and `vmbr1` on the LAN this machine reaches it on.
-    fn answer(path: &str) -> std::future::Ready<Result<Value, CallError>> {
-        std::future::ready(Ok(match path {
+    fn answer(path: &str) -> std::future::Ready<Result<String, CallError>> {
+        std::future::ready(Ok(body(&match path {
             "/nodes" => json!([{ "node": "pve", "status": "online" }]),
             "/nodes/pve/storage" => json!([
                 { "storage": "local", "type": "dir", "content": "images,iso,snippets,vztmpl,rootdir,backup", "enabled": 1, "active": 1 },
@@ -202,7 +198,7 @@ mod tests {
                 { "iface": "vmbr0", "type": "bridge", "cidr": "192.168.150.10/24" }
             ]),
             other => panic!("unexpected API read {other}"),
-        }))
+        })))
     }
 
     #[tokio::test]
@@ -235,22 +231,22 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_read_is_the_error_and_no_node_is_one() {
-        let denied = |_: String| std::future::ready(Err::<Value, _>(CallError::Status(403)));
+        let denied = |_: String| std::future::ready(Err::<String, _>(CallError::Status(403)));
         assert!(matches!(read(denied, None).await, Err(CallError::Status(403))));
-        let none = |_: String| std::future::ready(Ok::<_, CallError>(json!([])));
+        let none = |_: String| std::future::ready(Ok::<_, CallError>(body(&json!([]))));
         assert_eq!(read(none, None).await.unwrap_err().to_string(), "this user can't see any node");
     }
 
     #[test]
     fn nodes_online_first_and_storages_that_can_be_used() {
-        let nodes = json!([{ "node": "b", "status": "offline" }, { "node": "c", "status": "online" }, { "node": "a", "status": "online" }]);
+        let nodes: Vec<Node> = listed(json!([{ "node": "b", "status": "offline" }, { "node": "c", "status": "online" }, { "node": "a", "status": "online" }]));
         assert_eq!(node_names(&nodes), ["a", "c", "b"]);
-        let storages = json!([
+        let storages: Vec<Storage> = listed(json!([
             { "storage": "nfs", "content": "images", "enabled": 1, "active": 0 },
             { "storage": "off", "content": "images", "enabled": 0 },
             { "storage": "ceph", "content": "rootdir, images" },
             { "storage": "isos", "content": "iso,vztmpl" }
-        ]);
+        ]));
         assert_eq!(storages_with(&storages, "images"), ["ceph"]);
         assert_eq!(storages_with(&storages, "iso"), ["isos"]);
         let c = node_choices("n".into(), &storages, vec![], None);
@@ -259,7 +255,7 @@ mod tests {
 
     #[test]
     fn bridges_show_their_address_and_networks_hold_addresses() {
-        let ifaces = json!([{ "iface": "vmbr2" }, { "iface": "vmbr0", "address": "192.168.1.5", "netmask": "255.255.255.0" }]);
+        let ifaces: Vec<Iface> = listed(json!([{ "iface": "vmbr2" }, { "iface": "vmbr0", "address": "192.168.1.5", "netmask": "255.255.255.0" }]));
         assert_eq!(
             bridges(&ifaces),
             [Bridge { name: "vmbr0".into(), cidr: Some("192.168.1.5/255.255.255.0".into()) }, Bridge { name: "vmbr2".into(), cidr: None }]
