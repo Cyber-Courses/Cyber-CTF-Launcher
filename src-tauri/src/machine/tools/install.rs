@@ -602,7 +602,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn a_dnf_distribution_installs_docker_the_hypervisors_and_vagrant_through_dnf_and_the_rest_by_hand() {
-        // Fedora: every setup shard failed on "this distribution isn't supported" (2026-11-12).
+        // Regression: on Fedora the setup failed on "this distribution isn't supported".
         for dep in
             [Dependency::Docker, Dependency::Vagrant, Dependency::Terraform, Dependency::Virtualbox, Dependency::Qemu, Dependency::Libvirt, Dependency::Awscli]
         {

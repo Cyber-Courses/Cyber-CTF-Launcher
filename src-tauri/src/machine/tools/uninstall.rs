@@ -322,7 +322,7 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
 
 /// [`linux_plan`] on a machine with that package manager. Regression: a tool the setup had
 /// installed through dnf on Fedora was removed with `apt-get remove`, which pkexec ran to
-/// `apt-get: not found`, the record kept (the review of 2026-11-13).
+/// `apt-get: not found`, the record kept.
 #[cfg(target_os = "linux")]
 fn linux_plan_with(dep: Dependency, packages: super::install::Packages) -> Result<Vec<Step>> {
     use super::install::Packages;
