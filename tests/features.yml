@@ -2444,6 +2444,7 @@ areas:
             - src-tauri/src/machine/setup/tests.rs > a_bare_fedora_installs_through_dnf_as_a_bare_debian_does_through_apt
             - src-tauri/src/machine/tools/install.rs > a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs
             - src-tauri/src/machine/tools/install.rs > a_dnf_distribution_installs_docker_the_hypervisors_and_vagrant_through_dnf_and_the_rest_by_hand
+            - src-tauri/src/machine/tools/uninstall.rs > a_tool_installed_through_dnf_is_removed_through_dnf
             - src/features/machine/setup-steps/setup-steps.test.tsx > links to App Installer on Windows and names the Linux package manager
             - src/features/machine/setup-steps/follows-the-plan.test.tsx > on a Linux without apt or dnf
           web:

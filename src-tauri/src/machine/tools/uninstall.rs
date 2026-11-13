@@ -313,26 +313,47 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
     }
 }
 
-/// How to remove `dep` on Linux: its apt packages (as root through pkexec), or its folder.
+/// How to remove `dep` on Linux: its packages through the package manager that installed them
+/// (apt or dnf, as root through pkexec), or its folder.
 #[cfg(target_os = "linux")]
 fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
+    linux_plan_with(dep, super::install::packages_here())
+}
+
+/// [`linux_plan`] on a machine with that package manager. Regression: a tool the setup had
+/// installed through dnf on Fedora was removed with `apt-get remove`, which pkexec ran to
+/// `apt-get: not found`, the record kept (the review of 2026-11-13).
+#[cfg(target_os = "linux")]
+fn linux_plan_with(dep: Dependency, packages: super::install::Packages) -> Result<Vec<Step>> {
+    use super::install::Packages;
     let root = |script: &str| super::install::root(script.to_string());
-    Ok(match dep {
-        Dependency::Docker => vec![root("apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
-        Dependency::Vagrant => vec![root("apt-get remove -y vagrant")],
-        Dependency::Terraform => vec![root("apt-get remove -y terraform")],
-        Dependency::Virtualbox => vec![root("apt-get remove -y 'virtualbox*'")],
+    Ok(match (dep, packages) {
+        (Dependency::Utm | Dependency::Wsl | Dependency::Hyperv, _) => return Err(super::install::not_here(dep)),
+        (Dependency::Awscli, _) => vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")],
+        (_, Packages::None) => return Err(super::install::without_packages(dep)),
+        // Fedora: what the dnf install brought from the vendors' repositories and RPM Fusion; the
+        // compiler, Ruby's headers and the shared tools (genisoimage) stay.
+        (Dependency::Docker, Packages::Dnf) => vec![root("dnf remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
+        (Dependency::Vagrant, Packages::Dnf) => vec![root("dnf remove -y vagrant")],
+        (Dependency::Terraform, Packages::Dnf) => vec![root("dnf remove -y terraform")],
+        (Dependency::Virtualbox, Packages::Dnf) => vec![root("dnf remove -y VirtualBox akmod-VirtualBox 'kmod-VirtualBox*'")],
+        (Dependency::Qemu, Packages::Dnf) => vec![root("dnf remove -y qemu-kvm qemu-img")],
+        (Dependency::Libvirt, Packages::Dnf) => vec![root("dnf remove -y libvirt libvirt-daemon-kvm virt-install virt-manager libvirt-devel")],
+        // The cloud CLIs and VMware's utility install through apt only: nothing of ours to remove.
+        (_, Packages::Dnf) => return Err(super::install::apt_only(dep)),
+        (Dependency::Docker, Packages::Apt) => vec![root("apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
+        (Dependency::Vagrant, Packages::Apt) => vec![root("apt-get remove -y vagrant")],
+        (Dependency::Terraform, Packages::Apt) => vec![root("apt-get remove -y terraform")],
+        (Dependency::Virtualbox, Packages::Apt) => vec![root("apt-get remove -y 'virtualbox*'")],
         // The install's metapackages (qemu-system, libvirt-daemon-system) leave the packages
         // they pulled in behind, with the binaries the Machine page looks for
         // (qemu-system-x86_64, virsh): those go too, or the tool still reads as installed.
-        Dependency::Qemu => vec![root("apt-get remove -y 'qemu-system*' qemu-utils")],
-        Dependency::Libvirt => vec![root("apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager")],
-        Dependency::Awscli => vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")],
-        Dependency::Azurecli => vec![root("apt-get remove -y azure-cli")],
+        (Dependency::Qemu, Packages::Apt) => vec![root("apt-get remove -y 'qemu-system*' qemu-utils")],
+        (Dependency::Libvirt, Packages::Apt) => vec![root("apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager")],
+        (Dependency::Azurecli, Packages::Apt) => vec![root("apt-get remove -y azure-cli")],
         // Google's apt package, and the per-user SDK earlier versions installed in its place.
-        Dependency::Gcloud => vec![root("apt-get remove -y google-cloud-cli"), step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
-        Dependency::VmwareUtility => vec![root("apt-get remove -y vagrant-vmware-utility")],
-        Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => return Err(super::install::not_here(dep)),
+        (Dependency::Gcloud, Packages::Apt) => vec![root("apt-get remove -y google-cloud-cli"), step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
+        (Dependency::VmwareUtility, Packages::Apt) => vec![root("apt-get remove -y vagrant-vmware-utility")],
     })
 }
 
@@ -604,5 +625,23 @@ mod tests {
         let script = |dep| plan(dep, Some("/x/VirtualBox.dmg")).unwrap()[0].args.join(" ");
         assert!(script(Dependency::Qemu).contains("'qemu-system*'"));
         assert!(script(Dependency::Libvirt).contains("libvirt-clients"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_tool_installed_through_dnf_is_removed_through_dnf() {
+        use super::super::install::Packages;
+        for dep in [Dependency::Docker, Dependency::Vagrant, Dependency::Terraform, Dependency::Virtualbox, Dependency::Qemu, Dependency::Libvirt] {
+            let script = linux_plan_with(dep, Packages::Dnf).unwrap()[0].args.join(" ");
+            assert!(script.contains("dnf remove -y") && !script.contains("apt-get"), "{dep:?}: {script}");
+        }
+        // AWS CLI is a folder on every distribution.
+        assert!(linux_plan_with(Dependency::Awscli, Packages::Dnf).unwrap()[0].args.join(" ").contains("rm -rf /usr/local/aws-cli"));
+        // What the setup never installed through dnf has nothing to remove through it.
+        for dep in [Dependency::Azurecli, Dependency::Gcloud, Dependency::VmwareUtility] {
+            let err = linux_plan_with(dep, Packages::Dnf).err().map(|e| e.to_string()).unwrap_or_default();
+            assert!(err.contains("apt only"), "{dep:?}: {err}");
+        }
+        assert!(linux_plan_with(Dependency::Vagrant, Packages::None).is_err());
     }
 }
