@@ -322,7 +322,7 @@ fn linux_plan_with(dep: Dependency, packages: Packages) -> Result<Vec<Step>> {
 /// The package manager on this machine's PATH: apt-get, else dnf, else none the guided setup
 /// installs through (openSUSE's zypper, Arch's pacman: the player installs themselves).
 #[cfg(target_os = "linux")]
-fn packages_here() -> Packages {
+pub(super) fn packages_here() -> Packages {
     if crate::platform::on_path("apt-get") {
         Packages::Apt
     } else if crate::platform::on_path("dnf") {

@@ -6,6 +6,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A tool the setup installed through dnf is removed through dnf.** Cleanup's Remove on Fedora
+  ran `apt-get remove` through pkexec, which ended on `apt-get: not found` and kept the record.
+
 ## [1.9.0] — 2026-11-13
 
 ### Added
