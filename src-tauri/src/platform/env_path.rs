@@ -274,9 +274,12 @@ mod tests {
         std::fs::create_dir_all(&own).unwrap();
         std::fs::write(own.join(exe), "").unwrap();
         let first = std::env::split_paths(&path).map(|d| d.join(exe)).find(|f| f.is_file());
-        let fusion = Path::new("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool/ovftool");
-        assert!(first == Some(own.join(exe)) || first.as_deref() == Some(fusion), "{first:?}");
+        // A copy this machine already has in a tool folder (Fusion's, a user-level install) comes
+        // first by design; otherwise the search reaches the app's own.
+        let host_copy = first.as_deref().and_then(Path::parent).is_some_and(|d| extra_dirs().iter().any(|e| e == d));
+        assert!(first == Some(own.join(exe)) || host_copy, "{first:?}");
         if cfg!(target_os = "macos") {
+            let fusion = Path::new("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool/ovftool");
             let fusion_dir = extra_dirs().iter().position(|d| d.as_path() == fusion.parent().unwrap());
             assert!(fusion_dir.is_some(), "Fusion's ovftool folder is a tool folder");
         }
