@@ -18,6 +18,7 @@ pub struct Step {
     pub note: Option<String>,
     /// A private folder of files the step reads (a root step's proxy settings), removed with
     /// the step.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code, reason = "only a Linux root step keeps a private folder"))]
     pub private: Option<tempfile::TempDir>,
 }
 

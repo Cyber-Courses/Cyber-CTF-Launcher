@@ -588,8 +588,10 @@ mod tests {
     use super::*;
 
     /// A pidfile on a full disk.
+    #[cfg(unix)]
     struct FullDisk;
 
+    #[cfg(unix)]
     impl std::io::Write for FullDisk {
         fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
             Err(std::io::Error::other("no space left on device"))

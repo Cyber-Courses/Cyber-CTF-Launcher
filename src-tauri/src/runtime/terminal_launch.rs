@@ -8,15 +8,16 @@ use isothrum_runner::ShellCommand;
 
 use crate::error::{Error, Result};
 
+/// How long a terminal gets to die on its own (one that can't start, zutty without its font,
+/// does so within a moment) before it counts as started.
+#[cfg(all(unix, not(target_os = "macos")))]
+const TERMINAL_START_GRACE: std::time::Duration = std::time::Duration::from_millis(1500);
+
 /// The POSIX command line that runs `command` in its folder: `cd <cwd> && exec <program> <args>`
 /// (the `exec` so leaving the shell ends it, no extra process in between), through `env` with
 /// the variables the command needs (a Vagrant run's state folder), when it has any. Unix
 /// terminals only (Windows uses `windows_line`); the tests exercise it on every platform.
 #[cfg(any(unix, test))]
-/// How long a terminal gets to die on its own (one that can't start, zutty without its font,
-/// does so within a moment) before it counts as started.
-const TERMINAL_START_GRACE: std::time::Duration = std::time::Duration::from_millis(1500);
-
 fn command_line(command: &ShellCommand) -> String {
     let mut words = Vec::new();
     if !command.env.is_empty() {
