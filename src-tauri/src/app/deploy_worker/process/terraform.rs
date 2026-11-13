@@ -148,8 +148,16 @@ mod tests {
         assert_eq!(pids(""), [] as [u32; 0]);
     }
 
+    /// A stand-in Terraform, run as `perl -e STAND_IN docker run hashicorp/terraform:…`: one
+    /// process under that command line, which stops cleanly on SIGINT (exit 130) as Terraform
+    /// does, and prints `ready` only once its handler is set. A shell with `sleep 30 & wait`
+    /// said `ready` before it forked and waited, so where a SIGINT landed in between (or on the
+    /// fork, under the same command line, which ignores it) decided whether the run ended.
+    #[cfg(unix)]
+    const STAND_IN: &str = r#"$SIG{INT} = sub { exit 130 }; $| = 1; print "ready\n"; sleep 30; exit 0"#;
+
     /// Waits for a stand-in Terraform to print `ready` on `out`: it has started, under its own
-    /// command line.
+    /// command line, its SIGINT handler set.
     #[cfg(unix)]
     fn ready(out: std::process::ChildStdout) {
         use std::io::BufRead;
@@ -167,8 +175,8 @@ mod tests {
         // stop). Terraform here is a stand-in for its container run (`… hashicorp/terraform …`),
         // in a group of its own like a worker's.
         use std::os::unix::process::CommandExt;
-        let mut run = std::process::Command::new("sh")
-            .args(["-c", "echo ready; sleep 30 & wait", "docker", "run", "hashicorp/terraform:1.9.8"])
+        let mut run = std::process::Command::new("perl")
+            .args(["-e", STAND_IN, "docker", "run", "hashicorp/terraform:1.9.8"])
             .process_group(0)
             .stdout(std::process::Stdio::piped())
             .spawn()
@@ -182,8 +190,8 @@ mod tests {
         ready(run.stdout.take().unwrap());
         assert!(interrupt_terraform(group), "terraform found in its group");
         let status = run.wait().unwrap();
-        // Ended by the interrupt (its sleep alone would take 30 s), however the shell reports it.
-        assert!(!status.success(), "{status:?}");
+        // Ended by the interrupt, through its clean stop (its sleep alone would take 30 s).
+        assert_eq!(status.code(), Some(130), "{status:?}");
         other.kill().unwrap();
         other.wait().unwrap();
     }
@@ -211,13 +219,14 @@ mod tests {
     fn a_stop_reaches_terraform_in_a_group_of_its_own() {
         // A worker streams each tool in a process group of its own (so a cancel ends the tool's
         // whole tree), out of the worker's group: Terraform's interrupt still finds it there.
-        // The stand-in worker starts it in a group of its own (perl's setpgrp, with SIGINT back
-        // to its default: `&` ignores it); the image name comes from the environment, so only
-        // the stand-in Terraform's command line names it.
+        // The stand-in worker starts it in a group of its own (perl's setpgrp); its script and
+        // the image name come from the environment, so only the stand-in Terraform's command
+        // line names the image.
         use std::os::unix::process::CommandExt;
-        let run = r#"perl -e '$SIG{INT} = "DEFAULT"; setpgrp(0, 0); exec @ARGV' sh -c 'echo ready; sleep 30 & wait' docker run "$IMAGE" & wait"#;
+        let run = r#"perl -e 'setpgrp(0, 0); exec @ARGV' perl -e "$STAND_IN" docker run "$IMAGE" & wait"#;
         let mut worker = std::process::Command::new("sh")
             .args(["-c", run])
+            .env("STAND_IN", STAND_IN)
             .env("IMAGE", "hashicorp/terraform:1.9.8")
             .process_group(0)
             .stdout(std::process::Stdio::piped())
