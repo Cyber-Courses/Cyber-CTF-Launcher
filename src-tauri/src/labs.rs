@@ -186,12 +186,24 @@ fn stage(labs: &Path, dir: &Path, tarball: &[u8], lab_id: &str, commit: &str) ->
     let staging = staging_dir(labs, lab_id);
     clear_leftover(&staging);
     std::fs::create_dir_all(&staging)?;
-    extract(tarball, &staging)?;
+    // A staging that can't be filled (a refused archive) goes at once, not at the next install
+    // (the review of 2026-11-13: `labs/.<id>.staging` stayed).
+    if let Err(e) = fill_staging(&staging, dir, tarball, commit) {
+        clear_leftover(&staging);
+        return Err(e);
+    }
+    Ok(staging)
+}
+
+/// The staging folder's contents: the archive extracted, the commit marker, the installed
+/// copy's instance marker when it has one.
+fn fill_staging(staging: &Path, dir: &Path, tarball: &[u8], commit: &str) -> Result<()> {
+    extract(tarball, staging)?;
     std::fs::write(staging.join(runtime::lab::COMMIT_MARKER), commit)?;
     if let Ok(value) = std::fs::read(dir.join(runtime::lab::INSTANCE_MARKER)) {
         std::fs::write(staging.join(runtime::lab::INSTANCE_MARKER), value)?;
     }
-    Ok(staging)
+    Ok(())
 }
 
 /// Replaces the installed lab with the staged one, all or nothing: the old one is moved aside
@@ -554,6 +566,17 @@ mod tests {
         );
         let err = parse_launch(serde_json::json!({ "labId": "x" })).err().unwrap().to_string();
         assert!(err.starts_with("invalid launch spec: "), "{err}");
+    }
+
+    /// An archive that can't be extracted leaves no staging folder behind.
+    #[test]
+    fn a_refused_archive_leaves_no_staging_folder() {
+        let root = crate::testing::temp_dir("stage-refused");
+        let labs = root.join("labs");
+        let dir = labs.join("invoice");
+        std::fs::create_dir_all(&dir).unwrap();
+        let err = stage(&labs, &dir, b"not a tarball", "invoice", "0123456").unwrap_err();
+        assert!(!staging_dir(&labs, "invoice").exists(), "the staging went with the failure: {err}");
     }
 
     #[test]
