@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Copy } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import { useFlash } from "@/lib/use-flash";

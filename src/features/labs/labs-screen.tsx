@@ -21,7 +21,7 @@ import { useSavedHosts } from "@/features/servers/use-server-list";
 import { useVmProvider } from "@/lib/use-vm-provider";
 import { useStableCallback } from "@/lib/use-stable-callback";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** Each lab's status, by id: none for a lab not asked yet. */
 type Statuses = Partial<Record<string, LabStatus>>;

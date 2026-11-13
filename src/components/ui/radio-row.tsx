@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 type RadioRowProps = {
   selected: boolean;

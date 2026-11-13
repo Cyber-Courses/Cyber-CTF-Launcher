@@ -8,7 +8,7 @@ import { LogConsole } from "@/components/ui/log-console";
 import { Input, Note } from "@/features/servers/host-setup/form";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";
 import { openExternal } from "@/lib/failure";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 
 // The pieces the cloud credentials step repeats per provider.

@@ -13,7 +13,7 @@ import { confirmDestructive } from "@/lib/confirm";
 import { describeError } from "@/lib/errors";
 import { getAttackImage, OLD_ATTACK_IMAGES } from "@/lib/settings";
 import { machineStorage, machineStorageClean, type Storage } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** The attack box images to count: the one in use, and an older launcher's default (several GB,
  *  by tag or earlier digest) so it can be cleaned up. The bare repo is `:latest` again. Only the

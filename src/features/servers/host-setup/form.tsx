@@ -3,7 +3,7 @@
 import { type ReactNode } from "react";
 import { ChevronDown, Cloud, ExternalLink, Server } from "lucide-react";
 import { type RemoteProvider } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { openExternal } from "@/lib/failure";
 import { fieldClass } from "@/components/ui/input";
 import { useT } from "@/lib/i18n";

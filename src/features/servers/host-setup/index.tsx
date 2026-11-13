@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { HypervisorStep } from "@/features/servers/host-setup/hypervisor-step";
 import { ToolsStep } from "@/features/servers/host-setup/tools-step";
 import { ConnectionStep, ServerStep } from "@/features/servers/host-setup/connection-step";

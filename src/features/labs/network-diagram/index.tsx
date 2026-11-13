@@ -5,7 +5,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plug } from "lucide-react";
 import type { LabNetwork } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useLocale, useT } from "@/lib/i18n";
 import { Flow, type Tab } from "@/features/labs/network-diagram/flow";
 import { Attacker, MIN_ZOOM, Machine } from "@/features/labs/network-diagram/model";

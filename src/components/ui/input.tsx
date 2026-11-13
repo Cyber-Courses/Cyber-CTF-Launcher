@@ -1,5 +1,5 @@
 import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /**
  * Text fields at app density: 2.25rem, glass fill, an input ring; focus shows the jewel ring

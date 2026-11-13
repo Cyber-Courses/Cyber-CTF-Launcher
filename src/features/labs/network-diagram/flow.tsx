@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Background, BackgroundVariant, ReactFlow, useEdgesState, useNodesInitialized, useNodesState, useReactFlow, type Edge, type Node } from "@xyflow/react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { warn } from "@/lib/failure";
 import { edgeTypes } from "@/features/labs/network-diagram/edges";
 import { frameLayout } from "@/features/labs/network-diagram/frame";

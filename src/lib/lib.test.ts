@@ -19,7 +19,7 @@ import {
   setPortMode,
   setVmProvider,
 } from "@/lib/settings";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { isMac } from "@/lib/platform";
 import { ignore, warn } from "@/lib/failure";
 

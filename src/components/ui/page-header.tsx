@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /**
  * The top of every screen: a serif title (Newsreader 350; wrap at most one word in <em> for the

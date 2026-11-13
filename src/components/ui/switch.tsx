@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** A dependency-free on/off switch: the jewel when on. */
 export function Switch({

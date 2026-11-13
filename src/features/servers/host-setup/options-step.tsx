@@ -1,7 +1,7 @@
 "use client";
 
 import { Cloud } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { Field, Input, Select, Step } from "@/features/servers/host-setup/form";
 import { BackNav, SaveAndTestButton, StepError } from "@/features/servers/host-setup/step-nav";
 import type { HostSetup } from "@/features/servers/host-setup/use-host-setup";

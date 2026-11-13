@@ -6,7 +6,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { PROSE } from "@/components/ui/screen-width";
 import { apiQuery } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 import { warn } from "@/lib/failure";
 import { describeError } from "@/lib/errors";

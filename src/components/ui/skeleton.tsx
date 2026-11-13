@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** A softly pulsing placeholder block for loading states. */
 export function Skeleton({ className }: { className?: string }) {

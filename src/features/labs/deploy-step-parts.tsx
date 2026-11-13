@@ -3,7 +3,7 @@
 import { memo, useEffect, useRef } from "react";
 import { Check, ChevronRight, X } from "lucide-react";
 import { LogConsole } from "@/components/ui/log-console";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { formatDuration } from "@/lib/format";
 import type { Step, Timed } from "@/features/labs/deploy-log";
 import { useNow } from "@/lib/use-now";

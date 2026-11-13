@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { StatusDot } from "@/components/ui/status-pill";
 import { MAX_ANSWER, type SubmitResult } from "@/features/labs/objectives/objectives";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { describeError } from "@/lib/errors";
 
 type Feedback = { tone: "ok" | "warn" | "fail"; text: string } | null;

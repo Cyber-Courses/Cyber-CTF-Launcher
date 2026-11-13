@@ -2,7 +2,7 @@
 
 import { type ReactNode } from "react";
 import { Check, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 // The step list of the guided setup, the self-tests and deploy progress (the mockup's .steps).
 

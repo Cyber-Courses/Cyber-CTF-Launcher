@@ -4,7 +4,7 @@ import { useState } from "react";
 import { formatDuration } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { useFormat, useT, type T } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** Time since the start began (`from`: when Start was pressed, or the backend's operation was
  *  first seen), ticking; since it mounted when unknown. */

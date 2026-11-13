@@ -4,7 +4,7 @@ import { Component, useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Copy, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WindowTitleBar } from "@/components/window-title-bar";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { tell } from "@/lib/failure";
 import { logFolder, logFrontendError } from "@/lib/error-log";
 import { useT } from "@/lib/i18n";

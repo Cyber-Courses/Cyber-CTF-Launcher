@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import { StatusDot } from "@/components/ui/status-pill";
 import { SELFTEST_STEPS, serverSelftest, type SelfTestEvent, type ServerHost } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { formatBytes, formatElapsed } from "@/lib/format";
 import { progressText } from "@/lib/progress-line";
 import { useNow } from "@/lib/use-now";

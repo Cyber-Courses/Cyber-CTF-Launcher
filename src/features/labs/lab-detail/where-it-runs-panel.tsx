@@ -9,7 +9,7 @@ import { PLACE_ICONS } from "@/features/labs/run-place-icons";
 import type { LabAnswer } from "@/features/labs/use-lab-answer";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { labRequirements, type LabRequirements, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT, type MessageKey, type T } from "@/lib/i18n";
 import { warn } from "@/lib/failure";
 import { gigabytes, MIB } from "@/lib/format";

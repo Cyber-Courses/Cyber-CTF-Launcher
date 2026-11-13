@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { MoreHorizontal, type LucideIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useEscape } from "@/lib/use-escape";
 import { useT } from "@/lib/i18n";
 
