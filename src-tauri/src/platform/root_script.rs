@@ -10,7 +10,7 @@
 /// apt waits up to ten minutes for the dpkg lock there (`APT_CONFIG`, a file in `$d`): a fresh
 /// Debian runs unattended-upgrades at boot, and the guided setup's Vagrant install met its lock
 /// ("Could not get lock /var/lib/dpkg/lock-frontend. It is held by process … (unattended-upgr)",
-/// exit 100) and failed instead of waiting (debian13-bare setup-full).
+/// exit 100) and failed instead of waiting.
 pub const PRIVATE_WORKDIR: &str =
     r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT; printf 'DPkg::Lock::Timeout "600";\n' >"$d/apt.conf"; export APT_CONFIG="$d/apt.conf""#;
 

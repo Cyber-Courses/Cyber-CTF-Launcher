@@ -186,8 +186,8 @@ fn stage(labs: &Path, dir: &Path, tarball: &[u8], lab_id: &str, commit: &str) ->
     let staging = staging_dir(labs, lab_id);
     clear_leftover(&staging);
     std::fs::create_dir_all(&staging)?;
-    // A staging that can't be filled (a refused archive) goes at once, not at the next install
-    // (the review of 2026-11-13: `labs/.<id>.staging` stayed).
+    // A staging that can't be filled (a refused archive) goes at once, not at the next install:
+    // left, `labs/.<id>.staging` stays until then.
     if let Err(e) = fill_staging(&staging, dir, tarball, commit) {
         clear_leftover(&staging);
         return Err(e);
@@ -331,8 +331,7 @@ struct StartLabData {
 }
 
 /// The backend's `startLab` answer for `lab_id`: what to download and run, and the launch's
-/// values, typed at the boundary rather than handed on as raw JSON for the caller to type a
-/// step later.
+/// values, typed at the boundary rather than as raw JSON the caller types a step later.
 async fn start_lab(lab_id: &str) -> Result<Launch> {
     let data = api::graphql(START_LAB, json!({ "id": lab_id }), true).await?;
     let answer: StartLabData = serde_json::from_value(data).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))?;
