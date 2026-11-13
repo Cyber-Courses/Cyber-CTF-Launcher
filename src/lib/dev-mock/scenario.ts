@@ -163,8 +163,8 @@ function engineDown(ready: SystemReport, docker: Exclude<Scenario["docker"], "ru
   const denied = docker === "denied";
   const hint: CommandError =
     ready.os === "windows"
-      ? { code: "dockerDeniedWindows", args: { user: "florian" }, message: "docker: permission denied (add florian to the docker-users group)" }
-      : { code: "dockerDenied", args: { user: "florian" }, message: "docker: permission denied (add florian to the docker group)" };
+      ? { code: "dockerDeniedWindows", args: { user: "ada" }, message: "docker: permission denied (add ada to the docker-users group)" }
+      : { code: "dockerDenied", args: { user: "ada" }, message: "docker: permission denied (add ada to the docker group)" };
   return {
     ...ready,
     dockerRunning: false,

@@ -202,7 +202,7 @@ const serverCommands = {
   server_running_labs: () => ({}),
   server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 12, message: "Connected", checks: [] }),
   aws_month_to_date_cost: () => 6.4,
-  aws_cli_identity: () => "arn:aws:iam::482100000193:user/florian",
+  aws_cli_identity: () => "arn:aws:iam::482100000193:user/ada",
   aws_profiles: () => ["default"],
   // The other clouds' sign-in reads, so their setup steps render in the preview as AWS's do.
   azure_subscriptions: () => [
