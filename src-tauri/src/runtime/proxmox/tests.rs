@@ -1,6 +1,11 @@
 use super::*;
 use serde_json::json;
 
+/// `json`, a list of what a path answers, read.
+fn listed<T: serde::de::DeserializeOwned>(json: serde_json::Value) -> Vec<T> {
+    serde_json::from_value(json).unwrap()
+}
+
 #[test]
 fn a_login_without_a_realm_is_on_pam() {
     assert_eq!(with_default_realm("root"), "root@pam");
@@ -65,19 +70,20 @@ fn lab_bridge_defaults_to_vmbr0() {
 
 #[test]
 fn internal_bridges_have_no_ports() {
-    let ifaces = json!([{"iface": "vmbr0", "bridge_ports": "eno1"}, {"iface": "vmbr1", "bridge_ports": " "}, {"iface": "vmbr2"}]);
+    let ifaces: Vec<api::Iface> = listed(json!([{"iface": "vmbr0", "bridge_ports": "eno1"}, {"iface": "vmbr1", "bridge_ports": " "}, {"iface": "vmbr2"}]));
     assert!(!find_iface(&ifaces, "vmbr0").is_some_and(has_no_ports));
     assert!(find_iface(&ifaces, "vmbr1").is_some_and(has_no_ports));
     assert!(find_iface(&ifaces, "vmbr2").is_some_and(has_no_ports));
     assert!(find_iface(&ifaces, "vmbr9").is_none());
-    assert!(find_iface(&json!(null), "vmbr0").is_none());
+    assert!(find_iface(&[], "vmbr0").is_none());
 }
 
 #[test]
 fn storage_problems_name_the_fix() {
-    let ok = json!([{"storage": "local", "content": "iso,vztmpl,snippets,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]);
+    let ok: Vec<api::Storage> =
+        listed(json!([{"storage": "local", "content": "iso,vztmpl,snippets,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]));
     assert_eq!(storage_problems(&ok, "local-lvm", IMAGE_STORAGE, SNIPPET_STORAGE), Vec::<String>::new());
-    let stock = json!([{"storage": "local", "content": "iso,vztmpl,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]);
+    let stock: Vec<api::Storage> = listed(json!([{"storage": "local", "content": "iso,vztmpl,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]));
     let p = storage_problems(&stock, "local-lvm", IMAGE_STORAGE, SNIPPET_STORAGE);
     assert_eq!(p.len(), 1);
     assert!(p[0].contains("Snippets"));
@@ -133,14 +139,13 @@ async fn proxmox_live_test() {
 
 #[test]
 fn the_configured_node_or_the_first() {
-    let nodes = json!([{"node": "pve"}, {"node": "pve2"}]);
+    let nodes: Vec<api::Node> = listed(json!([{"node": "pve"}, {"node": "pve2"}]));
     assert_eq!(pick_node(&nodes, None).unwrap(), "pve");
     assert_eq!(pick_node(&nodes, Some("")).unwrap(), "pve");
     assert_eq!(pick_node(&nodes, Some("pve2")).unwrap(), "pve2");
     let err = pick_node(&nodes, Some("nope")).unwrap_err().to_string();
     assert_eq!(err, "there is no node \"nope\" on this host (found: pve, pve2)");
-    assert_eq!(pick_node(&json!([]), None).unwrap_err().to_string(), "this user can't see any node");
-    assert!(pick_node(&json!(null), None).is_err());
+    assert_eq!(pick_node(&[], None).unwrap_err().to_string(), "this user can't see any node");
 }
 
 #[test]
@@ -170,7 +175,7 @@ fn node_listing_failures_are_signed_in_failures() {
 
 #[test]
 fn a_missing_bridge_is_a_problem() {
-    let ifaces = json!([{"iface": "vmbr0"}]);
+    let ifaces: Vec<api::Iface> = listed(json!([{"iface": "vmbr0"}]));
     assert_eq!(bridge_problem(&ifaces, "vmbr0", "pve"), None);
     assert!(bridge_problem(&ifaces, "vmbr1", "pve").unwrap().starts_with("Bridge \"vmbr1\" doesn't exist on pve."));
 }
@@ -188,10 +193,10 @@ fn the_outcome_lists_every_problem() {
 #[test]
 fn storage_needs_each_content_once() {
     // The VM disks on `local` too: still one check per (storage, content).
-    let all = json!([{"storage": "local", "content": "iso, snippets, images"}]);
+    let all: Vec<api::Storage> = listed(json!([{"storage": "local", "content": "iso, snippets, images"}]));
     assert_eq!(storage_problems(&all, "local", IMAGE_STORAGE, SNIPPET_STORAGE), Vec::<String>::new());
-    assert_eq!(storage_content(&json!([{"storage": "x"}]), "x"), Some(vec![String::new()]));
-    assert_eq!(storage_content(&json!({}), "x"), None);
+    assert_eq!(storage_content(&listed::<api::Storage>(json!([{"storage": "x"}])), "x"), Some(vec![String::new()]));
+    assert_eq!(storage_content(&[], "x"), None);
 }
 
 #[test]
