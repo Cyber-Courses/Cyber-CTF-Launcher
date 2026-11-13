@@ -14,7 +14,7 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use isoloom_manifest::{Manifest, SetBy};
-use isothrum_runner::{RunName, RunOptions, Runner, SecretValue, Secrets};
+use isothrum_runner::{RunName, RunOptions, RunRecord, Runner, SecretValue, Secrets};
 
 use super::opened::OpenedRun;
 use super::{errors, progress, regenerate, view};
@@ -265,47 +265,47 @@ where
     let mut failed = Vec::new();
     for record in expired.into_iter().filter(|r| r.cloud.is_some()) {
         let name = record.name.to_string();
-        // Serialize with the launcher's own operations on this lab (`lock_lab`): busy means
-        // another operation holds it, so leave it for a later sweep rather than destroy over it
-        // (not a failure). Held across the destroy below.
-        let id = super::super::docker::lab_of_project(&name).unwrap_or(&name);
-        let Some(_held) = lock(id) else {
-            log::debug!("auto-stop: {name} is busy (an operation holds its lab lock); left for a later sweep");
-            continue;
-        };
-        let Some(host) = record.host_label.as_deref() else {
-            failed.push((name, Error::coded(Code::ReapNoHost)));
-            continue;
-        };
-        // The account removed or unreadable: left for a later sweep rather than reported as a
-        // destroy failure (it may come back). Said in the log, so a lab billing on is not silent.
-        let Some(tf_env) = account(host) else {
-            log::warn!("auto-stop: {name} is past its stop time, but its account {host} can't be used now; left for a later sweep");
-            continue;
-        };
-        // Its lab's files generated again first when an earlier version of the launcher made them;
-        // with its lab no longer installed, the destroy goes on with what its run kept (logged:
-        // those files may be an older launcher's).
-        match lab_dir_in(home, id) {
-            Ok(dir) => {
-                if let Err(e) = regenerate::current(&record.manifest, &dir, regenerate::lab_target(record.target)).await {
-                    failed.push((name, e));
-                    continue;
-                }
-            }
-            Err(e) => log::warn!("auto-stop: {name}'s files can't be generated again ({e}); destroying it with the ones its run kept"),
-        }
-        let open = runner.open(&record.manifest, Some(record.name.clone())).map(|r| r.with_connection(connection_secrets(&tf_env)));
-        let sink = progress::silent();
-        let outcome = match open {
-            Ok(run) => run.down(&RunOptions::new(), &sink).await.map_err(errors::from_runner),
-            Err(e) => Err(errors::from_runner(e)),
-        };
-        if let Err(e) = outcome {
+        if let Err(e) = reap_one(&runner, home, &record, &account, &lock).await {
             failed.push((name, e));
         }
     }
     Ok(failed)
+}
+
+/// Destroys the expired cloud run `record`. Ok when it is gone, and when it is left for a later
+/// sweep (its lab busy, its account unusable now); the error when its destroy failed.
+async fn reap_one<F, L, G>(runner: &Runner, home: &Path, record: &RunRecord, account: &F, lock: &L) -> Result<()>
+where
+    F: Fn(&str) -> Option<Vec<(String, String)>>,
+    L: Fn(&str) -> Option<G>,
+{
+    let name = record.name.to_string();
+    // Serialize with the launcher's own operations on this lab (`lock_lab`): busy means
+    // another operation holds it, so leave it for a later sweep rather than destroy over it
+    // (not a failure). Held across the destroy below.
+    let id = super::super::docker::lab_of_project(&name).unwrap_or(&name);
+    let Some(_held) = lock(id) else {
+        log::debug!("auto-stop: {name} is busy (an operation holds its lab lock); left for a later sweep");
+        return Ok(());
+    };
+    let Some(host) = record.host_label.as_deref() else {
+        return Err(Error::coded(Code::ReapNoHost));
+    };
+    // The account removed or unreadable: left for a later sweep rather than reported as a
+    // destroy failure (it may come back). Said in the log, so a lab billing on is not silent.
+    let Some(tf_env) = account(host) else {
+        log::warn!("auto-stop: {name} is past its stop time, but its account {host} can't be used now; left for a later sweep");
+        return Ok(());
+    };
+    // Its lab's files generated again first when an earlier version of the launcher made them;
+    // with its lab no longer installed, the destroy goes on with what its run kept (logged:
+    // those files may be an older launcher's).
+    match lab_dir_in(home, id) {
+        Ok(dir) => regenerate::current(&record.manifest, &dir, regenerate::lab_target(record.target)).await?,
+        Err(e) => log::warn!("auto-stop: {name}'s files can't be generated again ({e}); destroying it with the ones its run kept"),
+    }
+    let run = runner.open(&record.manifest, Some(record.name.clone())).map_err(errors::from_runner)?.with_connection(connection_secrets(&tf_env));
+    run.down(&RunOptions::new(), &progress::silent()).await.map_err(errors::from_runner)
 }
 
 #[cfg(test)]
