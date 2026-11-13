@@ -15,6 +15,22 @@ pub struct Port {
     pub published: u16,
     /// The port inside the container.
     pub target: u16,
+    /// The account the service on it ships with, as the lab declares it: shown beside the port.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub login: Option<Login>,
+}
+
+/// The fixed account a lab's service ships with (a training lab's published sign-in, not a
+/// secret), for the player to sign in with.
+#[derive(Serialize, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabLogin")]
+pub struct Login {
+    /// The account's name.
+    pub user: String,
+    /// Its password.
+    pub password: String,
 }
 
 /// One machine of a lab (a container or a VM), as the lab page and its diagram show it.

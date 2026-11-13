@@ -9,7 +9,7 @@ use crate::platform::AppDirs;
 use super::host::{self, Host};
 use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm};
 use super::providers::Provider;
-use super::{LabStatus, Place, Runtime, attack_box, docker, isothrum, server};
+use super::{LabStatus, Login, Place, Runtime, attack_box, docker, isothrum, server};
 use crate::error::{Error, Result};
 
 /// The status of lab `id`, installed in `dir` and declared `runtime`, wherever it runs and in the
@@ -27,6 +27,8 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     let controls = super::lifecycle::controls(host.as_ref(), status.provider.as_deref());
     // The attack box the launcher added is no machine of the lab's own (`attack_box`).
     let status = attack_box::set_apart(status, dir)?;
+    // The sign-in each service ships with, as the lab's spec declares it beside the port.
+    let status = with_logins(status, dir);
     // Here, parked = the launcher parked it and it is still down.
     let status = if here { with_parked(status, parked(dir)) } else { status };
     // Whether this container lab runs as one VM per machine (its VM recipes), locally or as
@@ -35,6 +37,26 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
     let reap_error = super::reaper::last_failure(dirs, id);
     Ok(LabStatus { per_machine, reap_error, controls, ..status })
+}
+
+/// `s` with each port's login, read from the lab's spec in `dir` (`login` on a port): matched by
+/// machine and TCP port. A spec that doesn't read leaves the ports as they are, without logins.
+fn with_logins(mut s: LabStatus, dir: &Path) -> LabStatus {
+    if let Ok(spec) = super::lab::load(dir) {
+        fill_logins(&mut s, &spec);
+    }
+    s
+}
+
+/// Gives each port of `s` the login `spec` declares on that machine's TCP port.
+fn fill_logins(s: &mut LabStatus, spec: &super::lab::Spec) {
+    for machine in &mut s.machines {
+        let Some(declared) = spec.machines.get(&machine.name) else { continue };
+        for port in &mut machine.ports {
+            let login = declared.ports.iter().find(|p| p.port == port.target && p.protocol.is_tcp()).and_then(|p| p.login.as_ref());
+            port.login = login.map(|l| Login { user: l.user.clone(), password: l.password.clone() });
+        }
+    }
 }
 
 /// Parked = the launcher parked it (`parked`) and it is still down; a lab someone started again
@@ -244,7 +266,7 @@ pub async fn primary_url(dir: &Path, id: &str, runtime: Runtime) -> Option<Strin
 
 #[cfg(test)]
 mod tests {
-    use super::{Place, on_server, primary_url, with_parked};
+    use super::{Place, fill_logins, on_server, primary_url, with_parked};
     use crate::runtime::providers::Provider;
     use crate::runtime::test_support::status_with;
     use crate::runtime::{Park, Runtime};
@@ -254,6 +276,23 @@ mod tests {
         assert_eq!(with_parked(status_with(false, &[]), Some(Park::Pause)).parked, Some(Park::Pause));
         assert_eq!(with_parked(status_with(true, &["web"]), Some(Park::Pause)).parked, None, "started again by hand");
         assert_eq!(with_parked(status_with(false, &[]), None).parked, None);
+    }
+
+    #[test]
+    fn each_port_gets_the_login_its_spec_declares() {
+        let spec = crate::runtime::lab::parse(
+            "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  jenkins:\n    networks: { lab: 10 }\n    ports: { web: { port: 8080, protocol: http, publish: true, login: { user: admin, password: admin } }, agent: 50000 }\n    app: { image: nginx:1.27 }\n",
+        )
+        .unwrap();
+        let mut s = status_with(true, &["jenkins", "other"]);
+        for m in &mut s.machines {
+            m.ports =
+                vec![crate::runtime::Port { published: 51234, target: 8080, login: None }, crate::runtime::Port { published: 0, target: 50000, login: None }];
+        }
+        fill_logins(&mut s, &spec);
+        let logins: Vec<Vec<Option<(&str, &str)>>> =
+            s.machines.iter().map(|m| m.ports.iter().map(|p| p.login.as_ref().map(|l| (l.user.as_str(), l.password.as_str()))).collect()).collect();
+        assert_eq!(logins, [vec![Some(("admin", "admin")), None], vec![None, None]], "the declared port only, on its own machine");
     }
 
     /// The connection of saved host `id`, named `name`, on `provider`.

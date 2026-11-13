@@ -335,6 +335,7 @@
     "runsOn": "Roda em",
     "autoStop": "Parada automática",
     "address": "Endereço",
+    "signIn": "Login",
     "insideLab": "Dentro do lab",
     "onHost": "Em {where}",
     "setup": "Configuração",

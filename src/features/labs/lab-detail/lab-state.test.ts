@@ -270,7 +270,13 @@ describe("publishedBinds", () => {
         ],
       }),
     ];
-    expect(publishedBinds(machines)).toEqual([{ machine: "web", target: 80, published: 5000 }]);
+    expect(publishedBinds(machines)).toEqual([{ machine: "web", target: 80, published: 5000, login: null }]);
+  });
+
+  it("carries the login a port's service ships with", () => {
+    const login = { user: "alice", password: "alice" };
+    const machines = [machine("gitea", "running", { ports: [{ published: 5001, target: 3000, login }] })];
+    expect(publishedBinds(machines)).toEqual([{ machine: "gitea", target: 3000, published: 5001, login }]);
   });
 });
 

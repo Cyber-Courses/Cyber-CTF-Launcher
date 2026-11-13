@@ -335,6 +335,7 @@
     "runsOn": "Se ejecuta en",
     "autoStop": "Parada automática",
     "address": "Dirección",
+    "signIn": "Inicio de sesión",
     "insideLab": "Dentro del lab",
     "onHost": "En {where}",
     "setup": "Configuración",

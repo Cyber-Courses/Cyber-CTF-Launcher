@@ -32,6 +32,7 @@ export type * from "./LabControl";
 export type * from "./LabFileProblem";
 export type * from "./LabInterface";
 export type * from "./LabLeftover";
+export type * from "./LabLogin";
 export type * from "./LabMachine";
 export type * from "./LabMetadata";
 export type * from "./LabNetwork";

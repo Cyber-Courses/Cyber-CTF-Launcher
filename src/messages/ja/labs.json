@@ -335,6 +335,7 @@
     "runsOn": "実行場所",
     "autoStop": "自動停止",
     "address": "アドレス",
+    "signIn": "サインイン",
     "insideLab": "ラボ内部",
     "onHost": "{where} 上",
     "setup": "セットアップ",
