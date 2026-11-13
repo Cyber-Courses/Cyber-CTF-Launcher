@@ -46,5 +46,8 @@ export function createAsk<Question, Answer>(dismissed: Answer) {
     );
   }
 
-  return { ask, answer, useAsked };
+  /** The open question, or null, outside React (a test's double answers it). */
+  const pending = () => current;
+
+  return { ask, answer, useAsked, subscribe, pending };
 }

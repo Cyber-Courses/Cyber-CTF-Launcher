@@ -2,6 +2,8 @@ import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { answer } from "@/lib/dev-mock";
 import type { CommandError } from "@/lib/errors";
 import { PROXMOX_PLACEMENT } from "@/lib/dev-mock/proxmox-sample";
+import { destructive, warnings } from "@/lib/confirm";
+import { translate } from "@/lib/i18n";
 
 export type Handler = (args: Record<string, unknown> | undefined) => unknown;
 export interface Call {
@@ -89,8 +91,47 @@ const DEFAULTS: Partial<Record<string, Handler>> = {
  * per-test `overrides`. A handler that throws rejects the invoke, like a failed Rust command.
  * Returns the list of calls made, for assertions.
  */
+// The in-app confirmation and warning dialogs, answered as the system dialog's double answers
+// (`plugin:dialog|message`, recorded as one of its calls): a test sees the same question and
+// answers it the same way.
+let stopAnswering: (() => void) | null = null;
+
+function answerInAppDialogs(calls: Call[], handler: Handler | undefined) {
+  stopAnswering?.();
+  const reply = (args: Record<string, unknown>) => {
+    calls.push({ cmd: "plugin:dialog|message", args });
+    return Promise.resolve().then(() => handler?.(args));
+  };
+  const offConfirm = destructive.subscribe(() => {
+    const open = destructive.pending();
+    if (!open) return;
+    const { title, message, confirm } = open.question;
+    reply({ title, message, kind: "warning", buttons: { OkCancelCustom: [confirm, translate("ui.confirm.cancel")] } }).then(
+      (label) => {
+        destructive.answer(label === confirm);
+      },
+      () => {
+        destructive.answer(false);
+      },
+    );
+  });
+  const offWarn = warnings.subscribe(() => {
+    const open = warnings.pending();
+    if (!open) return;
+    const { title, message } = open.question;
+    void reply({ title, message, kind: "warning" }).finally(() => {
+      warnings.answer(null);
+    });
+  });
+  stopAnswering = () => {
+    offConfirm();
+    offWarn();
+  };
+}
+
 export function installTauri(overrides: Partial<Record<string, Handler>> = {}): Call[] {
   const calls: Call[] = [];
+  answerInAppDialogs(calls, overrides["plugin:dialog|message"] ?? DEFAULTS["plugin:dialog|message"]);
   mockWindows("main");
   mockIPC(
     (cmd, args) => {

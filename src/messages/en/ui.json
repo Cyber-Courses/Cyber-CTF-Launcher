@@ -1,7 +1,7 @@
 {
   "confirm": {
     "cancel": "Cancel",
-    "failed": "Couldn't ask to confirm, so nothing was changed"
+    "ok": "OK"
   },
   "copy": {
     "title": "Copy {text}"
