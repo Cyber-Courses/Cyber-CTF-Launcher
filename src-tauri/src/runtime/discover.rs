@@ -133,16 +133,28 @@ pub(crate) fn lab_ids_from_prefixed_vm_names<'a>(names: impl Iterator<Item = &'a
     ids.into_iter().collect()
 }
 
-/// VM names from `VBoxManage list runningvms` (`"<name>" {<uuid>}` per line).
-pub(crate) fn vbox_vm_names(out: &str) -> Vec<String> {
+/// One VM of a `VBoxManage list vms` or `list runningvms` listing.
+pub(crate) struct VboxVm {
+    /// The VM's name, as VirtualBox shows it.
+    pub(crate) name: String,
+    /// Its uuid, without the braces around it.
+    pub(crate) id: String,
+}
+
+/// The VMs of a `VBoxManage list vms` or `list runningvms` listing (`"<name>" {<uuid>}` per
+/// line); a line that isn't a quoted name is skipped. The one reader of that listing.
+pub(crate) fn vbox_vms(out: &str) -> Vec<VboxVm> {
     out.lines()
         .filter_map(|l| {
-            let l = l.trim();
-            let rest = l.strip_prefix('"')?;
-            let end = rest.find('"')?;
-            Some(rest[..end].to_string())
+            let (name, id) = l.trim().strip_prefix('"')?.split_once('"')?;
+            Some(VboxVm { name: name.to_string(), id: id.trim().trim_matches(['{', '}']).to_string() })
         })
         .collect()
+}
+
+/// VM names from `VBoxManage list runningvms` ([`vbox_vms`]).
+pub(crate) fn vbox_vm_names(out: &str) -> Vec<String> {
+    vbox_vms(out).into_iter().map(|vm| vm.name).collect()
 }
 
 /// Names of the started VMs from `utmctl list` (`<uuid>  <status>  <name>`, under a `UUID Status
