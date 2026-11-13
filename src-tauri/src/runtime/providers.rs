@@ -866,6 +866,9 @@ mod tests {
         assert!(!stuck("VBoxManage: error: the guest session timed out").await, "the tool's own words");
         assert!(stuck("timed out after 8s").await, "the app's timeout");
         // And `detect` says so wherever VirtualBox applies; where it doesn't, it says nothing.
+        // The host's own KVM is no part of it (a Linux host with kvm_intel loaded would answer
+        // KvmHoldsVirtualization first).
+        assume_devices_ready();
         let _tools = tools("timed out after 8s");
         let virtualbox = detect(true).await.into_iter().find(|s| s.provider == Provider::Virtualbox);
         if Provider::Virtualbox.applicable() {
