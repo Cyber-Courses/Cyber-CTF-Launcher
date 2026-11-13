@@ -15,13 +15,7 @@ use super::profile::HostProfile;
 use crate::error::{Code, Error, Result};
 use crate::platform::keychain;
 
-/// Whether this build keeps the secrets in a file (a dev build, a test build whatever its profile,
-/// or an end-to-end run's app) rather than the keychain. A test binary built with a release-like
-/// profile (the rig's `rig`) has no debug assertions, and went to the system's keychain: the real
-/// Secret Service on a headless Linux clone, which refused.
-fn in_a_file() -> bool {
-    cfg!(debug_assertions) || cfg!(test) || crate::platform::test_root::root().is_some()
-}
+use crate::platform::keychain::bypassed as in_a_file;
 
 /// The secret stored for `id`. None stored is [`Code::NoPasswordStored`]; a store that can't be
 /// read (a locked keychain, its unlock prompt dismissed, a secrets file that doesn't parse) says

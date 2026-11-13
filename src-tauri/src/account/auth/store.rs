@@ -27,12 +27,7 @@ pub(super) struct Session {
     pub picture: Option<String>,
 }
 
-/// Whether this build keeps the session in a file (a dev build, a test build whatever its
-/// profile, or an end-to-end run's app, `platform::test_root`) rather than the keychain: a test
-/// binary built with a release-like profile (the rig's `rig`) has no debug assertions.
-fn in_a_file() -> bool {
-    cfg!(debug_assertions) || cfg!(test) || crate::platform::test_root::root().is_some()
-}
+use crate::platform::keychain::bypassed as in_a_file;
 
 /// The keychain entry holding the session, or its head when it is split (see [`split_chunks`]).
 const SESSION: &str = "session";
