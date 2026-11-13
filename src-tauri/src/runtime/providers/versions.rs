@@ -3,22 +3,6 @@
 
 use super::Provider;
 
-/// Each plugin of `vagrant plugin list` with its version, from lines like `vagrant-libvirt
-/// (0.12.2, global)`; `None` for a line that names no version (a wrapped or cut line).
-pub(super) fn parse_plugin_versions(out: &str) -> Vec<(String, Option<String>)> {
-    out.lines()
-        .filter_map(|l| {
-            let mut words = l.split_whitespace();
-            let name = words.next().filter(|name| name.starts_with("vagrant-") || name.starts_with("vagrant_"))?;
-            let version = words
-                .next()
-                .map(|w| w.trim_matches(|c: char| matches!(c, '(' | ')' | ',')).to_string())
-                .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()));
-            Some((name.to_string(), version))
-        })
-        .collect()
-}
-
 /// Whether version `found` is `min` or later: dot-separated numbers compared in turn, a missing
 /// one as 0 (`4.7` reads as `4.7.0`) and a part that doesn't start with a digit (`beta`) as 0.
 pub(super) fn version_at_least(found: &str, min: &str) -> bool {

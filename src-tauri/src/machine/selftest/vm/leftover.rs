@@ -11,7 +11,7 @@ use std::path::Path;
 use super::VM_NAME;
 use crate::error::{Error, Result};
 use crate::platform::exec::{Leftover, remove_hyperv_leftover, run};
-use crate::runtime::discover::vbox_vms;
+use crate::platform::tool_output::vboxmanage;
 
 /// What a test VM's VirtualBox description says: it is the test's in `dir`.
 pub(super) fn vbox_description(dir: &Path) -> String {
@@ -60,7 +60,7 @@ async fn remove_vbox_leftover(dir: &Path) -> Result<Leftover> {
     let ours = vbox_description(dir);
     for id in &ids {
         let info = run("VBoxManage", &["showvminfo", id, "--machinereadable"], None).await?;
-        if vbox_value(&info, "description").as_deref() != Some(ours.as_str()) {
+        if vboxmanage::value(&info, "description").as_deref() != Some(ours.as_str()) {
             return Ok(Leftover::Foreign);
         }
     }
@@ -74,15 +74,9 @@ async fn remove_vbox_leftover(dir: &Path) -> Result<Leftover> {
     Ok(Leftover::Removed)
 }
 
-/// The ids of the VMs named exactly `name` in `VBoxManage list vms` (`"name" {uuid}` lines).
+/// The ids of the VMs named exactly `name` in `VBoxManage list vms`.
 fn vbox_ids_named(list: &str, name: &str) -> Vec<String> {
-    vbox_vms(list).into_iter().filter(|vm| vm.name == name).map(|vm| vm.id).collect()
-}
-
-/// The value of `key` in `VBoxManage showvminfo --machinereadable` (`key="value"` lines).
-fn vbox_value(info: &str, key: &str) -> Option<String> {
-    let prefix = format!("{key}=\"");
-    info.lines().find_map(|l| l.trim().strip_prefix(&prefix)?.strip_suffix('"').map(str::to_string))
+    vboxmanage::vms(list).into_iter().filter(|vm| vm.name == name).map(|vm| vm.uuid).collect()
 }
 
 #[cfg(test)]
@@ -96,8 +90,8 @@ mod tests {
         assert_eq!(vbox_ids_named(list, VM_NAME), ["11111111-2222"]);
         assert_eq!(vbox_ids_named("", VM_NAME), [] as [String; 0]);
         let info = "name=\"CyberCTF test VM\"\ndescription=\"cyberctf-selftest:/tmp/vm\"\nVMState=\"running\"\n";
-        assert_eq!(vbox_value(info, "description").as_deref(), Some("cyberctf-selftest:/tmp/vm"));
-        assert_eq!(vbox_value(info, "missing"), None);
+        assert_eq!(vboxmanage::value(info, "description").as_deref(), Some("cyberctf-selftest:/tmp/vm"));
+        assert_eq!(vboxmanage::value(info, "missing"), None);
     }
 
     #[tokio::test]

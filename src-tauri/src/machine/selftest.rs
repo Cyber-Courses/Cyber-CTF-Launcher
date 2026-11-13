@@ -283,6 +283,8 @@ mod tests {
             ("vagrant", ["box", "list"]) => ok(boxes),
             ("vagrant", ["--version"]) => ok("Vagrant 2.4.3\n"),
             ("vagrant", ["ssh", "-c", _]) => ok("cyberctf-uname:Linux 6.6 x86_64\n"),
+            // Every address answers, as a ping's reply line says (an exit 0 alone isn't a reply).
+            ("ping", _) => ok("64 bytes from 192.168.56.250: icmp_seq=1 ttl=64 time=0.412 ms\n"),
             _ => ok(""),
         });
         let (channel, seen) = events();

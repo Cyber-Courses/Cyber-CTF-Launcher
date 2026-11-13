@@ -103,5 +103,6 @@ pub(super) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
 /// Automation permission), which no wait fixes: `Not authorized to send Apple events to UTM.
 /// (-1743)`.
 pub(super) fn utm_not_allowed(stderr: &str) -> bool {
-    stderr.contains("-1743") || stderr.contains("Not authorized to send Apple events")
+    use crate::platform::tool_output::apple_events::AppleEvent;
+    AppleEvent::of(stderr) == Some(AppleEvent::NotAuthorized)
 }

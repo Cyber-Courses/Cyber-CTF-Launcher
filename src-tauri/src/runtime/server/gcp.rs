@@ -4,6 +4,7 @@
 //! refuses past that limit ("billing quota exceeded"); one project needs a single free slot,
 //! checked here with a clear message instead of a failed launch.
 
+use crate::platform::tool_output::gcloud as gcloud_said;
 use std::time::Duration;
 
 use crate::platform::AppDirs;
@@ -59,7 +60,7 @@ async fn project_state(p: &str) -> Result<Project> {
             "DELETE_REQUESTED" | "DELETE_IN_PROGRESS" => Ok(Project::Gone),
             other => Err(Error::Invalid(format!("the Cyber CTF labs project {p} is {other}, so labs can't run in it. Check it in the Google Cloud console."))),
         },
-        Err(Error::CommandFailed { stderr, .. }) if stderr.contains("NOT_FOUND") => Ok(Project::Gone),
+        Err(Error::CommandFailed { stderr, .. }) if gcloud_said::not_found(&stderr) => Ok(Project::Gone),
         Err(e) => Err(Error::Invalid(format!(
             "couldn't check the Cyber CTF labs project {p}: {}. Check your connection and that gcloud is signed in as the account that owns it (gcloud auth login), then try again.",
             last_error_line(&e)
@@ -126,7 +127,7 @@ fn create_args<'a>(project: &'a str, org: Option<&'a str>) -> Vec<&'a str> {
 /// Why the labs project couldn't be linked to `billing`: no free project slot (said plainly,
 /// with the way out), or gcloud's own reason.
 fn link_failure(billing: &str, why: &str) -> String {
-    if why.contains("quota") || why.contains("Precondition") {
+    if gcloud_said::no_project_slot(why) {
         format!(
             "No free project slot on billing account {billing}: Google allows only a few projects per billing account. Unlink one you don't use (gcloud billing projects unlink <project>) or request an increase at https://support.google.com/code/contact/billing_quota_increase"
         )

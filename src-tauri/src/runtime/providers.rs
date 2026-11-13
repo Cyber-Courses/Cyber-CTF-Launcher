@@ -15,6 +15,7 @@ mod versions;
 use crate::platform::exec::{run_read, timed_out};
 use crate::platform::host::{Arch, Os};
 use crate::platform::remembered::remembered;
+use crate::platform::tool_output::vagrant::plugins as parse_plugin_versions;
 
 pub(crate) use kvm::kvm_problem;
 #[cfg(test)]
@@ -29,7 +30,7 @@ use vagrant_needs::fake_utility;
 pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
 #[cfg(test)]
 use versions::version_at_least;
-use versions::{hypervisor_too_old, parse_plugin_versions, plugin_too_old};
+use versions::{hypervisor_too_old, plugin_too_old};
 
 /// How long VirtualBox's service gets to answer `VBoxManage list runningvms` before it reads as
 /// unresponsive (wedged), not just slow.

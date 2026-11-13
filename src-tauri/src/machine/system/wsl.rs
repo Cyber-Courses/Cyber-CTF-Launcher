@@ -356,10 +356,11 @@ trait Reopen {
     fn unregister(&self);
 }
 
-/// `shutdown.exe` refusing because one is already scheduled (`ERROR_SHUTDOWN_IS_SCHEDULED`, 1190:
-/// its message ends with the code in every language).
+/// `shutdown.exe` refusing because one is already scheduled (`ERROR_SHUTDOWN_IS_SCHEDULED`: its
+/// message ends with the code in every language).
 fn already_scheduled(e: &Error) -> bool {
-    matches!(e, Error::CommandFailed { stderr, .. } if stderr.contains("1190"))
+    use crate::platform::tool_output::win32;
+    matches!(e, Error::CommandFailed { stderr, .. } if win32::error_code(stderr) == Some(win32::ERROR_SHUTDOWN_IS_SCHEDULED))
 }
 
 /// Asks Windows to restart in a few seconds, once per run of the app: a second ask while it
