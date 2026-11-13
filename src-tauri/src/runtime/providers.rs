@@ -176,13 +176,16 @@ impl Provider {
     }
 
     /// Whether it exists on `os` (`std::env::consts::OS`) at all: Hyper-V on Windows, Parallels
-    /// and UTM on macOS, libvirt on Linux, every other one anywhere. The one table of which OS a
+    /// and UTM on macOS, libvirt on Linux, QEMU off Windows, every other one anywhere. The one table of which OS a
     /// hypervisor belongs to: the setup's installs and removals read it too.
     pub fn runs_on(self, os: &str) -> bool {
         match self {
             Provider::Hyperv => os == "windows",
             Provider::Parallels | Provider::Utm => os == "macos",
             Provider::Libvirt => os == "linux",
+            // vagrant-qemu builds a networked VM's cloud-init seed with `oscdimg` on Windows (the
+            // Windows ADK's), and Isoloom gives the qemu provider Linux and macOS hosts only.
+            Provider::Qemu => os != "windows",
             _ => true,
         }
     }

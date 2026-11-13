@@ -65,6 +65,7 @@ impl Dependency {
             Dependency::Utm => Provider::Utm.runs_on(os),
             Dependency::Libvirt => Provider::Libvirt.runs_on(os),
             Dependency::Hyperv => Provider::Hyperv.runs_on(os),
+            Dependency::Qemu => Provider::Qemu.runs_on(os),
             _ => true,
         }
     }
@@ -462,7 +463,7 @@ mod tests {
             (Dependency::Wsl, &["windows"]),
             (Dependency::Hyperv, &["windows"]),
             (Dependency::Docker, &["macos", "linux", "windows"]),
-            (Dependency::Qemu, &["macos", "linux", "windows"]),
+            (Dependency::Qemu, &["macos", "linux"]),
         ] {
             for os in ["macos", "linux", "windows"] {
                 assert_eq!(dep.runs_on(os), oses.contains(&os), "{dep:?} on {os}");
