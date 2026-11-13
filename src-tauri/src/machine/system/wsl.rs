@@ -119,7 +119,7 @@ pub fn classify(p: &Probes) -> WslState {
     let platform_on = p.vm_platform == Some(Feature::Enabled);
     let platform_off = matches!(p.vm_platform, Some(Feature::Disabled | Feature::Absent));
     let running = p.hypervisor == Some(true);
-    let not_running = p.hypervisor == Some(false);
+    let hypervisor_running = p.hypervisor != Some(false);
     let pending = p.reboot_pending == Some(true);
 
     // Our own install ran this boot and Windows waits for a restart: whatever the features read
@@ -137,7 +137,7 @@ pub fn classify(p: &Probes) -> WslState {
         }
     }
     // WSL answers and nothing waits for a restart; the features couldn't be read.
-    if wsl && p.status == Run::Ok && p.reboot_pending == Some(false) && p.vm_platform.is_none() && !not_running {
+    if wsl && p.status == Run::Ok && p.reboot_pending == Some(false) && p.vm_platform.is_none() && hypervisor_running {
         return WslState::Ready;
     }
     if p.installed_this_boot {
@@ -289,9 +289,10 @@ fn assess(dirs: &AppDirs, probes: &Probes) -> (WslState, bool) {
     (state, virtualization_off(probes, state))
 }
 
-/// Logs a WSL check's `outcome`: at `info` when it differs from the last one, else at `debug`, so
-/// a Machine page left open doesn't fill the log with the same line. Whether it was new.
-fn log_check(outcome: &str) -> bool {
+/// Logs a WSL check's `outcome` at `info` when it differs from the last one, else at `debug`, so
+/// a Machine page left open doesn't fill the log with the same line; whether it was new (the
+/// name says it logs: Clean Code N7).
+fn log_if_changed(outcome: &str) -> bool {
     static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
     let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let new = *last != outcome;
@@ -312,7 +313,7 @@ pub async fn report(dirs: &AppDirs) -> Option<WslReport> {
         let boot = sysinfo::System::boot_time();
         let probes = windows::probe(installed_this_boot(dirs, boot), restarted_for_wsl(dirs, boot)).await;
         let (state, virtualization_off) = assess(dirs, &probes);
-        log_check(&format!("WSL check: {probes:?} -> {state:?}"));
+        log_if_changed(&format!("WSL check: {probes:?} -> {state:?}"));
         Some(WslReport { state, reopens_after_restart: windows::reopen_command().is_some(), virtualization_off })
     }
     #[cfg(not(windows))]
@@ -543,10 +544,10 @@ mod tests {
     #[test]
     fn a_wsl_check_is_logged_at_info_only_when_its_outcome_changes() {
         let a = format!("WSL check: test {} -> Ready", rand::random::<u32>());
-        assert!(log_check(&a));
-        assert!(!log_check(&a), "the same outcome again: debug only");
-        assert!(log_check("WSL check: test -> NeedsRestart"));
-        assert!(log_check(&a));
+        assert!(log_if_changed(&a));
+        assert!(!log_if_changed(&a), "the same outcome again: debug only");
+        assert!(log_if_changed("WSL check: test -> NeedsRestart"));
+        assert!(log_if_changed(&a));
     }
 
     use std::sync::atomic::{AtomicBool, AtomicU32};
