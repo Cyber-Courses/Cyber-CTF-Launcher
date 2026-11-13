@@ -278,12 +278,13 @@ pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
 }
 
 /// Stops lab `id` wherever it runs: the one Stop of the lab page, the Machine page and the
-/// hosted agent (through `labs::stop_lab`). Marked as stopping from the start: `end_first` (what
-/// the layers above end with the lab: its deploy workers, a deploy still running in one of which
-/// can take minutes while Terraform is interrupted and waited for, and the website's co-location
-/// check, which has nothing left to vouch for) runs first, while the page and the quit guard see
-/// a stop and no attack box may be added, so the teardown never races a `vagrant up` or `compose
-/// up` that would recreate what it removes; then the lab is torn down under its lock.
+/// hosted agent (through `labs::stop_lab_retiring_colocation`). Marked as stopping from the
+/// start: `end_first` (what the layers above end with the lab: its deploy workers, a deploy
+/// still running in one of which can take minutes while Terraform is interrupted and waited for,
+/// and the website's co-location check, which has nothing left to vouch for) runs first, while
+/// the page and the quit guard see a stop and no attack box may be added, so the teardown never
+/// races a `vagrant up` or `compose up` that would recreate what it removes; then the lab is torn
+/// down under its lock.
 pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_first: impl Future<Output = ()>, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
     let _stopping = DeployGuard::new(id, Action::Stop);

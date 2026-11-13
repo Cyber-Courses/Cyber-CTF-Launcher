@@ -311,7 +311,13 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
 /// Stops lab `id` wherever it runs ([`runtime::stop_lab`]), first ending the deploy still running
 /// in its worker, if any (`end_workers`: the app shell runs the workers), and the website's
 /// co-location check of it.
-pub(crate) async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_workers: impl Future<Output = ()>, log: impl FnMut(String)) -> Result<()> {
+pub(crate) async fn stop_lab_retiring_colocation(
+    dirs: &AppDirs,
+    id: &str,
+    runtime: Runtime,
+    end_workers: impl Future<Output = ()>,
+    log: impl FnMut(String),
+) -> Result<()> {
     let end_first = async {
         end_workers.await;
         crate::account::colocation::retire(id);

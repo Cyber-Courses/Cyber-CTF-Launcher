@@ -112,16 +112,16 @@ fn valid_machine_name(m: &str) -> bool {
     !m.is_empty() && m.len() <= MACHINE_NAME_MAX && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
-/// Stops lab `id` wherever it runs and removes it, its log lines sent on `logs` (see [`stop_lab`]).
+/// Stops lab `id` wherever it runs and removes it, its log lines sent on `logs` (see [`stop_lab_ending_workers`]).
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    stop_lab(&AppDirs::from(&app), &id, runtime, lines(logs)).await
+    stop_lab_ending_workers(&AppDirs::from(&app), &id, runtime, lines(logs)).await
 }
 
 /// Stops lab `id` wherever it runs, the deploy still running in its worker ended first (see
-/// [`labs::stop_lab`]).
-pub(crate) async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    labs::stop_lab(dirs, id, runtime, deploy_worker::end_workers(dirs, id), log).await
+/// [`labs::stop_lab_retiring_colocation`]).
+pub(crate) async fn stop_lab_ending_workers(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+    labs::stop_lab_retiring_colocation(dirs, id, runtime, deploy_worker::end_workers(dirs, id), log).await
 }
 
 /// Pauses (state saved) or shuts down (powered off) a lab on this machine, keeping its machines
