@@ -6,8 +6,16 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-11-13
+
 ### Added
 
+- **The guided setup installs on Fedora, and the distributions built on it, through dnf.** Docker
+  Engine from Docker's Fedora repository, Vagrant and Terraform from HashiCorp's (the release
+  before it when HashiCorp hasn't published for this Fedora yet), VirtualBox from RPM Fusion,
+  libvirt and QEMU from the distribution's own, each repository's key pinned, as the setup does
+  through apt on Debian and Ubuntu. The cloud CLIs and VMware's utility stay apt-only for now:
+  the setup says to install them by hand. The AppImage needs FUSE 2 on Fedora.
 - **What a player does that breaks a lab, catalogued and tested.** [tests/resilience.md](tests/resilience.md)
   lists each disruption (a machine removed, stopped or powered off outside the app, the app or its
   deploy worker killed, Docker or the hypervisor stopped, files deleted, a double Start, Stop
@@ -150,8 +158,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
-- Bundles Isoloom 2.1.7 and Isothrum 2.1.3 from crates.io, which write and read the run
-  manifest's version 1. Their changelogs list what changed; for the launcher: a container lab
+- Bundles Isoloom 2.1.9 and Isothrum 2.1.4 from crates.io, which write and read the run
+  manifest's version 1. Their changelogs list what changed; for the launcher: stopping a lab
+  removes the anonymous volumes an update's recreate inherited (Docker's data volumes, which
+  every start, update and stop left behind), a box for the ESXi provider is downloaded as the
+  build vagrant-vmware-esxi boots, a VM lab's status gets more time on Hyper-V and VirtualBox,
+  a container lab
   runs on the computer's own CPU architecture unless its spec pins one (a Linux Arm host ran
   nothing: `exec format error`), a lab's start no longer pulls an image the lab builds itself, a
   read-write shared folder in a VirtualBox VM, and now on QEMU too, is writable by the attack
@@ -191,9 +203,12 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   it keeps the system's shadow and thin border, on Linux a hairline draws its edge. Close goes
   through the same check as the system's button: with a lab deploying, the launcher still asks
   first. A crash screen has the header too, so a crashed window can still be moved and closed.
-- **On a Linux without apt, an install says to install the tool by hand.** On Fedora, openSUSE
+- **On a Linux without apt or dnf, an install says to install the tool by hand.** On openSUSE
   or Arch the setup used to ask for the password, then fail with `apt-get: not found`; it now
   stops before anything runs.
+- **Every root script's apt waits up to ten minutes for the dpkg lock.** A fresh Debian or
+  Ubuntu runs unattended-upgrades at first boot, and the guided setup's Vagrant install died on
+  its lock; the scripts' apt now waits for it (`DPkg::Lock::Timeout`).
 - **libvirt's install brings what the vagrant-libvirt plugin builds against** (`libvirt-dev`, a
   compiler, `pkg-config`, `ruby-dev`), where the plugin's install failed building, and adds the
   player to the `libvirt` and `kvm` groups. Until the next login, which those groups need, the

@@ -2,7 +2,7 @@
   "title": "Cyber CTF",
   "shortDescription": "Des labs de cybersécurité pratiques sur votre machine, votre serveur ou le cloud. Démarrez un lab en un clic, obtenez une attack box sur son réseau et entraînez-vous à de vraies attaques en toute sécurité.",
   "description": "Cyber CTF est le launcher de bureau pour des labs de cybersécurité pratiques. Choisissez un lab, cliquez sur Démarrer, et un environnement volontairement vulnérable se construit tout seul, avec votre propre attack box déjà branchée sur le réseau du lab. Entraînez-vous aux attaques web, à Active Directory, aux conteneurs et aux erreurs de configuration cloud sur de vrais systèmes, puis soumettez ce que vous trouvez.\n\nLancez les labs là où ça vous arrange :\n- Sur cet ordinateur, en conteneurs (Docker Desktop) ou en machines virtuelles (VirtualBox ou VMware Workstation)\n- Sur votre propre serveur : Proxmox VE ou VMware ESXi, pour les grands labs à plusieurs machines\n- Dans votre propre compte cloud : AWS, Microsoft Azure ou Google Cloud, arrêtés automatiquement pour ne payer que pendant que vous pratiquez\n\nChaque lab s'accompagne d'une carte réseau en direct de ses machines, services et ports publiés, et d'une attack box que vous ouvrez en un clic, directement dans l'application. Les labs lancés depuis www.cyberctf.org s'ouvrent directement dans le launcher, et votre progression suit votre compte Cyber CTF.\n\nConçu pour les étudiants, les professionnels de la sécurité et toute personne qui apprend le hacking éthique. N'attaquez que les labs que Cyber CTF construit pour vous.\n\nPrérequis : Docker Desktop pour les labs en conteneurs ; VirtualBox ou VMware Workstation pour les labs en VM sur cet ordinateur. Le launcher vous aide à installer ce qui manque.",
-  "releaseNotes": "- Version Microsoft Store : les labs conteneurs, VM et serveurs démarrent désormais (Docker, Vagrant et Terraform ne pouvaient pas lire les fichiers du lab)\n- Un lab ne peut plus être lancé à deux endroits à la fois, et un lab cloud encore actif ailleurs n'est jamais oublié (fini les factures surprises)\n- Arrêt, pause et lancement ne peuvent plus se télescoper sur un même lab, même depuis le processus en arrière-plan\n- Arrêter un lab ne touche plus un autre lab au nom proche\n- Les labs VM sont de nouveau reconnus après un redémarrage de l'application\n- Windows : le shell de l'attack box VM s'ouvre, et arrêter un lab ne touche jamais un autre programme\n- Les téléchargements et les connexions aux serveurs ne restent plus bloqués indéfiniment\n- Connexion plus fiable, et installations d'outils plus sûres sous Linux\n- De nombreuses petites corrections trouvées grâce à une suite de tests bien plus large",
+  "releaseNotes": "- Fedora : l'installation guidée installe Docker, libvirt, QEMU, VirtualBox et Vagrant via dnf\n- L'attack box sur tous les types de lab (conteneurs, VM, cloud), ses identifiants sur la page du lab, un bureau pour l'attack box VM\n- L'écran d'une machine du lab dans sa propre fenêtre, Ouvrir dans VirtualBox, Supprimer le lab depuis sa page, des pages pour les labs importés d'un dossier\n- Un installeur MSI pour Windows x64, un guide administrateur et une politique à l'échelle de la machine\n- Linux : les labs QEMU tournent avec KVM, VirtualBox reçoit les en-têtes du noyau, Docker s'installe sur Kali et les autres dérivés de Debian\n- Arrêter un lab ne laisse plus aucun volume Docker, un lab supprimé hors de l'application se réimporte, les installations attendent le verrou d'apt\n- Chaque version est signée, avec sommes de contrôle et provenance de build ; licence Apache-2.0",
   "features": [
     "Des centaines de labs pratiques : web, Active Directory, conteneurs et cloud",
     "Démarrage en un clic : le lab se construit sur votre machine",
@@ -16,15 +16,7 @@
     "Progression synchronisée avec votre compte Cyber CTF",
     "Thèmes Sombre, Noir et Clair, en 6 langues"
   ],
-  "keywords": [
-    "cybersécurité",
-    "CTF",
-    "hacking éthique",
-    "test d'intrusion",
-    "pentest",
-    "Active Directory",
-    "formation cybersécurité"
-  ],
+  "keywords": ["cybersécurité", "CTF", "hacking éthique", "test d'intrusion", "pentest", "Active Directory", "formation cybersécurité"],
   "copyrightAndTrademarkInfo": "© 2026 Cyber CTF",
   "websiteUrl": "https://www.cyberctf.org/fr",
   "privacyPolicy": "https://www.cyberctf.org/fr/privacy",
