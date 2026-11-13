@@ -259,6 +259,7 @@ fn as_root(script: String, proxy: Vec<String>) -> Step {
 /// `script` run as root through pkexec ([`as_root`]), with this process's proxy: every install
 /// and removal step on Linux.
 #[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(super) fn root(script: String) -> Step {
     as_root(script, crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
 }
@@ -273,6 +274,7 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
 /// built on them), dnf (Fedora and those built on it), or none the guided setup knows.
 #[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) enum Packages {
     /// apt-get: Debian, Ubuntu and the distributions built on them.
     Apt,
@@ -284,6 +286,7 @@ pub(crate) enum Packages {
 
 /// [`linux_plan`] on a machine with that package manager.
 #[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn linux_plan_with(dep: Dependency, packages: Packages) -> Result<Vec<Step>> {
     let user = crate::platform::exec::login_name();
     let user = user.as_deref();
