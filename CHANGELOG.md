@@ -88,6 +88,17 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   other confirmations opened the system's dialog, which looked foreign to the rest of the app;
   they now open the app's dialog, and a warning has a single OK.
 
+- **A screen that refused its password keeps saying so.** The connection noVNC closes right after
+  a refused password replaced the message with "didn't answer", which sent the player looking for
+  a network problem.
+
+- **A double click on a machine's Screen keeps the window it opened.** The second click took the
+  first window's session and then closed it, so the open window said it had no session; it now
+  brings the open window forward.
+
+- **A double click on Install update installs once.** Two downloads and installs ran at once, and
+  two restarts; a second click now joins the install under way, in Settings and in the banner.
+
 ## [1.9.0] — 2026-11-13
 
 ### Added
