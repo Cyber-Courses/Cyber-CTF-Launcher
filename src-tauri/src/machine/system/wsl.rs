@@ -411,7 +411,8 @@ pub async fn machine_restart(dirs: AppDirs, reason: String, feature: WindowsFeat
         if !crate::platform::exec::fake::scripted() {
             return Err(Error::Invalid("a test restarted without scripting shutdown".into()));
         }
-        let reopen = windows::UserRunOnce(if cfg!(test) { None } else { windows::reopen_command() });
+        let machines = crate::platform::exec::tools_in_use().are_the_machines();
+        let reopen = windows::UserRunOnce(if machines { windows::reopen_command() } else { None });
         schedule_restart(&dirs, &RESTART, &reason, &reopen, feature).await
     }
     #[cfg(not(windows))]

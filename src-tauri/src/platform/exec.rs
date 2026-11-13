@@ -34,6 +34,29 @@ pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line};
 
 use crate::error::{Error, Result};
 
+/// Which tools answer this thread's calls: the machine's own, or a unit test's scripted ones
+/// (`fake::Tools`, each with a set of its own). A cache of the tools' answers keys by it, so one
+/// test's scripted answer never stands for another's while the tests run the cache the app runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ToolSet(u64);
+
+impl ToolSet {
+    /// Whether these are the machine's own tools, not a test's scripted ones: only they may
+    /// reach the machine beyond a tool's answer (a UAC prompt, a restart's `RunOnce`).
+    pub fn are_the_machines(self) -> bool {
+        self == ToolSet(0)
+    }
+}
+
+/// The [`ToolSet`] answering this thread's calls.
+pub fn tools_in_use() -> ToolSet {
+    #[cfg(test)]
+    if let Some(set) = fake::set() {
+        return ToolSet(set);
+    }
+    ToolSet(0)
+}
+
 /// On Windows, every child of a windowed app gets a console window of its own unless told not
 /// to: the status polls (docker, vagrant, `VBoxManage`) would flash one on screen every few
 /// seconds. `CREATE_NO_WINDOW` keeps them headless; their output is piped anyway.

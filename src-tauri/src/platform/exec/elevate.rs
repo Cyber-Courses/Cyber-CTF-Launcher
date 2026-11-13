@@ -53,8 +53,8 @@ pub(super) enum Mode {
 
 /// How Vagrant runs for machines on Hyper-V (`hyperv`) or not.
 pub(super) fn mode(hyperv: bool) -> Mode {
-    // Never in unit tests: they answer from the scripted tools, and must never raise a prompt.
-    decide(cfg!(windows) && !cfg!(test), hyperv, may_manage_hyperv)
+    // Scripted tools answer Vagrant itself, and must never raise a prompt.
+    decide(cfg!(windows) && super::tools_in_use().are_the_machines(), hyperv, may_manage_hyperv)
 }
 
 /// The decision itself: only Hyper-V on Windows goes through the script, elevated only when this
@@ -376,7 +376,8 @@ mod tests {
         assert_eq!(decide(true, true, || true), Mode::Script { runas: false }, "an admin (or Hyper-V admin) runs it without a prompt");
         assert_eq!(decide(true, false, || false), Mode::Direct, "other providers never need it");
         assert_eq!(decide(false, true, || false), Mode::Direct, "never off Windows");
-        assert_eq!(mode(true), Mode::Direct, "never in unit tests");
+        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+        assert_eq!(mode(true), Mode::Direct, "never with scripted tools");
     }
 
     #[test]
