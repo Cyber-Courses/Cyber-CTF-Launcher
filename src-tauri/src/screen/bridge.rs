@@ -294,20 +294,26 @@ async fn relay_tcp(mut socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) 
         }
     };
     let (mut vnc_in, mut vnc_out) = vnc.into_split();
-    let (mut viewer_in, viewer_out) = socket.into_split();
-    let viewer_out = Arc::new(tokio::sync::Mutex::new(viewer_out));
-    let to_viewer = {
-        let viewer_out = Arc::clone(&viewer_out);
-        async move {
-            viewer_out.lock().await.write_all(&ws::binary(&first)).await?;
-            let mut buf = vec![0u8; SCREEN_CHUNK];
-            loop {
-                let n = vnc_in.read(&mut buf).await?;
-                if n == 0 {
-                    let _ = viewer_out.lock().await.write_all(&ws::close()).await;
-                    return Ok::<(), std::io::Error>(());
+    let (mut viewer_in, mut viewer_out) = socket.into_split();
+    // One writer to the viewer: the screen and the answers to its pings both go out here, the
+    // pongs handed over by the reader below, so no frame is ever written into the middle of
+    // another and no lock is shared between the two.
+    let (pongs, mut to_answer) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let to_viewer = async move {
+        viewer_out.write_all(&ws::binary(&first)).await?;
+        let mut buf = vec![0u8; SCREEN_CHUNK];
+        loop {
+            // Both cancel-safe: a read or a receive not chosen loses nothing.
+            tokio::select! {
+                read = vnc_in.read(&mut buf) => {
+                    let n = read?;
+                    if n == 0 {
+                        let _ = viewer_out.write_all(&ws::close()).await;
+                        return Ok::<(), std::io::Error>(());
+                    }
+                    viewer_out.write_all(&ws::binary(buf.get(..n).unwrap_or_default())).await?;
                 }
-                viewer_out.lock().await.write_all(&ws::binary(buf.get(..n).unwrap_or_default())).await?;
+                Some(ping) = to_answer.recv() => viewer_out.write_all(&ws::pong(&ping)).await?,
             }
         }
     };
@@ -320,7 +326,8 @@ async fn relay_tcp(mut socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) 
                         pending.drain(..used);
                         match frame {
                             ws::Frame::Data(d) => vnc_out.write_all(&d).await?,
-                            ws::Frame::Ping(p) => viewer_out.lock().await.write_all(&ws::pong(&p)).await?,
+                            // The writer is gone only once the relay ends.
+                            ws::Frame::Ping(p) => drop(pongs.send(p)),
                             ws::Frame::Pong => {}
                             ws::Frame::Close => return Ok(()),
                         }
