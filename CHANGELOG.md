@@ -37,6 +37,10 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
   Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
   running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
+### Added
+
+- **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
+  release now ships `.rpm` packages beside the `.deb` (#322).
 
 ## [1.9.0] — 2026-11-13
 
