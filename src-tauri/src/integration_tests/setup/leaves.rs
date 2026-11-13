@@ -111,6 +111,9 @@ mod tests {
             ("nft-table", "table ip raw"),
             ("iptables-rule", "raw :PREROUTING ACCEPT"),
             ("iptables-rule", "raw :OUTPUT ACCEPT"),
+            // Kali's containerd keeps the cri plugin on: its streaming server's localhost port
+            // (kali-bare's setup-docker audit, 2026-11-12).
+            ("listening-port", "tcp 127.0.0.1:* (containerd, *"),
             FOLDER,
         ] {
             assert!(linux.contains(&pair(kind, name)), "docker on linux lacks {kind} {name}: {linux:?}");

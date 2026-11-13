@@ -18,6 +18,7 @@ docker	linux	iptables-rule	filter :* ACCEPT	the filter table's base chains, whic
 docker	linux	iptables-rule	nat :* ACCEPT	the nat table's base chains, which the engine's first rule creates on a machine without any
 docker	linux	iptables-rule	raw :PREROUTING ACCEPT	the raw table's base chains: Docker Engine 29 drops traffic to its containers' addresses from outside their bridge there
 docker	linux	iptables-rule	raw :OUTPUT ACCEPT	the same table's other base chain
+docker	linux	listening-port	tcp 127.0.0.1:* (containerd, *	containerd's CRI streaming server on a random localhost port, where the distribution's containerd keeps the cri plugin on (Kali's; Docker's own containerd.io turns it off), as long as the engine runs
 docker	linux	nft-table	table ip filter	the filter table iptables-nft creates for the Docker engine's rules
 docker	linux	nft-table	table ip nat	the nat table iptables-nft creates for the Docker engine's rules
 docker	linux	nft-table	table ip raw	the raw table iptables-nft creates for Docker Engine 29's rules
