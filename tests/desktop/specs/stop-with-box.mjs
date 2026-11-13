@@ -45,7 +45,7 @@ try {
   await b.refresh();
   await b.$("[data-wdio-attack]").waitForExist({ timeout: 25000 });
   await forceVisible(b);
-  await waitAwake(b, async () => /Stop attack box/.test(await panel(b)), { timeout: 90000, interval: 3000, timeoutMsg: "the box never came up" });
+  await waitAwake(b, async () => /Stop attack box/.test(await panel(b)), { timeout: LAB_START_MS, interval: 3000, timeoutMsg: "the box never came up" });
   const withBox = containerNames(id);
   // The box is a machine of the lab: its `attackbox` service in the lab's own project.
   if (!withBox.some((n) => /-attackbox-\d+$/.test(n))) throw new Error(`no attack box container among ${JSON.stringify(withBox)}`);
