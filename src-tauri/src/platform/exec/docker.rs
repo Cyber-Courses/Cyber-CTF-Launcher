@@ -79,17 +79,69 @@ impl<'a> ImageRef<'a> {
     }
 }
 
+/// What a failed `docker` call said, read here only: every wording of the Docker CLI the app
+/// acts on, so a new wording is one change with its fixture below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DockerSaid {
+    /// This account can't reach the daemon's socket (unix) or named pipe (Windows).
+    Denied,
+    /// The engine doesn't answer: stopped, or quit while a call ran (on Windows, its pipe gone).
+    EngineDown,
+    /// The container named isn't there.
+    NoSuchContainer,
+    /// Anything else.
+    Other,
+}
+
+/// What Docker's CLI says when its engine doesn't answer (lower case, as compared).
+const ENGINE_DOWN: [&str; 3] = ["cannot connect to the docker daemon", "is the docker daemon running", "error during connect"];
+
+impl DockerSaid {
+    /// What `stderr`, a failed `docker` call's, says.
+    pub fn of(stderr: &str) -> DockerSaid {
+        let s = stderr.to_lowercase();
+        if denied_text(&s) {
+            DockerSaid::Denied
+        } else if ENGINE_DOWN.iter().any(|m| s.contains(m)) && !refusal(&s) {
+            DockerSaid::EngineDown
+        } else if s.contains("no such container") {
+            DockerSaid::NoSuchContainer
+        } else {
+            DockerSaid::Other
+        }
+    }
+
+    /// Whether `text`, what a tool said of Docker (lower case), says some access was refused:
+    /// unix's `permission denied`, Windows' `Access is denied`.
+    pub fn is_refusal(text: &str) -> bool {
+        refusal(text)
+    }
+
+    /// What `err` says, when it is a `docker` call that failed; none for another error.
+    pub fn of_error(err: &Error) -> Option<DockerSaid> {
+        match err {
+            Error::CommandFailed { stderr, .. } => Some(DockerSaid::of(stderr)),
+            _ => None,
+        }
+    }
+}
+
 /// Whether a failed `docker` call means this account can't reach the daemon's socket (not in
 /// the `docker` group, or not since its last login) rather than a daemon that isn't running.
 /// Told apart, the app says which: offering to start an engine that already runs only spun.
 pub fn docker_denied(err: &Error) -> bool {
-    matches!(err, Error::CommandFailed { stderr, .. } if denied_text(stderr))
+    DockerSaid::of_error(err) == Some(DockerSaid::Denied)
+}
+
+/// Whether `text` (lower case) says some access was refused: unix's `permission denied`,
+/// Windows' `Access is denied`.
+fn refusal(text: &str) -> bool {
+    text.contains("permission denied") || text.contains("access is denied")
 }
 
 /// The socket refusal on unix (`permission denied … docker.sock`), or the named pipe's on Windows
-/// (`open //./pipe/dockerDesktopLinuxEngine: Access is denied.`).
-fn denied_text(stderr: &str) -> bool {
-    let s = stderr.to_lowercase();
+/// (`open //./pipe/dockerDesktopLinuxEngine: Access is denied.`), in `s` (lower case).
+fn denied_text(s: &str) -> bool {
     let socket = s.contains("permission denied") && (s.contains("docker.sock") || s.contains("docker api") || s.contains("docker daemon"));
     let pipe = s.contains("access is denied") && s.contains("pipe");
     socket || pipe
@@ -189,6 +241,28 @@ mod tests {
         assert!(!docker_denied(&failed("error during connect: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.")));
         assert!(!docker_denied(&failed("Access is denied.")), "an unrelated refusal");
         assert!(!docker_denied(&Error::ToolMissing { tool: "docker" }));
+    }
+
+    #[test]
+    fn each_wording_of_the_docker_cli_reads_as_what_it_says() {
+        // As Docker 24 to 28 print them, on Linux and on Windows (Docker Desktop).
+        let cases = [
+            ("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?", DockerSaid::EngineDown),
+            (
+                "error during connect: Get \"http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.47/containers/json\": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.",
+                DockerSaid::EngineDown,
+            ),
+            ("permission denied while trying to connect to the docker API at unix:///var/run/docker.sock", DockerSaid::Denied),
+            ("error during connect: open //./pipe/docker_engine: Access is denied.", DockerSaid::Denied),
+            ("Error response from daemon: No such container: cyberctf-sqli-attacker", DockerSaid::NoSuchContainer),
+            ("Error response from daemon: pull access denied for x, repository does not exist", DockerSaid::Other),
+            ("", DockerSaid::Other),
+        ];
+        for (stderr, said) in cases {
+            assert_eq!(DockerSaid::of(stderr), said, "{stderr}");
+        }
+        assert_eq!(DockerSaid::of_error(&Error::ToolMissing { tool: "docker" }), None);
+        assert!(refusal("access is denied.") && refusal("permission denied") && !refusal("denied"));
     }
 
     #[test]

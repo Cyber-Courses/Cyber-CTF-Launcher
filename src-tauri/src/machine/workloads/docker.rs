@@ -151,7 +151,7 @@ pub(super) async fn stop(id: &str) -> Result<()> {
     let mut reap = vec!["rm", "-f"];
     reap.extend(names.iter().map(String::as_str));
     if let Err(e) = run("docker", &reap, None).await
-        && !e.to_string().contains("No such container")
+        && crate::platform::exec::DockerSaid::of_error(&e) != Some(crate::platform::exec::DockerSaid::NoSuchContainer)
     {
         log::warn!("stopping {id}: an older version's attack box: {e}");
     }
