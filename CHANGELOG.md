@@ -6,35 +6,6 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
-### Changed
-
-- **A release ships what built.** One platform's failed build, a missing signing secret or a
-  Store hiccup no longer stop the whole release: the release notes name the platform missing,
-  what lacks a secret ships unsigned (as 1.8.9 did), and the Store submission stays its own step.
-
-### Fixed
-
-- **An update install no longer proceeds when the labs' state couldn't be read.** A failed read
-  of the operations in flight was answered as "none", and the install, which quits every Cyber
-  CTF process, went ahead; it now says the state is unknown and waits.
-- **Auto-stop reports a listing failure as its own.** A sweep that couldn't list the runs was
-  reported as a lab named "runner" that couldn't be destroyed.
-- **The Windows NSIS installer builds again.** The uninstall hook named its script with a forward
-  slash, which makensis reads as part of the file pattern, so every NSIS build since the fix
-  of the hook's folder (2026-11-12, in 1.9.0) ended on "no files found"; the MSI built.
-
-- **A tool the setup installed through dnf is removed through dnf.** Cleanup's Remove on Fedora
-  ran `apt-get remove` through pkexec, which ended on `apt-get: not found` and kept the record.
-- **QEMU installed by winget reads as installed.** Its installer adds nothing to PATH and the
-  launcher didn't look in its folder, so the setup offered to install it again every pass.
-
-### Changed
-
-- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
-  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
-  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
-  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
-
 ## [1.9.0] — 2026-11-13
 
 ### Added
@@ -187,6 +158,13 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
+- **A release ships what built.** One platform's failed build, a missing signing secret or a
+  Store hiccup no longer stop the whole release: the release notes name the platform missing,
+  what lacks a secret ships unsigned (as 1.8.9 did), and the Store submission stays its own step.
+- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
+  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
+  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
+  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
 - Bundles Isoloom 2.1.9 and Isothrum 2.1.5 from crates.io, which write and read the run
   manifest's version 1. Their changelogs list what changed; for the launcher: stopping or
   updating a lab removes the anonymous volumes a recreate inherited or orphaned (Docker's data
@@ -356,6 +334,19 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
+- **An update install no longer proceeds when the labs' state couldn't be read.** A failed read
+  of the operations in flight was answered as "none", and the install, which quits every Cyber
+  CTF process, went ahead; it now says the state is unknown and waits.
+- **Auto-stop reports a listing failure as its own.** A sweep that couldn't list the runs was
+  reported as a lab named "runner" that couldn't be destroyed.
+- **The Windows NSIS installer builds again.** The uninstall hook named its script with a forward
+  slash, which makensis reads as part of the file pattern, so every NSIS build since the fix
+  of the hook's folder (2026-11-12, in 1.9.0) ended on "no files found"; the MSI built.
+
+- **A tool the setup installed through dnf is removed through dnf.** Cleanup's Remove on Fedora
+  ran `apt-get remove` through pkexec, which ended on `apt-get: not found` and kept the record.
+- **QEMU installed by winget reads as installed.** Its installer adds nothing to PATH and the
+  launcher didn't look in its folder, so the setup offered to install it again every pass.
 - **VM labs on QEMU start on Linux.** Vagrant gives each QEMU VM its lab network on a small disk it
   builds with `mkisofs`, which the guided setup didn't install, so every VM lab on QEMU failed at
   its first VM ("The executable 'mkisofs' Vagrant is trying to run was not found"). The QEMU
