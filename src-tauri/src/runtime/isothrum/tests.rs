@@ -221,11 +221,11 @@ async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
     assert_eq!(paths::parked(&f.home.dir), None, "the parked mark goes");
 }
 
-/// Regression (#276): a lab whose containers were removed outside the app (`docker compose down`
-/// by hand, a clean-up tool) stayed `ready` in the runner's record: its page said it wasn't
-/// running, but a re-import, an update or a removal was refused as still running until Stop.
-/// Before those, a run of which nothing is left is now taken down through the runner, which
-/// clears its record; one with anything left, even stopped, still holds them back.
+/// Regression: a lab whose containers were removed outside the app (`docker compose down` by hand,
+/// a clean-up tool) stayed `ready` in the runner's record: its page said it wasn't running, but a
+/// re-import, an update or a removal was refused as still running until Stop. Before those, a run
+/// of which nothing is left is now taken down through the runner, which clears its record; one with
+/// anything left, even stopped, still holds them back.
 #[tokio::test]
 async fn a_lab_taken_down_outside_the_app_is_forgotten_before_a_reimport() {
     use crate::runtime::status::{forget_gone_with, refuse_replace, still_up};

@@ -53,10 +53,10 @@ fn the_status_shows_who_is_signed_in_or_why_not() {
     assert!(failed.get("sessionExpired").is_none());
 }
 
-/// Each test thread has its own session file, `UNSAVED` and `EXPIRED`, but `SESSION_WRITE` is
-/// the process's: the tests that wait on it run one at a time. Those tests run over the dev
-/// session store, a debug build's alone: so does what they share, or a release build's test
-/// target (the rig's `rig` profile) finds it unused.
+/// Each test thread has its own session file, `UNSAVED` and `EXPIRED`, but `SESSION_WRITE` is the
+/// process's: the tests that wait on it run one at a time. Those tests run over the dev session
+/// store, a debug build's alone: so does what they share, or a release build's test target (the
+/// `rig` profile) finds it unused.
 #[cfg(debug_assertions)]
 static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 

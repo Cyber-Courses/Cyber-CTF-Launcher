@@ -240,8 +240,8 @@ mod tests {
 
     #[test]
     fn a_windows_proxy_command_double_quotes_its_paths() {
-        // Regression (#217): Windows' ssh runs a ProxyCommand with no POSIX shell, so the
-        // single-quoted key path reached the jump host's ssh with its quotes, and it failed.
+        // Regression: Windows' ssh runs a ProxyCommand with no POSIX shell, so the single-quoted
+        // key path reached the jump host's ssh with its quotes, and it failed.
         let key = PathBuf::from(r"C:\Users\Frédéric O'Brien\AppData\Roaming\org.cyberctf.desktop\ssh\id_ed25519");
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", key.clone()) };
         let kh = Path::new(r"C:\Users\Frédéric O'Brien\kh");
@@ -300,7 +300,8 @@ mod tests {
         let kh = "/Users/a/Library/Application Support/org.cyberctf.desktop/ssh/known_hosts";
         assert_eq!(options(kh)[1], r"UserKnownHostsFile=/Users/a/Library/Application\ Support/org.cyberctf.desktop/ssh/known_hosts");
         assert_eq!(ssh_config_path(r"C:\Users\x y\50%\kh"), r"C:\\Users\\x\ y\\50%%\\kh");
-        // The jump-host ProxyCommand carries the same escaped path (see jump_hosts_become_a_proxy_command).
+        // The jump-host ProxyCommand carries the same escaped path (see
+        // jump_hosts_become_a_proxy_command).
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.0.0.5", "debian", "/k/id".into()) };
         assert!(t.proxy_option(Path::new(kh)).unwrap().unwrap().contains(r"UserKnownHostsFile=/Users/a/Library/Application\ Support/"));
     }

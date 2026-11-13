@@ -65,9 +65,9 @@ async fn a_context_without_a_telling_name_is_known_by_its_daemon() {
     assert_eq!((found[0].engine.id(), found[0].context.as_str(), found[0].running, found[0].current), ("docker-desktop", "default", true, true));
 }
 
-/// Regression (the rig's Debian 13, `docker.io` 26.1.5): with the daemon unreachable,
-/// `docker info --format …` printed an empty line and exited 0, so the machine check read
-/// Docker as running ("Docker Engine 26.1.5") while every lab call failed.
+/// Regression (Debian 13's `docker.io` 26.1.5): with the daemon unreachable, `docker info --format
+/// …` printed an empty line and exited 0, so the machine check read Docker as running ("Docker
+/// Engine 26.1.5") while every lab call failed.
 #[tokio::test]
 async fn an_empty_docker_info_is_a_daemon_that_doesnt_answer() {
     let tools = Tools::new(move |program, args| match (program, args) {

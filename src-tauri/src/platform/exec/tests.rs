@@ -32,10 +32,10 @@ async fn timed_reads_surface_stderr_on_failure() {
 #[cfg(unix)]
 #[tokio::test]
 async fn a_run_whose_tool_left_a_child_holding_its_output_returns_after_the_drain_cap() {
-    // Regression (#B2): the plain `run`/`run_env` path read stdout to EOF with no bound, so a
-    // process the tool left behind (a `compose down` leaving a plugin, an ssh ControlMaster)
-    // that held the pipe open hung the call — and the lab lock a teardown holds — for good. It
-    // now returns within the post-exit drain cap, with what the tool itself printed.
+    // Regression: the plain `run`/`run_env` path read stdout to EOF with no bound, so a process the
+    // tool left behind (a `compose down` leaving a plugin, an ssh ControlMaster) that held the pipe
+    // open hung the call — and the lab lock a teardown holds — for good. It now returns within the
+    // post-exit drain cap, with what the tool itself printed.
     let started = std::time::Instant::now();
     let out = run("sh", &["-c", "sleep 30 & printf done"], None).await.unwrap();
     assert_eq!(out, "done");
@@ -152,10 +152,10 @@ impl Drop for Ends {
     }
 }
 
-/// Regression (a Windows on Arm rig clone): `docker` processes the app started outlived it,
-/// their parent gone. A tool's job ends its tree when the job's last handle closes, which the
-/// app's own death does: the stand-in is killed as Task Manager's End task or a crash would
-/// (`TerminateProcess`, no exit of its own), and the tool and its child go with it.
+/// Regression: `docker` processes the app started outlived it, their parent gone. A tool's job ends
+/// its tree when the job's last handle closes, which the app's own death does: the stand-in is
+/// killed as Task Manager's End task or a crash would (`TerminateProcess`, no exit of its own), and
+/// the tool and its child go with it.
 #[cfg(windows)]
 #[tokio::test]
 async fn a_killed_apps_tools_end_with_it() {
@@ -248,10 +248,10 @@ fn std_handles_owner_helper() {
     std::mem::forget(tool);
 }
 
-/// Regression (a Windows on Arm rig clone): a `docker` the app left running held the pipes of
-/// what started it, and the E2E harness waited on them until the docker was killed by hand.
-/// std hands a child every inheritable handle of its parent; the app keeps its own standard
-/// handles to itself, so its output ends when it does, whatever it left running.
+/// Regression: a `docker` the app left running held the pipes of what started it, and the E2E
+/// harness waited on them until the docker was killed by hand. std hands a child every inheritable
+/// handle of its parent; the app keeps its own standard handles to itself, so its output ends when
+/// it does, whatever it left running.
 #[cfg(windows)]
 #[test]
 fn a_tool_left_running_doesnt_hold_the_apps_output() {

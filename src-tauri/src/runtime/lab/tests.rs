@@ -47,16 +47,14 @@ const BUILT_WITH_INIT: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10
 
 #[test]
 fn an_init_job_of_a_machine_that_builds_its_image_is_rendered_buildable_so_the_start_pulls_nothing_for_it() {
-    // Regression (#266): with Isoloom 2.0.0 the init job ran the built image with `image:`
-    // alone, so the start's `docker compose pull --ignore-buildable` (Isothrum's pull step)
-    // left the machine out but asked a registry for the job's `localhost/isoloom/…` name, and
-    // every start of the fixture lab failed on the rig ("failed to resolve reference
-    // localhost/isoloom/invoice-portal-api-1-database:latest"). Isoloom 2.1.0 (a180941d)
-    // gives the job the machine's `build:` too, so the pull leaves it out and `up --build`
-    // builds once for both. Rendered through the pinned Isoloom crates: the pin holds it.
-    // Also as an instance (`.cyberctf-instance`), the app's own path for an installed lab: its
-    // files under `.isoloom-<n>/`, its images named `<lab>-<n>-<machine>` (the rig's start of
-    // instance 7 pulled `localhost/isoloom/invoice-portal-api-7-database`).
+    // Regression: an init job that ran the built image with `image:` alone made the start's `docker
+    // compose pull --ignore-buildable` (Isothrum's pull step) leave the machine out but ask a
+    // registry for the job's `localhost/isoloom/…` name, and the start failed ("failed to resolve
+    // reference localhost/isoloom/…-database:latest"). The job carries the machine's `build:` too,
+    // so the pull leaves it out and `up --build` builds once for both. Rendered through the pinned
+    // Isoloom crates: the pin holds it. Also as an instance (`.cyberctf-instance`), the app's own
+    // path for an installed lab: its files under `.isoloom-<n>/`, its images named
+    // `<lab>-<n>-<machine>`.
     for instance in [None, Some(7)] {
         let dir = lab(BUILT_WITH_INIT);
         std::fs::create_dir_all(dir.join("build/database")).unwrap();

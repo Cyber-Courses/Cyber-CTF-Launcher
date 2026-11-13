@@ -98,7 +98,7 @@ async fn a_script_exiting_126_or_127_with_pkexecs_words_is_still_its_own_failure
 fn a_winget_step_ends_by_winget_s_codes() {
     let winget = |code: u32, installer| end_of("winget", Verb::Install, Some(code.cast_signed()), installer);
     assert_eq!(end_of("winget", Verb::Install, Some(0), None), End::Done(None));
-    // Regression (#220): nothing to do, or a restart to finish, is a step done.
+    // Regression: nothing to do, or a restart to finish, is a step done.
     assert!(matches!(winget(0x8A15_002B, None), End::Done(Some(note)) if note.starts_with("Already installed")));
     assert!(matches!(winget(0x8A15_0109, None), End::Done(Some(note)) if note.contains("Restart Windows")));
     assert!(matches!(winget(0x8A15_0006, Some(1602)), End::Failed(Some(why)) if why.contains("cancelled")));
@@ -116,8 +116,8 @@ fn another_step_ends_by_its_own_codes() {
 #[cfg(unix)]
 #[tokio::test]
 async fn a_step_whose_output_fails_takes_what_it_started_with_it() {
-    // Regression (#220): an install step was spawned without kill_on_drop or a group, so a
-    // failed read of its output left it (and its installer) running unattended.
+    // Regression: an install step was spawned without kill_on_drop or a group, so a failed read of
+    // its output left it (and its installer) running unattended.
     let file = std::env::temp_dir().join(format!("cyberctf-step-tree-{}", rand::random::<u32>()));
     let script = format!("sleep 120 & echo $! > '{}'; wait", file.display());
     let started = tokio::time::timeout(std::time::Duration::from_secs(2), run_step(&step("sh", &["-c", &script]), &mut |_| {})).await;

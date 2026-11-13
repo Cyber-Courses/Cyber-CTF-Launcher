@@ -118,19 +118,20 @@ fn provisioning(model: &Mutex<Provisioning>, call: &Call) -> Reply {
     }
 }
 
-/// Regression: the lab page polls the lab's status from the app while its start runs in the
-/// deploy worker, another process. Two minutes into the start's provisioning, Vagrant refused the
-/// status read (the start's `vagrant up` held the VMs' locks), the runner's retries ran out, and
-/// the page showed "Couldn't read the state of" the lab. The read now says it isn't running yet,
-/// as the start's own progress does. Regression (friday, libvirt): the app's reads ran `vagrant
-/// status` on the VMs the start was provisioning, and took their locks in Vagrant's index from
-/// under the start's own Vagrant calls: neither the lab page's nor the attack box's read runs any
-/// Vagrant while the start holds the run, only the start does.
+/// Regression: the lab page polls the lab's status from the app while its start runs in the deploy
+/// worker, another process. Two minutes into the start's provisioning, Vagrant refused the status
+/// read (the start's `vagrant up` held the VMs' locks), the runner's retries ran out, and the page
+/// showed "Couldn't read the state of" the lab. The read now says it isn't running yet, as the
+/// start's own progress does. Regression: the app's reads ran `vagrant status` on the VMs the start
+/// was provisioning, and took their locks in Vagrant's index from under the start's own Vagrant
+/// calls: neither the lab page's nor the attack box's read runs any Vagrant while the start holds
+/// the run, only the start does.
 #[tokio::test(start_paused = true)]
 async fn the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_process() {
     let f: Scripted<Provisioning> = Scripted::answered_by(Home::new("-vm-busy", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), provisioning);
     // The deploy worker's runner, which starts the lab, and the app's, which the page reads it
-    // through: the lab's status, and the attack box's (the run's status, the box one of its machines).
+    // through: the lab's status, and the attack box's (the run's status, the box one of its
+    // machines).
     let worker = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
     let app = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
     let page = async {
@@ -179,11 +180,11 @@ fn timed_reads(model: &Mutex<Reads>, call: &Call) -> Reply {
     vagrant(&mut m.states, call)
 }
 
-/// Regression (friday, libvirt): at the end of a start, the lab page read the lab's status and
-/// the attack box's auto-start read it too; each asked the runner on its own, two `vagrant
-/// status` of the same VMs ran at once, Vagrant refused one (`MachineLocked`: each read takes the
-/// VMs' locks in its index without waiting), and the box "couldn't be added with the lab". The
-/// app's reads of one run take turns: never two Vagrant reads of it at once.
+/// Regression: at the end of a start, the lab page read the lab's status and the attack box's
+/// auto-start read it too; each asked the runner on its own, two `vagrant status` of the same VMs
+/// ran at once, Vagrant refused one (`MachineLocked`: each read takes the VMs' locks in its index
+/// without waiting), and the box "couldn't be added with the lab". The app's reads of one run take
+/// turns: never two Vagrant reads of it at once.
 #[tokio::test(start_paused = true)]
 async fn the_apps_reads_of_a_vm_lab_never_ask_vagrant_at_once() {
     let f: Scripted<Reads> = Scripted::answered_by(Home::new("-vm-reads", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), timed_reads);

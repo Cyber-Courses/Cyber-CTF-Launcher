@@ -1,8 +1,8 @@
 use super::*;
 
-/// Regression (rig windows-bare, a clean Windows 11): `winget install -e --id
-/// Docker.DockerDesktop` without a source failed with 0x8a15005e, the Microsoft Store source's
-/// certificate pinning failing, in both passes. winget is asked of its own source alone.
+/// Regression (a clean Windows 11): `winget install -e --id Docker.DockerDesktop` without a source
+/// failed with 0x8a15005e, the Microsoft Store source's certificate pinning failing, in both
+/// passes. winget is asked of its own source alone.
 #[test]
 fn winget_installs_and_removes_from_its_own_source_alone() {
     let install = winget("install", "Docker.DockerDesktop", &["--accept-source-agreements", "--accept-package-agreements"]);

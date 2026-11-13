@@ -266,10 +266,10 @@ mod tests {
         assert!(tools.called("down -v"), "the test lab is torn down even so");
     }
 
-    /// Regression (the rig's Debian 13, `docker.io` 26.1.5): Docker 26 and older exit 0
-    /// from `docker info --format …` with an empty line when the daemon doesn't answer, and the
-    /// engine step passed ("Docker ") to fail at the pull. It fails with the reason `docker
-    /// version` gives, asked of the same engine.
+    /// Regression (Debian 13's `docker.io` 26.1.5): Docker 26 and older exit 0 from `docker info
+    /// --format …` with an empty line when the daemon doesn't answer, and the engine step passed
+    /// ("Docker ") to fail at the pull. It fails with the reason `docker version` gives, asked of
+    /// the same engine.
     #[tokio::test]
     async fn an_engine_whose_docker_info_answers_nothing_fails_the_engine_step() {
         use crate::platform::exec::fake::{Tools, fail, ok};

@@ -288,10 +288,10 @@ fn kernel_build(running: &str, packages: &[&str]) -> Result<(String, String), St
 #[cfg(unix)]
 #[test]
 fn virtualbox_builds_its_driver_with_the_running_kernels_headers_or_waits_for_the_newer_kernel() {
-    // Regression (the rig's bare Debian 13, running 6.12.86 while the archive had 6.12.116):
-    // VirtualBox's recommends brought linux-headers-amd64, the newest kernel's headers (and that
-    // kernel), never the running one's, so its driver couldn't be built and VirtualBox read as
-    // installed with no driver.
+    // Regression (a Debian 13 running 6.12.86 while its archive had 6.12.116): VirtualBox's
+    // recommends brought linux-headers-amd64, the newest kernel's headers (and that kernel), never
+    // the running one's, so its driver couldn't be built and VirtualBox read as installed with no
+    // driver.
     let debian = "6.12.86+deb13-amd64";
     let headers = format!("linux-headers-{debian}");
     assert_eq!(
@@ -331,8 +331,8 @@ fn apt_cache_policy_is_read_in_english_whatever_the_language() {
 
 #[test]
 fn virtualbox_installs_without_its_recommends_with_what_builds_its_driver() {
-    // Regression: its recommends brought a PDF viewer, Qt's translations and the newest
-    // kernel (325 MB, 154 packages on the rig's bare Debian 13), and no driver.
+    // Regression: its recommends brought a PDF viewer, Qt's translations and the newest kernel (325
+    // MB, 154 packages on a bare Debian 13), and no driver.
     let s = virtualbox_script();
     assert!(s.contains("apt-get install -y --no-install-recommends virtualbox $build;"), "{s}");
     assert!(s.contains(r#"apt-get install -y --no-install-recommends "$pkg" $build;"#), "{s}");

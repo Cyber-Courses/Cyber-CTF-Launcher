@@ -181,10 +181,10 @@ async fn a_start_in_a_utm_vm_tries_again_once_after_utms_passing_refusal() {
 
 #[tokio::test]
 async fn an_update_whose_restart_utm_refused_after_stopping_the_vm_starts_the_run_again_with_its_new_machine() {
-    // Regression (a real UTM host): adding the attack box restarted the helper VM for its new
-    // settings; the reload shut the VM down, then UTM refused its boot with "-600". Trying the
-    // update again was refused ("This lab isn't running. Start it first."), so the box was never
-    // added and the lab stayed down.
+    // Regression: adding the attack box restarted the helper VM for its new settings; the reload
+    // shut the VM down, then UTM refused its boot with "-600". Trying the update again was refused
+    // ("This lab isn't running. Start it first."), so the box was never added and the lab stayed
+    // down.
     let f = Fixture::new();
     let run = f.run();
     run.up(Inputs::default(), Some("utm"), &mut |_| {}).await.unwrap();

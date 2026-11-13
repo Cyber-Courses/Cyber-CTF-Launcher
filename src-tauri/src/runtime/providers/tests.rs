@@ -409,9 +409,8 @@ fn qemu_on_linux_needs_the_kvm_device_the_labs_boot_with() {
 
 #[test]
 fn qemu_without_mkisofs_says_its_vms_need_it_vagrant_first() {
-    // Regression (the rig's ubuntu2404 attack-box-vm@qemu): QEMU read as ready without
-    // mkisofs, and every VM-form lab failed at its first VM ("The executable 'mkisofs'
-    // Vagrant is trying to run was not found in the PATH variable").
+    // Regression: QEMU read as ready without mkisofs, and every VM-form lab failed at its first VM
+    // ("The executable 'mkisofs' Vagrant is trying to run was not found in the PATH variable").
     assert!(needs_mkisofs(Provider::Qemu, "linux"));
     for (p, os) in [(Provider::Qemu, "macos"), (Provider::Qemu, "windows"), (Provider::Libvirt, "linux"), (Provider::Virtualbox, "linux")] {
         assert!(!needs_mkisofs(p, os), "{p:?} on {os}");

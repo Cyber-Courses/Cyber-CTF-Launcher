@@ -135,7 +135,8 @@ mod dev_file {
     }
 
     /// The secrets in `path`: none when it isn't there. A file that can't be read or doesn't parse
-    /// is an error, never "no secrets": the next save would write the one secret over all the others.
+    /// is an error, never "no secrets": the next save would write the one secret over all the
+    /// others.
     pub(super) fn read_at(path: &Path) -> Result<BTreeMap<String, String>> {
         let raw = match std::fs::read_to_string(path) {
             Ok(raw) => raw,
