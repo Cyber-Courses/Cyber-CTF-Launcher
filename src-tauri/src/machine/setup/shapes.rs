@@ -217,8 +217,13 @@ fn awaits_relogin(provider: Provider, plugin: bool, groups: &[&str], group: &str
     r
 }
 
-/// Fedora: Linux without apt, which the guided setup doesn't install through yet.
+/// Fedora: Linux with dnf, which the guided setup installs through as it does through apt.
 pub(crate) fn bare_fedora() -> SystemReport {
+    with(bare_debian(), false, |r| r.pkg_manager = PkgManager { name: "dnf".into(), installed: true, version: Some("4.24.0".into()) })
+}
+
+/// Arch: Linux with neither apt nor dnf, which the guided setup doesn't install through yet.
+pub(crate) fn bare_arch() -> SystemReport {
     with(bare_debian(), false, |r| r.pkg_manager = PkgManager { name: "apt".into(), installed: false, version: None })
 }
 
@@ -282,6 +287,7 @@ pub(crate) fn all() -> Vec<(&'static str, SystemReport)> {
         ("debianQemuAwaitsRelogin", debian_qemu_awaits_relogin()),
         ("debianQemuWithoutMkisofs", debian_qemu_without_mkisofs()),
         ("bareFedora", bare_fedora()),
+        ("bareArch", bare_arch()),
         ("macDockerWithoutVagrant", mac_docker_without_vagrant()),
         ("macTwoEngines", mac_two_engines()),
         ("macVmwareWithoutItsParts", mac_vmware_without_its_parts()),

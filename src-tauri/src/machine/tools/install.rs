@@ -7,10 +7,10 @@ use serde::Deserialize;
 
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 use super::scripts::{
-    awscli_script, azurecli_script, docker_script, gcloud_script, libvirt_script, qemu_script, terraform_script, vagrant_script, virtualbox_script,
-    vmware_utility_script,
+    awscli_script, azurecli_script, docker_dnf_script, docker_script, gcloud_script, libvirt_dnf_script, libvirt_script, qemu_dnf_script, qemu_script,
+    terraform_dnf_script, terraform_script, vagrant_dnf_script, vagrant_script, virtualbox_dnf_script, virtualbox_script, vmware_utility_script,
 };
 #[cfg(any(target_os = "macos", windows))]
 use super::steps::step;
@@ -266,45 +266,85 @@ pub(super) fn root(script: String) -> Step {
 /// The install steps on Linux: apt and the vendors' apt repositories, as root through pkexec.
 #[cfg(target_os = "linux")]
 fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
-    linux_plan_with(dep, apt_here())
+    linux_plan_with(dep, packages_here())
 }
 
-/// [`linux_plan`] on a machine with apt (`apt`) or without.
-#[cfg(target_os = "linux")]
-fn linux_plan_with(dep: Dependency, apt: bool) -> Result<Vec<Step>> {
-    Ok(match dep {
-        Dependency::Wsl | Dependency::Hyperv | Dependency::Utm => return Err(not_here(dep)),
-        _ if !apt => return Err(without_apt(dep)),
-        Dependency::Docker => vec![root(docker_script(crate::platform::exec::login_name().as_deref()))],
+/// The package manager a Linux install goes through: apt (Debian, Ubuntu and the distributions
+/// built on them), dnf (Fedora and those built on it), or none the guided setup knows.
+#[cfg(any(target_os = "linux", test))]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Packages {
+    Apt,
+    Dnf,
+    None,
+}
+
+/// [`linux_plan`] on a machine with that package manager.
+#[cfg(any(target_os = "linux", test))]
+fn linux_plan_with(dep: Dependency, packages: Packages) -> Result<Vec<Step>> {
+    let user = crate::platform::exec::login_name();
+    let user = user.as_deref();
+    Ok(match (dep, packages) {
+        (Dependency::Wsl | Dependency::Hyperv | Dependency::Utm, _) => return Err(not_here(dep)),
+        (_, Packages::None) => return Err(without_packages(dep)),
+        // Fedora: the vendors' rpm repositories (Docker's, HashiCorp's), RPM Fusion's VirtualBox,
+        // the distribution's libvirt and QEMU; the cloud CLIs and VMware's utility through apt only
+        // for now.
+        (Dependency::Docker, Packages::Dnf) => vec![root(docker_dnf_script(user))],
+        (Dependency::Vagrant, Packages::Dnf) => vec![root(vagrant_dnf_script())],
+        (Dependency::Terraform, Packages::Dnf) => vec![root(terraform_dnf_script())],
+        (Dependency::Virtualbox, Packages::Dnf) => vec![root(virtualbox_dnf_script(user))],
+        (Dependency::Qemu, Packages::Dnf) => vec![root(qemu_dnf_script(user))],
+        (Dependency::Libvirt, Packages::Dnf) => vec![root(libvirt_dnf_script(user))],
+        (Dependency::Awscli, Packages::Dnf) => vec![root(awscli_script())],
+        (_, Packages::Dnf) => return Err(apt_only(dep)),
+        (Dependency::Docker, Packages::Apt) => vec![root(docker_script(user))],
         // From HashiCorp's apt repository, not the distribution's (older than labs need).
-        Dependency::Vagrant => vec![root(vagrant_script())],
+        (Dependency::Vagrant, Packages::Apt) => vec![root(vagrant_script())],
         // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
-        Dependency::Terraform => vec![root(terraform_script())],
-        Dependency::Virtualbox => vec![root(virtualbox_script())],
+        (Dependency::Terraform, Packages::Apt) => vec![root(terraform_script())],
+        (Dependency::Virtualbox, Packages::Apt) => vec![root(virtualbox_script())],
         // The player joins /dev/kvm's group: the labs' VMs boot with KVM.
-        Dependency::Qemu => vec![root(qemu_script(crate::platform::exec::login_name().as_deref()))],
-        Dependency::Libvirt => vec![root(libvirt_script(crate::platform::exec::login_name().as_deref()))],
+        (Dependency::Qemu, Packages::Apt) => vec![root(qemu_script(user))],
+        (Dependency::Libvirt, Packages::Apt) => vec![root(libvirt_script(user))],
         // Cloud CLIs: AWS CLI v2 from Amazon's signed bundle, in a private temporary directory;
         // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.
-        Dependency::Awscli => vec![root(awscli_script())],
-        Dependency::Azurecli => vec![root(azurecli_script())],
-        Dependency::Gcloud => vec![root(gcloud_script())],
-        Dependency::VmwareUtility => vec![root(vmware_utility_script())],
+        (Dependency::Awscli, Packages::Apt) => vec![root(awscli_script())],
+        (Dependency::Azurecli, Packages::Apt) => vec![root(azurecli_script())],
+        (Dependency::Gcloud, Packages::Apt) => vec![root(gcloud_script())],
+        (Dependency::VmwareUtility, Packages::Apt) => vec![root(vmware_utility_script())],
     })
 }
 
-/// Whether apt is on this machine: every Linux install goes through it (and the vendors' apt
-/// repositories), so a distribution without it (Fedora, openSUSE, Arch) can't install from here yet.
+/// The package manager on this machine's PATH: apt-get, else dnf, else none the guided setup
+/// installs through (openSUSE's zypper, Arch's pacman: the player installs themselves).
 #[cfg(target_os = "linux")]
-fn apt_here() -> bool {
-    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("apt-get").is_file()))
+fn packages_here() -> Packages {
+    if crate::platform::on_path("apt-get") {
+        Packages::Apt
+    } else if crate::platform::on_path("dnf") {
+        Packages::Dnf
+    } else {
+        Packages::None
+    }
 }
 
-/// What an install of `dep` says on a Linux distribution without apt: the guided setup doesn't
-/// install there yet, so the player installs it themselves; instead of an apt command that fails.
+/// What an install of `dep` says on a Linux distribution with neither apt nor dnf: the guided
+/// setup doesn't install there yet, so the player installs it themselves; instead of a command
+/// that fails.
 #[cfg(any(target_os = "linux", test))]
-pub(crate) fn without_apt(dep: Dependency) -> Error {
-    Error::Invalid(format!("This distribution isn't supported by the guided setup yet (it has no apt): install {} yourself, then re-check.", dep.name()))
+pub(crate) fn without_packages(dep: Dependency) -> Error {
+    Error::Invalid(format!(
+        "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install {} yourself, then re-check.",
+        dep.name()
+    ))
+}
+
+/// What an install of `dep` says on a dnf distribution for a tool the guided setup installs
+/// through apt only for now (the cloud CLIs, VMware's utility).
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn apt_only(dep: Dependency) -> Error {
+    Error::Invalid(format!("The guided setup installs {} through apt only for now: install it yourself, then re-check.", dep.name()))
 }
 
 /// The ordered install steps for a dependency on this OS.
@@ -532,7 +572,7 @@ mod tests {
     fn vagrant_comes_from_hashicorps_repository_not_the_distributions() {
         // Regression: the setup ran `apt-get install vagrant`, Debian 13's 2.3.8, and every VM lab
         // then refused it ("needs Vagrant 2.4.0 or later").
-        let plan = linux_plan_with(Dependency::Vagrant, true).unwrap();
+        let plan = linux_plan_with(Dependency::Vagrant, Packages::Apt).unwrap();
         let script = plan.iter().flat_map(|s| s.args.iter()).cloned().collect::<Vec<_>>().join(" ");
         assert!(script.contains("apt.releases.hashicorp.com") && script.contains("apt-get install -y vagrant"), "{script}");
         assert!(!script.contains("apt-get update && apt-get install -y vagrant"), "the distribution's package: {script}");
@@ -540,20 +580,43 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn a_distribution_without_apt_is_told_to_install_it_itself_before_anything_runs() {
+    fn a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs() {
         // Regression: Fedora, openSUSE and Arch got `apt-get: not found` from a pkexec prompt.
         for dep in [Dependency::Vagrant, Dependency::Virtualbox, Dependency::Libvirt, Dependency::Qemu, Dependency::Docker] {
-            let err = linux_plan_with(dep, false).err().unwrap_or_else(|| panic!("{dep:?} refused"));
-            assert_eq!(err.to_string(), without_apt(dep).to_string());
-            assert!(linux_plan_with(dep, true).is_ok(), "{dep:?}");
+            let err = linux_plan_with(dep, Packages::None).err().unwrap_or_else(|| panic!("{dep:?} refused"));
+            assert_eq!(err.to_string(), without_packages(dep).to_string());
+            assert!(linux_plan_with(dep, Packages::Apt).is_ok(), "{dep:?}");
         }
-        assert!(linux_plan_with(Dependency::Utm, false).err().is_some_and(|e| e.to_string().starts_with("UTM doesn't run on Linux")));
+        assert!(linux_plan_with(Dependency::Utm, Packages::None).err().is_some_and(|e| e.to_string().starts_with("UTM doesn't run on Linux")));
     }
 
     #[test]
-    fn without_apt_the_install_says_the_distribution_isnt_supported_yet_and_what_to_install() {
-        let err = without_apt(Dependency::Virtualbox).to_string();
-        assert_eq!(err, "This distribution isn't supported by the guided setup yet (it has no apt): install VirtualBox yourself, then re-check.");
+    fn without_apt_or_dnf_the_install_says_the_distribution_isnt_supported_yet_and_what_to_install() {
+        let err = without_packages(Dependency::Virtualbox).to_string();
+        assert_eq!(err, "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install VirtualBox yourself, then re-check.");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_dnf_distribution_installs_docker_the_hypervisors_and_vagrant_through_dnf_and_the_rest_by_hand() {
+        // Fedora: every setup shard failed on "this distribution isn't supported" (2026-11-12).
+        for dep in
+            [Dependency::Docker, Dependency::Vagrant, Dependency::Terraform, Dependency::Virtualbox, Dependency::Qemu, Dependency::Libvirt, Dependency::Awscli]
+        {
+            let plan = linux_plan_with(dep, Packages::Dnf).unwrap_or_else(|e| panic!("{dep:?}: {e}"));
+            let script = plan.iter().flat_map(|s| s.args.iter()).cloned().collect::<Vec<_>>().join(" ");
+            let own = script
+                .replace(crate::platform::root_script::NEED_CURL, "")
+                .replace(crate::platform::root_script::NEED_GPG, "")
+                .replace(crate::platform::root_script::NEED_UNZIP, "");
+            assert!(!own.contains("apt-get"), "{dep:?} through apt: {script}");
+            if dep != Dependency::Awscli {
+                assert!(script.contains("dnf install -y"), "{dep:?}: {script}");
+            }
+        }
+        for dep in [Dependency::Azurecli, Dependency::Gcloud, Dependency::VmwareUtility] {
+            assert_eq!(linux_plan_with(dep, Packages::Dnf).err().map(|e| e.to_string()), Some(apt_only(dep).to_string()), "{dep:?}");
+        }
     }
 
     #[test]

@@ -16,12 +16,17 @@ pub const PRIVATE_WORKDIR: &str =
 
 /// curl, installed first where a bare system has none (Debian's minimal image): every vendor
 /// install downloads with it, and without it the repository checks read as "no packages".
+/// Through apt where it is, else dnf (Fedora and the distributions built on it).
 #[cfg(any(target_os = "linux", test))]
-pub const NEED_CURL: &str = r"command -v curl >/dev/null || { apt-get update && apt-get install -y curl ca-certificates; }";
+pub const NEED_CURL: &str = r"command -v curl >/dev/null || { if command -v apt-get >/dev/null; then apt-get update && apt-get install -y curl ca-certificates; else dnf install -y curl ca-certificates; fi; }";
+
+/// unzip, for Amazon's AWS CLI bundle, through apt where it is, else dnf.
+pub const NEED_UNZIP: &str =
+    r"command -v unzip >/dev/null || { if command -v apt-get >/dev/null; then apt-get update && apt-get install -y unzip; else dnf install -y unzip; fi; }";
 
 /// gpg, for the vendors' signing keys (Debian's minimal installs have only gpgv), and a private
 /// keyring folder for it in the work directory, so root's own keyring is never read or changed.
-pub const NEED_GPG: &str = r#"command -v gpg >/dev/null || { apt-get update && apt-get install -y gnupg; }; mkdir -p -m 700 "$d/gnupg""#;
+pub const NEED_GPG: &str = r#"command -v gpg >/dev/null || { if command -v apt-get >/dev/null; then apt-get update && apt-get install -y gnupg; else dnf install -y gnupg2; fi; }; mkdir -p -m 700 "$d/gnupg""#;
 
 /// Stops the script unless `"$d/key"`, a vendor's signing key (or keyring) just downloaded, holds
 /// exactly the keys pinned here (`fingerprints`, 40 hex digits each, their primary keys), no more
@@ -61,6 +66,15 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn curl_and_gpg_come_through_apt_where_it_is_else_dnf() {
+        for need in [NEED_CURL, NEED_GPG, NEED_UNZIP] {
+            assert!(need.contains("if command -v apt-get >/dev/null; then apt-get") && need.contains("else dnf install -y"), "{need}");
+            assert!(crate::platform::sh_parses(need), "not valid sh: {need}");
+        }
+        assert!(NEED_GPG.contains("dnf install -y gnupg2"), "Fedora's package is gnupg2");
+    }
 
     #[test]
     fn a_keyring_is_checked_for_every_pinned_key_in_the_order_the_check_reads_them() {

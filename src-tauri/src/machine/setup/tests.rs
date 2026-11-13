@@ -250,9 +250,19 @@ fn qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test() {
 }
 
 #[test]
-fn a_linux_without_apt_is_told_to_install_each_tool_itself_instead_of_a_failing_apt_command() {
-    // Regression: Fedora, openSUSE and Arch were offered the apt installs, which failed.
+fn a_bare_fedora_installs_through_dnf_as_a_bare_debian_does_through_apt() {
+    // Regression: every Fedora bare setup shard ended on "this distribution isn't supported by
+    // the guided setup yet" (2026-11-12).
     let r = shapes::bare_fedora();
+    let p = plan_of(&r, &wanted(&BOTH, &[Provider::Libvirt, Provider::Virtualbox]));
+    assert_eq!(steps(&p), ["docker: install docker", "libvirt: install libvirt", "vagrant: install vagrant", "plugin:vagrant-libvirt: plugin vagrant-libvirt"]);
+    assert_eq!(p.hypervisor, Some(Provider::Libvirt));
+}
+
+#[test]
+fn a_linux_without_apt_or_dnf_is_told_to_install_each_tool_itself_instead_of_a_failing_command() {
+    // Regression: Fedora, openSUSE and Arch were offered the apt installs, which failed.
+    let r = shapes::bare_arch();
     let distribution = |dependency, url: &str| Action::Manual { reason: ManualReason::Distribution, dependency: Some(dependency), url: Some(url.into()) };
     assert_eq!(
         r.setup.engines.iter().find(|e| e.engine == Engine::Native).unwrap().actions,
@@ -271,7 +281,7 @@ fn a_linux_without_apt_is_told_to_install_each_tool_itself_instead_of_a_failing_
         ]
     );
     // Vagrant too, once a hypervisor is there.
-    let mut r = shapes::bare_fedora();
+    let mut r = shapes::bare_arch();
     for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Libvirt) {
         p.hypervisor = Some(true);
     }

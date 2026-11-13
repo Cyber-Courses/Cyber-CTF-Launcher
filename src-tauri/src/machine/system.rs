@@ -25,7 +25,7 @@ pub struct Tool {
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PkgManager {
-    /// Its name: `Homebrew`, `winget` or `apt`.
+    /// Its name: `Homebrew`, `winget`, `apt` or `dnf`.
     pub name: String,
     /// Whether it answered its version probe.
     pub installed: bool,
@@ -204,12 +204,13 @@ async fn package_manager() -> PkgManager {
     pkg_manager(package_manager_version().await)
 }
 
-/// This OS's package manager, given its `--version` output when it is installed.
+/// This OS's package manager, given its `--version` output when it is installed: on Linux apt,
+/// or dnf where there is no apt-get (Fedora and the distributions built on it).
 fn pkg_manager(version: Option<String>) -> PkgManager {
     let name = if cfg!(target_os = "windows") {
         "winget"
     } else if cfg!(target_os = "linux") {
-        "apt"
+        linux_packages_name()
     } else {
         "Homebrew"
     };
@@ -226,8 +227,14 @@ async fn package_manager_version() -> Option<String> {
     #[cfg(target_os = "windows")]
     let program = "winget";
     #[cfg(target_os = "linux")]
-    let program = "apt-get";
+    let program = if linux_packages_name() == "dnf" { "dnf" } else { "apt-get" };
     version_of(program).await
+}
+
+/// The Linux package manager's name: `apt` where apt-get is on PATH, `dnf` where dnf is and
+/// apt-get isn't, else `apt` (the name the probe then reports as not installed).
+fn linux_packages_name() -> &'static str {
+    if !crate::platform::on_path("apt-get") && crate::platform::on_path("dnf") { "dnf" } else { "apt" }
 }
 
 /// `program --version`, timed as every probe is ([`run_read`]); none when it can't run or fails
