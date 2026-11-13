@@ -11,7 +11,19 @@ import { translate } from "@/lib/i18n";
  * [`install`]); a restart that fails after a good install is told too (the update is installed:
  * Restart now stays for another try, see [`restartOnUpdate`]).
  */
-export async function installAndRestart(update: Update, starting: () => void, installed: () => void): Promise<boolean> {
+export function installAndRestart(update: Update, starting: () => void, installed: () => void): Promise<boolean> {
+  // One at a time: the button stays enabled while the running labs are asked, and a double
+  // click downloaded and installed the update twice at once. A second ask joins the first.
+  inFlight ??= installThenRestart(update, starting, installed).finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+/** The install under way in this window, if one is. */
+let inFlight: Promise<boolean> | null = null;
+
+async function installThenRestart(update: Update, starting: () => void, installed: () => void): Promise<boolean> {
   if (!(await install(update, starting))) return false;
   installed();
   await restartOnUpdate();

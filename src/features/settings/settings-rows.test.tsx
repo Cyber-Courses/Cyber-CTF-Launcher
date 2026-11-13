@@ -147,6 +147,21 @@ describe("AboutSection", () => {
     expect(calls.filter((c) => c.cmd === "restart_app")).toHaveLength(2);
   });
 
+  it("installs once when Install update is clicked twice before the first click is answered", async () => {
+    // Regression: the button stays enabled while the running labs are asked, so a double click
+    // downloaded and installed the update twice at once.
+    const calls = installTauri({ busy_labs: () => [], active_operations: () => [] });
+    const downloadAndInstall = vi.fn(async () => {});
+    updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall });
+    await checkForUpdates();
+    const install = button(/install update/i);
+    fireEvent.click(install);
+    fireEvent.click(install);
+    await flush();
+    expect(downloadAndInstall).toHaveBeenCalledOnce();
+    expect(calls.filter((c) => c.cmd === "restart_app")).toHaveLength(1);
+  });
+
   it("offers the update again when its install fails", async () => {
     const calls = installTauri({ busy_labs: () => [], active_operations: () => [] });
     updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall: () => Promise.reject(new Error("bad signature")) });
