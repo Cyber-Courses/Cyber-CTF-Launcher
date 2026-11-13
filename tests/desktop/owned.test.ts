@@ -261,6 +261,6 @@ describe("the volumes a project's containers hold", () => {
     expect(removeDangling([A, B], sh)).toEqual([B]);
     expect(sh.calls).toContain(`docker volume rm --force ${B}`);
     expect(removeDangling([], sh)).toEqual([]);
-    expect(removeDangling([A], tools({ "docker volume ls": "" })).length).toBe(0);
+    expect(removeDangling([A], tools({ "docker volume ls": "" }))).toEqual([]);
   });
 });

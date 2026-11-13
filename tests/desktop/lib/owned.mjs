@@ -155,7 +155,10 @@ export function runTool(program, args) {
  *  one named (an update's recreate inherits a service's anonymous volumes into the new container
  *  under their ids, and the engine then keeps them at the down). The runner records them the same
  *  way inside its operations; the harness's own down, outside the app, records them here. Empty
- *  when the engine doesn't answer. */
+ *  when the engine doesn't answer.
+ *  @param {string} project
+ *  @param {(program: string, args: string[]) => string | null} [run]
+ *  @returns {string[]} */
 export function projectVolumes(project, run = runTool) {
   const ids = (run("docker", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${project}`]) ?? "").split(/\s+/).filter(Boolean);
   if (!ids.length) return [];
@@ -163,13 +166,18 @@ export function projectVolumes(project, run = runTool) {
   return volumeNames(mounts ?? "");
 }
 
-/** The volume names in `docker inspect`'s mount listing, each once, in order. */
+/** The volume names in `docker inspect`'s mount listing, each once, in order.
+ *  @param {string} listing
+ *  @returns {string[]} */
 export function volumeNames(listing) {
   return [...new Set(listing.split(/\s+/).filter(Boolean))];
 }
 
 /** Removes, among `names`, the volumes no container holds any more (the engine's dangling ones):
- *  the ones a `down --volumes` left. The names removed, in order. */
+ *  the ones a `down --volumes` left. The names removed, in order.
+ *  @param {string[]} names
+ *  @param {(program: string, args: string[]) => string | null} [run]
+ *  @returns {string[]} */
 export function removeDangling(names, run = runTool) {
   if (!names.length) return [];
   const dangling = new Set((run("docker", ["volume", "ls", "--quiet", "--filter", "dangling=true"]) ?? "").split(/\s+/).filter(Boolean));
