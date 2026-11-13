@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -49,11 +49,10 @@ async fn global_status() -> Option<String> {
     {
         return Some(answer);
     }
-    if IN_FLIGHT.swap(true, Ordering::AcqRel) {
+    // Released on drop too, so a cancelled scan doesn't block every later one.
+    let Some(_flight) = crate::platform::sync::Busy::try_take(&IN_FLIGHT) else {
         return last().map(|(_, answer)| answer);
-    }
-    // Cleared on drop too, so a cancelled scan doesn't block every later one.
-    let _done = crate::platform::ResetOnDrop(&IN_FLIGHT);
+    };
     // Timed: without a limit a polled call would hang and stack up one blocked process per tick.
     let out = run_env_timed("vagrant", &["global-status", "--machine-readable"], None, &[], GLOBAL_STATUS_TIMEOUT).await.ok();
     if let Some(o) = &out {
