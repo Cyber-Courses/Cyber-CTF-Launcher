@@ -31,10 +31,25 @@ pub async fn image_download_size(image: String) -> Option<u64> {
         return None;
     }
     let (repo, tag) = hub_ref(&image)?;
+    match hub_tag_size(&repo, &tag).await {
+        Ok(size) => size,
+        // No size is what the page shows; why (no client, no network, Hub's refusal, an answer
+        // without one) goes to the log, not into silence (Clean Code ch.7, 2026-11-13).
+        Err(why) => {
+            log::debug!("no download size for {image}: {why}");
+            None
+        }
+    }
+}
+
+/// The size Docker Hub gives for `repo:tag` on this architecture, or why it couldn't be asked.
+async fn hub_tag_size(repo: &str, tag: &str) -> Result<Option<u64>, String> {
     let url = format!("https://hub.docker.com/v2/repositories/{repo}/tags/{tag}");
-    let res = crate::platform::http::probe_client(Duration::from_secs(8), false).ok()?.get(url).send().await.ok()?;
-    let v: serde_json::Value = res.error_for_status().ok()?.json().await.ok()?;
-    size_for_arch(&v, hub_arch())
+    let client = crate::platform::http::probe_client(Duration::from_secs(8), false).map_err(|e| format!("no HTTP client: {e}"))?;
+    let res = client.get(url).send().await.map_err(|e| format!("Docker Hub didn't answer: {e}"))?;
+    let res = res.error_for_status().map_err(|e| format!("Docker Hub refused: {e}"))?;
+    let v: serde_json::Value = res.json().await.map_err(|e| format!("Docker Hub's answer isn't JSON: {e}"))?;
+    Ok(size_for_arch(&v, hub_arch()))
 }
 
 /// The size Docker Hub's tag description gives for `arch`, when it gives one.
