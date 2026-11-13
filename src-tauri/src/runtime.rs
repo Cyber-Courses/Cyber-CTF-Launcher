@@ -34,6 +34,7 @@ pub(crate) mod launch;
 pub(crate) mod lifecycle;
 mod model;
 pub(crate) mod paths;
+pub(crate) mod port;
 pub mod providers;
 pub(crate) mod proxmox;
 mod reaper;

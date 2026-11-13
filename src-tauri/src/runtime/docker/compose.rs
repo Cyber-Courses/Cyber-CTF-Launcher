@@ -97,14 +97,29 @@ fn null_as_empty<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(d
     Ok(Option::<Vec<T>>::deserialize(d)?.unwrap_or_default())
 }
 
+/// One port `ps` lists for a container: the container's port, and the host port it is published
+/// on (`0` from Docker when it isn't).
 #[derive(Deserialize)]
 pub(super) struct Publisher {
     #[serde(rename = "PublishedPort", default)]
-    pub(super) published_port: u16,
+    published_port: u16,
     #[serde(rename = "TargetPort", default)]
-    pub(super) target_port: u16,
+    target_port: u16,
     #[serde(rename = "Protocol", default)]
     pub(super) protocol: String,
+}
+
+impl Publisher {
+    /// The host port the container's port is published on, if any: this computer's, the engine
+    /// being local.
+    pub(super) const fn published(&self) -> Option<crate::runtime::port::HostPort> {
+        crate::runtime::port::HostPort::published(self.published_port)
+    }
+
+    /// The container's own port.
+    pub(super) const fn target(&self) -> crate::runtime::port::GuestPort {
+        crate::runtime::port::GuestPort::new(self.target_port)
+    }
 }
 
 // `docker compose ps --format json` prints either a JSON array (older Compose)
@@ -191,8 +206,8 @@ mod tests {
         let out = r#"[{"Service":"web","State":"running","Publishers":[{"PublishedPort":8080,"TargetPort":80,"Protocol":"tcp"}]}]"#;
         let e = parse_ps(out);
         assert_eq!(e[0].publishers.len(), 1);
-        assert_eq!(e[0].publishers[0].published_port, 8080);
-        assert_eq!(e[0].publishers[0].target_port, 80);
+        assert_eq!(e[0].publishers[0].published(), Some(crate::runtime::port::HostPort::new(8080)));
+        assert_eq!(e[0].publishers[0].target(), crate::runtime::port::GuestPort::new(80));
         // Image/Name/Health default to empty when absent.
         assert_eq!(e[0].image, "");
         assert_eq!(e[0].name, "");

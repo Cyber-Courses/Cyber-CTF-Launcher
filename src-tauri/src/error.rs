@@ -35,7 +35,8 @@ pub enum Code {
     /// path when it can be found, so the player knows what to stop.
     PortInUse {
         /// The host port that is taken.
-        port: u16,
+        #[ts(type = "number")]
+        port: crate::runtime::port::HostPort,
         /// What holds the port, when it could be found.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         holder: Option<String>,
@@ -412,13 +413,13 @@ mod tests {
             (Error::from(std::io::Error::new(std::io::ErrorKind::NotFound, "no such file")), json!({ "code": "other", "message": "no such file" })),
             (Error::coded(Code::SignedOut), json!({ "code": "signedOut", "message": "You're signed out. Sign in again to continue." })),
             (
-                Error::coded(Code::PortInUse { port: 8080, holder: None }),
-                json!({ "code": "portInUse", "args": { "port": 8080 }, "message": Code::PortInUse { port: 8080, holder: None }.message() }),
+                Error::coded(Code::PortInUse { port: crate::runtime::port::HostPort::new(8080), holder: None }),
+                json!({ "code": "portInUse", "args": { "port": 8080 }, "message": Code::PortInUse { port: crate::runtime::port::HostPort::new(8080), holder: None }.message() }),
             ),
             (
                 // With the holder found, it travels in the args (for the player-facing notice) and
                 // in the English message.
-                Error::coded(Code::PortInUse { port: 8080, holder: Some("nginx (pid 4123)".into()) }),
+                Error::coded(Code::PortInUse { port: crate::runtime::port::HostPort::new(8080), holder: Some("nginx (pid 4123)".into()) }),
                 json!({
                     "code": "portInUse",
                     "args": { "port": 8080, "holder": "nginx (pid 4123)" },
@@ -541,8 +542,8 @@ mod tests {
             Code::OfflineReady { detail: "API unreachable: timed out".into() },
             Code::AlreadyInProgress,
             Code::NoPasswordStored,
-            Code::PortInUse { port: 443, holder: None },
-            Code::PortInUse { port: 8000, holder: Some("nginx (pid 4123)".into()) },
+            Code::PortInUse { port: crate::runtime::port::HostPort::new(443), holder: None },
+            Code::PortInUse { port: crate::runtime::port::HostPort::new(8000), holder: Some("nginx (pid 4123)".into()) },
             Code::DockerNotRunning,
             Code::DockerDenied { user: "player".into() },
             Code::DockerDeniedWindows { user: "Ada Lovelace".into() },

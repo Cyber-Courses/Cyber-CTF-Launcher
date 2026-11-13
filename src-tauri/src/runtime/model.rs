@@ -7,14 +7,26 @@ use ts_rs::TS;
 
 /// A port the software inside a container binds: `target` is the port inside the
 /// container, `published` is where it is reachable on 127.0.0.1 (0 = not published).
-#[derive(Serialize, Clone, TS)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, TS)]
 #[ts(rename = "LabPort")]
 pub struct Port {
     /// Where it is reachable on 127.0.0.1 (0: not published).
-    pub published: u16,
+    #[ts(type = "number")]
+    pub published: Option<super::port::HostPort>,
     /// The port inside the container.
-    pub target: u16,
+    #[ts(type = "number")]
+    pub target: super::port::GuestPort,
+}
+
+/// The UI reads `published` as a number, 0 when the port isn't published.
+impl Serialize for Port {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct as _;
+        let mut port = s.serialize_struct("Port", 2)?;
+        port.serialize_field("published", &self.published.map_or(0, super::port::HostPort::get))?;
+        port.serialize_field("target", &self.target)?;
+        port.end()
+    }
 }
 
 /// One machine of a lab (a container or a VM), as the lab page and its diagram show it.

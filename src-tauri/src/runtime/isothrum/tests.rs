@@ -8,6 +8,7 @@ use super::test_lab::prelude::*;
 use super::*;
 use crate::error::Error;
 use crate::platform::exec::fake::Tools;
+use crate::runtime::port::HostPort;
 
 const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";
 
@@ -156,7 +157,7 @@ async fn the_lab_page_reads_the_runners_status() {
     assert_eq!(s.url.as_deref(), Some("http://127.0.0.1:8080/"));
     let web = s.machines.iter().find(|m| m.name == "web").unwrap();
     assert_eq!((web.state.as_str(), web.ip.as_str(), web.infra), ("running", "10.30.0.10", false));
-    assert_eq!(web.ports.iter().map(|p| (p.target, p.published)).collect::<Vec<_>>(), [(80, 8080)]);
+    assert_eq!(web.ports.iter().map(|p| (p.target.get(), p.published.map(HostPort::get))).collect::<Vec<_>>(), [(80, Some(8080))]);
     assert_eq!(web.services.iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.ports.clone())).collect::<Vec<_>>(), [("web", "web", vec![80])]);
     // Isoloom 2.1.0 names the probe job of the computer's own architecture `isoloom-probe`.
     assert!(s.machines.iter().find(|m| m.name == "isoloom-probe").is_some_and(|m| m.infra), "Isoloom's probe is plumbing");

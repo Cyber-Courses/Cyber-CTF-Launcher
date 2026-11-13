@@ -6,6 +6,7 @@ use isothrum_runner::{Error as RunnerError, ErrorCode, TimedOut};
 
 use crate::error::{Code, Error};
 use crate::platform::exec::DockerSaid;
+use crate::runtime::port::HostPort;
 use crate::runtime::providers::Provider;
 use crate::runtime::server::kind::{KINDS, kind};
 
@@ -49,7 +50,7 @@ pub(super) const ADD_AGAIN: &str = "Remove the lab and add it again from the cat
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
         // The holder is filled in later, on the launch path, where an async lookup can run.
-        RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port, holder: None }),
+        RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port: HostPort::new(port), holder: None }),
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
         RunnerError::Timeout { step, timed_out } => timed_out_step(&step, &timed_out),
@@ -258,7 +259,7 @@ mod tests {
 
     #[test]
     fn a_taken_port_and_a_missing_tool_keep_the_codes_the_ui_knows() {
-        assert_eq!(said(RunnerError::PortInUse { port: 8080, protocol: "tcp".into() }).0, Code::PortInUse { port: 8080, holder: None });
+        assert_eq!(said(RunnerError::PortInUse { port: 8080, protocol: "tcp".into() }).0, Code::PortInUse { port: HostPort::new(8080), holder: None });
         assert_eq!(said(RunnerError::ToolMissing { step: "tools".into(), tool: "docker".into() }).0, Code::ToolMissing { tool: "docker".into() });
         assert_eq!(said(RunnerError::Locked { run: "cyberctf-web".into() }).0, Code::AlreadyInProgress);
     }

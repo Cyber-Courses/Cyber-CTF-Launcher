@@ -6,6 +6,7 @@ use isoloom_manifest::{Manifest, OutputRole, Protocol, Role};
 use isothrum_runner::{CheckReport, MachineState, MachineStatus, RunState, Status};
 
 use super::super::docker::{Check, CheckResult};
+use super::super::port::{GuestPort, HostPort};
 use super::super::{Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
 
 /// The run as the lab page shows it. Running while any of its target machines runs (a lab whose
@@ -49,7 +50,7 @@ fn machine(manifest: &Manifest, m: &MachineStatus, native: Option<&str>) -> Mach
         name: m.name.clone(),
         state: state_word(&m.state),
         ip: interfaces.first().map(|i| i.ip.clone()).unwrap_or_default(),
-        ports: declared.iter().filter(|p| p.kind.transport() == Protocol::Tcp).map(|p| tcp_port(m, p.port.get())).collect(),
+        ports: declared.iter().filter(|p| p.kind.transport() == Protocol::Tcp).map(|p| tcp_port(m, GuestPort::new(p.port.get()))).collect(),
         interfaces,
         services: declared.iter().map(service).collect(),
         infra: m.role != Role::Member,
@@ -57,9 +58,10 @@ fn machine(manifest: &Manifest, m: &MachineStatus, native: Option<&str>) -> Mach
     }
 }
 
-/// `port` and the host port it is published on (0 when it isn't).
-fn tcp_port(m: &MachineStatus, port: u16) -> Port {
-    let published = m.published.iter().find(|p| p.port == port && p.protocol == Protocol::Tcp).map_or(0, |p| p.host_port);
+/// `port` and the host port it is published on (none when it isn't), as the runner reports it:
+/// never the machine's own number.
+fn tcp_port(m: &MachineStatus, port: GuestPort) -> Port {
+    let published = m.published.iter().find(|p| p.port == port.get() && p.protocol == Protocol::Tcp).map(|p| HostPort::new(p.host_port));
     Port { published, target: port }
 }
 

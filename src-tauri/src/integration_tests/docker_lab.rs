@@ -68,7 +68,7 @@ fn check_status(s: &LabStatus, e: &Expect, f: &mut Vec<String>) {
                 check(services.iter().any(|s| s == want), format!("{} declares {want}", t.name), f);
             }
             if e.published {
-                check(t.ports.iter().any(|p| p.published > 0), format!("{} publishes a port on this machine", t.name), f);
+                check(t.ports.iter().any(|p| p.published.is_some()), format!("{} publishes a port on this machine", t.name), f);
             }
             check(!t.interfaces.is_empty() && !t.ip.is_empty(), format!("{} has an address on the lab network", t.name), f);
         }
