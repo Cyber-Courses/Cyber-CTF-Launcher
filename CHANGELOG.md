@@ -24,6 +24,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Fixed
 
+- **Labs launched from the website at once each keep their co-location check.** A launch ended the
+  previous launch's check server, whatever its lab, so the website could no longer confirm that
+  the first lab ran on this computer. Each lab now keeps its own until its check is answered, it
+  expires, the lab stops or the lab is launched again.
+
 - **An update install no longer proceeds when the labs' state couldn't be read.** A failed read
   of the operations in flight was answered as "none", and the install, which quits every Cyber
   CTF process, went ahead; it now says the state is unknown and waits.
