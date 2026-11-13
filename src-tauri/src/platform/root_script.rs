@@ -43,6 +43,13 @@ impl RootScript {
     pub fn into_string(self) -> String {
         self.0
     }
+
+    /// The script, as `sh -c` takes it, with `first` run right after [`PRELUDE`], before its body
+    /// (a root step's proxy settings read from their file): still stopping at its first failure.
+    pub fn with_after_prelude(self, first: &str) -> String {
+        let body = self.0.strip_prefix(PRELUDE).unwrap_or(&self.0);
+        format!("{PRELUDE}; {first}{body}")
+    }
 }
 
 impl std::ops::Deref for RootScript {
@@ -118,6 +125,12 @@ mod tests {
     fn ran(script: &RootScript) -> (Option<i32>, String) {
         let out = std::process::Command::new("sh").arg("-c").arg(&**script).env("LANG", "fr_FR.UTF-8").env("LC_ALL", "fr_FR.UTF-8").output().unwrap();
         (out.status.code(), String::from_utf8_lossy(&out.stdout).into_owned())
+    }
+
+    #[test]
+    fn what_runs_after_the_prelude_comes_before_the_body() {
+        let script = RootScript::new("echo body").with_after_prelude("echo first");
+        assert_eq!(script, format!("{PRELUDE}; echo first; echo body"));
     }
 
     #[test]

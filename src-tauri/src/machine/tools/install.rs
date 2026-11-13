@@ -151,6 +151,7 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
                 format!("'{brew}' update || echo 'Homebrew was not updated; continuing with the install.'\nHOMEBREW_NO_AUTO_UPDATE=1 '{brew}' install qemu"),
             ],
             note: Some("Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into()),
+            private: None,
         }],
         Dependency::Utm => vec![fetch_and_open(brew, "utm", "UTM")],
         Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(not_here(dep)),
@@ -169,11 +170,13 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
                 program: "sh".into(),
                 args: vec!["-c".into(), format!("'{brew}' trust azure/azure-cli 2>/dev/null || true")],
                 note: Some("Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into()),
+                private: None,
             },
             Step {
                 program: brew.to_string(),
                 args: vec!["install".into(), "--cask".into(), "azure-cli-preview".into()],
                 note: Some("Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into()),
+                private: None,
             },
         ],
         Dependency::Gcloud => vec![step(brew, &["install", "--cask", "google-cloud-sdk"])],
@@ -250,20 +253,47 @@ const HYPERV_ON: &str = "if ((Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Wind
 
 /// `script` run as root through pkexec, which raises a graphical password prompt (polkit). pkexec
 /// clears the environment, so the proxy variables set here (`proxy`, `NAME=value`) are handed to
-/// the script through `env`: behind a corporate proxy apt and curl need them.
+/// the script: behind a corporate proxy apt and curl need them. Not on pkexec's command line,
+/// which every local user can read (`ps`, `/proc/<pid>/cmdline`) while the prompt is up, a
+/// proxy's password with it: in an owner-only file in a private folder of the player's, kept as
+/// long as the step, which the script reads right after its prelude ([`read_proxy`]).
 #[cfg(any(target_os = "linux", test))]
-fn as_root(script: RootScript, proxy: Vec<String>) -> Step {
-    let mut args = vec!["env".to_string()];
-    args.extend(proxy);
-    args.extend(["sh".to_string(), "-c".to_string(), script.into_string()]);
-    Step { program: "pkexec".into(), args, note: None }
+fn as_root(script: RootScript, proxy: &[String]) -> Result<Step> {
+    let mut step = Step { program: "pkexec".into(), args: vec!["env".into(), "sh".into(), "-c".into()], note: None, private: None };
+    // A value over two lines can't be one line of the file; no proxy has one.
+    let proxy: Vec<&str> = proxy.iter().map(String::as_str).filter(|a| !a.contains(['\n', '\r'])).collect();
+    if proxy.is_empty() {
+        step.args.push(script.into_string());
+        return Ok(step);
+    }
+    // Owner-only from its creation, under a name no one can take first.
+    let mut private = tempfile::Builder::new();
+    private.prefix("cyberctf-root-");
+    #[cfg(unix)]
+    private.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
+    let dir = private.tempdir()?;
+    let file = dir.path().join("proxy");
+    let mut lines = proxy.join("\n");
+    lines.push('\n');
+    crate::platform::private_fs::write(&file, lines)?;
+    step.args.push(script.with_after_prelude(&read_proxy(&file)));
+    step.private = Some(dir);
+    Ok(step)
+}
+
+/// The shell that exports the proxy variables `file` lists (`NAME=value`, one a line), read as
+/// data: a line naming anything but a proxy variable is skipped, and nothing in a value is run.
+#[cfg(any(target_os = "linux", test))]
+fn read_proxy(file: &std::path::Path) -> String {
+    let names = crate::platform::proxy::VARS.map(|name| format!("{name}=*")).join("|");
+    format!(r#"while IFS= read -r v; do case "$v" in {names}) export "$v" ;; esac; done < {}"#, crate::runtime::ssh::sh_quote(&file.to_string_lossy()))
 }
 
 /// `script` run as root through pkexec ([`as_root`]), with this process's proxy: every install
 /// and removal step on Linux.
 #[cfg(target_os = "linux")]
-pub(super) fn root(script: RootScript) -> Step {
-    as_root(script, crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
+pub(super) fn root(script: RootScript) -> Result<Step> {
+    as_root(script, &crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
 }
 
 /// The install steps on Linux: apt and the vendors' apt repositories, as root through pkexec.
@@ -290,36 +320,37 @@ pub(crate) enum Packages {
 fn linux_plan_with(dep: Dependency, packages: Packages) -> Result<Vec<Step>> {
     let user = crate::platform::exec::login_name();
     let user = user.as_deref();
-    Ok(match (dep, packages) {
+    let script = match (dep, packages) {
         (Dependency::Wsl | Dependency::Hyperv | Dependency::Utm, _) => return Err(not_here(dep)),
         (_, Packages::None) => return Err(without_packages(dep)),
         // Fedora: the vendors' rpm repositories (Docker's, HashiCorp's), RPM Fusion's VirtualBox,
         // the distribution's libvirt and QEMU; the cloud CLIs and VMware's utility through apt only
         // for now.
-        (Dependency::Docker, Packages::Dnf) => vec![root(docker_dnf_script(user))],
-        (Dependency::Vagrant, Packages::Dnf) => vec![root(vagrant_dnf_script())],
-        (Dependency::Terraform, Packages::Dnf) => vec![root(terraform_dnf_script())],
-        (Dependency::Virtualbox, Packages::Dnf) => vec![root(virtualbox_dnf_script(user))],
-        (Dependency::Qemu, Packages::Dnf) => vec![root(qemu_dnf_script(user))],
-        (Dependency::Libvirt, Packages::Dnf) => vec![root(libvirt_dnf_script(user))],
+        (Dependency::Docker, Packages::Dnf) => docker_dnf_script(user),
+        (Dependency::Vagrant, Packages::Dnf) => vagrant_dnf_script(),
+        (Dependency::Terraform, Packages::Dnf) => terraform_dnf_script(),
+        (Dependency::Virtualbox, Packages::Dnf) => virtualbox_dnf_script(user),
+        (Dependency::Qemu, Packages::Dnf) => qemu_dnf_script(user),
+        (Dependency::Libvirt, Packages::Dnf) => libvirt_dnf_script(user),
         // AWS CLI v2 from Amazon's signed bundle, in a private temporary directory: no package
         // manager's.
-        (Dependency::Awscli, Packages::Apt | Packages::Dnf) => vec![root(awscli_script())],
+        (Dependency::Awscli, Packages::Apt | Packages::Dnf) => awscli_script(),
         (_, Packages::Dnf) => return Err(apt_only(dep)),
-        (Dependency::Docker, Packages::Apt) => vec![root(docker_script(user))],
+        (Dependency::Docker, Packages::Apt) => docker_script(user),
         // From HashiCorp's apt repository, not the distribution's (older than labs need).
-        (Dependency::Vagrant, Packages::Apt) => vec![root(vagrant_script())],
+        (Dependency::Vagrant, Packages::Apt) => vagrant_script(),
         // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
-        (Dependency::Terraform, Packages::Apt) => vec![root(terraform_script())],
-        (Dependency::Virtualbox, Packages::Apt) => vec![root(virtualbox_script())],
+        (Dependency::Terraform, Packages::Apt) => terraform_script(),
+        (Dependency::Virtualbox, Packages::Apt) => virtualbox_script(),
         // The player joins /dev/kvm's group: the labs' VMs boot with KVM.
-        (Dependency::Qemu, Packages::Apt) => vec![root(qemu_script(user))],
-        (Dependency::Libvirt, Packages::Apt) => vec![root(libvirt_script(user))],
+        (Dependency::Qemu, Packages::Apt) => qemu_script(user),
+        (Dependency::Libvirt, Packages::Apt) => libvirt_script(user),
         // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.
-        (Dependency::Azurecli, Packages::Apt) => vec![root(azurecli_script())],
-        (Dependency::Gcloud, Packages::Apt) => vec![root(gcloud_script())],
-        (Dependency::VmwareUtility, Packages::Apt) => vec![root(vmware_utility_script())],
-    })
+        (Dependency::Azurecli, Packages::Apt) => azurecli_script(),
+        (Dependency::Gcloud, Packages::Apt) => gcloud_script(),
+        (Dependency::VmwareUtility, Packages::Apt) => vmware_utility_script(),
+    };
+    Ok(vec![root(script)?])
 }
 
 /// The package manager on this machine's PATH: apt-get, else dnf, else none the guided setup
@@ -425,7 +456,7 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
     if !valid_plugin(&plugin) {
         return Err(Error::Invalid(format!("invalid plugin name `{plugin}`")));
     }
-    let step = Step { program: "vagrant".into(), args: vec!["plugin".into(), "install".into(), plugin], note: None };
+    let step = Step { program: "vagrant".into(), args: vec!["plugin".into(), "install".into(), plugin], note: None, private: None };
     on_line(command_line(&step));
     run_step(&step, &mut on_line).await?;
     on_line("Done. Re-checking this machine…".into());
@@ -494,12 +525,42 @@ mod tests {
     }
 
     #[test]
-    fn a_root_install_carries_the_proxy_through_pkexec() {
-        let step = as_root(RootScript::new("apt-get update"), vec!["https_proxy=http://proxy.corp:3128".into(), "no_proxy=.corp".into()]);
+    fn a_root_install_carries_the_proxy_through_pkexec_off_its_command_line() {
+        // Regression: the proxy went on pkexec's command line (`env https_proxy=http://user:pass@…`),
+        // which every local user reads in `ps` while the password prompt is up.
+        let proxy = ["https_proxy=http://ada:s3cret@proxy.corp:3128".to_string(), "no_proxy=.corp".into(), "http_proxy=$(echo ran)`echo ran`".into()];
+        let step = as_root(RootScript::new(r#"printf '%s|%s|%s' "$https_proxy" "$no_proxy" "$http_proxy""#), &proxy).unwrap();
+        assert!(step.args[3].starts_with(crate::platform::root_script::PRELUDE), "the prelude first: {}", step.args[3]);
         assert_eq!(step.program, "pkexec");
-        let script = RootScript::new("apt-get update").into_string();
-        assert_eq!(step.args, ["env", "https_proxy=http://proxy.corp:3128", "no_proxy=.corp", "sh", "-c", script.as_str()]);
-        assert_eq!(as_root(RootScript::new("true"), Vec::new()).args[..3], ["env", "sh", "-c"]);
+        assert_eq!(step.args[..3], ["env", "sh", "-c"]);
+        assert!(!step.args.iter().any(|a| a.contains("s3cret") || a.contains("proxy.corp")), "{:?}", step.args);
+        let dir = step.private.as_ref().unwrap().path().to_owned();
+        #[cfg(unix)]
+        {
+            use crate::platform::private_fs::tests::mode;
+            assert_eq!((mode(&dir), mode(&dir.join("proxy"))), (0o700, 0o600), "owner-only");
+            // The script, run as pkexec runs it (no environment), has the proxy, its values as
+            // written, never run.
+            let out = std::process::Command::new(&step.args[1]).args(&step.args[2..]).env_clear().output().unwrap();
+            assert!(out.status.success(), "{out:?}");
+            assert_eq!(String::from_utf8_lossy(&out.stdout), "http://ada:s3cret@proxy.corp:3128|.corp|$(echo ran)`echo ran`");
+        }
+        drop(step);
+        assert!(!dir.exists(), "the folder goes with the step");
+        // No proxy: no file, the script alone.
+        let step = as_root(RootScript::new("true"), &[]).unwrap();
+        assert_eq!((step.args, step.private.is_none()), (vec!["env".to_string(), "sh".into(), "-c".into(), RootScript::new("true").into_string()], true));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_proxy_variables_are_read_from_the_proxy_file() {
+        let dir = crate::testing::temp_dir("proxy");
+        let file = dir.join("proxy");
+        std::fs::write(&file, "PATH=/nowhere\nhttps_proxy=http://p:3128\nLD_PRELOAD=/x.so\n").unwrap();
+        let script = format!(r#"{}; printf '%s|%s|%s' "$https_proxy" "${{LD_PRELOAD:-}}" "$PATH""#, read_proxy(&file));
+        let out = std::process::Command::new("sh").arg("-c").arg(script).env("PATH", "/usr/bin:/bin").output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "http://p:3128||/usr/bin:/bin");
     }
 
     #[test]

@@ -98,6 +98,9 @@ sha2 = "0.11.0"
 sha-crypt = { version = "=0.6.0", default-features = false, features = ["alloc", "password-hash"] }
 base64 = "0.23.1"
 rand = "0.10.3"
+# Private temp folders, removed when they drop: a root step's proxy settings (Linux installs),
+# and a test's temp folder, a failed test's too (`testing::temp_dir`).
+tempfile = "3"
 url = "2.5.8"
 flate2 = "1.1.10"
 tar = "0.4.46"
@@ -162,8 +165,6 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 tauri = { version = "2.12.0", features = ["test"] }
 # The runner's test doubles (scripted processes and host ports), for `runtime/isothrum`'s.
 isothrum-runner = { version = "2.1.7", features = ["fake"] }
-# A test's temp folder, removed when it drops, a failed test's too (`testing::temp_dir`).
-tempfile = "3"
 
 # The test rig's prebuilt set (the workspace's rig/lib/ci/prebuilt.py builds with --profile rig):
 # release behaviour, built fast: no LTO, many codegen units, no debug info, opt-level 2. The rig

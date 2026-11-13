@@ -41,6 +41,13 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 - **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
   release now ships `.rpm` packages beside the `.deb` (#322).
+### Fixed
+
+- **A proxy's credentials no longer show to other local users during a guided install.** On Linux
+  the proxy variables (`https_proxy=http://user:password@host`) went on pkexec's command line,
+  which any account on the computer could read while the password prompt was up. They are now
+  handed over in an owner-only file in a private folder, removed with the step, which the install
+  script reads as data.
 
 ## [1.9.0] — 2026-11-13
 

@@ -225,6 +225,7 @@ fn mac_admin(script: &str, note: &str) -> Step {
         program: "osascript".into(),
         args: vec!["-e".into(), format!("do shell script \"{escaped}\" with administrator privileges")],
         note: Some(note.into()),
+        private: None,
     }
 }
 
@@ -292,6 +293,7 @@ fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>
             program: "/Applications/Docker.app/Contents/MacOS/uninstall".into(),
             args: vec![],
             note: Some("Running Docker Desktop's own uninstaller…".into()),
+            private: None,
         }],
         Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
         Dependency::VmwareUtility => {
@@ -326,35 +328,39 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
 #[cfg(target_os = "linux")]
 pub(super) fn linux_plan_with(dep: Dependency, packages: super::install::Packages) -> Result<Vec<Step>> {
     use super::install::Packages;
-    let root = |script: &str| super::install::root(crate::platform::root_script::RootScript::new(script));
-    Ok(match (dep, packages) {
+    let script = match (dep, packages) {
         (Dependency::Utm | Dependency::Wsl | Dependency::Hyperv, _) => return Err(super::install::not_here(dep)),
-        (Dependency::Awscli, _) => vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")],
+        (Dependency::Awscli, _) => "rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer",
         (_, Packages::None) => return Err(super::install::without_packages(dep)),
         // Fedora: what the dnf install brought from the vendors' repositories and RPM Fusion; the
         // compiler, Ruby's headers and the shared tools (genisoimage) stay.
-        (Dependency::Docker, Packages::Dnf) => vec![root("dnf remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
-        (Dependency::Vagrant, Packages::Dnf) => vec![root("dnf remove -y vagrant")],
-        (Dependency::Terraform, Packages::Dnf) => vec![root("dnf remove -y terraform")],
-        (Dependency::Virtualbox, Packages::Dnf) => vec![root("dnf remove -y VirtualBox akmod-VirtualBox 'kmod-VirtualBox*'")],
-        (Dependency::Qemu, Packages::Dnf) => vec![root("dnf remove -y qemu-kvm qemu-img")],
-        (Dependency::Libvirt, Packages::Dnf) => vec![root("dnf remove -y libvirt libvirt-daemon-kvm virt-install virt-manager libvirt-devel")],
+        (Dependency::Docker, Packages::Dnf) => "dnf remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+        (Dependency::Vagrant, Packages::Dnf) => "dnf remove -y vagrant",
+        (Dependency::Terraform, Packages::Dnf) => "dnf remove -y terraform",
+        (Dependency::Virtualbox, Packages::Dnf) => "dnf remove -y VirtualBox akmod-VirtualBox 'kmod-VirtualBox*'",
+        (Dependency::Qemu, Packages::Dnf) => "dnf remove -y qemu-kvm qemu-img",
+        (Dependency::Libvirt, Packages::Dnf) => "dnf remove -y libvirt libvirt-daemon-kvm virt-install virt-manager libvirt-devel",
         // The cloud CLIs and VMware's utility install through apt only: nothing of ours to remove.
         (_, Packages::Dnf) => return Err(super::install::apt_only(dep)),
-        (Dependency::Docker, Packages::Apt) => vec![root("apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin")],
-        (Dependency::Vagrant, Packages::Apt) => vec![root("apt-get remove -y vagrant")],
-        (Dependency::Terraform, Packages::Apt) => vec![root("apt-get remove -y terraform")],
-        (Dependency::Virtualbox, Packages::Apt) => vec![root("apt-get remove -y 'virtualbox*'")],
+        (Dependency::Docker, Packages::Apt) => "apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+        (Dependency::Vagrant, Packages::Apt) => "apt-get remove -y vagrant",
+        (Dependency::Terraform, Packages::Apt) => "apt-get remove -y terraform",
+        (Dependency::Virtualbox, Packages::Apt) => "apt-get remove -y 'virtualbox*'",
         // The install's metapackages (qemu-system, libvirt-daemon-system) leave the packages
         // they pulled in behind, with the binaries the Machine page looks for
         // (qemu-system-x86_64, virsh): those go too, or the tool still reads as installed.
-        (Dependency::Qemu, Packages::Apt) => vec![root("apt-get remove -y 'qemu-system*' qemu-utils")],
-        (Dependency::Libvirt, Packages::Apt) => vec![root("apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager")],
-        (Dependency::Azurecli, Packages::Apt) => vec![root("apt-get remove -y azure-cli")],
-        // Google's apt package, and the per-user SDK earlier versions installed in its place.
-        (Dependency::Gcloud, Packages::Apt) => vec![root("apt-get remove -y google-cloud-cli"), step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""])],
-        (Dependency::VmwareUtility, Packages::Apt) => vec![root("apt-get remove -y vagrant-vmware-utility")],
-    })
+        (Dependency::Qemu, Packages::Apt) => "apt-get remove -y 'qemu-system*' qemu-utils",
+        (Dependency::Libvirt, Packages::Apt) => "apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager",
+        (Dependency::Azurecli, Packages::Apt) => "apt-get remove -y azure-cli",
+        (Dependency::Gcloud, Packages::Apt) => "apt-get remove -y google-cloud-cli",
+        (Dependency::VmwareUtility, Packages::Apt) => "apt-get remove -y vagrant-vmware-utility",
+    };
+    let mut steps = vec![super::install::root(crate::platform::root_script::RootScript::new(script))?];
+    // Google's apt package, and the per-user SDK earlier versions installed in its place.
+    if dep == Dependency::Gcloud {
+        steps.push(step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""]));
+    }
+    Ok(steps)
 }
 
 /// How to remove `dep` on this OS. On macOS, VirtualBox's step needs its installer image

@@ -106,6 +106,7 @@ pub fn mac_install(arch: &str) -> Step {
         program: "sh".into(),
         args: vec!["-c".into(), mac_script(&file, sha256), "sh".into(), mac_root_script(sha256)],
         note: Some(format!("Downloading HashiCorp's Vagrant VMware Utility {VERSION}…")),
+        private: None,
     }
 }
 
@@ -181,6 +182,7 @@ pub fn windows_install() -> Step {
         program: "powershell".into(),
         args: vec!["-NoProfile".into(), "-NonInteractive".into(), "-Command".into(), windows_script(file, sha256)],
         note: Some(format!("Downloading HashiCorp's Vagrant VMware Utility {VERSION}…")),
+        private: None,
     }
 }
 
@@ -198,6 +200,7 @@ pub fn windows_uninstall() -> Step {
             ),
         ],
         note: Some("Removing the Vagrant VMware Utility (Windows asks for an administrator's approval)…".into()),
+        private: None,
     }
 }
 

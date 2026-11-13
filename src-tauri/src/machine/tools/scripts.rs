@@ -45,7 +45,7 @@ case "$f" in
     ;;
 esac"#
     );
-    Step { program: "sh".into(), args: vec!["-c".into(), script], note: Some(format!("Downloading {name}…")) }
+    Step { program: "sh".into(), args: vec!["-c".into(), script], note: Some(format!("Downloading {name}…")), private: None }
 }
 
 #[cfg(any(target_os = "linux", test))]
