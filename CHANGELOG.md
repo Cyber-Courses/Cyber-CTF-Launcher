@@ -6,6 +6,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
+  release now ships `.rpm` packages beside the `.deb` (#322).
+
 ## [1.9.0] — 2026-11-13
 
 ### Added
