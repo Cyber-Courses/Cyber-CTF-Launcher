@@ -45,6 +45,8 @@ use isothrum_runner::{
 use isothrum_runner::{Exit, OnLine, ProcessError};
 
 use super::docker::Check;
+use super::{LabStatus, Park, Place, Runtime, lab, paths};
+use crate::error::{Error, Result};
 
 /// How long an operation the player asked for waits for the run's lock: the page's own status
 /// checks (a few seconds each, every so often) hold it too, and a Pause clicked while one runs
@@ -74,8 +76,6 @@ where
         }
     }
 }
-use super::{LabStatus, Park, Place, Runtime, lab, paths};
-use crate::error::{Error, Result};
 
 /// The Vagrant plugin `provider` needs, from Isoloom's table (`isoloom_manifest::Provider::plugin`,
 /// what a run manifest's provider names): none when Vagrant has it built in, and none for a

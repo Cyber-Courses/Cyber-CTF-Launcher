@@ -4,6 +4,8 @@
 
 #[cfg(target_os = "macos")]
 use super::steps::Step;
+#[cfg(any(target_os = "linux", test))]
+use crate::platform::root_script::{NEED_CURL, NEED_GPG, NEED_UNZIP, RootScript, check_keys};
 
 // Download the installer with brew (no admin needed), then open it so the tool's own
 // native installer runs and the user finishes there (trusted OS prompts, no custom dialog).
@@ -47,9 +49,6 @@ esac"#
     );
     Step { program: "sh".into(), args: vec!["-c".into(), script], note: Some(format!("Downloading {name}…")), private: None }
 }
-
-#[cfg(any(target_os = "linux", test))]
-use crate::platform::root_script::{NEED_CURL, NEED_GPG, NEED_UNZIP, RootScript, check_keys};
 
 /// The distro's codename as the vendors' repos name it (`$codename`): an Ubuntu derivative like
 /// Mint uses its Ubuntu base's. For the Debian family (Debian itself, Kali, Devuan: `ID_LIKE`
