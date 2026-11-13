@@ -4,7 +4,6 @@
 //! the app: they finish on their own.
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::AppHandle;
@@ -12,16 +11,40 @@ use tauri::Manager;
 
 use crate::runtime;
 
-/// Set once the user confirms quitting while a lab operation is in progress, so the close/exit handlers
-/// stop intercepting and let the app go.
-static FORCE_QUIT: AtomicBool = AtomicBool::new(false);
-/// Set while the app finishes in the background with its windows hidden (`linger_quit`); a
-/// relaunch clears it, so the app stays open instead of exiting once the operations are done.
-static LINGERING: AtomicBool = AtomicBool::new(false);
+/// Where the app stands on quitting: one state for the close/exit handlers, the background
+/// finish and the prompt, read and changed under one lock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    /// Running as usual: a quit while a lab operation runs is held.
+    Open,
+    /// Finishing in the background with its windows hidden (`linger_quit`); a relaunch takes it
+    /// back to `Open`, so the app stays open instead of exiting once the operations are done.
+    Lingering,
+    /// The user confirmed quitting while a lab operation is in progress: the close/exit handlers
+    /// stop intercepting and let the app go.
+    Forced,
+}
 
-/// When the last quit prompt was shown, so a second quit right after it means "quit anyway":
-/// there must always be a way out that doesn't go through Activity Monitor or Task Manager.
-static QUIT_PROMPTED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+/// The quit state: its phase, and when the last quit prompt was shown, so a second quit right
+/// after it means "quit anyway" (there must always be a way out that doesn't go through Activity
+/// Monitor or Task Manager).
+struct QuitState {
+    phase: Phase,
+    prompted_at: Option<Instant>,
+}
+
+static QUIT: Mutex<QuitState> = Mutex::new(QuitState { phase: Phase::Open, prompted_at: None });
+
+/// The quit state, locked (a panic elsewhere doesn't stop a quit).
+fn state() -> std::sync::MutexGuard<'static, QuitState> {
+    QUIT.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The quit state's phase.
+fn phase() -> Phase {
+    state().phase
+}
+
 const QUIT_AGAIN_WINDOW: Duration = Duration::from_secs(20);
 
 /// How long a lingering app waits for its in-app operations before exiting anyway.
@@ -34,16 +57,21 @@ pub fn linger_quit(app: AppHandle) {
     for (_, w) in app.webview_windows() {
         let _ = w.hide();
     }
-    LINGERING.store(true, Ordering::SeqCst);
+    {
+        let mut state = state();
+        if state.phase == Phase::Open {
+            state.phase = Phase::Lingering;
+        }
+    }
     tauri::async_runtime::spawn(async move {
         // Bounded: a wedged operation (a hung VBoxManage) must not keep an invisible app alive
         // for good. Past the cap it exits anyway; a detached worker would have been unaffected.
         let deadline = Instant::now() + LINGER_CAP;
-        while !runtime::busy_labs().is_empty() && Instant::now() < deadline && LINGERING.load(Ordering::SeqCst) {
+        while !runtime::busy_labs().is_empty() && Instant::now() < deadline && phase() == Phase::Lingering {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
         // Relaunched meanwhile (the windows are back): stay open.
-        if !LINGERING.swap(false, Ordering::SeqCst) {
+        if phase() != Phase::Lingering {
             return;
         }
         exit_now(&app);
@@ -57,14 +85,18 @@ pub fn force_quit(app: &AppHandle) {
 }
 
 fn exit_now(app: &AppHandle) {
-    FORCE_QUIT.store(true, Ordering::SeqCst);
+    // The lock is let go before exiting: the exit handlers read the state.
+    state().phase = Phase::Forced;
     app.exit(0);
 }
 
 /// The app was opened again (a second launch, a `cyberctf://` link): it stays open instead of
 /// exiting once a background finish is done.
 pub fn stop_lingering() {
-    LINGERING.store(false, Ordering::SeqCst);
+    let mut state = state();
+    if state.phase == Phase::Lingering {
+        state.phase = Phase::Open;
+    }
 }
 
 /// Whether a quit gets the prompt: a window can show it, and it wasn't just shown (a second quit
@@ -80,16 +112,18 @@ fn should_prompt(visible: bool, prompted_at: Option<Instant>) -> bool {
 /// second quit within a few seconds of the prompt: that is the user insisting.
 pub fn intercept(app: &AppHandle) -> bool {
     let busy = runtime::busy_labs().len();
-    if FORCE_QUIT.load(Ordering::SeqCst) || busy == 0 {
+    if phase() == Phase::Forced || busy == 0 {
         return false;
     }
     let visible = app.webview_windows().values().any(|w| w.is_visible().unwrap_or(false));
-    let mut prompted = QUIT_PROMPTED_AT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if !should_prompt(visible, *prompted) {
-        FORCE_QUIT.store(true, Ordering::SeqCst);
-        return false;
+    {
+        let mut state = state();
+        if !should_prompt(visible, state.prompted_at) {
+            state.phase = Phase::Forced;
+            return false;
+        }
+        state.prompted_at = Some(Instant::now());
     }
-    *prompted = Some(Instant::now());
     crate::app::events::emit(app, crate::app::events::QUIT_BLOCKED, busy);
     if let Some(w) = app.get_webview_window(crate::app::window::MAIN) {
         let _ = w.set_focus();
@@ -111,26 +145,26 @@ mod tests {
         }
     }
 
-    /// One test for both: they share the process-wide flags.
+    /// One test for both: they share the process-wide quit state.
     #[test]
     fn a_background_finish_stays_open_once_relaunched_and_a_forced_quit_exits_at_once() {
         let t = crate::testing::test_app::TestApp::new();
         // A deploy in flight holds the background finish (it looks again every 2 s).
         let deploy = runtime::DeployGuard::new("quit-test-linger", runtime::Action::Launch);
         linger_quit(t.handle().clone());
-        assert!(LINGERING.load(Ordering::SeqCst));
+        assert_eq!(phase(), Phase::Lingering);
         // Opened again meanwhile: once the deploy is done, the app stays open.
         stop_lingering();
-        assert!(!LINGERING.load(Ordering::SeqCst));
+        assert_eq!(phase(), Phase::Open);
         drop(deploy);
         std::thread::sleep(Duration::from_millis(2500));
-        assert!(!FORCE_QUIT.load(Ordering::SeqCst), "a relaunched app doesn't exit");
+        assert_ne!(phase(), Phase::Forced, "a relaunched app doesn't exit");
 
         // Quit anyway: the quit guard lets go and the runtime is asked to exit (Tauri's mock
         // runtime has no exit to request: it panics there).
         let exit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| force_quit(t.handle())));
         assert!(exit.is_err(), "the runtime was asked to exit");
-        assert!(FORCE_QUIT.load(Ordering::SeqCst));
+        assert_eq!(phase(), Phase::Forced);
         let deploy = runtime::DeployGuard::new("quit-test-forced", runtime::Action::Launch);
         assert!(!intercept(t.handle()), "a forced quit is never held");
         drop(deploy);
