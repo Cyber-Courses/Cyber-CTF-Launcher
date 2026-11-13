@@ -29,6 +29,12 @@ struct Live {
 /// machine's lock (every later status of that lab then fails as "locked").
 static LIVE_GROUPS: Mutex<Vec<Live>> = Mutex::new(Vec::new());
 
+/// The live groups, poisoned or not: each change to the list is whole, and a list lost to a
+/// panic elsewhere would leave every tool started since running past the app's exit.
+fn live_groups() -> std::sync::MutexGuard<'static, Vec<Live>> {
+    LIVE_GROUPS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Kills a spawned tool's whole process tree when dropped, unless disarmed after it exited.
 pub(crate) struct GroupGuard(Option<u32>);
 
@@ -54,9 +60,7 @@ impl GroupGuard {
     }
 
     fn enter(tool: Live) {
-        if let Ok(mut live) = LIVE_GROUPS.lock() {
-            live.push(tool);
-        }
+        live_groups().push(tool);
     }
 
     /// The tool exited on its own: leave whatever it started alone.
@@ -80,7 +84,7 @@ impl Drop for GroupGuard {
 
 fn forget(pid: Option<u32>) -> Option<Live> {
     let pid = pid?;
-    let mut live = LIVE_GROUPS.lock().ok()?;
+    let mut live = live_groups();
     let at = live.iter().position(|l| l.pid == pid)?;
     Some(live.remove(at))
 }
@@ -109,7 +113,7 @@ fn kill(live: &Live) {
 /// shared the worker's group, so Vagrant or Compose can stop what they were doing; its record
 /// stays in the ledger, for the next start to end it should it outlive this process.
 pub fn kill_live_tools() {
-    let groups = LIVE_GROUPS.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default();
+    let groups = std::mem::take(&mut *live_groups());
     for live in groups {
         #[cfg(unix)]
         if live.stream {

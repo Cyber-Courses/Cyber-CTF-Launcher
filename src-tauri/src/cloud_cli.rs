@@ -42,7 +42,7 @@ static SIGN_IN: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
 
 /// Cancels the CLI sign-in in progress (its CLI is stopped), if any.
 pub fn cloud_login_cancel() {
-    if let Some(cancel) = SIGN_IN.lock().ok().and_then(|mut s| s.take()) {
+    if let Some(cancel) = SIGN_IN.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() {
         let _ = cancel.send(());
     }
 }
@@ -57,7 +57,7 @@ async fn sign_in(program: &'static str, args: &[&str], mut on_line: impl FnMut(S
 /// A cancel for a new sign-in, through `cloud_login_cancel`; the one before it is cancelled.
 fn cancellable() -> oneshot::Receiver<()> {
     let (tx, cancelled) = oneshot::channel();
-    if let Some(previous) = SIGN_IN.lock().ok().and_then(|mut s| s.replace(tx)) {
+    if let Some(previous) = SIGN_IN.lock().unwrap_or_else(std::sync::PoisonError::into_inner).replace(tx) {
         let _ = previous.send(());
     }
     cancelled

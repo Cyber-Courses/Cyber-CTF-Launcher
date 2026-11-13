@@ -33,7 +33,8 @@ fn tick() -> u64 {
 /// A run's last read: the tick it began at, and its answer.
 type Last = Option<(u64, Status)>;
 
-/// The turn of run `key`'s reads, holding its last read.
+/// The turn of run `key`'s reads, holding its last read. The last lock taken: after the lab's
+/// (the lock order: `runtime::lock_lab`).
 fn turn(key: &Path) -> Arc<AsyncMutex<Last>> {
     static TURNS: KeyedLocks<PathBuf, Last> = KeyedLocks::new();
     TURNS.get(key)
