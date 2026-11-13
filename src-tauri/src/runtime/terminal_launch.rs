@@ -13,6 +13,10 @@ use crate::error::{Error, Result};
 /// the variables the command needs (a Vagrant run's state folder), when it has any. Unix
 /// terminals only (Windows uses `windows_line`); the tests exercise it on every platform.
 #[cfg(any(unix, test))]
+/// How long a terminal gets to die on its own (one that can't start, zutty without its font,
+/// does so within a moment) before it counts as started.
+const TERMINAL_START_GRACE: std::time::Duration = std::time::Duration::from_millis(1500);
+
 fn command_line(command: &ShellCommand) -> String {
     let mut words = Vec::new();
     if !command.env.is_empty() {
@@ -73,7 +77,7 @@ pub fn open_terminal(command: &ShellCommand) -> Result<()> {
             let Ok(mut child) = std::process::Command::new(term).args([flag, "sh", "-c", &run]).spawn() else { continue };
             // A terminal that can't start (e.g. zutty without its font) dies within a moment
             // without a window, so give it that moment and fall through to the next one.
-            std::thread::sleep(std::time::Duration::from_millis(1500));
+            std::thread::sleep(TERMINAL_START_GRACE);
             match child.try_wait() {
                 Ok(Some(status)) if !status.success() => {}
                 _ => {

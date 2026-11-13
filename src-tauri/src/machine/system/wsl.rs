@@ -137,7 +137,8 @@ pub fn classify(p: &Probes) -> WslState {
         }
     }
     // WSL answers and nothing waits for a restart; the features couldn't be read.
-    if wsl && p.status == Run::Ok && p.reboot_pending == Some(false) && p.vm_platform.is_none() && !not_running {
+    let answers_with_features_unread = wsl && p.status == Run::Ok && p.reboot_pending == Some(false) && p.vm_platform.is_none();
+    if answers_with_features_unread && !not_running {
         return WslState::Ready;
     }
     if p.installed_this_boot {
