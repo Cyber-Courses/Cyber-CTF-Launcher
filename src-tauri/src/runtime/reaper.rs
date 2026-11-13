@@ -98,7 +98,24 @@ pub fn last_failure(dirs: &AppDirs, id: &str) -> Option<Wire> {
         return None;
     }
     let base = dirs.data().ok()?;
-    let record: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(base.join(REAP_ERRORS).join(id)).ok()?).ok()?;
+    let path = base.join(REAP_ERRORS).join(id);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        // A record that is there but can't be read is a failure to say, not "no failure"
+        // (Clean Code ch.7, 2026-11-13).
+        Err(e) => {
+            log::warn!("auto-stop: the last failure of {id} couldn't be read from {}: {e}", path.display());
+            return None;
+        }
+    };
+    let record: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(record) => record,
+        Err(e) => {
+            log::warn!("auto-stop: the last failure of {id} in {} isn't JSON: {e}", path.display());
+            return None;
+        }
+    };
     serde_json::from_value(record["error"].clone()).ok()
 }
 
