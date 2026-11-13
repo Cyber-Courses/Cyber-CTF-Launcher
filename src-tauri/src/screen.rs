@@ -273,6 +273,15 @@ pub(crate) fn close(label: &str) {
     }
 }
 
+/// Ends every window's session, as the app quits: their bridges, tunnels and `.rdp` files go
+/// with it (a quit left them, the review of 2026-11-13).
+pub(crate) fn close_all() {
+    let labels: Vec<String> = with_sessions(|s| s.keys().cloned().collect());
+    for label in labels {
+        close(&label);
+    }
+}
+
 /// Whether window `label` has a session (for tests).
 #[cfg(test)]
 pub(crate) fn has_session(label: &str) -> bool {
