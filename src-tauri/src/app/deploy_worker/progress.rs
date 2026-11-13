@@ -133,10 +133,27 @@ fn lost(spawned: &Spawned, last_line: Option<&str>) -> Error {
     // Its verdict and the lab's, as the worker would have written them: the lab page reads them
     // after a reload or a relaunch, when this error is long gone.
     spawned.files.settle_lost();
+    if stopped_on_request(spawned.exit.get()) {
+        // A Stop of the lab while it deployed: the worker was asked to end (SIGTERM) and did,
+        // without a verdict by design. Not a crash (it read as "exited with code 143" before,
+        // the review of 2026-11-13).
+        log::info!("deploy worker {} was stopped before the deploy ended", spawned.worker.pid);
+        return Error::Invalid("the deploy was stopped before it ended".into());
+    }
     let how = ended(spawned.exit.get());
     log::warn!("deploy worker {} ended without a verdict: it {how}; its output is in {}", spawned.worker.pid, spawned.files.log.display());
     let said = last_line.map(|l| format!(" Its last line: {}", l.trim())).unwrap_or_default();
     Error::Invalid(format!("the deploy worker stopped without a result: it {how}.{said}"))
+}
+
+/// Whether the worker ended as a Stop asks it to: by SIGTERM, or with the code it exits with
+/// after one (143).
+fn stopped_on_request(status: Option<&std::process::ExitStatus>) -> bool {
+    #[cfg(unix)]
+    if status.and_then(std::os::unix::process::ExitStatusExt::signal) == Some(libc::SIGTERM) {
+        return true;
+    }
+    status.and_then(std::process::ExitStatus::code) == Some(143)
 }
 
 /// How a worker process ended (`None`: not known, it wasn't reaped by this app).
@@ -154,6 +171,7 @@ fn exit_code(code: i32) -> String {
     let raw = code.cast_unsigned();
     let meaning = match raw {
         101 => Some("a panic"),
+        143 => Some("stopped on request"),
         0xC000_0005 => Some("an access violation"),
         0xC000_00FD => Some("a stack overflow"),
         0xC000_0374 => Some("a heap corruption"),
@@ -294,12 +312,27 @@ mod tests {
     #[test]
     fn exit_codes_a_crash_leaves_say_what_they_mean() {
         assert_eq!(exit_code(2), "exited with code 2");
+        assert_eq!(exit_code(143), "exited with code 143 (stopped on request)");
         assert_eq!(exit_code(1), "exited with code 1");
         assert_eq!(exit_code(0xC000_00FD_u32.cast_signed()), "exited with code 0xC00000FD (a stack overflow)");
         assert_eq!(exit_code(0xC000_0409_u32.cast_signed()), "exited with code 0xC0000409 (an abort)");
         assert_eq!(exit_code(0xC000_013A_u32.cast_signed()), "exited with code 0xC000013A (a Ctrl+C, or its console closed)");
         assert_eq!(exit_code(0xE000_0001_u32.cast_signed()), "exited with code 0xE0000001");
         assert_eq!(ended(None), "ended, how isn't known");
+    }
+    /// A Stop ends the worker by SIGTERM, which it answers with exit 143 after its cleanup: neither
+    /// is a crash.
+    #[cfg(unix)]
+    #[test]
+    fn a_worker_ended_by_a_stop_isnt_a_crash() {
+        use std::os::unix::process::ExitStatusExt;
+        let by_signal = std::process::ExitStatus::from_raw(libc::SIGTERM);
+        let by_code = std::process::ExitStatus::from_raw(143 << 8);
+        let crashed = std::process::ExitStatus::from_raw(101 << 8);
+        assert!(stopped_on_request(Some(&by_signal)));
+        assert!(stopped_on_request(Some(&by_code)));
+        assert!(!stopped_on_request(Some(&crashed)));
+        assert!(!stopped_on_request(None));
     }
 }
 
