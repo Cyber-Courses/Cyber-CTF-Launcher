@@ -42,10 +42,12 @@ type Watch = { setState: (s: ScreenState) => void; ended: () => boolean; passwor
  *  disconnected then). Gives what stops the wait. */
 function follow(v: Viewer, w: Watch): () => void {
   let shown = false;
-  let timedOut = false;
+  // Said already, by the wait running out or the server refusing the password: the disconnect
+  // that follows (noVNC fails the connection after either) must not say it again differently.
+  let settled = false;
   const timer = setTimeout(() => {
     if (shown || w.ended()) return;
-    timedOut = true;
+    settled = true;
     v.disconnect();
     w.setState({ kind: "failed", message: w.noAnswer });
   }, SHOW_WITHIN_MS);
@@ -58,11 +60,13 @@ function follow(v: Viewer, w: Watch): () => void {
     v.sendCredentials({ password: w.password });
   });
   v.addEventListener("securityfailure", () => {
+    settled = true;
+    clearTimeout(timer);
     w.setState({ kind: "failed", message: w.refused });
   });
   v.addEventListener("disconnect", (e) => {
     clearTimeout(timer);
-    if (w.ended() || timedOut) return;
+    if (w.ended() || settled) return;
     const clean = (e as CustomEvent<{ clean: boolean }>).detail.clean;
     // Closed before the screen ever showed: it didn't answer (the bridge closes such a one).
     if (!shown) w.setState({ kind: "failed", message: w.noAnswer });
