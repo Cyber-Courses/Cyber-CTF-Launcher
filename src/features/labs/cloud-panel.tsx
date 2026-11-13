@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { CopyValue } from "@/components/ui/copy-value";
 import { SecretValue } from "@/components/ui/secret-value";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -8,8 +7,7 @@ import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { labCloudPreview, type CloudPreview, type LabOutput } from "@/lib/tauri";
 import { useT, type T } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
-import { warn } from "@/lib/failure";
-import { describeError } from "@/lib/errors";
+import { useRead, valueOf } from "@/lib/use-read";
 
 /** "about $0.02 an hour (about $0.08 until it auto-stops in 4 h)" from a lab's own estimate. */
 export function costEstimate(t: T, hourlyUsd: number | null | undefined, autoStopHours?: number | null): string | null {
@@ -25,26 +23,11 @@ export type CloudPreviewRead = { preview: CloudPreview | null; error: string | n
 /** A cloud lab's cost and inputs, from its spec at the catalogue's commit; a failed read is kept
  *  as its reason, never taken for a lab without an estimate. */
 export function useCloudPreview(labId: string, rt: LabRuntimeInfo | null): CloudPreviewRead {
-  const [read, setRead] = useState<CloudPreviewRead>({ preview: null, error: null });
-  const cloud = rt?.runtime === "CLOUD";
   const repository = rt?.repository;
   const commit = rt?.commit;
-  useEffect(() => {
-    if (!cloud || !repository || !commit) return;
-    let alive = true;
-    labCloudPreview(labId, repository, commit)
-      .then((preview) => {
-        if (alive) setRead({ preview, error: null });
-      })
-      .catch((e: unknown) => {
-        warn("reading the cloud lab's preview")(e);
-        if (alive) setRead({ preview: null, error: describeError(e) });
-      });
-    return () => {
-      alive = false;
-    };
-  }, [cloud, labId, repository, commit]);
-  return read;
+  const key = rt?.runtime === "CLOUD" && repository && commit ? `${labId}@${repository}/${commit}` : null;
+  const read = useRead(key, () => labCloudPreview(labId, repository ?? "", commit ?? ""), "reading the cloud lab's preview");
+  return { preview: valueOf(read), error: read.state === "failed" ? read.error : null };
 }
 
 /** What the launch dialog says of the estimate: the cost, that the estimate couldn't be read and
