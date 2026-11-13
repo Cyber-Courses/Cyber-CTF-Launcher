@@ -176,7 +176,7 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
 
 /// The shell a window asks for: lab `id`'s attack box, on `runtime`, at `cols` x `rows`.
 pub struct Shell {
-    /// The lab.
+    /// The lab's id, its folder under `<app data>/labs/`.
     pub id: String,
     /// Where the lab runs.
     pub runtime: Runtime,

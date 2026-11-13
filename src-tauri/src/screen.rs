@@ -21,11 +21,11 @@ use crate::runtime::Runtime;
 /// The machine a screen window shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Which {
-    /// The lab.
+    /// The lab's id, its folder under `<app data>/labs/`.
     pub(crate) id: String,
     /// The lab's runtime, as the page declares it.
     pub(crate) runtime: Runtime,
-    /// The machine.
+    /// The machine's name in the lab's spec.
     pub(crate) machine: String,
 }
 
@@ -281,7 +281,7 @@ pub(crate) fn close(label: &str) {
 }
 
 /// Ends every window's session, as the app quits: their bridges, tunnels and `.rdp` files go
-/// with it (a quit used to leave them).
+/// with it, rather than outliving the app.
 pub(crate) fn close_all() {
     let labels: Vec<String> = with_sessions(|s| s.keys().cloned().collect());
     for label in labels {

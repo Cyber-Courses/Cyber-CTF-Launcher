@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn kvm_holds_the_cpus_virtualization_once_its_module_turns_it_on_as_it_loads() {
-        // Debian 13 (Linux 6.12), the rig's bare guest: kvm_intel loaded, enable_virt_at_load Y.
+        // Debian 13 (Linux 6.12): kvm_intel loaded, enable_virt_at_load Y.
         let modules =
             "kvm_intel 413696 0 - Live 0x0000000000000000\nkvm 1404928 1 kvm_intel, Live 0x0000000000000000\nirqbypass 12288 1 kvm, Live 0x0000000000000000\n";
         assert!(holds(modules, Some("Y\n")));
