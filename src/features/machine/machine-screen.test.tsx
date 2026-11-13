@@ -245,12 +245,13 @@ describe("EngineRows", () => {
   type Engine = SystemReport["dockerEngines"][number];
   const found = (engine: Engine["engine"], over: Partial<Engine> = {}): Engine => ({ engine, context: engine, running: true, current: false, ...over });
 
-  it("lists every engine found, each with its own state and test, the current one marked with the labs' last test", async () => {
+  /** Three engines found: OrbStack the current one, Docker Desktop running too (its own last test
+   *  failed), Colima stopped; the labs' last test passed an hour ago. */
+  function renderThreeEngines() {
     const calls = installTauri();
     const onToggleTest = vi.fn();
     const onFix = vi.fn();
     const onRefresh = vi.fn();
-    const user = userEvent.setup();
     const report: SystemReport = {
       ...readyReport(),
       dockerEngine: "orbstack",
@@ -269,6 +270,11 @@ describe("EngineRows", () => {
         last={{ result: "ok", at: base.now - 3_600_000 }}
       />,
     );
+    return { calls, onToggleTest, onFix, onRefresh };
+  }
+
+  it("lists every engine found, each with its own state, the current one marked with the labs' last test", () => {
+    renderThreeEngines();
     // Three rows, in the check's order: the current one (the default), another running (its own
     // test failed, so said so), one stopped. The same words whichever is the default.
     expect(providerRows()).toEqual([
@@ -278,7 +284,11 @@ describe("EngineRows", () => {
     ]);
     // Not installed here: not a row (Add a provider covers it).
     expect(text()).not.toContain("Podman");
-    // Every running engine has its own test; the stopped one its fix.
+  });
+
+  it("gives every running engine its own test and the stopped one its fix", async () => {
+    const { onToggleTest, onFix } = renderThreeEngines();
+    const user = userEvent.setup();
     const tests = screen.getAllByRole("button", { name: /^test$/i });
     expect(tests).toHaveLength(2);
     await user.click(tests[0]);
@@ -287,8 +297,11 @@ describe("EngineRows", () => {
     expect(onToggleTest).toHaveBeenLastCalledWith("docker:docker-desktop");
     await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenCalledWith("docker", undefined);
-    // The other running engine can become the one labs use: Docker is pointed at it, the machine re-read.
-    await user.click(button(/use by default/i));
+  });
+
+  it("points Docker at another running engine made the default, then re-reads the machine", async () => {
+    const { calls, onRefresh } = renderThreeEngines();
+    await userEvent.setup().click(button(/use by default/i));
     await flush();
     expect(calls.find((c) => c.cmd === "docker_use_engine")?.args).toEqual({ engine: "docker-desktop" });
     expect(onRefresh).toHaveBeenCalledOnce();

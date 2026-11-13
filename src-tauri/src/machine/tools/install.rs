@@ -771,10 +771,20 @@ mod tests {
 
     #[tokio::test]
     async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
-        let Ok(steps) = plan(Dependency::Terraform) else { return }; // macOS without Homebrew
         let t = TestApp::new();
         let tools = terraform_tools(Rc::new(Cell::new(false)), true);
         let log = Sink::default();
+        let steps = match plan(Dependency::Terraform) {
+            Ok(steps) => steps,
+            // A host with nothing to install through (macOS without Homebrew, Linux without apt or
+            // dnf): the install is refused as its plan is, before anything runs.
+            Err(refused) => {
+                let err = install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap_err();
+                assert_eq!(err.to_string(), refused.to_string());
+                assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+                return;
+            }
+        };
         install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
         let lines = log.lines();
         assert_eq!(lines.first(), Some(&command_line(&steps[0])), "{lines:?}");
