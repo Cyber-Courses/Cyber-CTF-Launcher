@@ -281,18 +281,18 @@ pub(crate) fn networks(dir: &Path) -> Result<Networks> {
 /// kept by the launcher, its hash placed in the box for its set-up.
 pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, shared: Option<&Path>) -> Result<()> {
     let Seat { name, networks, replaces } = seat(&lab::load(dir)?, network)?;
-    let networks = networks.iter().map(|(n, o)| format!("{n:?}: {o}")).collect::<Vec<_>>().join(", ");
+    let networks = networks.iter().map(|(n, o)| format!("{}: {o}", yaml_string(n))).collect::<Vec<_>>().join(", ");
     let hardware = match cpu {
         Cpu::Lab => "",
         Cpu::Arm => "hardware: { arch: arm64 }, ",
     };
     // The learner's shared folder, mounted both ways at the same place on every form.
     let shared = shared.map_or_else(String::new, |folder| {
-        format!("host_folders: [{{ from: {:?}, path: {:?} }}], ", folder.display().to_string(), crate::shared_folder::MOUNT_POINT)
+        format!("host_folders: [{{ from: {}, path: {} }}], ", yaml_string(&folder.display().to_string()), yaml_string(crate::shared_folder::MOUNT_POINT))
     });
     let machine = match (kind, cpu) {
         (Kind::Container { image }, _) => {
-            format!("{{ {hardware}{shared}app: {{ image: {image:?} }}, networks: {{ {networks} }} }}")
+            format!("{{ {hardware}{shared}app: {{ image: {} }}, networks: {{ {networks} }} }}", yaml_string(image))
         }
         (Kind::Vm { desktop }, cpu) => {
             std::fs::write(dir.join(SETUP_FILE), setup_script(desktop))?;
@@ -315,6 +315,12 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
         sign_in::forget(dir);
     }
     added
+}
+
+/// `s` as a quoted YAML string: a JSON string, which YAML reads as written. Rust's `{:?}` writes
+/// escapes YAML refuses (a combining mark as `\u{301}`).
+fn yaml_string(s: &str) -> String {
+    serde_json::Value::from(s).to_string()
 }
 
 /// Takes the box out of the lab in `dir` (a lab's own access machine it stood in for comes back),
@@ -676,6 +682,21 @@ mod tests {
             let spec = lab::load(&dir).unwrap();
             let mounted: Vec<(&str, &str)> = spec.machines[NAME].host_folders.iter().map(|h| (h.from.as_str(), h.path.as_str())).collect();
             assert_eq!(mounted, [("/Users/someone/CyberCTF/shared", crate::shared_folder::MOUNT_POINT)], "{kind:?}");
+            remove(&dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_shared_folder_with_a_combining_mark_in_its_name_is_mounted() {
+        // Regression: the folder was quoted with Rust's `{:?}`, which writes a combining mark as
+        // `\u{301}`, an escape YAML refuses: a folder named "Café" in decomposed form (as macOS
+        // file APIs give it) made adding the box fail every time ("unknown escape").
+        let dir = web_lab();
+        for name in ["Cafe\u{301}", "quote\"and\\backslash", "tab\there"] {
+            let folder = Path::new("/Users/someone").join(name);
+            add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Some(&folder)).unwrap();
+            let spec = lab::load(&dir).unwrap();
+            assert_eq!(spec.machines[NAME].host_folders[0].from, folder.display().to_string(), "{name:?}");
             remove(&dir).unwrap();
         }
     }
