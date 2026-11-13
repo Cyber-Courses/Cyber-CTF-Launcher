@@ -184,7 +184,7 @@ mod tests {
         serde_json::from_value(json).unwrap()
     }
 
-    /// The player's server as its API answered on 2026-11-08: one node, `local` and `local-lvm`,
+    /// A player's server as its API answers: one node, `local` and `local-lvm`,
     /// `vmbr0` on 192.168.150.0/24 and `vmbr1` on the LAN this machine reaches it on.
     fn answer(path: &str) -> std::future::Ready<Result<String, CallError>> {
         std::future::ready(Ok(body(&match path {

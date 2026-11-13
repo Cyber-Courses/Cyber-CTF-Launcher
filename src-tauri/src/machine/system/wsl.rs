@@ -292,7 +292,7 @@ fn assess(dirs: &AppDirs, probes: &Probes) -> (WslState, bool) {
 
 /// Logs a WSL check's `outcome` at `info` when it differs from the last one, else at `debug`, so
 /// a Machine page left open doesn't fill the log with the same line; whether it was new (the
-/// name says it logs: Clean Code N7).
+/// name says it logs).
 fn log_if_changed(outcome: &str) -> bool {
     static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
     let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);

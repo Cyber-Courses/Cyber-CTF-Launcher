@@ -135,8 +135,7 @@ fn lost(spawned: &Spawned, last_line: Option<&str>) -> Error {
     spawned.files.settle_lost();
     if stopped_on_request(spawned.exit.get()) {
         // A Stop of the lab while it deployed: the worker was asked to end (SIGTERM) and did,
-        // without a verdict by design. Not a crash (it read as "exited with code 143" before,
-        // the review of 2026-11-13).
+        // without a verdict by design. Not a crash (it read as "exited with code 143" before).
         log::info!("deploy worker {} was stopped before the deploy ended", spawned.worker.pid);
         return Error::Invalid("the deploy was stopped before it ended".into());
     }

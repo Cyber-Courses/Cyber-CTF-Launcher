@@ -104,8 +104,8 @@ mod tests {
     }
 
     /// Many tasks on many threads, each taking its key's lock and bumping a counter under it: the
-    /// counters end exact, so no two tasks held one key's lock at once (Clean Code ch.13: run
-    /// with more threads than processors).
+    /// counters end exact, so no two tasks held one key's lock at once (more threads than
+    /// processors, so the tasks interleave).
     #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
     async fn the_locks_exclude_across_threads() {
         let locks: Arc<KeyedLocks<String>> = Arc::new(KeyedLocks::new());
