@@ -6,6 +6,14 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A shared folder whose name has an accent written as a combining mark no longer blocks the
+  attack box.** Its name went into the box's spec with an escape YAML refuses, so a folder named
+  "Café" in the decomposed form macOS file APIs give made adding the attack box fail every time
+  ("unknown escape"). The folder, the network names and the image are now quoted as YAML reads
+  them.
+
 ## [1.9.0] — 2026-11-13
 
 ### Added
