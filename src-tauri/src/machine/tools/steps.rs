@@ -16,11 +16,14 @@ pub struct Step {
     pub args: Vec<String>,
     /// A note shown before the step (e.g. when we open a download instead of installing).
     pub note: Option<String>,
+    /// A private folder of files the step reads (a root step's proxy settings), removed with
+    /// the step.
+    pub private: Option<tempfile::TempDir>,
 }
 
 /// A step that runs `program` with `args`, with no note.
 pub fn step(program: impl Into<String>, args: &[&str]) -> Step {
-    Step { program: program.into(), args: args.iter().map(ToString::to_string).collect(), note: None }
+    Step { program: program.into(), args: args.iter().map(ToString::to_string).collect(), note: None, private: None }
 }
 
 /// Without pkexec there is no graphical password prompt (Debian ships it apart from polkit).
@@ -317,7 +320,7 @@ mod tests {
     #[tokio::test]
     async fn steps_stream_both_outputs_and_report_a_failure() {
         let mut lines = Vec::new();
-        let ok = Step { program: "sh".into(), args: vec!["-c".into(), "echo out; echo err >&2".into()], note: Some("Note first".into()) };
+        let ok = Step { program: "sh".into(), args: vec!["-c".into(), "echo out; echo err >&2".into()], note: Some("Note first".into()), private: None };
         let fail = step("sh", &["-c", "exit 3"]);
         let err = run_steps(&[ok, fail], &mut |l| lines.push(l)).await.unwrap_err();
         assert_eq!(lines[0], "Note first");
