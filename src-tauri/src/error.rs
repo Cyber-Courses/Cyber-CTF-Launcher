@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::english;
+
 /// What went wrong, as the UI knows it: a code it can branch on and say in the player's
 /// language, with the values its message needs. `Other` and the refusals are the codes the UI
 /// shows as the error's own (English) message (`Code::OWN_MESSAGE`).
@@ -220,139 +222,23 @@ impl Code {
     #[cfg(test)]
     pub const OWN_MESSAGE: [Code; 3] = [Code::Other, Code::Refused, Code::RefusedBeforeActing];
 
-    /// The English message, for the log and for a UI without this code's translation; for a code
-    /// of `Code::OWN_MESSAGE`, what is said when an error has none of its own.
+    /// The English message, for the log and for a UI without this code's translation: the English
+    /// catalogue's sentence (`errors.codes.*`, what the English UI shows), then a port clash's
+    /// holder as the lab page says it under the error (`labs.failure.portHeldBy`). For a code of
+    /// `Code::OWN_MESSAGE`, which the catalogue doesn't have, what is said when an error has none
+    /// of its own.
     fn message(&self) -> String {
         match self {
             Code::Other => "Something went wrong.".into(),
             Code::Refused => "The operation was refused before it changed anything.".into(),
             Code::RefusedBeforeActing => "The change was refused before it acted: nothing changed.".into(),
-            Code::SignedOut => "You're signed out. Sign in again to continue.".into(),
-            Code::SessionExpired => "Your session expired: you're signed out. Sign in again to continue.".into(),
-            Code::LoginTimeout { minutes } => format!("Sign-in wasn't finished within {minutes} minutes, so it was cancelled. Try again."),
-            Code::AlreadyInProgress => "Another operation on this lab is already in progress; wait for it to finish.".into(),
-            Code::NoPasswordStored => "No password is stored for this host. Edit it and enter one.".into(),
-            Code::SignInCancelled => "Sign-in cancelled.".into(),
-            Code::SignInDenied => "Sign-in was declined at Cyber Auth, so you're still signed out. Sign in again and allow Cyber CTF to continue.".into(),
-            Code::SignInCodeUnavailable => {
-                "Signing in with a code isn't available yet. Copy the sign-in link into any browser instead, on this machine or another.".into()
+            Code::PortInUse { holder: Some(holder), .. } => {
+                let held = english::sentence(&english::LABS["failure"], "portHeldBy", &serde_json::json!({ "holder": holder }));
+                format!("{} {held}", english::coded(&english::ERRORS["codes"], self))
             }
-            Code::Unreachable { detail } => format!("Cyber CTF can't be reached ({detail}). Check your connection and try again."),
-            Code::OfflineReady { detail } => {
-                format!("Cyber CTF can't be reached ({detail}). This lab is installed here, so it can start offline, without saving progress.")
-            }
-            Code::PortInUse { port, holder } => {
-                let clash = format!(
-                    "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again."
-                );
-                // What holds it, as the lab page says it under the error (`labs.failure.portHeldBy`):
-                // the catalogue has one form, the holder its own line.
-                match holder {
-                    Some(holder) => format!("{clash} Held by {holder}. Stop it, then start the lab again."),
-                    None => clash,
-                }
-            }
-            Code::DockerNotRunning => {
-                "Docker isn't running. Start your container engine (Docker Desktop, or the docker service on Linux), then start the lab again.".into()
-            }
-            Code::DockerDenied { user } => format!(
-                "Docker is running, but your account can't use it yet. Add yourself to the docker group in a terminal (sudo usermod -aG docker {user}), then log out and back in."
-            ),
-            Code::DockerDeniedWindows { user } => format!(
-                "Docker is running, but your account can't use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users \"{user}\" /add), then sign out and back in."
-            ),
-            Code::ReapNoHost => "No account is recorded for it, so the launcher can't destroy it. Remove its resources in your cloud console.".into(),
-            Code::PlacementLockedHost { count, fields } => placement_locked(*count, "host", fields),
-            Code::PlacementLockedAccount { count, fields } => placement_locked(*count, "account", fields),
-            Code::LabRunningHere => "This lab is still running on this machine (or its machines are still there). Stop it, then try again.".into(),
-            Code::LabRunningOn { host } => format!("This lab is still running on {host}. Stop it there, then try again."),
-            Code::HostHasLabs { count } => {
-                let (labs, them) = if *count == 1 { ("lab", "it") } else { ("labs", "them") };
-                format!("{count} {labs} still running on this host. Stop {them} before removing the host.")
-            }
-            Code::ToolMissing { tool } => format!("`{tool}` is not installed or not on PATH"),
-            Code::CommandFailed { command, stderr } => format!("`{command}` failed: {stderr}"),
-            Code::DownloadStalled { .. } | Code::DownloadFailed { .. } | Code::BoxDownloadStalled { .. } | Code::BoxDownloadFailed { .. } => {
-                download_message(self)
-            }
-            Code::PickCloudAccount => "This lab runs in your cloud account: pick one of your cloud accounts to start it on.".into(),
-            Code::NoHypervisor => {
-                "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account."
-                    .into()
-            }
-            Code::TurnedOffByPolicy { setting } => {
-                format!("Your organization turned this off on this computer (policy setting {setting}). Ask your IT team if you need it.")
-            }
-            _ => run_message(self),
+            _ => english::coded(&english::ERRORS["codes"], self),
         }
     }
-}
-
-/// The server `server` refused the lab's saved credentials.
-fn server_refused(server: &str) -> String {
-    format!("Cyber CTF can't sign in to {server}: its token was revoked or its password changed. Update it in Servers.")
-}
-
-/// The message of a download that stalled or failed (`code`): the lab's images, or its VM box.
-fn download_message(code: &Code) -> String {
-    match code {
-        Code::DownloadStalled { minutes } => format!(
-            "Downloading the lab's images stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again: what was already downloaded is kept."
-        ),
-        Code::DownloadFailed { reason } => format!("Couldn't download the lab's images: {reason}. Check your internet connection, then try again."),
-        Code::BoxDownloadStalled { minutes } => format!(
-            "Downloading the lab's VM box stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again."
-        ),
-        Code::BoxDownloadFailed { reason } => format!("Couldn't download the lab's VM box: {reason}. Check your internet connection, then try again."),
-        other => other.message(),
-    }
-}
-
-/// The message of a lab's run that the runner failed (`code`): the server refusing its
-/// credentials, a tool too old, Hyper-V's elevation refused, a lab not ready, machines gone or
-/// none left, a lab that can't be parked, a step stopped for taking too long.
-fn run_message(code: &Code) -> String {
-    match code {
-        Code::ServerAuthFailed { server } => server_refused(server),
-        Code::ToolTooOld { tool, found, required } => {
-            format!("This lab needs {tool} {required} or later, and this computer has {found}. Update it, then start the lab again.")
-        }
-        Code::ElevationFailed { reason } => {
-            format!("Hyper-V needs administrator rights, and they couldn't be had ({reason}). Start the lab again and accept the prompt.")
-        }
-        Code::LabNotReady { detail } => format!("The lab started, but didn't become ready: {detail}"),
-        Code::MachinesGone { machines } => format!(
-            "Some of this lab's machines are gone ({machines}): they were removed outside Cyber CTF, so it can't resume as it was. Start it again for a fresh copy."
-        ),
-        Code::NothingToResume => "Nothing is left of this lab to resume (its stopped containers or VMs are gone). Start it again for a fresh copy.".into(),
-        Code::NotParkable => "This lab can't be paused or shut down. Stop it instead.".into(),
-        step => step_stopped(step),
-    }
-}
-
-/// The message of a lab's step stopped for taking too long (`code`), with what to do then.
-fn step_stopped(code: &Code) -> String {
-    const AGAIN: &str = "Start the lab again; if it keeps happening, check the network and the resources of Docker, the hypervisor or the server.";
-    match code {
-        Code::StepStalled { step, minutes, last_line } => {
-            format!(
-                "The lab's `{step}` step showed no progress for {minutes} minutes, so it was stopped. Its last output was: \u{201c}{last_line}\u{201d}. {AGAIN}"
-            )
-        }
-        Code::StepSilent { step, minutes } => format!("The lab's `{step}` step printed nothing for {minutes} minutes, so it was stopped. {AGAIN}"),
-        Code::StepCeiling { step, hours } => {
-            format!("The lab's `{step}` step was still working after {hours} hours, the longest any step may run, so it was stopped. {AGAIN}")
-        }
-        Code::StepTimedOut { step, minutes } => format!("The lab's `{step}` step ran into its {minutes}-minute limit, so it was stopped. {AGAIN}"),
-        // The codes `Code::message` words itself never reach here.
-        _ => format!("The lab's step was stopped. {AGAIN}"),
-    }
-}
-
-/// "2 labs are still on this account: stop them before changing its region."
-fn placement_locked(count: u64, what: &str, fields: &str) -> String {
-    let (labs, them) = if count == 1 { ("lab is", "it") } else { ("labs are", "them") };
-    format!("{count} {labs} still on this {what}: stop {them} before changing its {fields}.")
 }
 
 /// A failure of the launcher's own code, as its functions return it; the webview gets it as a

@@ -59,31 +59,24 @@ fn a_coded_error_says_its_code_in_english() {
     assert_eq!(e.code(), Code::LoginTimeout { minutes: 5 });
 }
 
-/// Each code's English message is said twice: here (the log, a worker's ✗ line) and in the
-/// webview's catalog (`errors.codes.*`, what the English UI shows). They must agree, for every
-/// form of every code ([`form`]). A port clash with its holder is the catalogue's sentence,
-/// then the holder's line the lab page shows under it (`labs.failure.portHeldBy`): the
-/// catalogue has no holder form of its own.
+/// Each code's English message is the English catalogue's sentence, which every form of every
+/// code ([`form`]) has; filled in, no placeholder is left. A plural and a port clash's holder,
+/// spelled out.
 #[test]
-fn every_code_says_what_the_english_catalog_says() {
-    let catalog: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/errors.json")).unwrap();
-    let labs: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/labs.json")).unwrap();
+fn every_code_says_its_english_catalogue_sentence() {
     for code in sample_codes().into_iter().filter(|c| !Code::OWN_MESSAGE.contains(c)) {
         let wire = serde_json::to_value(Wire { code: code.clone(), message: String::new() }).unwrap();
-        let entry = &catalog["codes"][wire["code"].as_str().unwrap()];
-        // A plural ({ one, other }) by its `count`, as the webview picks it in English.
-        let form = if wire["args"]["count"] == 1 { "one" } else { "other" };
-        let mut text = entry.as_str().or_else(|| entry[form].as_str()).unwrap_or_else(|| panic!("no message for {wire}")).to_string();
-        for (name, value) in wire["args"].as_object().into_iter().flatten() {
-            let value = value.as_str().map_or_else(|| value.to_string(), str::to_string);
-            text = text.replace(&format!("{{{name}}}"), &value);
-        }
-        if let Code::PortInUse { holder: Some(holder), .. } = &code {
-            let held = labs["failure"]["portHeldBy"].as_str().unwrap().replace("{holder}", holder);
-            text = format!("{text} {held}");
-        }
-        assert_eq!(code.message(), text, "{wire}");
+        let text = code.message();
+        assert_ne!(text, wire["code"].as_str().unwrap(), "no sentence for {wire}");
+        assert!(!text.contains('{'), "a placeholder left in {wire}: {text}");
     }
+    assert_eq!(Code::HostHasLabs { count: 1 }.message(), "1 lab still running on this host. Stop it before removing the host.");
+    assert_eq!(Code::HostHasLabs { count: 3 }.message(), "3 labs still running on this host. Stop them before removing the host.");
+    assert_eq!(
+        Code::PortInUse { port: crate::runtime::port::HostPort::new(8000), holder: Some("nginx (pid 4123)".into()) }.message(),
+        "Host port 8000 is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again. \
+             Held by nginx (pid 4123). Stop it, then start the lab again."
+    );
 }
 
 /// Which form of a code `code` is: its variant, a port clash told with or without its holder.
