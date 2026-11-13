@@ -49,7 +49,7 @@ esac"#
 }
 
 #[cfg(any(target_os = "linux", test))]
-use crate::platform::root_script::{NEED_CURL, NEED_GPG, NEED_UNZIP, PRIVATE_WORKDIR, check_keys};
+use crate::platform::root_script::{NEED_CURL, NEED_GPG, NEED_UNZIP, RootScript, check_keys};
 
 /// The distro's codename as the vendors' repos name it (`$codename`): an Ubuntu derivative like
 /// Mint uses its Ubuntu base's. For the Debian family (Debian itself, Kali, Devuan: `ID_LIKE`
@@ -109,7 +109,7 @@ fn apt_repo_script(r: &VendorRepo) -> String {
 /// made a keyring under `/etc/apt/keyrings`, the source restricted to this machine's architecture
 /// and to that key, and apt's lists updated. `--batch --yes`: a second run (after a partial one)
 /// overwrites the keyring instead of asking on a terminal it doesn't have. Runs in
-/// [`PRIVATE_WORKDIR`], after [`fetch_prelude`].
+/// a [`RootScript`], after [`fetch_prelude`].
 #[cfg(any(target_os = "linux", test))]
 fn apt_repo_setup(r: &VendorRepo) -> String {
     let VendorRepo { vendor, fingerprint, key_url, repo, suite, component, name, by_hand } = r;
@@ -145,27 +145,27 @@ const HASHICORP: VendorRepo = VendorRepo {
 
 /// HashiCorp's apt repo, then terraform.
 #[cfg(any(target_os = "linux", test))]
-pub fn terraform_script() -> String {
-    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y terraform", apt_repo_script(&HASHICORP))
+pub fn terraform_script() -> RootScript {
+    RootScript::new(format!("{CODENAME}; {}; apt-get install -y terraform", apt_repo_script(&HASHICORP)))
 }
 
 /// HashiCorp's apt repo, then Vagrant: the distributions' own package is older than labs need
 /// (Debian 13 ships 2.3.8; labs need 2.4.0 or later), so a setup that installed it left a machine
 /// that refused every VM lab.
 #[cfg(any(target_os = "linux", test))]
-pub fn vagrant_script() -> String {
+pub fn vagrant_script() -> RootScript {
     const VAGRANT: VendorRepo = VendorRepo { by_hand: Some("https://developer.hashicorp.com/vagrant/install"), ..HASHICORP };
-    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y vagrant", apt_repo_script(&VAGRANT))
+    RootScript::new(format!("{CODENAME}; {}; apt-get install -y vagrant", apt_repo_script(&VAGRANT)))
 }
 
 /// HashiCorp's apt repo, then the Vagrant VMware Utility, whose package generates its
 /// certificates and enables and starts its service. `--reinstall`: an install that is there
 /// already has its package configured again, which restarts a service that had stopped.
 #[cfg(any(target_os = "linux", test))]
-pub fn vmware_utility_script() -> String {
+pub fn vmware_utility_script() -> RootScript {
     // HashiCorp's repository, but a release it doesn't serve yet is sent to the utility's own page.
     let repo = VendorRepo { by_hand: Some("https://developer.hashicorp.com/vagrant/install/vmware"), ..HASHICORP };
-    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y --reinstall vagrant-vmware-utility", apt_repo_script(&repo))
+    RootScript::new(format!("{CODENAME}; {}; apt-get install -y --reinstall vagrant-vmware-utility", apt_repo_script(&repo)))
 }
 
 /// Oracle's VirtualBox archive signing key (`info@virtualbox.org`, "Oracle Corporation (VirtualBox
@@ -205,11 +205,11 @@ const KERNEL_BUILD: &str = r#"kver="$(uname -r)"; flavour=""; f="$kver"; while [
 /// headless VirtualBox that Vagrant drives never uses. When the running kernel's headers were gone,
 /// it says the driver waits for a restart.
 #[cfg(any(target_os = "linux", test))]
-pub fn virtualbox_script() -> String {
-    format!(
-        r#"{PRIVATE_WORKDIR}; apt-get update; {KERNEL_BUILD}; if apt-cache policy virtualbox 2>/dev/null | grep -q 'Candidate: [0-9]'; then apt-get install -y --no-install-recommends virtualbox $build; else {CODENAME}; {}; pkg="$(apt-cache search --names-only '^virtualbox-[0-9]+\.[0-9]+$' | awk '{{print $1}}' | sort -V | tail -n 1)"; [ -n "$pkg" ] || {{ echo "No VirtualBox package found in Oracle's repo. Install it from https://www.virtualbox.org/wiki/Linux_Downloads" >&2; exit 1; }}; apt-get install -y --no-install-recommends "$pkg" $build; fi; [ -z "$reboot" ] || echo "VirtualBox is installed. This computer runs a kernel ($kver) whose headers its package sources no longer have, so the newer kernel came with its headers: restart the computer to start it, and VirtualBox's driver is built then.""#,
+pub fn virtualbox_script() -> RootScript {
+    RootScript::new(format!(
+        r#"apt-get update; {KERNEL_BUILD}; if apt-cache policy virtualbox 2>/dev/null | grep -q 'Candidate: [0-9]'; then apt-get install -y --no-install-recommends virtualbox $build; else {CODENAME}; {}; pkg="$(apt-cache search --names-only '^virtualbox-[0-9]+\.[0-9]+$' | awk '{{print $1}}' | sort -V | tail -n 1)"; [ -n "$pkg" ] || {{ echo "No VirtualBox package found in Oracle's repo. Install it from https://www.virtualbox.org/wiki/Linux_Downloads" >&2; exit 1; }}; apt-get install -y --no-install-recommends "$pkg" $build; fi; [ -z "$reboot" ] || echo "VirtualBox is installed. This computer runs a kernel ($kver) whose headers its package sources no longer have, so the newer kernel came with its headers: restart the computer to start it, and VirtualBox's driver is built then.""#,
         apt_repo_script(&ORACLE)
-    )
+    ))
 }
 
 /// Docker's release key (`docker@docker.com`, Docker Release (CE deb)), the one download.docker.com
@@ -243,17 +243,17 @@ const DOCKER: VendorRepo = VendorRepo {
 /// script (get.docker.com) can't be held to a key (it fetches the key and installs what it signed
 /// in one go), so it never runs as root from here.
 #[cfg(any(target_os = "linux", test))]
-pub fn docker_script(user: Option<&str>) -> String {
+pub fn docker_script(user: Option<&str>) -> RootScript {
     use std::fmt::Write as _;
     let mut s = format!(
-        "{PRIVATE_WORKDIR}; {}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'Cyber CTF installs Docker on Debian, Ubuntu and the distributions built on them. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; if [ -n \"$own\" ]; then {DISTRIBUTION_DOCKER}; else {}; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi",
+        "{}; {DOCKER_DIST}; [ -n \"$dist\" ] || {{ echo 'Cyber CTF installs Docker on Debian, Ubuntu and the distributions built on them. Install Docker Engine from your distribution or https://docs.docker.com/engine/install/, then check again.' >&2; exit 1; }}; if [ -n \"$own\" ]; then {DISTRIBUTION_DOCKER}; else {}; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; fi",
         fetch_prelude(),
         apt_repo_setup(&DOCKER)
     );
     if let Some(u) = user.filter(|u| valid_user(u)) {
         let _ = write!(s, "; usermod -aG docker {u}; echo 'Added {u} to the docker group: log out and back in (or restart) for it to apply.'");
     }
-    s
+    RootScript::new(s)
 }
 
 /// Which of Docker's apt repositories fits this system (`$dist`, empty when none does) and its
@@ -288,11 +288,11 @@ pub const AWS_CLI_KEY_FINGERPRINT: &str = "FB5DB77FD5C118B80511ADA8A6310ACC46724
 /// report it by its fingerprint. Then `unzip -t` checks the archive is whole before anything
 /// in it runs.
 #[cfg(any(target_os = "linux", test))]
-pub fn awscli_script() -> String {
-    format!(
-        r#"{PRIVATE_WORKDIR}; {NEED_CURL}; url="https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip"; curl -fsSL "$url" -o "$d/awscliv2.zip"; curl -fsSL "$url.sig" -o "$d/awscliv2.zip.sig"; {}; {NEED_UNZIP}; unzip -tq "$d/awscliv2.zip" >/dev/null; unzip -oq "$d/awscliv2.zip" -d "$d"; "$d/aws/install" --update"#,
+pub fn awscli_script() -> RootScript {
+    RootScript::new(format!(
+        r#"{NEED_CURL}; url="https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip"; curl -fsSL "$url" -o "$d/awscliv2.zip"; curl -fsSL "$url.sig" -o "$d/awscliv2.zip.sig"; {}; {NEED_UNZIP}; unzip -tq "$d/awscliv2.zip" >/dev/null; unzip -oq "$d/awscliv2.zip" -d "$d"; "$d/aws/install" --update"#,
         aws_verify()
-    )
+    ))
 }
 
 /// Stops the script unless `"$d/awscliv2.zip.sig"` is a valid signature of `"$d/awscliv2.zip"`
@@ -327,8 +327,8 @@ const MICROSOFT: VendorRepo = VendorRepo {
 /// Microsoft's install script (aka.ms/InstallAzureCLIDeb) sets up, without running that script as
 /// root.
 #[cfg(any(target_os = "linux", test))]
-pub fn azurecli_script() -> String {
-    format!("{PRIVATE_WORKDIR}; {CODENAME}; {}; apt-get install -y azure-cli", apt_repo_script(&MICROSOFT))
+pub fn azurecli_script() -> RootScript {
+    RootScript::new(format!("{CODENAME}; {}; apt-get install -y azure-cli", apt_repo_script(&MICROSOFT)))
 }
 
 /// Google Cloud's package signing key ("Artifact Registry Repository Signer"), the one
@@ -349,8 +349,8 @@ const GOOGLE: VendorRepo = VendorRepo {
 /// Google Cloud's apt repository, then `google-cloud-cli` (gcloud), system-wide: what Google
 /// documents for Debian and Ubuntu, in place of its install script.
 #[cfg(any(target_os = "linux", test))]
-pub fn gcloud_script() -> String {
-    format!("{PRIVATE_WORKDIR}; {}; apt-get install -y google-cloud-cli", apt_repo_script(&GOOGLE))
+pub fn gcloud_script() -> RootScript {
+    RootScript::new(format!("{}; apt-get install -y google-cloud-cli", apt_repo_script(&GOOGLE)))
 }
 
 /// libvirt, with what `vagrant plugin install vagrant-libvirt` compiles against: libvirt's headers
@@ -360,7 +360,7 @@ pub fn gcloud_script() -> String {
 /// `kvm`, where the distribution has one), so Vagrant reaches `qemu:///system` and `/dev/kvm`
 /// without root; the groups apply from the next login.
 #[cfg(any(target_os = "linux", test))]
-pub fn libvirt_script(user: Option<&str>) -> String {
+pub fn libvirt_script(user: Option<&str>) -> RootScript {
     use std::fmt::Write as _;
     // virtiofsd: libvirt's shared folders (the attack box's /shared) need it, and it is its own
     // package from Debian 12 and Ubuntu 23.10 on (QEMU's before); a release without it skips it.
@@ -374,7 +374,7 @@ pub fn libvirt_script(user: Option<&str>) -> String {
             join_kvm_group(u, KVM_DEVICE)
         );
     }
-    s
+    RootScript::new(s)
 }
 
 /// QEMU and its disk tools, then the player into the group `/dev/kvm` belongs to, so vagrant-qemu
@@ -384,13 +384,13 @@ pub fn libvirt_script(user: Option<&str>) -> String {
 /// on Linux ([`crate::runtime::providers::needs_mkisofs`]). Every Debian and Ubuntu release has
 /// the package; Debian's `xorriso` has no `mkisofs`, only `xorrisofs`.
 #[cfg(any(target_os = "linux", test))]
-pub fn qemu_script(user: Option<&str>) -> String {
+pub fn qemu_script(user: Option<&str>) -> RootScript {
     let mut s = "apt-get update && apt-get install -y qemu-system qemu-utils genisoimage".to_string();
     if let Some(u) = user.filter(|u| valid_user(u)) {
         s.push_str("; ");
         s.push_str(&join_kvm_group(u, KVM_DEVICE));
     }
-    s
+    RootScript::new(s)
 }
 
 /// The KVM device.
@@ -444,7 +444,7 @@ struct RpmRepo {
 #[cfg(any(target_os = "linux", test))]
 const RPM_SERVED: &str = r#"rpm_served() { served=$(curl -s -o /dev/null -w '%{http_code}' "$1/repodata/repomd.xml" || true); case "$served" in 2??) return 0 ;; 404) return 1 ;; *) echo "Couldn't reach $1 (HTTP $served). Check this machine's internet access or proxy, then try again." >&2; exit 1 ;; esac; }"#;
 
-/// The script that sets `r` up for dnf, after [`fetch_prelude`] in [`PRIVATE_WORKDIR`]: the
+/// The script that sets `r` up for dnf, after [`fetch_prelude`] in a [`RootScript`]: the
 /// release the repository serves found (`$rel`, this Fedora's or the newest earlier one of the
 /// three), the key checked and imported, the repo file written.
 #[cfg(any(target_os = "linux", test))]
@@ -486,29 +486,29 @@ const HASHICORP_RPM: RpmRepo = RpmRepo {
 /// Docker Engine on Fedora from Docker's own repository, its key pinned, then its service on;
 /// the player joins the `docker` group as on Debian.
 #[cfg(any(target_os = "linux", test))]
-pub fn docker_dnf_script(user: Option<&str>) -> String {
+pub fn docker_dnf_script(user: Option<&str>) -> RootScript {
     use std::fmt::Write as _;
     let mut s = format!(
-        "{PRIVATE_WORKDIR}; {}; {}; dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; systemctl enable --now docker",
+        "{}; {}; dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; systemctl enable --now docker",
         fetch_prelude(),
         rpm_repo_setup(&DOCKER_RPM)
     );
     if let Some(u) = user.filter(|u| valid_user(u)) {
         let _ = write!(s, "; usermod -aG docker {u}; echo 'Added {u} to the docker group: log out and back in (or restart) for it to apply.'");
     }
-    s
+    RootScript::new(s)
 }
 
 /// Vagrant on Fedora from HashiCorp's rpm repository (the distribution has none).
 #[cfg(any(target_os = "linux", test))]
-pub fn vagrant_dnf_script() -> String {
-    format!("{PRIVATE_WORKDIR}; {}; {}; dnf install -y vagrant", fetch_prelude(), rpm_repo_setup(&HASHICORP_RPM))
+pub fn vagrant_dnf_script() -> RootScript {
+    RootScript::new(format!("{}; {}; dnf install -y vagrant", fetch_prelude(), rpm_repo_setup(&HASHICORP_RPM)))
 }
 
 /// Terraform on Fedora from the same repository.
 #[cfg(any(target_os = "linux", test))]
-pub fn terraform_dnf_script() -> String {
-    format!("{PRIVATE_WORKDIR}; {}; {}; dnf install -y terraform", fetch_prelude(), rpm_repo_setup(&HASHICORP_RPM))
+pub fn terraform_dnf_script() -> RootScript {
+    RootScript::new(format!("{}; {}; dnf install -y terraform", fetch_prelude(), rpm_repo_setup(&HASHICORP_RPM)))
 }
 
 /// VirtualBox on Fedora from RPM Fusion (Oracle's own repository lags the Fedora releases by
@@ -516,20 +516,20 @@ pub fn terraform_dnf_script() -> String {
 /// then the player into `vboxusers`. RPM Fusion's release package carries its signing key, which
 /// dnf imports as it installs it.
 #[cfg(any(target_os = "linux", test))]
-pub fn virtualbox_dnf_script(user: Option<&str>) -> String {
+pub fn virtualbox_dnf_script(user: Option<&str>) -> RootScript {
     use std::fmt::Write as _;
     let mut s = r#"dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm"; dnf install -y VirtualBox akmod-VirtualBox "kernel-devel-$(uname -r)" kernel-headers; akmods --force --kernels "$(uname -r)"; modprobe vboxdrv || echo "VirtualBox's driver isn't loaded yet: restart the computer to start it, and VirtualBox's driver is built then.""#.to_string();
     if let Some(u) = user.filter(|u| valid_user(u)) {
         let _ = write!(s, "; usermod -aG vboxusers {u}");
     }
-    s
+    RootScript::new(s)
 }
 
 /// libvirt on Fedora with what vagrant-libvirt builds against (libvirt's headers, a C compiler,
 /// pkg-config, Ruby's headers) and virtiofsd for the shared folders, its service on, then the
 /// player into the `libvirt` group (and the KVM device's).
 #[cfg(any(target_os = "linux", test))]
-pub fn libvirt_dnf_script(user: Option<&str>) -> String {
+pub fn libvirt_dnf_script(user: Option<&str>) -> RootScript {
     use std::fmt::Write as _;
     let mut s = "dnf install -y libvirt libvirt-daemon-kvm qemu-kvm virt-install virt-manager libvirt-devel gcc make pkgconf-pkg-config ruby-devel virtiofsd; systemctl enable --now libvirtd".to_string();
     if let Some(u) = user.filter(|u| valid_user(u)) {
@@ -539,19 +539,19 @@ pub fn libvirt_dnf_script(user: Option<&str>) -> String {
             join_kvm_group(u, KVM_DEVICE)
         );
     }
-    s
+    RootScript::new(s)
 }
 
 /// QEMU and its disk tools on Fedora, with `genisoimage` for vagrant-qemu's cloud-init seeds,
 /// then the player into the KVM device's group.
 #[cfg(any(target_os = "linux", test))]
-pub fn qemu_dnf_script(user: Option<&str>) -> String {
+pub fn qemu_dnf_script(user: Option<&str>) -> RootScript {
     let mut s = "dnf install -y qemu-kvm qemu-img genisoimage".to_string();
     if let Some(u) = user.filter(|u| valid_user(u)) {
         s.push_str("; ");
         s.push_str(&join_kvm_group(u, KVM_DEVICE));
     }
-    s
+    RootScript::new(s)
 }
 
 #[cfg(test)]
@@ -671,10 +671,10 @@ mod tests {
         // root:kvm 0660) every lab's `accel=kvm` was refused: "Could not access KVM kernel module:
         // Permission denied".
         let s = qemu_script(Some("ada"));
-        assert!(s.starts_with("apt-get update && apt-get install -y qemu-system qemu-utils genisoimage; "), "{s}");
-        assert!(s.ends_with(&join_kvm_group("ada", "/dev/kvm")), "{s}");
+        let install = "apt-get update && apt-get install -y qemu-system qemu-utils genisoimage";
+        assert_eq!(s, RootScript::new(format!("{install}; {}", join_kvm_group("ada", "/dev/kvm"))));
         assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
-        assert_eq!(qemu_script(None), "apt-get update && apt-get install -y qemu-system qemu-utils genisoimage");
+        assert_eq!(qemu_script(None), RootScript::new(install));
         assert!(!qemu_script(Some("a; rm -rf /")).contains("usermod"));
     }
 
@@ -686,7 +686,8 @@ mod tests {
         // package with /usr/bin/mkisofs on Debian and Ubuntu.
         for user in [None, Some("ada")] {
             let s = qemu_script(user);
-            assert!(s.split(';').next().unwrap().split_whitespace().any(|w| w == "genisoimage"), "{s}");
+            let install = s.split("; ").find(|c| c.contains("apt-get install")).unwrap();
+            assert!(install.split_whitespace().any(|w| w == "genisoimage"), "{s}");
         }
     }
 
@@ -764,7 +765,7 @@ mod tests {
     }
 
     /// Every vendor's apt repository, with the script that sets it up.
-    fn repo_scripts() -> [(&'static VendorRepo, String); 7] {
+    fn repo_scripts() -> [(&'static VendorRepo, RootScript); 7] {
         [
             (&HASHICORP, terraform_script()),
             (&HASHICORP, vagrant_script()),
@@ -806,7 +807,7 @@ mod tests {
     }
 
     /// Every install script that runs as root.
-    fn root_scripts() -> [String; 8] {
+    fn root_scripts() -> [RootScript; 8] {
         [
             awscli_script(),
             docker_script(Some("player")),
