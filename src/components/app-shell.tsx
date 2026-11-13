@@ -21,6 +21,7 @@ import { LaunchConfirm } from "@/features/app/launch-confirm";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { OfflineStartPrompt } from "@/features/labs/offline-start-prompt";
+import { DestructivePrompt, WarningPrompt } from "@/components/destructive-prompt";
 import { useAttackBoxAutoStart } from "@/features/labs/attack-box-auto";
 import { useActiveOperations } from "@/features/labs/runs/operations";
 import { useT } from "@/lib/i18n";
@@ -141,6 +142,8 @@ function MainWindow({ nav, system, session, chrome, palette, labTitle, onLabChan
       <QuitGuard />
       <PortModePrompt />
       <OfflineStartPrompt />
+      <DestructivePrompt />
+      <WarningPrompt />
       <Toaster />
       <Sidebar
         tab={tab}
