@@ -268,7 +268,9 @@ fn in_use(e: std::io::Error, dir: &Path) -> Error {
     }
 }
 
-/// A `startLab` or `claimLaunch` answer.
+/// A `startLab` or `claimLaunch` answer, typed after the fact: what the tests build by hand
+/// (`start_lab` types its answer at the boundary).
+#[cfg(test)]
 pub(crate) fn parse_launch(launch_json: serde_json::Value) -> Result<Launch> {
     serde_json::from_value(launch_json).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))
 }
@@ -309,10 +311,20 @@ pub(crate) async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_wor
 /// and the launch's values (the evidence claim, the player's flags).
 const START_LAB: &str = "mutation ($id: ID!) { startLab(labId: $id) { labId runtime repository commit env { name value } } }";
 
-/// The backend's `startLab` answer for `lab_id`: what to download and run, and the launch's values.
-async fn start_lab(lab_id: &str) -> Result<serde_json::Value> {
+/// The data of the `startLab` operation's answer.
+#[derive(serde::Deserialize)]
+struct StartLabData {
+    #[serde(rename = "startLab")]
+    start_lab: Launch,
+}
+
+/// The backend's `startLab` answer for `lab_id`: what to download and run, and the launch's
+/// values, typed at the boundary (Clean Code ch.8, 2026-11-13: the raw JSON crossed into the
+/// caller, which typed it a step later).
+async fn start_lab(lab_id: &str) -> Result<Launch> {
     let data = api::graphql(START_LAB, json!({ "id": lab_id }), true).await?;
-    Ok(data["startLab"].clone())
+    let answer: StartLabData = serde_json::from_value(data).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))?;
+    Ok(answer.start_lab)
 }
 
 /// The values a launch of `lab_id` gives the lab, as the backend at `base` answers player
@@ -332,7 +344,7 @@ async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(
         log::warn!("the session can't be read, so {lab_id}'s launch isn't kept for an offline start: {e}");
         None
     });
-    match start_lab(lab_id).await.and_then(parse_launch) {
+    match start_lab(lab_id).await {
         Ok(answer) => {
             if let Some(user) = &user
                 && let Err(e) = offline::keep(base, &answer, user)
