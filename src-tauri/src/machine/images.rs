@@ -34,7 +34,7 @@ pub async fn image_download_size(image: String) -> Option<u64> {
     match hub_tag_size(&repo, &tag).await {
         Ok(size) => size,
         // No size is what the page shows; why (no client, no network, Hub's refusal, an answer
-        // without one) goes to the log, not into silence (Clean Code ch.7, 2026-11-13).
+        // without one) goes to the log, not into silence.
         Err(why) => {
             log::debug!("no download size for {image}: {why}");
             None

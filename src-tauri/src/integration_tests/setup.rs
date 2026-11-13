@@ -268,8 +268,8 @@ fn setup_root() -> PathBuf {
 
 /// The end of a pass that doesn't stop at a restart: the entry's folder is dropped when the pass
 /// installed nothing, since only an installed item's record names it among what is left on the
-/// machine (the leftover audit reported it after every check-only or nothing-to-install pass:
-/// fedora45-bare's setup shards, where the guided setup installs nothing). A pass
+/// machine (the leftover audit reported it after every check-only or nothing-to-install pass,
+/// a bare Fedora's where the guided setup installs nothing). A pass
 /// that installed something keeps it: its marks are the next pass's.
 fn end_of_pass(installed: usize, root: &Path) {
     if installed == 0 {

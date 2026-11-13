@@ -424,7 +424,7 @@ fn valid_user(u: &str) -> bool {
 /// `/etc/pki/rpm-gpg` and imported, then a repo file under `/etc/yum.repos.d` that trusts that
 /// key alone (`gpgcheck=1`). `RELEASE` in the base URL is the Fedora release the repository is
 /// read for: this one, else the newest earlier one it serves (HashiCorp serves a new Fedora
-/// release some weeks after it ships), else the refusal, as the apt repositories' `release_served`.
+/// release weeks after it ships), else the refusal, as the apt repositories' `release_served`.
 #[cfg(any(target_os = "linux", test))]
 struct RpmRepo {
     vendor: &'static str,
@@ -461,7 +461,7 @@ fn rpm_repo_setup(r: &RpmRepo) -> String {
 }
 
 /// Docker's rpm repository for Fedora, its key pinned (`docker@docker.com`, the key
-/// download.docker.com/linux/fedora/gpg served; not the apt one).
+/// download.docker.com/linux/fedora/gpg serves; not the apt one).
 #[cfg(any(target_os = "linux", test))]
 const DOCKER_RPM: RpmRepo = RpmRepo {
     vendor: "Docker",
@@ -511,8 +511,8 @@ pub fn terraform_dnf_script() -> String {
     format!("{PRIVATE_WORKDIR}; {}; {}; dnf install -y terraform", fetch_prelude(), rpm_repo_setup(&HASHICORP_RPM))
 }
 
-/// VirtualBox on Fedora from RPM Fusion (Oracle's own repository lags the Fedora releases: no
-/// build for 45), its kernel module built here for the running kernel (akmods),
+/// VirtualBox on Fedora from RPM Fusion (Oracle's own repository lags the Fedora releases by
+/// months), its kernel module built here for the running kernel (akmods),
 /// then the player into `vboxusers`. RPM Fusion's release package carries its signing key, which
 /// dnf imports as it installs it.
 #[cfg(any(target_os = "linux", test))]
@@ -600,7 +600,7 @@ mod dnf_tests {
     #[cfg(unix)]
     #[test]
     fn a_release_the_repository_doesnt_serve_falls_back_to_the_newest_earlier_one() {
-        // HashiCorp served Fedora 44 and not 45.
+        // HashiCorp serving Fedora 44 and not yet 45.
         let s = rpm_repo_setup(&HASHICORP_RPM);
         let head = &s[..s.find("; command -v gpg").unwrap()];
         let bin = std::env::temp_dir().join(format!("cyberctf-rpm-probe-{}-{}", std::process::id(), rand::random::<u32>()));
@@ -949,7 +949,7 @@ mod tests {
     #[test]
     fn a_debian_derivative_the_vendor_doesnt_serve_takes_its_debian_bases_packages() {
         // Regression: Kali (kali-rolling) stopped at "HashiCorp has no packages for kali-rolling
-        // yet" (kali-bare's setup-libvirt); HashiCorp serves trixie and bookworm.
+        // yet"; HashiCorp serves trixie and bookworm.
         let s = apt_repo_script(&HASHICORP);
         let snippet = &s[s.find("; release_served \"$repo\"").unwrap() + 2..s.find("; command -v gpg").unwrap()];
         let bin = std::env::temp_dir().join(format!("cyberctf-curl-{}-{}", std::process::id(), rand::random::<u32>()));

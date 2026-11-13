@@ -85,8 +85,8 @@ pub fn headless_std(cmd: &mut std::process::Command) -> &mut std::process::Comma
 /// Starts a desktop app and returns at once, the app on its own: no console window, none of this
 /// process's standard handles (a child given them keeps them open as long as it runs, and whoever
 /// waits for this process's output then waits for the app: Docker Desktop, started by the guided
-/// setup under a test harness whose output a script redirected, held the script until the rig's
-/// budget ended it), its own process group. Windows only: macOS opens apps with
+/// setup under a test harness whose output a script redirected, held the script until the
+/// harness's budget ended it), its own process group. Windows only: macOS opens apps with
 /// `open -a`, which returns by itself.
 #[cfg(windows)]
 pub fn launch_detached(program: &str) -> Result<()> {

@@ -10,8 +10,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 /// A single-flight flag taken for as long as the guard lives: a scan or a download that runs
 /// once at a time, whoever asks meanwhile told so. Released on drop, so a cancelled flight frees
-/// the next one. Written twice before (`ResetOnDrop`, the downloads' `Busy`); one type (Clean
-/// Code G5, 2026-11-13).
+/// the next one. Written twice before (`ResetOnDrop`, the downloads' `Busy`); one type.
 pub struct Busy(&'static std::sync::atomic::AtomicBool);
 
 impl Busy {

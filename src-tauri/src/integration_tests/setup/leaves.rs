@@ -112,7 +112,7 @@ mod tests {
             ("iptables-rule", "raw :PREROUTING ACCEPT"),
             ("iptables-rule", "raw :OUTPUT ACCEPT"),
             // Kali's containerd keeps the cri plugin on: its streaming server's localhost port
-            // (kali-bare's setup-docker audit).
+            // (seen by the leftover audit of the Docker path on a bare Kali).
             ("listening-port", "tcp 127.0.0.1:* (containerd, *"),
             FOLDER,
         ] {
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn the_docker_path_on_windows_leaves_wsl_2_hyper_vs_own_and_the_engines_hosts_entries() {
         // Docker Desktop's WSL 2 VM runs under Hyper-V's worker process, and the engine writes its
-        // hosts entries (the Docker path's audit on a bare Windows clone).
+        // hosts entries (the Docker path's leftover audit on a bare Windows).
         for item in ["docker", "engine:docker-desktop"] {
             let windows = names(item, "windows");
             for (kind, name) in [("process", "* \"*\\vmwp.exe\" *"), ("hosts-entry", "* *.docker.internal")] {
@@ -147,7 +147,7 @@ mod tests {
         // as left once WSL 2 was installed), then Hyper-V's own: WSL 2's install on Windows 11
         // turns Hyper-V's platform on too, and the Docker path's audit on a bare clone read the
         // Default Switch, its routes, Hyper-V's 16 rules, vmms's port 2179 and NetBIOS on the
-        // new vEthernet adapters as left (rig windows-bare setup-docker).
+        // new vEthernet adapters as left (the Docker path's audit on a bare Windows).
         let wsl = names("wsl", "windows");
         let rules: Vec<_> = wsl.iter().filter(|(k, _)| k == "firewall-rule").cloned().collect();
         assert_eq!(rules[0], pair("firewall-rule", "Windows Subsystem for Linux"));
