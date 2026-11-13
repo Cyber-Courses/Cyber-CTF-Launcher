@@ -20,6 +20,8 @@
 
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
 use super::steps::Step;
+#[cfg(any(target_os = "windows", test))]
+use crate::platform::exec::ps_quote;
 
 /// The release installed. Its files and checksums are HashiCorp's published ones
 /// (`releases.hashicorp.com/vagrant-vmware-utility/<version>/…_SHA256SUMS`, signed with HashiCorp's
@@ -114,12 +116,6 @@ pub fn mac_install(arch: &str) -> Step {
 #[cfg(target_os = "macos")]
 pub const MAC_UNINSTALL: &str = "/opt/vagrant-vmware-desktop/bin/vagrant-vmware-utility service uninstall; rm -rf /opt/vagrant-vmware-desktop && (pkgutil --forget com.vagrant.vagrant-vmware-utility || true)";
 
-/// `text` as a PowerShell single-quoted string.
-#[cfg(any(target_os = "windows", test))]
-fn ps_quoted(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "''"))
-}
-
 /// The elevated half of the Windows install, with the downloaded MSI's path in `$msi` (set by
 /// the player's half, before this): an install already there only has its service started
 /// again; otherwise the MSI is copied into a folder only administrators write, checked again
@@ -153,7 +149,7 @@ try {{
 #[cfg(any(target_os = "windows", test))]
 fn windows_script(file: &str, sha256: &str) -> String {
     let url = url(file);
-    let elevated = ps_quoted(&windows_elevated(sha256));
+    let elevated = ps_quote(&windows_elevated(sha256));
     format!(
         r"$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -284,8 +280,7 @@ mod tests {
         );
         assert!(elevated.contains("'HashiCorp, Inc.'") && elevated.contains("$env:SystemRoot"), "{elevated}");
         // The elevated script is one PowerShell string inside the player's: every quote doubled.
-        assert!(script.contains(&ps_quoted(&elevated)));
-        assert_eq!(ps_quoted("it's"), "'it''s'");
+        assert!(script.contains(&ps_quote(&elevated)));
         assert!(windows_uninstall().args.last().unwrap().contains(WINDOWS_PRODUCT_CODE));
     }
 

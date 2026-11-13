@@ -37,7 +37,9 @@ use std::path::Path;
 #[cfg(any(windows, test))]
 use self::collect::{WorkDir, follow_batch};
 #[cfg(any(windows, test))]
-use self::script::{Plan, env_json, forwarded_env, own_env, powershell_args, ps_quote, script};
+pub(crate) use self::script::ps_quote;
+#[cfg(any(windows, test))]
+use self::script::{Plan, env_json, forwarded_env, own_env, powershell_args, script};
 #[cfg(any(windows, test))]
 use super::vagrant::{Event, Outcome, Step};
 use crate::error::{Error, Result};
