@@ -146,7 +146,9 @@
       "tfApply": "インフラを作成",
       "tfReady": "ラボをインストールして起動",
       "prepareLab": "ラボを準備",
-      "preparing": "準備中"
+      "preparing": "準備中",
+      "attackBox": "攻撃用マシンを追加",
+      "afterReady": "実行中のラボを変更"
     },
     "title": "デプロイ",
     "on": "<where>{where}</where> 上",
