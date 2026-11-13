@@ -6,6 +6,13 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows: the attack box's terminal opens under a profile whose name has `&`.** With an account
+  named `Tom&Jerry`, Open shell split its script's path at the `&` and showed "not recognized".
+  The script's path stays quoted for both cmd.exe that read it, and the shell's command line
+  quotes any word holding a character cmd.exe reads as its own (`&|<>^()`).
+
 ## [1.9.0] — 2026-11-13
 
 ### Added

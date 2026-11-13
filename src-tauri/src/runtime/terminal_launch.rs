@@ -90,11 +90,19 @@ pub fn open_terminal(command: &ShellCommand) -> Result<()> {
     }
 }
 
+/// The characters cmd.exe reads as its own outside double quotes: command separators,
+/// redirections, its escape and its blocks.
+#[cfg(any(windows, test))]
+const CMD_SPECIAL: [char; 7] = ['&', '|', '<', '>', '^', '(', ')'];
+
 /// The cmd.exe command line: `cd /d "<cwd>" && set "<VAR>=<value>" && <program> <args>`, each
-/// word double-quoted, the command's variables set first.
+/// word double-quoted when it holds a space, a quote or a character cmd.exe reads as its own (a
+/// profile folder `C:\Users\Tom&Jerry`), the command's variables set first.
 #[cfg(any(windows, test))]
 pub(crate) fn windows_line(command: &ShellCommand) -> String {
-    let quote = |w: &str| if w.contains(' ') || w.contains('"') { format!("\"{}\"", w.replace('"', "\"\"")) } else { w.to_owned() };
+    let quote = |w: &str| {
+        if w.contains([' ', '"']) || w.contains(CMD_SPECIAL) { format!("\"{}\"", w.replace('"', "\"\"")) } else { w.to_owned() }
+    };
     let mut run = std::iter::once(&command.program).chain(&command.args).map(|w| quote(w)).collect::<Vec<_>>().join(" ");
     for (name, value) in command.env.iter().rev() {
         run = format!("set \"{name}={value}\" && {run}");
@@ -105,16 +113,24 @@ pub(crate) fn windows_line(command: &ShellCommand) -> String {
 /// Opens a console window titled "Cyber CTF attack box" on `line`, a cmd.exe command line. The
 /// line goes into a temp .cmd that is run (cmd.exe's quote-stripping with nested quotes and `&`
 /// is unreliable when a path has a space): the line lives in the file with normal double-quoted
-/// paths, and the only thing cmd parses is the balanced-quoted .cmd path.
+/// paths, and the only thing cmd parses is the .cmd path ([`start_args`]).
 #[cfg(windows)]
 pub fn open_terminal_cmd(line: &str) -> Result<()> {
     use std::os::windows::process::CommandExt;
     let bat = write_shell_script(&std::env::temp_dir(), line)?;
-    std::process::Command::new("cmd")
-        .raw_arg(format!("/c start \"Cyber CTF attack box\" cmd /c \"{}\"", bat.display()))
-        .env("DOCKER_CLI_HINTS", "false")
-        .spawn()?;
+    std::process::Command::new("cmd").raw_arg(start_args(&bat.display().to_string())).env("DOCKER_CLI_HINTS", "false").spawn()?;
     Ok(())
+}
+
+/// The arguments of the cmd.exe that opens the console on the script at `bat`: `start` a new
+/// console running `cmd /s /c ""<bat>""`, which (`/s`) strips the outer quotes and runs
+/// `"<bat>"`, quoted: `cmd /c "<bat>"` lost its quotes when the path held a special character
+/// (`C:\Users\Tom&Jerry` ran `C:\Users\Tom`, then `Jerry\…`). The outer quotes are written `^"`
+/// so the first cmd, which reads the whole line, takes them as plain characters and still reads
+/// the path inside quotes.
+#[cfg(any(windows, test))]
+fn start_args(bat: &str) -> String {
+    format!("/c start \"Cyber CTF attack box\" cmd /s /c ^\"\"{bat}\"^\"")
 }
 
 /// The temp scripts the Windows terminals run: `cyberctf-shell-<unique>.cmd`.
@@ -201,6 +217,27 @@ mod tests {
             windows_line(&cmd("docker", &["compose", "exec", "kali", "bash"], "C:\\runs\\x y")),
             "cd /d \"C:\\runs\\x y\" && docker compose exec kali bash"
         );
+    }
+
+    #[test]
+    fn the_windows_line_quotes_words_cmd_would_read_as_its_own() {
+        // Regression: only words with a space or a quote were quoted, so a profile folder named
+        // `Tom&Jerry` split the line at the `&`.
+        assert_eq!(
+            windows_line(&cmd("docker", &["exec", "a(b)", "x|y"], "C:\\Users\\Tom&Jerry\\run")),
+            "cd /d \"C:\\Users\\Tom&Jerry\\run\" && docker exec \"a(b)\" \"x|y\""
+        );
+    }
+
+    #[test]
+    fn the_console_runs_a_script_whose_path_has_cmds_special_characters() {
+        // Regression: `cmd /c "<path>"` lost its quotes when the path held a special character, so
+        // under `C:\Users\Tom&Jerry` it ran `C:\Users\Tom`, then `Jerry\…`: "not recognized".
+        assert_eq!(
+            start_args(r"C:\Users\Tom&Jerry\AppData\Local\Temp\cyberctf-shell-1.cmd"),
+            r#"/c start "Cyber CTF attack box" cmd /s /c ^""C:\Users\Tom&Jerry\AppData\Local\Temp\cyberctf-shell-1.cmd"^""#
+        );
+        assert_eq!(start_args(r"C:\Users\Ada Lovelace\Temp\x.cmd"), r#"/c start "Cyber CTF attack box" cmd /s /c ^""C:\Users\Ada Lovelace\Temp\x.cmd"^""#);
     }
 
     #[test]
