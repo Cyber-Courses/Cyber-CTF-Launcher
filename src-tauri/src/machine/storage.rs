@@ -156,24 +156,34 @@ fn parse_image_line(out: &str) -> Option<(String, u64)> {
     Some((id.trim().to_string(), size.trim().parse().unwrap_or(0))).filter(|(id, _)| !id.is_empty())
 }
 
-/// The app's images present now, as (reference, image id, size): a recorded reference only while
-/// it still names the image the app pulled.
-async fn present_images(candidates: &[(String, Option<String>)]) -> Vec<(String, String, u64)> {
+/// An image of the app's present on the engine now.
+struct PresentImage {
+    /// The reference it was pulled by (two references can name one image).
+    reference: String,
+    /// The engine's image id.
+    id: String,
+    /// Its size on disk.
+    bytes: u64,
+}
+
+/// The app's images present now: a recorded reference only while it still names the image the
+/// app pulled.
+async fn present_images(candidates: &[(String, Option<String>)]) -> Vec<PresentImage> {
     let mut found = Vec::new();
     for (reference, want) in candidates {
-        if let Some((id, size)) = inspect_image(reference).await
+        if let Some((id, bytes)) = inspect_image(reference).await
             && want.as_ref().is_none_or(|w| *w == id)
         {
-            found.push((reference.clone(), id, size));
+            found.push(PresentImage { reference: reference.clone(), id, bytes });
         }
     }
     found
 }
 
 /// The listed images: one per image (two references to one image are one download on disk).
-fn image_items(found: &[(String, String, u64)]) -> Vec<StoredItem> {
+fn image_items(found: &[PresentImage]) -> Vec<StoredItem> {
     let mut seen = BTreeSet::new();
-    found.iter().filter(|(_, id, _)| seen.insert(id.clone())).map(|(reference, _, bytes)| StoredItem { name: reference.clone(), bytes: *bytes }).collect()
+    found.iter().filter(|i| seen.insert(i.id.clone())).map(|i| StoredItem { name: i.reference.clone(), bytes: i.bytes }).collect()
 }
 
 /// Where Vagrant keeps a box version for a provider: `<box>/<version>/<provider>`, or with the
@@ -199,7 +209,7 @@ fn box_label(b: &OwnedBox) -> String {
 
 /// What of the app's downloads is here now.
 struct Present {
-    images: Vec<(String, String, u64)>,
+    images: Vec<PresentImage>,
     boxes: Vec<(OwnedBox, u64)>,
     /// The plugin cache's size.
     plugins: u64,
@@ -245,8 +255,8 @@ pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>, wor
 async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugins: bool) -> Result<u64> {
     let cache = plugin_cache(store);
     let before = Present::find(&owned::load(store)?, extra_images, home, &cache).await;
-    for (reference, _, _) in &before.images {
-        stayed(reference, run("docker", &["image", "rm", reference], None).await);
+    for image in &before.images {
+        stayed(&image.reference, run("docker", &["image", "rm", &image.reference], None).await);
     }
     for (b, _) in &before.boxes {
         // No --force: Vagrant refuses to remove a box a VM still uses.
@@ -342,8 +352,8 @@ mod tests {
 
     #[test]
     fn two_references_to_one_image_are_listed_once() {
-        let found =
-            [("cyberctf/attack-box:latest".to_string(), "sha256:a".to_string(), 3000), ("cyberctf/attack-box@sha256:d".into(), "sha256:a".into(), 3000)];
+        let image = |reference: &str| PresentImage { reference: reference.into(), id: "sha256:a".into(), bytes: 3000 };
+        let found = [image("cyberctf/attack-box:latest"), image("cyberctf/attack-box@sha256:d")];
         let items = image_items(&found);
         assert_eq!(items.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("cyberctf/attack-box:latest", 3000)]);
     }
