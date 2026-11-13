@@ -194,7 +194,7 @@ describe("settings", () => {
   });
 });
 
-describe("utils", () => {
+describe("class-names", () => {
   it("joins class names, skipping falsy values and flattening arrays", () => {
     expect(cn("a", null, undefined, false, "", ["b", ["c", false]], 0, 1)).toBe("a b c 0 1");
     expect(cn()).toBe("");
