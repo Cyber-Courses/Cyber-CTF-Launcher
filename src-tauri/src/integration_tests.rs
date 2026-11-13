@@ -25,8 +25,32 @@ mod vm_lab;
 /// real run goes through. `docker_vm_lab`'s scenario once built its start by hand, so it skipped that
 /// retry and failed on a UTM run where the app would not have.
 #[cfg(test)]
+/// The scenarios' Rust sources (their files and their folders: `support/`, a family's own
+/// modules), each as its path under `src/integration_tests` and its text, but the files
+/// `exempt` names.
+fn scenario_sources(exempt: &[(&str, &str)]) -> Vec<(String, String)> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
+    let mut sources = Vec::new();
+    let mut dirs = vec![root.clone()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            let name = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+            if path.extension().is_none_or(|x| x != "rs") || exempt.iter().any(|(f, _)| *f == name) {
+                continue;
+            }
+            sources.push((name, std::fs::read_to_string(&path).unwrap()));
+        }
+    }
+    sources
+}
+
+#[cfg(test)]
 mod start_path {
-    use std::path::Path;
 
     /// The scenarios that drive a run they open themselves, each with why: the server ones take
     /// the host's connection from their knobs, with no saved host for the launcher's start to read.
@@ -56,24 +80,9 @@ mod start_path {
 
     #[test]
     fn a_scenario_starts_and_stops_its_lab_the_way_the_launcher_does() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
         let mut found = Vec::new();
-        // The scenarios' files and their folders (`support/`, a family's own modules).
-        let mut dirs = vec![root.clone()];
-        while let Some(dir) = dirs.pop() {
-            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    dirs.push(path);
-                    continue;
-                }
-                let name = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
-                if path.extension().is_none_or(|x| x != "rs") || OPENS_ITS_OWN_RUN.iter().any(|(f, _)| *f == name) {
-                    continue;
-                }
-                let code = std::fs::read_to_string(&path).unwrap();
-                found.extend(direct_changes(&code).into_iter().map(|s| format!("{name}: {s}")));
-            }
+        for (name, code) in super::scenario_sources(OPENS_ITS_OWN_RUN) {
+            found.extend(direct_changes(&code).into_iter().map(|s| format!("{name}: {s}")));
         }
         assert!(found.is_empty(), "start or stop the lab through launch:: / lifecycle::, not the runner:\n{}", found.join("\n"));
     }
@@ -170,7 +179,6 @@ mod teardown {
 /// The unit tests (`mod tests`) keep `TestApp::new`, and so does a cloud scenario.
 #[cfg(test)]
 mod app_root {
-    use std::path::Path;
 
     /// The files whose scenario keeps its app in the system's place, each with why.
     const KEEPS_THE_SYSTEMS_PLACE: &[(&str, &str)] = &[(
@@ -185,23 +193,10 @@ mod app_root {
 
     #[test]
     fn a_scenarios_app_keeps_its_folders_in_the_scenarios_temp_folder() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/integration_tests");
         let mut found = Vec::new();
-        let mut dirs = vec![root.clone()];
-        while let Some(dir) = dirs.pop() {
-            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    dirs.push(path);
-                    continue;
-                }
-                let name = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
-                if path.extension().is_none_or(|x| x != "rs") || KEEPS_THE_SYSTEMS_PLACE.iter().any(|(f, _)| *f == name) {
-                    continue;
-                }
-                if outside_unit_tests(&std::fs::read_to_string(&path).unwrap()).contains("TestApp::new(") {
-                    found.push(name);
-                }
+        for (name, code) in super::scenario_sources(KEEPS_THE_SYSTEMS_PLACE) {
+            if outside_unit_tests(&code).contains("TestApp::new(") {
+                found.push(name);
             }
         }
         assert!(found.is_empty(), "a scenario's app is TestApp::scenario(), not TestApp::new(): {found:?}");

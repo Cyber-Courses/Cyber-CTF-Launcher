@@ -47,7 +47,9 @@ impl Fixture {
 
     /// The lab's run in a VM, on a macOS host (where UTM is).
     fn run(&self) -> LabRun {
-        let mut config = self.home.config(&self.fake, []);
+        // Free host ports for the runner to pin the lab's published ports to: Isothrum 2.1.3 and
+        // later pass over a preferred number the computer holds, and pick a free one otherwise.
+        let mut config = self.home.config(&self.fake, 41000..41064);
         config.host = isoloom_manifest::HostOs::Macos;
         LabRun::with(config, &self.home.dir, "web", Kind::DockerVm).unwrap()
     }

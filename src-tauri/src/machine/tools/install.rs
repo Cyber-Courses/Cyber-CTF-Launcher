@@ -258,7 +258,7 @@ fn as_root(script: String, proxy: Vec<String>) -> Step {
 
 /// `script` run as root through pkexec ([`as_root`]), with this process's proxy: every install
 /// and removal step on Linux.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 pub(super) fn root(script: String) -> Step {
     as_root(script, crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
 }

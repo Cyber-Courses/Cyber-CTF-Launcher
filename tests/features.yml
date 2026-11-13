@@ -2445,7 +2445,7 @@ areas:
             - src-tauri/src/machine/tools/install.rs > a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs
             - src-tauri/src/machine/tools/install.rs > a_dnf_distribution_installs_docker_the_hypervisors_and_vagrant_through_dnf_and_the_rest_by_hand
             - src/features/machine/setup-steps/setup-steps.test.tsx > links to App Installer on Windows and names the Linux package manager
-            - src/features/machine/setup-steps/follows-the-plan.test.tsx > on a Linux without apt
+            - src/features/machine/setup-steps/follows-the-plan.test.tsx > on a Linux without apt or dnf
           web:
             - "machine-setup.spec.ts > a fresh Mac: the package manager is detected"
           setup:

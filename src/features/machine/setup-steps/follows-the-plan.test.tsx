@@ -58,15 +58,16 @@ describe("the setup window follows the core's plan", () => {
     expect(calls.find((c) => c.cmd === "docker_use_engine")?.args).toMatchObject({ engine: "docker-desktop" });
   });
 
-  it("on a Linux without apt, asks the player to install each tool themselves instead of offering a failing install", async () => {
+  it("on a Linux without apt or dnf, asks the player to install each tool themselves instead of offering a failing install", async () => {
     installTauri();
     const user = userEvent.setup();
-    const fedora = shape("bareFedora");
-    render(<Step step="docker" report={fedora} />);
+    // Arch: neither apt nor dnf (Fedora installs through dnf since 1.9.0).
+    const arch = shape("bareArch");
+    render(<Step step="docker" report={arch} />);
     expect(text()).toContain("This distribution isn't supported by the guided setup yet: install Docker Engine yourself, then re-check.");
     expect(screen.queryByRole("button", { name: /install docker engine/i })).toBeNull();
     cleanup();
-    render(<Step step="vm" report={fedora} />);
+    render(<Step step="vm" report={arch} />);
     await user.click(radioWith("VirtualBox"));
     expect(radioWith("VirtualBox").textContent).toContain("Install it yourself.");
     expect(text()).toContain("install VirtualBox yourself, then re-check.");

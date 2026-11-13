@@ -24,8 +24,18 @@ pub struct TestApp {
 
 impl TestApp {
     pub fn new() -> TestApp {
+        TestApp::built(None)
+    }
+
+    /// A mock app of its own identifier, its folders under `root` when one is given (Tauri's
+    /// directories override), else where Tauri puts them; its data folder made.
+    fn built(root: Option<PathBuf>) -> TestApp {
         let mut context = tauri::test::mock_context(tauri::test::noop_assets());
-        context.config_mut().identifier = format!("com.cyberctf.unit-test.{}-{}", std::process::id(), rand::random::<u64>());
+        let identifier = format!("com.cyberctf.unit-test.{}-{}", std::process::id(), rand::random::<u64>());
+        if let Some(root) = root {
+            context.config_mut().app.app_directories_override = Some(tauri::utils::config::AppDirectoriesOverride::Root(root.join(&identifier)));
+        }
+        context.config_mut().identifier = identifier;
         let app = tauri::test::mock_builder().build(context).expect("mock app");
         let data = app.path().app_data_dir().expect("app data dir");
         std::fs::create_dir_all(&data).unwrap();
@@ -47,15 +57,7 @@ impl TestApp {
     /// folder; its cache in `caches/`, its logs in `logs/`), removed when it drops; without a
     /// root, [`TestApp::new`]'s.
     fn in_root(root: Option<PathBuf>) -> TestApp {
-        let Some(root) = root else { return TestApp::new() };
-        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
-        let identifier = format!("com.cyberctf.unit-test.{}-{}", std::process::id(), rand::random::<u64>());
-        context.config_mut().app.app_directories_override = Some(tauri::utils::config::AppDirectoriesOverride::Root(root.join(&identifier)));
-        context.config_mut().identifier = identifier;
-        let app = tauri::test::mock_builder().build(context).expect("mock app");
-        let data = app.path().app_data_dir().expect("app data dir");
-        std::fs::create_dir_all(&data).unwrap();
-        TestApp { app, data }
+        TestApp::built(root)
     }
 
     pub fn handle(&self) -> &AppHandle {
