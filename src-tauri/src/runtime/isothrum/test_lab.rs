@@ -41,11 +41,15 @@ impl Home {
         Home { root, dir }
     }
 
-    /// A runner on this home: its processes `fake`, its free ports `ports`.
+    /// A runner on this home: its processes `fake`, its free ports `ports`, or a real machine's
+    /// worth of them (41000 and up) when none is given: the runner pins every published port to
+    /// a free one where the preferred number isn't fixed (Isothrum 2.1.3), and a double with no
+    /// port fails every start with "no free host port", which no real machine does.
     pub(super) fn config(&self, fake: &Arc<FakeProcesses>, ports: impl IntoIterator<Item = u16>) -> RunnerConfig {
         let mut config = RunnerConfig::new(&self.root);
         config.processes = Arc::clone(fake) as Arc<dyn ProcessRunner>;
-        config.ports = Arc::new(FakePorts::new(ports));
+        let given: Vec<u16> = ports.into_iter().collect();
+        config.ports = Arc::new(FakePorts::new(if given.is_empty() { (41000..41064).collect() } else { given }));
         config
     }
 }
