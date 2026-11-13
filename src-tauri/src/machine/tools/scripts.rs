@@ -364,8 +364,9 @@ pub fn libvirt_script(user: Option<&str>) -> RootScript {
     use std::fmt::Write as _;
     // virtiofsd: libvirt's shared folders (the attack box's /shared) need it, and it is its own
     // package from Debian 12 and Ubuntu 23.10 on (QEMU's before); a release without it skips it.
-    let mut s = "apt-get update && apt-get install -y libvirt-daemon-system libvirt-dev build-essential pkg-config ruby-dev virt-manager \
-                 && if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi"
+    // Separate statements: a failure inside an `&&` chain doesn't stop a script that runs `set -e`.
+    let mut s = "apt-get update; apt-get install -y libvirt-daemon-system libvirt-dev build-essential pkg-config ruby-dev virt-manager; \
+                 if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi"
         .to_string();
     if let Some(u) = user.filter(|u| valid_user(u)) {
         let _ = write!(
@@ -385,7 +386,7 @@ pub fn libvirt_script(user: Option<&str>) -> RootScript {
 /// the package; Debian's `xorriso` has no `mkisofs`, only `xorrisofs`.
 #[cfg(any(target_os = "linux", test))]
 pub fn qemu_script(user: Option<&str>) -> RootScript {
-    let mut s = "apt-get update && apt-get install -y qemu-system qemu-utils genisoimage".to_string();
+    let mut s = "apt-get update; apt-get install -y qemu-system qemu-utils genisoimage".to_string();
     if let Some(u) = user.filter(|u| valid_user(u)) {
         s.push_str("; ");
         s.push_str(&join_kvm_group(u, KVM_DEVICE));
@@ -671,7 +672,7 @@ mod tests {
         // root:kvm 0660) every lab's `accel=kvm` was refused: "Could not access KVM kernel module:
         // Permission denied".
         let s = qemu_script(Some("ada"));
-        let install = "apt-get update && apt-get install -y qemu-system qemu-utils genisoimage";
+        let install = "apt-get update; apt-get install -y qemu-system qemu-utils genisoimage";
         assert_eq!(s, RootScript::new(format!("{install}; {}", join_kvm_group("ada", "/dev/kvm"))));
         assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
         assert_eq!(qemu_script(None), RootScript::new(install));
@@ -680,7 +681,7 @@ mod tests {
 
     #[test]
     fn qemu_install_brings_the_mkisofs_vagrant_builds_a_vms_network_seed_with() {
-        // Regression (the rig's ubuntu2404 attack-box-vm@qemu): the install was `qemu-system
+        // Regression (an Ubuntu 24.04 attack box in a QEMU VM): the install was `qemu-system
         // qemu-utils`, and every VM-form lab failed at its first VM: "The executable 'mkisofs'
         // Vagrant is trying to run was not found in the PATH variable". `genisoimage` is the
         // package with /usr/bin/mkisofs on Debian and Ubuntu.
@@ -688,6 +689,46 @@ mod tests {
             let s = qemu_script(user);
             let install = s.split("; ").find(|c| c.contains("apt-get install")).unwrap();
             assert!(install.split_whitespace().any(|w| w == "genisoimage"), "{s}");
+        }
+    }
+
+    /// Whether `script` exits non-zero when its package installs fail (`apt-get install` and
+    /// `dnf`, as when apt's lock is held or the network is down), the group steps after them
+    /// standing in for success.
+    #[cfg(unix)]
+    fn fails_when_its_package_manager_does(script: &str) -> bool {
+        let bin = std::env::temp_dir().join(format!("cyberctf-pm-{}-{}", std::process::id(), rand::random::<u32>()));
+        std::fs::create_dir_all(&bin).unwrap();
+        for (name, body) in [
+            ("apt-get", r#"[ "$1" = update ] || exit 100"#),
+            ("dnf", "exit 1"),
+            ("apt-cache", "exit 0"),
+            ("usermod", "exit 0"),
+            ("getent", "exit 0"),
+            ("systemctl", "exit 0"),
+        ] {
+            std::fs::write(bin.join(name), format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(bin.join(name), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        }
+        let out = std::process::Command::new("sh").arg("-c").arg(script).env("PATH", format!("{}:/usr/bin:/bin", bin.display())).output().unwrap();
+        std::fs::remove_dir_all(&bin).unwrap();
+        !out.status.success()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_libvirt_or_qemu_install_fails_its_step() {
+        // Regression: after a failed install the group step that followed decided the exit status,
+        // and the install read as done. `set -e` doesn't stop at a failure inside an `&&` chain,
+        // so the commands are separate statements.
+        for (name, s) in [
+            ("libvirt", libvirt_script(Some("ada"))),
+            ("qemu", qemu_script(Some("ada"))),
+            ("libvirt dnf", libvirt_dnf_script(Some("ada"))),
+            ("qemu dnf", qemu_dnf_script(Some("ada"))),
+        ] {
+            assert!(s.starts_with(crate::platform::root_script::PRELUDE), "{name}: {s}");
+            assert!(fails_when_its_package_manager_does(&s), "{name} reads as done after a failed install: {s}");
         }
     }
 
@@ -863,18 +904,21 @@ mod tests {
             std::fs::set_permissions(bin.join(name), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         };
         fake("uname", format!("#!/bin/sh\necho '{running}'\n"));
-        // `apt-cache policy <package>`: a candidate when the sources have it, none otherwise.
+        // `apt-cache policy <package>`: a candidate when the sources have it, none otherwise, its
+        // label translated (as apt does under pkexec, which keeps `LANG`) unless `LC_ALL=C`.
         let known = packages.iter().map(|p| format!("'{p}'")).collect::<Vec<_>>().join(" ");
         fake(
             "apt-cache",
             format!(
-                "#!/bin/sh\nfor p in {known}; do [ \"$2\" = \"$p\" ] && {{ echo \"$p:\"; echo '  Candidate: 1.0-1'; exit 0; }}; done\necho \"$2:\"; echo '  Candidate: (none)'\n"
+                "#!/bin/sh\nlabel='Candidat :'; [ \"$LC_ALL\" = C ] && label='Candidate:'\nfor p in {known}; do [ \"$2\" = \"$p\" ] && {{ echo \"$p:\"; echo \"  $label 1.0-1\"; exit 0; }}; done\necho \"$2:\"; echo \"  $label (none)\"\n"
             ),
         );
+        // Behind the prelude every root script starts with, under a French `LANG`.
         let out = std::process::Command::new("sh")
             .arg("-c")
-            .arg(format!("set -e; {KERNEL_BUILD}; echo \"$build|$reboot\""))
+            .arg(format!("{}; {KERNEL_BUILD}; echo \"$build|$reboot\"", crate::platform::root_script::PRELUDE))
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env("LANG", "fr_FR.UTF-8")
             .output()
             .unwrap();
         std::fs::remove_dir_all(&bin).unwrap();
@@ -917,6 +961,17 @@ mod tests {
         // Neither: it stops, saying so, before anything is installed.
         let none = kernel_build(debian, &[]).unwrap_err();
         assert!(none.starts_with("VirtualBox builds its kernel driver with the running kernel's headers (linux-headers-6.12.86+deb13-amd64)"), "{none}");
+    }
+
+    #[test]
+    fn apt_cache_policy_is_read_in_english_whatever_the_language() {
+        // Regression: under `LANG=fr_FR.UTF-8` apt prints `Candidat :`, so the `Candidate:` grep
+        // never matched: the kernel headers read as missing and Ubuntu's own VirtualBox was missed.
+        // The prelude, which every policy read comes after, sets the C locale.
+        let s = virtualbox_script();
+        let prelude = crate::platform::root_script::PRELUDE;
+        assert!(prelude.ends_with("export LC_ALL=C") && s.starts_with(prelude), "{s}");
+        assert_eq!(s.matches("apt-cache policy").count(), 3, "{s}");
     }
 
     #[test]
