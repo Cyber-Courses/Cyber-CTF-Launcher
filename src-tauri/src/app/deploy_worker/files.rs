@@ -103,10 +103,31 @@ pub(super) const LOST: &str = "The deploy stopped before it finished: its backgr
 /// What a status file says for a result, and the worker's exit code that goes with it: `ok`, or
 /// the error as the webview gets it (`error: {"code":…,"message":…}`), its code read back by
 /// [`verdict`].
-pub(super) fn status_line<T>(result: &Result<T>) -> (String, i32) {
+/// How a worker process ends, as its exit code says it (the parent reads the status file for
+/// the verdict and the code for a worker that never got that far).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum WorkerExit {
+    /// The deploy reached its end as asked.
+    Done = 0,
+    /// The deploy failed; the status file says how.
+    Failed = 1,
+    /// The job file couldn't be read: nothing was deployed.
+    NoJob = 2,
+    /// Terminated from outside (SIGTERM's conventional code).
+    Terminated = 143,
+}
+
+impl WorkerExit {
+    /// The process exit code.
+    pub(super) const fn code(self) -> i32 {
+        self as i32
+    }
+}
+
+pub(super) fn status_line<T>(result: &Result<T>) -> (String, WorkerExit) {
     match result {
-        Ok(_) => ("ok".to_string(), 0),
-        Err(e) => (format!("error: {}", serde_json::to_string(&e.to_wire()).unwrap_or_else(|_| e.to_string())), 1),
+        Ok(_) => ("ok".to_string(), WorkerExit::Done),
+        Err(e) => (format!("error: {}", serde_json::to_string(&e.to_wire()).unwrap_or_else(|_| e.to_string())), WorkerExit::Failed),
     }
 }
 

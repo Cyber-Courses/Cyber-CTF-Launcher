@@ -190,7 +190,7 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
     }
     // The pidfile is taken before the worker starts (another process may be racing for it too).
     let pidfile = process::claim(&files::of(&AppDirs::from(app), &job.key())?)?;
-    Ok(process::spawn(app, job, pidfile))
+    Ok(process::spawn(&AppDirs::from(app), job, pidfile))
 }
 
 /// The files of lab `id`'s worker, for the lab's removal (which holds the lab, so no new worker

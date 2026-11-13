@@ -253,21 +253,15 @@ fn connection_secrets(tf_env: &[(String, String)]) -> Secrets {
 /// install of the same lab must not run a second Terraform operation over the same state, which
 /// could corrupt `terraform.tfstate`. Returns the runs it couldn't destroy, with why, so the
 /// caller can surface and retry them; a run whose account can't be resolved, or whose lab is
-/// busy, is left for a later sweep. A sweep that can't even list the runs yields that as one
-/// entry.
-pub(crate) async fn reap_expired<F, L, G>(home: &Path, now: SystemTime, account: F, lock: L) -> Vec<(String, Error)>
+/// busy, is left for a later sweep. `Err` when the runs can't even be listed: no sweep happened
+/// (not a failed run named for the runner, which a caller would report as a lab).
+pub(crate) async fn reap_expired<F, L, G>(home: &Path, now: SystemTime, account: F, lock: L) -> Result<Vec<(String, Error)>>
 where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
     L: Fn(&str) -> Option<G>,
 {
-    let runner = match Runner::new(super::host_config(home, None)) {
-        Ok(runner) => runner,
-        Err(e) => return vec![("runner".to_owned(), errors::from_runner(e))],
-    };
-    let expired = match runner.expired(now) {
-        Ok(records) => records,
-        Err(e) => return vec![("runner".to_owned(), errors::from_runner(e))],
-    };
+    let runner = Runner::new(super::host_config(home, None)).map_err(errors::from_runner)?;
+    let expired = runner.expired(now).map_err(errors::from_runner)?;
     let mut failed = Vec::new();
     for record in expired.into_iter().filter(|r| r.cloud.is_some()) {
         let name = record.name.to_string();
@@ -311,7 +305,7 @@ where
             failed.push((name, e));
         }
     }
-    failed
+    Ok(failed)
 }
 
 #[cfg(test)]
@@ -413,7 +407,7 @@ mod tests {
             (host == "aws1").then(|| vec![("AWS_ACCESS_KEY_ID".to_string(), "AKIA".to_string())])
         };
         crate::testing::logs::take_warnings();
-        let failed = reap_expired(&home, SystemTime::now(), account, |_| Some(())).await;
+        let failed = reap_expired(&home, SystemTime::now(), account, |_| Some(())).await.unwrap();
         // Its lab isn't installed: its files can't be generated again, which is said.
         let warned = crate::testing::logs::take_warnings();
         assert!(warned.iter().any(|w| w.starts_with("auto-stop: cyberctf-web's files can't be generated again (lab `web` is not installed)")), "{warned:?}");
@@ -438,7 +432,7 @@ mod tests {
         };
         // "busy"'s lock can't be taken (another operation holds it); "web"'s can.
         let lock = |id: &str| (id != "busy").then_some(());
-        let failed = reap_expired(&home, SystemTime::now(), account, lock).await;
+        let failed = reap_expired(&home, SystemTime::now(), account, lock).await.unwrap();
         assert_eq!(asked.into_inner().unwrap(), ["aws1"], "only the free lab's account is used, never the busy one's");
         let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, ["cyberctf-web"], "the free lab is swept (its files are gone, so its destroy fails); the busy one is not touched: {failed:?}");
@@ -455,7 +449,7 @@ mod tests {
         let mut record: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         record.as_object_mut().unwrap().remove("host_label");
         std::fs::write(&file, record.to_string()).unwrap();
-        let failed = reap_expired(&home, SystemTime::now(), |_: &str| None, |_| Some(())).await;
+        let failed = reap_expired(&home, SystemTime::now(), |_: &str| None, |_| Some(())).await.unwrap();
         let codes: Vec<(&str, Code)> = failed.iter().map(|(name, e)| (name.as_str(), e.code())).collect();
         assert_eq!(codes, [("cyberctf-web", Code::ReapNoHost)]);
         std::fs::remove_dir_all(home).unwrap();
