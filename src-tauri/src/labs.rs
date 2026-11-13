@@ -331,8 +331,8 @@ struct StartLabData {
 }
 
 /// The backend's `startLab` answer for `lab_id`: what to download and run, and the launch's
-/// values, typed at the boundary (Clean Code ch.8, 2026-11-13: the raw JSON crossed into the
-/// caller, which typed it a step later).
+/// values, typed at the boundary rather than handed on as raw JSON for the caller to type a
+/// step later.
 async fn start_lab(lab_id: &str) -> Result<Launch> {
     let data = api::graphql(START_LAB, json!({ "id": lab_id }), true).await?;
     let answer: StartLabData = serde_json::from_value(data).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))?;
