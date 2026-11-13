@@ -148,6 +148,19 @@ describe("the screen window", () => {
     expect(screen.getByText("The machine's screen refused the password it was given.")).toBeTruthy();
   });
 
+  it("keeps saying the password was refused once noVNC closes the connection after it", async () => {
+    // noVNC fails the connection after a security failure: an unclean disconnect follows at once.
+    made.length = 0;
+    installTauri({ screen_connect: () => ({ ...VNC, address: "127.0.0.1:5903" }) });
+    render(<ScreenWindow />);
+    await flush();
+    fire(made[0], "securityfailure");
+    fire(made[0], "disconnect", { clean: false });
+    await flush();
+    expect(screen.getByText("The machine's screen refused the password it was given.")).toBeTruthy();
+    expect(screen.queryByText("The VM's screen didn't answer at 127.0.0.1:5903.")).toBeNull();
+  });
+
   it("opens a Remote Desktop in the system's client and copies its password only on request", async () => {
     const calls = installTauri({ screen_connect: () => RDP, screen_open_rdp: () => null, screen_password: () => "pw-rdp" });
     const user = userEvent.setup();
