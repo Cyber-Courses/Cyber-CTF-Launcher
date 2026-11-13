@@ -12,6 +12,7 @@ use crate::account::{api, auth};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::policy::{self, Key};
+use crate::platform::sync::OwnedTask;
 use crate::runtime::server;
 
 /// Upserts this machine as the player's launcher agent and returns the server agent id.
@@ -106,9 +107,10 @@ fn heartbeat_agent(current: &Mutex<Option<Registration>>, user: Option<&str>) ->
 /// Heartbeats (~30s) for the current registration, on its own task: claiming and running a lab
 /// can block for a long time (a cloud launch waits on terraform apply, up to tens of minutes),
 /// and the machine must keep reporting that it's online for the whole launch, not drop offline
-/// while busy.
-fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>) {
-    tokio::spawn(async move {
+/// while busy. It lives as long as what it returns is kept: the agent loop keeps it, so it ends
+/// (and is cancelled) with the loop.
+fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>) -> OwnedTask {
+    OwnedTask::spawn(async move {
         loop {
             // A session that can't be read is logged by the agent loop: no heartbeat then.
             if let Ok(user) = auth::signed_in_user().await
@@ -120,7 +122,7 @@ fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>)
             }
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
-    });
+    })
 }
 
 /// Runs the background agent, unless the policy turns it off: waits for login, registers, then
@@ -135,7 +137,7 @@ pub async fn run(deps: Deps) {
         return;
     }
     let current = &REGISTRATION;
-    spawn_heartbeat(deps.dirs().clone(), current);
+    let _heartbeat = spawn_heartbeat(deps.dirs().clone(), current);
     loop {
         let read = auth::signed_in_user().await;
         let registered = registration(current).clone();
