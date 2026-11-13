@@ -7,7 +7,12 @@
 /// The start of every script run as root that downloads something: stop at the first failure,
 /// and work in a fresh private directory `$d` (`mktemp -d`, mode 0700, removed on exit). A fixed
 /// path such as `/tmp/aws` could be prepared by any local user beforehand and then run as root.
-pub const PRIVATE_WORKDIR: &str = r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT"#;
+/// apt waits up to ten minutes for the dpkg lock there (`APT_CONFIG`, a file in `$d`): a fresh
+/// Debian runs unattended-upgrades at boot, and the guided setup's Vagrant install met its lock
+/// ("Could not get lock /var/lib/dpkg/lock-frontend. It is held by process … (unattended-upgr)",
+/// exit 100) and failed instead of waiting (debian13-bare setup-full, 2026-11-12).
+pub const PRIVATE_WORKDIR: &str =
+    r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT; printf 'DPkg::Lock::Timeout "600";\n' >"$d/apt.conf"; export APT_CONFIG="$d/apt.conf""#;
 
 /// curl, installed first where a bare system has none (Debian's minimal image): every vendor
 /// install downloads with it, and without it the repository checks read as "no packages".
@@ -39,6 +44,22 @@ fn expected(fingerprints: &[&str]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_private_workdir_makes_apt_wait_for_the_dpkg_lock() {
+        // Regression: a fresh Debian's unattended-upgrades held the dpkg lock and the guided
+        // setup's apt-get failed with exit 100 instead of waiting (2026-11-12).
+        assert!(
+            PRIVATE_WORKDIR.contains(r#"DPkg::Lock::Timeout "600";"#) && PRIVATE_WORKDIR.contains(r#"export APT_CONFIG="$d/apt.conf""#),
+            "{PRIVATE_WORKDIR}"
+        );
+        assert!(crate::platform::sh_parses(PRIVATE_WORKDIR), "not valid sh: {PRIVATE_WORKDIR}");
+        #[cfg(unix)]
+        {
+            let out = std::process::Command::new("sh").arg("-c").arg(format!("{PRIVATE_WORKDIR}; cat \"$APT_CONFIG\"")).output().unwrap();
+            assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), r#"DPkg::Lock::Timeout "600";"#);
+        }
+    }
+
     use super::*;
 
     #[test]
