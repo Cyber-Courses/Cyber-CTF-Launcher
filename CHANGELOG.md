@@ -8,6 +8,10 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Fixed
 
+- **The Windows NSIS installer builds again.** The uninstall hook named its script with a forward
+  slash, which makensis reads as part of the file pattern, so every NSIS build since 1.8.9's fix
+  of the hook's folder ended on "no files found"; the MSI built.
+
 - **A tool the setup installed through dnf is removed through dnf.** Cleanup's Remove on Fedora
   ran `apt-get remove` through pkexec, which ended on `apt-get: not found` and kept the record.
 - **QEMU installed by winget reads as installed.** Its installer adds nothing to PATH and the
