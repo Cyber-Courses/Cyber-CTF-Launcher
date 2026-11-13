@@ -48,23 +48,33 @@ async fn hub_tag_size(repo: &str, tag: &str) -> Result<Option<u64>, String> {
     let client = crate::platform::http::probe_client(Duration::from_secs(8), false).map_err(|e| format!("no HTTP client: {e}"))?;
     let res = client.get(url).send().await.map_err(|e| format!("Docker Hub didn't answer: {e}"))?;
     let res = res.error_for_status().map_err(|e| format!("Docker Hub refused: {e}"))?;
-    let v: serde_json::Value = res.json().await.map_err(|e| format!("Docker Hub's answer isn't JSON: {e}"))?;
-    Ok(size_for_arch(&v, hub_arch()))
+    let tag: HubTag = res.json().await.map_err(|e| format!("Docker Hub's answer isn't a tag's description: {e}"))?;
+    Ok(size_for_arch(&tag, hub_arch()))
+}
+
+/// What the launcher reads of Docker Hub's tag description (`/v2/repositories/<repo>/tags/<tag>`):
+/// its image per architecture. Unknown fields are skipped.
+#[derive(Debug, Default, serde::Deserialize)]
+struct HubTag {
+    #[serde(default)]
+    images: Vec<HubImage>,
+}
+
+/// One architecture's image of a tag, and its compressed size in bytes.
+#[derive(Debug, serde::Deserialize)]
+struct HubImage {
+    architecture: Option<String>,
+    size: Option<u64>,
 }
 
 /// The size Docker Hub's tag description gives for `arch`, when it gives one.
-fn size_for_arch(v: &serde_json::Value, arch: &str) -> Option<u64> {
-    v.get("images")?
-        .as_array()?
-        .iter()
-        .find(|i| i.get("architecture").and_then(|a| a.as_str()) == Some(arch))
-        .and_then(|i| i.get("size")?.as_u64())
-        .filter(|s| *s > 0)
+fn size_for_arch(tag: &HubTag, arch: &str) -> Option<u64> {
+    tag.images.iter().find(|i| i.architecture.as_deref() == Some(arch)).and_then(|i| i.size).filter(|s| *s > 0)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{hub_arch, hub_ref, image_download_size, size_for_arch};
+    use super::{HubTag, hub_arch, hub_ref, image_download_size, size_for_arch};
 
     #[test]
     fn maps_image_references_to_docker_hub() {
@@ -79,14 +89,15 @@ mod tests {
 
     #[test]
     fn the_size_is_this_architectures_and_never_zero() {
-        let v = serde_json::json!({ "images": [
-            { "architecture": "amd64", "size": 1000 },
-            { "architecture": "arm64", "size": 0 },
-        ] });
-        assert_eq!(size_for_arch(&v, "amd64"), Some(1000));
-        assert_eq!(size_for_arch(&v, "arm64"), None);
-        assert_eq!(size_for_arch(&v, "riscv64"), None);
-        assert_eq!(size_for_arch(&serde_json::json!({}), "amd64"), None);
+        // As Docker Hub answers it (fields trimmed to a few).
+        let tag: HubTag = serde_json::from_str(
+            r#"{"creator":1,"id":2,"images":[{"architecture":"amd64","features":"","variant":null,"digest":"sha256:aa","os":"linux","os_features":"","os_version":null,"size":1000,"status":"active","last_pulled":"2026-11-01T00:00:00Z","last_pushed":"2026-10-01T00:00:00Z"},{"architecture":"arm64","digest":"sha256:bb","os":"linux","size":0,"status":"active"}],"last_updated":"2026-10-01T00:00:00Z","name":"latest","repository":3,"full_size":1000,"v2":true,"tag_status":"active","digest":"sha256:cc"}"#,
+        )
+        .unwrap();
+        assert_eq!(size_for_arch(&tag, "amd64"), Some(1000));
+        assert_eq!(size_for_arch(&tag, "arm64"), None);
+        assert_eq!(size_for_arch(&tag, "riscv64"), None);
+        assert_eq!(size_for_arch(&HubTag::default(), "amd64"), None);
         assert_ne!(hub_arch(), "");
         assert_eq!(hub_ref("a/b@sha256:abc").map(|r| r.1).as_deref(), Some("latest"));
     }
