@@ -50,8 +50,7 @@ async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
     let Ok(home) = super::paths::runner_home(dirs) else { return };
     let Ok(base) = dirs.data() else { return };
     // A connection that can't be read (the keychain refused, a server removed) leaves the lab
-    // for a later sweep, said: silent, auto-stop looked as if it never ran (the review of
-    // 2026-11-13).
+    // for a later sweep, said: silent, auto-stop would look as if it never ran.
     let account = |host: &str| match server::connection(dirs, host) {
         Ok(c) => Some(c.tf_env),
         Err(e) => {
@@ -120,8 +119,7 @@ pub fn last_failure(dirs: &AppDirs, id: &str) -> Option<Wire> {
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        // A record that is there but can't be read is a failure to say, not "no failure"
-        // (Clean Code ch.7, 2026-11-13).
+        // A record that is there but can't be read is a failure to say, not "no failure".
         Err(e) => {
             log::warn!("auto-stop: the last failure of {id} couldn't be read from {}: {e}", path.display());
             return None;

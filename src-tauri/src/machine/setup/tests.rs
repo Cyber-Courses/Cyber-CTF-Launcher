@@ -251,8 +251,8 @@ fn qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test() {
 
 #[test]
 fn a_bare_fedora_installs_through_dnf_as_a_bare_debian_does_through_apt() {
-    // Regression: every Fedora bare setup shard ended on "this distribution isn't supported by
-    // the guided setup yet" (2026-11-12).
+    // Regression: on a bare Fedora the guided setup ended on "this distribution isn't supported
+    // by the guided setup yet".
     let r = shapes::bare_fedora();
     let p = plan_of(&r, &wanted(&BOTH, &[Provider::Libvirt, Provider::Virtualbox]));
     assert_eq!(steps(&p), ["docker: install docker", "libvirt: install libvirt", "vagrant: install vagrant", "plugin:vagrant-libvirt: plugin vagrant-libvirt"]);

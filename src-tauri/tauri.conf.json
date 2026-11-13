@@ -42,6 +42,11 @@
         "depends": [
           "pkexec | policykit-1"
         ]
+      },
+      "rpm": {
+        "depends": [
+          "polkit"
+        ]
       }
     },
     "targets": [
@@ -50,6 +55,7 @@
       "nsis",
       "msi",
       "deb",
+      "rpm",
       "appimage"
     ],
     "icon": [

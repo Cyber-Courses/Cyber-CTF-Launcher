@@ -12,7 +12,7 @@ import { commands, installTauri } from "@/test/tauri";
 import { clickEverything, flush } from "@/test/ui";
 import { must } from "@/components/test-support";
 
-const signedIn = { loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" };
+const signedIn = { loggedIn: true, name: "Ada Lovelace", email: "ada@example.org" };
 // Controls that leave the screen or open another window: pressed in their own tests.
 const LEAVE = /^(home|labs|overview)$/i;
 

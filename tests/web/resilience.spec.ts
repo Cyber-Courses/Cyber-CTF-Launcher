@@ -38,7 +38,7 @@ for (const size of [
       await openApp(page);
       const main = page.locator("main");
       const screens: [string, string | RegExp, (p: Page) => ReturnType<Page["getByRole"]>][] = [
-        ["Overview", /Florian/, (p) => p.locator("main").getByRole("button", { name: "Browse labs" })],
+        ["Overview", /Ada/, (p) => p.locator("main").getByRole("button", { name: "Browse labs" })],
         ["Labs", "Labs", (p) => p.getByRole("textbox", { name: "Search labs and skills" })],
         ["Machine", "Machine", (p) => p.locator("main").getByRole("button", { name: "Add a provider" })],
         ["Servers", "Servers", (p) => p.getByRole("button", { name: "Add server" })],
@@ -162,7 +162,7 @@ test.describe("keyboard only", () => {
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(palette).toBeHidden();
-    await expect(pageTitle(page)).toHaveText(second.replace(/^Go to /, "").replace("Overview", "") || /Florian/);
+    await expect(pageTitle(page)).toHaveText(second.replace(/^Go to /, "").replace("Overview", "") || /Ada/);
   });
 
   test("the start dialog keeps the focus inside, and Cancel gives it back", async ({ page }) => {

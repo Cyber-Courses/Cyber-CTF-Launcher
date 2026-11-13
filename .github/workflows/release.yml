@@ -437,8 +437,8 @@ jobs:
           gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' > assets.txt
           missing=()
           grep -q '_universal\.dmg$' assets.txt || missing+=("macOS (universal .dmg)")
-          grep -q '_amd64\.deb$' assets.txt || missing+=("Linux x64 (.deb, AppImage)")
-          grep -q '_arm64\.deb$' assets.txt || missing+=("Linux arm64 (.deb, AppImage)")
+          grep -q '_amd64\.deb$' assets.txt || missing+=("Linux x64 (.deb, .rpm, AppImage)")
+          grep -q '_arm64\.deb$' assets.txt || missing+=("Linux arm64 (.deb, .rpm, AppImage)")
           grep -q '_x64-setup\.exe$' assets.txt || missing+=("Windows x64 (.exe installer, .msi)")
           grep -q '_arm64-setup\.exe$' assets.txt || missing+=("Windows on Arm (.exe installer)")
           if [ "${#missing[@]}" -gt 0 ]; then

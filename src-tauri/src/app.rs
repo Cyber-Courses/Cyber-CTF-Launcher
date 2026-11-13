@@ -393,6 +393,7 @@ fn on_run_event(app: &AppHandle, event: &RunEvent) {
         // its grace: the app is going, and it must not outlive it.
         crate::runtime::isothrum::end_cut_short_tools();
         terminal::close_all();
+        crate::screen::close_all();
     }
 }
 

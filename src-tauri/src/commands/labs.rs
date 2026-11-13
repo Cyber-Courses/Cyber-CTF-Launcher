@@ -104,9 +104,12 @@ fn check_image(image: &str) -> Result<()> {
     if crate::platform::exec::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
 }
 
+/// The longest machine name Isoloom accepts (a DNS label's length).
+const MACHINE_NAME_MAX: usize = 64;
+
 /// A machine name as Vagrant and Isoloom spell them: plain characters, dots allowed, not empty.
 fn valid_machine_name(m: &str) -> bool {
-    !m.is_empty() && m.len() <= 64 && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    !m.is_empty() && m.len() <= MACHINE_NAME_MAX && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 /// Stops lab `id` wherever it runs and removes it, its log lines sent on `logs` (see [`stop_lab`]).

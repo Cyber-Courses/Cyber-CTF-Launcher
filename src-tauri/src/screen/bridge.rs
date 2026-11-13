@@ -55,6 +55,11 @@ impl std::fmt::Debug for Target {
     }
 }
 
+/// How much of the screen's stream one read takes to the viewer: frames come in bursts.
+const SCREEN_CHUNK: usize = 64 * 1024;
+/// How much of the viewer's input one read takes to the screen: key and pointer events, small.
+const INPUT_CHUNK: usize = 16 * 1024;
+
 /// The Next dev server a dev build's window loads: `tauri.conf.json`'s `devUrl`.
 pub(crate) const DEV_SERVER_ORIGIN: &str = "http://127.0.0.1:3206";
 
@@ -308,7 +313,7 @@ async fn relay_tcp(mut socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) 
         let viewer_out = Arc::clone(&viewer_out);
         async move {
             viewer_out.lock().await.write_all(&ws::binary(&first)).await?;
-            let mut buf = vec![0u8; 64 * 1024];
+            let mut buf = vec![0u8; SCREEN_CHUNK];
             loop {
                 let n = vnc_in.read(&mut buf).await?;
                 if n == 0 {
@@ -320,7 +325,7 @@ async fn relay_tcp(mut socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) 
         }
     };
     let from_viewer = async move {
-        let mut chunk = vec![0u8; 16 * 1024];
+        let mut chunk = vec![0u8; INPUT_CHUNK];
         loop {
             loop {
                 match ws::decode(&pending) {

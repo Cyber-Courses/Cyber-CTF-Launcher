@@ -22,7 +22,7 @@ fn offered(os: &str, arch: &str) -> Vec<Provider> {
     let local: &[Provider] = match (os, arch) {
         ("macos", "aarch64") => &[Provider::VmwareDesktop, Provider::Parallels, Provider::Qemu, Provider::Utm],
         ("macos", _) => &[Provider::Virtualbox, Provider::VmwareDesktop, Provider::Parallels, Provider::Qemu],
-        ("windows", _) => &[Provider::Virtualbox, Provider::VmwareDesktop, Provider::Hyperv, Provider::Qemu],
+        ("windows", _) => &[Provider::Virtualbox, Provider::VmwareDesktop, Provider::Hyperv],
         _ => &[Provider::Virtualbox, Provider::VmwareDesktop, Provider::Libvirt, Provider::Qemu],
     };
     local.iter().copied().chain(Provider::SERVERS.iter().rev().copied()).collect()

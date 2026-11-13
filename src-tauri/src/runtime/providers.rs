@@ -171,18 +171,21 @@ impl Provider {
     fn applicable_on(self, os: &str, arch: &str) -> bool {
         // Neither ships for Windows on Arm (no installer, no Arm VMs there): VM labs on those PCs
         // go to Hyper-V, a server or the cloud.
-        let no_arm_build = matches!(self, Provider::Virtualbox | Provider::VmwareDesktop) && os == "windows" && arch == "aarch64";
-        self.runs_on(os) && !no_arm_build
+        let built_for_windows_on_arm = !(matches!(self, Provider::Virtualbox | Provider::VmwareDesktop) && os == "windows" && arch == "aarch64");
+        self.runs_on(os) && built_for_windows_on_arm
     }
 
     /// Whether it exists on `os` (`std::env::consts::OS`) at all: Hyper-V on Windows, Parallels
-    /// and UTM on macOS, libvirt on Linux, every other one anywhere. The one table of which OS a
+    /// and UTM on macOS, libvirt on Linux, QEMU off Windows, every other one anywhere. The one table of which OS a
     /// hypervisor belongs to: the setup's installs and removals read it too.
     pub fn runs_on(self, os: &str) -> bool {
         match self {
             Provider::Hyperv => os == "windows",
             Provider::Parallels | Provider::Utm => os == "macos",
             Provider::Libvirt => os == "linux",
+            // vagrant-qemu builds a networked VM's cloud-init seed with `oscdimg` on Windows (the
+            // Windows ADK's), and Isoloom gives the qemu provider Linux and macOS hosts only.
+            Provider::Qemu => os != "windows",
             _ => true,
         }
     }
@@ -197,12 +200,12 @@ impl Provider {
     /// [`offered`](Self::offered) on `os` and CPU `arch`.
     fn offered_on(self, os: &str, arch: &str, installed: bool) -> bool {
         let apple_silicon = os == "macos" && arch == "aarch64";
-        let not_for_this_mac = match self {
-            Provider::Virtualbox => apple_silicon,
-            Provider::Utm => os == "macos" && !apple_silicon,
-            _ => false,
+        let for_this_mac = match self {
+            Provider::Virtualbox => !apple_silicon,
+            Provider::Utm => os != "macos" || apple_silicon,
+            _ => true,
         };
-        self.applicable_on(os, arch) && (installed || !not_for_this_mac)
+        self.applicable_on(os, arch) && (installed || for_this_mac)
     }
 
     /// Vagrant plugin required, if the provider is not built in: Isoloom's table for the providers
@@ -370,15 +373,25 @@ async fn tool_present(program: &'static str, args: &[&str]) -> bool {
     match run_read(program, args, None).await {
         // vmrun without arguments prints usage and exits non-zero, but it exists.
         Ok(_) | Err(crate::error::Error::CommandFailed { .. }) => true,
+        // A tool that ran out of the probe's time is there, and slow (a cold VBoxSVC): not
+        // absent, which would offer to install it again.
+        Err(e) if crate::platform::exec::timed_out(&e) => {
+            log::warn!("`{program}` took longer than the probe waits: read as installed");
+            true
+        }
         Err(_) => false,
     }
 }
 
-/// The Vagrant plugins installed, each with its version when it says one (none when `vagrant
-/// plugin list` fails).
-async fn installed_plugins() -> Vec<(String, Option<String>)> {
-    remembered("vagrant plugin list", run_read("vagrant", &["plugin", "list"], None)).await.map(|o| parse_plugin_versions(&o)).unwrap_or_default()
+/// The Vagrant plugins installed, each with its version when it says one; why they can't be
+/// listed when `vagrant plugin list` fails (not "none": a plugin that is there would read as
+/// missing).
+async fn installed_plugins() -> Result<Vec<(String, Option<String>)>, String> {
+    remembered("vagrant plugin list", run_read("vagrant", &["plugin", "list"], None)).await.map(|o| parse_plugin_versions(&o)).map_err(|e| e.to_string())
 }
+
+/// What `detect` knows of the Vagrant plugins: the ones listed, or why they couldn't be.
+type Plugins = Result<Vec<(String, Option<String>)>, String>;
 
 /// The local hypervisors ready for a lab's VMs on this machine: Vagrant, the hypervisor and its
 /// plugin (what the Machine page reports as ready), in [`Provider::ALL`]'s order.
@@ -410,7 +423,7 @@ pub fn pick(preferred: Option<Provider>, ready: &[Provider]) -> Option<Provider>
 /// What the machine check finds for each provider this machine can run (its OS and CPU), the
 /// Vagrant plugins read only when Vagrant is installed (`vagrant_installed`).
 pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
-    let plugins = if vagrant_installed { installed_plugins().await } else { Vec::new() };
+    let plugins = if vagrant_installed { installed_plugins().await } else { Ok(Vec::new()) };
     let mut statuses = Vec::new();
     for provider in Provider::ALL {
         statuses.extend(detect_one(provider, vagrant_installed, &plugins).await);
@@ -422,13 +435,13 @@ pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
 /// isn't offered on this machine. What the server self-test reads before it runs a lab on ESXi.
 pub async fn status(provider: Provider) -> Option<ProviderStatus> {
     let vagrant_installed = run_read("vagrant", &["--version"], None).await.is_ok();
-    let plugins = if vagrant_installed { installed_plugins().await } else { Vec::new() };
+    let plugins = if vagrant_installed { installed_plugins().await } else { Ok(Vec::new()) };
     detect_one(provider, vagrant_installed, &plugins).await
 }
 
 /// One provider's status, given whether Vagrant is installed and its `plugins`: none when it
 /// isn't offered on this machine.
-async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(String, Option<String>)]) -> Option<ProviderStatus> {
+async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &Plugins) -> Option<ProviderStatus> {
     // Only surface providers that can run on this machine, not the whole catalogue.
     if !provider.applicable() {
         return None;
@@ -443,15 +456,7 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
     let mkisofs_missing = found == Some(true) && needs_mkisofs(provider, std::env::consts::OS) && !tool_present("mkisofs", &["-version"]).await;
     let hypervisor = if mkisofs_missing { Some(false) } else { found };
 
-    // The Vagrant layer (the plugin that drives this provider): present, and not older than
-    // the one the launcher drives labs with.
-    let plugin = provider.plugin().map(str::to_string);
-    let found = plugin.as_deref().and_then(|p| plugins.iter().find(|(name, _)| name == p));
-    let plugin_version = found.and_then(|(_, version)| version.clone());
-    let plugin_installed = match &plugin {
-        None => true, // built in to Vagrant (virtualbox, hyperv)
-        Some(_) => vagrant_installed && found.is_some() && plugin_too_old(provider, plugin_version.as_deref()).is_none(),
-    };
+    let (plugin, plugin_version, plugin_installed) = plugin_layer(provider, vagrant_installed, plugins);
     // The hypervisor's own version, where its plugin is particular about it (UTM).
     let hypervisor_version = if hypervisor == Some(true) { provider.hypervisor_version().await } else { None };
 
@@ -477,6 +482,7 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
         plugin: plugin.as_deref(),
         plugin_installed,
         plugin_version: plugin_version.as_deref(),
+        plugins_unknown: plugins.as_ref().err().map(String::as_str),
         utility,
         account: if needs_admin {
             Some(AccountLacks::HypervAdmin)
@@ -511,6 +517,22 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &[(Str
     })
 }
 
+/// The Vagrant layer of `provider` (the plugin that drives it): the plugin it needs, the version
+/// installed, and whether that is installed at a version the launcher drives labs with. A
+/// built-in provider (virtualbox, hyperv) has no plugin and reads installed; one whose plugins
+/// couldn't be listed reads not installed, and `detect` says why.
+fn plugin_layer(provider: Provider, vagrant_installed: bool, plugins: &Plugins) -> (Option<String>, Option<String>, bool) {
+    let plugin = provider.plugin().map(str::to_string);
+    let listed = plugins.as_deref().unwrap_or_default();
+    let found = plugin.as_deref().and_then(|p| listed.iter().find(|(name, _)| name == p));
+    let plugin_version = found.and_then(|(_, version)| version.clone());
+    let plugin_installed = match &plugin {
+        None => true,
+        Some(_) => vagrant_installed && found.is_some() && plugin_too_old(provider, plugin_version.as_deref()).is_none(),
+    };
+    (plugin, plugin_version, plugin_installed)
+}
+
 /// Whether VirtualBox's service (`VBoxSVC`) is wedged. Installed is not the same as working:
 /// `VBoxManage --version` never talks to the service, which can wedge so that every real call
 /// hangs (a deploy then sits on "Bringing machine up" forever). Asks it something that needs the
@@ -538,6 +560,9 @@ struct Detection<'a> {
     plugin: Option<&'a str>,
     /// Whether that plugin is installed, at a version the launcher drives.
     plugin_installed: bool,
+    /// Why the plugins couldn't be listed, when `vagrant plugin list` failed: `plugin_installed`
+    /// then says nothing.
+    plugins_unknown: Option<&'a str>,
     /// That plugin's installed version, when it is present and says one.
     plugin_version: Option<&'a str>,
     /// Where the Vagrant VMware Utility stands; `None` when the provider doesn't use it.
@@ -563,7 +588,7 @@ pub enum AccountLacks {
 /// hypervisor itself (nothing setup installs mends that), then the first of its [`needs`]. So it
 /// is `None` only when nothing is needed: readiness and the setup steps can't disagree.
 fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'_>) -> Option<Unavailable> {
-    let Detection { unresponsive, hypervisor, mkisofs_missing, hypervisor_version, plugin, plugin_version, utility, account, .. } = detection;
+    let Detection { unresponsive, hypervisor, mkisofs_missing, hypervisor_version, plugin, plugin_version, plugins_unknown, utility, account, .. } = detection;
     let plugin = || plugin.unwrap_or("?").to_owned();
     if needs.contains(&Need::Vagrant) {
         Some(Unavailable::VagrantMissing)
@@ -585,6 +610,8 @@ fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'
         Some(Unavailable::HypervisorTooOld { name: name.into(), version: version.into(), min: min.into() })
     } else if let Some((version, min)) = plugin_too_old(provider, plugin_version) {
         Some(Unavailable::PluginTooOld { plugin: plugin(), version: version.into(), min: min.into() })
+    } else if let (Some(_), Some(why)) = (detection.plugin, plugins_unknown) {
+        Some(Unavailable::PluginsUnknown { plugin: plugin(), reason: why.to_owned() })
     } else {
         needs.first().map(|need| match need {
             Need::Vagrant => Unavailable::VagrantMissing,
@@ -664,9 +691,32 @@ mod tests {
     }
 
     #[test]
+    fn a_plugin_listing_that_failed_says_so_rather_than_plugin_missing() {
+        let detection = |plugins_unknown| Detection {
+            unresponsive: false,
+            hypervisor: Some(true),
+            mkisofs_missing: false,
+            hypervisor_version: None,
+            plugin: Some("vagrant-libvirt"),
+            plugin_installed: false,
+            plugin_version: None,
+            plugins_unknown,
+            utility: None,
+            account: None,
+        };
+        let needs = [Need::Plugin];
+        assert_eq!(
+            unavailable_reason(Provider::Libvirt, &needs, detection(Some("exited with code 1"))),
+            Some(Unavailable::PluginsUnknown { plugin: "vagrant-libvirt".into(), reason: "exited with code 1".into() })
+        );
+        assert_eq!(unavailable_reason(Provider::Libvirt, &needs, detection(None)), Some(Unavailable::PluginMissing { plugin: "vagrant-libvirt".into() }));
+    }
+
+    #[test]
     fn an_old_utm_plugin_or_utm_reads_as_too_old_and_says_what_to_do() {
         let detection = |hypervisor_version, plugin_version, plugin_installed| Detection {
             unresponsive: false,
+            plugins_unknown: None,
             hypervisor: Some(true),
             mkisofs_missing: false,
             hypervisor_version,
@@ -866,6 +916,9 @@ mod tests {
         assert!(!stuck("VBoxManage: error: the guest session timed out").await, "the tool's own words");
         assert!(stuck("timed out after 8s").await, "the app's timeout");
         // And `detect` says so wherever VirtualBox applies; where it doesn't, it says nothing.
+        // The host's own KVM is no part of it (a Linux host with kvm_intel loaded would answer
+        // KvmHoldsVirtualization first).
+        assume_devices_ready();
         let _tools = tools("timed out after 8s");
         let virtualbox = detect(true).await.into_iter().find(|s| s.provider == Provider::Virtualbox);
         if Provider::Virtualbox.applicable() {
@@ -883,6 +936,7 @@ mod tests {
                 vagrant,
                 Detection {
                     unresponsive: stuck,
+                    plugins_unknown: None,
                     hypervisor: hv,
                     mkisofs_missing: false,
                     hypervisor_version: None,
@@ -896,6 +950,7 @@ mod tests {
         };
         let hyperv = |needs_admin: bool| Detection {
             unresponsive: false,
+            plugins_unknown: None,
             hypervisor: Some(true),
             mkisofs_missing: false,
             hypervisor_version: None,
@@ -928,6 +983,7 @@ mod tests {
     fn libvirt_joined_since_logging_in_waits_for_the_next_login() {
         let libvirt = |relogin: bool| Detection {
             unresponsive: false,
+            plugins_unknown: None,
             hypervisor: Some(true),
             mkisofs_missing: false,
             hypervisor_version: None,
@@ -951,6 +1007,7 @@ mod tests {
         // Permission denied").
         let qemu = |relogin: bool| Detection {
             unresponsive: false,
+            plugins_unknown: None,
             hypervisor: Some(true),
             mkisofs_missing: false,
             hypervisor_version: None,
@@ -986,6 +1043,7 @@ mod tests {
         }
         let qemu = Detection {
             unresponsive: false,
+            plugins_unknown: None,
             hypervisor: Some(false),
             mkisofs_missing: true,
             hypervisor_version: None,
@@ -1008,7 +1066,7 @@ mod tests {
         // mkisofs is never asked for.
         use crate::platform::exec::fake::{Tools, ok};
         let tools = Tools::new(|program, _| if program == "mkisofs" { None } else { ok("QEMU emulator version 8.2.2\n") });
-        let plugins = [("vagrant-qemu".to_owned(), Some("0.8.0".to_owned()))];
+        let plugins = Ok(vec![("vagrant-qemu".to_owned(), Some("0.8.0".to_owned()))]);
         let qemu = detect_one(Provider::Qemu, true, &plugins).await.unwrap();
         if cfg!(target_os = "linux") {
             assert_eq!((qemu.hypervisor, qemu.available, qemu.reason), (Some(false), false, Some(Unavailable::MkisofsMissing)));
@@ -1022,6 +1080,7 @@ mod tests {
     fn vmware(plugin_installed: bool, utility: UtilityState) -> Detection<'static> {
         Detection {
             unresponsive: false,
+            plugins_unknown: None,
             hypervisor: Some(true),
             mkisofs_missing: false,
             hypervisor_version: None,
