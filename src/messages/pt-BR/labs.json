@@ -146,7 +146,9 @@
       "tfApply": "Criar a infraestrutura",
       "tfReady": "Instalar e iniciar o lab",
       "prepareLab": "Preparar o lab",
-      "preparing": "Preparando"
+      "preparing": "Preparando",
+      "attackBox": "Adicionar a máquina de ataque",
+      "afterReady": "Alterar o laboratório em execução"
     },
     "title": "Implantação",
     "on": "em <where>{where}</where>",

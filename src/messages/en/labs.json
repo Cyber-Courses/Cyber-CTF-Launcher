@@ -146,7 +146,9 @@
       "tfApply": "Create the infrastructure",
       "tfReady": "Install and start the lab",
       "prepareLab": "Prepare the lab",
-      "preparing": "Preparing"
+      "preparing": "Preparing",
+      "attackBox": "Add the attack box",
+      "afterReady": "Change the running lab"
     },
     "title": "Deployment",
     "on": "on <where>{where}</where>",
