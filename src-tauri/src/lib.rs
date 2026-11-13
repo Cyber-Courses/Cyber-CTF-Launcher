@@ -3,7 +3,7 @@
 
 mod account;
 mod app;
-mod cloud;
+mod cloud_cli;
 mod commands;
 mod error;
 #[cfg(test)]

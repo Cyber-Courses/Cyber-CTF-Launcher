@@ -208,7 +208,7 @@ back to the Labs list, with a toast.
 login`, Azure `az login`, Google Cloud's application-default credentials, OCI's
   `~/.oci/config`). Before any change to a lab in an account, the launcher asks that CLI whether
   the sign-in still holds and refuses, saying how to sign in again, when it ran out
-  (`runtime/isothrum/cloud.rs`): a sign-in that runs out halfway leaves a lab behind.
+  (`runtime/isothrum/cloud_runs.rs`): a sign-in that runs out halfway leaves a lab behind.
 - A cloud lab's firewall opens its SSH and published ports to this machine's public IP only,
   which two independent services must agree on (`launch::public_ip`). AWS launches also check
   the account's budget first.
