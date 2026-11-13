@@ -646,7 +646,7 @@ export function results() {
 
 /** `process.exit(code)` once stdout and stderr have drained. On Windows a pipe is written
  *  asynchronously, and an exit right after `console.log` dropped a spec's last lines: the app's
- *  output tail after it died (the x64 E2E on the rig: `app out tail:` never reached
+ *  output tail after it died (an x64 desktop E2E run: `app out tail:` never reached
  *  the spec's log, so an abort left no trace but its exit status). */
 export function exitDrained(code) {
   process.exitCode = code;
