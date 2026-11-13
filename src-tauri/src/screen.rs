@@ -245,7 +245,7 @@ pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path)
         Some((rdp::Connection { address: at.to_string(), user: r.user.clone() }, r.password.clone()))
     })
     .ok_or_else(|| Error::Invalid("this screen isn't a Remote Desktop".into()))?;
-    crate::platform::private_fs::dir(dir).map_err(Error::Io)?;
+    crate::platform::private_fs::create_dir(dir).map_err(Error::Io)?;
     let file = dir.join(format!("{}.rdp", label.replace([':', '/', '\\'], "-")));
     crate::platform::private_fs::write(&file, rdp::file(&connection)).map_err(Error::Io)?;
     with_sessions(|s| s.get_mut(label).map(|s| s.rdp_file = Some(file.clone())));

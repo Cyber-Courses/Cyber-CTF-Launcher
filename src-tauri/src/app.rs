@@ -400,7 +400,7 @@ fn on_run_event(app: &AppHandle, event: &RunEvent) {
 /// Makes the app's data folder `dir` this user's alone; one that can't be is said in the log (its
 /// files then keep the folder's own permissions), and the app goes on.
 fn narrow_to_this_user(dir: &std::path::Path) {
-    if let Err(e) = private_fs::dir(dir) {
+    if let Err(e) = private_fs::create_dir(dir) {
         log::warn!("the app's data folder {} couldn't be made this user's alone: {e}", dir.display());
     }
 }

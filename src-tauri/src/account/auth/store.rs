@@ -152,7 +152,7 @@ fn load_file(path: &std::path::Path) -> std::result::Result<Option<Session>, Str
 /// file holds the session's tokens).
 fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
-        crate::platform::private_fs::dir(dir)?;
+        crate::platform::private_fs::create_dir(dir)?;
     }
     crate::platform::atomic_file::write_private(path, raw)?;
     Ok(())
