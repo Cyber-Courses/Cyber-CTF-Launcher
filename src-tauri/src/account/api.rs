@@ -8,21 +8,40 @@ use crate::account::auth;
 use crate::error::{Error, Result};
 use crate::platform::config;
 
-/// Runs a GraphQL operation as the logged-in player (anonymous if logged out
-/// and `require_login` is false). Returns `data`, or the first error message.
-pub async fn graphql(query: &str, variables: Value, require_login: bool) -> Result<Value> {
-    let token = token_for_call(auth::access_token().await, require_login)?;
+/// Who a GraphQL call may run as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Caller {
+    /// The signed-in player only: signed out is an error.
+    Player,
+    /// The player when signed in, anonymous otherwise.
+    PlayerOrAnonymous,
+}
+
+/// Runs a GraphQL operation as the signed-in player; signed out is an error. Returns `data`, or
+/// the first error message.
+pub async fn graphql_signed_in(query: &str, variables: Value) -> Result<Value> {
+    graphql(query, variables, Caller::Player).await
+}
+
+/// Runs a GraphQL operation as the signed-in player, or anonymously when signed out. Returns
+/// `data`, or the first error message.
+pub async fn graphql_public(query: &str, variables: Value) -> Result<Value> {
+    graphql(query, variables, Caller::PlayerOrAnonymous).await
+}
+
+async fn graphql(query: &str, variables: Value, caller: Caller) -> Result<Value> {
+    let token = token_for_call(auth::access_token().await, caller)?;
     send(&config::api_url(), token, query, variables).await
 }
 
-/// The token a call goes with: the player's; none (anonymous) only when the call doesn't
-/// `require_login` and there is no session to use (signed out, or it expired). A session that is
+/// The token a call goes with: the player's; none (anonymous) only when the call may run
+/// anonymously and there is no session to use (signed out, or it expired). A session that is
 /// there but couldn't be read or renewed (the keychain locked, the sign-in service unreachable)
 /// is that error: as anonymous, the catalogue would lose the player's progress without a word.
-fn token_for_call(token: Result<String>, require_login: bool) -> Result<Option<String>> {
+fn token_for_call(token: Result<String>, caller: Caller) -> Result<Option<String>> {
     match token {
         Ok(t) => Ok(Some(t)),
-        Err(e) if !require_login && matches!(e.code(), crate::error::Code::SignedOut | crate::error::Code::SessionExpired) => Ok(None),
+        Err(e) if caller == Caller::PlayerOrAnonymous && matches!(e.code(), crate::error::Code::SignedOut | crate::error::Code::SessionExpired) => Ok(None),
         Err(e) => Err(e),
     }
 }
@@ -63,28 +82,28 @@ fn parse_response(status: reqwest::StatusCode, text: &str) -> Result<Value> {
 
 /// Runs one of the allowed CyberBackend operations for the webview (see [`ApiOperation`]).
 pub async fn api_query(operation: ApiOperation, variables: Option<Value>) -> Result<Value> {
-    graphql(&operation.document(), variables.unwrap_or(Value::Null), false).await
+    graphql_public(&operation.document(), variables.unwrap_or(Value::Null)).await
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_response, token_for_call};
+    use super::{Caller, parse_response, token_for_call};
     use crate::error::{Code, Error};
     use reqwest::StatusCode;
     use serde_json::json;
 
     #[test]
     fn only_a_missing_session_makes_a_call_anonymous() {
-        assert_eq!(token_for_call(Ok("tok".into()), true).unwrap().as_deref(), Some("tok"));
+        assert_eq!(token_for_call(Ok("tok".into()), Caller::Player).unwrap().as_deref(), Some("tok"));
         for code in [Code::SignedOut, Code::SessionExpired] {
-            assert_eq!(token_for_call(Err(Error::coded(code.clone())), false).unwrap(), None);
-            assert_eq!(token_for_call(Err(Error::coded(code.clone())), true).unwrap_err().code(), code);
+            assert_eq!(token_for_call(Err(Error::coded(code.clone())), Caller::PlayerOrAnonymous).unwrap(), None);
+            assert_eq!(token_for_call(Err(Error::coded(code.clone())), Caller::Player).unwrap_err().code(), code);
         }
         // Regression: a keychain that couldn't be read, or a refresh that failed, read as signed
         // out: the catalogue loaded as anonymous, and nothing said why.
-        let locked = token_for_call(Err(Error::Invalid("the keychain is locked".into())), false);
+        let locked = token_for_call(Err(Error::Invalid("the keychain is locked".into())), Caller::PlayerOrAnonymous);
         assert_eq!(locked.unwrap_err().to_string(), "the keychain is locked");
-        assert!(token_for_call(Err(Error::Unreachable("cyberauth.co unreachable".into())), false).is_err());
+        assert!(token_for_call(Err(Error::Unreachable("cyberauth.co unreachable".into())), Caller::PlayerOrAnonymous).is_err());
     }
 
     #[test]
@@ -172,10 +191,10 @@ mod tests {
     #[tokio::test]
     #[ignore = "network"]
     async fn queries_the_api_anonymously() {
-        let data = super::graphql("{ challenges { id } me { authId } }", serde_json::Value::Null, false).await.unwrap();
+        let data = super::graphql_public("{ challenges { id } me { authId } }", serde_json::Value::Null).await.unwrap();
         assert!(data["challenges"].is_array());
         assert!(data["me"].is_null());
-        let err = super::graphql("mutation { startLab(labId: \"x\") { labId } }", serde_json::Value::Null, true).await.unwrap_err();
+        let err = super::graphql_signed_in("mutation { startLab(labId: \"x\") { labId } }", serde_json::Value::Null).await.unwrap_err();
         assert_eq!(err.code(), crate::error::Code::SignedOut);
     }
 }

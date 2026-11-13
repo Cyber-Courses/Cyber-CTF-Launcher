@@ -333,7 +333,7 @@ struct StartLabData {
 /// The backend's `startLab` answer for `lab_id`: what to download and run, and the launch's
 /// values, typed at the boundary rather than as raw JSON the caller types a step later.
 async fn start_lab(lab_id: &str) -> Result<Launch> {
-    let data = api::graphql(START_LAB, json!({ "id": lab_id }), true).await?;
+    let data = api::graphql_signed_in(START_LAB, json!({ "id": lab_id })).await?;
     let answer: StartLabData = serde_json::from_value(data).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))?;
     Ok(answer.start_lab)
 }
@@ -487,8 +487,7 @@ async fn start_recorded(
     env: &[(String, String)],
     log: impl FnMut(String),
 ) -> Result<()> {
-    let runtime::Downloads { images, boxes } = runtime::downloads(lab.runtime, &to);
-    let before = crate::machine::storage::owned::Before::take(images, boxes).await;
+    let before = crate::machine::storage::owned::Before::take(runtime::downloads(lab.runtime, &to)).await;
     let started = runtime::start_locked(dirs, lab, to, env, log).await;
     crate::machine::storage::claim_lab(dirs.clone(), lab.dir, lab.id, &before).await;
     started

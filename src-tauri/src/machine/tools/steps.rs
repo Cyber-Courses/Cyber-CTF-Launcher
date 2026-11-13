@@ -5,7 +5,7 @@ use std::process::Stdio;
 
 use tokio::process::Command;
 
-use super::exit_codes;
+use super::exit_codes::{self, Verb};
 use crate::error::{Error, Result};
 
 /// One command of an install or removal.
@@ -202,8 +202,8 @@ impl Watch {
         if let Some(why) = self.pkexec_error.filter(|_| matches!(status.code(), Some(126 | 127))) {
             return Err(Error::Invalid(pkexec_refusal(&why).into()));
         }
-        let removing = step.args.first().is_some_and(|a| a == "uninstall");
-        match end_of(&step.program, removing, status.code(), self.installer_code) {
+        let verb = if step.args.first().is_some_and(|a| a == "uninstall") { Verb::Remove } else { Verb::Install };
+        match end_of(&step.program, verb, status.code(), self.installer_code) {
             End::Done(note) => Ok(note),
             // A recognised broken-Homebrew cause reads as the fix for it; the raw brew lines stay
             // in the log. Otherwise a known code reads as what happened, with the raw codes after.
@@ -228,17 +228,17 @@ enum End {
 }
 
 /// What `program`'s exit `code` means for its step: winget's own codes, and an installer run
-/// through PowerShell (WSL's) exiting with the installer's code. `removing`: an uninstall.
-fn end_of(program: &str, removing: bool, code: Option<i32>, installer_code: Option<u32>) -> End {
+/// through PowerShell (WSL's) exiting with the installer's code, worded for the step's `verb`.
+fn end_of(program: &str, verb: Verb, code: Option<i32>, installer_code: Option<u32>) -> End {
     if code == Some(0) {
         return End::Done(None);
     }
     match program {
-        "winget" => match exit_codes::winget_done(code, removing) {
+        "winget" => match exit_codes::winget_done(code, verb) {
             Some(note) => End::Done(Some(note)),
-            None => End::Failed(exit_codes::winget_failure(code, installer_code, removing)),
+            None => End::Failed(exit_codes::winget_failure(code, installer_code, verb)),
         },
-        "powershell" => End::Failed(exit_codes::installer_failure(code, removing)),
+        "powershell" => End::Failed(exit_codes::installer_failure(code, verb)),
         _ => End::Failed(None),
     }
 }
@@ -343,8 +343,8 @@ mod tests {
 
     #[test]
     fn a_winget_step_ends_by_winget_s_codes() {
-        let winget = |code: u32, installer| end_of("winget", false, Some(code.cast_signed()), installer);
-        assert_eq!(end_of("winget", false, Some(0), None), End::Done(None));
+        let winget = |code: u32, installer| end_of("winget", Verb::Install, Some(code.cast_signed()), installer);
+        assert_eq!(end_of("winget", Verb::Install, Some(0), None), End::Done(None));
         // Regression (#220): nothing to do, or a restart to finish, is a step done.
         assert!(matches!(winget(0x8A15_002B, None), End::Done(Some(note)) if note.starts_with("Already installed")));
         assert!(matches!(winget(0x8A15_0109, None), End::Done(Some(note)) if note.contains("Restart Windows")));
@@ -355,9 +355,9 @@ mod tests {
     #[test]
     fn another_step_ends_by_its_own_codes() {
         // Only winget's codes are winget's: another program exiting with one just failed.
-        assert_eq!(end_of("sh", false, Some(0x8A15_002B_u32.cast_signed()), None), End::Failed(None));
-        assert!(matches!(end_of("powershell", true, Some(1223), None), End::Failed(Some(why)) if why.starts_with("The removal was cancelled")));
-        assert_eq!(end_of("pkexec", false, None, None), End::Failed(None), "killed by a signal");
+        assert_eq!(end_of("sh", Verb::Install, Some(0x8A15_002B_u32.cast_signed()), None), End::Failed(None));
+        assert!(matches!(end_of("powershell", Verb::Remove, Some(1223), None), End::Failed(Some(why)) if why.starts_with("The removal was cancelled")));
+        assert_eq!(end_of("pkexec", Verb::Install, None, None), End::Failed(None), "killed by a signal");
     }
 
     #[cfg(unix)]

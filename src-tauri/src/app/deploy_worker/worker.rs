@@ -159,7 +159,7 @@ async fn run_logged(app: &AppHandle, job: Job) -> WorkerExit {
             let _ = writeln!(file, "{line}");
         }
     };
-    let launch = sets_launch_verdict(&job.op);
+    let op = job.op.clone();
     // The lab is this worker's for the whole job (download and install included): the app's
     // own operations on it (a stop, the expiry reaper) wait or step aside meanwhile. A lock that
     // can't be taken fails the job: running unlocked is what it is there to prevent.
@@ -171,7 +171,7 @@ async fn run_logged(app: &AppHandle, job: Job) -> WorkerExit {
         Ok(_lab) => CatchUnwind(Box::pin(execute(app, job, &log))).await.unwrap_or_else(|panic| Err(crashed(&*panic))),
         Err(e) => Err(e),
     };
-    conclude(&f, &result, launch, log)
+    conclude(&f, &result, &op, log)
 }
 
 /// The verdict of a job that panicked (the panic hook logged where, with a backtrace, in the
@@ -211,9 +211,10 @@ async fn hold_lab(app: &AppHandle, id: &str) -> crate::error::Result<lab_file_lo
     lab_file_lock::acquire(&lab_file_lock::path(&crate::platform::AppDirs::from(app), id)?).await.map_err(lab_file_lock::unavailable)
 }
 
-/// The end of a run: the failure in the log, the verdict in the status file (and, for a
-/// `launch` or a resume, in the launch status too), the pidfile gone. Returns the process's exit code.
-fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool, log: impl Fn(String)) -> WorkerExit {
+/// The end of a run of `op`: the failure in the log, the verdict in the status file (and, for an
+/// op that [`sets_launch_verdict`], in the launch status too), the pidfile gone. Returns the
+/// process's exit code.
+fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, op: &Op, log: impl Fn(String)) -> WorkerExit {
     // The log file says how it ended too, so a page that re-attaches to it after a reload or a
     // relaunch (it has no live verdict) still sees the run failed.
     if let Err(e) = result {
@@ -223,7 +224,7 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
     // A refusal (the lab is still up elsewhere, an update of a running lab) changed nothing: the
     // launch's last verdict stays, or a lab still running on its host would read as failed.
     let refused = result.as_ref().is_err_and(crate::error::Error::is_refusal);
-    if launch
+    if sets_launch_verdict(op)
         && !refused
         && let Err(e) = std::fs::write(&f.launch_status, &status)
     {
@@ -393,7 +394,7 @@ mod tests {
         let f = Files::of(&dir, "lab-1");
         std::fs::write(&f.launch_status, "ok").unwrap();
         for code in [crate::error::Code::PickCloudAccount, crate::error::Code::NoHypervisor] {
-            conclude(&f, &Err::<(), _>(Error::coded(code.clone())), true, |_| {});
+            conclude(&f, &Err::<(), _>(Error::coded(code.clone())), &Op::Launch, |_| {});
             assert_eq!(verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().code(), code);
             assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok", "{code:?}");
         }
@@ -407,7 +408,7 @@ mod tests {
         std::fs::write(&f.pid, std::process::id().to_string()).unwrap();
         std::fs::write(&f.job, "{}").unwrap();
         let lines = std::sync::Mutex::new(Vec::new());
-        let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), true, |l| lines.lock().unwrap().push(l));
+        let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), &Op::Launch, |l| lines.lock().unwrap().push(l));
         assert_eq!(code, WorkerExit::Failed);
         assert_eq!(lines.lock().unwrap().as_slice(), ["✗[other] boom"]);
         let failed = r#"error: {"code":"other","message":"boom"}"#;
@@ -415,20 +416,25 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), failed);
         assert!(!f.pid.exists());
         assert!(!f.job.exists(), "the job file (it carries the launch token) is gone once it ends");
-        assert_eq!(conclude(&f, &Ok(()), true, |_| panic!("no log on success")), WorkerExit::Done);
+        assert_eq!(conclude(&f, &Ok(()), &Op::Launch, |_| panic!("no log on success")), WorkerExit::Done);
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "ok");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         // Another operation leaves the launch's verdict alone.
-        conclude(&f, &Err::<(), _>(Error::Invalid("park failed".into())), false, |_| {});
+        conclude(
+            &f,
+            &Err::<(), _>(Error::Invalid("park failed".into())),
+            &Op::Park { runtime: crate::runtime::Runtime::Docker, mode: crate::runtime::Park::Pause },
+            |_| {},
+        );
         assert_eq!(verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string(), "park failed");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         // So does a launch refused before it did anything (the lab is still up on its host).
-        conclude(&f, &Err::<(), _>(Error::Refused("still running on AWS".into())), true, |_| {});
+        conclude(&f, &Err::<(), _>(Error::Refused("still running on AWS".into())), &Op::Launch, |_| {});
         assert_eq!(verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string(), "still running on AWS");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         // A launch refused for something to put right first (a missing value, an expired cloud
         // sign-in) failed: its verdict says so.
-        conclude(&f, &Err::<(), _>(Error::RefusedBeforeActing("sign in again".into())), true, |_| {});
+        conclude(&f, &Err::<(), _>(Error::RefusedBeforeActing("sign in again".into())), &Op::Launch, |_| {});
         assert_eq!(verdict(&std::fs::read_to_string(&f.launch_status).unwrap()).unwrap_err().to_string(), "sign in again");
         std::fs::remove_dir_all(dir).ok();
     }

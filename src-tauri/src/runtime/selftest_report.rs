@@ -30,6 +30,32 @@ pub struct Event {
     pub size: Option<u64>,
 }
 
+/// A step's state as [`Reporter::send`] takes it, so a state can't be swapped with the step's id
+/// or label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StepState {
+    /// The step runs.
+    Running,
+    /// The step passed.
+    Ok,
+    /// The step failed.
+    Fail,
+    /// The step didn't run.
+    Skip,
+}
+
+impl StepState {
+    /// The state as [`Event::state`] says it.
+    fn as_str(self) -> &'static str {
+        match self {
+            StepState::Running => "running",
+            StepState::Ok => "ok",
+            StepState::Fail => "fail",
+            StepState::Skip => "skip",
+        }
+    }
+}
+
 /// Longest live output line shown under a running step, in characters.
 const PROGRESS_MAX: usize = 160;
 
@@ -52,8 +78,8 @@ impl Reporter {
     }
 
     /// Sends step `step` (`label`) in `state`, with `detail`.
-    pub(crate) fn send(&self, step: &'static str, label: &'static str, state: &'static str, detail: Option<String>) {
-        (self.sink)(Event { step, label, state, detail, size: None });
+    pub(crate) fn send(&self, step: &'static str, label: &'static str, state: StepState, detail: Option<String>) {
+        (self.sink)(Event { step, label, state: state.as_str(), detail, size: None });
     }
 
     /// Live output for a step that is still running, as its detail line: trimmed, at most
@@ -66,18 +92,18 @@ impl Reporter {
     pub(crate) fn progress_sized(&self, step: &'static str, label: &'static str, line: &str, size: Option<u64>) {
         let line = line.trim();
         if !line.is_empty() {
-            (self.sink)(Event { step, label, state: "running", detail: Some(line.chars().take(PROGRESS_MAX).collect()), size });
+            (self.sink)(Event { step, label, state: StepState::Running.as_str(), detail: Some(line.chars().take(PROGRESS_MAX).collect()), size });
         }
     }
 
     /// Runs one step, reporting it: `running`, then `ok` with the future's detail or `fail` with
     /// its error; a failure stops the test with that step's error.
     pub(crate) async fn step<T>(&self, step: &'static str, label: &'static str, fut: impl Future<Output = Result<(T, Option<String>)>>) -> Result<T> {
-        self.send(step, label, "running", None);
+        self.send(step, label, StepState::Running, None);
         let outcome = fut.await;
         let (state, detail) = match &outcome {
-            Ok((_, detail)) => ("ok", detail.clone()),
-            Err(e) => ("fail", Some((self.explain)(&e.to_string()))),
+            Ok((_, detail)) => (StepState::Ok, detail.clone()),
+            Err(e) => (StepState::Fail, Some((self.explain)(&e.to_string()))),
         };
         self.send(step, label, state, detail);
         outcome.map(|(v, _)| v)
@@ -87,8 +113,8 @@ impl Reporter {
     /// already says what went wrong).
     pub(crate) fn cleanup<T>(&self, label: &'static str, test: &Result<()>, done: Result<T>, ok_detail: Option<String>) {
         match (test, done) {
-            (Ok(()), Ok(_)) => self.send("cleanup", label, "ok", ok_detail),
-            (Ok(()), Err(e)) => self.send("cleanup", label, "fail", Some(e.to_string())),
+            (Ok(()), Ok(_)) => self.send("cleanup", label, StepState::Ok, ok_detail),
+            (Ok(()), Err(e)) => self.send("cleanup", label, StepState::Fail, Some(e.to_string())),
             (Err(_), _) => {}
         }
     }

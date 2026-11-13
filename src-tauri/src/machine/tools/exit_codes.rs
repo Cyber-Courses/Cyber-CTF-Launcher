@@ -26,13 +26,22 @@ const WINGET_ALREADY_INSTALLED: u32 = 0x8A15_002B;
 /// winget's "a restart is required to finish": the install (or removal) itself went through.
 const WINGET_RESTART_TO_FINISH: u32 = 0x8A15_0109;
 
+/// What a step does to its tool, for the words of its outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verb {
+    /// Installs (or updates) the tool.
+    Install,
+    /// Removes the tool.
+    Remove,
+}
+
 /// winget results that are not failures although winget exits non-zero, as the note to show:
 /// nothing to do, or done once Windows restarts. (A restart needed *before* installing,
 /// `0x8A15010A`, is a failure: nothing was installed.)
-pub fn winget_done(code: Option<i32>, removing: bool) -> Option<&'static str> {
+pub fn winget_done(code: Option<i32>, verb: Verb) -> Option<&'static str> {
     match code?.cast_unsigned() {
         WINGET_ALREADY_INSTALLED => Some("Already installed and up to date: nothing to do."),
-        WINGET_RESTART_TO_FINISH if removing => Some("Removed. Restart Windows to finish."),
+        WINGET_RESTART_TO_FINISH if verb == Verb::Remove => Some("Removed. Restart Windows to finish."),
         WINGET_RESTART_TO_FINISH => Some("Installed. Restart Windows to finish."),
         _ => None,
     }
@@ -66,26 +75,26 @@ pub fn installer_exit_code(line: &str) -> Option<u32> {
     }
 }
 
-/// A human-readable summary of a failed winget run, if its codes are known. `removing` words a
-/// cancel for an uninstall.
-pub fn winget_failure(code: Option<i32>, installer_code: Option<u32>, removing: bool) -> Option<&'static str> {
+/// A human-readable summary of a failed winget run, if its codes are known. `verb` words a
+/// cancel.
+pub fn winget_failure(code: Option<i32>, installer_code: Option<u32>, verb: Verb) -> Option<&'static str> {
     let code = code?.cast_unsigned();
     let outcome = match installer_code {
         Some(c) if code == WINGET_INSTALLER_FAILED && installer_cancelled(c) => Outcome::Cancelled,
         _ => winget_summary(code)?,
     };
-    Some(summary(outcome, removing))
+    Some(summary(outcome, verb))
 }
 
 /// A summary of a failed installer the app ran itself (WSL's, through PowerShell), from the
 /// installer's own exit code: only a cancel is known.
-pub fn installer_failure(code: Option<i32>, removing: bool) -> Option<&'static str> {
-    installer_cancelled(code?.cast_unsigned()).then(|| summary(Outcome::Cancelled, removing))
+pub fn installer_failure(code: Option<i32>, verb: Verb) -> Option<&'static str> {
+    installer_cancelled(code?.cast_unsigned()).then(|| summary(Outcome::Cancelled, verb))
 }
 
-fn summary(outcome: Outcome, removing: bool) -> &'static str {
+fn summary(outcome: Outcome, verb: Verb) -> &'static str {
     match outcome {
-        Outcome::Cancelled if removing => "The removal was cancelled, so nothing was changed. Try again and accept the administrator prompt.",
+        Outcome::Cancelled if verb == Verb::Remove => "The removal was cancelled, so nothing was changed. Try again and accept the administrator prompt.",
         Outcome::Cancelled => "The installation was cancelled, so nothing was installed. Try again and accept the administrator prompt.",
         Outcome::Failed(why) => why,
     }
@@ -100,21 +109,21 @@ mod tests {
         // The issue's run: Docker Desktop's installer exits 0xFFFFFFFB, winget then 0x8A150006.
         let installer = installer_exit_code("Installer failed with exit code: 4294967291");
         assert_eq!(installer, Some(0xFFFF_FFFB));
-        let summary = winget_failure(Some(0x8A15_0006_u32.cast_signed()), installer, false).unwrap();
+        let summary = winget_failure(Some(0x8A15_0006_u32.cast_signed()), installer, Verb::Install).unwrap();
         assert!(summary.starts_with("The installation was cancelled"), "{summary}");
-        assert!(winget_failure(Some(0x8A15_0006_u32.cast_signed()), installer, true).unwrap().starts_with("The removal was cancelled"));
+        assert!(winget_failure(Some(0x8A15_0006_u32.cast_signed()), installer, Verb::Remove).unwrap().starts_with("The removal was cancelled"));
         // An MSI the player backed out of, and winget's own "cancelled by user".
-        assert!(winget_failure(Some(0x8A15_0006_u32.cast_signed()), Some(1602), false).unwrap().contains("cancelled"));
-        assert!(winget_failure(Some(0x8A15_010C_u32.cast_signed()), None, false).unwrap().contains("cancelled"));
+        assert!(winget_failure(Some(0x8A15_0006_u32.cast_signed()), Some(1602), Verb::Install).unwrap().contains("cancelled"));
+        assert!(winget_failure(Some(0x8A15_010C_u32.cast_signed()), None, Verb::Install).unwrap().contains("cancelled"));
     }
 
     #[test]
     fn an_installer_error_reads_as_failed() {
-        let failed = |installer| winget_failure(Some(0x8A15_0006_u32.cast_signed()), installer, false).unwrap();
+        let failed = |installer| winget_failure(Some(0x8A15_0006_u32.cast_signed()), installer, Verb::Install).unwrap();
         assert!(failed(Some(1603)).starts_with("The installer reported an error"));
         // Not English output: winget's code alone still says it failed.
         assert!(failed(None).starts_with("The installer reported an error"));
-        assert!(winget_failure(Some(0x8A15_0105_u32.cast_signed()), None, false).unwrap().contains("disk space"));
+        assert!(winget_failure(Some(0x8A15_0105_u32.cast_signed()), None, Verb::Install).unwrap().contains("disk space"));
     }
 
     #[test]
@@ -123,29 +132,29 @@ mod tests {
         // Docker Desktop's or WSL's install 0x8A150109 (restart to finish): both read as failed,
         // so the step never counted as done.
         let code = |c: u32| Some(c.cast_signed());
-        assert!(winget_done(code(0x8A15_002B), false).unwrap().starts_with("Already installed"));
-        assert!(winget_done(code(0x8A15_0109), false).unwrap().contains("Restart Windows to finish"));
-        assert!(winget_done(code(0x8A15_0109), true).unwrap().starts_with("Removed"));
-        assert_eq!(winget_failure(code(0x8A15_0109), None, false), None, "no longer a failure");
+        assert!(winget_done(code(0x8A15_002B), Verb::Install).unwrap().starts_with("Already installed"));
+        assert!(winget_done(code(0x8A15_0109), Verb::Install).unwrap().contains("Restart Windows to finish"));
+        assert!(winget_done(code(0x8A15_0109), Verb::Remove).unwrap().starts_with("Removed"));
+        assert_eq!(winget_failure(code(0x8A15_0109), None, Verb::Install), None, "no longer a failure");
         // A restart needed before installing is still a failure, as is anything else.
-        assert_eq!(winget_done(code(0x8A15_010A), false), None);
-        assert!(winget_failure(code(0x8A15_010A), None, false).unwrap().contains("Restart Windows, then try again"));
-        assert_eq!(winget_done(code(0x8A15_0006), false), None);
-        assert_eq!(winget_done(None, false), None);
+        assert_eq!(winget_done(code(0x8A15_010A), Verb::Install), None);
+        assert!(winget_failure(code(0x8A15_010A), None, Verb::Install).unwrap().contains("Restart Windows, then try again"));
+        assert_eq!(winget_done(code(0x8A15_0006), Verb::Install), None);
+        assert_eq!(winget_done(None, Verb::Install), None);
     }
 
     #[test]
     fn unknown_codes_get_no_summary() {
-        assert_eq!(winget_failure(Some(1), None, false), None);
-        assert_eq!(winget_failure(None, None, false), None);
-        assert_eq!(installer_failure(Some(1), false), None);
-        assert_eq!(installer_failure(None, false), None);
+        assert_eq!(winget_failure(Some(1), None, Verb::Install), None);
+        assert_eq!(winget_failure(None, None, Verb::Install), None);
+        assert_eq!(installer_failure(Some(1), Verb::Install), None);
+        assert_eq!(installer_failure(None, Verb::Install), None);
     }
 
     #[test]
     fn an_installer_the_app_ran_itself_reads_a_declined_prompt_as_cancelled() {
-        assert!(installer_failure(Some(1223), false).unwrap().starts_with("The installation was cancelled"));
-        assert!(installer_failure(Some(1602), true).unwrap().starts_with("The removal was cancelled"));
+        assert!(installer_failure(Some(1223), Verb::Install).unwrap().starts_with("The installation was cancelled"));
+        assert!(installer_failure(Some(1602), Verb::Remove).unwrap().starts_with("The removal was cancelled"));
     }
 
     #[test]
@@ -165,14 +174,14 @@ mod tests {
     #[test]
     fn winget_codes_at_the_edges_map_without_overflow() {
         // The process exit code comes as i32: the sign bit set is still winget's HRESULT space.
-        assert_eq!(winget_failure(Some(i32::MIN), None, false), None);
-        assert_eq!(winget_failure(Some(-1), None, false), None);
-        assert!(installer_failure(Some(-5), true).unwrap().starts_with("The removal was cancelled"));
+        assert_eq!(winget_failure(Some(i32::MIN), None, Verb::Install), None);
+        assert_eq!(winget_failure(Some(-1), None, Verb::Install), None);
+        assert!(installer_failure(Some(-5), Verb::Remove).unwrap().starts_with("The removal was cancelled"));
         // winget's own "cancelled" wins whatever the installer said; an installer cancel only
         // counts under winget's "installer failed" code, and 0 is never a cancel.
-        assert!(winget_failure(Some(0x8A15_010C_u32.cast_signed()), Some(1603), false).unwrap().contains("cancelled"));
-        assert!(winget_failure(Some(0x8A15_0105_u32.cast_signed()), Some(1602), false).unwrap().contains("disk space"));
-        assert!(winget_failure(Some(0x8A15_0006_u32.cast_signed()), Some(0), false).unwrap().starts_with("The installer reported an error"));
+        assert!(winget_failure(Some(0x8A15_010C_u32.cast_signed()), Some(1603), Verb::Install).unwrap().contains("cancelled"));
+        assert!(winget_failure(Some(0x8A15_0105_u32.cast_signed()), Some(1602), Verb::Install).unwrap().contains("disk space"));
+        assert!(winget_failure(Some(0x8A15_0006_u32.cast_signed()), Some(0), Verb::Install).unwrap().starts_with("The installer reported an error"));
     }
 
     #[test]

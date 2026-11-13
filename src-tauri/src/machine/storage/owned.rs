@@ -18,6 +18,8 @@ mod record;
 use record::parse_box_list;
 pub use record::{Owned, OwnedBox, OwnedImage, listed_boxes, load};
 
+use crate::runtime::Downloads;
+
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::exec::run_read;
@@ -50,9 +52,10 @@ pub struct Before {
 }
 
 impl Before {
-    /// Reads what is on this machine now: the image ids when `images`, the boxes when `boxes`.
-    pub async fn take(images: bool, boxes: bool) -> Before {
-        let (images, boxes) = tokio::join!(async { if images { image_ids().await } else { None } }, async { if boxes { box_list().await } else { None } });
+    /// Reads what is on this machine now of the kinds `tracked` names: the image ids, the boxes.
+    pub(crate) async fn take(tracked: Downloads) -> Before {
+        let (images, boxes) =
+            tokio::join!(async { if tracked.images { image_ids().await } else { None } }, async { if tracked.boxes { box_list().await } else { None } });
         Before { images, boxes }
     }
 
@@ -110,7 +113,7 @@ pub async fn claim(store: &Path, before: &Before, images: &[String], boxes: &[St
 /// operations whose downloads are named up front. The record is in `dirs`' data folder.
 pub async fn tracked<T>(dirs: impl Into<AppDirs>, images: &[String], boxes: &[String], op: impl Future<Output = T>) -> T {
     let dirs = dirs.into();
-    let before = Before::take(!images.is_empty(), !boxes.is_empty()).await;
+    let before = Before::take(Downloads { images: !images.is_empty(), boxes: !boxes.is_empty() }).await;
     let out = op.await;
     if let Ok(store) = path(&dirs) {
         claim(&store, &before, images, boxes).await;
@@ -147,7 +150,7 @@ mod tests {
             }
             _ => ok(""),
         });
-        let before = Before::take(true, true).await;
+        let before = Before::take(Downloads { images: true, boxes: true }).await;
         let images = ["nginx:1.27".to_string(), "postgres:16".into(), "missing:1".into()];
         let boxes = ["generic/alpine319".to_string(), "bento/debian-12".into()];
         claim(&store, &before, &images, &boxes).await;
@@ -165,7 +168,7 @@ mod tests {
     async fn nothing_is_claimed_when_the_tools_couldnt_say_what_was_there() {
         let store = store();
         let _tools = Tools::rules(&[("image ls", fail("Cannot connect to the Docker daemon")), ("box list", None), ("inspect", ok("sha256:x\n"))]);
-        let before = Before::take(true, true).await;
+        let before = Before::take(Downloads { images: true, boxes: true }).await;
         assert!(!before.tracks_images());
         claim(&store, &before, &["nginx:1.27".into()], &["a/b".into()]).await;
         assert!(!store.exists());

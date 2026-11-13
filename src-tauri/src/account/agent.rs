@@ -76,10 +76,9 @@ struct Progress<'a> {
 }
 
 async fn update_state(session_id: &str, state: &str, p: Progress<'_>) -> Result<()> {
-    api::graphql(
+    api::graphql_signed_in(
         "mutation ($id: ID!, $s: LabSessionState!, $u: String, $c: String, $t: String, $n: String, $m: String) { updateLabSession(sessionId: $id, state: $s, localUrl: $u, controlUrl: $c, localToken: $t, coLocationNonce: $n, message: $m) { id } }",
         update_vars(session_id, state, &p),
-        true,
     )
     .await
     .map(|_| ())
@@ -202,10 +201,9 @@ fn running_message(host_name: Option<String>) -> String {
 
 /// Claims one pending session and runs its lab on this machine.
 async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
-    let data = api::graphql(
+    let data = api::graphql_signed_in(
         "mutation ($id: ID!) { claimLaunch(sessionId: $id) { labId runtime repository commit target env { name value } } }",
         json!({ "id": session_id }),
-        true,
     )
     .await?;
     let claim = parse_claim(&data)?;
@@ -238,7 +236,7 @@ fn running_notice(request: &LaunchRequest) -> String {
 /// Picks up and runs every pending launch aimed at this agent. A failed read of them is logged;
 /// the next poll asks again.
 pub(super) async fn poll_once(deps: &Deps, agent_id: &str) {
-    match api::graphql("query ($a: ID) { myPendingLaunches(agentId: $a) { id } }", json!({ "a": agent_id }), true).await {
+    match api::graphql_signed_in("query ($a: ID) { myPendingLaunches(agentId: $a) { id } }", json!({ "a": agent_id })).await {
         Ok(data) => claim_each(pending_ids(&data), |sid| async move { Box::pin(claim_and_run(deps, &sid)).await }, report_failed).await,
         Err(e) => log::warn!("myPendingLaunches failed: {e}"),
     }

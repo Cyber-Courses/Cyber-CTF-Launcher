@@ -2,6 +2,7 @@
 //! bridge can be reached through it.
 
 use super::{HostProfile, ssh, token_user};
+use crate::runtime::ssh::CommandLine;
 
 /// The node's SSH login (`user@host`) for going through it.
 pub fn node_login(h: &HostProfile) -> String {
@@ -26,11 +27,10 @@ const AUTHORIZE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60
 /// `CYBERCTF_SSH_PASSWORD`. Windows' OpenSSH can't run a `sh` script: there it is a `.cmd`, the
 /// password echoed after the line is parsed (delayed expansion), so `&`, `|` or `%` in it are
 /// printed, not run.
-pub(super) fn askpass_script(windows: bool) -> (&'static str, &'static str) {
-    if windows {
-        ("askpass.cmd", "@echo off\r\nsetlocal EnableDelayedExpansion\r\necho(!CYBERCTF_SSH_PASSWORD!\r\n")
-    } else {
-        ("askpass.sh", "#!/bin/sh\nprintf '%s\\n' \"$CYBERCTF_SSH_PASSWORD\"\n")
+pub(super) fn askpass_script(line: CommandLine) -> (&'static str, &'static str) {
+    match line {
+        CommandLine::Windows => ("askpass.cmd", "@echo off\r\nsetlocal EnableDelayedExpansion\r\necho(!CYBERCTF_SSH_PASSWORD!\r\n"),
+        CommandLine::Sh => ("askpass.sh", "#!/bin/sh\nprintf '%s\\n' \"$CYBERCTF_SSH_PASSWORD\"\n"),
     }
 }
 
@@ -54,7 +54,7 @@ async fn ssh_with(args: &[String], env: &[(String, String)], timeout: std::time:
 
 /// The askpass helper next to the launcher's key (see [`askpass_script`]), this user's only.
 pub(super) fn write_askpass(identity: &std::path::Path) -> crate::error::Result<std::path::PathBuf> {
-    let (name, script) = askpass_script(cfg!(windows));
+    let (name, script) = askpass_script(CommandLine::HERE);
     let askpass = identity.with_file_name(name);
     std::fs::write(&askpass, script)?;
     #[cfg(unix)]
@@ -79,7 +79,7 @@ pub(super) fn password_ssh_args(h: &HostProfile, identity: &std::path::Path, com
     let password_auth =
         ["PreferredAuthentications=password,keyboard-interactive".to_string(), "NumberOfPasswordPrompts=1".to_string(), "ConnectTimeout=10".to_string()];
     let mut args: Vec<String> = Vec::new();
-    for o in password_auth.into_iter().chain(ssh::options(false, &known_hosts)) {
+    for o in password_auth.into_iter().chain(ssh::options(&known_hosts)) {
         args.extend(["-o".into(), o]);
     }
     // `--`: the login comes from the host profile, so it can never be read as an ssh option
