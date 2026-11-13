@@ -30,8 +30,10 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Changed
 
-- Bundles Isothrum 2.1.6: retiring the attack box or detaching an access machine removes its
-  anonymous volumes (every retire of the box left its two behind, 2026-11-13).
+- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
+  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
+  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
+  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
 
 ## [1.9.0] — 2026-11-13
 
