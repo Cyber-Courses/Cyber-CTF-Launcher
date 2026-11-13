@@ -93,8 +93,7 @@ pub fn spawn(dirs: &AppDirs, job: &Job, pidfile: std::fs::File) -> Result<Spawne
     started
 }
 
-fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
-    use std::io::Write as _;
+fn start(f: Files, job: &Job, pidfile: std::fs::File) -> Result<Spawned> {
     crate::runtime::validate_id(&job.lab_id)?;
     // A fresh run: no verdict left from an earlier one (its log is kept, see `write_job`).
     files::clear_verdicts(&f, job.op == super::Op::Launch)?;
@@ -108,7 +107,7 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     if let Some(hwnd) = crate::platform::exec::owner_window() {
         cmd.env(crate::platform::exec::OWNER_WINDOW_ENV, hwnd.to_string());
     }
-    let child = match cmd.spawn() {
+    let mut child = match cmd.spawn() {
         // Windows: the job the app runs in forbids breaking away; start the worker inside it.
         Err(e) if cfg!(windows) && e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => {
             log::warn!("deploy worker can't leave the app's job object; it ends if that job is closed");
@@ -119,10 +118,28 @@ fn start(f: Files, job: &Job, mut pidfile: std::fs::File) -> Result<Spawned> {
     };
     let pid = child.id();
     let worker = Worker::of(pid, observe(pid).as_ref());
-    pidfile.write_all(worker.line().as_bytes()).map_err(Error::Io)?;
-    drop(pidfile);
+    record(&mut child, &worker, pidfile)?;
     let exit = reap(child, f.pid.clone());
     Ok(Spawned { files: f, worker, exit })
+}
+
+/// Writes `worker` into its pidfile. When that fails (a full disk), the worker `child` just
+/// started is ended, with what it started, and waited for before the error is returned: the
+/// caller then runs the job in the app, which must never deploy the lab beside a worker doing
+/// the same.
+fn record(child: &mut std::process::Child, worker: &Worker, mut pidfile: impl std::io::Write) -> Result<()> {
+    let Err(e) = pidfile.write_all(worker.line().as_bytes()) else { return Ok(()) };
+    log::warn!("couldn't write deploy worker {}'s pidfile ({e}): ending it", worker.pid);
+    #[cfg(unix)]
+    signal_group(worker.pid, libc::SIGKILL);
+    #[cfg(windows)]
+    taskkill(worker.pid);
+    // The worker alone, should its group be out of reach.
+    let _ = child.kill();
+    if let Err(wait) = child.wait() {
+        log::warn!("couldn't wait for deploy worker {}: {wait}", worker.pid);
+    }
+    Err(Error::Io(e))
 }
 
 /// Waits for the worker `child` on a thread of its own: unreaped, a finished worker stays a
@@ -556,6 +573,43 @@ async fn gone_within(worker: &Worker, checks: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A pidfile on a full disk.
+    struct FullDisk;
+
+    impl std::io::Write for FullDisk {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("no space left on device"))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Regression: a worker whose pidfile couldn't be written was left running while the app
+    /// fell back to running its job too, so both deployed the same lab.
+    #[cfg(unix)]
+    #[test]
+    fn a_worker_whose_pidfile_cant_be_written_is_ended() {
+        use std::os::unix::process::CommandExt;
+        let mut child = std::process::Command::new("sleep").arg("30").process_group(0).spawn().unwrap();
+        let worker = Worker::of(child.id(), None);
+        crate::testing::logs::take_warnings();
+        let err = record(&mut child, &worker, FullDisk).unwrap_err();
+        assert!(err.to_string().contains("no space left on device"), "{err}");
+        assert!(child.try_wait().unwrap().is_some(), "the worker still runs");
+        let warned = crate::testing::logs::take_warnings();
+        assert!(warned.iter().any(|w| w.starts_with(&format!("couldn't write deploy worker {}'s pidfile", worker.pid))), "{warned:?}");
+        // A pidfile written keeps its worker.
+        let mut running = std::process::Command::new("sleep").arg("30").process_group(0).spawn().unwrap();
+        let mut line = Vec::new();
+        record(&mut running, &Worker::of(running.id(), None), &mut line).unwrap();
+        assert_eq!(String::from_utf8(line).unwrap(), running.id().to_string());
+        assert!(running.try_wait().unwrap().is_none(), "ended though its pidfile was written");
+        running.kill().unwrap();
+        running.wait().unwrap();
+    }
 
     /// Regression: a stop's signal to its worker, and the removal of a pidfile, were dropped
     /// silently when they failed, and the stop went on beside a worker still running.
