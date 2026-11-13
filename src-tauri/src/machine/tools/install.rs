@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 #[cfg(target_os = "macos")]
 use super::scripts::fetch_and_open;
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 use super::scripts::{
     awscli_script, azurecli_script, docker_dnf_script, docker_script, gcloud_script, libvirt_dnf_script, libvirt_script, qemu_dnf_script, qemu_script,
     terraform_dnf_script, terraform_script, vagrant_dnf_script, vagrant_script, virtualbox_dnf_script, virtualbox_script, vmware_utility_script,
@@ -258,8 +258,7 @@ fn as_root(script: String, proxy: Vec<String>) -> Step {
 
 /// `script` run as root through pkexec ([`as_root`]), with this process's proxy: every install
 /// and removal step on Linux.
-#[cfg(any(target_os = "linux", test))]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg(target_os = "linux")]
 pub(super) fn root(script: String) -> Step {
     as_root(script, crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
 }
@@ -272,9 +271,8 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
 
 /// The package manager a Linux install goes through: apt (Debian, Ubuntu and the distributions
 /// built on them), dnf (Fedora and those built on it), or none the guided setup knows.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) enum Packages {
     /// apt-get: Debian, Ubuntu and the distributions built on them.
     Apt,
@@ -285,8 +283,7 @@ pub(crate) enum Packages {
 }
 
 /// [`linux_plan`] on a machine with that package manager.
-#[cfg(any(target_os = "linux", test))]
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg(target_os = "linux")]
 fn linux_plan_with(dep: Dependency, packages: Packages) -> Result<Vec<Step>> {
     let user = crate::platform::exec::login_name();
     let user = user.as_deref();
@@ -348,7 +345,7 @@ pub(crate) fn without_packages(dep: Dependency) -> Error {
 
 /// What an install of `dep` says on a dnf distribution for a tool the guided setup installs
 /// through apt only for now (the cloud CLIs, VMware's utility).
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 pub(crate) fn apt_only(dep: Dependency) -> Error {
     Error::Invalid(format!("The guided setup installs {} through apt only for now: install it yourself, then re-check.", dep.name()))
 }

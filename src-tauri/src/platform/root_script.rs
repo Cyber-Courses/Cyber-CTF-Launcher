@@ -21,7 +21,7 @@ pub const PRIVATE_WORKDIR: &str =
 pub const NEED_CURL: &str = r"command -v curl >/dev/null || { if command -v apt-get >/dev/null; then apt-get update && apt-get install -y curl ca-certificates; else dnf install -y curl ca-certificates; fi; }";
 
 /// unzip, for Amazon's AWS CLI bundle, through apt where it is, else dnf.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg(any(target_os = "linux", test))]
 pub const NEED_UNZIP: &str =
     r"command -v unzip >/dev/null || { if command -v apt-get >/dev/null; then apt-get update && apt-get install -y unzip; else dnf install -y unzip; fi; }";
 
