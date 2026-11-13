@@ -127,6 +127,12 @@ pub fn os_name(os: &str) -> &str {
     OS_NAMES.iter().find(|(id, _)| *id == os).map_or(os, |(_, name)| name)
 }
 
+/// Whether a program of that name is on this process's PATH (a file there; Windows' extensions
+/// aren't tried: the callers name Linux programs).
+pub fn on_path(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -138,10 +144,4 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(super::random_hex(3).len(), 6);
     }
-}
-
-/// Whether a program of that name is on this process's PATH (a file there; Windows' extensions
-/// aren't tried: the callers name Linux programs).
-pub fn on_path(program: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
 }

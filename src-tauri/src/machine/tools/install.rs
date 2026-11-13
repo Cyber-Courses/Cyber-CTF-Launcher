@@ -274,8 +274,11 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
 #[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Packages {
+    /// apt-get: Debian, Ubuntu and the distributions built on them.
     Apt,
+    /// dnf: Fedora and the distributions built on it.
     Dnf,
+    /// Neither: the player installs each tool themselves (openSUSE, Arch, …).
     None,
 }
 
@@ -296,7 +299,9 @@ fn linux_plan_with(dep: Dependency, packages: Packages) -> Result<Vec<Step>> {
         (Dependency::Virtualbox, Packages::Dnf) => vec![root(virtualbox_dnf_script(user))],
         (Dependency::Qemu, Packages::Dnf) => vec![root(qemu_dnf_script(user))],
         (Dependency::Libvirt, Packages::Dnf) => vec![root(libvirt_dnf_script(user))],
-        (Dependency::Awscli, Packages::Dnf) => vec![root(awscli_script())],
+        // AWS CLI v2 from Amazon's signed bundle, in a private temporary directory: no package
+        // manager's.
+        (Dependency::Awscli, Packages::Apt | Packages::Dnf) => vec![root(awscli_script())],
         (_, Packages::Dnf) => return Err(apt_only(dep)),
         (Dependency::Docker, Packages::Apt) => vec![root(docker_script(user))],
         // From HashiCorp's apt repository, not the distribution's (older than labs need).
@@ -307,9 +312,7 @@ fn linux_plan_with(dep: Dependency, packages: Packages) -> Result<Vec<Step>> {
         // The player joins /dev/kvm's group: the labs' VMs boot with KVM.
         (Dependency::Qemu, Packages::Apt) => vec![root(qemu_script(user))],
         (Dependency::Libvirt, Packages::Apt) => vec![root(libvirt_script(user))],
-        // Cloud CLIs: AWS CLI v2 from Amazon's signed bundle, in a private temporary directory;
         // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.
-        (Dependency::Awscli, Packages::Apt) => vec![root(awscli_script())],
         (Dependency::Azurecli, Packages::Apt) => vec![root(azurecli_script())],
         (Dependency::Gcloud, Packages::Apt) => vec![root(gcloud_script())],
         (Dependency::VmwareUtility, Packages::Apt) => vec![root(vmware_utility_script())],

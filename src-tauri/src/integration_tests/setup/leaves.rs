@@ -129,6 +129,10 @@ mod tests {
                 assert!(leaves.iter().all(|(k, _)| k != "route" && k != "iptables-rule"), "{item} on {os}: {leaves:?}");
             }
         }
+    }
+
+    #[test]
+    fn the_docker_path_on_windows_leaves_wsl_2_hyper_vs_own_and_the_engines_hosts_entries() {
         // Docker Desktop's WSL 2 VM runs under Hyper-V's worker process, and the engine writes its
         // hosts entries (the Docker path's audit on a bare Windows clone, 2026-11-12).
         for item in ["docker", "engine:docker-desktop"] {

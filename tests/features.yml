@@ -2434,14 +2434,16 @@ areas:
           desktop: only checks the window says Add a provider
 
       - id: setup.package-manager
-        what: The setup detects the package manager its installs use (Homebrew, winget, apt), gives the Homebrew command or App Installer link, and on a Linux without apt tells the player to install each tool themselves.
+        what: The setup detects the package manager its installs use (Homebrew, winget, apt or dnf), gives the Homebrew command or App Installer link, installs through apt on Debian and Ubuntu and through dnf on Fedora, and on a Linux with neither tells the player to install each tool themselves.
         host: true
         tests:
           unit:
             - src-tauri/src/machine/system.rs > the_package_manager_reports_its_first_version_line
             - src-tauri/src/machine/system.rs > a_package_manager_that_fails_its_version_is_not_installed
-            - src-tauri/src/machine/setup/tests.rs > a_linux_without_apt_is_told_to_install_each_tool_itself_instead_of_a_failing_apt_command
-            - src-tauri/src/machine/tools/install.rs > a_distribution_without_apt_is_told_to_install_it_itself_before_anything_runs
+            - src-tauri/src/machine/setup/tests.rs > a_linux_without_apt_or_dnf_is_told_to_install_each_tool_itself_instead_of_a_failing_command
+            - src-tauri/src/machine/setup/tests.rs > a_bare_fedora_installs_through_dnf_as_a_bare_debian_does_through_apt
+            - src-tauri/src/machine/tools/install.rs > a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs
+            - src-tauri/src/machine/tools/install.rs > a_dnf_distribution_installs_docker_the_hypervisors_and_vagrant_through_dnf_and_the_rest_by_hand
             - src/features/machine/setup-steps/setup-steps.test.tsx > links to App Installer on Windows and names the Linux package manager
             - src/features/machine/setup-steps/follows-the-plan.test.tsx > on a Linux without apt
           web:
