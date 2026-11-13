@@ -9,6 +9,26 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::Mutex as AsyncMutex;
 
+/// A single-flight flag taken for as long as the guard lives: a scan or a download that runs
+/// once at a time, whoever asks meanwhile told so. Released on drop, so a cancelled flight frees
+/// the next one. Written twice before (`ResetOnDrop`, the downloads' `Busy`); one type (Clean
+/// Code G5, 2026-11-13).
+pub struct Busy(&'static std::sync::atomic::AtomicBool);
+
+impl Busy {
+    /// Takes `flag` when it is free; `None` while another flight holds it.
+    pub fn try_take(flag: &'static std::sync::atomic::AtomicBool) -> Option<Busy> {
+        use std::sync::atomic::Ordering;
+        flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).ok().map(|_| Busy(flag))
+    }
+}
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
 /// The locks for keys of type `K`, each guarding a `T` (`()` for a plain lock).
 #[derive(Debug)]
 pub struct KeyedLocks<K, T = ()> {

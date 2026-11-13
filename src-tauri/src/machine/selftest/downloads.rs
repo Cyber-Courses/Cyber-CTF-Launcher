@@ -6,13 +6,14 @@
 
 use std::path::Path;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use super::docker::IMAGE;
 use super::vm::{box_provider, pick_box};
 use crate::error::Result;
 use crate::platform::exec::{run_env, run_env_timed, stream, within};
+use crate::platform::sync::Busy;
 use crate::runtime::providers::Provider;
 
 static DOCKER_DL: AtomicBool = AtomicBool::new(false);
@@ -25,21 +26,6 @@ const PULL_LIMIT: Duration = Duration::from_secs(300);
 const BOX_LIMIT: Duration = Duration::from_secs(1800);
 /// Last line of the VM box download, so a test waiting on it can show progress.
 static VM_DL_LINE: Mutex<String> = Mutex::new(String::new());
-
-/// Holds a download flag; releases it when dropped (also on error).
-struct Busy(&'static AtomicBool);
-
-impl Busy {
-    fn try_take(flag: &'static AtomicBool) -> Option<Busy> {
-        flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).ok().map(|_| Busy(flag))
-    }
-}
-
-impl Drop for Busy {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
-}
 
 /// Makes sure the test image is local on the engine `env` points Docker at (`DOCKER_CONTEXT`,
 /// or none for the CLI's current one). Returns whether it already was (or a background download

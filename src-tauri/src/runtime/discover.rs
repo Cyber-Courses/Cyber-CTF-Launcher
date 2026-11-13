@@ -196,16 +196,15 @@ fn id_after_labs(path: &str) -> Option<String> {
 /// timed (never hangs the caller), so it is safe to poll.
 pub async fn running_lab_ids(dirs: &AppDirs) -> Vec<String> {
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::AtomicBool;
     // One scan at a time: the UI polls every few seconds, and a wedged hypervisor makes each
     // probe wait out its timeout, so overlapping scans only stacked up stuck VBoxManage calls.
     // A poll during a scan gets the last answer.
     static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
     static LAST: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    if IN_FLIGHT.swap(true, Ordering::AcqRel) {
+    let Some(_flight) = crate::platform::sync::Busy::try_take(&IN_FLIGHT) else {
         return LAST.lock().map(|l| l.clone()).unwrap_or_default();
-    }
-    let _done = crate::platform::ResetOnDrop(&IN_FLIGHT);
+    };
     let ids = scan(dirs).await;
     if let Ok(mut last) = LAST.lock() {
         last.clone_from(&ids);
