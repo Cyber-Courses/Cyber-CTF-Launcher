@@ -2393,9 +2393,7 @@ dependencies = [
 
 [[package]]
 name = "isoloom-ansible"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f60ee7bfb39d2139464cd22f76ced1490d487ab162e05763f52a22359ac73b9"
+version = "3.0.0"
 dependencies = [
  "isoloom-catalogue",
  "isoloom-manifest",
@@ -2408,9 +2406,7 @@ dependencies = [
 
 [[package]]
 name = "isoloom-catalogue"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b6b6e71cacb375344957ea7fa21fb32622fefec2b45bd1eca0538ca80ed91d1"
+version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-manifest",
@@ -2425,9 +2421,7 @@ dependencies = [
 
 [[package]]
 name = "isoloom-compose"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f12ccb25824692b798b7fd294f94dc7b4c917f8fee2c62f5660aeac33a0e6715"
+version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-manifest",
@@ -2441,9 +2435,7 @@ dependencies = [
 
 [[package]]
 name = "isoloom-kubernetes"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33247931114cfcb3050eaa005935fda3a8609aa470595f05bb99f13802f848c4"
+version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-manifest",
@@ -2458,9 +2450,7 @@ dependencies = [
 
 [[package]]
 name = "isoloom-manifest"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cac93364174ec1c562314ab9422975fa7b2e8f117e1fe348420c3ce2d51e294"
+version = "3.0.0"
 dependencies = [
  "schemars 1.2.3",
  "serde",
@@ -2471,22 +2461,21 @@ dependencies = [
 
 [[package]]
 name = "isoloom-plan"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "357e9986b1ac8c114ca2df3a7f2e01b56fcc9e907eb832a9db55cc551e1c8ad7"
+version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-catalogue",
+ "isoloom-manifest",
  "isoloom-spec",
+ "serde",
  "serde_json",
+ "serde_yaml_ng",
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "isoloom-render"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1fabeb7b84d653f08a2647f9873522ad014bb9b9df3589c987d248145f44df2"
+version = "3.0.0"
 dependencies = [
  "flate2",
  "indexmap 2.14.2",
@@ -2500,9 +2489,7 @@ dependencies = [
 
 [[package]]
 name = "isoloom-spec"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54a0b8f39151d3368d4ca991ceb665dec50768f61ba2cd45d157a9fea6d8dfae"
+version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-manifest",
@@ -2517,9 +2504,7 @@ dependencies = [
 
 [[package]]
 name = "isoloom-targets"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1db49250a653e095db472573bbc65de23275c1bf04068925cd6c43a2b99f8bb2"
+version = "3.0.0"
 dependencies = [
  "isoloom-ansible",
  "isoloom-compose",
@@ -2538,9 +2523,7 @@ dependencies = [
 
 [[package]]
 name = "isoloom-terraform"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a098f6487793b27d5d30551630f5d2efe1de6e4cb81e3c440be6558416ed928"
+version = "3.0.0"
 dependencies = [
  "hcl-rs",
  "indexmap 2.14.2",
@@ -2554,9 +2537,7 @@ dependencies = [
 
 [[package]]
 name = "isoloom-vagrant"
-version = "2.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21e827c9dcbe65e23eff693e20fe98352e59ca52155c053b1888be8ecc4b5de1"
+version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-manifest",
@@ -2569,12 +2550,11 @@ dependencies = [
 
 [[package]]
 name = "isothrum-runner"
-version = "2.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6af3a8c889d1b149d2dd783497a1d5132b4d3e16da8cbd421199a4c4c30e78ab"
+version = "3.0.0"
 dependencies = [
  "flate2",
  "getrandom 0.4.3",
+ "indexmap 2.14.2",
  "isoloom-manifest",
  "nix 0.31.3",
  "process-wrap",
@@ -2582,6 +2562,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "socket2",
  "tar",
  "thiserror 2.0.21",
  "tokio",

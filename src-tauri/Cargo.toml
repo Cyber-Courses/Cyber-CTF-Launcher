@@ -117,13 +117,13 @@ serde_yaml_ng = "0.10.0"
 # layered crates, the published crates.io 2.0 line. Only `src/runtime/lab/` calls them:
 # the spec (`isoloom-spec`), the backends' registry and the resolved snapshot
 # (`isoloom-targets`).
-isoloom-spec = "2.1.9"
-isoloom-targets = "2.1.9"
+isoloom-spec = "3.0.0"
+isoloom-targets = "3.0.0"
 # The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
-isoloom-manifest = "2.1.9"
+isoloom-manifest = "3.0.0"
 # The Isothrum runner: executes the run manifest Isoloom writes; every lab runs through it
-# (`runtime/isothrum`). The published crates.io 2.0 line.
-isothrum-runner = "2.1.7"
+# (`runtime/isothrum`). The 3.0 line.
+isothrum-runner = "3.0.0"
 # The in-app terminal's pseudo-terminal (`terminal`).
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"
@@ -164,7 +164,7 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 # Tauri's mock runtime, so code taking an app handle runs in unit tests (see `AppRuntime`).
 tauri = { version = "2.12.0", features = ["test"] }
 # The runner's test doubles (scripted processes and host ports), for `runtime/isothrum`'s.
-isothrum-runner = { version = "2.1.7", features = ["fake"] }
+isothrum-runner = { version = "3.0.0", features = ["fake"] }
 
 # The test rig's prebuilt set (the workspace's rig/lib/ci/prebuilt.py builds with --profile rig):
 # release behaviour, built fast: no LTO, many codegen units, no debug info, opt-level 2. The rig
