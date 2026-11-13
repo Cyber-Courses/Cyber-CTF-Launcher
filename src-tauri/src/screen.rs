@@ -171,12 +171,19 @@ pub(crate) fn csp_with_bridge(csp: &str, port: u16) -> String {
 }
 
 /// Starts screen window `label`'s session for `which`, its bridge bound (its port is what the
-/// window's policy lets it connect to).
-pub(crate) async fn start(label: &str, which: Which) -> Result<u16> {
+/// window's policy lets it connect to). None when the window already has one (it is open, or
+/// another open of it is under way): that session is kept. Replacing it, a second click on the
+/// same screen took the session from under the window the first click opened.
+pub(crate) async fn start(label: &str, which: Which) -> Result<Option<u16>> {
     let bridge = bridge::Bridge::bind().await?;
     let port = bridge.port();
-    with_sessions(|s| s.insert(label.to_owned(), Session { which, bridge, reached: None, rdp_file: None }));
-    Ok(port)
+    Ok(with_sessions(|s| match s.entry(label.to_owned()) {
+        std::collections::hash_map::Entry::Occupied(_) => None,
+        std::collections::hash_map::Entry::Vacant(v) => {
+            v.insert(Session { which, bridge, reached: None, rdp_file: None });
+            Some(port)
+        }
+    }))
 }
 
 /// Window `label`'s machine.
@@ -323,10 +330,24 @@ mod tests {
         assert_eq!(csp_with_bridge("default-src 'self'", 4100), "default-src 'self'; connect-src 'self' ws://127.0.0.1:4100");
     }
 
+    /// Regression: a double click on a machine's screen started its session twice; the second
+    /// replaced the first, and once its own window failed to open (the first had it) it closed
+    /// the session, so the open window had none ("this screen window has no session").
+    #[tokio::test]
+    async fn a_second_start_of_the_same_window_keeps_its_session() {
+        let label = "screen-goad:dc02";
+        let port = start(label, which("dc02")).await.unwrap().expect("a new session");
+        assert_eq!(start(label, which("dc02")).await.unwrap(), None, "the window already has a session");
+        let vnc = connect(label, reached(Protocol::Vnc, "127.0.0.1:5900"), None).unwrap();
+        assert!(vnc.url.unwrap().starts_with(&format!("ws://127.0.0.1:{port}/")), "the first session's bridge serves the window");
+        close(label);
+        assert!(!has_session(label));
+    }
+
     #[tokio::test]
     async fn a_vnc_screen_gets_a_one_time_url_and_an_rdp_one_its_address_and_client() {
         let label = "screen-goad:web";
-        let port = start(label, which("web")).await.unwrap();
+        let port = start(label, which("web")).await.unwrap().expect("a new session");
         let vnc = connect(label, reached(Protocol::Vnc, "127.0.0.1:5900"), None).unwrap();
         let url = vnc.url.unwrap();
         assert!(url.starts_with(&format!("ws://127.0.0.1:{port}/")) && url.len() > 30, "{url}");
@@ -351,7 +372,7 @@ mod tests {
     async fn the_rdp_file_is_owner_only_and_goes_with_the_window() {
         use std::os::unix::fs::PermissionsExt as _;
         let label = "screen-goad:rdp01";
-        start(label, which("rdp01")).await.unwrap();
+        start(label, which("rdp01")).await.unwrap().expect("a new session");
         connect(label, reached(Protocol::Rdp, "127.0.0.1:24002"), None).unwrap();
         let dir = crate::testing::temp_dir("screen-rdp");
         // `true` stands in for the client: it opens nothing.
