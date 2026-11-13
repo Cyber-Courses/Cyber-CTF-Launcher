@@ -6,10 +6,9 @@
 //! WAL mode, so the app and its helper processes read while one writes; every change is one
 //! transaction ([`Store::write`]), taken for writing from its start, so a read-modify-write never
 //! saves over a change made beside it. The schema moves forward by numbered migrations
-//! ([`schema`]). On the first open of a data folder, the JSON files the launcher kept before are
-//! imported once ([`import`]); they stay where they were, never written again.
+//! ([`schema`]). A fresh data folder starts with an empty store: the JSON files earlier versions
+//! kept are not read.
 
-mod import;
 pub(crate) mod schema;
 #[cfg(test)]
 mod tests;
@@ -65,8 +64,8 @@ pub(crate) fn open(dirs: &AppDirs) -> Result<Store> {
     open_in(dirs.data()?)
 }
 
-/// The store in data folder `data`: opened, migrated and, the first time, filled from the files
-/// kept there before; the same store for the rest of the process's life.
+/// The store in data folder `data`: opened and migrated; the same store for the rest of the
+/// process's life.
 ///
 /// # Errors
 ///
@@ -77,7 +76,6 @@ pub(crate) fn open_in(data: &Path) -> Result<Store> {
         return Ok(store.clone());
     }
     let store = Store::open_file(data)?;
-    import::once(&store, data);
     stores.insert(data.to_path_buf(), store.clone());
     Ok(store)
 }

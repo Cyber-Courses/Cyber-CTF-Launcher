@@ -39,16 +39,3 @@ pub(crate) fn replace(conn: &Connection, failures: &[(String, String, Wire)]) ->
     }
     Ok(())
 }
-
-/// Records one failure (lab id, message, error), kept beside the others.
-///
-/// # Errors
-///
-/// The store can't be written.
-pub(crate) fn record(conn: &Connection, id: &str, message: &str, error: &Wire) -> Result<()> {
-    conn.execute(
-        "INSERT OR REPLACE INTO autostop_failures (lab_id, message, error, at) VALUES (?1, ?2, ?3, ?4)",
-        (id, message, super::to_json(error)?, super::now()),
-    )?;
-    Ok(())
-}

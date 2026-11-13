@@ -8,12 +8,8 @@ use crate::error::{Error, Result};
 
 /// The migrations, in order: the schema after the n-th is version n.
 const MIGRATIONS: &[&str] = &[
-    // 1: the launcher's domain, as the JSON and marker files kept it.
+    // 1: the launcher's domain.
     "
-    CREATE TABLE meta (
-        key   TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    ) STRICT;
     -- The app's own settings, each a JSON value by its key (`settings`).
     CREATE TABLE settings (
         key   TEXT PRIMARY KEY,

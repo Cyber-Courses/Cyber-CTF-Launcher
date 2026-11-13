@@ -160,7 +160,7 @@ fn connection_for(host: &HostProfile, password: &str) -> Connection {
 }
 
 /// The player's hosts and cloud accounts as launch targets for the website
-/// (`{ id, name, provider }`), reported by the launcher agent. A `server.json` that can't be read
+/// (`{ id, name, provider }`), reported by the launcher agent. A server list that can't be read
 /// is an error: reported as "no targets", every host would vanish from the website.
 pub fn launch_targets(dirs: &AppDirs) -> Result<Vec<serde_json::Value>> {
     load(dirs).map(|s| targets_of(&s))
@@ -171,18 +171,18 @@ fn targets_of(store: &Store) -> Vec<serde_json::Value> {
     store.hosts.iter().map(|h| serde_json::json!({ "id": h.id, "name": h.name, "provider": h.provider.id() })).collect()
 }
 
-/// A host's display name, if it is saved; an error when `server.json` can't be read.
+/// A host's display name, if it is saved; an error when the saved servers can't be read.
 pub fn host_name(dirs: &AppDirs, id: &str) -> Result<Option<String>> {
     Ok(saved_host(dirs, id)?.map(|h| h.name))
 }
 
-/// A host's provider, if it is saved; an error when `server.json` can't be read.
+/// A host's provider, if it is saved; an error when the saved servers can't be read.
 pub fn host_provider(dirs: &AppDirs, id: &str) -> Result<Option<Provider>> {
     Ok(saved_host(dirs, id)?.map(|h| h.provider))
 }
 
 /// The server marked as default, and its provider, if one is (`start_place::default_place` decides
-/// whether a lab starts there). A `server.json` that can't be read is an error, never "no
+/// whether a lab starts there). A server list that can't be read is an error, never "no
 /// default": the lab would start here instead of on the server the player chose.
 pub fn default_server(dirs: &AppDirs) -> Result<Option<(String, Provider)>> {
     Ok(default_of(load(dirs)?))
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn a_damaged_server_list_is_an_error_not_no_default_and_no_targets() {
-        // Regression: a server.json that couldn't be read read as "no default server" and "no
+        // Regression: a server list that couldn't be read read as "no default server" and "no
         // targets", so a VM lab started here instead of on the player's server and the website
         // lost every host, with nothing said.
         let t = crate::testing::test_app::TestApp::new();

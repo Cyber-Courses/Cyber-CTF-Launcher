@@ -1,11 +1,10 @@
-//! The store: its import of a data folder as the launcher kept it before, its transactions and its
-//! migrations.
+//! The store: a fresh one, its transactions and its migrations; the files of earlier versions
+//! are left alone.
 
 use std::path::{Path, PathBuf};
 
-use super::{autostop, hosts, settings, storage, tools};
+use super::{autostop, hosts, storage, tools};
 use crate::error::{Code, Error, Wire};
-use crate::machine::tools::install::Dependency;
 
 /// A data folder of this test's own, closed and removed when it drops.
 struct Data(PathBuf);
@@ -26,12 +25,6 @@ impl Data {
     fn store(&self) -> super::Store {
         super::open_in(&self.0).unwrap()
     }
-
-    /// Closes the store, so the next open is a new start of the app.
-    fn restart(&self) -> super::Store {
-        super::forget(&self.0);
-        self.store()
-    }
 }
 
 impl Drop for Data {
@@ -41,91 +34,17 @@ impl Drop for Data {
     }
 }
 
-/// A data folder as a 1.9 launcher left it: two servers (one the default), a cloud account, what
-/// it downloaded, the shared folder on, two tools installed (one waiting for its installer), and
-/// one lab the auto-stop couldn't destroy.
-fn fixture(data: &Data) {
-    data.write(
-        "server.json",
-        r#"{
-  "default": "pve1",
-  "hosts": [
-    { "id": "pve1", "name": "Garage Proxmox", "provider": "proxmox", "host": "10.1.2.3", "port": 8006, "username": "root@pam!cyberctf", "datastore": "local-lvm", "network": "vmbr0", "node": "pve", "insecureTls": true },
-    { "id": "esx", "name": "ESXi", "provider": "vmware_esxi", "host": "esx.lan", "port": 22, "username": "root" },
-    { "id": "aws1", "name": "My AWS", "provider": "aws", "host": "eu-west-3", "port": 443, "username": "AKIAEXAMPLE", "autoStopHours": 4, "useCliCreds": true, "monthlyLimit": 25.0 }
-  ]
-}"#,
-    );
-    data.write(
-        "storage.json",
-        r#"{ "images": [ { "reference": "nginx:1.27", "id": "sha256:aa" }, { "reference": "kalilinux/kali-rolling", "id": "sha256:bb" } ],
-             "boxes": [ { "name": "generic/debian12", "provider": "virtualbox", "version": "4.3.12" } ] }"#,
-    );
-    data.write("shared-folder.json", r#"{ "enabled": true, "path": "/home/player/CyberCTF/shared" }"#);
-    data.write(
-        "installed-tools.json",
-        r#"[ { "dependency": "vagrant", "at": 1700000000 }, { "dependency": "virtualbox", "at": 1700000100, "pending": true } ]"#,
-    );
-    data.write(
-        "reap-errors/goat",
-        r#"{"message":"Auto-stop couldn't destroy goat: the token has expired","error":{"code":"other","message":"the token has expired"}}"#,
-    );
-    data.write("reap-errors/not a lab", "{}");
-}
-
 #[test]
-fn a_data_folder_from_before_the_store_is_imported_once_and_its_files_left_as_they_were() {
-    let data = Data::new("import");
-    fixture(&data);
-    let before = std::fs::read_to_string(data.0.join("server.json")).unwrap();
+fn the_files_of_earlier_versions_are_neither_read_nor_touched() {
+    let data = Data::new("old-files");
+    let server = r#"{ "default": "pve1", "hosts": [ { "id": "pve1", "name": "Garage", "provider": "proxmox", "host": "h", "port": 8006, "username": "u" } ] }"#;
+    data.write("server.json", server);
+    data.write("installed-tools.json", r#"[ { "dependency": "vagrant", "at": 1700000000 } ]"#);
     let store = data.store();
-    let (default, saved) = store.read(|c| Ok((hosts::default(c)?, hosts::all(c)?))).unwrap();
-    assert_eq!(default.as_deref(), Some("pve1"));
-    assert_eq!(saved.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(), ["pve1", "esx", "aws1"], "in the order they were saved");
-    assert!(saved[0].insecure_tls && saved[2].use_cli_creds);
-    assert_eq!((saved[2].auto_stop_hours, saved[2].monthly_limit), (Some(4), Some(25.0)));
-    let owned = store.read(storage::load).unwrap();
-    assert_eq!((owned.images.len(), owned.boxes.len()), (2, 1));
-    let shared: crate::shared_folder::SharedFolder = store.read(|c| settings::get(c, settings::SHARED_FOLDER)).unwrap().unwrap();
-    assert_eq!((shared.enabled, shared.path.as_deref()), (true, Some("/home/player/CyberCTF/shared")));
-    let recorded = store.read(tools::all).unwrap();
-    assert_eq!(
-        recorded.iter().map(|t| (t.dependency, t.at, t.pending)).collect::<Vec<_>>(),
-        [(Dependency::Vagrant, 1_700_000_000, false), (Dependency::Virtualbox, 1_700_000_100, true)]
-    );
-    assert_eq!(store.read(autostop::failed).unwrap(), ["goat"], "a name that isn't a lab id is left out");
-    assert_eq!(store.read(|c| autostop::last(c, "goat")).unwrap().unwrap().message, "the token has expired");
-    assert_eq!(std::fs::read_to_string(data.0.join("server.json")).unwrap(), before, "the file stays as it was");
-
-    // Changed in the store, then started again: the files are never imported a second time.
-    store.write(|tx| hosts::replace(tx, None, &[])).unwrap();
-    let store = data.restart();
-    assert!(store.read(hosts::all).unwrap().is_empty(), "a removed host doesn't come back from the old file");
-    assert_eq!(store.read(storage::load).unwrap().images.len(), 2, "nothing doubled");
-}
-
-#[test]
-fn a_file_that_cant_be_read_is_imported_at_a_later_start_beside_what_was_saved_since() {
-    let data = Data::new("retry");
-    data.write("server.json", "{ not json");
-    data.write("installed-tools.json", r#"[ { "dependency": "docker", "at": 5 } ]"#);
-    let store = data.store();
-    assert!(store.read(hosts::all).unwrap().is_empty(), "nothing taken from a damaged file");
-    assert_eq!(store.read(tools::all).unwrap().len(), 1, "the other files are imported");
-    let added = crate::runtime::server::profile::HostProfile {
-        id: "new".into(),
-        ..serde_json::from_str(r#"{ "id": "x", "name": "New", "provider": "proxmox", "host": "h", "port": 8006, "username": "u" }"#).unwrap()
-    };
-    store.write(|tx| hosts::replace(tx, None, std::slice::from_ref(&added))).unwrap();
-    // The player put the file right; the next start takes it, keeping what was saved since.
-    data.write(
-        "server.json",
-        r#"{ "default": "old", "hosts": [ { "id": "old", "name": "Old", "provider": "proxmox", "host": "h", "port": 8006, "username": "u" } ] }"#,
-    );
-    let store = data.restart();
-    let saved = store.read(hosts::all).unwrap();
-    assert_eq!(saved.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(), ["new", "old"]);
-    assert_eq!(store.read(hosts::default).unwrap().as_deref(), Some("old"));
+    assert_eq!(store.read(hosts::all).unwrap(), []);
+    assert_eq!(store.read(hosts::default).unwrap(), None);
+    assert_eq!(store.read(tools::all).unwrap().len(), 0);
+    assert_eq!(std::fs::read_to_string(data.0.join("server.json")).unwrap(), server, "left as it was");
 }
 
 #[test]
@@ -152,10 +71,9 @@ fn a_failed_change_leaves_the_store_as_it_was() {
     let data = Data::new("rollback");
     let store = data.store();
     let w = Wire { code: Code::Other, message: "x".into() };
-    store.write(|tx| autostop::record(tx, "a", "m", &w)).unwrap();
+    store.write(|tx| autostop::replace(tx, &[("a".into(), "m".into(), w.clone())])).unwrap();
     let failed = store.write(|tx| -> crate::error::Result<()> {
-        autostop::replace(tx, &[])?;
-        autostop::record(tx, "b", "m", &w)?;
+        autostop::replace(tx, &[("b".into(), "m".into(), w.clone())])?;
         Err(Error::Invalid("no".into()))
     });
     assert!(failed.is_err());
