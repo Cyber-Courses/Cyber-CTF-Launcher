@@ -10,7 +10,7 @@
 /// apt waits up to ten minutes for the dpkg lock there (`APT_CONFIG`, a file in `$d`): a fresh
 /// Debian runs unattended-upgrades at boot, and the guided setup's Vagrant install met its lock
 /// ("Could not get lock /var/lib/dpkg/lock-frontend. It is held by process … (unattended-upgr)",
-/// exit 100) and failed instead of waiting (debian13-bare setup-full, 2026-11-12).
+/// exit 100) and failed instead of waiting.
 pub const PRIVATE_WORKDIR: &str =
     r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT; printf 'DPkg::Lock::Timeout "600";\n' >"$d/apt.conf"; export APT_CONFIG="$d/apt.conf""#;
 
@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn the_private_workdir_makes_apt_wait_for_the_dpkg_lock() {
         // Regression: a fresh Debian's unattended-upgrades held the dpkg lock and the guided
-        // setup's apt-get failed with exit 100 instead of waiting (2026-11-12).
+        // setup's apt-get failed with exit 100 instead of waiting.
         assert!(
             PRIVATE_WORKDIR.contains(r#"DPkg::Lock::Timeout "600";"#) && PRIVATE_WORKDIR.contains(r#"export APT_CONFIG="$d/apt.conf""#),
             "{PRIVATE_WORKDIR}"
