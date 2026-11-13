@@ -9,7 +9,7 @@ use crate::runtime::lab::Target;
 
 use super::status::{AttackStatus, status_of};
 use super::{Cpu, Kind};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::host::{self, Failed, Host};
 use crate::runtime::paths::local_runtime;
@@ -40,6 +40,12 @@ pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> 
         Some(host) if !host.has_machines() => None,
         Some(host) => Some(Placed { target: host.target(), host, dir: dir.to_path_buf(), vm: local_runtime(dir, runtime) == Runtime::Vm }),
     })
+}
+
+/// Where lab `id`'s attack box goes ([`locate`]), or the error an operation on the box gets when
+/// the launcher reaches no run of the lab it could join.
+pub(crate) fn reachable(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Placed> {
+    locate(dirs, dir, id, runtime)?.ok_or_else(|| Error::Invalid("This lab has no attack box the launcher can reach. Work from what the lab gives you.".into()))
 }
 
 /// What the learner picked for the box: the image a container box runs, and whether a VM box gets

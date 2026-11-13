@@ -8,13 +8,15 @@
 //! among VMs. On every form the player works as [`PLAYER`], an account of the box with sudo (its
 //! shell opens as it) and a password of the box's own for wherever the box asks for one (its
 //! screen, `su`, SSH): [`mod@sign_in`]. Where the lab runs, and how the box goes in and out of its
-//! run: [`locate`], [`Placed`]; the box as the lab page shows it: [`AttackStatus`].
+//! run: [`locate`], [`place::Placed`]; the box as the lab page shows it: [`AttackStatus`].
 
 mod place;
 mod sign_in;
 mod status;
 
-pub(crate) use place::{Pick, Placed, locate};
+#[cfg(test)]
+pub(crate) use place::Placed;
+pub(crate) use place::{Pick, locate, reachable};
 pub use sign_in::SignIn;
 pub(crate) use status::AttackStatus;
 

@@ -118,6 +118,44 @@ fn fresh(session: &Session) -> bool {
 ///   be signed in again at the next call) or over another account's sign-in.
 static SESSION_WRITE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// `SESSION_WRITE`, held: what writes the session (the renewed one waiting to be saved
+/// included) takes it, so a write outside the lock doesn't compile.
+struct SessionWrite {
+    /// Held for its lock, never read.
+    _held: tokio::sync::MutexGuard<'static, ()>,
+}
+
+impl SessionWrite {
+    /// Waits for the other writes of the session to finish, then holds the lock.
+    async fn lock() -> SessionWrite {
+        SessionWrite { _held: SESSION_WRITE.lock().await }
+    }
+
+    /// The session calls use: the stored one, unless a newer renewed one is still waiting to be
+    /// saved (then that one, and saving is tried again).
+    async fn current_session(&self) -> Result<Session> {
+        let stored = session_or_signed_out().await;
+        let Some(renewed) = unsaved() else { return stored };
+        match stored {
+            // Signed out (or unreadable) since: the renewed session is not resurrected.
+            Err(e) => {
+                set_unsaved(self, None);
+                Err(e)
+            }
+            Ok(s) if renewed.expires_at <= s.expires_at => {
+                set_unsaved(self, None);
+                Ok(s)
+            }
+            Ok(_) => {
+                if store::store(renewed.clone()).await.is_ok() {
+                    set_unsaved(self, None);
+                }
+                Ok(renewed)
+            }
+        }
+    }
+}
+
 /// A renewed session the keychain refused to save. Refresh tokens rotate: the old one in the
 /// keychain is spent, so dropping the new one would sign the player out at the next call (an
 /// `invalid_grant`). It is served from here, and saved again at each read until that works.
@@ -142,32 +180,10 @@ fn unsaved() -> Option<Session> {
     with_unsaved(|u| u.clone())
 }
 
-fn set_unsaved(session: Option<Session>) {
+/// Sets the renewed session waiting to be saved (`UNSAVED`): only under the write lock, which
+/// `_write` proves.
+fn set_unsaved(_write: &SessionWrite, session: Option<Session>) {
     with_unsaved(|u| *u = session);
-}
-
-/// The session calls use: the stored one, unless a newer renewed one is still waiting to be
-/// saved (then that one, and saving is tried again). Saves: call it holding `SESSION_WRITE`.
-async fn current_session() -> Result<Session> {
-    let stored = session_or_signed_out().await;
-    let Some(renewed) = unsaved() else { return stored };
-    match stored {
-        // Signed out (or unreadable) since: the renewed session is not resurrected.
-        Err(e) => {
-            set_unsaved(None);
-            Err(e)
-        }
-        Ok(s) if renewed.expires_at <= s.expires_at => {
-            set_unsaved(None);
-            Ok(s)
-        }
-        Ok(_) => {
-            if store::store(renewed.clone()).await.is_ok() {
-                set_unsaved(None);
-            }
-            Ok(renewed)
-        }
-    }
 }
 
 /// A valid access token for CyberBackend, refreshed if it expires within a minute.
@@ -198,8 +214,8 @@ where
             return Ok(session.access_token);
         }
     }
-    let _one_at_a_time = SESSION_WRITE.lock().await;
-    let session = current_session().await?;
+    let write = SessionWrite::lock().await;
+    let session = write.current_session().await?;
     if fresh(&session) {
         return Ok(session.access_token);
     }
@@ -226,7 +242,7 @@ where
         // The rotated refresh token must not be lost with the write: keep serving the renewed
         // session and retry saving it (see `UNSAVED`).
         log::warn!("the renewed session couldn't be saved yet ({e}); kept in memory until it can");
-        set_unsaved(Some(renewed));
+        set_unsaved(&write, Some(renewed));
     }
     Ok(token)
 }
@@ -380,8 +396,8 @@ async fn keep_tokens(tokens: TokenResponse) -> Result<AuthStatus> {
 /// another account's, would otherwise land over it). A renewed session still waiting to be saved
 /// belongs to the session this one replaces: it is dropped.
 async fn keep_signed_in(session: Session) -> Result<()> {
-    let _no_refresh = SESSION_WRITE.lock().await;
-    set_unsaved(None);
+    let no_refresh = SessionWrite::lock().await;
+    set_unsaved(&no_refresh, None);
     store::store(session).await
 }
 
@@ -410,8 +426,8 @@ fn status_from_read(read: std::result::Result<Option<Session>, String>, expired:
 pub async fn auth_logout() -> Result<()> {
     // After a refresh in flight: it would otherwise store its renewed session right after this
     // clear, and the player would be back in at the next call.
-    let _no_refresh = SESSION_WRITE.lock().await;
-    set_unsaved(None);
+    let no_refresh = SessionWrite::lock().await;
+    set_unsaved(&no_refresh, None);
     // Signed out on purpose: not an expiry to explain.
     set_expired(false);
     store::clear().await
@@ -518,17 +534,17 @@ mod tests {
         let stale = Session { expires_at: unix_secs() + 10, ..session() };
         store::store(stale).await.unwrap();
         let renewed = Session { access_token: "tok2".into(), refresh_token: Some("ref2".into()), expires_at: unix_secs() + 3600, ..session() };
-        set_unsaved(Some(renewed));
+        set_unsaved(&SessionWrite::lock().await, Some(renewed));
         // Served over the stored one, and saved now that the store takes it.
         assert_eq!(access_token().await.unwrap(), "tok2");
         assert!(unsaved().is_none());
         assert_eq!(store::read().await.unwrap().unwrap().refresh_token.as_deref(), Some("ref2"));
         // An older leftover never replaces a newer stored session.
-        set_unsaved(Some(Session { access_token: "old".into(), expires_at: unix_secs() + 5, ..session() }));
+        set_unsaved(&SessionWrite::lock().await, Some(Session { access_token: "old".into(), expires_at: unix_secs() + 5, ..session() }));
         assert_eq!(access_token().await.unwrap(), "tok2");
         assert!(unsaved().is_none());
         // Sign-out forgets both.
-        set_unsaved(Some(Session { access_token: "tok3".into(), expires_at: unix_secs() + 3600, ..session() }));
+        set_unsaved(&SessionWrite::lock().await, Some(Session { access_token: "tok3".into(), expires_at: unix_secs() + 3600, ..session() }));
         auth_logout().await.unwrap();
         assert!(unsaved().is_none());
         assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
