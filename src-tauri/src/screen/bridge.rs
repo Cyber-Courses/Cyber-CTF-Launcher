@@ -537,10 +537,13 @@ mod tests {
         let bridge = Bridge::bind().await.unwrap();
         let token = bridge.arm(Target::Tcp(at));
         let (mut viewer, _) = connect(bridge.port(), &token, "tauri://localhost").await;
+        // The clock stops only once the bridge's connection is accepted: paused while the connect
+        // is still in flight, the idle runtime would jump to the connect limit first. Held open,
+        // so the screen stays connected and silent.
+        let _screen = accepting.await.unwrap().unwrap();
         tokio::time::pause();
         let closed = close_reason(&mut viewer).await;
         assert_eq!(closed, format!("the VM's screen at {at} accepted the connection but said nothing within 15 s"));
-        accepting.abort();
     }
 
     /// The reason of the close frame the bridge sends (status 1011).
