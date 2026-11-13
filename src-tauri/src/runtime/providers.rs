@@ -171,8 +171,8 @@ impl Provider {
     fn applicable_on(self, os: &str, arch: &str) -> bool {
         // Neither ships for Windows on Arm (no installer, no Arm VMs there): VM labs on those PCs
         // go to Hyper-V, a server or the cloud.
-        let no_arm_build = matches!(self, Provider::Virtualbox | Provider::VmwareDesktop) && os == "windows" && arch == "aarch64";
-        self.runs_on(os) && !no_arm_build
+        let built_for_windows_on_arm = !(matches!(self, Provider::Virtualbox | Provider::VmwareDesktop) && os == "windows" && arch == "aarch64");
+        self.runs_on(os) && built_for_windows_on_arm
     }
 
     /// Whether it exists on `os` (`std::env::consts::OS`) at all: Hyper-V on Windows, Parallels
@@ -197,12 +197,12 @@ impl Provider {
     /// [`offered`](Self::offered) on `os` and CPU `arch`.
     fn offered_on(self, os: &str, arch: &str, installed: bool) -> bool {
         let apple_silicon = os == "macos" && arch == "aarch64";
-        let not_for_this_mac = match self {
-            Provider::Virtualbox => apple_silicon,
-            Provider::Utm => os == "macos" && !apple_silicon,
-            _ => false,
+        let for_this_mac = match self {
+            Provider::Virtualbox => !apple_silicon,
+            Provider::Utm => os != "macos" || apple_silicon,
+            _ => true,
         };
-        self.applicable_on(os, arch) && (installed || !not_for_this_mac)
+        self.applicable_on(os, arch) && (installed || for_this_mac)
     }
 
     /// Vagrant plugin required, if the provider is not built in: Isoloom's table for the providers
