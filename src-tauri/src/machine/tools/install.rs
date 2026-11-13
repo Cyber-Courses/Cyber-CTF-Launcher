@@ -18,6 +18,8 @@ use super::steps::{Step, command_line, run_step, run_steps};
 use super::uninstall;
 use crate::error::{Error, Result};
 use crate::platform::policy::{self, Key};
+#[cfg(any(target_os = "linux", test))]
+use crate::platform::root_script::RootScript;
 use crate::runtime::providers::Provider;
 
 /// A tool the guided setup installs, as the webview names it.
@@ -250,17 +252,17 @@ const HYPERV_ON: &str = "if ((Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Wind
 /// clears the environment, so the proxy variables set here (`proxy`, `NAME=value`) are handed to
 /// the script through `env`: behind a corporate proxy apt and curl need them.
 #[cfg(any(target_os = "linux", test))]
-fn as_root(script: String, proxy: Vec<String>) -> Step {
+fn as_root(script: RootScript, proxy: Vec<String>) -> Step {
     let mut args = vec!["env".to_string()];
     args.extend(proxy);
-    args.extend(["sh".to_string(), "-c".to_string(), script]);
+    args.extend(["sh".to_string(), "-c".to_string(), script.into_string()]);
     Step { program: "pkexec".into(), args, note: None }
 }
 
 /// `script` run as root through pkexec ([`as_root`]), with this process's proxy: every install
 /// and removal step on Linux.
 #[cfg(target_os = "linux")]
-pub(super) fn root(script: String) -> Step {
+pub(super) fn root(script: RootScript) -> Step {
     as_root(script, crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
 }
 
@@ -493,10 +495,11 @@ mod tests {
 
     #[test]
     fn a_root_install_carries_the_proxy_through_pkexec() {
-        let step = as_root("apt-get update".into(), vec!["https_proxy=http://proxy.corp:3128".into(), "no_proxy=.corp".into()]);
+        let step = as_root(RootScript::new("apt-get update"), vec!["https_proxy=http://proxy.corp:3128".into(), "no_proxy=.corp".into()]);
         assert_eq!(step.program, "pkexec");
-        assert_eq!(step.args, ["env", "https_proxy=http://proxy.corp:3128", "no_proxy=.corp", "sh", "-c", "apt-get update"]);
-        assert_eq!(as_root("true".into(), Vec::new()).args, ["env", "sh", "-c", "true"]);
+        let script = RootScript::new("apt-get update").into_string();
+        assert_eq!(step.args, ["env", "https_proxy=http://proxy.corp:3128", "no_proxy=.corp", "sh", "-c", script.as_str()]);
+        assert_eq!(as_root(RootScript::new("true"), Vec::new()).args[..3], ["env", "sh", "-c"]);
     }
 
     #[test]
@@ -551,6 +554,37 @@ mod tests {
         assert!(libvirt.contains("libvirt-dev") && libvirt.contains("build-essential"), "{libvirt}");
         let aws = plan(Dependency::Awscli).unwrap()[0].args.join(" ");
         assert!(aws.contains("awscli-exe-linux") && !aws.contains("/tmp/aws"), "{aws}");
+    }
+
+    /// Every step run as root on Linux, for each tool, package manager and way (install, removal).
+    #[cfg(target_os = "linux")]
+    fn every_linux_root_step() -> Vec<(String, Step)> {
+        let mut steps = Vec::new();
+        for dep in Dependency::ALL {
+            for packages in [Packages::Apt, Packages::Dnf] {
+                let install = linux_plan_with(dep, packages).unwrap_or_default();
+                let removal = uninstall::linux_plan_with(dep, packages).unwrap_or_default();
+                for (way, plan) in [("install", install), ("removal", removal)] {
+                    steps.extend(plan.into_iter().filter(|s| s.program == "pkexec").map(|s| (format!("{dep:?} {packages:?} {way}"), s)));
+                }
+            }
+        }
+        steps
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn every_root_step_starts_with_the_prelude_and_parses() {
+        // Regression: the libvirt and QEMU installs ran without `set -e`, and a failed
+        // `apt-get install` read as done; the hand-kept list of root scripts the tests checked
+        // didn't name them. Every plan is read here, whatever it installs.
+        let steps = every_linux_root_step();
+        assert!(steps.len() >= 25, "{} root steps", steps.len());
+        for (what, step) in steps {
+            let script = step.args.last().unwrap();
+            assert!(script.starts_with(crate::platform::root_script::PRELUDE), "{what}: {script}");
+            assert!(crate::platform::sh_parses(script), "{what}: not valid sh: {script}");
+        }
     }
 
     #[cfg(target_os = "windows")]

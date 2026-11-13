@@ -324,9 +324,9 @@ fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
 /// installed through dnf on Fedora was removed with `apt-get remove`, which pkexec ran to
 /// `apt-get: not found`, the record kept.
 #[cfg(target_os = "linux")]
-fn linux_plan_with(dep: Dependency, packages: super::install::Packages) -> Result<Vec<Step>> {
+pub(super) fn linux_plan_with(dep: Dependency, packages: super::install::Packages) -> Result<Vec<Step>> {
     use super::install::Packages;
-    let root = |script: &str| super::install::root(script.to_string());
+    let root = |script: &str| super::install::root(crate::platform::root_script::RootScript::new(script));
     Ok(match (dep, packages) {
         (Dependency::Utm | Dependency::Wsl | Dependency::Hyperv, _) => return Err(super::install::not_here(dep)),
         (Dependency::Awscli, _) => vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")],
@@ -419,7 +419,8 @@ mod tests {
         let steps = linux_plan(Dependency::Vagrant).unwrap();
         assert_eq!(steps[0].program, "pkexec");
         assert_eq!(steps[0].args.first().map(String::as_str), Some("env"));
-        assert_eq!(steps[0].args.last().map(String::as_str), Some("apt-get remove -y vagrant"));
+        let script = crate::platform::root_script::RootScript::new("apt-get remove -y vagrant");
+        assert_eq!(steps[0].args.last().map(String::as_str), Some(&*script));
     }
 
     #[tokio::test]
