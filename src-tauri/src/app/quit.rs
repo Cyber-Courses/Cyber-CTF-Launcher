@@ -70,8 +70,9 @@ pub fn linger_quit(app: AppHandle) {
         while !runtime::busy_labs().is_empty() && Instant::now() < deadline && phase() == Phase::Lingering {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
-        // Relaunched meanwhile (the windows are back): stay open.
-        if phase() != Phase::Lingering {
+        // Relaunched meanwhile (the windows are back): stay open. A quit forced meanwhile, or
+        // before, still exits: the windows are hidden, and nothing would end the app otherwise.
+        if phase() == Phase::Open {
             return;
         }
         exit_now(&app);
