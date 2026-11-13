@@ -153,7 +153,7 @@ fn context_engine(name: &str, os: &str) -> Option<Engine> {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineStatus {
-    /// The engine.
+    /// Which engine it is (Docker Desktop, Colima, the Linux daemon…).
     pub engine: Engine,
     /// The CLI context that reaches it.
     pub context: String,

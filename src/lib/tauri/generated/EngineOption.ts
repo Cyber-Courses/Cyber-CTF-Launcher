@@ -7,7 +7,7 @@ import type { SetupAction } from "./SetupAction";
  */
 export type EngineOption = { 
 /**
- * The engine.
+ * Which engine it is (Docker Desktop, Colima, the Linux daemon…).
  */
 engine: DockerEngine, 
 /**

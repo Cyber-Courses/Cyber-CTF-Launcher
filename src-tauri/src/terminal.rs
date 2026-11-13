@@ -135,7 +135,7 @@ impl Terminals {
 pub enum TermEvent {
     /// Output, as text (split multi-byte characters are held back until complete).
     Data {
-        /// The text.
+        /// The shell's output since the last event, as UTF-8.
         data: String,
     },
     /// The shell ended.

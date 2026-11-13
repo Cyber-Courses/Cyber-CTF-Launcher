@@ -8,7 +8,7 @@ import type { SetupAction } from "./SetupAction";
  */
 export type HypervisorOption = { 
 /**
- * The hypervisor.
+ * Which hypervisor, as the Vagrant provider that drives it.
  */
 provider: Provider, 
 /**

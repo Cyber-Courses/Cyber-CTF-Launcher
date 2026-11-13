@@ -129,7 +129,7 @@ impl Options {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineOption {
-    /// The engine.
+    /// Which engine it is (Docker Desktop, Colima, the Linux daemon…).
     pub engine: Engine,
     /// What makes it the one Docker uses here, in order: nothing when it is.
     pub actions: Vec<Action>,
@@ -140,7 +140,7 @@ pub struct EngineOption {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HypervisorOption {
-    /// The hypervisor.
+    /// Which hypervisor, as the Vagrant provider that drives it.
     pub provider: Provider,
     /// What installs it or turns it on, in order: nothing when it is ready.
     pub get: Vec<Action>,

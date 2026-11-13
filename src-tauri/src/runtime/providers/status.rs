@@ -10,7 +10,7 @@ use super::{Need, Provider, Unavailable, UtilityState};
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStatus {
-    /// The provider.
+    /// Which provider the rest is about.
     pub provider: Provider,
     /// A server, run elsewhere: nothing of it is installed here.
     pub remote: bool,
