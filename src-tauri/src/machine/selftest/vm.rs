@@ -7,10 +7,11 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::downloads::ensure_box;
-use super::{Reporter, arm};
+use super::{Arch, Reporter};
 use crate::error::{Error, Result};
 use crate::platform::exec::{Event, Step, Vagrant, run, within};
 use crate::runtime::providers::{self, Provider};
+use crate::runtime::selftest_report::StepState;
 
 /// The test VM's address on its private lab network (VirtualBox's default host-only range):
 /// the first of these that nothing answers on yet. One that answers already (another VM on it)
@@ -67,10 +68,10 @@ pub(super) fn test_providers() -> impl Iterator<Item = Provider> {
 }
 
 /// Small public boxes that exist for this provider and CPU, smallest first.
-pub(crate) fn candidate_boxes(p: Provider, arm: bool) -> &'static [&'static str] {
-    match (p, arm) {
-        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, false) => &["generic/alpine319", "bento/debian-12"],
-        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, true) => &["bento/debian-12"],
+pub(crate) fn candidate_boxes(p: Provider, arch: Arch) -> &'static [&'static str] {
+    match (p, arch) {
+        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, Arch::Amd64) => &["generic/alpine319", "bento/debian-12"],
+        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, Arch::Arm64) => &["bento/debian-12"],
         (Provider::Utm, _) => &["utm/bookworm"],
         _ => &["generic/alpine319"],
     }
@@ -96,10 +97,10 @@ fn has_private_network(p: Provider) -> bool {
 
 /// Picks a candidate box already downloaded for this provider, else the first candidate.
 /// Returns (box, already downloaded).
-pub(super) async fn pick_box(p: Provider, arm: bool) -> (&'static str, bool) {
-    let candidates = candidate_boxes(p, arm);
+pub(super) async fn pick_box(p: Provider, arch: Arch) -> (&'static str, bool) {
+    let candidates = candidate_boxes(p, arch);
     let list = run("vagrant", &["box", "list"], None).await.unwrap_or_default();
-    match candidates.iter().find(|c| box_listed(&list, c, box_provider(p), arm)) {
+    match candidates.iter().find(|c| box_listed(&list, c, box_provider(p), arch)) {
         Some(c) => (c, true),
         None => (candidates[0], false),
     }
@@ -107,8 +108,8 @@ pub(super) async fn pick_box(p: Provider, arm: bool) -> (&'static str, bool) {
 
 /// Whether `vagrant box list` has `name` for `provider` and this CPU (a box with no
 /// architecture in the listing counts for any).
-fn box_listed(list: &str, name: &str, provider: &str, arm: bool) -> bool {
-    let arch = if arm { "arm64" } else { "amd64" };
+fn box_listed(list: &str, name: &str, provider: &str, arch: Arch) -> bool {
+    let arch = arch.box_arch();
     crate::machine::storage::owned::listed_boxes(list).iter().any(|b| {
         let other_cpu = matches!(b.arch.as_deref(), Some(a @ ("amd64" | "arm64")) if a != arch);
         b.owned.name == name && b.owned.provider == provider && !other_cpu
@@ -223,9 +224,9 @@ async fn clear_earlier_test(dir: &Path, r: &Reporter) -> Result<()> {
     }
     match leftover::clear(dir).await {
         Ok(removed) if removed.is_empty() => {}
-        Ok(removed) => r.send(STEP.0, STEP.1, "ok", Some(format!("removed from {}", removed.join(", ")))),
+        Ok(removed) => r.send(STEP.0, STEP.1, StepState::Ok, Some(format!("removed from {}", removed.join(", ")))),
         Err(e) => {
-            r.send(STEP.0, STEP.1, "fail", Some(e.to_string()));
+            r.send(STEP.0, STEP.1, StepState::Fail, Some(e.to_string()));
             return Err(e);
         }
     }
@@ -237,10 +238,10 @@ async fn clear_earlier_test(dir: &Path, r: &Reporter) -> Result<()> {
 
 async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
     let provider = host_provider(preferred, r).await?;
-    let arm = arm();
-    let (bx, _) = pick_box(provider, arm).await;
+    let arch = Arch::here();
+    let (bx, _) = pick_box(provider, arch).await;
     r.step("box", "Get a small test VM image", async {
-        let had = ensure_box(dir, provider, bx, arm, |l| r.progress("box", "Get a small test VM image", &l)).await?;
+        let had = ensure_box(dir, provider, bx, arch, |l| r.progress("box", "Get a small test VM image", &l)).await?;
         Ok(((), Some(if had { format!("{bx} (ready)") } else { bx.to_string() })))
     })
     .await?;
@@ -329,9 +330,9 @@ async fn network(provider: Provider, ip: Option<&'static str>, r: &Reporter) -> 
             .await?;
         }
         None if has_private_network(provider) => {
-            r.send("network", "VM reachable on a lab network", "skip", Some(format!("every test address ({}…) is taken on this machine", VM_IPS[0])));
+            r.send("network", "VM reachable on a lab network", StepState::Skip, Some(format!("every test address ({}…) is taken on this machine", VM_IPS[0])));
         }
-        None => r.send("network", "VM reachable on a lab network", "skip", Some(format!("{} has no private networks", provider.id()))),
+        None => r.send("network", "VM reachable on a lab network", StepState::Skip, Some(format!("{} has no private networks", provider.id()))),
     }
 
     Ok(())
@@ -413,12 +414,12 @@ mod tests {
     #[test]
     fn a_box_counts_only_for_its_provider_and_cpu() {
         let list = "bento/debian-12   (virtualbox, 202510.26.0, (amd64))\ngeneric/alpine319 (libvirt, 4.3.12)\n";
-        assert!(box_listed(list, "bento/debian-12", "virtualbox", false));
-        assert!(!box_listed(list, "bento/debian-12", "virtualbox", true));
-        assert!(!box_listed(list, "bento/debian-12", "parallels", false));
+        assert!(box_listed(list, "bento/debian-12", "virtualbox", Arch::Amd64));
+        assert!(!box_listed(list, "bento/debian-12", "virtualbox", Arch::Arm64));
+        assert!(!box_listed(list, "bento/debian-12", "parallels", Arch::Amd64));
         // No architecture listed: any CPU.
-        assert!(box_listed(list, "generic/alpine319", "libvirt", true));
-        assert!(!box_listed(list, "generic/alpine", "libvirt", true));
+        assert!(box_listed(list, "generic/alpine319", "libvirt", Arch::Arm64));
+        assert!(!box_listed(list, "generic/alpine", "libvirt", Arch::Arm64));
     }
 
     #[test]
@@ -426,14 +427,14 @@ mod tests {
         // CRLF from Vagrant on Windows, tabs or runs of spaces before the parenthesis, a name
         // that merely starts with the wanted one, and the empty listing.
         let list = "bento/debian-12\t(virtualbox, 1)\r\nbento/debian-120    (virtualbox, 1)\r\ngeneric/alpine319 (vmware_desktop, 4.3.12, (arm64))\r\n";
-        assert!(box_listed(list, "bento/debian-12", "virtualbox", false));
-        assert!(box_listed(list, "bento/debian-120", "virtualbox", true));
-        assert!(!box_listed(list, "bento/debian-1", "virtualbox", false));
-        assert!(box_listed(list, "generic/alpine319", "vmware_desktop", true));
-        assert!(!box_listed(list, "generic/alpine319", "vmware_desktop", false), "an ARM box is not an x86 one");
-        assert!(!box_listed(list, "generic/alpine319", "vmware", true), "the provider id is whole");
-        assert!(!box_listed("There are no installed boxes! Use `vagrant box add` to add some.\n", "generic/alpine319", "qemu", false));
-        assert!(!box_listed("", "generic/alpine319", "qemu", false));
+        assert!(box_listed(list, "bento/debian-12", "virtualbox", Arch::Amd64));
+        assert!(box_listed(list, "bento/debian-120", "virtualbox", Arch::Arm64));
+        assert!(!box_listed(list, "bento/debian-1", "virtualbox", Arch::Amd64));
+        assert!(box_listed(list, "generic/alpine319", "vmware_desktop", Arch::Arm64));
+        assert!(!box_listed(list, "generic/alpine319", "vmware_desktop", Arch::Amd64), "an ARM box is not an x86 one");
+        assert!(!box_listed(list, "generic/alpine319", "vmware", Arch::Arm64), "the provider id is whole");
+        assert!(!box_listed("There are no installed boxes! Use `vagrant box add` to add some.\n", "generic/alpine319", "qemu", Arch::Amd64));
+        assert!(!box_listed("", "generic/alpine319", "qemu", Arch::Amd64));
     }
 
     #[test]
@@ -525,10 +526,10 @@ mod tests {
         assert_eq!(responds(Provider::Libvirt).map(|r| r.0), Some("virsh"));
         assert!(responds(Provider::Utm).is_some_and(|r| r.0.ends_with("utmctl")));
         assert!(responds(Provider::Qemu).is_none());
-        assert_eq!(candidate_boxes(Provider::Virtualbox, false), ["generic/alpine319", "bento/debian-12"]);
-        assert_eq!(candidate_boxes(Provider::Parallels, true), ["bento/debian-12"]);
-        assert_eq!(candidate_boxes(Provider::Utm, true), ["utm/bookworm"]);
-        assert_eq!(candidate_boxes(Provider::Qemu, true), ["generic/alpine319"]);
+        assert_eq!(candidate_boxes(Provider::Virtualbox, Arch::Amd64), ["generic/alpine319", "bento/debian-12"]);
+        assert_eq!(candidate_boxes(Provider::Parallels, Arch::Arm64), ["bento/debian-12"]);
+        assert_eq!(candidate_boxes(Provider::Utm, Arch::Arm64), ["utm/bookworm"]);
+        assert_eq!(candidate_boxes(Provider::Qemu, Arch::Arm64), ["generic/alpine319"]);
         assert!(has_private_network(Provider::Libvirt) && !has_private_network(Provider::Qemu) && !has_private_network(Provider::Hyperv));
         // QEMU stores and lists its box as libvirt (vagrant-qemu boots a libvirt box); others use their own id.
         assert_eq!(box_provider(Provider::Qemu), "libvirt");

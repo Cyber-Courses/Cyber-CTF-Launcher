@@ -112,10 +112,8 @@ pub async fn present(dep: Dependency) -> Option<bool> {
 
 /// Records the outcome of an install of `dependency`.
 pub fn record_outcome(dirs: &AppDirs, dependency: Dependency, outcome: Outcome) {
-    match outcome {
-        Outcome::NotOurs => {}
-        Outcome::Installed => update(dirs, |tools| remember(tools, dependency, false)),
-        Outcome::Pending => update(dirs, |tools| remember(tools, dependency, true)),
+    if outcome != Outcome::NotOurs {
+        update(dirs, |tools| remember(tools, dependency, outcome));
     }
 }
 
@@ -197,10 +195,16 @@ fn update_at(f: &Path, change: impl FnOnce(&mut Vec<InstalledTool>)) -> std::io:
     crate::platform::atomic_file::write(f, serde_json::to_vec_pretty(&tools)?)
 }
 
-/// `tools` with `dependency` recorded once, as installed now (or waiting for its installer).
-/// A tool already confirmed as ours stays confirmed.
-fn remember(tools: &mut Vec<InstalledTool>, dependency: Dependency, pending: bool) {
-    let pending = pending && !tools.iter().any(|t| t.dependency == dependency && !t.pending);
+/// `tools` with `dependency` recorded once as the install's `outcome` says: installed now, or
+/// waiting for its installer (one not ours is not recorded). A tool already confirmed as ours
+/// stays confirmed.
+fn remember(tools: &mut Vec<InstalledTool>, dependency: Dependency, outcome: Outcome) {
+    let waiting = match outcome {
+        Outcome::NotOurs => return,
+        Outcome::Installed => false,
+        Outcome::Pending => true,
+    };
+    let pending = waiting && !tools.iter().any(|t| t.dependency == dependency && !t.pending);
     tools.retain(|t| t.dependency != dependency);
     tools.push(InstalledTool { dependency, at: crate::platform::clock::unix_secs(), pending });
 }
@@ -486,11 +490,11 @@ mod tests {
         let f = dir.join("data").join("installed-tools.json");
         assert!(load_at(&f).unwrap().is_empty());
         update_at(&f, |tools| {
-            remember(tools, Dependency::Vagrant, false);
-            remember(tools, Dependency::Docker, false);
+            remember(tools, Dependency::Vagrant, Outcome::Installed);
+            remember(tools, Dependency::Docker, Outcome::Installed);
         })
         .unwrap();
-        update_at(&f, |tools| remember(tools, Dependency::Vagrant, false)).unwrap();
+        update_at(&f, |tools| remember(tools, Dependency::Vagrant, Outcome::Installed)).unwrap();
         let back = load_at(&f).unwrap();
         assert_eq!(back.iter().map(|t| t.dependency).collect::<Vec<_>>(), [Dependency::Docker, Dependency::Vagrant]);
         assert!(back.iter().all(|t| t.at > 0));
@@ -507,7 +511,7 @@ mod tests {
         std::thread::scope(|s| {
             for dep in deps {
                 let f = &f;
-                s.spawn(move || update_at(f, |tools| remember(tools, dep, false)).unwrap());
+                s.spawn(move || update_at(f, |tools| remember(tools, dep, Outcome::Installed)).unwrap());
             }
         });
         assert_eq!(load_at(&f).unwrap().len(), deps.len());
@@ -530,9 +534,9 @@ mod tests {
     #[test]
     fn pending_installs_count_once_found_and_expire_otherwise() {
         let mut tools = Vec::new();
-        remember(&mut tools, Dependency::Docker, true);
-        remember(&mut tools, Dependency::Vagrant, true);
-        remember(&mut tools, Dependency::Terraform, false);
+        remember(&mut tools, Dependency::Docker, Outcome::Pending);
+        remember(&mut tools, Dependency::Vagrant, Outcome::Pending);
+        remember(&mut tools, Dependency::Terraform, Outcome::Installed);
         assert_eq!(confirmed(tools.clone()).iter().map(|t| t.dependency).collect::<Vec<_>>(), [Dependency::Terraform]);
         // The JSON the UI reads is unchanged for a confirmed record.
         assert!(serde_json::to_value(&tools[2]).unwrap().get("pending").is_none());
@@ -545,7 +549,7 @@ mod tests {
         settle(&mut tools, &[], now + PENDING_FOR_SECS);
         assert_eq!(tools.iter().map(|t| t.dependency).collect::<Vec<_>>(), [Dependency::Docker, Dependency::Terraform]);
         // Re-opening an installer for a tool already ours keeps it ours.
-        remember(&mut tools, Dependency::Docker, true);
+        remember(&mut tools, Dependency::Docker, Outcome::Pending);
         assert!(confirmed(tools).iter().any(|t| t.dependency == Dependency::Docker));
     }
 

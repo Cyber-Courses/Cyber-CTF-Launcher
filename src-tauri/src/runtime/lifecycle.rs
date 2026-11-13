@@ -21,7 +21,7 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     let _deploy = DeployGuard::new(id, Action::Park(mode));
     refuse_cloud_park(runtime)?;
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
-    let run = local_run(dirs, dir, id, runtime, "Pausing a lab on a server or a cloud account isn't available. Stop it instead.")?;
+    let run = local_run(dirs, lab, "Pausing a lab on a server or a cloud account isn't available. Stop it instead.")?;
     // Only what the page is offered for this run ([`controls`]): a pause of containers on Docker
     // would be carried out as a shut down, and QEMU refuses one.
     if let Some(why) = park_refusal(mode, run.target(), run.recorded_provider()?.as_deref()) {
@@ -36,7 +36,8 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
 /// Lab `id`'s run on this machine ([`host::locate`]), for a lab parked or resumed here; refused
 /// with `elsewhere` for a lab on a server host or cloud account. A cloud-services lab, refused
 /// before, has none.
-fn local_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, elsewhere: &str) -> Result<isothrum::LabRun> {
+fn local_run(dirs: &AppDirs, lab: LabRef<'_>, elsewhere: &str) -> Result<isothrum::LabRun> {
+    let LabRef { dir, id, runtime } = lab;
     match host::locate(dirs, dir, id, runtime)? {
         Some(Host::Local(run)) => Ok(run),
         Some(_) => Err(Error::Invalid(elsewhere.into())),
@@ -126,12 +127,13 @@ fn parked_message(mode: Park) -> &'static str {
 /// down (powered off by hand, or a cut resume): the machines already up are left alone, the others
 /// come back. A resume boots the lab's machines again, so the administrator's policy is asked
 /// first, as for a start ([`policy_allows`]).
-async fn resume(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, mut log: impl FnMut(String)) -> Result<()> {
+async fn resume(dirs: &AppDirs, lab: LabRef<'_>, mut log: impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
     let _lock = lock_lab(dirs, id).await?;
     let _deploy = DeployGuard::new(id, Action::Resume);
     refuse_cloud_park(runtime)?;
     policy_allows(dirs, runtime, None, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
-    let run = local_run(dirs, dir, id, runtime, "A lab on a server or a cloud account isn't parked, so there is nothing to resume: start it again.")?;
+    let run = local_run(dirs, lab, "A lab on a server or a cloud account isn't parked, so there is nothing to resume: start it again.")?;
     log("Resuming the lab…".into());
     // The runner resumes a parked run as it was; when nothing is left of it, it drops the parked
     // mark and reports `NothingToResume`, so the page offers a fresh start.
@@ -183,14 +185,15 @@ fn provision_target(status: &super::LabStatus, machine: Option<&str>) -> Result<
 }
 
 /// Stops a lab wherever it runs, destroying remote VMs so the next start is clean.
-async fn stop(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    let _lock = lock_lab(dirs, id).await?;
-    stop_locked(dirs, dir, id, runtime, log).await
+async fn stop(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut(String)) -> Result<()> {
+    let _lock = lock_lab(dirs, lab.id).await?;
+    stop_locked(dirs, lab, log).await
 }
 
 /// The body of `stop`, for a caller already holding the lab lock (the lock is not reentrant, so
 /// it must not call `stop`, which would deadlock): the integration tests.
-pub(crate) async fn stop_locked(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
+pub(crate) async fn stop_locked(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut(String)) -> Result<()> {
+    let LabRef { dir, id, runtime } = lab;
     let _deploy = DeployGuard::new(id, Action::Stop);
     // Wherever it runs, through the runner (its attack box, a machine of it, goes with it): on
     // this machine, or on a server host or cloud account, destroyed there with the parameters it
@@ -253,7 +256,8 @@ pub async fn park_lab(dirs: &AppDirs, id: &str, runtime: Runtime, mode: Park, lo
 
 /// Brings parked lab `id`, declared `runtime`, back up as it was, its progress lines to `log`.
 pub async fn resume_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    resume(dirs, &lab_dir(dirs, id)?, id, runtime, log).await
+    let dir = lab_dir(dirs, id)?;
+    resume(dirs, LabRef { dir: &dir, id, runtime }, log).await
 }
 
 /// Runs the provisioning of lab `id`, declared `runtime`, again in place: of `machine` alone when
@@ -289,7 +293,7 @@ pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_first: imp
     let dir = lab_dir(dirs, id)?;
     let _stopping = DeployGuard::new(id, Action::Stop);
     end_first.await;
-    stop(dirs, &dir, id, runtime, log).await
+    stop(dirs, LabRef { dir: &dir, id, runtime }, log).await
 }
 
 #[cfg(test)]

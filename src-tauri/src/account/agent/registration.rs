@@ -16,10 +16,9 @@ use crate::runtime::server;
 
 /// Upserts this machine as the player's launcher agent and returns the server agent id.
 async fn register(dirs: &AppDirs) -> Result<String> {
-    let data = api::graphql(
+    let data = api::graphql_signed_in(
         "mutation ($i: ID!, $n: String!, $c: [String!]!, $a: String, $t: [LaunchTargetInput!], $v: String, $o: String) { registerLauncher(installId: $i, name: $n, capabilities: $c, arch: $a, targets: $t, version: $v, os: $o) { id } }",
         json!({ "i": install_id(dirs)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(dirs)?, "v": app_version(), "o": os_label() }),
-        true,
     )
     .await?;
     data["registerLauncher"]["id"].as_str().map(String::from).ok_or_else(|| Error::Invalid("registerLauncher returned no id".into()))
@@ -28,10 +27,9 @@ async fn register(dirs: &AppDirs) -> Result<String> {
 /// Keep-alive, re-reporting the targets so hosts added since registering show on the website, and
 /// the app version and OS, so an update installed since registering shows too.
 async fn heartbeat(dirs: &AppDirs, agent_id: &str) -> Result<()> {
-    api::graphql(
+    api::graphql_signed_in(
         "mutation ($id: ID!, $t: [LaunchTargetInput!], $v: String, $o: String) { launcherHeartbeat(agentId: $id, targets: $t, version: $v, os: $o) { id } }",
         json!({ "id": agent_id, "t": server::launch_targets(dirs)?, "v": app_version(), "o": os_label() }),
-        true,
     )
     .await
     .map(|_| ())

@@ -245,14 +245,24 @@ pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result
 pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>, workers: bool) -> Result<u64> {
     // A lab operation running may still use the plugins its `init` linked: they stay then.
     let busy = !crate::runtime::busy_labs().is_empty() || workers;
-    clean(&owned::path(&dirs)?, &extra_images, vagrant_home().as_deref(), !busy).await
+    let plugins = if busy { PluginCache::Keep } else { PluginCache::Clear };
+    clean(&owned::path(&dirs)?, &extra_images, vagrant_home().as_deref(), plugins).await
+}
+
+/// Whether a clean-up clears the plugin cache too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PluginCache {
+    /// Cleared (unless an `init` holds it).
+    Clear,
+    /// Kept: a lab operation running may still use the plugins its `init` linked.
+    Keep,
 }
 
 /// Removes the app's downloads recorded in `store` (and the attack box's of `extra_images`):
 /// each image reference it pulled (untagged, so an image the player tagged too stays), each box
-/// version for its provider (never `--all`), and with `plugins` the plugin cache (unless an `init`
-/// holds it). Ones still in use stay. Then forgets what is gone. Returns the bytes freed.
-async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugins: bool) -> Result<u64> {
+/// version for its provider (never `--all`), and the plugin cache as `plugins` says (unless an
+/// `init` holds it). Ones still in use stay. Then forgets what is gone. Returns the bytes freed.
+async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugins: PluginCache) -> Result<u64> {
     let cache = plugin_cache(store);
     let before = Present::find(&owned::load(store)?, extra_images, home, &cache).await;
     for image in &before.images {
@@ -262,7 +272,7 @@ async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugi
         // No --force: Vagrant refuses to remove a box a VM still uses.
         stayed(&box_label(b), run("vagrant", &["box", "remove", &b.name, "--provider", &b.provider, "--box-version", &b.version], None).await);
     }
-    if plugins && cache.is_dir() {
+    if plugins == PluginCache::Clear && cache.is_dir() {
         crate::runtime::clear_plugin_cache(&cache);
     }
     let after = Present::find(&owned::load(store)?, extra_images, home, &cache).await;
@@ -451,7 +461,7 @@ mod tests {
             "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\n",
         );
         let extra = ["cyberctf/attack-box:latest".to_string(), "kalilinux/kali-rolling".into()];
-        clean(&store, &extra, Some(&home), true).await.unwrap();
+        clean(&store, &extra, Some(&home), PluginCache::Clear).await.unwrap();
         let calls = tools.calls();
         assert!(
             calls.contains(&"docker image rm nginx:1.27".to_string()) && calls.contains(&"docker image rm cyberctf/attack-box:latest".to_string()),
@@ -472,7 +482,7 @@ mod tests {
         drop(tools);
         // Docker down and Vagrant gone: nothing can be told, so nothing is forgotten.
         let _down = Tools::rules(&[("docker", crate::platform::exec::fake::fail("Cannot connect to the Docker daemon")), ("vagrant", None)]);
-        clean(&store, &[], Some(&home), true).await.unwrap();
+        clean(&store, &[], Some(&home), PluginCache::Clear).await.unwrap();
         assert_eq!(owned::load(&store).unwrap(), owned, "the record survives a clean-up the tools couldn't answer");
     }
 
@@ -501,7 +511,7 @@ mod tests {
             ("image ls", crate::platform::exec::fake::ok("sha256:nginx\n")),
         ]);
         crate::testing::logs::take_warnings();
-        clean(&store, &[], Some(&home), false).await.unwrap();
+        clean(&store, &[], Some(&home), PluginCache::Keep).await.unwrap();
         let logged = crate::testing::logs::take_warnings();
         assert!(logged.iter().any(|w| w.starts_with("Storage's clean-up kept nginx:1.27: ") && w.contains("container 1a2b is using it")), "{logged:?}");
         assert!(
@@ -526,8 +536,8 @@ mod tests {
         // A deploy worker running: they stay. (Not running: `clean` itself, the in-process "is a
         // lab operation running" is process-wide, and other tests run lab operations meanwhile.)
         assert_eq!(machine_storage_clean(t.dirs(), Vec::new(), true).await.unwrap(), 0);
-        assert_eq!(clean(&store, &[], None, false).await.unwrap(), 0);
-        assert_eq!(clean(&store, &[], None, true).await.unwrap(), 2048);
+        assert_eq!(clean(&store, &[], None, PluginCache::Keep).await.unwrap(), 0);
+        assert_eq!(clean(&store, &[], None, PluginCache::Clear).await.unwrap(), 2048);
         assert!(machine_storage(t.dirs(), Vec::new()).await.unwrap().plugins.is_empty());
     }
 
@@ -564,10 +574,10 @@ mod tests {
         let (mine, apps) = ("cyberctf-e2e-player:1", "cyberctf-e2e-app:1");
         let store = std::env::temp_dir().join(format!("cyberctf-e2e-store-{}", rand::random::<u32>())).join("storage.json");
         build_throwaway(mine, "player").await;
-        let before = owned::Before::take(true, false).await;
+        let before = owned::Before::take(crate::runtime::Downloads { images: true, boxes: false }).await;
         build_throwaway(apps, "app").await;
         owned::claim(&store, &before, &[apps.to_string(), mine.to_string()], &[]).await;
-        let freed = clean(&store, &[], None, true).await.unwrap();
+        let freed = clean(&store, &[], None, PluginCache::Clear).await.unwrap();
         let exists = |tag: &'static str| async move { crate::platform::exec::run("docker", &["image", "inspect", tag], None).await.is_ok() };
         let (mine_left, apps_left) = (exists(mine).await, exists(apps).await);
         let _ = crate::platform::exec::run("docker", &["image", "rm", mine], None).await;

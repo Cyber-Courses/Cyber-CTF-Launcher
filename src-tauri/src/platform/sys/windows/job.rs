@@ -26,19 +26,17 @@ impl Job {
                 return None;
             }
             let job = Job(job);
-            if !job.set_kill_on_close(true) || AssignProcessToJobObject(job.0, process) == 0 {
+            if !job.set_limit_flags(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE) || AssignProcessToJobObject(job.0, process) == 0 {
                 return None;
             }
             Some(job)
         }
     }
 
-    fn set_kill_on_close(&self, on: bool) -> bool {
+    /// Sets the job's limits to `flags` (none: 0); whether Windows took them.
+    fn set_limit_flags(&self, flags: u32) -> bool {
         let info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
-            BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION {
-                LimitFlags: if on { JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE } else { 0 },
-                ..JOBOBJECT_BASIC_LIMIT_INFORMATION::default()
-            },
+            BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION { LimitFlags: flags, ..JOBOBJECT_BASIC_LIMIT_INFORMATION::default() },
             ..JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default()
         };
         let Ok(size) = u32::try_from(std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()) else { return false };
@@ -56,7 +54,7 @@ impl Job {
 
     /// The tool is done: closing the job no longer ends what it left running.
     pub fn release(&self) {
-        self.set_kill_on_close(false);
+        self.set_limit_flags(0);
     }
 }
 

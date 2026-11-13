@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::ssh::CommandLine;
 use serde_json::json;
 
 /// `json`, a list of what a path answers, read.
@@ -227,10 +228,10 @@ fn authorizing_the_key_signs_in_by_password_once() {
 /// password host behind an internal bridge couldn't launch from Windows.
 #[test]
 fn the_askpass_helper_is_a_cmd_on_windows_and_sh_elsewhere() {
-    let (name, script) = askpass_script(true);
+    let (name, script) = askpass_script(CommandLine::Windows);
     assert_eq!(name, "askpass.cmd");
     assert!(script.starts_with("@echo off\r\n") && script.contains("EnableDelayedExpansion") && script.contains("echo(!CYBERCTF_SSH_PASSWORD!"));
-    let (name, script) = askpass_script(false);
+    let (name, script) = askpass_script(CommandLine::Sh);
     assert_eq!(name, "askpass.sh");
     assert!(script.starts_with("#!/bin/sh\n"));
 }
@@ -340,7 +341,7 @@ async fn the_sdn_check_writes_its_askpass_in_the_given_apps_folder_only() {
         std::fs::create_dir_all(key.parent().unwrap()).unwrap();
         sdn_problem(&host("10.0.0.50", None), "pw", &key).await;
     }
-    let askpass = askpass_script(cfg!(windows)).0;
+    let askpass = askpass_script(CommandLine::HERE).0;
     for app in [&first, &second] {
         assert!(app.data().join("ssh").join(askpass).is_file(), "{}", app.data().display());
     }

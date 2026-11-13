@@ -77,17 +77,34 @@ pub fn ssh_config_path(path: &str) -> String {
 }
 
 /// The `-o` values every launcher SSH uses: accept a new host's key once, pinned in the
-/// launcher's own `known_hosts` (never the player's ~/.ssh), quiet. `batch` adds no prompts and
-/// a short connect timeout, and keepalives so a host that stops answering mid-command (a VM
-/// that froze, a dropped network) ends the command in under a minute instead of hanging it for
-/// hours. `known_hosts` is the plain path; it is escaped for ssh here.
-pub fn options(batch: bool, known_hosts: &str) -> Vec<String> {
-    let mut opts: Vec<String> = Vec::new();
-    if batch {
-        opts.extend(["BatchMode=yes".into(), "ConnectTimeout=10".into(), "ServerAliveInterval=15".into(), "ServerAliveCountMax=3".into()]);
-    }
-    opts.extend(["StrictHostKeyChecking=accept-new".into(), format!("UserKnownHostsFile={}", ssh_config_path(known_hosts)), "LogLevel=ERROR".into()]);
+/// launcher's own `known_hosts` (never the player's ~/.ssh), quiet. `known_hosts` is the plain
+/// path; it is escaped for ssh here.
+pub fn options(known_hosts: &str) -> Vec<String> {
+    vec!["StrictHostKeyChecking=accept-new".into(), format!("UserKnownHostsFile={}", ssh_config_path(known_hosts)), "LogLevel=ERROR".into()]
+}
+
+/// [`options`] for an SSH that runs unattended: no prompts and a short connect timeout, and
+/// keepalives so a host that stops answering mid-command (a VM that froze, a dropped network)
+/// ends the command in under a minute instead of hanging it for hours.
+pub fn batch_options(known_hosts: &str) -> Vec<String> {
+    let mut opts: Vec<String> = vec!["BatchMode=yes".into(), "ConnectTimeout=10".into(), "ServerAliveInterval=15".into(), "ServerAliveCountMax=3".into()];
+    opts.extend(options(known_hosts));
     opts
+}
+
+/// How the ssh on this computer runs a `ProxyCommand` or an askpass helper: through `sh` on unix,
+/// as a plain Windows command line (or a `.cmd`) on Windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommandLine {
+    /// `sh -c`'s rules.
+    Sh,
+    /// The C runtime's rules, as Windows' OpenSSH starts a command.
+    Windows,
+}
+
+impl CommandLine {
+    /// This computer's.
+    pub(crate) const HERE: CommandLine = if cfg!(windows) { CommandLine::Windows } else { CommandLine::Sh };
 }
 
 /// Whether `s` is a word no command line needs to quote.
@@ -99,11 +116,11 @@ fn plain_word(s: &str) -> bool {
 /// starts it as a plain Windows command line, where a single quote is a plain character (the
 /// key's path then arrived wrapped in quotes and ssh couldn't open it). There a word is quoted
 /// the way the C runtime splits a command line back ([`windows_quote`]).
-fn proxy_word(s: &str, windows: bool) -> String {
-    match (windows, plain_word(s)) {
+fn proxy_word(s: &str, line: CommandLine) -> String {
+    match (line, plain_word(s)) {
         (_, true) => s.to_string(),
-        (true, false) => windows_quote(s),
-        (false, false) => sh_quote(s),
+        (CommandLine::Windows, false) => windows_quote(s),
+        (CommandLine::Sh, false) => sh_quote(s),
     }
 }
 
@@ -126,9 +143,9 @@ fn windows_quote(s: &str) -> String {
     out
 }
 
-/// `options` as `-o …` words for a command line, each quoted by `quote`.
-fn quoted_options(batch: bool, known_hosts: &Path, quote: impl Fn(&str) -> String) -> String {
-    options(batch, &known_hosts.to_string_lossy()).iter().map(|o| format!("-o {}", quote(o))).collect::<Vec<_>>().join(" ")
+/// `batch_options` as `-o …` words for a command line, each quoted by `quote`.
+fn quoted_options(known_hosts: &Path, quote: impl Fn(&str) -> String) -> String {
+    batch_options(&known_hosts.to_string_lossy()).iter().map(|o| format!("-o {}", quote(o))).collect::<Vec<_>>().join(" ")
 }
 
 impl Target {
@@ -147,19 +164,19 @@ impl Target {
     /// `-o ProxyCommand=…` through the jump host, with the same key and `known_hosts`, quoted for
     /// this OS's ssh.
     fn proxy_option(&self, known_hosts: &Path) -> Result<Option<String>> {
-        self.proxy_command(known_hosts, cfg!(windows))
+        self.proxy_command(known_hosts, CommandLine::HERE)
     }
 
-    /// [`Target::proxy_option`] for Windows' ssh (`windows`) or a unix one.
-    fn proxy_command(&self, known_hosts: &Path, windows: bool) -> Result<Option<String>> {
+    /// [`Target::proxy_option`] for an ssh that runs it as `line`.
+    fn proxy_command(&self, known_hosts: &Path, line: CommandLine) -> Result<Option<String>> {
         let Some(jump) = &self.jump else { return Ok(None) };
         let (user, host) = jump.split_once('@').ok_or_else(|| Error::Invalid("unexpected jump host".into()))?;
         if !safe_token(user) || !safe_token(host) {
             return Err(Error::Invalid("unexpected jump host".into()));
         }
         // ssh expands `%` tokens in a ProxyCommand before its shell runs it: only `%h:%p` is ours.
-        let quote = |s: &str| proxy_word(s, windows);
-        let inner = format!("ssh -i {} {}", quote(&self.identity.to_string_lossy()), quoted_options(true, known_hosts, quote)).replace('%', "%%");
+        let quote = |s: &str| proxy_word(s, line);
+        let inner = format!("ssh -i {} {}", quote(&self.identity.to_string_lossy()), quoted_options(known_hosts, quote)).replace('%', "%%");
         Ok(Some(format!("ProxyCommand={inner} -W %h:%p {jump}")))
     }
 
@@ -175,7 +192,7 @@ impl Target {
     fn exec_args(&self, known_hosts: &Path, command: &str) -> Result<Vec<String>> {
         self.check_endpoint()?;
         let mut args: Vec<String> = vec!["-i".into(), self.identity.to_string_lossy().to_string(), "-p".into(), self.port.to_string()];
-        for o in options(true, &known_hosts.to_string_lossy()).into_iter().chain(self.proxy_option(known_hosts)?) {
+        for o in batch_options(&known_hosts.to_string_lossy()).into_iter().chain(self.proxy_option(known_hosts)?) {
             args.extend(["-o".into(), o]);
         }
         args.extend([format!("{}@{}", self.user, self.host), command.to_string()]);
@@ -228,24 +245,24 @@ mod tests {
         let key = PathBuf::from(r"C:\Users\Frédéric O'Brien\AppData\Roaming\org.cyberctf.desktop\ssh\id_ed25519");
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", key.clone()) };
         let kh = Path::new(r"C:\Users\Frédéric O'Brien\kh");
-        let proxy = t.proxy_command(kh, true).unwrap().unwrap();
+        let proxy = t.proxy_command(kh, CommandLine::Windows).unwrap().unwrap();
         assert!(proxy.starts_with(&format!("ProxyCommand=ssh -i \"{}\" -o BatchMode=yes ", key.display())), "{proxy}");
         assert!(proxy.contains(r#"-o "UserKnownHostsFile=C:\\Users\\Frédéric\ O\'Brien\\kh""#), "{proxy}");
         assert!(proxy.ends_with(" -W %h:%p root@pve.lan"), "{proxy}");
         // Plain words stay bare, and unix keeps POSIX quoting.
         assert!(proxy.contains(" -o LogLevel=ERROR "));
-        assert!(t.proxy_command(kh, false).unwrap().unwrap().contains(r"-i 'C:\Users\Frédéric O'\''Brien\"));
-        assert_eq!(proxy_word("a b", true), "\"a b\"");
-        assert_eq!(proxy_word("a b", false), "'a b'");
-        assert_eq!(proxy_word("BatchMode=yes", true), "BatchMode=yes");
+        assert!(t.proxy_command(kh, CommandLine::Sh).unwrap().unwrap().contains(r"-i 'C:\Users\Frédéric O'\''Brien\"));
+        assert_eq!(proxy_word("a b", CommandLine::Windows), "\"a b\"");
+        assert_eq!(proxy_word("a b", CommandLine::Sh), "'a b'");
+        assert_eq!(proxy_word("BatchMode=yes", CommandLine::Windows), "BatchMode=yes");
     }
 
     #[test]
     fn options_add_batch_mode_only_when_asked() {
-        assert_eq!(options(false, "/kh"), ["StrictHostKeyChecking=accept-new", "UserKnownHostsFile=/kh", "LogLevel=ERROR"]);
-        assert_eq!(options(true, "/kh")[..2], ["BatchMode=yes", "ConnectTimeout=10"]);
+        assert_eq!(options("/kh"), ["StrictHostKeyChecking=accept-new", "UserKnownHostsFile=/kh", "LogLevel=ERROR"]);
+        assert_eq!(batch_options("/kh")[..2], ["BatchMode=yes", "ConnectTimeout=10"]);
         // A host that stops answering mid-command ends it within 45 s, not hours later.
-        assert_eq!(options(true, "/kh")[2..4], ["ServerAliveInterval=15", "ServerAliveCountMax=3"]);
+        assert_eq!(batch_options("/kh")[2..4], ["ServerAliveInterval=15", "ServerAliveCountMax=3"]);
     }
 
     #[test]
@@ -281,7 +298,7 @@ mod tests {
     #[test]
     fn known_hosts_paths_with_spaces_stay_one_file() {
         let kh = "/Users/a/Library/Application Support/org.cyberctf.desktop/ssh/known_hosts";
-        assert_eq!(options(false, kh)[1], r"UserKnownHostsFile=/Users/a/Library/Application\ Support/org.cyberctf.desktop/ssh/known_hosts");
+        assert_eq!(options(kh)[1], r"UserKnownHostsFile=/Users/a/Library/Application\ Support/org.cyberctf.desktop/ssh/known_hosts");
         assert_eq!(ssh_config_path(r"C:\Users\x y\50%\kh"), r"C:\\Users\\x\ y\\50%%\\kh");
         // The jump-host ProxyCommand carries the same escaped path (see jump_hosts_become_a_proxy_command).
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.0.0.5", "debian", "/k/id".into()) };

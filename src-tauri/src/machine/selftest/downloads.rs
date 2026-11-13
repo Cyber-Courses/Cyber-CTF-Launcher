@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
+use super::Arch;
 use super::docker::IMAGE;
 use super::vm::{box_provider, pick_box};
 use crate::error::Result;
@@ -47,10 +48,10 @@ pub(super) async fn ensure_image(env: &[(String, String)]) -> Result<bool> {
 
 /// Makes sure the test box is local. `on_line` sees download progress, including from a
 /// background download this call is waiting on. Returns whether it was already there.
-pub(super) async fn ensure_box(dir: &Path, p: Provider, bx: &'static str, arm: bool, mut on_line: impl FnMut(String)) -> Result<bool> {
+pub(super) async fn ensure_box(dir: &Path, p: Provider, bx: &'static str, arch: Arch, mut on_line: impl FnMut(String)) -> Result<bool> {
     let mut waited = false;
     loop {
-        if pick_box(p, arm).await == (bx, true) {
+        if pick_box(p, arch).await == (bx, true) {
             return Ok(true);
         }
         if let Some(_busy) = Busy::try_take(&VM_BOX_DOWNLOADING) {
@@ -127,7 +128,7 @@ mod tests {
         // "Downloading …" notice, reach on_line.
         let tools = Tools::rules(&[("box list", ok("")), ("box add", ok("Progress: 10%\nProgress: 100%"))]);
         let mut lines = Vec::new();
-        let was_there = ensure_box(&dir, Provider::Virtualbox, "bento/ubuntu-24.04", false, |l| lines.push(l)).await.unwrap();
+        let was_there = ensure_box(&dir, Provider::Virtualbox, "bento/ubuntu-24.04", Arch::Amd64, |l| lines.push(l)).await.unwrap();
         assert!(!was_there, "it had to be downloaded");
         assert!(tools.called("box add bento/ubuntu-24.04 --provider virtualbox"), "{:?}", tools.calls());
         assert!(lines.iter().any(|l| l.contains("Downloading bento/ubuntu-24.04 for")), "the notice: {lines:?}");

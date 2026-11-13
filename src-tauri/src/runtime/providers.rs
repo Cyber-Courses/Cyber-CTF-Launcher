@@ -492,6 +492,12 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &Plugi
             None
         },
     };
+    Some(status_of(provider, vagrant_installed, detection))
+}
+
+/// `provider`'s status from what was found of it (`detection`), given whether Vagrant is
+/// installed: what Vagrant still needs to drive it, and why it can't run labs yet, if it can't.
+fn status_of(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> ProviderStatus {
     let needs = needs(vagrant_installed, detection.plugin_installed, detection.utility);
     // No VirtualBox VM starts while KVM holds the CPU's virtualization (Linux), installed or not:
     // said first, as nothing the setup installs mends it. VBoxManage answers without VirtualBox's
@@ -500,21 +506,19 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &Plugi
         .then(holds_virtualization)
         .flatten()
         .or_else(|| unavailable_reason(provider, &needs, detection))
-        .or_else(|| (provider == Provider::Virtualbox && hypervisor == Some(true)).then(vbox_driver::problem).flatten());
-    let account_lacks = detection.account;
-
-    Some(ProviderStatus {
+        .or_else(|| (provider == Provider::Virtualbox && detection.hypervisor == Some(true)).then(vbox_driver::problem).flatten());
+    ProviderStatus {
         provider,
         remote: provider.is_remote(),
         available: reason.is_none(),
-        hypervisor,
-        plugin,
-        plugin_installed,
-        utility,
+        hypervisor: detection.hypervisor,
+        plugin: detection.plugin.map(str::to_owned),
+        plugin_installed: detection.plugin_installed,
+        utility: detection.utility,
         needs,
         reason,
-        account_lacks,
-    })
+        account_lacks: detection.account,
+    }
 }
 
 /// The Vagrant layer of `provider` (the plugin that drives it): the plugin it needs, the version

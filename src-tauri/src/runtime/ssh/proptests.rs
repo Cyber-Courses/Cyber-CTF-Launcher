@@ -188,7 +188,8 @@ proptest! {
 
     #[test]
     fn known_hosts_reaches_ssh_as_one_verbatim_path(known_hosts in any_path(), batch: bool) {
-        check_options(&options(batch, &known_hosts), batch, &known_hosts);
+        let opts = if batch { batch_options(&known_hosts) } else { options(&known_hosts) };
+        check_options(&opts, batch, &known_hosts);
     }
 
     #[test]
@@ -223,7 +224,8 @@ proptest! {
         // one through the C runtime's that Windows' ssh starts it with.
         let jump = format!("{}@{}", jump.0, jump.1);
         let t = Target { jump: Some(jump.clone()), ..Target::direct("10.0.0.5", "debian", identity.clone().into()) };
-        let proxy = t.proxy_command(Path::new(&known_hosts), windows).unwrap().unwrap();
+        let line = if windows { CommandLine::Windows } else { CommandLine::Sh };
+        let proxy = t.proxy_command(Path::new(&known_hosts), line).unwrap().unwrap();
         check_proxy(&proxy, windows, &identity, &known_hosts, &jump);
     }
 

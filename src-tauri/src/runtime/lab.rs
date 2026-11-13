@@ -163,11 +163,11 @@ pub struct Observer {
     pub publish: Option<u16>,
 }
 
-/// The observers of the lab in `dir` (as its instance), at their addresses: the container ones
-/// when the lab runs as containers (`docker`), else the ones the spec writes.
-pub fn tools(dir: &Path, docker: bool) -> Result<Vec<Observer>> {
+/// The observers of the lab in `dir` (as its instance), at their addresses in the `form` it runs
+/// as: the container ones for containers, else the ones the spec writes.
+pub fn tools(dir: &Path, form: super::Runtime) -> Result<Vec<Observer>> {
     let snapshot = isoloom_targets::resolved::resolve_with(&lab(dir)?, instance(dir)).map_err(|e| Error::Invalid(e.to_string()))?;
-    let key = if docker { "docker_addresses" } else { "addresses" };
+    let key = if form == super::Runtime::Docker { "docker_addresses" } else { "addresses" };
     Ok(snapshot["tools"]
         .as_object()
         .map(|tools| {
@@ -656,7 +656,7 @@ mod tests {
     #[test]
     fn observers_come_with_their_addresses() {
         let dir = lab(&format!("{SPEC}tools:\n  shell: {{}}\n"));
-        let found = tools(&dir, true).unwrap();
+        let found = tools(&dir, Runtime::Docker).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].name, "shell");
         // Isoloom's toolbox, pinned by its digest.
@@ -664,7 +664,7 @@ mod tests {
         assert!(image.starts_with("nicolaka/netshoot:") && image.contains("@sha256:"), "{image}");
         assert_eq!(found[0].addresses.len(), 1);
         assert_eq!(found[0].addresses[0].network, "lab");
-        assert!(tools(&dir, false).unwrap()[0].addresses[0].ip.starts_with("10.30.0."));
+        assert!(tools(&dir, Runtime::Vm).unwrap()[0].addresses[0].ip.starts_with("10.30.0."));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -228,7 +228,7 @@ pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<V
     let dir = lab_dir(&AppDirs::from(&app), &id)?;
     match local_runtime(&dir, runtime) {
         Runtime::Cloud => Ok(Vec::new()),
-        form => lab::tools(&dir, form == Runtime::Docker),
+        form => lab::tools(&dir, form),
     }
 }
 
