@@ -21,7 +21,23 @@ async fn register(dirs: &AppDirs) -> Result<String> {
         json!({ "i": install_id(dirs)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(dirs)?, "v": app_version(), "o": os_label() }),
     )
     .await?;
-    data["registerLauncher"]["id"].as_str().map(String::from).ok_or_else(|| Error::Invalid("registerLauncher returned no id".into()))
+    let registered: Registered = serde_json::from_value(data).map_err(|e| Error::Invalid(format!("registerLauncher returned no id: {e}")))?;
+    Ok(registered.register_launcher.id)
+}
+
+/// The data of the `registerLauncher` answer.
+#[derive(serde::Deserialize)]
+struct Registered {
+    /// The agent the server keeps for this machine.
+    #[serde(rename = "registerLauncher")]
+    register_launcher: Agent,
+}
+
+/// An agent as the server names it.
+#[derive(serde::Deserialize)]
+struct Agent {
+    /// Its id.
+    id: String,
 }
 
 /// Keep-alive, re-reporting the targets so hosts added since registering show on the website, and
