@@ -158,10 +158,10 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
-- Bundles Isoloom 2.1.9 and Isothrum 2.1.4 from crates.io, which write and read the run
-  manifest's version 1. Their changelogs list what changed; for the launcher: stopping a lab
-  removes the anonymous volumes an update's recreate inherited (Docker's data volumes, which
-  every start, update and stop left behind), a box for the ESXi provider is downloaded as the
+- Bundles Isoloom 2.1.9 and Isothrum 2.1.5 from crates.io, which write and read the run
+  manifest's version 1. Their changelogs list what changed; for the launcher: stopping or
+  updating a lab removes the anonymous volumes a recreate inherited or orphaned (Docker's data
+  volumes, which every start, update and stop left behind), a box for the ESXi provider is downloaded as the
   build vagrant-vmware-esxi boots, a VM lab's status gets more time on Hyper-V and VirtualBox,
   a container lab
   runs on the computer's own CPU architecture unless its spec pins one (a Linux Arm host ran
