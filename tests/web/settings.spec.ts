@@ -56,6 +56,6 @@ test.describe("settings", () => {
     await expect(shared).toHaveAttribute("aria-checked", "false");
     await shared.click();
     await expect(shared).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByText("/Users/florian/cyberctf-share")).toBeVisible();
+    await expect(page.getByText("/Users/ada/cyberctf-share")).toBeVisible();
   });
 });

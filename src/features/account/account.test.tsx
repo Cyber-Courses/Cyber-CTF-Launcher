@@ -41,7 +41,7 @@ async function startSignIn() {
 
 describe("initials", () => {
   it("takes the first letters of a name, else of the email", () => {
-    expect(initials("Florian Amette", null)).toBe("FA");
+    expect(initials("Ada Lovelace", null)).toBe("FA");
     expect(initials("florian", null)).toBe("FL");
     expect(initials(null, "player@example.com")).toBe("PL");
     expect(initials(null, null)).toBe("?");
