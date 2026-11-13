@@ -175,7 +175,7 @@ pub async fn end_workers(dirs: &AppDirs, id: &str) {
 /// caller falls back to running the job in this process).
 fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
     let _one_at_a_time = STARTING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if running(&AppDirs::from(app)).contains(&job.key()) {
+    if running(&AppDirs::from(app))?.contains(&job.key()) {
         return Err(Error::coded(Code::AlreadyInProgress));
     }
     // Nothing begins while the lab stops: between ending its workers and taking its lock, a
@@ -200,7 +200,7 @@ pub fn idle_files(dirs: &AppDirs, id: &str) -> Result<Vec<std::path::PathBuf>> {
     let _one_at_a_time = STARTING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let f = files::of(dirs, id)?;
     // `running` clears a stale pidfile: one still there is a live worker's, or one being started.
-    if running(dirs).iter().any(|k| k == id) || f.pid.exists() {
+    if running(dirs)?.iter().any(|k| k == id) || f.pid.exists() {
         return Err(Error::coded(Code::AlreadyInProgress));
     }
     Ok(f.all())

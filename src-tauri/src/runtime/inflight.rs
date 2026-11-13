@@ -91,6 +91,14 @@ fn in_flight() -> &'static Mutex<HashMap<String, (Action, usize)>> {
     IN_FLIGHT.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// The in-flight map, locked. A thread that panicked while holding it leaves it poisoned, yet
+/// every update to it is one statement that can't stop halfway, so it is still right: read
+/// through. Read as empty instead, it would say "nothing in flight" while an operation runs, and
+/// an update install would quit the process under it.
+fn locked() -> std::sync::MutexGuard<'static, HashMap<String, (Action, usize)>> {
+    in_flight().lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// The labs with an operation of any kind in flight in this process (a start, a resume, a
 /// provisioning run, a stop or a park), each once: what a quit would cut off. The one rule for "a
 /// lab operation is running here"; with the deploy workers' labs it is what an update install
@@ -101,7 +109,7 @@ pub fn busy_labs() -> Vec<String> {
 
 /// Every in-process operation right now: the lab and what it is doing.
 pub fn active_actions() -> Vec<(String, Action)> {
-    in_flight().lock().map(|m| m.iter().map(|(id, (a, _))| (id.clone(), *a)).collect()).unwrap_or_default()
+    locked().iter().map(|(id, (a, _))| (id.clone(), *a)).collect()
 }
 
 /// Whether lab `id` is being stopped in this process right now.
@@ -111,7 +119,7 @@ pub fn stopping(id: &str) -> bool {
 
 /// The labs whose operation in flight is one `wanted` takes.
 fn labs_with(wanted: impl Fn(Action) -> bool) -> Vec<String> {
-    in_flight().lock().map(|m| m.iter().filter(|(_, (a, _))| wanted(*a)).map(|(id, _)| id.clone()).collect()).unwrap_or_default()
+    locked().iter().filter(|(_, (a, _))| wanted(*a)).map(|(id, _)| id.clone()).collect()
 }
 
 /// Marks its lab as starting, stopping or parking for as long as it is alive (RAII), so the mark
@@ -120,7 +128,8 @@ pub(crate) struct DeployGuard(String);
 
 impl DeployGuard {
     pub(crate) fn new(id: &str, action: Action) -> Self {
-        if let Ok(mut m) = in_flight().lock() {
+        {
+            let mut m = locked();
             let e = m.entry(id.to_string()).or_insert((action, 0));
             // The latest operation names the state (a stop right after a start is "stopping"),
             // but a stop waiting for the lab stays the state: the start it waits for doesn't
@@ -136,7 +145,7 @@ impl DeployGuard {
 
 impl Drop for DeployGuard {
     fn drop(&mut self) {
-        let Ok(mut m) = in_flight().lock() else { return };
+        let mut m = locked();
         if let Some((_, c)) = m.get_mut(&self.0) {
             *c -= 1;
             if *c == 0 {
@@ -211,6 +220,21 @@ fn try_lock_lab_at(file: Option<&Path>, id: &str) -> Result<Option<LabLock>> {
 mod tests {
     use super::{Action, DeployGuard, active_actions, busy_labs, stopping, try_lock_lab_at};
     use crate::runtime::Park;
+
+    /// Regression: a thread that panicked holding the in-flight map poisoned it, and every
+    /// reader then read it as empty: "nothing in flight" while a lab started, which an update
+    /// install takes as leave to quit every process.
+    #[test]
+    fn a_poisoned_map_still_lists_the_operations_in_flight() {
+        let _starting = DeployGuard::new("poisoned-map-lab", Action::Launch);
+        let panicked = std::thread::spawn(|| {
+            let _held = super::in_flight().lock();
+            panic!("poisons the map");
+        })
+        .join();
+        assert!(panicked.is_err() && super::in_flight().is_poisoned());
+        assert!(busy_labs().contains(&"poisoned-map-lab".to_owned()));
+    }
 
     async fn lock_lab(id: &str) -> super::LabLock {
         super::lock_lab_at(None, id).await.unwrap()
