@@ -6,11 +6,21 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
+  release now ships `.rpm` packages beside the `.deb` (#322).
+
 ### Changed
 
 - **A release ships what built.** One platform's failed build, a missing signing secret or a
   Store hiccup no longer stop the whole release: the release notes name the platform missing,
   what lacks a secret ships unsigned (as 1.8.9 did), and the Store submission stays its own step.
+
+- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
+  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
+  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
+  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
 
 ### Fixed
 
@@ -31,42 +41,47 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 - **QEMU installed by winget reads as installed.** Its installer adds nothing to PATH and the
   launcher didn't look in its folder, so the setup offered to install it again every pass.
 
-### Changed
-
-- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
-  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
-  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
-  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
-### Added
-
-- **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
-  release now ships `.rpm` packages beside the `.deb` (#322).
-### Fixed
-
 - **A proxy's credentials no longer show to other local users during a guided install.** On Linux
   the proxy variables (`https_proxy=http://user:password@host`) went on pkexec's command line,
   which any account on the computer could read while the password prompt was up. They are now
   handed over in an owner-only file in a private folder, removed with the step, which the install
   script reads as data.
-### Fixed
 
 - **A shared folder whose name has an accent written as a combining mark no longer blocks the
   attack box.** Its name went into the box's spec with an escape YAML refuses, so a folder named
   "Café" in the decomposed form macOS file APIs give made adding the attack box fail every time
   ("unknown escape"). The folder, the network names and the image are now quoted as YAML reads
   them.
-### Fixed
 
 - **Windows: the attack box's terminal opens under a profile whose name has `&`.** With an account
   named `Tom&Jerry`, Open shell split its script's path at the `&` and showed "not recognized".
   The script's path stays quoted for both cmd.exe that read it, and the shell's command line
   quotes any word holding a character cmd.exe reads as its own (`&|<>^()`).
-### Fixed
 
 - **A deploy worker whose pidfile can't be written no longer runs beside the app's own deploy.**
   When the worker started but its pidfile couldn't be written (a full disk), the app fell back to
   deploying in-process while the worker went on too, so both deployed the same lab. The worker is
   now ended, and waited for, before the app takes the job over.
+
+- **A failed libvirt or QEMU install fails its setup step.** On Debian, Ubuntu and Fedora, the
+  install script went on to the group step after `apt-get` or `dnf` failed (apt's lock held, the
+  network down), so the step read as done and the next machine check showed the tool missing with
+  no error. The scripts now stop at the first failing command, and wait for apt's lock as the
+  other installs do.
+
+- **VirtualBox installs on a Linux that isn't in English.** The install read apt's package
+  candidates by their English label, which apt translates: under a French locale the kernel
+  headers read as missing from the package sources and Ubuntu's own VirtualBox was missed. apt is
+  now asked in English.
+
+- **The deploy steps show the step that is actually running.** In a lab whose Docker runs in a
+  VM, "Get images" stayed running under the machine's later lines and under a green Ready, and
+  adding the attack box turned it running again. The running step is now the one holding the
+  latest line, and what runs after Ready (adding the attack box) is a step of its own below it.
+
+- **Destructive confirmations and warnings use the app's own dialog.** Removing a lab and seven
+  other confirmations opened the system's dialog, which looked foreign to the rest of the app;
+  they now open the app's dialog, and a warning has a single OK.
 
 ## [1.9.0] — 2026-11-13
 
