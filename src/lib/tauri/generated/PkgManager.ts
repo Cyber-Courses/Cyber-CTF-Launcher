@@ -5,7 +5,7 @@
  */
 export type PkgManager = { 
 /**
- * Its name: `Homebrew`, `winget` or `apt`.
+ * Its name: `Homebrew`, `winget`, `apt` or `dnf`.
  */
 name: string, 
 /**
