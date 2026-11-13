@@ -163,6 +163,9 @@ struct Out {
     root: PathBuf,
     /// The items that failed, for the test's verdict.
     failed: Vec<String>,
+    /// How many items this pass installed: none, and the entry's folder is dropped at the end
+    /// ([`end_of_pass`]).
+    installed: usize,
     /// How many logs and reports were written, for their order in the folder.
     written: usize,
 }
@@ -177,6 +180,7 @@ impl Out {
             logs: knobs.logs.clone(),
             root: setup_root(),
             failed: Vec::new(),
+            installed: 0,
             written: 0,
         }
     }
@@ -211,6 +215,9 @@ impl Out {
             if let Err(e) = appended {
                 panic!("appending to {}: {e}", report.display());
             }
+        }
+        if status == Status::Installed {
+            self.installed += 1;
         }
         if status == Status::Failed {
             self.failed.push(format!("{item}: {note}"));
@@ -257,6 +264,17 @@ impl Log {
 /// (`dirs`); kept from pass to pass, and named among what an installed item leaves.
 fn setup_root() -> PathBuf {
     std::env::temp_dir().join("cyberctf-guided-setup")
+}
+
+/// The end of a pass that doesn't stop at a restart: the entry's folder is dropped when the pass
+/// installed nothing, since only an installed item's record names it among what is left on the
+/// machine (the leftover audit reported it after every check-only or nothing-to-install pass:
+/// fedora45-bare's setup shards, where the guided setup installs nothing, 2026-11-12). A pass
+/// that installed something keeps it: its marks are the next pass's.
+fn end_of_pass(installed: usize, root: &Path) {
+    if installed == 0 {
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
 
 /// The app's folders for the pass: kept from pass to pass (the WSL and Hyper-V marks, what the
@@ -582,6 +600,7 @@ async fn the_guided_setup_readies_this_machine() {
     report_hypervisors(&mut out, &first, &knobs.wanted);
     if knobs.check_only {
         check_only(&mut out, &before, &first, &knobs);
+        end_of_pass(out.installed, &out.root);
         assert!(out.failed.is_empty(), "the setup can't ready this machine:\n{}", out.failed.join("\n"));
         return;
     }
@@ -631,6 +650,7 @@ async fn the_guided_setup_readies_this_machine() {
 
     let after = system::system_check(dirs.clone()).await;
     out.save_report("report-after", &after);
+    end_of_pass(out.installed, &out.root);
     assert!(out.failed.is_empty(), "the setup failed:\n{}", out.failed.join("\n"));
 }
 
@@ -669,6 +689,17 @@ mod tests {
         assert_eq!(out.record("vagrant", Status::Failed, 3, "exited with 1:\n\tE: no\r\n").reason, "failed: exited with 1:  E: no");
         assert_eq!(out.record("ready:docker", Status::Present, 0, "29.1").result, Verdict::Pass);
         assert_eq!(out.record("selftest:vm", Status::Skipped, 0, "no hypervisor is ready").result, Verdict::Skip);
+    }
+
+    #[test]
+    fn a_pass_that_installed_nothing_drops_the_entrys_folder_and_one_that_did_keeps_it() {
+        let root = std::env::temp_dir().join(format!("cyberctf-guided-setup-test-{}-{}", std::process::id(), rand::random::<u32>()));
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        end_of_pass(1, &root);
+        assert!(root.is_dir(), "an install's marks stay for the next pass");
+        end_of_pass(0, &root);
+        assert!(!root.exists(), "nothing installed: nothing of the entry's left");
+        end_of_pass(0, &root);
     }
 
     #[test]
