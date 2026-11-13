@@ -33,7 +33,7 @@ import { useCloudAccounts } from "@/features/servers/host-setup/use-cloud-accoun
 import { useRunLog } from "@/lib/use-run-log";
 import { testHost } from "@/features/servers/use-server-list";
 import { translate, useT } from "@/lib/i18n";
-import { describeError } from "@/lib/errors";
+import { useAction } from "@/lib/use-action";
 import { useStepper } from "@/lib/use-stepper";
 import { ignore } from "@/lib/failure";
 import { useToolInstallsOff } from "@/lib/use-managed";
@@ -154,34 +154,18 @@ function useConnect(
   onSaved: (h: ServerHost) => void,
   next: () => void,
 ) {
-  const [connecting, setConnecting] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
-  async function connect() {
+  const connect = useAction(async () => {
     if (!makesToken(payload)) {
       next();
       return;
     }
-    setConnecting(true);
-    setConnectError(null);
-    try {
-      const h = await serverSaveSshKey(payload);
-      setV((s) => ({ ...s, id: h.id, username: h.username, password: null }));
-      setMadeWith(h.sshKey ?? payload.sshKey ?? null);
-      onSaved(h);
-      next();
-    } catch (err) {
-      setConnectError(describeError(err));
-    } finally {
-      setConnecting(false);
-    }
-  }
-  return {
-    connecting,
-    connectError,
-    connect: () => {
-      if (!connecting) void connect();
-    },
-  };
+    const h = await serverSaveSshKey(payload);
+    setV((s) => ({ ...s, id: h.id, username: h.username, password: null }));
+    setMadeWith(h.sshKey ?? payload.sshKey ?? null);
+    onSaved(h);
+    next();
+  });
+  return { connecting: connect.running, connectError: connect.error, connect: connect.run };
 }
 
 /** The steps this setup takes, and where the player is among them. */
@@ -228,8 +212,6 @@ function useToolInstall(onRefresh: () => void) {
 /** Saving the host (`v`, as `savePayload` builds it: with an SSH key sign-in, through the node
  *  bootstrap), then moving to the Test step (`next`) and testing the saved host. */
 function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, next: () => void) {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<ServerHost | null>(null);
   const [test, setTest] = useState<ServerTest | "testing" | null>(null);
 
@@ -239,33 +221,24 @@ function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, ne
     setTest(await testHost(id));
   }
 
-  async function saveAndTest() {
-    setSaving(true);
-    setError(null);
-    try {
-      const h = await (makesToken(v) ? serverSaveSshKey(v) : serverSave(v));
-      setSaved(h);
-      onSaved(h);
-      next();
-      void runTest(h.id);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
-  }
+  // Guarded: a second click while the save is under way would save the host twice.
+  const save = useAction(async () => {
+    const h = await (makesToken(v) ? serverSaveSshKey(v) : serverSave(v));
+    setSaved(h);
+    onSaved(h);
+    next();
+    void runTest(h.id);
+  });
 
   return {
-    saving,
-    error,
+    saving: save.running,
+    error: save.error,
     saved,
     test,
     runTest: (id: string) => {
       void runTest(id);
     },
-    saveAndTest: () => {
-      void saveAndTest();
-    },
+    saveAndTest: save.run,
   };
 }
 

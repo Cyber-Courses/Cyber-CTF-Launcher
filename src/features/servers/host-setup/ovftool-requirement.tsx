@@ -9,6 +9,7 @@ import { PROVIDER_NAMES, PROVIDER_NAMES_ON, ovftoolPlace, type OvftoolLocation, 
 import { openExternal } from "@/lib/failure";
 import { pickFolder } from "@/lib/pickers";
 import { describeError } from "@/lib/errors";
+import { useAction } from "@/lib/use-action";
 import { useT, type T } from "@/lib/i18n";
 
 /** Broadcom's free downloads of each desktop hypervisor, which ships the OVF Tool. */
@@ -69,12 +70,13 @@ function usePlaceOvftool(onRefresh: () => void) {
       setBusy(false);
     }
   };
-  const choose = () => {
+  // Guarded from the click, the folder picker included: one placement at a time.
+  const placing = useAction(() =>
     place().catch((e: unknown) => {
       setNote({ text: describeError(e), ok: false });
-    });
-  };
-  return { busy, note, choose };
+    }),
+  );
+  return { busy, note, choose: placing.run };
 }
 
 /** VMware's OVF Tool: found (its version and where), or the ways to get it: the hypervisor that

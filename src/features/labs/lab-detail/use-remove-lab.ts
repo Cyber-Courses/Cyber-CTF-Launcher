@@ -11,6 +11,7 @@ import { warnInDialog } from "@/lib/confirm";
 import { ignore, tell } from "@/lib/failure";
 import { toast } from "@/lib/toast";
 import { useT, type T } from "@/lib/i18n";
+import { useAction } from "@/lib/use-action";
 
 // Removing a lab from this computer, from its page: the app's copy of it and what the app keeps
 // for it (the core's `lab_remove`), once the player confirmed it, never while it is up.
@@ -55,20 +56,22 @@ export function useRemoveLab(lab: Lab, changed: string, onRemoved: () => void) {
   const t = useT();
   const installed = useInstalled(lab, changed);
   const [removing, setRemoving] = useState(false);
-  const remove = async () => {
+  // One removal at a time, whoever starts it: started again while it runs, it asks and removes
+  // nothing more (the page's button is off by then, the hook doesn't rely on it).
+  const removal = useAction(async () => {
     if (!(await confirmRemoveLab(t, { title: lab.title, imported: !!lab.imported }))) return;
     setRemoving(true);
     try {
-      const removal = await labRemove(lab.id);
+      const removed = await labRemove(lab.id);
       forgetLastRun(lab.id);
       // Its row goes from the lists, its status reads as not installed.
       void (lab.imported ? refreshImported() : refreshStatus(lab, { fresh: true }));
-      await sayRemoved(t, lab, removal);
+      await sayRemoved(t, lab, removed);
       onRemoved();
     } catch (e) {
       tell(t("labs.uninstall.failed"))(e);
       setRemoving(false);
     }
-  };
-  return { installed: installed === true, removing, remove };
+  });
+  return { installed: installed === true, removing, remove: removal.run };
 }
