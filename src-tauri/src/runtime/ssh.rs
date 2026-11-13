@@ -12,6 +12,10 @@ use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::exec::run;
 
+/// The `known_hosts` every attack box shell once shared. Its keys of lab hosts long gone refused
+/// the shell to any new lab host at a recycled address: removed (nothing writes it any more).
+const SHARED_KNOWN_HOSTS: &str = "known_hosts";
+
 fn ssh_dir(dirs: &AppDirs) -> Result<PathBuf> {
     let dir = dirs.data()?.join("ssh");
     std::fs::create_dir_all(&dir)?;
@@ -206,10 +210,6 @@ impl Target {
 pub fn node_known_hosts(identity: &Path) -> PathBuf {
     identity.with_file_name("nodes_known_hosts")
 }
-
-/// The `known_hosts` every attack box shell once shared. Its keys of lab hosts long gone refused
-/// the shell to any new lab host at a recycled address: removed (nothing writes it any more).
-const SHARED_KNOWN_HOSTS: &str = "known_hosts";
 
 #[cfg(test)]
 mod tests {
