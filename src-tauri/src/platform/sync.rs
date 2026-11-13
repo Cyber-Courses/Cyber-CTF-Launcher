@@ -1,8 +1,7 @@
 //! Locks by key: one async lock per lab, per run folder or per run key, handed out by the key
 //! and shared by every holder of it, so two operations on one lab wait on each other and two
 //! labs never do. Written four times before (the in-flight registry, the regeneration lock, the
-//! status read's turn, the lab file locks): one type, one place to evict (Clean Code G5, ch.13,
-//! 2026-11-13).
+//! status read's turn, the lab file locks): one type, one place to evict.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};

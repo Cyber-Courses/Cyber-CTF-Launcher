@@ -76,7 +76,7 @@ pub(crate) fn windows_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBu
         dirs.push(pf.join("Docker").join("Docker").join("resources").join("bin"));
         // QEMU's installer (winget's SoftwareFreedomConservancy.QEMU) adds nothing to PATH
         // either: without this folder the tool read as absent right after its install, and the
-        // setup offered to install it again every pass (the review of 2026-11-13).
+        // setup offered to install it again every pass.
         dirs.push(pf.join("qemu"));
     }
     if let Some(pf86) = var("ProgramFiles(x86)").map(PathBuf::from) {
@@ -225,7 +225,7 @@ mod tests {
         assert!(has(r"C:\Program Files (x86)\VMware\VMware Workstation"), "{dirs:?}");
         // ovftool, inside Workstation in a folder of its own.
         assert!(has(r"C:\Program Files (x86)\VMware\VMware Workstation\OVFTool") && has(r"C:\Program Files\VMware\VMware Workstation\OVFTool"), "{dirs:?}");
-        // QEMU's winget install, which adds nothing to PATH (the review of 2026-11-13).
+        // QEMU's winget install, which adds nothing to PATH.
         assert!(has(r"C:\Program Files\qemu"), "{dirs:?}");
         // The installer's own answer comes first: a VirtualBox moved elsewhere wins.
         assert_eq!(dirs[0], PathBuf::from(r"D:\VBox\"));

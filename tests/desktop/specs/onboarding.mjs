@@ -26,8 +26,8 @@ try {
   // Not onboarded from the start: the wdio build seeds the storage before the page's scripts run
   // (launchApp's `storage`; readOnboarded() is `=== "1"`, so "0" reads as not onboarded), and no
   // reload: the seed script runs once per launch, keyed by a `__wdio_` mark, and a spec that
-  // cleared those keys and reloaded (this one, until 2026-11-12) had the seed run again with the
-  // default, onboarded, and never saw the Welcome step.
+  // cleared those keys and reloaded (as this one did) had the seed run again with the default,
+  // onboarded, and never saw the Welcome step.
   proc = await launchApp({ env: {}, storage: { "cyberctf.onboarded": "0" } });
   b = await connect();
   await forceVisible(b);
