@@ -5,7 +5,7 @@
 //! and checking the returned nonce. We bind loopback-only, require the token and a loopback
 //! `Host` (a DNS-rebinding page names its own host), echo an allowed Origin so only the site can
 //! read the response, and answer the nonce once: the token is spent by the first answer, and the
-//! server ends then, when the lab stops, or after [`PROBE_TTL`], whichever comes first.
+//! server ends then, when the lab stops, or after its time ([`SERVED`]), whichever comes first.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -47,9 +47,19 @@ fn origin_allowed_in(origin: &str, dev: bool) -> bool {
     ALLOWED_ORIGINS.contains(&origin) || (dev && is_loopback_origin(origin))
 }
 
-/// How long a connection gets to send its request, and to take the answer: a client that
-/// connects and stays silent must not hold a task (and a socket) for the life of the app.
-const IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(if cfg!(test) { 1 } else { 5 });
+/// How long a probe server waits, given by whoever starts one ([`serve`]'s are [`SERVED`]).
+#[derive(Debug, Clone, Copy)]
+struct Limits {
+    /// How long a connection gets to send its request, and to take the answer: a client that
+    /// connects and stays silent must not hold a task (and a socket) for the life of the app.
+    io: Duration,
+    /// How long the server waits for the website before it ends unused.
+    ttl: Duration,
+}
+
+/// The app's probe servers' limits: the website asks right after the lab is reported running,
+/// so the wait is generous.
+const SERVED: Limits = Limits { io: Duration::from_secs(5), ttl: Duration::from_secs(10 * 60) };
 
 /// Whether a request's `Host` names this server: `127.0.0.1:<port>` or `localhost:<port>`. A page
 /// reached by DNS rebinding sends its own host name, so it is refused even with a leaked token.
@@ -134,25 +144,21 @@ impl Probe {
     }
 }
 
-/// Answers one connection's request, each way within [`IO_TIMEOUT`].
-async fn answer(socket: &mut tokio::net::TcpStream, probe: &Probe) {
+/// Answers one connection's request, each way within `io`.
+async fn answer(socket: &mut tokio::net::TcpStream, probe: &Probe, io: Duration) {
     let mut buf = [0u8; 2048];
-    let Ok(Ok(n)) = tokio::time::timeout(IO_TIMEOUT, socket.read(&mut buf)).await else { return };
+    let Ok(Ok(n)) = tokio::time::timeout(io, socket.read(&mut buf)).await else { return };
     let req = String::from_utf8_lossy(&buf[..n]);
     let resp = probe.reply_to(&req);
-    let _ = tokio::time::timeout(IO_TIMEOUT, async {
+    let _ = tokio::time::timeout(io, async {
         let _ = socket.write_all(resp.as_bytes()).await;
         let _ = socket.shutdown().await;
     })
     .await;
 }
 
-/// How long a probe server waits for the website: it asks right after the lab is reported
-/// running, so this is generous.
-const PROBE_TTL: Duration = Duration::from_secs(if cfg!(test) { 2 } else { 10 * 60 });
-
-/// Accepts connections for `probe` until its token is spent or [`PROBE_TTL`] passes.
-async fn accept_until_spent(listener: TcpListener, probe: Arc<Probe>, ttl: Duration) {
+/// Accepts connections for `probe` until its token is spent or `limits`' time passes.
+async fn accept_until_spent(listener: TcpListener, probe: Arc<Probe>, limits: Limits) {
     let accepting = async {
         loop {
             let Ok((mut socket, _)) = listener.accept().await else {
@@ -161,13 +167,13 @@ async fn accept_until_spent(listener: TcpListener, probe: Arc<Probe>, ttl: Durat
                 continue;
             };
             let probe = probe.clone();
-            tokio::spawn(async move { answer(&mut socket, &probe).await });
+            tokio::spawn(async move { answer(&mut socket, &probe, limits.io).await });
         }
     };
     tokio::select! {
         () = accepting => {}
         () = probe.spent.notified() => {}
-        () = tokio::time::sleep(ttl) => {}
+        () = tokio::time::sleep(limits.ttl) => {}
     }
 }
 
@@ -185,7 +191,7 @@ pub async fn serve(lab: &str, token: String, nonce: String) -> Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0").await.map_err(Error::Io)?;
     let port = listener.local_addr().map_err(Error::Io)?.port();
     let probe = Arc::new(Probe::new(token, nonce, port));
-    let handle = tokio::spawn(accept_until_spent(listener, probe, PROBE_TTL));
+    let handle = tokio::spawn(accept_until_spent(listener, probe, SERVED));
     if let Some((_, old)) = current().replace((lab.to_string(), handle)) {
         old.abort();
     }
@@ -316,10 +322,11 @@ mod tests {
         let mut s = tokio::net::TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
         let (mut server_side, _) = listener.accept().await.unwrap();
         let probe = Probe::new("tok".into(), "n".into(), PORT);
-        let served = tokio::spawn(async move { super::answer(&mut server_side, &probe).await });
+        let io = std::time::Duration::from_millis(200);
+        let served = tokio::spawn(async move { super::answer(&mut server_side, &probe, io).await });
         let mut out = Vec::new();
         // Nothing sent: the server closes on its own, without an answer.
-        let read = tokio::time::timeout(super::IO_TIMEOUT * 5, s.read_to_end(&mut out)).await;
+        let read = tokio::time::timeout(io * 5, s.read_to_end(&mut out)).await;
         assert!(read.is_ok(), "still open after the timeout");
         assert_eq!(out, b"");
         served.await.unwrap();
@@ -414,9 +421,12 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let probe = std::sync::Arc::new(Probe::new("tok".into(), "n".into(), port));
-        tokio::time::timeout(std::time::Duration::from_secs(5), super::accept_until_spent(listener, probe, std::time::Duration::from_millis(50)))
-            .await
-            .expect("the server outlived its time");
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            super::accept_until_spent(listener, probe, super::Limits { ttl: std::time::Duration::from_millis(50), ..super::SERVED }),
+        )
+        .await
+        .expect("the server outlived its time");
         assert_eq!(health(port, "tok").await, "");
     }
 }
