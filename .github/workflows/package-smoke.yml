@@ -10,6 +10,9 @@ on:
   pull_request:
     paths:
       - "src-tauri/**"
+      # The installer's own files: its NSIS hooks and the scripts they carry (the hook's path fix
+      # of 2026-11-13 merged without this smoke, which the filter hadn't run).
+      - "packaging/**"
       - "src/**"
       - "public/**"
       - "package.json"
