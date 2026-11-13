@@ -28,6 +28,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 use super::ws;
 use crate::error::{Error, Result};
+use crate::platform::loopback_http::{ct_eq, header};
 
 /// Where the bridge relays to.
 #[derive(Clone)]
@@ -68,20 +69,6 @@ pub(crate) const DEV_SERVER_ORIGIN: &str = "http://127.0.0.1:3206";
 /// the Next dev server.
 fn origin_allowed_in(origin: &str, dev: bool) -> bool {
     matches!(origin, "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost") || (dev && origin == DEV_SERVER_ORIGIN)
-}
-
-/// Constant-time string equality, so the token check doesn't leak through timing.
-fn ct_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-/// A request header's value.
-fn header<'a>(req: &'a str, name: &str) -> Option<&'a str> {
-    req.lines().skip(1).find_map(|l| {
-        let (k, v) = l.split_once(':')?;
-        k.trim().eq_ignore_ascii_case(name).then(|| v.trim())
-    })
 }
 
 /// Why the bridge refuses a request.

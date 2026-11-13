@@ -17,6 +17,7 @@ pub mod exec;
 pub mod fs;
 pub mod http;
 pub mod keychain;
+pub mod loopback_http;
 #[cfg(any(windows, test))]
 pub mod msix_data;
 pub mod policy;

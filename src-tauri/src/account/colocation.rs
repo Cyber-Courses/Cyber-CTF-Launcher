@@ -15,6 +15,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Notify;
 
 use crate::error::{Error, Result};
+use crate::platform::loopback_http::{ct_eq, header};
 
 /// Site origins allowed to read the probe. Loopback origins are allowed too, in dev builds only
 /// (the site's dev server): in a release any local web page could otherwise read it.
@@ -49,22 +50,6 @@ fn origin_allowed_in(origin: &str, dev: bool) -> bool {
 /// How long a connection gets to send its request, and to take the answer: a client that
 /// connects and stays silent must not hold a task (and a socket) for the life of the app.
 const IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(if cfg!(test) { 1 } else { 5 });
-
-/// Constant-time string equality, so the token check doesn't leak via response timing.
-fn ct_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-fn header<'a>(req: &'a str, name: &str) -> Option<&'a str> {
-    req.lines().find_map(|l| {
-        let (k, v) = l.split_once(':')?;
-        k.trim().eq_ignore_ascii_case(name).then(|| v.trim())
-    })
-}
 
 /// Whether a request's `Host` names this server: `127.0.0.1:<port>` or `localhost:<port>`. A page
 /// reached by DNS rebinding sends its own host name, so it is refused even with a leaked token.
