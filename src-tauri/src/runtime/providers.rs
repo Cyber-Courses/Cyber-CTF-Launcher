@@ -4,11 +4,30 @@
 //! runner (Proxmox and the clouds' `cloud-docker`, `cloud-vm` and `cloud-services` through
 //! Terraform, ESXi through Vagrant), and they are never detected here.
 
+mod kvm;
+mod unavailable;
+mod vagrant_needs;
+mod vbox_driver;
+mod versions;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::platform::exec::{run_read, timed_out};
 use crate::platform::remembered::remembered;
+
+pub(crate) use kvm::kvm_problem;
+#[cfg(test)]
+pub(crate) use kvm::{assume_devices_ready, kvm_group};
+use kvm::{holds_virtualization, new_login_group};
+pub use kvm::{login_groups, uses_kvm};
+pub use unavailable::Unavailable;
+#[cfg(test)]
+use vagrant_needs::fake_utility;
+pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
+#[cfg(test)]
+use versions::version_at_least;
+use versions::{hypervisor_too_old, parse_plugin_versions, plugin_too_old};
 
 /// How long VirtualBox's service gets to answer `VBoxManage list runningvms` before it reads as
 /// unresponsive (wedged), not just slow.
@@ -295,26 +314,6 @@ impl Provider {
 }
 
 const UTM_APP: &str = "/Applications/UTM.app";
-
-mod vagrant_needs;
-#[cfg(test)]
-use vagrant_needs::fake_utility;
-pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
-
-mod unavailable;
-mod vbox_driver;
-mod versions;
-pub use unavailable::Unavailable;
-#[cfg(test)]
-use versions::version_at_least;
-use versions::{hypervisor_too_old, parse_plugin_versions, plugin_too_old};
-mod kvm;
-use kvm::holds_virtualization;
-pub(crate) use kvm::kvm_problem;
-use kvm::new_login_group;
-#[cfg(test)]
-pub(crate) use kvm::{assume_devices_ready, kvm_group};
-pub use kvm::{login_groups, uses_kvm};
 
 /// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.
 fn hyperv_enabled() -> bool {
