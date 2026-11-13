@@ -6,6 +6,12 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **A release ships what built.** One platform's failed build, a missing signing secret or a
+  Store hiccup no longer stop the whole release: the release notes name the platform missing,
+  what lacks a secret ships unsigned (as 1.8.9 did), and the Store submission stays its own step.
+
 ### Fixed
 
 - **The Windows NSIS installer builds again.** The uninstall hook named its script with a forward

@@ -29,13 +29,13 @@ git push origin vX.Y.Z
 
 | Job           | What                                                                                                                                                                              |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `preflight`   | the Tauri JS/Rust versions agree; on a tag, **every signing secret is set**, or the release stops here                                                                            |
+| `preflight`   | the Tauri JS/Rust versions agree; on a tag, says which signing secrets are missing (a warning: what they sign ships unsigned, the release goes on)                                |
 | `e2e`         | the web end-to-end suite (`e2e.yml`); red, the release stops here                                                                                                                 |
 | `prepare`     | creates the draft GitHub release (through the `cyber-ctf-creator` GitHub App), once `preflight` and `e2e` are green                                                               |
 | `third-party` | `pnpm notices` and `pnpm sbom` ([scripts/release/third-party.ts](../scripts/release/third-party.ts)): THIRD_PARTY_NOTICES and the CycloneDX SBOMs, attached to the release        |
 | `release`     | builds on five runners (macOS universal, Linux x64 and arm64 on Ubuntu 22.04, Windows x64 and Arm64), signs, **verifies the signatures**, uploads to the draft; notarizes the DMG |
 | `attest`      | `SHA256SUMS` of every asset, and a build provenance attestation of each                                                                                                           |
-| `publish`     | takes the draft live (tags only)                                                                                                                                                  |
+| `publish`     | takes the draft live (tags only), its notes naming any platform whose build failed; one platform's failure never holds the others back                                            |
 | `distribute`  | renders the Homebrew cask from `packaging/homebrew/cyberctf.rb` into `Cyber-Courses/homebrew-tap`, and starts `Cyber-Courses/apt`'s publish workflow                              |
 | `store`       | builds the MSIX bundle and submits it to the Microsoft Store (`msix.yml`); `STORE_AUTO_SUBMIT=false` leaves a draft in Partner Center                                             |
 

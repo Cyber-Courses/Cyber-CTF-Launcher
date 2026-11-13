@@ -42,10 +42,12 @@ jobs:
           install: "false"
       - run: pnpm check:tauri
       # A tag build ships to users: signed on Windows (Authenticode, Azure Artifact Signing) and
-      # macOS (Developer ID, notarized), with signed updates. Without one of its secrets it would
-      # publish unsigned installers, so it stops here, before any build. A manual run (a draft to
-      # review) builds without them. The step sees only whether each secret is set.
-      - name: Signing secrets are set (tag builds)
+      # macOS (Developer ID, notarized), with signed updates. Each build signs what it has secrets
+      # for (the sign steps below test each one), so a missing secret ships that platform unsigned,
+      # as 1.8.9 did, and this step says which in a warning, before any build: a release is not
+      # held back by one signature (v1.9.0 stopped here on the six Azure secrets, 2026-11-13). The
+      # step sees only whether each secret is set.
+      - name: Signing secrets (tag builds)
         if: github.ref_type == 'tag'
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID != '' }}
@@ -70,8 +72,8 @@ jobs:
             if [ "${!name}" != true ]; then missing+=("$name"); fi
           done
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::A tag build ships signed installers only. Add these repository secrets, then push the tag again: ${missing[*]}"
-            exit 1
+            echo "::warning::These signing secrets aren't set, so what they sign ships unsigned: ${missing[*]}"
+            echo "Not signed: ${missing[*]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # The web end-to-end suite (e2e.yml): tags don't trigger it, and main takes direct pushes, so a
@@ -377,8 +379,12 @@ jobs:
   # Every asset is on the draft (the DMG replaced by its notarized copy): SHA256SUMS of them all,
   # and a build provenance attestation (Sigstore-signed, stored by GitHub) of each, so anyone can
   # check a download came from this workflow: `gh attestation verify <file> --repo <this repo>`.
+  # Runs when the draft exists, whatever the builds did: a platform whose build failed is missing
+  # from the release, not a reason to ship nothing (every build's result is in the job graph, and
+  # `publish` names what is missing). Nothing built at all is the one failure.
   attest:
     needs: [prepare, release]
+    if: always() && needs.prepare.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -395,6 +401,10 @@ jobs:
           gh release download "$TAG" --repo "${{ github.repository }}" --dir assets
           # A re-run finds the SHA256SUMS of the run before: it isn't one of its own subjects.
           rm -f assets/SHA256SUMS
+          if [ -z "$(ls -A assets)" ]; then
+            echo "::error::No build uploaded an installer: nothing to publish."
+            exit 1
+          fi
           (cd assets && sha256sum -- *) > SHA256SUMS
           cat SHA256SUMS
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -406,17 +416,39 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: gh release upload "$TAG" SHA256SUMS --clobber --repo "${{ github.repository }}"
 
-  # Every platform built (and the DMG is notarized), checksummed and attested: take the draft live,
-  # then ship it to Homebrew and apt. Tag builds only; a manual run stays a draft to review.
+  # What built (the DMG notarized when it could be), checksummed and attested: take the draft live,
+  # naming the platforms whose build failed in its notes, then ship it to Homebrew and apt. Tag
+  # builds only; a manual run stays a draft to review.
   publish:
-    needs: attest
-    if: github.ref_type == 'tag'
+    needs: [attest, release]
+    if: always() && github.ref_type == 'tag' && needs.attest.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Takes the draft release live (gh release edit).
     permissions:
       contents: write
     steps:
+      - name: The platforms missing from this release, in its notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' > assets.txt
+          missing=()
+          grep -q '_universal\.dmg$' assets.txt || missing+=("macOS (universal .dmg)")
+          grep -q '_amd64\.deb$' assets.txt || missing+=("Linux x64 (.deb, AppImage)")
+          grep -q '_arm64\.deb$' assets.txt || missing+=("Linux arm64 (.deb, AppImage)")
+          grep -q '_x64-setup\.exe$' assets.txt || missing+=("Windows x64 (.exe installer, .msi)")
+          grep -q '_arm64-setup\.exe$' assets.txt || missing+=("Windows on Arm (.exe installer)")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            note="Not in this release (its build failed; see the release workflow run): $(IFS='; '; echo "${missing[*]}")."
+            echo "::warning::$note"
+            echo "$note" >> "$GITHUB_STEP_SUMMARY"
+            gh release view "$TAG" --repo "${{ github.repository }}" --json body --jq .body > body.md
+            printf '\n\n> %s\n' "$note" >> body.md
+            gh release edit "$TAG" --repo "${{ github.repository }}" --notes-file body.md
+          fi
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
