@@ -28,20 +28,19 @@ pub(super) async fn clear(dir: &Path) -> Result<Vec<&'static str>> {
     let mut removed = Vec::new();
     // Hyper-V asks for administrator rights: only when its disk folder says a VM was left.
     if dir.join(".vagrant").join("machines").join("default").join("hyperv").join("Virtual Hard Disks").is_dir() {
-        found("Hyper-V", remove_hyperv_leftover(VM_NAME, dir).await?, &mut removed)?;
+        removed.extend(found("Hyper-V", remove_hyperv_leftover(VM_NAME, dir).await?)?);
     }
-    found("VirtualBox", remove_vbox_leftover(dir).await?, &mut removed)?;
+    removed.extend(found("VirtualBox", remove_vbox_leftover(dir).await?)?);
     Ok(removed)
 }
 
-/// Adds `hypervisor` to `removed` when its leftover was removed; a foreign VM is an error.
-fn found(hypervisor: &'static str, leftover: Leftover, removed: &mut Vec<&'static str>) -> Result<()> {
+/// `hypervisor` when its leftover was removed; a foreign VM is an error.
+fn found(hypervisor: &'static str, leftover: Leftover) -> Result<Option<&'static str>> {
     match leftover {
-        Leftover::None => Ok(()),
+        Leftover::None => Ok(None),
         Leftover::Removed => {
             log::info!("removed the VM an earlier self-test left on {hypervisor}");
-            removed.push(hypervisor);
-            Ok(())
+            Ok(Some(hypervisor))
         }
         Leftover::Foreign => Err(Error::Invalid(format!(
             "{hypervisor} has a VM named \"{VM_NAME}\" that isn't this test's, so it was left alone. Rename or remove it in {hypervisor}, then test again."

@@ -102,18 +102,17 @@ pub(crate) struct Ctf {
 /// Reads the `.ctf/` folder of the lab in `lab_dir` (see the module's doc).
 pub(crate) fn read(lab_dir: &Path) -> Ctf {
     let dir = lab_dir.join(DIR);
-    let mut problems = Vec::new();
-    let metadata = kept(&mut problems, METADATA, file::<MetadataFile>(&dir, METADATA).and_then(|f| f.map(MetadataFile::checked).transpose()));
-    let objectives = kept(&mut problems, OBJECTIVES, file::<ObjectivesFile>(&dir, OBJECTIVES).and_then(|f| f.map(ObjectivesFile::checked).transpose()));
-    Ctf { metadata, objectives, problems }
+    let (metadata, metadata_problem) = kept(METADATA, file::<MetadataFile>(&dir, METADATA).and_then(|f| f.map(MetadataFile::checked).transpose()));
+    let (objectives, objectives_problem) = kept(OBJECTIVES, file::<ObjectivesFile>(&dir, OBJECTIVES).and_then(|f| f.map(ObjectivesFile::checked).transpose()));
+    Ctf { metadata, objectives, problems: metadata_problem.into_iter().chain(objectives_problem).collect() }
 }
 
-/// What file `name` read as, or none with why it couldn't be added to `problems`.
-fn kept<T>(problems: &mut Vec<Problem>, name: &str, read: Result<Option<T>, String>) -> Option<T> {
-    read.unwrap_or_else(|error| {
-        problems.push(Problem { file: name.to_owned(), error });
-        None
-    })
+/// What file `name` read as, or none with the problem that says why it couldn't.
+fn kept<T>(name: &str, read: Result<Option<T>, String>) -> (Option<T>, Option<Problem>) {
+    match read {
+        Ok(value) => (value, None),
+        Err(error) => (None, Some(Problem { file: name.to_owned(), error })),
+    }
 }
 
 /// The JSON file `name` in `dir` as `T`: none when it isn't there, why not when it can't be read
@@ -210,15 +209,11 @@ struct StepFile {
 }
 
 impl StepFile {
-    fn checked(self, keys: &mut Vec<String>) -> Result<Step, String> {
+    fn checked(self) -> Result<Step, String> {
         let key = self.key.trim().to_owned();
         if key.is_empty() {
             return Err("an objective has an empty `key`".into());
         }
-        if keys.contains(&key) {
-            return Err(format!("the key `{key}` is used twice"));
-        }
-        keys.push(key.clone());
         let title = self.title.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty()).unwrap_or_else(|| key.clone());
         let prompt = self.prompt.filter(|p| !p.trim().is_empty());
         Ok(Step { key, title, prompt, hint_count: u32::try_from(self.hints.len()).unwrap_or(u32::MAX) })
@@ -228,12 +223,16 @@ impl StepFile {
 impl ObjectivesFile {
     /// The challenges, once each has a key used nowhere else in the lab.
     fn checked(self) -> Result<Vec<Challenge>, String> {
-        let mut keys = Vec::new();
+        let mut keys = std::collections::HashSet::new();
+        let mut unique = |step: StepFile| {
+            let step = step.checked()?;
+            if keys.insert(step.key.clone()) { Ok(step) } else { Err(format!("the key `{}` is used twice", step.key)) }
+        };
         self.objectives
             .into_iter()
             .map(|c| {
-                let Step { key, title, prompt, hint_count } = c.step.checked(&mut keys)?;
-                let steps = c.steps.into_iter().map(|s| s.checked(&mut keys)).collect::<Result<_, _>>()?;
+                let Step { key, title, prompt, hint_count } = unique(c.step)?;
+                let steps = c.steps.into_iter().map(&mut unique).collect::<Result<_, _>>()?;
                 Ok(Challenge { key, title, prompt, optional: c.optional, points: c.points, hint_count, steps })
             })
             .collect()

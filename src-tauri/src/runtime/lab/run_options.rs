@@ -129,23 +129,23 @@ fn generated(lab: &Lab, runtime: Runtime, host: &str) -> RunOptions {
     let mut out = RunOptions { emulated, ..RunOptions::default() };
     match runtime {
         Runtime::Docker => {
-            out.docker = paths.has(Target::Docker).then(|| on_docker(lab, paths.path(Target::Docker, None), &mut paths.refused)).flatten();
-            paths.on(Target::DockerVm, &docker_vm_local, &mut out.docker_vm);
-            paths.on(Target::Vagrant, &vm_local, &mut out.vms);
-            paths.on(Target::DockerVm, &Provider::SERVERS, &mut out.servers);
-            paths.on(Target::CloudDocker, &clouds(Target::CloudDocker), &mut out.cloud_docker);
-            paths.on(Target::CloudVm, &clouds(Target::CloudVm), &mut out.cloud_vm);
+            out.docker = paths.docker();
+            out.docker_vm = paths.on(Target::DockerVm, &docker_vm_local);
+            out.vms = paths.on(Target::Vagrant, &vm_local);
+            out.servers = paths.on(Target::DockerVm, &Provider::SERVERS);
+            out.cloud_docker = paths.on(Target::CloudDocker, &clouds(Target::CloudDocker));
+            out.cloud_vm = paths.on(Target::CloudVm, &clouds(Target::CloudVm));
         }
         Runtime::Vm => {
-            paths.on(Target::Vagrant, &vm_local, &mut out.vms);
-            paths.on(Target::Vagrant, &[Provider::VmwareEsxi], &mut out.servers);
+            out.vms = paths.on(Target::Vagrant, &vm_local);
+            out.servers = paths.on(Target::Vagrant, &[Provider::VmwareEsxi]);
             // Proxmox's own target has one form: no provider of its own in the evidence.
-            paths.offer(Target::Proxmox, Provider::Proxmox, None, &mut out.servers);
-            paths.on(Target::CloudVm, &clouds(Target::CloudVm), &mut out.cloud_vm);
+            out.servers.extend(paths.offer(Target::Proxmox, Provider::Proxmox, None));
+            out.cloud_vm = paths.on(Target::CloudVm, &clouds(Target::CloudVm));
         }
         Runtime::Cloud => {
             if let Some(cloud) = spec.cloud.as_ref().map(|c| crate::runtime::cloud_services::provider(c.provider)) {
-                paths.on(Target::CloudServices, &[cloud], &mut out.cloud_services);
+                out.cloud_services = paths.on(Target::CloudServices, &[cloud]);
             }
         }
     }
@@ -181,22 +181,39 @@ impl Paths<'_> {
         RunPath { provider, target: target.id().to_owned(), variant, badge, evidence: tier.map(|t| t.evidence.clone()).unwrap_or_default() }
     }
 
-    /// Each of `providers` the lab runs on as `target`, into `out` ([`Paths::offer`]).
-    fn on(&mut self, target: Target, providers: &[Provider], out: &mut Vec<RunPath>) {
-        for p in providers {
-            self.offer(target, *p, Some(*p), out);
+    /// Each of `providers` the lab runs on as `target` ([`Paths::offer`]).
+    fn on(&mut self, target: Target, providers: &[Provider]) -> Vec<RunPath> {
+        providers.iter().filter_map(|p| self.offer(target, *p, Some(*p))).collect()
+    }
+
+    /// The lab as `target` on `provider` (its badge read as `tier`'s), unless the spec doesn't
+    /// generate `target` or Isoloom refuses it there: then its reason goes in `refused`.
+    fn offer(&mut self, target: Target, provider: Provider, tier: Option<Provider>) -> Option<RunPath> {
+        if !self.has(target) {
+            return None;
+        }
+        match lab::refusal_on(self.lab, target, provider) {
+            Some(reason) => {
+                self.refused.push(Refusal::by_isoloom(Some(provider), target.id().to_owned(), reason));
+                None
+            }
+            None => Some(RunPath { provider: Some(provider), ..self.path(target, tier) }),
         }
     }
 
-    /// The lab as `target` on `provider` (its badge read as `tier`'s), into `out`, unless the spec
-    /// doesn't generate `target` or Isoloom refuses it there: then its reason goes in `refused`.
-    fn offer(&mut self, target: Target, provider: Provider, tier: Option<Provider>, out: &mut Vec<RunPath>) {
-        if !self.has(target) {
-            return;
+    /// The lab as containers on this machine's Docker, unless the spec doesn't generate them or
+    /// Isoloom refuses it there: then its reason goes in `refused`.
+    fn docker(&mut self) -> Option<RunPath> {
+        if !self.has(Target::Docker) {
+            return None;
         }
-        match lab::refusal_on(self.lab, target, provider) {
-            Some(reason) => self.refused.push(Refusal::by_isoloom(Some(provider), target.id().to_owned(), reason)),
-            None => out.push(RunPath { provider: Some(provider), ..self.path(target, tier) }),
+        let path = self.path(Target::Docker, None);
+        match isoloom_targets::refusal(self.lab, Target::Docker) {
+            Some(reason) => {
+                self.refused.push(Refusal::by_isoloom(None, path.target, reason));
+                None
+            }
+            None => Some(path),
         }
     }
 }
@@ -219,18 +236,6 @@ fn with_policy(mut options: RunOptions, policy: Policy, privileged: bool) -> Run
         refuse(Key::DisableCloudLaunches, clouds, &mut o.refused);
     }
     options
-}
-
-/// The lab as containers on this machine's Docker, by its launch path `path`, unless Isoloom
-/// refuses it there: then its reason goes in `refused`.
-fn on_docker(lab: &Lab, path: RunPath, refused: &mut Vec<Refusal>) -> Option<RunPath> {
-    match isoloom_targets::refusal(lab, Target::Docker) {
-        Some(reason) => {
-            refused.push(Refusal::by_isoloom(None, path.target, reason));
-            None
-        }
-        None => Some(path),
-    }
 }
 
 /// The CPUs (`std::env::consts::ARCH` names) a lab's VMs are built for that differ from `host`,
