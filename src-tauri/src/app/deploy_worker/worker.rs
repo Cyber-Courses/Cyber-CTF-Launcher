@@ -170,7 +170,7 @@ async fn run_logged(app: &AppHandle, job: Job) -> WorkerExit {
         // Boxed: every operation's future is in it, too large to keep on the caller's stack. A
         // panic in it is its verdict: uncaught, it ended the job's task alone, and the worker
         // stayed up with no status written, the lab "starting" for good.
-        Ok(_lab) => CatchUnwind(Box::pin(execute(app, job, &log))).await.unwrap_or_else(|panic| Err(crashed(&*panic))),
+        Ok(_lab) => CatchUnwind(Box::pin(execute(&crate::platform::AppDirs::from(app), job, &log))).await.unwrap_or_else(|panic| Err(crashed(&*panic))),
         Err(e) => Err(e),
     };
     conclude(&f, &result, &op, log)
@@ -203,7 +203,7 @@ fn open_log(path: &std::path::Path) -> Option<std::fs::File> {
 
 /// Whether `op`'s verdict is also the lab's launch verdict (`files::Files::launch_status`, whether
 /// it came up): a launch, from the catalogue or a local folder, and a resume. Not a provisioning
-/// run, which `Action::brings_up` counts as bringing the lab up but which works on a lab already up.
+/// run, which works on a lab already up.
 pub(super) fn sets_launch_verdict(op: &Op) -> bool {
     matches!(op, Op::Launch | Op::LaunchLocal { .. } | Op::Resume { .. })
 }

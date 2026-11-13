@@ -440,7 +440,8 @@
       "disk": "Auf diesem Rechner ist kein Speicherplatz mehr frei. Gib welchen frei (die Seite Rechner listet die Images der Labs) und versuche es dann erneut.",
       "tool": "Ein Werkzeug, das dieses Lab braucht, fehlt hier. Installiere es auf der Seite Rechner und versuche es dann erneut.",
       "serverAuth": "Der Server hat die Zugangsdaten abgelehnt, die Cyber CTF für ihn hat. Öffne seine Einstellungen, gib sein neues Token oder Passwort ein und versuche es dann erneut."
-    }
+    },
+    "operationId": "Vorgang {id}: Geben Sie ihn an, wenn Sie um Hilfe bitten."
   },
   "offline": {
     "question": "{title} offline starten?",

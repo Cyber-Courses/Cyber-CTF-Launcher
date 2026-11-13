@@ -15,10 +15,8 @@ pub(crate) use process::{observed_as_worker, pidfile_line};
 mod progress;
 mod worker;
 
-use crate::AppHandle;
 use serde::{Deserialize, Serialize};
 
-pub use files::log_so_far;
 pub use process::{kill_and_wait, running, running_jobs};
 pub use worker::worker_main;
 
@@ -110,52 +108,49 @@ impl Job {
 
 /// Runs a job in this process (the worker's body, and the in-app fallback when no worker could
 /// be started), logging to `log`. A launch returns the lab's local URL.
-pub async fn execute(app: &AppHandle, job: Job, log: impl Fn(String)) -> Result<Option<String>> {
+pub async fn execute(dirs: &AppDirs, job: Job, log: impl Fn(String)) -> Result<Option<String>> {
     match job.op {
         Op::Launch => {
             let LaunchJob { launch, place } = job.launch.ok_or_else(|| Error::Invalid("invalid launch spec: the job has none".into()))?;
-            crate::labs::run(&AppDirs::from(app), launch, place.destination(), log).await
+            crate::labs::run(dirs, launch, place.destination(), log).await
         }
-        Op::Resume { runtime } => crate::runtime::resume_lab(&AppDirs::from(app), &job.lab_id, runtime, log).await.map(|()| None),
-        Op::Park { runtime, mode } => crate::runtime::park_lab(&AppDirs::from(app), &job.lab_id, runtime, mode, log).await.map(|()| None),
-        Op::Provision { runtime, machine } => {
-            crate::runtime::provision_lab(&AppDirs::from(app), &job.lab_id, runtime, machine.as_deref(), log).await.map(|()| None)
-        }
-        Op::LaunchLocal { src } => crate::labs::run_local(&AppDirs::from(app), &job.lab_id, std::path::Path::new(&src), log).await,
+        Op::Resume { runtime } => crate::runtime::resume_lab(dirs, &job.lab_id, runtime, log).await.map(|()| None),
+        Op::Park { runtime, mode } => crate::runtime::park_lab(dirs, &job.lab_id, runtime, mode, log).await.map(|()| None),
+        Op::Provision { runtime, machine } => crate::runtime::provision_lab(dirs, &job.lab_id, runtime, machine.as_deref(), log).await.map(|()| None),
+        Op::LaunchLocal { src } => crate::labs::run_local(dirs, &job.lab_id, std::path::Path::new(&src), log).await,
     }
 }
 
-/// Runs `job` detached (a worker process), following its log into `logs` until it finishes;
+/// Runs `job` detached (a worker process), following its log into `lines` until it finishes;
 /// falls back to running it in this process (on a task that outlives a webview reload) when no
 /// worker can be started. Refuses while another operation of the same key is in progress.
-pub async fn run_job(app: &AppHandle, job: Job, logs: tauri::ipc::Channel<String>) -> Result<()> {
-    match start_worker(app, &job)? {
-        Ok(spawned) => {
-            let follow = logs.clone();
-            progress::tail(&spawned, move |line| {
-                let _ = follow.send(line);
-            })
-            .await
-        }
-        // Fallback: run in this process, on a detached task (a webview reload aborts this command
-        // future and the child is kill_on_drop, so inline would be cut short). The app then has
-        // to stay open until it finishes; the quit guard keeps it alive.
+pub async fn run_job(dirs: &AppDirs, job: Job, lines: crate::run_service::local::Log) -> Result<()> {
+    match start_worker(dirs, &job)? {
+        Ok(spawned) => progress::tail(&spawned, move |line| lines(line)).await,
+        // Fallback: run in this process, on a detached task (a webview reload must not cut it
+        // short). The app then has to stay open until it finishes; the quit guard keeps it alive.
         Err(e) => {
-            // In the app's log too: the channel is gone with a reload or a closed window, and
-            // support reads the log for why a lab ran in the app.
+            // In the app's log too: support reads the log for why a lab ran in the app.
             log::warn!("the deploy worker for {} couldn't start, running it in the app: {e}", job.lab_id);
-            let _ = logs.send(format!("Running inside the app (a background worker couldn't be started: {e}). Keep the app open until it finishes."));
-            let app = app.clone();
-            let handle = tauri::async_runtime::spawn(async move {
-                let log = move |line: String| {
-                    let _ = logs.send(line);
-                };
-                execute(&app, job, log).await
-            });
+            lines(format!("Running inside the app (a background worker couldn't be started: {e}). Keep the app open until it finishes."));
+            let dirs = dirs.clone();
+            let handle = tauri::async_runtime::spawn(async move { execute(&dirs, job, move |line: String| lines(line)).await });
             handle.await.map_err(|e| Error::Invalid(format!("the task did not finish: {e}")))??;
             Ok(())
         }
     }
+}
+
+/// Follows lab `id`'s worker, started by an earlier run of the app, into `log` until it finishes:
+/// its verdict is the result.
+///
+/// # Errors
+///
+/// No worker runs on the lab, or its verdict is a failure.
+pub async fn follow(dirs: &AppDirs, id: &str, log: impl FnMut(String)) -> Result<()> {
+    let files = files::of(dirs, id)?;
+    let worker = files.worker().ok_or_else(|| Error::Invalid(format!("no deploy worker runs on lab {id}")))?;
+    progress::tail(&process::Spawned { files, worker, exit: process::Exit::default() }, log).await
 }
 
 /// Held while a worker is checked for and started (see [`start_worker`]).
@@ -173,9 +168,9 @@ pub async fn end_workers(dirs: &AppDirs, id: &str) {
 /// starts racing each other (a double click) must not both pass the check and spawn two
 /// workers. `Err` when the lab is busy; `Ok(Err)` when the worker couldn't be started (the
 /// caller falls back to running the job in this process).
-fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> {
+fn start_worker(dirs: &AppDirs, job: &Job) -> Result<Result<process::Spawned>> {
     let _one_at_a_time = STARTING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if running(&AppDirs::from(app))?.contains(&job.key()) {
+    if running(dirs)?.contains(&job.key()) {
         return Err(Error::coded(Code::AlreadyInProgress));
     }
     // Nothing begins while the lab stops: between ending its workers and taking its lock, a
@@ -185,12 +180,12 @@ fn start_worker(app: &AppHandle, job: &Job) -> Result<Result<process::Spawned>> 
     }
     // An operation of the app itself (a stop, the expiry reaper) holds the lab: the worker
     // would only wait for it, then act on what it left.
-    if lab_file_lock::held(&lab_file_lock::path(&AppDirs::from(app), &job.lab_id)?) {
+    if lab_file_lock::held(&lab_file_lock::path(dirs, &job.lab_id)?) {
         return Err(Error::coded(Code::AlreadyInProgress));
     }
     // The pidfile is taken before the worker starts (another process may be racing for it too).
-    let pidfile = process::claim(&files::of(&AppDirs::from(app), &job.key())?)?;
-    Ok(process::spawn(&AppDirs::from(app), job, pidfile))
+    let pidfile = process::claim(&files::of(dirs, &job.key())?)?;
+    Ok(process::spawn(dirs, job, pidfile))
 }
 
 /// The files of lab `id`'s worker, for the lab's removal (which holds the lab, so no new worker
@@ -229,7 +224,9 @@ mod tests {
         std::fs::create_dir_all(super::files::of(&t.dirs(), &job.key()).unwrap().job).unwrap();
         let sink = crate::testing::test_app::Sink::default();
         crate::testing::logs::take_warnings();
-        let err = super::run_job(t.handle(), job, sink.channel()).await.unwrap_err().to_string();
+        let lines = sink.on_line();
+        let lines = std::sync::Mutex::new(lines);
+        let err = super::run_job(&t.dirs(), job, std::sync::Arc::new(move |l| (lines.lock().unwrap())(l))).await.unwrap_err().to_string();
         let warned = crate::testing::logs::take_warnings();
         assert!(warned.iter().any(|w| w.starts_with("the deploy worker for local-mini couldn't start, running it in the app: ")), "{warned:?}");
         let lines = sink.lines();
@@ -338,7 +335,7 @@ mod tests {
         let stopping = crate::runtime::DeployGuard::new("ad", crate::runtime::Action::Stop);
         for op in [Op::Launch, Op::Resume { runtime: crate::runtime::Runtime::Vm }] {
             let job = Job::on_lab("ad", op);
-            let err = super::run_job(t.handle(), job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err().to_string();
+            let err = super::run_job(&t.dirs(), job.clone(), std::sync::Arc::new(|_| {})).await.unwrap_err().to_string();
             assert!(err.starts_with("This lab is stopping"), "{err}");
             assert!(!super::files::of(&t.dirs(), &job.key()).unwrap().pid.exists(), "no worker was claimed");
         }

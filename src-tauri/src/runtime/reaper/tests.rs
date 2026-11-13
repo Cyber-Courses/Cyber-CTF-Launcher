@@ -2,29 +2,39 @@ use super::*;
 use crate::error::{Code, Wire};
 use crate::testing::test_app::TestApp;
 
+/// The labs the store keeps a failure for.
+fn failed(t: &TestApp) -> Vec<String> {
+    crate::store::open(&t.dirs()).unwrap().read(crate::store::autostop::failed).unwrap()
+}
+
+/// Keeps `failures` (lab, error) as a sweep would.
+fn record(t: &TestApp, failures: &[(&str, &Wire)]) {
+    let rows: Vec<(String, String, Wire)> =
+        failures.iter().map(|(id, w)| ((*id).to_owned(), format!("Auto-stop couldn't destroy {id}"), (*w).clone())).collect();
+    crate::store::open(&t.dirs()).unwrap().write(|tx| crate::store::autostop::replace(tx, &rows)).unwrap();
+}
+
 #[test]
 fn a_recorded_reap_failure_is_read_back_for_the_lab_page() {
     // What a sweep couldn't destroy is kept per lab and shown on its page, so a lab billing past
     // its auto-stop never looks stopped.
     let t = TestApp::new();
-    let dir = t.data().join(REAP_ERRORS);
     let wire = Wire { code: Code::Other, message: "the token has expired".into() };
-    record_failure(&dir, "web", &wire, "Auto-stop couldn't destroy web: the token has expired").unwrap();
+    record(&t, &[("web", &wire)]);
     assert_eq!(last_failure(&t.dirs(), "web"), Some(wire));
     assert_eq!(last_failure(&t.dirs(), "other"), None, "a lab that never failed has nothing");
 }
 
 #[test]
-fn the_labs_that_failed_last_time_are_the_ones_with_a_record() {
-    // The next sweep reads these before clearing them, so a lab that fails again isn't notified
+fn a_sweeps_failures_replace_the_last_ones() {
+    // The next sweep reads these before replacing them, so a lab that fails again isn't notified
     // twice and a lab destroyed since has its record go.
     let t = TestApp::new();
-    let dir = t.data().join(REAP_ERRORS);
     let w = Wire { code: Code::Other, message: "x".into() };
-    record_failure(&dir, "a", &w, "m").unwrap();
-    record_failure(&dir, "b", &w, "m").unwrap();
-    assert_eq!(failed_last_time(&dir), ["a".to_string(), "b".to_string()].into_iter().collect());
-    assert!(failed_last_time(&t.data().join("never-swept")).is_empty());
+    record(&t, &[("a", &w), ("b", &w)]);
+    assert_eq!(failed(&t), ["a", "b"]);
+    record(&t, &[("b", &w)]);
+    assert_eq!(failed(&t), ["b"]);
 }
 
 #[test]
@@ -39,7 +49,7 @@ async fn a_sweep_of_a_fresh_app_destroys_nothing_and_records_nothing() {
     // runner-backed destroy of an expired cloud lab is covered by the fake-CLI and integration tests.
     let t = TestApp::new();
     reap_expired_labs(&t.dirs(), &|_: &str, _: &str| {}).await;
-    assert!(failed_last_time(&t.data().join(REAP_ERRORS)).is_empty());
+    assert_eq!(failed(&t), [] as [String; 0]);
 }
 
 #[test]

@@ -5,4 +5,5 @@ export const EVENTS = {
   quitBlocked: "quit-blocked",
   machineSetupStep: "machine-setup-step",
   launchConfirm: "launch-confirm",
+  runEvent: "run-event",
 } as const;

@@ -440,7 +440,8 @@
       "disk": "This machine is out of disk space. Free some (the Machine page lists the images labs keep), then retry.",
       "tool": "A tool this lab needs is missing here. Install it from the Machine page, then retry.",
       "serverAuth": "The server refused the credentials Cyber CTF has for it. Open its settings, give its new token or password, then retry."
-    }
+    },
+    "operationId": "Operation {id}: quote it when you ask for help."
   },
   "offline": {
     "question": "Start {title} offline?",

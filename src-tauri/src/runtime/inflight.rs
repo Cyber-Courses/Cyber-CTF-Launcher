@@ -36,13 +36,6 @@ pub enum Action {
 }
 
 impl Action {
-    /// Whether it brings the lab up (a launch, a resume or a provisioning run), or its run up to
-    /// date with the attack box going in or out: what the UI calls deploying, the lab page busy
-    /// meanwhile.
-    pub fn brings_up(self) -> bool {
-        matches!(self, Action::Launch | Action::Resume | Action::Provision | Action::AttachBox | Action::DetachBox)
-    }
-
     /// The operation it is, as the UI names it (`ActiveOperation::op`).
     pub fn operation(self) -> Operation {
         match self {
@@ -108,6 +101,7 @@ pub fn busy_labs() -> Vec<String> {
 }
 
 /// Every in-process operation right now: the lab and what it is doing.
+#[cfg(test)]
 pub fn active_actions() -> Vec<(String, Action)> {
     locked().iter().map(|(id, (a, _))| (id.clone(), *a)).collect()
 }
@@ -252,7 +246,6 @@ mod tests {
             assert!(busy.contains(&"box-op".to_owned()), "{busy:?}");
             assert!(actions.contains(&("box-op".to_owned(), action)), "{actions:?}");
             assert_eq!(action.operation(), op);
-            assert!(action.brings_up(), "the page shows the lab busy with it");
             assert!(!busy_labs().contains(&"box-op".to_owned()), "cleared once done");
         }
         let failed: Result<(), &str> = super::as_operation("box-op", Action::DetachBox, async { Err("refused") }).await;
@@ -304,7 +297,7 @@ mod tests {
         let id = "inflight-test-park";
         let g = DeployGuard::new(id, Action::Park(Park::Pause));
         assert_eq!(action_of(id), Some(Action::Park(Park::Pause)));
-        assert!(!Action::Park(Park::Pause).brings_up() && Action::Park(Park::Pause) != Action::Stop);
+        assert_ne!(Action::Park(Park::Pause), Action::Stop);
         drop(g);
         assert_eq!(action_of(id), None);
     }

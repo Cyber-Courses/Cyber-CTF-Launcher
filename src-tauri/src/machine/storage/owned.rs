@@ -1,4 +1,4 @@
-//! What Cyber CTF downloaded itself, recorded in `<app data>/storage.json`: the container images
+//! What Cyber CTF downloaded itself, recorded in the launcher's store (`crate::store::storage`): the container images
 //! (each by the reference it pulled and the image id it got) and the Vagrant boxes (name,
 //! provider, version) that appeared on this machine during one of its own operations (a lab
 //! start, a container attack box, a self-test). Storage lists and removes only these: an
@@ -16,32 +16,36 @@ use std::path::{Path, PathBuf};
 mod record;
 
 use record::parse_box_list;
-pub use record::{Owned, OwnedBox, OwnedImage, listed_boxes, load};
+pub use record::{Owned, OwnedBox, OwnedImage, listed_boxes};
 
 use crate::runtime::Downloads;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::platform::AppDirs;
 use crate::platform::exec::run_read;
 
-/// The record's file.
-pub fn path(dirs: &AppDirs) -> Result<PathBuf> {
-    Ok(dirs.data()?.join("storage.json"))
+/// Where the record is kept: the app data folder, whose launcher store holds it.
+pub fn place(dirs: &AppDirs) -> Result<PathBuf> {
+    Ok(dirs.data()?.to_path_buf())
 }
 
-/// Changes the record at `store` with `change`, holding an OS lock on `<store>.lock` meanwhile:
-/// a deploy worker and the app can record at once.
+/// The record kept in data folder `store`; empty when nothing was recorded yet.
+///
+/// # Errors
+///
+/// The store can't be opened or read: a caller that changes the record must stop there.
+pub fn load(store: &Path) -> Result<Owned> {
+    crate::store::open_in(store)?.read(crate::store::storage::load)
+}
+
+/// Changes the record in data folder `store` with `change`, in one transaction: a deploy worker
+/// and the app can record at once, and each keeps the other's change.
 pub fn update(store: &Path, change: impl FnOnce(&mut Owned)) -> Result<()> {
-    if let Some(dir) = store.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(store.with_extension("lock"))?;
-    lock.lock()?;
-    let mut owned = load(store)?;
-    change(&mut owned);
-    let json = serde_json::to_vec_pretty(&owned).map_err(|e| Error::Invalid(e.to_string()))?;
-    crate::platform::atomic_file::write(store, json)?;
-    Ok(())
+    crate::store::open_in(store)?.write(|tx| {
+        let mut owned = crate::store::storage::load(tx)?;
+        change(&mut owned);
+        crate::store::storage::replace(tx, &owned)
+    })
 }
 
 /// What was on this machine before an operation that may download: the image ids and the boxes,
@@ -115,7 +119,7 @@ pub async fn tracked<T>(dirs: impl Into<AppDirs>, images: &[String], boxes: &[St
     let dirs = dirs.into();
     let before = Before::take(Downloads { images: !images.is_empty(), boxes: !boxes.is_empty() }).await;
     let out = op.await;
-    if let Ok(store) = path(&dirs) {
+    if let Ok(store) = place(&dirs) {
         claim(&store, &before, images, boxes).await;
     }
     out
@@ -127,7 +131,7 @@ mod tests {
     use crate::platform::exec::fake::{Tools, fail, ok};
 
     fn store() -> PathBuf {
-        std::env::temp_dir().join(format!("cyberctf-owned-{}", rand::random::<u32>())).join("storage.json")
+        std::env::temp_dir().join(format!("cyberctf-owned-{}", rand::random::<u32>()))
     }
 
     #[tokio::test]
@@ -161,7 +165,7 @@ mod tests {
             owned.boxes.into_iter().collect::<Vec<_>>(),
             [OwnedBox { name: "generic/alpine319".into(), provider: "virtualbox".into(), version: "4".into() }]
         );
-        std::fs::remove_dir_all(store.parent().unwrap()).ok();
+        std::fs::remove_dir_all(&store).ok();
     }
 
     #[tokio::test]
@@ -171,11 +175,11 @@ mod tests {
         let before = Before::take(Downloads { images: true, boxes: true }).await;
         assert!(!before.tracks_images());
         claim(&store, &before, &["nginx:1.27".into()], &["a/b".into()]).await;
-        assert!(!store.exists());
+        assert!(!store.join(crate::store::FILE).exists(), "nothing was written");
     }
 
     #[test]
-    fn updates_add_to_the_record_and_a_damaged_one_is_left_alone() {
+    fn updates_add_to_the_record() {
         let store = store();
         let image = |r: &str| OwnedImage { reference: r.into(), id: format!("sha256:{r}") };
         update(&store, |o| {
@@ -187,17 +191,6 @@ mod tests {
         })
         .unwrap();
         assert_eq!(load(&store).unwrap().images.len(), 2);
-        // A damaged record is an error, never read as empty and written back: that would forget
-        // every download it lists.
-        std::fs::write(&store, "{not json").unwrap();
-        assert!(load(&store).is_err());
-        assert!(
-            update(&store, |o| {
-                o.images.insert(image("c"));
-            })
-            .is_err()
-        );
-        assert_eq!(std::fs::read_to_string(&store).unwrap(), "{not json", "the damaged record is not overwritten");
-        std::fs::remove_dir_all(store.parent().unwrap()).ok();
+        std::fs::remove_dir_all(&store).ok();
     }
 }

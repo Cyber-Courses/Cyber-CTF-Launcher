@@ -21,6 +21,7 @@ export function FailureNotice({
   message,
   kind,
   holder = null,
+  operation = null,
   canRandomPorts = true,
   stillUp,
   onOpenServer,
@@ -34,6 +35,8 @@ export function FailureNotice({
   kind: FailureKind | null;
   /** For a port clash, what holds the host port ("nginx (pid 4123)"), when the backend found it. */
   holder?: string | null;
+  /** The id of the operation that failed: what the player quotes when asking for help. */
+  operation?: string | null;
   /** Whether random host ports are an option for this clash (a container here): false for a VM
    *  here (its forwarded ports are fixed) or a server run, where freeing the port is the only fix. */
   canRandomPorts?: boolean;
@@ -62,6 +65,7 @@ export function FailureNotice({
       {kind === "ports" && holder && <span className="mt-1 block text-foreground">{t("labs.failure.portHeldBy", { holder })}</span>}
       {hintKey && <span className="mt-1 block text-foreground">{t(hintKey)}</span>}
       {stillUp && <span className="mt-1 block">{t("labs.failure.stillUp")}</span>}
+      {operation && <span className="mt-1 block text-muted-foreground">{t("labs.failure.operationId", { id: operation })}</span>}
       {kind === "serverAuth" && onOpenServer && <OpenServerButton onOpen={onOpenServer} />}
     </CalloutRow>
   );

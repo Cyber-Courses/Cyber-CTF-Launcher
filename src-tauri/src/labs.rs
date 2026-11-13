@@ -379,6 +379,7 @@ async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(
 }
 
 /// What the player asked to start, and how.
+#[derive(Debug, Clone)]
 pub struct LaunchRequest {
     /// The lab.
     pub lab_id: String,

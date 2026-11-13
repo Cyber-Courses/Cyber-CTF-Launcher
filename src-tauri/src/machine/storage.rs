@@ -54,7 +54,7 @@ impl Storage {
 
 /// The shared Terraform plugin cache, beside the downloads record `store` in the app data folder.
 fn plugin_cache(store: &Path) -> PathBuf {
-    store.with_file_name(crate::runtime::TERRAFORM_PLUGINS)
+    store.join(crate::runtime::TERRAFORM_PLUGINS)
 }
 
 /// The plugin cache as one item with its size, when it holds anything.
@@ -130,7 +130,7 @@ fn lab_boxes(dir: &Path) -> Vec<String> {
 /// Records as the app's what a lab start on this machine downloaded: the images its Compose file
 /// names and the boxes its Vagrantfiles name, that weren't here `before` it.
 pub(crate) async fn claim_lab(dirs: impl Into<AppDirs>, dir: &Path, id: &str, before: &owned::Before) {
-    let Ok(store) = owned::path(&dirs.into()) else { return };
+    let Ok(store) = owned::place(&dirs.into()) else { return };
     let images = if before.tracks_images() && crate::runtime::lab::compose_file(dir).is_file() { lab_images(dir, id).await } else { Vec::new() };
     owned::claim(&store, before, &images, &lab_boxes(dir)).await;
 }
@@ -236,7 +236,7 @@ impl Present {
 /// `extra_images`: the attack-box images the UI knows about; only those of the attack box's own
 /// repository count (see [`image_candidates`]), any other is the player's unless recorded.
 pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result<Storage> {
-    let store = owned::path(&dirs)?;
+    let store = owned::place(&dirs)?;
     Ok(Present::find(&owned::load(&store)?, &extra_images, vagrant_home().as_deref(), &plugin_cache(&store)).await.storage())
 }
 
@@ -246,7 +246,7 @@ pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>, wor
     // A lab operation running may still use the plugins its `init` linked: they stay then.
     let busy = !crate::runtime::busy_labs().is_empty() || workers;
     let plugins = if busy { PluginCache::Keep } else { PluginCache::Clear };
-    clean(&owned::path(&dirs)?, &extra_images, vagrant_home().as_deref(), plugins).await
+    clean(&owned::place(&dirs)?, &extra_images, vagrant_home().as_deref(), plugins).await
 }
 
 /// Whether a clean-up clears the plugin cache too.
@@ -437,7 +437,7 @@ mod tests {
     #[tokio::test]
     async fn clean_up_removes_only_the_apps_downloads_and_forgets_what_went() {
         let t = crate::testing::test_app::TestApp::new();
-        let store = owned::path(&t.dirs()).unwrap();
+        let store = owned::place(&t.dirs()).unwrap();
         let home = t.data().join("vagrant-home");
         let alpine = owned_box("generic/alpine319", "virtualbox", "4.3.12");
         download_box(&home, &alpine, None, 1000);
@@ -491,7 +491,7 @@ mod tests {
         // Regression: each removal's failure was dropped, and an item in use showed only as fewer
         // bytes freed.
         let t = crate::testing::test_app::TestApp::new();
-        let (store, home) = (owned::path(&t.dirs()).unwrap(), t.data().join("vagrant-home"));
+        let (store, home) = (owned::place(&t.dirs()).unwrap(), t.data().join("vagrant-home"));
         let alpine = owned_box("generic/alpine319", "virtualbox", "4.3.12");
         download_box(&home, &alpine, None, 1000);
         let nginx = owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() };
@@ -527,7 +527,7 @@ mod tests {
         // The shared cache is the app's alone (in its data folder): listed and cleaned with it.
         let t = crate::testing::test_app::TestApp::new();
         let _tools = Tools::rules(&[]);
-        let store = owned::path(&t.dirs()).unwrap();
+        let store = owned::place(&t.dirs()).unwrap();
         let aws = t.data().join(crate::runtime::TERRAFORM_PLUGINS).join("registry.terraform.io/hashicorp/aws/5.0.0/darwin_arm64");
         std::fs::create_dir_all(&aws).unwrap();
         std::fs::write(aws.join("terraform-provider-aws"), vec![0u8; 2048]).unwrap();
@@ -544,7 +544,7 @@ mod tests {
     #[tokio::test]
     async fn a_download_recorded_during_a_clean_up_is_kept() {
         let t = crate::testing::test_app::TestApp::new();
-        let store = owned::path(&t.dirs()).unwrap();
+        let store = owned::place(&t.dirs()).unwrap();
         let _tools = docker(&[("nginx:1.27", "sha256:nginx", 1000)], &[], "");
         let recorded = || owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() };
         // Recorded after the clean-up looked (a worker's lab start): `forget_gone` reads it again.
@@ -572,7 +572,7 @@ mod tests {
     #[ignore = "needs Docker"]
     async fn real_docker_clean_up_keeps_the_players_image() {
         let (mine, apps) = ("cyberctf-e2e-player:1", "cyberctf-e2e-app:1");
-        let store = std::env::temp_dir().join(format!("cyberctf-e2e-store-{}", rand::random::<u32>())).join("storage.json");
+        let store = std::env::temp_dir().join(format!("cyberctf-e2e-store-{}", rand::random::<u32>()));
         build_throwaway(mine, "player").await;
         let before = owned::Before::take(crate::runtime::Downloads { images: true, boxes: false }).await;
         build_throwaway(apps, "app").await;
@@ -582,7 +582,8 @@ mod tests {
         let (mine_left, apps_left) = (exists(mine).await, exists(apps).await);
         let _ = crate::platform::exec::run("docker", &["image", "rm", mine], None).await;
         let _ = crate::platform::exec::run("docker", &["image", "rm", apps], None).await;
-        std::fs::remove_dir_all(store.parent().unwrap()).ok();
+        crate::store::forget(&store);
+        std::fs::remove_dir_all(&store).ok();
         assert!(mine_left, "the player's image stays");
         assert!(!apps_left, "the app's image went");
         assert!(freed > 0, "the app's image's size is freed");

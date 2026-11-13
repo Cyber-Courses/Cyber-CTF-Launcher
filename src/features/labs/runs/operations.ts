@@ -1,16 +1,15 @@
 "use client";
 
-import { activeOperations, type ActiveOperation } from "@/lib/tauri";
-import { useMemo } from "react";
-import { sharedPoll, useSharedPoll } from "@/lib/shared-poll";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import type { ActiveOperation } from "@/lib/tauri";
 import { translate, type MessageKey } from "@/lib/i18n";
-import { structurallyEqual } from "@/lib/equal";
 import { ignore } from "@/lib/failure";
-import { readSession, writeSession } from "@/lib/local-store";
 import { machineLabel } from "@/lib/format";
+import { DONE_MARK, FAILED_MARK } from "@/lib/tauri/generated/DeployLog";
+import { connectRunEvents, inFlight, runEventsNow, subscribeRunEvents, type OperationRun, type RunEventsState } from "@/lib/tauri/run-events";
 
-// The operations the backend runs on labs right now, polled from the long-lived Rust process,
-// and how they read on screen.
+// The operations the core runs on labs right now, read from the run events (`run-events`: no
+// poll), and how they read on screen.
 
 /** A lab operation, as the backend names it. */
 export type LabOperation = ActiveOperation["op"];
@@ -26,37 +25,95 @@ export const operationStatus = (op: LabOperation, t: (key: MessageKey) => string
 export const keepsRunningPhase = (op: LabOperation): boolean => op === "provision";
 
 /**
- * The labs the backend deploys among `ops`, the operations in flight, as each says (Rust's
- * `ActiveOperation::deploying`), read from the one poll of the operations rather than a second
- * one.
+ * The labs the backend deploys among `ops`, the operations in flight, as each says
+ * (`deploying`).
  */
 export function deployingOf(ops: ReadonlyMap<string, ActiveOperation>): Set<string> {
   return new Set([...ops.values()].filter((o) => o.deploying).map((o) => o.labId));
 }
 
+/** Longest step shown in the sidebar, in characters (Rust's `progress::STEP_MAX`). */
+const STEP_MAX = 72;
+
+/** The step an operation's log is at: the last Vagrant action line (`==> dc01: Booting VM...`) as
+ *  `dc01: Booting VM...`, else the last non-empty line, kept short; null for none. */
+export function lastStep(lines: readonly string[]): string | null {
+  let action: string | null = null;
+  let last: string | null = null;
+  for (const raw of lines) {
+    const l = raw.trim();
+    if (!l || l.startsWith(DONE_MARK) || l.startsWith(FAILED_MARK)) continue;
+    if (l.startsWith("==>")) {
+      const rest = l.slice(3).trim();
+      const colon = rest.indexOf(":");
+      if (colon >= 0 && rest.slice(colon + 1).trim()) action = rest;
+      continue;
+    }
+    last = l;
+  }
+  const step = action ?? last;
+  if (step === null) return null;
+  return step.length > STEP_MAX ? `${step.slice(0, STEP_MAX - 1)}…` : step;
+}
+
+/** An operation in flight as the screens read it: what it is, the step it is at. */
+const asActive = (r: OperationRun): ActiveOperation => ({
+  labId: r.labId,
+  op: r.op,
+  machine: r.machine,
+  deploying: r.deploying,
+  step: lastStep(r.lines),
+  runtime: r.runtime,
+});
+
+/** Every operation in flight in `s`, by lab (a lab's latest one). */
+function activeOf(s: RunEventsState): Map<string, ActiveOperation> {
+  return new Map(inFlight(s).map((r) => [r.labId, asActive(r)]));
+}
+
+// The map handed out, the same object until the operations change (readers compare by identity).
+let lastState: RunEventsState | null = null;
+let lastActive = new Map<string, ActiveOperation>();
+function activeNow(): Map<string, ActiveOperation> {
+  const s = runEventsNow();
+  if (s !== lastState) {
+    lastState = s;
+    lastActive = activeOf(s);
+  }
+  return lastActive;
+}
+
 /**
- * The lab ids the backend is deploying right now (`deployingOf`), from the operations polled
- * from the long-lived Rust process. The in-memory store above is lost when the window reloads (a
- * dev rebuild, a crash, or fast-refresh), but the deploy keeps running; reading this lets a
- * screen show "this lab is starting" again instead of a bare Start button (which would invite a
- * colliding second start). The same set until the operations change.
+ * Every operation in flight, by lab, with the step its log is at, kept current by the run events
+ * while `enabled` (the window subscribes to them on first use).
+ */
+export function useActiveOperations(enabled = true): Map<string, ActiveOperation> {
+  useEffect(() => {
+    if (enabled) connectRunEvents().catch(ignore("the operations show once the core answers"));
+  }, [enabled]);
+  const ops = useSyncExternalStore(subscribeRunEvents, activeNow, activeNow);
+  return enabled ? ops : EMPTY;
+}
+
+const EMPTY = new Map<string, ActiveOperation>();
+
+/**
+ * The lab ids the backend is deploying right now (`deployingOf`): a window that reloaded while a
+ * deploy runs shows "this lab is starting" again instead of a bare Start button (which would
+ * invite a colliding second start). The same set until the operations change.
  */
 export function useDeployingLabs(enabled = true): Set<string> {
   const ops = useActiveOperations(enabled);
   return useMemo(() => deployingOf(ops), [ops]);
 }
 
-/**
- * Whether any lab operation is in flight, in the app or a deploy worker, of any kind (a stop and
- * a pause too): the operations listed are exactly Rust's `busy_labs`, the rule an update install
- * waits on, read from the one poll.
- */
+/** Whether any lab operation is in flight, of any kind (a stop and a pause too). */
 export function useLabsBusy(): boolean {
   return useActiveOperations().size > 0;
 }
 
-/** The labs deploying in the backend as last read (empty while nothing reads them). */
-export const deployingLabsNow = () => deployingOf(operationsPoll.get());
+/** The labs deploying in the backend as last told. */
+export const deployingLabsNow = () => deployingOf(activeNow());
 
 /** The sidebar's label for an operation, e.g. "Pausing…": the word the operation has everywhere
  *  else (header, list, deployment), running; the machine when it targets one. */
@@ -65,64 +122,11 @@ export function operationLabel(o: ActiveOperation): string {
   return `${operationStatus(o.op)}…`;
 }
 
-/**
- * Every operation in flight, by lab, with the step its log is at. Polled often (steps move
- * every few seconds during a VM start), so the sidebar reads like a live progress line.
- */
-export function useActiveOperations(enabled = true): Map<string, ActiveOperation> {
-  return useSharedPoll(operationsPoll, enabled);
+/** When `op`, in flight on `labId`, began (ms), as the core says: a page opened on a running
+ *  deploy counts from there, not from its own opening. */
+export function operationSeenAt(labId: string, op: string): number | undefined {
+  return inFlight(runEventsNow()).find((r) => r.labId === labId && r.op === op)?.startedAt;
 }
 
-// When this window first saw each operation in flight ("lab:op" → ms), kept for the session (a
-// reload keeps it): the backend doesn't say when an operation began, and a page opened on a
-// running deploy must not count from its own opening. For an operation already running when the
-// app started, that is when the app first read it.
-const SEEN_KEY = "cyberctf.operations.seen";
-let seen: Record<string, number> | null = null;
-const seenKey = (labId: string, op: string) => `${labId}:${op}`;
-
-function readSeen(): Record<string, number> {
-  seen ??= parseSeen(readSession(SEEN_KEY));
-  return seen;
-}
-
-/** The kept record; none when there is none, or one this window can't read. */
-function parseSeen(raw: string | null): Record<string, number> {
-  try {
-    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
-  } catch (e) {
-    return ignore("a record of the operations seen that isn't JSON: they count from now", () => ({}))(e);
-  }
-}
-
-/** Notes the operations in flight now: a new one is first seen now, one that ended is forgotten. */
-export function noteOperations(ops: ActiveOperation[], now = Date.now()) {
-  const before = readSeen();
-  const next: Record<string, number> = {};
-  for (const o of ops) next[seenKey(o.labId, o.op)] = before[seenKey(o.labId, o.op)] ?? now;
-  if (structurallyEqual(before, next)) return;
-  seen = next;
-  writeSession(SEEN_KEY, JSON.stringify(next));
-}
-
-/** When this window first saw `op` in flight on `labId` (see above), if it did. */
-export const operationSeenAt = (labId: string, op: string): number | undefined => readSeen()[seenKey(labId, op)];
-
-// One poll for the whole window, whichever screens read it (see shared-poll).
-const operationsPoll = sharedPoll({
-  read: () =>
-    activeOperations().then((l) => {
-      noteOperations(l);
-      return new Map(l.map((o) => [o.labId, o]));
-    }),
-  ms: 2000,
-  initial: new Map<string, ActiveOperation>(),
-  // And at once when the window comes back: a deploy may have started or ended meanwhile.
-  onFocus: true,
-  // Read on in a hidden window, slower while nothing runs: the shell starts a lab's attack box
-  // when its launch ends (from the website too), which must not wait for the window to show.
-  hiddenMs: (ops) => (ops.size > 0 ? 2000 : 10_000),
-});
-
-/** The operations in flight as last read (empty while nothing reads them). */
-export const activeOperationsNow = () => operationsPoll.get();
+/** The operations in flight as last told, by lab. */
+export const activeOperationsNow = () => activeNow();

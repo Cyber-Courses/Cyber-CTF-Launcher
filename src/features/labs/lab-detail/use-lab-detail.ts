@@ -132,6 +132,7 @@ export function useLabDetail(p: LabDetailProps) {
     runStartedAt: deploy.startedAt,
     runFailureCode: deploy.failureCode,
     runFailureHolder: deploy.failureHolder,
+    runFailureOperation: deploy.failureOperation,
   });
   const run = useRunTarget(lab, readyVms, p.dockerEngine ?? null, p.dockerEnginesRunning ?? []);
   const preview = useCloudPreview(lab.id, rt);

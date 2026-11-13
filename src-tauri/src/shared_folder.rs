@@ -4,7 +4,8 @@
 //! computer and its form can share a folder of it (`attack_box::Placed`): not on a server or
 //! in a cloud account, nor in a VM on QEMU outside Linux, on Hyper-V or on a hypervisor the lab's
 //! run doesn't name.
-//! Kept in the app's data folder, so the background deploy worker sees the same choice.
+//! Kept in the launcher's store (`crate::store::settings`), so the background deploy worker sees
+//! the same choice.
 
 use std::path::{Path, PathBuf};
 
@@ -26,30 +27,22 @@ pub struct SharedFolder {
     pub path: Option<String>,
 }
 
-/// The setting's file, in the app's data folder.
-fn file(dirs: &AppDirs) -> Result<PathBuf> {
-    Ok(dirs.data()?.join("shared-folder.json"))
-}
-
 /// The suggested folder: `CyberCTF/shared` in the home folder (an end-to-end run's, in one).
 pub fn default_path() -> Option<PathBuf> {
     crate::platform::own_home().map(|h| h.join("CyberCTF").join("shared"))
 }
 
 fn load(dirs: &AppDirs) -> Result<SharedFolder> {
-    load_from(&file(dirs)?)
+    load_from(dirs.data()?)
 }
 
-/// The setting in `file`; off when there is none (never saved). A file that can't be read or
-/// isn't the setting is an error, never taken for "off".
-fn load_from(file: &Path) -> Result<SharedFolder> {
-    let unreadable = |e: &dyn std::fmt::Display| Error::Invalid(format!("the shared folder setting ({}) can't be read: {e}", file.display()));
-    let text = match std::fs::read_to_string(file) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(SharedFolder::default()),
-        Err(e) => return Err(unreadable(&e)),
-    };
-    serde_json::from_str(&text).map_err(|e| unreadable(&e))
+/// The setting kept in data folder `data`; off when there is none (never saved). One that can't
+/// be read or isn't the setting is an error, never taken for "off".
+fn load_from(data: &Path) -> Result<SharedFolder> {
+    let unreadable = |e: &dyn std::fmt::Display| Error::Invalid(format!("the shared folder setting can't be read: {e}"));
+    let store = crate::store::open_in(data).map_err(|e| unreadable(&e))?;
+    let setting = store.read(|conn| crate::store::settings::get(conn, crate::store::settings::SHARED_FOLDER)).map_err(|e| unreadable(&e))?;
+    Ok(setting.unwrap_or_default())
 }
 
 /// The folder to mount, when sharing is on: created if missing. None when off; an error when the
@@ -112,23 +105,19 @@ fn info(s: SharedFolder) -> SharedFolderInfo {
 
 /// Turns sharing on or off and sets the folder (created now, so a wrong path shows at once).
 pub fn shared_folder_set(dirs: &AppDirs, enabled: bool, path: &str) -> Result<SharedFolderInfo> {
-    save_to(&file(dirs)?, enabled, path)?;
+    save_to(dirs.data()?, enabled, path)?;
     shared_folder_get(dirs)
 }
 
-/// `shared_folder_set` into the settings file `file`.
-fn save_to(file: &Path, enabled: bool, path: &str) -> Result<()> {
+/// `shared_folder_set` into the store of data folder `data`.
+fn save_to(data: &Path, enabled: bool, path: &str) -> Result<()> {
     let p = PathBuf::from(path.trim());
     if enabled {
         check(&p)?;
         std::fs::create_dir_all(&p).map_err(|e| Error::Invalid(format!("couldn't create {}: {e}", p.display())))?;
     }
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
     let s = SharedFolder { enabled, path: (!path.trim().is_empty()).then(|| p.display().to_string()) };
-    crate::platform::atomic_file::write(file, serde_json::to_string_pretty(&s).map_err(|e| Error::Invalid(e.to_string()))?)?;
-    Ok(())
+    crate::store::open_in(data)?.write(|tx| crate::store::settings::set(tx, crate::store::settings::SHARED_FOLDER, Some(&s)))
 }
 
 /// Opens the folder with `open` (the system's file manager).
@@ -172,7 +161,7 @@ mod tests {
     #[test]
     fn the_setting_is_saved_and_read_back() {
         let root = temp("set");
-        let file = root.join("data").join("shared-folder.json");
+        let file = root.join("data");
         let folder = root.join("my shared");
         // No file yet: sharing is off.
         assert_eq!(load_from(&file).unwrap(), SharedFolder::default());
@@ -193,9 +182,16 @@ mod tests {
         assert_eq!(folder_of(&s), None);
         assert_eq!(info(s).path, default_path().map(|p| p.display().to_string()).unwrap_or_default());
 
-        std::fs::write(&file, "garbage").unwrap();
+        crate::store::open_in(&file)
+            .unwrap()
+            .write(|tx| {
+                tx.execute("UPDATE settings SET value = 'garbage' WHERE key = ?1", [crate::store::settings::SHARED_FOLDER])?;
+                Ok(())
+            })
+            .unwrap();
         let err = load_from(&file).unwrap_err().to_string();
-        assert!(err.contains("shared-folder.json") && err.contains("can't be read"), "never taken for off: {err}");
+        assert!(err.contains("shared folder setting") && err.contains("can't be read"), "never taken for off: {err}");
+        crate::store::forget(&file);
         // A folder that can't be made is said, not taken for none.
         let blocker = root.join("a file");
         std::fs::write(&blocker, "").unwrap();
@@ -207,9 +203,8 @@ mod tests {
     #[test]
     fn turning_sharing_on_needs_a_usable_path_and_settings() {
         let root = temp("bad");
-        let file = root.join("shared-folder.json");
-        assert_eq!(save_to(&file, true, "relative/dir").unwrap_err().to_string(), "choose a full folder path");
-        assert!(!file.exists());
+        assert_eq!(save_to(&root, true, "relative/dir").unwrap_err().to_string(), "choose a full folder path");
+        assert!(!root.join(crate::store::FILE).exists(), "nothing saved");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -221,14 +216,13 @@ mod tests {
     #[test]
     fn the_commands_save_and_show_the_setting_and_never_open_a_folder_while_off() {
         let root = temp("cmd");
-        let file = root.join("shared-folder.json");
         let dirs = AppDirs::new(Some(root.clone()), None);
         let folder = root.join("loot");
         let shown = shared_folder_set(&dirs, false, &folder.display().to_string()).unwrap();
         assert!(!shown.enabled);
         assert_eq!((shown.path.as_str(), shown.mount_point), (folder.display().to_string().as_str(), MOUNT_POINT));
         assert_eq!(shared_folder_get(&dirs).unwrap().path, folder.display().to_string());
-        assert!(file.is_file() && !folder.exists(), "off: the folder isn't created");
+        assert!(!folder.exists(), "off: the folder isn't created");
         assert_eq!(shared_folder_open(&dirs, |_| panic!("nothing to open")).unwrap_err().to_string(), "folder sharing is off");
         // A path that can't be shared is refused and the setting kept.
         assert_eq!(shared_folder_set(&dirs, true, "relative/dir").err().unwrap().to_string(), "choose a full folder path");

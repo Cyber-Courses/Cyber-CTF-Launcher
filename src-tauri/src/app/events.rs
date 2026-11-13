@@ -12,9 +12,14 @@ pub const MACHINE_SETUP_STEP: &str = "machine-setup-step";
 /// The website asks to start a lab here; its payload is the launch to confirm.
 pub const LAUNCH_CONFIRM: &str = "launch-confirm";
 
+/// A lab operation started, logged a line or ended (`run_service::RunEvent`); its payload is the
+/// event with its cursor (`run_service::Cursored`).
+pub const RUN_EVENT: &str = "run-event";
+
 /// Every event, by the name the webview knows it by (camelCase) and its name on the wire.
 #[cfg(test)]
-pub const ALL: [(&str, &str); 3] = [("quitBlocked", QUIT_BLOCKED), ("machineSetupStep", MACHINE_SETUP_STEP), ("launchConfirm", LAUNCH_CONFIRM)];
+pub const ALL: [(&str, &str); 4] =
+    [("quitBlocked", QUIT_BLOCKED), ("machineSetupStep", MACHINE_SETUP_STEP), ("launchConfirm", LAUNCH_CONFIRM), ("runEvent", RUN_EVENT)];
 
 /// Emits `event` with `payload` from `to` (the app, or one window), logging one that can't be.
 pub fn emit<S: serde::Serialize + Clone>(to: &impl Emitter<crate::AppRuntime>, event: &str, payload: S) {

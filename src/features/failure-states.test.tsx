@@ -11,7 +11,8 @@ import { useLabActions } from "@/features/labs/use-lab-actions";
 import { must } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
 import { getDeploySnapshot, runFailure, startFailed, type DeployRun } from "@/features/labs/runs/deploy-runs";
-import { noteOperations, operationSeenAt } from "@/features/labs/runs/operations";
+import { operationSeenAt } from "@/features/labs/runs/operations";
+import { takeIn } from "@/lib/tauri/run-events";
 import type { ActiveOperation, AuthStatus, LabStatus } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
 import { commands, installTauri, rejectWith } from "@/test/tauri";
@@ -276,14 +277,15 @@ describe("a Stop & remove that failed", () => {
 describe("a deploy with no log here", () => {
   it("shows the backend's step and counts from when the operation was first seen", async () => {
     const step = "Configure SRV02 (ansible 41/88)";
-    installTauri({
-      busy_labs: () => [goad.id],
-      active_operations: () => [{ labId: goad.id, op: "launch", machine: "SRV02", deploying: true, step }],
-      lab_deploy_log: () => "",
-      lab_status: () => stopped,
-    });
-    // First seen a minute ago (this window saw it then, before the page opened).
-    noteOperations([{ labId: goad.id, op: "launch", machine: "SRV02", deploying: true, step }], Date.now() - 61_000);
+    installTauri({ busy_labs: () => [goad.id], active_operations: () => [], lab_status: () => stopped });
+    // Begun a minute ago, as the core says, before the page opened.
+    takeIn([
+      {
+        cursor: 1,
+        event: { kind: "started", operation: "op-1", labId: goad.id, op: "launch", machine: "SRV02", runtime: null, deploying: true, at: Date.now() - 61_000 },
+      },
+      { cursor: 2, event: { kind: "log", operation: "op-1", labId: goad.id, line: step } },
+    ]);
     render(<LabDetail lab={goad} loggedIn hostArch="x86_64" readyVms={[]} onBack={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} />);
     await flush(2200);
     expect(document.body.textContent).toContain(step);
@@ -294,12 +296,12 @@ describe("a deploy with no log here", () => {
     expect(document.body.textContent).toMatch(/Starting… 1:0\d/);
   });
 
-  it("keeps when an operation was first seen until it ends", () => {
-    const op: ActiveOperation = { labId: "lab-x", op: "launch", machine: null, deploying: true, step: null };
-    noteOperations([op], 1000);
-    noteOperations([op], 5000);
+  it("counts an operation from when the core began it, until it ends", () => {
+    takeIn([
+      { cursor: 1, event: { kind: "started", operation: "op-1", labId: "lab-x", op: "launch", machine: null, runtime: null, deploying: true, at: 1000 } },
+    ]);
     expect(operationSeenAt("lab-x", "launch")).toBe(1000);
-    noteOperations([], 6000);
+    takeIn([{ cursor: 2, event: { kind: "ended", operation: "op-1", labId: "lab-x", op: "launch", error: null } }]);
     expect(operationSeenAt("lab-x", "launch")).toBeUndefined();
   });
 });

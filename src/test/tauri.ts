@@ -8,6 +8,8 @@ import { translate } from "@/lib/i18n";
 import { backendCommands, callable } from "@/test/backend-commands";
 import { recordUncallable } from "@/test/uncallable";
 import { resetInFlight, track, waitForAnswers } from "@/test/in-flight";
+import { isOperation, replay, resetRunService, startOperation } from "@/lib/dev-mock/run-service";
+import type { ActiveOperation } from "@/lib/tauri/run-events";
 
 export type Handler = (args: Record<string, unknown> | undefined) => unknown;
 export interface Call {
@@ -31,8 +33,9 @@ const streams =
     return null;
   };
 
-/** `active_operations` answering a deploy worker's launch on each of `ids`, as the backend reports
- *  a lab it deploys (`busy_labs` lists them too). */
+/** `active_operations`, the operations already running when the core started (the run events a
+ *  window replays first: see `run-service`): a deploy worker's launch on each of `ids`, as the
+ *  backend reports a lab it deploys (`busy_labs` lists them too). */
 export const deployingOps =
   (ids: () => string[]): Handler =>
   () =>
@@ -161,6 +164,13 @@ export function installTauri(overrides: Partial<Record<string, Handler>> = {}): 
   resetInFlight();
   answerInAppDialogs(calls, overrides["plugin:dialog|message"] ?? DEFAULTS["plugin:dialog|message"]);
   mockWindows("main");
+  resetRunService();
+  const handle = (cmd: string, a: Record<string, unknown> | undefined) => {
+    const handler = overrides[cmd] ?? DEFAULTS[cmd];
+    const out: unknown = handler ? handler(a) : answer(cmd, a);
+    if (out instanceof Promise && !HELD.has(out)) track(out);
+    return out;
+  };
   mockIPC(
     (cmd, args) => {
       const a = args as Record<string, unknown> | undefined;
@@ -169,10 +179,11 @@ export function installTauri(overrides: Partial<Record<string, Handler>> = {}): 
         recordUncallable(cmd);
         throw new Error(`\`${cmd}\` isn't a command the Rust core registers (src-tauri/build.rs)`);
       }
-      const handler = overrides[cmd] ?? DEFAULTS[cmd];
-      const out: unknown = handler ? handler(a) : answer(cmd, a);
-      if (out instanceof Promise && !HELD.has(out)) track(out);
-      return out;
+      // The core's run service: an operation answers its id, its log and end are run events.
+      if (isOperation(cmd)) return startOperation(cmd, a, (withLogs) => handle(cmd, withLogs));
+      if (cmd === "run_events" && !overrides.run_events)
+        return replay((a?.after as number | null) ?? null, (handle("active_operations", undefined) as ActiveOperation[] | null) ?? []);
+      return handle(cmd, a);
     },
     { shouldMockEvents: true },
   );

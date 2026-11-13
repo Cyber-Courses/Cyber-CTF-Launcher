@@ -11,9 +11,11 @@ mod integration_tests;
 mod labs;
 mod machine;
 mod platform;
+mod run_service;
 mod runtime;
 mod screen;
 mod shared_folder;
+mod store;
 mod terminal;
 #[cfg(test)]
 mod testing;

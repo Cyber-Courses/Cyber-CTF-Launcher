@@ -307,11 +307,11 @@ mod tests {
         .unwrap();
         assert_eq!(default_server(&t.dirs()).unwrap(), Some(("pve1".into(), Provider::Proxmox)));
         assert_eq!(launch_targets(&t.dirs()).unwrap().len(), 1);
-        std::fs::write(t.data().join("server.json"), "{ not json").unwrap();
-        assert!(default_server(&t.dirs()).unwrap_err().to_string().starts_with("server.json:"));
+        crate::runtime::server::store::damage(&t.dirs());
+        assert!(default_server(&t.dirs()).unwrap_err().to_string().starts_with("the launcher's store:"));
         assert!(launch_targets(&t.dirs()).is_err());
-        // No file yet is no host at all, not an error.
-        std::fs::remove_file(t.data().join("server.json")).unwrap();
+        // No host saved is no host at all, not an error.
+        crate::runtime::server::store::clear(&t.dirs());
         assert_eq!(default_server(&t.dirs()).unwrap(), None);
         assert_eq!(launch_targets(&t.dirs()).unwrap(), [] as [serde_json::Value; 0]);
     }

@@ -124,6 +124,10 @@ isoloom-manifest = "3.0.0"
 # The Isothrum runner: executes the run manifest Isoloom writes; every lab runs through it
 # (`runtime/isothrum`). The 3.0 line.
 isothrum-runner = "3.0.0"
+# The launcher's own store (`store`): servers, tools, the storage record and the settings, one
+# SQLite file in WAL mode, every change a transaction. Bundled, so every platform runs the same
+# SQLite; the same version as the runner's store, which links the same library.
+rusqlite = { version = "0.41", features = ["bundled"] }
 # The in-app terminal's pseudo-terminal (`terminal`).
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"

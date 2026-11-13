@@ -174,7 +174,7 @@ async fn a_lab_last_on_a_server_is_an_error_when_the_saved_servers_cant_be_read(
     installed(&t, "ad", &vms_on(arches().0));
     let pve = t.host("pve", "proxmox", serde_json::json!({}));
     record_run(t.data(), "ad", Some(&pve), "proxmox", "absent");
-    std::fs::write(t.data().join("server.json"), "{ not json").unwrap();
+    crate::runtime::server::store::damage(&t.dirs());
     let ready = vec![Provider::Virtualbox];
     let place = Box::pin(default_place_with(
         &t.dirs(),
