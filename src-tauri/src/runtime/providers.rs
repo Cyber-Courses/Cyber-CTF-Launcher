@@ -370,6 +370,12 @@ async fn tool_present(program: &'static str, args: &[&str]) -> bool {
     match run_read(program, args, None).await {
         // vmrun without arguments prints usage and exits non-zero, but it exists.
         Ok(_) | Err(crate::error::Error::CommandFailed { .. }) => true,
+        // A tool that ran out of the probe's time is there, and slow (a cold VBoxSVC): not
+        // absent, which would offer to install it again.
+        Err(e) if crate::platform::exec::timed_out(&e) => {
+            log::warn!("`{program}` took longer than the probe waits: read as installed");
+            true
+        }
         Err(_) => false,
     }
 }
