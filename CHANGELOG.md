@@ -10,6 +10,8 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 - **A tool the setup installed through dnf is removed through dnf.** Cleanup's Remove on Fedora
   ran `apt-get remove` through pkexec, which ended on `apt-get: not found` and kept the record.
+- **QEMU installed by winget reads as installed.** Its installer adds nothing to PATH and the
+  launcher didn't look in its folder, so the setup offered to install it again every pass.
 
 ## [1.9.0] — 2026-11-13
 

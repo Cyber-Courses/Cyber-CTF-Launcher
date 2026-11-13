@@ -47,7 +47,7 @@ try {
   //    shows only when the runner reports the box running, so it is the definitive up signal.
   try {
     await waitAwake(b, async () => /Stop attack box/.test(await text(b)), {
-      timeout: 90000,
+      timeout: LAB_START_MS,
       interval: 3000,
       timeoutMsg: "the panel never showed the box running",
     });
