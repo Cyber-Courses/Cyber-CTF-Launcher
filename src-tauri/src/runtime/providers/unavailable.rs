@@ -65,6 +65,15 @@ pub enum Unavailable {
         /// The plugin's name.
         plugin: String,
     },
+    /// Whether the provider's Vagrant plugin is installed can't be told: `vagrant plugin list`
+    /// failed (read as "not installed" before, the player was told to install a plugin that may
+    /// be there).
+    PluginsUnknown {
+        /// The plugin's name.
+        plugin: String,
+        /// What `vagrant plugin list` said.
+        reason: String,
+    },
     /// The Vagrant VMware Utility is installed, but its service doesn't answer.
     VmwareUtilityStopped,
     /// The Vagrant VMware Utility, HashiCorp's service the VMware plugin drives VMware through,
@@ -111,6 +120,9 @@ impl Unavailable {
                 format!("Vagrant plugin `{plugin}` {version} is too old: {min} or later is needed. Install it again to update it.")
             }
             Unavailable::PluginMissing { plugin } => format!("Vagrant plugin `{plugin}` is not installed."),
+            Unavailable::PluginsUnknown { plugin, reason } => {
+                format!("Whether Vagrant plugin `{plugin}` is installed can't be told: `vagrant plugin list` failed ({reason}). Run it in a terminal to see why, then re-check.")
+            }
             Unavailable::VmwareUtilityStopped => {
                 "The Vagrant VMware Utility is installed, but its service isn't running: install it again (that restarts it), or restart the computer.".into()
             }
@@ -153,6 +165,7 @@ mod tests {
             Unavailable::HypervisorTooOld { name: s("UTM"), version: s("4.4.5"), min: s("4.5.0") },
             Unavailable::PluginTooOld { plugin: s("vagrant_utm"), version: s("0.1.0"), min: s("0.1.4") },
             Unavailable::PluginMissing { plugin: s("vagrant-libvirt") },
+            Unavailable::PluginsUnknown { plugin: s("vagrant-libvirt"), reason: s("exited with code 1") },
             Unavailable::VmwareUtilityStopped,
             Unavailable::VmwareUtilityMissing,
             Unavailable::VirtualboxDriver { kernel: s("6.12.86+deb13-amd64") },
