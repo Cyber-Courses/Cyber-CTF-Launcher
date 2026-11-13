@@ -3,7 +3,7 @@
 //! validates what the UI passes (ids, images, boxes, machine names), turns channels into log
 //! sinks, and calls the runtime domain (`crate::runtime`).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use tauri::ipc::Channel;
 
@@ -255,18 +255,11 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
     }
 }
 
-/// Where lab `id`'s attack box goes ([`attack_machine::locate`]), or an error when the launcher
-/// reaches no run of the lab.
-fn with_attack_box(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<attack_machine::Placed> {
-    attack_machine::locate(dirs, dir, id, runtime)?
-        .ok_or_else(|| Error::Invalid("This lab has no attack box the launcher can reach. Work from what the lab gives you.".into()))
-}
-
 /// The command the runner builds to open a shell into lab `id`'s attack box (the in-app terminal
 /// and the system terminal both run it).
 pub(crate) async fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<isothrum_runner::ShellCommand> {
     let dir = lab_dir(dirs, id)?;
-    with_attack_box(dirs, &dir, id, runtime)?.shell_command().await
+    attack_machine::reachable(dirs, &dir, id, runtime)?.shell_command().await
 }
 
 /// The attack box's status for the lab detail view: the machine the launcher added to the lab,
@@ -316,7 +309,7 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         // Held for the whole attach, like every lab operation: a pause or a stop from another
         // window or the agent waits, rather than halting the VMs the attach is working in.
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
-        let run = with_attack_box(&dirs, &dir, &id, runtime)?;
+        let run = attack_machine::reachable(&dirs, &dir, &id, runtime)?;
         let mut log = lines(logs);
         let image = image.unwrap_or_else(|| attack_machine::default_image().to_owned());
         // In flight like every lab operation: the page shows the lab busy and offers nothing that
@@ -342,7 +335,7 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
-        let run = with_attack_box(&dirs, &dir, &id, runtime)?;
+        let run = attack_machine::reachable(&dirs, &dir, &id, runtime)?;
         // In flight like every lab operation (see `attack_box_attach`). Boxed: the runner's
         // removal is a large future.
         let mut log = lines(logs);
