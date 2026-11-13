@@ -23,6 +23,7 @@ use crate::machine::system::SystemReport;
 use crate::machine::system::docker::Engine;
 use crate::machine::system::wsl::WslState;
 use crate::machine::tools::install::Dependency;
+use crate::platform::host::Os;
 use crate::runtime::providers::{Need, Provider, ProviderStatus, Unavailable};
 
 /// One thing the setup does, or leaves to the player, on this machine.
@@ -149,18 +150,21 @@ pub struct HypervisorOption {
 }
 
 /// The engines the setup offers on `os`, in the order it shows them.
-pub fn engines_on(os: &str) -> &'static [Engine] {
+pub fn engines_on(os: Os) -> &'static [Engine] {
     match os {
-        "macos" => &[Engine::DockerDesktop, Engine::Orbstack, Engine::Colima],
-        "windows" => &[Engine::DockerDesktop],
-        _ => &[Engine::DockerDesktop, Engine::Native, Engine::Colima],
+        Os::Macos => &[Engine::DockerDesktop, Engine::Orbstack, Engine::Colima],
+        Os::Windows => &[Engine::DockerDesktop],
+        Os::Linux => &[Engine::DockerDesktop, Engine::Native, Engine::Colima],
     }
 }
 
 /// The engine the setup installs in one click on `os`: Docker Desktop on macOS and Windows,
 /// Docker Engine on Linux.
-pub fn recommended_engine(os: &str) -> Engine {
-    if matches!(os, "macos" | "windows") { Engine::DockerDesktop } else { Engine::Native }
+pub fn recommended_engine(os: Os) -> Engine {
+    match os {
+        Os::Macos | Os::Windows => Engine::DockerDesktop,
+        Os::Linux => Engine::Native,
+    }
 }
 
 /// Docker answers: its CLI is installed and its daemon runs for this account.
@@ -171,30 +175,17 @@ pub fn docker_ready(r: &SystemReport) -> bool {
 /// Installing `dependency` here: its install, or on a Linux distribution without apt (the guided
 /// setup installs through it), the player's to do.
 fn install(r: &SystemReport, dependency: Dependency) -> Action {
-    if r.os == "linux" && !r.pkg_manager.installed {
-        return Action::Manual { reason: ManualReason::Distribution, dependency: Some(dependency), url: own_install_url(dependency).map(str::to_owned) };
+    if r.os == Os::Linux && !r.pkg_manager.installed {
+        return Action::Manual { reason: ManualReason::Distribution, dependency: Some(dependency), url: dependency.row().own_url.map(str::to_owned) };
     }
     Action::Install { dependency }
-}
-
-/// Where the player installs `dependency` themselves, when the setup can't.
-fn own_install_url(dependency: Dependency) -> Option<&'static str> {
-    Some(match dependency {
-        Dependency::Docker => "https://docs.docker.com/engine/install/",
-        Dependency::Vagrant => "https://developer.hashicorp.com/vagrant/install",
-        Dependency::Virtualbox => "https://www.virtualbox.org/wiki/Linux_Downloads",
-        Dependency::Qemu => "https://www.qemu.org/download/",
-        Dependency::Libvirt => "https://libvirt.org/",
-        Dependency::VmwareUtility => "https://developer.hashicorp.com/vagrant/install/vmware",
-        _ => return None,
-    })
 }
 
 /// What turns WSL 2 on: nothing off Windows, once it is ready, or once a Docker engine runs
 /// (proof enough, whatever the check could tell: #224); the restart once it waits for one; else
 /// its install (also when the check couldn't tell).
 fn wsl(r: &SystemReport) -> Vec<Action> {
-    if r.os != "windows" || docker_ready(r) {
+    if r.os != Os::Windows || docker_ready(r) {
         return Vec::new();
     }
     match r.wsl.as_ref().map_or(WslState::Unknown, |w| w.state) {
@@ -226,26 +217,8 @@ fn engine_actions(r: &SystemReport, engine: Engine) -> Vec<Action> {
 }
 
 /// The hypervisor the setup installs as `provider` on `os`, when it installs it.
-fn installable(provider: Provider, os: &str) -> Option<Dependency> {
-    let dependency = match provider {
-        Provider::Virtualbox => Dependency::Virtualbox,
-        Provider::Qemu => Dependency::Qemu,
-        Provider::Utm => Dependency::Utm,
-        Provider::Libvirt => Dependency::Libvirt,
-        Provider::Hyperv => Dependency::Hyperv,
-        _ => return None,
-    };
-    dependency.runs_on(os).then_some(dependency)
-}
-
-/// Where a hypervisor the setup doesn't install comes from (behind a login, or a licence).
-fn vendor_url(provider: Provider) -> Option<&'static str> {
-    Some(match provider {
-        Provider::VmwareDesktop => "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion",
-        Provider::Parallels => "https://www.parallels.com/products/desktop/",
-        Provider::Hyperv => "https://learn.microsoft.com/virtualization/hyper-v-on-windows/quick-start/enable-hyper-v",
-        _ => return None,
-    })
+pub(crate) fn installable(provider: Provider, os: Os) -> Option<Dependency> {
+    provider.dependency().filter(|d| d.runs_on(os))
 }
 
 /// An installed hypervisor that still can't run labs once everything Vagrant needs is in (no
@@ -280,7 +253,7 @@ fn hypervisor_get(r: &SystemReport, p: &ProviderStatus, hyperv_restart: bool) ->
     }
     vec![match installable(p.provider, r.os) {
         Some(dependency) => install(r, dependency),
-        None => Action::Manual { reason: ManualReason::Vendor, dependency: None, url: vendor_url(p.provider).map(str::to_owned) },
+        None => Action::Manual { reason: ManualReason::Vendor, dependency: None, url: p.provider.row().vendor.map(str::to_owned) },
     }]
 }
 

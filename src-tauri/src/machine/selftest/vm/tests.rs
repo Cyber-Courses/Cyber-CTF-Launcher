@@ -72,12 +72,12 @@ fn no_hypervisor_ready_says_what_keeps_the_preferred_one_from_running_vms() {
 #[test]
 fn a_box_counts_only_for_its_provider_and_cpu() {
     let list = "bento/debian-12   (virtualbox, 202510.26.0, (amd64))\ngeneric/alpine319 (libvirt, 4.3.12)\n";
-    assert!(box_listed(list, "bento/debian-12", "virtualbox", Arch::Amd64));
-    assert!(!box_listed(list, "bento/debian-12", "virtualbox", Arch::Arm64));
-    assert!(!box_listed(list, "bento/debian-12", "parallels", Arch::Amd64));
+    assert!(box_listed(list, "bento/debian-12", "virtualbox", Arch::X86_64));
+    assert!(!box_listed(list, "bento/debian-12", "virtualbox", Arch::Aarch64));
+    assert!(!box_listed(list, "bento/debian-12", "parallels", Arch::X86_64));
     // No architecture listed: any CPU.
-    assert!(box_listed(list, "generic/alpine319", "libvirt", Arch::Arm64));
-    assert!(!box_listed(list, "generic/alpine", "libvirt", Arch::Arm64));
+    assert!(box_listed(list, "generic/alpine319", "libvirt", Arch::Aarch64));
+    assert!(!box_listed(list, "generic/alpine", "libvirt", Arch::Aarch64));
 }
 
 #[test]
@@ -85,14 +85,14 @@ fn box_listings_with_windows_endings_wide_spacing_or_look_alike_names_match_exac
     // CRLF from Vagrant on Windows, tabs or runs of spaces before the parenthesis, a name
     // that merely starts with the wanted one, and the empty listing.
     let list = "bento/debian-12\t(virtualbox, 1)\r\nbento/debian-120    (virtualbox, 1)\r\ngeneric/alpine319 (vmware_desktop, 4.3.12, (arm64))\r\n";
-    assert!(box_listed(list, "bento/debian-12", "virtualbox", Arch::Amd64));
-    assert!(box_listed(list, "bento/debian-120", "virtualbox", Arch::Arm64));
-    assert!(!box_listed(list, "bento/debian-1", "virtualbox", Arch::Amd64));
-    assert!(box_listed(list, "generic/alpine319", "vmware_desktop", Arch::Arm64));
-    assert!(!box_listed(list, "generic/alpine319", "vmware_desktop", Arch::Amd64), "an ARM box is not an x86 one");
-    assert!(!box_listed(list, "generic/alpine319", "vmware", Arch::Arm64), "the provider id is whole");
-    assert!(!box_listed("There are no installed boxes! Use `vagrant box add` to add some.\n", "generic/alpine319", "qemu", Arch::Amd64));
-    assert!(!box_listed("", "generic/alpine319", "qemu", Arch::Amd64));
+    assert!(box_listed(list, "bento/debian-12", "virtualbox", Arch::X86_64));
+    assert!(box_listed(list, "bento/debian-120", "virtualbox", Arch::Aarch64));
+    assert!(!box_listed(list, "bento/debian-1", "virtualbox", Arch::X86_64));
+    assert!(box_listed(list, "generic/alpine319", "vmware_desktop", Arch::Aarch64));
+    assert!(!box_listed(list, "generic/alpine319", "vmware_desktop", Arch::X86_64), "an ARM box is not an x86 one");
+    assert!(!box_listed(list, "generic/alpine319", "vmware", Arch::Aarch64), "the provider id is whole");
+    assert!(!box_listed("There are no installed boxes! Use `vagrant box add` to add some.\n", "generic/alpine319", "qemu", Arch::X86_64));
+    assert!(!box_listed("", "generic/alpine319", "qemu", Arch::X86_64));
 }
 
 #[test]
@@ -186,10 +186,10 @@ fn probes_and_boxes_per_provider() {
     assert_eq!(responds(Provider::Libvirt).map(|r| r.0), Some("virsh"));
     assert!(responds(Provider::Utm).is_some_and(|r| r.0.ends_with("utmctl")));
     assert!(responds(Provider::Qemu).is_none());
-    assert_eq!(candidate_boxes(Provider::Virtualbox, Arch::Amd64), ["generic/alpine319", "bento/debian-12"]);
-    assert_eq!(candidate_boxes(Provider::Parallels, Arch::Arm64), ["bento/debian-12"]);
-    assert_eq!(candidate_boxes(Provider::Utm, Arch::Arm64), ["utm/bookworm"]);
-    assert_eq!(candidate_boxes(Provider::Qemu, Arch::Arm64), ["generic/alpine319"]);
+    assert_eq!(candidate_boxes(Provider::Virtualbox, Arch::X86_64), ["generic/alpine319", "bento/debian-12"]);
+    assert_eq!(candidate_boxes(Provider::Parallels, Arch::Aarch64), ["bento/debian-12"]);
+    assert_eq!(candidate_boxes(Provider::Utm, Arch::Aarch64), ["utm/bookworm"]);
+    assert_eq!(candidate_boxes(Provider::Qemu, Arch::Aarch64), ["generic/alpine319"]);
     assert!(has_private_network(Provider::Libvirt) && !has_private_network(Provider::Qemu) && !has_private_network(Provider::Hyperv));
     // QEMU stores and lists its box as libvirt (vagrant-qemu boots a libvirt box); others use their own id.
     assert_eq!(box_provider(Provider::Qemu), "libvirt");

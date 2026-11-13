@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use crate::error::{Error, Result};
 use crate::platform::exec::{docker_denied, docker_denied_error, run, run_read, run_read_env};
+use crate::platform::host::Os;
 
 /// How long each engine's context may take to answer before it counts as stopped.
 const ENGINE_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
@@ -129,7 +130,7 @@ fn engine_named(os: &str, context: &str) -> Engine {
 /// The engine behind a Docker CLI context, by the names the engines give their contexts.
 /// `default` only counts on Linux, where it is the native daemon; elsewhere its socket is a
 /// link to whichever desktop app installed it, so it says nothing on its own.
-fn context_engine(name: &str, os: &str) -> Option<Engine> {
+fn context_engine(name: &str, os: Os) -> Option<Engine> {
     let n = name.to_lowercase();
     if n == "orbstack" {
         Some(Engine::Orbstack)
@@ -141,7 +142,7 @@ fn context_engine(name: &str, os: &str) -> Option<Engine> {
         Some(Engine::RancherDesktop)
     } else if n.starts_with("podman") {
         Some(Engine::Podman)
-    } else if n == "default" && os == "linux" {
+    } else if n == "default" && os == Os::Linux {
         Some(Engine::Native)
     } else {
         None
@@ -186,7 +187,7 @@ fn contexts_from(listing: &str) -> Vec<(String, bool)> {
 
 /// The Docker CLI contexts with an engine behind them (unknown contexts are left out).
 async fn engine_contexts() -> Result<Vec<(String, Engine)>> {
-    let os = std::env::consts::OS;
+    let os = Os::HERE;
     Ok(contexts().await?.into_iter().filter_map(|(name, _)| context_engine(&name, os).map(|e| (name, e))).collect())
 }
 
@@ -196,7 +197,7 @@ async fn engine_contexts() -> Result<Vec<(String, Engine)>> {
 /// Mac reads as the desktop app behind it; one that doesn't is known by its name alone. Two
 /// contexts to one engine keep the first (the current one first of all).
 pub(super) async fn engines() -> Vec<EngineStatus> {
-    let os = std::env::consts::OS;
+    let os = Os::HERE;
     let mut found: Vec<EngineStatus> = Vec::new();
     let mut listed = contexts().await.unwrap_or_else(|e| {
         // No Docker CLI: no engine to list, and the report says Docker is missing.
@@ -275,23 +276,23 @@ pub async fn docker_start_engine(engine: String) -> Result<()> {
 
 /// Opens the engine's app, or runs its CLI, on this OS.
 async fn launch(engine: &str) -> Result<String> {
-    match (std::env::consts::OS, engine) {
-        ("macos", "docker-desktop") => run("open", &["-a", "Docker"], None).await,
-        ("macos", "orbstack") => run("open", &["-a", "OrbStack"], None).await,
+    match (Os::HERE, engine) {
+        (Os::Macos, "docker-desktop") => run("open", &["-a", "Docker"], None).await,
+        (Os::Macos, "orbstack") => run("open", &["-a", "OrbStack"], None).await,
         // Started on its own, with none of this process's handles: through `cmd /C start` the
         // app inherited them and kept them open, and a caller waiting for this process's output
         // (the guided setup's test entry under a redirect) waited for Docker Desktop to quit.
         #[cfg(windows)]
-        ("windows", "docker-desktop") => crate::platform::exec::launch_detached(r"C:\Program Files\Docker\Docker\Docker Desktop.exe").map(|()| String::new()),
+        (Os::Windows, "docker-desktop") => crate::platform::exec::launch_detached(r"C:\Program Files\Docker\Docker\Docker Desktop.exe").map(|()| String::new()),
         // Unattended (see `platform::elevation`): as root already, or through sudo, never asking.
-        ("linux", "docker-engine") if crate::platform::elevation::unattended() => {
+        (Os::Linux, "docker-engine") if crate::platform::elevation::unattended() => {
             if crate::platform::elevation::is_root() {
                 run("systemctl", &["start", "docker"], None).await
             } else {
                 run("sudo", &["-n", "systemctl", "start", "docker"], None).await
             }
         }
-        ("linux", "docker-engine") => run("pkexec", &["systemctl", "start", "docker"], None).await.map_err(|e| match e {
+        (Os::Linux, "docker-engine") => run("pkexec", &["systemctl", "start", "docker"], None).await.map_err(|e| match e {
             Error::ToolMissing { .. } => Error::Invalid(crate::machine::tools::steps::NO_PKEXEC.into()),
             e => e,
         }),

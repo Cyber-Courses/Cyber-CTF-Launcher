@@ -8,11 +8,10 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::install::Dependency;
-#[cfg(not(windows))]
-use super::steps::step;
-use super::steps::{Step, run_steps};
+use super::steps::{Step, run_steps, step};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
+use crate::platform::host::{Host, LinuxPackages, Os, Packages};
 
 /// A tool Cyber CTF installed, as Settings lists it: the record, and its name here.
 #[derive(Serialize, Clone, Debug, ts_rs::TS)]
@@ -67,45 +66,20 @@ pub fn outcome(present_before: bool, present_after: bool) -> Outcome {
     }
 }
 
-/// The command that proves `dep` is installed here, when there is one to run. WSL has none worth
-/// trusting (`wsl.exe` ships with Windows whether WSL is set up or not), so it is never recorded.
-fn presence_probe(dep: Dependency) -> Option<(&'static str, &'static [&'static str])> {
-    Some(match dep {
-        Dependency::Docker => ("docker", &["--version"]),
-        Dependency::Vagrant => ("vagrant", &["--version"]),
-        Dependency::Terraform => ("terraform", &["version"]),
-        Dependency::Virtualbox => ("VBoxManage", &["--version"]),
-        Dependency::Qemu => ("qemu-img", &["--version"]),
-        Dependency::Libvirt => ("virsh", &["--version"]),
-        Dependency::Awscli => ("aws", &["--version"]),
-        Dependency::Azurecli => ("az", &["version"]),
-        Dependency::Gcloud => ("gcloud", &["--version"]),
-        Dependency::Utm | Dependency::Wsl | Dependency::VmwareUtility | Dependency::Hyperv => return None,
-    })
-}
-
-/// The app bundle that proves `dep` is installed on macOS (also before its CLI is on PATH).
-fn mac_app(dep: Dependency) -> Option<&'static str> {
-    match dep {
-        Dependency::Docker => Some("/Applications/Docker.app"),
-        Dependency::Virtualbox => Some("/Applications/VirtualBox.app"),
-        Dependency::Utm => Some("/Applications/UTM.app"),
-        _ => None,
-    }
-}
-
 /// Whether `dep` is installed on this machine; None when that can't be told (WSL).
 pub async fn present(dep: Dependency) -> Option<bool> {
     // A service, not a program on PATH: what the machine check reads.
     if dep == Dependency::VmwareUtility {
         return Some(crate::runtime::providers::vmware_utility().await != crate::runtime::providers::UtilityState::Missing);
     }
-    if cfg!(target_os = "macos") && mac_app(dep).is_some_and(|a| std::path::Path::new(a).exists()) {
+    let row = dep.row();
+    let mac_app = row.mac_app.filter(|_| Os::HERE == Os::Macos);
+    if mac_app.is_some_and(|a| std::path::Path::new(a).exists()) {
         return Some(true);
     }
-    match presence_probe(dep) {
+    match row.probe {
         Some((program, args)) => Some(crate::platform::exec::run_read(program, args, None).await.is_ok()),
-        None if cfg!(target_os = "macos") && mac_app(dep).is_some() => Some(false),
+        None if mac_app.is_some() => Some(false),
         None => None,
     }
 }
@@ -210,7 +184,6 @@ pub async fn installed_tools(dirs: AppDirs) -> Vec<Installed> {
 }
 
 /// Runs a shell script with the OS admin prompt on macOS (the same dialog an installer shows).
-#[cfg(target_os = "macos")]
 fn mac_admin(script: &str, note: &str) -> Step {
     let escaped = script.replace('\\', "\\\\").replace('"', "\\\"");
     Step {
@@ -226,7 +199,6 @@ fn mac_admin(script: &str, note: &str) -> Step {
 /// mounted as `/Volumes/VirtualBox*`: anyone can mount a disk image with that name and a
 /// `VirtualBox_Uninstall.tool` of their own, which would then run as root. The image is found
 /// before elevating: as root, `~` isn't the player's home.
-#[cfg(any(target_os = "macos", test))]
 fn virtualbox_uninstall(dmg: &str) -> String {
     format!(
         "m=$(hdiutil attach -nobrowse -noautoopen '{dmg}' | awk -F'\\t' '/\\/Volumes\\//{{print $NF; exit}}'); [ -n \"$m\" ] || exit 3; \
@@ -236,7 +208,6 @@ fn virtualbox_uninstall(dmg: &str) -> String {
 
 /// The VirtualBox installer image, from `brew --cache --cask virtualbox`'s output: a `.dmg` path
 /// the admin script can quote.
-#[cfg(any(target_os = "macos", test))]
 fn virtualbox_dmg_from(out: &str) -> Result<String> {
     let path = out.trim();
     // Homebrew names it `….dmg`, in lower case: anything else isn't its installer image.
@@ -249,7 +220,6 @@ fn virtualbox_dmg_from(out: &str) -> Result<String> {
 
 /// The VirtualBox installer image Homebrew has (fetched again first: Homebrew drops the download
 /// once the cask moves on, which it does often), as the player, before the admin step.
-#[cfg(target_os = "macos")]
 async fn virtualbox_dmg(brew: &'static str, on_line: &mut impl FnMut(String)) -> Result<String> {
     run_steps(&[step(brew, &["fetch", "--cask", "virtualbox"])], on_line).await?;
     let out = crate::platform::exec::run_cli(brew, &["--cache", "--cask", "virtualbox"]).await?;
@@ -262,22 +232,27 @@ async fn virtualbox_dmg(brew: &'static str, on_line: &mut impl FnMut(String)) ->
     Ok(dmg)
 }
 
-/// How to remove `dep` on macOS: Homebrew's own packages, or the vendor's uninstaller.
-#[cfg(target_os = "macos")]
-fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
-    let brew = crate::platform::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
+/// How to remove `dep` on macOS: Homebrew's own packages, or the vendor's uninstaller. Only
+/// Homebrew's packages (and VirtualBox's installer image, which Homebrew keeps) need Homebrew: a
+/// tool installed from its vendor's package is removed without it.
+fn macos_plan(dep: Dependency, packages: Option<Packages>, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
+    let brew = || match packages {
+        Some(Packages::Homebrew(brew)) => Ok(brew),
+        _ => Err(Error::Invalid("Homebrew is needed to remove this tool.".into())),
+    };
     Ok(match dep {
-        Dependency::Terraform => vec![step(brew, &["uninstall", "hashicorp/tap/terraform"])],
-        Dependency::Qemu => vec![step(brew, &["uninstall", "qemu"])],
-        Dependency::Awscli => vec![step(brew, &["uninstall", "awscli"])],
-        Dependency::Gcloud => vec![step(brew, &["uninstall", "--cask", "google-cloud-sdk"])],
-        Dependency::Azurecli => vec![step(brew, &["uninstall", "--cask", "azure-cli-preview"])],
+        Dependency::Terraform => vec![step(brew()?, &["uninstall", "hashicorp/tap/terraform"])],
+        Dependency::Qemu => vec![step(brew()?, &["uninstall", "qemu"])],
+        Dependency::Awscli => vec![step(brew()?, &["uninstall", "awscli"])],
+        Dependency::Gcloud => vec![step(brew()?, &["uninstall", "--cask", "google-cloud-sdk"])],
+        Dependency::Azurecli => vec![step(brew()?, &["uninstall", "--cask", "azure-cli-preview"])],
         // Installed from the vendors' own packages: removed the way their uninstallers do.
         Dependency::Vagrant => vec![mac_admin(
             "rm -rf /opt/vagrant /usr/local/bin/vagrant && pkgutil --forget com.vagrant.vagrant || true",
             "Removing Vagrant (macOS asks for your password)…",
         )],
         Dependency::Virtualbox => {
+            brew()?;
             let dmg = virtualbox_dmg.ok_or_else(|| Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()))?;
             vec![mac_admin(&virtualbox_uninstall(dmg), "Running VirtualBox's own uninstaller (macOS asks for your password)…")]
         }
@@ -291,63 +266,71 @@ fn macos_plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>
         Dependency::VmwareUtility => {
             vec![mac_admin(super::vmware_utility::MAC_UNINSTALL, "Removing the Vagrant VMware Utility (macOS asks for your password)…")]
         }
-        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(super::install::not_here(dep)),
+        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(super::install::not_here(dep, Os::Macos)),
     })
 }
 
-/// How to remove `dep` on Windows: its winget package.
-#[cfg(target_os = "windows")]
+/// How to remove `dep` on Windows: its winget package, VMware's utility by its product code, and
+/// the Windows features by the player in Windows Features.
 fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
-    match (dep, super::install::winget_package(dep)) {
-        (_, Some(id)) => Ok(vec![super::install::winget("uninstall", id, &[])]),
-        (Dependency::VmwareUtility, None) => Ok(vec![super::vmware_utility::windows_uninstall()]),
-        (Dependency::Wsl, None) => Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
-        (Dependency::Hyperv, None) => Err(Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into())),
-        (_, None) => Err(super::install::not_here(dep)),
+    if let Some(id) = dep.row().winget {
+        return Ok(vec![super::install::winget("uninstall", id, &[])]);
+    }
+    match dep {
+        Dependency::VmwareUtility => Ok(vec![super::vmware_utility::windows_uninstall()]),
+        Dependency::Wsl => Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
+        Dependency::Hyperv => Err(Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into())),
+        Dependency::Utm | Dependency::Libvirt | Dependency::Qemu => Err(super::install::not_here(dep, Os::Windows)),
+        Dependency::Docker
+        | Dependency::Vagrant
+        | Dependency::Terraform
+        | Dependency::Virtualbox
+        | Dependency::Awscli
+        | Dependency::Azurecli
+        | Dependency::Gcloud => Err(Error::Invalid(format!("{} has no winget package to remove.", dep.name_on(Os::Windows)))),
     }
 }
 
 /// How to remove `dep` on Linux: its packages through the package manager that installed them
-/// (apt or dnf, as root through pkexec), or its folder.
-#[cfg(target_os = "linux")]
-fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
-    linux_plan_with(dep, super::install::packages_here())
-}
-
-/// [`linux_plan`] on a machine with that package manager. Regression: a tool the setup had
+/// (apt or dnf, as root through pkexec), or its folder. Regression: a tool the setup had
 /// installed through dnf on Fedora was removed with `apt-get remove`, which pkexec ran to
 /// `apt-get: not found`, the record kept.
-#[cfg(target_os = "linux")]
-pub(super) fn linux_plan_with(dep: Dependency, packages: super::install::Packages) -> Result<Vec<Step>> {
-    use super::install::Packages;
+fn linux_plan(dep: Dependency, packages: Option<Packages>) -> Result<Vec<Step>> {
+    let root = |script: &str| super::install::root(crate::platform::root_script::RootScript::new(script));
+    // AWS CLI is a folder on every distribution.
+    if dep == Dependency::Awscli {
+        return Ok(vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")?]);
+    }
+    let Some(packages) = packages.and_then(Packages::linux) else {
+        return Err(super::install::without_packages(dep));
+    };
     let script = match (dep, packages) {
-        (Dependency::Utm | Dependency::Wsl | Dependency::Hyperv, _) => return Err(super::install::not_here(dep)),
+        (Dependency::Utm | Dependency::Wsl | Dependency::Hyperv, _) => return Err(super::install::not_here(dep, Os::Linux)),
         (Dependency::Awscli, _) => "rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer",
-        (_, Packages::None) => return Err(super::install::without_packages(dep)),
         // Fedora: what the dnf install brought from the vendors' repositories and RPM Fusion; the
         // compiler, Ruby's headers and the shared tools (genisoimage) stay.
-        (Dependency::Docker, Packages::Dnf) => "dnf remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
-        (Dependency::Vagrant, Packages::Dnf) => "dnf remove -y vagrant",
-        (Dependency::Terraform, Packages::Dnf) => "dnf remove -y terraform",
-        (Dependency::Virtualbox, Packages::Dnf) => "dnf remove -y VirtualBox akmod-VirtualBox 'kmod-VirtualBox*'",
-        (Dependency::Qemu, Packages::Dnf) => "dnf remove -y qemu-kvm qemu-img",
-        (Dependency::Libvirt, Packages::Dnf) => "dnf remove -y libvirt libvirt-daemon-kvm virt-install virt-manager libvirt-devel",
-        // The cloud CLIs and VMware's utility install through apt only: nothing of ours to remove.
-        (_, Packages::Dnf) => return Err(super::install::apt_only(dep)),
-        (Dependency::Docker, Packages::Apt) => "apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
-        (Dependency::Vagrant, Packages::Apt) => "apt-get remove -y vagrant",
-        (Dependency::Terraform, Packages::Apt) => "apt-get remove -y terraform",
-        (Dependency::Virtualbox, Packages::Apt) => "apt-get remove -y 'virtualbox*'",
+        (Dependency::Docker, LinuxPackages::Dnf) => "dnf remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+        (Dependency::Docker, LinuxPackages::Apt) => "apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+        (Dependency::Vagrant, LinuxPackages::Dnf) => "dnf remove -y vagrant",
+        (Dependency::Vagrant, LinuxPackages::Apt) => "apt-get remove -y vagrant",
+        (Dependency::Terraform, LinuxPackages::Dnf) => "dnf remove -y terraform",
+        (Dependency::Terraform, LinuxPackages::Apt) => "apt-get remove -y terraform",
+        (Dependency::Virtualbox, LinuxPackages::Dnf) => "dnf remove -y VirtualBox akmod-VirtualBox 'kmod-VirtualBox*'",
+        (Dependency::Virtualbox, LinuxPackages::Apt) => "apt-get remove -y 'virtualbox*'",
         // The install's metapackages (qemu-system, libvirt-daemon-system) leave the packages
         // they pulled in behind, with the binaries the Machine page looks for
         // (qemu-system-x86_64, virsh): those go too, or the tool still reads as installed.
-        (Dependency::Qemu, Packages::Apt) => "apt-get remove -y 'qemu-system*' qemu-utils",
-        (Dependency::Libvirt, Packages::Apt) => "apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager",
-        (Dependency::Azurecli, Packages::Apt) => "apt-get remove -y azure-cli",
-        (Dependency::Gcloud, Packages::Apt) => "apt-get remove -y google-cloud-cli",
-        (Dependency::VmwareUtility, Packages::Apt) => "apt-get remove -y vagrant-vmware-utility",
+        (Dependency::Qemu, LinuxPackages::Dnf) => "dnf remove -y qemu-kvm qemu-img",
+        (Dependency::Qemu, LinuxPackages::Apt) => "apt-get remove -y 'qemu-system*' qemu-utils",
+        (Dependency::Libvirt, LinuxPackages::Dnf) => "dnf remove -y libvirt libvirt-daemon-kvm virt-install virt-manager libvirt-devel",
+        (Dependency::Libvirt, LinuxPackages::Apt) => "apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager",
+        (Dependency::Azurecli, LinuxPackages::Apt) => "apt-get remove -y azure-cli",
+        (Dependency::Gcloud, LinuxPackages::Apt) => "apt-get remove -y google-cloud-cli",
+        (Dependency::VmwareUtility, LinuxPackages::Apt) => "apt-get remove -y vagrant-vmware-utility",
+        // The cloud CLIs and VMware's utility install through apt only: nothing of ours to remove.
+        (Dependency::Azurecli | Dependency::Gcloud | Dependency::VmwareUtility, LinuxPackages::Dnf) => return Err(super::install::apt_only(dep)),
     };
-    let mut steps = vec![super::install::root(crate::platform::root_script::RootScript::new(script))?];
+    let mut steps = vec![root(script)?];
     // Google's apt package, and the per-user SDK earlier versions installed in its place.
     if dep == Dependency::Gcloud {
         steps.push(step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""]));
@@ -355,24 +338,16 @@ pub(super) fn linux_plan_with(dep: Dependency, packages: super::install::Package
     Ok(steps)
 }
 
-/// How to remove `dep` on this OS. On macOS, VirtualBox's step needs its installer image
+/// How to remove `dep` on `host`. On macOS, VirtualBox's step needs its installer image
 /// (`virtualbox_dmg`).
-fn plan(dep: Dependency, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
-    let _ = virtualbox_dmg;
-    if !dep.runs_on(std::env::consts::OS) {
-        return Err(super::install::not_here(dep));
+pub(super) fn plan_on(dep: Dependency, host: Host, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
+    if !dep.runs_on(host.os) {
+        return Err(super::install::not_here(dep, host.os));
     }
-    #[cfg(target_os = "macos")]
-    {
-        macos_plan(dep, virtualbox_dmg)
-    }
-    #[cfg(target_os = "windows")]
-    {
-        windows_plan(dep)
-    }
-    #[cfg(target_os = "linux")]
-    {
-        linux_plan(dep)
+    match host.os {
+        Os::Macos => macos_plan(dep, host.packages, virtualbox_dmg),
+        Os::Windows => windows_plan(dep),
+        Os::Linux => linux_plan(dep, host.packages),
     }
 }
 
@@ -383,17 +358,12 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
     if !confirmed(recorded).iter().any(|t| t.dependency == dependency) {
         return Err(Error::Invalid("Cyber CTF didn't install this tool, so it won't remove it.".into()));
     }
-    #[cfg(target_os = "macos")]
-    let dmg = match dependency {
-        Dependency::Virtualbox => {
-            let brew = crate::platform::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is needed to remove this tool.".into()))?;
-            Some(virtualbox_dmg(brew, &mut on_line).await?)
-        }
+    let host = Host::here();
+    let dmg = match (host.os, host.packages, dependency) {
+        (Os::Macos, Some(Packages::Homebrew(brew)), Dependency::Virtualbox) => Some(virtualbox_dmg(brew, &mut on_line).await?),
         _ => None,
     };
-    #[cfg(not(target_os = "macos"))]
-    let dmg: Option<String> = None;
-    run_steps(&plan(dependency, dmg.as_deref())?, &mut on_line).await?;
+    run_steps(&plan_on(dependency, host, dmg.as_deref())?, &mut on_line).await?;
     update(&dirs, |tools| tools.retain(|t| t.dependency != dependency));
     on_line("Removed.".into());
     Ok(())
@@ -403,18 +373,16 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_tool_this_os_doesnt_have_is_refused_as_the_install_refuses_it() {
-        for dep in Dependency::ALL.into_iter().filter(|d| !d.runs_on(std::env::consts::OS)) {
-            assert_eq!(plan(dep, None).err().map(|e| e.to_string()), Some(super::super::install::not_here(dep).to_string()));
-        }
-    }
+    const BREW: &str = "/opt/homebrew/bin/brew";
+    const MAC: Host = Host { os: Os::Macos, arch: crate::platform::host::Arch::Aarch64, packages: Some(Packages::Homebrew(BREW)) };
+    const WINDOWS: Host = Host { os: Os::Windows, arch: crate::platform::host::Arch::X86_64, packages: Some(Packages::Winget) };
+    const APT: Host = Host { os: Os::Linux, arch: crate::platform::host::Arch::X86_64, packages: Some(Packages::Linux(LinuxPackages::Apt)) };
+    const DNF: Host = Host { packages: Some(Packages::Linux(LinuxPackages::Dnf)), ..APT };
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn a_removal_runs_as_root_as_an_install_does() {
         // Regression: removals built their own pkexec line, without the proxy installs hand it.
-        let steps = linux_plan(Dependency::Vagrant).unwrap();
+        let steps = plan_on(Dependency::Vagrant, APT, None).unwrap();
         assert_eq!(steps[0].program, "pkexec");
         assert_eq!(steps[0].args.first().map(String::as_str), Some("env"));
         let script = crate::platform::root_script::RootScript::new("apt-get remove -y vagrant");
@@ -509,8 +477,8 @@ mod tests {
         assert_eq!(outcome(false, true), Outcome::Installed);
         assert_eq!(outcome(false, false), Outcome::Pending);
         // WSL can't be told apart from its stub: never recorded.
-        assert!(presence_probe(Dependency::Wsl).is_none());
-        assert!(presence_probe(Dependency::Docker).is_some() && mac_app(Dependency::Utm).is_some());
+        assert!(Dependency::Wsl.row().probe.is_none());
+        assert!(Dependency::Docker.row().probe.is_some() && Dependency::Utm.row().mac_app.is_some());
     }
 
     #[test]
@@ -567,15 +535,14 @@ mod tests {
         assert!(virtualbox_dmg_from("/a.DMG").is_err());
     }
 
-    #[cfg(target_os = "windows")]
     #[test]
     fn every_windows_tool_is_removed_through_winget() {
+        let plan = |dep, dmg| plan_on(dep, WINDOWS, dmg);
         for dep in [
             Dependency::Docker,
             Dependency::Vagrant,
             Dependency::Terraform,
             Dependency::Virtualbox,
-            Dependency::Qemu,
             Dependency::Awscli,
             Dependency::Azurecli,
             Dependency::Gcloud,
@@ -591,14 +558,19 @@ mod tests {
                 && plan(Dependency::Hyperv, None).is_err()
                 && plan(Dependency::Utm, Some("/x/VirtualBox.dmg")).is_err()
                 && plan(Dependency::Libvirt, Some("/x/VirtualBox.dmg")).is_err()
+                && plan(Dependency::Qemu, None).is_err()
         );
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn every_macos_tool_has_a_way_out() {
-        if crate::platform::brew_bin().is_none() {
-            return; // CI without Homebrew: the brew-based plans can't be built.
+        let plan = |dep, dmg| plan_on(dep, MAC, dmg);
+        // Regression: VMware's utility, installed from HashiCorp's package without Homebrew, could
+        // only be removed with Homebrew; so could every other tool from its vendor's package.
+        let without = Host { packages: None, ..MAC };
+        assert!(plan_on(Dependency::Terraform, without, None).err().is_some_and(|e| e.to_string().contains("Homebrew is needed")));
+        for dep in [Dependency::VmwareUtility, Dependency::Vagrant, Dependency::Docker, Dependency::Utm] {
+            assert!(plan_on(dep, without, None).is_ok(), "{dep:?}");
         }
         for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Libvirt | Dependency::Hyperv)) {
             assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
@@ -606,9 +578,9 @@ mod tests {
         assert!(plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err() && plan(Dependency::Libvirt, Some("/x/VirtualBox.dmg")).is_err());
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn every_linux_tool_has_a_way_out() {
+        let plan = |dep, dmg| plan_on(dep, APT, dmg);
         for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Utm | Dependency::Hyperv)) {
             assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
         }
@@ -620,21 +592,20 @@ mod tests {
         assert!(script(Dependency::Libvirt).contains("libvirt-clients"));
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn a_tool_installed_through_dnf_is_removed_through_dnf() {
-        use super::super::install::Packages;
         for dep in [Dependency::Docker, Dependency::Vagrant, Dependency::Terraform, Dependency::Virtualbox, Dependency::Qemu, Dependency::Libvirt] {
-            let script = linux_plan_with(dep, Packages::Dnf).unwrap()[0].args.join(" ");
+            let script = plan_on(dep, DNF, None).unwrap()[0].args.join(" ");
             assert!(script.contains("dnf remove -y") && !script.contains("apt-get"), "{dep:?}: {script}");
         }
         // AWS CLI is a folder on every distribution.
-        assert!(linux_plan_with(Dependency::Awscli, Packages::Dnf).unwrap()[0].args.join(" ").contains("rm -rf /usr/local/aws-cli"));
+        assert!(plan_on(Dependency::Awscli, DNF, None).unwrap()[0].args.join(" ").contains("rm -rf /usr/local/aws-cli"));
+        assert!(plan_on(Dependency::Awscli, Host { packages: None, ..APT }, None).is_ok(), "a folder, whatever the distribution");
         // What the setup never installed through dnf has nothing to remove through it.
         for dep in [Dependency::Azurecli, Dependency::Gcloud, Dependency::VmwareUtility] {
-            let err = linux_plan_with(dep, Packages::Dnf).err().map(|e| e.to_string()).unwrap_or_default();
+            let err = plan_on(dep, DNF, None).err().map(|e| e.to_string()).unwrap_or_default();
             assert!(err.contains("apt only"), "{dep:?}: {err}");
         }
-        assert!(linux_plan_with(Dependency::Vagrant, Packages::None).is_err());
+        assert!(plan_on(Dependency::Vagrant, Host { packages: None, ..APT }, None).is_err());
     }
 }

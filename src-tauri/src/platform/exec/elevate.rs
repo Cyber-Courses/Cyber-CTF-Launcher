@@ -37,8 +37,6 @@ use std::path::Path;
 #[cfg(any(windows, test))]
 use self::collect::{WorkDir, follow_batch};
 #[cfg(any(windows, test))]
-pub(crate) use self::script::ps_quote;
-#[cfg(any(windows, test))]
 use self::script::{Plan, env_json, forwarded_env, own_env, powershell_args, script};
 #[cfg(any(windows, test))]
 use super::vagrant::{Event, Outcome, Step};
@@ -366,6 +364,21 @@ pub(super) async fn batch(dir: &Path, env: &[(String, String)], steps: &[Step], 
 fn powershell() -> std::path::PathBuf {
     let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
     Path::new(&root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
+}
+
+/// `s` as a PowerShell single-quoted string. PowerShell also takes the typographic single quotes
+/// as quote characters, so every one of them is doubled too.
+pub(crate) fn ps_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(c);
+        }
+        out.push(c);
+    }
+    out.push('\'');
+    out
 }
 
 #[cfg(test)]

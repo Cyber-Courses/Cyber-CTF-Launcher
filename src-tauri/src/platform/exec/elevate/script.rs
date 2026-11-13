@@ -5,8 +5,8 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::Batch;
 use super::collect::WorkDir;
+use super::{Batch, ps_quote};
 use crate::error::{Error, Result};
 use crate::platform::exec::vagrant::HYPERV_SWITCH_ENV;
 
@@ -27,21 +27,6 @@ fn check_arg(arg: &str) -> Result<()> {
         return Err(Error::Invalid(format!("refusing to pass `{}` to Vagrant through Windows PowerShell: it can't pass it intact", arg.escape_debug())));
     }
     Ok(())
-}
-
-/// `s` as a PowerShell single-quoted string. PowerShell also takes the typographic single quotes
-/// as quote characters, so every one of them is doubled too.
-pub(crate) fn ps_quote(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('\'');
-    for c in s.chars() {
-        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
-            out.push(c);
-        }
-        out.push(c);
-    }
-    out.push('\'');
-    out
 }
 
 /// The environment the commands get: an elevated process starts from the account's stored

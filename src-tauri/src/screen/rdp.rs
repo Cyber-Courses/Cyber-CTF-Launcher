@@ -7,6 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::platform::host::Os;
+
 /// A Remote Desktop client this computer has.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Client {
@@ -35,20 +37,20 @@ impl Client {
 /// The Mac apps that open a `.rdp` file, newest first.
 const MAC_APPS: [&str; 2] = ["Windows App.app", "Microsoft Remote Desktop.app"];
 
-/// The Remote Desktop client of OS `os` (`std::env::consts::OS`), as `exists` and `on_path` find
+/// The Remote Desktop client of OS `os`, as `exists` and `on_path` find
 /// them; `home` is the user's (a Mac app in `~/Applications`).
-pub(crate) fn find(os: &str, home: Option<&Path>, exists: impl Fn(&Path) -> bool, on_path: impl Fn(&str) -> Option<PathBuf>) -> Option<Client> {
+pub(crate) fn find(os: Os, home: Option<&Path>, exists: impl Fn(&Path) -> bool, on_path: impl Fn(&str) -> Option<PathBuf>) -> Option<Client> {
     match os {
-        "windows" => {
+        Os::Windows => {
             let system = std::env::var_os("SystemRoot").map(|r| PathBuf::from(r).join("System32").join("mstsc.exe"));
             system.filter(|p| exists(p)).or_else(|| on_path("mstsc.exe")).map(Client::Mstsc)
         }
-        "macos" => {
+        Os::Macos => {
             let dirs = std::iter::once(PathBuf::from("/Applications")).chain(home.map(|h| h.join("Applications")));
             let dirs: Vec<PathBuf> = dirs.collect();
             MAC_APPS.iter().flat_map(|app| dirs.iter().map(move |d| d.join(app))).find(|p| exists(p)).map(Client::MacApp)
         }
-        _ => on_path("xfreerdp3").or_else(|| on_path("xfreerdp")).map(Client::FreeRdp).or_else(|| on_path("remmina").map(Client::Remmina)),
+        Os::Linux => on_path("xfreerdp3").or_else(|| on_path("xfreerdp")).map(Client::FreeRdp).or_else(|| on_path("remmina").map(Client::Remmina)),
     }
 }
 
@@ -109,17 +111,17 @@ mod tests {
 
     #[test]
     fn each_os_finds_its_own_client_or_none() {
-        let mac = find("macos", Some(Path::new("/Users/u")), |p| p == Path::new("/Users/u/Applications/Microsoft Remote Desktop.app"), none);
+        let mac = find(Os::Macos, Some(Path::new("/Users/u")), |p| p == Path::new("/Users/u/Applications/Microsoft Remote Desktop.app"), none);
         assert_eq!(mac, Some(Client::MacApp(PathBuf::from("/Users/u/Applications/Microsoft Remote Desktop.app"))));
-        let both = find("macos", None, |p| p.starts_with("/Applications"), none);
+        let both = find(Os::Macos, None, |p| p.starts_with("/Applications"), none);
         assert_eq!(both, Some(Client::MacApp(PathBuf::from("/Applications/Windows App.app"))), "the newer app first");
-        assert_eq!(find("macos", None, |_| false, none), None);
+        assert_eq!(find(Os::Macos, None, |_| false, none), None);
         let linux = |names: &'static [&'static str]| move |n: &str| names.contains(&n).then(|| PathBuf::from(format!("/usr/bin/{n}")));
-        assert_eq!(find("linux", None, |_| false, linux(&["xfreerdp", "remmina"])), Some(Client::FreeRdp(PathBuf::from("/usr/bin/xfreerdp"))));
-        assert_eq!(find("linux", None, |_| false, linux(&["xfreerdp3", "xfreerdp"])), Some(Client::FreeRdp(PathBuf::from("/usr/bin/xfreerdp3"))));
-        assert_eq!(find("linux", None, |_| false, linux(&["remmina"])), Some(Client::Remmina(PathBuf::from("/usr/bin/remmina"))));
-        assert_eq!(find("linux", None, |_| false, none), None);
-        let windows = find("windows", None, |_| false, |n: &str| (n == "mstsc.exe").then(|| PathBuf::from("C:/Windows/System32/mstsc.exe")));
+        assert_eq!(find(Os::Linux, None, |_| false, linux(&["xfreerdp", "remmina"])), Some(Client::FreeRdp(PathBuf::from("/usr/bin/xfreerdp"))));
+        assert_eq!(find(Os::Linux, None, |_| false, linux(&["xfreerdp3", "xfreerdp"])), Some(Client::FreeRdp(PathBuf::from("/usr/bin/xfreerdp3"))));
+        assert_eq!(find(Os::Linux, None, |_| false, linux(&["remmina"])), Some(Client::Remmina(PathBuf::from("/usr/bin/remmina"))));
+        assert_eq!(find(Os::Linux, None, |_| false, none), None);
+        let windows = find(Os::Windows, None, |_| false, |n: &str| (n == "mstsc.exe").then(|| PathBuf::from("C:/Windows/System32/mstsc.exe")));
         assert!(matches!(windows, Some(Client::Mstsc(_))));
     }
 

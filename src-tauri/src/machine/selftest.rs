@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use crate::error::Result;
 use crate::machine::storage::owned;
 use crate::platform::AppDirs;
+use crate::platform::host::Arch;
 use crate::runtime::providers::Provider;
 use crate::runtime::selftest_report::{Event, Reporter};
 
@@ -55,37 +56,13 @@ pub(crate) fn work_dir(dirs: &AppDirs, kind: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// A CPU architecture, as the test boxes differ by it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Arch {
-    /// x86-64 (`amd64`).
-    Amd64,
-    /// Arm (`arm64`).
-    Arm64,
-}
-
-impl Arch {
-    /// This machine's CPU.
-    fn here() -> Arch {
-        if std::env::consts::ARCH == "aarch64" { Arch::Arm64 } else { Arch::Amd64 }
-    }
-
-    /// The architecture as `vagrant box list` names it.
-    fn box_arch(self) -> &'static str {
-        match self {
-            Arch::Amd64 => "amd64",
-            Arch::Arm64 => "arm64",
-        }
-    }
-}
-
 /// Runs `op`, a self-test of `kind`, recording what it downloaded as the app's (the test image,
 /// or the test box of whichever provider it used), for Storage to clean up.
 async fn tracked<T>(dirs: &AppDirs, kind: Kind, op: impl std::future::Future<Output = T>) -> T {
     match kind {
         Kind::Docker => owned::tracked(dirs.clone(), &[IMAGE.to_string()], &[], op).await,
         Kind::Vm => {
-            let boxes: Vec<String> = vm::test_providers().flat_map(|p| candidate_boxes(p, Arch::here()).iter().map(ToString::to_string)).collect();
+            let boxes: Vec<String> = vm::test_providers().flat_map(|p| candidate_boxes(p, Arch::HERE).iter().map(ToString::to_string)).collect();
             owned::tracked(dirs.clone(), &[], &boxes, op).await
         }
     }
@@ -98,12 +75,12 @@ pub async fn machine_selftest_prefetch(dirs: AppDirs, kind: Kind, provider: Opti
         Kind::Docker => owned::tracked(dirs, &[IMAGE.to_string()], &[], downloads::ensure_image(&[])).await.map(|_| ()),
         Kind::Vm => {
             let Some(p) = vm::test_provider(provider).await else { return Ok(()) };
-            let (bx, cached) = vm::pick_box(p, Arch::here()).await;
+            let (bx, cached) = vm::pick_box(p, Arch::HERE).await;
             if cached {
                 return Ok(());
             }
             let dir = work_dir(&dirs, "vm")?;
-            owned::tracked(dirs, &[], &[bx.to_string()], downloads::ensure_box(&dir, p, bx, Arch::here(), |_| {})).await.map(|_| ())
+            owned::tracked(dirs, &[], &[bx.to_string()], downloads::ensure_box(&dir, p, bx, Arch::HERE, |_| {})).await.map(|_| ())
         }
     }
 }
@@ -164,7 +141,7 @@ mod tests {
         let err = r.step::<()>("two", "Second", async { Err(Error::Invalid("Cannot connect to the Docker daemon".into())) }).await.unwrap_err();
         assert!(err.to_string().contains("Docker daemon"));
         assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
-        let _ = Arch::here();
+        let _ = Arch::HERE;
     }
 
     #[test]

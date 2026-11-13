@@ -405,7 +405,7 @@ async fn act(dirs: &AppDirs, out: &mut Out, wanted: &Wanted, report: SystemRepor
 fn readiness(r: &SystemReport, wanted: &Wanted, hypervisor: Option<Provider>) -> Vec<(String, bool, String)> {
     let mut ready = Vec::new();
     if wanted.paths.contains(&SetupPath::Docker) {
-        if r.os == "windows" {
+        if r.os == crate::platform::host::Os::Windows {
             let state = r.wsl.as_ref().map_or_else(|| "not reported".to_owned(), |w| format!("{:?}", w.state));
             ready.push(("wsl".to_owned(), r.setup.wsl.is_empty(), format!("WSL 2: {state}")));
         }

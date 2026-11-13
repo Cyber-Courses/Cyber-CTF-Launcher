@@ -16,7 +16,7 @@ const props = {
   authReady: true,
   onLogin: vi.fn(() => Promise.resolve(true)),
   hostArch: "x86_64",
-  report: { ...readyReport(), arch: "x86_64" },
+  report: { ...readyReport(), arch: "x86_64" as const },
   openLab: { slug: null, tick: 0 },
   onDetailChange: vi.fn(),
 };
@@ -190,7 +190,7 @@ describe("Labs list", () => {
 
   it("points a fresh machine at setup for the labs it can't run", async () => {
     installTauri({ ...idle, server_list: () => ({ default: null, hosts: [] }) });
-    const report = { ...readyReport(), arch: "x86_64", dockerRunning: false };
+    const report = { ...readyReport(), arch: "x86_64" as const, dockerRunning: false };
     render(<Labs {...props} report={report} />);
     await flush(80);
     expect(screen.getAllByRole("button", { name: /Set up/ }).length).toBeGreaterThan(0);

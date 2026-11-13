@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { EMPTY_HOST } from "@/features/servers/host-setup";
 import { argsOf, failsWith, go, renderSetup } from "@/features/servers/host-setup/setup-test-kit";
-import type { OvftoolPlaced, SystemReport } from "@/lib/tauri";
+import type { Arch, Os, OvftoolPlaced, SystemReport } from "@/lib/tauri";
 import { INSTALLS_OFF, readyReport } from "@/test/fixtures";
 import { installTauri, type Call, type Handler } from "@/test/tauri";
 import { button, flush } from "@/test/ui";
@@ -15,7 +15,7 @@ const STANDALONE = "https://developer.broadcom.com/tools/open-virtualization-for
 const PICKED = "/Users/player/Downloads/VMware OVF Tool";
 
 /** This machine with Vagrant and its ESXi plugin, on `os`/`arch`, and the OVF Tool as `ovftool`. */
-function esxiReport(os: string, arch: string, ovftool: Partial<Pick<SystemReport, "ovftool" | "ovftoolLocation">> = {}): SystemReport {
+function esxiReport(os: Os, arch: Arch, ovftool: Partial<Pick<SystemReport, "ovftool" | "ovftoolLocation">> = {}): SystemReport {
   const r = readyReport();
   return {
     ...r,
@@ -58,7 +58,7 @@ describe("the OVF Tool row", () => {
   });
 
   it("offers VMware Workstation on an x64 PC, Windows or Linux", async () => {
-    for (const os of ["windows", "linux"]) {
+    for (const os of ["windows", "linux"] as const) {
       const calls = installTauri();
       const { user } = await toolsStep(esxiReport(os, "x86_64"));
       await go(user, /get vmware workstation \(includes ovf tool\)/i);

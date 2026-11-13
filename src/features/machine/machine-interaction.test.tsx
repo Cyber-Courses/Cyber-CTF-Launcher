@@ -52,7 +52,7 @@ describe("engine step: switching and starting", () => {
     const user = userEvent.setup();
     const report = {
       ...readyReport(),
-      os: "macos",
+      os: "macos" as const,
       dockerEngine: "docker-desktop" as const,
       dockerEnginesRunning: ["docker-desktop", "orbstack"] as SystemReport["dockerEnginesRunning"],
     };

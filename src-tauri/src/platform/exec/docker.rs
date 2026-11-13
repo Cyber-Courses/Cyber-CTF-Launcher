@@ -2,6 +2,7 @@
 //! daemon that isn't running.
 
 use crate::error::{Code, Error};
+use crate::platform::host::Os;
 
 /// Environment variables that would redirect the Docker CLI to a different engine than the one
 /// the user configured as current (`docker context use`, which Docker Desktop's UI reflects).
@@ -149,14 +150,14 @@ fn denied_text(s: &str) -> bool {
 
 /// The error of a player whose account can't use the running Docker daemon.
 pub fn docker_denied_error() -> Error {
-    Error::coded(denied_code(std::env::consts::OS, login_name().as_deref()))
+    Error::coded(denied_code(Os::HERE, login_name().as_deref()))
 }
 
 /// [`docker_denied_error`]'s code on `os`, for the account `user`. Windows grants the engine's
 /// pipe to the `docker-users` group (which Docker Desktop's installer fills only with the account
 /// that installed it); elsewhere the socket belongs to the `docker` group.
-fn denied_code(os: &str, user: Option<&str>) -> Code {
-    if os == "windows" {
+fn denied_code(os: Os, user: Option<&str>) -> Code {
+    if os == Os::Windows {
         Code::DockerDeniedWindows { user: user.unwrap_or("%USERNAME%").into() }
     } else {
         Code::DockerDenied { user: user.unwrap_or("$USER").into() }
@@ -298,11 +299,11 @@ mod tests {
     #[test]
     fn the_denied_message_names_the_command_to_run() {
         let message = |os, user| Error::coded(denied_code(os, user)).to_string();
-        assert!(message("linux", Some("ada")).contains("sudo usermod -aG docker ada"));
-        assert!(message("linux", None).contains("usermod -aG docker $USER"));
+        assert!(message(Os::Linux, Some("ada")).contains("sudo usermod -aG docker ada"));
+        assert!(message(Os::Linux, None).contains("usermod -aG docker $USER"));
         // Windows (#218): the docker-users group, not a Linux command.
-        assert_eq!(denied_code("windows", Some("Ada Lovelace")), Code::DockerDeniedWindows { user: "Ada Lovelace".into() });
-        let windows = message("windows", Some("Ada Lovelace"));
+        assert_eq!(denied_code(Os::Windows, Some("Ada Lovelace")), Code::DockerDeniedWindows { user: "Ada Lovelace".into() });
+        let windows = message(Os::Windows, Some("Ada Lovelace"));
         assert!(windows.contains("net localgroup docker-users \"Ada Lovelace\" /add") && windows.contains("sign out"), "{windows}");
         assert!(!windows.contains("usermod"));
         assert!(docker_denied_error().to_string().contains(if cfg!(windows) { "docker-users" } else { "usermod -aG docker" }));

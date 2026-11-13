@@ -130,7 +130,7 @@ pub fn plan(r: &SystemReport, options: &Options, wanted: &Wanted) -> Plan {
                 if matches!(action, Action::Install { .. } | Action::Relogin) || docker_install(&action) { "docker".into() } else { engine_item.clone() };
             plan.steps.push(Step { item, action });
         }
-        if r.os == "windows" {
+        if r.os == crate::platform::host::Os::Windows {
             plan.items.push("wsl".into());
         }
         plan.items.extend(["docker".to_owned(), engine_item]);

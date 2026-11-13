@@ -101,6 +101,7 @@ fn write_values(dir: &Path) {
     write_selftest_steps(dir);
     write_deploy_log(dir);
     write_setup_shapes(dir);
+    write_setup_tables(dir);
     write_error_codes(dir);
     write_patterns(dir);
     write_lab_ids(dir);
@@ -187,6 +188,52 @@ fn write_docker_engines(dir: &Path) {
 /// The generated file of the Docker engines (values, not types).
 const DOCKER_ENGINES: &str = "DockerEngines";
 
+/// The file of the guided setup's tables ([`machine::setup`], the tools' and the hypervisors'
+/// rows): which engines each OS offers and recommends, which tool installs a hypervisor on each
+/// OS, and where the player gets what the setup doesn't install. The browser preview works its
+/// setup options out from these, with no core to ask (not a type: imported by its path).
+fn write_setup_tables(dir: &Path) {
+    use crate::machine::tools::install::Dependency;
+    use crate::platform::host::Os;
+    use runtime::providers::Provider;
+    let per_os = |value: &dyn Fn(Os) -> String| {
+        Os::ALL.into_iter().fold(String::new(), |mut lines, os| {
+            let _ = writeln!(lines, "  {}: {},", os.id(), value(os));
+            lines
+        })
+    };
+    let quoted = |text: &str| serde_json::to_string(text).unwrap();
+    let engines = per_os(&|os| {
+        let ids = machine::setup::engines_on(os).iter().map(|e| quoted(e.id())).collect::<Vec<_>>().join(", ");
+        format!("[{ids}]")
+    });
+    let recommended = per_os(&|os| quoted(machine::setup::recommended_engine(os).id()));
+    let installs = per_os(&|os| {
+        let pairs = Provider::ALL.iter().filter_map(|p| machine::setup::installable(*p, os).map(|d| format!(" {}: {},", p.id(), quoted(&dependency_id(d)))));
+        format!("{{{} }}", pairs.collect::<String>())
+    });
+    let own =
+        Dependency::ALL.iter().filter_map(|d| d.row().own_url.map(|url| format!("  {}: {},\n", quoted(&dependency_id(*d)), quoted(url)))).collect::<String>();
+    let vendor = Provider::ALL.iter().filter_map(|p| p.row().vendor.map(|url| format!("  {}: {},\n", p.id(), quoted(url)))).collect::<String>();
+    let text = format!(
+        "{HEADER}import type {{ Dependency }} from \"./Dependency\";\nimport type {{ DockerEngine }} from \"./DockerEngine\";\nimport type {{ Os }} from \"./Os\";\nimport type {{ Provider }} from \"./Provider\";\n\n\
+         /** The engines the setup offers on each OS, in its order (Rust's `machine::setup::engines_on`). */\nexport const ENGINES_ON: Record<Os, readonly DockerEngine[]> = {{\n{engines}}};\n\n\
+         /** The engine the setup installs in one click on each OS (Rust's `machine::setup::recommended_engine`). */\nexport const RECOMMENDED_ENGINE: Record<Os, DockerEngine> = {{\n{recommended}}};\n\n\
+         /** The tool the setup installs as each hypervisor, on each OS (Rust's `Provider::dependency`, where the tool runs). */\nexport const INSTALLS_AS: Record<Os, Partial<Record<Provider, Dependency>>> = {{\n{installs}}};\n\n\
+         /** Where the player installs a tool themselves when the setup can't (Rust's tool rows, `own_url`). */\nexport const OWN_INSTALL_URLS: Partial<Record<Dependency, string>> = {{\n{own}}};\n\n\
+         /** Where a hypervisor the setup doesn't install comes from (Rust's provider rows, `vendor`). */\nexport const VENDOR_URLS: Partial<Record<Provider, string>> = {{\n{vendor}}};\n"
+    );
+    fs::write(dir.join(format!("{SETUP_TABLES}.ts")), text).unwrap();
+}
+
+/// A tool's id as the webview writes it (its serde name).
+fn dependency_id(d: crate::machine::tools::install::Dependency) -> String {
+    serde_json::to_value(d).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
+}
+
+/// The generated file of the guided setup's tables (values, not types).
+const SETUP_TABLES: &str = "SetupTables";
+
 /// The file of the steps each server's VM test reports ([`runtime::server_selftest::PLANS`]),
 /// which the Server screen lists up front (not a type: imported by its path, not from the index).
 fn write_selftest_steps(dir: &Path) {
@@ -231,6 +278,7 @@ const DEPLOY_LOG: &str = "DeployLog";
 /// The file of every provider's name as the player reads it ([`Provider::label`]), the one table
 /// the webview names providers from (not a type: imported by its path, not from the index).
 fn write_provider_names(dir: &Path) {
+    use crate::platform::host::Os;
     use runtime::providers::Provider;
     let entries = Provider::ALL.iter().chain(&Provider::CLOUDS).fold(String::new(), |mut lines, p| {
         let _ = writeln!(lines, "  {}: \"{}\",", p.id(), p.label());
@@ -238,12 +286,12 @@ fn write_provider_names(dir: &Path) {
     });
     let doc = "/** Each provider's name as the player reads it (Rust's `Provider::label`). */";
     // The names an OS changes (Rust's `Provider::label_on`), by OS.
-    let on = ["macos", "linux", "windows"].iter().fold(String::new(), |mut lines, os| {
+    let on = [Os::Macos, Os::Linux, Os::Windows].into_iter().fold(String::new(), |mut lines, os| {
         let names = Provider::ALL.iter().filter(|p| p.label_on(os) != p.label()).fold(String::new(), |mut l, p| {
             let _ = write!(l, " {}: \"{}\",", p.id(), p.label_on(os));
             l
         });
-        let _ = writeln!(lines, "  {os}: {{{names} }},");
+        let _ = writeln!(lines, "  {}: {{{names} }},", os.id());
         lines
     });
     let ids = |keep: fn(&Provider) -> bool| Provider::ALL.iter().filter(|p| keep(p)).map(|p| format!("\"{}\"", p.id())).collect::<Vec<_>>().join(", ");
@@ -253,14 +301,14 @@ fn write_provider_names(dir: &Path) {
     let listed = |providers: &[Provider]| providers.iter().map(|p| format!("\"{}\"", p.id())).collect::<Vec<_>>().join(", ");
     let (servers, clouds) = (listed(&Provider::SERVERS), listed(&Provider::CLOUDS));
     let doc_clouds = "/** The cloud accounts labs run in, in the launcher's order (Rust's `Provider::CLOUDS`). */";
-    let os_names = crate::platform::OS_NAMES.iter().fold(String::new(), |mut l, (id, name)| {
-        let _ = write!(l, " {id}: \"{name}\",");
+    let os_names = Os::ALL.into_iter().fold(String::new(), |mut l, os| {
+        let _ = write!(l, " {}: \"{}\",", os.id(), os.name());
         l
     });
-    let os_doc = "/** Each OS's name, by the machine report's id for it (Rust's `platform::OS_NAMES`). */";
+    let os_doc = "/** Each OS's name, by the machine report's id for it (Rust's `Os::name`). */";
     let doc_on = "/** The names an OS changes (Rust's `Provider::label_on`): VMware's desktop hypervisor is Fusion on\n *  macOS and Workstation elsewhere. */";
     let text = format!(
-        "{HEADER}import type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<string, Partial<Record<Provider, string>>> = {{\n{on}}};\n\n{doc_local}\nexport const LOCAL_PROVIDERS: readonly Provider[] = [{}];\n\n{doc_emulators}\nexport const EMULATORS: readonly Provider[] = [{}];\n\n{doc_servers}\nexport const SERVER_PROVIDERS = [{servers}] as const satisfies readonly Provider[];\n\n{doc_clouds}\nexport const CLOUD_PROVIDERS = [{clouds}] as const satisfies readonly Provider[];\n\n{os_doc}\nexport const OS_NAMES: Partial<Record<string, string>> = {{{os_names} }};\n",
+        "{HEADER}import type {{ Os }} from \"./Os\";\nimport type {{ Provider }} from \"./Provider\";\n\n{doc}\nexport const PROVIDER_NAMES: Record<Provider, string> = {{\n{entries}}};\n\n{doc_on}\nexport const PROVIDER_NAMES_ON: Record<Os, Partial<Record<Provider, string>>> = {{\n{on}}};\n\n{doc_local}\nexport const LOCAL_PROVIDERS: readonly Provider[] = [{}];\n\n{doc_emulators}\nexport const EMULATORS: readonly Provider[] = [{}];\n\n{doc_servers}\nexport const SERVER_PROVIDERS = [{servers}] as const satisfies readonly Provider[];\n\n{doc_clouds}\nexport const CLOUD_PROVIDERS = [{clouds}] as const satisfies readonly Provider[];\n\n{os_doc}\nexport const OS_NAMES: Record<Os, string> = {{{os_names} }};\n",
         ids(|p| !p.is_remote()),
         ids(|p| p.is_emulator()),
     );
@@ -366,6 +414,7 @@ fn write_index(dir: &Path) {
                 && n != SELFTEST_STEPS
                 && n != DEPLOY_LOG
                 && n != SETUP_SHAPES
+                && n != SETUP_TABLES
                 && n != ERROR_CODES
                 && n != PATTERNS
                 && n != LAB_IDS

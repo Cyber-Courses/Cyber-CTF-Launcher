@@ -9,11 +9,11 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use super::Arch;
 use super::docker::IMAGE;
 use super::vm::{box_provider, pick_box};
 use crate::error::Result;
 use crate::platform::exec::{run_env, run_env_timed, stream, within};
+use crate::platform::host::Arch;
 use crate::platform::sync::Busy;
 use crate::runtime::providers::Provider;
 
@@ -128,7 +128,7 @@ mod tests {
         // "Downloading …" notice, reach on_line.
         let tools = Tools::strict_rules(&[("box list", ok("")), ("box add", ok("Progress: 10%\nProgress: 100%"))]);
         let mut lines = Vec::new();
-        let was_there = ensure_box(&dir, Provider::Virtualbox, "bento/ubuntu-24.04", Arch::Amd64, |l| lines.push(l)).await.unwrap();
+        let was_there = ensure_box(&dir, Provider::Virtualbox, "bento/ubuntu-24.04", Arch::X86_64, |l| lines.push(l)).await.unwrap();
         assert!(!was_there, "it had to be downloaded");
         assert!(tools.called("box add bento/ubuntu-24.04 --provider virtualbox"), "{:?}", tools.calls());
         assert!(lines.iter().any(|l| l.contains("Downloading bento/ubuntu-24.04 for")), "the notice: {lines:?}");

@@ -5,6 +5,7 @@ use super::{
 };
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
+use crate::platform::host::Arch;
 use crate::runtime::lab::emulated_arches;
 use crate::runtime::paths::{mark_parked, parked};
 use crate::runtime::{Park, start};
@@ -305,16 +306,8 @@ fn memory_is_a_warning_only_when_the_lab_needs_more_than_is_free() {
 fn qemu_emulates_only_the_vms_built_for_another_cpu() {
     let dir = lab(VMS);
     let spec = crate::runtime::lab::load(&dir).unwrap();
-    assert_eq!(emulated_arches(&spec, "x86_64"), ["aarch64"]);
-    assert_eq!(emulated_arches(&spec, "aarch64"), ["x86_64"]);
-    let mut both = emulated_arches(&spec, "riscv64");
-    both.sort_unstable();
-    assert_eq!(both, ["aarch64", "x86_64"]);
-    std::fs::remove_dir_all(dir).unwrap();
-    // Containers have no CPU of their own to emulate.
-    let dir = lab(CONTAINERS);
-    let spec = crate::runtime::lab::load(&dir).unwrap();
-    assert_eq!(emulated_arches(&spec, "riscv64"), Vec::<&str>::new());
+    assert_eq!(emulated_arches(&spec, Arch::X86_64), [Arch::Aarch64]);
+    assert_eq!(emulated_arches(&spec, Arch::Aarch64), [Arch::X86_64]);
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -322,8 +315,8 @@ fn qemu_emulates_only_the_vms_built_for_another_cpu() {
 fn a_lab_without_vms_needs_no_emulator() {
     let dir = lab(CONTAINERS);
     let spec = crate::runtime::lab::load(&dir).unwrap();
-    for host in ["x86_64", "aarch64"] {
-        assert!(emulated_arches(&spec, host).is_empty(), "{host}");
+    for host in Arch::ALL {
+        assert!(emulated_arches(&spec, host).is_empty(), "{host:?}");
     }
     std::fs::remove_dir_all(dir).unwrap();
 }

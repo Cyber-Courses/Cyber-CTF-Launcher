@@ -13,6 +13,7 @@ mod vbox_driver;
 mod versions;
 
 use crate::platform::exec::{run_read, timed_out};
+use crate::platform::host::{Arch, Os};
 use crate::platform::remembered::remembered;
 
 pub(crate) use kvm::kvm_problem;
@@ -43,15 +44,15 @@ fn hyperv_enabled() -> bool {
 }
 
 fn qemu_binary() -> &'static str {
-    if std::env::consts::ARCH == "aarch64" { "qemu-system-aarch64" } else { "qemu-system-x86_64" }
+    Arch::HERE.qemu_system()
 }
 
 /// Whether `provider`'s VMs need `mkisofs` on `os`: QEMU's on Linux. vagrant-qemu gives a VM on a
 /// lab network (every lab VM on QEMU, through its network's hub) its settings in a cloud-init
 /// seed, an ISO Vagrant's `create_iso` builds, with `mkisofs` on Linux (`hdiutil` on macOS,
 /// which every Mac has). Without it, `vagrant up` fails at the lab's first VM.
-pub(crate) fn needs_mkisofs(provider: Provider, os: &str) -> bool {
-    provider == Provider::Qemu && os == "linux"
+pub(crate) fn needs_mkisofs(provider: Provider, os: Os) -> bool {
+    provider == Provider::Qemu && os == Os::Linux
 }
 
 async fn tool_present(program: &'static str, args: &[&str]) -> bool {
@@ -138,7 +139,7 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &Plugi
     if !provider.offered(found == Some(true)) {
         return None;
     }
-    let mkisofs_missing = found == Some(true) && needs_mkisofs(provider, std::env::consts::OS) && !tool_present("mkisofs", &["-version"]).await;
+    let mkisofs_missing = found == Some(true) && needs_mkisofs(provider, Os::HERE) && !tool_present("mkisofs", &["-version"]).await;
     let hypervisor = if mkisofs_missing { Some(false) } else { found };
 
     let (plugin, plugin_version, plugin_installed) = plugin_layer(provider, vagrant_installed, plugins);
@@ -153,7 +154,7 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &Plugi
 
     // libvirt's socket and /dev/kvm are their groups': added to them since logging in (the
     // libvirt and QEMU installs do it), the player can't use them before logging in again.
-    let joined = login_groups(provider, std::env::consts::OS);
+    let joined = login_groups(provider, Os::HERE);
     let relogin = !joined.is_empty() && hypervisor == Some(true) && crate::platform::exec::groups_pending().await.iter().any(|g| joined.contains(g));
 
     // VMware's plugin drives VMware through HashiCorp's utility service, installed on its own.
@@ -282,7 +283,7 @@ fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'
         Some(Unavailable::NotInstalled { program: provider.probe().map(|(program, _)| program.to_owned()) })
     } else if account == Some(AccountLacks::NewLogin) {
         Some(Unavailable::NewLogin { group: new_login_group(provider) })
-    } else if let Some(why) = uses_kvm(provider, std::env::consts::OS).then(kvm_problem).flatten() {
+    } else if let Some(why) = uses_kvm(provider, Os::HERE).then(kvm_problem).flatten() {
         Some(why)
     } else if let Some((name, version, min)) = hypervisor_too_old(provider, hypervisor_version) {
         Some(Unavailable::HypervisorTooOld { name: name.into(), version: version.into(), min: min.into() })

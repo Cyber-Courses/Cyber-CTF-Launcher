@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import { setLocalePreference } from "@/lib/i18n";
-import type { SystemReport } from "@/lib/tauri";
+import type { Os, SystemReport } from "@/lib/tauri";
 import { freshReport, readyReport, withSetup } from "@/test/fixtures";
 import { commands, held, installTauri, rejects, rejectWith, settled, stream, type Handler } from "@/test/tauri";
 import { button, findButton } from "@/test/ui";
@@ -48,7 +48,7 @@ async function forwardToSummary(user: User, forward: RegExp) {
 }
 
 describe("Onboarding: the step list per OS", () => {
-  it.each([
+  it.each<[Os, number]>([
     ["macos", 10],
     ["linux", 10],
     // Windows gets the WSL step on top.
@@ -68,7 +68,7 @@ describe("Onboarding: the step list per OS", () => {
   });
 
   it("holds a fresh machine on the package manager step until one is installed, on every OS", async () => {
-    for (const os of ["macos", "windows", "linux"]) {
+    for (const os of ["macos", "windows", "linux"] as const) {
       await atFirstMachineStep(freshReport(os));
       // Continue waits: nothing past this step works without a package manager.
       expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);

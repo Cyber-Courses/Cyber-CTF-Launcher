@@ -17,6 +17,7 @@ import type {
 
 export type {
   AccountLacks,
+  Arch,
   CloudClis,
   Dependency,
   DockerEngine,
@@ -27,6 +28,7 @@ export type {
   MachineMetrics,
   ManualReason,
   Need,
+  Os,
   OvftoolLocation,
   OvftoolPlaced,
   OvftoolRefusal,

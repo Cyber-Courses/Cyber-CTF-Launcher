@@ -68,6 +68,9 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   the first lab ran on this computer. Each lab now keeps its own until its check is answered, it
   expires, the lab stops or the lab is launched again.
 
+- **On a Mac without Homebrew, the tools installed from their vendors' packages can be removed.**
+  The Vagrant VMware Utility (which installs without Homebrew), Vagrant, Docker Desktop and UTM
+  were refused with "Homebrew is needed to remove this tool"; only Homebrew's own packages need it.
 - **An update install no longer proceeds when the labs' state couldn't be read.** A failed read
   of the operations in flight was answered as "none", and the install, which quits every Cyber
   CTF process, went ahead; it now says the state is unknown and waits.
@@ -96,6 +99,12 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   "Café" in the decomposed form macOS file APIs give made adding the attack box fail every time
   ("unknown escape"). The folder, the network names and the image are now quoted as YAML reads
   them.
+- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
+  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
+  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
+  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
+
+### Added
 
 - **Windows: the attack box's terminal opens under a profile whose name has `&`.** With an account
   named `Tom&Jerry`, Open shell split its script's path at the `&` and showed "not recognized".

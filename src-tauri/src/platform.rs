@@ -16,6 +16,7 @@ pub mod elevation;
 pub mod env_path;
 pub mod exec;
 pub mod fs;
+pub mod host;
 pub mod http;
 pub mod identity;
 pub mod keychain;
@@ -119,21 +120,6 @@ pub(crate) fn sh_parses(script: &str) -> bool {
         }
         Err(e) => panic!("sh: {e}"),
     }
-}
-
-/// Homebrew, where its installer puts it (Apple silicon, then Intel).
-#[cfg(target_os = "macos")]
-pub fn brew_bin() -> Option<&'static str> {
-    ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].into_iter().find(|p| std::path::Path::new(p).exists())
-}
-
-/// Each OS's name as the player reads it, by `std::env::consts::OS`'s id for it: the one table the
-/// launcher's messages and the webview (`OS_NAMES`, generated) name an OS from.
-pub const OS_NAMES: [(&str, &str); 3] = [("macos", "macOS"), ("windows", "Windows"), ("linux", "Linux")];
-
-/// The name of OS `os` ([`OS_NAMES`]); the id itself for any other.
-pub fn os_name(os: &str) -> &str {
-    OS_NAMES.iter().find(|(id, _)| *id == os).map_or(os, |(_, name)| name)
 }
 
 /// The entries of folder `dir`, none when it isn't there (yet). A folder that can't be read is an

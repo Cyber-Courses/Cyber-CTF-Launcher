@@ -242,7 +242,7 @@ fn qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test() {
     assert_eq!(steps(&p).last().map(String::as_str), Some("qemu: relogin"), "{:?}", steps(&p));
     // On a Mac QEMU runs on HVF: a group pending is no reason to log in again.
     let mut mac = shapes::debian_qemu_awaits_relogin();
-    mac.os = "macos";
+    mac.os = crate::platform::host::Os::Macos;
     for p in mac.vm_providers.iter_mut().filter(|p| p.provider == Provider::Qemu) {
         (p.available, p.reason, p.account_lacks) = (true, None, None);
     }
@@ -342,7 +342,7 @@ fn each_engine_says_what_makes_it_the_one_docker_uses() {
     let w = Wanted { engine: Some(Engine::DockerDesktop), ..wanted(&[SetupPath::Docker], &[]) };
     assert_eq!(steps(&plan(&r, &r.setup, &w)), ["engine:docker-desktop: use docker-desktop"]);
     // Nothing installed: the recommended one is installed, the others link out.
-    let r = bare("macos", "x86_64");
+    let r = bare(crate::platform::host::Os::Macos, crate::platform::host::Arch::X86_64);
     assert_eq!(r.setup.recommended_engine, Engine::DockerDesktop);
     assert_eq!(r.setup.engines[0].actions, [Action::Install { dependency: Dependency::Docker }]);
     assert!(matches!(r.setup.engines[1].actions.as_slice(), [Action::Manual { reason: ManualReason::Vendor, .. }]));
