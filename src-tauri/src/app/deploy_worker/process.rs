@@ -604,7 +604,8 @@ mod tests {
         // A pidfile written keeps its worker.
         let mut running = std::process::Command::new("sleep").arg("30").process_group(0).spawn().unwrap();
         let mut line = Vec::new();
-        record(&mut running, &Worker::of(running.id(), None), &mut line).unwrap();
+        let worker = Worker::of(running.id(), None);
+        record(&mut running, &worker, &mut line).unwrap();
         assert_eq!(String::from_utf8(line).unwrap(), running.id().to_string());
         assert!(running.try_wait().unwrap().is_none(), "ended though its pidfile was written");
         running.kill().unwrap();
