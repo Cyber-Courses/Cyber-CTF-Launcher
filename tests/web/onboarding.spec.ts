@@ -160,7 +160,7 @@ test.describe("onboarding", () => {
     await page.getByRole("button", { name: "Browse labs" }).click();
     // The shell picked the sign-in up: the account shows in the sidebar, no "Sign in" prompt.
     await expect(pageTitle(page)).toHaveText("Labs");
-    await expect(page.locator("aside")).toContainText("Florian");
+    await expect(page.locator("aside")).toContainText("Ada");
   });
 
   test("a failed machine check during onboarding says so, and Try again recovers", async ({ page }) => {

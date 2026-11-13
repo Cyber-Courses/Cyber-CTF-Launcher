@@ -19,7 +19,7 @@ async function violations(page: Page) {
 
 /** The sidebar's screens, with their title once open. */
 const SCREENS = [
-  ["Overview", /Florian/],
+  ["Overview", /Ada/],
   ["Labs", "Labs"],
   ["Machine", "Machine"],
   ["Servers", "Servers"],
