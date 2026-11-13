@@ -4,8 +4,6 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::AppHandle;
-
 use super::Job;
 use super::files::{self, Files, read_worker, write_job};
 use crate::error::{Error, Result};
@@ -83,8 +81,8 @@ pub fn claim(f: &Files) -> Result<std::fs::File> {
 /// Starts the worker for `job`, detached from this process, under the pidfile `pidfile` the
 /// caller claimed (see [`claim`]). `Err` when it can't be started (the pidfile is then given
 /// back); the caller then deploys in-process as a fallback.
-pub fn spawn(app: &AppHandle, job: &Job, pidfile: std::fs::File) -> Result<Spawned> {
-    let f = files::of(&AppDirs::from(app), &job.key())?;
+pub fn spawn(dirs: &AppDirs, job: &Job, pidfile: std::fs::File) -> Result<Spawned> {
+    let f = files::of(dirs, &job.key())?;
     let path = f.pid.clone();
     let job_file = f.job.clone();
     let started = start(f, job, pidfile);

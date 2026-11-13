@@ -50,17 +50,47 @@ pub(crate) fn authorize_command(public: &str) -> String {
     )
 }
 
-/// The token id and secret in `pveum user token add --output-format json`'s answer.
-pub(crate) fn parse_token(out: &str) -> Result<(String, String), String> {
-    let json = out.lines().find(|l| l.trim_start().starts_with('{')).ok_or_else(|| format!("pveum gave no token: {}", out.trim()))?;
-    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("pveum's answer isn't JSON ({e})"))?;
+/// An API token `pveum user token add` made: its full id (`user@realm!name`) and its secret.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ApiToken {
+    /// `user@realm!name`.
+    pub(crate) id: String,
+    /// The value the API is called with; shown once by `pveum`.
+    pub(crate) secret: String,
+}
+
+/// Why `pveum`'s answer gave no token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TokenError {
+    /// No JSON line in what it printed (the text, trimmed).
+    NoToken(String),
+    /// Its JSON line doesn't parse (serde's words).
+    NotJson(String),
+    /// The JSON holds no well-formed token id and secret.
+    Malformed,
+}
+
+impl std::fmt::Display for TokenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenError::NoToken(out) => write!(f, "pveum gave no token: {out}"),
+            TokenError::NotJson(e) => write!(f, "pveum's answer isn't JSON ({e})"),
+            TokenError::Malformed => f.write_str("pveum's answer has no token id and secret"),
+        }
+    }
+}
+
+/// The token in `pveum user token add --output-format json`'s answer.
+pub(crate) fn parse_token(out: &str) -> Result<ApiToken, TokenError> {
+    let json = out.lines().find(|l| l.trim_start().starts_with('{')).ok_or_else(|| TokenError::NoToken(out.trim().to_owned()))?;
+    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| TokenError::NotJson(e.to_string()))?;
     let id = v["full-tokenid"].as_str().unwrap_or_default().to_string();
     let secret = v["value"].as_str().unwrap_or_default().to_string();
     let secret_ok = !secret.is_empty() && secret.len() <= 128 && secret.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !is_token(&id) || !secret_ok {
-        return Err("pveum's answer has no token id and secret".into());
+        return Err(TokenError::Malformed);
     }
-    Ok((id, secret))
+    Ok(ApiToken { id, secret })
 }
 
 /// Which part of the setup failed.
@@ -162,7 +192,7 @@ pub async fn bootstrap(host: &str, key: &SshKeySignIn, known_hosts: &Path, publi
         let detail = detail(&e);
         Failure { part: if ssh_failed(&detail) { Part::Ssh } else { Part::Token }, detail }
     })?;
-    let (token_id, secret) = parse_token(&out).map_err(|detail| Failure { part: Part::Token, detail })?;
+    let ApiToken { id: token_id, secret } = parse_token(&out).map_err(|e| Failure { part: Part::Token, detail: e.to_string() })?;
     Ok(Made { token_id, secret, key_added })
 }
 
@@ -177,6 +207,8 @@ mod tests {
         SshKeySignIn { path: "/Users/me/.ssh/id_ed25519".into(), user: "root".into(), port: 22 }
     }
 
+    /// The value pveum's fake answer carries (not a real one: the shape of one).
+    const PVEUM_VALUE: &str = "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab";
     const ANSWER: &str = r#"{"full-tokenid":"root@pam!cyberctf-0a1b2c3d","info":{"privsep":"0"},"value":"6f1d2c3b-aaaa-bbbb-cccc-0123456789ab"}"#;
 
     #[test]
@@ -202,11 +234,12 @@ mod tests {
 
     #[test]
     fn the_token_comes_from_pveums_json() {
-        assert_eq!(parse_token(ANSWER).unwrap(), ("root@pam!cyberctf-0a1b2c3d".into(), "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab".into()));
-        assert_eq!(parse_token(&format!("warning: something\n{ANSWER}\n")).unwrap().0, "root@pam!cyberctf-0a1b2c3d");
-        assert!(parse_token("").is_err());
-        assert!(parse_token(r#"{"full-tokenid":"root@pam","value":"x"}"#).is_err());
-        assert!(parse_token(r#"{"full-tokenid":"root@pam!n","value":"a b"}"#).is_err());
+        assert_eq!(parse_token(ANSWER).unwrap(), ApiToken { id: "root@pam!cyberctf-0a1b2c3d".into(), secret: PVEUM_VALUE.into() });
+        assert_eq!(parse_token(&format!("warning: something\n{ANSWER}\n")).unwrap().id, "root@pam!cyberctf-0a1b2c3d");
+        assert_eq!(parse_token(""), Err(TokenError::NoToken(String::new())));
+        assert_eq!(parse_token(r#"{"full-tokenid":"root@pam","value":"x"}"#), Err(TokenError::Malformed));
+        assert_eq!(parse_token(r#"{"full-tokenid":"root@pam!n","value":"a b"}"#), Err(TokenError::Malformed));
+        assert!(matches!(parse_token("{not json"), Err(TokenError::NotJson(_))));
     }
 
     #[test]

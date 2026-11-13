@@ -8,6 +8,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Fixed
 
+- **An update install no longer proceeds when the labs' state couldn't be read.** A failed read
+  of the operations in flight was answered as "none", and the install, which quits every Cyber
+  CTF process, went ahead; it now says the state is unknown and waits.
+- **Auto-stop reports a listing failure as its own.** A sweep that couldn't list the runs was
+  reported as a lab named "runner" that couldn't be destroyed.
 - **The Windows NSIS installer builds again.** The uninstall hook named its script with a forward
   slash, which makensis reads as part of the file pattern, so every NSIS build since the fix
   of the hook's folder (2026-11-12, in 1.9.0) ended on "no files found"; the MSI built.

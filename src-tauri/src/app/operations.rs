@@ -13,8 +13,11 @@ use crate::runtime::{self, Action, Operation, Runtime};
 /// update quits every Cyber CTF process, the workers included, so it waits while this isn't
 /// empty: a stop cut off mid-`terraform destroy` leaves billable resources behind as surely as a
 /// launch. The same labs as [`active_operations`] lists, without reading each worker's log.
-pub async fn busy_labs(dirs: AppDirs) -> Vec<String> {
-    or_logged(off_main(move || merge_unique(runtime::busy_labs(), deploy_worker::running(&dirs))).await)
+pub async fn busy_labs(dirs: AppDirs) -> Result<Vec<String>, String> {
+    // Not `or_logged`: an answer that couldn't be read is not "nothing in flight", and the update
+    // install, which quits every process, must not read it so (Clean Code ch.7: a default that
+    // hides a failure).
+    off_main(move || merge_unique(runtime::busy_labs(), deploy_worker::running(&dirs))).await
 }
 
 /// Runs `f` on a blocking thread. These commands are polled every 2 s by every window, and each
@@ -217,7 +220,7 @@ mod tests {
         // What an update install waits for: a stop runs in this process, never in a worker, and
         // quitting mid-`terraform destroy` leaves billable resources behind.
         let t = crate::testing::test_app::TestApp::new();
-        let busy = |id: &str| wait(busy_labs(t.dirs())).iter().any(|l| l == id);
+        let busy = |id: &str| wait(busy_labs(t.dirs())).unwrap().iter().any(|l| l == id);
         for (id, action) in [("operations-test-busy-stop", Action::Stop), ("operations-test-busy-park", Action::Park(Park::Pause))] {
             assert!(!busy(id));
             let guard = crate::runtime::DeployGuard::new(id, action);
@@ -256,7 +259,7 @@ mod tests {
                 runtime: None
             })
         );
-        assert!(wait(busy_labs(t.dirs())).contains(&id.to_string()));
+        assert!(wait(busy_labs(t.dirs())).unwrap().contains(&id.to_string()));
         assert_eq!(wait(lab_deploy_log(t.dirs(), id.into())).unwrap(), log);
         worker.kill().unwrap();
         worker.wait().unwrap();
@@ -278,7 +281,7 @@ mod tests {
         std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&deploy_worker::Job::on_lab(id, Op::Launch)).unwrap()).unwrap();
         std::fs::write(dir.join(format!("{id}.log")), "Pulling images\n").unwrap();
         assert!(wait(active_operations(t.dirs())).iter().all(|o| o.lab_id != id));
-        assert!(!wait(busy_labs(t.dirs())).contains(&id.to_string()));
+        assert!(!wait(busy_labs(t.dirs())).unwrap().contains(&id.to_string()));
         assert!(!dir.join(format!("{id}.pid")).exists(), "swept");
         // Its job, which it never ended, is settled: its log says how it ended, its job file goes.
         let read = wait(lab_deploy_log(t.dirs(), id.into())).unwrap();
@@ -300,7 +303,7 @@ mod tests {
         // Its job file cut short (a full disk, a crash while it was written).
         std::fs::write(dir.join(format!("{id}.json")), "{\"lab_id\":\"operations-test-trunc").unwrap();
         std::fs::write(dir.join(format!("{id}.log")), "==> web: Booting VM...\n").unwrap();
-        let deploying = wait(busy_labs(t.dirs())).contains(&id.to_string());
+        let deploying = wait(busy_labs(t.dirs())).unwrap().contains(&id.to_string());
         let listed = wait(active_operations(t.dirs())).into_iter().find(|o| o.lab_id == id);
         worker.kill().unwrap();
         worker.wait().unwrap();

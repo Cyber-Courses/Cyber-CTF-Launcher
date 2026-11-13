@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use crate::AppHandle;
 
-use super::files::status_line;
+use super::files::{WorkerExit, status_line};
 use super::{Job, Op, execute, files};
 use crate::platform::unwind::{CatchUnwind, panic_message};
 use crate::runtime::deploy_log::failed_line;
@@ -28,7 +28,7 @@ pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntim
         Ok(job) => job,
         Err(why) => {
             fail_before_the_job(job_path, &why.to_string());
-            std::process::exit(2);
+            std::process::exit(WorkerExit::NoJob.code());
         }
     };
     #[cfg(unix)]
@@ -69,7 +69,7 @@ fn start(app: &mut tauri::App<crate::AppRuntime>, job: Job) -> tauri::async_runt
     let handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         let code = run_logged(&handle, job).await;
-        handle.exit(code);
+        handle.exit(code.code());
     })
 }
 
@@ -98,7 +98,7 @@ fn end_tools_when_stopped(job_file: PathBuf, task: tauri::async_runtime::JoinHan
             // waited for, within the app's patience with a stopped worker, so none outlives it.
             crate::runtime::isothrum::stop_cut_short_tools(TOOLS_GRACE).await;
             files::remove_job(&job_file);
-            std::process::exit(143);
+            std::process::exit(WorkerExit::Terminated.code());
         }
     });
 }
@@ -143,12 +143,12 @@ fn open_main_app() {
 
 /// Runs the job, logging to its file (also this process's stdout/stderr, for panics), and leaves
 /// the verdict in the status file. Returns the process's exit code.
-async fn run_logged(app: &AppHandle, job: Job) -> i32 {
+async fn run_logged(app: &AppHandle, job: Job) -> WorkerExit {
     let f = match files::of(&crate::platform::AppDirs::from(app), &job.key()) {
         Ok(f) => f,
         Err(e) => {
             log::error!("deploy worker for {}: no files to run the job in: {e}", job.key());
-            return 2;
+            return WorkerExit::NoJob;
         }
     };
     let sink = std::sync::Mutex::new(open_log(&f.log));
@@ -213,7 +213,7 @@ async fn hold_lab(app: &AppHandle, id: &str) -> crate::error::Result<lab_file_lo
 
 /// The end of a run: the failure in the log, the verdict in the status file (and, for a
 /// `launch` or a resume, in the launch status too), the pidfile gone. Returns the process's exit code.
-fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool, log: impl Fn(String)) -> i32 {
+fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool, log: impl Fn(String)) -> WorkerExit {
     // The log file says how it ended too, so a page that re-attaches to it after a reload or a
     // relaunch (it has no live verdict) still sees the run failed.
     if let Err(e) = result {
@@ -244,7 +244,7 @@ fn conclude<T>(f: &files::Files, result: &crate::error::Result<T>, launch: bool,
 mod tests {
     use super::{conclude, sets_launch_verdict, status_line};
     use crate::app::deploy_worker::files::{self, read_job};
-    use crate::app::deploy_worker::files::{Files, verdict};
+    use crate::app::deploy_worker::files::{Files, WorkerExit, verdict};
     use crate::app::deploy_worker::{Job, Op};
     use crate::error::{Code, Error};
 
@@ -262,9 +262,9 @@ mod tests {
 
     #[test]
     fn the_status_line_reads_back_as_the_same_verdict() {
-        assert_eq!(status_line(&Ok(())), ("ok".to_string(), 0));
+        assert_eq!(status_line(&Ok(())), ("ok".to_string(), WorkerExit::Done));
         let (line, code) = status_line::<()>(&Err(Error::Invalid("Docker isn't running".into())));
-        assert_eq!((line.as_str(), code), (r#"error: {"code":"other","message":"Docker isn't running"}"#, 1));
+        assert_eq!((line.as_str(), code), (r#"error: {"code":"other","message":"Docker isn't running"}"#, WorkerExit::Failed));
         assert_eq!(verdict(&line).unwrap_err().to_string(), "Docker isn't running");
         // A coded error comes back with its code, for the webview to say in its language.
         let (line, _) = status_line::<()>(&Err(Error::coded(Code::DockerNotRunning)));
@@ -312,7 +312,7 @@ mod tests {
         std::fs::create_dir_all(crate::runtime::lab_file_lock::path(&t.dirs(), "web").unwrap()).unwrap();
         let job = Job::on_lab("web", Op::Resume { runtime: crate::runtime::Runtime::Docker });
         let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
-        assert_eq!(super::run_logged(t.handle(), job).await, 1);
+        assert_eq!(super::run_logged(t.handle(), job).await, WorkerExit::Failed);
         let status = std::fs::read_to_string(&f.status).unwrap();
         assert!(verdict(&status).unwrap_err().to_string().starts_with("Couldn't lock the lab"), "{status}");
         assert!(tools.calls().is_empty(), "nothing ran: {:?}", tools.calls());
@@ -331,7 +331,7 @@ mod tests {
         ] {
             let job = Job::on_lab("gone", op);
             let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
-            assert_eq!(super::run_logged(t.handle(), job).await, 1);
+            assert_eq!(super::run_logged(t.handle(), job).await, WorkerExit::Failed);
             let status = std::fs::read_to_string(&f.status).unwrap();
             assert!(status.starts_with("error: "), "{status}");
             assert!(std::fs::read_to_string(&f.log).unwrap().starts_with("✗["));
@@ -351,7 +351,7 @@ mod tests {
         let launch = crate::app::deploy_worker::LaunchJob { launch: crate::labs::parse_launch(spec).unwrap(), place: crate::runtime::Placement::default() };
         let job = Job { launch: Some(launch), ..Job::on_lab("web", Op::Launch) };
         let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
-        assert_eq!(super::run_logged(t.handle(), job).await, 1);
+        assert_eq!(super::run_logged(t.handle(), job).await, WorkerExit::Failed);
         let said = verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string();
         assert_eq!(said, "the deploy worker crashed: docker blew up");
         assert!(verdict(&std::fs::read_to_string(&f.launch_status).unwrap()).is_err(), "the launch failed");
@@ -408,14 +408,14 @@ mod tests {
         std::fs::write(&f.job, "{}").unwrap();
         let lines = std::sync::Mutex::new(Vec::new());
         let code = conclude(&f, &Err::<(), _>(Error::Invalid("boom".into())), true, |l| lines.lock().unwrap().push(l));
-        assert_eq!(code, 1);
+        assert_eq!(code, WorkerExit::Failed);
         assert_eq!(lines.lock().unwrap().as_slice(), ["✗[other] boom"]);
         let failed = r#"error: {"code":"other","message":"boom"}"#;
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), failed);
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), failed);
         assert!(!f.pid.exists());
         assert!(!f.job.exists(), "the job file (it carries the launch token) is gone once it ends");
-        assert_eq!(conclude(&f, &Ok(()), true, |_| panic!("no log on success")), 0);
+        assert_eq!(conclude(&f, &Ok(()), true, |_| panic!("no log on success")), WorkerExit::Done);
         assert_eq!(std::fs::read_to_string(&f.status).unwrap(), "ok");
         assert_eq!(std::fs::read_to_string(&f.launch_status).unwrap(), "ok");
         // Another operation leaves the launch's verdict alone.

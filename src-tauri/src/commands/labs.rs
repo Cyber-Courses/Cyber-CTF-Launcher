@@ -84,7 +84,7 @@ pub async fn lab_remove(app: AppHandle, id: String) -> Result<labs::remove::Remo
 /// The labs with any operation in flight, in this process or a deploy worker: what an update
 /// install waits for (see [`operations::busy_labs`]).
 #[tauri::command]
-pub async fn busy_labs(app: AppHandle) -> Vec<String> {
+pub async fn busy_labs(app: AppHandle) -> std::result::Result<Vec<String>, String> {
     operations::busy_labs(AppDirs::from(&app)).await
 }
 
