@@ -87,7 +87,16 @@ fn installed_in(base: &Path, id: &str) -> Option<PathBuf> {
 /// The ids with a Terraform deployment under the app data folder `base` (valid ids only): the
 /// labs the expired-lab reaper looks at.
 pub(crate) fn deployed_ids(base: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(base.join("deployments")) else { return Vec::new() };
+    let dir = base.join("deployments");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        // The reaper then stops no expired lab: said, as a lab billing past its expiry must be.
+        Err(e) => {
+            log::warn!("the deployments in {} couldn't be listed: no expired lab is stopped this time: {e}", dir.display());
+            return Vec::new();
+        }
+    };
     entries.flatten().filter_map(|e| e.file_name().into_string().ok()).filter(|id| validate_id(id).is_ok()).collect()
 }
 

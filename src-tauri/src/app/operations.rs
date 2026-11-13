@@ -17,7 +17,8 @@ pub async fn busy_labs(dirs: AppDirs) -> Result<Vec<String>, String> {
     // Not `or_logged`: an answer that couldn't be read is not "nothing in flight", and the update
     // install, which quits every process, must not read it so (Clean Code ch.7: a default that
     // hides a failure).
-    off_main(move || merge_unique(runtime::busy_labs(), deploy_worker::running(&dirs))).await
+    let workers = off_main(move || deploy_worker::running(&dirs).map_err(|e| e.to_string())).await??;
+    Ok(merge_unique(runtime::busy_labs(), workers))
 }
 
 /// Runs `f` on a blocking thread. These commands are polled every 2 s by every window, and each

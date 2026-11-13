@@ -118,7 +118,8 @@ pub async fn machine_storage(app: AppHandle, extra_images: Vec<String>) -> Resul
 #[tauri::command]
 pub async fn machine_storage_clean(app: AppHandle, extra_images: Vec<String>) -> Result<u64> {
     let dirs = AppDirs::from(&app);
-    let workers = !crate::app::deploy_worker::running(&dirs).is_empty();
+    // Workers that can't be listed may be running: what they use is kept.
+    let workers = crate::app::deploy_worker::running(&dirs).map_or(true, |w| !w.is_empty());
     storage::machine_storage_clean(dirs, extra_images, workers).await
 }
 

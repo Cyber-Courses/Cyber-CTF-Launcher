@@ -337,14 +337,22 @@ fn is_worker(cmdline: &str) -> bool {
 
 /// The keys (lab ids) whose worker is running right now: a pidfile naming a live process. A
 /// pidfile whose process is gone (the worker finished, or died) is removed on the way.
-pub fn running(dirs: &AppDirs) -> Vec<String> {
-    let Ok(d) = files::dir(dirs) else { return Vec::new() };
-    running_in(&d)
+///
+/// # Errors
+///
+/// The workers' folder can't be read: which workers run is unknown, and a caller deciding
+/// whether something may be cut off must not read that as "none".
+pub fn running(dirs: &AppDirs) -> Result<Vec<String>> {
+    Ok(running_in(&files::dir(dirs)?)?)
 }
 
-/// [`running`] for the workers' folder `d`.
-fn running_in(d: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(d) else { return Vec::new() };
+/// [`running`] for the workers' folder `d` (none when it isn't there yet).
+fn running_in(d: &Path) -> std::io::Result<Vec<String>> {
+    let entries = match std::fs::read_dir(d) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
     let mut out = Vec::new();
     for e in entries.flatten() {
         let p = e.path();
@@ -362,7 +370,7 @@ fn running_in(d: &Path) -> Vec<String> {
         }
     }
     out.sort();
-    out
+    Ok(out)
 }
 
 /// The worker key a pidfile (`<key>.pid`) is for: a lab id ([`Job::key`]). Any other name (an
@@ -388,7 +396,12 @@ fn job_for_key(key: &str) -> Job {
 
 /// [`running_jobs`] for the workers' folder `d`.
 fn jobs_in(d: &Path) -> Vec<(Job, Option<String>)> {
+    // The sidebar's list: one that can't be read shows none this time, and the next poll asks again.
     running_in(d)
+        .unwrap_or_else(|e| {
+            log::warn!("listing the running deploy workers: {}: {e}", d.display());
+            Vec::new()
+        })
         .into_iter()
         .map(|key| {
             let f = Files::of(d, &key);
@@ -766,6 +779,18 @@ mod tests {
         std::fs::remove_dir_all(dir).ok();
     }
 
+    /// Regression: a workers' folder that couldn't be read listed no worker, and an update
+    /// install, which waits for none to run, would then quit the workers mid-deploy.
+    #[test]
+    fn workers_that_cant_be_listed_are_an_error_not_none() {
+        let dir = crate::testing::temp_dir("unlistable");
+        assert_eq!(running_in(&dir.join("missing")).unwrap(), [] as [&str; 0], "no folder yet: no worker");
+        let not_a_folder = dir.join("file");
+        std::fs::write(&not_a_folder, "").unwrap();
+        assert!(running_in(&not_a_folder).is_err());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_second_start_is_refused_while_the_first_worker_runs() {
@@ -778,7 +803,7 @@ mod tests {
         let err = claim(&f).unwrap_err().to_string();
         assert!(err.contains("already in progress"), "{err}");
         assert_eq!(read_worker(&f.pid), Some(worker), "the running worker's pidfile is kept");
-        assert_eq!(running_in(&dir), ["lab-1"]);
+        assert_eq!(running_in(&dir).unwrap(), ["lab-1"]);
         child.kill().unwrap();
         child.wait().unwrap();
         std::fs::remove_dir_all(dir).ok();
@@ -789,7 +814,7 @@ mod tests {
         let dir = crate::testing::temp_dir("claimed");
         let f = Files::of(&dir, "lab-1");
         drop(claim(&f).unwrap());
-        assert_eq!(running_in(&dir), [] as [&str; 0]);
+        assert_eq!(running_in(&dir).unwrap(), [] as [&str; 0]);
         assert!(f.pid.exists());
         std::fs::remove_dir_all(dir).ok();
     }
@@ -813,11 +838,11 @@ mod tests {
         std::fs::write(&f.pid, "4000000000").unwrap();
         std::fs::write(dir.join("lab-2.pid"), "garbage").unwrap();
         std::fs::write(dir.join("lab-3.log"), "not a pidfile").unwrap();
-        assert_eq!(running_in(&dir), [] as [&str; 0]);
+        assert_eq!(running_in(&dir).unwrap(), [] as [&str; 0]);
         assert!(!f.pid.exists() && !dir.join("lab-2.pid").exists());
         assert!(dir.join("lab-3.log").exists());
         assert_eq!(jobs_in(&dir), [] as [(Job, Option<String>); 0]);
-        assert_eq!(running_in(&dir.join("missing")), [] as [&str; 0]);
+        assert_eq!(running_in(&dir.join("missing")).unwrap(), [] as [&str; 0]);
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -872,7 +897,7 @@ mod tests {
         std::fs::write(&f.pid, pidfile_line(child.id())).unwrap();
         std::fs::write(&f.job, serde_json::to_vec(&job).unwrap()).unwrap();
         std::fs::write(&f.log, "Resuming the lab…\n").unwrap();
-        assert_eq!(running(&t.dirs()), ["lab-1"]);
+        assert_eq!(running(&t.dirs()).unwrap(), ["lab-1"]);
         let jobs = running_jobs(&t.dirs());
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].0, job);
@@ -890,7 +915,7 @@ mod tests {
         let _ = bystander.kill();
         let _ = bystander.wait();
         assert!(!f.pid.exists());
-        assert_eq!(running(&t.dirs()), [] as [&str; 0]);
+        assert_eq!(running(&t.dirs()).unwrap(), [] as [&str; 0]);
         // Nothing left to stop.
         kill_and_wait(&t.dirs(), "lab-1").await;
         kill(&t.dirs(), "lab-2");
@@ -954,7 +979,7 @@ mod tests {
             kill_files(&f);
             assert!(!f.pid.exists(), "{text}: the stale pidfile is dropped");
         }
-        assert_eq!(running_in(&dir), [] as [&str; 0]);
+        assert_eq!(running_in(&dir).unwrap(), [] as [&str; 0]);
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -985,7 +1010,7 @@ mod tests {
         let dir = crate::testing::temp_dir("sweep-empty");
         std::fs::write(dir.join("lab-1.pid"), "").unwrap();
         std::fs::write(dir.join("lab-2.pid"), " \n").unwrap();
-        assert_eq!(running_in(&dir), [] as [&str; 0]);
+        assert_eq!(running_in(&dir).unwrap(), [] as [&str; 0]);
         assert!(dir.join("lab-1.pid").exists());
         assert!(!dir.join("lab-2.pid").exists());
         std::fs::remove_dir_all(dir).ok();
@@ -998,7 +1023,7 @@ mod tests {
         // This test process is alive, but not a worker: not listed at all.
         std::fs::write(&f.pid, std::process::id().to_string()).unwrap();
         std::fs::write(&f.job, "{not json").unwrap();
-        assert_eq!(running_in(&dir), [] as [&str; 0]);
+        assert_eq!(running_in(&dir).unwrap(), [] as [&str; 0]);
         assert_eq!(jobs_in(&dir), [] as [(Job, Option<String>); 0]);
         std::fs::remove_dir_all(dir).ok();
     }
