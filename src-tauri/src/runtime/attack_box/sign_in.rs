@@ -33,7 +33,7 @@ const GROUP: usize = 5;
 #[derive(Clone, PartialEq, Eq, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SignIn {
-    /// The account, `player` (`attack_machine::PLAYER`).
+    /// The account, `player` (`attack_box::PLAYER`).
     pub user: String,
     /// Its password.
     pub password: String,

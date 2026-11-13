@@ -14,10 +14,10 @@ use crate::app::operations::{self, ActiveOperation};
 use crate::error::{Error, Result};
 use crate::labs::{self, LaunchRequest};
 use crate::platform::AppDirs;
-use crate::runtime::attack_machine::AttackStatus;
+use crate::runtime::attack_box::AttackStatus;
 use crate::runtime::paths::{installed_lab_dir, lab_dir, local_runtime};
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, start_place, status, terminal_launch};
+use crate::runtime::{LabStatus, Park, Runtime, attack_box, cloud_services, discover, docker, lab, start_place, status, terminal_launch};
 
 /// Starts a lab, the deploy's log sent on `logs` (see [`labs::prepare_launch`]).
 #[tauri::command]
@@ -255,10 +255,10 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
     }
 }
 
-/// Where lab `id`'s attack box goes ([`attack_machine::locate`]), or an error when the launcher
+/// Where lab `id`'s attack box goes ([`attack_box::locate`]), or an error when the launcher
 /// reaches no run of the lab.
-fn with_attack_box(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<attack_machine::Placed> {
-    attack_machine::locate(dirs, dir, id, runtime)?
+fn with_attack_box(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<attack_box::Placed> {
+    attack_box::locate(dirs, dir, id, runtime)?
         .ok_or_else(|| Error::Invalid("This lab has no attack box the launcher can reach. Work from what the lab gives you.".into()))
 }
 
@@ -279,7 +279,7 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime) -> 
     Box::pin(async move {
         let dirs = AppDirs::from(&app);
         let dir = lab_dir(&dirs, &id)?;
-        match attack_machine::locate(&dirs, &dir, &id, runtime)? {
+        match attack_box::locate(&dirs, &dir, &id, runtime)? {
             Some(placed) => placed.status().await,
             None => Ok(AttackStatus::default()),
         }
@@ -289,7 +289,7 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime) -> 
 
 /// The learner's pick for an attach: which lab network to join (none: the seat the lab declares,
 /// else its first network), with which image for a container box (none: the launcher's default,
-/// [`attack_machine::default_image`]; a VM box is Kali whatever is picked). One argument so the
+/// [`attack_box::default_image`]; a VM box is Kali whatever is picked). One argument so the
 /// command stays within Tauri's argument count.
 #[derive(serde::Deserialize)]
 pub struct AttachPick {
@@ -318,11 +318,11 @@ pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pic
         let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
         let run = with_attack_box(&dirs, &dir, &id, runtime)?;
         let mut log = lines(logs);
-        let image = image.unwrap_or_else(|| attack_machine::default_image().to_owned());
+        let image = image.unwrap_or_else(|| attack_box::default_image().to_owned());
         // In flight like every lab operation: the page shows the lab busy and offers nothing that
         // would collide, while bringing the run up to date may restart some of its machines.
         let attach = crate::runtime::as_operation(&id, crate::runtime::Action::AttachBox, async {
-            let attach = run.add(&dirs, attack_machine::Pick { image: &image, desktop }, network.as_deref(), &mut log);
+            let attach = run.add(&dirs, attack_box::Pick { image: &image, desktop }, network.as_deref(), &mut log);
             // Only an image pulled on this machine is the app's to account for.
             if !run.pulls_image_here() {
                 return Box::pin(attach).await;
@@ -355,9 +355,9 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, log
 /// login, `su`, SSH): its account and the password the launcher keeps for it; none when the lab
 /// has no box, or the launcher keeps no password for it. The lab page's Credentials row.
 #[tauri::command]
-pub async fn attack_box_sign_in(app: AppHandle, id: String) -> Result<Option<attack_machine::SignIn>> {
+pub async fn attack_box_sign_in(app: AppHandle, id: String) -> Result<Option<attack_box::SignIn>> {
     let dir = lab_dir(&AppDirs::from(&app), &id)?;
-    attack_machine::sign_in(&dir, None)
+    attack_box::sign_in(&dir, None)
 }
 
 /// Opens the attack box shell of a running lab in the system terminal, on the command the runner
@@ -529,7 +529,7 @@ mod tests {
         server::mark_lab(&dir, Some(&t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
         // The box is a machine the launcher adds to the lab, the run updated with the account's
         // place: cloud-docker (the default), a container among the lab's in its cloud VM.
-        let placed = |runtime| match crate::runtime::attack_machine::locate(&t.dirs(), &dir, "srv", runtime).unwrap() {
+        let placed = |runtime| match crate::runtime::attack_box::locate(&t.dirs(), &dir, "srv", runtime).unwrap() {
             Some(b) => match &b.host {
                 crate::runtime::host::Host::Cloud { place, .. } => (place.label.clone(), b.target, b.vm),
                 _ => panic!("in the cloud account"),
@@ -608,7 +608,7 @@ mod tests {
         let s = sink();
         assert!(attack_box_status(t.handle().clone(), "srv".into(), Runtime::Docker).await.is_err());
         assert!(kali_attach_fails(t.handle().clone(), "srv", channel(s.clone())).await);
-        assert!(!crate::runtime::attack_machine::added(&dir).unwrap(), "the lab is as published");
+        assert!(!crate::runtime::attack_box::added(&dir).unwrap(), "the lab is as published");
         attack_box_detach(t.handle().clone(), "srv".into(), Runtime::Docker, channel(s.clone())).await.unwrap();
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert!(s.lock().unwrap().is_empty());
@@ -641,16 +641,16 @@ mod tests {
 
     #[tokio::test]
     async fn the_attack_box_sign_in_is_the_kept_password_of_the_box_and_none_without_one() {
-        use crate::runtime::attack_machine::{self, Cpu, Kind, PLAYER};
+        use crate::runtime::attack_box::{self, Cpu, Kind, PLAYER};
         let t = TestApp::new();
         let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
         let sign_in = || attack_box_sign_in(t.handle().clone(), "web".into());
         assert_eq!(sign_in().await.unwrap(), None, "no box");
-        attack_machine::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
+        attack_box::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
         let got = sign_in().await.unwrap().expect("the box's sign-in");
         assert_eq!(got.user, PLAYER);
         assert_eq!(got.password.len(), 23);
-        attack_machine::remove(&dir).unwrap();
+        attack_box::remove(&dir).unwrap();
         assert_eq!(sign_in().await.unwrap(), None, "taken out: forgotten");
         assert!(attack_box_sign_in(t.handle().clone(), "../x".into()).await.is_err(), "a bad id");
     }

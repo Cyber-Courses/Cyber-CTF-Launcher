@@ -1594,8 +1594,8 @@ areas:
         tests:
           unit:
             - src/features/labs/screens-panel.test.tsx
-            - src-tauri/src/runtime/attack_machine/status.rs > the_box_carries_its_machine_and_its_screen
-            - src-tauri/src/runtime/attack_machine/status.rs > a_box_another_process_is_setting_up_is_not_up_yet
+            - src-tauri/src/runtime/attack_box/status.rs > the_box_carries_its_machine_and_its_screen
+            - src-tauri/src/runtime/attack_box/status.rs > a_box_another_process_is_setting_up_is_not_up_yet
           desktop:
             - screens/panel
             - screens/screen-none
@@ -1620,7 +1620,7 @@ areas:
             - src-tauri/src/commands/labs.rs > attack_box_commands_refuse_bad_ids_and_images_before_touching_the_runner
             - src-tauri/src/runtime/isothrum/tests.rs > an_attack_box_goes_in_and_out_of_the_run_with_the_labs_files
             - src-tauri/src/runtime/isothrum/tests.rs > an_attack_box_refused_by_a_lab_that_is_not_up_leaves_the_lab_as_published
-            - src-tauri/src/runtime/attack_machine.rs > a_lab_that_declares_where_the_player_sits_gets_the_box_there_in_place_of_its_own
+            - src-tauri/src/runtime/attack_box.rs > a_lab_that_declares_where_the_player_sits_gets_the_box_there_in_place_of_its_own
             - src/features/labs/attack-box.test.tsx
           web:
             - labs.spec.ts > a running lab shows its network with the machines and the attack box
@@ -1668,10 +1668,10 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/attack_machine.rs > beside_containers_the_box_runs_the_picked_image_on_the_picked_network
-            - src-tauri/src/runtime/attack_machine.rs > a_container_box_makes_the_player_account_where_it_starts_then_idles
+            - src-tauri/src/runtime/attack_box.rs > beside_containers_the_box_runs_the_picked_image_on_the_picked_network
+            - src-tauri/src/runtime/attack_box.rs > a_container_box_makes_the_player_account_where_it_starts_then_idles
             - src-tauri/src/runtime/host.rs > only_a_container_box_on_this_machine_pulls_its_image_here
-            - src-tauri/src/runtime/attack_machine/place.rs > on_an_arm_computer_the_box_of_a_lab_here_runs_natively_on_every_local_form
+            - src-tauri/src/runtime/attack_box/place.rs > on_an_arm_computer_the_box_of_a_lab_here_runs_natively_on_every_local_form
           desktop:
             - attack-box
             - attack-shell
@@ -1697,7 +1697,7 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/attack_machine/place.rs > the_box_shell_opens_as_the_player_account_on_every_local_form
+            - src-tauri/src/runtime/attack_box/place.rs > the_box_shell_opens_as_the_player_account_on_every_local_form
             - src-tauri/src/runtime/isothrum/docker_vm_tests.rs > an_update_tries_again_once_after_utms_passing_refusal
           integration:
             - attack-box-docker-vm
@@ -1720,10 +1720,10 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/attack_machine.rs > the_box_is_a_kali_machine_on_the_first_machines_network_at_a_free_address
-            - src-tauri/src/runtime/attack_machine.rs > a_vm_box_makes_the_player_account_once_its_toolset_is_in
-            - src-tauri/src/runtime/attack_machine.rs > kalis_archive_keys_are_checked_before_apt_trusts_them
-            - src-tauri/src/runtime/attack_machine.rs > on_an_arm_computer_the_box_runs_natively_a_debian_vm_made_kali
+            - src-tauri/src/runtime/attack_box.rs > the_box_is_a_kali_machine_on_the_first_machines_network_at_a_free_address
+            - src-tauri/src/runtime/attack_box.rs > a_vm_box_makes_the_player_account_once_its_toolset_is_in
+            - src-tauri/src/runtime/attack_box.rs > kalis_archive_keys_are_checked_before_apt_trusts_them
+            - src-tauri/src/runtime/attack_box.rs > on_an_arm_computer_the_box_runs_natively_a_debian_vm_made_kali
             - src/features/labs/attack-box.test.tsx > offers to start the attack VM beside a VM lab on any hypervisor, QEMU included
             - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > opens the attack VM
           desktop:
@@ -1751,8 +1751,8 @@ areas:
         tests:
           unit:
             - src-tauri/src/commands/labs.rs > a_cloud_lab_has_its_attack_box_in_both_forms_with_its_accounts_place
-            - src-tauri/src/runtime/attack_machine/place.rs > an_attack_box_refused_for_an_expired_cloud_sign_in_leaves_the_lab_as_published
-            - src-tauri/src/runtime/attack_machine/place.rs > on_a_server_or_in_a_cloud_account_the_box_takes_the_labs_cpu_whatever_this_computer_is
+            - src-tauri/src/runtime/attack_box/place.rs > an_attack_box_refused_for_an_expired_cloud_sign_in_leaves_the_lab_as_published
+            - src-tauri/src/runtime/attack_box/place.rs > on_a_server_or_in_a_cloud_account_the_box_takes_the_labs_cpu_whatever_this_computer_is
             - src/features/labs/attack-box.test.tsx > shows a remote lab
             - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > offers no attacker shell on a server or cloud account until the lab is up
           integration:
@@ -1768,9 +1768,9 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/attack_machine/place.rs > the_box_shell_opens_as_the_player_account_on_every_local_form
-            - src-tauri/src/runtime/attack_machine.rs > the_image_and_its_smoke_test_name_the_launchers_player_account
-            - src-tauri/src/runtime/attack_machine.rs > a_vm_box_makes_the_player_account_once_its_toolset_is_in
+            - src-tauri/src/runtime/attack_box/place.rs > the_box_shell_opens_as_the_player_account_on_every_local_form
+            - src-tauri/src/runtime/attack_box.rs > the_image_and_its_smoke_test_name_the_launchers_player_account
+            - src-tauri/src/runtime/attack_box.rs > a_vm_box_makes_the_player_account_once_its_toolset_is_in
           desktop:
             - attack-shell/whoami
           integration:
@@ -1793,9 +1793,9 @@ areas:
           - screen_sign_in
         tests:
           unit:
-            - src-tauri/src/runtime/attack_machine/sign_in.rs
-            - src-tauri/src/runtime/attack_machine.rs > each_box_gets_its_own_password_its_hash_in_a_root_only_file_never_on_a_command_line
-            - src-tauri/src/runtime/attack_machine.rs > a_screen_window_gets_the_sign_in_of_the_box_alone
+            - src-tauri/src/runtime/attack_box/sign_in.rs
+            - src-tauri/src/runtime/attack_box.rs > each_box_gets_its_own_password_its_hash_in_a_root_only_file_never_on_a_command_line
+            - src-tauri/src/runtime/attack_box.rs > a_screen_window_gets_the_sign_in_of_the_box_alone
             - src-tauri/src/runtime/server/secrets.rs > a_named_secret_is_kept_beside_the_hosts_and_deleted_alone
             - src-tauri/src/platform/redact.rs > a_registered_secret_is_replaced_wherever_it_shows
             - src-tauri/src/commands/labs.rs > the_attack_box_sign_in_is_the_kept_password_of_the_box_and_none_without_one
@@ -1838,8 +1838,8 @@ areas:
             - src-tauri/src/shared_folder.rs > turning_sharing_on_needs_a_usable_path_and_settings
             - src-tauri/src/shared_folder.rs > folder_names_with_ruby_or_shell_characters_are_accepted_since_the_vagrantfile_escapes_them
             - src-tauri/src/shared_folder.rs > the_commands_save_and_show_the_setting_and_never_open_a_folder_while_off
-            - src-tauri/src/runtime/attack_machine/place.rs > the_shared_folder_reaches_the_box_wherever_the_lab_runs_on_this_computer_and_can_share_it
-            - src-tauri/src/runtime/attack_machine/place.rs > the_integration_tests_share_a_folder_on_the_same_hypervisors_as_the_launcher
+            - src-tauri/src/runtime/attack_box/place.rs > the_shared_folder_reaches_the_box_wherever_the_lab_runs_on_this_computer_and_can_share_it
+            - src-tauri/src/runtime/attack_box/place.rs > the_integration_tests_share_a_folder_on_the_same_hypervisors_as_the_launcher
             - src/features/settings/settings-rows.test.tsx > turns sharing on, showing the folder and its mount point
           web:
             - settings.spec.ts > the shared-folder switch is there and toggles
@@ -1865,8 +1865,8 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/attack_machine.rs > a_desktop_box_gets_xfce_and_the_player_signed_in_after_its_account
-            - src-tauri/src/runtime/attack_machine.rs > a_desktop_box_never_locks_its_screen
+            - src-tauri/src/runtime/attack_box.rs > a_desktop_box_gets_xfce_and_the_player_signed_in_after_its_account
+            - src-tauri/src/runtime/attack_box.rs > a_desktop_box_never_locks_its_screen
             - src/features/settings/attack-desktop.test.tsx
             - src/features/labs/attack-box.test.tsx > gives a VM box Kali
           desktop:
@@ -1883,7 +1883,7 @@ areas:
         host: false
         tests:
           unit:
-            - src-tauri/src/runtime/attack_machine.rs > the_default_image_is_the_cyber_ctf_image_pinned_by_its_digest
+            - src-tauri/src/runtime/attack_box.rs > the_default_image_is_the_cyber_ctf_image_pinned_by_its_digest
             - src-tauri/src/commands/labs.rs > image_errors_name_what_was_wrong
             - src/lib/attack-box-default.test.ts
             - src/lib/lib.test.ts > keeps a custom image, even another tag or digest of the Cyber CTF box

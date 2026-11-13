@@ -80,9 +80,9 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str, worker_files: impl FnOnce()
     // lab). A keychain that refuses (locked) leaves it, listed for the player to delete: never a
     // reason to keep the lab, which a computer with a broken keychain could then never remove.
     // No keychain at all, or no password kept, is nothing to delete.
-    if let Err(e) = runtime::attack_machine::forget_password(&dir) {
+    if let Err(e) = runtime::attack_box::forget_password(&dir) {
         log::warn!("removing lab {id}: its attack box's password stayed in the keychain: {e}");
-        let entry = runtime::attack_machine::password_entry(&dir);
+        let entry = runtime::attack_box::password_entry(&dir);
         removal.left.push(Leftover { path: format!("the attack box's password is still in the keychain ({entry})"), error: e.to_string() });
     }
     Ok(removal)

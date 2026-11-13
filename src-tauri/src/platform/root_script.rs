@@ -2,7 +2,7 @@
 //! checked: a fresh private work directory, gpg with a keyring of its own there, and the check of
 //! a downloaded signing key against the fingerprints pinned for it. The vendors' apt repositories
 //! a Linux machine sets up (`machine::tools::scripts`) and Kali's archive a Debian attack VM is
-//! made Kali from (`runtime::attack_machine`) go through the same check.
+//! made Kali from (`runtime::attack_box`) go through the same check.
 
 /// The start of every script run as root that downloads something: stop at the first failure,
 /// and work in a fresh private directory `$d` (`mktemp -d`, mode 0700, removed on exit). A fixed

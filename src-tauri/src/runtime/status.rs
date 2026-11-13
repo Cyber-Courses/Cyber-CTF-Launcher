@@ -9,7 +9,7 @@ use crate::platform::AppDirs;
 use super::host::{self, Host};
 use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm};
 use super::providers::Provider;
-use super::{LabStatus, Place, Runtime, attack_machine, docker, isothrum, server};
+use super::{LabStatus, Place, Runtime, attack_box, docker, isothrum, server};
 use crate::error::{Error, Result};
 
 /// The status of lab `id`, installed in `dir` and declared `runtime`, wherever it runs and in the
@@ -25,8 +25,8 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     let here = matches!(host, Some(Host::Local(_)));
     // What the page may do on it, by the lifecycle's own rules.
     let controls = super::lifecycle::controls(host.as_ref(), status.provider.as_deref());
-    // The attack box the launcher added is no machine of the lab's own (`attack_machine`).
-    let status = attack_machine::set_apart(status, dir)?;
+    // The attack box the launcher added is no machine of the lab's own (`attack_box`).
+    let status = attack_box::set_apart(status, dir)?;
     // Here, parked = the launcher parked it and it is still down.
     let status = if here { with_parked(status, parked(dir)) } else { status };
     // Whether this container lab runs as one VM per machine (its VM recipes), locally or as

@@ -218,7 +218,7 @@ pub(crate) async fn stop_run(run: isothrum::LabRun, dir: &Path, mut log: impl Fn
 /// A stopped lab's markers: where it ran, its local VM, its per-machine form, its engine, parked;
 /// and the attack box the launcher added to it (the next start is the lab as published).
 fn forget_run(dir: &Path) -> Result<()> {
-    super::attack_machine::remove(dir)?;
+    super::attack_box::remove(dir)?;
     server::mark_lab(dir, None)?;
     mark_local_vm(dir, None)?;
     mark_per_machine_vm(dir, false)?;

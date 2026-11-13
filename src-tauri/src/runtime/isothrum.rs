@@ -8,7 +8,7 @@
 //! launcher always used), the runner's home (the app data folder, so runs are kept under its
 //! `runs/`), the words the player reads (the runner's events in `progress`, its error codes in
 //! `errors`) and the lab page's shapes (`view`). The attack box is no concern of the run's: the
-//! launcher adds it to the lab as one of its machines (`attack_machine`), and the run is brought
+//! launcher adds it to the lab as one of its machines (`attack_box`), and the run is brought
 //! up to date with it ([`LabRun::update`], [`LabRun::retire`]) like with any change of the lab.
 //! An operation that outlives the app runs in the launcher's own deploy worker, which calls the runner in-process;
 //! stopping that worker drops the operation, which ends what it started.

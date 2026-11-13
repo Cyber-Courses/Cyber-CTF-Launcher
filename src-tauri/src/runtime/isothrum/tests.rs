@@ -343,8 +343,8 @@ fn a_start_gives_the_launch_values_to_the_slots_and_resumes_a_parked_run() {
 
 /// The lab's attack box as the launcher places it on this machine: a container added to the
 /// lab, the run brought up to date with it.
-fn placed_box(f: &Fixture) -> crate::runtime::attack_machine::Placed {
-    use crate::runtime::attack_machine::Placed;
+fn placed_box(f: &Fixture) -> crate::runtime::attack_box::Placed {
+    use crate::runtime::attack_box::Placed;
     use crate::runtime::host::Host;
     Placed { host: Host::Local(f.run()), dir: f.home.dir.clone(), target: lab::Target::Docker, vm: false }
 }
@@ -355,12 +355,10 @@ async fn an_attack_box_refused_by_a_lab_that_is_not_up_leaves_the_lab_as_publish
     let _tools = Tools::rules(&[]);
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     let compose = std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
-    let err = placed_box(&f)
-        .add(&dirs, crate::runtime::attack_machine::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {})
-        .await
-        .unwrap_err();
+    let err =
+        placed_box(&f).add(&dirs, crate::runtime::attack_box::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.unwrap_err();
     assert!(matches!(&err, crate::error::Error::RefusedBeforeActing(m) if m == "This lab isn't running. Start it first."), "{err}");
-    assert!(!crate::runtime::attack_machine::added(&f.home.dir).unwrap(), "the box is out of the lab's spec again");
+    assert!(!crate::runtime::attack_box::added(&f.home.dir).unwrap(), "the box is out of the lab's spec again");
     assert_eq!(std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap(), compose, "and its files as they were");
 }
 
@@ -372,11 +370,11 @@ async fn an_attack_box_whose_start_failed_in_the_run_stays_in_the_lab_for_stop_t
     f.up().await;
     f.model().failing_up = true;
     let placed = placed_box(&f);
-    assert!(placed.add(&dirs, crate::runtime::attack_machine::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.is_err());
-    assert!(crate::runtime::attack_machine::added(&f.home.dir).unwrap(), "the run may hold some of it: kept, for a stop to retire");
+    assert!(placed.add(&dirs, crate::runtime::attack_box::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.is_err());
+    assert!(crate::runtime::attack_box::added(&f.home.dir).unwrap(), "the run may hold some of it: kept, for a stop to retire");
     f.model().failing_up = false;
     placed.remove(&dirs, &mut |_| {}).await.unwrap();
-    assert!(!crate::runtime::attack_machine::added(&f.home.dir).unwrap());
+    assert!(!crate::runtime::attack_box::added(&f.home.dir).unwrap());
 }
 
 #[tokio::test]
@@ -392,7 +390,7 @@ async fn an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull() {
     let before = ups();
     let mut lines = Vec::new();
     let err = placed_box(&f)
-        .add(&dirs, crate::runtime::attack_machine::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |l| lines.push(l))
+        .add(&dirs, crate::runtime::attack_box::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |l| lines.push(l))
         .await
         .unwrap_err();
     assert_eq!(
@@ -417,7 +415,7 @@ async fn an_attack_box_goes_in_and_out_of_the_run_with_the_labs_files() {
     let compose = || std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
     let updates = || f.fake.calls().iter().filter(|c| c.line().contains(" up --detach ")).count();
     let before = updates();
-    placed.add(&dirs, crate::runtime::attack_machine::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.unwrap();
+    placed.add(&dirs, crate::runtime::attack_box::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.unwrap();
     // The lab's files regenerated with the box, then the run brought up to date with them.
     assert!(compose().contains("attackbox") && compose().contains("kalilinux/kali-rolling"));
     assert_eq!(updates(), before + 1);
@@ -425,7 +423,7 @@ async fn an_attack_box_goes_in_and_out_of_the_run_with_the_labs_files() {
     // Out of the files, and the run brought up to date again (Compose drops the orphan).
     assert!(!compose().contains("attackbox"));
     assert_eq!(updates(), before + 2);
-    assert!(!crate::runtime::attack_machine::added(&f.home.dir).unwrap());
+    assert!(!crate::runtime::attack_box::added(&f.home.dir).unwrap());
 }
 
 #[test]

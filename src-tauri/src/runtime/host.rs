@@ -252,11 +252,11 @@ mod tests {
         assert!(!host.has_machines());
         let check = host.check().await.unwrap();
         assert!(!check.available && check.results.is_empty());
-        assert!(crate::runtime::attack_machine::locate(&t.dirs(), &dir, "t", Runtime::Cloud).unwrap().is_none());
+        assert!(crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", Runtime::Cloud).unwrap().is_none());
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         // Its containers in the same account are machines of the lab's own.
         assert!(locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().unwrap().has_machines());
-        assert!(crate::runtime::attack_machine::locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().is_some());
+        assert!(crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().is_some());
     }
 
     #[test]
@@ -264,7 +264,7 @@ mod tests {
         let t = TestApp::new();
         let _tools = Tools::rules(&[]);
         let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
-        let placed = |runtime| crate::runtime::attack_machine::locate(&t.dirs(), &dir, "t", runtime).unwrap().unwrap();
+        let placed = |runtime| crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", runtime).unwrap().unwrap();
         assert!(placed(Runtime::Docker).pulls_image_here());
         assert!(!placed(Runtime::Vm).pulls_image_here(), "a Kali VM pulls no image");
         server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
