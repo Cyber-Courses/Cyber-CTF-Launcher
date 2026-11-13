@@ -150,6 +150,34 @@ export function runTool(program, args) {
   }
 }
 
+/** The volumes `project`'s containers hold now (`docker ps -a` by the Compose project label, then
+ *  the containers' volume mounts), each once: what a `down --volumes` leaves when the engine counts
+ *  one named (an update's recreate inherits a service's anonymous volumes into the new container
+ *  under their ids, and the engine then keeps them at the down). The runner records them the same
+ *  way inside its operations; the harness's own down, outside the app, records them here. Empty
+ *  when the engine doesn't answer. */
+export function projectVolumes(project, run = runTool) {
+  const ids = (run("docker", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${project}`]) ?? "").split(/\s+/).filter(Boolean);
+  if (!ids.length) return [];
+  const mounts = run("docker", ["inspect", "--format", '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\\n"}}{{end}}{{end}}', ...ids]);
+  return volumeNames(mounts ?? "");
+}
+
+/** The volume names in `docker inspect`'s mount listing, each once, in order. */
+export function volumeNames(listing) {
+  return [...new Set(listing.split(/\s+/).filter(Boolean))];
+}
+
+/** Removes, among `names`, the volumes no container holds any more (the engine's dangling ones):
+ *  the ones a `down --volumes` left. The names removed, in order. */
+export function removeDangling(names, run = runTool) {
+  if (!names.length) return [];
+  const dangling = new Set((run("docker", ["volume", "ls", "--quiet", "--filter", "dangling=true"]) ?? "").split(/\s+/).filter(Boolean));
+  const left = names.filter((n) => dangling.has(n));
+  if (left.length) run("docker", ["volume", "rm", "--force", ...left]);
+  return left;
+}
+
 /** The labs installed in the run's folder. */
 export function installedLabs(root) {
   const labs = runFolders(root).labs;

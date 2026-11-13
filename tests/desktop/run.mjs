@@ -60,7 +60,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { libvirtFixtureXml, scanFixture } from "./lib/fixture.mjs";
 import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "./lib/host.mjs";
-import { dropComposeRecord, projects, record as recordMachine, runFolders, runTool } from "./lib/owned.mjs";
+import { dropComposeRecord, projectVolumes, projects, record as recordMachine, removeDangling, runFolders, runTool } from "./lib/owned.mjs";
 import {
   DEAD_APP,
   RUNNER_NEEDS,
@@ -317,10 +317,16 @@ function stopRunApps() {
 function cleanupLab(final = false) {
   if ((final && KEEP) || engineWhy !== null) return;
   const downed = projects(RUN_ROOT).ours;
+  // What the down leaves when the engine counts an inherited anonymous volume named (the lab's
+  // database volume after a recreate): recorded before, removed after, as the runner does inside
+  // its own operations, which this down happens outside of.
+  const held = downed.flatMap((p) => projectVolumes(p));
   for (const p of downed) {
     say(`cleanup: docker compose -p ${p} down --volumes (the run's)`);
     runTool("docker", ["compose", "-p", p, "down", "--volumes", "--remove-orphans"]);
   }
+  const orphaned = removeDangling(held);
+  if (orphaned.length) say(`cleanup: ${orphaned.length} volume(s) the down left removed (held by the run's containers before it)`);
   const left = projects(RUN_ROOT).ours;
   if (left.length && !final) die(`the run's Compose projects are left after the clean-up: ${left.join(" ")}`);
   for (const p of downed) if (!left.includes(p) && dropComposeRecord(RUN_ROOT, p)) say(`cleanup: the app's record of ${p} dropped (taken down)`);
