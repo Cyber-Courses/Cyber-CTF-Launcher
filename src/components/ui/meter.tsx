@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** A thin usage bar: the jewel when calm, warm over 75%, fail over 90%. */
 export function Meter({ value, className }: { value: number; className?: string }) {

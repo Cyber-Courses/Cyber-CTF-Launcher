@@ -15,10 +15,10 @@
 //!   markers, and SSH to a lab host.
 //! - `isothrum`: every lab run through the Isothrum runner: on this machine (Docker, one VM, or
 //!   VMs), on a server, in a cloud account.
-//! - `attack_machine`: the learner's attack box, a machine the launcher adds to the lab (through
+//! - `attack_box`: the learner's attack box, a machine the launcher adds to the lab (through
 //!   its overlay, `lab::overlay`) and takes out again, wherever the lab runs.
 
-pub(crate) mod attack_machine;
+pub(crate) mod attack_box;
 pub(crate) mod cloud_services;
 pub(crate) mod deploy_log;
 pub(crate) mod discover;
@@ -73,7 +73,7 @@ pub use status::{lab_installed, lab_present, primary_url};
 pub use terraform::{PLUGIN_CACHE as TERRAFORM_PLUGINS, clear_plugin_cache};
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]
-pub(crate) use {attack_machine::AttackStatus, cloud_services::Preview, docker::Check};
+pub(crate) use {attack_box::AttackStatus, cloud_services::Preview, docker::Check};
 
 /// Mirrors `LabRuntime` in CyberBackend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]

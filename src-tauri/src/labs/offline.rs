@@ -54,7 +54,7 @@ pub fn keep(base: &Path, launch: &Launch, user: &str) -> Result<()> {
     super::validate_source(&kept.repository, &kept.commit)?;
     let path = kept_path(base, &kept.lab_id);
     if let Some(dir) = path.parent() {
-        crate::platform::private_fs::dir(dir)?;
+        crate::platform::private_fs::create_dir(dir)?;
     }
     let raw = serde_json::to_string(&kept).map_err(|e| Error::Invalid(e.to_string()))?;
     crate::platform::private_fs::write(&path, raw)?;

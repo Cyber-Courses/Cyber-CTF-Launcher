@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** A row of mutually exclusive options in one glass track (filters, view switches, small settings). */
 export function Segmented<T extends string | number | null>({

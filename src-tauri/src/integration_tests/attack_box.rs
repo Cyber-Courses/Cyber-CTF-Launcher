@@ -30,7 +30,7 @@ use super::support::attack_box::{add_box, box_reaches, in_box, password_works, r
 use super::support::lab::{install_copy, leftovers};
 use super::support::{check, log, scenario};
 use crate::platform::AppDirs;
-use crate::runtime::attack_machine::{self, Placed};
+use crate::runtime::attack_box::{self, Placed};
 use crate::runtime::host::Host;
 use crate::runtime::launch::{CloudStart, Inputs, VmStart, start_cloud_run, start_docker_in_vm_run, start_docker_run, start_vm_run};
 use crate::runtime::providers::Provider;
@@ -40,7 +40,7 @@ use crate::runtime::{isothrum, lab, lifecycle};
 /// signing in with the password the launcher keeps, then taken out; with the shared folder on
 /// (Settings, as [`shared_folder`] turns it on), that folder seen both ways from inside the box.
 pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
-    add_box(placed, dirs, attack_machine::default_image(), l, f).await;
+    add_box(placed, dirs, attack_box::default_image(), l, f).await;
     box_reaches(placed, target, "once added", f).await;
     password_works(placed, "once added", f).await;
     match crate::shared_folder::current(dirs) {
@@ -49,7 +49,7 @@ pub(super) async fn exercise(placed: &Placed, dirs: &AppDirs, target: &str, l: &
         Err(e) => check(false, format!("the shared folder's setting reads: {e}"), f),
     }
     remove_box(placed, dirs, l, f).await;
-    check(!attack_machine::added(&placed.dir).unwrap_or(true), "the lab is as published".into(), f);
+    check(!attack_box::added(&placed.dir).unwrap_or(true), "the lab is as published".into(), f);
 }
 
 /// The shared folder `folder` seen both ways from inside the box `placed`.
@@ -203,7 +203,7 @@ async fn the_attack_box_is_a_machine_of_an_aws_lab() {
                 return;
             }
             // The box's place, as the lab page's commands find it.
-            match attack_machine::locate(&dirs, &dir, &id, crate::runtime::Runtime::Docker) {
+            match attack_box::locate(&dirs, &dir, &id, crate::runtime::Runtime::Docker) {
                 Ok(Some(placed)) => exercise(&placed, &dirs, &target, &mut l, f).await,
                 found => check(false, format!("the box's place in the account is found ({:?})", found.err()), f),
             }

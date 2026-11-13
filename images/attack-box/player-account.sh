@@ -9,7 +9,7 @@
 #
 # Run when the image is built (no shared folder then), at each start of a container box (its image
 # may predate the account, or the folder's owner may differ from the image's), and once when a VM
-# box is set up. The launcher names the account (`attack_machine::PLAYER`) and the folder.
+# box is set up. The launcher names the account (`attack_box::PLAYER`) and the folder.
 #
 #   account=<name> [shared=<folder>] [password_hash=<file>] sh player-account.sh
 set -e

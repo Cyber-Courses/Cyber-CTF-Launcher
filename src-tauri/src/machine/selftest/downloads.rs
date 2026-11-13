@@ -16,16 +16,16 @@ use crate::platform::exec::{run_env, run_env_timed, stream, within};
 use crate::platform::sync::Busy;
 use crate::runtime::providers::Provider;
 
-static DOCKER_DL: AtomicBool = AtomicBool::new(false);
-static VM_DL: AtomicBool = AtomicBool::new(false);
+static DOCKER_IMAGE_PULLING: AtomicBool = AtomicBool::new(false);
+static VM_BOX_DOWNLOADING: AtomicBool = AtomicBool::new(false);
 /// The test image is 2 MB: past this the engine is stuck, not the network slow.
 const PULL_LIMIT: Duration = Duration::from_secs(300);
 /// A test box is hundreds of MB (far larger than the image), so a generous bound: past it the
 /// download is stalled, not just a slow link. Without it a wedged `vagrant box add` spins for
-/// good, and a test waiting on the `VM_DL` busy flag polls it forever.
+/// good, and a test waiting on the `VM_BOX_DOWNLOADING` busy flag polls it forever.
 const BOX_LIMIT: Duration = Duration::from_secs(1800);
 /// Last line of the VM box download, so a test waiting on it can show progress.
-static VM_DL_LINE: Mutex<String> = Mutex::new(String::new());
+static VM_BOX_PROGRESS: Mutex<String> = Mutex::new(String::new());
 
 /// Makes sure the test image is local on the engine `env` points Docker at (`DOCKER_CONTEXT`,
 /// or none for the CLI's current one). Returns whether it already was (or a background download
@@ -36,7 +36,7 @@ pub(super) async fn ensure_image(env: &[(String, String)]) -> Result<bool> {
         if run_env("docker", &["image", "inspect", IMAGE], None, env).await.is_ok() {
             return Ok(true);
         }
-        if let Some(_busy) = Busy::try_take(&DOCKER_DL) {
+        if let Some(_busy) = Busy::try_take(&DOCKER_IMAGE_PULLING) {
             run_env_timed("docker", &["pull", "-q", IMAGE], None, env, PULL_LIMIT).await?;
             return Ok(waited);
         }
@@ -53,13 +53,13 @@ pub(super) async fn ensure_box(dir: &Path, p: Provider, bx: &'static str, arm: b
         if pick_box(p, arm).await == (bx, true) {
             return Ok(true);
         }
-        if let Some(_busy) = Busy::try_take(&VM_DL) {
+        if let Some(_busy) = Busy::try_take(&VM_BOX_DOWNLOADING) {
             on_line(format!("Downloading {bx} for {}, once…", p.id()));
             add_box(dir, p, bx, BOX_LIMIT, &mut on_line).await?;
             return Ok(waited);
         }
         waited = true;
-        let line = VM_DL_LINE.lock().map(|l| l.clone()).unwrap_or_default();
+        let line = VM_BOX_PROGRESS.lock().map(|l| l.clone()).unwrap_or_default();
         on_line(if line.trim().is_empty() { format!("Finishing the background download of {bx}…") } else { line });
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
@@ -73,7 +73,7 @@ async fn add_box(dir: &Path, p: Provider, bx: &str, limit: Duration, mut on_line
         "vagrant box add",
         limit,
         stream("vagrant", &["box", "add", bx, "--provider", box_provider(p), "--force"], Some(dir), &[], |l| {
-            if let Ok(mut last) = VM_DL_LINE.lock() {
+            if let Ok(mut last) = VM_BOX_PROGRESS.lock() {
                 last.clone_from(&l);
             }
             on_line(l);

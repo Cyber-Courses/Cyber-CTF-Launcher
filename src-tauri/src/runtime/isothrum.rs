@@ -2,18 +2,18 @@
 //! its files (`.isoloom[-<n>]/docker/run.json`, `.isoloom[-<n>]/vagrant/run.json`, ...), through
 //! the runner's `Running` operations: a container lab on this machine's Docker or in one local VM,
 //! a VM lab on this machine's hypervisor (Vagrant, every local provider) or an ESXi host, and a lab
-//! on a Proxmox server (`server`) or in a cloud account (`cloud`).
+//! on a Proxmox server (`server`) or in a cloud account (`cloud_runs`).
 //!
 //! What stays the launcher's: the run's name (`cyberctf-<lab id>`, the Compose project the
 //! launcher always used), the runner's home (the app data folder, so runs are kept under its
 //! `runs/`), the words the player reads (the runner's events in `progress`, its error codes in
 //! `errors`) and the lab page's shapes (`view`). The attack box is no concern of the run's: the
-//! launcher adds it to the lab as one of its machines (`attack_machine`), and the run is brought
+//! launcher adds it to the lab as one of its machines (`attack_box`), and the run is brought
 //! up to date with it ([`LabRun::update`], [`LabRun::retire`]) like with any change of the lab.
 //! An operation that outlives the app runs in the launcher's own deploy worker, which calls the runner in-process;
 //! stopping that worker drops the operation, which ends what it started.
 
-mod cloud;
+mod cloud_runs;
 pub(crate) mod errors;
 mod gone;
 mod import;
@@ -24,7 +24,7 @@ mod regenerate;
 mod server;
 mod view;
 
-pub(crate) use cloud::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
+pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
 pub(crate) use import::{Outcome, import_all, runner as import_runner};
 pub(crate) use server::{ServerPlace, ServerRun};
 

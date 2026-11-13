@@ -6,7 +6,7 @@ import { Meter } from "@/components/ui/meter";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SelfTest, type SelfTestResult, type SelfTestTarget } from "@/features/machine/self-test";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 import { StatusDot } from "@/components/ui/status-pill";
 

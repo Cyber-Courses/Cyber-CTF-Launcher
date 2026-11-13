@@ -61,7 +61,7 @@ fn open(file: &Path, options: &std::fs::OpenOptions) -> io::Result<File> {
 }
 
 /// Creates `dir` (with its missing parents, which get the usual mode) and makes it owner-only.
-pub fn dir(dir: &Path) -> io::Result<()> {
+pub fn create_dir(dir: &Path) -> io::Result<()> {
     std::fs::create_dir_all(dir)?;
     #[cfg(unix)]
     {
@@ -125,7 +125,7 @@ pub(crate) mod tests {
         // A fresh log empties the old one.
         drop(create(&d.join("x.log")).unwrap());
         assert_eq!(std::fs::read_to_string(d.join("x.log")).unwrap(), "");
-        dir(&d.join("a").join("b")).unwrap();
+        create_dir(&d.join("a").join("b")).unwrap();
         assert!(d.join("a").join("b").is_dir());
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -155,9 +155,9 @@ pub(crate) mod tests {
         let sub = d.join("deploys");
         std::fs::create_dir(&sub).unwrap();
         wide(&sub, 0o755);
-        dir(&sub).unwrap();
+        create_dir(&sub).unwrap();
         assert_eq!(mode(&sub), 0o700);
-        dir(&d.join("fresh")).unwrap();
+        create_dir(&d.join("fresh")).unwrap();
         assert_eq!(mode(&d.join("fresh")), 0o700);
         let _ = std::fs::remove_dir_all(&d);
     }

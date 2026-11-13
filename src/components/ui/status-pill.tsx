@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import type { Tone } from "@/lib/tone";
 
 export type { Tone };

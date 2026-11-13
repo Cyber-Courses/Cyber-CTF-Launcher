@@ -272,7 +272,7 @@ pub(crate) struct VmStart<'a> {
 /// The runner's start of a VM lab (runner home `home`) on `provider`: its files generated (the
 /// run manifest with them), the memory warning and QEMU's emulator check, then up (a parked run
 /// is resumed as it was). The learner's attack box is added to the lab afterwards, from the lab
-/// page or with the lab (`attack_machine`), not by the launch. Takes no app handle, so the
+/// page or with the lab (`attack_box`), not by the launch. Takes no app handle, so the
 /// integration tests run exactly this.
 pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let VmStart { provider, inputs } = start;

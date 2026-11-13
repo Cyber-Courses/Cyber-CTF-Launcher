@@ -76,10 +76,10 @@ pub fn screen_password(window: WebviewWindow) -> Result<String> {
 /// `LightDM`'s or the console's login), when it is the lab's attack box: its account and the
 /// password the launcher keeps for it. None for any other machine.
 #[tauri::command]
-pub fn screen_sign_in(window: WebviewWindow) -> Result<Option<crate::runtime::attack_machine::SignIn>> {
+pub fn screen_sign_in(window: WebviewWindow) -> Result<Option<crate::runtime::attack_box::SignIn>> {
     let which = screen::which(window.label())?;
     let dir = paths::lab_dir(&AppDirs::from(window.app_handle()), &which.id)?;
-    crate::runtime::attack_machine::sign_in(&dir, Some(&which.machine))
+    crate::runtime::attack_box::sign_in(&dir, Some(&which.machine))
 }
 
 /// The system's Remote Desktop client, when this computer has one.
@@ -124,11 +124,11 @@ mod tests {
 
     #[tokio::test]
     async fn the_attack_box_screen_alone_gets_its_sign_in() {
-        use crate::runtime::attack_machine::{self, Cpu, Kind, NAME, PLAYER};
+        use crate::runtime::attack_box::{self, Cpu, Kind, NAME, PLAYER};
         let t = TestApp::new();
         let spec = "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { os: debian@12, networks: { lan: 10 } }\n";
         let dir = t.lab("signin", &[("isoloom.yml", spec)]);
-        attack_machine::add(&dir, Kind::Vm { desktop: true }, Cpu::Lab, None, None).unwrap();
+        attack_box::add(&dir, Kind::Vm { desktop: true }, Cpu::Lab, None, None).unwrap();
         let app = t.handle();
         let sign_in = |machine: &str| {
             let label = format!("screen-signin:{machine}");
@@ -142,9 +142,9 @@ mod tests {
         };
         let box_screen = sign_in(NAME).await.unwrap().expect("the box's sign-in");
         assert_eq!(box_screen.user, PLAYER);
-        assert_eq!(Some(box_screen), attack_machine::sign_in(&dir, None).unwrap(), "the password the launcher keeps");
+        assert_eq!(Some(box_screen), attack_box::sign_in(&dir, None).unwrap(), "the password the launcher keeps");
         assert_eq!(sign_in("web").await.unwrap(), None, "a target's screen gets none");
-        attack_machine::remove(&dir).unwrap();
+        attack_box::remove(&dir).unwrap();
     }
 
     #[tokio::test]

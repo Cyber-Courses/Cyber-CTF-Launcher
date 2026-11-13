@@ -7,7 +7,7 @@ import { Panel } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-pill";
 import { TypeIcon } from "@/components/ui/type-icon";
 import { Icon, type IconName } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 
 /** A step's centred title and description. */

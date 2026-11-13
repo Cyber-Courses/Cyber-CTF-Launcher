@@ -165,7 +165,7 @@ mod dev_file {
     /// folder this user's only from the start.
     pub(super) fn write_at(path: &Path, map: &BTreeMap<String, String>) -> Result<()> {
         if let Some(dir) = path.parent() {
-            crate::platform::private_fs::dir(dir)?;
+            crate::platform::private_fs::create_dir(dir)?;
         }
         let raw = serde_json::to_string(map).map_err(|e| Error::Invalid(e.to_string()))?;
         crate::platform::atomic_file::write_private(path, raw)?;

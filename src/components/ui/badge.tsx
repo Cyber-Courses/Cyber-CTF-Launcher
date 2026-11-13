@@ -1,5 +1,5 @@
 import type { HTMLAttributes } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 type Variant = "default" | "success" | "warning" | "destructive" | "accent" | "outline";
 

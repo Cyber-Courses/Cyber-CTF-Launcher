@@ -104,7 +104,7 @@ impl workloads::LabRuntime for AppHandle {
 
     fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send {
         let dirs = AppDirs::from(self);
-        async move { super::labs::stop_lab(&dirs, id, runtime, |_| {}).await }
+        async move { super::labs::stop_lab_ending_workers(&dirs, id, runtime, |_| {}).await }
     }
 }
 

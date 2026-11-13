@@ -6,7 +6,7 @@ use isothrum_runner::ShellCommand;
 
 use super::check;
 use crate::platform::AppDirs;
-use crate::runtime::attack_machine::{self, Placed};
+use crate::runtime::attack_box::{self, Placed};
 
 /// `probe` run in the box, through the console the lab page opens, without a terminal. A console
 /// of a shape this doesn't know is an error.
@@ -71,20 +71,20 @@ fn probe_args(console: &ShellCommand, probe: &str) -> Option<Vec<String>> {
 /// Adds the attack box to the running lab `placed`, from `image` beside containers, as the lab
 /// page's Start attack box does.
 pub(crate) async fn add_box(placed: &Placed, dirs: &AppDirs, image: &str, l: &mut impl FnMut(String), f: &mut Vec<String>) {
-    let added = placed.add(dirs, crate::runtime::attack_machine::Pick { image, desktop: false }, None, l).await;
+    let added = placed.add(dirs, crate::runtime::attack_box::Pick { image, desktop: false }, None, l).await;
     check(added.is_ok(), format!("the attack box is added to the lab ({:?})", added.err()), f);
 }
 
 /// The box runs, with an address, and a shell in it reaches `target`'s port 80, is called by the
-/// box's own name in the lab ([`attack_machine::name`]: the seat the lab declares, else
-/// [`attack_machine::NAME`]) and is the player's ([`box_is_the_players`]); `when` says at which
+/// box's own name in the lab ([`attack_box::name`]: the seat the lab declares, else
+/// [`attack_box::NAME`]) and is the player's ([`box_is_the_players`]); `when` says at which
 /// point of the test.
 pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &mut Vec<String>) {
     match placed.status().await {
         Ok(s) => check(s.running && !s.ip.is_empty(), format!("the attack box runs, with an address, {when} ({} on {})", s.ip, s.lab_network), f),
         Err(err) => check(false, format!("the attack box's status reads, {when}: {err}"), f),
     }
-    let name = match attack_machine::name(&placed.dir) {
+    let name = match attack_box::name(&placed.dir) {
         Ok(name) => name,
         Err(err) => return check(false, format!("the attack box's name reads, {when}: {err}"), f),
     };
@@ -106,10 +106,10 @@ pub(crate) async fn box_reaches(placed: &Placed, target: &str, when: &str, f: &m
     box_is_the_players(placed, when, f).await;
 }
 
-/// A shell in the box `placed` is the player's ([`attack_machine::PLAYER`]): its account, in its
+/// A shell in the box `placed` is the player's ([`attack_box::PLAYER`]): its account, in its
 /// home, with sudo and no password; `when` says at which point of the test.
 pub(crate) async fn box_is_the_players(placed: &Placed, when: &str, f: &mut Vec<String>) {
-    let player = attack_machine::PLAYER;
+    let player = attack_box::PLAYER;
     let seen = match placed.shell_command().await {
         Ok(console) => in_box(&console, "whoami && cd && pwd && sudo -n true && echo sudo-ok").await,
         Err(err) => Err(err),
@@ -167,16 +167,16 @@ print("su-asked" if asked else "su-did-not-ask")
 print("su-ok" if b"su-signed-in" in out else "su-refused")
 "#;
 
-/// The password the launcher keeps for the box `placed` ([`attack_machine::sign_in`]) is its
+/// The password the launcher keeps for the box `placed` ([`attack_box::sign_in`]) is its
 /// player account's: `su` to the account takes it (given on standard input, never on a command
 /// line), and refuses another; `when` says at which point of the test. The probe's output is never
 /// in a failure's message: it may echo the password.
 pub(crate) async fn password_works(placed: &Placed, when: &str, f: &mut Vec<String>) {
-    let sign_in = match attack_machine::sign_in(&placed.dir, None) {
+    let sign_in = match attack_box::sign_in(&placed.dir, None) {
         Ok(Some(sign_in)) => sign_in,
         found => return check(false, format!("the launcher keeps a password for the box, {when} ({:?})", found.err()), f),
     };
-    check(sign_in.user == attack_machine::PLAYER, format!("the box's sign-in is {}'s, {when}", attack_machine::PLAYER), f);
+    check(sign_in.user == attack_box::PLAYER, format!("the box's sign-in is {}'s, {when}", attack_box::PLAYER), f);
     let console = match placed.shell_command().await {
         Ok(console) => console,
         Err(e) => return check(false, format!("a console into the box opens, {when}: {e}"), f),

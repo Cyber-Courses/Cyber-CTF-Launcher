@@ -377,7 +377,7 @@ unset_of() {
 }
 # shared_for <provider> <scenario>: the shared folder a VM box gets on that hypervisor here, empty
 # where it can't share one. The same providers as the launcher's `shares_folders`
-# (src-tauri/src/runtime/attack_machine/place.rs), which a unit test there holds to this list.
+# (src-tauri/src/runtime/attack_box/place.rs), which a unit test there holds to this list.
 # QEMU only on Linux (virtiofsd); Hyper-V and any other hypervisor: none.
 shared_for() {
   case "$1" in

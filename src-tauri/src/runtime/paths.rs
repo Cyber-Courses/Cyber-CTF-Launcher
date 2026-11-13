@@ -43,7 +43,7 @@ pub(crate) fn runner_home(dirs: &AppDirs) -> Result<PathBuf> {
 /// No data folder, or one where it can't be made.
 pub(crate) fn deploys_dir(dirs: &AppDirs) -> Result<PathBuf> {
     let d = dirs.data()?.join("deploys");
-    crate::platform::private_fs::dir(&d).map_err(Error::Io)?;
+    crate::platform::private_fs::create_dir(&d).map_err(Error::Io)?;
     Ok(d)
 }
 

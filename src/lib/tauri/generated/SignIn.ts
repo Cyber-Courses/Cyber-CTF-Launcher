@@ -5,7 +5,7 @@
  */
 export type SignIn = { 
 /**
- * The account, `player` (`attack_machine::PLAYER`).
+ * The account, `player` (`attack_box::PLAYER`).
  */
 user: string, 
 /**

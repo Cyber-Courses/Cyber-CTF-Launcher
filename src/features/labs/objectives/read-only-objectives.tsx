@@ -5,7 +5,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { PROSE } from "@/components/ui/screen-width";
 import type { LabChallenge } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /**
  * A lab's challenges as its own `.ctf/objectives.json` lists them, to read only: a lab imported

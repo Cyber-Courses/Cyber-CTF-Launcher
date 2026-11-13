@@ -21,7 +21,7 @@ RUN cat /tmp/bashrc.cyberctf >> /root/.bashrc \
 # The account the player works as (the launcher's shell opens as it): a home, bash, sudo without a
 # password. The image's own user stays root, so the launcher can still set the box up; it makes the
 # account again where the box starts from an image without it (player-account.sh). The name is the
-# launcher's (`attack_machine::PLAYER`, which a test there holds this to).
+# launcher's (`attack_box::PLAYER`, which a test there holds this to).
 ARG PLAYER=player
 COPY player-account.sh /tmp/player-account.sh
 RUN account=$PLAYER sh /tmp/player-account.sh && rm /tmp/player-account.sh

@@ -9,7 +9,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AttackStatus {
-    /// Whether the launcher reaches a run of the lab to put a box in (`attack_machine::locate`):
+    /// Whether the launcher reaches a run of the lab to put a box in (`attack_box::locate`):
     /// not on an ESXi host, nor beside a cloud-services lab.
     pub reachable: bool,
     /// Whether the box is up (the runner has it running).
@@ -22,7 +22,7 @@ pub struct AttackStatus {
     /// none when the lab declares where the player sits, or once the box is in. Known before the
     /// box is up, so the page can offer the choice.
     pub networks: Vec<String>,
-    /// The network the box joins when the learner picks none (`attack_machine::Networks`).
+    /// The network the box joins when the learner picks none (`attack_box::Networks`).
     pub default_network: String,
     /// Whether the box is a VM: a Kali VM among a lab's VMs, wherever the lab runs.
     pub vm: bool,

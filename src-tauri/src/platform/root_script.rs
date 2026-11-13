@@ -2,7 +2,7 @@
 //! checked: a fresh private work directory, gpg with a keyring of its own there, and the check of
 //! a downloaded signing key against the fingerprints pinned for it. The vendors' apt repositories
 //! a Linux machine sets up (`machine::tools::scripts`) and Kali's archive a Debian attack VM is
-//! made Kali from (`runtime::attack_machine`) go through the same check.
+//! made Kali from (`runtime::attack_box`) go through the same check.
 
 /// [`PRIVATE_WORKDIR`]'s text, which [`PRELUDE`] starts with too.
 macro_rules! private_workdir {

@@ -4,7 +4,7 @@ import { FlaskConical, Pencil, Star, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { PROVIDER_NAMES, type HostCapacity, type ServerHost } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { ServerSelfTest } from "@/features/servers/server-self-test";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ProviderGlyph } from "@/features/servers/provider-glyph";

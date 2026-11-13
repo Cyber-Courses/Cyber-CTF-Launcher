@@ -1,5 +1,5 @@
 import type { SVGProps } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /**
  * Shared monochrome line-icon set (Geist/Vercel feel: 24px grid, 1.6 stroke, round

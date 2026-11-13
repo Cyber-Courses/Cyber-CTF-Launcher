@@ -4,7 +4,7 @@ import { Cloud, Container, Monitor, Server, type LucideIcon } from "lucide-react
 import { runPlaces, type PlaceKey } from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabStatus } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 
 /** Each place's icon, wherever a place is drawn (a lab row, the lab page's Where it runs). */

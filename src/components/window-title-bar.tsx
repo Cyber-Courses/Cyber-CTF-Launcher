@@ -6,7 +6,7 @@ import { Copy, Minus, Square, X } from "lucide-react";
 import { ignore, warn } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 import { useWindowFrame } from "@/lib/platform";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 type Props = {
   /** A title, translated, centred over the bar (Settings). None otherwise, as on macOS, where the

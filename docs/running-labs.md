@@ -50,12 +50,12 @@ as published. The instance number stays: it is the installed lab's, not the run'
 ## The attack box
 
 The learner's attack box is one more machine of the lab, wherever it runs: the launcher adds
-`attackbox` to the lab's spec through its overlay (`runtime/attack_machine`), regenerates the
+`attackbox` to the lab's spec through its overlay (`runtime/attack_box`), regenerates the
 lab for its form and brings the run up to date (`Running::update`). Taking it out retires it
 from the run (`Running::retire`: Vagrant forgets a VM its Vagrantfile no longer has), removes it
 from the overlay and updates again. Its status is the run's status of that machine; its shell is
 the runner's console into it as the player's account (`Running::console_command` with `player`,
-`attack_machine::PLAYER`): `exec --user` into a container, a `sudo -i` login on a VM, whatever
+`attack_box::PLAYER`): `exec --user` into a container, a `sudo -i` login on a VM, whatever
 account the way in logs in as (`vagrant`, a cloud image's).
 
 The box has that account on every form, with a home and sudo without a password
@@ -69,7 +69,7 @@ image's own user.
 The account also has a password, for wherever the box asks for one: a desktop box's screen locker
 or LightDM's login after a logout, a VM's console login on its Screen, `su`, SSH where the box's
 `sshd` takes passwords. The launcher makes a new one each time it adds a box
-(`attack_machine/sign_in.rs`): 20 random characters of lowercase letters and digits without
+(`attack_box/sign_in.rs`): 20 random characters of lowercase letters and digits without
 look-alikes, in four groups (`k7mpq-zrt4w-hn8xc-ls2vd`, 100 bits). It keeps it with its other
 secrets (the OS keychain, `attack-box:<lab>`; a 0600 file in a dev build), registers it with the
 log redaction, and forgets it when the box is taken out. The box gets only its SHA-512 crypt hash
@@ -208,7 +208,7 @@ back to the Labs list, with a toast.
 login`, Azure `az login`, Google Cloud's application-default credentials, OCI's
   `~/.oci/config`). Before any change to a lab in an account, the launcher asks that CLI whether
   the sign-in still holds and refuses, saying how to sign in again, when it ran out
-  (`runtime/isothrum/cloud.rs`): a sign-in that runs out halfway leaves a lab behind.
+  (`runtime/isothrum/cloud_runs.rs`): a sign-in that runs out halfway leaves a lab behind.
 - A cloud lab's firewall opens its SSH and published ports to this machine's public IP only,
   which two independent services must agree on (`launch::public_ip`). AWS launches also check
   the account's budget first.

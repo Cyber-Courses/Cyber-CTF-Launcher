@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /**
  * The family Button: a pill with an inset highlight (cyber-design-system). Dependency-free.

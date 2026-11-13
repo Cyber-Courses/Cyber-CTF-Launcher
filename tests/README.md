@@ -212,7 +212,7 @@ Every platform the launcher ships for is tested in CI, on the runners `release.y
 | Windows Arm          | `windows-11-arm`   | yes         | yes (NSIS)      | no Linux containers on the runner     |
 
 What differs by platform is decided in code a unit test covers on every platform (the box's CPU:
-`attack_machine/place.rs`; the tools' paths and shells: `platform/`). A real lab on an Intel Mac
+`attack_box/place.rs`; the tools' paths and shells: `platform/`). A real lab on an Intel Mac
 or on Windows (Docker Desktop, Hyper-V, VirtualBox) still needs a machine of that kind: run
 `pnpm test:integration` there before a release that changes how labs run, and
 `packaging/windows/smoke-test.ps1` for the installer's edge cases.

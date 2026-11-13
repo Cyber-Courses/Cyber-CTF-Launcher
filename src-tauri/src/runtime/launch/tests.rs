@@ -48,7 +48,7 @@ async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate
 // their execution is covered by the runner crate and the opt-in `real_cloud_labs` harness, not
 // here. The launcher's own cloud policy is unit-tested where it lives: the AWS budget verdict
 // (`on_host::budget_verdict`), this machine's public IP (`on_host::agreed_ip`), and the
-// account-to-options mapping (`isothrum::cloud` tests).
+// account-to-options mapping (`isothrum::cloud_runs` tests).
 
 /// A fake IP-lookup service answering `body` once.
 async fn resolver(body: &str) -> String {

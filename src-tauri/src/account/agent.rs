@@ -38,7 +38,7 @@ use crate::runtime::{self, Runtime, server};
 pub type Notify = dyn Fn(&str, &str) + Send + Sync;
 
 /// Ends the deploy still running in lab `id`'s worker, if any, before the agent stops the lab
-/// (see `labs::stop_lab`).
+/// (see `labs::stop_lab_retiring_colocation`).
 pub type EndWorkers = dyn Fn(&str) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync;
 
 /// The app the background agent runs inside: its data folder, the two things it reaches the
@@ -132,7 +132,7 @@ fn picked_target(target: Option<&str>, host_name: impl Fn(&str) -> Result<Option
 async fn tear_down(deps: &Deps, lab_id: &str, runtime: Runtime) -> Result<()> {
     let dirs = deps.dirs();
     if crate::runtime::lab_installed(dirs, lab_id) {
-        labs::stop_lab(dirs, lab_id, runtime, (deps.end_workers)(lab_id), |_line: String| {}).await
+        labs::stop_lab_retiring_colocation(dirs, lab_id, runtime, (deps.end_workers)(lab_id), |_line: String| {}).await
     } else {
         Ok(())
     }

@@ -3,7 +3,7 @@
 //! hypervisor runs. The lab's run manifest is the one Isoloom generates for the `docker-vm`
 //! target. What the lab page relies on: the lab reads as running once UTM's plugin says
 //! `started`. A lab that declares no attack machine of its own gets no box from the runner: the
-//! launcher adds its box as a machine of the lab (`attack_machine`).
+//! launcher adds its box as a machine of the lab (`attack_box`).
 
 use super::test_lab::prelude::*;
 use super::*;

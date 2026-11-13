@@ -125,28 +125,32 @@ pub async fn run(deps: Deps) {
     loop {
         let read = auth::signed_in_user().await;
         let registered = registration(current).clone();
-        match next_step(registered.as_ref(), read.as_ref().map(Option::as_deref)) {
+        // How long to wait before starting the cycle over, when this one can't poll.
+        let start_over_after = match next_step(registered.as_ref(), read.as_ref().map(Option::as_deref)) {
             Next::Unreadable => {
                 if let Err(e) = &read {
                     log::warn!("the agent can't read the session, and waits with its registration kept: {e}");
                 }
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                continue;
+                Some(Duration::from_secs(30))
             }
             Next::SignedOut => {
                 *registration(current) = None;
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                continue;
+                Some(Duration::from_secs(5))
             }
             Next::Register => {
                 // Not online for the account registered before while this one registers.
                 *registration(current) = None;
                 // No token yet, or registering failed: wait and start the cycle over.
-                if register_step(&deps, current, read.ok().flatten()).await {
-                    continue;
+                match try_register(&deps, current, read.ok().flatten()).await {
+                    Attempt::Registered => None,
+                    Attempt::RetryAfter(wait) => Some(wait),
                 }
             }
-            Next::Run => {}
+            Next::Run => None,
+        };
+        if let Some(wait) = start_over_after {
+            tokio::time::sleep(wait).await;
+            continue;
         }
         if let Some(agent_id) = agent_id_of(current)
             && auth::access_token().await.is_ok()
@@ -157,24 +161,30 @@ pub async fn run(deps: Deps) {
     }
 }
 
-/// Registers this machine for `user`, keeping its agent id in `current`. Returns whether the loop
-/// should wait and start over — there was no access token yet, or `registerLauncher` failed — so a
-/// poll is never made for an account this machine isn't registered as.
-async fn register_step(deps: &Deps, current: &Mutex<Option<Registration>>, user: Option<String>) -> bool {
+/// How one registration attempt ended.
+enum Attempt {
+    /// This machine is registered: the loop goes on to poll.
+    Registered,
+    /// Not registered: the loop waits this long and starts over, so a poll is never made for an
+    /// account this machine isn't registered as.
+    RetryAfter(Duration),
+}
+
+/// Registers this machine for `user`, keeping its agent id in `current`. Retries after a while
+/// when there is no access token yet, or `registerLauncher` failed.
+async fn try_register(deps: &Deps, current: &Mutex<Option<Registration>>, user: Option<String>) -> Attempt {
     if auth::access_token().await.is_err() {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        return true;
+        return Attempt::RetryAfter(Duration::from_secs(5));
     }
     match register(deps.dirs()).await {
         Ok(agent_id) => {
             log::info!("launcher agent online: {agent_id}");
             *registration(current) = Some(Registration { user: user.unwrap_or_default(), agent_id });
-            false
+            Attempt::Registered
         }
         Err(e) => {
             log::warn!("registerLauncher failed, retrying: {e}");
-            tokio::time::sleep(Duration::from_secs(15)).await;
-            true
+            Attempt::RetryAfter(Duration::from_secs(15))
         }
     }
 }

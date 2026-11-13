@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from "react";
 import { AvatarGroup, type AvatarItem } from "@/components/ui/avatar";
 import { Icon, type IconName } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /**
  * What a page or panel shows while it has nothing yet, the same everywhere: an icon tile, a short
