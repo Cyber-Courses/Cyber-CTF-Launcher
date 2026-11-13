@@ -80,11 +80,15 @@ job). `git commit --no-verify` skips a hook when you must; the push still checks
 | What                                                              | Command                 |
 | ----------------------------------------------------------------- | ----------------------- |
 | Unit tests: the frontend's, the scripts' and the Rust ones        | `pnpm test`             |
+| The test runners' own tests, which run them in child processes    | `pnpm test:harness`     |
 | The UI in Chromium against the dev mock (Playwright, `dev:web`)   | `pnpm test:web`         |
 | The real app through its embedded WebDriver (Docker, a VM)        | `pnpm test:desktop`     |
 | Real labs on Docker and local VMs (more tiers: `tests/README.md`) | `pnpm test:integration` |
 | What CI runs, one verdict per step                                | `pnpm check`            |
 | Everything, the desktop end-to-end too: the gate before a release | `pnpm release-check`    |
+
+`pnpm test` stays fast: the test runners' own tests, which start a runner in child processes with
+real timers and take seconds each, are `pnpm test:harness`; `pnpm check` runs both.
 
 [tests/README.md](tests/README.md) says what each tier proves and needs, how to run it, every knob,
 and where a new test goes.

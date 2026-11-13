@@ -1,5 +1,12 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
+
+/**
+ * The test runners' own end-to-end tests: each runs a runner (run.sh, run.mjs, the audit) for real
+ * in child processes, with real timers and caps, so it takes seconds per case and slows down
+ * with the host's load. They are opt-in: `pnpm test:harness` (vitest.harness.config.mts).
+ */
+export const HARNESS = ["tests/desktop/run.test.ts", "tests/desktop/host.test.ts", "tests/integration/run.test.ts", "tests/audit/kinds.test.ts"];
 
 // Unit tests for the launcher's frontend logic (stores, pure helpers), the repository's scripts and
 // the test runners under tests/. Node environment by default; component tests opt into jsdom with a `// @vitest-environment jsdom` docblock.
@@ -15,6 +22,7 @@ export default defineConfig({
     // graph can take seconds on slow CI runners. Tests themselves stay fast.
     testTimeout: 20_000,
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.test.ts", "tests/**/*.test.ts"],
+    exclude: [...configDefaults.exclude, ...HARNESS],
     setupFiles: ["src/test/setup.ts"],
     coverage: {
       provider: "v8",
