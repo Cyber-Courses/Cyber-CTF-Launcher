@@ -7,7 +7,8 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::io::{Read, Write};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::Serialize;
@@ -104,12 +105,28 @@ impl Write for Input {
     }
 }
 
-static SESSIONS: Mutex<Option<HashMap<u32, Session>>> = Mutex::new(None);
-static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+/// The app's open shells, by session. Made once, where the app is put together (`app::services`),
+/// and reached through the app's state: a cheap handle, which each shell's threads keep a copy of.
+#[derive(Clone, Default)]
+pub struct Terminals(Arc<Open>);
 
-fn with_sessions<T>(f: impl FnOnce(&mut HashMap<u32, Session>) -> T) -> T {
-    let mut guard = SESSIONS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    f(guard.get_or_insert_with(HashMap::new))
+/// What [`Terminals`] holds.
+#[derive(Default)]
+struct Open {
+    sessions: Mutex<HashMap<u32, Session>>,
+    /// The last session's number: the next one is one more (the first is 1).
+    last: AtomicU32,
+}
+
+impl Terminals {
+    /// A new session's number.
+    fn next_id(&self) -> u32 {
+        self.0.last.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    fn with_sessions<T>(&self, f: impl FnOnce(&mut HashMap<u32, Session>) -> T) -> T {
+        f(&mut self.0.sessions.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
+    }
 }
 
 /// What an attack box shell sends the webview.
@@ -169,75 +186,79 @@ pub struct Shell {
     pub rows: u16,
 }
 
-/// Starts `shell` in a pseudo-terminal for the window labelled `window`; its output goes to
-/// `send`, which answers false once nobody reads it. Returns the session.
-pub async fn open(targets: &impl ShellTargets, window: &str, shell: Shell, send: impl FnMut(TermEvent) -> bool + Send + 'static) -> Result<u32> {
-    let Shell { id, runtime, cols, rows } = shell;
-    let session = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let command = targets.command(&id, runtime).await?;
-    let pair = native_pty_system().openpty(pty_size(cols, rows)).map_err(|e| Error::Invalid(format!("couldn't open a terminal: {e}")))?;
-    let mut cmd = pty_command(&command);
-    cmd.env("TERM", "xterm-256color");
-    // Docker's "What's next" ad on exit.
-    cmd.env("DOCKER_CLI_HINTS", "false");
-    let child = pair.slave.spawn_command(cmd).map_err(|e| Error::Invalid(format!("couldn't start the shell: {e}")))?;
-    drop(pair.slave);
-    let reader = pair.master.try_clone_reader().map_err(|e| Error::Invalid(e.to_string()))?;
-    let writer = Box::new(Input::spawn(pair.master.take_writer().map_err(|e| Error::Invalid(e.to_string()))?));
-    let window = window.to_string();
-    with_sessions(|s| s.insert(session, Session { writer, master: pair.master, child, window }));
-    follow(session, reader, send);
-    Ok(session)
-}
+impl Terminals {
+    /// Starts `shell` in a pseudo-terminal for the window labelled `window`; its output goes to
+    /// `send`, which answers false once nobody reads it. Returns the session.
+    pub async fn open(&self, targets: &impl ShellTargets, window: &str, shell: Shell, send: impl FnMut(TermEvent) -> bool + Send + 'static) -> Result<u32> {
+        let Shell { id, runtime, cols, rows } = shell;
+        let session = self.next_id();
+        let command = targets.command(&id, runtime).await?;
+        let pair = native_pty_system().openpty(pty_size(cols, rows)).map_err(|e| Error::Invalid(format!("couldn't open a terminal: {e}")))?;
+        let mut cmd = pty_command(&command);
+        cmd.env("TERM", "xterm-256color");
+        // Docker's "What's next" ad on exit.
+        cmd.env("DOCKER_CLI_HINTS", "false");
+        let child = pair.slave.spawn_command(cmd).map_err(|e| Error::Invalid(format!("couldn't start the shell: {e}")))?;
+        drop(pair.slave);
+        let reader = pair.master.try_clone_reader().map_err(|e| Error::Invalid(e.to_string()))?;
+        let writer = Box::new(Input::spawn(pair.master.take_writer().map_err(|e| Error::Invalid(e.to_string()))?));
+        let window = window.to_string();
+        self.with_sessions(|s| s.insert(session, Session { writer, master: pair.master, child, window }));
+        self.follow(session, reader, send);
+        Ok(session)
+    }
 
-/// Streams session `session`'s output to `send` until its shell ends, then its exit code.
-fn follow(session: u32, mut reader: Box<dyn Read + Send>, send: impl FnMut(TermEvent) -> bool + Send + 'static) {
-    // The code of a shell whose end was seen by the Windows watcher (which closed its session).
-    let ended = std::sync::Arc::new(Mutex::new(None::<u32>));
-    #[cfg(windows)]
-    watch_exit(session, ended.clone());
-    std::thread::spawn(move || {
-        forward(&mut reader, send, |view_gone| {
-            let Some(mut sess) = with_sessions(|s| s.remove(&session)) else {
-                return ended.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
-            };
-            if view_gone {
-                // Nobody reads it any more, and the shell may never end on its own: waiting
-                // for it would leak it (and this thread) for as long as the app runs.
-                end(sess);
-                return None;
-            }
-            reaped(sess.child.process_id(), sess.child.wait())
-        });
-    });
-}
-
-/// Windows: `ConPTY` keeps the output open until the pseudo-console is closed, not when the shell
-/// ends, so the reader would wait (and the view show a live shell) forever. Watch the shell
-/// itself; once it has ended, keep its code in `ended` and close its session, which ends the
-/// output. Stops when the session is closed some other way (the window went).
-#[cfg(windows)]
-fn watch_exit(session: u32, ended: std::sync::Arc<Mutex<Option<u32>>>) {
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(250));
-            let status = with_sessions(|s| s.get_mut(&session).map(|sess| sess.child.try_wait()));
-            let code = match status {
-                None => return,
-                Some(Ok(None)) => continue,
-                Some(Ok(Some(st))) => Some(st.exit_code()),
-                Some(Err(e)) => {
-                    log::warn!("couldn't reap an attack-box shell (session {session}): {e}");
-                    None
+    /// Streams session `session`'s output to `send` until its shell ends, then its exit code.
+    fn follow(&self, session: u32, mut reader: Box<dyn Read + Send>, send: impl FnMut(TermEvent) -> bool + Send + 'static) {
+        // The code of a shell whose end was seen by the Windows watcher (which closed its session).
+        let ended = std::sync::Arc::new(Mutex::new(None::<u32>));
+        #[cfg(windows)]
+        self.watch_exit(session, ended.clone());
+        let terminals = self.clone();
+        std::thread::spawn(move || {
+            forward(&mut reader, send, |view_gone| {
+                let Some(mut sess) = terminals.with_sessions(|s| s.remove(&session)) else {
+                    return ended.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+                };
+                if view_gone {
+                    // Nobody reads it any more, and the shell may never end on its own: waiting
+                    // for it would leak it (and this thread) for as long as the app runs.
+                    end(sess);
+                    return None;
                 }
-            };
-            *ended.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = code;
-            // Dropped outside the sessions lock: closing the pseudo-console can take a moment.
-            let closed = with_sessions(|s| s.remove(&session));
-            drop(closed);
-            return;
-        }
-    });
+                reaped(sess.child.process_id(), sess.child.wait())
+            });
+        });
+    }
+
+    /// Windows: `ConPTY` keeps the output open until the pseudo-console is closed, not when the shell
+    /// ends, so the reader would wait (and the view show a live shell) forever. Watch the shell
+    /// itself; once it has ended, keep its code in `ended` and close its session, which ends the
+    /// output. Stops when the session is closed some other way (the window went).
+    #[cfg(windows)]
+    fn watch_exit(&self, session: u32, ended: std::sync::Arc<Mutex<Option<u32>>>) {
+        let terminals = self.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                let status = terminals.with_sessions(|s| s.get_mut(&session).map(|sess| sess.child.try_wait()));
+                let code = match status {
+                    None => return,
+                    Some(Ok(None)) => continue,
+                    Some(Ok(Some(st))) => Some(st.exit_code()),
+                    Some(Err(e)) => {
+                        log::warn!("couldn't reap an attack-box shell (session {session}): {e}");
+                        None
+                    }
+                };
+                *ended.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = code;
+                // Dropped outside the sessions lock: closing the pseudo-console can take a moment.
+                let closed = terminals.with_sessions(|s| s.remove(&session));
+                drop(closed);
+                return;
+            }
+        });
+    }
 }
 
 /// What the pseudo-terminal runs: the runner's command (`docker`/`vagrant`) with its arguments,
@@ -309,47 +330,49 @@ fn forward(reader: &mut dyn Read, mut send: impl FnMut(TermEvent) -> bool, exit:
     send(TermEvent::Exit { code });
 }
 
-/// Sends keystrokes (or pasted text) to session `session`; only the window labelled `window`,
-/// which shows it, may. Queued for the session's input thread, so no write waits on the shell
-/// (nor holds the sessions lock while it does).
-pub fn write(window: &str, session: u32, data: &[u8]) -> Result<()> {
-    with_sessions(|s| match s.get_mut(&session).filter(|sess| sess.window == window) {
-        Some(sess) => sess.writer.write_all(data).and_then(|()| sess.writer.flush()).map_err(Error::Io),
-        None => Err(Error::Invalid("the shell has ended".into())),
-    })
-}
-
-/// Follows the view's size, so full-screen tools (vim, less, htop) lay out right.
-pub fn resize(window: &str, session: u32, cols: u16, rows: u16) -> Result<()> {
-    with_sessions(|s| match s.get(&session).filter(|sess| sess.window == window) {
-        Some(sess) => sess.master.resize(pty_size(cols, rows)).map_err(|e| Error::Invalid(e.to_string())),
-        None => Ok(()),
-    })
-}
-
-/// Ends the shell (the view was closed). Another window's shell is left alone.
-pub fn close(window: &str, session: u32) {
-    let owned = with_sessions(|s| if s.get(&session).is_some_and(|sess| sess.window == window) { s.remove(&session) } else { None });
-    if let Some(sess) = owned {
-        end(sess);
+impl Terminals {
+    /// Sends keystrokes (or pasted text) to session `session`; only the window labelled `window`,
+    /// which shows it, may. Queued for the session's input thread, so no write waits on the shell
+    /// (nor holds the sessions lock while it does).
+    pub fn write(&self, window: &str, session: u32, data: &[u8]) -> Result<()> {
+        self.with_sessions(|s| match s.get_mut(&session).filter(|sess| sess.window == window) {
+            Some(sess) => sess.writer.write_all(data).and_then(|()| sess.writer.flush()).map_err(Error::Io),
+            None => Err(Error::Invalid("the shell has ended".into())),
+        })
     }
-}
 
-/// Ends the shells a window was showing, when it is closed.
-pub fn close_window(label: &str) {
-    let ids: Vec<u32> = with_sessions(|s| s.iter().filter(|(_, v)| v.window == label).map(|(k, _)| *k).collect());
-    for id in ids {
-        if let Some(sess) = with_sessions(|s| s.remove(&id)) {
+    /// Follows the view's size, so full-screen tools (vim, less, htop) lay out right.
+    pub fn resize(&self, window: &str, session: u32, cols: u16, rows: u16) -> Result<()> {
+        self.with_sessions(|s| match s.get(&session).filter(|sess| sess.window == window) {
+            Some(sess) => sess.master.resize(pty_size(cols, rows)).map_err(|e| Error::Invalid(e.to_string())),
+            None => Ok(()),
+        })
+    }
+
+    /// Ends the shell (the view was closed). Another window's shell is left alone.
+    pub fn close(&self, window: &str, session: u32) {
+        let owned = self.with_sessions(|s| if s.get(&session).is_some_and(|sess| sess.window == window) { s.remove(&session) } else { None });
+        if let Some(sess) = owned {
             end(sess);
         }
     }
-}
 
-/// Ends every shell, when the app exits.
-pub fn close_all() {
-    let all: Vec<Session> = with_sessions(|s| s.drain().map(|(_, v)| v).collect());
-    for mut sess in all {
-        kill_shell(sess.child.as_mut());
+    /// Ends the shells a window was showing, when it is closed.
+    pub fn close_window(&self, label: &str) {
+        let ids: Vec<u32> = self.with_sessions(|s| s.iter().filter(|(_, v)| v.window == label).map(|(k, _)| *k).collect());
+        for id in ids {
+            if let Some(sess) = self.with_sessions(|s| s.remove(&id)) {
+                end(sess);
+            }
+        }
+    }
+
+    /// Ends every shell, when the app exits.
+    pub fn close_all(&self) {
+        let all: Vec<Session> = self.with_sessions(|s| s.drain().map(|(_, v)| v).collect());
+        for mut sess in all {
+            kill_shell(sess.child.as_mut());
+        }
     }
 }
 
@@ -495,10 +518,11 @@ mod tests {
         let reader = pair.master.try_clone_reader().unwrap();
         let writer = Box::new(Input::spawn(pair.master.take_writer().unwrap()));
         // A live session, as terminal_open makes it: its window still open.
-        let session = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        with_sessions(|s| s.insert(session, Session { writer, master: pair.master, child, window: "shell-test".into() }));
+        let terms = Terminals::default();
+        let session = terms.next_id();
+        terms.with_sessions(|s| s.insert(session, Session { writer, master: pair.master, child, window: "shell-test".into() }));
         let (tx, rx) = std::sync::mpsc::channel();
-        follow(session, reader, move |e| tx.send(e).is_ok());
+        terms.follow(session, reader, move |e| tx.send(e).is_ok());
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
         let mut out = String::new();
         let code = loop {
@@ -507,7 +531,7 @@ mod tests {
                     // ConPTY asks where the cursor is (DSR) and holds all output until answered;
                     // in the app xterm.js answers it.
                     if data.contains("\x1b[6n") {
-                        write("shell-test", session, b"\x1b[1;1R").unwrap();
+                        terms.write("shell-test", session, b"\x1b[1;1R").unwrap();
                     }
                     out.push_str(&data);
                 }
@@ -517,7 +541,7 @@ mod tests {
         };
         assert!(out.contains("hi"), "{out:?}");
         assert_eq!(code, Some(3));
-        assert!(with_sessions(|s| !s.contains_key(&session)), "the ended session is closed");
+        assert!(terms.with_sessions(|s| !s.contains_key(&session)), "the ended session is closed");
     }
 
     fn argv(c: &CommandBuilder) -> Vec<String> {
@@ -625,9 +649,10 @@ mod tests {
 
     #[test]
     fn unknown_sessions_are_ended_or_ignored() {
-        assert_eq!(write("shell-lab-unknown", u32::MAX, b"x").unwrap_err().to_string(), "the shell has ended");
-        assert!(resize("shell-lab-unknown", u32::MAX, 80, 24).is_ok());
-        close("shell-lab-unknown", u32::MAX);
+        let terms = Terminals::default();
+        assert_eq!(terms.write("shell-lab-unknown", u32::MAX, b"x").unwrap_err().to_string(), "the shell has ended");
+        assert!(terms.resize("shell-lab-unknown", u32::MAX, 80, 24).is_ok());
+        terms.close("shell-lab-unknown", u32::MAX);
     }
 
     /// A writer that blocks until `release` is dropped, as a PTY whose shell doesn't read does.
@@ -649,13 +674,13 @@ mod tests {
     /// A session of window `window` whose input goes to `writer` (through its own thread), its
     /// shell a `cat` that never ends on its own.
     #[cfg(unix)]
-    fn session_writing_to(window: &str, writer: Box<dyn Write + Send>) -> u32 {
+    fn session_writing_to(terms: &Terminals, window: &str, writer: Box<dyn Write + Send>) -> u32 {
         let pair = native_pty_system().openpty(pty_size(80, 24)).unwrap();
         let child = pair.slave.spawn_command(CommandBuilder::new("cat")).unwrap();
         drop(pair.slave);
-        let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = terms.next_id();
         let writer = Box::new(Input::spawn(writer));
-        with_sessions(|s| s.insert(id, Session { writer, master: pair.master, child, window: window.into() }));
+        terms.with_sessions(|s| s.insert(id, Session { writer, master: pair.master, child, window: window.into() }));
         id
     }
 
@@ -674,66 +699,69 @@ mod tests {
                 Ok(())
             }
         }
+        let terms = Terminals::default();
         let (release, stalled) = std::sync::mpsc::channel();
         let (sink, written) = std::sync::mpsc::channel::<Vec<u8>>();
-        let stuck = session_writing_to("shell-stalled", Box::new(Stalled(stalled)));
-        let other = session_writing_to("shell-other", Box::new(Sink(sink)));
+        let stuck = session_writing_to(&terms, "shell-stalled", Box::new(Stalled(stalled)));
+        let other = session_writing_to(&terms, "shell-other", Box::new(Sink(sink)));
         let started = std::time::Instant::now();
         // More than a PTY buffer, in many writes, then more: none waits on the shell.
         for _ in 0..64 {
-            write("shell-stalled", stuck, &[b'x'; 4096]).unwrap();
+            terms.write("shell-stalled", stuck, &[b'x'; 4096]).unwrap();
         }
         // A write that waited on the stalled shell would block forever (it never reads), so the
         // bound only has to tell "returned" from "hung" — generous, so a loaded runner descheduling
         // this thread for a moment can't false-fail it.
         assert!(started.elapsed() < std::time::Duration::from_secs(20), "writes to a stalled shell returned without waiting");
         // Another session's write goes through meanwhile (the sessions lock isn't held).
-        write("shell-other", other, b"ls\n").unwrap();
+        terms.write("shell-other", other, b"ls\n").unwrap();
         assert_eq!(written.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), b"ls\n");
         // A shell that never reads has its input refused once its queue is full, not held.
-        let refused = (0..=INPUT_QUEUE).find_map(|_| write("shell-stalled", stuck, b"y").err());
+        let refused = (0..=INPUT_QUEUE).find_map(|_| terms.write("shell-stalled", stuck, b"y").err());
         assert_eq!(refused.unwrap().to_string(), "the shell isn't reading its input");
         drop(release);
-        close("shell-stalled", stuck);
-        close("shell-other", other);
-        assert!(with_sessions(|s| !s.contains_key(&stuck) && !s.contains_key(&other)));
+        terms.close("shell-stalled", stuck);
+        terms.close("shell-other", other);
+        assert!(terms.with_sessions(|s| !s.contains_key(&stuck) && !s.contains_key(&other)));
     }
 
     #[cfg(unix)]
     #[test]
     fn a_window_reaches_its_own_shells_only() {
+        let terms = Terminals::default();
         let (_release, stalled) = std::sync::mpsc::channel();
-        let id = session_writing_to("shell-mine", Box::new(Stalled(stalled)));
-        assert_eq!(write("shell-theirs", id, b"rm -rf ~\n").unwrap_err().to_string(), "the shell has ended");
-        assert!(resize("shell-theirs", id, 100, 30).is_ok());
-        close("shell-theirs", id);
-        assert!(with_sessions(|s| s.contains_key(&id)), "another window can't end it");
-        write("shell-mine", id, b"ok\n").unwrap();
-        resize("shell-mine", id, 100, 30).unwrap();
-        close("shell-mine", id);
-        assert!(with_sessions(|s| !s.contains_key(&id)));
+        let id = session_writing_to(&terms, "shell-mine", Box::new(Stalled(stalled)));
+        assert_eq!(terms.write("shell-theirs", id, b"rm -rf ~\n").unwrap_err().to_string(), "the shell has ended");
+        assert!(terms.resize("shell-theirs", id, 100, 30).is_ok());
+        terms.close("shell-theirs", id);
+        assert!(terms.with_sessions(|s| s.contains_key(&id)), "another window can't end it");
+        terms.write("shell-mine", id, b"ok\n").unwrap();
+        terms.resize("shell-mine", id, 100, 30).unwrap();
+        terms.close("shell-mine", id);
+        assert!(terms.with_sessions(|s| !s.contains_key(&id)));
     }
 
     #[cfg(unix)]
     #[test]
     fn a_session_takes_input_resizes_and_ends_with_its_window() {
+        let terms = Terminals::default();
         let pair = native_pty_system().openpty(pty_size(80, 24)).unwrap();
         let mut cmd = CommandBuilder::new("sh");
         cmd.args(["-c", "cat"]);
         let child = pair.slave.spawn_command(cmd).unwrap();
         drop(pair.slave);
         let writer = Box::new(Input::spawn(pair.master.take_writer().unwrap()));
-        let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = terms.next_id();
         let label = format!("shell-test-{id}");
-        with_sessions(|s| s.insert(id, Session { writer, master: pair.master, child, window: label.clone() }));
-        write(&label, id, b"hi\n").unwrap();
-        resize(&label, id, 100, 30).unwrap();
-        close_window("some-other-window");
-        assert!(with_sessions(|s| s.contains_key(&id)));
-        close_window(&label);
-        assert!(!with_sessions(|s| s.contains_key(&id)));
-        assert!(write(&label, id, b"x").is_err());
-        close(&label, id);
+        terms.with_sessions(|s| s.insert(id, Session { writer, master: pair.master, child, window: label.clone() }));
+        terms.write(&label, id, b"hi\n").unwrap();
+        terms.resize(&label, id, 100, 30).unwrap();
+        terms.close_window("some-other-window");
+        assert!(terms.with_sessions(|s| s.contains_key(&id)));
+        terms.close_window(&label);
+        assert!(!terms.with_sessions(|s| s.contains_key(&id)));
+        assert!(terms.write(&label, id, b"x").is_err());
+        terms.close(&label, id);
     }
 
     #[test]

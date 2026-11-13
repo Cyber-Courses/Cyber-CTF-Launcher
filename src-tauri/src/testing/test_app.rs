@@ -36,7 +36,7 @@ impl TestApp {
             context.config_mut().app.app_directories_override = Some(tauri::utils::config::AppDirectoriesOverride::Root(root.join(&identifier)));
         }
         context.config_mut().identifier = identifier;
-        let app = tauri::test::mock_builder().build(context).expect("mock app");
+        let app = crate::app::services(tauri::test::mock_builder()).build(context).expect("mock app");
         let data = app.path().app_data_dir().expect("app data dir");
         std::fs::create_dir_all(&data).unwrap();
         TestApp { app, data }

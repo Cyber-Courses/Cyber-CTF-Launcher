@@ -166,12 +166,11 @@ fn user_path() -> Option<OsString> {
     registry_string(Hive::CurrentUser, "Environment", "Path")
 }
 
-/// Call first thing in `run()`, before any thread is spawned, with the folders of the tools the
-/// app places itself (`own`, which may not exist yet).
-pub fn augment(own: &[PathBuf]) {
+/// Puts on `PATH` the shell's folders a GUI launch misses and the folders of the tools the app
+/// places itself (`own`, which may not exist yet), while `only` this thread runs.
+pub fn augment(only: &crate::platform::sys::SingleThreaded, own: &[PathBuf]) {
     if let Some(path) = augmented(std::env::var_os("PATH").as_deref(), own) {
-        // At the very start of `run()`: no thread is started yet (Tauri, tokio, a plugin).
-        crate::platform::sys::set_env_at_startup("PATH", &path);
+        crate::platform::sys::set_env_at_startup(only, "PATH", &path);
     }
 }
 
@@ -185,10 +184,13 @@ mod tests {
     #[test]
     #[ignore = "changes the process PATH: run alone, with --test-threads=1"]
     fn finder_path_finds_tools() {
-        crate::platform::sys::set_env_at_startup("PATH", OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
+        // SAFETY: run alone, with --test-threads=1 (see the `ignore` reason).
+        #[allow(unsafe_code, reason = "this test runs alone, so it is the only thread")]
+        let only = unsafe { crate::platform::sys::SingleThreaded::assume() };
+        crate::platform::sys::set_env_at_startup(&only, "PATH", OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
         let found = |tool: &str| std::process::Command::new(tool).arg("--version").output().is_ok();
         assert!(!found("docker"), "docker should be missing on the bare Finder PATH");
-        augment(&[]);
+        augment(&only, &[]);
         for tool in ["docker", "vagrant"] {
             assert!(found(tool), "{tool} not found after augment(); PATH={:?}", std::env::var("PATH"));
         }

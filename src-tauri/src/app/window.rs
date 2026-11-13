@@ -132,9 +132,10 @@ pub fn open_shell(app: &AppHandle, id: &str, runtime: Runtime, title: &str) -> R
         .resizable(true)
         .build()
         .map_err(fail)?;
+    let terminals = app.state::<terminal::Terminals>().inner().clone();
     window.on_window_event(move |e| {
         if matches!(e, tauri::WindowEvent::Destroyed) {
-            terminal::close_window(&label);
+            terminals.close_window(&label);
         }
     });
     Ok(())
