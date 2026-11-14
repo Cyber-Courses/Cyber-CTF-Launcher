@@ -52,8 +52,8 @@ pub(super) async fn start_on_server(
     run.up(&place, inputs.values, log).await
 }
 
-/// One VM per machine on a server host is Isoloom's cloud-vm, which every cloud account runs (how
-/// far each is proven is its run tier's badge); on a server (ESXi, Proxmox) the lab runs as the
+/// One VM per machine on a server host is Isoloom's cloud-vm, which every cloud account runs; on a
+/// server (ESXi, Proxmox) the lab runs as the
 /// catalogue publishes it.
 pub(super) fn per_machine_runs_on(provider: Option<Provider>) -> Result<()> {
     match provider {

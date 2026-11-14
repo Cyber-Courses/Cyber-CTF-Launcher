@@ -98,7 +98,7 @@ describe("late answers", () => {
 
   it("offers one VM per machine where the backend's run options have it: a ready hypervisor that isn't UTM", async () => {
     // The backend reads the lab's spec: Isoloom refuses its per-machine VMs on UTM (no network).
-    const path = (target: string, provider: Provider) => ({ provider, target, variant: provider, badge: "none" as const, evidence: "" });
+    const path = (target: string, provider: Provider) => ({ provider, target, variant: provider });
     installTauri({
       lab_run_options: () => ({
         docker: null,

@@ -177,19 +177,10 @@ function OptionList({ group: g, value, onChange, disabled }: { group: OptionGrou
             subtitle={o.ok ? o.subtitle : t("labs.runOn.notSupported")}
             leading={o.logo}
             trailing={
-              (o.badge || o.status) && (
-                <span className="flex items-center gap-1.5">
-                  {o.badge && (
-                    <RowPill tone={o.badge.kind === "experimental" ? "warn" : "muted"} title={o.badge.title}>
-                      {t(o.badge.kind === "experimental" ? "labs.runOn.experimental" : "labs.runOn.beta")}
-                    </RowPill>
-                  )}
-                  {o.status && (
-                    <RowPill tone={o.status.tone} title={o.status.title}>
-                      {o.status.label}
-                    </RowPill>
-                  )}
-                </span>
+              o.status && (
+                <RowPill tone={o.status.tone} title={o.status.title}>
+                  {o.status.label}
+                </RowPill>
               )
             }
           />

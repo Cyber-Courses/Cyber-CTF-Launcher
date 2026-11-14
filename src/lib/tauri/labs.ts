@@ -4,7 +4,6 @@ import { awaitOperation } from "@/lib/tauri/run-events";
 
 export type { ActiveOperation } from "@/lib/tauri/run-events";
 import type {
-  Badge,
   CloudPreview,
   AttackStatus,
   ImportedLab,
@@ -49,7 +48,6 @@ export { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@
 export { DONE_MARK, FAILED_CODE, FAILED_MARK, FETCH_LINES, PREPARE_LINES } from "@/lib/tauri/generated/DeployLog";
 
 export type {
-  Badge,
   CloudPreview,
   AttackStatus,
   ImportedLab,

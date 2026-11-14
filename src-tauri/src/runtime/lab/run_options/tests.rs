@@ -85,16 +85,6 @@ fn a_windows_vm_given_a_labs_input_runs_on_no_cloud_and_says_why() {
 }
 
 #[test]
-fn each_path_carries_its_own_tier_badge() {
-    let tiers = tiers::run_tiers();
-    let o = options(DUAL, Runtime::Docker);
-    for p in o.vms.iter().chain(&o.servers).chain(&o.cloud_docker).chain(&o.cloud_vm) {
-        let tier = tiers.iter().find(|t| t.target == p.target && t.variant == p.variant).unwrap_or_else(|| panic!("{p:?} has an entry"));
-        assert_eq!((p.badge, p.evidence.as_str()), (tier.badge, tier.evidence.as_str()), "{p:?}");
-    }
-}
-
-#[test]
 fn cloud_services_run_on_their_own_cloud_only() {
     let spec = "version: 1\nname: goat\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { region: us-east-1 }\n";
     let o = options(spec, Runtime::Cloud);

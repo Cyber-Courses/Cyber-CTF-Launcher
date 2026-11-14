@@ -11,7 +11,7 @@ import { flush } from "@/test/ui";
 // The launch picker's steps: a remembered choice skips its step, Back walks to the step before,
 // and "Don't ask again" saves what the path chose.
 
-const path = (target: string, provider: Provider): LabRunPath => ({ provider, badge: "none", evidence: target });
+const path = (_target: string, provider: Provider): LabRunPath => ({ provider });
 /** A dual-form lab's run options here: Docker, and one VM per machine on VirtualBox and QEMU. */
 const options: LabRunOptions = {
   docker: path("compose", "virtualbox"),

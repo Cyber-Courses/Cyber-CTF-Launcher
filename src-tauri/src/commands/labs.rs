@@ -224,7 +224,7 @@ pub async fn lab_default_place(
 
 /// Every way lab `id`, declared `runtime`, can start ([`lab::run_options`]): per form, the
 /// hypervisors, servers and clouds its spec at the catalogue's pinned commit runs on, each with
-/// its launch path's badge, and where Isoloom refuses it. What the launch picker offers.
+/// its launch path, and where Isoloom refuses it. What the launch picker offers.
 #[tauri::command]
 pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, source: LabSource) -> Result<lab::RunOptions> {
     let lab = lab::lab_at(&AppDirs::from(&app), &id, source.checked()).await?;

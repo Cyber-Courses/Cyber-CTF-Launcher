@@ -1,39 +1,34 @@
 //! Where and in which form a lab can run, as its spec allows: per form, the hypervisors, servers
 //! and clouds Isoloom generates it for, each with the launch path it takes there (its Isoloom
-//! target and provider or cloud) and that path's maturity badge, and the ones Isoloom refuses,
+//! target and provider or cloud), and the ones Isoloom refuses,
 //! with why, and the ones this computer's policy turns off. The launch picker offers exactly
 //! these; a start checks the same refusals.
 
 use isoloom_spec::model::Target;
 use isoloom_targets::Lab;
 
-use super::tiers::{self, Badge};
 use crate::platform::host::Arch;
 use crate::platform::policy::{self, Key, Policy};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Runtime, lab};
 
-/// One way to start the lab: the provider or cloud it runs on (none: this machine's Docker), the
-/// Isoloom launch path it takes there, and how far that path is proven.
+/// One way to start the lab: the provider or cloud it runs on (none: this machine's Docker), and
+/// the Isoloom launch path it takes there.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabRunPath")]
 pub struct RunPath {
     /// The hypervisor, server or cloud it runs on; None for this machine's Docker.
     pub provider: Option<Provider>,
-    /// The Isoloom target (`docker`, `vagrant`, `cloud-vm`, …): how its badge is found, not
-    /// the webview's.
+    /// The Isoloom target (`docker`, `vagrant`, `cloud-vm`, …): the launcher's, not the
+    /// webview's.
     #[serde(skip)]
     #[ts(skip)]
     pub target: String,
-    /// Its provider or cloud as Isoloom's tier evidence names it (`utm`, `aws`), if it has one.
+    /// Its provider or cloud as Isoloom names it (`utm`, `aws`), if it has one.
     #[serde(skip)]
     #[ts(skip)]
     pub variant: Option<String>,
-    /// The path's maturity badge (none when real runs prove it).
-    pub badge: Badge,
-    /// The evidence behind the badge, for its tooltip.
-    pub evidence: String,
 }
 
 /// A form of the lab Isoloom refuses or this computer's policy turns off: on a provider or cloud,
@@ -125,7 +120,7 @@ fn generated(lab: &Lab, runtime: Runtime, host: Arch) -> RunOptions {
     let local: Vec<Provider> = Provider::ALL.into_iter().filter(|p| !p.is_remote()).collect();
     // The lab's own VMs here: on an emulator only, when they are built for another CPU.
     let vm_local: Vec<Provider> = local.iter().copied().filter(|p| !emulated || p.is_emulator()).collect();
-    let mut paths = Paths { lab, targets: lab.possible(), tiers: tiers::run_tiers(), refused: Vec::new() };
+    let mut paths = Paths { lab, targets: lab.possible(), refused: Vec::new() };
     let mut out = RunOptions { emulated, ..RunOptions::default() };
     match runtime {
         Runtime::Docker => {
@@ -156,12 +151,11 @@ fn clouds(target: Target) -> Vec<Provider> {
     Provider::CLOUDS.into_iter().filter(|c| variants(target).contains(&c.id())).collect()
 }
 
-/// Builds a lab's launch paths: the targets Isoloom can run it on ([`Lab::possible`]), each path's
-/// badge from Isoloom's tiers, and what Isoloom refuses on a provider (`refused`).
+/// Builds a lab's launch paths: the targets Isoloom can run it on ([`Lab::possible`]), and what
+/// Isoloom refuses on a provider (`refused`).
 struct Paths<'a> {
     lab: &'a Lab,
     targets: Vec<Target>,
-    tiers: Vec<tiers::RunTier>,
     refused: Vec<Refusal>,
 }
 
@@ -171,12 +165,9 @@ impl Paths<'_> {
         self.targets.contains(&target)
     }
 
-    /// The path of `target` on `provider`, with the badge Isoloom's tiers give it there.
-    fn path(&self, target: Target, provider: Option<Provider>) -> RunPath {
-        let variant = provider.map(|p| p.id().to_owned());
-        let tier = self.tiers.iter().find(|t| t.target == target.id() && t.variant == variant);
-        let badge = tiers::badge_or_beta(tier, &format!("{}/{}", target.id(), variant.as_deref().unwrap_or("-")));
-        RunPath { provider, target: target.id().to_owned(), variant, badge, evidence: tier.map(|t| t.evidence.clone()).unwrap_or_default() }
+    /// The path of `target` on `provider`.
+    fn path(target: Target, provider: Option<Provider>) -> RunPath {
+        RunPath { provider, target: target.id().to_owned(), variant: provider.map(|p| p.id().to_owned()) }
     }
 
     /// Each of `providers` the lab runs on as `target` ([`Paths::offer`]).
@@ -184,7 +175,7 @@ impl Paths<'_> {
         providers.iter().filter_map(|p| self.offer(target, *p, Some(*p))).collect()
     }
 
-    /// The lab as `target` on `provider` (its badge read as `tier`'s), unless the spec doesn't
+    /// The lab as `target` on `provider` (Isoloom's variant `tier`), unless the spec doesn't
     /// generate `target` or Isoloom refuses it there: then its reason goes in `refused`.
     fn offer(&mut self, target: Target, provider: Provider, tier: Option<Provider>) -> Option<RunPath> {
         if !self.has(target) {
@@ -195,7 +186,7 @@ impl Paths<'_> {
                 self.refused.push(Refusal::by_isoloom(Some(provider), target.id().to_owned(), reason));
                 None
             }
-            None => Some(RunPath { provider: Some(provider), ..self.path(target, tier) }),
+            None => Some(RunPath { provider: Some(provider), ..Paths::path(target, tier) }),
         }
     }
 
@@ -205,7 +196,7 @@ impl Paths<'_> {
         if !self.has(Target::Docker) {
             return None;
         }
-        let path = self.path(Target::Docker, None);
+        let path = Paths::path(Target::Docker, None);
         match super::refused_or_failed(isoloom_targets::refusal(self.lab, Target::Docker)) {
             Some(reason) => {
                 self.refused.push(Refusal::by_isoloom(None, path.target, reason));
@@ -253,10 +244,9 @@ pub fn emulated_arches(spec: &lab::Spec, host: Arch) -> Vec<Arch> {
     emulated
 }
 
-/// The providers or clouds Isoloom's tier evidence lists for `target`: the ones it generates it
-/// for.
+/// The providers or clouds Isoloom lists for `target`: the ones it generates it for.
 fn variants(target: Target) -> Vec<&'static str> {
-    isoloom_targets::tiers::variants(target)
+    isoloom_targets::validators::variants(target)
 }
 
 #[cfg(test)]

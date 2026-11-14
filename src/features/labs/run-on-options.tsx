@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Container } from "lucide-react";
 import { PROVIDER_NAMES, type DockerEngine, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
-import { badgeOf, pathOf, refusalOn, refusalOnHypervisors, type RunBadge } from "@/features/labs/run-on-badges";
+import { refusalOn, refusalOnHypervisors } from "@/features/labs/run-on-refusals";
 import { testHost } from "@/features/servers/use-server-list";
 import { hostStatus, type HostTest } from "@/features/servers/servers-model";
 import { StatusPill, type Tone } from "@/components/ui/status-pill";
@@ -27,7 +27,6 @@ type Option = {
   why?: string;
   logo: React.ReactNode;
   status?: Status;
-  badge?: RunBadge;
 };
 export type OptionGroup = { id: string; label: string; options: Option[] };
 /** Each host's test result, by id; none yet while it runs. */
@@ -101,7 +100,7 @@ function engineStatus(t: T, dockerRunning: boolean | null): Status | undefined {
  *  form, so it isn't named by one; a cloud form runs on the account, so Start finishes it. */
 export function vmFormOptions(t: T, options: LabRunOptions | null, forms: RunTarget[], account?: ServerHost | null): Option[] {
   return forms.map((form) => {
-    // A cloud account's forms: the account's own logo and the path's tier badge.
+    // A cloud account's forms: the account's own logo.
     if (form.kind === "host") {
       const perMachine = !!form.perMachine;
       return {
@@ -109,7 +108,6 @@ export function vmFormOptions(t: T, options: LabRunOptions | null, forms: RunTar
         title: t(perMachine ? "labs.runOn.cloudFormPerMachine" : "labs.runOn.cloudFormOneVm"),
         subtitle: t(perMachine ? "labs.runOn.cloudPerMachineHint" : "labs.runOn.cloudOneVmHint"),
         ok: true,
-        badge: account ? badgeOf(pathOf(options, form, account.provider)) : undefined,
         logo: account ? <ProviderGlyph provider={account.provider} /> : <HypervisorLogo provider={null} />,
         status: { tone: "ok", label: t("labs.runOn.ready") },
       };
@@ -120,7 +118,6 @@ export function vmFormOptions(t: T, options: LabRunOptions | null, forms: RunTar
       title: t("labs.runOn.formPerMachine"),
       subtitle: t("labs.runOn.perMachineVmHint"),
       ok: true,
-      badge: badgeOf(pathOf(options, form)),
       logo: <HypervisorLogo provider={provider} />,
       status: { tone: "ok", label: t("labs.runOn.ready") },
     };
@@ -210,7 +207,6 @@ function hostOption(t: T, options: LabRunOptions | null, h: ServerHost, ok: bool
     why: refusalOn(t, options, h.provider) ?? t("labs.runOn.unsupportedKind", { kind }),
     logo: <ProviderGlyph provider={h.provider} />,
     status: ok ? hostPill(t, check) : undefined,
-    badge: badgeOf(pathOf(options, { kind: "host", id: h.id }, h.provider)),
   };
 }
 
