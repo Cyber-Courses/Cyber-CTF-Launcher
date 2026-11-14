@@ -71,6 +71,7 @@ const COMMANDS: &[&str] = &[
     "ovftool_place",
     "restart_app",
     "running_labs",
+    "save_diagnostics",
     "screen_connect",
     "screen_open_native",
     "screen_open_rdp",

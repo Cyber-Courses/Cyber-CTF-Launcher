@@ -15,6 +15,10 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   with no display (a server, a fresh VM, CI) and beside the open app; `--json` gives one versioned
   JSON object a line, and its exit codes tell a failure (1) from a usage error (2) and from
   something to put right first (3). See docs/cli.md.
+- **Save diagnostics.** Settings > About saves one file to attach to a bug report: the version,
+  the OS, the machine check, the installed labs, the last lab operations and the end of the logs,
+  with tokens, passwords, keys, flags and e-mail addresses removed and the home folder written
+  `~`. **Send to support** saves it and opens a mail to support to attach it to.
 
 - **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
   release now ships `.rpm` packages beside the `.deb` (#322).

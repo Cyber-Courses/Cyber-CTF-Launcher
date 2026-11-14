@@ -419,7 +419,11 @@ message, is in `deploys/<lab>.log` in the data folder, the previous operation's 
 `deploys/<lab>.previous.log`. The level is `info`; set `CYBERCTF_LOG` (`error`, `warn`, `info`,
 `debug` or `trace`) in the app's environment for another. Tokens, passwords, credentials in URLs,
 values under secret-sounding names and the attack boxes' passwords are redacted from every line. **Settings > About** has **Diagnostics > Copy** (the
-version, the OS and the machine's setup status, for a support request) and **Log files > Open
+version, the OS and the machine's setup status, for a support request), **Save diagnostics** (one
+`.tar.gz`: the version, the OS, the machine check, the installed labs, the last operations and the
+end of the logs, with tokens, passwords, keys, flags, a running lab's launch values and e-mail
+addresses removed, the home folder written `~`, and no server's name, address or user), **Send to
+support** (the same file, then a mail to support to attach it to) and **Log files > Open
 folder**. Logs name labs, servers and paths: read them before sending them outside.
 
 ## Uninstall

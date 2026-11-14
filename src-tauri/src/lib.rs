@@ -11,6 +11,7 @@ mod app;
 mod cli;
 mod cloud_cli;
 mod commands;
+mod diagnostics;
 mod english;
 mod error;
 #[cfg(test)]
