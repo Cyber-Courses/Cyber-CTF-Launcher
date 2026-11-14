@@ -14,6 +14,7 @@ pub(crate) mod host;
 pub(crate) mod local;
 #[cfg(test)]
 pub(crate) mod tests;
+pub(crate) mod watch;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -201,10 +202,22 @@ pub(crate) trait RunService: Send + Sync {
     /// process queued there (the command line, an earlier run of the app) told as events too,
     /// and the screens of a lab whose run leaves its standing state ended.
     fn follow_runner(&self) -> BoxFuture<'static, ()>;
+
+    /// Watches `labs` (each with its catalogue runtime), `open` among them looked at closely (a
+    /// lab page shows it): their statuses come as events from now on, the new ones' at once, as
+    /// the service reconciles. Replaces what was watched.
+    fn watch(&self, labs: Vec<(String, Runtime)>, open: Vec<String>);
+
+    /// One reconcile pass: reads what may have changed and tells what did (see [`RunEvent::Status`],
+    /// [`RunEvent::Running`]). The app runs it every [`RECONCILE_EVERY`].
+    fn reconcile_once(&self) -> BoxFuture<'_, ()>;
 }
 
 /// How long the app waits before following the runner service again once its stream ended.
 const FOLLOW_AGAIN: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How often the app's run service reconciles what it watches with what runs.
+pub(crate) const RECONCILE_EVERY: std::time::Duration = std::time::Duration::from_secs(6);
 
 /// A boxed future, as a trait object's method returns one.
 pub(crate) type BoxFuture<'a, T> = std::pin::Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -245,10 +258,18 @@ pub(crate) fn start(app: &AppHandle) {
     service.events().listen(Box::new(move |e| crate::app::events::emit(&to, RUN_EVENT, e.clone())));
     // What another process asks of the runner service (an earlier run of the app, the command
     // line), told as it happens; followed again whenever the service's stream ends.
+    let following = Arc::clone(&service);
     tauri::async_runtime::spawn(async move {
         loop {
-            service.follow_runner().await;
+            following.follow_runner().await;
             tokio::time::sleep(FOLLOW_AGAIN).await;
+        }
+    });
+    // The watched labs' statuses, reconciled with what runs.
+    tauri::async_runtime::spawn(async move {
+        loop {
+            service.reconcile_once().await;
+            tokio::time::sleep(RECONCILE_EVERY).await;
         }
     });
 }

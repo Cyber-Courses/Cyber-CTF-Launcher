@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
-import { useWatchLab } from "@/features/labs/lab-polling";
+import { useWatchLab } from "@/features/labs/lab-watch";
 import type { LocalVmPick } from "@/features/labs/lab-operations";
 import type { RunTarget } from "@/features/labs/run-target";
 import type { LabStatus, Provider, SystemReport } from "@/lib/tauri";
