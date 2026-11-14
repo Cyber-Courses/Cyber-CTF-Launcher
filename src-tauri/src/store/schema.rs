@@ -51,6 +51,17 @@ const MIGRATIONS: &[&str] = &[
         at      INTEGER NOT NULL
     ) STRICT;
     ",
+    // 2: what a cloud run was started with.
+    "
+    -- The plain (non-secret) values a cloud run was started with, by run and name: every later
+    -- operation on it (a stop, the auto-stop, an update) gives its module the same ones.
+    CREATE TABLE run_values (
+        run   TEXT NOT NULL,
+        name  TEXT NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (run, name)
+    ) STRICT;
+    ",
 ];
 
 /// The schema version this build writes.
