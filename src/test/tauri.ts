@@ -150,7 +150,7 @@ export const held =
 
 /** Waits until every command invoked has its answer (the ones a test holds aside, see [`held`]),
  *  and the renders those answers cause have landed: waited for, never a fixed delay, which a
- *  loaded machine can outlast. Gives up after SETTLE_LIMIT_MS, so a test that holds an answer without
+ *  loaded machine can outlast. Gives up after 15 s, so a test that holds an answer without
  *  saying so fails on its assertions rather than hanging. */
 export async function settled(): Promise<void> {
   await act(() => waitForAnswers(0));
