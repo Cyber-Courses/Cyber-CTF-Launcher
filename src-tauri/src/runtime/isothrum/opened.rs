@@ -7,12 +7,14 @@ use std::path::{Path, PathBuf};
 use isothrum_runner::{Format, RunName, RunOptions, Runner, RunnerConfig, Running};
 
 use super::errors;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::runtime::lab;
 
 /// A lab's run on the runner, opened by its name from the module Isoloom generated for it.
 pub(crate) struct OpenedRun {
     pub(super) runner: Runner,
+    /// The runner's home: where its SSH key is (`ssh/id_ed25519`), the launcher's own.
+    home: PathBuf,
     /// The lab's folder.
     pub(super) dir: PathBuf,
     /// The Isoloom target the run's files are generated for; none for a helper VM an earlier
@@ -28,7 +30,8 @@ impl OpenedRun {
     /// for `target` (none: a helper VM's, see [`OpenedRun::target`]), on a runner set up with
     /// `config`.
     pub(super) fn new(config: RunnerConfig, dir: &Path, target: Option<lab::Target>, project: PathBuf, name: RunName) -> Result<Self> {
-        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, dir: dir.to_path_buf(), target, project, name })
+        let home = config.home.clone();
+        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, home, dir: dir.to_path_buf(), target, project, name })
     }
 
     /// Whether the module was generated (a start that failed before generation made none).
@@ -72,9 +75,20 @@ impl OpenedRun {
     }
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
-    /// when given.
+    /// when given: SSH with the runner's key (the launcher's own), as the module's `ssh_user`, to
+    /// the machine's address through the module's router (its `ip` output) as a jump host. The
+    /// runner gives a Terraform module's machines no console command of its own.
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<isothrum_runner::ShellCommand> {
-        self.running().await?.console_command(machine, user).map_err(errors::from_runner)
+        let status = self.running().await?.status().await.map_err(errors::from_runner)?;
+        let output = |name: &str| status.outputs.iter().find(|o| o.name == name).and_then(|o| o.revealed()).map(str::to_owned);
+        let (Some(router), Some(login)) = (output("ip"), output("ssh_user")) else {
+            return Err(Error::Invalid("This lab isn't up: its router's address isn't known yet.".into()));
+        };
+        let address = status.machines.iter().find(|m| m.name == machine).and_then(|m| m.address.clone());
+        let Some(address) = address else { return Err(Error::Invalid(format!("{machine} has no address yet: start the lab first."))) };
+        // Made when there is none: the key the module's machines let in.
+        self.runner.ssh_public_key().await.map_err(errors::from_runner)?;
+        Ok(ssh_through(&self.home, &router, &login, &address, user.map(checked_user).transpose()?))
     }
 
     /// `machine`'s graphical console (its screen), as the runner reaches it with `opts` (the
@@ -87,5 +101,64 @@ impl OpenedRun {
     /// the runner says with `opts`.
     pub(crate) async fn native_console(&self, machine: &str, opts: &RunOptions) -> Result<isothrum_runner::NativeConsole> {
         self.running().await?.native_console(machine, opts).await.map_err(errors::from_runner)
+    }
+}
+
+/// `user`, when it can name an account: letters, digits, `_`, `-` and `.`, not starting with `-`.
+fn checked_user(user: &str) -> Result<&str> {
+    let fits = !user.is_empty() && !user.starts_with('-') && user.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+    if fits { Ok(user) } else { Err(Error::Invalid(format!("`{user}` can't name an account"))) }
+}
+
+/// SSH into `address` as `login` through the jump host `router` (as `login` too), with the key of
+/// the runner whose home is `home`; as account `user` when given (`sudo -iu`). Host keys aren't
+/// kept across runs: a lab's machines are made anew at each start.
+fn ssh_through(home: &Path, router: &str, login: &str, address: &str, user: Option<&str>) -> isothrum_runner::ShellCommand {
+    let key = home.join("ssh").join("id_ed25519");
+    let known = home.join("ssh").join("lab_known_hosts");
+    let options = |key: &Path, known: &Path| {
+        [
+            "-i".to_owned(),
+            key.display().to_string(),
+            "-o".to_owned(),
+            "IdentitiesOnly=yes".to_owned(),
+            "-o".to_owned(),
+            "StrictHostKeyChecking=no".to_owned(),
+            "-o".to_owned(),
+            format!("UserKnownHostsFile={}", known.display()),
+        ]
+    };
+    // The jump's own ssh takes the same key (`-J` alone would use the default one).
+    let jump = format!("ssh {} -W %h:%p {login}@{router}", options(&key, &known).map(|o| quoted(&o)).join(" "));
+    let mut args: Vec<String> = options(&key, &known).into();
+    args.extend(["-o".to_owned(), format!("ProxyCommand={jump}")]);
+    if user.is_some() {
+        args.push("-t".to_owned());
+    }
+    args.push(format!("{login}@{address}"));
+    if let Some(user) = user {
+        args.extend(["sudo".to_owned(), "-iu".to_owned(), user.to_owned()]);
+    }
+    isothrum_runner::ShellCommand::new("ssh", args, home)
+}
+
+/// `word` as one word of the jump's command line (double-quoted when it holds a space).
+fn quoted(word: &str) -> String {
+    if word.contains([' ', '"']) { format!("\"{}\"", word.replace('"', "\\\"")) } else { word.to_owned() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_modules_machine_is_reached_through_its_router_with_the_runners_key() {
+        let cmd = ssh_through(Path::new("/data/isothrum"), "192.0.2.10", "isoloom", "10.40.0.11", Some("player"));
+        assert_eq!(cmd.program, "ssh");
+        let line = cmd.args.join(" ");
+        assert!(line.contains("-i /data/isothrum/ssh/id_ed25519"), "{line}");
+        assert!(line.contains("ProxyCommand=ssh -i /data/isothrum/ssh/id_ed25519") && line.contains("-W %h:%p isoloom@192.0.2.10"), "{line}");
+        assert!(line.ends_with("-t isoloom@10.40.0.11 sudo -iu player"), "{line}");
+        assert!(checked_user("-oProxyCommand=x").is_err());
     }
 }
