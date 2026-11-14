@@ -592,8 +592,4 @@ fn the_hypervisor_table_says_where_each_provider_runs_and_the_setup_offers_it() 
             assert!(!p.row().shares_folders.contains(&os), "{p:?}");
         }
     }
-    // The hypervisors the setup installs name their tool, and the others their vendor's page.
-    for p in Provider::ALL.into_iter().filter(|p| !p.is_remote()) {
-        assert!(p.dependency().is_some() || p.row().vendor.is_some(), "{p:?}: neither installed nor linked");
-    }
 }

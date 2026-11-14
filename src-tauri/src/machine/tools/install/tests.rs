@@ -92,11 +92,18 @@ fn every_tool_on_every_computer_installs_or_says_why_and_each_install_has_a_way_
 }
 
 #[test]
+fn every_local_hypervisor_is_installed_by_the_setup_or_linked_to_its_vendor() {
+    for p in Provider::ALL.into_iter().filter(|p| !p.is_remote()) {
+        assert!(Dependency::of_hypervisor(p).is_some() || p.row().vendor.is_some(), "{p:?}: neither installed nor linked");
+    }
+}
+
+#[test]
 fn a_hypervisor_is_installed_exactly_where_it_runs_and_its_provider_names_the_tool() {
     // Regression (#314): QEMU was installed through winget on Windows, where no lab runs on it.
     for dep in Dependency::ALL {
         let Some(provider) = dep.hypervisor() else { continue };
-        assert_eq!(provider.dependency(), Some(dep), "{provider:?}");
+        assert_eq!(Dependency::of_hypervisor(provider), Some(dep), "{provider:?}");
         for os in Os::ALL {
             assert_eq!(dep.runs_on(os), provider.runs_on(os), "{dep:?} on {os:?}");
         }

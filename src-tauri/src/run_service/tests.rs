@@ -14,7 +14,7 @@ use crate::testing::test_app::TestApp;
 /// Waits for operation `id`'s end among `app`'s run events: `Ok` when it went through, its error
 /// when it failed. Every log line it sent, in order, beside.
 pub(crate) async fn finished(app: &crate::AppHandle, id: &OperationId) -> (std::result::Result<(), Wire>, Vec<String>) {
-    let events = super::of(app);
+    let events = crate::app::runs::of(app);
     for _ in 0..3000 {
         let all = events.events().since(None);
         let lines = all
@@ -37,11 +37,14 @@ pub(crate) async fn finished(app: &crate::AppHandle, id: &OperationId) -> (std::
 
 /// A run service that runs nothing: it takes each request, and the test tells its events (the
 /// runner's service, as the launcher sees it through the trait).
+/// One `watch` the webview asked: the labs shown (each with its runtime) and the pages open.
+type Watched = (Vec<(String, Runtime)>, Vec<String>);
+
 #[derive(Default)]
 struct Fake {
     events: EventLog,
     taken: Mutex<Vec<(OperationId, String, Operation)>>,
-    watched: Mutex<Vec<(Vec<(String, Runtime)>, Vec<String>)>>,
+    watched: Mutex<Vec<Watched>>,
 }
 
 impl RunService for Fake {
@@ -125,11 +128,11 @@ async fn the_launchers_own_service_tells_an_operation_and_its_failure_by_its_id(
     let t = TestApp::new();
     let _tools = crate::platform::exec::fake::Tools::rules(&[]);
     // A resume of a lab that isn't installed fails in the app, before any worker.
-    let id = super::of(t.handle()).start(Request::Resume { lab_id: "local-x".into(), runtime: Runtime::Docker }).unwrap();
+    let id = crate::app::runs::of(t.handle()).start(Request::Resume { lab_id: "local-x".into(), runtime: Runtime::Docker }).unwrap();
     let (outcome, _lines) = finished(t.handle(), &id).await;
     let error = outcome.unwrap_err();
     assert_eq!(error.message, "lab `local-x` is not installed");
-    let events = super::of(t.handle()).events().since(None);
+    let events = crate::app::runs::of(t.handle()).events().since(None);
     let RunEvent::Started { op, lab_id, deploying, runtime, .. } = &events[0].event else { panic!("{events:?}") };
     assert_eq!((*op, lab_id.as_str(), *deploying, *runtime), (Operation::Resume, "local-x", true, Some(Runtime::Docker)));
     assert!(events.iter().any(|e| matches!(&e.event, RunEvent::Ended { operation, .. } if *operation == id)), "ended");

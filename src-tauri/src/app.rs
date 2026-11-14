@@ -6,6 +6,7 @@ pub mod logging;
 pub mod menu;
 pub mod operations;
 pub mod quit;
+pub(crate) mod runs;
 pub mod setup_window;
 pub mod updates;
 pub mod window;
@@ -332,7 +333,7 @@ fn setup(app: &mut App) {
     }
     // Every lab operation's events to the webview, and the operations an earlier run of the app
     // left running picked up.
-    crate::run_service::start(app.handle());
+    crate::app::runs::start(app.handle());
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
     // Not an end-to-end run's app: the user's links stay with the app they chose.
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]

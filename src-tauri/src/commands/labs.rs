@@ -39,14 +39,14 @@ pub async fn lab_launch(
         per_machine_vm: per_machine_vm.unwrap_or(false),
         docker_engine,
     };
-    run_service::of(&app).start(Request::Launch(request))
+    crate::app::runs::of(&app).start(Request::Launch(request))
 }
 
 /// Imports and starts a lab from a local directory `path` (an unpublished lab; see
 /// [`labs::local_id`]): the operation's id.
 #[tauri::command]
 pub async fn lab_launch_local(app: AppHandle, path: String) -> Result<OperationId> {
-    run_service::of(&app).start(local_request(PathBuf::from(path))?)
+    crate::app::runs::of(&app).start(local_request(PathBuf::from(path))?)
 }
 
 /// The request that imports and starts the lab in folder `src`, under the id it gets here
@@ -73,7 +73,7 @@ pub(crate) fn start_checked(dirs: &AppDirs, service: &dyn run_service::RunServic
 
 /// Starts `request` on the app's run service, checked ([`start_checked`]).
 fn start(app: &AppHandle, request: Request) -> Result<OperationId> {
-    start_checked(&AppDirs::from(app), &*run_service::of(app), request)
+    start_checked(&AppDirs::from(app), &*crate::app::runs::of(app), request)
 }
 
 /// The labs imported from a folder installed here, each with what its own `.ctf/` folder says
@@ -117,7 +117,7 @@ pub async fn busy_labs(app: AppHandle) -> std::result::Result<Vec<String>, Strin
 /// replays before it follows the live ones.
 #[tauri::command]
 pub async fn run_events(app: AppHandle, after: Option<u64>) -> Vec<run_service::Cursored> {
-    run_service::of(&app).events().since(after)
+    crate::app::runs::of(&app).events().since(after)
 }
 
 fn check_image(image: &str) -> Result<()> {
@@ -184,7 +184,7 @@ pub async fn labs_watch(app: AppHandle, labs: Vec<WatchedLab>, open: Vec<String>
     for lab in &labs {
         crate::runtime::validate_id(&lab.id)?;
     }
-    run_service::of(&app).watch(labs.into_iter().map(|l| (l.id, l.runtime)).collect(), open);
+    crate::app::runs::of(&app).watch(labs.into_iter().map(|l| (l.id, l.runtime)).collect(), open);
     Ok(())
 }
 
@@ -397,6 +397,11 @@ mod tests {
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()))
     }
 
+    #[test]
+    fn cloud_services_are_offered_only_in_a_build_with_their_feature() {
+        assert_eq!(super::cloud_services_supported(), cfg!(feature = "cloud-services"));
+    }
+
     #[tokio::test]
     async fn imported_labs_are_the_local_ones_with_what_their_ctf_folder_defines() {
         let t = TestApp::new();
@@ -411,7 +416,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_installed_lab_is_removed_with_its_workers_files_and_refused_while_a_worker_runs() {
+    async fn an_installed_lab_is_removed_and_refused_while_an_operation_holds_it() {
         let t = TestApp::new();
         let app = || t.handle().clone();
         assert!(!lab_installed(app(), "local-t".into()).await.unwrap());
@@ -419,17 +424,15 @@ mod tests {
         assert!(lab_installed(app(), "../x".into()).await.is_err());
         let dir = t.lab("local-t", &[("isoloom.yml", SPEC)]);
         assert!(lab_installed(app(), "local-t".into()).await.unwrap());
-        let deploys = crate::runtime::deploys_dir(&t.dirs()).unwrap();
-        // A worker being started on it (its pidfile claimed, empty): refused, nothing deleted.
-        std::fs::write(deploys.join("local-t.pid"), "").unwrap();
-        std::fs::write(deploys.join("local-t.log"), "the last deploy").unwrap();
+        // An operation holds the lab (its lock, as a start or a stop takes it): refused, nothing deleted.
+        let held = crate::runtime::try_lock_lab(&t.dirs(), "local-t").unwrap().expect("the lab's lock");
         assert_eq!(lab_remove(app(), "local-t".into()).await.unwrap_err().code(), crate::error::Code::AlreadyInProgress);
-        assert!(dir.is_dir() && deploys.join("local-t.log").is_file());
-        // No worker: the lab goes, with its worker's files.
-        std::fs::remove_file(deploys.join("local-t.pid")).unwrap();
+        assert!(dir.is_dir());
+        // Released: the lab goes.
+        drop(held);
         let removal = lab_remove(app(), "local-t".into()).await.unwrap();
         assert!(removal.left.is_empty(), "{removal:?}");
-        assert!(!dir.exists() && !deploys.join("local-t.log").exists());
+        assert!(!dir.exists());
         assert!(!lab_installed(app(), "local-t".into()).await.unwrap());
     }
 
@@ -674,7 +677,7 @@ mod tests {
                 .unwrap_err()
                 .to_string();
         assert_eq!(bad_image, "invalid attack-box image `x;y`");
-        assert!(crate::run_service::of(t.handle()).events().since(None).is_empty(), "nothing ran");
+        assert!(crate::app::runs::of(t.handle()).events().since(None).is_empty(), "nothing ran");
     }
 
     #[tokio::test]

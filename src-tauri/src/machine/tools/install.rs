@@ -151,6 +151,12 @@ impl Dependency {
         }
     }
 
+    /// The tool the guided setup installs as hypervisor `provider`, where it does (the row that
+    /// names it).
+    pub(crate) fn of_hypervisor(provider: Provider) -> Option<Dependency> {
+        Dependency::ALL.into_iter().find(|d| d.hypervisor() == Some(provider))
+    }
+
     /// The hypervisor it is, when it is one.
     pub(crate) fn hypervisor(self) -> Option<Provider> {
         match self.row().runs {

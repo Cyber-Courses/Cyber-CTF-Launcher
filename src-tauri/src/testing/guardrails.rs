@@ -67,18 +67,20 @@ const HOME_PATHS: &[&str] = &[
     "anonymous-volumes",
 ];
 
-/// Shipped code that still opens paths inside Isothrum's home, each with why. The runner API
-/// branch (cc-launcher-runner-api) moves each behind Isothrum's own API and empties this list.
+/// Shipped code that still opens paths inside Isothrum's home, each with why, until Isothrum's
+/// API gives what it reads there.
 const HOME_ALLOWED: &[(&str, &str, &str)] = &[
-    ("runtime/isothrum/import.rs", "base.join(\"runs\")", "moves an adopted Terraform deployment's carried files into its new run's folder"),
-    ("labs/remove.rs", "base.join(\"runs\")", "a removed lab's run folder is deleted with the lab's other traces"),
-    ("runtime/launch/on_host.rs", "join(\"ssh\").join(\"id_ed25519\")", "the runner's SSH key, put on a server host for its labs"),
     ("runtime/ssh.rs", "dirs.data()?.join(\"ssh\")", "the launcher's own key folder, which is also the runner's (its home is the app data folder)"),
     ("runtime/ssh.rs", "ssh_dir(dirs)?.join(\"id_ed25519\")", "the launcher's own key, the same file as the runner's"),
     (
-        "runtime/terraform/runner.rs",
-        "PLUGIN_CACHE: &str = \"terraform-plugins\"",
-        "the launcher's own Terraform path's plugin cache, the same folder as the runner's",
+        "runtime/isothrum/opened.rs",
+        "home.join(\"ssh\").join(\"id_ed25519\")",
+        "a Terraform run's console: the runner gives none, nor its key's path (asked of Isothrum)",
+    ),
+    (
+        "runtime/isothrum/opened.rs",
+        "home.join(\"ssh\").join(\"lab_known_hosts\")",
+        "a Terraform run's console: the runner gives none, nor a known_hosts of the run's (asked of Isothrum)",
     ),
 ];
 
@@ -92,7 +94,6 @@ fn shipped_code_opens_no_path_inside_isothrums_home() {
 /// Where a script handed to `sh -c` may be built from parts: the root scripts' own module, and
 /// the one place a pkexec step takes a [`crate::platform::root_script::RootScript`].
 const SHELL_ALLOWED: &[(&str, &str, &str)] = &[
-    ("machine/tools/install.rs", "args: vec![\"env\".into(), \"sh\".into(), \"-c\".into()]", "the root step: the script pushed after is a RootScript"),
     ("machine/tools/install.rs", "format!(\"'{brew}' trust azure/azure-cli", "macOS: Homebrew's own path, found by the app, single-quoted"),
     ("machine/tools/scripts.rs", "args: vec![\"-c\".into(), script]", "macOS: the cask fetch; Homebrew's path and fixed cask names, single-quoted"),
     ("machine/tools/vmware_utility.rs", "args: vec![\"-c\".into(), mac_script(", "macOS: the utility's install, a pinned file name and digest"),
@@ -129,22 +130,21 @@ const PARSE_ALLOWED: &[(&str, &str, &str)] = &[
     ("machine/system.rs", "serde_json::from_str(json.trim())", "tool output: `az version`; belongs in cloud_cli"),
     ("runtime/server/azure_size.rs", "serde_json::from_str(json)", "tool output: `az vm list-sizes`; belongs in cloud_cli"),
     ("runtime/server/azure_size.rs", "serde_json::from_str::<Vec<Value>>(out)", "tool output: `az vm list-usage`; belongs in cloud_cli"),
-    ("shared_folder.rs", "serde_json::from_str(&text)", "the app's own shared-folder settings file"),
     ("app.rs", "serde_json::from_str(json)", "the webview's stored settings"),
     ("platform/policy.rs", "serde_json::from_str::<serde_json::Value>(text)", "the administrator's policy file"),
-    ("runtime/reaper.rs", "serde_json::from_str(&text)", "the app's own record of an auto-stop failure"),
     ("runtime/attack_box.rs", "serde_json::from_str::<File>(IMAGE_FILE)", "the bundled attack box image file"),
     ("runtime/server/secrets.rs", "serde_json::from_str(&raw)", "the app's own secrets file"),
-    ("runtime/server/store.rs", "serde_json::from_str(&raw)", "the app's own server.json"),
     ("app/updates.rs", "serde_json::from_str::<serde_json::Value>(receipt)", "the installer's receipt file"),
-    ("machine/tools/uninstall.rs", "serde_json::from_slice(&bytes)", "the app's record of the tools it installed"),
-    ("machine/storage/owned/record.rs", "serde_json::from_slice(&bytes)", "the app's record of what it owns on disk"),
     ("labs/offline.rs", "serde_json::from_str(&raw)", "the app's record of a lab kept offline"),
     ("labs/ctf.rs", "serde_json::from_str(&text)", "a lab's own metadata file"),
     ("account/auth/store.rs", "serde_json::from_str(raw)", "the app's stored sign-in"),
     ("account/auth/tokens.rs", "serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload)", "a token's claims (JWT payload)"),
     ("account/auth/tokens.rs", "serde_json::from_str::<serde_json::Value>(&body)", "the sign-in server's HTTP answer"),
     ("account/api.rs", "serde_json::from_str(text)", "the backend's HTTP answer"),
+    ("store.rs", "serde_json::from_str(text)", "the launcher's own store's JSON columns"),
+    ("english.rs", "serde_json::from_str(source)", "the webview's bundled English messages"),
+    ("diagnostics/collect.rs", "serde_json::from_str::<Value>(body)", "an earlier version's deploy verdict file, left in the data folder"),
+    ("diagnostics/collect.rs", "serde_json::from_slice::<Value>(&std::fs::read(dir.join(n))", "an earlier version's deploy job files, left in the data folder"),
 ];
 
 #[test]

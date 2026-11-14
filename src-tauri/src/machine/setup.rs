@@ -218,7 +218,7 @@ fn engine_actions(r: &SystemReport, engine: Engine) -> Vec<Action> {
 
 /// The hypervisor the setup installs as `provider` on `os`, when it installs it.
 pub(crate) fn installable(provider: Provider, os: Os) -> Option<Dependency> {
-    provider.dependency().filter(|d| d.runs_on(os))
+    Dependency::of_hypervisor(provider).filter(|d| d.runs_on(os))
 }
 
 /// An installed hypervisor that still can't run labs once everything Vagrant needs is in (no
