@@ -209,7 +209,7 @@ mod tests {
     #[tokio::test]
     async fn a_listing_that_fails_or_a_server_is_an_error_not_nothing_left() {
         use crate::platform::exec::fake::{Tools, fail, ok};
-        let _tools = Tools::rules(&[("VBoxManage list vms", ok("\"Web · srv\" {1}\n\"Other · a\" {2}\n")), ("virsh", fail("not found"))]);
+        let _tools = Tools::strict_rules(&[("VBoxManage list vms", ok("\"Web · srv\" {1}\n\"Other · a\" {2}\n")), ("virsh", fail("not found"))]);
         let dir = Path::new("/data/labs/web");
         assert_eq!(left_on(Provider::Virtualbox, "Web", dir).await.unwrap(), ["\"Web · srv\" {1}"]);
         assert!(left_on(Provider::Libvirt, "Web", dir).await.unwrap_err().contains("listing the VMs on libvirt failed"));

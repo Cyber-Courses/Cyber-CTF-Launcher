@@ -262,7 +262,7 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_authorizes_the_launcher_key_then_makes_the_token() {
-        let tools = Tools::rules(&[("authorized_keys", ok("added\n")), ("pveum user token", ok(ANSWER))]);
+        let tools = Tools::strict_rules(&[("authorized_keys", ok("added\n")), ("pveum user token", ok(ANSWER))]);
         let made = bootstrap("10.0.0.50", &sign_in(), Path::new("/data/ssh/nodes_known_hosts"), PUBLIC).await.unwrap();
         assert_eq!(made, Made { token_id: "root@pam!cyberctf-0a1b2c3d".into(), secret: "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab".into(), key_added: true });
         let calls = tools.calls();
@@ -274,7 +274,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_key_already_authorized_is_not_added_twice() {
-        let _tools = Tools::rules(&[("authorized_keys", ok("present\n")), ("pveum user token", ok(ANSWER))]);
+        let _tools = Tools::strict_rules(&[("authorized_keys", ok("present\n")), ("pveum user token", ok(ANSWER))]);
         let made = bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap();
         assert!(!made.key_added);
         // The command itself only appends when grep finds no identical line.
@@ -286,7 +286,7 @@ mod tests {
     #[tokio::test]
     async fn each_failure_names_its_part() {
         async fn authorize_failing(stderr: &str) -> Failure {
-            let _tools = Tools::rules(&[("authorized_keys", fail(stderr))]);
+            let _tools = Tools::strict_rules(&[("authorized_keys", fail(stderr))]);
             bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap_err()
         }
         let refused = authorize_failing("root@10.0.0.50: Permission denied (publickey,password).").await;
@@ -294,7 +294,7 @@ mod tests {
         assert!(refused.to_string().starts_with("Couldn't sign in to the node over SSH with your key: root@10.0.0.50: Permission denied"));
         assert_eq!(authorize_failing("bash: /root/.ssh/authorized_keys: Read-only file system").await.part, Part::Key);
 
-        let _tools = Tools::rules(&[("authorized_keys", ok("present")), ("pveum user token", fail("user 'root@pam' does not exist"))]);
+        let _tools = Tools::strict_rules(&[("authorized_keys", ok("present")), ("pveum user token", fail("user 'root@pam' does not exist"))]);
         let token = bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap_err();
         assert_eq!(token, Failure { part: Part::Token, detail: "user 'root@pam' does not exist".into() });
     }

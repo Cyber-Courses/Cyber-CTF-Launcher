@@ -104,7 +104,8 @@ mod tests {
     async fn the_tests_own_leftover_is_removed_and_anyone_elses_left_alone() {
         let dir = Path::new("/data/selftest/vm");
         let ours = format!("description=\"{}\"\n", vbox_description(dir));
-        let tools = Tools::rules(&[
+        let tools = Tools::strict_rules(&[
+            ("VBoxManage unregistervm", crate::platform::exec::fake::ok("")),
             ("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")),
             ("VBoxManage showvminfo abc", ok(&ours)),
             ("VBoxManage controlvm abc poweroff", fail("not running")),
@@ -112,14 +113,15 @@ mod tests {
         assert_eq!(clear(dir).await.unwrap(), ["VirtualBox"]);
         assert!(tools.called("VBoxManage unregistervm abc --delete"), "{:?}", tools.calls());
 
-        let tools = Tools::rules(&[("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")), ("VBoxManage showvminfo abc", ok("description=\"\"\n"))]);
+        let tools =
+            Tools::strict_rules(&[("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")), ("VBoxManage showvminfo abc", ok("description=\"\"\n"))]);
         let err = clear(dir).await.unwrap_err().to_string();
         assert!(err.contains("isn't this test's, so it was left alone"), "{err}");
         assert!(!tools.called("unregistervm") && !tools.called("controlvm"), "{:?}", tools.calls());
 
-        let _none = Tools::rules(&[("VBoxManage list vms", ok("\"lab · web\" {x}\n"))]);
+        let _none = Tools::strict_rules(&[("VBoxManage list vms", ok("\"lab · web\" {x}\n"))]);
         assert_eq!(clear(dir).await.unwrap(), [] as [&str; 0]);
-        let _no_vbox = Tools::rules(&[("VBoxManage", fail("not found"))]);
+        let _no_vbox = Tools::strict_rules(&[("VBoxManage", fail("not found"))]);
         assert!(clear(dir).await.unwrap().is_empty(), "no VirtualBox here");
     }
 }

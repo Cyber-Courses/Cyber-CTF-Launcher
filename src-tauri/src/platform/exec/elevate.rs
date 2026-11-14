@@ -376,7 +376,7 @@ mod tests {
         assert_eq!(decide(true, true, || true), Mode::Script { runas: false }, "an admin (or Hyper-V admin) runs it without a prompt");
         assert_eq!(decide(true, false, || false), Mode::Direct, "other providers never need it");
         assert_eq!(decide(false, true, || false), Mode::Direct, "never off Windows");
-        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
         assert_eq!(mode(true), Mode::Direct, "never with scripted tools");
     }
 

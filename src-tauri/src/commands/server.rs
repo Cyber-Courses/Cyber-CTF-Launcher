@@ -161,7 +161,12 @@ mod tests {
         assert_eq!(server_set_default(app(), Some(saved.id.clone())).unwrap_err().to_string(), "a cloud account can't be the default host");
         server_set_default(app(), None).unwrap();
         // Testing it asks the Azure CLI (no network here).
-        let tools = Tools::rules(&[("account show", ok("Pay-As-You-Go\n"))]);
+        let tools = Tools::strict_rules(&[
+            ("az vm list-skus", crate::platform::exec::fake::ok("")),
+            ("az vm list-usage", crate::platform::exec::fake::ok("")),
+            ("terraform version", crate::platform::exec::fake::ok("")),
+            ("account show", ok("Pay-As-You-Go\n")),
+        ]);
         let result = server_test(app(), saved.id.clone()).await.unwrap();
         assert!(tools.called("az account show --subscription 00000000-0000-0000-0000-000000000000"));
         assert!(!result.checks.is_empty());
@@ -212,7 +217,7 @@ mod tests {
     #[tokio::test]
     async fn the_vm_test_runs_on_proxmox_and_esxi_hosts_only() {
         let t = crate::testing::test_app::TestApp::new();
-        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
         let app = || t.handle().clone();
         let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
 
@@ -245,7 +250,7 @@ mod tests {
     async fn the_esxi_vm_test_stops_at_its_first_step_without_vagrants_esxi_plugin() {
         let t = crate::testing::test_app::TestApp::new();
         // No Vagrant on this computer: no ESXi plugin either.
-        let _tools = crate::platform::exec::fake::Tools::rules(&[("vagrant", None)]);
+        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[("ovftool --version", crate::platform::exec::fake::ok("")), ("vagrant", None)]);
         crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
         t.host("esx", "vmware_esxi", serde_json::json!({ "host": "192.0.2.1", "port": 22, "username": "root" }));
         crate::runtime::server::secrets::set_secret("esx", "pw").unwrap();

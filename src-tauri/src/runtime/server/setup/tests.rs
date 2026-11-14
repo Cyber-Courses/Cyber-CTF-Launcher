@@ -75,7 +75,7 @@ async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
     std::fs::write(&mine, "PRIVATE KEY CONTENTS").unwrap();
 
     // The node refuses the key: nothing is saved, and the message says which part failed.
-    let tools = Tools::rules(&[("authorized_keys", fail("root@10.0.0.50: Permission denied (publickey)."))]);
+    let tools = Tools::strict_rules(&[("authorized_keys", fail("root@10.0.0.50: Permission denied (publickey)."))]);
     let err = save_with_ssh_key(&t.dirs(), ssh_key_input(&mine)).await.unwrap_err().to_string();
     assert!(err.starts_with("Couldn't sign in to the node over SSH with your key"), "{err}");
     assert!(!tools.called("pveum"), "no token is made when SSH fails");
@@ -84,7 +84,7 @@ async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
 
     let name = ssh_key::token_name("ssh-ed25519 AAAA cyberctf-launcher");
     let answer = format!(r#"{{"full-tokenid":"root@pam!{name}","info":{{"privsep":"0"}},"value":"6f1d2c3b-aaaa-bbbb-cccc-0123456789ab"}}"#);
-    let tools = Tools::rules(&[("authorized_keys", ok("added")), ("pveum user token", ok(answer))]);
+    let tools = Tools::strict_rules(&[("authorized_keys", ok("added")), ("pveum user token", ok(answer))]);
     let saved = save_with_ssh_key(&t.dirs(), ssh_key_input(&mine)).await.unwrap();
     assert_eq!(saved.username, format!("root@pam!{name}"), "a token setup from here on");
     assert!(crate::runtime::proxmox::is_token(&saved.username));

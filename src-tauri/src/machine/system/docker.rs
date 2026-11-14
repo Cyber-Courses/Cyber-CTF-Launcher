@@ -414,7 +414,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_engines_context_is_resolved_for_pinning_a_lab_to_it() {
-        let _tools = Tools::rules(&[("context ls", ok("default *\norbstack\ncolima-dev\n"))]);
+        let _tools = Tools::strict_rules(&[("context ls", ok("default *\norbstack\ncolima-dev\n"))]);
         assert_eq!(engine_context("colima").await.unwrap(), "colima-dev");
         assert_eq!(engine_context("orbstack").await.unwrap(), "orbstack");
         assert_eq!(engine_context("podman").await.unwrap_err().to_string(), "no Docker context for podman");
@@ -424,7 +424,7 @@ mod tests {
     async fn contexts_that_cant_be_listed_say_so_not_that_the_engine_has_none() {
         // Regression: a failed `docker context ls` read as no contexts, and a launch on a chosen
         // engine failed with "no Docker context for orbstack".
-        let _tools = Tools::rules(&[("context ls", fail("error: invalid config file"))]);
+        let _tools = Tools::strict_rules(&[("context ls", fail("error: invalid config file"))]);
         let err = engine_context("orbstack").await.unwrap_err().to_string();
         assert!(err.starts_with("couldn't list the Docker contexts to find orbstack's: "), "{err}");
         assert!(err.contains("invalid config file"), "{err}");
@@ -432,7 +432,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_cli_is_pointed_at_the_context_of_the_engine_asked_for() {
-        let tools = Tools::rules(&[("context ls", ok("default *\norbstack\ncolima-dev\n"))]);
+        let tools =
+            Tools::strict_rules(&[("docker context use", crate::platform::exec::fake::ok("")), ("context ls", ok("default *\norbstack\ncolima-dev\n"))]);
         docker_use_engine("colima".into()).await.unwrap();
         assert!(tools.called("docker context use colima-dev"), "{:?}", tools.calls());
         let err = docker_use_engine("podman".into()).await.unwrap_err();
@@ -469,7 +470,7 @@ mod tests {
     #[tokio::test]
     async fn a_daemon_this_account_cannot_use_is_reported_without_waiting() {
         // Running already, for another account: not started again.
-        let tools = Tools::rules(&[("docker info", fail(DENIED))]);
+        let tools = Tools::strict_rules(&[("docker info", fail(DENIED))]);
         let err = docker_start_engine("colima".into()).await.unwrap_err();
         assert!(matches!(err.code(), crate::error::Code::DockerDenied { .. } | crate::error::Code::DockerDeniedWindows { .. }), "{err}");
         assert!(!tools.called("colima start"));
@@ -483,7 +484,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_engine_that_cannot_be_started_here_is_refused() {
-        let tools = Tools::rules(&[("docker info", fail(DOWN))]);
+        let tools = Tools::strict_rules(&[("docker info", fail(DOWN))]);
         let err = docker_start_engine("some-engine".into()).await.unwrap_err();
         assert!(err.to_string().contains("can't start some-engine here"), "{err}");
         assert_eq!(tools.calls(), ["docker info --format {{.OperatingSystem}}"]);

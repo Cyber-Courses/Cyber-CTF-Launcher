@@ -606,11 +606,8 @@ mod dnf_tests {
         let head = &s[..s.find("; command -v gpg").unwrap()];
         let bin = std::env::temp_dir().join(format!("cyberctf-rpm-probe-{}-{}", std::process::id(), rand::random::<u32>()));
         std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("curl"), "#!/bin/sh\ncase \"$*\" in */fedora/44/*) printf 200 ;; *) printf 404 ;; esac\n").unwrap();
-        std::fs::write(bin.join("rpm"), "#!/bin/sh\necho 45\n").unwrap();
-        for f in ["curl", "rpm"] {
-            std::fs::set_permissions(bin.join(f), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-        }
+        crate::testing::write_executable(bin.join("curl"), "#!/bin/sh\ncase \"$*\" in */fedora/44/*) printf 200 ;; *) printf 404 ;; esac\n");
+        crate::testing::write_executable(bin.join("rpm"), "#!/bin/sh\necho 45\n");
         let out = std::process::Command::new("sh")
             .arg("-c")
             .arg(format!("set -e; {head}; echo \"rel=$rel\""))
@@ -707,8 +704,7 @@ mod tests {
             ("getent", "exit 0"),
             ("systemctl", "exit 0"),
         ] {
-            std::fs::write(bin.join(name), format!("#!/bin/sh\n{body}\n")).unwrap();
-            std::fs::set_permissions(bin.join(name), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+            crate::testing::write_executable(bin.join(name), format!("#!/bin/sh\n{body}\n"));
         }
         let out = std::process::Command::new("sh").arg("-c").arg(script).env("PATH", format!("{}:/usr/bin:/bin", bin.display())).output().unwrap();
         std::fs::remove_dir_all(&bin).unwrap();
@@ -792,8 +788,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let brew = dir.join("brew");
         let log = dir.join("calls");
-        std::fs::write(&brew, format!("#!/bin/sh\necho \"$1\" >> '{}'\n[ \"$1\" = update ]\n", log.display())).unwrap();
-        std::fs::set_permissions(&brew, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        crate::testing::write_executable(&brew, format!("#!/bin/sh\necho \"$1\" >> '{}'\n[ \"$1\" = update ]\n", log.display()));
 
         let step = fetch_and_open(brew.to_str().unwrap(), "vagrant", "Vagrant");
         let out = std::process::Command::new(&step.program).args(&step.args).output().unwrap();
@@ -881,8 +876,7 @@ mod tests {
         let bin = std::env::temp_dir().join(format!("cyberctf-curl-{}-{}", std::process::id(), rand::random::<u32>()));
         std::fs::create_dir_all(&bin).unwrap();
         let fake = bin.join("curl");
-        std::fs::write(&fake, format!("#!/bin/sh\nprintf '%s' '{http}'\n")).unwrap();
-        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        crate::testing::write_executable(&fake, format!("#!/bin/sh\nprintf '%s' '{http}'\n"));
         let out = std::process::Command::new("sh")
             .arg("-c")
             .arg(format!("set -e; {RELEASE_SERVED}; {script}"))
@@ -900,8 +894,7 @@ mod tests {
         let bin = std::env::temp_dir().join(format!("cyberctf-kernel-{}-{}", std::process::id(), rand::random::<u32>()));
         std::fs::create_dir_all(&bin).unwrap();
         let fake = |name: &str, body: String| {
-            std::fs::write(bin.join(name), body).unwrap();
-            std::fs::set_permissions(bin.join(name), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+            crate::testing::write_executable(bin.join(name), body);
         };
         fake("uname", format!("#!/bin/sh\necho '{running}'\n"));
         // `apt-cache policy <package>`: a candidate when the sources have it, none otherwise, its
@@ -1011,8 +1004,7 @@ mod tests {
         let bin = std::env::temp_dir().join(format!("cyberctf-curl-{}-{}", std::process::id(), rand::random::<u32>()));
         std::fs::create_dir_all(&bin).unwrap();
         let fake = bin.join("curl");
-        std::fs::write(&fake, "#!/bin/sh\ncase \"$*\" in */dists/trixie/*) printf 200 ;; *) printf 404 ;; esac\n").unwrap();
-        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        crate::testing::write_executable(&fake, "#!/bin/sh\ncase \"$*\" in */dists/trixie/*) printf 200 ;; *) printf 404 ;; esac\n");
         let run = |vars: &str| {
             let out = std::process::Command::new("sh")
                 .arg("-c")

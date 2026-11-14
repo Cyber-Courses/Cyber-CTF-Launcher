@@ -364,7 +364,7 @@ mod tests {
         assert_eq!(free_ip().await, Some("192.168.56.249"));
         let v = vagrantfile(Provider::Virtualbox, "x", free_ip().await, Path::new("/t"));
         assert!(v.contains("ip: \"192.168.56.249\"") && !v.contains(".250"), "{v}");
-        let _all = Tools::rules(&[]);
+        let _all = Tools::strict_rules(&[("ping -c 1", crate::platform::exec::fake::ok("64 bytes"))]);
         assert_eq!(free_ip().await, None, "every address answers");
         assert!(!vagrantfile(Provider::Virtualbox, "x", None, Path::new("/t")).contains("private_network"));
     }
@@ -479,7 +479,9 @@ mod tests {
         let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen = events.clone();
         let r = Reporter::new(move |e: crate::runtime::selftest_report::Event| seen.lock().unwrap().push(format!("{}:{}", e.step, e.state)));
-        let tools = Tools::rules(&[
+        let tools = Tools::strict_rules(&[
+            ("VBoxManage controlvm", crate::platform::exec::fake::ok("")),
+            ("VBoxManage unregistervm", crate::platform::exec::fake::ok("")),
             ("vagrant destroy", fail("The machine isn't created")),
             ("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")),
             ("VBoxManage showvminfo abc", ok(&ours)),
@@ -493,7 +495,8 @@ mod tests {
         assert_eq!(events.lock().unwrap()[0], "leftover:ok");
         assert!(crate::testing::logs::take_warnings().iter().any(|w| w.contains("The machine isn't created")), "the destroy's failure is logged");
 
-        let tools = Tools::rules(&[("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")), ("VBoxManage showvminfo abc", ok("description=\"\"\n"))]);
+        let tools =
+            Tools::strict_rules(&[("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")), ("VBoxManage showvminfo abc", ok("description=\"\"\n"))]);
         events.lock().unwrap().clear();
         let err = run_test(&dir, None, &r).await.unwrap_err();
         assert!(err.to_string().contains("isn't this test's"), "{err}");

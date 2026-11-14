@@ -251,7 +251,7 @@ mod tests {
             auto_stop_hours: None,
         };
         let placed = Placed { host: Host::Cloud { run, place: isothrum::CloudPlace::default(), conn }, dir: dir.to_path_buf(), target, vm: false };
-        let tools = Tools::rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
+        let tools = Tools::strict_rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
         let dirs = AppDirs::new(Some(home), None);
         let err = placed.add(&dirs, Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.unwrap_err();
         assert!(err.to_string().starts_with("Your sign-in to AWS has expired"), "{err}");

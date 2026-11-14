@@ -101,12 +101,12 @@ mod tests {
     async fn ensure_image_pulls_only_when_the_test_image_is_missing() {
         use crate::platform::exec::fake::{Tools, fail, ok};
         // Already local: `image inspect` answers, so nothing is pulled and it reports "was there".
-        let present = Tools::rules(&[("image inspect", ok("sha256:abc"))]);
+        let present = Tools::strict_rules(&[("image inspect", ok("sha256:abc"))]);
         assert!(ensure_image(&[]).await.unwrap(), "already local");
         assert!(!present.called("pull"), "nothing pulled: {:?}", present.calls());
         drop(present);
         // Missing: `image inspect` fails, the image is pulled quietly, and this call did the pull.
-        let pulled = Tools::rules(&[("image inspect", fail("Error: No such image")), ("pull", ok(""))]);
+        let pulled = Tools::strict_rules(&[("image inspect", fail("Error: No such image")), ("pull", ok(""))]);
         let ctx = [("DOCKER_CONTEXT".to_string(), "orbstack".to_string())];
         assert!(!ensure_image(&ctx).await.unwrap(), "pulled now, not already there");
         assert!(pulled.called("pull -q"), "{:?}", pulled.calls());
@@ -115,7 +115,7 @@ mod tests {
         assert_eq!(pulled.env_of("pull -q", "DOCKER_CONTEXT").as_deref(), Some("orbstack"));
         drop(pulled);
         // The pull itself fails (a wedged engine): surfaced as an error, not a false "ready".
-        let _failed = Tools::rules(&[("image inspect", fail("Error: No such image")), ("pull", fail("timed out"))]);
+        let _failed = Tools::strict_rules(&[("image inspect", fail("Error: No such image")), ("pull", fail("timed out"))]);
         assert!(ensure_image(&[]).await.is_err());
     }
 
@@ -126,7 +126,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         // `box list` shows nothing, so the box is added once; the lines Vagrant prints, and the
         // "Downloading …" notice, reach on_line.
-        let tools = Tools::rules(&[("box list", ok("")), ("box add", ok("Progress: 10%\nProgress: 100%"))]);
+        let tools = Tools::strict_rules(&[("box list", ok("")), ("box add", ok("Progress: 10%\nProgress: 100%"))]);
         let mut lines = Vec::new();
         let was_there = ensure_box(&dir, Provider::Virtualbox, "bento/ubuntu-24.04", Arch::Amd64, |l| lines.push(l)).await.unwrap();
         assert!(!was_there, "it had to be downloaded");
@@ -144,7 +144,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         // `vagrant box add` never returns (a wedged download): bounded by the limit, it surfaces as
         // a timeout instead of hanging the test (and, in the app, the self-test's box step) for good.
-        let _tools = Tools::rules(&[("box add", Some(Reply::Hang))]);
+        let _tools = Tools::strict_rules(&[("box add", Some(Reply::Hang))]);
         let started = std::time::Instant::now();
         let err = add_box(&dir, Provider::Virtualbox, "bento/debian-12", Duration::from_millis(200), |_| {}).await.unwrap_err();
         assert!(timed_out(&err), "a stalled box add is a timeout, not an endless wait: {err:?}");
