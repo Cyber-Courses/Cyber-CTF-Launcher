@@ -6,7 +6,8 @@
 //! WAL mode, so the app and its helper processes read while one writes; every change is one
 //! transaction ([`Store::write`]), taken for writing from its start, so a read-modify-write never
 //! saves over a change made beside it. The schema moves forward by numbered migrations
-//! ([`schema`]). A fresh data folder starts with an empty store: the JSON files earlier versions
+//! ([`schema`]), the store backed up beside its file before each run of them (the last two
+//! kept). A fresh data folder starts with an empty store: the JSON files earlier versions
 //! kept are not read.
 
 pub(crate) mod schema;
