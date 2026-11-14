@@ -329,8 +329,8 @@ fn setup(app: &mut App) {
     if let Ok(dir) = app.path().app_data_dir() {
         narrow_to_this_user(&dir);
     }
-    // The launcher's store, opened (and, the first time, filled from the files of earlier
-    // versions) before anything reads it: a store that can't be opened is in the log at once.
+    // The launcher's store, opened before anything reads it: a store that can't be opened is in
+    // the log at once.
     if let Err(e) = crate::store::open(&platform::AppDirs::from(app.handle())) {
         log::error!("the launcher's store can't be opened: {e}");
     }

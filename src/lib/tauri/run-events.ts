@@ -61,7 +61,7 @@ export function forgetRunEvents() {
 registerReset(forgetRunEvents);
 
 /** `run` with the frame's event applied (the operation it is of, as it now stands). */
-function applied(runs: Map<OperationId, OperationRun>, { event }: Cursored, at: number) {
+function applied(runs: Map<OperationId, OperationRun>, { event }: Cursored, at: number, copied: Set<OperationId>) {
   const run = runs.get(event.operation);
   switch (event.kind) {
     case "started":
@@ -80,7 +80,16 @@ function applied(runs: Map<OperationId, OperationRun>, { event }: Cursored, at: 
       });
       return;
     case "log":
-      if (run) runs.set(event.operation, { ...run, lines: [...run.lines, event.line], times: [...run.times, at] });
+      if (!run) return;
+      // Copied once per batch (readers hold the previous arrays), then added to in place: a VM
+      // start's thousands of lines aren't copied once per line.
+      if (copied.has(event.operation)) {
+        run.lines.push(event.line);
+        run.times.push(at);
+      } else {
+        copied.add(event.operation);
+        runs.set(event.operation, { ...run, lines: [...run.lines, event.line], times: [...run.times, at] });
+      }
       return;
     case "ended":
       if (!run) return;
@@ -96,7 +105,8 @@ export function takeIn(frames: readonly Cursored[]) {
   if (fresh.length === 0) return;
   const runs = new Map(state.operations);
   const at = Date.now();
-  for (const f of fresh) applied(runs, f, at);
+  const copied = new Set<OperationId>();
+  for (const f of fresh) applied(runs, f, at, copied);
   state = { cursor: fresh.at(-1)?.cursor ?? state.cursor, operations: runs };
   for (const l of listeners) l();
 }

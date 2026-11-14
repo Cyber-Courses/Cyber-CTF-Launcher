@@ -38,10 +38,12 @@ const STEP_MAX = 72;
 /** The step an operation's log is at: the last Vagrant action line (`==> dc01: Booting VM...`) as
  *  `dc01: Booting VM...`, else the last non-empty line, kept short; null for none. */
 export function lastStep(lines: readonly string[]): string | null {
-  let action: string | null = null;
+  // From the end: the last action line wins, else the last other line; a long log is read only
+  // back to its last action.
   let last: string | null = null;
-  for (const raw of lines) {
-    const l = raw.trim();
+  let action: string | null = null;
+  for (let i = lines.length - 1; i >= 0 && action === null; i--) {
+    const l = lines[i].trim();
     if (!l || l.startsWith(DONE_MARK) || l.startsWith(FAILED_MARK)) continue;
     if (l.startsWith("==>")) {
       const rest = l.slice(3).trim();
@@ -49,22 +51,26 @@ export function lastStep(lines: readonly string[]): string | null {
       if (colon >= 0 && rest.slice(colon + 1).trim()) action = rest;
       continue;
     }
-    last = l;
+    last ??= l;
   }
   const step = action ?? last;
   if (step === null) return null;
   return step.length > STEP_MAX ? `${step.slice(0, STEP_MAX - 1)}…` : step;
 }
 
+// Each run's reading, kept while the run is the same object: a change of one operation doesn't
+// read every other one's log again.
+const read = new WeakMap<OperationRun, ActiveOperation>();
+
 /** An operation in flight as the screens read it: what it is, the step it is at. */
-const asActive = (r: OperationRun): ActiveOperation => ({
-  labId: r.labId,
-  op: r.op,
-  machine: r.machine,
-  deploying: r.deploying,
-  step: lastStep(r.lines),
-  runtime: r.runtime,
-});
+function asActive(r: OperationRun): ActiveOperation {
+  let active = read.get(r);
+  if (!active) {
+    active = { labId: r.labId, op: r.op, machine: r.machine, deploying: r.deploying, step: lastStep(r.lines), runtime: r.runtime };
+    read.set(r, active);
+  }
+  return active;
+}
 
 /** Every operation in flight in `s`, by lab (a lab's latest one). */
 function activeOf(s: RunEventsState): Map<string, ActiveOperation> {

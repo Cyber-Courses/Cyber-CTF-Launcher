@@ -123,7 +123,6 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         setup_window::server_open_setup,
         labs::busy_labs,
         labs::run_events,
-        labs::operation_cancel,
         app::restart_app,
         app::linger_quit,
         app::force_quit,

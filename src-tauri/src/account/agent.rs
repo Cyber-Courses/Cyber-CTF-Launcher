@@ -130,10 +130,14 @@ fn picked_target(target: Option<&str>, host_name: impl Fn(&str) -> Result<Option
 /// installed (its download failed) has nothing to stop.
 async fn tear_down(deps: &Deps, lab_id: &str, runtime: Runtime) -> Result<()> {
     let dirs = deps.dirs();
-    if crate::runtime::lab_installed(dirs, lab_id) {
-        labs::stop_lab_retiring_colocation(dirs, lab_id, runtime, (deps.end_workers)(lab_id), |_line: String| {}).await
-    } else {
-        Ok(())
+    if !crate::runtime::lab_installed(dirs, lab_id) {
+        return Ok(());
+    }
+    let stop = |log: crate::run_service::local::Log| labs::stop_lab_retiring_colocation(dirs, lab_id, runtime, (deps.end_workers)(lab_id), move |l| log(l));
+    // Told as an operation of the lab, so its page shows it stopping.
+    match crate::run_service::LocalRunService::of(dirs) {
+        Ok(service) => service.observe(lab_id, crate::runtime::Operation::Stop, Some(runtime), stop).await,
+        Err(_) => stop(std::sync::Arc::new(|_| {})).await,
     }
 }
 
@@ -168,7 +172,13 @@ fn undoes(failure: &Error, present_before: bool) -> bool {
 async fn run_claimed(deps: &Deps, launch: &labs::Launch, place: &StartPlace, present_before: bool) -> Result<Option<String>> {
     let to =
         runtime::Destination { host: place.host.as_deref(), provider: place.provider, per_machine_vm: place.per_machine_vm, ..runtime::Destination::default() };
-    match labs::run(deps.dirs(), launch.clone(), to, |_line: String| {}).await {
+    let run = |log: crate::run_service::local::Log| labs::run(deps.dirs(), launch.clone(), to, move |l| log(l));
+    // Told as an operation of the lab, so its page shows it starting, with its log.
+    let ran = match crate::run_service::LocalRunService::of(deps.dirs()) {
+        Ok(service) => service.observe(&launch.lab_id, crate::runtime::Operation::Launch, Some(launch.runtime), run).await,
+        Err(_) => run(std::sync::Arc::new(|_| {})).await,
+    };
+    match ran {
         Ok(url) => Ok(url),
         Err(e) => Err(undo_start(deps, &launch.lab_id, launch.runtime, present_before, e).await),
     }
@@ -316,9 +326,9 @@ mod tests {
         assert_eq!(gone.to_string(), "that host is no longer set up in the launcher");
         assert_eq!(picked_target(None, known).unwrap(), None);
         // Regression: saved hosts that can't be read said "no longer set up", as if it were gone.
-        let unreadable = |_: &str| Err(Error::Invalid("server.json: expected value".into()));
+        let unreadable = |_: &str| Err(Error::Invalid("the launcher's store: expected value".into()));
         let err = picked_target(Some("esxi-1"), unreadable).unwrap_err();
-        assert_eq!(err.to_string(), "server.json: expected value");
+        assert_eq!(err.to_string(), "the launcher's store: expected value");
     }
 
     #[tokio::test]

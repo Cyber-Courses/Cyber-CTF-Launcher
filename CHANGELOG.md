@@ -13,6 +13,19 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Changed
 
+- **Saved servers, cloud accounts and the records of what Cyber CTF installed are not carried
+  over from earlier versions.** The launcher keeps its settings in a store of its own now and
+  doesn't read the files earlier versions wrote. After updating, add your Proxmox, ESXi and cloud
+  accounts again; Settings no longer lists the tools and images an earlier version installed, so
+  Clean up won't remove those. Stop the labs running on a server or in a cloud account before you
+  update: without their saved account, Stop and the auto-stop can't remove them afterwards, and
+  a cloud lab left running keeps costing.
+
+- **Lab operations report their progress as they happen.** Starting, stopping, pausing and the
+  attack box show their steps from the operation's own events instead of reading them every few
+  seconds, and a window opened or reloaded mid-operation picks them up where they are. A failed
+  operation shows its id, to quote when you ask for help (#379).
+
 - **A release ships what built.** One platform's failed build, a missing signing secret or a
   Store hiccup no longer stop the whole release: the release notes name the platform missing,
   what lacks a secret ships unsigned (as 1.8.9 did), and the Store submission stays its own step.

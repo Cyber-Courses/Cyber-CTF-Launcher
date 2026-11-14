@@ -246,7 +246,7 @@ pub(crate) mod tests {
         let json = serde_json::to_string(&p).unwrap();
         let back: HostProfile = serde_json::from_str(&json).unwrap();
         assert_eq!(back, p);
-        // Optional fields default when absent (older server.json files).
+        // Optional fields default when absent (profiles saved by older versions).
         let minimal = r#"{"id":"ab12","name":"L","provider":"proxmox","host":"10.0.0.5","port":8006,"username":"root@pam"}"#;
         let m: HostProfile = serde_json::from_str(minimal).unwrap();
         assert_eq!(m.datastore, None);

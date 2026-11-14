@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tauri::Manager;
 
-use super::{BoxFuture, EventLog, OperationId, Request, RunEvent, RunService};
+use super::{EventLog, OperationId, Request, RunEvent, RunService};
 use crate::error::{Result, Wire};
 use crate::runtime::{Operation, Runtime};
 use crate::testing::test_app::TestApp;
@@ -41,7 +41,6 @@ pub(crate) async fn finished(app: &crate::AppHandle, id: &OperationId) -> (std::
 struct Fake {
     events: EventLog,
     taken: Mutex<Vec<(OperationId, String, Operation)>>,
-    cancelled: Mutex<Vec<OperationId>>,
 }
 
 impl RunService for Fake {
@@ -49,11 +48,6 @@ impl RunService for Fake {
         let id = OperationId(format!("fake-{}", self.taken.lock().unwrap().len() + 1));
         self.taken.lock().unwrap().push((id.clone(), request.lab_id().to_owned(), request.operation()));
         Ok(id)
-    }
-
-    fn cancel(&self, operation: &OperationId) -> BoxFuture<'_, ()> {
-        self.cancelled.lock().unwrap().push(operation.clone());
-        Box::pin(async {})
     }
 
     fn events(&self) -> &EventLog {
@@ -98,8 +92,6 @@ async fn an_operation_runs_end_to_end_through_a_fake_service_and_a_reloaded_wind
     let missed = crate::commands::labs::run_events(t.handle().clone(), Some(seen[1].cursor)).await;
     assert_eq!(missed.len(), 1);
     assert!(matches!(missed[0].event, RunEvent::Ended { .. }));
-    crate::commands::labs::operation_cancel(t.handle().clone(), id.clone()).await;
-    assert_eq!(*fake.cancelled.lock().unwrap(), [id]);
 }
 
 #[tokio::test]
@@ -133,26 +125,63 @@ async fn the_launchers_own_service_tells_an_operation_and_its_failure_by_its_id(
 }
 
 #[tokio::test]
-async fn a_second_operation_on_a_busy_lab_is_refused_but_a_stop_is_taken() {
+async fn a_second_operation_on_a_busy_lab_is_refused_and_a_panicking_one_still_ends() {
     let t = TestApp::new();
     let service = super::LocalRunService::new(t.dirs());
+    let started = |id: &OperationId| RunEvent::Started {
+        operation: id.clone(),
+        lab_id: "web".into(),
+        op: Operation::Launch,
+        machine: None,
+        runtime: None,
+        deploying: true,
+        at: 0,
+    };
     // An operation under way that never ends by itself.
-    let id = OperationId::new();
-    let started =
-        RunEvent::Started { operation: id.clone(), lab_id: "web".into(), op: Operation::Launch, machine: None, runtime: None, deploying: true, at: 0 };
-    service.begin(started, false, |_| Box::pin(std::future::pending()));
+    let first = OperationId::new();
+    service.begin(started(&first), true, |_| Box::pin(std::future::pending())).unwrap();
     let again = service.start(Request::Resume { lab_id: "web".into(), runtime: Runtime::Docker }).unwrap_err();
     assert_eq!(again.code(), crate::error::Code::AlreadyInProgress);
-    // Cancelled: it ends, once, as cancelled, and the app's log names it by the id the page shows,
-    // for the player to quote.
-    crate::testing::logs::take_warnings();
-    service.cancel(&id).await;
-    service.cancel(&id).await;
-    let warned = crate::testing::logs::take_warnings();
-    assert_eq!(warned, [format!("operation {id}: Launch of lab web failed: the operation was cancelled before it ended")]);
-    let ends: Vec<_> = service.events().since(None).into_iter().filter(|e| matches!(e.event, RunEvent::Ended { .. })).collect();
-    let [end] = ends.as_slice() else { panic!("{ends:?}") };
-    let RunEvent::Ended { error: Some(error), .. } = &end.event else { panic!("{end:?}") };
-    assert!(error.message.contains("cancelled"), "{error:?}");
+    let refused = OperationId::new();
+    assert!(service.begin(started(&refused), true, |_| Box::pin(async { Ok(()) })).is_err(), "checked and admitted as one step");
+    assert!(!service.events().since(None).iter().any(|e| matches!(&e.event, RunEvent::Started { operation, .. } if *operation == refused)), "nothing told");
+    // One that panics ends all the same, as failed, its lab no longer busy.
+    let t2 = TestApp::new();
+    let service = super::LocalRunService::new(t2.dirs());
+    let panics = OperationId::new();
+    service.begin(started(&panics), true, |_| Box::pin(async { buggy_step() })).unwrap();
+    let outcome = service.events().ended(&panics).await;
+    assert!(outcome.unwrap_err().message.contains("internal error: a bug in a step"));
     assert!(!service.busy("web"));
+}
+
+#[tokio::test]
+async fn an_operation_run_outside_a_request_is_told_like_the_others() {
+    let t = TestApp::new();
+    let service = super::LocalRunService::of(&t.dirs()).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&service, &super::LocalRunService::of(&t.dirs()).unwrap()), "one per data folder");
+    let url = service
+        .observe("web", Operation::Launch, Some(Runtime::Docker), |log| async move {
+            log("==> web: Starting".into());
+            Ok(Some("http://127.0.0.1:8080".to_owned()))
+        })
+        .await
+        .unwrap();
+    assert_eq!(url.as_deref(), Some("http://127.0.0.1:8080"));
+    let kinds: Vec<&str> = service
+        .events()
+        .since(None)
+        .iter()
+        .map(|e| match e.event {
+            RunEvent::Started { .. } => "started",
+            RunEvent::Log { .. } => "log",
+            RunEvent::Ended { .. } => "ended",
+        })
+        .collect();
+    assert_eq!(kinds, ["started", "log", "ended"]);
+}
+
+/// A step with a bug: it panics.
+fn buggy_step() -> crate::error::Result<()> {
+    panic!("a bug in a step")
 }

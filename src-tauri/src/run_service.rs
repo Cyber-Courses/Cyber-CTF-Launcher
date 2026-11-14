@@ -193,10 +193,6 @@ pub(crate) trait RunService: Send + Sync {
     /// The refusal.
     fn start(&self, request: Request) -> Result<OperationId>;
 
-    /// Cancels operation `operation`: what it started is ended, and it ends as cancelled. One
-    /// already ended is left as it is.
-    fn cancel(&self, operation: &OperationId) -> BoxFuture<'_, ()>;
-
     /// The events of every operation.
     fn events(&self) -> &EventLog;
 
@@ -204,6 +200,9 @@ pub(crate) trait RunService: Send + Sync {
     /// log and their end are events too.
     fn pick_up_running(&self);
 }
+
+/// How often the app looks for workers it didn't start.
+const PICK_UP_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// A boxed future, as a trait object's method returns one.
 pub(crate) type BoxFuture<'a, T> = std::pin::Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -215,7 +214,11 @@ pub(crate) fn of(app: &AppHandle) -> Arc<dyn RunService> {
     if let Some(service) = app.try_state::<Arc<dyn RunService>>() {
         return Arc::clone(&service);
     }
-    let made: Arc<dyn RunService> = Arc::new(LocalRunService::new(crate::platform::AppDirs::from(app)));
+    let made: Arc<dyn RunService> = match LocalRunService::of(&crate::platform::AppDirs::from(app)) {
+        Ok(service) => service,
+        // No data folder: a service of its own, whose operations fail on the folder they need.
+        Err(_) => Arc::new(LocalRunService::new(crate::platform::AppDirs::from(app))),
+    };
     app.manage(made);
     Arc::clone(&app.state::<Arc<dyn RunService>>())
 }
@@ -238,5 +241,14 @@ pub(crate) fn start(app: &AppHandle) {
     let service = of(app);
     let to = app.clone();
     service.events().listen(Box::new(move |e| crate::app::events::emit(&to, RUN_EVENT, e.clone())));
-    service.pick_up_running();
+    // The workers this app didn't start (an earlier run of it, the command line), picked up as
+    // they are found: off the main thread, each look asks the OS about their processes.
+    let picking = Arc::clone(&service);
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let service = Arc::clone(&picking);
+            let _ = tokio::task::spawn_blocking(move || service.pick_up_running()).await;
+            tokio::time::sleep(PICK_UP_EVERY).await;
+        }
+    });
 }

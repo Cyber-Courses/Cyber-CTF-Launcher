@@ -3,7 +3,7 @@
 //! (re)loads replays what it missed ([`EventLog::since`]) and then follows the live ones, the
 //! same Tauri event ([`RUN_EVENT`]) for every window.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
 use serde::Serialize;
@@ -86,30 +86,48 @@ pub struct EventLog {
     emitted: tokio::sync::Notify,
 }
 
-/// The kept events, oldest first, and the last cursor given.
+/// The kept events, oldest first, the last cursor given, and the latest operations' outcomes.
 #[derive(Default)]
 struct Kept {
     /// The last cursor given (0: none yet).
     last: u64,
     /// The kept events.
     events: VecDeque<Cursored>,
+    /// The outcome of each operation that ended lately, for [`EventLog::ended`] (the oldest
+    /// forgotten past [`ENDS_KEPT`]).
+    ends: HashMap<OperationId, Result<(), Wire>>,
+    /// The operations of `ends`, oldest first.
+    ended_order: VecDeque<OperationId>,
 }
 
+/// How many operations' outcomes are kept for a waiter.
+const ENDS_KEPT: usize = 4096;
+
 impl EventLog {
-    /// Emits `event`: kept, then told to every listener, in the order emitted.
+    /// Emits `event`: kept, then told to every listener, under one lock, so the listeners hear
+    /// the events in the order of their cursors whatever thread emits them (a window drops an
+    /// event at or below the last cursor it took in).
     pub fn emit(&self, event: RunEvent) {
-        let cursored = {
+        {
             let mut kept = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             kept.last += 1;
+            if let RunEvent::Ended { operation, error, .. } = &event {
+                kept.ends.insert(operation.clone(), error.clone().map_or(Ok(()), Err));
+                kept.ended_order.push_back(operation.clone());
+                while kept.ended_order.len() > ENDS_KEPT {
+                    if let Some(old) = kept.ended_order.pop_front() {
+                        kept.ends.remove(&old);
+                    }
+                }
+            }
             let cursored = Cursored { cursor: kept.last, event };
-            kept.events.push_back(cursored.clone());
+            for listener in self.listeners.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter() {
+                listener(&cursored);
+            }
+            kept.events.push_back(cursored);
             while kept.events.len() > KEPT {
                 kept.events.pop_front();
             }
-            cursored
-        };
-        for listener in self.listeners.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter() {
-            listener(&cursored);
         }
         self.emitted.notify_waiters();
     }
@@ -131,13 +149,9 @@ impl EventLog {
         }
     }
 
-    /// Operation `operation`'s outcome among the kept events, once it ended.
+    /// Operation `operation`'s outcome, once it ended.
     fn end_of(&self, operation: &OperationId) -> Option<Result<(), Wire>> {
-        let kept = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        kept.events.iter().rev().find_map(|e| match &e.event {
-            RunEvent::Ended { operation: o, error, .. } if o == operation => Some(error.clone().map_or(Ok(()), Err)),
-            _ => None,
-        })
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).ends.get(operation).cloned()
     }
 
     /// Adds `listener`, told of every event from now on.
@@ -189,6 +203,27 @@ mod tests {
         assert_eq!(waiter.await.unwrap(), Err(error));
         // Already ended: answered at once.
         assert!(events.ended(&op).await.is_err());
+    }
+
+    #[test]
+    fn events_emitted_from_many_threads_reach_a_listener_in_cursor_order() {
+        let events = std::sync::Arc::new(EventLog::default());
+        let heard = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let h = heard.clone();
+        events.listen(Box::new(move |e| h.lock().unwrap().push(e.cursor)));
+        std::thread::scope(|s| {
+            for t in 0..8 {
+                let events = &events;
+                s.spawn(move || {
+                    for i in 0..200 {
+                        events.emit(log(&format!("op-{t}"), &format!("{i}")));
+                    }
+                });
+            }
+        });
+        let heard = heard.lock().unwrap();
+        assert_eq!(heard.len(), 1600);
+        assert!(heard.windows(2).all(|w| w[0] < w[1]), "out of order");
     }
 
     #[test]

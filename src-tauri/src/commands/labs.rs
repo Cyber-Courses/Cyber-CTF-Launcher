@@ -88,12 +88,6 @@ pub async fn run_events(app: AppHandle, after: Option<u64>) -> Vec<run_service::
     run_service::of(&app).events().since(after)
 }
 
-/// Cancels operation `operation`: what it started is ended, and it ends as cancelled.
-#[tauri::command]
-pub async fn operation_cancel(app: AppHandle, operation: OperationId) {
-    run_service::of(&app).cancel(&operation).await;
-}
-
 fn check_image(image: &str) -> Result<()> {
     if crate::platform::exec::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
 }

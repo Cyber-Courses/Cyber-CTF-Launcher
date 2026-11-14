@@ -4,7 +4,7 @@ import { fail, send, sleep } from "@/lib/dev-mock/command";
 import { eventHandlers } from "@/lib/dev-mock/events";
 import { type Host, hostsOf, saveError, saveHosts } from "@/lib/dev-mock/hosts";
 import { catalogueQuery, defaultPlaceQuery, runOptionsQuery } from "@/lib/dev-mock/catalogue";
-import { labHandlers } from "@/lib/dev-mock/lab-ops";
+import { inFlight, labHandlers } from "@/lib/dev-mock/lab-ops";
 import type { BrowserHandler, Context } from "@/lib/dev-mock/live";
 import { machineHandlers } from "@/lib/dev-mock/machine";
 import { answer, UNMANAGED } from "@/lib/dev-mock/sample";
@@ -13,7 +13,6 @@ import { screenHandlers, terminalHandlers } from "@/lib/dev-mock/terminal";
 import type { Args } from "@/lib/dev-mock/types";
 import type { DeviceCode, ManagedSettings } from "@/lib/tauri";
 import type { CommandError } from "@/lib/tauri/generated";
-import type { ActiveOperation } from "@/lib/tauri/run-events";
 import { isOperation, replay, startOperation } from "@/lib/dev-mock/run-service";
 import { PROXMOX_PLACEMENT } from "@/lib/dev-mock/proxmox-sample";
 
@@ -159,8 +158,7 @@ export async function browserAnswer(cmd: string, args: Args, ctx: Context): Prom
   // The core's run service: an operation answers its id, its log and end are run events.
   if (isOperation(cmd)) return startOperation(cmd, args, handle);
   if (cmd === "run_events") {
-    const inFlight = (await (HANDLERS.get("active_operations")?.(undefined, ctx) ?? answer("active_operations", undefined))) as ActiveOperation[] | null;
-    return replay((args?.after as number | null) ?? null, inFlight ?? []);
+    return replay((args?.after as number | null) ?? null, inFlight(ctx));
   }
   return await handle(args);
 }

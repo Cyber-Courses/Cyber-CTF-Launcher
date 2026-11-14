@@ -8,6 +8,8 @@ import { hostsOf } from "@/lib/dev-mock/hosts";
 import { type BrowserHandler, type Context, type Live, labArg, labRuntime, operation, slugOf, statusOf, vagrantMachines } from "@/lib/dev-mock/live";
 import { answer } from "@/lib/dev-mock/sample";
 import type { Args } from "@/lib/dev-mock/types";
+import { SAMPLE_IN_FLIGHT } from "@/lib/dev-mock/labs";
+import type { ActiveOperation } from "@/lib/tauri/run-events";
 
 /** A Docker Compose start, as the launcher streams it. */
 const composeUp = (slug: string) => [
@@ -206,10 +208,6 @@ export const labHandlers: Record<string, BrowserHandler> = {
   running_labs: (_args, { live }) => [...live.running],
   machine_workloads: workloads,
   busy_labs: (args, { sc, live }) => [...new Set([...(sc.noDeploying ? [] : (answer("busy_labs", args) as string[])), ...live.ops.keys()])],
-  active_operations: (args, { sc, live }) => [
-    ...(sc.noDeploying ? [] : (answer("active_operations", args) as unknown[])),
-    ...[...live.ops].map(([labId, op]) => ({ labId, op, machine: null, step: null })),
-  ],
   lab_launch: launch,
   lab_stop: stop,
   lab_park: park,
@@ -219,3 +217,10 @@ export const labHandlers: Record<string, BrowserHandler> = {
   lab_installed: (args, { live }) => live.here.has(labArg(args)),
   lab_remove: remove,
 };
+
+/** The operations the preview's core runs when a window replays its events: the sample's (unless
+ *  `noDeploying`), and those the preview started. */
+export function inFlight({ sc, live }: Context): ActiveOperation[] {
+  const started = [...live.ops].map(([labId, op]): ActiveOperation => ({ labId, op, machine: null, deploying: true, step: null }));
+  return [...(sc.noDeploying ? [] : SAMPLE_IN_FLIGHT), ...started];
+}

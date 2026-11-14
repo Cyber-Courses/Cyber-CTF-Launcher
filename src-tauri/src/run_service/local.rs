@@ -1,7 +1,10 @@
 //! The launcher's own run service: each operation as the launcher ran it before the runner's
 //! service, on a task of the app, its log lines and its end told as events. A launch, a resume, a
 //! park and a provisioning run go to a detached deploy worker (quitting the app never cuts them
-//! short); a stop and the attack box going in or out run in the app.
+//! short); a stop and the attack box going in or out run in the app. The website agent's launch
+//! and teardown, which run in the app on their own, are told the same way
+//! ([`LocalRunService::observe`]), and so is a worker this app didn't start (an earlier run of the
+//! app, the command line), picked up as it is found.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -22,10 +25,6 @@ struct Running {
     lab_id: String,
     /// What it is.
     op: Operation,
-    /// Whether it runs in a deploy worker (cancelled by ending the worker).
-    in_worker: bool,
-    /// Its task, once spawned.
-    task: Option<tauri::async_runtime::JoinHandle<()>>,
 }
 
 /// The launcher's own run service (see the module).
@@ -38,6 +37,13 @@ pub(crate) struct LocalRunService {
     running: Arc<Mutex<HashMap<OperationId, Running>>>,
 }
 
+/// The services of this process, one per data folder: the app's windows, the website agent and
+/// a command line in this process all report through the same one.
+fn services() -> &'static Mutex<HashMap<std::path::PathBuf, Arc<LocalRunService>>> {
+    static SERVICES: std::sync::OnceLock<Mutex<HashMap<std::path::PathBuf, Arc<LocalRunService>>>> = std::sync::OnceLock::new();
+    SERVICES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 impl LocalRunService {
     /// The service of the app whose folders are `dirs`: no window or app handle needed, so the
     /// command line runs it as the app does.
@@ -45,38 +51,89 @@ impl LocalRunService {
         LocalRunService { dirs, events: Arc::new(EventLog::default()), running: Arc::new(Mutex::new(HashMap::new())) }
     }
 
+    /// This process's service for the data folder of `dirs`, made on first use.
+    ///
+    /// # Errors
+    ///
+    /// No data folder.
+    pub(crate) fn of(dirs: &AppDirs) -> Result<Arc<LocalRunService>> {
+        let data = dirs.data()?.to_path_buf();
+        let mut all = services().lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(Arc::clone(all.entry(data).or_insert_with(|| Arc::new(LocalRunService::new(dirs.clone())))))
+    }
+
     /// Whether an operation acts on lab `id` now.
     pub(super) fn busy(&self, id: &str) -> bool {
         self.running.lock().unwrap_or_else(PoisonError::into_inner).values().any(|r| r.lab_id == id)
     }
 
-    /// Begins operation `operation` on `lab_id` (told as started), running `work` on a task with
-    /// its log; its end is told when `work` returns, or when it is cancelled.
-    pub(super) fn begin(&self, started: RunEvent, in_worker: bool, work: impl FnOnce(Log) -> BoxFuture<'static, Result<()>>) {
-        let RunEvent::Started { operation, lab_id, op, .. } = &started else { return };
-        let operation = operation.clone();
-        let (lab_id, op) = (lab_id.clone(), *op);
-        self.running.lock().unwrap_or_else(PoisonError::into_inner).insert(operation.clone(), Running { lab_id: lab_id.clone(), op, in_worker, task: None });
+    /// Admits operation `operation`, `op` on `lab_id`, as under way: refused when `exclusive`
+    /// and another acts on the lab. Checked and recorded as one step: two starts racing each
+    /// other (a double click) never both pass.
+    fn admit(&self, operation: &OperationId, lab_id: &str, op: Operation, exclusive: bool) -> Result<()> {
+        let mut running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
+        if exclusive && running.values().any(|r| r.lab_id == lab_id) {
+            return Err(Error::coded(Code::AlreadyInProgress));
+        }
+        running.insert(operation.clone(), Running { lab_id: lab_id.to_owned(), op });
+        Ok(())
+    }
+
+    /// The log of operation `operation` on `lab_id`: each line an event.
+    fn log_of(&self, operation: &OperationId, lab_id: &str) -> Log {
+        let (events, operation, lab_id) = (Arc::clone(&self.events), operation.clone(), lab_id.to_owned());
+        Arc::new(move |line| events.emit(RunEvent::Log { operation: operation.clone(), lab_id: lab_id.clone(), line }))
+    }
+
+    /// Begins the operation `started` tells of (refused, nothing told, when `exclusive` and
+    /// another acts on its lab), running `work` on a task with its log; its end is told when
+    /// `work` returns, or panics.
+    pub(super) fn begin(&self, started: RunEvent, exclusive: bool, work: impl FnOnce(Log) -> BoxFuture<'static, Result<()>>) -> Result<()> {
+        let RunEvent::Started { operation, lab_id, op, .. } = &started else { return Ok(()) };
+        let (operation, lab_id, op) = (operation.clone(), lab_id.clone(), *op);
+        self.admit(&operation, &lab_id, op, exclusive)?;
         log::info!("operation {operation}: {op:?} of lab {lab_id} started");
         self.events.emit(started);
-        let log: Log = {
-            let (events, operation, lab_id) = (Arc::clone(&self.events), operation.clone(), lab_id.clone());
-            Arc::new(move |line| events.emit(RunEvent::Log { operation: operation.clone(), lab_id: lab_id.clone(), line }))
-        };
-        let work = work(log);
-        let (events, running, id) = (Arc::clone(&self.events), Arc::clone(&self.running), operation.clone());
-        let task = tauri::async_runtime::spawn(async move {
-            let error = work.await.err().map(|e| e.to_wire());
-            end(&events, &running, &id, error);
+        let work = work(self.log_of(&operation, &lab_id));
+        let (events, running) = (Arc::clone(&self.events), Arc::clone(&self.running));
+        tauri::async_runtime::spawn(async move {
+            let error = unpanicked(work).await.err().map(|e| e.to_wire());
+            end(&events, &running, &operation, error);
         });
-        if let Some(r) = self.running.lock().unwrap_or_else(PoisonError::into_inner).get_mut(&operation) {
-            r.task = Some(task);
-        }
+        Ok(())
+    }
+
+    /// Runs `work`, operation `op` on lab `id` started outside a request (the website agent's
+    /// launch and teardown), here and now, told as an operation like the others: its start, its
+    /// log lines, its end. Never refused: what it does takes the lab's lock itself.
+    ///
+    /// # Errors
+    ///
+    /// What `work` returns, or its panic as an error.
+    pub(crate) async fn observe<T, F>(&self, id: &str, op: Operation, runtime: Option<Runtime>, work: impl FnOnce(Log) -> F) -> Result<T>
+    where
+        F: Future<Output = Result<T>>,
+    {
+        let operation = OperationId::new();
+        self.admit(&operation, id, op, false)?;
+        log::info!("operation {operation}: {op:?} of lab {id} started");
+        let deploying = !matches!(op, Operation::Stop | Operation::Pause | Operation::Shutdown);
+        self.events.emit(RunEvent::Started { operation: operation.clone(), lab_id: id.to_owned(), op, machine: None, runtime, deploying, at: now_ms() });
+        let out = unpanicked(work(self.log_of(&operation, id))).await;
+        end(&self.events, &self.running, &operation, out.as_ref().err().map(Error::to_wire));
+        out
     }
 }
 
-/// Tells operation `id`'s end (failed with `error`, or done), once: whoever ends it first (the
-/// operation itself, or a cancel) tells it.
+/// `work`'s result, a panic in it as an error: an operation that panics still ends (its lab no
+/// longer busy, its page no longer waiting).
+async fn unpanicked<T>(work: impl Future<Output = Result<T>>) -> Result<T> {
+    crate::platform::unwind::CatchUnwind(Box::pin(work))
+        .await
+        .unwrap_or_else(|panic| Err(Error::Invalid(format!("the operation stopped on an internal error: {}", crate::platform::unwind::panic_message(&*panic)))))
+}
+
+/// Tells operation `id`'s end (failed with `error`, or done), once.
 fn end(events: &EventLog, running: &Mutex<HashMap<OperationId, Running>>, id: &OperationId, error: Option<Wire>) {
     let Some(r) = running.lock().unwrap_or_else(PoisonError::into_inner).remove(id) else { return };
     match &error {
@@ -95,9 +152,6 @@ impl RunService for LocalRunService {
     fn start(&self, request: Request) -> Result<OperationId> {
         let lab_id = request.lab_id().to_owned();
         crate::runtime::validate_id(&lab_id)?;
-        if !matches!(request, Request::Stop { .. }) && self.busy(&lab_id) {
-            return Err(Error::coded(Code::AlreadyInProgress));
-        }
         let operation = OperationId::new();
         let started = RunEvent::Started {
             operation: operation.clone(),
@@ -108,26 +162,11 @@ impl RunService for LocalRunService {
             deploying: request.deploying(),
             at: now_ms(),
         };
-        let in_worker = !matches!(request, Request::Stop { .. } | Request::AttachBox { .. } | Request::DetachBox { .. });
+        // A stop is never refused: it ends what runs on the lab first.
+        let exclusive = !matches!(request, Request::Stop { .. });
         let dirs = self.dirs.clone();
-        self.begin(started, in_worker, move |log| Box::pin(async move { execute(&dirs, request, log).await }));
+        self.begin(started, exclusive, move |log| Box::pin(async move { execute(&dirs, request, log).await }))?;
         Ok(operation)
-    }
-
-    fn cancel(&self, operation: &OperationId) -> BoxFuture<'_, ()> {
-        let operation = operation.clone();
-        Box::pin(async move {
-            let found = self.running.lock().unwrap_or_else(PoisonError::into_inner).get_mut(&operation).map(|r| (r.lab_id.clone(), r.in_worker, r.task.take()));
-            let Some((lab_id, in_worker, task)) = found else { return };
-            if in_worker {
-                deploy_worker::kill_and_wait(&self.dirs, &lab_id).await;
-            }
-            if let Some(task) = task {
-                task.abort();
-            }
-            let cancelled = Error::Invalid("the operation was cancelled before it ended".into());
-            end(&self.events, &self.running, &operation, Some(cancelled.to_wire()));
-        })
     }
 
     fn events(&self) -> &EventLog {
@@ -141,9 +180,8 @@ impl RunService for LocalRunService {
                 continue;
             }
             let (op, machine) = crate::app::operations::worker_op(&job.op);
-            let operation = OperationId::new();
             let started = RunEvent::Started {
-                operation: operation.clone(),
+                operation: OperationId::new(),
                 lab_id: job.lab_id.clone(),
                 op,
                 machine,
@@ -152,7 +190,8 @@ impl RunService for LocalRunService {
                 at: now_ms(),
             };
             let (dirs, id) = (dirs.clone(), job.lab_id.clone());
-            self.begin(started, true, move |log| Box::pin(async move { deploy_worker::follow(&dirs, &id, move |line| log(line)).await }));
+            // Taken meanwhile by an operation of this app: that one tells it.
+            let _ = self.begin(started, true, move |log| Box::pin(async move { deploy_worker::follow(&dirs, &id, move |line| log(line)).await }));
         }
     }
 }

@@ -39,7 +39,7 @@ export function restartOnUpdate(): Promise<void> {
 /**
  * Downloads and installs `update`. Installing quits every Cyber CTF process, the deploy workers
  * included, so it waits while any lab operation runs, a stop or a pause as much as a start
- * (`busyLabs`, asked again now: the polled set can be a few seconds old), and also when that
+ * (`busyLabs`, asked again now: the operations the window holds can lag a moment behind), and also when that
  * can't be told. Each way it doesn't install is told; `starting` runs once the download begins.
  * True once the update is installed.
  */

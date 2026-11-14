@@ -661,9 +661,9 @@ mod tests {
         assert!(terraform_launch(&launch, &Ok(Some(Provider::Proxmox))));
         assert!(!terraform_launch(&launch, &Ok(Some(Provider::VmwareEsxi))));
         assert!(!terraform_launch(&launch, &Ok(None)));
-        // Regression: an unreadable server.json read as "no such host", so a Terraform launch was
+        // Regression: an unreadable server list read as "no such host", so a Terraform launch was
         // killed outright mid-apply. Now a launch on any host is interrupted first.
-        assert!(terraform_launch(&launch, &Err(crate::error::Error::Invalid("server.json: broken".into()))));
+        assert!(terraform_launch(&launch, &Err(crate::error::Error::Invalid("the launcher's store: broken".into()))));
         let here = on(None, super::super::Op::Launch);
         assert!(!terraform_launch(&here, &Ok(None)));
         let park = on(Some("h"), super::super::Op::Park { runtime: crate::runtime::Runtime::Vm, mode: crate::runtime::Park::Pause });

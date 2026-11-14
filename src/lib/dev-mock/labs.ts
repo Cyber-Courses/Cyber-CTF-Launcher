@@ -1,3 +1,4 @@
+import type { ActiveOperation } from "@/lib/tauri/run-events";
 import type { ImportedLab, LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
 import { argText } from "@/lib/dev-mock/command";
 import { objectivesAnswer } from "@/lib/dev-mock/objectives";
@@ -264,8 +265,6 @@ export const labCommands = {
   lab_run_options: (args) => runOptions(args?.runtime),
   running_labs: () => ["lab-invoice"],
   busy_labs: () => ["lab-goad"],
-  active_operations: () => [{ labId: "lab-goad", op: "launch", machine: "SRV02", deploying: true, step: "Configure SRV02 (ansible 41/88)" }],
-  lab_deploy_log: () => "",
   lab_tools: () => [{ name: "Burp Suite", image: null, addresses: [{ network: "default", ip: "10.42.0.9" }], publish: null }],
   // No lab imported from a folder in the sample (the preview's `imported` switch adds one).
   imported_labs: () => [],
@@ -340,3 +339,9 @@ export function runOptions(runtime: unknown): LabRunOptions {
     cloudDocker: clouds(),
   };
 }
+
+/** The operations the sample's core is running when the preview opens (a run event replay's
+ *  first events): GOAD deploying, at its SRV02 step. */
+export const SAMPLE_IN_FLIGHT: ActiveOperation[] = [
+  { labId: "lab-goad", op: "launch", machine: "SRV02", deploying: true, step: "Configure SRV02 (ansible 41/88)" },
+];

@@ -23,7 +23,6 @@ const COMMANDS: &[&str] = &[
     "azure_subscriptions",
     "busy_labs",
     "run_events",
-    "operation_cancel",
     "cloud_login",
     "cloud_login_cancel",
     "confirm_launch",

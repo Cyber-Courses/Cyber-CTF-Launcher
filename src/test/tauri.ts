@@ -9,6 +9,7 @@ import { backendCommands, callable } from "@/test/backend-commands";
 import { recordUncallable } from "@/test/uncallable";
 import { resetInFlight, track, waitForAnswers } from "@/test/in-flight";
 import { isOperation, replay, resetRunService, startOperation } from "@/lib/dev-mock/run-service";
+import { SAMPLE_IN_FLIGHT } from "@/lib/dev-mock/labs";
 import type { ActiveOperation } from "@/lib/tauri/run-events";
 
 export type Handler = (args: Record<string, unknown> | undefined) => unknown;
@@ -182,7 +183,10 @@ export function installTauri(overrides: Partial<Record<string, Handler>> = {}): 
       // The core's run service: an operation answers its id, its log and end are run events.
       if (isOperation(cmd)) return startOperation(cmd, a, (withLogs) => handle(cmd, withLogs));
       if (cmd === "run_events" && !overrides.run_events)
-        return replay((a?.after as number | null) ?? null, (handle("active_operations", undefined) as ActiveOperation[] | null) ?? []);
+        return replay(
+          (a?.after as number | null) ?? null,
+          (overrides.active_operations?.(undefined) as ActiveOperation[] | null | undefined) ?? SAMPLE_IN_FLIGHT,
+        );
       return handle(cmd, a);
     },
     { shouldMockEvents: true },
