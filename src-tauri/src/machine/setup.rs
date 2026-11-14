@@ -4,16 +4,16 @@
 //! - the machine check carries, for each choice the setup window offers, what that choice takes
 //!   here ([`Options`], the report's `setup`): the window renders those actions and runs each
 //!   through its command, never working them out itself;
-//! - `plan` (in `setup/plan.rs`) puts them in order for a whole setup, from what is wanted: the
-//!   headless entry the test rig runs on a bare machine (`integration_tests::setup`, built with
-//!   the library's tests, its only caller: the window walks the same options step by step).
+//! - `plan` (in `setup/plan.rs`) puts them in order for a whole setup, from what is wanted, and
+//!   `run::walk` runs it step by step: the command line's `machine setup` and the headless entry
+//!   the test rig runs on a bare machine (`integration_tests::setup`); the window walks the same
+//!   options one click at a time.
 
-#[cfg(test)]
 mod plan;
+pub(crate) mod run;
 #[cfg(test)]
 pub(crate) mod shapes;
 
-#[cfg(test)]
 pub(crate) use plan::{Plan, SetupPath, Step, Wanted, plan};
 
 use serde::Serialize;
