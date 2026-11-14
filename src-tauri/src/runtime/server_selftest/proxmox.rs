@@ -40,6 +40,7 @@ impl TestRun for OnServer {
     async fn up(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()> {
         self.run.up(&self.place, &[], &mut |l| log(l)).await
     }
+    #[expect(clippy::unused_async_trait_impl, reason = "the trait's checks are async; a Proxmox run's has nothing to wait for")]
     async fn check(&self) -> Result<Check> {
         Ok(self.run.check())
     }

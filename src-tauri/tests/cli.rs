@@ -2,6 +2,7 @@
 //! system (no `DISPLAY`, no `WAYLAND_DISPLAY`), no tools on its PATH. Its JSON lines' shape and its
 //! exit codes, and (Linux) that it links no GUI library: it must run where no display is.
 #![allow(clippy::unwrap_used, clippy::panic, reason = "a test's helpers fail it by panicking, as its assertions do")]
+#![expect(clippy::disallowed_methods, reason = "it runs the executable it tests, as a script does")]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

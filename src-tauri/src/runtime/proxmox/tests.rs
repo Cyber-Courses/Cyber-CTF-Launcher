@@ -365,7 +365,7 @@ async fn a_self_signed_host_gets_no_credential_until_its_certificate_is_confirme
     let mut h = HostProfile { port, insecure_tls: true, ..host("127.0.0.1", None) };
     match sign_in(&h, "pw").await {
         Err(SignInError::Certificate(Refusal::Unconfirmed { presented }, server)) => {
-            assert_eq!((presented.to_string(), server.as_str()), (FINGERPRINT_A.to_owned(), "t"))
+            assert_eq!((presented.to_string(), server.as_str()), (FINGERPRINT_A.to_owned(), "t"));
         }
         other => panic!("{:?}", other.err()),
     }
