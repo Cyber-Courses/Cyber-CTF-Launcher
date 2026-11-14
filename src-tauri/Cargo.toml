@@ -114,7 +114,7 @@ reqwest = { version = "0.13", features = ["json", "form"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
-# layered crates, the published crates.io 2.0 line. Only `src/runtime/lab/` calls them:
+# layered crates, the 3.0 line. Only `src/runtime/lab/` calls them:
 # the spec (`isoloom-spec`), the backends' registry and the resolved snapshot
 # (`isoloom-targets`).
 isoloom-spec = "3.0.0"
