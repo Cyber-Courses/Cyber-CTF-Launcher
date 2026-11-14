@@ -4,6 +4,8 @@ import type { CommandError } from "@/lib/errors";
 import { PROXMOX_PLACEMENT } from "@/lib/dev-mock/proxmox-sample";
 import { destructive, warnings } from "@/lib/confirm";
 import { translate } from "@/lib/i18n";
+import { backendCommands, callable } from "@/test/backend-commands";
+import { recordUncallable } from "@/test/uncallable";
 
 export type Handler = (args: Record<string, unknown> | undefined) => unknown;
 export interface Call {
@@ -51,7 +53,7 @@ export const dialogsAsked = (calls: Call[]) =>
   calls.filter((c) => c.cmd === "plugin:dialog|message").map((c) => ({ title: c.args?.title, message: c.args?.message }));
 
 // Commands the browser dev mock leaves unanswered (null), with a plausible answer for tests.
-const DEFAULTS: Partial<Record<string, Handler>> = {
+export const DEFAULTS: Partial<Record<string, Handler>> = {
   // The player confirms what they asked for, unless a test answers otherwise.
   "plugin:dialog|message": answersDialog(true),
   installed_tools: () => [{ dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 }],
@@ -129,6 +131,8 @@ function answerInAppDialogs(calls: Call[], handler: Handler | undefined) {
   };
 }
 
+const REGISTERED = backendCommands();
+
 export function installTauri(overrides: Partial<Record<string, Handler>> = {}): Call[] {
   const calls: Call[] = [];
   answerInAppDialogs(calls, overrides["plugin:dialog|message"] ?? DEFAULTS["plugin:dialog|message"]);
@@ -137,6 +141,10 @@ export function installTauri(overrides: Partial<Record<string, Handler>> = {}): 
     (cmd, args) => {
       const a = args as Record<string, unknown> | undefined;
       calls.push({ cmd, args: a });
+      if (!callable(REGISTERED, cmd)) {
+        recordUncallable(cmd);
+        throw new Error(`\`${cmd}\` isn't a command the Rust core registers (src-tauri/build.rs)`);
+      }
       const handler = overrides[cmd] ?? DEFAULTS[cmd];
       return handler ? handler(a) : answer(cmd, a);
     },
