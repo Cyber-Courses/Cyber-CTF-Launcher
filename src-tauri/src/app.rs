@@ -211,7 +211,7 @@ fn own_tool_dirs(identifier: &str, test_root: Option<&std::path::Path>) -> Vec<P
 }
 
 /// The job file when this process was started as a deploy worker (`<exe> deploy --job <file>`).
-fn worker_job(args: impl IntoIterator<Item = String>) -> Option<PathBuf> {
+pub(crate) fn worker_job(args: impl IntoIterator<Item = String>) -> Option<PathBuf> {
     let args: Vec<String> = args.into_iter().collect();
     match args.as_slice() {
         [_, deploy, flag, job, ..] if deploy == "deploy" && flag == "--job" => Some(PathBuf::from(job)),

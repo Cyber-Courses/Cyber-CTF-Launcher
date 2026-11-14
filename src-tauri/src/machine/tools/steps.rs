@@ -40,6 +40,9 @@ fn is_pkexec_error(line: &str) -> bool {
     line.starts_with("Error executing command as another user") || line.starts_with("Error creating textual authentication agent")
 }
 
+/// An unattended root step sudo refused to run without a password: nothing was changed.
+pub const SUDO_REFUSED: &str = "sudo needs a password to act as an administrator here, and none can be asked for unattended, so nothing was changed. Run it as root, or on a terminal without --yes.";
+
 /// What to tell the player when pkexec itself refused to run the command.
 fn pkexec_refusal(stderr: &str) -> &'static str {
     if stderr.contains("No authentication agent") || stderr.contains("textual authentication agent") {
@@ -162,37 +165,35 @@ async fn run_step_once(step: &Step, on_line: &mut impl FnMut(String)) -> Result<
 /// output (the first one seen: an update's lock error comes before the install error it leads
 /// to, so it wins; shown only if the step fails).
 struct Watch {
-    winget: bool,
-    pkexec: bool,
+    /// The program the step runs, as far as its output is read.
+    program: Program,
     brew: bool,
     installer_code: Option<u32>,
     pkexec_error: Option<String>,
+    /// sudo's refusal to run without a password, when it said so.
+    sudo_refused: bool,
     brew_help: Option<&'static str>,
 }
 
 impl Watch {
     fn new(step: &Step) -> Watch {
-        Watch {
-            winget: step.program == "winget",
-            pkexec: step.program == "pkexec",
-            brew: is_brew_step(step),
-            installer_code: None,
-            pkexec_error: None,
-            brew_help: None,
-        }
+        Watch { program: Program::of(step), brew: is_brew_step(step), installer_code: None, pkexec_error: None, sudo_refused: false, brew_help: None }
     }
 
     /// A line of the step's output, either stream.
     fn line(&mut self, line: &str) {
-        if self.winget {
+        if self.program == Program::Winget {
             self.installer_code = exit_codes::installer_exit_code(line).or(self.installer_code);
         }
     }
 
     /// A line of the step's error output.
     fn error_line(&mut self, line: &str) {
-        if self.pkexec && is_pkexec_error(line) {
+        if self.program == Program::Pkexec && is_pkexec_error(line) {
             self.pkexec_error = Some(line.to_string());
+        }
+        if self.program == Program::UnattendedSudo && line.starts_with("sudo: ") && line.contains("password") {
+            self.sudo_refused = true;
         }
         if self.brew && self.brew_help.is_none() {
             self.brew_help = brew_trouble(line);
@@ -208,6 +209,9 @@ impl Watch {
         if let Some(why) = self.pkexec_error.filter(|_| matches!(status.code(), Some(126 | 127))) {
             return Err(Error::Invalid(pkexec_refusal(&why).into()));
         }
+        if self.sudo_refused && !status.success() {
+            return Err(Error::Refused(SUDO_REFUSED.into()));
+        }
         let verb = if step.args.first().is_some_and(|a| a == "uninstall") { Verb::Remove } else { Verb::Install };
         match end_of(&step.program, verb, status.code(), self.installer_code) {
             End::Done(note) => Ok(note),
@@ -220,6 +224,31 @@ impl Watch {
                     None => format!("`{}` exited with {status}", step.program),
                 },
             })),
+        }
+    }
+}
+
+/// The programs whose output a step's watch reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Program {
+    /// winget: the installer it ran exits with a code of its own.
+    Winget,
+    /// pkexec: its own refusals, told apart from the script's.
+    Pkexec,
+    /// `sudo -n` (an unattended root step): its refusal to run without a password.
+    UnattendedSudo,
+    /// Any other.
+    Other,
+}
+
+impl Program {
+    /// The program `step` runs.
+    fn of(step: &Step) -> Program {
+        match step.program.as_str() {
+            "winget" => Program::Winget,
+            "pkexec" => Program::Pkexec,
+            "sudo" if step.args.first().is_some_and(|a| a == "-n") => Program::UnattendedSudo,
+            _ => Program::Other,
         }
     }
 }

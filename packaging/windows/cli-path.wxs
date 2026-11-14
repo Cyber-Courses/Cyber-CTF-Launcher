@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The MSI's optional PATH entry for the command line, cyberctf.exe, which Tauri installs next to
+  the app's executable (every binary of the package). Off by default; `msiexec /i <msi> CLIPATH=1`
+  puts the install folder at the end of the machine's PATH, and the uninstall takes it off.
+  Referenced from tauri.conf.json (bundle.windows.wix: fragmentPaths, componentRefs).
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="CliPathEntry" Guid="29dc5737-000c-5477-b969-6fa5218dd185" KeyPath="yes">
+        <Condition><![CDATA[CLIPATH = "1"]]></Condition>
+        <Environment Id="CliPathEntryPath" Name="PATH" Value="[INSTALLDIR]" Part="last" Action="set" System="yes" Permanent="no" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

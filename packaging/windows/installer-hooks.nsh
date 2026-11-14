@@ -20,3 +20,25 @@
   Pop $0
   DetailPrint "Removing the self-test VM: exit code $0"
 !macroend
+
+; The command line, cyberctf.exe, is installed next to the app's executable (Tauri copies every
+; binary of the package). Run with /CLIPATH, the installer also puts the install folder on the
+; user's PATH, so `cyberctf` runs from any terminal; the uninstaller takes it off again whether or
+; not it was put there. PowerShell reads and writes the user's PATH as the registry keeps it
+; (REG_EXPAND_SZ), entry by entry, so nothing else on it changes and a second install adds nothing;
+; clearing a variable through .NET then tells Explorer the environment changed, so a terminal opened
+; from it next sees the new PATH.
+!macro NSIS_HOOK_POSTINSTALL
+  ClearErrors
+  ${GetOptions} $CMDLINE "/CLIPATH" $0
+  ${IfNot} ${Errors}
+    nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$$d = $\'$INSTDIR$\'; $$k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($\'Environment$\', $$true); $$p = $$k.GetValue($\'Path$\', $\'$\', $\'DoNotExpandEnvironmentNames$\'); $$e = @($$p -split $\';$\' | Where-Object { $$_ }); if ($$e -notcontains $$d) { $$k.SetValue($\'Path$\', (($$e + $$d) -join $\';$\'), $\'ExpandString$\'); [Environment]::SetEnvironmentVariable($\'CYBERCTF_PATH_REFRESH$\', $$null, $\'User$\') }"'
+    Pop $0
+    DetailPrint "Putting cyberctf on PATH: exit code $0"
+  ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$$d = $\'$INSTDIR$\'; $$k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($\'Environment$\', $$true); if ($$k) { $$p = $$k.GetValue($\'Path$\', $\'$\', $\'DoNotExpandEnvironmentNames$\'); $$e = @($$p -split $\';$\' | Where-Object { $$_ -and $$_ -ne $$d }); $$k.SetValue($\'Path$\', ($$e -join $\';$\'), $\'ExpandString$\') }"'
+  Pop $0
+!macroend

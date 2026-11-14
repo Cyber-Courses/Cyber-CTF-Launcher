@@ -14,7 +14,7 @@ use std::ffi::OsStr;
 #[cfg(target_os = "macos")]
 pub use unix::{boot_session, process_start};
 #[cfg(unix)]
-pub use unix::{login_name, process_exists, signal_group, signal_process};
+pub use unix::{is_root, login_name, process_exists, signal_group, signal_process};
 #[cfg(all(windows, test))]
 pub use windows::terminate;
 #[cfg(windows)]

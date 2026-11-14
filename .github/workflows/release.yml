@@ -322,7 +322,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $bundle = 'src-tauri/target/release/bundle'
           $files = @(Get-ChildItem "$bundle/nsis/*-setup.exe", "$bundle/msi/*.msi" -ErrorAction SilentlyContinue) +
-            @(Get-Item 'src-tauri/target/release/cyberctf-desktop.exe')
+            @(Get-Item 'src-tauri/target/release/cyberctf-desktop.exe', 'src-tauri/target/release/cyberctf.exe')
           if (-not ($files | Where-Object { $_.Extension -in '.msi' -or $_.Name -like '*-setup.exe' })) { throw 'No installer was built.' }
           $bad = 0
           foreach ($f in $files) {

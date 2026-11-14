@@ -283,6 +283,14 @@ async fn launch(engine: &str) -> Result<String> {
         // (the guided setup's test entry under a redirect) waited for Docker Desktop to quit.
         #[cfg(windows)]
         ("windows", "docker-desktop") => crate::platform::exec::launch_detached(r"C:\Program Files\Docker\Docker\Docker Desktop.exe").map(|()| String::new()),
+        // Unattended (see `platform::elevation`): as root already, or through sudo, never asking.
+        ("linux", "docker-engine") if crate::platform::elevation::unattended() => {
+            if crate::platform::elevation::is_root() {
+                run("systemctl", &["start", "docker"], None).await
+            } else {
+                run("sudo", &["-n", "systemctl", "start", "docker"], None).await
+            }
+        }
         ("linux", "docker-engine") => run("pkexec", &["systemctl", "start", "docker"], None).await.map_err(|e| match e {
             Error::ToolMissing { .. } => Error::Invalid(crate::machine::tools::steps::NO_PKEXEC.into()),
             e => e,

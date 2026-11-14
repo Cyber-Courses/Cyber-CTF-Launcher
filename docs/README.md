@@ -5,12 +5,13 @@ the way in: what the launcher is, how to install it, and what it needs.
 
 ## Use the launcher
 
-| Page                                  | Kind     | What it covers                                                                        |
-| ------------------------------------- | -------- | ------------------------------------------------------------------------------------- |
-| [Getting started](getting-started.md) | tutorial | from a fresh install to a running lab and its attack box, on this machine with Docker |
-| [Troubleshooting](troubleshooting.md) | how-to   | sign-in, Docker, VM labs, servers and clouds, tool installs, updates                  |
-| [Signing in](signing-in.md)           | how-to   | the browser sign-in, the copy-the-link and code fallbacks, and how it works           |
-| [Getting help](../SUPPORT.md)         | how-to   | where to ask, and what to send with a bug report                                      |
+| Page                                  | Kind      | What it covers                                                                        |
+| ------------------------------------- | --------- | ------------------------------------------------------------------------------------- |
+| [Getting started](getting-started.md) | tutorial  | from a fresh install to a running lab and its attack box, on this machine with Docker |
+| [Troubleshooting](troubleshooting.md) | how-to    | sign-in, Docker, VM labs, servers and clouds, tool installs, updates                  |
+| [Signing in](signing-in.md)           | how-to    | the browser sign-in, the copy-the-link and code fallbacks, and how it works           |
+| [Getting help](../SUPPORT.md)         | how-to    | where to ask, and what to send with a bug report                                      |
+| [The command line](cli.md)            | reference | `cyberctf`: every command, its JSON lines and exit codes, the guided setup unattended |
 
 ## Deploy and administer it
 

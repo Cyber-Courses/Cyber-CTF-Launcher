@@ -5,6 +5,7 @@ use std::path::Path;
 #[cfg(unix)]
 use std::path::PathBuf;
 
+#[cfg(target_os = "macos")]
 use crate::AppHandle;
 
 use super::files::{WorkerExit, status_line};
@@ -70,9 +71,58 @@ fn start(app: &mut tauri::App<crate::AppRuntime>, job: Job) -> tauri::async_runt
     app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
     let handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
-        let code = run_logged(&handle, job).await;
+        let code = run_logged(&crate::platform::AppDirs::from(&handle), job).await;
         handle.exit(code.code());
     })
+}
+
+/// The worker's entry point without Tauri, for a worker the command line started (`cyberctf
+/// deploy --job <file>`): the same job, verdict and stop handling as [`worker_main`]'s, with no
+/// window system needed (a server or a fresh machine with no display). Its folders: the data
+/// folder the job file is in (`<data>/deploys/<key>.json`), the app's cache folder. Its log lines
+/// go to stderr, which the starter points at the job's log. Returns the process's exit code.
+pub fn headless_main(job_path: &Path) -> i32 {
+    #[cfg(windows)]
+    crate::platform::console::let_tools_take_ctrl_c();
+    let job = match files::read_job(job_path) {
+        Ok(job) => job,
+        Err(why) => {
+            fail_before_the_job(job_path, &why.to_string());
+            return WorkerExit::NoJob.code();
+        }
+    };
+    let data = job_path.parent().and_then(Path::parent).map(Path::to_path_buf);
+    let dirs = crate::platform::AppDirs::new(data, crate::platform::AppDirs::standard().cache().ok().map(Path::to_path_buf));
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            fail_before_the_job(job_path, &format!("no async runtime: {e}"));
+            return WorkerExit::NoJob.code();
+        }
+    };
+    // The run service's tasks and the runner's spawn on Tauri's async runtime: this one.
+    tauri::async_runtime::set(runtime.handle().clone());
+    runtime.block_on(async move {
+        let task = tokio::spawn(async move { run_logged(&dirs, job).await });
+        #[cfg(unix)]
+        end_tools_on_term(job_path.to_path_buf(), task.abort_handle());
+        task.await.unwrap_or(WorkerExit::Failed).code()
+    })
+}
+
+/// [`end_tools_when_stopped`] for the headless worker, whose job runs on a plain Tokio task.
+#[cfg(unix)]
+fn end_tools_on_term(job_file: PathBuf, task: tokio::task::AbortHandle) {
+    tokio::spawn(async move {
+        if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            term.recv().await;
+            crate::platform::exec::kill_live_tools();
+            task.abort();
+            crate::runtime::isothrum::stop_cut_short_tools(TOOLS_GRACE).await;
+            files::remove_job(&job_file);
+            std::process::exit(WorkerExit::Terminated.code());
+        }
+    });
 }
 
 /// How long a stopped worker waits for the runner's tools it cut short to stop on their own
@@ -146,8 +196,8 @@ fn open_main_app() {
 
 /// Runs the job, logging to its file (also this process's stdout/stderr, for panics), and leaves
 /// the verdict in the status file. Returns the process's exit code.
-async fn run_logged(app: &AppHandle, job: Job) -> WorkerExit {
-    let f = match files::of(&crate::platform::AppDirs::from(app), &job.key()) {
+async fn run_logged(dirs: &crate::platform::AppDirs, job: Job) -> WorkerExit {
+    let f = match files::of(dirs, &job.key()) {
         Ok(f) => f,
         Err(e) => {
             log::error!("deploy worker for {}: no files to run the job in: {e}", job.key());
@@ -166,12 +216,12 @@ async fn run_logged(app: &AppHandle, job: Job) -> WorkerExit {
     // The lab is this worker's for the whole job (download and install included): the app's
     // own operations on it (a stop, the expiry reaper) wait or step aside meanwhile. A lock that
     // can't be taken fails the job: running unlocked is what it is there to prevent.
-    let held = hold_lab(app, &job.lab_id).await.map(Some);
+    let held = hold_lab(dirs, &job.lab_id).await.map(Some);
     let result = match held {
         // Boxed: every operation's future is in it, too large to keep on the caller's stack. A
         // panic in it is its verdict: uncaught, it ended the job's task alone, and the worker
         // stayed up with no status written, the lab "starting" for good.
-        Ok(_lab) => CatchUnwind(Box::pin(execute(&crate::platform::AppDirs::from(app), job, &log))).await.unwrap_or_else(|panic| Err(crashed(&*panic))),
+        Ok(_lab) => CatchUnwind(Box::pin(execute(dirs, job, &log))).await.unwrap_or_else(|panic| Err(crashed(&*panic))),
         Err(e) => Err(e),
     };
     conclude(&f, &result, &op, log)
@@ -210,8 +260,8 @@ pub(super) fn sets_launch_verdict(op: &Op) -> bool {
 }
 
 /// The cross-process lock of lab `id`, waited for.
-async fn hold_lab(app: &AppHandle, id: &str) -> crate::error::Result<lab_file_lock::LabFileLock> {
-    lab_file_lock::acquire(&lab_file_lock::path(&crate::platform::AppDirs::from(app), id)?).await.map_err(lab_file_lock::unavailable)
+async fn hold_lab(dirs: &crate::platform::AppDirs, id: &str) -> crate::error::Result<lab_file_lock::LabFileLock> {
+    lab_file_lock::acquire(&lab_file_lock::path(dirs, id)?).await.map_err(lab_file_lock::unavailable)
 }
 
 /// The end of a run of `op`: the failure in the log, the verdict in the status file (and, for an
@@ -316,7 +366,7 @@ mod tests {
         std::fs::create_dir_all(crate::runtime::lab_file_lock::path(&t.dirs(), "web").unwrap()).unwrap();
         let job = Job::on_lab("web", Op::Resume { runtime: crate::runtime::Runtime::Docker });
         let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
-        assert_eq!(super::run_logged(t.handle(), job).await, WorkerExit::Failed);
+        assert_eq!(super::run_logged(&t.dirs(), job).await, WorkerExit::Failed);
         let status = std::fs::read_to_string(&f.status).unwrap();
         assert!(verdict(&status).unwrap_err().to_string().starts_with("Couldn't lock the lab"), "{status}");
         assert!(tools.calls().is_empty(), "nothing ran: {:?}", tools.calls());
@@ -335,7 +385,7 @@ mod tests {
         ] {
             let job = Job::on_lab("gone", op);
             let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
-            assert_eq!(super::run_logged(t.handle(), job).await, WorkerExit::Failed);
+            assert_eq!(super::run_logged(&t.dirs(), job).await, WorkerExit::Failed);
             let status = std::fs::read_to_string(&f.status).unwrap();
             assert!(status.starts_with("error: "), "{status}");
             assert!(std::fs::read_to_string(&f.log).unwrap().starts_with("✗["));
@@ -355,7 +405,7 @@ mod tests {
         let launch = crate::app::deploy_worker::LaunchJob { launch: crate::labs::parse_launch(spec).unwrap(), place: crate::runtime::Placement::default() };
         let job = Job { launch: Some(launch), ..Job::on_lab("web", Op::Launch) };
         let f = crate::app::deploy_worker::files::of(&t.dirs(), &job.key()).unwrap();
-        assert_eq!(super::run_logged(t.handle(), job).await, WorkerExit::Failed);
+        assert_eq!(super::run_logged(&t.dirs(), job).await, WorkerExit::Failed);
         let said = verdict(&std::fs::read_to_string(&f.status).unwrap()).unwrap_err().to_string();
         assert_eq!(said, "the deploy worker crashed: docker blew up");
         assert!(verdict(&std::fs::read_to_string(&f.launch_status).unwrap()).is_err(), "the launch failed");

@@ -95,6 +95,12 @@ pub fn boot_session() -> Option<String> {
     std::ffi::CStr::from_bytes_until_nul(text).ok().and_then(|s| s.to_str().ok()).map(str::to_owned)
 }
 
+/// Whether this process runs as root (its effective user is 0).
+pub fn is_root() -> bool {
+    // SAFETY: geteuid takes nothing, can't fail, and touches no memory of ours.
+    unsafe { libc::geteuid() == 0 }
+}
+
 #[cfg(test)]
 mod tests {
     use std::os::unix::process::CommandExt as _;

@@ -31,18 +31,23 @@ use crate::runtime::server::store::{load, update};
 #[ts(rename = "ServerList")]
 pub struct HostList {
     /// The default host's id, when one is set.
-    default: Option<String>,
+    pub(crate) default: Option<String>,
     /// Every saved server and cloud account.
-    hosts: Vec<HostProfile>,
+    pub(crate) hosts: Vec<HostProfile>,
     /// Each account's monthly budget in USD, by id: the ones a cloud launch is checked against
     /// (AWS accounts with a positive limit), whose spend the Cloud page reads.
-    budgets: std::collections::BTreeMap<String, f64>,
+    pub(crate) budgets: std::collections::BTreeMap<String, f64>,
 }
 
 /// The saved servers and cloud accounts, with the default's id.
 #[tauri::command]
 pub fn server_list(app: AppHandle) -> Result<HostList> {
-    let store = load(&AppDirs::from(&app))?;
+    host_list(&AppDirs::from(&app))
+}
+
+/// [`server_list`], in the app whose folders are `dirs`.
+pub(crate) fn host_list(dirs: &AppDirs) -> Result<HostList> {
+    let store = load(dirs)?;
     let budgets = store.hosts.iter().filter_map(|h| Some((h.id.clone(), budget_limit(h)?))).collect();
     Ok(HostList { default: store.default, hosts: store.hosts, budgets })
 }
@@ -83,7 +88,12 @@ pub async fn server_remove(app: AppHandle, id: String) -> Result<()> {
 /// Sets (or clears, with None) the host VM labs run on by default.
 #[tauri::command]
 pub fn server_set_default(app: AppHandle, id: Option<String>) -> Result<()> {
-    update(&AppDirs::from(&app), |store| set_default_host(store, id))
+    set_default_in(&AppDirs::from(&app), id)
+}
+
+/// [`server_set_default`], in the app whose folders are `dirs`.
+pub(crate) fn set_default_in(dirs: &AppDirs, id: Option<String>) -> Result<()> {
+    update(dirs, |store| set_default_host(store, id))
 }
 
 /// "Test connection" of a saved host (see `server::connection_test`).
@@ -97,7 +107,12 @@ pub async fn server_test(app: AppHandle, id: String) -> Result<TestResult> {
 /// over SSH; the setup form shows it for those hosts.
 #[tauri::command]
 pub async fn server_public_key(app: AppHandle) -> Result<String> {
-    Ok(crate::runtime::ssh::ensure_key(&AppDirs::from(&app)).await?.1)
+    public_key_in(&AppDirs::from(&app)).await
+}
+
+/// [`server_public_key`], in the app whose folders are `dirs`.
+pub(crate) async fn public_key_in(dirs: &AppDirs) -> Result<String> {
+    Ok(crate::runtime::ssh::ensure_key(dirs).await?.1)
 }
 
 /// How many installed labs are currently running on each host, keyed by host id (each lab's

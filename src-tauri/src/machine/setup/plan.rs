@@ -31,6 +31,7 @@ pub enum SetupPath {
 /// What a whole setup is for.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Wanted {
+    /// The lab types to ready the machine for.
     pub paths: Vec<SetupPath>,
     /// The engine to set up; none: the setup's own ([`Options::engine`]).
     pub engine: Option<Engine>,
@@ -43,7 +44,9 @@ pub struct Wanted {
 /// `<hypervisor>`, `plugin:<name>`, `vmware-utility`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Step {
+    /// The item it is about.
     pub item: String,
+    /// What it does.
     pub action: Action,
 }
 

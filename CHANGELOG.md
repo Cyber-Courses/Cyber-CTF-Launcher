@@ -8,6 +8,14 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **A command line, `cyberctf`.** The labs (list, show, status, install, start, stop, park,
+  resume, remove, logs), the attack box, the machine check and the whole guided setup (its plan
+  with `--dry-run`, then each step run and reported), the tools, the servers, the cloud CLIs, the
+  account and the storage, without the app's window and through the same code as the app. It runs
+  with no display (a server, a fresh VM, CI) and beside the open app; `--json` gives one versioned
+  JSON object a line, and its exit codes tell a failure (1) from a usage error (2) and from
+  something to put right first (3). See docs/cli.md.
+
 - **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
   release now ships `.rpm` packages beside the `.deb` (#322).
 

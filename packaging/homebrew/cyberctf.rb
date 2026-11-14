@@ -17,6 +17,8 @@ cask "cyberctf" do
   # updater, which a Homebrew install doesn't use.
 
   app "Cyber CTF.app"
+  # The command line, inside the bundle beside the app's executable.
+  binary "#{appdir}/Cyber CTF.app/Contents/MacOS/cyberctf"
 
   # Not removed by zap: the login keychain's items of service "org.cyberctf.desktop" (the
   # sign-in session, and a password per saved server or cloud account; delete them in Keychain
