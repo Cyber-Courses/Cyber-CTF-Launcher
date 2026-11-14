@@ -206,7 +206,7 @@ impl Paths<'_> {
             return None;
         }
         let path = self.path(Target::Docker, None);
-        match isoloom_targets::refusal(self.lab, Target::Docker) {
+        match super::refused_or_failed(isoloom_targets::refusal(self.lab, Target::Docker)) {
             Some(reason) => {
                 self.refused.push(Refusal::by_isoloom(None, path.target, reason));
                 None

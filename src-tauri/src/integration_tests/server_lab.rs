@@ -91,7 +91,7 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
                 }
                 Err(e) => check(false, format!("its status reads: {e}"), f),
             }
-            checks_pass(run.check().await, f);
+            checks_pass(Ok(run.check()), f);
         },
         async |f: &mut Vec<String>| {
             let down = run.down(&place, &mut log("pve")).await;

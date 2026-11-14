@@ -11,9 +11,9 @@
 //! This module is the launcher's one door to Isoloom's spec and generators (`isoloom-spec`,
 //! `isoloom-targets`: used nowhere else, their types re-exported from here): the spec, the
 //! generated files, the resolved snapshot, the checks and each launch path's tier evidence
-//! (`tiers`) go through it, and so do Isoloom's path and naming conventions (`names`). The run
-//! manifest those generators write is the Isothrum runner's input: its types (`isoloom-manifest`)
-//! are read by `runtime/isothrum` alone. The launcher's own conventions sit on top:
+//! (`tiers`) go through it, and so do Isoloom's path and naming conventions (`names`). The native
+//! files those generators write (a Compose file, a Vagrantfile, a Terraform module) are what the
+//! Isothrum runner opens, by their folder. The launcher's own conventions sit on top:
 //! its overrides of the generated files (`overrides`, applied after Isoloom's defaults) and the
 //! variables it gives Isoloom's Terraform modules from its hosts and cloud accounts (`vars`).
 //! Isoloom only converts: it keeps no registry of running labs and probes no host, so neither
@@ -223,7 +223,7 @@ pub fn prepare(dir: &Path, target: Target) -> Result<Prepared> {
 }
 
 /// `target`'s files for `lab`, as Isoloom generates them: the plan rendered by the target's
-/// backend, its run manifest (`<target>/run.json`) when it has one, and the resolved snapshot;
+/// backend and the resolved snapshot;
 /// for instance `n`, the lab as that instance and everything under `.isoloom-<n>/`. Refused,
 /// with the backend's reason, when the lab's machines don't allow the target or the plan needs
 /// what the backend can't do.
@@ -375,14 +375,24 @@ async fn fetch_spec(url: String) -> Result<String> {
 /// cloud), if it won't: its VMs on a Vagrant provider (`qemu`, `hyperv`, …: a TPM, data disks; on
 /// `utm`, none at all), a cloud whose `cloud-vm` module it drops
 /// (a Windows machine given secrets on AWS or Azure), or the target itself. Isoloom's own rule, so
-/// the launcher refuses exactly what the generated files would.
+/// the launcher refuses exactly what the generated files would. A lab Isoloom can neither refuse
+/// nor generate there is refused with what Isoloom says of it: its generation would fail too.
 pub fn refusal_on(lab: &Lab, target: Target, provider: crate::runtime::providers::Provider) -> Option<String> {
-    if target == Target::CloudVm {
-        return isoloom_targets::refusal(lab, target)
-            .or_else(|| isoloom_targets::cloud_refusals(lab, target)?.refused.into_iter().find(|r| r.cloud == provider.id()).map(|r| r.reason));
-    }
-    let variant = (target == Target::Vagrant).then(|| provider.id());
-    isoloom_targets::refusal_on(lab, target, variant)
+    let decided = if target == Target::CloudVm {
+        isoloom_targets::refusal(lab, target).and_then(|refused| match refused {
+            Some(reason) => Ok(Some(reason)),
+            None => Ok(isoloom_targets::cloud_refusals(lab, target)?
+                .and_then(|clouds| clouds.refused.into_iter().find(|r| r.cloud == provider.id()).map(|r| r.reason))),
+        })
+    } else {
+        isoloom_targets::refusal_on(lab, target, (target == Target::Vagrant).then(|| provider.id()))
+    };
+    refused_or_failed(decided)
+}
+
+/// Isoloom's refusal, or what it says when it can't decide (its generation would fail too).
+pub fn refused_or_failed(decided: std::result::Result<Option<String>, isoloom_targets::GenerateError>) -> Option<String> {
+    decided.unwrap_or_else(|e| Some(e.to_string()))
 }
 
 #[cfg(test)]

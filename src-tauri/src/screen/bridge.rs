@@ -32,6 +32,7 @@ use crate::platform::loopback_http::{ct_eq, header};
 
 /// Where the bridge relays to.
 #[derive(Clone)]
+#[allow(dead_code, reason = "the screens come back with the runner's console offers")]
 pub(crate) enum Target {
     /// A TCP port speaking VNC.
     Tcp(SocketAddr),

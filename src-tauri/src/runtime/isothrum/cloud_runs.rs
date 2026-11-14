@@ -1,32 +1,29 @@
 //! A lab in the player's cloud account through the Isothrum runner, as VMs (`cloud-vm`) or as
-//! its containers in a VM (`cloud-docker`): the run manifest Isoloom writes beside its Terraform
-//! module (`.isoloom[-<n>]/cloud-vm/<cloud>/run.json`,
-//! `.isoloom[-<n>]/cloud-docker/<cloud>/run.json`), run through the runner's operations instead
-//! of the launcher's own Terraform path.
+//! its containers in a VM (`cloud-docker`): the Terraform module Isoloom writes
+//! (`.isoloom[-<n>]/cloud-vm/<cloud>/`, `.isoloom[-<n>]/cloud-docker/<cloud>/`), run through the
+//! runner's operations instead of the launcher's own Terraform path.
 //!
 //! What stays the launcher's (policy, never execution): the run's name (`cyberctf-<lab id>`), the
 //! AWS budget guard, this machine's public IP for the firewall, the GCP labs project, and turning
 //! the player's cloud account into the module's inputs. The runner keeps the Terraform state, the
-//! run's record and the expiry a destroy replays; it reads the module's `ssh_user` output and
-//! waits on the project delivery, so a cloud lab now actually comes up, is sealed and checked.
+//! run's record and its expiry.
 
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use isoloom_manifest::{Manifest, SetBy};
-use isothrum_runner::{RunName, RunOptions, RunRecord, Runner, SecretValue, Secrets};
+use isothrum_runner::{Format, RunName, RunOptions, RunRecord, Runner, SecretValue, Secrets};
 
 use super::opened::OpenedRun;
-use super::{errors, progress, regenerate, view};
+use super::{errors, progress, view};
 use crate::error::{Code, Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::paths::lab_dir_in;
 use crate::runtime::server::sign_in::sign_in_question;
 use crate::runtime::{LabStatus, Place, Runtime, lab};
 
-/// The account environment names the launcher passes to the module as **parameters** (not
+/// The account environment names the launcher passes to the module as plain values (not
 /// secrets): a chosen AWS CLI profile and the region. Everything else in the account's Terraform
-/// environment is a credential, delivered as a connection secret.
+/// environment is a credential, delivered as a secret.
 const PARAM_ENV: [&str; 3] = ["AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION"];
 
 /// Where a cloud lab runs, as the launcher resolved it from the player's account.
@@ -69,8 +66,8 @@ impl CloudPlace {
         }
     }
 
-    /// The run's connection secrets: every credential in the account's environment (a value no
-    /// manifest slot takes is never delivered), by its environment-variable name.
+    /// The run's secrets: every credential in the account's environment, by its
+    /// environment-variable name.
     fn secrets(&self, env: &[(String, String)]) -> Secrets {
         let mut secrets = Secrets::new();
         for (k, v) in self.tf_env.iter().filter(|(k, _)| !PARAM_ENV.contains(&k.as_str())) {
@@ -83,8 +80,8 @@ impl CloudPlace {
         secrets
     }
 
-    /// The module's parameters: the region, the firewall CIDR, and a chosen AWS CLI profile.
-    fn params(&self) -> Vec<(String, String)> {
+    /// The module's plain values: the region, the firewall CIDR, and a chosen AWS CLI profile.
+    fn values(&self) -> Vec<(String, String)> {
         let mut params = Vec::new();
         if let Some(region) = &self.region {
             params.push(("region".to_owned(), region.clone()));
@@ -99,10 +96,9 @@ impl CloudPlace {
     }
 
     /// Where a module of the lab's own (cloud services) works, as its provider reads it from the
-    /// environment, for each that `manifest` takes as a param (Isoloom's placement, left out when
-    /// the lab's `cloud.env` sets it): the account's AWS region, Azure subscription, Google Cloud
-    /// project and region. A start refuses a param its manifest doesn't take: only those it does.
-    fn placement(&self, manifest: &Manifest) -> Vec<(String, String)> {
+    /// environment: the account's AWS region, Azure subscription, Google Cloud project and region,
+    /// each that the account has.
+    fn placement(&self) -> Vec<(String, String)> {
         let env = |name: &str| self.tf_env.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
         let candidates = [
             ("AWS_REGION", env("AWS_REGION").or_else(|| env("AWS_DEFAULT_REGION")).or_else(|| self.region.clone())),
@@ -110,15 +106,14 @@ impl CloudPlace {
             ("GOOGLE_PROJECT", self.project.clone()),
             ("GOOGLE_REGION", self.region.clone()),
         ];
-        let takes = |name: &str| manifest.params.iter().any(|p| p.set_by == SetBy::Embedder && p.name.as_str() == name);
-        candidates.into_iter().filter(|(name, _)| takes(name)).filter_map(|(name, value)| Some((name.to_owned(), value?))).collect()
+        candidates.into_iter().filter_map(|(name, value)| Some((name.to_owned(), value?))).collect()
     }
 
-    /// The options of an operation on this account's run of `manifest`, with the launch's values
-    /// `env`.
-    pub(crate) fn options(&self, env: &[(String, String)], manifest: &Manifest) -> RunOptions {
-        let params = self.params().into_iter().chain(self.placement(manifest));
-        let opts = RunOptions::new().with_secrets(self.secrets(env)).with_params(params).with_host_label(&self.label);
+    /// The options of an operation on this account's run, with the launch's values `env`.
+    pub(crate) fn options(&self, env: &[(String, String)]) -> RunOptions {
+        let values = self.values().into_iter().chain(self.placement());
+        let opts = values.fold(RunOptions::new(), |o, (k, v)| o.with_env(k, v));
+        let opts = opts.with_secrets(self.secrets(env)).with_host_label(&self.label);
         match self.lifetime {
             Some(lifetime) => opts.with_lifetime(lifetime),
             None => opts,
@@ -152,7 +147,7 @@ impl CloudRun {
         let config = super::host_config(home, None);
         let (out, target) = lab::terraform(dir, runtime, cloud);
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
-        Ok(CloudRun { run: OpenedRun::new(config, dir, Some(target), out.join("run.json"), name)?, cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(config, dir, Some(target), out, name)?, cloud: cloud.to_owned() })
     }
 
     /// Refuses a change while the account's sign-in has run out, before anything runs: the
@@ -177,8 +172,10 @@ impl CloudRun {
     /// start. `env` is the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        let running = self.running().await?;
-        super::up_with(&running, &place.options(env, running.manifest()), log).await
+        super::up_with(&self.running().await?, &place.options(env), log).await?;
+        let message = self.target().and_then(|t| super::described::message(&self.dir, t));
+        message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
+        Ok(())
     }
 
     /// Brings the running lab up to date with its regenerated module (a machine added to the lab
@@ -186,16 +183,14 @@ impl CloudRun {
     /// they were given.
     pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        let running = self.running().await?;
-        super::update_of(&running, &place.options(&[], running.manifest()), log).await
+        super::update_of(&self.running().await?, &place.options(&[]), log).await
     }
 
     /// Takes `machine` out of the running lab ahead of its removal from the module, with the
     /// account's credentials (`place`'s).
     pub(crate) async fn retire(&self, place: &CloudPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        let running = self.running().await?;
-        super::retire_from(&running, machine, &place.options(&[], running.manifest()), log).await
+        super::retire_from(&self.running().await?, machine, &place.options(&[]), log).await
     }
 
     /// Removes everything the run created in the account, with the parameters it was applied with
@@ -203,52 +198,55 @@ impl CloudRun {
     pub(crate) async fn down(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
         // A run whose module was never generated created nothing in the account: a clean no-op,
         // as the other runner paths tolerate (without this, tearing down a lab that was never
-        // deployed errors on the missing run.json).
-        if !self.manifest.is_file() {
+        // deployed errors on the missing module).
+        if !self.has_project() {
             log("Nothing to remove: the run has no files.".to_owned());
             return Ok(());
         }
         self.signed_in(place).await?;
         let running = self.running().await?;
         let (sink, lines) = progress::channel();
-        progress::follow(log, lines, running.down(&place.options(&[], running.manifest()), &sink)).await.map_err(errors::from_runner)
+        progress::follow(log, lines, running.down(&place.options(&[]), &sink)).await.map_err(errors::from_runner)
     }
 
     /// The lab as its page shows it (place `Cloud`); not running before its module was ever
     /// generated. The caller fills the account's name and the cloud's id (`status::on_server`).
     pub(crate) async fn status(&self) -> Result<LabStatus> {
-        if !self.manifest.is_file() {
+        if !self.has_project() {
             return Ok(LabStatus { place: Some(Place::Cloud), ..LabStatus::default() });
         }
         let running = self.running().await?;
         let status = running.status().await.map_err(errors::from_runner)?;
-        Ok(LabStatus { place: Some(Place::Cloud), ..view::lab_status(running.manifest(), &status, None) })
+        let form = if self.target() == Some(lab::Target::CloudDocker) { super::described::Form::Containers } else { super::described::Form::Vms };
+        let described = super::described::Described::of(&self.dir, form)?;
+        Ok(LabStatus { place: Some(Place::Cloud), ..view::lab_status(&described, &status, None) })
     }
 
-    /// Runs the lab's checks over SSH; not available when the lab declares none, or before its
-    /// module was ever generated (nothing is deployed to check).
-    pub(crate) async fn check(&self, place: &CloudPlace) -> Result<Check> {
-        if !self.manifest.is_file() {
-            return Ok(Check::default());
-        }
-        let running = self.running().await?;
-        super::checks_of(&running, &place.options(&[], running.manifest())).await
+    /// The lab's checks: not available in a cloud account yet (the runner runs no command in a
+    /// Terraform module's VMs).
+    pub(crate) fn check(&self, _place: &CloudPlace) -> Check {
+        Check::default()
     }
 }
 
-/// The account's credentials as the run's connection secrets, for a destroy (a value no manifest
-/// slot takes is never delivered).
-fn connection_secrets(tf_env: &[(String, String)]) -> Secrets {
+/// A destroy's options with the account's environment `tf_env`: its credentials as secrets, its
+/// profile and region as plain values.
+fn destroy_options(tf_env: &[(String, String)]) -> RunOptions {
     let mut secrets = Secrets::new();
-    for (k, v) in tf_env.iter().filter(|(k, _)| !PARAM_ENV.contains(&k.as_str())) {
-        secrets.insert(k.clone(), SecretValue::new(v.clone()));
+    let mut opts = RunOptions::new();
+    for (k, v) in tf_env {
+        if PARAM_ENV.contains(&k.as_str()) {
+            opts = opts.with_env(k.clone(), v.clone());
+        } else {
+            secrets.insert(k.clone(), SecretValue::new(v.clone()));
+        }
     }
-    secrets
+    opts.with_secrets(secrets)
 }
 
 /// Destroys every cloud run the runner records as past its expiry (the auto-stop), with the
 /// account's credentials resolved by `account` (a recorded account id to its Terraform
-/// environment). The runner replays the parameters each run was applied with. Each destroy runs
+/// environment). Each destroy runs
 /// under the lab's per-lab lock (`lock`, `None` while another operation holds it): a user Stop or
 /// install of the same lab must not run a second Terraform operation over the same state, which
 /// could corrupt `terraform.tfstate`. Returns the runs it couldn't destroy, with why, so the
@@ -297,15 +295,12 @@ where
         log::warn!("auto-stop: {name} is past its stop time, but its account {host} can't be used now; left for a later sweep");
         return Ok(());
     };
-    // Its lab's files generated again first when an earlier version of the launcher made them;
-    // with its lab no longer installed, the destroy goes on with what its run kept (logged:
-    // those files may be an older launcher's).
-    match lab_dir_in(home, id) {
-        Ok(dir) => regenerate::current(&record.manifest, &dir, regenerate::lab_target(record.target)).await?,
-        Err(e) => log::warn!("auto-stop: {name}'s files can't be generated again ({e}); destroying it with the ones its run kept"),
+    // With its lab no longer installed, the destroy goes on with the module its run kept.
+    if let Err(e) = lab_dir_in(home, id) {
+        log::warn!("auto-stop: {name}'s lab isn't installed any more ({e}); destroying it with the module its run kept");
     }
-    let run = runner.open(&record.manifest, Some(record.name.clone())).map_err(errors::from_runner)?.with_connection(connection_secrets(&tf_env));
-    run.down(&RunOptions::new(), &progress::silent()).await.map_err(errors::from_runner)
+    let run = runner.open_as(&record.project, Format::Terraform, Some(record.name.clone())).map_err(errors::from_runner)?;
+    run.down(&destroy_options(&tf_env), &progress::silent()).await.map_err(errors::from_runner)
 }
 
 #[cfg(test)]

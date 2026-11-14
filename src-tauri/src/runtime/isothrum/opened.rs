@@ -1,32 +1,39 @@
-//! A lab run the launcher opens from its generated manifest under its own name: a server's
-//! (Proxmox) or a cloud account's. Both are changed (brought up to date, a machine retired), read
-//! and consoled into the same way.
+//! A lab run the launcher opens from its generated Terraform module under its own name: a
+//! server's (Proxmox) or a cloud account's. Both are changed (brought up to date, a machine
+//! retired), read and consoled into the same way.
 
 use std::path::{Path, PathBuf};
 
-use isothrum_runner::{RunName, RunOptions, Runner, RunnerConfig, Running};
+use isothrum_runner::{Format, RunName, RunOptions, Runner, RunnerConfig, Running};
 
-use super::{errors, regenerate};
+use super::errors;
 use crate::error::Result;
 use crate::runtime::lab;
 
-/// A lab's run on the runner, opened by its name from the manifest Isoloom generated for it.
+/// A lab's run on the runner, opened by its name from the module Isoloom generated for it.
 pub(crate) struct OpenedRun {
     pub(super) runner: Runner,
     /// The lab's folder.
-    dir: PathBuf,
+    pub(super) dir: PathBuf,
     /// The Isoloom target the run's files are generated for; none for a helper VM an earlier
     /// version left on a Proxmox server, whose files Isoloom no longer generates.
     target: Option<lab::Target>,
-    pub(super) manifest: PathBuf,
+    /// The run's Terraform module.
+    pub(super) project: PathBuf,
     pub(super) name: RunName,
 }
 
 impl OpenedRun {
-    /// The run named `name` of the lab in `dir`, whose manifest `manifest` is generated for
-    /// `target` (none: a helper VM's, see [`OpenedRun::target`]), on a runner set up with `config`.
-    pub(super) fn new(config: RunnerConfig, dir: &Path, target: Option<lab::Target>, manifest: PathBuf, name: RunName) -> Result<Self> {
-        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, dir: dir.to_path_buf(), target, manifest, name })
+    /// The run named `name` of the lab in `dir`, whose Terraform module `project` is generated
+    /// for `target` (none: a helper VM's, see [`OpenedRun::target`]), on a runner set up with
+    /// `config`.
+    pub(super) fn new(config: RunnerConfig, dir: &Path, target: Option<lab::Target>, project: PathBuf, name: RunName) -> Result<Self> {
+        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, dir: dir.to_path_buf(), target, project, name })
+    }
+
+    /// Whether the module was generated (a start that failed before generation made none).
+    pub(crate) fn has_project(&self) -> bool {
+        std::fs::read_dir(&self.project).is_ok_and(|mut entries| entries.any(|e| e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "tf"))))
     }
 
     /// The Isoloom target the run's files are generated for; none for a run an earlier version
@@ -35,11 +42,9 @@ impl OpenedRun {
         self.target
     }
 
-    /// The lab's manifest, opened under the run's name: its files generated again first when an
-    /// earlier version of the launcher made them ([`regenerate::current`]).
+    /// The lab's module, opened under the run's name.
     pub(super) async fn running(&self) -> Result<Running<'_>> {
-        regenerate::current(&self.manifest, &self.dir, self.target).await?;
-        self.runner.open(&self.manifest, Some(self.name.clone())).map_err(|e| match self.target {
+        self.runner.open_as(&self.project, Format::Terraform, Some(self.name.clone())).map_err(|e| match self.target {
             Some(_) => errors::from_runner(e),
             // A helper VM an earlier version left on a server: said what to remove if not opened.
             None => errors::of_helper_vm(e, self.name.as_str()),
@@ -48,7 +53,7 @@ impl OpenedRun {
 
     /// The run's status as the runner reports it; None before the lab's files exist.
     pub(crate) async fn run_status(&self) -> Result<Option<isothrum_runner::Status>> {
-        if !self.manifest.is_file() {
+        if !self.has_project() {
             return Ok(None);
         }
         self.running().await?.status().await.map(Some).map_err(errors::from_runner)
@@ -70,17 +75,5 @@ impl OpenedRun {
     /// when given.
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<isothrum_runner::ShellCommand> {
         self.running().await?.console_command(machine, user).map_err(errors::from_runner)
-    }
-
-    /// `machine`'s graphical console (its screen), as the runner reaches it with the place's
-    /// `connection` (a server's API credentials; none for a cloud's, whose consoles need none).
-    pub(crate) async fn graphical_console(&self, machine: &str, connection: isothrum_runner::Secrets) -> Result<isothrum_runner::Console> {
-        self.running().await?.with_connection(connection).graphical_console(machine).await.map_err(errors::from_runner)
-    }
-
-    /// What opens running VM `machine` in its hypervisor's own app (a server's web console), as
-    /// the runner says with the place's `connection`.
-    pub(crate) async fn native_console(&self, machine: &str, connection: isothrum_runner::Secrets) -> Result<isothrum_runner::NativeConsole> {
-        self.running().await?.with_connection(connection).native_console(machine).await.map_err(errors::from_runner)
     }
 }

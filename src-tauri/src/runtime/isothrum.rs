@@ -1,8 +1,11 @@
-//! The launcher on the Isothrum runner: every lab runs from the run manifest Isoloom writes beside
-//! its files (`.isoloom[-<n>]/docker/run.json`, `.isoloom[-<n>]/vagrant/run.json`, ...), through
-//! the runner's `Running` operations: a container lab on this machine's Docker or in one local VM,
-//! a VM lab on this machine's hypervisor (Vagrant, every local provider) or an ESXi host, and a lab
-//! on a Proxmox server (`server`) or in a cloud account (`cloud_runs`).
+//! The launcher on the Isothrum runner: every lab runs from the project Isoloom generates for its
+//! target (the folder `.isoloom[-<n>]/docker/`, `.isoloom[-<n>]/vagrant/`, a Terraform module),
+//! opened by the runner as a project of its format, through its `Running` operations: a container
+//! lab on this machine's Docker, a VM lab on this machine's hypervisor (Vagrant, every local
+//! provider) or an ESXi host, and a lab on a Proxmox server (`server`) or in a cloud account
+//! (`cloud_runs`). The launcher alone knows the two products: what the lab says of itself (its
+//! message, ports, roles, checks) it reads from the lab's spec through Isoloom, and it hands the
+//! values a run takes to the runner as environment and secrets, never as files of the runner's.
 //!
 //! What stays the launcher's: the run's name (`cyberctf-<lab id>`, the Compose project the
 //! launcher always used), the runner's home (the app data folder, so runs are kept under its
@@ -14,30 +17,59 @@
 //! stopping that worker drops the operation, which ends what it started.
 
 mod cloud_runs;
+mod described;
 pub(crate) mod errors;
 mod gone;
 mod one_read;
 mod opened;
 mod progress;
-mod regenerate;
 mod server;
 mod view;
 
 pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
 pub(crate) use server::{ServerPlace, ServerRun};
 
-/// The form a run was started in, as the runner records it: the run manifest's target (its types,
-/// `isoloom-manifest`, are read here alone).
-pub(crate) use isoloom_manifest::Target as RunTarget;
-/// The names Isoloom's generated files share with a run outside its manifest (`isoloom-manifest`'s
-/// contract), for the rest of the runtime: the output folder, the ESXi host's variables.
-pub(crate) use isoloom_manifest::contract::{ESXI_HOSTNAME, ESXI_HOSTPORT, OUTPUT_DIR};
+/// The folder Isoloom generates a lab's files in, at its root (`.isoloom`, `.isoloom-<n>` for an
+/// instance).
+pub(crate) const OUTPUT_DIR: &str = ".isoloom";
+/// The ESXi host's variables Isoloom's Vagrantfiles read.
+pub(crate) const ESXI_HOSTNAME: &str = "ESXI_HOSTNAME";
+/// The ESXi host's SSH port.
+pub(crate) const ESXI_HOSTPORT: &str = "ESXI_HOSTPORT";
+/// The variable Isoloom's Compose file reads to publish the lab's services on their own host ports
+/// rather than free ones picked at random.
+const PUBLISH_FIXED: &str = "ISOLOOM_PUBLISH_FIXED";
+
+/// The form a run was started in, as the runner records it: its project's format and folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RunForm {
+    /// A Compose project: containers on Docker.
+    Docker,
+    /// The helper VM an earlier version ran a container lab in (Isoloom's former `docker-vm`).
+    HelperVm,
+    /// A Vagrant project: VMs.
+    Vagrant,
+    /// A Terraform module: a server's or a cloud account's.
+    Terraform,
+}
+
+impl RunForm {
+    /// The form of `record`'s run: by its format, and by its folder for the helper VM.
+    pub(crate) fn of(record: &isothrum_runner::RunRecord) -> RunForm {
+        match record.format {
+            Format::Compose => RunForm::Docker,
+            Format::Vagrant if record.project.components().any(|c| c.as_os_str() == lab::DOCKER_VM_FOLDER) => RunForm::HelperVm,
+            Format::Vagrant => RunForm::Vagrant,
+            _ => RunForm::Terraform,
+        }
+    }
+}
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use isothrum_runner::{
-    BoxFuture, Occupied, ProcessRunner, ProcessSpec, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, Status,
+    BoxFuture, Format, ProcessRunner, ProcessSpec, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, Status,
     SystemProcesses,
 };
 use isothrum_runner::{Exit, OnLine, ProcessError};
@@ -75,17 +107,17 @@ where
     }
 }
 
-/// The Vagrant plugin `provider` needs, from Isoloom's table (`isoloom_manifest::Provider::plugin`,
-/// what a run manifest's provider names): none when Vagrant has it built in, and none for a
-/// provider Isoloom's Vagrantfiles don't drive (Proxmox, the clouds), which the caller knows.
+/// The Vagrant plugin `provider` needs, from the runner's table (`isothrum_runner::Provider::plugin`):
+/// none when Vagrant has it built in, and none for a provider Isoloom's Vagrantfiles don't drive
+/// (Proxmox, the clouds), which the caller knows.
 pub(crate) fn vagrant_plugin(provider: super::providers::Provider) -> Option<&'static str> {
     vagrant_provider(provider)?.plugin()
 }
 
-/// `provider` as Isoloom's run manifests name it, when its Vagrantfiles drive it.
-fn vagrant_provider(provider: super::providers::Provider) -> Option<isoloom_manifest::Provider> {
+/// `provider` as the runner names it, when Isoloom's Vagrantfiles drive it.
+fn vagrant_provider(provider: super::providers::Provider) -> Option<isothrum_runner::Provider> {
     use super::providers::Provider as P;
-    use isoloom_manifest::Provider as Isoloom;
+    use isothrum_runner::Provider as Isoloom;
     Some(match provider {
         P::Virtualbox => Isoloom::Virtualbox,
         P::VmwareDesktop => Isoloom::VmwareDesktop,
@@ -122,10 +154,10 @@ pub(crate) fn forget_run(home: &Path, id: &str) -> Result<()> {
 pub(crate) fn recorded_here(dirs: &crate::platform::AppDirs, dir: &Path, id: &str) -> Result<Option<LabRun>> {
     let Some(record) = record_of(dirs, id)? else { return Ok(None) };
     let home = paths::runner_home(dirs)?;
-    Ok(Some(match record.target {
-        isoloom_manifest::Target::Docker => LabRun::docker(&home, dir, id)?,
-        isoloom_manifest::Target::DockerVm => LabRun::docker_in_vm(&home, dir, id)?,
-        isoloom_manifest::Target::Vagrant if record.host_label.is_none() => LabRun::vm(&home, dir, id)?,
+    Ok(Some(match RunForm::of(&record) {
+        RunForm::Docker => LabRun::docker(&home, dir, id)?,
+        RunForm::HelperVm => LabRun::docker_in_vm(&home, dir, id)?,
+        RunForm::Vagrant if record.host_label.is_none() => LabRun::vm(&home, dir, id)?,
         _ => return Ok(None),
     }))
 }
@@ -171,11 +203,12 @@ impl EsxiPlace {
         }
     }
 
-    /// The run's connection: the host's password.
-    pub(crate) fn connection(&self) -> Secrets {
-        let mut secrets = Secrets::new();
-        secrets.insert(lab::esxi::PASSWORD, self.password.clone());
-        secrets
+    /// `opts` on this host: its id recorded, its settings as environment, its password among
+    /// the secrets.
+    pub(crate) fn onto(&self, opts: RunOptions) -> RunOptions {
+        let mut opts = self.params.iter().fold(opts.with_host_label(self.label.clone()), |o, (k, v)| o.with_env(k.clone(), v.clone()));
+        opts.secrets.insert(lab::esxi::PASSWORD, self.password.clone());
+        opts
     }
 }
 
@@ -262,29 +295,44 @@ impl LabRun {
         Ok(LabRun { runner, dir: dir.to_path_buf(), name, kind, esxi: None })
     }
 
-    /// The lab's manifest file.
-    fn manifest(&self) -> PathBuf {
+    /// The lab's generated project: its Compose folder, or its Vagrant one.
+    fn project(&self) -> PathBuf {
         match self.kind {
-            Kind::Docker => lab::docker_manifest(&self.dir),
-            Kind::DockerVm => lab::docker_vm_dir(&self.dir).join("run.json"),
-            Kind::Vm => lab::vagrant_dir(&self.dir, Runtime::Vm).join("run.json"),
+            Kind::Docker => lab::docker_dir(&self.dir),
+            Kind::DockerVm => lab::docker_vm_dir(&self.dir),
+            Kind::Vm => lab::vagrant_dir(&self.dir, Runtime::Vm),
         }
     }
 
-    /// The lab's manifest, opened under the run's name: its files generated again first when an
-    /// earlier version of the launcher made them ([`regenerate::current`]).
+    /// The project's format.
+    fn format(&self) -> Format {
+        if self.kind == Kind::Docker { Format::Compose } else { Format::Vagrant }
+    }
+
+    /// Whether the project's own file is there (`compose.yml`, the `Vagrantfile`).
+    fn has_project(&self) -> bool {
+        let file = if self.kind == Kind::Docker { "compose.yml" } else { "Vagrantfile" };
+        self.project().join(file).is_file()
+    }
+
+    /// The lab's project, opened under the run's name. A Compose or Vagrant project generated by
+    /// an earlier version is still one of its format: it is opened as it is.
     async fn lab(&self) -> Result<Running<'_>> {
-        let manifest = self.manifest();
-        regenerate::current(&manifest, &self.dir, self.target()).await?;
-        let lab = match self.runner.open(&manifest, Some(self.name.clone())) {
-            Ok(lab) => lab,
-            Err(e) if self.kind == Kind::DockerVm => return Err(self.helper_vm_gone(e)),
-            Err(e) => return Err(errors::from_runner(e)),
-        };
-        Ok(match &self.esxi {
-            Some(place) => lab.with_connection(place.connection()),
-            None => lab,
-        })
+        match self.runner.open_as(&self.project(), self.format(), Some(self.name.clone())) {
+            Ok(lab) => Ok(lab),
+            Err(e) if self.kind == Kind::DockerVm => Err(self.helper_vm_gone(e)),
+            Err(e) => Err(errors::from_runner(e)),
+        }
+    }
+
+    /// What the lab says of itself (its machines, ports, networks, check runners), from its spec;
+    /// nothing for the helper VM an earlier version left, whose form Isoloom no longer describes.
+    fn described(&self) -> Result<described::Described> {
+        match self.kind {
+            Kind::Docker => described::Described::of(&self.dir, described::Form::Containers),
+            Kind::Vm => described::Described::of(&self.dir, described::Form::Vms),
+            Kind::DockerVm => Ok(described::Described::default()),
+        }
     }
 
     /// The runner's refusal `e` to open the helper VM an earlier version left this lab in. When it
@@ -303,13 +351,14 @@ impl LabRun {
         said
     }
 
-    /// `opts` for this run's place: on an ESXi server, its id and its settings; everywhere, the
-    /// run's key under the name Isoloom's Vagrantfiles read it ([`super::lab::ISOLOOM_KEY`]), so the lab's VMs,
-    /// networks and libvirt domains are named for this copy and no other.
+    /// `opts` for this run's place: on an ESXi server, its id, its settings (as the environment
+    /// Isoloom's Vagrantfiles read) and its password (a secret, beside the launch's); everywhere,
+    /// the run's key under the name Isoloom's Vagrantfiles read it ([`super::lab::ISOLOOM_KEY`]),
+    /// so the lab's VMs, networks and libvirt domains are named for this copy and no other.
     fn placed(&self, opts: RunOptions) -> RunOptions {
         let opts = opts.with_env(super::lab::ISOLOOM_KEY, self.runner.copy_key(&self.name));
         match &self.esxi {
-            Some(place) => opts.with_host_label(place.label.clone()).with_params(place.params.iter().cloned()),
+            Some(place) => place.onto(opts),
             None => opts,
         }
     }
@@ -319,7 +368,10 @@ impl LabRun {
     /// VM lab runs on `provider`.
     pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let provider = provider.map(runner_provider).transpose()?;
-        up_with(&self.lab().await?, &self.placed(start_options(inputs, provider)), log).await.map_err(|e| self.said(e))
+        up_with(&self.lab().await?, &self.placed(start_options(inputs, provider)), log).await.map_err(|e| self.said(e))?;
+        let message = self.target().and_then(|t| described::message(&self.dir, t));
+        message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
+        Ok(())
     }
 
     /// Removes everything the run created: containers, networks, volumes, its pinned ports; or
@@ -328,7 +380,7 @@ impl LabRun {
         // A run whose manifest was never written (a start that failed before generation) created
         // nothing, so there is nothing to remove: a clean no-op, as the launcher's own Docker path
         // tolerates "no resource to remove". Without this, tearing down a failed launch errors on
-        // the missing run.json.
+        // the missing project.
         if !self.files_back()? {
             log("Nothing to remove: the run has no files.".into());
             return Ok(());
@@ -373,7 +425,7 @@ impl LabRun {
         }
         let lab = self.lab().await?;
         let status = self.read(&lab).await?;
-        Ok(LabStatus { place: Some(place), ..view::lab_status(lab.manifest(), &status, paths::parked(&self.dir)) })
+        Ok(LabStatus { place: Some(place), ..view::lab_status(&self.described()?, &status, paths::parked(&self.dir)) })
     }
 
     /// `lab`'s status, read by the runner, one read of the run at a time in the app
@@ -399,7 +451,7 @@ impl LabRun {
 
     /// Runs the lab's checks; not available when it declares none (nothing runs then).
     pub(crate) async fn check(&self) -> Result<Check> {
-        checks_of(&self.lab().await?, &self.placed(RunOptions::new())).await
+        checks_of(&self.lab().await?, &self.described()?.check_runners, self.kind != Kind::Docker, &self.placed(RunOptions::new())).await
     }
 
     /// Brings the running lab up to date with its regenerated files (a machine added to the lab
@@ -484,26 +536,6 @@ impl LabRun {
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
         self.lab().await?.console_command(machine, user).map_err(errors::from_runner)
     }
-
-    /// `machine`'s graphical console (its screen), as the runner reaches it.
-    pub(crate) async fn graphical_console(&self, machine: &str) -> Result<isothrum_runner::Console> {
-        self.lab().await?.graphical_console(machine).await.map_err(errors::from_runner)
-    }
-
-    /// What opens running VM `machine` in its hypervisor's own app, as the runner says.
-    pub(crate) async fn native_console(&self, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        self.lab().await?.native_console(machine).await.map_err(errors::from_runner)
-    }
-}
-
-/// A graphical console's protocol (a run's offer, the runner's console) in the launcher's words:
-/// `vnc`, `rdp`, or `none`.
-pub(crate) fn protocol_word(protocol: isoloom_manifest::ConsoleProtocol) -> &'static str {
-    match protocol {
-        isoloom_manifest::ConsoleProtocol::Vnc => "vnc",
-        isoloom_manifest::ConsoleProtocol::Rdp => "rdp",
-        isoloom_manifest::ConsoleProtocol::None => "none",
-    }
 }
 
 /// An operation on a run that UTM's passing refusal may cut short ([`LabRun::after_utm_refusal`]).
@@ -518,7 +550,7 @@ enum Op<'a> {
 /// Brings `lab` up to date with its regenerated manifest, with `opts`, waiting out another
 /// operation's hold on the run.
 async fn update_of(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-    when_unlocked(log, move |sink| async move { lab.update(opts, &sink).await.map(drop) }).await.map_err(errors::from_runner)
+    when_unlocked(log, move |sink| async move { lab.update(opts, &sink).await }).await.map_err(errors::from_runner)
 }
 
 /// Takes `machine` out of `lab` ahead of its removal from the manifest, with `opts`, waiting out
@@ -527,24 +559,29 @@ async fn retire_from(lab: &Running<'_>, machine: &str, opts: &RunOptions, log: &
     when_unlocked(log, move |sink| async move { lab.retire(machine, opts, &sink).await }).await.map_err(errors::from_runner)
 }
 
-/// Brings `lab` up with `opts`, its events as `log`'s lines, then says where to start: its
-/// message, filled.
+/// Brings `lab` up with `opts`, its events as `log`'s lines.
 async fn up_with(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
     let (sink, lines) = progress::channel();
-    let run = progress::follow(log, lines, lab.up(opts, &sink)).await.map_err(errors::from_runner)?;
-    run.message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
-    Ok(())
+    progress::follow(log, lines, lab.up(opts, &sink)).await.map(drop).map_err(errors::from_runner)
 }
 
-/// Runs `lab`'s checks; not available when it declares none (nothing runs then).
-async fn checks_of(lab: &Running<'_>, opts: &RunOptions) -> Result<Check> {
-    if lab.manifest().checks.runners.is_empty() {
+/// Runs `lab`'s checks in each of its `runners` (Compose services, or VMs when `vms`, where
+/// Isoloom installed its runner script); not available when it has none (nothing runs then).
+async fn checks_of(lab: &Running<'_>, runners: &[String], vms: bool, opts: &RunOptions) -> Result<Check> {
+    if runners.is_empty() {
         return Ok(Check::default());
     }
-    let mut output = Vec::new();
-    let (sink, lines) = progress::channel();
-    let report = progress::follow(&mut |l| output.push(l), lines, lab.check(opts, &sink)).await.map_err(errors::from_runner)?;
-    Ok(view::check(&report, &output))
+    let argv = if vms { described::vagrant_check_command() } else { Vec::new() };
+    let (mut lines, mut all_ok) = (Vec::new(), true);
+    for runner in runners {
+        let (sink, events) = progress::channel();
+        let mut said = Vec::new();
+        let report = progress::follow(&mut |l| said.push(l), events, lab.exec(runner, &argv, opts, &sink)).await.map_err(errors::from_runner)?;
+        let printed = report.stdout.lines().chain(report.stderr.lines()).map(str::to_owned);
+        lines.extend(said.into_iter().chain(printed).map(|l| (runner.clone(), l)));
+        all_ok &= report.exit == 0;
+    }
+    Ok(view::check(&lines, all_ok))
 }
 
 /// Pins a lab's docker/compose calls to one engine: when a Docker context was chosen for the run,
@@ -643,22 +680,22 @@ impl<'a> Inputs<'a> {
 /// A start's options: the launch's `inputs` (its values as secrets, and fixed host ports when the
 /// player chose the lab's own), the hypervisor a VM lab runs on, and a parked run resumed rather
 /// than rebuilt.
-fn start_options(inputs: Inputs<'_>, provider: Option<isoloom_manifest::Provider>) -> RunOptions {
+fn start_options(inputs: Inputs<'_>, provider: Option<isothrum_runner::Provider>) -> RunOptions {
     let mut secrets = Secrets::new();
     for (name, value) in inputs.values {
         secrets.insert(name.clone(), SecretValue::new(value.clone()));
     }
-    let mut opts = RunOptions::new().with_secrets(secrets).with_occupied(Occupied::ResumeParked);
+    let mut opts = RunOptions::new().with_secrets(secrets);
     if let Some(p) = provider {
         opts = opts.with_provider(p);
     }
-    if inputs.default_ports { opts.with_param(isoloom_manifest::contract::PUBLISH_FIXED, "1") } else { opts }
+    if inputs.default_ports { opts.with_env(PUBLISH_FIXED, "1") } else { opts }
 }
 
 /// The runner's provider for the launcher's provider id `id` (`virtualbox`, `libvirt`…): the same
 /// names on both sides; one the runner doesn't know is refused rather than dropped, so a start
 /// never lands on a hypervisor the player didn't pick.
-fn runner_provider(id: &str) -> Result<isoloom_manifest::Provider> {
+fn runner_provider(id: &str) -> Result<isothrum_runner::Provider> {
     isothrum_runner::from_wire_name(id).ok_or_else(|| Error::Invalid(format!("the runner knows no hypervisor `{id}`")))
 }
 

@@ -27,8 +27,9 @@ pub async fn screen_connect(window: WebviewWindow) -> Result<screen::Connection>
         let which = screen::which(&label)?;
         let dirs = AppDirs::from(window.app_handle());
         let dir = paths::lab_dir(&dirs, &which.id)?;
-        let located = host::locate(&dirs, &dir, &which.id, which.runtime)?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
-        let reached = Reached::of(located.graphical_console(&dirs, &which.machine).await?)?;
+        host::locate(&dirs, &dir, &which.id, which.runtime)?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
+        let reached: Option<Reached> = None;
+        let reached = reached.ok_or_else(|| Error::Invalid(NO_SCREEN.into()))?;
         let client = (reached.protocol == Protocol::Rdp).then(client).flatten();
         screen::connect(&label, reached, client.as_ref())
     })
@@ -43,16 +44,17 @@ pub async fn screen_open_native(app: AppHandle, id: String, runtime: Runtime, ma
     Box::pin(async move {
         let dirs = AppDirs::from(&app);
         let dir = paths::lab_dir(&dirs, &id)?;
-        let located = host::locate(&dirs, &dir, &id, runtime)?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
-        let console = located.native_console(&dirs, &machine).await?;
+        host::locate(&dirs, &dir, &id, runtime)?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
+        // The runner offers no way into a VM's own app yet ([`native`]): none is taken.
+        let (name, ways): (String, Vec<native::NativeOpen>) = (machine, Vec::new());
         let home = crate::platform::home_dir();
-        let launch = native::pick(&console.ways, Os::HERE, home.as_deref(), std::path::Path::exists, native::on_path)
-            .ok_or_else(|| Error::Invalid(format!("{} isn't installed on this computer", console.app)))?;
+        let launch = native::pick(&ways, Os::HERE, home.as_deref(), std::path::Path::exists, native::on_path)
+            .ok_or_else(|| Error::Invalid(format!("{name} can't be opened in its hypervisor's app: {NO_SCREEN}")))?;
         match launch {
             native::Launch::Program { program, args } => native::run(&program, &args).await,
             native::Launch::Url(url) => {
                 use tauri_plugin_opener::OpenerExt as _;
-                app.opener().open_url(url, None::<&str>).map_err(|e| Error::Invalid(format!("couldn't open {}'s console: {e}", console.app)))
+                app.opener().open_url(url, None::<&str>).map_err(|e| Error::Invalid(format!("couldn't open {name}'s console: {e}")))
             }
         }
     })
@@ -82,6 +84,10 @@ pub fn screen_sign_in(window: WebviewWindow) -> Result<Option<crate::runtime::at
     let dir = paths::lab_dir(&AppDirs::from(window.app_handle()), &which.id)?;
     crate::runtime::attack_box::sign_in(&dir, Some(&which.machine))
 }
+
+/// What a screen asked for says while the runner offers no console (its consoles come back as
+/// their own offers, per machine).
+const NO_SCREEN: &str = "no screen for this lab";
 
 /// The system's Remote Desktop client, when this computer has one.
 fn client() -> Option<rdp::Client> {

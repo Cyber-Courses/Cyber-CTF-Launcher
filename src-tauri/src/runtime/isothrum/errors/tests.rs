@@ -7,7 +7,10 @@ fn said(e: RunnerError) -> (Code, String) {
 
 #[test]
 fn a_taken_port_and_a_missing_tool_keep_the_codes_the_ui_knows() {
-    assert_eq!(said(RunnerError::PortInUse { port: 8080, protocol: "tcp".into() }).0, Code::PortInUse { port: HostPort::new(8080), holder: None });
+    assert_eq!(
+        said(RunnerError::PortInUse { port: isothrum_runner::HostPort::new(8080), protocol: "tcp".into() }).0,
+        Code::PortInUse { port: HostPort::new(8080), holder: None }
+    );
     assert_eq!(said(RunnerError::ToolMissing { step: "tools".into(), tool: "docker".into() }).0, Code::ToolMissing { tool: "docker".into() });
     assert_eq!(said(RunnerError::Locked { run: "cyberctf-web".into() }).0, Code::AlreadyInProgress);
 }
@@ -228,24 +231,14 @@ fn the_remaining_runner_failures_each_get_their_wording() {
 }
 
 #[test]
-fn a_manifest_of_another_version_says_to_add_the_lab_again() {
-    let source = isoloom_manifest::parse(r#"{"manifest_version": 0}"#).unwrap_err();
-    let (code, text) = said(RunnerError::Manifest { path: "run.json".into(), source });
-    assert_eq!(code, Code::Other);
-    assert!(text.starts_with("This lab's files were made by another version of Cyber CTF, and they couldn't be made again for this one. Remove the lab and add it again from the catalogue"), "{text}");
-    assert!(text.contains("(run.json: manifest_version 0"), "the runner's words follow: {text}");
-    assert!(!text.contains("Update Cyber CTF"), "updating doesn't help a lab that can't be generated again: {text}");
-}
-
-#[test]
 fn anything_else_keeps_the_runners_words() {
     let e = RunnerError::MachineUnknown { run: "r".into(), machine: "web".into() };
     let text = e.to_string();
     assert_eq!(said(e).1, text);
-    // A placeholder the manifest names but the run doesn't have: its generated files are wrong.
-    let unbound = RunnerError::Unbound { at: "lifecycle.up.up".into(), placeholder: "params.X".into() };
-    let text = unbound.to_string();
-    assert_eq!(said(unbound).1, format!("Cyber CTF can't run this lab's generated files: {text}"));
+    // A folder that isn't a project the runner runs: its generated files are wrong.
+    let invalid = RunnerError::Project { dir: "lab".into(), reason: "no compose.yml".into() };
+    let text = invalid.to_string();
+    assert_eq!(said(invalid).1, format!("Cyber CTF can't run this lab's generated files: {text}"));
 }
 
 #[test]
@@ -254,12 +247,12 @@ fn a_missing_or_refused_value_changed_nothing() {
     // is rolled back like one refused for a run that isn't up.
     for e in [
         RunnerError::SecretMissing { name: "CTF_FLAG_MAIN".into() },
-        RunnerError::Param { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() },
+        RunnerError::Input { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() },
     ] {
         let launcher = from_runner(e);
         assert!(refused_before_acting(&launcher), "{launcher}");
     }
-    let param = from_runner(RunnerError::Param { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() });
+    let param = from_runner(RunnerError::Input { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() });
     assert!(param.to_string().contains("`ISOLOOM_DERIVED`") && param.to_string().contains("`2` isn't one of 0, 1"), "{param}");
     assert!(!refused_before_acting(&Error::Invalid("a step failed".into())));
 }

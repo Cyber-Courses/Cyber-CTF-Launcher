@@ -32,36 +32,30 @@ pub struct AttackStatus {
     pub console: Option<crate::runtime::Console>,
 }
 
-/// The box `name` from the run's status: up when it runs, then its address on the network it
-/// joined (the only one it is on), and whether it is a VM (`vm`).
+/// The box `name` from the run's status: up when it runs, and whether it is a VM (`vm`). The
+/// runner reports no machine's address and no screen: the box shows none of either until it
+/// does.
 pub(super) fn status_of(status: &Status, name: &str, vm: bool) -> AttackStatus {
     let machine = status.machines.iter().find(|m| m.name == name);
     let running = machine.is_some_and(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy));
-    let joined = machine.filter(|_| running).and_then(|m| m.addresses.iter().next());
-    let (lab_network, ip) = joined.map(|(network, ip)| (network.clone(), ip.clone())).unwrap_or_default();
-    let native = crate::screen::native::installed_here(status.native.as_ref());
-    let console = machine.and_then(|m| m.console.as_ref()).map(|c| crate::runtime::Console::of(c, native.as_deref()));
-    AttackStatus { running, ip, lab_network, vm, machine: name.to_owned(), console, ..AttackStatus::default() }
+    AttackStatus { running, vm, machine: name.to_owned(), console: None, ..AttackStatus::default() }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A VM lab's status as the runner reports it: its web VM, and the box `kali` in `state` at
-    /// its address on the lab network (absent: not added yet).
+    /// A VM lab's status as the runner reports it: its web VM, and the box `kali` in `state`
+    /// (absent: not added yet).
     fn vm_lab(state: &str) -> Status {
         serde_json::from_value(serde_json::json!({
             "state": "ready",
             "provider": "qemu",
             "machines": [
-                { "name": "web", "role": "member", "state": "running", "addresses": { "lab": "10.61.0.10" }, "published": [] },
-                { "name": "kali", "role": "access", "state": state, "addresses": { "lab": "10.61.0.252" }, "published": [],
-                  "console": { "protocol": "vnc" } }
+                { "name": "web", "state": "running", "published": [] },
+                { "name": "kali", "state": state, "published": [] }
             ],
-            "networks": [{ "name": "lab", "cidr": "10.61.0.0/24", "internet": false, "native": "isoloom-t-lab" }],
-            "outputs": [],
-            "message": null
+            "outputs": []
         }))
         .expect("a run status")
     }
@@ -71,7 +65,7 @@ mod tests {
         let down = status_of(&vm_lab("absent"), "kali", true);
         assert_eq!((down.running, down.ip.as_str(), down.lab_network.as_str()), (false, "", ""), "no address nor network until it runs");
         let up = status_of(&vm_lab("running"), "kali", true);
-        assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));
+        assert_eq!((up.running, up.ip.as_str()), (true, ""), "the runner reports no address");
         assert!(!status_of(&vm_lab("running"), "nobody", false).running, "no such machine: no box");
     }
 
@@ -82,14 +76,13 @@ mod tests {
     fn a_box_another_process_is_setting_up_is_not_up_yet() {
         let busy = status_of(&vm_lab("busy"), "kali", true);
         assert_eq!((busy.running, busy.ip.as_str()), (false, ""));
-        assert!(busy.console.is_some(), "its screen is offered once it runs");
+        assert!(busy.console.is_none(), "no screen is offered yet");
     }
 
     #[test]
-    fn the_box_carries_its_machine_and_its_screen() {
+    fn the_box_carries_its_machine() {
         let up = status_of(&vm_lab("running"), "kali", true);
         assert_eq!(up.machine, "kali");
-        assert_eq!(up.console, Some(crate::runtime::Console { protocol: "vnc".into(), note: None, unavailable: None, native_app: None }));
-        assert_eq!(status_of(&vm_lab("running"), "web", false).console, None, "a machine whose run says nothing of its screen");
+        assert_eq!(up.console, None, "no screen is offered yet");
     }
 }

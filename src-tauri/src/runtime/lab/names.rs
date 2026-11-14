@@ -1,6 +1,6 @@
 //! Isoloom's path and naming conventions, in one place: where it writes a target's files
 //! (`.isoloom[-<n>]/docker|vagrant|proxmox|cloud-docker/<cloud>|cloud-vm/<cloud>|cloud-services`,
-//! the Compose file and the run manifest among them, and the `docker-vm` folder an earlier version
+//! the Compose file among them, and the `docker-vm` folder an earlier version
 //! left), the environment its
 //! Vagrantfiles read to reach an ESXi host (`ESXI_*`), and the output of its cloud modules the
 //! launcher reads (`ip`). The rest of the launcher asks here instead of spelling them out.
@@ -22,10 +22,10 @@ pub fn compose_file(dir: &Path) -> PathBuf {
     out(dir).join("docker/compose.yml")
 }
 
-/// The lab's run manifest on local Docker (Isoloom writes it beside the Compose file): what the
-/// Isothrum runner executes.
-pub fn docker_manifest(dir: &Path) -> PathBuf {
-    out(dir).join("docker/run.json")
+/// The lab's Compose project on local Docker (the folder of its Compose file): what the Isothrum
+/// runner opens.
+pub fn docker_dir(dir: &Path) -> PathBuf {
+    out(dir).join("docker")
 }
 
 /// Where the Vagrantfile of a local or ESXi run is: one VM per machine (`vagrant`); for a
@@ -45,8 +45,11 @@ pub fn vagrant_dir(dir: &Path, runtime: Runtime) -> PathBuf {
 /// Isoloom no longer generates that form: the folder is only read, to stop and remove a run left
 /// in it.
 pub fn docker_vm_dir(dir: &Path) -> PathBuf {
-    out(dir).join("docker-vm")
+    out(dir).join(DOCKER_VM_FOLDER)
 }
+
+/// The folder name of [`docker_vm_dir`], by which a run's project is known as one in a helper VM.
+pub const DOCKER_VM_FOLDER: &str = "docker-vm";
 
 /// The Terraform module and its Isoloom target for a server or cloud (`tf` is the launcher's
 /// Terraform target: `proxmox`, `aws`, `azure`, `gcp`, `digitalocean`, `linode`, `oci`). On

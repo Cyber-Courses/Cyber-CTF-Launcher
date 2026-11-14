@@ -721,9 +721,9 @@ mod tests {
         let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         let dir = install_with(&t.dirs(), invoice("invoice", SHA), &|_| {}, async || Ok(gz.clone())).await.unwrap();
         crate::runtime::paths::mark_parked(&dir, Some(runtime::Park::Shutdown)).unwrap();
-        let manifest = runtime::lab::docker_manifest(&dir);
-        std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
-        std::fs::write(&manifest, "not a manifest").unwrap();
+        let compose = runtime::lab::compose_file(&dir);
+        std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
+        std::fs::write(&compose, "not a compose file").unwrap();
         let newer = "1123456789abcdef0123456789abcdef01234567";
         let err = install_with(&t.dirs(), invoice("invoice", newer), &|_| {}, async || Ok(gz.clone())).await.unwrap_err();
         assert!(matches!(err, Error::Refused(_)), "{err:?}");
