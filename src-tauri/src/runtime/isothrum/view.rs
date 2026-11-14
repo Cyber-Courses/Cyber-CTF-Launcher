@@ -81,7 +81,10 @@ fn machine(declared: Option<&Declared>, m: &MachineStatus) -> Machine {
 /// the machine's own number.
 fn published(m: &MachineStatus, port: &DeclaredPort) -> Option<HostPort> {
     let tcp = port.tcp();
-    m.published.iter().find(|p| p.port == port.port && p.protocol.is_none_or(|proto| (proto == Protocol::Tcp) == tcp)).map(|p| HostPort::new(p.host_port))
+    m.published
+        .iter()
+        .find(|p| p.port.get() == port.port && p.protocol.is_none_or(|proto| (proto == Protocol::Tcp) == tcp))
+        .map(|p| HostPort::new(p.host_port.get()))
 }
 
 /// What a declared port serves: a web UI (`http`), else the port's own name (`mysql`, `ssh`).

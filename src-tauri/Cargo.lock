@@ -2612,6 +2612,7 @@ dependencies = [
 name = "isoloom-manifest"
 version = "3.0.0"
 dependencies = [
+ "isoloom-spec",
  "schemars 1.2.3",
  "serde",
  "serde_json",
@@ -2652,7 +2653,6 @@ name = "isoloom-spec"
 version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
- "isoloom-manifest",
  "saphyr-parser",
  "schemars 1.2.3",
  "serde",
@@ -2730,7 +2730,6 @@ dependencies = [
  "flate2",
  "getrandom 0.4.3",
  "indexmap 2.14.2",
- "isoloom-manifest",
  "nix 0.31.3",
  "process-wrap",
  "regex",
@@ -4093,7 +4092,6 @@ dependencies = [
  "indexmap 2.14.2",
  "nix 0.31.3",
  "tokio",
- "windows",
 ]
 
 [[package]]

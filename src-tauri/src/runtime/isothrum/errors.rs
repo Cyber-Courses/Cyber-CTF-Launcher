@@ -37,7 +37,7 @@ fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
         // The holder is filled in later, on the launch path, where an async lookup can run.
-        RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port: HostPort::new(port), holder: None }),
+        RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port: HostPort::new(port.get()), holder: None }),
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
         RunnerError::Timeout { step, timed_out } => timed_out_step(&step, &timed_out),
