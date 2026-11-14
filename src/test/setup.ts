@@ -44,7 +44,11 @@ if (typeof window !== "undefined") {
     this.open = false;
   });
 
+  const { takeUncallable } = await import("@/test/uncallable");
   afterEach(() => {
+    // A test whose screen invoked a command the Rust core doesn't register fails, whatever the
+    // screen did with the rejection.
+    const uncallable = takeUncallable();
     cleanup();
     clearMocks();
     // Shared polls, the deploy store and self-test runs live at module level: each test starts clean.
@@ -54,5 +58,6 @@ if (typeof window !== "undefined") {
     } catch {
       /* no storage */
     }
+    if (uncallable.length > 0) throw new Error(`invoked commands the Rust core doesn't register: ${uncallable.join(", ")}`);
   });
 }

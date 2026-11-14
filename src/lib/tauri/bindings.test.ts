@@ -57,14 +57,15 @@ describe("Tauri bindings", () => {
   });
 
   it("streams typed events on the `events` channel", async () => {
+    // Any command the core registers will do: the double refuses one it doesn't.
     const calls = installTauri({
-      custom_cmd: (a) => {
+      lab_check: (a) => {
         stream(a, { step: 1 }, { step: 2 });
         return 7;
       },
     });
     const events: unknown[] = [];
-    const out = await invokeStreaming<number>("custom_cmd", { id: "x" }, (e: { step: number }) => events.push(e), "events");
+    const out = await invokeStreaming<number>("lab_check", { id: "x" }, (e: { step: number }) => events.push(e), "events");
     expect(out).toBe(7);
     expect(events).toEqual([{ step: 1 }, { step: 2 }]);
     expect(Object.keys(calls[0].args ?? {})).toEqual(["id", "events"]);

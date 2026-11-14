@@ -25,6 +25,7 @@
     "release-check": "scripts/release/release-check.sh",
     "test": "vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
     "test:watch": "vitest",
+    "test:harness": "vitest run --config vitest.harness.config.mts",
     "test:web": "playwright test",
     "test:desktop": "tests/desktop/run.sh",
     "test:integration": "tests/integration/run.sh",

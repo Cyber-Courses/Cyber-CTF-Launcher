@@ -40,7 +40,9 @@ const previewBuild = () => vi.stubEnv("NEXT_PUBLIC_DEV_MOCK", "1");
 const at = (url: string) => {
   window.history.replaceState(null, "", url);
 };
-const tick = () => new Promise((ok) => setTimeout(ok, 20));
+/** Every dynamic import the gate started has settled: a mock it was going to load is loaded by
+ *  now, so "never loaded" means it never started, not that it hadn't arrived yet. */
+const settled = () => vi.dynamicImportSettled();
 
 beforeEach(() => {
   at("/?mock");
@@ -65,7 +67,7 @@ describe("DevMockGate", () => {
     vi.stubEnv("NEXT_PUBLIC_DEV_MOCK", "");
     await expectAppNotice((await renderGate()).container);
     expect(screen.queryByText("child")).toBeNull();
-    await tick();
+    await settled();
     expect(installDevMock).not.toHaveBeenCalled();
   });
 
@@ -137,7 +139,7 @@ describe("DevMockGate", () => {
     previewBuild();
     const { unmount, container } = await renderGate();
     unmount();
-    await tick();
+    await settled();
     expect(installDevMock).toHaveBeenCalledTimes(1);
     expect(container.innerHTML).toBe("");
   });
@@ -147,7 +149,7 @@ describe("DevMockGate", () => {
     previewBuild();
     await renderGate();
     expect(screen.getByText("child")).toBeTruthy();
-    await tick();
+    await settled();
     expect(installDevMock).not.toHaveBeenCalled();
   });
 });

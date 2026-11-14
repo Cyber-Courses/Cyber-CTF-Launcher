@@ -1,9 +1,13 @@
+import { act } from "@testing-library/react";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { answer } from "@/lib/dev-mock";
 import type { CommandError } from "@/lib/errors";
 import { PROXMOX_PLACEMENT } from "@/lib/dev-mock/proxmox-sample";
 import { destructive, warnings } from "@/lib/confirm";
 import { translate } from "@/lib/i18n";
+import { backendCommands, callable } from "@/test/backend-commands";
+import { recordUncallable } from "@/test/uncallable";
+import { resetInFlight, track, waitForAnswers } from "@/test/in-flight";
 
 export type Handler = (args: Record<string, unknown> | undefined) => unknown;
 export interface Call {
@@ -51,7 +55,7 @@ export const dialogsAsked = (calls: Call[]) =>
   calls.filter((c) => c.cmd === "plugin:dialog|message").map((c) => ({ title: c.args?.title, message: c.args?.message }));
 
 // Commands the browser dev mock leaves unanswered (null), with a plausible answer for tests.
-const DEFAULTS: Partial<Record<string, Handler>> = {
+export const DEFAULTS: Partial<Record<string, Handler>> = {
   // The player confirms what they asked for, unless a test answers otherwise.
   "plugin:dialog|message": answersDialog(true),
   installed_tools: () => [{ dependency: "vagrant", at: Math.floor(Date.now() / 1000) - 3600 }],
@@ -129,16 +133,46 @@ function answerInAppDialogs(calls: Call[], handler: Handler | undefined) {
   };
 }
 
+const REGISTERED = backendCommands();
+
+/** The answers a test holds open on purpose (until it resolves them, or for good). */
+const HELD = new WeakSet<Promise<unknown>>();
+
+/** `handler`, whose answer the test holds open on purpose (it resolves it when it means to, or
+ *  never): [`settled`] doesn't wait for it. */
+export const held =
+  (handler: Handler): Handler =>
+  (args) => {
+    const out = handler(args);
+    if (out instanceof Promise) HELD.add(out);
+    return out;
+  };
+
+/** Waits until every command invoked has its answer (the ones a test holds aside, see [`held`]),
+ *  and the renders those answers cause have landed: waited for, never a fixed delay, which a
+ *  loaded machine can outlast. Gives up after SETTLE_LIMIT_MS, so a test that holds an answer without
+ *  saying so fails on its assertions rather than hanging. */
+export async function settled(): Promise<void> {
+  await act(() => waitForAnswers(0));
+}
+
 export function installTauri(overrides: Partial<Record<string, Handler>> = {}): Call[] {
   const calls: Call[] = [];
+  resetInFlight();
   answerInAppDialogs(calls, overrides["plugin:dialog|message"] ?? DEFAULTS["plugin:dialog|message"]);
   mockWindows("main");
   mockIPC(
     (cmd, args) => {
       const a = args as Record<string, unknown> | undefined;
       calls.push({ cmd, args: a });
+      if (!callable(REGISTERED, cmd)) {
+        recordUncallable(cmd);
+        throw new Error(`\`${cmd}\` isn't a command the Rust core registers (src-tauri/build.rs)`);
+      }
       const handler = overrides[cmd] ?? DEFAULTS[cmd];
-      return handler ? handler(a) : answer(cmd, a);
+      const out: unknown = handler ? handler(a) : answer(cmd, a);
+      if (out instanceof Promise && !HELD.has(out)) track(out);
+      return out;
     },
     { shouldMockEvents: true },
   );

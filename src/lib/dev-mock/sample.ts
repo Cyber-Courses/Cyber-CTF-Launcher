@@ -241,6 +241,9 @@ const appCommands = {
 // A Map, not an object lookup: a command named like an Object.prototype member is unknown too.
 const HANDLERS = new Map<string, Handler>(Object.entries({ ...accountCommands, ...labCommands, ...machineCommands, ...serverCommands, ...appCommands }));
 
+/** The commands the mock answers. */
+export const mockedCommands = (): string[] => [...HANDLERS.keys()];
+
 /** The mock's answer to a command; null for one it doesn't know. */
 export function answer(cmd: string, args: Args): unknown {
   const handler = HANDLERS.get(cmd);

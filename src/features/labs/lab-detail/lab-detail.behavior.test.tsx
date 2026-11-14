@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
 import { answersDialog, commands, dialogsAsked, installTauri, type Handler } from "@/test/tauri";
 import { NOTHING, VMS_HERE, containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
-import { flush } from "@/test/ui";
+import { flush, preloadLabScreens } from "@/test/ui";
 import { getDockerEngine, getLocalVmForm, getVmProvider, setDockerEngine, setLocalVmForm, setPortMode, setVmProvider } from "@/lib/settings";
+
+// The lab page's lazily loaded screens, loaded once before the tests rather than inside the first.
+beforeAll(preloadLabScreens, 60_000);
 
 afterEach(() => {
   setPortMode(null);
