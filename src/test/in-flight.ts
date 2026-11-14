@@ -11,9 +11,6 @@ export function track(answer: Promise<unknown>): void {
   answer.then(done, done);
 }
 
-/** How many answers are still on their way. */
-export const inFlight = () => inflight;
-
 /** Forgets every answer on its way (a new double installed). */
 export function resetInFlight(): void {
   inflight = 0;
@@ -21,7 +18,7 @@ export function resetInFlight(): void {
 
 /** How long a wait for the answers gives up after: a test holding an answer without saying so
  *  (`held()`) fails on its assertions rather than hanging. */
-export const SETTLE_LIMIT_MS = 15_000;
+const SETTLE_LIMIT_MS = 15_000;
 
 /** Waits, after at least `ms`, until no answer is on its way (or the limit passed). */
 export async function waitForAnswers(ms: number): Promise<void> {
