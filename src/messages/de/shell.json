@@ -119,6 +119,8 @@
     "signInTitle": "Bei der Attack-Box anmelden",
     "signInHint": "Wo ihr Bildschirm ein Passwort verlangt (eine Sperre, eine Anmeldung), melde dich als {user} mit diesem Passwort an.",
     "user": "Benutzer",
-    "password": "Passwort"
+    "password": "Passwort",
+    "shareClipboard": "Die Zwischenablage dieses Computers mit der Maschine teilen",
+    "shareClipboardHint": "Standardmäßig aus: Die Maschine könnte lesen, was du hier kopierst (Passwörter, Tokens), und es ändern. Nur für dieses Fenster; Laufwerke, Drucker und andere Geräte werden nie geteilt."
   }
 }

@@ -83,12 +83,13 @@ impl Drop for EndsOnDrop {
     }
 }
 
-/// Opens this window's Remote Desktop in the system's client.
+/// Opens this window's Remote Desktop in the system's client, sharing this computer's clipboard
+/// with the machine only when the learner turned it on for this session (`clipboard`).
 #[tauri::command]
-pub fn screen_open_rdp(window: WebviewWindow) -> Result<()> {
+pub fn screen_open_rdp(window: WebviewWindow, clipboard: bool) -> Result<()> {
     let client = client().ok_or_else(|| Error::Invalid(missing_client(Os::HERE).into()))?;
     let dirs = AppDirs::from(window.app_handle());
-    screen::open_rdp(window.label(), &client, &dirs.data()?.join("screen"))
+    screen::open_rdp(window.label(), &client, &dirs.data()?.join("screen"), clipboard)
 }
 
 /// This window's Remote Desktop password, for the learner to paste in the client.
@@ -143,7 +144,7 @@ mod tests {
         assert!(screen_password(w.clone()).is_err());
         // No Remote Desktop to open: nothing runs (a client this machine lacks says what to install).
         let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
-        assert!(screen_open_rdp(w).is_err());
+        assert!(screen_open_rdp(w, false).is_err());
         assert_eq!(tools.calls(), Vec::<String>::new());
     }
 

@@ -119,6 +119,8 @@
     "signInTitle": "Iniciar sesión en la attack box",
     "signInHint": "Donde su pantalla pida una contraseña (un bloqueo, un inicio de sesión), inicia sesión como {user} con esta contraseña.",
     "user": "Usuario",
-    "password": "Contraseña"
+    "password": "Contraseña",
+    "shareClipboard": "Compartir el portapapeles de este equipo con la máquina",
+    "shareClipboardHint": "Desactivado por defecto: la máquina podría leer lo que copias aquí (contraseñas, tokens) y cambiarlo. Solo para esta ventana; los discos, impresoras y otros dispositivos nunca se comparten."
   }
 }

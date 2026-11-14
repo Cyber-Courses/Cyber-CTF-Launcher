@@ -180,6 +180,21 @@ describe("the screen window", () => {
     expect(written).toEqual(["pw-rdp"]);
   });
 
+  it("shares this computer's clipboard with a Remote Desktop only when turned on for the session", async () => {
+    const calls = installTauri({ screen_connect: () => RDP, screen_open_rdp: () => null });
+    const user = userEvent.setup();
+    render(<ScreenWindow />);
+    await flush();
+    const share = screen.getByRole("switch", { name: /Share this computer's clipboard/ });
+    expect(share.getAttribute("aria-checked")).toBe("false");
+    await user.click(screen.getByRole("button", { name: /Open in Windows App/ }));
+    await user.click(share);
+    expect(share.getAttribute("aria-checked")).toBe("true");
+    await user.click(screen.getByRole("button", { name: /Open in Windows App/ }));
+    await flush();
+    expect(calls.filter((c) => c.cmd === "screen_open_rdp").map((c) => c.args)).toEqual([{ clipboard: false }, { clipboard: true }]);
+  });
+
   it("says what to install when there is no Remote Desktop app", async () => {
     installTauri({ screen_connect: () => ({ ...RDP, client: null }) });
     render(<ScreenWindow />);

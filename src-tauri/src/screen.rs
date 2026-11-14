@@ -263,12 +263,13 @@ pub(crate) fn password(label: &str) -> Result<String> {
 }
 
 /// Opens window `label`'s Remote Desktop in `client`: its `.rdp` file written owner-only in
-/// `dir` (removed when the window closes), `FreeRDP` given the password on its input.
-pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path) -> Result<()> {
+/// `dir` (removed when the window closes), `FreeRDP` given the password on its input, this
+/// computer's clipboard shared with the machine only when the learner asked (`clipboard`).
+pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path, clipboard: bool) -> Result<()> {
     let (connection, password) = with_sessions(|s| {
         let r = s.get(label).and_then(|s| s.reached.as_ref()).filter(|r| r.protocol == Protocol::Rdp)?;
         let bridge::Target::Tcp(at) = &r.at else { return None };
-        Some((rdp::Connection { address: at.to_string(), user: r.user.clone() }, r.password.clone()))
+        Some((rdp::Connection { address: at.to_string(), user: r.user.clone(), clipboard }, r.password.clone()))
     })
     .ok_or_else(|| Error::Invalid("this screen isn't a Remote Desktop".into()))?;
     crate::platform::private_fs::create_dir(dir).map_err(Error::Io)?;
@@ -422,7 +423,7 @@ mod tests {
         connect(label, reached(Protocol::Rdp, "127.0.0.1:24002"), None).unwrap();
         let dir = crate::testing::temp_dir("screen-rdp");
         // `true` stands in for the client: it opens nothing.
-        open_rdp(label, &rdp::Client::Mstsc("true".into()), &dir).unwrap();
+        open_rdp(label, &rdp::Client::Mstsc("true".into()), &dir, false).unwrap();
         let file = dir.join("screen-goad-rdp01.rdp");
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(text.contains("full address:s:127.0.0.1:24002") && !text.contains("pw-1"), "{text}");
@@ -445,7 +446,7 @@ mod tests {
         let client = dir.join("client.sh");
         std::fs::write(&client, "#!/bin/sh\necho $$ > \"$1.pid.tmp\" && mv \"$1.pid.tmp\" \"$1.pid\"\n").unwrap();
         std::fs::set_permissions(&client, std::fs::Permissions::from_mode(0o700)).unwrap();
-        open_rdp(label, &rdp::Client::Mstsc(client), &dir).unwrap();
+        open_rdp(label, &rdp::Client::Mstsc(client), &dir, false).unwrap();
         let said = dir.join("screen-goad-rdp02.rdp.pid");
         let reaped = |pid: &str| std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |stat| !stat.contains(") Z "));
         let mut gone = false;

@@ -61,14 +61,34 @@ pub(crate) struct Connection {
     pub(crate) address: String,
     /// The account, when the console signs in to the machine's own OS.
     pub(crate) user: Option<String>,
+    /// Whether the learner shares this computer's clipboard with the machine, for this session
+    /// only: off unless asked, as a lab machine is not trusted with what is copied here.
+    pub(crate) clipboard: bool,
 }
 
-/// The `.rdp` file of `c`: its address, its account, and no password. A console with no account
+/// What a `.rdp` file says the client keeps on this computer: printers, ports, smart cards,
+/// security keys, drives, other devices, the microphone and cameras are never handed to a lab
+/// machine. The clipboard is the session's choice ([`Connection::clipboard`]).
+const NOT_REDIRECTED: [&str; 8] = [
+    "redirectprinters:i:0",
+    "redirectcomports:i:0",
+    "redirectsmartcards:i:0",
+    "redirectwebauthn:i:0",
+    "drivestoredirect:s:",
+    "devicestoredirect:s:",
+    "camerastoredirect:s:",
+    "audiocapturemode:i:0",
+];
+
+/// The `.rdp` file of `c`: its address, its account, no password, and no device of this computer
+/// redirected but the clipboard when the session shares it. A console with no account
 /// (VirtualBox's remote display) takes none: no credential prompt, no Network Level
 /// Authentication, which it doesn't speak. Its certificate is the machine's own, self-signed, on
 /// a loopback or tunnelled connection: the client connects without asking about it.
 pub(crate) fn file(c: &Connection) -> String {
     let mut lines = vec![format!("full address:s:{}", c.address), "screen mode id:i:1".to_owned(), "authentication level:i:0".to_owned()];
+    lines.push(format!("redirectclipboard:i:{}", u8::from(c.clipboard)));
+    lines.extend(NOT_REDIRECTED.iter().map(|l| (*l).to_owned()));
     if let Some(user) = &c.user {
         lines.push(format!("username:s:{}", user.replace(['\r', '\n'], "")));
         lines.push("prompt for credentials:i:1".to_owned());
@@ -101,6 +121,8 @@ pub(crate) fn command(client: &Client, rdp: &Path, c: &Connection, has_password:
         Client::Remmina(p) => file_only(p.clone(), vec!["-c".into(), file]),
         Client::FreeRdp(p) => {
             let mut args = vec![format!("/v:{}", c.address), "/cert:ignore".to_owned(), "/dynamic-resolution".to_owned()];
+            // No drive, home folder or printer of this computer; the clipboard as the session chose.
+            args.extend([if c.clipboard { "+clipboard" } else { "-clipboard" }, "-drives", "-home-drive"].map(str::to_owned));
             let stdin = has_password && c.user.is_some();
             if let Some(user) = &c.user {
                 args.push(format!("/u:{user}"));
@@ -139,21 +161,45 @@ mod tests {
 
     #[test]
     fn the_rdp_file_names_the_loopback_and_the_account_but_no_password() {
-        let with = file(&Connection { address: "127.0.0.1:24001".into(), user: Some("isoloom".into()) });
-        assert_eq!(
-            with,
-            "full address:s:127.0.0.1:24001\r\nscreen mode id:i:1\r\nauthentication level:i:0\r\nusername:s:isoloom\r\nprompt for credentials:i:1\r\n"
-        );
+        let with = file(&Connection { address: "127.0.0.1:24001".into(), user: Some("isoloom".into()), clipboard: false });
+        assert!(with.starts_with("full address:s:127.0.0.1:24001\r\nscreen mode id:i:1\r\nauthentication level:i:0\r\n"), "{with}");
+        assert!(with.ends_with("\r\nusername:s:isoloom\r\nprompt for credentials:i:1\r\n"), "{with}");
         assert!(!with.contains("password"));
-        let vrde = file(&Connection { address: "127.0.0.1:3390".into(), user: None });
+        let vrde = file(&Connection { address: "127.0.0.1:3390".into(), user: None, clipboard: false });
         assert!(vrde.contains("prompt for credentials:i:0\r\nenablecredsspsupport:i:0"), "{vrde}");
-        let injected = file(&Connection { address: "127.0.0.1:1".into(), user: Some("a\r\nfull address:s:evil:3389".into()) });
+        let injected = file(&Connection { address: "127.0.0.1:1".into(), user: Some("a\r\nfull address:s:evil:3389".into()), clipboard: false });
         assert_eq!(injected.lines().filter(|l| l.starts_with("full address")).count(), 1, "one line each: {injected}");
     }
 
     #[test]
+    fn a_lab_machine_gets_no_device_of_this_computer_and_the_clipboard_only_when_shared() {
+        let kept = file(&Connection { address: "127.0.0.1:24001".into(), user: None, clipboard: false });
+        for line in [
+            "redirectclipboard:i:0",
+            "redirectprinters:i:0",
+            "redirectcomports:i:0",
+            "redirectsmartcards:i:0",
+            "redirectwebauthn:i:0",
+            "drivestoredirect:s:",
+            "devicestoredirect:s:",
+            "camerastoredirect:s:",
+            "audiocapturemode:i:0",
+        ] {
+            assert!(kept.lines().any(|l| l == line), "{line} in {kept}");
+        }
+        let shared = file(&Connection { address: "127.0.0.1:24001".into(), user: None, clipboard: true });
+        assert!(shared.lines().any(|l| l == "redirectclipboard:i:1") && shared.lines().any(|l| l == "redirectprinters:i:0"), "{shared}");
+        let freerdp = Client::FreeRdp(PathBuf::from("/usr/bin/xfreerdp"));
+        let rdp = Path::new("/x.rdp");
+        let kept = command(&freerdp, rdp, &Connection { address: "127.0.0.1:1".into(), user: None, clipboard: false }, false).args;
+        assert!(kept.iter().any(|a| a == "-clipboard") && kept.iter().any(|a| a == "-drives") && kept.iter().any(|a| a == "-home-drive"), "{kept:?}");
+        let shared = command(&freerdp, rdp, &Connection { address: "127.0.0.1:1".into(), user: None, clipboard: true }, false).args;
+        assert!(shared.iter().any(|a| a == "+clipboard") && !shared.iter().any(|a| a == "-clipboard"), "{shared:?}");
+    }
+
+    #[test]
     fn each_client_opens_the_file_and_only_freerdp_reads_the_password_on_its_input() {
-        let c = Connection { address: "127.0.0.1:24001".into(), user: Some("isoloom".into()) };
+        let c = Connection { address: "127.0.0.1:24001".into(), user: Some("isoloom".into()), clipboard: false };
         let rdp = Path::new("/data/screen/x.rdp");
         assert_eq!(
             command(&Client::MacApp(PathBuf::from("/Applications/Windows App.app")), rdp, &c, true),
@@ -164,7 +210,10 @@ mod tests {
             }
         );
         let free = command(&Client::FreeRdp(PathBuf::from("/usr/bin/xfreerdp")), rdp, &c, true);
-        assert_eq!(free.args, ["/v:127.0.0.1:24001", "/cert:ignore", "/dynamic-resolution", "/u:isoloom", "/from-stdin:force"]);
+        assert_eq!(
+            free.args,
+            ["/v:127.0.0.1:24001", "/cert:ignore", "/dynamic-resolution", "-clipboard", "-drives", "-home-drive", "/u:isoloom", "/from-stdin:force"]
+        );
         assert!(free.password_on_stdin && !free.args.iter().any(|a| a.starts_with("/p:")), "never on the command line");
         assert_eq!(command(&Client::Mstsc(PathBuf::from("mstsc.exe")), rdp, &c, true).args, ["/data/screen/x.rdp"]);
     }
