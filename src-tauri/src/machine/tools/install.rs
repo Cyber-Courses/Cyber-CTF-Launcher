@@ -259,12 +259,15 @@ const HYPERV_ON: &str = "if ((Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Wind
 /// long as the step, which the script reads right after its prelude ([`read_proxy`]).
 #[cfg(any(target_os = "linux", test))]
 fn as_root(script: RootScript, proxy: &[String]) -> Result<Step> {
-    let mut step = Step { program: "pkexec".into(), args: vec!["env".into(), "sh".into(), "-c".into()], note: None, private: None };
+    // Through pkexec, or unattended through sudo (see `platform::elevation`).
+    let root = |script: String| {
+        let (program, args) = crate::platform::elevation::as_root("env", &["sh".into(), "-c".into(), script]);
+        Step { program, args, note: None, private: None }
+    };
     // A value over two lines can't be one line of the file; no proxy has one.
     let proxy: Vec<&str> = proxy.iter().map(String::as_str).filter(|a| !a.contains(['\n', '\r'])).collect();
     if proxy.is_empty() {
-        step.args.push(script.into_string());
-        return Ok(step);
+        return Ok(root(script.into_string()));
     }
     // Owner-only from its creation, under a name no one can take first.
     let mut private = tempfile::Builder::new();
@@ -276,7 +279,7 @@ fn as_root(script: RootScript, proxy: &[String]) -> Result<Step> {
     let mut lines = proxy.join("\n");
     lines.push('\n');
     crate::platform::private_fs::write(&file, lines)?;
-    step.args.push(script.with_after_prelude(&read_proxy(&file)));
+    let mut step = root(script.with_after_prelude(&read_proxy(&file)));
     step.private = Some(dir);
     Ok(step)
 }

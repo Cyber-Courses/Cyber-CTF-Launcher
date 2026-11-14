@@ -14,7 +14,7 @@ use std::ffi::OsStr;
 #[cfg(target_os = "macos")]
 pub use unix::{boot_session, process_start};
 #[cfg(unix)]
-pub use unix::{login_name, process_exists, signal_group, signal_process};
+pub use unix::{is_root, login_name, process_exists, signal_group, signal_process};
 #[cfg(windows)]
 pub use windows::{
     ElevatedProcess, Hive, Job, child_processes, delete_user_registry_value, in_hyperv_admins, is_elevated, keep_std_handles, launch_elevated, process_created,
