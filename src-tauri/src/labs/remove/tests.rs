@@ -69,7 +69,7 @@ fn records(base: &Path, id: &str) -> Vec<PathBuf> {
 #[tokio::test]
 async fn a_removal_deletes_the_apps_copy_and_records_and_never_the_folder_it_was_imported_from() {
     let t = TestApp::new();
-    let _tools = Tools::strict_rules(&[]);
+    let _tools = Tools::strict_rules(&[("docker network ls", crate::platform::exec::fake::ok(""))]);
     let src = source();
     let dir = super::super::for_tests::reimport(&t.dirs(), "local-copy", &src).await.unwrap();
     // A link in the copy pointing at the source (never one the import makes: planted, the worst

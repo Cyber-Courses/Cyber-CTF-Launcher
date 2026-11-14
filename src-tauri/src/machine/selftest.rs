@@ -217,7 +217,13 @@ mod tests {
     async fn the_container_test_runs_on_the_engine_asked_for() {
         use crate::platform::exec::fake::{Tools, fail, ok};
         let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::strict_rules(&[("docker info", ok("27.3.1\n")), ("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
+        let tools = Tools::strict_rules(&[
+            ("docker image ls -q", crate::platform::exec::fake::ok("")),
+            ("docker compose -p cyberctf-selftest -f docker-compose.yml down", crate::platform::exec::fake::ok("")),
+            ("docker info", ok("27.3.1\n")),
+            ("image inspect", fail("No such image")),
+            ("pull", fail("timed out")),
+        ]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("orbstack".into()), channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:ok", "pull:running", "pull:fail"]);
@@ -247,7 +253,12 @@ mod tests {
     async fn a_failed_container_test_stops_at_its_step_and_still_cleans_up() {
         use crate::platform::exec::fake::{Tools, fail};
         let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::strict_rules(&[("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"))]);
+        let tools = Tools::strict_rules(&[
+            ("docker image ls -q", crate::platform::exec::fake::ok("")),
+            ("docker compose -p cyberctf-selftest -f docker-compose.yml down", crate::platform::exec::fake::ok("")),
+            ("docker image inspect", crate::platform::exec::fake::ok("")),
+            ("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock")),
+        ]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Docker, None, None, channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
@@ -310,7 +321,7 @@ mod tests {
     #[tokio::test]
     async fn without_vagrant_the_vm_test_stops_at_once() {
         let t = crate::testing::test_app::TestApp::new();
-        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[("vagrant", None)]);
+        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[("VBoxManage list vms", crate::platform::exec::fake::ok("")), ("vagrant", None)]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Vm, None, None, channel).await.is_err());
         assert_eq!(states(&seen), ["vagrant:running", "vagrant:fail"]);

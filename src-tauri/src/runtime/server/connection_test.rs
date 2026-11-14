@@ -114,7 +114,12 @@ mod tests {
         use crate::platform::exec::fake::{Tools, ok};
         let t = crate::testing::test_app::TestApp::new();
         let az = t.host("az1", "azure", serde_json::json!({}));
-        let tools = Tools::strict_rules(&[("account show", ok("Pay-As-You-Go\n"))]);
+        let tools = Tools::strict_rules(&[
+            ("az vm list-skus", crate::platform::exec::fake::ok("")),
+            ("az vm list-usage", crate::platform::exec::fake::ok("")),
+            ("terraform version", crate::platform::exec::fake::ok("")),
+            ("account show", ok("Pay-As-You-Go\n")),
+        ]);
         let result = test_connection(&t.dirs(), &az).await.unwrap();
         assert!(tools.called("az account show"), "{:?}", tools.calls());
         assert!(!result.checks.is_empty());

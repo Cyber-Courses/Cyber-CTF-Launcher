@@ -109,6 +109,8 @@ mod tests {
         std::fs::write(vagrant.join("Vagrantfile"), "").unwrap();
         let global = format!("1,,machine-id,a\n1,,provider-name,virtualbox\n1,,machine-home,{}\n1,,state,running\n", vagrant.display());
         let tools = Tools::strict_rules(&[
+            ("docker compose -p cyberctf-sqli down", crate::platform::exec::fake::ok("")),
+            ("docker rm -f", crate::platform::exec::fake::ok("")),
             ("docker ps --filter", ok("aaa\tcyberctf-sqli-web-1\tcyberctf-sqli\n")),
             ("docker stats", ok("aaa\t10MiB / 1GiB\n")),
             ("global-status", ok(global)),

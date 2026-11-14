@@ -432,7 +432,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_cli_is_pointed_at_the_context_of_the_engine_asked_for() {
-        let tools = Tools::strict_rules(&[("context ls", ok("default *\norbstack\ncolima-dev\n"))]);
+        let tools =
+            Tools::strict_rules(&[("docker context use", crate::platform::exec::fake::ok("")), ("context ls", ok("default *\norbstack\ncolima-dev\n"))]);
         docker_use_engine("colima".into()).await.unwrap();
         assert!(tools.called("docker context use colima-dev"), "{:?}", tools.calls());
         let err = docker_use_engine("podman".into()).await.unwrap_err();

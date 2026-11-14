@@ -496,7 +496,7 @@ mod tests {
         let tools = Tools::script().allow("docker", ok("")).build();
         call(&tools, "docker compose -p lab up");
         call(&tools, "docker info");
-        assert_eq!(tools.made("docker compose * up"), [vec!["compose", "-p", "lab", "up"]]);
+        assert_eq!(tools.made("docker compose -p * up"), [vec!["compose", "-p", "lab", "up"]]);
         assert_eq!(tools.made("dockerd"), Vec::<Vec<String>>::new());
     }
 }

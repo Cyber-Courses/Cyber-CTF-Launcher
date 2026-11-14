@@ -370,7 +370,7 @@ mod tests {
         let state = t.data().join("deployments").join(id).join("aws");
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
-        let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::strict_rules(&[("docker network ls", crate::platform::exec::fake::ok(""))]);
         assert!(crate::runtime::lab_present(&dirs, id));
         let err = run_claimed(&test_deps(&t, Arc::default()), &claim_of(id).launch, &StartPlace::default(), false).await.unwrap_err();
         assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");

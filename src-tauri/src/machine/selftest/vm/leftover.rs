@@ -105,6 +105,7 @@ mod tests {
         let dir = Path::new("/data/selftest/vm");
         let ours = format!("description=\"{}\"\n", vbox_description(dir));
         let tools = Tools::strict_rules(&[
+            ("VBoxManage unregistervm", crate::platform::exec::fake::ok("")),
             ("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")),
             ("VBoxManage showvminfo abc", ok(&ours)),
             ("VBoxManage controlvm abc poweroff", fail("not running")),

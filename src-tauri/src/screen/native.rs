@@ -234,7 +234,7 @@ mod tests {
         assert!(err.to_string().contains("VBoxManage"), "{err}");
         assert_eq!(tools.calls(), ["/bin/VBoxManage startvm web --type separate"]);
         drop(tools);
-        let _ok = crate::platform::exec::fake::Tools::strict_rules(&[]);
+        let _ok = crate::platform::exec::fake::Tools::strict_rules(&[("virt-viewer lab_web", crate::platform::exec::fake::ok(""))]);
         run(Path::new("/bin/virt-viewer"), &["lab_web".into()]).await.unwrap();
     }
     /// Regression: a viewer left running had its error output's pipe closed under it, so the

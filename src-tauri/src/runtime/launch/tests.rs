@@ -220,7 +220,7 @@ async fn a_plain_container_start_forgets_an_earlier_per_machine_form() {
     // generated or run), after the form was decided: no container is ever started here.
     let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS)]);
     mark_per_machine_vm(&dir, true).unwrap();
-    let tools = Tools::strict_rules(&[]);
+    let tools = Tools::strict_rules(&[("docker network ls", crate::platform::exec::fake::ok(""))]);
     let (r, _) = start_here(&t, "both", Runtime::Docker, None, &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.contains("isoloom.yml has mistakes") && err.contains("setup.sh"), "{err}");

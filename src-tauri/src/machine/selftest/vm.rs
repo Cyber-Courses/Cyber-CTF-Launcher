@@ -364,7 +364,7 @@ mod tests {
         assert_eq!(free_ip().await, Some("192.168.56.249"));
         let v = vagrantfile(Provider::Virtualbox, "x", free_ip().await, Path::new("/t"));
         assert!(v.contains("ip: \"192.168.56.249\"") && !v.contains(".250"), "{v}");
-        let _all = Tools::strict_rules(&[]);
+        let _all = Tools::strict_rules(&[("ping -c 1", crate::platform::exec::fake::ok("64 bytes"))]);
         assert_eq!(free_ip().await, None, "every address answers");
         assert!(!vagrantfile(Provider::Virtualbox, "x", None, Path::new("/t")).contains("private_network"));
     }
@@ -480,6 +480,8 @@ mod tests {
         let seen = events.clone();
         let r = Reporter::new(move |e: crate::runtime::selftest_report::Event| seen.lock().unwrap().push(format!("{}:{}", e.step, e.state)));
         let tools = Tools::strict_rules(&[
+            ("VBoxManage controlvm", crate::platform::exec::fake::ok("")),
+            ("VBoxManage unregistervm", crate::platform::exec::fake::ok("")),
             ("vagrant destroy", fail("The machine isn't created")),
             ("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")),
             ("VBoxManage showvminfo abc", ok(&ours)),
