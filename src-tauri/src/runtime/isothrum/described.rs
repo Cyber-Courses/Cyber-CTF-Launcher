@@ -137,11 +137,9 @@ fn vagrant_runners(project: &Path) -> Vec<String> {
     vms
 }
 
-/// The command that runs a VM's checks inside it (Isoloom's Vagrant runner, installed at every
-/// provisioning).
-pub(super) fn vagrant_check_command() -> Vec<String> {
-    ["sudo", "sh", "/var/lib/isoloom/checks.sh"].map(str::to_owned).to_vec()
-}
+/// The provisioner of Isoloom's Vagrantfiles that runs a VM's checks, its scripts read from the
+/// host first (`vagrant provision <vm> --provision-with checks`).
+pub(super) const VAGRANT_CHECKS: &str = "checks";
 
 /// What marks a check runner's line (Isoloom's `isoloom-check/1` protocol), wherever it starts
 /// in the line its tool prints.

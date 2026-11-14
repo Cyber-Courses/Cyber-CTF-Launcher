@@ -446,7 +446,7 @@ impl LabRun {
     /// file keeps the value it was written with.
     pub(crate) async fn provision(&self, machine: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
-        when_unlocked(log, move |sink| async move { lab.provision(machine, opts, &sink).await }).await.map_err(|e| self.said(errors::from_runner(e)))
+        when_unlocked(log, move |sink| async move { lab.provision(machine, None, opts, &sink).await }).await.map_err(|e| self.said(errors::from_runner(e)))
     }
 
     /// Runs the lab's checks; not available when it declares none (nothing runs then).
@@ -586,23 +586,44 @@ async fn up_with(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(Stri
     progress::follow(log, lines, lab.up(opts, &sink)).await.map(drop).map_err(errors::from_runner)
 }
 
-/// Runs `lab`'s checks in each of its `runners` (Compose services, or VMs when `vms`, where
-/// Isoloom installed its runner script); not available when it has none (nothing runs then).
+/// Runs `lab`'s checks in each of its `runners` (Compose services, or VMs when `vms`); not
+/// available when it has none (nothing runs then).
 async fn checks_of(lab: &Running<'_>, runners: &[String], vms: bool, opts: &RunOptions) -> Result<Check> {
     if runners.is_empty() {
         return Ok(Check::default());
     }
-    let argv = if vms { described::vagrant_check_command() } else { Vec::new() };
     let (mut lines, mut all_ok) = (Vec::new(), true);
     for runner in runners {
-        let (sink, events) = progress::channel();
-        let mut said = Vec::new();
-        let report = progress::follow(&mut |l| said.push(l), events, lab.exec(runner, &argv, opts, &sink)).await.map_err(errors::from_runner)?;
-        let printed = report.stdout.lines().chain(report.stderr.lines()).map(str::to_owned);
-        lines.extend(said.into_iter().chain(printed).map(|l| (runner.clone(), l)));
-        all_ok &= report.exit == 0;
+        let (said, ok) = if vms { vm_checks(lab, runner, opts).await? } else { service_checks(lab, runner, opts).await? };
+        lines.extend(said.into_iter().map(|l| (runner.clone(), l)));
+        all_ok &= ok;
     }
     Ok(view::check(&lines, all_ok))
+}
+
+/// The checks of Compose service `runner` (`isoloom-check[-<position>]`), run as a one-off: what
+/// it printed, and whether it passed.
+async fn service_checks(lab: &Running<'_>, runner: &str, opts: &RunOptions) -> Result<(Vec<String>, bool)> {
+    let (sink, events) = progress::channel();
+    let mut said = Vec::new();
+    let report = progress::follow(&mut |l| said.push(l), events, lab.exec(runner, &[], opts, &sink)).await.map_err(errors::from_runner)?;
+    said.extend(report.stdout.lines().chain(report.stderr.lines()).map(str::to_owned));
+    Ok((said, report.exit == 0))
+}
+
+/// The checks of VM `vm`, through Isoloom's `checks` provisioner, which reads the check scripts
+/// from the host again before it runs them: what it printed (the operation's log), and whether
+/// it passed. A provisioner that fails is a check that failed when it printed any check's line;
+/// one that printed none never ran them, and its error is the answer.
+async fn vm_checks(lab: &Running<'_>, vm: &str, opts: &RunOptions) -> Result<(Vec<String>, bool)> {
+    let (sink, events) = progress::channel();
+    let mut said = Vec::new();
+    let ran = progress::follow(&mut |l| said.push(l), events, lab.provision(Some(vm), Some(described::VAGRANT_CHECKS), opts, &sink)).await;
+    match ran {
+        Ok(()) => Ok((said, true)),
+        Err(_) if said.iter().any(|l| described::check_line(l).is_some()) => Ok((said, false)),
+        Err(e) => Err(errors::from_runner(e)),
+    }
 }
 
 /// Pins a lab's docker/compose calls to one engine: when a Docker context was chosen for the run,
