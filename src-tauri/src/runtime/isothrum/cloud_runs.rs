@@ -11,7 +11,7 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use isothrum_runner::{Format, RunName, RunOptions, RunRecord, Runner, SecretValue, Secrets};
+use isothrum_runner::{Format, RunOptions, RunRecord, Runner, SecretValue, Secrets};
 
 use super::opened::OpenedRun;
 use super::{errors, progress, view};
@@ -160,8 +160,7 @@ impl CloudRun {
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
         let config = super::host_config(home);
         let (out, target) = lab::terraform(dir, runtime, cloud);
-        let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
-        Ok(CloudRun { run: OpenedRun::new(config, dir, Some(target), out, name, true)?, cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (out, Some(target)), true)?, cloud: cloud.to_owned() })
     }
 
     /// Refuses a change while the account's sign-in has run out, before anything runs: the
@@ -245,6 +244,7 @@ impl CloudRun {
 
     /// The lab's checks: not available in a cloud account yet (the runner runs no command in a
     /// Terraform module's VMs).
+    #[expect(clippy::unused_self, reason = "a run's checks are asked of the run, as on the other hosts; this one has none to run yet")]
     pub(crate) fn check(&self, _place: &CloudPlace) -> Check {
         Check::default()
     }

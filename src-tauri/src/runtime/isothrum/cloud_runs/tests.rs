@@ -70,9 +70,13 @@ async fn an_expired_run_whose_account_is_gone_is_skipped_and_the_others_still_sw
     };
     crate::testing::logs::take_warnings();
     let failed = reap_expired(&home, SystemTime::now(), account, |_| Some(())).await.unwrap();
-    // Its lab isn't installed: its files can't be generated again, which is said.
+    // Its lab isn't installed any more: it is destroyed with the module its run kept, which is said.
     let warned = crate::testing::logs::take_warnings();
-    assert!(warned.iter().any(|w| w.starts_with("auto-stop: cyberctf-web's files can't be generated again (lab `web` is not installed)")), "{warned:?}");
+    assert!(
+        warned.iter().any(|w| w
+            .starts_with("auto-stop: cyberctf-web's lab isn't installed any more (lab `web` is not installed); destroying it with the module its run kept")),
+        "{warned:?}"
+    );
     assert_eq!(asked.into_inner().unwrap(), ["gone1", "aws1"], "every expired run's account is looked up");
     let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
     assert_eq!(names, ["cyberctf-web"], "{failed:?}");

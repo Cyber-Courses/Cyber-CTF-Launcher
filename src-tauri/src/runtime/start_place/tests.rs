@@ -97,8 +97,8 @@ async fn a_vm_lab_runs_here_when_a_hypervisor_here_runs_it_else_on_the_default_s
     let pve = t.host("pve", "proxmox", serde_json::json!({}));
     default_server(&t, &pve);
     assert_eq!(place(&t, "ad", Runtime::Vm, &[Provider::Virtualbox]).await, here_on(Provider::Virtualbox));
-    // A hypervisor that can't run it (UTM: no network for its VMs) doesn't count.
-    assert_eq!(place(&t, "ad", Runtime::Vm, &[Provider::Utm]).await, host("pve"));
+    // UTM runs it too (one isolated network per lab network).
+    assert_eq!(place(&t, "ad", Runtime::Vm, &[Provider::Utm]).await, here_on(Provider::Utm));
     assert_eq!(place(&t, "ad", Runtime::Vm, &[]).await, host("pve"));
     // VMs built for another CPU run here only emulated.
     installed(&t, "other", &vms_on(foreign));
@@ -148,14 +148,13 @@ async fn a_lab_starts_again_where_it_last_ran() {
     set_provider(&t, "web", "virtualbox");
     assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, per_machine_on(Provider::Virtualbox));
     // Last in a helper VM an earlier version ran it inside: its true form, on Docker when Docker
-    // answers, else as one VM per machine on that hypervisor while its spec runs there (UTM gives
-    // VMs no network: Docker then, whose start says it doesn't answer).
+    // answers, else as one VM per machine on that hypervisor while its spec runs there.
     record_run(t.data(), "web", None, "docker-vm", "absent");
     set_provider(&t, "web", "virtualbox");
     assert_eq!(with_docker(&t, "web", Runtime::Docker, true).await, StartPlace::default());
     assert_eq!(with_docker(&t, "web", Runtime::Docker, false).await, per_machine_on(Provider::Virtualbox));
     set_provider(&t, "web", "utm");
-    assert_eq!(with_docker(&t, "web", Runtime::Docker, false).await, StartPlace::default());
+    assert_eq!(with_docker(&t, "web", Runtime::Docker, false).await, per_machine_on(Provider::Utm));
     // A server no longer saved: as if it never ran there.
     record_run(t.data(), "web", Some("gone"), "docker-vm", "absent");
     assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace::default());
@@ -172,10 +171,10 @@ async fn a_vm_lab_starts_here_on_the_preferred_hypervisor_when_it_is_ready_and_r
     let ready = [Provider::Virtualbox, Provider::Libvirt];
     assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, Some(Provider::Libvirt)).await, here_on(Provider::Libvirt));
     assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, None).await, here_on(Provider::Virtualbox), "no choice: the first ready");
-    // Preferred but not ready, or ready but unable to run it (UTM: no network for its VMs): not it.
+    // Preferred but not ready: not it. UTM, ready and preferred, runs it.
     assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, Some(Provider::Parallels)).await, here_on(Provider::Virtualbox));
     let utm = [Provider::Utm, Provider::Virtualbox];
-    assert_eq!(preferring(&t, "ad", Runtime::Vm, &utm, Some(Provider::Utm)).await, here_on(Provider::Virtualbox));
+    assert_eq!(preferring(&t, "ad", Runtime::Vm, &utm, Some(Provider::Utm)).await, here_on(Provider::Utm));
     // Where it last ran here comes first: its VMs are there.
     record_run(t.data(), "ad", None, "vagrant", "absent");
     set_provider(&t, "ad", "virtualbox");

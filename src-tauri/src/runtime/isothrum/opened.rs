@@ -29,11 +29,11 @@ pub(crate) struct OpenedRun {
 }
 
 impl OpenedRun {
-    /// The run named `name` of the lab in `dir`, whose Terraform module `project` is generated
-    /// for `target` (none: a helper VM's, see [`OpenedRun::target`]), on a runner set up with
-    /// `config`, its operations through the home's runner service when `service` (in this process
-    /// for a test's).
-    pub(super) fn new(config: RunnerConfig, dir: &Path, target: Option<lab::Target>, project: PathBuf, name: RunName, service: bool) -> Result<Self> {
+    /// The run of lab `id` in `dir`, whose Terraform module `project` is generated for `target`
+    /// (none: a helper VM's, see [`OpenedRun::target`]), on a runner set up with `config`, its
+    /// operations through the home's runner service when `service` (in this process for a test's).
+    pub(super) fn new(config: RunnerConfig, dir: &Path, id: &str, (project, target): (PathBuf, Option<lab::Target>), service: bool) -> Result<Self> {
+        let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         let home = config.home.clone();
         Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, home, dir: dir.to_path_buf(), target, project, name, service })
     }
@@ -44,10 +44,10 @@ impl OpenedRun {
         if self.service
             && let Some(client) = remote::client(&self.home).await
         {
-            let target = remote::target(&self.project, Format::Terraform, &self.name);
-            return Box::pin(remote::operate(&self.home, &client, act, target, opts, log)).await.map(drop).map_err(remote::Failure::into_error);
+            let on = remote::Served { home: &self.home, client: &client, target: remote::target(&self.project, Format::Terraform, &self.name) };
+            return Box::pin(remote::operate(on, act, opts, log)).await.map(drop).map_err(remote::Failure::into_error);
         }
-        let lab = self.running().await?;
+        let lab = self.running()?;
         Box::pin(remote::in_process(&lab, act, opts, log)).await.map(drop).map_err(remote::Failure::into_error)
     }
 
@@ -59,7 +59,7 @@ impl OpenedRun {
             let target = remote::target(&self.project, Format::Terraform, &self.name);
             return remote::status(&self.home, &client, &self.name, target).await.map_err(remote::Failure::into_error);
         }
-        self.running().await?.status().await.map_err(errors::from_runner)
+        self.running()?.status().await.map_err(errors::from_runner)
     }
 
     /// Whether the module was generated (a start that failed before generation made none).
@@ -74,7 +74,7 @@ impl OpenedRun {
     }
 
     /// The lab's module, opened under the run's name.
-    pub(super) async fn running(&self) -> Result<Running<'_>> {
+    pub(super) fn running(&self) -> Result<Running<'_>> {
         self.runner.open_as(&self.project, Format::Terraform, Some(self.name.clone())).map_err(|e| match self.target {
             Some(_) => errors::from_runner(e),
             // A helper VM an earlier version left on a server: said what to remove if not opened.
@@ -122,13 +122,13 @@ impl OpenedRun {
     /// `machine`'s graphical console (its screen), as the runner reaches it with `opts` (the
     /// place's credentials: a Proxmox server's API, as the module's own values carry them).
     pub(crate) async fn graphical_console(&self, machine: &str, opts: &RunOptions) -> Result<isothrum_runner::Console> {
-        self.running().await?.graphical_console(machine, opts).await.map_err(errors::from_runner)
+        self.running()?.graphical_console(machine, opts).await.map_err(errors::from_runner)
     }
 
     /// What opens running VM `machine` in its hypervisor's own app (a server's web console), as
     /// the runner says with `opts`.
     pub(crate) async fn native_console(&self, machine: &str, opts: &RunOptions) -> Result<isothrum_runner::NativeConsole> {
-        self.running().await?.native_console(machine, opts).await.map_err(errors::from_runner)
+        self.running()?.native_console(machine, opts).await.map_err(errors::from_runner)
     }
 }
 

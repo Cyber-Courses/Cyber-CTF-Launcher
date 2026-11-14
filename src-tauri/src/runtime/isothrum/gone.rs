@@ -48,7 +48,8 @@ impl LabRun {
             return Ok(false);
         }
         let status = self.read().await?;
-        Ok(status.live && !status.machines.is_empty() && status.machines.iter().all(|m| m.state == isothrum_runner::MachineState::Absent))
+        // A live read lists what it found: none, or only machines absent, is nothing left.
+        Ok(status.live && status.machines.iter().all(|m| m.state == isothrum_runner::MachineState::Absent))
     }
 
     /// `e`, an operation's failure on this run, as the player reads it: on this machine's Docker,

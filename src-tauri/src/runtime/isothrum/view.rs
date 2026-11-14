@@ -49,13 +49,19 @@ fn runs_in(lab: &Described, status: &Status) -> bool {
     status.machines.iter().any(|m| lab.machine(&m.name).is_some() && matches!(m.state, MachineState::Running | MachineState::Unhealthy))
 }
 
-/// The page the lab starts at: its first web port published on the host, at the host's loopback.
+/// The page the lab starts at: its first web port published on the host, at the host's loopback, else
+/// at its machine's own address.
 fn entry(lab: &Described, status: &Status) -> Option<String> {
     lab.machines.iter().find_map(|d| {
         let seen = status.machines.iter().find(|m| m.name == d.name)?;
         d.ports.iter().filter(|p| p.web()).find_map(|p| {
-            let host = published(seen, p)?;
-            Some(format!("{}://127.0.0.1:{}/", if p.protocol == "https" { "https" } else { "http" }, host.get()))
+            // Published on this computer, else at the machine's own address (a VM nothing forwards
+            // to: on an ESXi host, on libvirt's network).
+            let at = match published(seen, p) {
+                Some(host) => format!("127.0.0.1:{}", host.get()),
+                None => format!("{}:{}", seen.address.as_deref()?, p.port),
+            };
+            Some(format!("{}://{at}/", if p.protocol == "https" { "https" } else { "http" }))
         })
     })
 }

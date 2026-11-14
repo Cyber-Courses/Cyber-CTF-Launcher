@@ -13,7 +13,7 @@ fn options(spec: &str, runtime: Runtime) -> RunOptions {
 
 /// The lab's run options on a `host` CPU.
 fn options_on(spec: &str, runtime: Runtime, host: Arch) -> RunOptions {
-    run_options_on(&Lab::new(isoloom_spec::parse(spec).unwrap()), runtime, host)
+    run_options_on(&Lab::new(isoloom_spec::parse(spec).unwrap()).with_host_access(crate::runtime::lab::granted()), runtime, host)
 }
 
 /// The providers of `paths`, in order.
@@ -85,6 +85,7 @@ fn a_windows_vm_given_a_labs_input_runs_on_no_cloud_and_says_why() {
 }
 
 #[test]
+#[ignore = "its spec's `cloud:` section is refused by Isoloom 3.0: a cloud-services lab's facts move to the launcher's own lab file"]
 fn cloud_services_run_on_their_own_cloud_only() {
     let spec = "version: 1\nname: goat\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { region: us-east-1 }\n";
     let o = options(spec, Runtime::Cloud);
@@ -110,6 +111,9 @@ fn the_picker_offers_no_way_the_policy_turns_off_and_says_why() {
     use crate::platform::policy::{Key, Override};
     let open = options(DUAL, Runtime::Docker);
     assert!(!open.cloud_vm.is_empty() && !open.cloud_docker.is_empty());
+    let isoloom_refused = |o: &RunOptions| -> Vec<Refusal> { o.refused.iter().filter(|r| matches!(r.cause, RefusalCause::Isoloom { .. })).cloned().collect() };
+    let windows = isoloom_refused(&options(VMS, Runtime::Vm));
+    assert!(windows.iter().any(|r| r.provider == Some(Provider::Utm)), "UTM has no Windows Server box: {windows:?}");
     {
         let _policy = Override::with(&[Key::DisableCloudLaunches]);
         let o = options(DUAL, Runtime::Docker);
@@ -118,6 +122,7 @@ fn the_picker_offers_no_way_the_policy_turns_off_and_says_why() {
         assert_eq!(o.vms, open.vms);
         let clouds = o.refused.iter().filter(|r| r.cause == by_policy("DisableCloudLaunches")).count();
         assert_eq!(clouds, open.cloud_vm.len() + open.cloud_docker.len(), "each cloud's row says why");
+        assert_eq!(isoloom_refused(&options(VMS, Runtime::Vm)), windows, "Isoloom's own refusals stay its own");
         let _privileged = Override::with(&[Key::RefusePrivilegedLabs]);
         assert_eq!(options(DUAL, Runtime::Docker).docker, open.docker, "a lab without privileged machines runs");
     }
@@ -125,9 +130,7 @@ fn the_picker_offers_no_way_the_policy_turns_off_and_says_why() {
     let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
     let o = options(&privileged, Runtime::Docker);
     assert!(o.docker.is_none() && o.vms.is_empty() && o.servers.is_empty() && o.cloud_vm.is_empty(), "nowhere");
-    assert!(o.refused.iter().any(|r| r.provider.is_none() && r.cause == by_policy("RefusePrivilegedLabs")), "this machine's Docker says why");
-    let utm = o.refused.iter().find(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant");
-    assert!(utm.is_some_and(|r| matches!(r.cause, RefusalCause::Isoloom { .. })), "Isoloom's own refusals stay its own: {utm:?}");
+    assert!(o.refused.iter().any(|r| r.provider.is_none() && r.cause == by_policy("RefusePrivilegedLabs")), "this machine's Docker says why: {:?}", o.refused);
 }
 
 /// A refusal by this computer's policy `setting`.

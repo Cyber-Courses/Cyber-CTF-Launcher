@@ -47,13 +47,40 @@ pub fn lab(dir: &Path) -> Result<Lab> {
     // With the launcher's additions (`overlay`) merged in, when it made any.
     let source = overlay::spec_text(dir)?.and_then(|text| isoloom_spec::parse(&text)).map_err(|e| Error::Invalid(load_error(&e)))?;
     let d = defaults(dir)?;
-    let lab = Lab::new(source).with_images(d.images.clone()).with_regions(d.regions());
+    let lab = Lab::new(source).with_images(d.images.clone()).with_regions(d.regions()).with_host_access(granted());
     let problems: Vec<String> = lab.problems_with_files(dir).iter().map(|p| p.render(isoloom_spec::SPEC_FILE)).collect();
     if !problems.is_empty() {
         return Err(Error::Invalid(format!("this lab's isoloom.yml has mistakes:\n{}", problems.join("\n"))));
     }
     Ok(lab)
 }
+
+/// What of this computer a lab may reach beyond its own machines, which Isoloom refuses unless
+/// its runner allows each: what the launcher's labs have always reached. Folders of this computer
+/// (the attack box's shared folder, which it writes in), the container engine's socket and a
+/// privileged container, the last one turned off by the `RefusePrivilegedLabs` policy with the
+/// launcher's own words (`launch::policy_allows`). A VM booted from this computer's files, its
+/// devices and a network bridged to its own stay refused: no lab of the launcher's uses them.
+fn granted() -> isoloom_spec::host_access::Grants {
+    use isoloom_spec::host_access::{Grants, HostAccess};
+    Grants::of([HostAccess::HostFolders, HostAccess::WritableHostFolders, HostAccess::DockerSocket, HostAccess::Privileged])
+}
+
+/// The lab in `dir` resolved as its instance runs it (Isoloom's snapshot: each machine's addresses,
+/// the networks), as JSON.
+pub fn resolved(dir: &Path) -> Result<serde_json::Value> {
+    isoloom_targets::resolved::resolve_with(&lab(dir)?, instance(dir)).map_err(|e| Error::Invalid(e.to_string()))
+}
+
+/// The lab's message (how to start, in Markdown) as it reads on `target`, its placeholders filled
+/// from its spec; none when it has none.
+pub fn message_on(dir: &Path, target: Target) -> Result<Option<String>> {
+    isoloom_targets::resolved::render_message_on(&lab(dir)?, instance(dir), target).map_err(|e| Error::Invalid(e.to_string()))
+}
+
+/// The VM a VM lab's checks that stand on its networks run in: Isoloom's controller, which halts
+/// once it has set the lab up.
+pub const CONTROLLER: &str = isoloom_spec::contract::CONTROLLER;
 
 /// A spec as written, unchecked (what a launch dialog previews): `isoloom.yml` in `dir`.
 pub fn load(dir: &Path) -> Result<Spec> {
