@@ -23,6 +23,7 @@ mod gone;
 mod one_read;
 mod opened;
 mod progress;
+mod remote;
 mod server;
 mod view;
 
@@ -233,6 +234,11 @@ pub(crate) struct LabRun {
     esxi: Option<EsxiPlace>,
     /// The Docker context a container lab's launch chose (its engine marker), if any.
     engine: Option<String>,
+    /// The runner's home (its service's).
+    home: PathBuf,
+    /// Whether its operations go to the home's runner service (a test's scripted runner runs them
+    /// in this process).
+    service: bool,
 }
 
 impl LabRun {
@@ -240,19 +246,19 @@ impl LabRun {
     /// folder), with this host's tools.
     pub(crate) fn docker(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
         // The lab's docker calls go to the engine chosen at launch (its marker), if any.
-        Ok(LabRun { engine: paths::engine(dir), ..LabRun::with(host_config(home), dir, id, Kind::Docker)? })
+        Ok(LabRun { engine: paths::engine(dir), ..LabRun::served(home, dir, id, Kind::Docker)? })
     }
 
     /// VM lab `id`, installed in `dir`, on the runner whose home is `home`, with this host's tools.
     pub(crate) fn vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
-        LabRun::with(host_config(home), dir, id, Kind::Vm)
+        LabRun::served(home, dir, id, Kind::Vm)
     }
 
     /// Container lab `id` left by an earlier version in one local helper VM (Isoloom's former
     /// `docker-vm`: Docker Compose inside a VM), installed in `dir`, on the runner whose home is
     /// `home`: to read, stop and remove that run.
     pub(crate) fn docker_in_vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
-        LabRun::with(host_config(home), dir, id, Kind::DockerVm)
+        LabRun::served(home, dir, id, Kind::DockerVm)
     }
 
     /// Lab `id`, installed in `dir` and declared `runtime`, as it runs on this machine, in the form
@@ -282,7 +288,7 @@ impl LabRun {
     /// is `home`; a container lab's run there is the helper VM an earlier version left.
     pub(crate) fn on_esxi(home: &Path, dir: &Path, id: &str, runtime: Runtime, place: EsxiPlace) -> Result<LabRun> {
         let kind = if runtime == Runtime::Docker { Kind::DockerVm } else { Kind::Vm };
-        Ok(LabRun::with(host_config(home), dir, id, kind)?.on(place))
+        Ok(LabRun::served(home, dir, id, kind)?.on(place))
     }
 
     /// The run on the ESXi server `place`.
@@ -290,11 +296,38 @@ impl LabRun {
         LabRun { esxi: Some(place), ..self }
     }
 
-    /// A run on a runner built from `config` (tests script its tools).
+    /// A run on the runner whose home is `home`, its operations through the home's service.
+    fn served(home: &Path, dir: &Path, id: &str, kind: Kind) -> Result<LabRun> {
+        Ok(LabRun { service: true, ..LabRun::with(host_config(home), dir, id, kind)? })
+    }
+
+    /// A run on a runner built from `config`, its operations in this process (tests script its
+    /// tools).
     fn with(config: RunnerConfig, dir: &Path, id: &str, kind: Kind) -> Result<LabRun> {
         let name = RunName::new(&super::docker::project(id)).map_err(errors::from_runner)?;
+        let home = config.home.clone();
         let runner = Runner::new(config).map_err(errors::from_runner)?;
-        Ok(LabRun { runner, dir: dir.to_path_buf(), name, kind, esxi: None, engine: None })
+        Ok(LabRun { runner, dir: dir.to_path_buf(), name, kind, esxi: None, engine: None, home, service: false })
+    }
+
+    /// `act` on the run with `opts`, its events as `log`'s lines: through the home's runner
+    /// service, else in this process (none reachable, or a test's runner). Whether it reached
+    /// its goal (false: a check failed).
+    async fn act(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, remote::Failure> {
+        if self.service
+            && let Some(client) = remote::client(&self.home).await
+        {
+            let target = remote::target(&self.project(), self.format(), &self.name);
+            return Box::pin(remote::operate(&self.home, &client, act, target, opts, log)).await;
+        }
+        let lab = self.lab().await.map_err(remote::Failure::Launcher)?;
+        Box::pin(remote::in_process(&lab, act, opts, log)).await
+    }
+
+    /// `act` on the run with this place's options, as [`LabRun::act`], its failure in the
+    /// player's words.
+    async fn act_placed(&self, act: remote::Act<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+        self.act(act, &self.placed(RunOptions::new()), log).await.map(drop).map_err(|e| self.said(e.into_error()))
     }
 
     /// The lab's generated project: its Compose folder, or its Vagrant one.
@@ -374,7 +407,8 @@ impl LabRun {
     /// VM lab runs on `provider`.
     pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let provider = provider.map(runner_provider).transpose()?;
-        up_with(&self.lab().await?, &self.placed(start_options(inputs, provider)), log).await.map_err(|e| self.said(e))?;
+        let opts = self.placed(start_options(inputs, provider));
+        self.act(remote::Act::Up, &opts, log).await.map_err(|e| self.said(e.into_error()))?;
         let message = self.target().and_then(|t| described::message(&self.dir, t));
         message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
         Ok(())
@@ -391,35 +425,32 @@ impl LabRun {
             log("Nothing to remove: the run has no files.".into());
             return Ok(());
         }
-        let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
-        when_unlocked(log, move |sink| async move { lab.down(opts, &sink).await }).await.map_err(|e| self.said(errors::from_runner(e)))
+        self.act_placed(remote::Act::Down, log).await
     }
 
     /// Parks the lab, keeping what it created: Docker only stops containers, so both of the
     /// launcher's park modes are the manifest's `shutdown` there; VMs are suspended (`Pause`) or
     /// powered off (`Shutdown`).
     pub(crate) async fn park(&self, mode: Park, log: &mut impl FnMut(String)) -> Result<()> {
-        let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
         let mode = match (self.kind, mode) {
             // VMs (a VM lab, or the VM a container lab runs in) suspend on Pause; Docker only
             // stops its containers, so both of its park modes are the manifest's `shutdown`.
             (Kind::Vm | Kind::DockerVm, Park::Pause) => isothrum_runner::Park::Pause,
             _ => isothrum_runner::Park::Shutdown,
         };
-        when_unlocked(log, move |sink| async move { lab.park(mode, opts, &sink).await }).await.map_err(|e| self.said(errors::from_runner(e)))
+        self.act_placed(remote::Act::Park(mode), log).await
     }
 
     /// Starts the parked lab again. When nothing is left of it, the launcher's parked mark goes
     /// too, so the lab page offers a fresh start instead of a resume that can't work.
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
-        match when_unlocked(log, move |sink| async move { lab.resume(opts, &sink).await }).await {
+        match self.act(remote::Act::Resume, &self.placed(RunOptions::new()), log).await {
             Ok(_) => Ok(()),
-            Err(e) if e.code() == isothrum_runner::ErrorCode::NothingToResume => {
+            Err(e) if e.code() == Some(isothrum_runner::ErrorCode::NothingToResume) => {
                 paths::mark_parked(&self.dir, None)?;
-                Err(errors::from_runner(e))
+                Err(e.into_error())
             }
-            Err(e) => Err(self.said(errors::from_runner(e))),
+            Err(e) => Err(self.said(e.into_error())),
         }
     }
 
@@ -429,15 +460,24 @@ impl LabRun {
         if !self.files_back()? {
             return Ok(LabStatus { place: Some(place), ..LabStatus::default() });
         }
-        let lab = self.lab().await?;
-        let status = self.read(&lab).await?;
+        let status = self.read().await?;
         Ok(LabStatus { place: Some(place), ..view::lab_status(&self.described()?, &status, paths::parked(&self.dir)) })
     }
 
-    /// `lab`'s status, read by the runner, one read of the run at a time in the app
-    /// ([`one_read`]): the lab page's and the attack box's never ask Vagrant at once.
-    async fn read(&self, lab: &Running<'_>) -> Result<Status> {
-        one_read::status(&self.dir.join(self.name.as_str()), || async { lab.status().await.map_err(|e| self.said(errors::from_runner(e))) }).await
+    /// The run's status, read by the home's runner service (else by the runner in this process),
+    /// one read of the run at a time in the app ([`one_read`]): the lab page's and the attack
+    /// box's never ask Vagrant at once.
+    async fn read(&self) -> Result<Status> {
+        one_read::status(&self.dir.join(self.name.as_str()), || async {
+            if self.service
+                && let Some(client) = remote::client(&self.home).await
+            {
+                let target = remote::target(&self.project(), self.format(), &self.name);
+                return remote::status(&self.home, &client, &self.name, target).await.map_err(|e| self.said(e.into_error()));
+            }
+            self.lab().await?.status().await.map_err(|e| self.said(errors::from_runner(e)))
+        })
+        .await
     }
 
     /// The provider the run's record says it runs on, none before it ever ran: read from the
@@ -451,13 +491,44 @@ impl LabRun {
     /// and its controller's play. The launch's values aren't kept, so none reaches it: an input's
     /// file keeps the value it was written with.
     pub(crate) async fn provision(&self, machine: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
-        let (lab, opts) = (&self.lab().await?, &self.placed(RunOptions::new()));
-        when_unlocked(log, move |sink| async move { lab.provision(machine, None, opts, &sink).await }).await.map_err(|e| self.said(errors::from_runner(e)))
+        self.act_placed(remote::Act::Provision(machine, None), log).await
     }
 
     /// Runs the lab's checks; not available when it declares none (nothing runs then).
     pub(crate) async fn check(&self) -> Result<Check> {
-        checks_of(&self.lab().await?, &self.described()?.check_runners, self.kind != Kind::Docker, &self.placed(RunOptions::new())).await
+        let runners = self.described()?.check_runners;
+        if runners.is_empty() {
+            return Ok(Check::default());
+        }
+        let (mut lines, mut all_ok) = (Vec::new(), true);
+        for runner in &runners {
+            let (said, ok) = if self.kind == Kind::Docker { self.service_checks(runner).await? } else { self.vm_checks(runner).await? };
+            lines.extend(said.into_iter().map(|l| (runner.clone(), l)));
+            all_ok &= ok;
+        }
+        Ok(view::check(&lines, all_ok))
+    }
+
+    /// The checks of Compose service `runner` (`isoloom-check[-<position>]`), run as a one-off:
+    /// what it printed, and whether it passed.
+    async fn service_checks(&self, runner: &str) -> Result<(Vec<String>, bool)> {
+        let mut said = Vec::new();
+        let ok = self.act(remote::Act::Exec(runner, &[]), &self.placed(RunOptions::new()), &mut |l| said.push(l)).await.map_err(remote::Failure::into_error)?;
+        Ok((said, ok))
+    }
+
+    /// The checks of VM `vm`, through Isoloom's `checks` provisioner, which reads the check
+    /// scripts from the host again before it runs them: what it printed (the operation's log),
+    /// and whether it passed. A provisioner that fails is a check that failed when it printed any
+    /// check's line; one that printed none never ran them, and its error is the answer.
+    async fn vm_checks(&self, vm: &str) -> Result<(Vec<String>, bool)> {
+        let mut said = Vec::new();
+        let act = remote::Act::Provision(Some(vm), Some(described::VAGRANT_CHECKS));
+        match self.act(act, &self.placed(RunOptions::new()), &mut |l| said.push(l)).await {
+            Ok(ok) => Ok((said, ok)),
+            Err(_) if said.iter().any(|l| described::check_line(l).is_some()) => Ok((said, false)),
+            Err(e) => Err(e.into_error()),
+        }
     }
 
     /// Brings the running lab up to date with its regenerated files (a machine added to the lab
@@ -486,7 +557,7 @@ impl LabRun {
     async fn attempt(&self, op: Op<'_>, log: &mut impl FnMut(String)) -> Result<()> {
         match op {
             Op::Up { inputs, provider } => self.up(inputs, Some(provider), log).await,
-            Op::Update => update_of(&self.lab().await?, &self.placed(RunOptions::new()), log).await,
+            Op::Update => self.act_placed(remote::Act::Update, log).await,
         }
     }
 
@@ -525,7 +596,7 @@ impl LabRun {
 
     /// Takes `machine` out of the running lab, ahead of its removal from the lab's files.
     pub(crate) async fn retire(&self, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        retire_from(&self.lab().await?, machine, &self.placed(RunOptions::new()), log).await
+        self.act_placed(remote::Act::Retire(machine), log).await
     }
 
     /// The run's status as the runner reports it; None before the lab's files exist.
@@ -533,8 +604,7 @@ impl LabRun {
         if !self.files_back()? {
             return Ok(None);
         }
-        let lab = self.lab().await?;
-        self.read(&lab).await.map(Some)
+        self.read().await.map(Some)
     }
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
@@ -572,64 +642,6 @@ enum Op<'a> {
     Up { inputs: Inputs<'a>, provider: &'a str },
     /// Bringing the running run up to date with its files.
     Update,
-}
-
-/// Brings `lab` up to date with its regenerated manifest, with `opts`, waiting out another
-/// operation's hold on the run.
-async fn update_of(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-    when_unlocked(log, move |sink| async move { lab.update(opts, &sink).await }).await.map_err(errors::from_runner)
-}
-
-/// Takes `machine` out of `lab` ahead of its removal from the manifest, with `opts`, waiting out
-/// another operation's hold on the run.
-async fn retire_from(lab: &Running<'_>, machine: &str, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-    when_unlocked(log, move |sink| async move { lab.retire(machine, opts, &sink).await }).await.map_err(errors::from_runner)
-}
-
-/// Brings `lab` up with `opts`, its events as `log`'s lines.
-async fn up_with(lab: &Running<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-    let (sink, lines) = progress::channel();
-    progress::follow(log, lines, lab.up(opts, &sink)).await.map(drop).map_err(errors::from_runner)
-}
-
-/// Runs `lab`'s checks in each of its `runners` (Compose services, or VMs when `vms`); not
-/// available when it has none (nothing runs then).
-async fn checks_of(lab: &Running<'_>, runners: &[String], vms: bool, opts: &RunOptions) -> Result<Check> {
-    if runners.is_empty() {
-        return Ok(Check::default());
-    }
-    let (mut lines, mut all_ok) = (Vec::new(), true);
-    for runner in runners {
-        let (said, ok) = if vms { vm_checks(lab, runner, opts).await? } else { service_checks(lab, runner, opts).await? };
-        lines.extend(said.into_iter().map(|l| (runner.clone(), l)));
-        all_ok &= ok;
-    }
-    Ok(view::check(&lines, all_ok))
-}
-
-/// The checks of Compose service `runner` (`isoloom-check[-<position>]`), run as a one-off: what
-/// it printed, and whether it passed.
-async fn service_checks(lab: &Running<'_>, runner: &str, opts: &RunOptions) -> Result<(Vec<String>, bool)> {
-    let (sink, events) = progress::channel();
-    let mut said = Vec::new();
-    let report = progress::follow(&mut |l| said.push(l), events, lab.exec(runner, &[], opts, &sink)).await.map_err(errors::from_runner)?;
-    said.extend(report.stdout.lines().chain(report.stderr.lines()).map(str::to_owned));
-    Ok((said, report.exit == 0))
-}
-
-/// The checks of VM `vm`, through Isoloom's `checks` provisioner, which reads the check scripts
-/// from the host again before it runs them: what it printed (the operation's log), and whether
-/// it passed. A provisioner that fails is a check that failed when it printed any check's line;
-/// one that printed none never ran them, and its error is the answer.
-async fn vm_checks(lab: &Running<'_>, vm: &str, opts: &RunOptions) -> Result<(Vec<String>, bool)> {
-    let (sink, events) = progress::channel();
-    let mut said = Vec::new();
-    let ran = progress::follow(&mut |l| said.push(l), events, lab.provision(Some(vm), Some(described::VAGRANT_CHECKS), opts, &sink)).await;
-    match ran {
-        Ok(()) => Ok((said, true)),
-        Err(_) if said.iter().any(|l| described::check_line(l).is_some()) => Ok((said, false)),
-        Err(e) => Err(errors::from_runner(e)),
-    }
 }
 
 /// The variable a run's tools get the Docker context chosen at the lab's launch in (the engine

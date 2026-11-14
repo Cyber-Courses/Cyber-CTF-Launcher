@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use isothrum_runner::{Format, RunName, RunOptions, Runner, RunnerConfig, Running};
 
-use super::errors;
+use super::{errors, remote};
 use crate::error::{Error, Result};
 use crate::runtime::lab;
 
@@ -23,15 +23,43 @@ pub(crate) struct OpenedRun {
     /// The run's Terraform module.
     pub(super) project: PathBuf,
     pub(super) name: RunName,
+    /// Whether its operations go to the home's runner service (a test's scripted runner runs them
+    /// in this process).
+    service: bool,
 }
 
 impl OpenedRun {
     /// The run named `name` of the lab in `dir`, whose Terraform module `project` is generated
     /// for `target` (none: a helper VM's, see [`OpenedRun::target`]), on a runner set up with
-    /// `config`.
-    pub(super) fn new(config: RunnerConfig, dir: &Path, target: Option<lab::Target>, project: PathBuf, name: RunName) -> Result<Self> {
+    /// `config`, its operations through the home's runner service when `service` (in this process
+    /// for a test's).
+    pub(super) fn new(config: RunnerConfig, dir: &Path, target: Option<lab::Target>, project: PathBuf, name: RunName, service: bool) -> Result<Self> {
         let home = config.home.clone();
-        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, home, dir: dir.to_path_buf(), target, project, name })
+        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, home, dir: dir.to_path_buf(), target, project, name, service })
+    }
+
+    /// `act` on the run with `opts`, its events as `log`'s lines: through the home's runner
+    /// service, else in this process (none reachable, or a test's runner).
+    pub(super) async fn act(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
+        if self.service
+            && let Some(client) = remote::client(&self.home).await
+        {
+            let target = remote::target(&self.project, Format::Terraform, &self.name);
+            return Box::pin(remote::operate(&self.home, &client, act, target, opts, log)).await.map(drop).map_err(remote::Failure::into_error);
+        }
+        let lab = self.running().await?;
+        Box::pin(remote::in_process(&lab, act, opts, log)).await.map(drop).map_err(remote::Failure::into_error)
+    }
+
+    /// The run's status, read by the home's runner service (else by the runner in this process).
+    pub(super) async fn read(&self) -> Result<isothrum_runner::Status> {
+        if self.service
+            && let Some(client) = remote::client(&self.home).await
+        {
+            let target = remote::target(&self.project, Format::Terraform, &self.name);
+            return remote::status(&self.home, &client, &self.name, target).await.map_err(remote::Failure::into_error);
+        }
+        self.running().await?.status().await.map_err(errors::from_runner)
     }
 
     /// Whether the module was generated (a start that failed before generation made none).
@@ -59,19 +87,19 @@ impl OpenedRun {
         if !self.has_project() {
             return Ok(None);
         }
-        self.running().await?.status().await.map(Some).map_err(errors::from_runner)
+        self.read().await.map(Some)
     }
 
     /// Brings the running lab up to date with its regenerated files, with `opts` (what changing
     /// the run needs: the place's connection and credentials).
     pub(crate) async fn update_with(&self, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-        super::update_of(&self.running().await?, opts, log).await
+        self.act(remote::Act::Update, opts, log).await
     }
 
     /// Takes `machine` out of the running lab ahead of its removal from the lab's files, with
     /// `opts`, as [`OpenedRun::update_with`].
     pub(crate) async fn retire_with(&self, machine: &str, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-        super::retire_from(&self.running().await?, machine, opts, log).await
+        self.act(remote::Act::Retire(machine), opts, log).await
     }
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
@@ -79,7 +107,7 @@ impl OpenedRun {
     /// the machine's address through the module's router (its `ip` output) as a jump host. The
     /// runner gives a Terraform module's machines no console command of its own.
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<isothrum_runner::ShellCommand> {
-        let status = self.running().await?.status().await.map_err(errors::from_runner)?;
+        let status = self.read().await?;
         let output = |name: &str| status.outputs.iter().find(|o| o.name == name).and_then(|o| o.revealed()).map(str::to_owned);
         let (Some(router), Some(login)) = (output("ip"), output("ssh_user")) else {
             return Err(Error::Invalid("This lab isn't up: its router's address isn't known yet.".into()));
