@@ -50,7 +50,7 @@ fn expired_record(home: &Path, lab: &str, host: &str) {
 
 /// A fresh runner home with each `(lab, host)` as an expired cloud run (`cyberctf-<lab>`).
 fn home_with(records: &[(&str, &str)]) -> std::path::PathBuf {
-    let home = std::env::temp_dir().join(format!("cyberctf-reap-{}", rand::random::<u32>()));
+    let home = std::env::temp_dir().join(format!("cyberctf-reap-{}", rand::random::<u32>())).join("isothrum");
     for (lab, host) in records {
         expired_record(&home, lab, host);
     }
@@ -77,7 +77,7 @@ async fn an_expired_run_whose_account_is_gone_is_skipped_and_the_others_still_sw
     let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
     assert_eq!(names, ["cyberctf-web"], "{failed:?}");
     assert!(crate::testing::runner::is_recorded(&home, "cyberctf-orphan"), "the skipped run keeps its record");
-    std::fs::remove_dir_all(home).unwrap();
+    std::fs::remove_dir_all(home.parent().unwrap()).unwrap();
 }
 
 /// A lab with an operation in flight (its per-lab lock held) is left for a later sweep: the
@@ -99,7 +99,7 @@ async fn a_run_whose_lab_is_busy_is_left_for_a_later_sweep() {
     let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
     assert_eq!(names, ["cyberctf-web"], "the free lab is swept (its files are gone, so its destroy fails); the busy one is not touched: {failed:?}");
     assert!(crate::testing::runner::is_recorded(&home, "cyberctf-busy"), "the busy run keeps its record (never destroyed)");
-    std::fs::remove_dir_all(home).unwrap();
+    std::fs::remove_dir_all(home.parent().unwrap()).unwrap();
 }
 
 /// An expired run with no account recorded can't be destroyed by the launcher: reported with
@@ -113,7 +113,7 @@ async fn an_expired_run_with_no_account_is_reported_as_such() {
     let failed = reap_expired(&home, SystemTime::now(), |_: &str| None, |_| Some(())).await.unwrap();
     let codes: Vec<(&str, Code)> = failed.iter().map(|(name, e)| (name.as_str(), e.code())).collect();
     assert_eq!(codes, [("cyberctf-web", Code::ReapNoHost)]);
-    std::fs::remove_dir_all(home).unwrap();
+    std::fs::remove_dir_all(home.parent().unwrap()).unwrap();
 }
 
 fn place() -> CloudPlace {
@@ -172,7 +172,7 @@ fn a_destroy_takes_the_credentials_as_secrets_and_the_region_and_profile_as_valu
     .iter()
     .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
     .collect();
-    let opts = destroy_options(&tf_env);
+    let opts = destroy_options(&tf_env, &[]);
     assert_eq!(opts.secrets.get("AWS_ACCESS_KEY_ID").map(SecretValue::expose), Some("AKIA"));
     assert_eq!(opts.secrets.get("AWS_SECRET_ACCESS_KEY").map(SecretValue::expose), Some("sk"));
     assert!(opts.secrets.get("AWS_PROFILE").is_none(), "the profile is a value, not a credential");
@@ -188,4 +188,22 @@ fn an_operation_without_a_launch_sets_no_firewall_or_expiry() {
     assert!(opts.lifetime.is_none());
     assert_eq!(opts.env.get("region").map(String::as_str), Some("eu-west-3"));
     assert_eq!(opts.secrets.get("AWS_ACCESS_KEY_ID").map(SecretValue::expose), Some("k"));
+}
+
+#[test]
+fn a_destroy_replays_the_values_the_run_was_started_with() {
+    // Terraform's destroy needs the apply's variables: the region and firewall CIDR of the start
+    // win over the account's region now, and the account adds only what they lack.
+    let kept = vec![("region".to_owned(), "eu-west-3".to_owned()), ("allowed_cidr".to_owned(), "203.0.113.7/32".to_owned())];
+    let tf_env = vec![("AWS_ACCESS_KEY_ID".to_owned(), "k".to_owned()), ("AWS_REGION".to_owned(), "us-east-1".to_owned())];
+    let opts = destroy_options(&tf_env, &kept);
+    assert_eq!(opts.env.get("region").map(String::as_str), Some("eu-west-3"));
+    assert_eq!(opts.env.get("allowed_cidr").map(String::as_str), Some("203.0.113.7/32"));
+    assert_eq!(opts.env.get("AWS_REGION").map(String::as_str), Some("us-east-1"), "what the kept values lack");
+    assert_eq!(opts.secrets.get("AWS_ACCESS_KEY_ID").map(SecretValue::expose), Some("k"));
+    // A stop of the same run from its place: the kept values win over the place's region.
+    let place = CloudPlace { region: Some("us-west-2".to_owned()), ..CloudPlace::default() };
+    let stop = place.options_over(&[], &kept);
+    assert_eq!(stop.env.get("region").map(String::as_str), Some("eu-west-3"));
+    assert_eq!(stop.env.get("allowed_cidr").map(String::as_str), Some("203.0.113.7/32"));
 }
