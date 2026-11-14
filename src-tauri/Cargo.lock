@@ -2556,7 +2556,6 @@ name = "isoloom-ansible"
 version = "3.0.0"
 dependencies = [
  "isoloom-catalogue",
- "isoloom-manifest",
  "isoloom-plan",
  "isoloom-render",
  "isoloom-spec",
@@ -2569,7 +2568,6 @@ name = "isoloom-catalogue"
 version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
- "isoloom-manifest",
  "isoloom-spec",
  "regex",
  "schemars 1.2.3",
@@ -2584,7 +2582,6 @@ name = "isoloom-compose"
 version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
- "isoloom-manifest",
  "isoloom-plan",
  "isoloom-render",
  "isoloom-spec",
@@ -2598,7 +2595,6 @@ name = "isoloom-kubernetes"
 version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
- "isoloom-manifest",
  "isoloom-plan",
  "isoloom-render",
  "isoloom-spec",
@@ -2609,24 +2605,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "isoloom-manifest"
-version = "3.0.0"
-dependencies = [
- "isoloom-spec",
- "schemars 1.2.3",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "thiserror 2.0.21",
-]
-
-[[package]]
 name = "isoloom-plan"
 version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
  "isoloom-catalogue",
- "isoloom-manifest",
  "isoloom-spec",
  "serde",
  "serde_json",
@@ -2640,7 +2623,6 @@ version = "3.0.0"
 dependencies = [
  "flate2",
  "indexmap 2.14.2",
- "isoloom-manifest",
  "isoloom-plan",
  "isoloom-spec",
  "serde_json",
@@ -2669,7 +2651,6 @@ dependencies = [
  "isoloom-ansible",
  "isoloom-compose",
  "isoloom-kubernetes",
- "isoloom-manifest",
  "isoloom-plan",
  "isoloom-render",
  "isoloom-spec",
@@ -2687,7 +2668,6 @@ version = "3.0.0"
 dependencies = [
  "hcl-rs",
  "indexmap 2.14.2",
- "isoloom-manifest",
  "isoloom-plan",
  "isoloom-render",
  "isoloom-spec",
@@ -2700,7 +2680,6 @@ name = "isoloom-vagrant"
 version = "3.0.0"
 dependencies = [
  "indexmap 2.14.2",
- "isoloom-manifest",
  "isoloom-plan",
  "isoloom-render",
  "isoloom-spec",

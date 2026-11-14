@@ -13,7 +13,7 @@ import { tell } from "@/lib/failure";
 import { toast } from "@/lib/toast";
 import { useT } from "@/lib/i18n";
 import { screenOpenRdp, screenPassword, type ScreenConnection } from "@/lib/tauri";
-import { useScreen, type ScreenState } from "@/app/screen/use-screen";
+import { useScreen, useTunnelClosed, type ScreenState } from "@/app/screen/use-screen";
 import { SignInPopover } from "@/app/screen/sign-in";
 
 /** A lab machine's screen window (opened by `screen_window`): its VNC screen drawn by noVNC through
@@ -25,6 +25,7 @@ function Screen() {
   const [state, setState] = useState<ScreenState>({ kind: "connecting" });
   const [attempt, setAttempt] = useState(0);
   useScreen(host, attempt, setState);
+  useTunnelClosed(setState);
   const retry = useCallback(() => {
     setState({ kind: "connecting" });
     setAttempt((a) => a + 1);

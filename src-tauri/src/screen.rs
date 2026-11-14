@@ -58,9 +58,21 @@ pub(crate) enum Protocol {
     Rdp,
 }
 
+/// A screen window's SSH tunnel that ended on its own, as the window is told
+/// ([`crate::app::events::SCREEN_TUNNEL_CLOSED`]).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct TunnelClosed {
+    /// The window's label.
+    pub(crate) label: String,
+    /// Why it ended, in the runner's words.
+    pub(crate) reason: String,
+}
+
 impl Reached {
-    /// The runner's `console`, kept for the window's life.
-    pub(crate) fn of(console: isothrum_runner::Console) -> Result<Reached> {
+    /// The runner's `console`, kept for the window's life, and its SSH tunnel when one carries
+    /// it: the caller keeps that alive too ([`Reached::hold`]), and watches it end.
+    pub(crate) fn of(mut console: isothrum_runner::Console) -> Result<(Reached, Option<isothrum_runner::Tunnel>)> {
+        let tunnel = console.tunnel.take();
         let protocol = match crate::runtime::isothrum::protocol_word(console.protocol) {
             "vnc" => Protocol::Vnc,
             "rdp" => Protocol::Rdp,
@@ -75,16 +87,22 @@ impl Reached {
             },
             _ => return Err(Error::Invalid("the runner reached the screen where this launcher can't show it".into())),
         };
-        Ok(Reached {
+        let reached = Reached {
             protocol,
             at,
             user: console.user.clone(),
             password: console.password.as_ref().map(|p| p.expose().to_owned()),
             note: console.note.clone(),
-            // The runner reaches no screen through an SSH tunnel any more.
-            tunnelled: false,
+            tunnelled: tunnel.is_some(),
             _keep: Some(Box::new(console)),
-        })
+        };
+        Ok((reached, tunnel))
+    }
+
+    /// Keeps `guard` (what owns the console's tunnel) for as long as the console is kept: the
+    /// window closing, or connecting again, drops it and ends the tunnel.
+    pub(crate) fn hold(&mut self, guard: Box<dyn Send>) {
+        self._keep = Some(Box::new((self._keep.take(), guard)));
     }
 }
 

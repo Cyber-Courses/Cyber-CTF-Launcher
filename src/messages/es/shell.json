@@ -110,6 +110,7 @@
     "rdpHint": "Se abre en {client}. Mantén esta ventana abierta mientras lo usas: cerrarla termina la conexión.",
     "noClient": "No hay ninguna aplicación de Escritorio remoto instalada. En Mac, instala Windows App desde la App Store; en Linux, FreeRDP (xfreerdp) o Remmina. Luego reintenta.",
     "tunnelled": "Pasa por un túnel SSH cifrado desde este equipo, que se cierra con esta ventana.",
+    "tunnelClosed": "El túnel de la consola se cerró: {reason}",
     "openFailed": "No se pudo abrir la aplicación de Escritorio remoto",
     "openRdp": "Abrir en {client}",
     "copyPassword": "Copiar contraseña",

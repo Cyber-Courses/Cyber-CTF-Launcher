@@ -28,7 +28,10 @@ pub async fn screen_connect(window: WebviewWindow) -> Result<screen::Connection>
         let dirs = AppDirs::from(window.app_handle());
         let dir = paths::lab_dir(&dirs, &which.id)?;
         let located = host::locate(&dirs, &dir, &which.id, which.runtime)?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
-        let reached = Reached::of(located.graphical_console(&dirs, &which.machine).await?)?;
+        let (mut reached, tunnel) = Reached::of(located.graphical_console(&dirs, &which.machine).await?)?;
+        if let Some(tunnel) = tunnel {
+            reached.hold(watch_tunnel(window.app_handle().clone(), label.clone(), tunnel));
+        }
         let client = (reached.protocol == Protocol::Rdp).then(client).flatten();
         screen::connect(&label, reached, client.as_ref())
     })
@@ -57,6 +60,27 @@ pub async fn screen_open_native(app: AppHandle, id: String, runtime: Runtime, ma
         }
     })
     .await
+}
+
+/// Watches the console's SSH `tunnel` of window `label`, owning it: when its `ssh` ends on its own,
+/// the window is told why. The guard it gives ends the watch, and the tunnel with it, once
+/// dropped.
+fn watch_tunnel(app: AppHandle, label: String, mut tunnel: isothrum_runner::Tunnel) -> Box<dyn Send> {
+    let task = tauri::async_runtime::spawn(async move {
+        let reason = tunnel.closed().await;
+        log::info!("{label}: the console's tunnel closed: {reason}");
+        crate::app::events::emit(&app, crate::app::events::SCREEN_TUNNEL_CLOSED, screen::TunnelClosed { label, reason });
+    });
+    Box::new(EndsOnDrop(task))
+}
+
+/// A task ended when this is dropped.
+struct EndsOnDrop(tauri::async_runtime::JoinHandle<()>);
+
+impl Drop for EndsOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 /// Opens this window's Remote Desktop in the system's client.

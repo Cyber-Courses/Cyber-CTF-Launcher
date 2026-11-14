@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, type RefObject } from "react";
+import { useCallback, useEffect, type RefObject } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { describeError } from "@/lib/errors";
+import { screenTunnelClosed, type TunnelClosed } from "@/lib/tauri/events";
+import { useTauriEvent } from "@/lib/use-tauri-event";
 import { screenConnect, type ScreenConnection } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
@@ -127,4 +130,26 @@ export function useScreen(host: RefObject<HTMLDivElement | null>, attempt: numbe
       viewer?.disconnect();
     };
   }, [host, attempt, setState, t]);
+}
+
+/** This window's label; none where no Tauri window hosts the page (the browser's dev mock). */
+function ownLabel(): string | null {
+  try {
+    return getCurrentWindow().label;
+  } catch {
+    return null;
+  }
+}
+
+/** Says, when the SSH tunnel carrying this window's screen ends on its own, that it closed and
+ *  why: the screen can't come back through it, so the window offers to connect again. */
+export function useTunnelClosed(setState: (s: ScreenState) => void) {
+  const t = useT();
+  const onClosed = useCallback(
+    (closed: TunnelClosed) => {
+      if (closed.label === ownLabel()) setState({ kind: "failed", message: t("shell.vmScreen.tunnelClosed", { reason: closed.reason }) });
+    },
+    [setState, t],
+  );
+  useTauriEvent(screenTunnelClosed, onClosed);
 }

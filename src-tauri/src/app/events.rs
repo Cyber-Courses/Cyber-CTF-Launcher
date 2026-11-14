@@ -16,10 +16,19 @@ pub const LAUNCH_CONFIRM: &str = "launch-confirm";
 /// event with its cursor (`run_service::Cursored`).
 pub const RUN_EVENT: &str = "run-event";
 
+/// A screen window's SSH tunnel ended on its own (its `ssh` exited); its payload is the window's
+/// label and why (`screen::TunnelClosed`).
+pub const SCREEN_TUNNEL_CLOSED: &str = "screen-tunnel-closed";
+
 /// Every event, by the name the webview knows it by (camelCase) and its name on the wire.
 #[cfg(test)]
-pub const ALL: [(&str, &str); 4] =
-    [("quitBlocked", QUIT_BLOCKED), ("machineSetupStep", MACHINE_SETUP_STEP), ("launchConfirm", LAUNCH_CONFIRM), ("runEvent", RUN_EVENT)];
+pub const ALL: [(&str, &str); 5] = [
+    ("quitBlocked", QUIT_BLOCKED),
+    ("machineSetupStep", MACHINE_SETUP_STEP),
+    ("launchConfirm", LAUNCH_CONFIRM),
+    ("runEvent", RUN_EVENT),
+    ("screenTunnelClosed", SCREEN_TUNNEL_CLOSED),
+];
 
 /// Emits `event` with `payload` from `to` (the app, or one window), logging one that can't be.
 pub fn emit<S: serde::Serialize + Clone>(to: &impl Emitter<crate::AppRuntime>, event: &str, payload: S) {

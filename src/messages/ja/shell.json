@@ -110,6 +110,7 @@
     "rdpHint": "{client} で開きます。使用中はこのウィンドウを開いたままにしてください。閉じると接続が終わります。",
     "noClient": "リモートデスクトップのアプリがインストールされていません。Mac では App Store から Windows App を、Linux では FreeRDP (xfreerdp) または Remmina をインストールしてから再試行してください。",
     "tunnelled": "このコンピューターからの暗号化された SSH トンネルを通ります。トンネルはこのウィンドウと一緒に閉じます。",
+    "tunnelClosed": "コンソールのトンネルが閉じました: {reason}",
     "openFailed": "リモートデスクトップのアプリを開けませんでした",
     "openRdp": "{client} で開く",
     "copyPassword": "パスワードをコピー",
