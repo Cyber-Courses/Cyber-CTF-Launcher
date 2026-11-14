@@ -314,6 +314,17 @@ pub(crate) fn close(label: &str) {
     }
 }
 
+/// Ends the sessions of lab `id`'s windows, its run having left its standing state (taken down,
+/// a machine retired, failed): their bridges and tunnels go, as the run's own down ends those it
+/// holds.
+pub(crate) fn close_lab(id: &str) {
+    let labels: Vec<String> = with_sessions(|s| s.iter().filter(|(_, session)| session.which.id == id).map(|(label, _)| label.clone()).collect());
+    for label in labels {
+        log::info!("{label}: its lab's run left its standing state: the screen's session ends");
+        close(&label);
+    }
+}
+
 /// Ends every window's session, as the app quits: their bridges, tunnels and `.rdp` files go
 /// with it, rather than outliving the app.
 pub(crate) fn close_all() {

@@ -43,6 +43,14 @@ pub(super) async fn client(home: &Path) -> Option<Arc<Client>> {
     }
 }
 
+/// The service operations this process queued (its own, told by its run service already), by id.
+static OURS: LazyLock<std::sync::Mutex<std::collections::HashSet<i64>>> = LazyLock::new(Default::default);
+
+/// Whether the service's operation `id` is one this process queued.
+fn ours(id: isothrum_client::v1::OperationId) -> bool {
+    OURS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).contains(&id.0)
+}
+
 /// Forgets `home`'s connection, broken: the next operation connects again.
 async fn forget(home: &Path) {
     CLIENTS.lock().await.remove(home);
@@ -160,7 +168,10 @@ pub(super) async fn operate(
     log: &mut impl FnMut(String),
 ) -> Result<bool, Failure> {
     let mut followed = match client.follow(command(act, target, opts)).await {
-        Ok(followed) => followed,
+        Ok(followed) => {
+            OURS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(followed.accepted.operation.0);
+            followed
+        }
         Err(e) => {
             if matches!(e, ClientError::Io(_) | ClientError::Protocol(_)) {
                 forget(home).await;
@@ -302,4 +313,87 @@ pub(super) async fn follow_under_way(home: &Path, name: &RunName, log: &mut impl
         }
     }
     Ok(())
+}
+
+/// What the service does that this process didn't ask for, as the app tells it.
+#[derive(Debug)]
+pub(crate) enum Others {
+    /// An operation another process queued (the command line, an earlier run of the app) began.
+    Began {
+        /// The service's id for it.
+        operation: i64,
+        /// Its run.
+        run: String,
+        /// What it does.
+        op: isothrum_runner::Op,
+    },
+    /// One of its lines.
+    Line {
+        /// The service's id for it.
+        operation: i64,
+        /// The line.
+        line: String,
+    },
+    /// It ended (failed with the error).
+    Ended {
+        /// The service's id for it.
+        operation: i64,
+        /// Why it failed.
+        error: Option<Error>,
+    },
+    /// Run `run` left its standing state (ready or parked): taken down, a machine retired, failed.
+    Left {
+        /// The run.
+        run: String,
+    },
+}
+
+/// Follows `home`'s service (`client`) for as long as its stream lasts, telling `on` what
+/// another process asked of it and when a run leaves its standing state. Only what happens from
+/// now on, and the operations under way now, are told: the service's history isn't replayed.
+///
+/// # Errors
+///
+/// The service's stream can't be read, or ended.
+pub(crate) async fn follow_others(client: &Client, on: &mut impl FnMut(Others)) -> Result<(), String> {
+    use isothrum_runner::{OperationPhase, RunState};
+    let since = isothrum_runner::rfc3339(std::time::SystemTime::now());
+    let mut under = std::collections::HashSet::new();
+    for run in client.list().await.map_err(|e| e.to_string())? {
+        under.extend(under_way(client, &run.name).await.into_iter().map(|o| o.0));
+    }
+    let mut events = client.subscribe(None, None).await.map_err(|e| e.to_string())?;
+    let mut told: HashMap<i64, Option<Error>> = HashMap::new();
+    while let Some(item) = events.next().await {
+        let (_, event) = item.map_err(|e| e.to_string())?;
+        let live = event.time >= since;
+        let standing = |s: &RunState| matches!(s, RunState::Ready | RunState::Parked);
+        if let (EventKind::State { from, to }, Some(run), true) = (&event.kind, &event.run, live)
+            && standing(from)
+            && !standing(to)
+        {
+            on(Others::Left { run: run.clone() });
+        }
+        let Some(operation) = event.operation.filter(|o| !ours(*o)) else { continue };
+        let id = operation.0;
+        if !told.contains_key(&id) {
+            if !(live || under.contains(&id)) || isothrum_client::v1::phase_of(&event) == Some(OperationPhase::Ended) {
+                continue;
+            }
+            let (Some(run), Some(op)) = (event.run.clone(), event.op) else { continue };
+            told.insert(id, None);
+            on(Others::Began { operation: id, run, op });
+        }
+        if let Some(line) = progress::line(&event.kind) {
+            on(Others::Line { operation: id, line });
+        }
+        if let EventKind::Error { code, message, step, detail, .. } = &event.kind {
+            told.insert(id, Some(errors::from_service(*code, message, step.as_deref(), detail.as_ref())));
+        }
+        if isothrum_client::v1::phase_of(&event) == Some(OperationPhase::Ended) {
+            let error = told.remove(&id).flatten();
+            on(Others::Ended { operation: id, error });
+        }
+    }
+    Err("the runner service's stream ended".into())
 }

@@ -54,7 +54,9 @@ impl RunService for Fake {
         &self.events
     }
 
-    fn pick_up_running(&self) {}
+    fn follow_runner(&self) -> super::BoxFuture<'static, ()> {
+        Box::pin(std::future::pending())
+    }
 }
 
 /// `t`'s app with `fake` as its run service.
