@@ -7,6 +7,9 @@ license = "Apache-2.0"
 repository = "https://github.com/Cyber-Courses/Cyber-CTF-Launcher"
 edition = "2024"
 rust-version = "1.90"
+# Two binaries: the app (`src/main.rs`) and the command line (`src/bin/cyberctf.rs`); `cargo run`
+# and Tauri start the app.
+default-run = "cyberctf-desktop"
 
 [lib]
 name = "cyberctf_lib"
@@ -138,6 +141,9 @@ ts-rs = "12"
 # POSIX quoting) runs its `sh_quote`d command lines' words directly; tests check `sh_quote`
 # round-trips through it.
 shell-words = "1"
+# The command line's (`cli`) arguments, help and shell completions.
+clap = { version = "4.6", features = ["derive", "env"] }
+clap_complete = "4.6"
 # Secrets taken out of the log and the setup log (`platform::redact`). Already in the tree
 # through Tauri.
 regex = "1"

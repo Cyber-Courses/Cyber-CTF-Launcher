@@ -1,5 +1,6 @@
 //! The Cyber CTF launcher: a Tauri app that installs, runs and stops CTF labs on the player's
-//! machine, servers and cloud accounts. `run` starts it, as the app or as a deploy worker.
+//! machine, servers and cloud accounts. `run` starts it, as the app or as a deploy worker;
+//! `cli_main` is its command line, `cyberctf`, which runs without the app or a window system.
 
 // Tests start their stand-in tools as processes of their own (clippy.toml's disallowed-methods
 // holds the shipped code to `platform::exec`).
@@ -7,6 +8,7 @@
 
 mod account;
 mod app;
+mod cli;
 mod cloud_cli;
 mod commands;
 mod english;
@@ -54,4 +56,13 @@ pub fn run() -> tauri::Result<()> {
     #[cfg(windows)]
     platform::sys::keep_std_handles();
     app::run()
+}
+
+/// The command line, `cyberctf` (its own executable, `src/bin/cyberctf.rs`): the launcher's labs,
+/// machine setup, servers and account through the same code as the app, with no window system
+/// needed. Returns the process's exit code: 0 done, 1 failed, 2 a usage error, 3 something to put
+/// right first.
+#[must_use]
+pub fn cli_main() -> std::process::ExitCode {
+    cli::main()
 }
