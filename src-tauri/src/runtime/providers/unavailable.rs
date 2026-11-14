@@ -5,6 +5,8 @@
 use serde::Serialize;
 use ts_rs::TS;
 
+use crate::english;
+
 /// Why a provider can't run a lab's VMs here: the first layer missing (Vagrant, the hypervisor,
 /// the account's rights, its plugin, the VMware utility), as `detect` found it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -101,39 +103,13 @@ pub enum Unavailable {
 
 impl Unavailable {
     /// The English sentence, for the log and the core's own messages; the webview says the code.
+    /// It is the English catalogue's (`machine.unavailable.*`, what the English UI shows); a
+    /// program not named is its `notInstalledNoProgram`.
     pub fn message(&self) -> String {
+        let section = &english::MACHINE["unavailable"];
         match self {
-            Unavailable::VagrantMissing => "Vagrant is not installed.".into(),
-            Unavailable::VirtualboxStuck => {
-                "VirtualBox isn't responding (its background service is stuck). Quit VirtualBox and any VM windows, or restart the computer, then re-check.".into()
-            }
-            Unavailable::HypervOff => "Hyper-V isn't turned on (Windows Features > Hyper-V), or this edition of Windows doesn't have it.".into(),
-            Unavailable::HypervNeedsAdmin => "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator.".into(),
-            Unavailable::MkisofsMissing => "QEMU VMs need mkisofs, which isn't installed: Vagrant builds with it the disk that gives each VM its lab network. Install QEMU again (that adds it), or run sudo apt-get install genisoimage, then re-check.".into(),
-            Unavailable::NotInstalled { program: Some(program) } => format!("`{program}` was not found."),
-            Unavailable::NotInstalled { program: None } => "Not installed.".into(),
-            Unavailable::NewLogin { group } => format!("You were added to the {group} group since you logged in: log out and back in (or restart) for it to apply."),
-            Unavailable::NoKvm => "KVM isn't available on this machine (no /dev/kvm): turn on virtualization in the firmware, or use another hypervisor.".into(),
-            Unavailable::KvmDenied { group } => format!("You can't use /dev/kvm yet: add yourself to the {group} group, then sign out and back in."),
-            Unavailable::HypervisorTooOld { name, version, min } => format!("{name} {version} is too old: {min} or later is needed. Update {name}, then re-check."),
-            Unavailable::PluginTooOld { plugin, version, min } => {
-                format!("Vagrant plugin `{plugin}` {version} is too old: {min} or later is needed. Install it again to update it.")
-            }
-            Unavailable::PluginMissing { plugin } => format!("Vagrant plugin `{plugin}` is not installed."),
-            Unavailable::PluginsUnknown { plugin, reason } => {
-                format!("Whether Vagrant plugin `{plugin}` is installed can't be told: `vagrant plugin list` failed ({reason}). Run it in a terminal to see why, then re-check.")
-            }
-            Unavailable::VmwareUtilityStopped => {
-                "The Vagrant VMware Utility is installed, but its service isn't running: install it again (that restarts it), or restart the computer.".into()
-            }
-            Unavailable::VmwareUtilityMissing => "The Vagrant VMware Utility is not installed: HashiCorp's service the VMware plugin drives VMware through.".into(),
-            Unavailable::VirtualboxDriver { kernel } => format!(
-                "VirtualBox's kernel driver (vboxdrv) isn't loaded on this kernel ({kernel}), so VirtualBox can't start VMs. Install the kernel's headers (linux-headers-{kernel} on Debian and Ubuntu), build the driver (sudo /sbin/vboxconfig for Oracle's VirtualBox, sudo dpkg-reconfigure virtualbox-dkms for your distribution's), then re-check. With Secure Boot on, the driver must be signed before it loads."
-            ),
-            Unavailable::KernelRestart { kernel } => {
-                format!("VirtualBox's kernel driver is built for the newer kernel installed with it ({kernel}): restart the computer to start that kernel, then re-check.")
-            }
-            Unavailable::KvmHoldsVirtualization => "KVM holds this computer's hardware virtualization (VT-x or AMD-V): Linux turns it on as soon as KVM's module loads (the default since Linux 6.12), so VirtualBox can't start VMs (\"VT-x is being used by another hypervisor\"). Use libvirt or QEMU, which run on KVM; for VirtualBox, unload KVM (sudo modprobe -r kvm_intel kvm_amd) or start Linux with kvm.enable_virt_at_load=0, then re-check.".into(),
+            Unavailable::NotInstalled { program: None } => english::sentence(section, "notInstalledNoProgram", &serde_json::Value::Null),
+            _ => english::coded(section, self),
         }
     }
 }
@@ -174,23 +150,20 @@ mod tests {
         ]
     }
 
-    /// Each code's English sentence is said twice: here (the log, the setup's blocked step) and
-    /// in the webview's catalogue (`machine.unavailable.*`, what the English UI shows). They must
-    /// agree; a program not named is the catalogue's `notInstalledNoProgram`.
+    /// Each code's English sentence is the English catalogue's, which every code has; filled in,
+    /// no placeholder is left.
     #[test]
-    fn every_reason_says_what_the_english_catalogue_says() {
-        let catalogue: serde_json::Value = serde_json::from_str(include_str!("../../../../src/messages/en/machine.json")).unwrap();
+    fn every_reason_says_its_english_catalogue_sentence() {
         for reason in samples() {
             let wire = serde_json::to_value(&reason).unwrap();
-            let mut key = wire["code"].as_str().unwrap().to_owned();
-            if reason == (Unavailable::NotInstalled { program: None }) {
-                key = "notInstalledNoProgram".into();
-            }
-            let mut text = catalogue["unavailable"][&key].as_str().unwrap_or_else(|| panic!("no machine.unavailable.{key}")).to_owned();
-            for (name, value) in wire["args"].as_object().into_iter().flatten() {
-                text = text.replace(&format!("{{{name}}}"), value.as_str().unwrap_or_default());
-            }
-            assert_eq!(reason.message(), text, "{wire}");
+            let text = reason.message();
+            assert_ne!(text, wire["code"].as_str().unwrap(), "no sentence for {wire}");
+            assert!(!text.contains('{'), "a placeholder left in {wire}: {text}");
         }
+        let s = String::from;
+        let too_old = Unavailable::HypervisorTooOld { name: s("UTM"), version: s("4.4.5"), min: s("4.5.0") };
+        assert_eq!(too_old.message(), "UTM 4.4.5 is too old: 4.5.0 or later is needed. Update UTM, then re-check.");
+        assert_eq!(Unavailable::NotInstalled { program: None }.message(), "Not installed.");
+        assert_eq!(Unavailable::NotInstalled { program: Some(s("virsh")) }.message(), "`virsh` was not found.");
     }
 }

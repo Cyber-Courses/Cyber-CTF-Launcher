@@ -135,6 +135,12 @@ pub fn on_path(program: &str) -> bool {
     std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
 }
 
+/// `f`, a call that blocks (the keychain, a file tree, a generator), run on the async runtime's
+/// blocking threads so it holds up no task; a panic in it is an error, not a crash.
+pub async fn off_runtime<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| Error::Invalid(e.to_string()))?
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

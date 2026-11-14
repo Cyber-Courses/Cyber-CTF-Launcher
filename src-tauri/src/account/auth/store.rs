@@ -240,7 +240,7 @@ fn clear_chunks_from(from: usize) -> Result<()> {
 /// `save_blocking` on a blocking thread (the keychain may prompt).
 pub(super) async fn store(session: Session) -> Result<()> {
     let file = session_file();
-    tokio::task::spawn_blocking(move || save_blocking(&session, file.as_deref())).await.map_err(|e| Error::Invalid(e.to_string()))?
+    crate::platform::off_runtime(move || save_blocking(&session, file.as_deref())).await
 }
 
 fn clear_blocking(file: Option<&std::path::Path>) -> Result<()> {
@@ -265,7 +265,7 @@ fn remove_file(path: &std::path::Path) -> Result<()> {
 /// When the keychain (the session file, in a dev build) still holds it.
 pub(super) async fn clear() -> Result<()> {
     let file = session_file();
-    tokio::task::spawn_blocking(move || clear_blocking(file.as_deref())).await.map_err(|e| Error::Invalid(e.to_string()))?
+    crate::platform::off_runtime(move || clear_blocking(file.as_deref())).await
 }
 
 #[cfg(test)]

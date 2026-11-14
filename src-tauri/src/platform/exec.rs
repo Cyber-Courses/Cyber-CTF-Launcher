@@ -25,6 +25,8 @@ pub use docker::login_name;
 pub use docker::{DockerSaid, ImageRef, docker_denied, docker_denied_error, groups_pending, valid_image};
 #[cfg(test)]
 pub(crate) use elevate::leftover_script;
+#[cfg(any(windows, test))]
+pub(crate) use elevate::ps_quote;
 pub use elevate::{Leftover, join_hyperv_admins, may_manage_hyperv, remove_hyperv_leftover};
 #[cfg(windows)]
 #[cfg(windows)]

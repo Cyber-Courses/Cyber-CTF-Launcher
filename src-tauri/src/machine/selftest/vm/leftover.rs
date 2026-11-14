@@ -11,6 +11,7 @@ use std::path::Path;
 use super::VM_NAME;
 use crate::error::{Error, Result};
 use crate::platform::exec::{Leftover, remove_hyperv_leftover, run};
+use crate::runtime::discover::vbox_vms;
 
 /// What a test VM's VirtualBox description says: it is the test's in `dir`.
 pub(super) fn vbox_description(dir: &Path) -> String {
@@ -75,8 +76,7 @@ async fn remove_vbox_leftover(dir: &Path) -> Result<Leftover> {
 
 /// The ids of the VMs named exactly `name` in `VBoxManage list vms` (`"name" {uuid}` lines).
 fn vbox_ids_named(list: &str, name: &str) -> Vec<String> {
-    let quoted = format!("\"{name}\" ");
-    list.lines().filter_map(|l| l.trim().strip_prefix(&quoted)).map(|id| id.trim().trim_matches(['{', '}']).to_string()).collect()
+    vbox_vms(list).into_iter().filter(|vm| vm.name == name).map(|vm| vm.id).collect()
 }
 
 /// The value of `key` in `VBoxManage showvminfo --machinereadable` (`key="value"` lines).

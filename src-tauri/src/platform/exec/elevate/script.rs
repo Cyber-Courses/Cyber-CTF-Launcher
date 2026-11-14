@@ -31,7 +31,7 @@ fn check_arg(arg: &str) -> Result<()> {
 
 /// `s` as a PowerShell single-quoted string. PowerShell also takes the typographic single quotes
 /// as quote characters, so every one of them is doubled too.
-pub(super) fn ps_quote(s: &str) -> String {
+pub(crate) fn ps_quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('\'');
     for c in s.chars() {
