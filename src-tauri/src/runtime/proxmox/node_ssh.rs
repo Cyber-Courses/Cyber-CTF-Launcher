@@ -17,7 +17,7 @@ pub async fn authorize_launcher_key(h: &HostProfile, password: &str, identity: &
     // on Linux /tmp is common to every account, and a file another user left there under this
     // name can't be rewritten (or could be swapped for something else).
     let env = password_env(identity, password)?;
-    ssh_with(&authorize_args(h, identity, public), &env, AUTHORIZE_TIMEOUT).await.map(|_| ())
+    ssh_with(&h.host, &authorize_args(h, identity, public), &env, AUTHORIZE_TIMEOUT).await.map(|_| ())
 }
 
 /// The most letting the key in may take: a node that stops answering must not hang the launch.
@@ -47,9 +47,9 @@ fn password_env(identity: &std::path::Path, password: &str) -> crate::error::Res
 }
 
 /// `ssh` with `args` and `env`, for at most `timeout`: its output.
-async fn ssh_with(args: &[String], env: &[(String, String)], timeout: std::time::Duration) -> crate::error::Result<String> {
+async fn ssh_with(host: &str, args: &[String], env: &[(String, String)], timeout: std::time::Duration) -> crate::error::Result<String> {
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    crate::platform::exec::run_env_timed("ssh", &refs, None, env, timeout).await
+    crate::platform::exec::run_env_timed("ssh", &refs, None, env, timeout).await.map_err(|e| ssh::known_hosts::refused_key(host, e))
 }
 
 /// The askpass helper next to the launcher's key (see [`askpass_script`]), this user's only.
@@ -111,7 +111,7 @@ pub(super) async fn sdn_problem(h: &HostProfile, password: &str, identity: &std:
             Ok(env) => env,
             Err(e) => return Some(format!("Couldn't check the node's network configuration over SSH ({e}).")),
         };
-        ssh_with(&password_ssh_args(h, identity, SDN_SOURCE_CHECK), &env, timeout).await
+        ssh_with(&h.host, &password_ssh_args(h, identity, SDN_SOURCE_CHECK), &env, timeout).await
     };
     sdn_outcome(checked, (!token).then(|| node_login(h)))
 }

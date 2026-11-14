@@ -94,6 +94,7 @@ const COMMANDS: &[&str] = &[
     "server_selftest",
     "server_set_default",
     "server_test",
+    "server_trust_ssh_keys",
     "shared_folder_get",
     "shared_folder_open",
     "shared_folder_set",

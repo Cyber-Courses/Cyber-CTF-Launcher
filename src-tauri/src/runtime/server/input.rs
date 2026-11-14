@@ -98,6 +98,11 @@ impl HostInput {
         self.port.filter(|p| *p > 0)
     }
 
+    /// The port the launcher's SSH reaches the node on: the SSH key sign-in's, else 22.
+    pub(crate) fn ssh_port(&self) -> u16 {
+        self.ssh_key.as_ref().map_or(22, |k| k.port)
+    }
+
     /// Whether this is a Proxmox server with a self-signed certificate.
     pub(crate) fn self_signed(&self) -> bool {
         self.provider == Provider::Proxmox && self.insecure_tls.unwrap_or(false)

@@ -52,6 +52,7 @@
     "noHypervisor": "Nenhum hypervisor pronto nesta máquina roda este lab. Instale um pela página Máquina, ou rode o lab num servidor ou na sua conta de nuvem.",
     "turnedOffByPolicy": "Sua organização desativou este recurso neste computador (configuração de política {setting}). Fale com sua equipe de TI se precisar dele.",
     "tlsUnconfirmed": "O certificado de {server} ainda não foi confirmado (SHA-256 {presented}), então nada foi enviado a ele. Para confirmá-lo, abra-o em Servidores, escolha Editar e compare a impressão digital com a que o próprio servidor mostra antes de confirmá-la.",
-    "tlsChanged": "O certificado de {server} mudou (era {pinned}, agora é {presented}), então nada foi enviado a ele: alguém pode estar interceptando a conexão. Se você mesmo trocou o certificado, abra-o em Servidores, escolha Editar e compare a impressão digital com a que o próprio servidor mostra antes de confirmá-la."
+    "tlsChanged": "O certificado de {server} mudou (era {pinned}, agora é {presented}), então nada foi enviado a ele: alguém pode estar interceptando a conexão. Se você mesmo trocou o certificado, abra-o em Servidores, escolha Editar e compare a impressão digital com a que o próprio servidor mostra antes de confirmá-la.",
+    "sshHostKeyRefused": "A chave de host SSH de {host} não é a que foi confirmada (ou nenhuma foi confirmada ainda), então a conexão foi recusada. Se o servidor foi reinstalado, abra-o em Servidores, escolha Editar e verifique a nova chave."
   }
 }

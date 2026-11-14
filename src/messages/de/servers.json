@@ -353,6 +353,9 @@
       "certificateWhere": "In der Proxmox-Weboberfläche: der Knoten > System > Zertifikate, der Fingerabdruck des Zertifikats. Auf dem Knoten: pvenode cert info.",
       "sha256": "SHA-256-Fingerabdruck",
       "previous": "Zuvor bestätigt",
+      "sshKeys": "SSH-Hostschlüssel des Knotens",
+      "sshWhere": "Auf der Konsole des Knotens: for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done",
+      "sshUnread": "Die SSH-Hostschlüssel des Knotens konnten nicht gelesen werden ({error}): SSH zu ihm bleibt abgelehnt, bis sie hier bestätigt sind.",
       "confirm": "Sie stimmen überein: diesem Server vertrauen",
       "confirmChanged": "Ich habe ihn ersetzt: dem neuen vertrauen",
       "cancel": "Abbrechen"

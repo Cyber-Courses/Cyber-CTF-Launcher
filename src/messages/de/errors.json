@@ -52,6 +52,7 @@
     "noHypervisor": "Kein auf diesem Rechner bereiter Hypervisor führt dieses Lab aus. Installiere einen über die Seite Rechner oder führe das Lab auf einem Server oder in deinem Cloud-Konto aus.",
     "turnedOffByPolicy": "Deine Organisation hat diese Funktion auf diesem Computer deaktiviert (Richtlinieneinstellung {setting}). Wende dich an deine IT, wenn du sie brauchst.",
     "tlsUnconfirmed": "Das Zertifikat von {server} wurde noch nicht bestätigt (SHA-256 {presented}), daher wurde nichts an ihn gesendet. Um es zu bestätigen, öffne ihn unter Server, wähle Bearbeiten und vergleiche den Fingerabdruck mit dem, den der Server selbst anzeigt, bevor du ihn bestätigst.",
-    "tlsChanged": "Das Zertifikat von {server} hat sich geändert (es war {pinned}, jetzt ist es {presented}), daher wurde nichts an ihn gesendet: Jemand könnte die Verbindung abfangen. Wenn du das Zertifikat selbst ersetzt hast, öffne ihn unter Server, wähle Bearbeiten und vergleiche den Fingerabdruck mit dem, den der Server selbst anzeigt, bevor du ihn bestätigst."
+    "tlsChanged": "Das Zertifikat von {server} hat sich geändert (es war {pinned}, jetzt ist es {presented}), daher wurde nichts an ihn gesendet: Jemand könnte die Verbindung abfangen. Wenn du das Zertifikat selbst ersetzt hast, öffne ihn unter Server, wähle Bearbeiten und vergleiche den Fingerabdruck mit dem, den der Server selbst anzeigt, bevor du ihn bestätigst.",
+    "sshHostKeyRefused": "Der SSH-Hostschlüssel von {host} ist nicht der bestätigte (oder es wurde noch keiner bestätigt), daher wurde die Verbindung abgelehnt. Wenn der Server neu installiert wurde, öffne ihn unter Server, wähle Bearbeiten und prüfe seinen neuen Schlüssel."
   }
 }

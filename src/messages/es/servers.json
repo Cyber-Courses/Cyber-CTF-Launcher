@@ -353,6 +353,9 @@
       "certificateWhere": "En la interfaz web de Proxmox: el nodo > Sistema > Certificados, la huella del certificado. En el nodo: pvenode cert info.",
       "sha256": "Huella SHA-256",
       "previous": "Confirmada antes",
+      "sshKeys": "Claves de host SSH del nodo",
+      "sshWhere": "En la consola del nodo: for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done",
+      "sshUnread": "No se pudieron leer las claves de host SSH del nodo ({error}): SSH hacia él seguirá rechazado hasta que se confirmen aquí.",
       "confirm": "Coinciden: confiar en este servidor",
       "confirmChanged": "Lo cambié yo: confiar en el nuevo",
       "cancel": "Cancelar"

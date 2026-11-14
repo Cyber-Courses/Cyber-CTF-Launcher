@@ -12,6 +12,8 @@ import type {
   ServerCheckState,
   ServerIdentity,
   ServerTest,
+  SshHostKey,
+  SshHostKeys,
   SshKeySignIn,
 } from "@/lib/tauri/generated";
 import type { CloudProvider } from "@/lib/tauri/cloud";
@@ -28,6 +30,8 @@ export type {
   ServerCheckState,
   ServerIdentity,
   ServerTest,
+  SshHostKey,
+  SshHostKeys,
   SshKeySignIn,
 };
 
@@ -68,8 +72,12 @@ export const serverSaveSshKey = (input: ServerHostInput) => invoke<ServerHost>("
  *  password or token secret, else the saved host's). Rejects when the API can't be read. */
 export const serverProxmoxPlacement = (input: ServerHostInput) => invoke<ProxmoxPlacement>("server_proxmox_placement", { input });
 /** What the form's Proxmox server offers to be confirmed before the launcher signs in to it: its
- *  self-signed certificate's SHA-256 fingerprint. Nothing but a TLS handshake reaches the server. */
+ *  self-signed certificate's SHA-256 fingerprint, and its node's SSH host keys. Nothing but a TLS
+ *  handshake and an SSH key exchange reaches the server. */
 export const serverIdentity = (input: ServerHostInput) => invoke<ServerIdentity>("server_identity", { input });
+/** Confirms the node's SSH host keys the player was shown (`fingerprints`); rejects when the node
+ *  offers others by now. */
+export const serverTrustSshKeys = (input: ServerHostInput, fingerprints: string[]) => invokeUnit("server_trust_ssh_keys", { input, fingerprints });
 /** The first of ~/.ssh/id_ed25519, id_ecdsa, id_rsa that exists (null when none does). */
 export const serverDefaultSshKey = () => invoke<string | null>("server_default_ssh_key");
 export const serverRemove = (id: string) => invokeUnit("server_remove", { id });

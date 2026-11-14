@@ -353,6 +353,9 @@
       "certificateWhere": "In the Proxmox web interface: the node > System > Certificates, the certificate's fingerprint. On the node: pvenode cert info.",
       "sha256": "SHA-256 fingerprint",
       "previous": "Confirmed before",
+      "sshKeys": "Node SSH host keys",
+      "sshWhere": "On the node's console: for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done",
+      "sshUnread": "The node's SSH host keys couldn't be read ({error}): SSH to it stays refused until they are confirmed here.",
       "confirm": "They match: trust this server",
       "confirmChanged": "I replaced it: trust the new one",
       "cancel": "Cancel"

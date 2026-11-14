@@ -16,6 +16,8 @@ use crate::platform::exec::run;
 /// the shell to any new lab host at a recycled address: removed (nothing writes it any more).
 const SHARED_KNOWN_HOSTS: &str = "known_hosts";
 
+pub mod known_hosts;
+
 fn ssh_dir(dirs: &AppDirs) -> Result<PathBuf> {
     let dir = dirs.data()?.join("ssh");
     std::fs::create_dir_all(&dir)?;
@@ -80,11 +82,12 @@ pub fn ssh_config_path(path: &str) -> String {
     out
 }
 
-/// The `-o` values every launcher SSH uses: accept a new host's key once, pinned in the
-/// launcher's own `known_hosts` (never the player's ~/.ssh), quiet. `known_hosts` is the plain
+/// The `-o` values every launcher SSH uses: only the host keys the learner confirmed, in the
+/// launcher's own `known_hosts` ([`known_hosts`], never the player's ~/.ssh), are accepted; a host
+/// with none or another is refused, never pinned silently. Quiet. `known_hosts` is the plain
 /// path; it is escaped for ssh here.
 pub fn options(known_hosts: &str) -> Vec<String> {
-    vec!["StrictHostKeyChecking=accept-new".into(), format!("UserKnownHostsFile={}", ssh_config_path(known_hosts)), "LogLevel=ERROR".into()]
+    vec!["StrictHostKeyChecking=yes".into(), format!("UserKnownHostsFile={}", ssh_config_path(known_hosts)), "LogLevel=ERROR".into()]
 }
 
 /// [`options`] for an SSH that runs unattended: no prompts and a short connect timeout, and
@@ -189,7 +192,7 @@ impl Target {
     pub async fn exec_timed(&self, known_hosts: &Path, command: &str, timeout: std::time::Duration) -> Result<String> {
         let args = self.exec_args(known_hosts, command)?;
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        crate::platform::exec::run_env_timed("ssh", &refs, None, &[], timeout).await
+        crate::platform::exec::run_env_timed("ssh", &refs, None, &[], timeout).await.map_err(|e| known_hosts::refused_key(&self.host, e))
     }
 
     /// The `ssh` arguments `exec` runs (no shell in between).
@@ -205,8 +208,9 @@ impl Target {
 }
 
 /// The host keys of the server nodes the launcher reaches with its key (a Proxmox node: the jump
-/// host to an internal lab bridge, its key setup), next to that key. A lab host's keys are never
-/// kept here: the Isothrum runner keeps each run's own, in the run's folder.
+/// host to an internal lab bridge, its key setup), next to that key, as the learner confirmed
+/// them ([`known_hosts`]). A lab host's keys are never kept here: the Isothrum runner keeps each
+/// run's own, in the run's folder.
 pub fn node_known_hosts(identity: &Path) -> PathBuf {
     identity.with_file_name("nodes_known_hosts")
 }
@@ -229,7 +233,7 @@ mod tests {
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", "/k/id".into()) };
         assert_eq!(
             t.proxy_option(Path::new("/x/kh")).unwrap().unwrap(),
-            "ProxyCommand=ssh -i /k/id -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR -W %h:%p root@pve.lan"
+            "ProxyCommand=ssh -i /k/id -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/x/kh -o LogLevel=ERROR -W %h:%p root@pve.lan"
         );
         for bad in ["nobody", "root@pve;rm", "-o@x"] {
             let t = Target { jump: Some(bad.into()), ..Target::direct("10.10.0.5", "isoloom", "/k/id".into()) };
@@ -259,7 +263,7 @@ mod tests {
 
     #[test]
     fn options_add_batch_mode_only_when_asked() {
-        assert_eq!(options("/kh"), ["StrictHostKeyChecking=accept-new", "UserKnownHostsFile=/kh", "LogLevel=ERROR"]);
+        assert_eq!(options("/kh"), ["StrictHostKeyChecking=yes", "UserKnownHostsFile=/kh", "LogLevel=ERROR"]);
         assert_eq!(batch_options("/kh")[..2], ["BatchMode=yes", "ConnectTimeout=10"]);
         // A host that stops answering mid-command ends it within 45 s, not hours later.
         assert_eq!(batch_options("/kh")[2..4], ["ServerAliveInterval=15", "ServerAliveCountMax=3"]);

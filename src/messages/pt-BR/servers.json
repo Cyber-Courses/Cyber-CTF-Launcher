@@ -353,6 +353,9 @@
       "certificateWhere": "Na interface web do Proxmox: o nó > Sistema > Certificados, a impressão digital do certificado. No nó: pvenode cert info.",
       "sha256": "Impressão digital SHA-256",
       "previous": "Confirmada antes",
+      "sshKeys": "Chaves de host SSH do nó",
+      "sshWhere": "No console do nó: for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done",
+      "sshUnread": "Não foi possível ler as chaves de host SSH do nó ({error}): o SSH para ele continua recusado até serem confirmadas aqui.",
       "confirm": "Elas coincidem: confiar neste servidor",
       "confirmChanged": "Eu o troquei: confiar no novo",
       "cancel": "Cancelar"

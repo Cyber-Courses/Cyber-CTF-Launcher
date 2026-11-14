@@ -381,20 +381,34 @@ describe("server tools step", () => {
   });
 });
 
-describe("Proxmox server certificate, trusted on first use", () => {
+describe("Proxmox server identity, trusted on first use", () => {
   const CERT = "4F:1F:C1:74:0E:F3:4D:3C:35:1D:35:82:F2:1B:1B:36:8D:42:03:EF:17:90:50:E8:15:F1:A2:C2:DA:39:4E:81";
+  const KEY = { algorithm: "ssh-ed25519", fingerprint: "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ" };
   const identity =
-    (tls: string | null = CERT) =>
-    () => ({ tls });
+    (state: "new" | "confirmed" | "changed", tls: string | null = CERT) =>
+    () => ({
+      tls,
+      ssh: { pattern: "192.168.1.20", keys: [KEY], state },
+      sshError: null,
+    });
 
-  it("shows the certificate's fingerprint before signing in, and goes on only once it is confirmed", async () => {
-    const calls = installTauri({ server_identity: identity() });
+  it("shows the certificate and node key fingerprints before signing in, and goes on only once they are confirmed", async () => {
+    // The node's keys read as new until they are trusted.
+    let trusted = false;
+    const calls = installTauri({
+      server_identity: () => identity(trusted ? "confirmed" : "new")(),
+      server_trust_ssh_keys: () => {
+        trusted = true;
+        return null;
+      },
+    });
     const user = userEvent.setup();
     await renderSetup(editing({}));
     await go(user, /^continue$/i);
     await go(user, /^continue$/i);
     const dialog = screen.getByRole("dialog", { name: "Confirm this server's identity" });
     expect(dialog.textContent).toContain(CERT);
+    expect(dialog.textContent).toContain(KEY.fingerprint);
     // Cancel comes first: agreeing is the deliberate choice.
     expect(
       within(dialog)
@@ -405,11 +419,13 @@ describe("Proxmox server certificate, trusted on first use", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(heading()).toBe("Connect to Proxmox");
+    expect(argsOf(calls, "server_trust_ssh_keys")).toEqual([]);
     expect(argsOf(calls, "server_proxmox_placement")).toEqual([]);
-    // Confirmed: the certificate's fingerprint goes with the host.
+    // Confirmed: the node's keys are trusted, the certificate's fingerprint goes with the host.
     await go(user, /^continue$/i);
     await user.click(screen.getByRole("button", { name: "They match: trust this server" }));
     await flush(30);
+    expect(argsOf(calls, "server_trust_ssh_keys")).toEqual([expect.objectContaining({ fingerprints: [KEY.fingerprint] })]);
     expect(argsOf(calls, "server_proxmox_placement")[0]).toMatchObject({ input: { tlsFingerprint: CERT } });
     // Saved with the confirmed certificate, and nothing asked again.
     await go(user, /save and test/i);
@@ -419,7 +435,7 @@ describe("Proxmox server certificate, trusted on first use", () => {
 
   it("says a changed certificate changed, with the one confirmed before", async () => {
     const before = CERT.replace("4F:1F", "0A:0B");
-    const calls = installTauri({ server_identity: identity() });
+    const calls = installTauri({ server_identity: identity("confirmed") });
     const user = userEvent.setup();
     await renderSetup(editing({ tlsFingerprint: before }));
     await go(user, /^continue$/i);
@@ -427,13 +443,15 @@ describe("Proxmox server certificate, trusted on first use", () => {
     const dialog = screen.getByRole("dialog", { name: "This server's identity changed" });
     expect(dialog.textContent).toContain(before);
     expect(dialog.textContent).toContain(CERT);
+    expect(dialog.textContent).not.toContain(KEY.fingerprint);
     await user.click(screen.getByRole("button", { name: "I replaced it: trust the new one" }));
     await flush(30);
+    expect(argsOf(calls, "server_trust_ssh_keys")).toEqual([]);
     expect(argsOf(calls, "server_proxmox_placement")[0]).toMatchObject({ input: { tlsFingerprint: CERT } });
   });
 
-  it("asks nothing of a server whose certificate is confirmed", async () => {
-    const calls = installTauri({ server_identity: identity(CERT.toLowerCase()) });
+  it("asks nothing of a server whose certificate and keys are confirmed", async () => {
+    const calls = installTauri({ server_identity: identity("confirmed", CERT.toLowerCase()) });
     const user = userEvent.setup();
     await renderSetup(editing({ tlsFingerprint: CERT }));
     await go(user, /^continue$/i);

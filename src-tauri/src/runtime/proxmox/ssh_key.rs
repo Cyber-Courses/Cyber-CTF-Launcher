@@ -135,6 +135,13 @@ fn detail(e: &Error) -> String {
     }
 }
 
+/// Which part failed when ssh gave `e`: ssh itself (no connection, the key refused, a host key
+/// that isn't the confirmed one), else `command`'s part.
+fn failed_part(e: &Error, command: Part) -> Part {
+    let refused = matches!(e, Error::Coded { code: crate::error::Code::SshHostKeyRefused { .. }, .. });
+    if refused || ssh_failed(&detail(e)) { Part::Ssh } else { command }
+}
+
 /// Whether ssh itself failed (no connection, the key refused, an unknown host key), rather than
 /// the command it ran on the node.
 fn ssh_failed(stderr: &str) -> bool {
@@ -163,16 +170,14 @@ pub fn target(host: &str, key: &SshKeySignIn) -> ssh::Target {
 
 /// Lets the launcher's key (`public`) into the node's `authorized_keys` for the key's user, over
 /// SSH with the player's key; `true` when it was added, `false` when it was there already. The
-/// node's host key is pinned in the launcher's node `known_hosts` (`known_hosts`).
+/// node's host key must be one the learner confirmed in the launcher's node `known_hosts`
+/// (`known_hosts`).
 pub async fn authorize(host: &str, key: &SshKeySignIn, known_hosts: &Path, public: &str) -> Result<bool, Failure> {
     match target(host, key).exec_timed(known_hosts, &authorize_command(public), SSH_TIMEOUT).await {
         Ok(out) if out.lines().any(|l| l.trim() == "added") => Ok(true),
         Ok(out) if out.lines().any(|l| l.trim() == "present") => Ok(false),
         Ok(out) => Err(Failure { part: Part::Key, detail: format!("unexpected answer: {}", out.trim()) }),
-        Err(e) => {
-            let detail = detail(&e);
-            Err(Failure { part: if ssh_failed(&detail) { Part::Ssh } else { Part::Key }, detail })
-        }
+        Err(e) => Err(Failure { part: failed_part(&e, Part::Key), detail: detail(&e) }),
     }
 }
 
@@ -192,10 +197,10 @@ pub struct Made {
 pub async fn bootstrap(host: &str, key: &SshKeySignIn, known_hosts: &Path, public: &str) -> Result<Made, Failure> {
     let key_added = authorize(host, key, known_hosts, public).await?;
     let command = token_command(&key.user, &token_name(public));
-    let out = target(host, key).exec_timed(known_hosts, &command, SSH_TIMEOUT).await.map_err(|e| {
-        let detail = detail(&e);
-        Failure { part: if ssh_failed(&detail) { Part::Ssh } else { Part::Token }, detail }
-    })?;
+    let out = target(host, key)
+        .exec_timed(known_hosts, &command, SSH_TIMEOUT)
+        .await
+        .map_err(|e| Failure { part: failed_part(&e, Part::Token), detail: detail(&e) })?;
     let ApiToken { id: token_id, secret } = parse_token(&out).map_err(|e| Failure { part: Part::Token, detail: e.to_string() })?;
     Ok(Made { token_id, secret, key_added })
 }

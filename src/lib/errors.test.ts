@@ -86,6 +86,7 @@ describe("command errors", () => {
         "signInCodeUnavailable",
         "signInDenied",
         "signedOut",
+        "sshHostKeyRefused",
         "stepCeiling",
         "stepSilent",
         "stepStalled",

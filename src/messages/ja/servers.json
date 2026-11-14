@@ -353,6 +353,9 @@
       "certificateWhere": "Proxmox の Web 画面: ノード > システム > 証明書 の証明書フィンガープリント。ノード上では pvenode cert info。",
       "sha256": "SHA-256 フィンガープリント",
       "previous": "以前に確認したもの",
+      "sshKeys": "ノードの SSH ホスト鍵",
+      "sshWhere": "ノードのコンソールで: for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done",
+      "sshUnread": "ノードの SSH ホスト鍵を読み取れませんでした（{error}）。ここで確認するまで、そのノードへの SSH は拒否されたままです。",
       "confirm": "一致しています: このサーバーを信頼する",
       "confirmChanged": "自分で入れ替えた: 新しいものを信頼する",
       "cancel": "キャンセル"

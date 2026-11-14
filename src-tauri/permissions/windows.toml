@@ -148,6 +148,7 @@ permissions = [
   "allow-server-save-ssh-key",
   "allow-server-selftest",
   "allow-server-test",
+  "allow-server-trust-ssh-keys",
   "allow-system-check",
 ]
 

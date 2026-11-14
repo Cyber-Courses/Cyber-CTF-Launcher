@@ -230,6 +230,12 @@ pub enum Code {
         /// The fingerprint of the certificate it offered.
         presented: String,
     },
+    /// A server node's SSH host key isn't one the learner confirmed (none yet, or another one):
+    /// the connection was refused.
+    SshHostKeyRefused {
+        /// The node's address.
+        host: String,
+    },
 }
 
 impl Code {

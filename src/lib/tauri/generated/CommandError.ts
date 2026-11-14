@@ -176,4 +176,8 @@ pinned: string,
 /**
  * The fingerprint of the certificate it offered.
  */
-presented: string, } });
+presented: string, } } | { "code": "sshHostKeyRefused", "args": { 
+/**
+ * The node's address.
+ */
+host: string, } });

@@ -2,28 +2,31 @@
 
 import { useRef, useState } from "react";
 import { ConsentDialog } from "@/components/ui/consent-dialog";
-import { serverIdentity, type ServerHostInput, type ServerIdentity } from "@/lib/tauri";
+import { serverIdentity, serverTrustSshKeys, type ServerHostInput, type ServerIdentity } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
 // Trust on first use for a Proxmox server: before the launcher signs in to it, the player is shown
-// its self-signed certificate's fingerprint, to compare with what the server itself shows, and
-// confirms it. The fingerprint is saved with the host. A server that shows the confirmed one goes
-// on without a question.
+// its self-signed certificate's fingerprint and its node's SSH host keys, to compare with what the
+// server itself shows, and confirms them. The certificate's is saved with the host; the keys go to
+// the launcher's own known_hosts. A server that shows the confirmed ones goes on without a question.
 
 /** A fingerprint as the core writes it, to compare with one typed or stored in any case. */
 const normal = (f: string | null | undefined) => (f ?? "").toUpperCase().replace(/[^0-9A-F]/g, "");
 
-/** What the server offers that isn't confirmed yet: its certificate's fingerprint, and the one
- *  confirmed before if it changed. */
+/** What the server offers that isn't confirmed yet: its certificate's fingerprint (and the one
+ *  confirmed before, if it changed), and its node's keys when they are new or changed. */
 export type Unconfirmed = {
   tls: { presented: string; pinned: string | null } | null;
+  ssh: ServerIdentity["ssh"];
+  sshError: string | null;
 };
 
 /** What of `identity` the payload `v` hasn't confirmed; null when it is all confirmed. */
 export function unconfirmed(v: ServerHostInput, identity: ServerIdentity): Unconfirmed | null {
   const pinned = v.tlsFingerprint ?? null;
   const tls = identity.tls !== null && normal(identity.tls) !== normal(pinned) ? { presented: identity.tls, pinned: normal(pinned) ? pinned : null } : null;
-  return tls ? { tls } : null;
+  const ssh = identity.ssh && identity.ssh.state !== "confirmed" ? identity.ssh : null;
+  return tls || ssh ? { tls, ssh, sshError: identity.sshError } : null;
 }
 
 /** Asks the player to confirm what a Proxmox server offers, when it isn't confirmed yet: `ensure`
@@ -46,6 +49,11 @@ export function useTrustCheck(setV: React.Dispatch<React.SetStateAction<ServerHo
       setAsking(open);
     });
     if (!yes) return null;
+    if (open.ssh)
+      await serverTrustSshKeys(
+        v,
+        open.ssh.keys.map((k) => k.fingerprint),
+      );
     const confirmed = { ...v, tlsFingerprint: open.tls?.presented ?? v.tlsFingerprint ?? null };
     setV((s) => ({ ...s, tlsFingerprint: confirmed.tlsFingerprint }));
     return confirmed;
@@ -64,11 +72,11 @@ export function useTrustCheck(setV: React.Dispatch<React.SetStateAction<ServerHo
   return { ensure, dialog };
 }
 
-/** The question: the fingerprint in full, where to find the server's own to compare, and a
- *  warning when it changed. */
+/** The question: each fingerprint in full, where to find the server's own to compare, and a
+ *  warning when one changed. */
 function TrustDialog({ asking, onConfirm, onCancel }: { asking: Unconfirmed; onConfirm: () => void; onCancel: () => void }) {
   const t = useT();
-  const changed = !!asking.tls?.pinned;
+  const changed = !!asking.tls?.pinned || asking.ssh?.state === "changed";
   return (
     <ConsentDialog
       title={changed ? t("servers.setup.trust.titleChanged") : t("servers.setup.trust.title")}
@@ -86,6 +94,16 @@ function TrustDialog({ asking, onConfirm, onCancel }: { asking: Unconfirmed; onC
           <Fingerprint label={t("servers.setup.trust.sha256")} value={asking.tls.presented} />
         </section>
       )}
+      {asking.ssh && (
+        <section className="mt-3" aria-label={t("servers.setup.trust.sshKeys")}>
+          <p className="font-medium text-foreground">{t("servers.setup.trust.sshKeys")}</p>
+          <p className="text-[0.75rem]">{t("servers.setup.trust.sshWhere")}</p>
+          {asking.ssh.keys.map((k) => (
+            <Fingerprint key={k.fingerprint} label={k.algorithm} value={k.fingerprint} />
+          ))}
+        </section>
+      )}
+      {asking.sshError && <p className="mt-3 text-[0.75rem]">{t("servers.setup.trust.sshUnread", { error: asking.sshError })}</p>}
     </ConsentDialog>
   );
 }
