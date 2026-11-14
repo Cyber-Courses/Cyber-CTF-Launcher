@@ -37,6 +37,7 @@ pub use vars::{esxi_env, host_vars};
 
 // What the rest of the launcher uses of Isoloom's types: through here, like its functions.
 pub use isoloom_spec::model::{Arch, Machine, Spec, Target};
+#[cfg(feature = "cloud-services")]
 pub use isoloom_spec::model::{CloudProvider, CloudServices};
 pub use isoloom_targets::Lab;
 

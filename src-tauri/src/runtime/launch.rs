@@ -5,10 +5,12 @@ use std::path::Path;
 
 use crate::platform::AppDirs;
 
+#[cfg(feature = "cloud-services")]
+use super::cloud_services;
 pub(crate) use super::isothrum::Inputs;
 use super::paths::{mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, runner_home};
 use super::providers::Provider;
-use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server};
+use super::{LabRef, Runtime, docker, isothrum, lab, server};
 use crate::error::{Code, Error, Result};
 use crate::platform::policy::Key;
 
@@ -19,13 +21,17 @@ mod port_holder;
 #[cfg(test)]
 use local::low_memory_warning;
 use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
+#[cfg(feature = "cloud-services")]
+#[cfg(feature = "cloud-services")]
+pub(super) use on_host::check_aws_budget;
 pub(in crate::runtime) use on_host::esxi_run;
+#[cfg(any(test, feature = "cloud-services"))]
+pub(super) use on_host::public_ip;
 pub(super) use on_host::server_place;
 #[cfg(test)]
 pub(crate) use on_host::{CloudStart, start_cloud_run};
 #[cfg(test)]
 use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from, record_cloud_form};
-pub(super) use on_host::{check_aws_budget, public_ip};
 use on_host::{containers_run_on, per_machine_runs_on, start_on_server};
 
 /// Where a lab is started: on this machine (with a local `provider`, and `per_machine_vm`
@@ -107,7 +113,10 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
         return Err(super::status::still_running(&up));
     }
     if runtime == Runtime::Cloud {
+        #[cfg(feature = "cloud-services")]
         return cloud_services::start(dirs, lab, host, env, &mut log).await;
+        #[cfg(not(feature = "cloud-services"))]
+        return Err(Error::Refused(super::CLOUD_UNSUPPORTED.into()));
     }
     match place {
         Place::Here(run) => start_here(dirs, lab, run, docker_context, inputs, &mut log).await,

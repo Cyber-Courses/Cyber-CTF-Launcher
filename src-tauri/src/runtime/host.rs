@@ -50,6 +50,10 @@ pub(crate) enum Host {
 /// on the server host or cloud account its marker names, else on this machine. `None` for a
 /// cloud-services lab on no account: nothing of it runs anywhere.
 pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Host>> {
+    // A cloud-services lab runs nowhere in a build without the feature.
+    if !cfg!(feature = "cloud-services") && runtime == Runtime::Cloud {
+        return Ok(None);
+    }
     let home = runner_home(dirs)?;
     let form = local_runtime(dir, runtime);
     Ok(Some(match server::lab_connection(dirs, dir)? {
@@ -95,7 +99,10 @@ impl Host {
     /// Whether the run has machines of the lab's own: every run but a cloud-services lab's,
     /// whose services are no machines to check or to put an attack box beside.
     pub(crate) fn has_machines(&self) -> bool {
-        self.target() != Some(lab::Target::CloudServices)
+        #[cfg(feature = "cloud-services")]
+        return self.target() != Some(lab::Target::CloudServices);
+        #[cfg(not(feature = "cloud-services"))]
+        true
     }
 
     /// The Proxmox server's place for a change of its run (its node, its SSH jump).
@@ -235,7 +242,10 @@ mod tests {
         assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", Some(lab::Target::CloudVm))));
         mark_per_machine_vm(&dir, false).unwrap();
         assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", Some(lab::Target::CloudDocker))));
+        #[cfg(feature = "cloud-services")]
         assert_eq!(located(&t, &dir, Runtime::Cloud), Some(("cloud", Some(lab::Target::CloudServices))));
+        #[cfg(not(feature = "cloud-services"))]
+        assert_eq!(located(&t, &dir, Runtime::Cloud), None, "a build without the feature runs none");
         // On a server: Proxmox through Terraform, ESXi through Vagrant there.
         crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
         for server in ["pve", "esx"] {
@@ -251,6 +261,7 @@ mod tests {
         assert_eq!(located(&t, &dir, Runtime::Docker), Some(("server", None)));
     }
 
+    #[cfg(feature = "cloud-services")]
     #[tokio::test]
     async fn cloud_services_have_no_machines_to_check_nor_to_put_an_attack_box_beside() {
         let t = TestApp::new();

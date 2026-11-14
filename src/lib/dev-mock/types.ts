@@ -61,6 +61,7 @@ type Answers = {
   oci_config: OciConfig;
   lab_status: LabStatus;
   lab_cloud_preview: CloudPreview | null;
+  cloud_services_supported: boolean;
   lab_requirements: LabRequirements | null;
   lab_default_place: LabStartPlace;
   lab_run_options: LabRunOptions;

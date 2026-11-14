@@ -29,6 +29,7 @@ const IMPORTING: &str = "Importing ";
 /// The last line of a lab's import from a folder on this machine.
 pub(crate) const IMPORTED: &str = "Lab imported";
 const ON_SERVER_HOST: &str = "Running on server host ";
+#[cfg(any(test, feature = "cloud-services"))]
 const IN_CLOUD_ACCOUNT: &str = "Running in your ";
 
 /// How the lines said while the lab is fetched and placed start (for the generated file).
@@ -51,6 +52,7 @@ pub(crate) fn on_server_host(name: &str, provider: &str) -> String {
 }
 
 /// A cloud-services lab placed in the player's `cloud` (its name) account `name`, in `region`.
+#[cfg(any(test, feature = "cloud-services"))]
 pub(crate) fn in_cloud_account(cloud: &str, name: &str, region: &str) -> String {
     format!("{IN_CLOUD_ACCOUNT}{cloud} account {name} ({region})")
 }

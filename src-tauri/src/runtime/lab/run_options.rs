@@ -136,11 +136,15 @@ fn generated(lab: &Lab, runtime: Runtime, host: Arch) -> RunOptions {
             out.servers.extend(paths.offer(Target::Proxmox, Provider::Proxmox, None));
             out.cloud_vm = paths.on(Target::CloudVm, &clouds(Target::CloudVm));
         }
+        #[cfg(feature = "cloud-services")]
         Runtime::Cloud => {
             if let Some(cloud) = spec.cloud.as_ref().map(|c| crate::runtime::cloud_services::provider(c.provider)) {
                 out.cloud_services = paths.on(Target::CloudServices, &[cloud]);
             }
         }
+        // Not run by this build: offered nowhere, refused as it says.
+        #[cfg(not(feature = "cloud-services"))]
+        Runtime::Cloud => paths.refused.push(Refusal::by_isoloom(None, "cloud-services".to_owned(), crate::runtime::CLOUD_UNSUPPORTED.to_owned())),
     }
     out.refused = paths.refused;
     out

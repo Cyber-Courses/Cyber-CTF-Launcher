@@ -27,7 +27,7 @@ use crate::platform::AppDirs;
 use super::lab::{CloudProvider, CloudServices, Spec, Target};
 use super::launch::{check_aws_budget, public_ip};
 use super::providers::Provider;
-use super::{LabRef, Runtime, isothrum, lab, server};
+use super::{LabRef, Preview, Runtime, isothrum, lab, server};
 use crate::error::{Error, Result};
 
 /// The launch-time input the launcher fills with this machine's public IP as a one-address block
@@ -187,24 +187,6 @@ fn allow_list_inputs(cloud: &CloudServices, ip: &str) -> Vec<(String, String)> {
     let asks = |name: &str| wanted.iter().any(|(_, i)| i == name);
     let block = if ip.contains(':') { format!("{ip}/128") } else { format!("{ip}/32") };
     [(PLAYER_IP, ip.to_owned()), (PLAYER_CIDR, block)].into_iter().filter(|(name, _)| asks(name)).map(|(name, value)| (name.to_owned(), value)).collect()
-}
-
-/// What the launch dialog shows before a cloud-services lab starts: its cloud, what it costs
-/// and what it asks for. Read from the lab's spec at its pinned commit.
-#[derive(serde::Serialize, Debug, PartialEq, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename = "CloudPreview")]
-pub struct Preview {
-    /// The cloud the module runs on, by id (`aws`, `azure`, …).
-    pub provider: String,
-    /// What the spec says it costs per hour, in US dollars; None when it doesn't say.
-    pub hourly_usd: Option<f64>,
-    /// The launch-time inputs it takes.
-    pub inputs: Vec<String>,
-    /// Whether it opens something to this machine's public IP only.
-    pub allow_list: bool,
-    /// The names of what it exposes once up.
-    pub outputs: Vec<String>,
 }
 
 /// What the cloud-services lab of `spec` runs and takes before it starts; None for a lab that

@@ -344,6 +344,7 @@
     "removeKeep": " Pour les conserver, éteignez plutôt le lab.",
     "cloudServices": "services cloud",
     "cloudServicesTitle": "Services cloud",
+    "cloudServicesUnsupported": "Ce lab exécute ses propres services cloud, que cette version de Cyber CTF n’exécute pas.",
     "cloudLeftover": "Un démarrage précédent a laissé des services cloud dans votre compte. Arrêtez le lab pour les supprimer, puis relancez-le.",
     "cloudIdle": "Démarrez le lab pour créer ses services cloud dans votre compte. Arrêtez-le quand vous avez fini : cela les supprime et met fin à leur coût.",
     "connectAccountOn": "Connecter un compte {clouds}",

@@ -58,6 +58,7 @@ export function StartLabButton({
   const t = useT();
   const [choosing, setChoosing] = useState(chooseAtOnce);
   const rt = lab.runtime;
+  if (cloud && !cloud.supported) return <p className="max-w-xs text-[0.8125rem] text-muted-foreground">{t("labs.detail.cloudServicesUnsupported")}</p>;
   if (cloud && run.cloudAccounts.length === 0) return <ConnectCloudButton providers={rt?.providers ?? []} />;
   return (
     <div className="relative">

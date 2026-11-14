@@ -321,3 +321,21 @@ mod tests {
         }
     }
 }
+
+/// What the launch dialog shows before a cloud-services lab starts (in a build with the
+/// `cloud-services` feature): its cloud, what it costs and what it asks for. Read from the lab's spec at its pinned commit.
+#[derive(serde::Serialize, Debug, PartialEq, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "CloudPreview")]
+pub struct Preview {
+    /// The cloud the module runs on, by id (`aws`, `azure`, …).
+    pub provider: String,
+    /// What the spec says it costs per hour, in US dollars; None when it doesn't say.
+    pub hourly_usd: Option<f64>,
+    /// The launch-time inputs it takes.
+    pub inputs: Vec<String>,
+    /// Whether it opens something to this machine's public IP only.
+    pub allow_list: bool,
+    /// The names of what it exposes once up.
+    pub outputs: Vec<String>,
+}

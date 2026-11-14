@@ -249,6 +249,8 @@ export const importedSample: ImportedLab = {
 /** The lab commands: their status, a cloud lab's preview, what runs and deploys. */
 export const labCommands = {
   lab_status: (args) => (args?.id === "lab-invoice" ? invoiceStatus : stopped),
+  // The mock answers as a build with the `cloud-services` feature, which its cloud labs show.
+  cloud_services_supported: () => true,
   lab_cloud_preview: (args) =>
     args?.id === "lab-goat" ? { provider: "aws", hourlyUsd: 0.02, inputs: ["PLAYER_CIDR"], allowList: true, outputs: ["access_key_id", "secret_key"] } : null,
   lab_requirements: (args) =>

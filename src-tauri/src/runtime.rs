@@ -8,6 +8,7 @@
 //! it holds.
 
 pub(crate) mod attack_box;
+#[cfg(feature = "cloud-services")]
 pub(crate) mod cloud_services;
 pub(crate) mod deploy_log;
 pub(crate) mod discover;
@@ -46,7 +47,7 @@ pub use isothrum_runner::ShellCommand;
 pub(crate) use launch::start;
 pub(crate) use launch::{Destination, Downloads, Placement, check_destination, downloads, policy_allows, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
-pub use model::{Console, Control, Interface, LabStatus, Login, Machine, Network, Park, Place, Port, Service};
+pub use model::{Console, Control, Interface, LabStatus, Login, Machine, Network, Park, Place, Port, Preview, Service};
 #[cfg(test)]
 pub use paths::LOCAL_VM_MARKER;
 pub(crate) use paths::deploys_dir;
@@ -57,7 +58,7 @@ pub(crate) use status::{forget_gone, refuse_replace};
 pub use status::{lab_installed, lab_present, primary_url};
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]
-pub(crate) use {attack_box::AttackStatus, cloud_services::Preview, docker::Check};
+pub(crate) use {attack_box::AttackStatus, docker::Check};
 
 /// Mirrors `LabRuntime` in CyberBackend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
@@ -70,9 +71,16 @@ pub enum Runtime {
     /// Terraform.
     Vm,
     /// Cloud services (Isoloom's `cloud-services`): a Terraform module of the lab's own,
-    /// applied into the player's cloud account. See `cloud_services`.
+    /// applied into the player's cloud account. See `cloud_services`, built with the
+    /// `cloud-services` feature only; without it such a lab starts nowhere
+    /// ([`CLOUD_UNSUPPORTED`]).
     Cloud,
 }
+
+/// What a lab that runs its own cloud services says in a build without the `cloud-services`
+/// feature.
+#[cfg_attr(feature = "cloud-services", allow(dead_code, reason = "said only without the feature"))]
+pub const CLOUD_UNSUPPORTED: &str = "This lab runs its own cloud services, which this version of Cyber CTF doesn't run.";
 
 impl Runtime {
     /// Its tag as CyberBackend and the webview spell it

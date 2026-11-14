@@ -344,6 +344,7 @@
     "removeKeep": "残したい場合は、代わりにラボをシャットダウンしてください。",
     "cloudServices": "クラウドサービス",
     "cloudServicesTitle": "クラウドサービス",
+    "cloudServicesUnsupported": "このラボは独自のクラウドサービスを実行しますが、このバージョンの Cyber CTF では実行できません。",
     "cloudLeftover": "前回の起動でクラウドサービスがアカウントに残っています。停止して削除してから、もう一度起動してください。",
     "cloudIdle": "ラボを起動すると、クラウドサービスがアカウントに作成されます。終わったら停止してください。削除され、料金の発生も止まります。",
     "connectAccountOn": "{clouds} のアカウントを接続",
