@@ -471,7 +471,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/labs/remove/tests.rs
-            - src-tauri/src/commands/labs.rs > an_installed_lab_is_removed_with_its_workers_files_and_refused_while_a_worker_runs
+            - src-tauri/src/commands/labs.rs > an_installed_lab_is_removed_and_refused_while_an_operation_holds_it
             - src/features/labs/lab-detail/remove-lab.test.tsx
             - src/lib/confirm.test.tsx > warnInDialog
           web:
@@ -1161,7 +1161,7 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/isothrum.rs > a_chosen_engine_pins_the_labs_docker_calls_through_its_context
+            - src-tauri/src/runtime/isothrum/engine.rs > a_chosen_engine_pins_the_labs_docker_calls_through_its_context
             - src-tauri/src/labs.rs > a_chosen_engine_with_no_context_here_fails_the_launch_rather_than_use_another
             - src-tauri/src/runtime/paths.rs > engine_marker_round_trips_and_reads_trimmed
             - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > picks a container engine when several answer, remembers it, and starts on it

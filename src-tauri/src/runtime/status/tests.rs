@@ -162,7 +162,7 @@ async fn a_lab_marked_on_a_host_that_is_no_longer_saved_names_that_host() {
     std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "gone1\n").unwrap();
     let tools = Tools::strict_rules(&[]);
     for runtime in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
-        let err = super::status(&t.dirs(), &dir, "web", runtime).await.err().expect("refused").to_string();
+        let err = super::status(&t.dirs(), &dir, "web", runtime).await.expect_err("refused").to_string();
         assert_eq!(err, "server host `gone1` not found", "{runtime:?}");
     }
     // Refused before anything local or remote is probed; the marker alone never makes it
