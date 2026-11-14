@@ -21,13 +21,13 @@ mod port_holder;
 use local::low_memory_warning;
 use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
 pub(in crate::runtime) use on_host::esxi_run;
+pub(super) use on_host::server_place;
 #[cfg(test)]
 pub(crate) use on_host::{CloudStart, start_cloud_run};
 #[cfg(test)]
 use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from, record_cloud_form};
 pub(super) use on_host::{check_aws_budget, public_ip};
 use on_host::{per_machine_runs_on, start_on_server};
-pub(super) use on_host::{runner_runs_on, server_place};
 
 /// Where a lab is started: on this machine (with a local `provider`, and `per_machine_vm`
 /// picking the one-VM-per-machine form for a container lab), or on the server `host`; and

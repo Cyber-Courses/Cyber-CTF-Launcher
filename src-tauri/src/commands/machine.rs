@@ -123,9 +123,7 @@ pub async fn machine_storage_clean(app: AppHandle, extra_images: Vec<String>) ->
 
 /// [`machine_storage_clean`], in the app whose folders are `dirs`.
 pub(crate) async fn storage_clean_in(dirs: AppDirs, extra_images: Vec<String>) -> Result<u64> {
-    // Workers that can't be listed may be running: what they use is kept.
-    let workers = crate::app::deploy_worker::running(&dirs).map_or(true, |w| !w.is_empty());
-    storage::machine_storage_clean(dirs, extra_images, workers).await
+    storage::machine_storage_clean(dirs, extra_images).await
 }
 
 /// Installs `dependency`, each command and its output sent on `logs`.

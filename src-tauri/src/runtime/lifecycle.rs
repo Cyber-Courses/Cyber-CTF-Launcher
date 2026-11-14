@@ -203,12 +203,7 @@ pub(crate) async fn stop_locked(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut
     if let Some(host) = host::locate(dirs, dir, id, runtime)? {
         host.down(dirs, &mut log).await?;
     }
-    forget_run(dir)?;
-    // What the runner hasn't taken over yet, nothing here removes: said, never reported stopped.
-    match super::status::left_awaiting_hand_over(dirs, id)? {
-        Some(left) => Err(left),
-        None => Ok(()),
-    }
+    forget_run(dir)
 }
 
 /// Destroys a lab's run on this machine (`run`, of the lab in `dir`) and, once it is gone, clears

@@ -29,7 +29,7 @@ describe("MachineScreen", () => {
   });
 
   it("lists what a fresh machine is missing", async () => {
-    const calls = installTauri({ machine_workloads: () => [], machine_storage: () => ({ images: [], boxes: [], plugins: [] }) });
+    const calls = installTauri({ machine_workloads: () => [], machine_storage: () => ({ images: [], boxes: [] }) });
     const user = userEvent.setup();
     render(<MachineScreen report={freshReport("windows")} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
     await flush(50);

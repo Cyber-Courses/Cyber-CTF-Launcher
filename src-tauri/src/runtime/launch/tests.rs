@@ -351,14 +351,6 @@ async fn a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing() {
     crate::runtime::test_support::record_run(t.data(), "web", None, "vagrant", "ready");
     let (r, _) = start_on(&t, "web", Runtime::Docker, "aws1").await;
     assert_eq!(r.unwrap_err().code(), crate::error::Code::LabRunningHere);
-    // A deployment of the launcher's own Terraform path not yet handed to the runner counts too.
-    crate::runtime::test_support::record_run(t.data(), "web", None, "vagrant", "absent");
-    server::mark_lab(&dir, Some("aws1")).unwrap();
-    let state = t.data().join("deployments").join("web").join("aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
-    let (r, _) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
-    assert_eq!(r.unwrap_err().code(), crate::error::Code::LabRunningOn { host: "Host aws1".into() });
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
 }
 

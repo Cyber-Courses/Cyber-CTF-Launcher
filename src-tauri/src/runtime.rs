@@ -34,7 +34,6 @@ pub(crate) mod ssh;
 pub(crate) mod start_place;
 pub(crate) mod status;
 pub(crate) mod terminal_launch;
-pub(crate) mod terraform;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -60,7 +59,6 @@ pub use paths::validate_id;
 pub use reaper::reap_expired_labs;
 pub(crate) use status::{forget_gone, refuse_replace};
 pub use status::{lab_installed, lab_present, primary_url};
-pub use terraform::{PLUGIN_CACHE as TERRAFORM_PLUGINS, clear_plugin_cache};
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]
 pub(crate) use {attack_box::AttackStatus, cloud_services::Preview, docker::Check};
@@ -81,10 +79,7 @@ pub enum Runtime {
 }
 
 impl Runtime {
-    /// Every runtime a lab can declare.
-    pub const ALL: [Runtime; 3] = [Runtime::Docker, Runtime::Vm, Runtime::Cloud];
-
-    /// Its tag as CyberBackend, the webview and the files next to a lab's state spell it
+    /// Its tag as CyberBackend and the webview spell it
     /// (`DOCKER`, `VM`, `CLOUD`): its serde name.
     pub fn tag(self) -> &'static str {
         match self {
@@ -92,11 +87,6 @@ impl Runtime {
             Runtime::Vm => "VM",
             Runtime::Cloud => "CLOUD",
         }
-    }
-
-    /// The runtime tagged `tag` ([`Runtime::tag`]), if one is.
-    pub fn from_tag(tag: &str) -> Option<Runtime> {
-        Runtime::ALL.into_iter().find(|r| r.tag() == tag)
     }
 }
 
@@ -156,7 +146,7 @@ pub(crate) mod test_support {
         }
     }
 
-    /// Lab `lab`'s run as the runner whose home is `home` (the app data folder) records it:
+    /// Lab `lab`'s run as the app's runner (its home in the app data folder `home`) records it:
     /// `cyberctf-<lab>`, of `target`, on the place labelled `host` (none: this machine), left in
     /// `state` (`ready`, `parked`, `failed`, `absent`, …) by its last operation.
     pub(crate) fn record_run(home: &std::path::Path, lab: &str, host: Option<&str>, target: &str, state: &str) {
@@ -172,7 +162,7 @@ pub(crate) mod test_support {
             "version": 0, "name": name, "manifest": home.join("labs").join(lab).join("run.json"),
             "target": target, "driver": driver, "host_label": host, "state": state, "params": {}
         });
-        crate::testing::runner::save_run(home, &record);
+        crate::testing::runner::save_run(&crate::runtime::paths::runner_home_in(home), &record);
     }
 
     /// A temp lab folder holding `spec` as its `isoloom.yml`, for tests that load a lab from disk;

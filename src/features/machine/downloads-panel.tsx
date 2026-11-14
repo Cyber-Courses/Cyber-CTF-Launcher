@@ -92,7 +92,7 @@ function useDownloads() {
 export function DownloadsPanel() {
   const t = useT();
   const { storage, readError, cleaning, freed, clean } = useDownloads();
-  const storeItems = storage ? [...storage.images, ...storage.boxes, ...storage.plugins] : [];
+  const storeItems = storage ? [...storage.images, ...storage.boxes] : [];
   const storeTotal = storeItems.reduce((a, i) => a + i.bytes, 0);
   return (
     <Panel>

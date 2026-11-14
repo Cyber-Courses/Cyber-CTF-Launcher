@@ -93,8 +93,7 @@ pub(crate) fn running_by_host(dirs: &AppDirs) -> HashMap<String, u32> {
 
 /// Runs still up on host `id` of labs no longer marked as running there (moved elsewhere,
 /// uninstalled): only that host's credentials can take them down. As the runner records them
-/// (any state but gone, on that host), and the launcher's own Terraform states not handed to the
-/// runner yet that still hold resources there. A record that can't be read is an error.
+/// (any state but gone, on that host). A record that can't be read is an error.
 pub(crate) fn leftovers_on(dirs: &AppDirs, id: &str) -> Result<usize> {
     let base = dirs.data()?;
     let elsewhere = |lab: &str| marked_host(&crate::runtime::paths::labs_root_in(base).join(lab)).as_deref() != Some(id);
@@ -104,15 +103,7 @@ pub(crate) fn leftovers_on(dirs: &AppDirs, id: &str) -> Result<usize> {
         .filter_map(|r| crate::runtime::lab_of_project(r.name.as_str()).map(str::to_owned))
         .filter(|lab| elsewhere(lab))
         .count();
-    let mut states = 0;
-    for lab in crate::runtime::paths::deployed_ids(base).iter().filter(|lab| elsewhere(lab)) {
-        for (_, state) in crate::runtime::paths::deployment_states(base, lab)? {
-            if crate::runtime::paths::recorded_host(&state).as_deref() == Some(id) && crate::runtime::terraform::deployed(&state)? {
-                states += 1;
-            }
-        }
-    }
-    Ok(runs + states)
+    Ok(runs)
 }
 
 /// The host id of each installed lab's marker (trimmed; empty when the marker is). A lab leaves

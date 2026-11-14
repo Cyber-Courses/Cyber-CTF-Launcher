@@ -87,14 +87,6 @@ fn a_lab_is_present_wherever_something_of_it_is_left() {
     // Taken down: absent.
     record_run(t.data(), "present", None, "vagrant", "absent");
     assert!(!super::lab_present(&dirs, "present"));
-    // A Terraform state of the launcher's own path still holding resources, waiting for its
-    // hand-over to the runner, is the lab up on that account.
-    let state = t.data().join("deployments/present/aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[{"type":"aws_instance"}]}"#).unwrap();
-    std::fs::write(state.join("host"), "aws1").unwrap();
-    assert!(super::lab_present(&dirs, "present"));
-    std::fs::remove_dir_all(t.data().join("deployments")).unwrap();
     assert!(super::lab_installed(&dirs, "present") && !super::lab_installed(&dirs, "gone"));
     // Parked here.
     crate::runtime::paths::mark_parked(&dir, Some(crate::runtime::Park::Pause)).unwrap();
@@ -107,9 +99,7 @@ fn a_lab_whose_run_cant_be_read_is_judged_by_its_marker_and_says_why() {
     // was decided on the marker alone with nothing in the log.
     let t = crate::testing::test_app::TestApp::new();
     let dir = t.lab("present", &[]);
-    let state = t.data().join("deployments/present/aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), "not a state").unwrap();
+    crate::testing::runner::damage_store(&crate::runtime::paths::runner_home_in(t.data()));
     crate::testing::logs::take_warnings();
     assert!(!super::lab_present(&t.dirs(), "present"), "no marker: down");
     std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "aws1").unwrap();
@@ -123,7 +113,7 @@ fn a_lab_whose_run_cant_be_read_is_judged_by_its_marker_and_says_why() {
 #[test]
 fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
     // Regression: an update, a re-import and a start elsewhere asked the lab folder (Vagrant's
-    // `.vagrant`, local Docker, `deployments/`), where the runner keeps nothing: a VM, a
+    // `.vagrant`, local Docker), where the runner keeps nothing: a VM, a
     // docker-in-VM, an ESXi, a Proxmox or a cloud lab run by the runner read as down.
     use crate::runtime::test_support::record_run;
     let t = crate::testing::test_app::TestApp::new();
@@ -158,34 +148,10 @@ fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
     assert_eq!(super::still_up(&dirs, "web").unwrap(), None);
     assert!(super::refuse_replace(&dirs, &dir, "web").is_ok());
     // A store that can't be read stops the replacement rather than read as "down".
-    crate::testing::runner::damage_store(t.data());
+    crate::testing::runner::damage_store(&crate::runtime::paths::runner_home_in(t.data()));
     assert!(super::still_up(&dirs, "web").is_err() && super::refuse_replace(&dirs, &dir, "web").is_err());
     // Nothing installed: nothing to replace.
     assert!(super::refuse_replace(&dirs, &t.data().join("labs/none"), "none").is_ok());
-}
-
-#[test]
-fn a_deployment_that_cant_be_read_is_an_error_never_nothing_up() {
-    // Regression: an unreadable deployments folder or Terraform state read as "nothing up",
-    // contradicting `still_up`'s own rule: a missed deployment is a billable leftover.
-    let t = crate::testing::test_app::TestApp::new();
-    let dirs = t.dirs();
-    t.lab("web", &[]);
-    let state = t.data().join("deployments/web/aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), "{ cut short").unwrap();
-    assert!(super::still_up(&dirs, "web").is_err(), "a state that can't be parsed");
-    std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[]}"#).unwrap();
-    assert_eq!(super::still_up(&dirs, "web").unwrap(), None, "an empty state holds nothing");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let folder = t.data().join("deployments/web");
-        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000)).unwrap();
-        let unreadable = super::still_up(&dirs, "web");
-        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(unreadable.is_err(), "a deployments folder that can't be listed");
-    }
 }
 
 #[tokio::test]

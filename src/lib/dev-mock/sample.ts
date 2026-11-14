@@ -181,7 +181,6 @@ const machineCommands = {
       { name: "postgres:16", bytes: 0.43 * GB },
     ],
     boxes: [{ name: "StefanScherer/windows_2019", bytes: 11.2 * GB }],
-    plugins: [{ name: "Terraform provider plugins", bytes: 0.6 * GB }],
   }),
   attack_box_status: () => attackBox(),
   attack_box_sign_in: () => ({ user: "player", password: "dev-mock-password" }),

@@ -188,20 +188,17 @@ fn passwords_are_kept_when_blank_and_bounded_when_given() {
 
 #[test]
 fn a_deployment_left_by_an_uninstalled_lab_keeps_its_host() {
-    // The lab's folder is gone (uninstalled) but its Terraform state still holds resources
-    // on the account: only this host's credentials can destroy them, so it stays.
+    // The lab's folder is gone (uninstalled) but its run is still up on the account: only this
+    // host's credentials can destroy it, so it stays.
     let t = crate::testing::test_app::TestApp::new();
     let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
-    let state = t.data().join("deployments").join("web").join("aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
-    std::fs::write(state.join("host"), "aws1\n").unwrap();
+    crate::runtime::test_support::record_run(t.data(), "web", Some("aws1"), "cloud-vm", "ready");
     let err = remove(&t.dirs(), &host).unwrap_err().to_string();
     assert_eq!(err, "1 lab still running on this host. Stop it before removing the host.");
     assert_eq!(load(&t.dirs()).unwrap().hosts.len(), 1);
     assert!(crate::runtime::server::hosts::running_by_host(&t.dirs()).is_empty(), "no installed lab is marked as running there");
-    // Destroyed (its state gone): free to remove.
-    std::fs::remove_file(state.join("terraform.tfstate")).unwrap();
+    // Destroyed: free to remove.
+    crate::runtime::test_support::record_run(t.data(), "web", Some("aws1"), "cloud-vm", "absent");
     remove(&t.dirs(), &host).unwrap();
     assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);
 }

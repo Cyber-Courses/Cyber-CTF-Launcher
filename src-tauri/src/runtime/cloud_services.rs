@@ -286,7 +286,6 @@ mod tests {
         let err = super::super::start(&t.dirs(), lab, to, &[], |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("set-up steps on this machine"), "{err}");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-        assert!(!t.data().join("deployments/goat").exists());
     }
 
     #[test]

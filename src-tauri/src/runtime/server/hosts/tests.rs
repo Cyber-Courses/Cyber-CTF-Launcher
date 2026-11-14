@@ -124,14 +124,8 @@ fn what_is_left_on_a_host_keeps_it_from_being_removed() {
     assert_eq!(leftovers_on(&dirs, "aws1").unwrap(), 2);
     assert_eq!(leftovers_on(&dirs, "aws2").unwrap(), 1);
     assert_eq!(labs_on(&dirs, "aws1").unwrap(), 3, "two left and one marked");
-    // A Terraform state of the launcher's own path, awaiting its hand-over, counts too.
-    let state = t.data().join("deployments").join("old-1").join("aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
-    std::fs::write(state.join("host"), "aws1").unwrap();
-    assert_eq!(leftovers_on(&dirs, "aws1").unwrap(), 3);
     // A store that can't be read is an error, not "nothing left".
-    crate::testing::runner::damage_store(t.data());
+    crate::testing::runner::damage_store(&crate::runtime::paths::runner_home_in(t.data()));
     assert!(leftovers_on(&dirs, "aws1").is_err() && labs_on(&dirs, "aws1").is_err());
 }
 

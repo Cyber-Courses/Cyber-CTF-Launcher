@@ -1,10 +1,9 @@
 //! Removing a lab from this computer: the app's copy of it (the folder an import copied, or a
-//! release unpacked) and every record the app keeps for it under its data folder: the runner's run
-//! folder (its record, its event log, what it last saw, Vagrant's state of it), the deployments of
-//! the launcher's own Terraform path, the deploy workers' job, logs and verdicts, an update's or an
-//! import's leftover copies, a catalogue lab's source kept for an offline start, and the password
+//! release unpacked) and every record the app keeps for it under its data folder: the deploy
+//! workers' job, logs and verdicts, an update's or an import's leftover copies, a catalogue lab's source kept for an offline start, and the password
 //! kept for its attack box (the OS keychain's `attack-box:<lab id>`). The generated project
-//! (Compose files, Vagrantfiles, run manifest) is inside the copy and goes with it.
+//! (Compose files, Vagrantfiles, run manifest) is inside the copy and goes with it. Its run is the
+//! runner's: the runner forgets it (its own home is the runner's to keep).
 //!
 //! Nothing outside the app's data folder is touched. An imported lab's own folder, the one it was
 //! imported from, is the player's: the copy keeps no link out of itself (`TreeLinks`), and a
@@ -77,7 +76,7 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str, worker_files: impl FnOnce()
     let (base, owned) = (dirs.data()?.to_path_buf(), id.to_owned());
     let mut removal = blocking(move || remove_files(&base, &owned, &extra, rename_retrying, delete)).await?;
     // The runner's record of its run, through the runner's store: its files went above.
-    if let Err(e) = runtime::isothrum::forget_run(dirs.data()?, id) {
+    if let Err(e) = runtime::isothrum::forget_run(&runtime::paths::runner_home(dirs)?, id) {
         log::warn!("removing lab {id}: the runner keeps its run's record: {e}");
     }
     // Its attack box's password, once the lab is gone (a removal refused above keeps it with the
@@ -99,17 +98,11 @@ fn aside(labs: &Path, id: &str) -> PathBuf {
 }
 
 /// What the app keeps for lab `id` under its data folder `base`, beside its copy: an earlier
-/// removal's, update's or import's leftover copy, the runner's run folder, the Terraform
-/// deployments and the kept offline source.
+/// removal's, update's or import's leftover copy and the kept offline source. The run is the
+/// runner's: its record is forgotten through the runner.
 fn traces(base: &Path, id: &str) -> Vec<PathBuf> {
     let labs = paths::labs_root_in(base);
-    vec![
-        labs.join(format!(".{id}.staging")),
-        labs.join(format!(".{id}.old")),
-        base.join("runs").join(runtime::compose_project(id)),
-        base.join("deployments").join(id),
-        super::offline::kept_path(base, id),
-    ]
+    vec![labs.join(format!(".{id}.staging")), labs.join(format!(".{id}.old")), super::offline::kept_path(base, id)]
 }
 
 /// Moves lab `id`'s copy under `base` aside with `rename`, then deletes it and every trace of the
