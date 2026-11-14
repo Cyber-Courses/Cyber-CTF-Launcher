@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { emulatorReady, formProviders, hostSupports, localProviders, runPlaces, runsNatively, runsNativelyHere } from "@/features/labs/lab-runtime";
+import { cpuName, emulatorReady, formProviders, hostSupports, localProviders, runPlaces, runsNatively, runsNativelyHere } from "@/features/labs/lab-runtime";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabRunOptions, LabRunPath, Provider, ServerHost } from "@/lib/tauri";
 
@@ -28,6 +28,31 @@ describe("runsNatively", () => {
   it("runs only on the CPUs the lab lists", () => {
     expect(runsNatively(rt({ architectures: ["x86_64"] }), "x86_64")).toBe(true);
     expect(runsNatively(rt({ architectures: ["x86_64"] }), "arm64")).toBe(false);
+  });
+  it("reads every name of a CPU as that CPU, on the lab's side and the machine's", () => {
+    // Regression: the machine report names Apple silicon `aarch64`, the catalogue `arm64`: an
+    // Apple Silicon Mac read its own arm64 labs as emulated.
+    const arm = ["arm64", "aarch64", "ARM64", "AArch64"];
+    const intel = ["amd64", "x86_64", "x64", "X86_64", "AMD64"];
+    for (const [names, others] of [
+      [arm, intel],
+      [intel, arm],
+    ]) {
+      for (const lab of names) {
+        for (const host of names) expect(runsNatively(rt({ architectures: [lab] }), host), `${lab} on ${host}`).toBe(true);
+        for (const host of others) expect(runsNatively(rt({ architectures: [lab] }), host), `${lab} on ${host}`).toBe(false);
+      }
+    }
+    expect(runsNatively(rt({ architectures: [] }), "aarch64")).toBe(true);
+    expect(runsNatively(rt({ architectures: ["riscv64"] }), "aarch64")).toBe(false);
+  });
+});
+
+describe("cpuName", () => {
+  it("gives each CPU one name, and an unknown one as written, lowercased", () => {
+    expect(["arm64", "aarch64", " ARM64 "].map(cpuName)).toEqual(["aarch64", "aarch64", "aarch64"]);
+    expect(["amd64", "x86_64", "x64", "AMD64"].map(cpuName)).toEqual(["x86_64", "x86_64", "x86_64", "x86_64"]);
+    expect(cpuName("RISCV64")).toBe("riscv64");
   });
 });
 
@@ -161,6 +186,7 @@ describe("runsNativelyHere", () => {
     expect(runsNativelyHere(null, "x86_64")).toBe(true);
     expect(runsNativelyHere(arm, "x86_64")).toBe(false);
     expect(runsNativelyHere(arm, "arm64")).toBe(true);
+    expect(runsNativelyHere(arm, "aarch64")).toBe(true);
     expect(runsNativelyHere(rt({}), "x86_64")).toBe(true);
   });
 });
