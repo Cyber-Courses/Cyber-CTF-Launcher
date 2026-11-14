@@ -227,7 +227,8 @@ areas:
             - src-tauri/src/account/colocation.rs > returns_the_nonce_only_with_the_right_token_and_echoes_allowed_origin
             - src-tauri/src/account/colocation.rs > a_foreign_origin_gets_no_nonce_and_spends_nothing
             - src-tauri/src/account/colocation.rs > only_a_loopback_host_on_this_port_reads_the_nonce
-            - src-tauri/src/account/colocation.rs > a_new_launch_or_the_lab_stopping_retires_the_server
+            - src-tauri/src/account/colocation.rs > labs_launched_at_once_each_keep_their_check
+            - src-tauri/src/account/colocation.rs > a_labs_new_launch_or_the_lab_stopping_retires_its_server_only
             - src-tauri/src/account/colocation.rs > serve_answers_once_on_loopback_then_closes
         gaps:
           integration: never probed by the real website
@@ -475,7 +476,7 @@ areas:
             - src-tauri/src/labs/remove/tests.rs
             - src-tauri/src/commands/labs.rs > an_installed_lab_is_removed_with_its_workers_files_and_refused_while_a_worker_runs
             - src/features/labs/lab-detail/remove-lab.test.tsx
-            - src/lib/confirm.test.ts > warnInDialog
+            - src/lib/confirm.test.tsx > warnInDialog
           web:
             - remove-lab.spec.ts > an imported lab is removed once asked
             - remove-lab.spec.ts > a running lab can't be removed until it is stopped
@@ -2177,7 +2178,7 @@ areas:
         tests:
           unit:
             - src/features/machine/provider-row.test.tsx
-            - src/features/machine/machine-screen.test.tsx > lists every engine found, each with its own state and test
+            - src/features/machine/machine-screen.test.tsx > lists every engine found, each with its own state
             - src/features/machine/machine-screen.test.tsx > lists every hypervisor installed, each with its own state
             - src/features/machine/machine-screen.test.tsx > marks the hypervisor chosen in Settings, not the first installed one
           web:
@@ -3497,7 +3498,7 @@ areas:
             - src-tauri/src/platform/proxy.rs > the_system_proxy_becomes_the_tools_variables
             - src-tauri/src/platform/proxy.rs > root_commands_get_the_proxy_variables_that_are_set
             - src-tauri/src/platform/proxy.rs > a_disabled_proxy_or_a_pac_file_sets_nothing
-            - src-tauri/src/machine/tools/install.rs > a_root_install_carries_the_proxy_through_pkexec
+            - src-tauri/src/machine/tools/install.rs > a_root_install_carries_the_proxy_through_pkexec_off_its_command_line
         gaps:
           integration: no run behind a proxy (setup, installs, labs); PAC files are logged, not followed
         note: Windows relies on each tool's own proxy settings; nothing in the app handles it there.
