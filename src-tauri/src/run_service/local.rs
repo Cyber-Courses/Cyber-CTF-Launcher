@@ -1,16 +1,14 @@
-//! The launcher's own run service: each operation as the launcher ran it before the runner's
-//! service, on a task of the app, its log lines and its end told as events. A launch, a resume, a
-//! park and a provisioning run go to a detached deploy worker (quitting the app never cuts them
-//! short); a stop and the attack box going in or out run in the app. The website agent's launch
-//! and teardown, which run in the app on their own, are told the same way
-//! ([`LocalRunService::observe`]), and so is a worker this app didn't start (an earlier run of the
-//! app, the command line), picked up as it is found.
+//! The launcher's own run service: each operation on a task of the app, its log lines and its end
+//! told as events. What it asks of a lab's run (its `up`, `down`, `park`…) goes to the home's
+//! runner service, which runs it to its end whatever becomes of the app; the launcher's own steps
+//! around it (the download and install, the place, the attack box's edits) run here. The website
+//! agent's launch and teardown, which run in the app on their own, are told the same way
+//! ([`LocalRunService::observe`]).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use super::{AttachPick, BoxFuture, EventLog, OperationId, Request, RunEvent, RunService};
-use crate::app::deploy_worker::{self, Job, Op};
 use crate::error::{Code, Error, Result, Wire};
 use crate::platform::AppDirs;
 use crate::runtime::paths::lab_dir;
@@ -63,6 +61,7 @@ impl LocalRunService {
     }
 
     /// Whether an operation acts on lab `id` now.
+    #[cfg(test)]
     pub(super) fn busy(&self, id: &str) -> bool {
         self.running.lock().unwrap_or_else(PoisonError::into_inner).values().any(|r| r.lab_id == id)
     }
@@ -174,25 +173,8 @@ impl RunService for LocalRunService {
     }
 
     fn pick_up_running(&self) {
-        let dirs = self.dirs.clone();
-        for (job, _step) in deploy_worker::running_jobs(&dirs) {
-            if self.busy(&job.lab_id) {
-                continue;
-            }
-            let (op, machine) = crate::app::operations::worker_op(&job.op);
-            let started = RunEvent::Started {
-                operation: OperationId::new(),
-                lab_id: job.lab_id.clone(),
-                op,
-                machine,
-                runtime: crate::app::operations::job_runtime(&job),
-                deploying: true,
-                at: now_ms(),
-            };
-            let (dirs, id) = (dirs.clone(), job.lab_id.clone());
-            // Taken meanwhile by an operation of this app: that one tells it.
-            let _ = self.begin(started, true, move |log| Box::pin(async move { deploy_worker::follow(&dirs, &id, move |line| log(line)).await }));
-        }
+        // Every operation that outlives the app runs in the home's runner service: what an
+        // earlier run of the app left there is the service's to report (its event stream).
     }
 }
 
@@ -201,27 +183,22 @@ async fn execute(dirs: &AppDirs, request: Request, log: Log) -> Result<()> {
     match request {
         Request::Launch(launch) => {
             let line = |l: String| log(l);
-            let prepared = crate::labs::prepare_launch(dirs, launch, &line).await?;
-            deploy_worker::run_job(dirs, Job::from(prepared), log).await
+            let crate::labs::PreparedLaunch { launch, place, .. } = crate::labs::prepare_launch(dirs, launch, &line).await?;
+            Box::pin(crate::labs::run(dirs, launch, place.destination(), line)).await.map(drop)
         }
-        Request::LaunchLocal { lab_id, src } => {
-            deploy_worker::run_job(dirs, Job::on_lab(&lab_id, Op::LaunchLocal { src: src.to_string_lossy().into_owned() }), log).await
+        Request::LaunchLocal { lab_id, src } => Box::pin(crate::labs::run_local(dirs, &lab_id, &src, move |l| log(l))).await.map(drop),
+        Request::Resume { lab_id, runtime } => Box::pin(crate::runtime::resume_lab(dirs, &lab_id, runtime, move |l| log(l))).await,
+        Request::Park { lab_id, runtime, mode } => Box::pin(crate::runtime::park_lab(dirs, &lab_id, runtime, mode, move |l| log(l))).await,
+        Request::Provision { lab_id, runtime, machine } => {
+            Box::pin(crate::runtime::provision_lab(dirs, &lab_id, runtime, machine.as_deref(), move |l| log(l))).await
         }
-        Request::Resume { lab_id, runtime } => worker(dirs, &lab_id, Op::Resume { runtime }, log).await,
-        Request::Park { lab_id, runtime, mode } => worker(dirs, &lab_id, Op::Park { runtime, mode }, log).await,
-        Request::Provision { lab_id, runtime, machine } => worker(dirs, &lab_id, Op::Provision { runtime, machine }, log).await,
         Request::Stop { lab_id, runtime } => {
-            crate::labs::stop_lab_retiring_colocation(dirs, &lab_id, runtime, deploy_worker::end_workers(dirs, &lab_id), move |l| log(l)).await
+            let ended = crate::runtime::isothrum::end_operations(dirs, &lab_id);
+            crate::labs::stop_lab_retiring_colocation(dirs, &lab_id, runtime, ended, move |l| log(l)).await
         }
         Request::AttachBox { lab_id, runtime, pick } => Box::pin(attach_box(dirs, &lab_id, runtime, pick, log)).await,
         Request::DetachBox { lab_id, runtime } => Box::pin(detach_box(dirs, &lab_id, runtime, log)).await,
     }
-}
-
-/// Runs operation `op` on installed lab `id` in a deploy worker.
-async fn worker(dirs: &AppDirs, id: &str, op: Op, log: Log) -> Result<()> {
-    lab_dir(dirs, id)?;
-    deploy_worker::run_job(dirs, Job::on_lab(id, op), log).await
 }
 
 /// Adds the attack box to running lab `id` as a machine of it, on the network the learner picked

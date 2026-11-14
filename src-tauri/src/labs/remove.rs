@@ -43,9 +43,7 @@ pub struct Leftover {
     pub error: String,
 }
 
-/// Removes lab `id` from this computer (see the module's documentation). `worker_files` gives the
-/// files of the lab's deploy worker once the lab is held, or refuses while a worker runs on it (the
-/// app shell runs the workers). The lab's copy is moved aside first, all or nothing: a copy that
+/// Removes lab `id` from this computer (see the module's documentation). The lab's copy is moved aside first, all or nothing: a copy that
 /// won't move (a file in it held open on Windows) refuses the removal with nothing deleted. What
 /// can't be deleted after that is in the answer, the lab gone from the app all the same: its
 /// attack box's password too, which a keychain that refuses leaves behind.
@@ -54,9 +52,9 @@ pub struct Leftover {
 ///
 /// An invalid id, a lab that isn't installed, one still up somewhere or busy, a copy that won't
 /// move aside.
-pub(crate) async fn remove(dirs: &AppDirs, id: &str, worker_files: impl FnOnce() -> Result<Vec<PathBuf>>) -> Result<Removal> {
+pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<Removal> {
     runtime::validate_id(id)?;
-    // Held to the end: a start, a stop or a worker waits, and a new worker isn't started.
+    // Held to the end: a start or a stop waits.
     let busy = || Error::coded(Code::AlreadyInProgress);
     if runtime::stopping(id) {
         return Err(busy());
@@ -72,9 +70,8 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str, worker_files: impl FnOnce()
     if paths::parked(&dir).is_some() {
         return Err(Error::coded(Code::LabRunningHere));
     }
-    let extra = worker_files()?;
     let (base, owned) = (dirs.data()?.to_path_buf(), id.to_owned());
-    let mut removal = blocking(move || remove_files(&base, &owned, &extra, rename_retrying, delete)).await?;
+    let mut removal = blocking(move || remove_files(&base, &owned, &[], rename_retrying, delete)).await?;
     // The runner's record of its run, through the runner's store: its files went above.
     if let Err(e) = runtime::isothrum::forget_run(&runtime::paths::runner_home(dirs)?, id) {
         log::warn!("removing lab {id}: the runner keeps its run's record: {e}");

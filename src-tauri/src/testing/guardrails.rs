@@ -137,8 +137,6 @@ const PARSE_ALLOWED: &[(&str, &str, &str)] = &[
     ("runtime/server/secrets.rs", "serde_json::from_str(&raw)", "the app's own secrets file"),
     ("runtime/server/store.rs", "serde_json::from_str(&raw)", "the app's own server.json"),
     ("app/updates.rs", "serde_json::from_str::<serde_json::Value>(receipt)", "the installer's receipt file"),
-    ("app/deploy_worker/files.rs", "serde_json::from_str::<crate::error::Wire>(body)", "a deploy worker's verdict file, the app's own"),
-    ("app/deploy_worker/files.rs", "serde_json::from_slice(&bytes)", "a deploy worker's job file, the app's own"),
     ("machine/tools/uninstall.rs", "serde_json::from_slice(&bytes)", "the app's record of the tools it installed"),
     ("machine/storage/owned/record.rs", "serde_json::from_slice(&bytes)", "the app's record of what it owns on disk"),
     ("labs/offline.rs", "serde_json::from_str(&raw)", "the app's record of a lab kept offline"),

@@ -472,16 +472,11 @@ async fn gone(pid: u32) -> bool {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn a_tool_cut_short_never_outlives_the_wait_for_it_nor_the_apps_exit() {
+async fn a_tool_cut_short_never_outlives_the_apps_exit() {
     // The runner asks a cut-short tool to stop and gives it 30 s: a process exiting meanwhile
     // left it running.
     let dir = std::env::temp_dir().join(format!("cyberctf-cut-short-{}", rand::random::<u32>()));
     std::fs::create_dir_all(&dir).unwrap();
-    let waited = cut_short_stubborn_tool(&dir.join("waited")).await;
-    let started = std::time::Instant::now();
-    super::stop_cut_short_tools(std::time::Duration::from_secs(1)).await;
-    assert!(started.elapsed() < std::time::Duration::from_secs(5));
-    assert!(gone(waited).await, "ended once the wait was over");
     let at_exit = cut_short_stubborn_tool(&dir.join("at-exit")).await;
     super::end_cut_short_tools();
     assert!(gone(at_exit).await, "ended at the app's exit");

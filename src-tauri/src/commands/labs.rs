@@ -7,7 +7,6 @@
 use std::path::PathBuf;
 
 use crate::AppHandle;
-use crate::app::deploy_worker;
 use crate::app::operations;
 use crate::error::{Error, Result};
 use crate::labs::{self, LaunchRequest};
@@ -100,7 +99,11 @@ pub async fn lab_remove(app: AppHandle, id: String) -> Result<labs::remove::Remo
 
 /// [`lab_remove`], in the app whose folders are `dirs`.
 pub(crate) async fn remove_in(dirs: &AppDirs, id: &str) -> Result<labs::remove::Removal> {
-    labs::remove::remove(dirs, id, || deploy_worker::idle_files(dirs, id)).await
+    // Refused while the runner service runs or holds an operation of the lab's run.
+    if crate::runtime::isothrum::busy_in_service(dirs).await.map_err(Error::Invalid)?.iter().any(|l| l == id) {
+        return Err(Error::coded(crate::error::Code::AlreadyInProgress));
+    }
+    labs::remove::remove(dirs, id).await
 }
 
 /// The labs with any operation in flight, in this process or a deploy worker: what an update
@@ -169,7 +172,7 @@ pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<
 /// [`lab_status`], in the app whose folders are `dirs`.
 pub(crate) async fn status_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<LabStatus> {
     let Some(dir) = installed_lab_dir(dirs, id)? else { return Ok(LabStatus::default()) };
-    let failed = deploy_worker::last_deploy_failed(dirs, id);
+    let failed = crate::runtime::isothrum::last_run_failed(dirs, id);
     Ok(status::status(dirs, &dir, id, runtime).await?.unless_launch_failed(failed))
 }
 

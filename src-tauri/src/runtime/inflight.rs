@@ -37,6 +37,7 @@ pub enum Action {
 
 impl Action {
     /// The operation it is, as the UI names it (`ActiveOperation::op`).
+    #[cfg(test)]
     pub fn operation(self) -> Operation {
         match self {
             Action::Launch => Operation::Launch,
