@@ -17,6 +17,12 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   Store hiccup no longer stop the whole release: the release notes name the platform missing,
   what lacks a secret ships unsigned (as 1.8.9 did), and the Store submission stays its own step.
 
+- **The runner's failures reach every language by their code (#381).** A step stopped for
+  taking too long, a tool too old, Hyper-V's elevation refused, a lab that didn't become ready,
+  machines removed outside the app, nothing left to resume, a lab that can't be paused: each now
+  reaches the window as a code with its values, said in the player's language, not as English
+  text.
+
 - Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
   longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
   Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
