@@ -20,13 +20,15 @@ enum Frame {
     Quoted,
 }
 
-/// Where `script` chains with `&&` at its top level (outside quotes and `$(…)`), as byte offsets.
+/// Where `script` chains with `&&` at its top level (outside quotes and `$(…)`, and outside an
+/// `if`'s or a loop's condition, where `set -e` doesn't apply anyway), as byte offsets.
 fn top_level_chains(script: &str) -> Vec<usize> {
     let bytes = script.as_bytes();
     let word_at = |i: usize, w: &str| {
         script[i..].starts_with(w) && (i == 0 || b" \t;(|&".contains(&bytes[i - 1])) && bytes.get(i + w.len()).is_none_or(|c| b" \t;)".contains(c))
     };
     let mut stack: Vec<Frame> = Vec::new();
+    let mut condition = false;
     let mut found = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
@@ -55,7 +57,9 @@ fn top_level_chains(script: &str) -> Vec<usize> {
                     *cases = cases.saturating_sub(1);
                 }
             }
-            b'&' if stack.is_empty() && bytes.get(i + 1) == Some(&b'&') => {
+            b'i' | b'e' | b'w' | b'u' if stack.is_empty() && ["if", "elif", "while", "until"].iter().any(|w| word_at(i, w)) => condition = true,
+            b't' | b'd' if stack.is_empty() && (word_at(i, "then") || word_at(i, "do")) => condition = false,
+            b'&' if stack.is_empty() && !condition && bytes.get(i + 1) == Some(&b'&') => {
                 found.push(i);
                 i += 1;
             }
@@ -64,6 +68,18 @@ fn top_level_chains(script: &str) -> Vec<usize> {
         i += 1;
     }
     found
+}
+
+/// The chains kept on purpose, each with why: what is before the `&&` in the command it ends.
+const ALLOWED: &[(&str, &str)] = &[(
+    "usermod -aG \"$g\" ",
+    "joining the group that opens /dev/kvm is best-effort: when it fails the install goes on, and only the note that it was done is left out",
+)];
+
+/// Whether the chain at `at` in `script` is one of [`ALLOWED`].
+fn allowed(script: &str, at: usize) -> bool {
+    let command = &script[script[..at].rfind([';', '\n']).map_or(0, |i| i + 1)..at];
+    ALLOWED.iter().any(|(before, _)| command.contains(before))
 }
 
 /// Every root script the install steps make, by name.
@@ -111,7 +127,7 @@ fn no_root_script_chains_with_and_at_its_top_level() {
     let chained: Vec<String> = install_scripts()
         .into_iter()
         .chain(removal_scripts())
-        .filter(|(_, s)| !top_level_chains(s).is_empty())
+        .filter(|(_, s)| top_level_chains(s).into_iter().any(|at| !allowed(s, at)))
         .map(|(name, s)| format!("{name}: {s}"))
         .collect();
     assert!(chained.is_empty(), "root scripts chaining with && (set -e ignores a failure before the last command; use `;`):\n{}", chained.join("\n"));
@@ -136,7 +152,11 @@ fn every_root_script_function_is_checked() {
 #[test]
 fn only_a_top_level_and_chain_counts() {
     assert_eq!(top_level_chains("apt-get update && apt-get install -y x"), [15]);
-    assert!(top_level_chains(r#"c="$(. /etc/os-release && echo "$ID")"; echo 'a && b'; awk '$1=="x"&&p'"#).is_empty());
+    assert_eq!(top_level_chains(r#"c="$(. /etc/os-release && echo "$ID")"; echo 'a && b'; awk '$1=="x"&&p'"#), Vec::<usize>::new());
+    assert_eq!(top_level_chains(r#"if [ -n "$a" ] && b; then c; fi; while x && y; do z; done"#), Vec::<usize>::new(), "a condition's chain");
+    assert_eq!(top_level_chains("if a; then b && c; fi").len(), 1, "a chain in an if's body counts");
+    let kvm = r#"if getent group "$g" >/dev/null; then usermod -aG "$g" ada && echo "Added"; fi"#;
+    assert!(top_level_chains(kvm).into_iter().all(|at| allowed(kvm, at)), "the kvm group's chain is allowed");
     assert_eq!(top_level_chains(r#"echo "\"" && true"#).len(), 1, "an escaped quote doesn't open a string");
     let case = r#"b="$(. /etc/os-release && case " $ID " in *ubuntu*) ;; *debian*) echo "x" ;; esac)"; a && b"#;
     assert_eq!(top_level_chains(case).len(), 1, "a case pattern's `)` doesn't end the substitution");

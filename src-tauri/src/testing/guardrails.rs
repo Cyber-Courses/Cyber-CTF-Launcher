@@ -44,7 +44,7 @@ fn unallowed(hits: &[Hit], allowed: &[(&str, &str, &str)]) -> Vec<String> {
     out.extend(
         allowed
             .iter()
-            .filter(|a| !hits.iter().any(|h| covers(h, *a)))
+            .filter(|a| !hits.iter().any(|h| covers(h, a)))
             .map(|(f, t, _)| format!("stale allow-list entry (nothing matches it now: remove it): {f}: {t}")),
     );
     out
@@ -58,7 +58,7 @@ const HOME_PATHS: &[&str] = &[
     "state.db",
     "slots.lock",
     "join(\"ssh\")",
-    "id_ed25519",
+    "join(\"id_ed25519\")",
     "terraform-plugins",
     "record.json",
     "store.sqlite",
@@ -73,6 +73,13 @@ const HOME_ALLOWED: &[(&str, &str, &str)] = &[
     ("runtime/isothrum/import.rs", "base.join(\"runs\")", "moves an adopted Terraform deployment's carried files into its new run's folder"),
     ("labs/remove.rs", "base.join(\"runs\")", "a removed lab's run folder is deleted with the lab's other traces"),
     ("runtime/launch/on_host.rs", "join(\"ssh\").join(\"id_ed25519\")", "the runner's SSH key, put on a server host for its labs"),
+    ("runtime/ssh.rs", "dirs.data()?.join(\"ssh\")", "the launcher's own key folder, which is also the runner's (its home is the app data folder)"),
+    ("runtime/ssh.rs", "ssh_dir(dirs)?.join(\"id_ed25519\")", "the launcher's own key, the same file as the runner's"),
+    (
+        "runtime/terraform/runner.rs",
+        "PLUGIN_CACHE: &str = \"terraform-plugins\"",
+        "the launcher's own Terraform path's plugin cache, the same folder as the runner's",
+    ),
 ];
 
 #[test]
@@ -89,6 +96,9 @@ const SHELL_ALLOWED: &[(&str, &str, &str)] = &[
     ("machine/tools/install.rs", "format!(\"'{brew}' trust azure/azure-cli", "macOS: Homebrew's own path, found by the app, single-quoted"),
     ("machine/tools/scripts.rs", "args: vec![\"-c\".into(), script]", "macOS: the cask fetch; Homebrew's path and fixed cask names, single-quoted"),
     ("machine/tools/vmware_utility.rs", "args: vec![\"-c\".into(), mac_script(", "macOS: the utility's install, a pinned file name and digest"),
+    ("machine/tools/install.rs", "\"-c\".into(),", "macOS: QEMU's brew update then install, Homebrew's own path single-quoted"),
+    ("machine/selftest/vm.rs", "Step::new(&[\"ssh\", \"-c\", &uname_command()])", "vagrant ssh's -c: the self-test's fixed probe, run in the test VM"),
+    ("platform.rs", "args([\"-n\", \"-c\", script])", "a test helper (cfg(test)): sh -n only parses the script"),
     ("runtime/terminal_launch.rs", "args([flag, \"sh\", \"-c\", &run])", "the attack shell's line, quoted word by word with shell_words"),
     ("screen/rdp.rs", "vec![\"-c\".into(), file]", "Remmina's -c is its connection file, not a shell"),
 ];
@@ -123,12 +133,20 @@ const PARSE_ALLOWED: &[(&str, &str, &str)] = &[
     ("app.rs", "serde_json::from_str(json)", "the webview's stored settings"),
     ("platform/policy.rs", "serde_json::from_str::<serde_json::Value>(text)", "the administrator's policy file"),
     ("runtime/reaper.rs", "serde_json::from_str(&text)", "the app's own record of an auto-stop failure"),
-    ("runtime/proxmox/ssh_key.rs", "serde_json::from_str(json)", "Proxmox's API answer"),
     ("runtime/attack_box.rs", "serde_json::from_str::<File>(IMAGE_FILE)", "the bundled attack box image file"),
     ("runtime/server/secrets.rs", "serde_json::from_str(&raw)", "the app's own secrets file"),
     ("runtime/server/store.rs", "serde_json::from_str(&raw)", "the app's own server.json"),
     ("app/updates.rs", "serde_json::from_str::<serde_json::Value>(receipt)", "the installer's receipt file"),
-    ("machine/images.rs", "serde_json::from_str(", "Docker Hub's HTTP answer"),
+    ("app/deploy_worker/files.rs", "serde_json::from_str::<crate::error::Wire>(body)", "a deploy worker's verdict file, the app's own"),
+    ("app/deploy_worker/files.rs", "serde_json::from_slice(&bytes)", "a deploy worker's job file, the app's own"),
+    ("machine/tools/uninstall.rs", "serde_json::from_slice(&bytes)", "the app's record of the tools it installed"),
+    ("machine/storage/owned/record.rs", "serde_json::from_slice(&bytes)", "the app's record of what it owns on disk"),
+    ("labs/offline.rs", "serde_json::from_str(&raw)", "the app's record of a lab kept offline"),
+    ("labs/ctf.rs", "serde_json::from_str(&text)", "a lab's own metadata file"),
+    ("account/auth/store.rs", "serde_json::from_str(raw)", "the app's stored sign-in"),
+    ("account/auth/tokens.rs", "serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload)", "a token's claims (JWT payload)"),
+    ("account/auth/tokens.rs", "serde_json::from_str::<serde_json::Value>(&body)", "the sign-in server's HTTP answer"),
+    ("account/api.rs", "serde_json::from_str(text)", "the backend's HTTP answer"),
 ];
 
 #[test]
@@ -147,7 +165,7 @@ fn the_guardrails_see_what_they_look_for() {
     assert!(!spliced_shell("step(\"sh\", &[\"-c\", \"rm -rf \\\"$HOME/x\\\"\"])"));
     assert!(!spliced_shell("[\"-c\", \"qemu:///system\", \"list\"]"));
     let hit = |file: &str, text: &str| Hit { file: file.into(), line: 1, text: text.into() };
-    assert!(unallowed(&[hit("a.rs", "x.join(\"runs\")")], &[]).len() == 1);
-    assert!(unallowed(&[hit("a.rs", "x.join(\"runs\")")], &[("a.rs", "x.join", "why")]).is_empty());
+    assert_eq!(unallowed(&[hit("a.rs", "x.join(\"runs\")")], &[]).len(), 1);
+    assert_eq!(unallowed(&[hit("a.rs", "x.join(\"runs\")")], &[("a.rs", "x.join", "why")]), Vec::<String>::new());
     assert!(unallowed(&[], &[("a.rs", "x.join", "why")])[0].starts_with("stale"), "an entry nothing matches is stale");
 }

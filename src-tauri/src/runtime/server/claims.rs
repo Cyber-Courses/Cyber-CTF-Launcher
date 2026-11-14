@@ -94,7 +94,7 @@ async fn unwitnessed(provider: Provider, claim: &Claim) -> Option<String> {
             let call = format!("{program} {}", question.join(" "));
             let tools = Tools::strict_rules(&[(call.as_str(), ok(""))]);
             let answered = run.signed_in(&CloudPlace::default()).await.is_ok();
-            let asked = tools.calls().iter().any(|c| *c == call);
+            let asked = tools.calls().contains(&call);
             (!(answered && asked)).then(|| format!("`{call}` isn't asked before a change: {:?}", tools.calls()))
         }
     }
