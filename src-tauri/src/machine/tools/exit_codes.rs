@@ -128,9 +128,9 @@ mod tests {
 
     #[test]
     fn an_up_to_date_package_or_a_pending_restart_is_done_not_failed() {
-        // Regression (#220): `winget install` of a package already there exits 0x8A15002B, and
-        // Docker Desktop's or WSL's install 0x8A150109 (restart to finish): both read as failed,
-        // so the step never counted as done.
+        // Regression: `winget install` of a package already there exits 0x8A15002B, and Docker
+        // Desktop's or WSL's install 0x8A150109 (restart to finish): both read as failed, so the
+        // step never counted as done.
         let code = |c: u32| Some(c.cast_signed());
         assert!(winget_done(code(0x8A15_002B), Verb::Install).unwrap().starts_with("Already installed"));
         assert!(winget_done(code(0x8A15_0109), Verb::Install).unwrap().contains("Restart Windows to finish"));

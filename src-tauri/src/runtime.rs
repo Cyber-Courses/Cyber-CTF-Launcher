@@ -1,22 +1,11 @@
 //! Lab runtimes. A lab is a directory under `<app data>/labs/<lab id>/` with an `isoloom.yml`
 //! at its root; the files of the target it runs on are generated under its instance's
-//! `.isoloom-<n>/` (`.isoloom/` for a lab with no instance; see `lab`). The UI only ever passes a lab id and a runtime; paths and commands are built here.
+//! `.isoloom-<n>/` (`.isoloom/` for a lab with no instance; see `lab`). The UI only ever passes a
+//! lab id and a runtime; paths and commands are built here.
 //!
-//! - `launch`: starting a lab, here or on a server host.
-//! - `cloud_services`: cloud-services labs, a Terraform module of the lab's own applied into the
-//!   player's cloud account.
-//! - `lifecycle`: park, resume, provision and stop; `reaper`: the auto-stop of expired cloud labs.
-//! - `status`: what a lab looks like right now, wherever it runs.
-//! - `terminal_launch`: opening the OS terminal on the attack box shell the runner builds.
-//!
-//! The Tauri commands over all of the above are thin adapters in `crate::commands` (lab commands
-//! in `commands::labs`, server-host commands in `commands::server`).
-//! - `inflight`, `paths`, `ssh`: the per-lab lock and in-flight registry, a lab's files and
-//!   markers, and SSH to a lab host.
-//! - `isothrum`: every lab run through the Isothrum runner: on this machine (Docker, one VM, or
-//!   VMs), on a server, in a cloud account.
-//! - `attack_box`: the learner's attack box, a machine the launcher adds to the lab (through
-//!   its overlay, `lab::overlay`) and takes out again, wherever the lab runs.
+//! The Tauri commands over these modules are thin adapters in `crate::commands` (lab commands in
+//! `commands::labs`, server-host commands in `commands::server`); each module's own doc says what
+//! it holds.
 
 pub(crate) mod attack_box;
 pub(crate) mod cloud_services;

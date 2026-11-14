@@ -50,7 +50,7 @@ const PROXMOX_SLOT: u8 = 1;
 /// One Terraform deployment of the launcher's own path: lab `id`'s state folder on a provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Deployment {
-    /// The lab.
+    /// The lab's id, its folder under `<app data>/labs/`.
     pub(crate) id: String,
     /// The server or cloud it is on.
     pub(crate) provider: Provider,

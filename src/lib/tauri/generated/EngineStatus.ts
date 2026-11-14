@@ -7,7 +7,7 @@ import type { DockerEngine } from "./DockerEngine";
  */
 export type EngineStatus = { 
 /**
- * The engine.
+ * Which engine it is (Docker Desktop, Colima, the Linux daemon…).
  */
 engine: DockerEngine, 
 /**

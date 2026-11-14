@@ -156,8 +156,8 @@ mod tests {
 
     #[test]
     fn a_scenarios_app_keeps_every_folder_in_the_runners_root_and_they_go_when_it_drops() {
-        // Regression (#308): the integration tests' app kept a lab's runs, its VMs' disks with
-        // them, in ~/Library/Application Support, where a capped scenario's VMs kept running.
+        // Regression: the integration tests' app kept a lab's runs, its VMs' disks with them, in
+        // ~/Library/Application Support, where a capped scenario's VMs kept running.
         let root = crate::testing::temp_dir("test-app-root");
         let t = TestApp::in_root(Some(root.to_path_buf()));
         let own = t.data().to_path_buf();

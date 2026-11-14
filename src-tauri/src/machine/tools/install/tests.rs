@@ -1,0 +1,383 @@
+use super::*;
+
+/// Regression (a clean Windows 11): `winget install -e --id Docker.DockerDesktop` without a source
+/// failed with 0x8a15005e, the Microsoft Store source's certificate pinning failing, in both
+/// passes. winget is asked of its own source alone.
+#[test]
+fn winget_installs_and_removes_from_its_own_source_alone() {
+    let install = winget("install", "Docker.DockerDesktop", &["--accept-source-agreements", "--accept-package-agreements"]);
+    assert_eq!(command_line(&install), "$ winget install -e --id Docker.DockerDesktop --source winget --accept-source-agreements --accept-package-agreements");
+    assert_eq!(command_line(&winget("uninstall", "Hashicorp.Vagrant", &[])), "$ winget uninstall -e --id Hashicorp.Vagrant --source winget");
+}
+
+#[test]
+fn docker_is_named_as_the_setup_installs_it_on_each_os() {
+    assert_eq!(Dependency::Docker.name_on("linux"), "Docker Engine");
+    assert_eq!(Dependency::Docker.name_on("macos"), "Docker Desktop");
+    assert_eq!(Dependency::Docker.name_on("windows"), "Docker Desktop");
+    assert_eq!(Dependency::Awscli.name_on("linux"), "AWS CLI");
+}
+
+#[test]
+fn each_tool_runs_on_its_os_and_is_refused_elsewhere_in_one_message() {
+    for (dep, oses) in [
+        (Dependency::Utm, ["macos"].as_slice()),
+        (Dependency::Libvirt, &["linux"]),
+        (Dependency::Wsl, &["windows"]),
+        (Dependency::Hyperv, &["windows"]),
+        (Dependency::Docker, &["macos", "linux", "windows"]),
+        (Dependency::Qemu, &["macos", "linux"]),
+    ] {
+        for os in ["macos", "linux", "windows"] {
+            assert_eq!(dep.runs_on(os), oses.contains(&os), "{dep:?} on {os}");
+        }
+    }
+    // Here: every tool this OS doesn't have is refused before any step, saying so.
+    for dep in Dependency::ALL.into_iter().filter(|d| !d.runs_on(std::env::consts::OS)) {
+        let said = plan(dep).err().map(|e| e.to_string()).unwrap_or_default();
+        assert_eq!(said, super::not_here(dep).to_string());
+        assert!(said.starts_with(&format!("{} doesn't run on ", dep.name())), "{said}");
+    }
+}
+
+#[tokio::test]
+async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
+    let _policy = policy::Override::with(&[Key::DisableToolInstalls]);
+    let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
+    let t = crate::testing::test_app::TestApp::new();
+    let mut lines = Vec::new();
+    let err = install_dependency(t.dirs(), Dependency::Docker, |l| lines.push(l)).await.unwrap_err();
+    assert_eq!(err.code(), crate::error::Code::TurnedOffByPolicy { setting: "DisableToolInstalls".into() });
+    assert_eq!(lines, [err.to_string()], "said on the install's log");
+    let err = install_vagrant_plugin("vagrant-vmware-esxi".into(), |_| {}).await.unwrap_err();
+    assert!(err.to_string().contains("DisableToolInstalls"), "{err}");
+    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+}
+
+#[test]
+fn a_root_install_carries_the_proxy_through_pkexec_off_its_command_line() {
+    // Regression: the proxy went on pkexec's command line (`env https_proxy=http://user:pass@…`),
+    // which every local user reads in `ps` while the password prompt is up.
+    let proxy = ["https_proxy=http://ada:s3cret@proxy.corp:3128".to_string(), "no_proxy=.corp".into(), "http_proxy=$(echo ran)`echo ran`".into()];
+    let step = as_root(RootScript::new(r#"printf '%s|%s|%s' "$https_proxy" "$no_proxy" "$http_proxy""#), &proxy).unwrap();
+    assert!(step.args[3].starts_with(crate::platform::root_script::PRELUDE), "the prelude first: {}", step.args[3]);
+    assert_eq!(step.program, "pkexec");
+    assert_eq!(step.args[..3], ["env", "sh", "-c"]);
+    assert!(!step.args.iter().any(|a| a.contains("s3cret") || a.contains("proxy.corp")), "{:?}", step.args);
+    let dir = step.private.as_ref().unwrap().path().to_owned();
+    #[cfg(unix)]
+    {
+        use crate::platform::private_fs::tests::mode;
+        assert_eq!((mode(&dir), mode(&dir.join("proxy"))), (0o700, 0o600), "owner-only");
+        // The script, run as pkexec runs it (no environment), has the proxy, its values as
+        // written, never run.
+        let out = std::process::Command::new(&step.args[1]).args(&step.args[2..]).env_clear().output().unwrap();
+        assert!(out.status.success(), "{out:?}");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "http://ada:s3cret@proxy.corp:3128|.corp|$(echo ran)`echo ran`");
+    }
+    drop(step);
+    assert!(!dir.exists(), "the folder goes with the step");
+    // No proxy: no file, the script alone.
+    let step = as_root(RootScript::new("true"), &[]).unwrap();
+    assert_eq!((step.args, step.private.is_none()), (vec!["env".to_string(), "sh".into(), "-c".into(), RootScript::new("true").into_string()], true));
+}
+
+#[cfg(unix)]
+#[test]
+fn only_proxy_variables_are_read_from_the_proxy_file() {
+    let dir = crate::testing::temp_dir("proxy");
+    let file = dir.join("proxy");
+    std::fs::write(&file, "PATH=/nowhere\nhttps_proxy=http://p:3128\nLD_PRELOAD=/x.so\n").unwrap();
+    let script = format!(r#"{}; printf '%s|%s|%s' "$https_proxy" "${{LD_PRELOAD:-}}" "$PATH""#, read_proxy(&file));
+    let out = std::process::Command::new("sh").arg("-c").arg(script).env("PATH", "/usr/bin:/bin").output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "http://p:3128||/usr/bin:/bin");
+}
+
+#[test]
+fn only_vagrant_plugin_names_are_installed() {
+    assert!(valid_plugin("vagrant-vmware-esxi") && valid_plugin("vagrant_proxmox"));
+    assert!(!valid_plugin("vagrant-x; touch /tmp/x") && !valid_plugin("--plugin-source") && !valid_plugin("rails"));
+    assert!(!valid_plugin(&format!("vagrant-{}", "a".repeat(64))));
+}
+
+/// The plan for every dependency on this OS: the ones that install here have steps, the
+/// others say why not.
+fn plans() -> Vec<(Dependency, Result<Vec<Step>>)> {
+    Dependency::ALL.into_iter().map(|d| (d, plan(d))).collect()
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_installs_through_homebrew() {
+    if crate::platform::brew_bin().is_none() {
+        assert!(plan(Dependency::Docker).err().unwrap().to_string().contains("Homebrew is required"));
+        return;
+    }
+    for (dep, p) in plans() {
+        match dep {
+            Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => assert!(p.is_err(), "{dep:?}"),
+            _ => assert!(!p.unwrap().is_empty(), "{dep:?}"),
+        }
+    }
+    let azure = plan(Dependency::Azurecli).unwrap();
+    assert_eq!(azure.len(), 3);
+    assert!(azure[2].note.is_some() && azure[2].args.contains(&"azure-cli-preview".to_string()));
+    // QEMU is one shell step: a best-effort Homebrew update that never aborts the install
+    // (`|| …`), then the install itself. It must not be a second, fatal `brew update` step.
+    let qemu = plan(Dependency::Qemu).unwrap();
+    assert_eq!(qemu.len(), 1);
+    assert_eq!(qemu[0].program, "sh");
+    let script = qemu[0].args.join(" ");
+    assert!(script.contains("update ||") && script.contains("install qemu"), "{script}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_installs_through_pkexec() {
+    for (dep, p) in plans() {
+        match dep {
+            Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => assert!(p.is_err(), "{dep:?}"),
+            _ => assert_eq!(p.unwrap()[0].program, "pkexec", "{dep:?}"),
+        }
+    }
+    // libvirt brings what the vagrant-libvirt plugin builds against, and joins its group.
+    let libvirt = plan(Dependency::Libvirt).unwrap()[0].args.join(" ");
+    assert!(libvirt.contains("libvirt-dev") && libvirt.contains("build-essential"), "{libvirt}");
+    let aws = plan(Dependency::Awscli).unwrap()[0].args.join(" ");
+    assert!(aws.contains("awscli-exe-linux") && !aws.contains("/tmp/aws"), "{aws}");
+}
+
+/// Every step run as root on Linux, for each tool, package manager and way (install, removal).
+#[cfg(target_os = "linux")]
+fn every_linux_root_step() -> Vec<(String, Step)> {
+    let mut steps = Vec::new();
+    for dep in Dependency::ALL {
+        for packages in [Packages::Apt, Packages::Dnf] {
+            let install = linux_plan_with(dep, packages).unwrap_or_default();
+            let removal = uninstall::linux_plan_with(dep, packages).unwrap_or_default();
+            for (way, plan) in [("install", install), ("removal", removal)] {
+                steps.extend(plan.into_iter().filter(|s| s.program == "pkexec").map(|s| (format!("{dep:?} {packages:?} {way}"), s)));
+            }
+        }
+    }
+    steps
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn every_root_step_starts_with_the_prelude_and_parses() {
+    // Regression: the libvirt and QEMU installs ran without `set -e`, and a failed
+    // `apt-get install` read as done; the hand-kept list of root scripts the tests checked
+    // didn't name them. Every plan is read here, whatever it installs.
+    let steps = every_linux_root_step();
+    assert!(steps.len() >= 25, "{} root steps", steps.len());
+    for (what, step) in steps {
+        let script = step.args.last().unwrap();
+        assert!(script.starts_with(crate::platform::root_script::PRELUDE), "{what}: {script}");
+        assert!(crate::platform::sh_parses(script), "{what}: not valid sh: {script}");
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_installs_through_winget_and_wsl_through_its_installer() {
+    for (dep, p) in plans() {
+        match dep {
+            Dependency::Utm | Dependency::Libvirt => assert!(p.is_err(), "{dep:?}"),
+            Dependency::Virtualbox | Dependency::VmwareUtility if std::env::consts::ARCH == "aarch64" => assert!(p.is_err()),
+            Dependency::Wsl | Dependency::VmwareUtility | Dependency::Hyperv => assert_eq!(p.unwrap()[0].program, "powershell"),
+            _ => {
+                let steps = p.unwrap();
+                assert_eq!(steps[0].program, "winget");
+                assert!(steps[0].args.contains(&"--accept-package-agreements".to_string()));
+                assert!(steps[0].args.windows(2).any(|w| w == ["--source", "winget"]), "{dep:?}: {:?}", steps[0].args);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn vagrant_comes_from_hashicorps_repository_not_the_distributions() {
+    // Regression: the setup ran `apt-get install vagrant`, Debian 13's 2.3.8, and every VM lab
+    // then refused it ("needs Vagrant 2.4.0 or later").
+    let plan = linux_plan_with(Dependency::Vagrant, Packages::Apt).unwrap();
+    let script = plan.iter().flat_map(|s| s.args.iter()).cloned().collect::<Vec<_>>().join(" ");
+    assert!(script.contains("apt.releases.hashicorp.com") && script.contains("apt-get install -y vagrant"), "{script}");
+    assert!(!script.contains("apt-get update && apt-get install -y vagrant"), "the distribution's package: {script}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs() {
+    // Regression: Fedora, openSUSE and Arch got `apt-get: not found` from a pkexec prompt.
+    for dep in [Dependency::Vagrant, Dependency::Virtualbox, Dependency::Libvirt, Dependency::Qemu, Dependency::Docker] {
+        let err = linux_plan_with(dep, Packages::None).err().unwrap_or_else(|| panic!("{dep:?} refused"));
+        assert_eq!(err.to_string(), without_packages(dep).to_string());
+        assert!(linux_plan_with(dep, Packages::Apt).is_ok(), "{dep:?}");
+    }
+    assert!(linux_plan_with(Dependency::Utm, Packages::None).err().is_some_and(|e| e.to_string().starts_with("UTM doesn't run on Linux")));
+}
+
+#[test]
+fn without_apt_or_dnf_the_install_says_the_distribution_isnt_supported_yet_and_what_to_install() {
+    let err = without_packages(Dependency::Virtualbox).to_string();
+    assert_eq!(err, "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install VirtualBox yourself, then re-check.");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_dnf_distribution_installs_docker_the_hypervisors_and_vagrant_through_dnf_and_the_rest_by_hand() {
+    // Regression: on Fedora the setup failed on "this distribution isn't supported".
+    for dep in
+        [Dependency::Docker, Dependency::Vagrant, Dependency::Terraform, Dependency::Virtualbox, Dependency::Qemu, Dependency::Libvirt, Dependency::Awscli]
+    {
+        let plan = linux_plan_with(dep, Packages::Dnf).unwrap_or_else(|e| panic!("{dep:?}: {e}"));
+        let script = plan.iter().flat_map(|s| s.args.iter()).cloned().collect::<Vec<_>>().join(" ");
+        let own = script
+            .replace(crate::platform::root_script::NEED_CURL, "")
+            .replace(crate::platform::root_script::NEED_GPG, "")
+            .replace(crate::platform::root_script::NEED_UNZIP, "");
+        assert!(!own.contains("apt-get"), "{dep:?} through apt: {script}");
+        if dep != Dependency::Awscli {
+            assert!(script.contains("dnf install -y"), "{dep:?}: {script}");
+        }
+    }
+    for dep in [Dependency::Azurecli, Dependency::Gcloud, Dependency::VmwareUtility] {
+        assert_eq!(linux_plan_with(dep, Packages::Dnf).err().map(|e| e.to_string()), Some(apt_only(dep).to_string()), "{dep:?}");
+    }
+}
+
+#[test]
+fn hyper_v_is_turned_on_by_dism_elevated_and_refused_on_windows_home() {
+    // DISM's "done, restart to finish" (3010) is a success; Home has no Hyper-V to turn on.
+    assert!(HYPERV_ON.contains("/FeatureName:Microsoft-Hyper-V") && HYPERV_ON.contains("/NoRestart") && HYPERV_ON.contains("-Verb RunAs"));
+    assert!(HYPERV_ON.contains("-eq 3010) { exit 0 }") && HYPERV_ON.contains("EditionID -like 'Core*'"));
+}
+
+#[test]
+fn dependencies_use_lowercase_names() {
+    assert_eq!(serde_json::to_string(&Dependency::Azurecli).unwrap(), "\"azurecli\"");
+    assert_eq!(serde_json::from_str::<Dependency>("\"wsl\"").unwrap(), Dependency::Wsl);
+    assert_eq!(serde_json::to_string(&Dependency::Hyperv).unwrap(), "\"hyperv\"");
+}
+
+use std::cell::Cell;
+use std::rc::Rc;
+
+use crate::platform::exec::fake::{Tools, fail, ok};
+use crate::testing::test_app::{Sink, TestApp};
+
+/// A dependency this OS doesn't install (on macOS without Homebrew, none does).
+fn not_here() -> Dependency {
+    if cfg!(windows) { Dependency::Utm } else { Dependency::Wsl }
+}
+
+/// Scripted tools for an install of Terraform: `terraform version` answers once `installed`
+/// is set, and the install step (whichever package manager runs it) sets it when `works`.
+fn terraform_tools(installed: Rc<Cell<bool>>, works: bool) -> Tools {
+    Tools::new(move |program, _| {
+        if program == "terraform" {
+            return if installed.get() { ok("Terraform v1.9.8") } else { fail("terraform: not found") };
+        }
+        if !works {
+            return fail("E: Unable to locate package terraform");
+        }
+        installed.set(true);
+        ok("Setting up terraform (1.9.8-1) ...")
+    })
+}
+
+#[tokio::test]
+async fn a_dependency_this_os_does_not_install_is_refused_in_the_log_before_running_anything() {
+    let t = TestApp::new();
+    let tools = Tools::strict_rules(&[]);
+    let log = Sink::default();
+    let err = install_dependency(t.dirs(), not_here(), log.on_line()).await.unwrap_err();
+    assert_eq!(log.lines(), [err.to_string()]);
+    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+    assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
+}
+
+#[tokio::test]
+async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
+    let t = TestApp::new();
+    let tools = terraform_tools(Rc::new(Cell::new(false)), true);
+    let log = Sink::default();
+    let steps = match plan(Dependency::Terraform) {
+        Ok(steps) => steps,
+        // A host with nothing to install through (macOS without Homebrew, Linux without apt or
+        // dnf): the install is refused as its plan is, before anything runs.
+        Err(refused) => {
+            let err = install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap_err();
+            assert_eq!(err.to_string(), refused.to_string());
+            assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+            return;
+        }
+    };
+    install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
+    let lines = log.lines();
+    assert_eq!(lines.first(), Some(&command_line(&steps[0])), "{lines:?}");
+    assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
+    assert_eq!(lines.last().map(String::as_str), Some("Done. Re-checking this machine…"));
+    assert!(tools.called(&format!("{} {}", steps[0].program, steps[0].args.join(" "))));
+    let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
+    assert_eq!(ours, [Dependency::Terraform]);
+
+    // Cleanup removes it, then forgets it: a second removal is refused.
+    let log = Sink::default();
+    uninstall::uninstall_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
+    assert_eq!(log.lines().last().map(String::as_str), Some("Removed."));
+    assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
+    let err = uninstall::uninstall_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap_err();
+    assert_eq!(err.to_string(), "Cyber CTF didn't install this tool, so it won't remove it.");
+}
+
+#[tokio::test]
+async fn a_tool_that_was_already_there_is_never_recorded() {
+    if plan(Dependency::Terraform).is_err() {
+        return;
+    }
+    let t = TestApp::new();
+    let _tools = terraform_tools(Rc::new(Cell::new(true)), true);
+    install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
+    assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_tool_not_found_yet_counts_once_a_later_check_finds_it() {
+    if plan(Dependency::Terraform).is_err() {
+        return;
+    }
+    let t = TestApp::new();
+    let present = Rc::new(Cell::new(false));
+    // The step "works" but the tool isn't on PATH yet (an installer left open).
+    let probe = present.clone();
+    let _tools = Tools::new(move |program, _| if program == "terraform" && !probe.get() { fail("not found") } else { ok("") });
+    install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
+    assert!(uninstall::installed_tools(t.dirs()).await.is_empty(), "pending, not shown");
+    present.set(true);
+    let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
+    assert_eq!(ours, [Dependency::Terraform]);
+}
+
+#[tokio::test]
+async fn a_failed_install_says_so_and_records_nothing() {
+    if plan(Dependency::Terraform).is_err() {
+        return;
+    }
+    let t = TestApp::new();
+    let _tools = terraform_tools(Rc::new(Cell::new(false)), false);
+    let log = Sink::default();
+    let err = install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap_err();
+    assert!(err.to_string().contains("exited with"), "{err}");
+    assert!(log.lines().contains(&"E: Unable to locate package terraform".to_string()));
+    assert!(!log.lines().iter().any(|l| l.starts_with("Done.")));
+    assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
+}
+
+#[tokio::test]
+async fn an_invalid_plugin_is_refused_before_running_anything() {
+    let err = install_vagrant_plugin("rails".into(), |_| {}).await.unwrap_err();
+    assert_eq!(err.to_string(), "invalid plugin name `rails`");
+}

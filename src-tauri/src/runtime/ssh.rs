@@ -12,6 +12,10 @@ use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::exec::run;
 
+/// The `known_hosts` every attack box shell once shared. Its keys of lab hosts long gone refused
+/// the shell to any new lab host at a recycled address: removed (nothing writes it any more).
+const SHARED_KNOWN_HOSTS: &str = "known_hosts";
+
 fn ssh_dir(dirs: &AppDirs) -> Result<PathBuf> {
     let dir = dirs.data()?.join("ssh");
     std::fs::create_dir_all(&dir)?;
@@ -207,10 +211,6 @@ pub fn node_known_hosts(identity: &Path) -> PathBuf {
     identity.with_file_name("nodes_known_hosts")
 }
 
-/// The `known_hosts` every attack box shell once shared. Its keys of lab hosts long gone refused
-/// the shell to any new lab host at a recycled address: removed (nothing writes it any more).
-const SHARED_KNOWN_HOSTS: &str = "known_hosts";
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,8 +240,8 @@ mod tests {
 
     #[test]
     fn a_windows_proxy_command_double_quotes_its_paths() {
-        // Regression (#217): Windows' ssh runs a ProxyCommand with no POSIX shell, so the
-        // single-quoted key path reached the jump host's ssh with its quotes, and it failed.
+        // Regression: Windows' ssh runs a ProxyCommand with no POSIX shell, so the single-quoted
+        // key path reached the jump host's ssh with its quotes, and it failed.
         let key = PathBuf::from(r"C:\Users\Frédéric O'Brien\AppData\Roaming\org.cyberctf.desktop\ssh\id_ed25519");
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.10.0.5", "isoloom", key.clone()) };
         let kh = Path::new(r"C:\Users\Frédéric O'Brien\kh");
@@ -300,7 +300,8 @@ mod tests {
         let kh = "/Users/a/Library/Application Support/org.cyberctf.desktop/ssh/known_hosts";
         assert_eq!(options(kh)[1], r"UserKnownHostsFile=/Users/a/Library/Application\ Support/org.cyberctf.desktop/ssh/known_hosts");
         assert_eq!(ssh_config_path(r"C:\Users\x y\50%\kh"), r"C:\\Users\\x\ y\\50%%\\kh");
-        // The jump-host ProxyCommand carries the same escaped path (see jump_hosts_become_a_proxy_command).
+        // The jump-host ProxyCommand carries the same escaped path (see
+        // jump_hosts_become_a_proxy_command).
         let t = Target { jump: Some("root@pve.lan".into()), ..Target::direct("10.0.0.5", "debian", "/k/id".into()) };
         assert!(t.proxy_option(Path::new(kh)).unwrap().unwrap().contains(r"UserKnownHostsFile=/Users/a/Library/Application\ Support/"));
     }

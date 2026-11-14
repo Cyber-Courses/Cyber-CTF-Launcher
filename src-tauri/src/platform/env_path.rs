@@ -210,8 +210,8 @@ mod tests {
 
     #[test]
     fn windows_finds_the_hypervisors_that_never_join_path() {
-        // Regression (#218): VirtualBox read as not installed right after its installer ran, and
-        // VMware Workstation's vmrun was never found.
+        // Regression: VirtualBox read as not installed right after its installer ran, and VMware
+        // Workstation's vmrun was never found.
         let env = |name: &str| -> Option<OsString> {
             match name {
                 "VBOX_MSI_INSTALL_PATH" => Some(r"D:\VBox\".into()),

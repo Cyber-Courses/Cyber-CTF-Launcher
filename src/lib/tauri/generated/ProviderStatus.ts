@@ -11,7 +11,7 @@ import type { UtilityState } from "./UtilityState";
  */
 export type ProviderStatus = { 
 /**
- * The provider.
+ * Which provider the rest is about.
  */
 provider: Provider, 
 /**

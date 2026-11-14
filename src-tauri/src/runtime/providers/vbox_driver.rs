@@ -75,9 +75,8 @@ mod tests {
 
     #[test]
     fn a_driver_not_loaded_waits_for_the_newer_kernel_its_install_brought() {
-        // Regression (the rig's bare Debian 13): the archive had moved on to 6.12.116, so the
-        // running 6.12.86 had no headers; VirtualBox read as ready, and the self-test's VM then
-        // found no driver.
+        // Debian 13 whose archive moved on to 6.12.116: the running 6.12.86 has no headers, so
+        // VirtualBox isn't ready (its VMs would find no driver) until the newer kernel runs.
         let dir = lib_modules(&[("6.12.86+deb13-amd64", false), ("6.12.116+deb13-amd64", true), ("6.12.94+deb13-amd64", true)]);
         assert_eq!(driver_problem(NOT_LOADED, "6.12.86+deb13-amd64", &dir), Some(Unavailable::KernelRestart { kernel: "6.12.116+deb13-amd64".into() }));
         // Ubuntu's ABI number counts.
