@@ -63,6 +63,8 @@ pub(crate) fn in_cloud_account(cloud: &str, name: &str, region: &str) -> String 
 // lab page's "Prepare this machine" step when one comes first.
 const LOW_MEMORY: &str = "This lab's VMs ask for about ";
 const EMULATING: &str = "Emulating ";
+/// UTM is opened before a lab's VMs start on it, and waited for until it answers.
+pub(crate) const OPENING_UTM: &str = "Opening UTM and waiting for it to answer…";
 /// The runner clears what a previous, stopped run left (its `LeftoversRemoved` warning).
 pub(crate) const CLEARING_LEFTOVERS: &str = "Clearing a previous, stopped run…";
 /// The runner clears what Docker kept of an earlier run and starts again (its `Recovering`
@@ -72,7 +74,7 @@ pub(crate) const RECOVERING: &str = "Docker kept something of an earlier run: cl
 /// How the lines said while this machine is readied for a lab's VMs start (for the generated
 /// file).
 #[cfg(test)]
-pub(crate) const PREPARE: [&str; 4] = [LOW_MEMORY, EMULATING, CLEARING_LEFTOVERS, RECOVERING];
+pub(crate) const PREPARE: [&str; 5] = [LOW_MEMORY, EMULATING, OPENING_UTM, CLEARING_LEFTOVERS, RECOVERING];
 
 /// A lab's VMs asking for `needed_mb` of memory with only `available_mb` free here.
 pub(crate) fn low_memory(needed_mb: u64, available_mb: u64) -> String {
@@ -128,7 +130,7 @@ mod tests {
             assert!(FETCH.iter().any(|s| line.starts_with(s)), "{line}");
             assert!(!PREPARE.iter().any(|s| line.starts_with(s)), "{line}");
         }
-        let prepared = [low_memory(2, 1), emulating("a", "h"), CLEARING_LEFTOVERS.into(), RECOVERING.into()];
+        let prepared = [low_memory(2, 1), emulating("a", "h"), OPENING_UTM.into(), CLEARING_LEFTOVERS.into(), RECOVERING.into()];
         for line in &prepared {
             assert!(PREPARE.iter().any(|s| line.starts_with(s)), "{line}");
             assert!(!FETCH.iter().any(|s| line.starts_with(s)), "{line}");

@@ -19,7 +19,7 @@ mod port_holder;
 
 #[cfg(test)]
 use local::low_memory_warning;
-use local::{check_provider, check_qemu, warn_if_low_memory};
+use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
 pub(in crate::runtime) use on_host::esxi_run;
 #[cfg(test)]
 pub(crate) use on_host::{CloudStart, start_cloud_run};
@@ -237,6 +237,9 @@ pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     warn_if_low_memory(&prepared.spec, log);
     if provider == Provider::Qemu {
         check_qemu(&prepared, log).await?;
+    }
+    if provider == Provider::Utm {
+        check_utm(log).await?;
     }
     isothrum::LabRun::vm(home, dir, id)?.start(inputs, provider.id(), log).await?;
     mark_parked(dir, None)

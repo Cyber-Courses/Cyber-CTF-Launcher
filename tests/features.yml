@@ -1326,6 +1326,7 @@ areas:
             - src-tauri/src/runtime/providers.rs > an_old_utm_plugin_or_utm_reads_as_too_old_and_says_what_to_do
             - src-tauri/src/runtime/discover.rs > utm_started_vms_map_back_to_installed_labs
             - src-tauri/src/runtime/isothrum/errors.rs > utms_passing_scripting_errors_are_tried_again_and_said_and_nothing_else_is
+            - src-tauri/src/runtime/launch/tests.rs > a_utm_not_ready_for_commands_is_waited_for
           web:
             - "vm-labs.spec.ts > on Apple Silicon: a VM lab built for arm64 runs on UTM, pauses, resumes and stops"
           desktop:
@@ -1333,6 +1334,7 @@ areas:
             - lab-form-vm
           integration:
             - vm-lab
+            - src-tauri/src/runtime/launch/tests.rs > utm_is_opened_and_answers_before_a_vm_starts
           setup:
             - utm
             - plugin:vagrant_utm

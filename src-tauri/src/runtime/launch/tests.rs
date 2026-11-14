@@ -1,3 +1,4 @@
+use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{
     Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, containers_run_on, downloads, local_run, low_memory_warning, parse_ipv4,
     per_machine_runs_on, record_cloud_form,
@@ -380,6 +381,45 @@ fn resolver_answers_must_be_one_ipv4() {
     assert_eq!(parse_ipv4("2001:db8::1"), None);
     assert_eq!(parse_ipv4("<html>blocked</html>"), None);
     assert_eq!(parse_ipv4(""), None);
+}
+
+#[test]
+fn an_automation_refusal_is_told_apart_from_a_utm_still_opening() {
+    // macOS refusing this app Apple events (no wait fixes it) against a UTM not answering yet.
+    assert!(utm_not_allowed("54:63: execution error: Not authorized to send Apple events to UTM. (-1743)"));
+    assert!(utm_not_allowed("UTM got an error: (-1743)"));
+    assert!(!utm_not_allowed("execution error: UTM got an error: Application isn't running. (-600)"));
+    assert!(!utm_not_allowed(""));
+    assert!(UTM_NOT_ALLOWED.contains("Automation"));
+}
+
+/// A UTM that answers but isn't ready for commands yet (-2700, as it refused a VM import after
+/// answering its name) is waited for like one still opening: the start goes on once it is.
+#[tokio::test]
+async fn a_utm_not_ready_for_commands_is_waited_for() {
+    use crate::platform::exec::fake::{Tools, fail, ok};
+    let mut probes = 0;
+    let tools = Tools::new(move |program, args| match (program, args) {
+        ("osascript", [_, probe]) if probe.contains("every virtual machine") => {
+            probes += 1;
+            if probes == 1 { fail("execution error: UTM got an error: UTM is not ready to accept commands. (-2700)") } else { ok("") }
+        }
+        _ => ok(""),
+    });
+    let mut lines = Vec::new();
+    check_utm(&mut |l| lines.push(l)).await.unwrap();
+    assert!(lines.iter().any(|l| l.contains("waiting for it to answer")), "{lines:?}");
+    assert!(tools.called("every virtual machine"), "asks for its VMs, which only a ready UTM lists");
+}
+
+/// The real UTM, opened cold: run by hand before a release with UTM quit (`osascript -e 'tell
+/// application "UTM" to quit'`), so the wait covers its launch.
+#[tokio::test]
+#[ignore = "opens the real UTM (macOS, UTM installed)"]
+async fn utm_is_opened_and_answers_before_a_vm_starts() {
+    let mut lines = Vec::new();
+    check_utm(&mut |l| lines.push(l)).await.unwrap();
+    println!("said: {lines:?}");
 }
 
 #[tokio::test]
