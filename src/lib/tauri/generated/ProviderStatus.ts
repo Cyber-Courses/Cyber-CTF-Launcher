@@ -24,7 +24,7 @@ remote: boolean,
 available: boolean, 
 /**
  * Whether the hypervisor itself is installed (for Hyper-V, whether the Windows feature is
- * on; for QEMU on Linux, with the `mkisofs` its VMs need, [`needs_mkisofs`]). None where
+ * on; for QEMU on Linux, with the `mkisofs` its VMs need, [`needs_mkisofs`](super::needs_mkisofs)). None where
  * nothing local is checked: a server or a cloud.
  */
 hypervisor: boolean | null, 
@@ -42,7 +42,7 @@ pluginInstalled: boolean,
  */
 utility: UtilityState | null, 
 /**
- * What is still to install for Vagrant to drive it here ([`needs`]): empty when nothing is.
+ * What is still to install for Vagrant to drive it here ([`needs`](super::needs)): empty when nothing is.
  * The Machine page and the setup steps read this, never their own idea of it.
  */
 needs: Array<Need>, 

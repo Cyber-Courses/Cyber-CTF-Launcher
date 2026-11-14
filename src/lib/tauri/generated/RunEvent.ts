@@ -64,4 +64,20 @@ op: Operation,
 /**
  * Why it failed; none when it went through.
  */
-error: CommandError | null, } | { "kind": "status", labId: string, status: LabStatus | null, error: CommandError | null, } | { "kind": "running", labIds: Array<string>, };
+error: CommandError | null, } | { "kind": "status", 
+/**
+ * The lab.
+ */
+labId: string, 
+/**
+ * Its status; none when it couldn't be read.
+ */
+status: LabStatus | null, 
+/**
+ * Why it couldn't be read.
+ */
+error: CommandError | null, } | { "kind": "running", 
+/**
+ * The labs seen up.
+ */
+labIds: Array<string>, };
