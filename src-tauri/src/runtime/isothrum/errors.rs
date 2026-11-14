@@ -22,21 +22,14 @@ pub(crate) fn refused_before_acting(e: &Error) -> bool {
 /// What a step stopped for taking too long says: how long it went without progress (and what it
 /// last printed), or that it hit the longest any step may run.
 fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
-    const AGAIN: &str = "Start the lab again; if it keeps happening, check the network and the resources of Docker, the hypervisor or the server.";
+    let step = step.to_owned();
     let minutes = timed_out.after_s().div_ceil(60);
-    Error::Invalid(match timed_out {
-        TimedOut::NoProgress { last_line: Some(line), .. } => {
-            format!("The lab's `{step}` step showed no progress for {minutes} minutes, so it was stopped. Its last output was: \u{201c}{line}\u{201d}. {AGAIN}")
-        }
-        TimedOut::NoProgress { last_line: None, .. } => {
-            format!("The lab's `{step}` step printed nothing for {minutes} minutes, so it was stopped. {AGAIN}")
-        }
-        TimedOut::Ceiling { after_s } => format!(
-            "The lab's `{step}` step was still working after {} hours, the longest any step may run, so it was stopped. {AGAIN}",
-            after_s.div_ceil(3600)
-        ),
+    Error::coded(match timed_out {
+        TimedOut::NoProgress { last_line: Some(line), .. } => Code::StepStalled { step, minutes, last_line: line.clone() },
+        TimedOut::NoProgress { last_line: None, .. } => Code::StepSilent { step, minutes },
+        TimedOut::Ceiling { after_s } => Code::StepCeiling { step, hours: after_s.div_ceil(3600) },
         // A reason added later reads as the plain limit.
-        _ => format!("The lab's `{step}` step ran into its {minutes}-minute limit, so it was stopped. {AGAIN}"),
+        _ => Code::StepTimedOut { step, minutes },
     })
 }
 
@@ -68,19 +61,11 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::DownloadFailed { reason, .. } => Error::coded(Code::DownloadFailed { reason: reason.trim().to_owned() }),
         // Named by the address the run's settings give until [`on_server`] names it as Servers does.
         RunnerError::ServerAuthFailed { server, .. } => Error::coded(Code::ServerAuthFailed { server: server.unwrap_or_else(|| "the server".into()) }),
-        RunnerError::ToolTooOld { tool, found, required } => Error::Invalid(format!(
-            "This lab needs {} {required} or later, and this computer has {found}. Update it, then start the lab again.",
-            tool_name(&tool)
-        )),
+        RunnerError::ToolTooOld { tool, found, required } => Error::coded(Code::ToolTooOld { tool: tool_name(&tool), found, required }),
         // The prompt declined or unanswered, or the elevated session ended (the reason says which).
-        RunnerError::Elevation { reason } => {
-            Error::Invalid(format!("Hyper-V needs administrator rights, and they couldn't be had ({reason}). Start the lab again and accept the prompt."))
-        }
-        RunnerError::NotReady { detail, .. } => Error::Invalid(format!("The lab started, but didn't become ready: {detail}")),
-        RunnerError::PartlyGone { machines, .. } => Error::Invalid(format!(
-            "Some of this lab's machines are gone ({}): they were removed outside Cyber CTF, so it can't resume as it was. Start it again for a fresh copy.",
-            machines.join(", ")
-        )),
+        RunnerError::Elevation { reason } => Error::coded(Code::ElevationFailed { reason }),
+        RunnerError::NotReady { detail, .. } => Error::coded(Code::LabNotReady { detail }),
+        RunnerError::PartlyGone { machines, .. } => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
         RunnerError::SecretMissing { name } => {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
         }
@@ -112,11 +97,9 @@ fn by_code(e: &RunnerError) -> Error {
         ErrorCode::AlreadyRunning => Error::Refused("This lab is already running on this machine. Stop it before starting it again.".into()),
         ErrorCode::RunningElsewhere => Error::Refused("This lab is still running somewhere else. Stop it there before starting it here.".into()),
         ErrorCode::Locked => Error::coded(Code::AlreadyInProgress),
-        ErrorCode::NothingToResume => {
-            Error::Invalid("Nothing is left of this lab to resume (its stopped containers or VMs are gone). Start it again for a fresh copy.".into())
-        }
+        ErrorCode::NothingToResume => Error::coded(Code::NothingToResume),
         ErrorCode::NotRunning => Error::RefusedBeforeActing("This lab isn't running. Start it first.".into()),
-        ErrorCode::NotParkable => Error::Invalid("This lab can't be paused or shut down. Stop it instead.".into()),
+        ErrorCode::NotParkable => Error::coded(Code::NotParkable),
         // A lab's files of another version are generated again before the runner reads them
         // (`regenerate`): one still refused is a lab that can't be generated any more.
         ErrorCode::ManifestVersion => Error::Invalid(format!("{EARLIER_FILES}. {ADD_AGAIN} ({e})")),
@@ -352,6 +335,23 @@ mod tests {
         let silent = TimedOut::NoProgress { after_s: 1800, last_line: None };
         assert!(said(RunnerError::Timeout { step: "up".into(), timed_out: silent }).1.starts_with("The lab's `up` step printed nothing for 30 minutes"));
         assert!(said(RunnerError::SecretMissing { name: "CTF_FLAG_MAIN".into() }).1.contains("`CTF_FLAG_MAIN`"));
+    }
+
+    #[test]
+    fn the_runners_failures_the_launcher_words_reach_the_webview_as_codes_it_translates() {
+        let stalled = TimedOut::NoProgress { after_s: 1800, last_line: Some("pulling".into()) };
+        assert_eq!(
+            said(RunnerError::Timeout { step: "up".into(), timed_out: stalled }).0,
+            Code::StepStalled { step: "up".into(), minutes: 30, last_line: "pulling".into() }
+        );
+        let ceiling = TimedOut::Ceiling { after_s: 21600 };
+        assert_eq!(said(RunnerError::Timeout { step: "up".into(), timed_out: ceiling }).0, Code::StepCeiling { step: "up".into(), hours: 6 });
+        let old = said(RunnerError::ToolTooOld { tool: "vagrant".into(), found: "2.3".into(), required: "2.4".into() }).0;
+        assert_eq!(old, Code::ToolTooOld { tool: "Vagrant".into(), found: "2.3".into(), required: "2.4".into() });
+        assert_eq!(said(RunnerError::Elevation { reason: "declined".into() }).0, Code::ElevationFailed { reason: "declined".into() });
+        let gone = RunnerError::PartlyGone { run: "r".into(), machines: vec!["web".into(), "db".into()] };
+        assert_eq!(said(gone).0, Code::MachinesGone { machines: "web, db".into() });
+        assert_eq!(said(RunnerError::NothingToResume { run: "r".into() }).0, Code::NothingToResume);
     }
 
     #[test]

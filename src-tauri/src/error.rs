@@ -135,6 +135,65 @@ pub enum Code {
         /// Why, in Vagrant's words.
         reason: String,
     },
+    /// A tool the lab needs answers at a version older than the one it needs.
+    ToolTooOld {
+        /// The tool, as the player knows it (`Vagrant`).
+        tool: String,
+        /// The version this computer has.
+        found: String,
+        /// The oldest version the lab takes.
+        required: String,
+    },
+    /// Hyper-V's commands need administrator rights, and they couldn't be had: the prompt
+    /// declined or unanswered, the elevated session ended.
+    ElevationFailed {
+        /// Why, in the runner's words.
+        reason: String,
+    },
+    /// The lab started, but a check that it is ready didn't hold.
+    LabNotReady {
+        /// What didn't hold, in the runner's words.
+        detail: String,
+    },
+    /// A resume found some of the lab's machines removed outside the app.
+    MachinesGone {
+        /// The machines gone, comma separated.
+        machines: String,
+    },
+    /// A resume found nothing of the lab left (its stopped containers or VMs are gone).
+    NothingToResume,
+    /// The lab can't be paused or shut down: it has no way to.
+    NotParkable,
+    /// A step of the lab printed lines but none new for `minutes`, so it was stopped.
+    StepStalled {
+        /// The step (`up`).
+        step: String,
+        /// How long it went without progress, in minutes.
+        minutes: u64,
+        /// The last line it printed.
+        last_line: String,
+    },
+    /// A step of the lab printed nothing for `minutes`, so it was stopped.
+    StepSilent {
+        /// The step (`up`).
+        step: String,
+        /// How long it printed nothing, in minutes.
+        minutes: u64,
+    },
+    /// A step of the lab still worked after the longest any step may run, so it was stopped.
+    StepCeiling {
+        /// The step (`up`).
+        step: String,
+        /// The longest a step may run, in hours.
+        hours: u64,
+    },
+    /// A step of the lab ran into its time limit, so it was stopped.
+    StepTimedOut {
+        /// The step (`up`).
+        step: String,
+        /// Its limit, in minutes.
+        minutes: u64,
+    },
     /// The server the lab runs on (Proxmox, ESXi) refused its saved credentials: its API token
     /// was revoked, or its password changed.
     ServerAuthFailed {
@@ -216,7 +275,6 @@ impl Code {
             Code::DownloadStalled { .. } | Code::DownloadFailed { .. } | Code::BoxDownloadStalled { .. } | Code::BoxDownloadFailed { .. } => {
                 download_message(self)
             }
-            Code::ServerAuthFailed { server } => server_refused(server),
             Code::PickCloudAccount => "This lab runs in your cloud account: pick one of your cloud accounts to start it on.".into(),
             Code::NoHypervisor => {
                 "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account."
@@ -225,6 +283,7 @@ impl Code {
             Code::TurnedOffByPolicy { setting } => {
                 format!("Your organization turned this off on this computer (policy setting {setting}). Ask your IT team if you need it.")
             }
+            _ => run_message(self),
         }
     }
 }
@@ -246,6 +305,47 @@ fn download_message(code: &Code) -> String {
         ),
         Code::BoxDownloadFailed { reason } => format!("Couldn't download the lab's VM box: {reason}. Check your internet connection, then try again."),
         other => other.message(),
+    }
+}
+
+/// The message of a lab's run that the runner failed (`code`): the server refusing its
+/// credentials, a tool too old, Hyper-V's elevation refused, a lab not ready, machines gone or
+/// none left, a lab that can't be parked, a step stopped for taking too long.
+fn run_message(code: &Code) -> String {
+    match code {
+        Code::ServerAuthFailed { server } => server_refused(server),
+        Code::ToolTooOld { tool, found, required } => {
+            format!("This lab needs {tool} {required} or later, and this computer has {found}. Update it, then start the lab again.")
+        }
+        Code::ElevationFailed { reason } => {
+            format!("Hyper-V needs administrator rights, and they couldn't be had ({reason}). Start the lab again and accept the prompt.")
+        }
+        Code::LabNotReady { detail } => format!("The lab started, but didn't become ready: {detail}"),
+        Code::MachinesGone { machines } => format!(
+            "Some of this lab's machines are gone ({machines}): they were removed outside Cyber CTF, so it can't resume as it was. Start it again for a fresh copy."
+        ),
+        Code::NothingToResume => "Nothing is left of this lab to resume (its stopped containers or VMs are gone). Start it again for a fresh copy.".into(),
+        Code::NotParkable => "This lab can't be paused or shut down. Stop it instead.".into(),
+        step => step_stopped(step),
+    }
+}
+
+/// The message of a lab's step stopped for taking too long (`code`), with what to do then.
+fn step_stopped(code: &Code) -> String {
+    const AGAIN: &str = "Start the lab again; if it keeps happening, check the network and the resources of Docker, the hypervisor or the server.";
+    match code {
+        Code::StepStalled { step, minutes, last_line } => {
+            format!(
+                "The lab's `{step}` step showed no progress for {minutes} minutes, so it was stopped. Its last output was: \u{201c}{last_line}\u{201d}. {AGAIN}"
+            )
+        }
+        Code::StepSilent { step, minutes } => format!("The lab's `{step}` step printed nothing for {minutes} minutes, so it was stopped. {AGAIN}"),
+        Code::StepCeiling { step, hours } => {
+            format!("The lab's `{step}` step was still working after {hours} hours, the longest any step may run, so it was stopped. {AGAIN}")
+        }
+        Code::StepTimedOut { step, minutes } => format!("The lab's `{step}` step ran into its {minutes}-minute limit, so it was stopped. {AGAIN}"),
+        // The codes `Code::message` words itself never reach here.
+        _ => format!("The lab's step was stopped. {AGAIN}"),
     }
 }
 
@@ -515,11 +615,21 @@ mod tests {
             Code::BoxDownloadStalled { .. } => 31,
             Code::BoxDownloadFailed { .. } => 32,
             Code::ServerAuthFailed { .. } => 33,
+            Code::ToolTooOld { .. } => 34,
+            Code::ElevationFailed { .. } => 35,
+            Code::LabNotReady { .. } => 36,
+            Code::MachinesGone { .. } => 37,
+            Code::NothingToResume => 38,
+            Code::NotParkable => 39,
+            Code::StepStalled { .. } => 40,
+            Code::StepSilent { .. } => 41,
+            Code::StepCeiling { .. } => 42,
+            Code::StepTimedOut { .. } => 43,
         }
     }
 
     /// How many forms [`form`] tells apart.
-    const FORMS: usize = 34;
+    const FORMS: usize = 44;
 
     #[test]
     fn every_form_has_a_sample() {
@@ -564,6 +674,16 @@ mod tests {
             Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() },
             Code::PickCloudAccount,
             Code::NoHypervisor,
+            Code::ToolTooOld { tool: "Vagrant".into(), found: "2.3.4".into(), required: "2.4.0".into() },
+            Code::ElevationFailed { reason: "the permission prompt was declined".into() },
+            Code::LabNotReady { detail: "http://web:80 answered 502".into() },
+            Code::MachinesGone { machines: "web, db".into() },
+            Code::NothingToResume,
+            Code::NotParkable,
+            Code::StepStalled { step: "up".into(), minutes: 30, last_line: "web Downloading 1.1GB".into() },
+            Code::StepSilent { step: "up".into(), minutes: 30 },
+            Code::StepCeiling { step: "up".into(), hours: 6 },
+            Code::StepTimedOut { step: "up".into(), minutes: 30 },
         ]
     }
 
