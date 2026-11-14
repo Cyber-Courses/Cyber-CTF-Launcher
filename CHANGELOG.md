@@ -20,6 +20,14 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   with tokens, passwords, keys, flags and e-mail addresses removed and the home folder written
   `~`. **Send to support** saves it and opens a mail to support to attach it to.
 
+- **A VM lab runs on UTM again, one VM per machine.** Isoloom's `vagrant` target has a UTM
+  provider again: each lab network is an isolated vmnet network its VMs are attached to (the Mac
+  and the other networks don't see it), each machine boots a UTM box (Debian 12 and Ubuntu 24.04
+  are built in). The start opens UTM and waits for it to answer before Vagrant drives it, and
+  says when macOS doesn't let Cyber CTF control UTM. A lab whose machines have no UTM box
+  (Windows, other Linux) is refused on UTM with Isoloom's reason, in the picker and at the start.
+  Needs UTM 4.6.5 or later from GitHub or Homebrew (the App Store build has no vmnet) and
+  vagrant_utm 0.2.0 or later, which the guided setup installs.
 - **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
   release now ships `.rpm` packages beside the `.deb` (#322).
 

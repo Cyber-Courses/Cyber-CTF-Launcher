@@ -224,7 +224,8 @@ pub(crate) struct VmStart<'a> {
 }
 
 /// The runner's start of a VM lab (runner home `home`) on `provider`: its files generated (the
-/// run manifest with them), the memory warning and QEMU's emulator check, then up (a parked run
+/// run manifest with them), the memory warning, QEMU's emulator check and UTM open and answering
+/// ([`check_utm`]: Vagrant's UTM plugin drives it with Apple events), then up (a parked run
 /// is resumed as it was). The learner's attack box is added to the lab afterwards, from the lab
 /// page or with the lab (`attack_box`), not by the launch. Takes no app handle, so the
 /// integration tests run exactly this.

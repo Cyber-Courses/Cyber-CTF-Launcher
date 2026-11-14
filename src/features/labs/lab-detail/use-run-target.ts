@@ -174,9 +174,9 @@ function saveLaunchChoice(runOn: RunTarget, { ports, engine, engineCount, hyperv
 }
 
 /** This machine's VM form for a dual-form container lab: one VM per machine (`perMachine`, on
- *  `perMachineVms`, which excludes UTM). `pickProvider` selects the form and its hypervisor for this
- *  launch only (Start saves it with "don't ask again"). It defaults to the hypervisor chosen in
- *  Settings (readyVms lists it first), else the first ready. */
+ *  `perMachineVms`: the hypervisors Isoloom takes the lab's VMs on). `pickProvider` selects the
+ *  form and its hypervisor for this launch only (Start saves it with "don't ask again"). It
+ *  defaults to the hypervisor chosen in Settings (readyVms lists it first), else the first ready. */
 function useLocalVmChoice(
   rt: LabRuntimeInfo | null,
   { readyVms, options }: { readyVms: Provider[]; options: LabRunOptions | null },
