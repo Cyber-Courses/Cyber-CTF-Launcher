@@ -1,7 +1,9 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 
-/** Lets pending promises (mocked Tauri invokes) and the renders they cause settle. */
+/** Lets pending promises (mocked Tauri invokes) and the renders they cause settle, for a fixed
+ *  `ms`. A test whose screen waits on mocked answers is better off with `settled()` (test/tauri.ts),
+ *  which waits for them however long the machine takes. */
 export const flush = (ms = 20) =>
   act(async () => {
     await new Promise((r) => setTimeout(r, ms));

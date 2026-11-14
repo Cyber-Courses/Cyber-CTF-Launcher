@@ -7,6 +7,7 @@ import { destructive, warnings } from "@/lib/confirm";
 import { translate } from "@/lib/i18n";
 import { backendCommands, callable } from "@/test/backend-commands";
 import { recordUncallable } from "@/test/uncallable";
+import { resetInFlight, track, waitForAnswers } from "@/test/in-flight";
 
 export type Handler = (args: Record<string, unknown> | undefined) => unknown;
 export interface Call {
@@ -147,26 +148,17 @@ export const held =
     return out;
   };
 
-/** The commands answered asynchronously and not settled yet, held answers aside. */
-let inflight = 0;
-
 /** Waits until every command invoked has its answer (the ones a test holds aside, see [`held`]),
  *  and the renders those answers cause have landed: waited for, never a fixed delay, which a
- *  loaded machine can outlast. Gives up after `limit` ms, so a test that holds an answer without
+ *  loaded machine can outlast. Gives up after SETTLE_LIMIT_MS, so a test that holds an answer without
  *  saying so fails on its assertions rather than hanging. */
-export async function settled(limit = 15_000): Promise<void> {
-  const start = Date.now();
-  const tick = () => new Promise((r) => setTimeout(r, 0));
-  await act(async () => {
-    await tick();
-    while (inflight > 0 && Date.now() - start < limit) await tick();
-    await tick();
-  });
+export async function settled(): Promise<void> {
+  await act(() => waitForAnswers(0));
 }
 
 export function installTauri(overrides: Partial<Record<string, Handler>> = {}): Call[] {
   const calls: Call[] = [];
-  inflight = 0;
+  resetInFlight();
   answerInAppDialogs(calls, overrides["plugin:dialog|message"] ?? DEFAULTS["plugin:dialog|message"]);
   mockWindows("main");
   mockIPC(
@@ -179,13 +171,7 @@ export function installTauri(overrides: Partial<Record<string, Handler>> = {}): 
       }
       const handler = overrides[cmd] ?? DEFAULTS[cmd];
       const out: unknown = handler ? handler(a) : answer(cmd, a);
-      if (out instanceof Promise && !HELD.has(out)) {
-        inflight += 1;
-        const done = () => {
-          inflight -= 1;
-        };
-        out.then(done, done);
-      }
+      if (out instanceof Promise && !HELD.has(out)) track(out);
       return out;
     },
     { shouldMockEvents: true },
