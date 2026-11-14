@@ -53,7 +53,7 @@ fn the_status_shows_who_is_signed_in_or_why_not() {
     assert!(failed.get("sessionExpired").is_none());
 }
 
-/// Each test thread has its own session file, `UNSAVED` and `EXPIRED`, but `SESSION_WRITE` is the
+/// Each test thread has its own session file, unsaved session and `EXPIRED`, but the write lock is the
 /// process's: the tests that wait on it run one at a time. Those tests run over the dev session
 /// store, a debug build's alone: so does what they share, or a release build's test target (the
 /// `rig` profile) finds it unused.
@@ -90,17 +90,17 @@ async fn a_renewed_session_that_could_not_be_saved_is_served_then_saved_and_forg
     let stale = Session { expires_at: unix_secs() + 10, ..session() };
     store::store(stale).await.unwrap();
     let renewed = Session { access_token: "tok2".into(), refresh_token: Some("ref2".into()), expires_at: unix_secs() + 3600, ..session() };
-    set_unsaved(&SessionWrite::lock().await, Some(renewed));
+    SessionWrite::lock().await.set_unsaved(Some(renewed));
     // Served over the stored one, and saved now that the store takes it.
     assert_eq!(access_token().await.unwrap(), "tok2");
     assert!(unsaved().is_none());
     assert_eq!(store::read().await.unwrap().unwrap().refresh_token.as_deref(), Some("ref2"));
     // An older leftover never replaces a newer stored session.
-    set_unsaved(&SessionWrite::lock().await, Some(Session { access_token: "old".into(), expires_at: unix_secs() + 5, ..session() }));
+    SessionWrite::lock().await.set_unsaved(Some(Session { access_token: "old".into(), expires_at: unix_secs() + 5, ..session() }));
     assert_eq!(access_token().await.unwrap(), "tok2");
     assert!(unsaved().is_none());
     // Sign-out forgets both.
-    set_unsaved(&SessionWrite::lock().await, Some(Session { access_token: "tok3".into(), expires_at: unix_secs() + 3600, ..session() }));
+    SessionWrite::lock().await.set_unsaved(Some(Session { access_token: "tok3".into(), expires_at: unix_secs() + 3600, ..session() }));
     auth_logout().await.unwrap();
     assert!(unsaved().is_none());
     assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
