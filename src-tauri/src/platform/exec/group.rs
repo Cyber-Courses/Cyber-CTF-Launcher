@@ -1,6 +1,8 @@
 //! Process groups of timed and streamed tools, so a timeout, a cancellation or the app's exit
 //! kills the whole tree a tool started, not just the tool: its own process group on unix, a job
-//! object (which ends every process in it when it is closed) on Windows.
+//! object (which ends every process in it when it is closed) on Windows. On unix each group is
+//! recorded in the tools' ledger while it runs, for the next start to end it should the app be
+//! killed ([`super::ledger`]).
 
 use std::sync::Mutex;
 
@@ -18,6 +20,9 @@ struct Live {
     stream: bool,
     #[cfg(windows)]
     job: std::sync::Arc<Job>,
+    /// Its record in the tools' ledger, removed when this drops.
+    #[cfg(unix)]
+    record: Option<super::ledger::Recorded>,
 }
 
 /// Tools still running, so they can be ended when the app (or a deploy worker being
@@ -44,12 +49,17 @@ impl GroupGuard {
         if let Some(p) = pid {
             #[cfg(windows)]
             let Some(job) = child.raw_handle().and_then(Job::for_process) else { return GroupGuard(None) };
+            // Written before the registry is locked: no file is written under its lock.
+            #[cfg(unix)]
+            let record = super::ledger::Recorded::tool(p, stream);
             if let Ok(mut live) = LIVE_GROUPS.lock() {
                 live.push(Live {
                     pid: p,
                     stream,
                     #[cfg(windows)]
                     job: std::sync::Arc::new(job),
+                    #[cfg(unix)]
+                    record,
                 });
             }
         }
@@ -103,16 +113,20 @@ fn kill(live: &Live) {
 /// Ends every tool this process started that is still running, with what it started. For the
 /// app's exit, and a deploy worker being stopped (each tool is in a group of its own, so a signal
 /// to the worker's group misses it). A streamed tool gets SIGTERM on unix, as it did when it
-/// shared the worker's group, so Vagrant or Compose can stop what they were doing.
+/// shared the worker's group, so Vagrant or Compose can stop what they were doing; its record
+/// stays in the ledger, for the next start to end it should it outlive this process.
 pub fn kill_live_tools() {
     let groups = LIVE_GROUPS.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default();
-    for live in &groups {
+    for live in groups {
         #[cfg(unix)]
         if live.stream {
             signalled(live.pid, sys::signal_group(live.pid, libc::SIGTERM));
+            if let Some(record) = live.record {
+                record.keep();
+            }
             continue;
         }
-        kill(live);
+        kill(&live);
     }
 }
 

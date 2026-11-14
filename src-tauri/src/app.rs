@@ -34,6 +34,15 @@ pub fn open_folder(path: &std::path::Path) -> crate::error::Result<()> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| crate::error::Error::Invalid(format!("couldn't open {}: {e}", path.display())))
 }
 
+/// Records this process's tools from now on in the ledger in the app's data folder, which a later
+/// start reads to end what an app or deploy worker killed outright left running; the folder,
+/// when the OS gave the app's.
+pub(crate) fn record_tools(app: &AppHandle) -> Option<PathBuf> {
+    let dir = platform::AppDirs::from(app).data_file(exec::TOOLS_DIR)?;
+    exec::record_tools_in(dir.clone());
+    Some(dir)
+}
+
 /// How often expired cloud labs are looked for and torn down.
 const REAP_EVERY: Duration = Duration::from_secs(300);
 
@@ -292,6 +301,13 @@ fn wdio_seed(handle: &crate::AppHandle) {
 
 fn setup(app: &mut App) {
     logging::log_startup(app.handle(), "app");
+    // Before any tool starts: this app's tools are recorded, and those an app or deploy worker
+    // killed outright left running are ended (Vagrant's lock and Terraform's state free again).
+    if let Some(dir) = record_tools(app.handle()) {
+        tauri::async_runtime::spawn(async move {
+            exec::end_orphaned_tools(&dir).await;
+        });
+    }
     // Once the log is up, so what is wrong with the policy is in it.
     let policy = platform::policy::current();
     register_updater(app.handle(), updates::channel(policy));

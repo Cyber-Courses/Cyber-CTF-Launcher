@@ -62,6 +62,8 @@ pub fn worker_main(job_path: &Path, mut context: tauri::Context<crate::AppRuntim
 /// the job's task, which a stop ends.
 fn start(app: &mut tauri::App<crate::AppRuntime>, job: Job) -> tauri::async_runtime::JoinHandle<()> {
     crate::app::logging::log_startup(app.handle(), &format!("deploy worker ({})", job.lab_id));
+    // Killed outright, its tools are ended at the app's next start.
+    let _ = crate::app::record_tools(app.handle());
     // A background process, not an app: on macOS keep it out of the Dock, the app
     // switcher and Apple Events aimed at "Cyber CTF".
     #[cfg(target_os = "macos")]

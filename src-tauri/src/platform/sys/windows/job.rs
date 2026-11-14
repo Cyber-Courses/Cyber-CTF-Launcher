@@ -97,6 +97,36 @@ pub fn resume_threads_of(pid: u32) -> bool {
     resumed
 }
 
+/// The processes `parent` started that still run, by id, with their image's file name
+/// (`docker.exe`). Windows keeps a process's parent id after the parent is gone, and may have
+/// given that id to another process since: tell them apart by when each was created.
+pub fn child_processes(parent: u32) -> Vec<(u32, String)> {
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS};
+    let Ok(size) = u32::try_from(std::mem::size_of::<PROCESSENTRY32W>()) else { return Vec::new() };
+    let mut children = Vec::new();
+    // SAFETY: a process snapshot walked with a correctly sized entry, closed once done; the
+    // image's name is read within its fixed buffer, up to its NUL.
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return children;
+        }
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dwSize = size;
+        let mut more = Process32FirstW(snapshot, &raw mut entry) != 0;
+        while more {
+            if entry.th32ParentProcessID == parent && entry.th32ProcessID != 0 {
+                let name = &entry.szExeFile;
+                let len = name.iter().position(|c| *c == 0).unwrap_or(name.len());
+                children.push((entry.th32ProcessID, String::from_utf16_lossy(name.get(..len).unwrap_or_default())));
+            }
+            more = Process32NextW(snapshot, &raw mut entry) != 0;
+        }
+        CloseHandle(snapshot);
+    }
+    children
+}
+
 /// Ends process `pid` (one that couldn't be let run).
 pub fn terminate(pid: u32) {
     use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};

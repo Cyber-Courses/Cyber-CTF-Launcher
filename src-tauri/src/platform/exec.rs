@@ -6,6 +6,7 @@ mod elevate;
 #[cfg(test)]
 pub mod fake;
 mod group;
+mod ledger;
 pub(crate) mod shim;
 mod vagrant;
 
@@ -30,6 +31,7 @@ pub use elevate::{Leftover, join_hyperv_admins, may_manage_hyperv, remove_hyperv
 pub use elevate::{OWNER_WINDOW_ENV, owner_window, set_owner_window};
 pub(crate) use group::GroupGuard;
 pub use group::kill_live_tools;
+pub use ledger::{DIR as TOOLS_DIR, end_orphans as end_orphaned_tools, record_tools_in};
 pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line};
 
 use crate::error::{Error, Result};
@@ -184,17 +186,24 @@ fn exit_error(program: &'static str, args: &[&str], code: Option<i32>, stderr: S
 /// group on unix; on Windows a job object, the process created suspended and resumed only once
 /// it is in the job, so nothing it starts in between escapes it. Dropped armed (a timeout, a
 /// cancellation), the guard ends the whole tree, and so does the app's exit
-/// ([`kill_live_tools`]). `stream`: a long-running tool, stopped gently on unix.
+/// ([`kill_live_tools`]). `stream`: a long-running tool, stopped gently on unix. Recorded in the
+/// tools' ledger, for the next start to end what an app killed outright left ([`ledger`]): on unix
+/// while it runs, on Windows while it is created and not yet in its job.
 pub(crate) fn spawn_group(cmd: &mut Command, stream: bool) -> std::io::Result<(Child, GroupGuard)> {
     cmd.kill_on_drop(true);
     #[cfg(unix)]
     cmd.process_group(0);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW | group::CREATE_SUSPENDED);
+    #[cfg(windows)]
+    let creating = ledger::Recorded::spawning(cmd.as_std().get_program());
     let child = cmd.spawn()?;
     let guard = if stream { GroupGuard::stream(&child) } else { GroupGuard::new(&child) };
     #[cfg(windows)]
     group::resume(&child)?;
+    // In its job (or running without one, Windows having refused it): no longer the ledger's.
+    #[cfg(windows)]
+    drop(creating);
     Ok((child, guard))
 }
 
@@ -636,6 +645,55 @@ mod tests {
         ends.0.wait().unwrap();
         assert!(fake::gone(tool).await, "the tool {tool} outlived the app that started it");
         assert!(fake::gone(child).await, "the tool's child {child} outlived the app that started it");
+    }
+
+    /// The app's stand-in on unix, run as a child process by the test below: it records its tools
+    /// in the ledger `CYBERCTF_LEDGER` names, starts one the app's way (`run_env_timed`, so in a
+    /// process group of its own), a tool whose long child's pid lands in `CYBERCTF_TREE_FILE`,
+    /// and waits on it until it is killed.
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "run as a child process by a_killed_apps_tools_end_at_the_next_start"]
+    fn ledger_owner_helper() {
+        record_tools_in(std::path::PathBuf::from(std::env::var("CYBERCTF_LEDGER").unwrap()));
+        let file = std::path::PathBuf::from(std::env::var("CYBERCTF_TREE_FILE").unwrap());
+        let (program, args) = parent_of_a_child(&file);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let _ = runtime.block_on(run_env_timed(program, &args, None, &[], Duration::from_secs(300)));
+    }
+
+    /// Regression (#301): on unix, the tools of an app killed outright (SIGKILL, a crash, Force
+    /// Quit) ran on in their own process groups. They do until the next start, which ends them,
+    /// what they started with them, from the ledger the killed app kept.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_killed_apps_tools_end_at_the_next_start() {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+        let ledger = tempfile::tempdir().unwrap();
+        let file = ledger.path().join("tree");
+        let mut owner = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "platform::exec::tests::ledger_owner_helper", "--ignored", "--nocapture", "--test-threads", "1"])
+            .env("CYBERCTF_LEDGER", ledger.path())
+            .env("CYBERCTF_TREE_FILE", &file)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let child = wait_for_child_pid(&file).await;
+        std::fs::remove_file(&file).unwrap();
+        let mut sys = System::new();
+        sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[Pid::from_u32(child)]), true, ProcessRefreshKind::nothing());
+        let tool = sys.process(Pid::from_u32(child)).and_then(sysinfo::Process::parent).map(Pid::as_u32).expect("the tool's child has its parent");
+        owner.kill().unwrap();
+        owner.wait().unwrap();
+        let alive = crate::platform::sys::process_exists(tool) && crate::platform::sys::process_exists(child);
+        let ended = end_orphaned_tools(ledger.path()).await;
+        assert!(alive, "the killed app's tool and its child ran on until the next start");
+        assert_eq!(ended, [tool]);
+        assert!(fake::gone(tool).await, "the tool {tool} outlived the next start");
+        assert!(fake::gone(child).await, "the tool's child {child} outlived the next start");
+        assert_eq!(std::fs::read_dir(ledger.path()).unwrap().count(), 0, "its record is gone");
     }
 
     /// The app's stand-in for the test below, its output piped to the test: it keeps its standard
