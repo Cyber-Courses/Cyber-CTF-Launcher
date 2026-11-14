@@ -211,19 +211,22 @@ mod tests {
         machine_selftest_prefetch(t.dirs(), Kind::Docker, None).await.unwrap();
     }
 
+    /// What a container test's bookkeeping asks before and after the run, answered as on a
+    /// machine with nothing of the test's left: no images listed, the test lab already down.
+    fn clean_slate() -> [(&'static str, Option<crate::platform::exec::fake::Reply>); 2] {
+        use crate::platform::exec::fake::ok;
+        [("docker image ls -q", ok("")), ("docker compose -p cyberctf-selftest -f docker-compose.yml down", ok(""))]
+    }
+
     /// The Machine page tests one engine among several: every Docker call of the run, the
     /// probe, the pull, compose and the clean-up, goes to that engine's context.
     #[tokio::test]
     async fn the_container_test_runs_on_the_engine_asked_for() {
         use crate::platform::exec::fake::{Tools, fail, ok};
         let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::strict_rules(&[
-            ("docker image ls -q", crate::platform::exec::fake::ok("")),
-            ("docker compose -p cyberctf-selftest -f docker-compose.yml down", crate::platform::exec::fake::ok("")),
-            ("docker info", ok("27.3.1\n")),
-            ("image inspect", fail("No such image")),
-            ("pull", fail("timed out")),
-        ]);
+        let [image_list, down] = clean_slate();
+        let tools =
+            Tools::strict_rules(&[image_list, down, ("docker info", ok("27.3.1\n")), ("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("orbstack".into()), channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:ok", "pull:running", "pull:fail"]);
@@ -253,9 +256,10 @@ mod tests {
     async fn a_failed_container_test_stops_at_its_step_and_still_cleans_up() {
         use crate::platform::exec::fake::{Tools, fail};
         let t = crate::testing::test_app::TestApp::new();
+        let [image_list, down] = clean_slate();
         let tools = Tools::strict_rules(&[
-            ("docker image ls -q", crate::platform::exec::fake::ok("")),
-            ("docker compose -p cyberctf-selftest -f docker-compose.yml down", crate::platform::exec::fake::ok("")),
+            image_list,
+            down,
             ("docker image inspect", crate::platform::exec::fake::ok("")),
             ("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock")),
         ]);

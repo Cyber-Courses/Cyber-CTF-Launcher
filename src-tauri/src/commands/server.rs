@@ -142,7 +142,7 @@ mod tests {
 
     #[tokio::test]
     async fn hosts_are_saved_listed_tested_and_removed_through_the_commands() {
-        use crate::platform::exec::fake::{Tools, ok};
+        use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         let input = |id: Option<&str>| -> HostInput {
@@ -161,12 +161,7 @@ mod tests {
         assert_eq!(server_set_default(app(), Some(saved.id.clone())).unwrap_err().to_string(), "a cloud account can't be the default host");
         server_set_default(app(), None).unwrap();
         // Testing it asks the Azure CLI (no network here).
-        let tools = Tools::strict_rules(&[
-            ("az vm list-skus", crate::platform::exec::fake::ok("")),
-            ("az vm list-usage", crate::platform::exec::fake::ok("")),
-            ("terraform version", crate::platform::exec::fake::ok("")),
-            ("account show", ok("Pay-As-You-Go\n")),
-        ]);
+        let tools = Tools::strict_rules(&crate::platform::exec::fake::azure_signed_in());
         let result = server_test(app(), saved.id.clone()).await.unwrap();
         assert!(tools.called("az account show --subscription 00000000-0000-0000-0000-000000000000"));
         assert!(!result.checks.is_empty());

@@ -111,15 +111,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_host_is_tested_by_its_provider_and_an_unsaved_one_is_an_error() {
-        use crate::platform::exec::fake::{Tools, ok};
+        use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let az = t.host("az1", "azure", serde_json::json!({}));
-        let tools = Tools::strict_rules(&[
-            ("az vm list-skus", crate::platform::exec::fake::ok("")),
-            ("az vm list-usage", crate::platform::exec::fake::ok("")),
-            ("terraform version", crate::platform::exec::fake::ok("")),
-            ("account show", ok("Pay-As-You-Go\n")),
-        ]);
+        let tools = Tools::strict_rules(&crate::platform::exec::fake::azure_signed_in());
         let result = test_connection(&t.dirs(), &az).await.unwrap();
         assert!(tools.called("az account show"), "{:?}", tools.calls());
         assert!(!result.checks.is_empty());

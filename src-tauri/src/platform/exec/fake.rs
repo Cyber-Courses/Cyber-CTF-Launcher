@@ -39,6 +39,12 @@ pub fn fail(stderr: impl Into<String>) -> Option<Reply> {
     Some(Reply::Fail(stderr.into()))
 }
 
+/// The Azure CLI as testing an Azure account reads it: signed in to the "Pay-As-You-Go"
+/// subscription, with no VM size or usage listed, and Terraform there.
+pub fn azure_signed_in() -> [(&'static str, Option<Reply>); 4] {
+    [("az vm list-skus", ok("")), ("az vm list-usage", ok("")), ("terraform version", ok("")), ("account show", ok("Pay-As-You-Go\n"))]
+}
+
 /// What a scripted call got: the script's reply, or nothing (the tool is missing).
 enum Scripted {
     Reply(Reply),
