@@ -128,6 +128,10 @@ isothrum-runner = "3.0.0"
 # SQLite file in WAL mode, every change a transaction. Bundled, so every platform runs the same
 # SQLite; the same version as the runner's store, which links the same library.
 rusqlite = { version = "0.41", features = ["bundled"] }
+# The Isothrum runner service (`run_service::host`): this executable, run as `serve --home <home>`,
+# is the service of a home; the app and the command line reach it through its client.
+isothrum-service = "3.0.0"
+isothrum-client = "3.0.0"
 # The in-app terminal's pseudo-terminal (`terminal`).
 portable-pty = "0.9"
 tauri-plugin-dialog = "2"

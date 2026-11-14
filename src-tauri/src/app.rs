@@ -114,6 +114,18 @@ pub fn run() -> tauri::Result<()> {
 /// on `PATH` too, for the deploy workers and the labs' runs.
 #[allow(clippy::needless_pass_by_value, reason = "taking the token ends the start's claim to be the only thread")]
 fn start(only: platform::sys::SingleThreaded) -> Started {
+    // `<exe> serve --home <home>`: this process is the runner service of that home (see
+    // `run_service::host`), nothing of the app starts.
+    if let Some(serve) = crate::run_service::host::request(std::env::args()) {
+        let code = match serve {
+            Ok(serve) => crate::run_service::host::main(serve),
+            Err(why) => {
+                eprintln!("{why}");
+                2
+            }
+        };
+        std::process::exit(code);
+    }
     crate::runtime::server::connection_test::mark_started();
     // One context for whichever role this process plays. Its main window gets the app's frame
     // (none on Linux and Windows) before it is created.
