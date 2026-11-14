@@ -4272,8 +4272,8 @@ areas:
           unit:
             - src-tauri/src/app/deploy_worker/process.rs > a_clock_jump_leaves_a_live_worker_alive_and_a_recycled_pid_still_dead
             - src-tauri/src/app/deploy_worker/process.rs > a_live_worker_is_alive_only_with_its_own_start_time
-            - src-tauri/src/app/deploy_worker/process/identity.rs > a_proc_stat_line_gives_its_start_in_ticks_since_boot
-            - src-tauri/src/app/deploy_worker/process/identity.rs > a_process_keeps_its_identity_and_another_has_its_own
+            - src-tauri/src/platform/identity.rs > a_proc_stat_line_gives_its_start_in_ticks_since_boot
+            - src-tauri/src/platform/identity.rs > a_process_keeps_its_identity_and_another_has_its_own
         gaps:
           integration: "no scenario sets the clock: rig proposal resilience-clock-jump (+1 h mid-start, Linux)"
 

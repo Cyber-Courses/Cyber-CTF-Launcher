@@ -73,5 +73,9 @@ export function useRemoveLab(lab: Lab, changed: string, onRemoved: () => void) {
       setRemoving(false);
     }
   });
-  return { installed: installed === true, removing, remove: removal.run };
+  // A click handler hands its event on: the removal takes nothing.
+  const remove = () => {
+    removal.run();
+  };
+  return { installed: installed === true, removing, remove };
 }
