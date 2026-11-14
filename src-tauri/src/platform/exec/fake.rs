@@ -259,9 +259,10 @@ impl Drop for Tools {
         STATE.with(|s| *s.borrow_mut() = None);
         SET.with(|s| s.set(None));
         let unmet = self.1.as_ref().map(|strict| strict.unmet()).unwrap_or_default();
-        if !unmet.is_empty() && !std::thread::panicking() {
-            panic!("the scripted tools weren't run as scripted:\n{}\ncalls made:\n{}", unmet.join("\n"), self.calls().join("\n"));
+        if std::thread::panicking() {
+            return;
         }
+        assert!(unmet.is_empty(), "the scripted tools weren't run as scripted:\n{}\ncalls made:\n{}", unmet.join("\n"), self.calls().join("\n"));
     }
 }
 
@@ -404,6 +405,15 @@ mod tests {
     }
 
     #[test]
+    fn a_call_made_more_often_than_its_count_panics_when_the_tools_go() {
+        let tools = Tools::script().expect_times("vagrant status", 1, ok("")).build();
+        call(&tools, "vagrant status");
+        call(&tools, "vagrant status");
+        let message = panic_of(move || drop(tools));
+        assert!(message.contains("`vagrant status` was expected Exactly(1), made 2 time(s)"), "{message}");
+    }
+
+    #[test]
     fn two_expectations_matching_a_call_equally_panic() {
         let tools = Tools::script().allow("docker * ps", ok("a")).allow("docker compose *", ok("b")).build();
         let message = panic_of(|| drop(call(&tools, "docker compose ps")));
@@ -417,6 +427,6 @@ mod tests {
         call(&tools, "docker compose -p lab up");
         call(&tools, "docker info");
         assert_eq!(tools.made("docker compose * up"), [vec!["compose", "-p", "lab", "up"]]);
-        assert!(tools.made("dockerd").is_empty());
+        assert_eq!(tools.made("dockerd"), Vec::<Vec<String>>::new());
     }
 }
