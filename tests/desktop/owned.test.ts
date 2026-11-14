@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -224,16 +223,7 @@ describe("the run's downloads", () => {
 });
 
 describe("the command line", () => {
-  it("lists nothing as the run's for a run with no lab, and refuses a missing folder", () => {
-    const root = run();
-    const script = join(import.meta.dirname, "lib", "owned.mjs");
-    // Whatever Docker runs here, none of it is the run's: the run installed no lab.
-    const r = spawnSync(process.execPath, [script, "projects", root], { encoding: "utf8" });
-    expect(r.status).toBe(0);
-    expect(r.stdout).not.toMatch(/^ours/m);
-    expect(spawnSync(process.execPath, [script, "projects"], { encoding: "utf8" }).status).toBe(2);
-  });
-
+  // Its run against this machine's Docker is owned.cli.test.ts, in the opt-in harness.
   it("finds the run's folder in CYBERCTF_WDIO_ROOT", () => {
     expect(runRoot({ CYBERCTF_WDIO_ROOT: "/tmp/run" })).toBe("/tmp/run");
     expect(runRoot({})).toBeNull();

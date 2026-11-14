@@ -6,7 +6,13 @@ import { configDefaults, defineConfig } from "vitest/config";
  * in child processes, with real timers and caps, so it takes seconds per case and slows down
  * with the host's load. They are opt-in: `pnpm test:harness` (vitest.harness.config.mts).
  */
-export const HARNESS = ["tests/desktop/run.test.ts", "tests/desktop/host.test.ts", "tests/integration/run.test.ts", "tests/audit/kinds.test.ts"];
+export const HARNESS = [
+  "tests/desktop/run.test.ts",
+  "tests/desktop/owned.cli.test.ts",
+  "tests/desktop/host.test.ts",
+  "tests/integration/run.test.ts",
+  "tests/audit/kinds.test.ts",
+];
 
 // Unit tests for the launcher's frontend logic (stores, pure helpers), the repository's scripts and
 // the test runners under tests/. Node environment by default; component tests opt into jsdom with a `// @vitest-environment jsdom` docblock.
