@@ -99,7 +99,7 @@ where
     let ran = match conn.provider {
         // Boxed: a whole lab's run on the server makes a large future.
         Provider::Proxmox => Box::pin(lab_run::prepared_test(&r, proxmox::prepare(dirs, id, &conn, &work), proxmox::course(&conn))).await,
-        Provider::VmwareEsxi => Box::pin(lab_run::prepared_test(&r, async { esxi::prepare(dirs, id, &conn, &work) }, esxi::course(&conn))).await,
+        Provider::VmwareEsxi => Box::pin(lab_run::prepared_test(&r, async { esxi::prepare(dirs, id, &conn, &work) }, esxi::course(dirs, id, &conn))).await,
         Provider::Aws => Ran::nothing(Error::Invalid("the VM test is for server hosts; AWS labs are billed, so it isn't run as a test".into())),
         _ => Ran::nothing(Error::Invalid("the VM test runs only on a Proxmox or ESXi host".into())),
     };
