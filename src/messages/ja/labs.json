@@ -368,7 +368,16 @@
     "copySecret": "{name} をコピー",
     "nothingExposed": "ラボはクラウドアカウントで稼働中です。ここに表示するものは公開されていません。",
     "billedEstimate": "あなたへの請求: {cost}（ラボの見積もり）。",
-    "billedWhileRunning": "実行中はクラウドアカウントに課金されます。"
+    "billedWhileRunning": "実行中はクラウドアカウントに課金されます。",
+    "consent": {
+      "agree": "このラボが独自の Terraform コードを、{credentials} を使ってこのコンピューターで実行することに同意します。",
+      "why": "このコードはラボの作者が書いたものです。ラボの作成に限らず、この認証情報で許されることは何でもこのアカウントで実行できます。ラボを信頼できる場合にのみ、できればラボ専用のアカウントで開始してください。",
+      "awsKeys": "{name} のアクセスキー {key}",
+      "awsCli": "{name} の AWS CLI の認証情報（プロファイル {profile}）",
+      "azure": "{name} のサブスクリプション {subscription} での Azure CLI のサインイン",
+      "gcp": "{name} の請求先アカウント {account} での gcloud のサインイン",
+      "stored": "{name} に保存された認証情報"
+    }
   },
   "objectives": {
     "title": "目標",

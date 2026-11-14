@@ -8,7 +8,7 @@ import { RunOnDialog, RunOnPicker } from "@/features/labs/run-on";
 import type { RunTarget } from "@/features/labs/run-target";
 import type { RunTargetChoice } from "@/features/labs/lab-detail/use-run-target";
 import type { Lab } from "@/features/labs/use-labs";
-import { CloudLaunchNote, type CloudPreviewRead } from "@/features/labs/cloud-panel";
+import { CloudLaunchNote, useCloudConsent, type CloudPreviewRead } from "@/features/labs/cloud-panel";
 import { cloudNames } from "@/features/labs/lab-runtime";
 import { joinOr } from "@/features/labs/lab-readiness";
 import { serverOpenSetup } from "@/lib/tauri";
@@ -112,7 +112,8 @@ function StartDialog({
   onStart,
 }: Pick<StartLabProps, "lab" | "run" | "isDocker" | "busy" | "dockerRunning" | "onStart"> & { cloud: StartLabProps["cloud"]; onClose: () => void }) {
   const t = useT();
-  const footer = <StartFooter run={run} cloudGated={!!cloud} onClose={onClose} onStart={onStart} />;
+  const { agreed, consent } = useCloudConsent(cloud ? run.pickedAccount : undefined);
+  const footer = <StartFooter run={run} cloudGated={!!cloud} agreed={agreed} onClose={onClose} onStart={onStart} />;
   return (
     <RunOnDialog onClose={onClose} footer={footer}>
       {run.steps.step === "ports" ? (
@@ -150,6 +151,7 @@ function StartDialog({
       {cloud && (
         <div className="mt-4">
           <CloudLaunchNote read={cloud} autoStopHours={run.pickedAccount?.autoStopHours ?? null} />
+          {consent}
         </div>
       )}
     </RunOnDialog>
@@ -157,15 +159,17 @@ function StartDialog({
 }
 
 /** The dialog's actions: Back (off the places step), Cancel, and Start. Start waits for a cloud
- *  account to be picked (`cloudGated`). */
+ *  account to be picked and the player's consent to its credentials' use (`cloudGated`, `agreed`). */
 function StartFooter({
   run,
   cloudGated,
+  agreed,
   onClose,
   onStart,
 }: {
   run: RunTargetChoice;
   cloudGated: boolean;
+  agreed: boolean;
   onClose: () => void;
   onStart: (t: RunTarget) => void;
 }) {
@@ -183,7 +187,7 @@ function StartFooter({
       <Button
         variant="primary"
         size="sm"
-        disabled={cloudGated && !run.pickedAccount}
+        disabled={cloudGated && (!run.pickedAccount || !agreed)}
         onClick={() => {
           run.dontAskAgain.commit();
           onStart(run.chosen());
