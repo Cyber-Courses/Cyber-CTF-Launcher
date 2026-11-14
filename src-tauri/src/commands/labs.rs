@@ -15,7 +15,7 @@ use crate::run_service::{self, AttachPick, OperationId, Request};
 use crate::runtime::attack_box::AttackStatus;
 use crate::runtime::paths::{installed_lab_dir, lab_dir, local_runtime};
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Park, Runtime, attack_box, cloud_services, docker, lab, start_place, status, terminal_launch};
+use crate::runtime::{LabStatus, Park, Runtime, attack_box, docker, lab, start_place, status, terminal_launch};
 
 /// Starts a lab (see [`labs::prepare_launch`]): the operation's id, its log and end as run events.
 #[tauri::command]
@@ -200,8 +200,26 @@ pub struct WatchedLab {
 /// Before a cloud-services lab starts: its cloud, its cost estimate, what it asks for at launch
 /// and what it exposes, from its spec at the catalogue's pinned commit. None for other labs.
 #[tauri::command]
-pub async fn lab_cloud_preview(app: AppHandle, id: String, source: LabSource) -> Result<Option<cloud_services::Preview>> {
-    cloud_services::preview_at(&AppDirs::from(&app), &id, source.checked()).await
+#[cfg(feature = "cloud-services")]
+pub async fn lab_cloud_preview(app: AppHandle, id: String, source: LabSource) -> Result<Option<crate::runtime::Preview>> {
+    crate::runtime::cloud_services::preview_at(&AppDirs::from(&app), &id, source.checked()).await
+}
+
+/// [`lab_cloud_preview`] in a build without the `cloud-services` feature: none, as for a lab of
+/// another kind.
+#[tauri::command]
+#[cfg(not(feature = "cloud-services"))]
+pub async fn lab_cloud_preview(app: AppHandle, id: String, source: LabSource) -> Result<Option<crate::runtime::Preview>> {
+    let _ = (app, source);
+    crate::runtime::validate_id(&id)?;
+    Ok(None)
+}
+
+/// Whether this build runs labs of their own cloud services (the `cloud-services` feature): the
+/// webview offers such labs, and the filter for them, only when it does.
+#[tauri::command]
+pub fn cloud_services_supported() -> bool {
+    cfg!(feature = "cloud-services")
 }
 
 /// A lab's minimum-to-run system requirements (CPU, memory, disk), as a lightest-to-heaviest
@@ -358,9 +376,8 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 mod tests {
     use super::{AttachPick, LabSource, check_image, valid_machine_name};
     use super::{
-        attack_box_attach, attack_box_detach, attack_box_sign_in, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_cloud_preview,
-        lab_default_place, lab_installed, lab_launch, lab_launch_local, lab_park, lab_provision, lab_remove, lab_resume, lab_run_options, lab_status, lab_stop,
-        lab_tools,
+        attack_box_attach, attack_box_detach, attack_box_sign_in, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_default_place,
+        lab_installed, lab_launch, lab_launch_local, lab_park, lab_provision, lab_remove, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools,
     };
     use crate::commands::lines;
     use crate::platform::exec::fake::Tools;
@@ -442,8 +459,10 @@ mod tests {
         LabSource { repository: repository.into(), commit: commit.into() }
     }
 
+    #[cfg(feature = "cloud-services")]
     #[tokio::test]
     async fn the_preview_command_reads_the_installed_copy_and_refuses_a_source_the_catalogue_doesnt_allow() {
+        use super::lab_cloud_preview;
         let t = TestApp::new();
         let commit = "0123456789abcdef0123456789abcdef01234567";
         let spec = "version: 1\nname: goat\ncloud:\n  provider: aws\n  terraform: terraform\n  hourly_usd: 0.02\n";

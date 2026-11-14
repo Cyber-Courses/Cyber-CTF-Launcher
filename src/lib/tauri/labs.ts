@@ -81,6 +81,9 @@ export type {
   TermEvent,
 };
 
+/** Whether this build runs labs of their own cloud services (the core's `cloud-services` feature). */
+export const cloudServicesSupported = () => invoke<boolean>("cloud_services_supported");
+
 /** A cloud lab's cost and inputs before it starts; null for other labs. */
 export const labCloudPreview = (id: string, repository: string, commit: string) =>
   invoke<CloudPreview | null>("lab_cloud_preview", { id, source: { repository, commit } });

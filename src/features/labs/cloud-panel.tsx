@@ -4,7 +4,7 @@ import { CopyValue } from "@/components/ui/copy-value";
 import { SecretValue } from "@/components/ui/secret-value";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { labCloudPreview, type CloudPreview, type LabOutput } from "@/lib/tauri";
+import { cloudServicesSupported, labCloudPreview, type CloudPreview, type LabOutput } from "@/lib/tauri";
 import { useT, type T } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
 import { useRead, valueOf } from "@/lib/use-read";
@@ -18,7 +18,7 @@ export function costEstimate(t: T, hourlyUsd: number | null | undefined, autoSto
 
 /** A cloud lab's preview as read: its cost and inputs (null until read, or for a lab that isn't
  *  cloud services), or why it couldn't be read. */
-export type CloudPreviewRead = { preview: CloudPreview | null; error: string | null };
+export type CloudPreviewRead = { preview: CloudPreview | null; error: string | null; supported: boolean };
 
 /** A cloud lab's cost and inputs, from its spec at the catalogue's commit; a failed read is kept
  *  as its reason, never taken for a lab without an estimate. */
@@ -27,7 +27,10 @@ export function useCloudPreview(labId: string, rt: LabRuntimeInfo | null): Cloud
   const commit = rt?.commit;
   const key = rt?.runtime === "CLOUD" && repository && commit ? `${labId}@${repository}/${commit}` : null;
   const read = useRead(key, () => labCloudPreview(labId, repository ?? "", commit ?? ""), "reading the cloud lab's preview");
-  return { preview: valueOf(read), error: read.state === "failed" ? read.error : null };
+  // A build without the core's `cloud-services` feature runs none: the page says so (supported
+  // until it answers, so a page never flashes the refusal).
+  const supported = useRead(key && "cloud-services", cloudServicesSupported, "asking whether this build runs cloud services");
+  return { preview: valueOf(read), error: read.state === "failed" ? read.error : null, supported: valueOf(supported) ?? true };
 }
 
 /** What the launch dialog says of the estimate: the cost, that the estimate couldn't be read and

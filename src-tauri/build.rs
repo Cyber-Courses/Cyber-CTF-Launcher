@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "aws_profiles",
     "azure_subscriptions",
     "busy_labs",
+    "cloud_services_supported",
     "run_events",
     "labs_watch",
     "cloud_login",

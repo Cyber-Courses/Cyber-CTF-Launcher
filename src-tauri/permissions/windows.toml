@@ -17,6 +17,7 @@ permissions = [
   "allow-auth-logout",
   "allow-auth-status",
   "allow-busy-labs",
+  "allow-cloud-services-supported",
   "allow-confirm-launch",
   "allow-docker-start-engine",
   "allow-docker-use-engine",
