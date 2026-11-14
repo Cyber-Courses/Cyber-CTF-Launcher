@@ -102,6 +102,16 @@ pub fn redact(line: &str) -> Cow<'_, str> {
             out = Cow::Owned(out.replace(secret.as_str(), REDACTED));
         }
     }
+    if let Cow::Owned(replaced) = by_pattern(&out) {
+        return Cow::Owned(replaced);
+    }
+    out
+}
+
+/// `text` with what the patterns take replaced by `[redacted]` (the secrets [`register`] was
+/// given aside); borrowed when they took nothing.
+fn by_pattern(text: &str) -> Cow<'_, str> {
+    let mut out = Cow::Borrowed(text);
     for (pattern, replace) in RULES.iter() {
         let replaced = match replace {
             Replace::With(replacement) => pattern.replace_all(&out, replacement.as_str()),
@@ -112,7 +122,11 @@ pub fn redact(line: &str) -> Cow<'_, str> {
                 })
             }
         };
-        if let Cow::Owned(replaced) = replaced {
+        // A match the rule kept as it was (a run of 40 characters that is no AWS secret) changes
+        // nothing: the text stays borrowed.
+        if let Cow::Owned(replaced) = replaced
+            && replaced != *out
+        {
             out = Cow::Owned(replaced);
         }
     }
@@ -219,12 +233,12 @@ mod tests {
             (format!("{begin}\n{body}\n{end}\nafter"), "[redacted]\nafter".to_owned()),
         ];
         for (line, expected) in cases {
-            assert_eq!(redact(&line), expected, "{line}");
+            assert_eq!(by_pattern(&line), expected, "{line}");
         }
         // A Git commit, a digest, a long base64 run: not an AWS secret.
         for kept in ["commit 0a2715b0a2715b0a2715b0a2715b0a2715b0a271", "sha256:ABCDEF0123456789ABCDEF0123456789ABCDEF01", &format!("{aws_secret}{aws_secret}")]
         {
-            assert!(matches!(redact(kept), Cow::Borrowed(_)), "{kept}");
+            assert!(matches!(by_pattern(kept), Cow::Borrowed(_)), "{kept}");
         }
     }
 
@@ -254,7 +268,7 @@ mod tests {
             "https://github.com/Cyber-Courses/Cyber-CTF-Launcher/releases/latest/download/latest.json",
             "$ pkexec env https_proxy=http://proxy.corp:3128 sh -c apt-get update",
         ] {
-            assert!(matches!(redact(line), Cow::Borrowed(_)), "{line}");
+            assert!(matches!(by_pattern(line), Cow::Borrowed(_)), "{line}");
         }
     }
 }
