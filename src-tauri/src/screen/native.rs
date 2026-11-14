@@ -113,27 +113,39 @@ pub(crate) async fn run(program: &Path, args: &[String]) -> Result<()> {
     if let Some(scripted) = crate::platform::exec::fake::answer_step(&program.to_string_lossy(), args, &mut |_| {}) {
         return scripted;
     }
+    run_within(program, args, FAILS_WITHIN).await
+}
+
+/// [`run`], the program given `within` to fail.
+async fn run_within(program: &Path, args: &[String], within: Duration) -> Result<()> {
+    use tokio::io::AsyncReadExt as _;
     let name = program.file_name().map_or_else(|| program.display().to_string(), |n| n.to_string_lossy().into_owned());
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| Error::Invalid(format!("couldn't open {name}: {e}")))?;
-    let stderr = child.stderr.take();
-    match tokio::time::timeout(FAILS_WITHIN, child.wait()).await {
+    // Read as it comes, for as long as the program runs: a pipe nobody reads fills up and blocks
+    // it, and one whose reading end is closed kills it (SIGPIPE) at its next warning.
+    let mut stderr = child.stderr.take();
+    let said = tokio::spawn(async move {
+        let mut bytes = Vec::new();
+        if let Some(err) = stderr.as_mut() {
+            let _ = err.read_to_end(&mut bytes).await;
+        }
+        String::from_utf8_lossy(&bytes).into_owned()
+    });
+    match tokio::time::timeout(within, child.wait()).await {
         Ok(Ok(status)) if !status.success() => {
-            let mut said = String::new();
-            if let Some(mut err) = stderr {
-                use tokio::io::AsyncReadExt as _;
-                let _ = err.read_to_string(&mut said).await;
-            }
+            let said = said.await.unwrap_or_default();
             let said = said.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("it failed").to_owned();
             Err(Error::Invalid(format!("{name} couldn't open the VM: {said}")))
         }
         Ok(Ok(_)) => Ok(()),
         Ok(Err(e)) => Err(Error::Invalid(format!("couldn't open {name}: {e}"))),
         Err(_) => {
-            // Still open (a viewer's window): reaped once it ends.
+            // Still open (a viewer's window): reaped once it ends, its error output read until then.
             tokio::spawn(async move {
                 let _ = child.wait().await;
+                let _ = said.await;
             });
             Ok(())
         }
@@ -224,5 +236,33 @@ mod tests {
         drop(tools);
         let _ok = crate::platform::exec::fake::Tools::rules(&[]);
         run(Path::new("/bin/virt-viewer"), &["lab_web".into()]).await.unwrap();
+    }
+    /// Regression: a viewer left running had its error output's pipe closed under it, so the
+    /// first warning it printed after the launcher stopped waiting killed it (SIGPIPE): the VM's
+    /// window closed by itself.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_viewer_left_running_survives_printing_warnings() {
+        let dir = crate::testing::temp_dir("native-viewer");
+        let alive = dir.join("alive");
+        let script = format!("sleep 0.5; echo 'Gtk-WARNING: a late warning' >&2; echo yes > '{}'", alive.display());
+        run_within(Path::new("/bin/sh"), &["-c".into(), script], Duration::from_millis(100)).await.unwrap();
+        let mut seen = false;
+        for _ in 0..60 {
+            if std::fs::read_to_string(&alive).is_ok_and(|s| s.trim() == "yes") {
+                seen = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(seen, "the viewer was killed by its first warning");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_program_that_fails_in_time_says_its_last_line() {
+        let err =
+            run_within(Path::new("/bin/sh"), &["-c".into(), "echo first >&2; echo 'no such VM' >&2; exit 1".into()], Duration::from_secs(5)).await.unwrap_err();
+        assert_eq!(err.to_string(), "sh couldn't open the VM: no such VM");
     }
 }
