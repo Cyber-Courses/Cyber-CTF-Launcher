@@ -10,7 +10,7 @@ mod account;
 pub(crate) mod app;
 mod cloud;
 pub(crate) mod labs;
-mod machine;
+pub(crate) mod machine;
 mod screen;
 pub(crate) mod server;
 mod setup_window;

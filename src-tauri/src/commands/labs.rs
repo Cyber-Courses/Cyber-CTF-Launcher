@@ -47,9 +47,34 @@ pub async fn lab_launch(
 /// [`labs::local_id`]): the operation's id.
 #[tauri::command]
 pub async fn lab_launch_local(app: AppHandle, path: String) -> Result<OperationId> {
-    let src = PathBuf::from(path);
+    run_service::of(&app).start(local_request(PathBuf::from(path))?)
+}
+
+/// The request that imports and starts the lab in folder `src`, under the id it gets here
+/// ([`labs::local_id`]): refused for a folder that isn't a lab.
+pub(crate) fn local_request(src: PathBuf) -> Result<Request> {
     let lab_id = labs::local_id(&src)?;
-    run_service::of(&app).start(Request::LaunchLocal { lab_id, src })
+    Ok(Request::LaunchLocal { lab_id, src })
+}
+
+/// Starts `request` on `service` once it passes the checks every caller of the run service makes
+/// (the app's commands, the command line): an operation on an installed lab needs it installed,
+/// and a machine name or an image that could reach a command line is refused. The operation's id.
+pub(crate) fn start_checked(dirs: &AppDirs, service: &dyn run_service::RunService, request: Request) -> Result<OperationId> {
+    if !matches!(request, Request::Launch(_) | Request::LaunchLocal { .. }) {
+        lab_dir(dirs, request.lab_id())?;
+    }
+    match &request {
+        Request::Provision { machine: Some(m), .. } if !valid_machine_name(m) => return Err(Error::Invalid(format!("invalid machine name `{m}`"))),
+        Request::AttachBox { pick: AttachPick { image: Some(image), .. }, .. } => check_image(image)?,
+        _ => {}
+    }
+    service.start(request)
+}
+
+/// Starts `request` on the app's run service, checked ([`start_checked`]).
+fn start(app: &AppHandle, request: Request) -> Result<OperationId> {
+    start_checked(&AppDirs::from(app), &*run_service::of(app), request)
 }
 
 /// The labs imported from a folder installed here, each with what its own `.ctf/` folder says
@@ -70,8 +95,12 @@ pub async fn lab_installed(app: AppHandle, id: String) -> Result<bool> {
 /// runs on it (see [`labs::remove`]). What couldn't be deleted is in the answer.
 #[tauri::command]
 pub async fn lab_remove(app: AppHandle, id: String) -> Result<labs::remove::Removal> {
-    let dirs = AppDirs::from(&app);
-    labs::remove::remove(&dirs, &id, || deploy_worker::idle_files(&dirs, &id)).await
+    remove_in(&AppDirs::from(&app), &id).await
+}
+
+/// [`lab_remove`], in the app whose folders are `dirs`.
+pub(crate) async fn remove_in(dirs: &AppDirs, id: &str) -> Result<labs::remove::Removal> {
+    labs::remove::remove(dirs, id, || deploy_worker::idle_files(dirs, id)).await
 }
 
 /// The labs with any operation in flight, in this process or a deploy worker: what an update
@@ -104,36 +133,27 @@ fn valid_machine_name(m: &str) -> bool {
 /// [`labs::stop_lab_retiring_colocation`]): the operation's id.
 #[tauri::command]
 pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime) -> Result<OperationId> {
-    lab_dir(&AppDirs::from(&app), &id)?;
-    run_service::of(&app).start(Request::Stop { lab_id: id, runtime })
+    start(&app, Request::Stop { lab_id: id, runtime })
 }
 
 /// Pauses (state saved) or shuts down (powered off) a lab on this machine, keeping its machines
 /// so it resumes as it was: the operation's id.
 #[tauri::command]
 pub async fn lab_park(app: AppHandle, id: String, runtime: Runtime, mode: Park) -> Result<OperationId> {
-    lab_dir(&AppDirs::from(&app), &id)?;
-    run_service::of(&app).start(Request::Park { lab_id: id, runtime, mode })
+    start(&app, Request::Park { lab_id: id, runtime, mode })
 }
 
 /// Runs a VM lab's provisioners again, on one machine (`machine`) or all of them: the operation's
 /// id.
 #[tauri::command]
 pub async fn lab_provision(app: AppHandle, id: String, runtime: Runtime, machine: Option<String>) -> Result<OperationId> {
-    lab_dir(&AppDirs::from(&app), &id)?;
-    if let Some(m) = &machine
-        && !valid_machine_name(m)
-    {
-        return Err(Error::Invalid(format!("invalid machine name `{m}`")));
-    }
-    run_service::of(&app).start(Request::Provision { lab_id: id, runtime, machine })
+    start(&app, Request::Provision { lab_id: id, runtime, machine })
 }
 
 /// Brings a parked lab back (or the machines of a lab that went down): the operation's id.
 #[tauri::command]
 pub async fn lab_resume(app: AppHandle, id: String, runtime: Runtime) -> Result<OperationId> {
-    lab_dir(&AppDirs::from(&app), &id)?;
-    run_service::of(&app).start(Request::Resume { lab_id: id, runtime })
+    start(&app, Request::Resume { lab_id: id, runtime })
 }
 
 /// What lab `id` looks like right now, wherever it runs; not running when its last launch or
@@ -143,10 +163,14 @@ pub async fn lab_resume(app: AppHandle, id: String, runtime: Runtime) -> Result<
 /// its download, as a failure of its own ("lab … is not installed").
 #[tauri::command]
 pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<LabStatus> {
-    let dirs = AppDirs::from(&app);
-    let Some(dir) = installed_lab_dir(&dirs, &id)? else { return Ok(LabStatus::default()) };
-    let failed = deploy_worker::last_deploy_failed(&dirs, &id);
-    Ok(status::status(&dirs, &dir, &id, runtime).await?.unless_launch_failed(failed))
+    status_in(&AppDirs::from(&app), &id, runtime).await
+}
+
+/// [`lab_status`], in the app whose folders are `dirs`.
+pub(crate) async fn status_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<LabStatus> {
+    let Some(dir) = installed_lab_dir(dirs, id)? else { return Ok(LabStatus::default()) };
+    let failed = deploy_worker::last_deploy_failed(dirs, id);
+    Ok(status::status(dirs, &dir, id, runtime).await?.unless_launch_failed(failed))
 }
 
 /// Before a cloud-services lab starts: its cloud, its cost estimate, what it asks for at launch
@@ -210,7 +234,12 @@ pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, sourc
 /// lab run as one VM per machine included); none beside cloud services.
 #[tauri::command]
 pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<Vec<lab::Observer>> {
-    let dir = lab_dir(&AppDirs::from(&app), &id)?;
+    tools_in(&AppDirs::from(&app), &id, runtime)
+}
+
+/// [`lab_tools`], in the app whose folders are `dirs`.
+pub(crate) fn tools_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<Vec<lab::Observer>> {
+    let dir = lab_dir(dirs, id)?;
     match local_runtime(&dir, runtime) {
         Runtime::Cloud => Ok(Vec::new()),
         form => lab::tools(&dir, form),
@@ -232,9 +261,13 @@ pub async fn running_labs(app: AppHandle) -> Vec<String> {
 /// lab), or on an ESXi host (from its controller).
 #[tauri::command]
 pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<docker::Check> {
-    let dirs = AppDirs::from(&app);
-    let dir = lab_dir(&dirs, &id)?;
-    match crate::runtime::host::locate(&dirs, &dir, &id, runtime)? {
+    check_in(&AppDirs::from(&app), &id, runtime).await
+}
+
+/// [`lab_check`], in the app whose folders are `dirs`.
+pub(crate) async fn check_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<docker::Check> {
+    let dir = lab_dir(dirs, id)?;
+    match crate::runtime::host::locate(dirs, &dir, id, runtime)? {
         Some(host) => host.check().await,
         None => Ok(docker::Check::default()),
     }
@@ -254,10 +287,14 @@ pub(crate) async fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime
 /// status future is large, and awaiting it inline would make every caller's future large too.
 #[tauri::command]
 pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime) -> Result<AttackStatus> {
+    box_status_in(&AppDirs::from(&app), &id, runtime).await
+}
+
+/// [`attack_box_status`], in the app whose folders are `dirs`.
+pub(crate) async fn box_status_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<AttackStatus> {
     Box::pin(async move {
-        let dirs = AppDirs::from(&app);
-        let dir = lab_dir(&dirs, &id)?;
-        match attack_box::locate(&dirs, &dir, &id, runtime)? {
+        let dir = lab_dir(dirs, id)?;
+        match attack_box::locate(dirs, &dir, id, runtime)? {
             Some(placed) => placed.status().await,
             None => Ok(AttackStatus::default()),
         }
@@ -270,19 +307,14 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime) -> 
 /// operation's id. A container box pulls its image on the first add.
 #[tauri::command]
 pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pick: AttachPick) -> Result<OperationId> {
-    lab_dir(&AppDirs::from(&app), &id)?;
-    if let Some(image) = &pick.image {
-        check_image(image)?;
-    }
-    run_service::of(&app).start(Request::AttachBox { lab_id: id, runtime, pick })
+    start(&app, Request::AttachBox { lab_id: id, runtime, pick })
 }
 
 /// Takes the attack box back out of the running lab, leaving the rest of the lab up: the
 /// operation's id.
 #[tauri::command]
 pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime) -> Result<OperationId> {
-    lab_dir(&AppDirs::from(&app), &id)?;
-    run_service::of(&app).start(Request::DetachBox { lab_id: id, runtime })
+    start(&app, Request::DetachBox { lab_id: id, runtime })
 }
 
 /// How the player signs in to lab `id`'s attack box where it asks for a password (its screen's
@@ -290,8 +322,12 @@ pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime) -> 
 /// has no box, or the launcher keeps no password for it. The lab page's Credentials row.
 #[tauri::command]
 pub async fn attack_box_sign_in(app: AppHandle, id: String) -> Result<Option<attack_box::SignIn>> {
-    let dir = lab_dir(&AppDirs::from(&app), &id)?;
-    attack_box::sign_in(&dir, None)
+    sign_in_in(&AppDirs::from(&app), &id)
+}
+
+/// [`attack_box_sign_in`], in the app whose folders are `dirs`.
+pub(crate) fn sign_in_in(dirs: &AppDirs, id: &str) -> Result<Option<attack_box::SignIn>> {
+    attack_box::sign_in(&lab_dir(dirs, id)?, None)
 }
 
 /// Opens the attack box shell of a running lab in the system terminal, on the command the runner

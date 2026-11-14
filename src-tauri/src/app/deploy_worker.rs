@@ -18,7 +18,7 @@ mod worker;
 use serde::{Deserialize, Serialize};
 
 pub use process::{kill_and_wait, running, running_jobs};
-pub use worker::worker_main;
+pub use worker::{headless_main, worker_main};
 
 use crate::error::{Code, Error, Result};
 use crate::platform::AppDirs;
@@ -151,6 +151,22 @@ pub async fn follow(dirs: &AppDirs, id: &str, log: impl FnMut(String)) -> Result
     let files = files::of(dirs, id)?;
     let worker = files.worker().ok_or_else(|| Error::Invalid(format!("no deploy worker runs on lab {id}")))?;
     progress::tail(&process::Spawned { files, worker, exit: process::Exit::default() }, log).await
+}
+
+/// The log of the last worker run on lab `id` (the one running, else the last one that ran), and
+/// whether a worker runs on it now; an empty log when none ever ran.
+///
+/// # Errors
+///
+/// No data folder, or a log that can't be read.
+pub fn last_log(dirs: &AppDirs, id: &str) -> Result<(String, bool)> {
+    let f = files::of(dirs, id)?;
+    let running = f.worker().is_some_and(|w| process::alive(&w));
+    match std::fs::read_to_string(&f.log) {
+        Ok(text) => Ok((text, running)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((String::new(), running)),
+        Err(e) => Err(Error::Io(e)),
+    }
 }
 
 /// Held while a worker is checked for and started (see [`start_worker`]).
