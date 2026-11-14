@@ -12,6 +12,7 @@ pub mod atomic_file;
 pub mod clock;
 pub mod config;
 pub mod console;
+pub mod elevation;
 pub mod env_path;
 pub mod exec;
 pub mod fs;
@@ -62,7 +63,23 @@ impl AppDirs {
     pub fn cache(&self) -> Result<&Path> {
         self.cache.as_deref().ok_or_else(|| Error::Invalid("the app's cache folder is unknown".into()))
     }
+
+    /// The app's folders as Tauri resolves them for the app ([`APP_IDENTIFIER`]), worked out
+    /// without Tauri: what a process of the app's that runs without it (the command line, a
+    /// deploy worker started by it) shares with the app. An end-to-end run's app keeps them in
+    /// its own folder ([`test_root`]).
+    pub fn standard() -> AppDirs {
+        if let Some(root) = test_root::root() {
+            let app = test_root::app_dir(&root);
+            return AppDirs::new(Some(app.clone()), Some(app.join("caches")));
+        }
+        AppDirs::new(env_path::app_data_dir(APP_IDENTIFIER), env_path::app_cache_dir(APP_IDENTIFIER))
+    }
 }
+
+/// The app's identifier (`identifier` in tauri.conf.json, which a test holds it to): the name of
+/// its folders under the OS's data and cache folders.
+pub const APP_IDENTIFIER: &str = "org.cyberctf.desktop";
 
 /// The user's home folder (`USERPROFILE` on Windows, `HOME` elsewhere).
 pub fn home_dir() -> Option<PathBuf> {
@@ -143,6 +160,12 @@ pub async fn off_runtime<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_identifier_is_the_apps() {
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(config["identifier"], super::APP_IDENTIFIER);
+    }
+
     #[test]
     fn bytes_read_as_two_lowercase_hex_digits_each() {
         assert_eq!(super::hex(&[0x00, 0x0f, 0xab, 0xff]), "000fabff");

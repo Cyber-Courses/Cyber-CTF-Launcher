@@ -135,6 +135,19 @@ pub fn app_data_dir(identifier: &str) -> Option<PathBuf> {
     data.filter(|d| !d.as_os_str().is_empty()).map(|d| d.join(identifier))
 }
 
+/// The app cache folder of the app `identifier`, as Tauri resolves it (`app_cache_dir`: the OS's
+/// cache folder, then the identifier), for a process of the app's that runs without Tauri.
+pub fn app_cache_dir(identifier: &str) -> Option<PathBuf> {
+    let cache = if cfg!(target_os = "macos") {
+        super::home_dir().map(|h| h.join("Library").join("Caches"))
+    } else if cfg!(windows) {
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+    } else {
+        std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).filter(|d| d.is_absolute()).or_else(|| super::home_dir().map(|h| h.join(".cache")))
+    };
+    cache.filter(|d| !d.as_os_str().is_empty()).map(|d| d.join(identifier))
+}
+
 /// Merges the PATH an installer has since written to the registry (machine, then user), and
 /// the tool folders that exist now, into this process's PATH. Children inherit it, so a restart
 /// from the app keeps it too. Cheap (two registry reads): call before each machine check.
