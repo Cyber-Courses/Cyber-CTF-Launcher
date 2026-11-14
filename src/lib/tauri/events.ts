@@ -22,3 +22,12 @@ export const machineSetupStep = channel<SetupStepAsked>(EVENTS.machineSetupStep,
   if (typeof at !== "object" || at === null || !("step" in at) || typeof at.step !== "string") return DROP;
   return { step: at.step, provider: "provider" in at ? providerId(at.provider) : null };
 });
+
+/** A screen window's SSH tunnel ended on its own: the window's label, and why. */
+export type TunnelClosed = { label: string; reason: string };
+
+/** The console's SSH tunnel of a screen window closed (its `ssh` ended). */
+export const screenTunnelClosed = channel<TunnelClosed>(EVENTS.screenTunnelClosed, (p) => {
+  if (typeof p !== "object" || p === null || !("label" in p) || typeof p.label !== "string") return DROP;
+  return { label: p.label, reason: "reason" in p && typeof p.reason === "string" ? p.reason : "" };
+});
