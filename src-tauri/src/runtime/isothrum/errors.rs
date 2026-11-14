@@ -41,6 +41,7 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port: HostPort::new(port.get()), holder: None }),
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
+        RunnerError::ToolUnanswered { tool, reason, .. } if tool == "docker" => docker_unanswered(&reason),
         RunnerError::Timeout { step, timed_out } => timed_out_step(&step, &timed_out),
         // The lab's images, pulled before its containers start: a slow connection, not the
         // resources of Docker, the hypervisor or the server.
@@ -103,6 +104,7 @@ pub(crate) fn from_service(code: ErrorCode, message: &str, step: Option<&str>, d
     match detail.map(|d| &d.data) {
         Some(Detail::PortInUse { port, .. }) => Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: None }),
         Some(Detail::ToolMissing { tool }) => Error::coded(Code::ToolMissing { tool: tool.clone() }),
+        Some(Detail::ToolUnanswered { tool }) if tool == "docker" => docker_unanswered(message),
         Some(Detail::ToolTooOld { tool, found, required }) => {
             Error::coded(Code::ToolTooOld { tool: tool_name(tool), found: found.clone(), required: required.clone() })
         }
@@ -184,20 +186,18 @@ pub(crate) fn expired_sign_in(reason: &str, cloud: Option<Provider>) -> Option<E
     )))
 }
 
-/// A step's tool that ran and failed: Docker not answering its probe reads as the engine being
-/// stopped (or this account not allowed to use it); a cloud sign-in that ran out, as signing in
-/// again; an address block another network holds, as what to do about it; anything else, as the
-/// command that failed.
+/// Docker not answering the runner's probe (`tool_unanswered`), Docker's own words `said`: the
+/// engine stopped, or this account not allowed to use it.
+fn docker_unanswered(said: &str) -> Error {
+    if DockerSaid::is_refusal(&said.to_ascii_lowercase()) { crate::platform::exec::docker_denied_error() } else { Error::coded(Code::DockerNotRunning) }
+}
+
+/// A step's tool that ran and failed: a cloud sign-in that ran out reads as signing in again; an
+/// address block another network holds, as what to do about it; anything else, as the command
+/// that failed.
 fn tool_failed(step: &str, reason: &str) -> Error {
     if let Some(expired) = expired_sign_in(reason, None) {
         return expired;
-    }
-    if runner_said::docker_unanswered(step, reason) {
-        return if DockerSaid::is_refusal(&reason.to_ascii_lowercase()) {
-            crate::platform::exec::docker_denied_error()
-        } else {
-            Error::coded(Code::DockerNotRunning)
-        };
     }
     super::super::docker::explain_pool_overlap(Error::CommandFailed { command: format!("lab step {step}"), stderr: reason.to_owned() })
 }

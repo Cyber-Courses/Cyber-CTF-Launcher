@@ -17,10 +17,17 @@ fn a_taken_port_and_a_missing_tool_keep_the_codes_the_ui_knows() {
 
 #[test]
 fn docker_not_answering_its_probe_reads_as_a_stopped_engine() {
-    let down = RunnerError::ToolFailed { step: "tools".into(), reason: "`docker` doesn't answer: Cannot connect to the Docker daemon".into() };
-    assert_eq!(said(down).0, Code::DockerNotRunning);
-    let denied = RunnerError::ToolFailed { step: "tools".into(), reason: "`docker` doesn't answer: permission denied while trying to connect".into() };
-    assert!(matches!(said(denied).0, Code::DockerDenied { .. } | Code::DockerDeniedWindows { .. }));
+    let unanswered = |reason: &str| RunnerError::ToolUnanswered { step: "tools".into(), tool: "docker".into(), reason: reason.into() };
+    assert_eq!(said(unanswered("Cannot connect to the Docker daemon")).0, Code::DockerNotRunning);
+    assert!(matches!(said(unanswered("permission denied while trying to connect")).0, Code::DockerDenied { .. } | Code::DockerDeniedWindows { .. }));
+    // The service's answer: the code and its tool, the runner's whole message.
+    let served = |tool: &str| {
+        let e = RunnerError::ToolUnanswered { step: "tools".into(), tool: tool.into(), reason: "Cannot connect to the Docker daemon".into() };
+        from_service(e.code(), &e.to_string(), Some("tools"), e.detail().as_ref()).code()
+    };
+    assert_eq!(served("docker"), Code::DockerNotRunning);
+    // Another tool's silence isn't Docker's.
+    assert_ne!(served("podman"), Code::DockerNotRunning);
 }
 
 #[test]
