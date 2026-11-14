@@ -103,8 +103,9 @@ impl workloads::LabRuntime for AppHandle {
     }
 
     fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send {
-        let dirs = AppDirs::from(self);
-        async move { super::labs::stop_lab_ending_workers(&dirs, id, runtime, |_| {}).await }
+        let app = self.clone();
+        let request = crate::run_service::Request::Stop { lab_id: id.to_owned(), runtime };
+        async move { crate::run_service::run(&app, request).await }
     }
 }
 

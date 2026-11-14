@@ -112,9 +112,8 @@ export function LabNotices({ page, props: p }: { page: LabPage; props: LabDetail
           op={failure.op}
           message={failure.message}
           kind={s.failureKind}
-          holder={s.failureHolder}
-          // Random free ports fix a container clash here, but not a VM here (fixed forwarded ports)
-          // nor a server run: there the hint is to free the port, not to randomise it.
+          {...{ holder: s.failureHolder, operation: s.failureOperation }}
+          // Random free ports fix a container clash here, not a VM here (fixed forwarded ports) nor a server run: there, free the port.
           canRandomPorts={s.isDocker && !s.remote && s.place !== "local_vm"}
           stillUp={failure.op === "stop" && s.running}
           onOpenServer={openServer}

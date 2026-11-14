@@ -40,9 +40,9 @@ fn a_launch_goes_to_the_target_picked_on_the_website_while_it_is_set_up() {
     assert_eq!(gone.to_string(), "that host is no longer set up in the launcher");
     assert_eq!(picked_target(None, known).unwrap(), None);
     // Regression: saved hosts that can't be read said "no longer set up", as if it were gone.
-    let unreadable = |_: &str| Err(Error::Invalid("server.json: expected value".into()));
+    let unreadable = |_: &str| Err(Error::Invalid("the launcher's store: expected value".into()));
     let err = picked_target(Some("esxi-1"), unreadable).unwrap_err();
-    assert_eq!(err.to_string(), "server.json: expected value");
+    assert_eq!(err.to_string(), "the launcher's store: expected value");
 }
 
 #[tokio::test]

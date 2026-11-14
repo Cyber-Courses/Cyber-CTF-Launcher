@@ -440,7 +440,8 @@
       "disk": "Cette machine manque d’espace disque. Libérez-en (la page Machine liste les images gardées par les labs), puis réessayez.",
       "tool": "Un outil dont ce lab a besoin manque ici. Installez-le depuis la page Machine, puis réessayez.",
       "serverAuth": "Le serveur a refusé les identifiants que Cyber CTF a pour lui. Ouvrez ses réglages, saisissez son nouveau jeton ou mot de passe, puis réessayez."
-    }
+    },
+    "operationId": "Opération {id} : citez-la quand vous demandez de l’aide."
   },
   "offline": {
     "question": "Démarrer {title} hors ligne ?",

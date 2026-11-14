@@ -6,8 +6,8 @@
 //! on. Runs on startup and periodically while the app is open; a lab that expired while the app
 //! was closed is reaped at the next sweep.
 //!
-//! A reap that fails is never silent: it is logged, kept for the lab's page (a per-lab
-//! `reap-error` record, shown while the lab is past its stop time) and notified once per lab per
+//! A reap that fails is never silent: it is logged, kept for the lab's page (the launcher's store,
+//! `crate::store::autostop`, shown while the lab is past its stop time) and notified once per lab per
 //! sweep it newly fails on. A failure that never recovers on its own (expired credentials, a
 //! deleted API key) would otherwise leave the lab billing unnoticed.
 //!
@@ -18,7 +18,6 @@
 //! it by hand ([`handover_message`]), and the hand-over is tried again at every sweep.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use super::inflight::try_lock_lab;
 use super::providers::Provider;
@@ -30,10 +29,6 @@ use crate::platform::AppDirs;
 /// runner couldn't take). The app shell supplies a system notification; unit tests a no-op. This
 /// is the only thing the reaper reaches the UI for, so it stays domain and tauri-free.
 pub type Report = dyn Fn(&str, &str) + Send + Sync;
-
-/// Folder under the app data dir: one reap-error record per lab id the last sweep couldn't
-/// destroy (`{message, error}`). A later sweep that destroys the lab clears it.
-const REAP_ERRORS: &str = "reap-errors";
 
 /// Destroys every cloud lab the runner records as past its auto-stop (see the module), handing the
 /// launcher's own pre-runner deployments to the runner first.
@@ -48,7 +43,6 @@ pub async fn reap_expired_labs(dirs: &AppDirs, report: &Report) {
 /// lab destroyed (or no longer expired) has its record cleared.
 async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
     let Ok(home) = super::paths::runner_home(dirs) else { return };
-    let Ok(base) = dirs.data() else { return };
     // A connection that can't be read (the keychain refused, a server removed) leaves the lab
     // for a later sweep, said: silent, auto-stop would look as if it never ran.
     let account = |host: &str| match server::connection(dirs, host) {
@@ -72,40 +66,32 @@ async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
             return;
         }
     };
-    // The labs that failed last time, read before clearing: a lab that fails again isn't
-    // re-notified, and a lab destroyed this time (no new record) has its record go.
-    let dir = base.join(REAP_ERRORS);
-    let prior = failed_last_time(&dir);
-    // Not cleared, a destroyed lab's record would go on saying it couldn't be.
-    if let Err(e) = crate::platform::fs::remove_dir_if_present(&dir) {
-        log::warn!("auto-stop: couldn't clear the last sweep's failures in {}: {e}", dir.display());
-    }
+    // The labs that failed last time, read before replacing them: a lab that fails again isn't
+    // re-notified, and a lab destroyed this time (no new failure) has its record go.
+    let store = match crate::store::open(dirs) {
+        Ok(store) => store,
+        Err(e) => {
+            log::warn!("auto-stop: the last sweep's failures can't be kept: {e}");
+            return;
+        }
+    };
+    let prior: BTreeSet<String> = store.read(crate::store::autostop::failed).unwrap_or_default().into_iter().collect();
+    let mut kept = Vec::new();
     for (run, e) in failures {
         let id = super::docker::lab_of_project(&run).unwrap_or(&run).to_string();
         let message = format!("Auto-stop couldn't destroy {id}: {e}");
         log::warn!("{message}");
-        if let Err(w) = record_failure(&dir, &id, &e.to_wire(), &message) {
-            log::warn!("auto-stop: couldn't record the failure for {id}: {w}");
-        }
         if !prior.contains(&id) {
             report("Auto-stop failed", &message);
         }
+        if super::is_lab_id(&id) {
+            kept.push((id, message, e.to_wire()));
+        }
     }
-}
-
-/// The lab ids that had a reap-error record (the last sweep couldn't destroy them).
-fn failed_last_time(dir: &Path) -> BTreeSet<String> {
-    std::fs::read_dir(dir).into_iter().flatten().flatten().filter_map(|e| e.file_name().into_string().ok()).collect()
-}
-
-/// Keeps a failed reap of lab `id` for its page (`{message, error}`), under the reap-errors folder.
-fn record_failure(dir: &Path, id: &str, error: &Wire, message: &str) -> std::io::Result<()> {
-    if !super::is_lab_id(id) {
-        return Ok(());
+    // Not replaced, a destroyed lab's record would go on saying it couldn't be.
+    if let Err(e) = store.write(|tx| crate::store::autostop::replace(tx, &kept)) {
+        log::warn!("auto-stop: couldn't keep this sweep's failures: {e}");
     }
-    std::fs::create_dir_all(dir)?;
-    let record = serde_json::json!({ "message": message, "error": error });
-    std::fs::write(dir.join(id), record.to_string())
 }
 
 /// Why the auto-stop couldn't destroy cloud lab `id` the last time it tried, while the lab is
@@ -114,25 +100,11 @@ pub fn last_failure(dirs: &AppDirs, id: &str) -> Option<Wire> {
     if !super::is_lab_id(id) {
         return None;
     }
-    let base = dirs.data().ok()?;
-    let path = base.join(REAP_ERRORS).join(id);
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        // A record that is there but can't be read is a failure to say, not "no failure".
-        Err(e) => {
-            log::warn!("auto-stop: the last failure of {id} couldn't be read from {}: {e}", path.display());
-            return None;
-        }
-    };
-    let record: serde_json::Value = match serde_json::from_str(&text) {
-        Ok(record) => record,
-        Err(e) => {
-            log::warn!("auto-stop: the last failure of {id} in {} isn't JSON: {e}", path.display());
-            return None;
-        }
-    };
-    serde_json::from_value(record["error"].clone()).ok()
+    // A record that is there but can't be read is a failure to say, not "no failure".
+    crate::store::open(dirs).and_then(|store| store.read(|conn| crate::store::autostop::last(conn, id))).unwrap_or_else(|e| {
+        log::warn!("auto-stop: the last failure of {id} couldn't be read: {e}");
+        None
+    })
 }
 
 /// Hands the labs a player started on the launcher's own Terraform path (before the runner) to the

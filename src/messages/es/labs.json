@@ -440,7 +440,8 @@
       "disk": "Esta máquina se quedó sin espacio en disco. Libera algo (la página Máquina muestra las imágenes que guardan los labs) y reinténtalo.",
       "tool": "Falta aquí una herramienta que este lab necesita. Instálala desde la página Máquina y reinténtalo.",
       "serverAuth": "El servidor rechazó las credenciales que Cyber CTF tiene para él. Abre su configuración, introduce su nuevo token o contraseña y reinténtalo."
-    }
+    },
+    "operationId": "Operación {id}: cítela cuando pida ayuda."
   },
   "offline": {
     "question": "¿Iniciar {title} sin conexión?",

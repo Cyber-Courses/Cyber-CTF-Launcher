@@ -4,7 +4,7 @@ import { fail, send, sleep } from "@/lib/dev-mock/command";
 import { eventHandlers } from "@/lib/dev-mock/events";
 import { type Host, hostsOf, saveError, saveHosts } from "@/lib/dev-mock/hosts";
 import { catalogueQuery, defaultPlaceQuery, runOptionsQuery } from "@/lib/dev-mock/catalogue";
-import { labHandlers } from "@/lib/dev-mock/lab-ops";
+import { inFlight, labHandlers } from "@/lib/dev-mock/lab-ops";
 import type { BrowserHandler, Context } from "@/lib/dev-mock/live";
 import { machineHandlers } from "@/lib/dev-mock/machine";
 import { answer, UNMANAGED } from "@/lib/dev-mock/sample";
@@ -13,6 +13,7 @@ import { screenHandlers, terminalHandlers } from "@/lib/dev-mock/terminal";
 import type { Args } from "@/lib/dev-mock/types";
 import type { DeviceCode, ManagedSettings } from "@/lib/tauri";
 import type { CommandError } from "@/lib/tauri/generated";
+import { isOperation, replay, startOperation } from "@/lib/dev-mock/run-service";
 import { PROXMOX_PLACEMENT } from "@/lib/dev-mock/proxmox-sample";
 
 /** Every policy switch on (`managed`): an administrator manages this computer. */
@@ -150,6 +151,14 @@ const HANDLERS = new Map<string, BrowserHandler>(
 
 /** The browser preview's answer to `cmd`. */
 export async function browserAnswer(cmd: string, args: Args, ctx: Context): Promise<unknown> {
-  const handler = HANDLERS.get(cmd);
-  return handler ? await handler(args, ctx) : answer(cmd, args);
+  const handle = (a: Args) => {
+    const handler = HANDLERS.get(cmd);
+    return handler ? handler(a, ctx) : answer(cmd, a);
+  };
+  // The core's run service: an operation answers its id, its log and end are run events.
+  if (isOperation(cmd)) return startOperation(cmd, args, handle);
+  if (cmd === "run_events") {
+    return replay((args?.after as number | null) ?? null, inFlight(ctx));
+  }
+  return await handle(args);
 }

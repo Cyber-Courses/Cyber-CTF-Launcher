@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { invokeStreaming, invokeUnit } from "@/lib/tauri/invoke";
+import { awaitOperation } from "@/lib/tauri/run-events";
+
+export type { ActiveOperation } from "@/lib/tauri/run-events";
 import type {
-  ActiveOperation,
   Badge,
   CloudPreview,
   AttackStatus,
@@ -28,6 +30,7 @@ import type {
   LabControl,
   LabStatus,
   LabTool,
+  OperationId,
   Park,
   Provider,
   Runtime,
@@ -46,7 +49,6 @@ export { EMULATORS, LOCAL_PROVIDERS, PROVIDER_NAMES, PROVIDER_NAMES_ON } from "@
 export { DONE_MARK, FAILED_CODE, FAILED_MARK, FETCH_LINES, PREPARE_LINES } from "@/lib/tauri/generated/DeployLog";
 
 export type {
-  ActiveOperation,
   Badge,
   CloudPreview,
   AttackStatus,
@@ -102,16 +104,24 @@ export const labRunOptions = (id: string, runtime: Runtime, repository: string, 
 export const labRequirements = (id: string, repository: string, commit: string) =>
   invoke<LabRequirements | null>("lab_requirements", { id, source: { repository, commit } });
 
-export const labStop = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeStreaming("lab_stop", { id, runtime }, onLog);
+/** Asks the core for a lab operation (`command`), then follows it to its end through the run
+ *  events: its log lines to `onLog`, resolved when it went through, rejected with its error. A
+ *  refusal (another operation runs on the lab) rejects before anything ran. */
+async function invokeOperation(command: string, args: Record<string, unknown>, onLog: (line: string) => void): Promise<void> {
+  const id = await invoke<OperationId>(command, args);
+  await awaitOperation(id, onLog);
+}
+
+export const labStop = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeOperation("lab_stop", { id, runtime }, onLog);
 
 /** Pauses or shuts a lab down, keeping its machines; `labResume` brings it back as it was. */
-export const labPark = (id: string, runtime: Runtime, mode: Park, onLog: (line: string) => void) => invokeStreaming("lab_park", { id, runtime, mode }, onLog);
+export const labPark = (id: string, runtime: Runtime, mode: Park, onLog: (line: string) => void) => invokeOperation("lab_park", { id, runtime, mode }, onLog);
 
 /** Runs a VM lab's provisioners again on one machine (or all with `null`), in place. */
 export const labProvision = (id: string, runtime: Runtime, machine: string | null, onLog: (line: string) => void) =>
-  invokeStreaming("lab_provision", { id, runtime, machine }, onLog);
+  invokeOperation("lab_provision", { id, runtime, machine }, onLog);
 
-export const labResume = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeStreaming("lab_resume", { id, runtime }, onLog);
+export const labResume = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeOperation("lab_resume", { id, runtime }, onLog);
 
 export const labStatus = (id: string, runtime: Runtime) => invoke<LabStatus>("lab_status", { id, runtime });
 
@@ -137,10 +147,10 @@ export type AttackPick = { network: string | null; image: string | null; desktop
 
 /** Adds the attack box to the running lab as one of its machines, as `pick` says. */
 export const attackBoxAttach = (id: string, runtime: Runtime, pick: AttackPick, onLog: (line: string) => void) =>
-  invokeStreaming("attack_box_attach", { id, runtime, pick }, onLog);
+  invokeOperation("attack_box_attach", { id, runtime, pick }, onLog);
 
 /** Takes the attack box back out of the running lab. */
-export const attackBoxDetach = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeStreaming("attack_box_detach", { id, runtime }, onLog);
+export const attackBoxDetach = (id: string, runtime: Runtime, onLog: (line: string) => void) => invokeOperation("attack_box_detach", { id, runtime }, onLog);
 
 /** How the player signs in to the lab's attack box where it asks for a password (its screen, su,
  *  SSH): its account and the password the launcher keeps for it; null when it keeps none. */
@@ -166,12 +176,12 @@ export type LabLaunch = {
 };
 
 export const labLaunch = ({ offline = false, perMachineVm = false, ...launch }: LabLaunch, onLog: (line: string) => void) =>
-  invokeStreaming("lab_launch", { ...launch, offline, perMachineVm }, onLog);
+  invokeOperation("lab_launch", { ...launch, offline, perMachineVm }, onLog);
 
 /** Imports and starts a lab from a local directory `path` (an unpublished lab, bypassing the
  *  catalogue and the backend); the deploy's log is streamed to `onLog`. The lab then appears in
  *  the running labs by its derived `local-<name>` id, driven by the ordinary lifecycle commands. */
-export const labLaunchLocal = (path: string, onLog: (line: string) => void) => invokeStreaming("lab_launch_local", { path }, onLog);
+export const labLaunchLocal = (path: string, onLog: (line: string) => void) => invokeOperation("lab_launch_local", { path }, onLog);
 
 /** The labs imported from a folder installed here, each with what its own `.ctf/` folder says of
  *  it (title, description, category, difficulty, challenges) and which of those files can't be read. */
@@ -189,13 +199,6 @@ export const labRemove = (id: string) => invoke<LabRemoval>("lab_remove", { id }
 /** The labs with any operation in flight (a start, a stop, a park, a provisioning run), in the
  *  app or a deploy worker: what an update install waits for (Rust's `busy_labs`). */
 export const busyLabs = () => invoke<string[]>("busy_labs");
-
-/** Every lab operation in flight right now: workers and in-process ones. */
-export const activeOperations = () => invoke<ActiveOperation[]>("active_operations");
-
-/** The log so far of a lab's latest deploy, which runs in a detached worker process. Lets a
- *  reloaded or relaunched app re-attach to a deploy still in progress. */
-export const labDeployLog = (id: string) => invoke<string>("lab_deploy_log", { id });
 
 /** Quit by finishing in the background: hides the windows and exits once the in-app deploys
  *  (the fallback when no worker could be started) are done. */

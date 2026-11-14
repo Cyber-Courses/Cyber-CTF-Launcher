@@ -5,7 +5,6 @@
 
 /// Every command in `generate_handler!` (src/commands.rs); a test keeps the two lists in sync.
 const COMMANDS: &[&str] = &[
-    "active_operations",
     "agent_info",
     "api_query",
     "attack_box_attach",
@@ -23,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "aws_profiles",
     "azure_subscriptions",
     "busy_labs",
+    "run_events",
     "cloud_login",
     "cloud_login_cancel",
     "confirm_launch",
@@ -42,7 +42,6 @@ const COMMANDS: &[&str] = &[
     "lab_check",
     "lab_cloud_preview",
     "lab_default_place",
-    "lab_deploy_log",
     "lab_installed",
     "lab_launch",
     "lab_launch_local",

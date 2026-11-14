@@ -14,7 +14,8 @@ import {
 } from "@/features/labs/runs/deploy-runs";
 import { getLastRun, setLastRun } from "@/features/labs/runs/last-run";
 import { deployingOf, keepsRunningPhase, operationLabel, operationStatus, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
-import { timeLines, useWorkerLog } from "@/features/labs/runs/worker-log";
+import { useWorkerLog } from "@/features/labs/runs/worker-log";
+import { takeIn } from "@/lib/tauri/run-events";
 import { setLocalePreference } from "@/lib/i18n";
 import type { ActiveOperation } from "@/lib/tauri";
 import { commands, installTauri } from "@/test/tauri";
@@ -231,7 +232,7 @@ describe("operations", () => {
     expect([...deployingOf(inFlight)].sort()).toEqual(["here-provision", "here-resume", "worker-pause"]);
   });
 
-  it("reads the labs deploying from the one poll of the operations, not a poll of their own", async () => {
+  it("reads the labs deploying from the run events, not a poll of their own", async () => {
     const calls = installTauri({
       active_operations: () => [
         { labId: "lab-w", op: "resume", machine: null, deploying: true, step: null, runtime: "VM" },
@@ -244,7 +245,7 @@ describe("operations", () => {
     expect(commands(calls)).not.toContain("busy_labs");
   });
 
-  it("polls the labs deploying and the operations in flight", async () => {
+  it("reads the labs deploying and the operations in flight from the events a window replays", async () => {
     installTauri();
     const deploying = renderHook(() => useDeployingLabs());
     const ops = renderHook(() => useActiveOperations());
@@ -255,38 +256,41 @@ describe("operations", () => {
 });
 
 describe("worker log", () => {
-  it("times a worker's log lines as they first show, starting over on a new run", () => {
-    const empty = { lines: [], times: [] };
-    const one = timeLines(empty, ["a"], 10);
-    expect(one).toEqual({ lines: ["a"], times: [10] });
-    const two = timeLines(one, ["a", "b"], 20);
-    expect(two).toEqual({ lines: ["a", "b"], times: [10, 20] });
-    // The same log again: the same object.
-    expect(timeLines(two, ["a", "b"], 30)).toBe(two);
-    // A new run (shorter, or another first line): timed afresh.
-    expect(timeLines(two, ["x"], 40)).toEqual({ lines: ["x"], times: [40] });
-    expect(timeLines(two, ["x", "y", "z"], 50)).toEqual({ lines: ["x", "y", "z"], times: [50, 50, 50] });
-    expect(timeLines(two, [], 60)).toEqual(empty);
-  });
+  const started = { kind: "started", operation: "op-1", labId: "lab-goad", op: "launch", machine: null, runtime: null, deploying: true, at: 5 } as const;
 
-  it("follows a worker's log only while active, skipping blank lines", async () => {
-    const calls = installTauri({ lab_deploy_log: () => "line 1\n\nline 2\n" });
-    const { result, rerender } = renderHook(({ active }) => useWorkerLog("lab-goad", active, 1000), { initialProps: { active: false } });
+  it("follows the lab's operation from the run events, with no command of its own", async () => {
+    const calls = installTauri({ active_operations: () => [] });
+    const { result } = renderHook(({ active }) => useWorkerLog("lab-goad", active), { initialProps: { active: true } });
     await flush();
     expect(result.current.lines).toEqual([]);
-    expect(commands(calls)).not.toContain("lab_deploy_log");
-    rerender({ active: true });
-    await flush();
+    act(() => {
+      takeIn([
+        { cursor: 1, event: started },
+        { cursor: 2, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "line 1" } },
+        { cursor: 3, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "line 2" } },
+      ]);
+    });
     expect(result.current.lines).toEqual(["line 1", "line 2"]);
     expect(result.current.times).toHaveLength(2);
-    expect(calls.find((c) => c.cmd === "lab_deploy_log")?.args).toMatchObject({ id: "lab-goad" });
+    expect(commands(calls).filter((c) => c !== "run_events" && !c.startsWith("plugin:event"))).toEqual([]);
   });
 
-  it("reads the code a worker's failed line carries, and shows the line without it", async () => {
-    installTauri({ lab_deploy_log: () => "==> pulling\n✗[dockerNotRunning] Docker isn't running.\n" });
-    const { result } = renderHook(() => useWorkerLog("lab-goad", true, 1000));
+  it("ends a failed operation's log on its ✗ line and reads its error's code", async () => {
+    installTauri({ active_operations: () => [] });
+    const { result } = renderHook(() => useWorkerLog("lab-goad", true));
     await flush();
-    expect(result.current.lines).toEqual(["==> pulling", "✗ Docker isn't running."]);
+    act(() => {
+      takeIn([
+        { cursor: 1, event: started },
+        { cursor: 2, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "==> pulling" } },
+        {
+          cursor: 3,
+          event: { kind: "ended", operation: "op-1", labId: "lab-goad", op: "launch", error: { code: "dockerNotRunning", message: "Docker isn't running." } },
+        },
+      ]);
+    });
+    expect(result.current.lines[0]).toBe("==> pulling");
+    expect(result.current.lines[1]).toMatch(/^✗ /);
     expect(result.current.failureCode).toBe("dockerNotRunning");
   });
 });

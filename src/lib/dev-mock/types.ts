@@ -3,7 +3,6 @@
 // A fixture that drifts from the core (a field renamed, added or made optional) then fails
 // `pnpm typecheck` instead of crashing the preview and the end-to-end tests.
 import type {
-  ActiveOperation,
   AgentInfo,
   AttackStatus,
   AuthStatus,
@@ -67,8 +66,6 @@ type Answers = {
   lab_run_options: LabRunOptions;
   running_labs: string[];
   busy_labs: string[];
-  active_operations: ActiveOperation[];
-  lab_deploy_log: string;
   lab_tools: LabTool[];
   imported_labs: ImportedLab[];
   lab_installed: boolean;

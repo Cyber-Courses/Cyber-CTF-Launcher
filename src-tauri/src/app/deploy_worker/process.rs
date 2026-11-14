@@ -661,9 +661,9 @@ mod tests {
         assert!(terraform_launch(&launch, &Ok(Some(Provider::Proxmox))));
         assert!(!terraform_launch(&launch, &Ok(Some(Provider::VmwareEsxi))));
         assert!(!terraform_launch(&launch, &Ok(None)));
-        // Regression: an unreadable server.json read as "no such host", so a Terraform launch was
+        // Regression: an unreadable server list read as "no such host", so a Terraform launch was
         // killed outright mid-apply. Now a launch on any host is interrupted first.
-        assert!(terraform_launch(&launch, &Err(crate::error::Error::Invalid("server.json: broken".into()))));
+        assert!(terraform_launch(&launch, &Err(crate::error::Error::Invalid("the launcher's store: broken".into()))));
         let here = on(None, super::super::Op::Launch);
         assert!(!terraform_launch(&here, &Ok(None)));
         let park = on(Some("h"), super::super::Op::Park { runtime: crate::runtime::Runtime::Vm, mode: crate::runtime::Park::Pause });
@@ -955,7 +955,7 @@ mod tests {
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].0, job);
         // A second operation on the lab is refused while this one runs.
-        let err = super::super::run_job(app, job.clone(), tauri::ipc::Channel::new(|_| Ok(()))).await.unwrap_err();
+        let err = super::super::run_job(&crate::platform::AppDirs::from(app), job.clone(), std::sync::Arc::new(|_| {})).await.unwrap_err();
         assert_eq!(err.code(), crate::error::Code::AlreadyInProgress);
         // Stopping it ends its process group, and only that (regression: procps' `kill -TERM
         // -<pid>` signalled every process of the user), and drops its pidfile.

@@ -3,7 +3,7 @@
 //! touched). Removal goes through the same trusted flows as install: the package manager,
 //! the vendor's own uninstaller, or the OS admin prompt.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -143,13 +143,9 @@ async fn confirm_pending(dirs: &AppDirs) {
     });
 }
 
-fn records_file(dirs: &AppDirs) -> Option<PathBuf> {
-    dirs.data_file("installed-tools.json")
-}
-
 /// The records; none without a data folder.
-fn load(dirs: &AppDirs) -> std::io::Result<Vec<InstalledTool>> {
-    records_file(dirs).map_or(Ok(Vec::new()), |f| load_at(&f))
+fn load(dirs: &AppDirs) -> Result<Vec<InstalledTool>> {
+    dirs.data().map_or(Ok(Vec::new()), load_at)
 }
 
 /// [`load`], a record that can't be read logged and read as none (for listing them).
@@ -160,39 +156,31 @@ fn load_or_logged(dirs: &AppDirs) -> Vec<InstalledTool> {
     })
 }
 
-/// The records in `f`: none when it is missing; an error when it can't be read or isn't a
-/// record, which must not read as "nothing installed" (the next change would save that over it).
-fn load_at(f: &Path) -> std::io::Result<Vec<InstalledTool>> {
-    match std::fs::read(f) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(e),
-    }
+/// The records in data folder `data`'s store: none when nothing was recorded; an error when they
+/// can't be read, which must not read as "nothing installed".
+fn load_at(data: &Path) -> Result<Vec<InstalledTool>> {
+    crate::store::open_in(data)?.read(crate::store::tools::all)
 }
 
 /// Changes the records with `change`. One that can't be changed (unreadable, damaged, or it can't
 /// be written) is left as it is and logged: Cleanup then doesn't offer to remove that tool.
 fn update(dirs: &AppDirs, change: impl FnOnce(&mut Vec<InstalledTool>)) {
-    if let Some(f) = records_file(dirs)
-        && let Err(e) = update_at(&f, change)
+    if let Ok(data) = dirs.data()
+        && let Err(e) = update_at(data, change)
     {
-        log::warn!("the record of the tools Cyber CTF installed ({}) couldn't be updated: {e}", f.display());
+        log::warn!("the record of the tools Cyber CTF installed couldn't be updated: {e}");
     }
 }
 
-/// Changes the records in `f` with `change`, holding an OS lock on `<f>.lock` meanwhile: installs
+/// Changes the records in data folder `data`'s store with `change`, in one transaction: installs
 /// and removals in different windows (machine setup, server setup, Settings) can end at the same
-/// moment, and each must keep the other's change. Written whole (see `atomic_file`), so a crash
-/// mid-write can't leave a half file.
-fn update_at(f: &Path, change: impl FnOnce(&mut Vec<InstalledTool>)) -> std::io::Result<()> {
-    if let Some(dir) = f.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(f.with_extension("lock"))?;
-    lock.lock()?;
-    let mut tools = load_at(f)?;
-    change(&mut tools);
-    crate::platform::atomic_file::write(f, serde_json::to_vec_pretty(&tools)?)
+/// moment, and each keeps the other's change.
+fn update_at(data: &Path, change: impl FnOnce(&mut Vec<InstalledTool>)) -> Result<()> {
+    crate::store::open_in(data)?.write(|tx| {
+        let mut tools = crate::store::tools::all(tx)?;
+        change(&mut tools);
+        crate::store::tools::replace(tx, &tools)
+    })
 }
 
 /// `tools` with `dependency` recorded once as the install's `outcome` says: installed now, or
@@ -449,34 +437,28 @@ mod tests {
         assert!(confirmed(load(&dirs).unwrap()).iter().any(|t| t.dependency == Dependency::Vagrant), "still remembered as installed");
     }
 
-    #[test]
-    fn a_record_that_cant_be_written_is_said_in_the_log() {
-        // Regression: a failed write of the record was dropped, and Cleanup silently stopped
-        // offering to remove the tool.
-        let t = crate::testing::test_app::TestApp::new();
-        let dirs = t.dirs();
-        let f = records_file(&dirs).unwrap();
-        std::fs::create_dir_all(&f).unwrap();
-        crate::testing::logs::take_warnings();
-        record_outcome(&dirs, Dependency::Vagrant, Outcome::Installed);
-        let logged = crate::testing::logs::take_warnings();
-        assert!(logged.iter().any(|w| w.starts_with("the record of the tools Cyber CTF installed")), "{logged:?}");
+    /// Makes the recorded tools unreadable, as a damaged store would be.
+    fn damage(dirs: &AppDirs) {
+        crate::store::open(dirs)
+            .unwrap()
+            .write(|tx| {
+                tx.execute("INSERT INTO installed_tools (dependency, at) VALUES ('no-such-tool', 1)", [])?;
+                Ok(())
+            })
+            .unwrap();
     }
 
     #[test]
     fn a_damaged_record_is_never_written_over_nor_read_as_nothing_installed() {
-        // Regression: a record that didn't parse read as no tools, and the next install saved
+        // Regression: a record that didn't read was taken for no tools, and the next install saved
         // that list over it: Cleanup stopped offering every tool recorded before, without a word.
         let t = crate::testing::test_app::TestApp::new();
         let dirs = t.dirs();
-        let f = records_file(&dirs).unwrap();
-        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
-        std::fs::write(&f, "[{\"dependency\":\"vagrant\",").unwrap();
+        damage(&dirs);
         crate::testing::logs::take_warnings();
         record_outcome(&dirs, Dependency::Docker, Outcome::Installed);
-        assert_eq!(std::fs::read_to_string(&f).unwrap(), "[{\"dependency\":\"vagrant\",", "left as it was");
-        assert!(crate::testing::logs::take_warnings().iter().any(|w| w.contains("couldn't be updated")));
-        assert_eq!(load(&dirs).unwrap_err().kind(), std::io::ErrorKind::InvalidData);
+        assert!(crate::testing::logs::take_warnings().iter().any(|w| w.contains("couldn't be updated")), "said in the log");
+        assert!(load(&dirs).is_err(), "left as it was");
         let listed = tauri::async_runtime::block_on(installed_tools(dirs.clone()));
         assert!(listed.is_empty());
         assert!(crate::testing::logs::take_warnings().iter().any(|w| w.contains("can't be read")), "listing says why it is empty");
@@ -487,7 +469,7 @@ mod tests {
     #[test]
     fn records_round_trip_through_their_file_and_keep_one_entry_per_tool() {
         let dir = crate::testing::temp_dir("tools");
-        let f = dir.join("data").join("installed-tools.json");
+        let f = dir.join("data");
         assert!(load_at(&f).unwrap().is_empty());
         update_at(&f, |tools| {
             remember(tools, Dependency::Vagrant, Outcome::Installed);
@@ -506,7 +488,7 @@ mod tests {
     #[test]
     fn updates_from_several_threads_each_keep_the_others_change() {
         let dir = crate::testing::temp_dir("tools-race");
-        let f = dir.join("installed-tools.json");
+        let f = dir.to_path_buf();
         let deps = [Dependency::Docker, Dependency::Vagrant, Dependency::Terraform, Dependency::Qemu];
         std::thread::scope(|s| {
             for dep in deps {

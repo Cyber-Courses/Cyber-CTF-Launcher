@@ -5,7 +5,6 @@
 identifier = "main-window"
 description = "The main window: every screen of the app, but not the attack box terminals."
 permissions = [
-  "allow-active-operations",
   "allow-agent-info",
   "allow-api-query",
   "allow-attack-box-attach",
@@ -31,7 +30,6 @@ permissions = [
   "allow-lab-check",
   "allow-lab-cloud-preview",
   "allow-lab-default-place",
-  "allow-lab-deploy-log",
   "allow-lab-installed",
   "allow-lab-launch",
   "allow-lab-launch-local",
@@ -58,6 +56,7 @@ permissions = [
   "allow-open-log-folder",
   "allow-open-settings",
   "allow-restart-app",
+  "allow-run-events",
   "allow-running-labs",
   "allow-screen-window",
   "allow-screen-open-native",
@@ -82,7 +81,6 @@ permissions = [
 identifier = "settings-window"
 description = "The Settings window: account, machine, tools and shared folder settings, plus the hooks the app shell runs before it shows Settings."
 permissions = [
-  "allow-active-operations",
   "allow-agent-info",
   "allow-api-query",
   "allow-auth-login",
@@ -107,6 +105,7 @@ permissions = [
   "allow-managed-settings",
   "allow-open-log-folder",
   "allow-restart-app",
+  "allow-run-events",
   "allow-running-labs",
   "allow-shared-folder-get",
   "allow-shared-folder-open",

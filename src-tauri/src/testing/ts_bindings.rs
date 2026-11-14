@@ -13,7 +13,6 @@ use std::path::Path;
 
 use ts_rs::{Config, TS};
 
-use crate::app::operations;
 use crate::machine::tools;
 use crate::{account, cloud_cli, error, labs, machine, runtime, shared_folder, terminal};
 
@@ -59,7 +58,7 @@ fn generate(dir: &Path) {
         machine::system::SystemReport,
         machine::system::metrics::MachineMetrics,
         machine::workloads::Workload,
-        operations::ActiveOperation,
+        crate::run_service::Cursored,
         tools::install::Dependency,
         tools::ovftool::Outcome,
         tools::uninstall::Installed,

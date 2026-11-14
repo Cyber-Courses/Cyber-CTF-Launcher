@@ -8,6 +8,13 @@ import { operationSeenAt, useActiveOperations, useDeployingLabs } from "@/featur
 import { useWorkerLog } from "@/features/labs/runs/worker-log";
 import { failureOf } from "@/lib/log-marks";
 
+/** The failed operation's id (none while one runs): this session's run's when it has the log, else
+ *  the replayed one's. */
+function failedOperation(deploying: boolean, local: boolean, run: string | null | undefined, replayed: string | null): string | null {
+  if (deploying) return null;
+  return local ? (run ?? null) : replayed;
+}
+
 /** When this window first saw the backend's operation `op` in flight on the lab (none: none). */
 const backendSince = (labId: string, op: LabOperation | undefined) => (op ? operationSeenAt(labId, op) : undefined);
 
@@ -27,6 +34,7 @@ export function useLabPageState(
     runStartedAt,
     runFailureCode,
     runFailureHolder,
+    runFailureOperation,
     ...input
   }: Omit<LabStateInput, "backendDeploying" | "backendOp" | "startFailed" | "runOp"> & {
     logs: string[];
@@ -36,6 +44,7 @@ export function useLabPageState(
     runStartedAt?: number;
     runFailureCode?: ErrorCode | null;
     runFailureHolder?: string | null;
+    runFailureOperation?: string | null;
   },
 ) {
   // Labs the backend is still deploying, so a window reload recovers the "starting" state.
@@ -71,6 +80,8 @@ export function useLabPageState(
     failureKind: state.deploying ? null : failureKind(failure, local ? runFailureCode : worker.failureCode),
     /** For a port clash this session saw, what holds the host port (so the notice can name it). */
     failureHolder: state.deploying || !local ? null : (runFailureHolder ?? null),
+    /** The id of the operation that failed (this session's, else the replayed one's), to quote. */
+    failureOperation: failedOperation(state.deploying, local, runFailureOperation, worker.failureOperation),
     /** When the operation in flight (or the last one) began: this session's run, else when this
      *  window first saw the backend's. */
     startedAt: local ? runStartedAt : backendSince(labId, backendOp),

@@ -1,13 +1,11 @@
-//! The record of what a program downloaded for its own operations, kept as `storage.json` in its
-//! data folder: the container images (each by the reference it pulled and the id that reference
+//! The record of what a program downloaded for its own operations: the container images (each by the reference it pulled and the id that reference
 //! named) and the Vagrant boxes (name, provider, version) that appeared during one of its
 //! operations. Its cleanup lists and removes only these: an image or a box the user already had,
 //! or pulled for their own projects, is never touched, even when one of those operations uses the
-//! same one. This module is the record's shape, its loader and the `vagrant box list` parser;
-//! the program that keeps the record writes it.
+//! same one. This module is the record's shape and the `vagrant box list` parser; the program that
+//! keeps the record stores it.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -41,21 +39,6 @@ pub struct Owned {
     /// The box versions downloaded.
     #[serde(default)]
     pub boxes: BTreeSet<OwnedBox>,
-}
-
-/// The record at `store`; empty when there is none yet.
-///
-/// # Errors
-///
-/// The file exists but can't be read, or isn't a record (`InvalidData`). A caller that changes
-/// the record and writes it back must stop there: writing an empty record over one it couldn't
-/// read would forget everything the program downloaded.
-pub fn load(store: &Path) -> std::io::Result<Owned> {
-    match std::fs::read(store) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Owned::default()),
-        Err(e) => Err(e),
-    }
 }
 
 /// A box as one line of `vagrant box list` names it: the box version for its provider, and its
@@ -113,21 +96,5 @@ mod tests {
                 ("generic/debian12".to_owned(), "virtualbox".to_owned(), "202510.26.0".to_owned()),
             ]
         );
-    }
-
-    #[test]
-    fn a_record_loads_a_missing_one_is_empty_and_a_damaged_one_is_an_error() {
-        let dir = std::env::temp_dir().join(format!("isothrum-owned-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let store = dir.join("storage.json");
-        assert_eq!(load(&store).unwrap(), Owned::default());
-        std::fs::write(&store, r#"{"images":[{"reference":"nginx:1.27","id":"sha256:nginx"}]}"#).unwrap();
-        let owned = load(&store).unwrap();
-        assert_eq!(owned.images.len(), 1);
-        assert!(owned.boxes.is_empty());
-        std::fs::write(&store, "{not json").unwrap();
-        assert_eq!(load(&store).unwrap_err().kind(), std::io::ErrorKind::InvalidData);
-        assert!(load(&dir).is_err(), "a folder where the file should be is an error, not an empty record");
-        std::fs::remove_dir_all(&dir).ok();
     }
 }

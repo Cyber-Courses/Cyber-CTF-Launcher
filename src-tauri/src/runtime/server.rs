@@ -1,6 +1,6 @@
 //! Server hosts and cloud accounts: the player's own ESXi / Proxmox server (VM labs run there
 //! through Vagrant or Terraform) and their AWS / Azure / GCP / `DigitalOcean` / Linode / OCI
-//! accounts. Profiles (non-secret) live in `<app data>/server.json`; each host's secret lives
+//! accounts. Profiles (non-secret) live in the launcher's store (`crate::store`); each host's secret lives
 //! in the OS keychain (a file in debug builds, like the auth session).
 //!
 //! Neither `vagrant-vmware-esxi` nor `vagrant-proxmox` reads environment variables on its

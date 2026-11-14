@@ -329,6 +329,14 @@ fn setup(app: &mut App) {
     if let Ok(dir) = app.path().app_data_dir() {
         narrow_to_this_user(&dir);
     }
+    // The launcher's store, opened before anything reads it: a store that can't be opened is in
+    // the log at once.
+    if let Err(e) = crate::store::open(&platform::AppDirs::from(app.handle())) {
+        log::error!("the launcher's store can't be opened: {e}");
+    }
+    // Every lab operation's events to the webview, and the operations an earlier run of the app
+    // left running picked up.
+    crate::run_service::start(app.handle());
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
     // Not an end-to-end run's app: the user's links stay with the app they chose.
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
