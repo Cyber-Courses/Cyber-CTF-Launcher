@@ -10,6 +10,7 @@
 mod guardrails;
 pub mod logs;
 pub mod proptest_support;
+pub mod runner;
 pub mod source_scan;
 pub mod test_app;
 mod ts_bindings;

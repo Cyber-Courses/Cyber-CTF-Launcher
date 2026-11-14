@@ -130,8 +130,8 @@ fn what_is_left_on_a_host_keeps_it_from_being_removed() {
     std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{},"resources":[{"type":"aws_instance"}]}"#).unwrap();
     std::fs::write(state.join("host"), "aws1").unwrap();
     assert_eq!(leftovers_on(&dirs, "aws1").unwrap(), 3);
-    // A record that can't be read is an error, not "nothing left".
-    std::fs::write(t.data().join("runs/cyberctf-api-1/record.json"), "{").unwrap();
+    // A store that can't be read is an error, not "nothing left".
+    crate::testing::runner::damage_store(t.data());
     assert!(leftovers_on(&dirs, "aws1").is_err() && labs_on(&dirs, "aws1").is_err());
 }
 

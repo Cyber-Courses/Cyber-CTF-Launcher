@@ -189,8 +189,7 @@ async fn a_lab_last_on_a_server_is_an_error_when_the_saved_servers_cant_be_read(
 
 /// Lab `id`'s recorded run used Vagrant's `provider`.
 fn set_provider(t: &TestApp, id: &str, provider: &str) {
-    let path = t.data().join("runs").join(format!("cyberctf-{id}")).join("record.json");
-    let mut record: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let mut record = crate::testing::runner::run_record(t.data(), &format!("cyberctf-{id}"));
     record["provider"] = provider.into();
-    std::fs::write(path, record.to_string()).unwrap();
+    crate::testing::runner::save_run(t.data(), &record);
 }

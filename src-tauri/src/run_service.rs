@@ -10,6 +10,7 @@
 //! the same events.
 
 pub(crate) mod events;
+pub(crate) mod host;
 pub(crate) mod local;
 #[cfg(test)]
 pub(crate) mod tests;

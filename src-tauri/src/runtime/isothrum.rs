@@ -107,6 +107,17 @@ pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
     import::runner(home)?.runs().map_err(errors::from_runner)
 }
 
+/// Forgets lab `id`'s run in the runner's store, once the lab is removed: no run is left behind
+/// for a lab that isn't there.
+///
+/// # Errors
+///
+/// The runner's store can't be opened or written.
+pub(crate) fn forget_run(home: &Path, id: &str) -> Result<()> {
+    let name = RunName::new(&super::docker::project(id)).map_err(errors::from_runner)?;
+    isothrum_runner::store::Store::open(home).and_then(|store| store.write(|tx| tx.forget_run(&name))).map_err(errors::from_runner)
+}
+
 /// Lab `id`'s run here, installed in `dir`, opened in the form its record says it was started in
 /// (Docker, Docker in a local VM, VMs): none without a record, or for a run recorded on a server
 /// or a cloud, which isn't this machine's to read.

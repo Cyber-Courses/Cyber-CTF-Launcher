@@ -157,8 +157,8 @@ fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
     record_run(t.data(), "web-2", None, "docker", "ready");
     assert_eq!(super::still_up(&dirs, "web").unwrap(), None);
     assert!(super::refuse_replace(&dirs, &dir, "web").is_ok());
-    // A record that can't be read stops the replacement rather than read as "down".
-    std::fs::write(t.data().join("runs/cyberctf-web/record.json"), "not json").unwrap();
+    // A store that can't be read stops the replacement rather than read as "down".
+    crate::testing::runner::damage_store(t.data());
     assert!(super::still_up(&dirs, "web").is_err() && super::refuse_replace(&dirs, &dir, "web").is_err());
     // Nothing installed: nothing to replace.
     assert!(super::refuse_replace(&dirs, &t.data().join("labs/none"), "none").is_ok());

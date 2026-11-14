@@ -1015,7 +1015,9 @@ dependencies = [
  "isoloom-manifest",
  "isoloom-spec",
  "isoloom-targets",
+ "isothrum-client",
  "isothrum-runner",
+ "isothrum-service",
  "keyring",
  "libc",
  "log",
@@ -1275,6 +1277,12 @@ checksum = "442039f5147480ba31067cb00ada1adae6892028e40e45fc5de7b7df6dcc1b5f"
 dependencies = [
  "const-random",
 ]
+
+[[package]]
+name = "doctest-file"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2db04e74f0a9a93103b50e90b96024c9b2bdca8bce6a632ec71b88736d3d359"
 
 [[package]]
 name = "dom_query"
@@ -2499,6 +2507,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "interprocess"
+version = "2.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f0ed453af5ae3bdbf68e41dde07eae0bffcc986419f63521ba9c89d82988c70"
+dependencies = [
+ "doctest-file",
+ "futures-core",
+ "libc",
+ "recvmsg",
+ "tokio",
+ "widestring",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2687,6 +2710,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "isothrum-client"
+version = "3.0.0"
+dependencies = [
+ "futures-core",
+ "interprocess",
+ "isothrum-runner",
+ "nix 0.31.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "isothrum-runner"
 version = "3.0.0"
 dependencies = [
@@ -2697,6 +2735,7 @@ dependencies = [
  "nix 0.31.3",
  "process-wrap",
  "regex",
+ "rusqlite",
  "schemars 1.2.3",
  "serde",
  "serde_json",
@@ -2706,6 +2745,21 @@ dependencies = [
  "tokio",
  "tracing",
  "windows",
+]
+
+[[package]]
+name = "isothrum-service"
+version = "3.0.0"
+dependencies = [
+ "getrandom 0.4.3",
+ "interprocess",
+ "isothrum-client",
+ "isothrum-runner",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "widestring",
 ]
 
 [[package]]
@@ -4216,6 +4270,12 @@ name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
+
+[[package]]
+name = "recvmsg"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3edd4d5d42c92f0a659926464d4cce56b562761267ecf0f469d85b7de384175"
 
 [[package]]
 name = "redox_syscall"
@@ -6613,6 +6673,12 @@ dependencies = [
  "windows",
  "windows-core",
 ]
+
+[[package]]
+name = "widestring"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi"

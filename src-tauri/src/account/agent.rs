@@ -133,10 +133,12 @@ async fn tear_down(deps: &Deps, lab_id: &str, runtime: Runtime) -> Result<()> {
     if !crate::runtime::lab_installed(dirs, lab_id) {
         return Ok(());
     }
-    let stop = |log: crate::run_service::local::Log| labs::stop_lab_retiring_colocation(dirs, lab_id, runtime, (deps.end_workers)(lab_id), move |l| log(l));
+    // Boxed: the stop's future is large, and the operation around it adds to it.
+    let stop =
+        |log: crate::run_service::local::Log| Box::pin(labs::stop_lab_retiring_colocation(dirs, lab_id, runtime, (deps.end_workers)(lab_id), move |l| log(l)));
     // Told as an operation of the lab, so its page shows it stopping.
     match crate::run_service::LocalRunService::of(dirs) {
-        Ok(service) => service.observe(lab_id, crate::runtime::Operation::Stop, Some(runtime), stop).await,
+        Ok(service) => Box::pin(service.observe(lab_id, crate::runtime::Operation::Stop, Some(runtime), stop)).await,
         Err(_) => stop(std::sync::Arc::new(|_| {})).await,
     }
 }
@@ -172,10 +174,11 @@ fn undoes(failure: &Error, present_before: bool) -> bool {
 async fn run_claimed(deps: &Deps, launch: &labs::Launch, place: &StartPlace, present_before: bool) -> Result<Option<String>> {
     let to =
         runtime::Destination { host: place.host.as_deref(), provider: place.provider, per_machine_vm: place.per_machine_vm, ..runtime::Destination::default() };
-    let run = |log: crate::run_service::local::Log| labs::run(deps.dirs(), launch.clone(), to, move |l| log(l));
+    // Boxed: the launch's future is large, and the operation around it adds to it.
+    let run = |log: crate::run_service::local::Log| Box::pin(labs::run(deps.dirs(), launch.clone(), to, move |l| log(l)));
     // Told as an operation of the lab, so its page shows it starting, with its log.
     let ran = match crate::run_service::LocalRunService::of(deps.dirs()) {
-        Ok(service) => service.observe(&launch.lab_id, crate::runtime::Operation::Launch, Some(launch.runtime), run).await,
+        Ok(service) => Box::pin(service.observe(&launch.lab_id, crate::runtime::Operation::Launch, Some(launch.runtime), run)).await,
         Err(_) => run(std::sync::Arc::new(|_| {})).await,
     };
     match ran {
