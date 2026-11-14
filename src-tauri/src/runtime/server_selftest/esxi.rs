@@ -35,8 +35,23 @@ const ADDRESS: Step = ("address", "The test VM gets an address on the host's net
 #[cfg(test)]
 pub(super) const PLAN: [&str; 8] = [super::CONNECT, lab_run::PREPARE.0, IMAGE.0, VM.0, ADDRESS.0, SSH.0, lab_run::COMMAND.0, lab_run::CLEANUP.0];
 
-/// The test VM's name on the host (Isoloom's `<lab>-<machine>`).
-const VM_NAME: &str = "cyberctf-server-selftest-probe";
+/// The test lab's name and its one machine's (`lab_run`'s spec).
+const LAB: &str = "cyberctf-server-selftest";
+const MACHINE: &str = "probe";
+
+/// The test VM's name on host `id`, as Isoloom names the test lab's machine on ESXi
+/// (`<lab>-<key>-<machine>`): the key is the one every run of a lab gets from the launcher
+/// (`ISOLOOM_KEY`, the runner's key for the run), here the test's run on that host, so it is the
+/// same at every test of the host and a VM an earlier test left is found under it.
+pub(super) fn vm_name(dirs: &AppDirs, id: &str) -> Result<String> {
+    vm_name_in(&crate::runtime::paths::runner_home(dirs)?, id)
+}
+
+/// [`vm_name`] for the runner whose home is `home`.
+fn vm_name_in(home: &Path, id: &str) -> Result<String> {
+    let run = isothrum_runner::RunName::new(&crate::runtime::docker::project(&run_id(id))).map_err(|e| Error::Invalid(e.to_string()))?;
+    Ok(format!("{LAB}-{}-{MACHINE}", isothrum_runner::copy_key(home, &run)))
+}
 
 /// The port group a VM's first adapter goes on when the host's profile names none (the
 /// Vagrantfile's default).
@@ -119,12 +134,14 @@ pub(super) fn open(dirs: &AppDirs, id: &str, conn: &server::Connection, dir: &Pa
 /// opened, with what the preparation step says.
 pub(super) fn prepare(dirs: &AppDirs, id: &str, conn: &server::Connection, work: &Path) -> Result<(OnEsxi, Option<String>)> {
     let run = open(dirs, id, conn, &lab_run::write_lab(work, lab::vagrant_target(Runtime::Vm))?)?;
-    Ok((run, Some(format!("VM {VM_NAME}, on port group {}", network_of(conn)))))
+    Ok((run, Some(format!("VM {}, on port group {}", vm_name(dirs, id)?, network_of(conn)))))
 }
 
-/// How the test lab comes up on host `conn`.
-pub(super) fn course(conn: &server::Connection) -> impl Course + use<> {
-    Esxi::new(conn, vagrant_boxes())
+/// How the test lab comes up on host `conn` (its id `id`), its VM named [`vm_name`].
+pub(super) fn course(dirs: &AppDirs, id: &str, conn: &server::Connection) -> impl Course + use<> {
+    // Unreadable, the runner's home fails the preparation first, which says why.
+    let vm = vm_name(dirs, id).unwrap_or_else(|_| format!("{LAB}-<key>-{MACHINE}"));
+    Esxi::new(conn, vagrant_boxes(), vm)
 }
 
 /// The port group the test VM's first adapter goes on: the first the profile lists.
@@ -154,6 +171,8 @@ struct Boxed {
 /// VM powered on, then running with an address its VMware Tools report, then `up` succeeding once
 /// its provisioning ran over SSH.
 struct Esxi {
+    /// The test VM's name on the host ([`vm_name`]).
+    vm: String,
     /// The port group the VM's first adapter goes on.
     network: String,
     /// The datastore the VM is uploaded to, when the profile names one.
@@ -169,8 +188,8 @@ struct Esxi {
 }
 
 impl Esxi {
-    fn new(conn: &server::Connection, boxes: Option<PathBuf>) -> Self {
-        Esxi { network: network_of(conn), datastore: setting(conn, DATASTORE), boxes, used: Boxed::default(), size: None, ovftool_said: None }
+    fn new(conn: &server::Connection, boxes: Option<PathBuf>, vm: String) -> Self {
+        Esxi { vm, network: network_of(conn), datastore: setting(conn, DATASTORE), boxes, used: Boxed::default(), size: None, ovftool_said: None }
     }
 
     /// Notes the box `line` names: Vagrant adding it (`Adding box 'NAME' (vVERSION) for provider:
@@ -292,7 +311,8 @@ impl Course for Esxi {
             return Some((
                 0,
                 format!(
-                    "A VM named {VM_NAME} is already on the host, left by an earlier test: delete it in the ESXi host client (Virtual Machines), then run the test again."
+                    "A VM named {} is already on the host, left by an earlier test: delete it in the ESXi host client (Virtual Machines), then run the test again.",
+                    self.vm
                 ),
             ));
         }
@@ -341,7 +361,8 @@ impl Course for Esxi {
 
     fn left(&self, e: &Error) -> String {
         format!(
-            "Couldn't remove everything the test created on the ESXi host ({e}). Its VM, {VM_NAME}, may still be there: the next test removes it first, or delete it in the ESXi host client."
+            "Couldn't remove everything the test created on the ESXi host ({e}). Its VM, {}, may still be there: the next test removes it first, or delete it in the ESXi host client.",
+            self.vm
         )
     }
 }
@@ -366,8 +387,11 @@ mod tests {
     }
 
     /// The course on a host with datastore `ssd1` and port group `Lab Net`, no box store.
+    /// The test VM's name in these tests.
+    const TEST_VM: &str = "cyberctf-server-selftest-k3x9a2-probe";
+
     fn esxi() -> Esxi {
-        Esxi::new(&conn(&[(DATASTORE, "ssd1"), (VIRTUAL_NETWORK, "Lab Net, Other")]), None)
+        Esxi::new(&conn(&[(DATASTORE, "ssd1"), (VIRTUAL_NETWORK, "Lab Net, Other")]), None, TEST_VM.into())
     }
 
     /// Vagrant's and the plugin's lines of a run that went all the way, the box downloaded.
@@ -432,7 +456,7 @@ mod tests {
         assert_eq!(ran.result.unwrap_err().to_string(), detail(&seen, "image", "fail"));
         let left = detail(&seen, "cleanup", "fail");
         assert!(left.starts_with("Couldn't remove everything the test created on the ESXi host (vagrant destroy failed)"), "{left}");
-        assert!(left.contains(VM_NAME));
+        assert!(left.contains(TEST_VM), "{left}");
         assert_eq!(ends(&seen), ["image:fail", "cleanup:fail"]);
         let why = detail(&seen, "image", "fail");
         assert!(why.contains("to datastore ssd1") && why.ends_with("Details: Error: No space left on device"), "{why}");
@@ -455,7 +479,7 @@ mod tests {
         let version = boxes.join("bento-VAGRANTSLASH-debian-12").join("202510.26.0");
         std::fs::create_dir_all(version.join("arm64").join("vmware_desktop")).unwrap();
         std::fs::create_dir_all(version.join("amd64").join("virtualbox")).unwrap();
-        let mut e = Esxi::new(&conn(&[]), Some(boxes.clone()));
+        let mut e = Esxi::new(&conn(&[]), Some(boxes.clone()), TEST_VM.into());
         // No `Adding box` line: the plugin's summary names the box, the store its architecture.
         for line in &ALL_THE_WAY[4..6] {
             assert_eq!(e.ends(line), None);
@@ -465,7 +489,7 @@ mod tests {
         assert_eq!(e.detail(0).as_deref(), Some("Box bento/debian-12 v202510.26.0 (amd64 or arm64)"));
         std::fs::remove_dir_all(&boxes).unwrap();
         assert_eq!(e.detail(0).as_deref(), Some("Box bento/debian-12 v202510.26.0 (architecture unknown)"));
-        assert_eq!(Esxi::new(&conn(&[]), None).detail(0), None, "no box named yet");
+        assert_eq!(Esxi::new(&conn(&[]), None, TEST_VM.into()).detail(0), None, "no box named yet");
         assert_eq!(e.network, DEFAULT_NETWORK);
     }
 
@@ -481,7 +505,7 @@ mod tests {
         std::fs::write(version.join("amd64").join("virtualbox").join("box.vmdk"), vec![0u8; 900]).unwrap();
         let (r, seen) = reporter();
         let run = Scripted::new(&ALL_THE_WAY, None);
-        let course = Esxi::new(&conn(&[(DATASTORE, "ssd1")]), Some(boxes.clone()));
+        let course = Esxi::new(&conn(&[(DATASTORE, "ssd1")]), Some(boxes.clone()), TEST_VM.into());
         assert!(lab_run::test(&r, &run, course).await.result.is_ok());
         assert_eq!(running_size(&seen, "image"), Some(3000), "the amd64 VMware build Vagrant added, not another");
         assert_eq!(running_size(&seen, "vm"), None);
@@ -529,11 +553,21 @@ mod tests {
         let generated = lab::vagrant_dir(&dir, Runtime::Vm);
         let vagrantfile = std::fs::read_to_string(generated.join("Vagrantfile")).unwrap();
         assert!(vagrantfile.contains("m.vm.provider \"vmware_esxi\""), "no ESXi provider block");
-        assert!(vagrantfile.contains(&format!("v.guest_name = \"{VM_NAME}\"")), "the VM isn't named {VM_NAME}");
+        // Named with the copy's key, which the run hands the Vagrantfile (`ISOLOOM_KEY`).
+        let keyed = format!("v.guest_name = \"{LAB}-#{{ISOLOOM_KEY}}-{MACHINE}\"");
+        assert!(vagrantfile.contains(&keyed), "the VM isn't named {keyed}");
         let manifest = std::fs::read_to_string(generated.join("run.json")).unwrap();
         assert!(manifest.contains("\"vmware_esxi\"") && manifest.contains("check-probe"), "{manifest}");
         assert_eq!(lab_run::kept_lab(&work), Some(dir), "a test cut short now is found by the next one");
         assert!(isothrum_runner::RunName::new(&crate::runtime::docker::project(&run_id("0123456789abcdef"))).is_ok());
+        // The VM's name on a host is the same at every test there: the runner's key for the
+        // test's run, the one the run hands the Vagrantfile. Another host's test VM is another.
+        let home = Path::new("/data/runner");
+        let name = vm_name_in(home, "0123456789abcdef").unwrap();
+        let run = isothrum_runner::RunName::new(&crate::runtime::docker::project(&run_id("0123456789abcdef"))).unwrap();
+        assert_eq!(name, format!("{LAB}-{}-{MACHINE}", isothrum_runner::copy_key(home, &run)));
+        assert_eq!(vm_name_in(home, "0123456789abcdef").unwrap(), name);
+        assert_ne!(vm_name_in(home, "fedcba9876543210").unwrap(), name);
         std::fs::remove_dir_all(work).unwrap();
     }
 }
