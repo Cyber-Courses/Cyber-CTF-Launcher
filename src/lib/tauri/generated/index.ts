@@ -7,7 +7,6 @@ export type * from "./Arch";
 export type * from "./AttackStatus";
 export type * from "./AuthStatus";
 export type * from "./AzureSubscription";
-export type * from "./Badge";
 export type * from "./CloudClis";
 export type * from "./CloudLoginProvider";
 export type * from "./CloudPreview";

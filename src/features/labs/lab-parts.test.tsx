@@ -13,7 +13,7 @@ import { RunOnDialog, RunOnPicker, type Platform } from "@/features/labs/run-on"
 import type { RunTarget } from "@/features/labs/run-target";
 import type { Lab } from "@/features/labs/use-labs";
 import { getPortMode, setPortMode } from "@/lib/settings";
-import type { ActiveOperation, LabCheck, LabRunOptions, LabRunPath, LabStatus, Provider, ServerHost } from "@/lib/tauri";
+import type { ActiveOperation, LabCheck, LabRunOptions, LabStatus, ServerHost } from "@/lib/tauri";
 import { answersDialog, commands, dialogsAsked, installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 import { must, startInAct } from "@/components/test-support";
@@ -213,38 +213,6 @@ describe("RunOnPicker", () => {
     expect(screen.getByText("Container")).toBeTruthy();
     expect(screen.queryByText("VM")).toBeNull();
     expect(onPickPlatform).not.toHaveBeenCalled();
-  });
-
-  it("badges each place by the launch path the backend says the lab takes there", async () => {
-    // The badge is the backend's, per path (Isoloom's tier evidence): Azure's cloud-docker is
-    // validated-only, AWS's has real runs; a Proxmox server's path is an experimental one here. The picker used to guess the paths (Proxmox as cloud-vm/proxmox).
-    installTauri();
-    const path = (provider: Provider, badge: LabRunPath["badge"]): LabRunPath => ({ provider, badge, evidence: `${provider}: ${badge}` });
-    renderPicker({
-      hosts: [
-        host({ id: "az", name: "Azure sub", provider: "azure", host: "westeurope" }),
-        host({ id: "aws", name: "AWS sandbox", provider: "aws", host: "eu-west-3" }),
-        host({ id: "pve", name: "Homelab", provider: "proxmox", host: "10.0.0.2" }),
-      ],
-      hostOk: () => true,
-      runOptions: {
-        docker: null,
-        vms: [],
-        servers: [path("proxmox", "experimental")],
-        cloudDocker: [path("azure", "beta"), path("aws", "none")],
-        cloudVm: [],
-        cloudServices: [],
-        emulated: false,
-        refused: [],
-      },
-    });
-    const pve = must(screen.getByText("Homelab").closest<HTMLElement>("[role=radio]"), "Proxmox's option");
-    expect(within(pve).getByText("Experimental").closest("[title]")?.getAttribute("title")).toBe("proxmox: experimental");
-    await flush();
-    const az = must(screen.getByText("Azure sub").closest<HTMLElement>("[role=radio]"), "Azure's option");
-    expect(within(az).getByText("Beta")).toBeTruthy();
-    const aws = must(screen.getByText("AWS sandbox").closest<HTMLElement>("[role=radio]"), "AWS's option");
-    expect(within(aws).queryByText("Beta")).toBeNull();
   });
 
   it("says Isoloom's reason on a place it refuses the lab, and offers no containers the run options don't give it", async () => {

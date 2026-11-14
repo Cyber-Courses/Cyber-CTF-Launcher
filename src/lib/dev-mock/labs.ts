@@ -292,15 +292,11 @@ export function apiQuery(args: Args): unknown {
   return {};
 }
 
-/** A badge-less path, or a Beta one. */
-const runPath = (provider: Provider | null, beta = false): LabRunPath => ({
-  provider,
-  badge: beta ? "beta" : "none",
-  evidence: beta ? "validated only; tier 1 pending: linux, macos, windows" : "real runs: macos (mac, 2026-10-17)",
-});
+/** A launch path on `provider`. */
+const runPath = (provider: Provider | null): LabRunPath => ({ provider });
 
 /** UTM's path for a VM lab whose spec has a recipe for it. */
-export const utmPath = runPath("utm", true);
+export const utmPath = runPath("utm");
 
 const CLOUDS_OF_SAMPLE: Provider[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"];
 const NO_OPTIONS: LabRunOptions = {
@@ -318,14 +314,14 @@ const NO_OPTIONS: LabRunOptions = {
  *  Docker or a cloud VM (none has VM recipes too), a VM lab as VMs (not on UTM) here, on a server
  *  or a cloud, cloud services on AWS. */
 export function runOptions(runtime: unknown): LabRunOptions {
-  const clouds = () => CLOUDS_OF_SAMPLE.map((c) => runPath(c, c !== "aws"));
+  const clouds = () => CLOUDS_OF_SAMPLE.map((c) => runPath(c));
   if (runtime === "CLOUD") return { ...NO_OPTIONS, cloudServices: [runPath("aws")] };
   const local: Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu"];
   const utm = { provider: "utm" as const, cause: { kind: "isoloom" as const, reason: "a VM on UTM gets no private network" } };
   if (runtime === "VM")
     return {
       ...NO_OPTIONS,
-      vms: [...local, "hyperv" as const].map((p) => runPath(p, p !== "virtualbox")),
+      vms: [...local, "hyperv" as const].map((p) => runPath(p)),
       servers: [runPath("vmware_esxi"), runPath("proxmox")],
       cloudVm: clouds(),
       refused: [utm],

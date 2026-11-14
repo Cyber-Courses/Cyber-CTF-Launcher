@@ -45,8 +45,8 @@ const vmLab: Lab = {
   runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi"], ...SOURCE },
 };
 
-/** A launch path on `provider`, unbadged. */
-const path = (provider: Provider): LabRunPath => ({ provider, badge: "none", evidence: "" });
+/** A launch path on `provider`. */
+const path = (provider: Provider): LabRunPath => ({ provider });
 
 /** The backend's run options with only `paths` set. */
 const runOptions = (paths: Partial<LabRunOptions>): LabRunOptions => ({

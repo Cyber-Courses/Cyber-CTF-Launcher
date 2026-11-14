@@ -10,8 +10,7 @@
 //!
 //! This module is the launcher's one door to Isoloom's spec and generators (`isoloom-spec`,
 //! `isoloom-targets`: used nowhere else, their types re-exported from here): the spec, the
-//! generated files, the resolved snapshot, the checks and each launch path's tier evidence
-//! (`tiers`) go through it, and so do Isoloom's path and naming conventions (`names`). The native
+//! generated files, the resolved snapshot and the checks go through it, and so do Isoloom's path and naming conventions (`names`). The native
 //! files those generators write (a Compose file, a Vagrantfile, a Terraform module) are what the
 //! Isothrum runner opens, by their folder. The launcher's own conventions sit on top:
 //! its overrides of the generated files (`overrides`, applied after Isoloom's defaults) and the
@@ -29,7 +28,6 @@ mod names;
 pub(crate) mod overlay;
 mod overrides;
 mod run_options;
-mod tiers;
 mod vars;
 
 pub use instances::*;

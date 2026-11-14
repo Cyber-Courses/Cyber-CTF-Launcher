@@ -80,8 +80,6 @@
     "servers": "Servidores",
     "cloud": "Nube",
     "notSupported": "No compatible con este lab",
-    "beta": "Beta",
-    "experimental": "Experimental",
     "rememberChoice": "No volver a preguntar",
     "engineHeading": "¿Qué motor?",
     "defaultChoice": "Predeterminado",

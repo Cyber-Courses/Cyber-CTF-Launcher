@@ -6,7 +6,7 @@ import type { LabRunOptions, LabRunPath, Provider, ServerHost } from "@/lib/taur
 
 const rt = (p: Partial<LabRuntimeInfo>): LabRuntimeInfo => ({ runtime: "VM", architectures: [], providers: [], ...p });
 const host = (provider: string) => ({ id: provider, name: provider, provider }) as unknown as ServerHost;
-const path = (provider: Provider): LabRunPath => ({ provider, badge: "none", evidence: "" });
+const path = (provider: Provider): LabRunPath => ({ provider });
 /** The backend's run options with only `paths` set. */
 const options = (paths: Partial<LabRunOptions>): LabRunOptions => ({
   docker: null,

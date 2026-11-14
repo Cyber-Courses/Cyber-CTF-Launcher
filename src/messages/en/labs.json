@@ -80,8 +80,6 @@
     "servers": "Servers",
     "cloud": "Cloud",
     "notSupported": "Not supported by this lab",
-    "beta": "Beta",
-    "experimental": "Experimental",
     "rememberChoice": "Don't ask again",
     "engineHeading": "Which engine?",
     "defaultChoice": "Default",
