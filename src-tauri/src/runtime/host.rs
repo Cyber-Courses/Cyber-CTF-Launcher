@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn a_lab_is_found_where_its_marker_says_in_the_form_it_was_started_in() {
         let t = TestApp::new();
-        let _tools = Tools::rules(&[]);
+        let _tools = Tools::strict_rules(&[]);
         let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
         // On this machine: as its runtime says, a container lab in its helper VM, or as one VM
         // per machine; a cloud-services lab on no account runs nowhere.
@@ -245,7 +245,7 @@ mod tests {
     #[tokio::test]
     async fn cloud_services_have_no_machines_to_check_nor_to_put_an_attack_box_beside() {
         let t = TestApp::new();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
         server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
         let host = locate(&t.dirs(), &dir, "t", Runtime::Cloud).unwrap().unwrap();
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn only_a_container_box_on_this_machine_pulls_its_image_here() {
         let t = TestApp::new();
-        let _tools = Tools::rules(&[]);
+        let _tools = Tools::strict_rules(&[]);
         let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
         let placed = |runtime| crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", runtime).unwrap().unwrap();
         assert!(placed(Runtime::Docker).pulls_image_here());

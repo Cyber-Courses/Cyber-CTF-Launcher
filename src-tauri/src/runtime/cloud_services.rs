@@ -279,7 +279,7 @@ mod tests {
             "goat",
             &[("isoloom.yml", format!("{}  before: [keys.sh]\n", goat()).as_str()), ("keys.sh", "true\n"), ("terraform/main.tf", "variable \"region\" {}\n")],
         );
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         // No such account: had it been read first, that would be the error.
         let (lab, to) =
             (LabRef { dir: &dir, id: "goat", runtime: Runtime::Cloud }, super::super::Destination { host: Some("no-such-account"), ..Default::default() });

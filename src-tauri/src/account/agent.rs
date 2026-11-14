@@ -335,7 +335,7 @@ mod tests {
         // A lab whose download failed: the failure isn't said to have left anything up.
         let t = crate::testing::test_app::TestApp::new();
         let deps = test_deps(&t, Arc::default());
-        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
         tear_down(&deps, "gone", Runtime::Docker).await.unwrap();
         tear_down(&deps, "gone", Runtime::Vm).await.unwrap();
         let err = undo_start(&deps, "gone", Runtime::Docker, false, Error::Invalid("download failed: HTTP 404".into())).await;
@@ -370,7 +370,7 @@ mod tests {
         let state = t.data().join("deployments").join(id).join("aws");
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"ip":{"value":"203.0.113.7"}},"resources":[{}]}"#).unwrap();
-        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
         assert!(crate::runtime::lab_present(&dirs, id));
         let err = run_claimed(&test_deps(&t, Arc::default()), &claim_of(id).launch, &StartPlace::default(), false).await.unwrap_err();
         assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");
@@ -388,7 +388,7 @@ mod tests {
         let dir = t.lab(id, &[]);
         server::mark_lab(&dir, Some("pve1")).unwrap();
         crate::runtime::test_support::record_run(t.data(), id, Some("pve1"), "proxmox", "ready");
-        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
         let failure = Error::Invalid("the lab host didn't answer".into());
         let err = undo_start(&test_deps(&t, Arc::default()), id, Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id), failure).await;
         assert_eq!(err.to_string(), "the lab host didn't answer");

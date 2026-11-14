@@ -513,7 +513,7 @@ mod tests {
     #[tokio::test]
     async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
         let _policy = policy::Override::with(&[Key::DisableToolInstalls]);
-        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
         let t = crate::testing::test_app::TestApp::new();
         let mut lines = Vec::new();
         let err = install_dependency(t.dirs(), Dependency::Docker, |l| lines.push(l)).await.unwrap_err();
@@ -761,7 +761,7 @@ mod tests {
     #[tokio::test]
     async fn a_dependency_this_os_does_not_install_is_refused_in_the_log_before_running_anything() {
         let t = TestApp::new();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let log = Sink::default();
         let err = install_dependency(t.dirs(), not_here(), log.on_line()).await.unwrap_err();
         assert_eq!(log.lines(), [err.to_string()]);

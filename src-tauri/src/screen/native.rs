@@ -226,7 +226,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_program_that_fails_at_once_says_why_and_one_that_stays_open_is_left_running() {
-        let tools = crate::platform::exec::fake::Tools::rules(&[(
+        let tools = crate::platform::exec::fake::Tools::strict_rules(&[(
             "startvm",
             crate::platform::exec::fake::fail("VBoxManage: error: The machine is already locked for a session"),
         )]);
@@ -234,7 +234,7 @@ mod tests {
         assert!(err.to_string().contains("VBoxManage"), "{err}");
         assert_eq!(tools.calls(), ["/bin/VBoxManage startvm web --type separate"]);
         drop(tools);
-        let _ok = crate::platform::exec::fake::Tools::rules(&[]);
+        let _ok = crate::platform::exec::fake::Tools::strict_rules(&[]);
         run(Path::new("/bin/virt-viewer"), &["lab_web".into()]).await.unwrap();
     }
     /// Regression: a viewer left running had its error output's pipe closed under it, so the

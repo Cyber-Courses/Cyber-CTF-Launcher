@@ -124,7 +124,7 @@ fn on_own_ports(values: &[(String, String)]) -> Inputs<'_> {
 /// `Tools` guard, which hold the lab's folder and the fake tools for the rest of the test.
 async fn up_then_parked() -> (Fixture, LabRun, Tools) {
     let f = Fixture::new();
-    let tools = Tools::rules(&[]);
+    let tools = Tools::strict_rules(&[]);
     let run = f.up().await;
     run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
     (f, run, tools)
@@ -133,7 +133,7 @@ async fn up_then_parked() -> (Fixture, LabRun, Tools) {
 #[tokio::test]
 async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let mut log = Vec::new();
     f.run().up(on_own_ports(&launch_env()), None, &mut |l| log.push(l)).await.unwrap();
     let up = f.fake.last(" up --detach").unwrap();
@@ -149,7 +149,7 @@ async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
 #[tokio::test]
 async fn the_lab_page_reads_the_runners_status() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let run = f.up().await;
     let s = run.status().await.unwrap();
     assert!(s.running && s.parked.is_none());
@@ -183,7 +183,7 @@ async fn a_lab_parks_and_resumes() {
 #[tokio::test]
 async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let run = f.up().await;
     assert_eq!(f.fake.last(" up --detach").and_then(|c| c.env("CTF_LAUNCH_TOKEN").map(str::to_owned)).as_deref(), Some("t0k"));
     run.park(Park::Shutdown, &mut |_| {}).await.unwrap();
@@ -199,7 +199,7 @@ async fn a_resumed_lab_keeps_the_files_its_inputs_were_written_to() {
 #[tokio::test]
 async fn a_container_stopped_outside_the_app_is_resumed_as_it_is() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let run = f.up().await;
     f.set(Containers::Stopped);
     let down = run.status().await.unwrap();
@@ -230,7 +230,7 @@ async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
 async fn a_lab_taken_down_outside_the_app_is_forgotten_before_a_reimport() {
     use crate::runtime::status::{forget_gone_with, refuse_replace, still_up};
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let run = f.up().await;
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     let mut quiet = |_: String| {};
@@ -255,7 +255,7 @@ async fn a_lab_taken_down_outside_the_app_is_forgotten_before_a_reimport() {
 #[tokio::test]
 async fn a_second_start_of_a_running_lab_is_refused_and_a_down_removes_it_all() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let run = f.up().await;
     let again = run.up(on_own_ports(&launch_env()), None, &mut |_| {}).await.unwrap_err();
     assert!(matches!(&again, Error::Refused(m) if m.starts_with("This lab is already running on this machine")), "{again}");
@@ -267,7 +267,7 @@ async fn a_second_start_of_a_running_lab_is_refused_and_a_down_removes_it_all() 
 #[tokio::test]
 async fn the_labs_checks_run_through_the_runner() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let run = f.run();
     let not_up = run.check().await.unwrap_err().to_string();
     assert!(not_up.contains("isn't running"), "{not_up}");
@@ -353,7 +353,7 @@ fn placed_box(f: &Fixture) -> crate::runtime::attack_box::Placed {
 #[tokio::test]
 async fn an_attack_box_refused_by_a_lab_that_is_not_up_leaves_the_lab_as_published() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     let compose = std::fs::read_to_string(lab::compose_file(&f.home.dir)).unwrap();
     let err =
@@ -366,7 +366,7 @@ async fn an_attack_box_refused_by_a_lab_that_is_not_up_leaves_the_lab_as_publish
 #[tokio::test]
 async fn an_attack_box_whose_start_failed_in_the_run_stays_in_the_lab_for_stop_to_take_out() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     f.up().await;
     f.model().failing_up = true;
@@ -383,7 +383,7 @@ async fn an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull() {
     // Regression: the box's image downloading inside the start's `up` was read as the lab's `up`
     // running out of time, and the player was told to check Docker's resources.
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     f.up().await;
     f.model().failing_pull = true;
@@ -409,7 +409,7 @@ async fn an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull() {
 #[tokio::test]
 async fn an_attack_box_goes_in_and_out_of_the_run_with_the_labs_files() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let dirs = crate::platform::AppDirs::new(Some(f.home.root.clone()), None);
     f.up().await;
     let placed = placed_box(&f);
@@ -460,7 +460,7 @@ fn as_written_before(manifest: &std::path::Path) {
 async fn a_lab_generated_by_an_earlier_version_is_generated_again_then_read_and_stopped() {
     let home = Home::new("-earlier", SPEC, &[(lab::INSTANCE_MARKER, "3")], lab::Target::Docker);
     let f: Fixture = Scripted::answered_by(home, answer);
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     f.up().await;
     let manifest = lab::docker_manifest(&f.home.dir);
     assert!(manifest.starts_with(f.home.dir.join(".isoloom-3")), "{}", manifest.display());
@@ -487,7 +487,7 @@ async fn a_lab_generated_by_an_earlier_version_is_generated_again_then_read_and_
 #[tokio::test]
 async fn a_lab_generated_by_an_earlier_version_that_cant_be_generated_again_says_what_to_do() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     as_written_before(&lab::docker_manifest(&f.home.dir));
     std::fs::remove_file(f.home.dir.join("isoloom.yml")).unwrap();
     let err = f.run().down(&mut |_| {}).await.unwrap_err().to_string();
@@ -593,7 +593,7 @@ async fn a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_st
     // Regression: the player deleted the lab's generated folder while it ran. Its page read it as
     // stopped, and its Stop said "Nothing to remove" and left its containers running.
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let run = f.up().await;
     std::fs::remove_file(lab::docker_manifest(&f.home.dir)).unwrap();
     assert!(run.status().await.unwrap().running, "the page still sees it");
@@ -607,7 +607,7 @@ async fn a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_st
 #[tokio::test]
 async fn a_running_lab_whose_whole_folder_is_gone_says_what_is_left() {
     let f = Fixture::new();
-    let _tools = Tools::rules(&[]);
+    let _tools = Tools::strict_rules(&[]);
     let run = f.up().await;
     std::fs::remove_dir_all(&f.home.dir).unwrap();
     let err = run.down(&mut |_| {}).await.unwrap_err().to_string();

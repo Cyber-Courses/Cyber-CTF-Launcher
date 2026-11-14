@@ -63,7 +63,7 @@ thread_local! {
 
 /// The scripted tools of the running test, until dropped. A call the script doesn't answer
 /// (`None`) is a missing tool.
-pub struct Tools(Rc<RefCell<State>>, Option<Rc<Strict>>);
+pub struct Tools(Rc<RefCell<State>>, Option<Rc<dyn Checked>>);
 
 /// How often a scripted call must be made, checked when the tools are dropped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +135,12 @@ impl Script {
     }
 }
 
+/// What a strict fake has to say when the tools go: the calls it had no answer for, and the
+/// expectations it wasn't given.
+trait Checked {
+    fn unmet(&self) -> Vec<String>;
+}
+
 /// A strict script's bookkeeping.
 struct Strict {
     script: Script,
@@ -166,7 +172,9 @@ impl Strict {
         self.unscripted.borrow_mut().push(why.clone());
         panic!("{why}");
     }
+}
 
+impl Checked for Strict {
     /// What wasn't run as scripted.
     fn unmet(&self) -> Vec<String> {
         let mut unmet = self.unscripted.borrow().clone();
@@ -181,6 +189,36 @@ impl Strict {
             }
         }
         unmet
+    }
+}
+
+/// [`Tools::strict_rules`]' bookkeeping.
+struct SubstringRules {
+    rules: Vec<(String, Option<Reply>)>,
+    unscripted: RefCell<Vec<String>>,
+}
+
+impl SubstringRules {
+    fn answer(&self, program: &str, args: &[&str]) -> Option<Reply> {
+        let line = std::iter::once(program).chain(args.iter().copied()).collect::<Vec<_>>().join(" ");
+        let matching: Vec<&(String, Option<Reply>)> = self.rules.iter().filter(|(k, _)| line.contains(k.as_str())).collect();
+        let longest = matching.iter().map(|(k, _)| k.len()).max();
+        let best: Vec<&&(String, Option<Reply>)> = matching.iter().filter(|(k, _)| Some(k.len()) == longest).collect();
+        let why = match best.as_slice() {
+            [(_, reply)] => return reply.clone(),
+            [] => format!("unscripted call `{line}`; the rules are:\n{}", self.rules.iter().map(|(k, _)| format!("  {k}")).collect::<Vec<_>>().join("\n")),
+            many => {
+                format!("call `{line}` matches {} rules equally: {}", many.len(), many.iter().map(|(k, _)| format!("`{k}`")).collect::<Vec<_>>().join(", "))
+            }
+        };
+        self.unscripted.borrow_mut().push(why.clone());
+        panic!("{why}");
+    }
+}
+
+impl Checked for SubstringRules {
+    fn unmet(&self) -> Vec<String> {
+        self.unscripted.borrow().clone()
     }
 }
 
@@ -220,6 +258,19 @@ impl Tools {
             })
             .filter(|args| args.len() >= want.len() && want.iter().zip(args).all(|(w, g)| *w == "*" || w == g))
             .collect()
+    }
+
+    /// Tools answering by rule, strictly: each rule answers the calls (`program arg arg…`) that
+    /// contain its text; of several, the longest text answers (so order never matters), two as
+    /// long panic, and a call no rule answers panics (and is said again when the tools go)
+    /// rather than succeeding. A rule no call used is fine: one test helper's rules serve several
+    /// tests. For the tests moved off [`Tools::rules`]; a new test scripts with [`Tools::script`].
+    pub fn strict_rules(rules: &[(&str, Option<Reply>)]) -> Tools {
+        let checked = Rc::new(SubstringRules { rules: rules.iter().map(|(k, r)| (k.to_string(), r.clone())).collect(), unscripted: RefCell::new(Vec::new()) });
+        let answering = checked.clone();
+        let mut tools = Tools::new(move |program, args| answering.answer(program, args));
+        tools.1 = Some(checked);
+        tools
     }
 
     /// Lenient tools, for the tests written before [`Tools::script`]: the first rule whose text
@@ -411,6 +462,25 @@ mod tests {
         call(&tools, "vagrant status");
         let message = panic_of(move || drop(tools));
         assert!(message.contains("`vagrant status` was expected Exactly(1), made 2 time(s)"), "{message}");
+    }
+
+    #[test]
+    fn strict_rules_answer_by_the_longest_text_and_refuse_a_call_none_answers() {
+        let tools = Tools::strict_rules(&[("docker", ok("general")), ("compose ps", ok("specific"))]);
+        assert_eq!(out(call(&tools, "docker compose ps -q")).as_deref(), Some("specific"));
+        assert_eq!(out(call(&tools, "docker info")).as_deref(), Some("general"));
+        let message = panic_of(|| drop(call(&tools, "vagrant up")));
+        assert!(message.contains("unscripted call `vagrant up`") && message.contains("compose ps"), "{message}");
+        let again = panic_of(move || drop(tools));
+        assert!(again.contains("unscripted call `vagrant up`"), "reported again when dropped: {again}");
+    }
+
+    #[test]
+    fn strict_rules_matching_a_call_equally_panic() {
+        let tools = Tools::strict_rules(&[("compose", ok("a")), ("ps -q x", ok("b"))]);
+        let message = panic_of(|| drop(call(&tools, "docker compose ps -q x")));
+        assert!(message.contains("matches 2 rules equally"), "{message}");
+        panic_of(move || drop(tools));
     }
 
     #[test]

@@ -462,7 +462,7 @@ mod tests {
         let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("web", &[]);
         std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "gone1\n").unwrap();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         for runtime in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
             let err = super::status(&t.dirs(), &dir, "web", runtime).await.err().expect("refused").to_string();
             assert_eq!(err, "server host `gone1` not found", "{runtime:?}");
@@ -486,7 +486,7 @@ mod tests {
     async fn the_status_carries_what_the_page_may_do_where_the_lab_runs() {
         use crate::runtime::Control;
         let t = crate::testing::test_app::TestApp::new();
-        let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
         let dir = t.lab("web", &[]);
         let docker = super::status(&t.dirs(), &dir, "web", Runtime::Docker).await.unwrap().controls;
         // Containers stopped outside the app come back with a resume (tests/resilience.md M4).

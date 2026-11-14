@@ -529,7 +529,7 @@ mod tests {
 
     /// The AWS checklist on scripted tools: `dry` answers the dry run, `latest` the SSM lookup.
     async fn aws_checklist(latest: Option<Reply>, dry: Option<Reply>) -> (Tools, TestResult) {
-        let tools = Tools::rules(&[
+        let tools = Tools::strict_rules(&[
             ("sts get-caller-identity", ok("arn:aws:iam::1:user/me\n")),
             ("ssm get-parameter", latest),
             ("ec2 run-instances", dry),
@@ -637,7 +637,7 @@ mod tests {
     async fn the_gcp_test_asks_for_the_sign_in_a_launch_needs_first() {
         // Regression: Test passed on the CLI's own sign-in while every launch was refused because
         // the application-default sign-in Terraform uses had run out.
-        let tools = Tools::rules(&[
+        let tools = Tools::strict_rules(&[
             ("auth application-default print-access-token", fail("ERROR: (gcloud.auth.application-default.print-access-token) Reauthentication failed.")),
             ("billing accounts describe", ok("Main\n")),
             ("terraform version", ok("Terraform v1.9")),
@@ -647,7 +647,7 @@ mod tests {
         assert_eq!(result.checks.iter().map(|c| (c.name.as_str(), c.state)).collect::<Vec<_>>(), [("Sign-in", CheckState::Fail)]);
         assert!(result.checks[0].detail.contains("Reauthentication failed."), "{}", result.checks[0].detail);
         assert!(!tools.called("billing"), "{:?}", tools.calls());
-        let _tools = Tools::rules(&[
+        let _tools = Tools::strict_rules(&[
             ("auth application-default print-access-token", ok("ya29.token\n")),
             ("billing accounts describe", ok("Main\n")),
             ("terraform version", ok("Terraform v1.9")),

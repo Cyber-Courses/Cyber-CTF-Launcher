@@ -320,14 +320,14 @@ mod tests {
         let home = std::env::temp_dir().join(format!("cyberctf-signin-{}", rand::random::<u32>()));
         let place = CloudPlace { region: Some("eu-west-3".into()), tf_env: vec![("AWS_PROFILE".into(), "labs".into())], ..CloudPlace::default() };
         let aws = CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, "aws").unwrap();
-        let tools = Tools::rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
+        let tools = Tools::strict_rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
         let err = aws.down(&place, &mut |_| ()).await;
         assert!(err.is_ok(), "no files: nothing to remove, nothing asked");
         let err = aws.update(&place, &mut |_| ()).await.unwrap_err().to_string();
         assert!(err.starts_with("Your sign-in to AWS has expired") && err.contains("`aws login`"), "{err}");
         assert_eq!(tools.calls().len(), 1, "only the question ran: {:?}", tools.calls());
         drop(tools);
-        let signed = Tools::rules(&[("sts get-caller-identity", ok("arn:aws:iam::1:user/me\n"))]);
+        let signed = Tools::strict_rules(&[("sts get-caller-identity", ok("arn:aws:iam::1:user/me\n"))]);
         assert!(aws.signed_in(&place).await.is_ok());
         drop(signed);
         // Every cloud whose sign-in runs out is asked its own question; a token cloud, none.
@@ -337,12 +337,12 @@ mod tests {
             ("oci", "iam region list", "ServiceError: NotAuthenticated"),
         ] {
             let run = CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, cloud).unwrap();
-            let tools = Tools::rules(&[(question, fail(said))]);
+            let tools = Tools::strict_rules(&[(question, fail(said))]);
             let err = run.update(&place, &mut |_| ()).await.unwrap_err().to_string();
             assert!(err.starts_with("Your sign-in to") && tools.calls().len() == 1, "{cloud}: {err} {:?}", tools.calls());
         }
         let linode = CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, "linode").unwrap();
-        let none = Tools::rules(&[]);
+        let none = Tools::strict_rules(&[]);
         assert!(linode.signed_in(&place).await.is_ok());
         assert!(none.calls().is_empty(), "no question for a token cloud");
         let _ = std::fs::remove_dir_all(&home);
@@ -362,7 +362,7 @@ mod tests {
         let mut earlier: serde_json::Value = serde_json::from_str(&generated).unwrap();
         earlier["manifest_version"] = 0.into();
         std::fs::write(&manifest, earlier.to_string()).unwrap();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let run = CloudRun::new(&dir.join("home"), &dir, "t", Runtime::Docker, "aws").unwrap();
         // Opened and read: what stops it now is the firewall value a run that never started has
         // no record of, not the manifest.

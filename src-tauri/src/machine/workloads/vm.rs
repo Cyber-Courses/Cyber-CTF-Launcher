@@ -254,7 +254,7 @@ mod tests {
         let attack = lab.join(super::LEGACY_ATTACK_VM_DIR);
         std::fs::create_dir_all(&attack).unwrap();
         std::fs::write(attack.join("Vagrantfile"), "").unwrap();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         super::stop(&t.dirs(), "goad").await.unwrap();
         assert_eq!(tools.calls().iter().filter(|c| c.as_str() == "vagrant destroy -f").count(), 3, "{:?}", tools.calls());
     }

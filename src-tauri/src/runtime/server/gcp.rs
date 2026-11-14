@@ -171,7 +171,7 @@ mod tests {
             "ERROR: (gcloud.projects.describe) User [other@example.com] does not have permission to access projects instance [cyberctf-labs-aaaaaa] (or it may not exist)",
             "timed out after 60s (the tool or its backend may be stuck)",
         ] {
-            let tools = Tools::rules(&[("projects describe", fail(stderr))]);
+            let tools = Tools::strict_rules(&[("projects describe", fail(stderr))]);
             let err = labs_project(&t.dirs(), &id).await.unwrap_err().to_string();
             assert!(err.starts_with("couldn't check the Cyber CTF labs project cyberctf-labs-aaaaaa:"), "{err}");
             assert!(!tools.called("projects create"), "{:?}", tools.calls());
@@ -183,11 +183,11 @@ mod tests {
     async fn an_active_project_is_kept_and_a_deleted_one_replaced() {
         let t = TestApp::new();
         let id = account(&t, Some("cyberctf-labs-aaaaaa"));
-        let tools = Tools::rules(&[("projects describe", ok("ACTIVE\n"))]);
+        let tools = Tools::strict_rules(&[("projects describe", ok("ACTIVE\n"))]);
         assert_eq!(labs_project(&t.dirs(), &id).await.unwrap(), "cyberctf-labs-aaaaaa");
         assert!(!tools.called("projects create") && !tools.called("services enable"));
         drop(tools);
-        let tools = Tools::rules(&[("projects describe", fail("ERROR: NOT_FOUND: project not found"))]);
+        let tools = Tools::strict_rules(&[("projects describe", fail("ERROR: NOT_FOUND: project not found"))]);
         let made = labs_project(&t.dirs(), &id).await.unwrap();
         assert!(made.starts_with("cyberctf-labs-") && made != "cyberctf-labs-aaaaaa", "{made}");
         assert!(tools.called("billing projects link") && tools.called("--billing-account 0X0X0X-0X0X0X-0X0X0X"));
@@ -205,7 +205,7 @@ mod tests {
 
     /// What `project_state` makes of a `describe` answering `describe`.
     async fn state_of(describe: Option<crate::platform::exec::fake::Reply>) -> Result<Project> {
-        let _tools = Tools::rules(&[("projects describe", describe)]);
+        let _tools = Tools::strict_rules(&[("projects describe", describe)]);
         project_state("p").await
     }
 
@@ -216,13 +216,13 @@ mod tests {
         let t = TestApp::new();
         let id = account(&t, None);
         for (step, stderr) in [("services enable", "ERROR: quota exceeded"), ("billing projects link", "Cloud billing quota exceeded")] {
-            let tools = Tools::rules(&[(step, fail(stderr))]);
+            let tools = Tools::strict_rules(&[(step, fail(stderr))]);
             assert!(labs_project(&t.dirs(), &id).await.is_err());
             assert!(tools.called("projects delete"), "{step}: {:?}", tools.calls());
             assert_eq!(saved_project(&t), None);
         }
         // Not even deletable: the error names it, to delete by hand.
-        let _tools = Tools::rules(&[("services enable", fail("quota")), ("projects delete", fail("permission denied"))]);
+        let _tools = Tools::strict_rules(&[("services enable", fail("quota")), ("projects delete", fail("permission denied"))]);
         let err = labs_project(&t.dirs(), &id).await.unwrap_err().to_string();
         assert!(err.contains("couldn't be deleted either: delete it in the Google Cloud console"), "{err}");
         assert_eq!(saved_project(&t), None);

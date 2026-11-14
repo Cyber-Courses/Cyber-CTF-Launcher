@@ -312,7 +312,7 @@ mod tests {
         let dir = t.lab("web", &[]);
         let host = t.host("az1", "azure", serde_json::json!({}));
         server::mark_lab(&dir, Some(&host)).unwrap();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let err = park_lab(&t.dirs(), "web", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err().to_string();
         assert!(err.starts_with("Pausing a lab on a server or a cloud account"), "{err}");
         let err = resume_lab(&t.dirs(), "web", Runtime::Docker, |_| {}).await.unwrap_err().to_string();
@@ -340,7 +340,7 @@ mod tests {
         std::fs::create_dir_all(&state).unwrap();
         std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[{"type":"aws_instance"}]}"#).unwrap();
         std::fs::write(state.join("host"), &host).unwrap();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let err = stop_lab(&t.dirs(), "web", Runtime::Docker, std::future::ready(()), |_| {}).await.unwrap_err().to_string();
         assert!(err.contains("the launcher can't remove") && err.contains("delete its resources in your AWS console"), "{err}");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
@@ -356,7 +356,7 @@ mod tests {
         let t = TestApp::new();
         let dir = t.lab("priv", &[("isoloom.yml", crate::runtime::test_support::PRIVILEGED_LAB)]);
         mark_parked(&dir, Some(Park::Pause)).unwrap();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
         let err = resume_lab(&t.dirs(), "priv", Runtime::Docker, |_| {}).await.unwrap_err();
         assert_eq!(err.code(), Code::TurnedOffByPolicy { setting: "RefusePrivilegedLabs".into() }, "{err}");
@@ -370,7 +370,7 @@ mod tests {
         let dir = t.lab("web", &[]);
         mark_parked(&dir, Some(Park::Shutdown)).unwrap();
         crate::runtime::paths::mark_engine(&dir, Some("orbstack")).unwrap();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let mut lines = Vec::<String>::new();
         let lab = LabRef { dir: &dir, id: "web", runtime: Runtime::Docker };
         clear_parked(&t.dirs(), lab, &mut |l| lines.push(l)).await.unwrap();
@@ -390,7 +390,7 @@ mod tests {
         let manifest = crate::runtime::lab::docker_manifest(&dir);
         std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
         std::fs::write(&manifest, "not a manifest").unwrap();
-        let _tools = Tools::rules(&[]);
+        let _tools = Tools::strict_rules(&[]);
         let lab = LabRef { dir: &dir, id: "web", runtime: Runtime::Docker };
         assert!(clear_parked(&t.dirs(), lab, &mut |_| {}).await.is_err());
         assert_eq!(parked(&dir), Some(Park::Pause), "still parked: its machines may still be there");
@@ -428,7 +428,7 @@ mod tests {
         let t = TestApp::new();
         let spec = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
         t.lab("t", &[("isoloom.yml", spec)]);
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let err = park_lab(&t.dirs(), "t", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err();
         assert!(matches!(err, crate::error::Error::Refused(_)) && err.to_string().contains("shut it down instead"), "{err}");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
@@ -449,7 +449,7 @@ mod tests {
         let t = TestApp::new();
         let dir = t.lab("goat", &[]);
         mark_parked(&dir, Some(Park::Pause)).unwrap();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         stop_lab(&t.dirs(), "goat", Runtime::Cloud, std::future::ready(()), |_| {}).await.unwrap();
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert_eq!(parked(&dir), None);
@@ -465,7 +465,7 @@ mod tests {
     async fn clearing_a_lab_that_is_not_parked_does_nothing() {
         let t = TestApp::new();
         let dir = t.lab("web-1", &[]);
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let mut lines = Vec::<String>::new();
         clear_parked(&t.dirs(), LabRef { dir: &dir, id: "web-1", runtime: Runtime::Vm }, &mut |l| lines.push(l)).await.unwrap();
         assert_eq!(lines, [] as [String; 0]);
@@ -486,7 +486,7 @@ mod tests {
     fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
         use crate::runtime::paths::{mark_local_vm, mark_per_machine_vm};
         let t = TestApp::new();
-        let _tools = Tools::rules(&[]);
+        let _tools = Tools::strict_rules(&[]);
         let spec = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
         let dir = t.lab("t", &[("isoloom.yml", spec)]);
         // Containers here: shut down only (nothing to save), no provisioning; stopped containers

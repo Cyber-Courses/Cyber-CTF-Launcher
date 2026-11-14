@@ -31,7 +31,7 @@ fn per_machine_on(provider: Provider) -> Destination<'static> {
 async fn a_lab_on_qemu_is_checked_for_its_emulator() {
     let t = TestApp::new();
     t.lab("ad", &[("isoloom.yml", VM_LAB), ("setup.sh", "true\n")]);
-    let _tools = Tools::rules(&[("qemu-system", None)]);
+    let _tools = Tools::strict_rules(&[("qemu-system", None)]);
     let (r, _) = start_here(&t, "ad", Runtime::Vm, Some(Provider::Qemu), &[]).await;
     // One of its machines is built for the other CPU, and its emulator is missing (or its
     // networks don't fit QEMU's two-VM links): refused before any VM is created.
@@ -184,7 +184,7 @@ async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_fo
     let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
     // QEMU with no emulator for the other CPU: the start stops at the emulator check, after the
     // VM form's files are generated and the form is recorded, before any VM is created.
-    let _tools = Tools::rules(&[("qemu-system", None)]);
+    let _tools = Tools::strict_rules(&[("qemu-system", None)]);
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Qemu), &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.contains("qemu-system"), "{err}");
@@ -220,7 +220,7 @@ async fn a_plain_container_start_forgets_an_earlier_per_machine_form() {
     // generated or run), after the form was decided: no container is ever started here.
     let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS)]);
     mark_per_machine_vm(&dir, true).unwrap();
-    let tools = Tools::rules(&[]);
+    let tools = Tools::strict_rules(&[]);
     let (r, _) = start_here(&t, "both", Runtime::Docker, None, &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.contains("isoloom.yml has mistakes") && err.contains("setup.sh"), "{err}");
@@ -234,7 +234,7 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
     let t = TestApp::new();
     let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
     t.host("pve1", "proxmox", serde_json::json!({}));
-    let tools = Tools::rules(&[]);
+    let tools = Tools::strict_rules(&[]);
     let to = Destination { host: Some("pve1"), per_machine_vm: true, ..Destination::default() };
     let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
     assert_eq!(err, super::PER_MACHINE_NOT_ON_SERVERS);
@@ -342,7 +342,7 @@ async fn a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing() {
     server::mark_lab(&dir, Some("aws1")).unwrap();
     mark_parked(&dir, Some(Park::Pause)).unwrap();
     crate::runtime::test_support::record_run(t.data(), "web", Some("aws1"), "cloud-docker", "ready");
-    let tools = Tools::rules(&[]);
+    let tools = Tools::strict_rules(&[]);
     let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
     let err = r.unwrap_err();
     assert!(err.is_refusal(), "{err}");
@@ -424,7 +424,7 @@ async fn the_policy_refuses_a_start_it_turns_off_before_anything_runs() {
     let t = TestApp::new();
     t.lab("priv", &[("isoloom.yml", crate::runtime::test_support::PRIVILEGED_LAB)]);
     let aws = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
-    let tools = Tools::rules(&[]);
+    let tools = Tools::strict_rules(&[]);
     let refused = |r: crate::error::Result<()>, setting: &str| {
         let err = r.unwrap_err();
         assert_eq!(err.code(), Code::TurnedOffByPolicy { setting: setting.into() }, "{err}");

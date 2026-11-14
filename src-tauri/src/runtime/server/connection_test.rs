@@ -114,7 +114,7 @@ mod tests {
         use crate::platform::exec::fake::{Tools, ok};
         let t = crate::testing::test_app::TestApp::new();
         let az = t.host("az1", "azure", serde_json::json!({}));
-        let tools = Tools::rules(&[("account show", ok("Pay-As-You-Go\n"))]);
+        let tools = Tools::strict_rules(&[("account show", ok("Pay-As-You-Go\n"))]);
         let result = test_connection(&t.dirs(), &az).await.unwrap();
         assert!(tools.called("az account show"), "{:?}", tools.calls());
         assert!(!result.checks.is_empty());
@@ -128,7 +128,7 @@ mod tests {
         use crate::platform::exec::fake::{Tools, fail, ok};
         let t = crate::testing::test_app::TestApp::new();
         let id = t.host("gcp1", "gcp", serde_json::json!({ "username": "0X0X0X-0X0X0X-0X0X0X", "gcpProject": "cyberctf-labs-aaaaaa" }));
-        let _tools = Tools::rules(&[
+        let _tools = Tools::strict_rules(&[
             ("auth application-default print-access-token", ok("ya29.token\n")),
             ("billing accounts describe", ok("Main\n")),
             ("terraform version", ok("Terraform v1.9")),
@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(result.checks.last().map(|c| c.name.as_str()), Some("Labs project"));
         assert!(result.message.starts_with("couldn't check the Cyber CTF labs project"), "{}", result.message);
         // Every check passing, it says so, and passes.
-        let _tools = Tools::rules(&[
+        let _tools = Tools::strict_rules(&[
             ("auth application-default print-access-token", ok("ya29.token\n")),
             ("billing accounts describe", ok("Main\n")),
             ("terraform version", ok("Terraform v1.9")),
@@ -165,7 +165,7 @@ mod tests {
         );
         let host = load_host(&t.dirs(), &id).unwrap();
         // The key already there: only the authorization is run, and every part passes.
-        let tools = Tools::rules(&[("authorized_keys", ok("present"))]);
+        let tools = Tools::strict_rules(&[("authorized_keys", ok("present"))]);
         let checks = ssh_key_checks(&t.dirs(), &host, host.ssh_key.as_ref().unwrap()).await;
         let names: Vec<&str> = checks.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["SSH with your key", "API token", "Launcher key"]);

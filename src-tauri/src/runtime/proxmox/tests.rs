@@ -312,16 +312,16 @@ async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
     std::fs::create_dir_all(key.parent().unwrap()).unwrap();
     // A token setup: the launcher's key, as the token's user.
     let token = HostProfile { username: "root@pam!cyberctf-0a1b2c3d".into(), ..host("10.0.0.50", None) };
-    let tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
+    let tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
     assert_eq!(sdn_problem(&token, "secret", &key).await.as_deref(), Some(SDN_MISSING));
     let call = tools.calls().pop().unwrap();
     assert!(call.starts_with("ssh -i ") && call.contains(" root@10.0.0.50 ") && call.ends_with(SDN_SOURCE_CHECK), "{call}");
     drop(tools);
-    let tools = Tools::rules(&[("/etc/network/interfaces", ok(""))]);
+    let tools = Tools::strict_rules(&[("/etc/network/interfaces", ok(""))]);
     assert_eq!(sdn_problem(&token, "secret", &key).await, None);
     drop(tools);
     // A password setup: the password, through the askpass helper.
-    let tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
+    let tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
     assert_eq!(sdn_problem(&host("10.0.0.50", None), "pw", &key).await.as_deref(), Some(SDN_MISSING));
     assert_eq!(tools.env_of("/etc/network/interfaces", "CYBERCTF_SSH_PASSWORD").as_deref(), Some("pw"));
     assert!(tools.calls().pop().unwrap().contains("PreferredAuthentications=password"));
@@ -335,7 +335,7 @@ async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
 async fn the_sdn_check_writes_its_askpass_in_the_given_apps_folder_only() {
     use crate::platform::exec::fake::{Tools, fail};
     let (first, second) = (crate::testing::test_app::TestApp::new(), crate::testing::test_app::TestApp::new());
-    let _tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
+    let _tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
     for app in [&first, &second] {
         let key = app.data().join("ssh").join("id_ed25519");
         std::fs::create_dir_all(key.parent().unwrap()).unwrap();
