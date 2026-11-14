@@ -158,10 +158,10 @@ impl CloudRun {
     /// Lab `id` of `runtime` (a container lab is `cloud-docker`, a VM lab `cloud-vm`) on `cloud`,
     /// installed in `dir`, on the runner whose home is `home` (the app data folder).
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
-        let config = super::host_config(home, None);
+        let config = super::host_config(home);
         let (out, target) = lab::terraform(dir, runtime, cloud);
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
-        Ok(CloudRun { run: OpenedRun::new(config, dir, Some(target), out, name)?, cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(config, dir, Some(target), out, name, true)?, cloud: cloud.to_owned() })
     }
 
     /// Refuses a change while the account's sign-in has run out, before anything runs: the
@@ -186,7 +186,7 @@ impl CloudRun {
     /// start. `env` is the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        super::up_with(&self.running().await?, &place.options(env), log).await?;
+        self.act(super::remote::Act::Up, &place.options(env), log).await?;
         let message = self.target().and_then(|t| super::described::message(&self.dir, t));
         message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
         Ok(())
@@ -197,14 +197,14 @@ impl CloudRun {
     /// they were given.
     pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        super::update_of(&self.running().await?, &place.later_options(), log).await
+        self.act(super::remote::Act::Update, &place.later_options(), log).await
     }
 
     /// Takes `machine` out of the running lab ahead of its removal from the module, with the
     /// account's credentials (`place`'s).
     pub(crate) async fn retire(&self, place: &CloudPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        super::retire_from(&self.running().await?, machine, &place.later_options(), log).await
+        self.act(super::remote::Act::Retire(machine), &place.later_options(), log).await
     }
 
     /// Removes everything the run created in the account, with the parameters it was applied with
@@ -218,10 +218,7 @@ impl CloudRun {
             return Ok(());
         }
         self.signed_in(place).await?;
-        let running = self.running().await?;
-        let (sink, lines) = progress::channel();
-        let opts = place.later_options();
-        progress::follow(log, lines, running.down(&opts, &sink)).await.map_err(errors::from_runner)
+        self.act(super::remote::Act::Down, &place.later_options(), log).await
     }
 
     /// `machine`'s graphical console, as the runner reaches it in the account `place`.
@@ -240,8 +237,7 @@ impl CloudRun {
         if !self.has_project() {
             return Ok(LabStatus { place: Some(Place::Cloud), ..LabStatus::default() });
         }
-        let running = self.running().await?;
-        let status = running.status().await.map_err(errors::from_runner)?;
+        let status = self.read().await?;
         let form = if self.target() == Some(lab::Target::CloudDocker) { super::described::Form::Containers } else { super::described::Form::Vms };
         let described = super::described::Described::of(&self.dir, form)?;
         Ok(LabStatus { place: Some(Place::Cloud), ..view::lab_status(&described, &status, None) })
@@ -278,7 +274,7 @@ where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
     L: Fn(&str) -> Option<G>,
 {
-    let runner = Runner::new(super::host_config(home, None)).map_err(errors::from_runner)?;
+    let runner = Runner::new(super::host_config(home)).map_err(errors::from_runner)?;
     let expired = runner.expired(now).map_err(errors::from_runner)?;
     let mut failed = Vec::new();
     for record in expired.into_iter().filter(|r| r.cloud.is_some()) {

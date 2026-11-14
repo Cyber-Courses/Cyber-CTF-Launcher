@@ -47,8 +47,7 @@ impl LabRun {
         if !self.has_project() {
             return Ok(false);
         }
-        let lab = self.lab().await?;
-        let status = self.read(&lab).await?;
+        let status = self.read().await?;
         Ok(status.live && !status.machines.is_empty() && status.machines.iter().all(|m| m.state == isothrum_runner::MachineState::Absent))
     }
 

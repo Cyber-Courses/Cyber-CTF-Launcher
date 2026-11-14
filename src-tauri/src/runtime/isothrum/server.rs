@@ -14,7 +14,7 @@ use std::path::Path;
 use isothrum_runner::{RunName, RunOptions, SecretValue, Secrets};
 
 use super::opened::OpenedRun;
-use super::{errors, progress, view};
+use super::{errors, view};
 use crate::error::Result;
 use crate::runtime::docker::Check;
 use crate::runtime::{LabStatus, Place, Runtime, lab};
@@ -56,11 +56,12 @@ impl ServerRun {
     /// Running `id`, installed in `dir`, on the runner whose home is `home` (the app data folder),
     /// with this host's tools.
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
-        ServerRun::with(super::host_config(home, None), dir, id, runtime)
+        ServerRun::with(super::host_config(home), dir, id, runtime, true)
     }
 
-    /// [`ServerRun::new`] on a runner set up with `config` (tests script its tools).
-    fn with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
+    /// [`ServerRun::new`] on a runner set up with `config`, its operations through the home's
+    /// service when `service` (tests script its tools, in this process).
+    fn with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime, service: bool) -> Result<ServerRun> {
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         // A VM lab runs Proxmox's own module, one VM per machine. A container lab never starts
         // there: its run is the helper VM an earlier version left, read from where it ran.
@@ -70,7 +71,7 @@ impl ServerRun {
             let (out, target) = lab::terraform(dir, runtime, "proxmox");
             (out, Some(target))
         };
-        Ok(ServerRun { run: OpenedRun::new(config, dir, target, project, name)? })
+        Ok(ServerRun { run: OpenedRun::new(config, dir, target, project, name, service)? })
     }
 
     /// The runner's SSH public key (the launcher's own), made when there is none: what the node
@@ -82,7 +83,7 @@ impl ServerRun {
     /// Brings the lab up on `place` from its generated files, and says where to start. `env` is
     /// the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &ServerPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        super::up_with(&self.running().await?, &options(place, env), log).await.map_err(|e| errors::on_server(e, &place.name))?;
+        self.act(super::remote::Act::Up, &options(place, env), log).await.map_err(|e| errors::on_server(e, &place.name))?;
         let message = self.target().and_then(|t| super::described::message(&self.dir, t));
         message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
         Ok(())
@@ -91,9 +92,7 @@ impl ServerRun {
     /// Removes everything the run created on the server, with the params it was applied with
     /// (the connection is `place`'s, the one that works now).
     pub(crate) async fn down(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        let lab = self.running().await?;
-        let (sink, lines) = progress::channel();
-        progress::follow(log, lines, lab.down(&options(place, &[]), &sink)).await.map_err(|e| errors::on_server(errors::from_runner(e), &place.name))
+        self.act(super::remote::Act::Down, &options(place, &[]), log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
     /// Brings the running lab up to date with its regenerated files, on `place`.
@@ -114,8 +113,7 @@ impl ServerRun {
         }
         // The server's API is asked with `place`'s credentials, which the module's variables
         // carry: a status reads the run's tool as an operation does.
-        let lab = self.running().await?;
-        let status = lab.status().await.map_err(|e| errors::on_server(errors::from_runner(e), &place.name))?;
+        let status = self.read().await.map_err(|e| errors::on_server(e, &place.name))?;
         let described = match self.target() {
             Some(_) => super::described::Described::of(&self.dir, super::described::Form::Vms)?,
             None => super::described::Described::default(),
@@ -235,7 +233,7 @@ mod tests {
         /// them), on fake tools.
         fn up() -> (Scripted<Api>, ServerRun) {
             let f = Scripted::answered_by(Home::new("-pve", SPEC, &[], lab::Target::Proxmox), answer);
-            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm).unwrap();
+            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm, false).unwrap();
             let state = f.home.root.join("runs").join("cyberctf-web");
             std::fs::create_dir_all(&state).unwrap();
             std::fs::write(

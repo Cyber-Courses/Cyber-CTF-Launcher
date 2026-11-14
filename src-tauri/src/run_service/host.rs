@@ -74,7 +74,8 @@ async fn run(serve: Serve) -> std::result::Result<(), Box<dyn std::error::Error>
     let service = Service::hold(serve.home)?;
     let processes = SystemProcesses::default();
     let mut config = RunnerConfig::new(service.home());
-    config.processes = Arc::new(processes.clone());
+    // A lab's docker calls pinned to the engine its launch chose, as in the app.
+    config.processes = Arc::new(crate::runtime::isothrum::EngineProcesses::new(processes.clone()));
     let runner = Arc::new(Runner::new(config)?);
     let stop: isothrum_service::StopSignal = Box::new(|| {
         Box::pin(async {

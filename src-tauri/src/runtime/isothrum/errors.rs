@@ -2,7 +2,7 @@
 //! with a stable code; the launcher's wording (and the codes its UI knows) is decided here, from
 //! that code, the same as the launcher's own Docker path says it.
 
-use isothrum_runner::{Error as RunnerError, ErrorCode, TimedOut};
+use isothrum_runner::{Detail, Error as RunnerError, ErrorCode, ErrorDetail, TimedOut};
 
 use crate::error::{Code, Error};
 use crate::platform::exec::DockerSaid;
@@ -66,7 +66,7 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::Input { name, reason } => {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
         }
-        other => by_code(&other),
+        other => by_code(other.code(), &other),
     }
 }
 
@@ -99,9 +99,40 @@ pub(super) fn of_helper_vm(e: RunnerError, run: &str) -> Error {
     }
 }
 
-/// The failures whose wording needs nothing but their code (their message is kept otherwise).
-fn by_code(e: &RunnerError) -> Error {
-    match e.code() {
+/// The launcher's error for an operation that failed in the runner service: its code `code`, the
+/// runner's `message`, the `step` that failed and the failure's typed fields (`detail`), worded as
+/// [`from_runner`] words the same failure in this process; by its code alone, its message kept,
+/// where the service gives no fields this build reads.
+pub(crate) fn from_service(code: ErrorCode, message: &str, step: Option<&str>, detail: Option<&ErrorDetail>) -> Error {
+    let step = step.unwrap_or_default();
+    match detail.map(|d| &d.data) {
+        Some(Detail::PortInUse { port, .. }) => Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: None }),
+        Some(Detail::ToolMissing { tool }) => Error::coded(Code::ToolMissing { tool: tool.clone() }),
+        Some(Detail::ToolTooOld { tool, found, required }) => {
+            Error::coded(Code::ToolTooOld { tool: tool_name(tool), found: found.clone(), required: required.clone() })
+        }
+        Some(Detail::Timeout { timed_out }) => timed_out_step(step, timed_out),
+        Some(Detail::DownloadStalled { after_s }) if is_box_download(step) => Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) }),
+        Some(Detail::DownloadStalled { after_s }) => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
+        Some(Detail::ServerAuthFailed { server }) => Error::coded(Code::ServerAuthFailed { server: server.clone().unwrap_or_else(|| "the server".into()) }),
+        Some(Detail::PartlyGone { machines }) => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
+        Some(Detail::SecretMissing { name }) => {
+            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
+        }
+        Some(Detail::InputInvalid { name }) => {
+            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: {message}. Start it from the catalogue again."))
+        }
+        _ => match code {
+            ErrorCode::ToolFailed => tool_failed(step, message),
+            _ => by_code(code, message),
+        },
+    }
+}
+
+/// The failures whose wording needs nothing but their code `code` (the runner's words `e`, kept
+/// otherwise).
+fn by_code(code: ErrorCode, e: impl std::fmt::Display) -> Error {
+    match code {
         ErrorCode::AlreadyRunning => Error::Refused("This lab is already running on this machine. Stop it before starting it again.".into()),
         ErrorCode::RunningElsewhere => Error::Refused("This lab is still running somewhere else. Stop it there before starting it here.".into()),
         ErrorCode::Locked => Error::coded(Code::AlreadyInProgress),
