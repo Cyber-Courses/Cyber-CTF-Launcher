@@ -7,7 +7,7 @@ mod registry;
 use std::ffi::OsStr;
 
 pub use elevation::{ElevatedProcess, in_hyperv_admins, is_elevated, launch_elevated};
-pub use job::{Job, process_created, resume_threads_of, terminate};
+pub use job::{Job, child_processes, process_created, resume_threads_of, terminate};
 pub use registry::{Hive, delete_user_registry_value, registry_key_exists, registry_string, registry_value_exists, registry_values, set_user_registry_string};
 
 /// Keeps this process's own standard input, output and error to itself. std starts a child with

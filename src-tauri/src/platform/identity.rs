@@ -1,10 +1,11 @@
 //! A process's identity the clock can't move: the boot it runs in and when it started within it,
 //! both as the kernel stored them, never computed from the wall clock.
 //!
-//! A worker was recognised by its start time in seconds since the epoch, which on Linux is
+//! A deploy worker was recognised by its start time in seconds since the epoch, which on Linux is
 //! computed (the boot time, itself now minus the uptime, plus the start in ticks since boot): a
 //! clock set an hour forward moved it an hour, and a live worker read as another process, its
-//! pidfile swept and its job settled as lost. What this reads instead:
+//! pidfile swept and its job settled as lost. The tools' ledger (`exec::ledger`) tells its tools
+//! and their owners apart the same way. What this reads instead:
 //!
 //! - Linux: `/proc/<pid>/stat`'s start time, in clock ticks since boot, and the boot's id
 //!   (`/proc/sys/kernel/random/boot_id`);

@@ -9,9 +9,9 @@ use super::files::{self, Files, read_worker, write_job};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 
-mod identity;
 mod terraform;
-pub use identity::Identity;
+use crate::platform::identity;
+pub use crate::platform::identity::Identity;
 use terraform::interrupt_terraform;
 
 /// A worker process as its pidfile records it: its id and, when they could be read, its start
