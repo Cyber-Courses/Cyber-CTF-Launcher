@@ -110,9 +110,11 @@ fn checked_user(user: &str) -> Result<&str> {
     if fits { Ok(user) } else { Err(Error::Invalid(format!("`{user}` can't name an account"))) }
 }
 
-/// SSH into `address` as `login` through the jump host `router` (as `login` too), with the key of
-/// the runner whose home is `home`; as account `user` when given (`sudo -iu`). Host keys aren't
-/// kept across runs: a lab's machines are made anew at each start.
+/// SSH into `address` as `login` with the key of the runner whose home is `home`: through the jump
+/// host `router` (as `login` too) when the machine is behind it, straight to it when it is the
+/// router's address itself (a cloud's one public VM, the Docker host); as account `user` when
+/// given (`sudo -iu`). Host keys aren't kept across runs: a lab's machines are made anew at each
+/// start.
 fn ssh_through(home: &Path, router: &str, login: &str, address: &str, user: Option<&str>) -> isothrum_runner::ShellCommand {
     let key = home.join("ssh").join("id_ed25519");
     let known = home.join("ssh").join("lab_known_hosts");
@@ -131,7 +133,9 @@ fn ssh_through(home: &Path, router: &str, login: &str, address: &str, user: Opti
     // The jump's own ssh takes the same key (`-J` alone would use the default one).
     let jump = format!("ssh {} -W %h:%p {login}@{router}", options(&key, &known).map(|o| quoted(&o)).join(" "));
     let mut args: Vec<String> = options(&key, &known).into();
-    args.extend(["-o".to_owned(), format!("ProxyCommand={jump}")]);
+    if address != router {
+        args.extend(["-o".to_owned(), format!("ProxyCommand={jump}")]);
+    }
     if user.is_some() {
         args.push("-t".to_owned());
     }
@@ -160,5 +164,8 @@ mod tests {
         assert!(line.contains("ProxyCommand=ssh -i /data/isothrum/ssh/id_ed25519") && line.contains("-W %h:%p isoloom@192.0.2.10"), "{line}");
         assert!(line.ends_with("-t isoloom@10.40.0.11 sudo -iu player"), "{line}");
         assert!(checked_user("-oProxyCommand=x").is_err());
+        // The machine at the router's address itself: reached straight, no jump to itself.
+        let direct = ssh_through(Path::new("/data/isothrum"), "192.0.2.10", "isoloom", "192.0.2.10", None).args.join(" ");
+        assert!(!direct.contains("ProxyCommand") && direct.ends_with("isoloom@192.0.2.10"), "{direct}");
     }
 }
