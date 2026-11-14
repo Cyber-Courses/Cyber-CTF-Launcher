@@ -1,8 +1,7 @@
 //! The launcher's own state, one SQLite file in its data folder (`launcher.sqlite3`): the saved
 //! servers and cloud accounts (their secrets stay in the keychain), the tools the setup installed,
-//! what the app downloaded for itself, the shared folder setting, the auto-stop's failures, and
-//! the plain values a cloud run was started with (what the launcher gave it). Runs themselves are
-//! not here: the runner owns everything about a run.
+//! what the app downloaded for itself, the shared folder setting and the auto-stop's failures. Runs
+//! are not here: the runner owns everything about a run, the values its start was given included.
 //!
 //! WAL mode, so the app and its helper processes read while one writes; every change is one
 //! transaction ([`Store::write`]), taken for writing from its start, so a read-modify-write never
@@ -17,7 +16,6 @@ mod tests;
 
 pub(crate) mod autostop;
 pub(crate) mod hosts;
-pub(crate) mod run_values;
 pub(crate) mod settings;
 pub(crate) mod storage;
 pub(crate) mod tools;

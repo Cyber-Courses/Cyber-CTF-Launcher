@@ -1,73 +1,17 @@
 //! A lab VM's screen in its hypervisor's own app, beside the built-in viewer ("Open in
-//! VirtualBox"): which app the lab's provider has and what of it a computer needs ([`NativeApp`]),
-//! and what opens a running VM in it ([`NativeOpen`]: a program and its arguments, a macOS app and
-//! what it opens, or an `https` URL). The launcher offers the app only where this computer has it,
-//! and opens the VM the first way this computer can: never through a shell, each argument as it
-//! was given. The runner offers none of it yet (its consoles come back as their own offers): until
-//! then no lab offers its app, and these are the launcher's own shapes.
+//! VirtualBox"): the runner says which app the lab's provider has and what of it a computer needs
+//! ([`isothrum_runner::NativeApp`]), and what opens a running VM in it
+//! ([`isothrum_runner::NativeConsole`]: a program and its arguments, a macOS app and what it
+//! opens, or an `https` URL). The launcher offers the app only where this computer has it, and
+//! opens the VM the first way this computer can: never through a shell, each argument as the
+//! runner gave it.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use isothrum_runner::{NativeApp, NativeNeed, NativeOpen};
+
 use crate::error::{Error, Result};
-
-/// What of an app this computer must have to open it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum NativeNeed {
-    /// A program, by its name on `PATH` or its full path.
-    Program(String),
-    /// A macOS app bundle.
-    MacApp(PathBuf),
-    /// The default browser (a web console).
-    Browser,
-}
-
-/// The hypervisor's own app that shows a running VM's screen in a window of its own, and what of
-/// it this computer must have (any one of `needs`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code, reason = "the screens come back with the runner's console offers")]
-pub(crate) struct NativeApp {
-    /// Its name as its maker writes it (`VirtualBox`): what a button names.
-    pub(crate) name: String,
-    /// What opens it, best first.
-    pub(crate) needs: Vec<NativeNeed>,
-}
-
-/// One way to open a VM in its hypervisor's app: what to run, never through a shell.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code, reason = "the screens come back with the runner's console offers")]
-pub(crate) enum NativeOpen {
-    /// Run `program` (a name on `PATH`, or a full path) with `args`, each passed as it is.
-    Program {
-        /// The program.
-        program: String,
-        /// Its arguments.
-        args: Vec<String>,
-    },
-    /// Open the macOS app `app` on `args` (`open -a <app> <args>…`).
-    MacApp {
-        /// The app bundle.
-        app: PathBuf,
-        /// What it opens.
-        args: Vec<String>,
-    },
-    /// Open `url` (`https`) in the default browser.
-    Url {
-        /// The URL.
-        url: String,
-    },
-}
-
-impl NativeOpen {
-    /// What of the app this way needs.
-    fn need(&self) -> NativeNeed {
-        match self {
-            NativeOpen::Program { program, .. } => NativeNeed::Program(program.clone()),
-            NativeOpen::MacApp { app, .. } => NativeNeed::MacApp(app.clone()),
-            NativeOpen::Url { .. } => NativeNeed::Browser,
-        }
-    }
-}
 use crate::platform::host::Os;
 
 /// How this computer opens a VM in its app.
@@ -104,13 +48,12 @@ fn found(need: &NativeNeed, os: Os, home: Option<&Path>, exists: &impl Fn(&Path)
         }
         NativeNeed::MacApp(app) if os == Os::Macos => mac_app_places(app, home).into_iter().find(|p| exists(p)),
         NativeNeed::Browser => Some(PathBuf::new()),
-        NativeNeed::MacApp(_) => None,
+        _ => None,
     }
 }
 
 /// The app's name, when this computer has what one of its ways needs: what the lab page's
 /// "Open in …" button says; `None` hides the button.
-#[allow(dead_code, reason = "the screens come back with the runner's console offers")]
 pub(crate) fn installed(
     app: Option<&NativeApp>,
     os: Os,
@@ -122,6 +65,11 @@ pub(crate) fn installed(
     app.needs.iter().any(|n| found(n, os, home, &exists, &on_path).is_some()).then(|| app.name.clone())
 }
 
+/// [`installed`] on this computer: its OS, the user's home, its files and its `PATH`.
+pub(crate) fn installed_here(app: Option<&NativeApp>) -> Option<String> {
+    installed(app, Os::HERE, crate::platform::home_dir().as_deref(), Path::exists, on_path)
+}
+
 /// `name` where this computer's `PATH` has it (on Windows, `name.exe` too).
 pub(crate) fn on_path(name: &str) -> Option<PathBuf> {
     let names: Vec<String> =
@@ -130,7 +78,7 @@ pub(crate) fn on_path(name: &str) -> Option<PathBuf> {
     std::env::split_paths(&path).flat_map(|d| names.iter().map(move |n| d.join(n))).find(|p| p.is_file())
 }
 
-/// The first of `ways` (best first) this computer can
+/// The first of `ways` (a [`isothrum_runner::NativeConsole`]'s, best first) this computer can
 /// take, as it takes it.
 pub(crate) fn pick(
     ways: &[NativeOpen],
@@ -149,6 +97,7 @@ pub(crate) fn pick(
                 Some(Launch::Program { program: PathBuf::from("/usr/bin/open"), args: open })
             }
             NativeOpen::Url { url } => url.starts_with("https://").then(|| Launch::Url(url.clone())),
+            _ => None,
         }
     })
 }
@@ -214,7 +163,7 @@ mod tests {
     }
 
     fn app(name: &str, needs: &[NativeNeed]) -> NativeApp {
-        NativeApp { name: name.to_owned(), needs: needs.to_vec() }
+        serde_json::from_value(serde_json::json!({ "name": name, "needs": needs })).unwrap()
     }
 
     /// `PATH` with these programs on it, in `/bin`.

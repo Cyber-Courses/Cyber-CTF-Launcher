@@ -18,11 +18,12 @@ use super::described::{Declared, DeclaredPort, Described};
 /// drawing the lab without it.
 pub(super) fn lab_status(lab: &Described, status: &Status, marked: Option<Park>) -> LabStatus {
     let running = runs_in(lab, status);
+    let native = crate::screen::native::installed_here(status.native.as_ref());
     let shown = |m: &&MachineStatus| m.state != MachineState::Absent || (running && lab.machine(&m.name).is_some());
     LabStatus {
         running,
         parked: (status.state == RunState::Parked && !running).then(|| marked.unwrap_or(Park::Shutdown)),
-        machines: status.machines.iter().filter(shown).map(|m| machine(lab.machine(&m.name), m)).collect(),
+        machines: status.machines.iter().filter(shown).map(|m| machine(lab.machine(&m.name), m, native.as_deref())).collect(),
         networks: lab.networks.clone(),
         url: entry(lab, status).filter(|_| running),
         place: Some(Place::Container),
@@ -61,19 +62,21 @@ fn entry(lab: &Described, status: &Status) -> Option<String> {
 
 /// One machine: its state as Docker words it, its addresses, its TCP ports with the host port
 /// each got (0: not published) and what it serves, as `declared` says (none: one of Isoloom's
-/// own machines, plumbing hidden from the diagram, never "down"). No screen is offered yet.
-fn machine(declared: Option<&Declared>, m: &MachineStatus) -> Machine {
+/// own machines, plumbing hidden from the diagram, never "down"), and its screen (with `native`,
+/// the app this computer has to open it in). Its address is the one the runner reads where the
+/// lab's spec gives none for the form it runs in.
+fn machine(declared: Option<&Declared>, m: &MachineStatus, native: Option<&str>) -> Machine {
     let interfaces = declared.map(|d| d.interfaces.clone()).unwrap_or_default();
     let ports = declared.map(|d| d.ports.as_slice()).unwrap_or_default();
     Machine {
         name: m.name.clone(),
         state: state_word(&m.state),
-        ip: interfaces.first().map(|i| i.ip.clone()).unwrap_or_default(),
+        ip: interfaces.first().map(|i| i.ip.clone()).or_else(|| m.address.clone()).unwrap_or_default(),
         ports: ports.iter().filter(|p| p.tcp()).map(|p| Port { published: published(m, p), target: GuestPort::new(p.port), login: None }).collect(),
         interfaces,
         services: ports.iter().map(service).collect(),
         infra: declared.is_none(),
-        console: None,
+        console: m.console.as_ref().map(|c| super::super::Console::of(c, native)),
     }
 }
 

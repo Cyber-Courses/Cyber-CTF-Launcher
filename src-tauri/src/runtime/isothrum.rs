@@ -536,6 +536,27 @@ impl LabRun {
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
         self.lab().await?.console_command(machine, user).map_err(errors::from_runner)
     }
+
+    /// `machine`'s graphical console (its screen), as the runner reaches it with the run's
+    /// options (an ESXi host's settings and password).
+    pub(crate) async fn graphical_console(&self, machine: &str) -> Result<isothrum_runner::Console> {
+        self.lab().await?.graphical_console(machine, &self.placed(RunOptions::new())).await.map_err(errors::from_runner)
+    }
+
+    /// What opens running VM `machine` in its hypervisor's own app, as the runner says.
+    pub(crate) async fn native_console(&self, machine: &str) -> Result<isothrum_runner::NativeConsole> {
+        self.lab().await?.native_console(machine, &self.placed(RunOptions::new())).await.map_err(errors::from_runner)
+    }
+}
+
+/// A graphical console's protocol (a run's offer, the runner's console) in the launcher's words:
+/// `vnc`, `rdp`, or `none`.
+pub(crate) fn protocol_word(protocol: isothrum_runner::ConsoleProtocol) -> &'static str {
+    match protocol {
+        isothrum_runner::ConsoleProtocol::Vnc => "vnc",
+        isothrum_runner::ConsoleProtocol::Rdp => "rdp",
+        _ => "none",
+    }
 }
 
 /// An operation on a run that UTM's passing refusal may cut short ([`LabRun::after_utm_refusal`]).

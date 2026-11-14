@@ -109,24 +109,24 @@ impl CloudPlace {
         candidates.into_iter().filter_map(|(name, value)| Some((name.to_owned(), value?))).collect()
     }
 
+    /// The options of a later operation on this account's run (a stop, an update, a screen): the
+    /// account's credentials only. The runner replays the plain values the start was given, so
+    /// the operation acts on the region and account the start did.
+    pub(crate) fn later_options(&self) -> RunOptions {
+        RunOptions::new().with_secrets(self.secrets(&[])).with_host_label(&self.label)
+    }
+
     /// Every plain value the module gets from this place: [`CloudPlace::values`], then its
     /// placement.
     fn plain(&self) -> Vec<(String, String)> {
         self.values().into_iter().chain(self.placement()).collect()
     }
 
-    /// The options of a start on this account, with the launch's values `env`.
+    /// The options of a start on this account, with the launch's values `env`: the module's plain
+    /// values (which the runner's record keeps and every later operation replays), the
+    /// credentials and launch values as secrets.
     pub(crate) fn options(&self, env: &[(String, String)]) -> RunOptions {
-        self.options_over(env, &[])
-    }
-
-    /// The options of an operation on this account's run, with the launch's values `env`, over the
-    /// plain values the run was started with (`kept`): those win, so a stop or an update acts on
-    /// the region and account the start did; this place adds only what they lack.
-    fn options_over(&self, env: &[(String, String)], kept: &[(String, String)]) -> RunOptions {
-        let added = self.plain().into_iter().filter(|(k, _)| !kept.iter().any(|(name, _)| name == k));
-        let values = kept.iter().cloned().chain(added);
-        let opts = values.fold(RunOptions::new(), |o, (k, v)| o.with_env(k, v));
+        let opts = self.plain().into_iter().fold(RunOptions::new(), |o, (k, v)| o.with_env(k, v));
         let opts = opts.with_secrets(self.secrets(env)).with_host_label(&self.label);
         match self.lifetime {
             Some(lifetime) => opts.with_lifetime(lifetime),
@@ -141,9 +141,6 @@ const SIGN_IN_WAIT: Duration = Duration::from_secs(30);
 /// One cloud lab (`cloud-vm` or `cloud-docker`), run by the runner.
 pub(crate) struct CloudRun {
     run: OpenedRun,
-    /// The app data folder the runner's home is in: where the launcher's store keeps the values
-    /// the run was started with.
-    data: std::path::PathBuf,
     /// The launcher's Terraform target for the cloud (`aws`, `azure`, …).
     cloud: String,
 }
@@ -164,7 +161,7 @@ impl CloudRun {
         let config = super::host_config(home, None);
         let (out, target) = lab::terraform(dir, runtime, cloud);
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
-        Ok(CloudRun { run: OpenedRun::new(config, dir, Some(target), out, name)?, data: data_of(home), cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(config, dir, Some(target), out, name)?, cloud: cloud.to_owned() })
     }
 
     /// Refuses a change while the account's sign-in has run out, before anything runs: the
@@ -189,10 +186,6 @@ impl CloudRun {
     /// start. `env` is the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        // Kept before anything runs: a run started with values no later stop has could not be
-        // destroyed with them.
-        let plain = place.plain();
-        crate::store::open_in(&self.data)?.write(|tx| crate::store::run_values::replace(tx, self.name.as_str(), &plain))?;
         super::up_with(&self.running().await?, &place.options(env), log).await?;
         let message = self.target().and_then(|t| super::described::message(&self.dir, t));
         message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
@@ -204,14 +197,14 @@ impl CloudRun {
     /// they were given.
     pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        super::update_of(&self.running().await?, &place.options_over(&[], &self.kept()?), log).await
+        super::update_of(&self.running().await?, &place.later_options(), log).await
     }
 
     /// Takes `machine` out of the running lab ahead of its removal from the module, with the
     /// account's credentials (`place`'s).
     pub(crate) async fn retire(&self, place: &CloudPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        super::retire_from(&self.running().await?, machine, &place.options_over(&[], &self.kept()?), log).await
+        super::retire_from(&self.running().await?, machine, &place.later_options(), log).await
     }
 
     /// Removes everything the run created in the account, with the parameters it was applied with
@@ -227,16 +220,18 @@ impl CloudRun {
         self.signed_in(place).await?;
         let running = self.running().await?;
         let (sink, lines) = progress::channel();
-        let opts = place.options_over(&[], &self.kept()?);
-        progress::follow(log, lines, running.down(&opts, &sink)).await.map_err(errors::from_runner)?;
-        forget_values(&self.data, self.name.as_str());
-        Ok(())
+        let opts = place.later_options();
+        progress::follow(log, lines, running.down(&opts, &sink)).await.map_err(errors::from_runner)
     }
 
-    /// The plain values the run was started with, as the launcher kept them (none for a run an
-    /// earlier build started).
-    fn kept(&self) -> Result<Vec<(String, String)>> {
-        kept_values(&self.data, self.name.as_str())
+    /// `machine`'s graphical console, as the runner reaches it in the account `place`.
+    pub(crate) async fn screen(&self, place: &CloudPlace, machine: &str) -> Result<isothrum_runner::Console> {
+        self.graphical_console(machine, &place.later_options()).await
+    }
+
+    /// What opens `machine` in its cloud's own console, in the account `place`.
+    pub(crate) async fn native(&self, place: &CloudPlace, machine: &str) -> Result<isothrum_runner::NativeConsole> {
+        self.native_console(machine, &place.later_options()).await
     }
 
     /// The lab as its page shows it (place `Cloud`); not running before its module was ever
@@ -259,38 +254,14 @@ impl CloudRun {
     }
 }
 
-/// The app data folder of the runner whose home is `home` (`<data>/isothrum`).
-fn data_of(home: &Path) -> std::path::PathBuf {
-    home.parent().unwrap_or(home).to_path_buf()
-}
-
-/// The plain values run `run` was started with, kept in the store of data folder `data`.
-fn kept_values(data: &Path, run: &str) -> Result<Vec<(String, String)>> {
-    crate::store::open_in(data)?.read(|conn| crate::store::run_values::of(conn, run))
-}
-
-/// Forgets the values of run `run`, gone; a store that can't be written is logged (a later start
-/// replaces them).
-fn forget_values(data: &Path, run: &str) {
-    if let Err(e) = crate::store::open_in(data).and_then(|store| store.write(|tx| crate::store::run_values::forget(tx, run))) {
-        log::warn!("{run}: the values it was started with couldn't be forgotten: {e}");
-    }
-}
-
-/// A destroy's options: the plain values the run was started with (`kept`), the account's
-/// environment `tf_env` (its credentials as secrets, its profile and region as plain values where
-/// the kept ones don't say).
-fn destroy_options(tf_env: &[(String, String)], kept: &[(String, String)]) -> RunOptions {
+/// A destroy's options: the account's credentials from its environment `tf_env`, as secrets. The
+/// runner replays the plain values the start was given (region, firewall CIDR, profile).
+fn destroy_options(tf_env: &[(String, String)]) -> RunOptions {
     let mut secrets = Secrets::new();
-    let mut opts = kept.iter().cloned().fold(RunOptions::new(), |o, (k, v)| o.with_env(k, v));
-    for (k, v) in tf_env {
-        if !PARAM_ENV.contains(&k.as_str()) {
-            secrets.insert(k.clone(), SecretValue::new(v.clone()));
-        } else if !opts.env.contains_key(k) {
-            opts = opts.with_env(k.clone(), v.clone());
-        }
+    for (k, v) in tf_env.iter().filter(|(k, _)| !PARAM_ENV.contains(&k.as_str())) {
+        secrets.insert(k.clone(), SecretValue::new(v.clone()));
     }
-    opts.with_secrets(secrets)
+    RunOptions::new().with_secrets(secrets)
 }
 
 /// Destroys every cloud run the runner records as past its expiry (the auto-stop), with the
@@ -348,11 +319,8 @@ where
     if let Err(e) = lab_dir_in(home, id) {
         log::warn!("auto-stop: {name}'s lab isn't installed any more ({e}); destroying it with the module its run kept");
     }
-    let kept = kept_values(&data_of(home), &name)?;
     let run = runner.open_as(&record.project, Format::Terraform, Some(record.name.clone())).map_err(errors::from_runner)?;
-    run.down(&destroy_options(&tf_env, &kept), &progress::silent()).await.map_err(errors::from_runner)?;
-    forget_values(&data_of(home), &name);
-    Ok(())
+    run.down(&destroy_options(&tf_env), &progress::silent()).await.map_err(errors::from_runner)
 }
 
 #[cfg(test)]

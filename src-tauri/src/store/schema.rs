@@ -62,6 +62,10 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (run, name)
     ) STRICT;
     ",
+    // 3: the runner's record keeps a run's start values and replays them itself.
+    "
+    DROP TABLE run_values;
+    ",
 ];
 
 /// The schema version this build writes.
