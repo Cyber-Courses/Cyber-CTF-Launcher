@@ -56,7 +56,7 @@ impl ServerRun {
     /// Running `id`, installed in `dir`, on the runner whose home is `home` (the app data folder),
     /// with this host's tools.
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
-        ServerRun::with(super::host_config(home, None), dir, id, runtime)
+        ServerRun::with(super::host_config(home), dir, id, runtime)
     }
 
     /// [`ServerRun::new`] on a runner set up with `config` (tests script its tools).

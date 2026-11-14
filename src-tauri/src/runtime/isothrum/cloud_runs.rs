@@ -158,7 +158,7 @@ impl CloudRun {
     /// Lab `id` of `runtime` (a container lab is `cloud-docker`, a VM lab `cloud-vm`) on `cloud`,
     /// installed in `dir`, on the runner whose home is `home` (the app data folder).
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
-        let config = super::host_config(home, None);
+        let config = super::host_config(home);
         let (out, target) = lab::terraform(dir, runtime, cloud);
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         Ok(CloudRun { run: OpenedRun::new(config, dir, Some(target), out, name)?, cloud: cloud.to_owned() })
@@ -278,7 +278,7 @@ where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
     L: Fn(&str) -> Option<G>,
 {
-    let runner = Runner::new(super::host_config(home, None)).map_err(errors::from_runner)?;
+    let runner = Runner::new(super::host_config(home)).map_err(errors::from_runner)?;
     let expired = runner.expired(now).map_err(errors::from_runner)?;
     let mut failed = Vec::new();
     for record in expired.into_iter().filter(|r| r.cloud.is_some()) {
