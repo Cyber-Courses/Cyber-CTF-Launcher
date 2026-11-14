@@ -124,6 +124,17 @@ impl ServerRun {
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
     }
 
+    /// `machine`'s graphical console, Proxmox's own through its API, signed in with `place`'s
+    /// credentials.
+    pub(crate) async fn screen(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_runner::Console> {
+        self.graphical_console(machine, &options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))
+    }
+
+    /// What opens `machine` in the server's own web console, on `place`.
+    pub(crate) async fn native(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_runner::NativeConsole> {
+        self.native_console(machine, &options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))
+    }
+
     /// The lab's checks: not available on a server yet (the runner runs no command in a
     /// Terraform module's VMs).
     pub(crate) fn check(&self) -> Check {

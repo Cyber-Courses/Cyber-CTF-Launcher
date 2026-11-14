@@ -32,13 +32,17 @@ pub struct AttackStatus {
     pub console: Option<crate::runtime::Console>,
 }
 
-/// The box `name` from the run's status: up when it runs, and whether it is a VM (`vm`). The
-/// runner reports no machine's address and no screen: the box shows none of either until it
-/// does.
-pub(super) fn status_of(status: &Status, name: &str, vm: bool) -> AttackStatus {
+/// The box `name` from the run's status: up when it runs, then its address as the runner reads
+/// it and the network the box joined (`network`, from the lab's spec: the only one it is on),
+/// whether it is a VM (`vm`), and its screen as the run offers it.
+pub(super) fn status_of(status: &Status, name: &str, network: Option<&str>, vm: bool) -> AttackStatus {
     let machine = status.machines.iter().find(|m| m.name == name);
     let running = machine.is_some_and(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy));
-    AttackStatus { running, vm, machine: name.to_owned(), console: None, ..AttackStatus::default() }
+    let ip = machine.filter(|_| running).and_then(|m| m.address.clone()).unwrap_or_default();
+    let lab_network = if ip.is_empty() { String::new() } else { network.unwrap_or_default().to_owned() };
+    let native = crate::screen::native::installed_here(status.native.as_ref());
+    let console = machine.and_then(|m| m.console.as_ref()).map(|c| crate::runtime::Console::of(c, native.as_deref()));
+    AttackStatus { running, ip, lab_network, vm, machine: name.to_owned(), console, ..AttackStatus::default() }
 }
 
 #[cfg(test)]
@@ -52,8 +56,8 @@ mod tests {
             "state": "ready",
             "provider": "qemu",
             "machines": [
-                { "name": "web", "state": "running", "published": [] },
-                { "name": "kali", "state": state, "published": [] }
+                { "name": "web", "state": "running", "published": [], "address": "10.61.0.10" },
+                { "name": "kali", "state": state, "published": [], "address": "10.61.0.252", "console": { "protocol": "vnc" } }
             ],
             "outputs": []
         }))
@@ -62,11 +66,11 @@ mod tests {
 
     #[test]
     fn the_box_is_found_by_its_name_down_until_it_runs() {
-        let down = status_of(&vm_lab("absent"), "kali", true);
+        let down = status_of(&vm_lab("absent"), "kali", Some("lab"), true);
         assert_eq!((down.running, down.ip.as_str(), down.lab_network.as_str()), (false, "", ""), "no address nor network until it runs");
-        let up = status_of(&vm_lab("running"), "kali", true);
-        assert_eq!((up.running, up.ip.as_str()), (true, ""), "the runner reports no address");
-        assert!(!status_of(&vm_lab("running"), "nobody", false).running, "no such machine: no box");
+        let up = status_of(&vm_lab("running"), "kali", Some("lab"), true);
+        assert_eq!((up.running, up.ip.as_str(), up.lab_network.as_str()), (true, "10.61.0.252", "lab"));
+        assert!(!status_of(&vm_lab("running"), "nobody", None, false).running, "no such machine: no box");
     }
 
     /// Regression: the box's start, in the deploy worker, held `attackbox` in Vagrant, and the
@@ -74,15 +78,16 @@ mod tests {
     /// busy: the box isn't up yet, and nothing of it is an error.
     #[test]
     fn a_box_another_process_is_setting_up_is_not_up_yet() {
-        let busy = status_of(&vm_lab("busy"), "kali", true);
+        let busy = status_of(&vm_lab("busy"), "kali", Some("lab"), true);
         assert_eq!((busy.running, busy.ip.as_str()), (false, ""));
-        assert!(busy.console.is_none(), "no screen is offered yet");
+        assert!(busy.console.is_some(), "its screen is offered once it runs");
     }
 
     #[test]
-    fn the_box_carries_its_machine() {
-        let up = status_of(&vm_lab("running"), "kali", true);
+    fn the_box_carries_its_machine_and_its_screen() {
+        let up = status_of(&vm_lab("running"), "kali", Some("lab"), true);
         assert_eq!(up.machine, "kali");
-        assert_eq!(up.console, None, "no screen is offered yet");
+        assert_eq!(up.console, Some(crate::runtime::Console { protocol: "vnc".into(), note: None, unavailable: None, native_app: None }));
+        assert_eq!(status_of(&vm_lab("running"), "web", None, false).console, None, "a machine whose run says nothing of its screen");
     }
 }

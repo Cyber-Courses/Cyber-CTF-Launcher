@@ -76,4 +76,16 @@ impl OpenedRun {
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<isothrum_runner::ShellCommand> {
         self.running().await?.console_command(machine, user).map_err(errors::from_runner)
     }
+
+    /// `machine`'s graphical console (its screen), as the runner reaches it with `opts` (the
+    /// place's credentials: a Proxmox server's API, as the module's own values carry them).
+    pub(crate) async fn graphical_console(&self, machine: &str, opts: &RunOptions) -> Result<isothrum_runner::Console> {
+        self.running().await?.graphical_console(machine, opts).await.map_err(errors::from_runner)
+    }
+
+    /// What opens running VM `machine` in its hypervisor's own app (a server's web console), as
+    /// the runner says with `opts`.
+    pub(crate) async fn native_console(&self, machine: &str, opts: &RunOptions) -> Result<isothrum_runner::NativeConsole> {
+        self.running().await?.native_console(machine, opts).await.map_err(errors::from_runner)
+    }
 }

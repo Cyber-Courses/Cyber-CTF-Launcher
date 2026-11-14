@@ -51,12 +51,41 @@ pub(crate) struct Reached {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(rename = "ScreenProtocol")]
-#[allow(dead_code, reason = "the screens come back with the runner's console offers")]
 pub(crate) enum Protocol {
     /// VNC, shown in the window.
     Vnc,
     /// RDP, opened in the system's client.
     Rdp,
+}
+
+impl Reached {
+    /// The runner's `console`, kept for the window's life.
+    pub(crate) fn of(console: isothrum_runner::Console) -> Result<Reached> {
+        let protocol = match crate::runtime::isothrum::protocol_word(console.protocol) {
+            "vnc" => Protocol::Vnc,
+            "rdp" => Protocol::Rdp,
+            _ => return Err(Error::Invalid(format!("{} has no screen", console.machine))),
+        };
+        let at = match &console.endpoint {
+            isothrum_runner::Endpoint::Loopback(at) => bridge::Target::Tcp(*at),
+            isothrum_runner::Endpoint::ProxmoxVnc(vnc) => bridge::Target::WebSocket {
+                url: vnc.websocket.expose().to_owned(),
+                header: (vnc.authorization.0.clone(), vnc.authorization.1.expose().to_owned()),
+                insecure: vnc.insecure,
+            },
+            _ => return Err(Error::Invalid("the runner reached the screen where this launcher can't show it".into())),
+        };
+        Ok(Reached {
+            protocol,
+            at,
+            user: console.user.clone(),
+            password: console.password.as_ref().map(|p| p.expose().to_owned()),
+            note: console.note.clone(),
+            // The runner reaches no screen through an SSH tunnel any more.
+            tunnelled: false,
+            _keep: Some(Box::new(console)),
+        })
+    }
 }
 
 /// What the screen window is told of its machine's screen.

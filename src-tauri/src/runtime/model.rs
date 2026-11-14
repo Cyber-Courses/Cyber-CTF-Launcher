@@ -101,6 +101,19 @@ pub struct Console {
     pub native_app: Option<String>,
 }
 
+impl Console {
+    /// The runner's offer of a machine's console, in the lab page's words, with the app this
+    /// computer has to open it in (`native_app`, [`crate::screen::native::installed`]).
+    pub(crate) fn of(offer: &isothrum_runner::ConsoleOffer, native_app: Option<&str>) -> Console {
+        Console {
+            protocol: super::isothrum::protocol_word(offer.protocol).to_owned(),
+            note: offer.note.clone(),
+            unavailable: offer.unavailable.clone(),
+            native_app: native_app.map(str::to_owned),
+        }
+    }
+}
+
 /// One service inside a machine, as declared by the lab.
 #[derive(Serialize, Debug, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]

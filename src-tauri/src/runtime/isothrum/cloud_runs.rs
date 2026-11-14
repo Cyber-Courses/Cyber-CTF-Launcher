@@ -233,6 +233,16 @@ impl CloudRun {
         Ok(())
     }
 
+    /// `machine`'s graphical console, as the runner reaches it in the account `place`.
+    pub(crate) async fn screen(&self, place: &CloudPlace, machine: &str) -> Result<isothrum_runner::Console> {
+        self.graphical_console(machine, &place.options_over(&[], &self.kept()?)).await
+    }
+
+    /// What opens `machine` in its cloud's own console, in the account `place`.
+    pub(crate) async fn native(&self, place: &CloudPlace, machine: &str) -> Result<isothrum_runner::NativeConsole> {
+        self.native_console(machine, &place.options_over(&[], &self.kept()?)).await
+    }
+
     /// The plain values the run was started with, as the launcher kept them (none for a run an
     /// earlier build started).
     fn kept(&self) -> Result<Vec<(String, String)>> {

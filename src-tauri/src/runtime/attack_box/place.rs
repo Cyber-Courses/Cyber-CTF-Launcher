@@ -113,7 +113,13 @@ impl Placed {
         let super::Networks { pickable, default } = super::networks(&self.dir)?;
         let seen = match self.host.run_status().await? {
             None => AttackStatus { vm: self.vm, ..AttackStatus::default() },
-            Some(status) => status_of(&status, &super::name(&self.dir)?, self.vm),
+            Some(status) => {
+                let name = super::name(&self.dir)?;
+                // The network the box joined, as the lab's spec (with the box added) says.
+                let spec = lab::lab(&self.dir)?.spec();
+                let network = spec.machines.get(&name).and_then(|m| m.networks.keys().next().cloned());
+                status_of(&status, &name, network.as_deref(), self.vm)
+            }
         };
         Ok(AttackStatus { reachable: true, networks: pickable, default_network: default, ..seen })
     }
