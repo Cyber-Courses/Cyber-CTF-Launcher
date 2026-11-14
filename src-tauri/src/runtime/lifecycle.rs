@@ -56,9 +56,10 @@ fn refuse_cloud_park(runtime: Runtime) -> Result<()> {
 /// Why a cloud-services lab isn't parked.
 const CLOUD_PARK: &str = "A cloud lab can't be paused: stop it to end what it costs, and start it again later.";
 
-/// Why a run on this machine for `target`, on `provider`, can't be parked in `mode`: the
-/// [`local_controls`] it is offered don't hold that mode's control. None when they do.
-fn park_refusal(mode: Park, target: lab::Target, provider: Option<&str>) -> Option<&'static str> {
+/// Why a run on this machine for `target` (none: a helper VM an earlier version left), on
+/// `provider`, can't be parked in `mode`: the [`local_controls`] it is offered don't hold that
+/// mode's control. None when they do.
+fn park_refusal(mode: Park, target: Option<lab::Target>, provider: Option<&str>) -> Option<&'static str> {
     let control = match mode {
         Park::Pause => Control::Pause,
         Park::Shutdown => Control::Shutdown,
@@ -66,18 +67,18 @@ fn park_refusal(mode: Park, target: lab::Target, provider: Option<&str>) -> Opti
     if local_controls(target, provider).contains(&control) {
         return None;
     }
-    Some(match mode {
-        Park::Shutdown => "A container lab running in a VM can be paused, not shut down.",
-        Park::Pause if target == lab::Target::Docker => "A container lab on Docker has no state to save: shut it down instead.",
-        Park::Pause => "QEMU can't pause a lab: shut it down instead.",
+    // Every form here shuts down: only a pause is refused, or anything of a helper VM's run.
+    Some(match target {
+        None => LEFT_IN_A_HELPER_VM,
+        Some(lab::Target::Docker) => "A container lab on Docker has no state to save: shut it down instead.",
+        Some(_) => "QEMU can't pause a lab: shut it down instead.",
     })
 }
 
-/// Whether a run on this machine for `target` can be shut down: not a container lab in one VM,
-/// whose containers don't restart on their own after a power-off (it is paused, its state saved).
-fn shuts_down(target: lab::Target) -> bool {
-    target != lab::Target::DockerVm
-}
+/// Why a container lab an earlier version runs inside a helper VM is only stopped: Cyber CTF no
+/// longer runs that form, so nothing else changes it.
+const LEFT_IN_A_HELPER_VM: &str =
+    "This lab runs Docker inside a VM, as an earlier version of Cyber CTF started it, which this version no longer does: stop it, then start it again.";
 
 /// Whether a run on this machine for `target`, on `provider`, can be paused: its VMs suspend
 /// (a container lab here only stops its containers: there is no state to save, so it is shut
@@ -97,19 +98,20 @@ fn pauses(target: lab::Target, provider: Option<&str>) -> bool {
 pub(crate) fn controls(host: Option<&Host>, provider: Option<&str>) -> Vec<Control> {
     match host {
         Some(Host::Local(run)) => local_controls(run.target(), provider),
-        Some(Host::Esxi { run, .. }) if run.target() == lab::Target::Vagrant => vec![Control::Provision],
+        Some(Host::Esxi { run, .. }) if run.target() == Some(lab::Target::Vagrant) => vec![Control::Provision],
         Some(_) | None => Vec::new(),
     }
 }
 
 /// [`controls`] for a run on this machine for `target`, on `provider`: the one rule [`park`]
-/// holds too.
-fn local_controls(target: lab::Target, provider: Option<&str>) -> Vec<Control> {
+/// holds too. None for a helper VM an earlier version left (no `target`): it is only stopped.
+fn local_controls(target: Option<lab::Target>, provider: Option<&str>) -> Vec<Control> {
+    let Some(target) = target else { return Vec::new() };
     let vms = target == lab::Target::Vagrant;
     // Containers stopped outside the app (`docker stop`, Docker Desktop's Stop) come back with a
     // resume as VMs do; one removed can't, and the page offers its reset instead.
     let repairs = vms || target == lab::Target::Docker;
-    [(pauses(target, provider), Control::Pause), (shuts_down(target), Control::Shutdown), (vms, Control::Provision), (repairs, Control::Repair)]
+    [(pauses(target, provider), Control::Pause), (true, Control::Shutdown), (vms, Control::Provision), (repairs, Control::Repair)]
         .into_iter()
         .filter_map(|(offered, c)| offered.then_some(c))
         .collect()
@@ -208,6 +210,7 @@ pub(crate) async fn stop_locked(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut
 
 /// Destroys a lab's run on this machine (`run`, of the lab in `dir`) and, once it is gone, clears
 /// what marked it as running. Takes no app handle, so the integration tests run exactly this.
+#[cfg(test)]
 pub(crate) async fn stop_run(run: isothrum::LabRun, dir: &Path, mut log: impl FnMut(String)) -> Result<()> {
     run.down(&mut log).await?;
     forget_run(dir)
@@ -272,7 +275,7 @@ pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
         return None;
     }
     // Its VMs are its machines (a VM lab, or a container lab run as one VM per machine), unless
-    // the one VM is the helper a container lab runs inside.
+    // the one VM is the helper an earlier version ran a container lab inside.
     Some(if per_machine_vm(&dir) || (in_vm && local_vm(&dir).is_none()) { Runtime::Vm } else { Runtime::Docker })
 }
 

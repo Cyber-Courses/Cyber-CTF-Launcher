@@ -8,8 +8,7 @@ use super::super::deploy_log;
 use super::{Error, Result, lab};
 
 /// Warns (without blocking) when the host likely can't fit all of a one-VM-per-machine lab's
-/// memory, so an out-of-memory failure mid-boot isn't a surprise. Not used for a container lab
-/// in a single VM, where the total would overcount.
+/// memory, so an out-of-memory failure mid-boot isn't a surprise.
 pub(super) fn warn_if_low_memory(spec: &lab::Spec, log: &mut impl FnMut(String)) {
     use sysinfo::System;
     let needed_mb = u64::from(lab::memory_mb(spec));
@@ -26,11 +25,10 @@ pub(super) fn low_memory_warning(needed_mb: u64, available_mb: u64) -> Option<St
     (available_mb > 0 && needed_mb > available_mb).then(|| deploy_log::low_memory(needed_mb, available_mb))
 }
 
-/// A lab run as `target` on `provider` (its VMs, or the helper VM a container lab runs in):
-/// Isoloom's own refusal of the pair, if it has one, before any VM is created. QEMU links a VM on
-/// one network only; UTM's Vagrant plugin gives a VM no private network, so a lab with a network
-/// (every lab) can't run as VMs on UTM; a TPM runs on VirtualBox, libvirt and Hyper-V only; a
-/// container's host folders aren't shared into a helper VM everywhere.
+/// A lab run as `target` on `provider` (its VMs): Isoloom's own refusal of the pair, if it has
+/// one, before any VM is created. QEMU links a VM on one network only; UTM's Vagrant plugin gives
+/// a VM no private network, so a lab with a network (every lab) can't run as VMs on UTM; a TPM
+/// runs on VirtualBox, libvirt and Hyper-V only.
 pub(super) fn check_provider(lab: &lab::Lab, target: lab::Target, provider: super::Provider) -> Result<()> {
     match lab::refusal_on(lab, target, provider) {
         Some(why) => Err(Error::Invalid(format!(

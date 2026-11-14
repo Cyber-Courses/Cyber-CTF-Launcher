@@ -3,9 +3,8 @@
 Deliberately vulnerable web applications, the targets of many labs, are not part of Isoloom's
 catalogue: Isoloom stays a generic tool, and these belong with the labs that use them. A lab
 names the application's prebuilt image itself, pinned by digest so every learner gets the same
-build. Both run wherever a lab's machines are containers (on this computer, in a VM here, on a
-server or in the cloud); an image can't be a VM, so a lab whose other machines are VMs can't use
-them.
+build. Both run wherever a lab's machines are containers (on this computer or in the cloud); an
+image can't be a VM, so a lab whose other machines are VMs can't use them.
 
 Add the machine to the lab's `isoloom.yml`, on one of its networks, with an address of its own.
 

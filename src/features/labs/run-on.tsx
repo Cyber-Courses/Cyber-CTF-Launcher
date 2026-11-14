@@ -11,8 +11,6 @@ const targetKey = (t: RunTarget) => {
   switch (t.kind) {
     case "local":
       return t.kind;
-    case "local-vm":
-      return `vm:${t.provider}`;
     case "local-vms":
       return `vms:${t.provider}`;
     // `perMachine` (a cloud account's one-VM-per-machine form, cloud-vm) is its own row on the
@@ -26,12 +24,12 @@ const targetKey = (t: RunTarget) => {
  *  the VM form, its hypervisor, or the container engine and host ports. */
 export type PickerStep = "platform" | "form" | "hypervisor" | "engine" | "ports";
 
-/** A row a lab can be launched from in step 1: run here as containers, run here in a VM, or on one
+/** A row a lab can be launched from in step 1: run here as containers, run here as VMs, or on one
  *  saved host. (A container lab's local form is `containers`; a VM lab's is `vm`.) */
 export type Platform = { kind: "containers" } | { kind: "vm" } | { kind: "host"; id: string };
 
 /** The platform a step-1 row's target stands for. A bare `local` is the Containers row for a
- *  container lab, the In a VM row (its own VMs) for a VM lab; `local-vm`/`local-vms` are In a VM. */
+ *  container lab, the In a VM row (its own VMs) for a VM lab; `local-vms` is In a VM. */
 const platformOfRow = (t: RunTarget, offerContainers: boolean): Platform => {
   if (t.kind === "host") return { kind: "host", id: t.id };
   if (t.kind === "local") return offerContainers ? { kind: "containers" } : { kind: "vm" };
@@ -39,8 +37,8 @@ const platformOfRow = (t: RunTarget, offerContainers: boolean): Platform => {
 };
 
 /** A target collapsed to its step-1 row's representative, so the right row highlights whichever
- *  local form (`local`, `local-vm`, `local-vms`) is the current pick. A container lab's VM forms
- *  all map to the one VM row (its first form). */
+ *  local form (`local`, `local-vms`) is the current pick. A container lab's VM form maps to the
+ *  one VM row. */
 const asRowTarget = (t: RunTarget, firstVmForm: RunTarget | undefined): RunTarget => {
   // A cloud form (`perMachine`) still highlights its account's one row on the places step.
   if (t.kind === "host") return { kind: "host", id: t.id };
@@ -124,7 +122,7 @@ export function RunOnPicker(props: RunOnPickerProps) {
     );
   }
   if (step === "hypervisor") {
-    const form = value.kind === "local-vms" ? "local-vms" : "local-vm";
+    const form = "local-vms";
     const pickHypervisor = (target: RunTarget) => {
       if (isLocalVmForm(target)) onPickHypervisor(target.provider);
     };

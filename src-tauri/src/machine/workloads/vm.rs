@@ -142,7 +142,8 @@ const LEGACY_ATTACK_VM_DIR: &str = ".cyberctf-attack-vm";
 
 /// Destroys a lab's (or the self-test's) local VMs.
 pub(super) async fn stop(dirs: &AppDirs, id: &str) -> Result<()> {
-    // A lab's VMs: one per machine (.isoloom/vagrant) or Docker on one VM (.isoloom/docker-vm).
+    // A lab's VMs: one per machine (.isoloom/vagrant), or the helper VM an earlier version ran a
+    // container lab inside (.isoloom/docker-vm).
     let vagrant_dirs: Vec<PathBuf> = if id == "selftest" {
         vec![selftest::work_dir(dirs, "vm")?]
     } else {
@@ -244,7 +245,8 @@ mod tests {
         use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let lab = t.lab("goad", &[]);
-        // Docker on one VM and one VM per machine both left something: each folder is destroyed.
+        // One VM per machine and an earlier version's helper VM both left something: each folder
+        // is destroyed.
         for sub in ["vagrant", "docker-vm"] {
             let d = crate::runtime::lab::out(&lab).join(sub);
             std::fs::create_dir_all(&d).unwrap();

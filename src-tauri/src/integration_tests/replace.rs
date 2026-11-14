@@ -1,17 +1,17 @@
 //! A running lab's folder is never replaced under it, on each local form: started through the
 //! launcher's own start, a new version installed over it and the same lab imported again are both
 //! refused while it is up (the runner's record says so, wherever the runner keeps it), and both go
-//! through once it is stopped. Opt-in (it needs Docker, and for the VM forms Vagrant and a
+//! through once it is stopped. Opt-in (it needs Docker, and for the VM form Vagrant and a
 //! hypervisor):
 //!
 //! ```text
 //! CYBERCTF_TEST_REPLACE_LAB=<isoloom checkout>/examples/solo-web \
-//! CYBERCTF_TEST_REPLACE_FORM=docker-vm \
-//! CYBERCTF_TEST_VM_PROVIDER=utm \
+//! CYBERCTF_TEST_REPLACE_FORM=vm \
+//! CYBERCTF_TEST_VM_PROVIDER=virtualbox \
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 a_running_lab_is_not_replaced_under_it
 //! ```
 //!
-//! `CYBERCTF_TEST_REPLACE_FORM` is `docker`, `docker-vm` or `vm`; `CYBERCTF_TEST_VM_INPUTS` gives
+//! `CYBERCTF_TEST_REPLACE_FORM` is `docker` or `vm`; `CYBERCTF_TEST_VM_INPUTS` gives
 //! a VM lab's launch values (`NAME=value,…`).
 
 use std::path::Path;
@@ -47,9 +47,8 @@ async fn a_running_lab_is_not_replaced_under_it() {
         serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "virtualbox".into()))).unwrap();
     let (runtime, provider, env) = match form.as_str() {
         "docker" => (Runtime::Docker, None, Vec::new()),
-        "docker-vm" => (Runtime::Docker, Some(provider), Vec::new()),
         "vm" => (Runtime::Vm, Some(provider), vm_inputs()),
-        other => panic!("CYBERCTF_TEST_REPLACE_FORM: {other} is none of docker, docker-vm, vm"),
+        other => panic!("CYBERCTF_TEST_REPLACE_FORM: {other} is none of docker, vm"),
     };
     let src = Path::new(&src);
     let newer = tarball(src).unwrap_or_else(|e| panic!("the lab's tarball: {e}"));
@@ -58,13 +57,8 @@ async fn a_running_lab_is_not_replaced_under_it() {
     // Installed as the launcher installs a lab: under the app data folder.
     let dir = t.data().join("labs").join(&id);
     lab::copy_tree(src, &dir).unwrap_or_else(|e| panic!("copy {} to {}: {e}", src.display(), dir.display()));
-    let on_vm = match form.as_str() {
-        "docker-vm" => Some(lab::Target::DockerVm),
-        "vm" => Some(lab::Target::Vagrant),
-        _ => None,
-    };
-    if let (Some(target), Some(provider)) = (on_vm, provider)
-        && super::support::refused_by_launcher(&dir, target, provider)
+    if let Some(provider) = provider
+        && super::support::refused_by_launcher(&dir, lab::Target::Vagrant, provider)
     {
         return;
     }

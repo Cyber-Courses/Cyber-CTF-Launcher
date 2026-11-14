@@ -9,11 +9,9 @@ export const runtimeWord = (t: T, { isDocker, isCloud }: { isDocker: boolean; is
 
 /** Where this deploy is headed, shown in the Deployment panel so it's clear during a build, and
  *  where it runs once up, said as the header and Details say it ([`placeText`]): the place the
- *  status records, unless this page's picker heads elsewhere (a server not run on yet, a VM here
- *  for a lab last run as containers). */
+ *  status records, unless this page's picker heads elsewhere (a server not run on yet). */
 export function deployDestination(t: T, place: Place | null, runOn: RunTarget, hosts: ServerHost[]): string {
   if (place?.kind === "server" || place?.kind === "cloud") return placeText(t, place);
   if (runOn.kind === "host") return hosts.find((h) => h.id === runOn.id)?.name ?? t("labs.detail.yourServer");
-  if (runOn.kind === "local-vm" && place?.kind !== "hypervisor") return t("labs.detail.aVmHere");
   return place ? placeText(t, place) : t("labs.detail.thisMachine");
 }

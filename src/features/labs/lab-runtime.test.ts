@@ -10,7 +10,6 @@ const path = (provider: Provider): LabRunPath => ({ provider, badge: "none", evi
 /** The backend's run options with only `paths` set. */
 const options = (paths: Partial<LabRunOptions>): LabRunOptions => ({
   docker: null,
-  dockerVm: [],
   vms: [],
   servers: [],
   cloudDocker: [],
@@ -94,10 +93,10 @@ describe("formProviders", () => {
     expect(here({ vms: [path("qemu")], emulated: true })).toBe("unsupported");
     expect(here({ vms: [path("virtualbox")] })).not.toBe("unsupported");
   });
-  it("give a container lab's helper VM its hypervisors, and a VM lab its own once read", () => {
+  it("give a container lab's VM form (one VM per machine) its hypervisors, and a VM lab its own once read", () => {
     const docker = rt({ runtime: "DOCKER" });
     expect(localProviders(docker)).toEqual([]);
-    expect(localProviders(docker, "x86_64", options({ dockerVm: [path("utm")] }))).toEqual(["utm"]);
+    expect(localProviders(docker, "x86_64", options({ vms: [path("libvirt")] }))).toEqual(["libvirt"]);
     const vm = rt({ architectures: ["x86_64"], providers: ["virtualbox", "utm"] as Provider[] });
     expect(localProviders(vm, "x86_64", options({ vms: [path("virtualbox")] }))).toEqual(["virtualbox"]);
   });
@@ -129,8 +128,8 @@ describe("runPlaces", () => {
   // The places the lab supports at all (ready or configurable), as before the tri-state.
   const available = (places: ReturnType<typeof runPlaces>) => places.filter((p) => p.state !== "unsupported").map((p) => p.key);
   const stateOf = (places: ReturnType<typeof runPlaces>, key: string) => places.find((p) => p.key === key)?.state;
-  it("lists a container lab's places", () => {
-    expect(available(runPlaces(rt({ runtime: "DOCKER", providers: ["docker", "aws"] as Provider[] })))).toEqual(["container", "local_vm", "cloud"]);
+  it("lists a container lab's places: no VM here without VM recipes (never its containers in a VM)", () => {
+    expect(available(runPlaces(rt({ runtime: "DOCKER", providers: ["docker", "aws"] as Provider[] })))).toEqual(["container", "cloud"]);
   });
   it("offers a foreign-CPU VM lab here only with an emulator", () => {
     const lab = rt({ architectures: ["x86_64"], providers: ["virtualbox", "proxmox"] as Provider[] });
@@ -155,7 +154,7 @@ describe("runPlaces", () => {
     const setUp = runPlaces(lab, undefined, false, {
       readyVms: ["virtualbox"] as Provider[],
       hosts: [host("proxmox"), host("aws")],
-      options: options({ dockerVm: [path("virtualbox")], servers: [path("proxmox")], cloudDocker: [path("aws")] }),
+      options: options({ vms: [path("virtualbox")], servers: [path("proxmox")], cloudDocker: [path("aws")] }),
     });
     expect(stateOf(setUp, "local_vm")).toBe("ready");
     expect(stateOf(setUp, "server")).toBe("ready");

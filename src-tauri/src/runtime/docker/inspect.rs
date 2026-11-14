@@ -1,5 +1,5 @@
 //! Reading a container lab running here: where it is reachable (the URL Open goes to), and the
-//! address blocks Docker's networks hold.
+//! address blocks Docker's networks hold; and whether this machine's Docker answers at all.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -14,6 +14,12 @@ mod networks;
 pub use networks::subnets_in_use;
 #[cfg(test)]
 use networks::{ipv4_subnets, networks_of_others};
+
+/// Whether this machine's Docker answers: `docker version` reaches its daemon (for this account),
+/// which names its OS. A Docker that isn't installed or isn't running doesn't.
+pub async fn answers() -> bool {
+    run_read("docker", &["version", "--format", "{{.Server.Os}}"], None).await.is_ok_and(|os| !os.trim().is_empty())
+}
 
 /// Whole words of a service's name or image repository that mark it as no web UI: a
 /// datastore, or a non-HTTP network service (a daemon's name with or without its `d`).

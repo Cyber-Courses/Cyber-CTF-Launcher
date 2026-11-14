@@ -32,13 +32,12 @@ pub(crate) const INSTALLED: &str = "Lab installed";
 const IMPORTING: &str = "Importing ";
 /// The last line of a lab's import from a folder on this machine.
 pub(crate) const IMPORTED: &str = "Lab imported";
-const IN_LOCAL_VM: &str = "Running in a ";
 const ON_SERVER_HOST: &str = "Running on server host ";
 const IN_CLOUD_ACCOUNT: &str = "Running in your ";
 
 /// How the lines said while the lab is fetched and placed start (for the generated file).
 #[cfg(test)]
-pub(crate) const FETCH: [&str; 7] = [DOWNLOADING, INSTALLED, IMPORTING, IMPORTED, IN_LOCAL_VM, ON_SERVER_HOST, IN_CLOUD_ACCOUNT];
+pub(crate) const FETCH: [&str; 6] = [DOWNLOADING, INSTALLED, IMPORTING, IMPORTED, ON_SERVER_HOST, IN_CLOUD_ACCOUNT];
 
 /// The first line of a lab's install from the catalogue: its repository at `commit` (short).
 pub(crate) fn downloading(repository: &str, commit: &str) -> String {
@@ -48,11 +47,6 @@ pub(crate) fn downloading(repository: &str, commit: &str) -> String {
 /// The first line of lab `lab_id`'s import from the folder `from`.
 pub(crate) fn importing(lab_id: &str, from: &Path) -> String {
     format!("{IMPORTING}{lab_id} from {}", from.display())
-}
-
-/// A container lab placed in one VM on this machine, on hypervisor `provider` (its id).
-pub(crate) fn in_local_vm(provider: &str) -> String {
-    format!("{IN_LOCAL_VM}{provider} VM on this machine")
 }
 
 /// A lab placed on the saved server `name`, a `provider` (its id) host.
@@ -114,7 +108,6 @@ mod tests {
     fn the_lines_read_as_the_lab_page_expects_them() {
         assert_eq!(downloading("CyberCTF/invoice", "0123456789ab"), "Downloading CyberCTF/invoice@0123456789ab");
         assert_eq!(importing("local-web", Path::new("/home/ada/labs/web")), "Importing local-web from /home/ada/labs/web");
-        assert_eq!(in_local_vm("qemu"), "Running in a qemu VM on this machine");
         assert_eq!(on_server_host("esxi-1", "vmware_esxi"), "Running on server host esxi-1 (vmware_esxi)");
         assert_eq!(in_cloud_account("AWS", "Labs", "eu-west-1"), "Running in your AWS account Labs (eu-west-1)");
         assert!(emulating("x86_64", "aarch64").starts_with("Emulating x86_64 on this aarch64 machine with QEMU"));
@@ -130,7 +123,6 @@ mod tests {
             INSTALLED.into(),
             importing("l", Path::new("/x")),
             IMPORTED.into(),
-            in_local_vm("p"),
             on_server_host("n", "p"),
             in_cloud_account("c", "n", "r"),
         ];

@@ -15,7 +15,8 @@ use crate::platform::AppDirs;
 
 /// A lab's run, where it runs.
 pub(crate) enum Host {
-    /// On this machine: on Docker, in one local VM, or as VMs ([`isothrum::LabRun::local`]).
+    /// On this machine: on Docker, or as VMs ([`isothrum::LabRun::local`]), or in the helper VM
+    /// an earlier version ran a container lab inside.
     Local(isothrum::LabRun),
     /// VMs on an ESXi server (Vagrant there), through its connection.
     Esxi {
@@ -80,8 +81,10 @@ impl Failed {
 }
 
 impl Host {
-    /// The Isoloom target the run's files are generated for.
-    pub(crate) fn target(&self) -> lab::Target {
+    /// The Isoloom target the run's files are generated for; none for a container lab an earlier
+    /// version runs inside a helper VM (here, on ESXi or on Proxmox), whose files Isoloom no
+    /// longer generates: that run is only read, stopped and removed.
+    pub(crate) fn target(&self) -> Option<lab::Target> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.target(),
             Host::Cloud { run, .. } => run.target(),
@@ -92,7 +95,7 @@ impl Host {
     /// Whether the run has machines of the lab's own: every run but a cloud-services lab's,
     /// whose services are no machines to check or to put an attack box beside.
     pub(crate) fn has_machines(&self) -> bool {
-        self.target() != lab::Target::CloudServices
+        self.target() != Some(lab::Target::CloudServices)
     }
 
     /// The Proxmox server's place for a change of its run (its node, its SSH jump).
@@ -192,7 +195,7 @@ mod tests {
     const SPEC: &str = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, vm: { box: debian/bookworm64 }, networks: { lab: 10 } }\n";
 
     /// Where lab `t` runs, as its kind and the target its run's files are generated for.
-    fn located(t: &TestApp, dir: &Path, runtime: Runtime) -> Option<(&'static str, lab::Target)> {
+    fn located(t: &TestApp, dir: &Path, runtime: Runtime) -> Option<(&'static str, Option<lab::Target>)> {
         locate(&t.dirs(), dir, "t", runtime).unwrap().map(|h| {
             let kind = match &h {
                 Host::Local(_) => "local",
@@ -215,31 +218,37 @@ mod tests {
         let t = TestApp::new();
         let _tools = Tools::strict_rules(&[]);
         let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
-        // On this machine: as its runtime says, a container lab in its helper VM, or as one VM
-        // per machine; a cloud-services lab on no account runs nowhere.
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", lab::Target::Docker)));
-        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("local", lab::Target::Vagrant)));
+        // On this machine: as its runtime says, as one VM per machine, or in the helper VM an
+        // earlier version left it in (no target: never generated again); a cloud-services lab on
+        // no account runs nowhere.
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", Some(lab::Target::Docker))));
+        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("local", Some(lab::Target::Vagrant))));
         assert_eq!(located(&t, &dir, Runtime::Cloud), None);
         mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", lab::Target::DockerVm)));
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", None)));
+        assert!(crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().is_none(), "no box goes into it");
         mark_local_vm(&dir, None).unwrap();
         mark_per_machine_vm(&dir, true).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", lab::Target::Vagrant)));
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", Some(lab::Target::Vagrant))));
         // In a cloud account: in the form it was started in, cloud services included.
         server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", lab::Target::CloudVm)));
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", Some(lab::Target::CloudVm))));
         mark_per_machine_vm(&dir, false).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", lab::Target::CloudDocker)));
-        assert_eq!(located(&t, &dir, Runtime::Cloud), Some(("cloud", lab::Target::CloudServices)));
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", Some(lab::Target::CloudDocker))));
+        assert_eq!(located(&t, &dir, Runtime::Cloud), Some(("cloud", Some(lab::Target::CloudServices))));
         // On a server: Proxmox through Terraform, ESXi through Vagrant there.
         crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
         for server in ["pve", "esx"] {
             crate::runtime::server::secrets::set_secret(server, "pw").unwrap();
         }
         server::mark_lab(&dir, Some(&t.host("pve", "proxmox", serde_json::json!({})))).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("server", lab::Target::Proxmox)));
+        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("server", Some(lab::Target::Proxmox))));
         server::mark_lab(&dir, Some(&t.host("esx", "vmware_esxi", serde_json::json!({})))).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("esxi", lab::Target::Vagrant)));
+        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("esxi", Some(lab::Target::Vagrant))));
+        // A container lab there is the helper VM an earlier version left, on either server.
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("esxi", None)));
+        server::mark_lab(&dir, Some("pve")).unwrap();
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("server", None)));
     }
 
     #[tokio::test]

@@ -12,17 +12,26 @@ account, what the player picked); the runner does the work and keeps the run's s
 
 ## Places and forms
 
-| Place          | Lab                                        | Isoloom target          | What runs                                                             |
-| -------------- | ------------------------------------------ | ----------------------- | --------------------------------------------------------------------- |
-| This machine   | containers                                 | `docker`                | Docker Compose on the engine picked at launch                         |
-| This machine   | containers, "in a VM"                      | `docker-vm`             | one Vagrant VM (any local hypervisor but Hyper-V), Compose inside     |
-| This machine   | VMs, or containers as "one VM per machine" | `vagrant`               | one Vagrant VM per machine                                            |
-| Proxmox server | containers                                 | `docker-vm` (Proxmox)   | one VM made by Terraform, Compose inside over SSH                     |
-| Proxmox server | VMs                                        | `proxmox`               | one VM per machine, made by Terraform                                 |
-| ESXi server    | VMs (containers in one VM)                 | `vagrant` / `docker-vm` | Vagrant's `vmware_esxi`, the runner relaying the host from macOS      |
-| Cloud account  | containers                                 | `cloud-docker`          | one instance made by Terraform, Compose inside over SSH               |
-| Cloud account  | VMs, or containers as "one VM per machine" | `cloud-vm`              | one instance per machine (AWS, Azure, GCP, DigitalOcean, Linode, OCI) |
-| Cloud account  | cloud services (no machines)               | `cloud-services`        | the lab's own Terraform module                                        |
+| Place          | Lab                                        | Isoloom target   | What runs                                                             |
+| -------------- | ------------------------------------------ | ---------------- | --------------------------------------------------------------------- |
+| This machine   | containers                                 | `docker`         | Docker Compose on the engine picked at launch                         |
+| This machine   | VMs, or containers as "one VM per machine" | `vagrant`        | one Vagrant VM per machine                                            |
+| Proxmox server | VMs                                        | `proxmox`        | one VM per machine, made by Terraform                                 |
+| ESXi server    | VMs                                        | `vagrant`        | Vagrant's `vmware_esxi`, the runner relaying the host from macOS      |
+| Cloud account  | containers                                 | `cloud-docker`   | one instance made by Terraform, Compose inside over SSH               |
+| Cloud account  | VMs, or containers as "one VM per machine" | `cloud-vm`       | one instance per machine (AWS, Azure, GCP, DigitalOcean, Linode, OCI) |
+| Cloud account  | cloud services (no machines)               | `cloud-services` | the lab's own Terraform module                                        |
+
+A lab runs as true containers or true VMs, never as containers inside a helper VM: a container
+lab runs on Docker here or on a cloud account's instance, or, with VM recipes, as one VM per
+machine here or in a cloud account; it has no form on a server. A container lab an earlier
+version ran inside one helper VM (Isoloom's former `docker-vm`, here, on ESXi or on Proxmox) is
+still read, stopped and removed through the runner as it was started; nothing else changes it,
+and its next start is in its true form (on Docker when Docker answers here, else as one VM per
+machine). When that run's manifest is a version this build can't read, the lab's files are
+generated in the true form instead, and the log says so; when the runner no longer opens that
+form at all, its helper-VM mark is cleared and the lab says which VM to remove by hand (the
+Machine page lists it).
 
 The catalogue names a lab by its own runtime (containers or VMs); every operation on a started
 lab finds its run through `runtime::host::locate`, which reads where it runs and the form it was
@@ -34,15 +43,15 @@ A running lab is the runner's run `cyberctf-<lab id>`, its state under
 `<app data>/runs/<run>/` (`record.json`, `events.jsonl`, the Terraform state for a server or a
 cloud). Beside the lab, in its folder:
 
-| File                       | Says                                                                                        |
-| -------------------------- | ------------------------------------------------------------------------------------------- |
-| `.cyberctf-host`           | the server or cloud account it runs on (`server::mark_lab`)                                 |
-| `.cyberctf-local-vm`       | a container lab here runs in a VM, and on which hypervisor                                  |
-| `.cyberctf-per-machine-vm` | a container lab started as one VM per machine                                               |
-| `.cyberctf-engine`         | the Docker context it was started on, when not the current one                              |
-| `.cyberctf-parked`         | parked (paused or shut down): the next start resumes it                                     |
-| `.cyberctf-overlay.yml`    | the machines the launcher added to the lab (the attack box), merged into its spec when read |
-| `.cyberctf-instance`       | its instance number, given at install: its networks' blocks and its generated files' folder |
+| File                       | Says                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `.cyberctf-host`           | the server or cloud account it runs on (`server::mark_lab`)                                  |
+| `.cyberctf-local-vm`       | a container lab here runs in a helper VM an earlier version started, and on which hypervisor |
+| `.cyberctf-per-machine-vm` | a container lab started as one VM per machine                                                |
+| `.cyberctf-engine`         | the Docker context it was started on, when not the current one                               |
+| `.cyberctf-parked`         | parked (paused or shut down): the next start resumes it                                      |
+| `.cyberctf-overlay.yml`    | the machines the launcher added to the lab (the attack box), merged into its spec when read  |
+| `.cyberctf-instance`       | its instance number, given at install: its networks' blocks and its generated files' folder  |
 
 A stop clears them once the run is gone (`lifecycle::forget_run`), so the next start is the lab
 as published. The instance number stays: it is the installed lab's, not the run's.

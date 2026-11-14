@@ -534,7 +534,8 @@ mod tests {
 
     #[test]
     fn a_vm_labs_boxes_are_read_from_its_vagrantfiles() {
-        // One VM per machine (vagrant) or Docker in one VM (docker-vm); a VM lab's attack box is
+        // One VM per machine (vagrant), or the helper VM an earlier version ran a container lab
+        // inside (docker-vm); a VM lab's attack box is
         // a machine of the lab, so its box is among the vagrant ones.
         let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("ad", &[]);

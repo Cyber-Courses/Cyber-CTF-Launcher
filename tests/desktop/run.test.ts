@@ -103,9 +103,9 @@ describe("the desktop cases", () => {
     for (const name of ["restart", "stop", "attack-box", "stop-during-start", "park-resume"])
       expect(p.cases.find((c) => c.case === name)?.needs, name).toContain("running-lab:fixture");
     // One VM lab start on the hypervisor proves the others can try.
-    expect(p.providers.get("vm-start")).toBe("lab-form-docker-vm");
-    for (const name of ["lab-form-vm", "lab-form-per-machine", "screens"]) expect(p.cases.find((c) => c.case === name)?.needs, name).toContain("vm-start");
-    expect(p.cases.find((c) => c.case === "lab-form-docker-vm")?.needs).toEqual(["session", "hypervisor"]);
+    expect(p.providers.get("vm-start")).toBe("lab-form-per-machine");
+    for (const name of ["lab-form-vm", "screens"]) expect(p.cases.find((c) => c.case === name)?.needs, name).toContain("vm-start");
+    expect(p.cases.find((c) => c.case === "lab-form-per-machine")?.needs).toEqual(["session", "hypervisor"]);
   });
 
   it("fall into four groups, each holding the providers its cases need, cleanup last", () => {

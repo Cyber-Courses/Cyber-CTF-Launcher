@@ -32,7 +32,7 @@ export type LabDetailProps = {
   /** Logged out: the start button logs in instead of being greyed out. */
   onLogin?: () => Promise<boolean>;
   hostArch: string;
-  /** Local hypervisors ready on this machine (Vagrant + hypervisor), for "in a VM". */
+  /** Local hypervisors ready on this machine (Vagrant + hypervisor), for the VM forms. */
   readyVms?: Provider[];
   /** Whether a Docker engine answers on this machine (null = unknown). */
   dockerRunning?: boolean | null;
@@ -145,7 +145,7 @@ export function useLabDetail(p: LabDetailProps) {
   const tools = useLabTools(lab.id, s.running && !s.isCloud, runtime);
   // An imported lab's challenges are its own `.ctf/objectives.json`'s, read with the lab: none from the backend.
   const objectives = useObjectives(lab.id, lab.question, t("labs.detail.objective"), p.loggedIn, !lab.imported);
-  const restart = () => restartTarget(status, run.hosts, runtime, run.runOn, run.localVm);
+  const restart = () => restartTarget(status, run.hosts, runtime, run.runOn, run.perMachine?.provider ?? null);
   const { resetting, reset } = useLabReset(p.onStop, p.onStart, restart, clearCheck);
   const startOn = (target: RunTarget) => void p.onStart(target);
   // Where it runs, said the same way by the header, Details and the diagram's host card.

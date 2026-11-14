@@ -434,16 +434,17 @@ fn a_lab_here_is_run_in_the_form_it_was_started_in() {
     let dir = std::env::temp_dir().join(format!("cyberctf-local-form-{}", rand::random::<u32>()));
     std::fs::create_dir_all(&dir).unwrap();
     let home = dir.join("home");
-    let form = |runtime| LabRun::local(&home, &dir, "t", runtime).unwrap().map(|r| r.target());
+    let form = |runtime| LabRun::local(&home, &dir, "t", runtime).unwrap().map(|r| (r.kind, r.target()));
     // As declared: its containers on Docker, its VMs, and no run here for cloud services.
-    assert_eq!(form(Runtime::Docker), Some(lab::Target::Docker));
-    assert_eq!(form(Runtime::Vm), Some(lab::Target::Vagrant));
+    assert_eq!(form(Runtime::Docker), Some((Kind::Docker, Some(lab::Target::Docker))));
+    assert_eq!(form(Runtime::Vm), Some((Kind::Vm, Some(lab::Target::Vagrant))));
     assert_eq!(form(Runtime::Cloud), None);
-    // A container lab started in one local VM, then as one VM per machine (which wins).
+    // A container lab an earlier version left in a helper VM: that run, read as it is (no target
+    // to generate it again for), then as one VM per machine (which wins).
     paths::mark_local_vm(&dir, Some(crate::runtime::providers::Provider::Qemu)).unwrap();
-    assert_eq!(form(Runtime::Docker), Some(lab::Target::DockerVm));
+    assert_eq!(form(Runtime::Docker), Some((Kind::DockerVm, None)));
     paths::mark_per_machine_vm(&dir, true).unwrap();
-    assert_eq!(form(Runtime::Docker), Some(lab::Target::Vagrant));
+    assert_eq!(form(Runtime::Docker), Some((Kind::Vm, Some(lab::Target::Vagrant))));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

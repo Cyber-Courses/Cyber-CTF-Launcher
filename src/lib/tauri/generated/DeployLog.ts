@@ -10,7 +10,7 @@ export const FAILED_CODE = ["[", "]"] as const;
 export const DONE_MARK = "✓";
 
 /** How the launcher's lines start while it fetches and places the lab: the "Download the lab" step (Rust's `deploy_log::FETCH`). */
-export const FETCH_LINES: readonly string[] = ["Downloading ", "Lab installed", "Importing ", "Lab imported", "Running in a ", "Running on server host ", "Running in your "];
+export const FETCH_LINES: readonly string[] = ["Downloading ", "Lab installed", "Importing ", "Lab imported", "Running on server host ", "Running in your "];
 
 /** How the launcher's lines start while it readies this machine for a lab's VMs: the "Prepare this machine" step when one
  *  comes first (Rust's `deploy_log::PREPARE`). */

@@ -19,7 +19,7 @@ export const badgeOf = (path: LabRunPath | undefined): RunBadge | undefined =>
 const on = (paths: LabRunPath[], provider: Provider | undefined) => paths.find((p) => p.provider === provider);
 
 /** The launch path `target` takes, as the lab's `options` say (the host's `provider` for a saved
- *  server or account): a helper VM's or one VM per machine's on its hypervisor, a server's by its
+ *  server or account): one VM per machine's on its hypervisor, a server's by its
  *  kind, a cloud account's in the form picked (its default: cloud services, else one VM with the
  *  containers, else one VM per machine). None while the options load, or here on Docker or a VM
  *  lab's own hypervisor (picked later). */
@@ -28,8 +28,6 @@ export function pathOf(options: LabRunOptions | null, target: RunTarget, provide
   switch (target.kind) {
     case "local":
       return undefined;
-    case "local-vm":
-      return on(options.dockerVm, target.provider);
     case "local-vms":
       return on(options.vms, target.provider);
     case "host":

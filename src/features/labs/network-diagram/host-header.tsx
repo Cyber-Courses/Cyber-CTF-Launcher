@@ -28,7 +28,7 @@ function Sub({ place }: { place: Place | null }) {
         <CopyText text="127.0.0.1">127.0.0.1</CopyText> · {t("diagram.host.host")}
       </>
     );
-  if (place.kind === "hypervisor") return <>{place.inVm ? t("diagram.host.containerVmSub") : t("diagram.host.vmSub")}</>;
+  if (place.kind === "hypervisor") return <>{t("diagram.host.vmSub")}</>;
   if (place.kind === "server")
     return (
       <>

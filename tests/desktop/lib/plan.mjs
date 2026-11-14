@@ -53,7 +53,7 @@ export function readCases(file) {
 /**
  * What a spec's source declares, on one line each, as literals: `export const needs = [...]`
  * and `export const provides = [...]`; a spec run once per form declares each by form
- * (`{ container: [...], "docker-vm": [...] }`), and `form` picks that form's.
+ * (`{ container: [...], "per-machine": [...] }`), and `form` picks that form's.
  * @param {string} source
  * @param {string} [form]
  * @returns {{ needs: string[], provides: string[] }}

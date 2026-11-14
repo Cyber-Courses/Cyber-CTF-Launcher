@@ -102,12 +102,13 @@ pub(in crate::runtime) fn set_marker(dir: &Path, name: &str, value: Option<&str>
     Ok(())
 }
 
-/// Marks a container lab as running in a VM on this machine (Isoloom's docker-vm),
-/// so stop, status and the attack-box shell go to the VM instead of local Docker.
+/// Marks a container lab an earlier version runs inside one helper VM on this machine (Isoloom's
+/// former docker-vm, no longer generated), so its status and stop go to that VM instead of local
+/// Docker until it is stopped. Only cleared now.
 pub const LOCAL_VM_MARKER: &str = ".cyberctf-local-vm";
 
-/// Marks the lab in `dir` as a container lab run in one VM here, on hypervisor `provider`; none
-/// removes the mark.
+/// Marks the lab in `dir` as a container lab run in one helper VM here, on hypervisor `provider`
+/// (what an earlier version wrote); none removes the mark.
 pub(crate) fn mark_local_vm(dir: &Path, provider: Option<Provider>) -> Result<()> {
     set_marker(dir, LOCAL_VM_MARKER, provider.map(super::providers::Provider::id))
 }

@@ -12,13 +12,12 @@ import type { LabStatus, Provider, SystemReport } from "@/lib/tauri";
 
 // The Labs screen's open lab: which one, from the navigation, and its page.
 
-/** How a chosen target runs beyond plain containers, for the launch: a VM here on a hypervisor, as
- *  one VM per machine here, or a cloud account's one-VM-per-machine form (cloud-vm, no local
+/** How a chosen target runs beyond plain containers, for the launch: a VM lab here on a
+ *  hypervisor, a container lab as one VM per machine here, or a cloud account's one-VM-per-machine form (cloud-vm, no local
  *  hypervisor). Nothing for plain containers, a server, or a cloud account's one-VM form. */
 function localVmPick(target: RunTarget): LocalVmPick | undefined {
   // A VM lab here on the hypervisor it ran on (Reset), or the backend's when none is named.
   if (target.kind === "local" && target.provider) return { provider: target.provider };
-  if (target.kind === "local-vm") return { provider: target.provider };
   if (target.kind === "local-vms") return { provider: target.provider, perMachine: true };
   if (target.kind === "host" && target.perMachine) return { perMachine: true };
   return undefined;

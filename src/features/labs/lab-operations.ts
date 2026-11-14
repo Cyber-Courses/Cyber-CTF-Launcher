@@ -98,15 +98,14 @@ export const cloudLaunch =
  *  refuses the launch, saying so (`noHypervisor`). */
 const vmHypervisor = (picked: Provider | undefined, place: LabStartPlace | null): Provider | null => picked ?? place?.hypervisor ?? null;
 
-/** How a container lab runs beyond plain containers: in a VM here (`provider`, the hypervisor),
- *  and/or as one VM per machine (`perMachine`) — its VM recipes, as a VM lab runs, rather than its
- *  containers inside one helper VM. A cloud account's one-VM-per-machine form (cloud-vm) carries
- *  `perMachine` with no local `provider`. */
+/** How a container lab runs beyond plain containers: as one VM per machine (`perMachine`) — its
+ *  VM recipes, as a VM lab runs — here on hypervisor `provider`, or on a cloud account (cloud-vm,
+ *  no local `provider`). The launcher never runs its containers inside a VM. */
 export type LocalVmPick = { provider?: Provider; perMachine?: boolean };
 
 /** Where a (non-cloud) lab starts: on the server `host`; here in Docker or, a VM lab, on the
- *  hypervisor `vmProvider` (none: the backend's, `vmHypervisor`); in a VM here on `vmProvider`; or (`perMachineVm`, a container lab with VM recipes) as one VM
- *  per machine on `vmProvider`. `host` omitted (undefined): nothing was picked, and the backend
+ *  hypervisor `vmProvider` (none: the backend's, `vmHypervisor`); or, a container lab with VM
+ *  recipes (`perMachineVm`, or any hypervisor picked for it), as one VM per machine on `vmProvider`. `host` omitted (undefined): nothing was picked, and the backend
  *  says where (`defaultPlace`). `ports` = the host ports of a container lab here. */
 export type LocalWhere = {
   host?: string | null;
@@ -151,13 +150,13 @@ export const localLaunch =
   async (log, rt) => {
     const { ports, engine } = where;
     const { host, vmProvider, perMachineVm, place, isVmLab } = await resolveWhere(lab, rt, where);
-    // Run as one VM per machine, the lab is a VM lab here: its machines are VMs on `vmProvider`.
-    const asVms = perMachineVm && !!vmProvider && host == null;
+    // Run as one VM per machine, the lab is a VM lab here: its machines are VMs on `vmProvider`. A
+    // container lab given a hypervisor here runs that way (never its containers inside a VM).
+    const asVms = !isVmLab && !!vmProvider && host == null;
     // On a cloud account, one VM per machine is cloud-vm: no local hypervisor, the host carries it.
     const cloudPerMachine = perMachineVm && host != null;
     const vm = isVmLab || asVms;
     const remote = host != null;
-    const inLocalVm = !vm && !remote && !!vmProvider;
     // Here: a VM lab on its hypervisor, a container lab's VM form on the one picked for it.
     const provider = remote ? null : isVmLab ? vmHypervisor(vmProvider, place) : (vmProvider ?? null);
     await launchOrOfferOffline(lab.title, (offline) =>
@@ -177,14 +176,14 @@ export const localLaunch =
     );
     log(translate("labs.actions.labRunning"));
     setLastRun(lab.id);
-    void notify(translate("labs.actions.labReady"), translate(readyKey(remote, where.inCloud ?? false, inLocalVm), { title: lab.title }));
+    void notify(translate("labs.actions.labReady"), translate(readyKey(remote, where.inCloud ?? false), { title: lab.title }));
   };
 
 /** The ready notification's text for a lab started on a `remote` host (a cloud account when
- *  `inCloud`), else here, in a VM (`inLocalVm`) or not. */
-function readyKey(remote: boolean, inCloud: boolean, inLocalVm: boolean): MessageKey {
+ *  `inCloud`), else here. */
+function readyKey(remote: boolean, inCloud: boolean): MessageKey {
   if (remote) return inCloud ? "labs.actions.readyInCloud" : "labs.actions.readyOnServer";
-  return inLocalVm ? "labs.actions.readyInVm" : "labs.actions.readyHere";
+  return "labs.actions.readyHere";
 }
 
 export const stopping =

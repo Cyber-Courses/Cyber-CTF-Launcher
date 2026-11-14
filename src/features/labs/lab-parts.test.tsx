@@ -36,7 +36,6 @@ describe("RunOnPicker", () => {
   /** Run options that offer the lab nowhere, refused as `refused` say. */
   const refusing = (refused: LabRunOptions["refused"]): LabRunOptions => ({
     docker: null,
-    dockerVm: [],
     vms: [],
     servers: [],
     cloudDocker: [],
@@ -107,12 +106,13 @@ describe("RunOnPicker", () => {
   it("shows Container and VM as two rows for a VM-capable container lab", async () => {
     installTauri();
     const user = userEvent.setup();
-    const { onPickPlatform } = renderPicker({ hosts: [], dockerRunning: false, vmForms: [{ kind: "local-vm", provider: "virtualbox" }] });
+    const { onPickPlatform } = renderPicker({ hosts: [], dockerRunning: false, vmForms: [{ kind: "local-vms", provider: "virtualbox" }] });
     // Two rows under This machine, each its own kind of run here: no inline switches, no misleading Docker logo.
     expect(screen.getByText("Container")).toBeTruthy();
     expect(screen.getByText("Engine stopped")).toBeTruthy();
     expect(screen.getByText("VM")).toBeTruthy();
-    expect(screen.getByText("Containers in one VM")).toBeTruthy();
+    // Its VM form is its machines as VMs, never its containers inside one.
+    expect(screen.getByText("The lab's VM recipes: its machines as virtual machines, not containers")).toBeTruthy();
     await user.click(screen.getByText("Container"));
     expect(onPickPlatform).toHaveBeenLastCalledWith({ kind: "containers" } satisfies Platform);
     await user.click(screen.getByText("VM"));
@@ -129,41 +129,15 @@ describe("RunOnPicker", () => {
     expect(screen.queryByAltText("Docker")).toBeNull();
   });
 
-  it("shows the dual-form lab's VM row leading to the form step, with no inline switch", async () => {
+  it("offers a container lab's VM form as a full row (no switches) on the form step", async () => {
     installTauri();
     const user = userEvent.setup();
-    const { onPickPlatform } = renderPicker({
-      hosts: [],
-      dockerRunning: true,
-      vmForms: [
-        { kind: "local-vm", provider: "qemu" },
-        { kind: "local-vms", provider: "qemu" },
-      ],
-    });
-    // Two VM forms: the row says so and carries no inline switch (the forms are picked in step 2).
-    expect(screen.getByText("VM")).toBeTruthy();
-    expect(screen.getByText("In one VM, or one per machine")).toBeTruthy();
-    expect(screen.queryByRole("radiogroup", { name: "Hypervisor" })).toBeNull();
-    await user.click(screen.getByText("VM"));
-    expect(onPickPlatform).toHaveBeenLastCalledWith({ kind: "vm" } satisfies Platform);
-  });
-
-  it("offers the two VM forms as full rows (no switches) on the form step", async () => {
-    installTauri();
-    const user = userEvent.setup();
-    const { onPickForm } = renderPicker({
-      step: "form",
-      hosts: [],
-      vmForms: [
-        { kind: "local-vm", provider: "qemu" },
-        { kind: "local-vms", provider: "qemu" },
-      ],
-    });
+    const { onPickForm } = renderPicker({ step: "form", hosts: [], vmForms: [{ kind: "local-vms", provider: "qemu" }] });
     expect(screen.getByText("How should it run?")).toBeTruthy();
-    // No Containers on the form step: it is a leaf on step 1. Only the VM forms here, as full rows.
+    // No Containers on the form step, and no helper VM: one VM per machine, its VM recipes.
     expect(screen.queryByText("Container")).toBeNull();
-    expect(screen.getByText("In one VM")).toBeTruthy();
     expect(screen.getByText("One VM per machine")).toBeTruthy();
+    expect(screen.queryByText("In one VM")).toBeNull();
     expect(screen.queryByRole("radiogroup", { name: "Hypervisor" })).toBeNull();
     await user.click(screen.getByText("One VM per machine"));
     expect(onPickForm).toHaveBeenLastCalledWith({ kind: "local-vms", provider: "qemu" } satisfies RunTarget);
@@ -201,14 +175,14 @@ describe("RunOnPicker", () => {
     const { onPickHypervisor } = renderPicker({
       step: "hypervisor",
       hosts: [],
-      value: { kind: "local-vm", provider: "utm" },
-      hypervisors: ["utm", "qemu"],
-      defaultHypervisor: "utm",
+      value: { kind: "local-vms", provider: "virtualbox" },
+      hypervisors: ["virtualbox", "qemu"],
+      defaultHypervisor: "virtualbox",
     });
     expect(screen.getByText("Which hypervisor?")).toBeTruthy();
-    const utm = must(screen.getByText("UTM").closest<HTMLElement>("[role=radio]"), "UTM's row");
-    expect(utm.getAttribute("aria-checked")).toBe("true");
-    expect(within(utm).getByText("Default")).toBeTruthy();
+    const vbox = must(screen.getByText("VirtualBox").closest<HTMLElement>("[role=radio]"), "VirtualBox's row");
+    expect(vbox.getAttribute("aria-checked")).toBe("true");
+    expect(within(vbox).getByText("Default")).toBeTruthy();
     const qemu = must(screen.getByText("QEMU").closest<HTMLElement>("[role=radio]"), "QEMU's row");
     expect(within(qemu).getByText("Ready")).toBeTruthy();
     await user.click(screen.getByText("QEMU"));
@@ -243,8 +217,7 @@ describe("RunOnPicker", () => {
 
   it("badges each place by the launch path the backend says the lab takes there", async () => {
     // The badge is the backend's, per path (Isoloom's tier evidence): Azure's cloud-docker is
-    // validated-only, AWS's has real runs; a Proxmox server runs a container lab's helper VM, an
-    // experimental path here. The picker used to guess the paths (Proxmox as cloud-vm/proxmox).
+    // validated-only, AWS's has real runs; a Proxmox server's path is an experimental one here. The picker used to guess the paths (Proxmox as cloud-vm/proxmox).
     installTauri();
     const path = (provider: Provider, badge: LabRunPath["badge"]): LabRunPath => ({ provider, badge, evidence: `${provider}: ${badge}` });
     renderPicker({
@@ -256,7 +229,6 @@ describe("RunOnPicker", () => {
       hostOk: () => true,
       runOptions: {
         docker: null,
-        dockerVm: [],
         vms: [],
         servers: [path("proxmox", "experimental")],
         cloudDocker: [path("azure", "beta"), path("aws", "none")],
@@ -323,7 +295,7 @@ describe("RunOnPicker", () => {
     installTauri();
     renderPicker({
       offerContainers: true,
-      runOptions: { docker: null, dockerVm: [], vms: [], servers: [], cloudDocker: [], cloudVm: [], cloudServices: [], refused: [], emulated: false },
+      runOptions: { docker: null, vms: [], servers: [], cloudDocker: [], cloudVm: [], cloudServices: [], refused: [], emulated: false },
     });
     expect(screen.queryByText("Container")).toBeNull();
     await flush();
@@ -561,7 +533,7 @@ describe("LabRow", () => {
     expect(h.onOpen).not.toHaveBeenCalled();
   });
 
-  it("doesn't offer to keep a lab on a server or in a helper VM, where the backend offers no shutdown", async () => {
+  it("doesn't offer to keep a lab on a server or in a helper VM an earlier version left, where the backend offers no shutdown", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
     const { unmount } = render(
@@ -573,8 +545,8 @@ describe("LabRow", () => {
     expect(dialogsAsked(calls)).toHaveLength(1);
     expect(dialogsAsked(calls)[0].message).not.toMatch(/To keep them/);
     unmount();
-    // A container lab in one VM here: the backend offers a pause, never a shutdown.
-    renderRow({ status: running({ url: null, place: "local_vm", provider: "virtualbox", controls: ["pause", "repair"] }) });
+    // A container lab an earlier version left in one helper VM here: only stopped.
+    renderRow({ status: running({ url: null, place: "local_vm", provider: "virtualbox", controls: [] }) });
     await user.click(screen.getByRole("button", { name: "Stop" }));
     await flush();
     expect(dialogsAsked(calls)).toHaveLength(2);

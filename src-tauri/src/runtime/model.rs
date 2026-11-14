@@ -158,8 +158,8 @@ pub struct Network {
 pub enum Place {
     /// In containers on this machine's Docker.
     Container,
-    /// In VMs on this machine: a VM lab, or a container lab in a VM (one helper VM, or one VM per
-    /// machine).
+    /// In VMs on this machine: a VM lab, or a container lab as one VM per machine (or in the
+    /// helper VM an earlier version ran it inside).
     LocalVm,
     /// On a saved server (Proxmox or ESXi).
     Server,

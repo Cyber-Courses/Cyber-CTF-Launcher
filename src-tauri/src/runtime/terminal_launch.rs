@@ -223,8 +223,8 @@ mod tests {
     #[test]
     fn the_lines_set_the_variables_the_command_needs() {
         assert_eq!(
-            command_line(&in_vm("/labs/x/.isoloom/docker-vm")),
-            "cd /labs/x/.isoloom/docker-vm && exec env 'VAGRANT_DOTFILE_PATH=/runs/x y/vagrant' vagrant ssh default"
+            command_line(&in_vm("/labs/x/.isoloom/vagrant")),
+            "cd /labs/x/.isoloom/vagrant && exec env 'VAGRANT_DOTFILE_PATH=/runs/x y/vagrant' vagrant ssh default"
         );
         assert_eq!(windows_line(&in_vm("C:\\labs\\x")), "cd /d C:\\labs\\x && set \"VAGRANT_DOTFILE_PATH=/runs/x y/vagrant\" && vagrant ssh default");
     }

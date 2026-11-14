@@ -34,7 +34,6 @@ function runner(cargo: string, env: Record<string, string>, args: string[] = [])
     SUITE_NESTED: "",
     CYBERCTF_TEST_INTEGRATION_TIMEOUT: "",
     CYBERCTF_TEST_VM_PROVIDER: "",
-    CYBERCTF_TEST_DOCKER_VM_PROVIDER: "",
     CYBERCTF_TEST_ISOLOOM_DIR: dir,
     CYBERCTF_TEST_INTEGRATION_LOGS: dir,
     ...env,
@@ -198,7 +197,7 @@ describe("an integration scenario's verdict", () => {
   it("takes --only <scenario>@<provider>: that scenario alone, on that hypervisor", () => {
     const out = join(folder(), "results.jsonl");
     runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "vm-lab@virtualbox", "--results", out]);
-    runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "attack-box-docker@docker", "--only", "docker-vm-lab@hyperv", "--results", out]);
+    runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "attack-box-docker@docker", "--only", "per-machine@hyperv", "--results", out]);
     const records = readFileSync(out, "utf8")
       .trim()
       .split("\n")
@@ -206,7 +205,7 @@ describe("an integration scenario's verdict", () => {
     expect(records.map((r) => [r.case, r.provider, r.result])).toEqual([
       ["vm-lab", "virtualbox", "pass"],
       ["attack-box-docker", "", "pass"],
-      ["docker-vm-lab", "hyperv", "pass"],
+      ["per-machine", "hyperv", "pass"],
     ]);
   });
 
@@ -349,15 +348,14 @@ describe("--results", () => {
     () => {
       const out = join(folder(), "results.jsonl");
       // vm-lab fails with the launcher's own refusal of UTM: the VM scenarios after it on UTM are
-      // skipped with that line, the docker ones (no provider) and those on another hypervisor run.
+      // skipped with that line, the docker ones (no provider) and those before it run.
       const refusal = "FAILED: it starts: This lab can't run on UTM yet: `web` is on a network, and vagrant_utm gives a VM no private network.";
       const cargo = `case "$*" in *integration_tests::vm_lab::*) echo "${refusal.replaceAll("`", "\\`")}"; echo "test result: FAILED. 0 passed; 1 failed"; exit 101 ;; *) echo "test result: ok. 1 passed; 0 failed" ;; esac`;
       runner(
         cargo,
         {
-          ONLY: "attack-box-vm docker-lab-hello-stack vm-lab per-machine replace-docker-vm replace-vm resilience-docker-port-taken resilience-vm-destroyed resilience-vm-killed-provisioning",
+          ONLY: "attack-box-vm docker-lab-hello-stack vm-lab per-machine replace-vm resilience-docker-port-taken resilience-vm-destroyed resilience-vm-killed-provisioning",
           CYBERCTF_TEST_VM_PROVIDER: "utm",
-          CYBERCTF_TEST_DOCKER_VM_PROVIDER: "qemu",
         },
         ["--results", out],
       );
@@ -374,7 +372,7 @@ describe("--results", () => {
           reason: `utm failed on the platform earlier in this run: ${refusal}`,
           seconds: 0,
         });
-      for (const other of ["attack-box-vm", "docker-lab-hello-stack", "replace-docker-vm", "resilience-docker-port-taken"])
+      for (const other of ["attack-box-vm", "docker-lab-hello-stack", "resilience-docker-port-taken"])
         expect(of(other), other).toMatchObject({ result: "pass" });
       // Docker is a provider of its own: Docker down ends its scenarios.
       const down = join(folder(), "results.jsonl");

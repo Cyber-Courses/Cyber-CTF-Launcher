@@ -176,15 +176,17 @@ export function bindHost(url: string | null | undefined): string {
 
 /** Where Reset starts the lab again: where it ran, as its status says. On the saved server or
  *  cloud account it ran on (found by id), in the form it ran in there; in a VM here, on the
- *  hypervisor the status names (else, for a container lab, the pick's, else the default), as one
- *  VM per machine or one helper VM for a container lab, as its own VMs for a VM lab; else here. A
- *  host no longer saved can't be started on again: the current pick stands. */
+ *  hypervisor the status names (else, for a container lab, the pick's, else the default
+ *  `vmProvider`), as one VM per machine for a container lab, as its own VMs for a VM lab; else
+ *  here. A container lab an earlier version ran inside one helper VM starts on Docker here (the
+ *  launcher no longer runs that form). A host no longer saved can't be started on again: the
+ *  current pick stands. */
 export function restartTarget(
   status: LabStatus | undefined,
   hosts: ServerHost[],
   runtime: Runtime | undefined,
   runOn: RunTarget,
-  localVm: Provider | null,
+  vmProvider: Provider | null,
 ): RunTarget {
   if (status?.hostId) {
     const host = hosts.find((h) => h.id === status.hostId);
@@ -194,10 +196,11 @@ export function restartTarget(
   if (status?.place !== "local_vm") return { kind: "local" };
   // A VM lab's own VMs: on the hypervisor they ran on, else the backend's for it.
   if (runtime === "VM") return isLocalHypervisor(status.provider) ? { kind: "local", provider: status.provider } : { kind: "local" };
-  const picked = isLocalVmForm(runOn) ? runOn.provider : localVm;
+  if (!status.perMachine) return { kind: "local" };
+  const picked = isLocalVmForm(runOn) ? runOn.provider : vmProvider;
   const provider = isLocalHypervisor(status.provider) ? status.provider : picked;
   if (!provider) return { kind: "local" };
-  return vmFormTarget(status.perMachine ? "local-vms" : "local-vm", provider);
+  return vmFormTarget("local-vms", provider);
 }
 
 /** The header's actions, by what the lab is doing. */

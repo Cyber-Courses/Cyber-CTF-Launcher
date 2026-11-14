@@ -41,8 +41,7 @@ export function HeaderLead({ lab, state: s, status, place = null }: { lab: Lab; 
       <b>{state.word}</b>
     </span>,
   ];
-  // Where it runs, with the engine, hypervisor, server or cloud by name (a container lab in a VM
-  // here says so: "on this machine" alone hides where its containers are).
+  // Where it runs, with the engine, hypervisor, server or cloud by name.
   if (s.running && place) strip.push(<span key="where">{t("labs.detail.onWhere", { where: placeText(t, place) })}</span>);
   else if (s.parked && place && placeName(place)) strip.push(<span key="where">{placeName(place)}</span>);
   if (lab.runtime) strip.push(<span key="rt">{runtimeWord(t, s)}</span>);

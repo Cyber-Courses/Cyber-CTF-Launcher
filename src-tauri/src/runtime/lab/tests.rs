@@ -175,12 +175,11 @@ fn the_snapshot_read_here_is_the_version_its_fields_were_checked_against() {
 }
 
 #[test]
-fn vagrant_dir_and_target_differ_for_docker_and_vm() {
+fn a_container_labs_vagrant_folder_is_the_one_an_earlier_version_ran_its_helper_vm_from() {
     let d = Path::new("/l");
     assert_eq!(vagrant_dir(d, Runtime::Docker), PathBuf::from("/l/.isoloom/docker-vm"));
+    assert_eq!(vagrant_dir(d, Runtime::Docker), docker_vm_dir(d));
     assert_eq!(vagrant_dir(d, Runtime::Vm), PathBuf::from("/l/.isoloom/vagrant"));
-    assert_eq!(vagrant_target(Runtime::Docker), Target::DockerVm);
-    assert_eq!(vagrant_target(Runtime::Vm), Target::Vagrant);
 }
 
 #[test]
@@ -280,8 +279,10 @@ fn the_labs_own_defaults_file_reaches_the_generated_files() {
 fn picks_the_module_for_each_run() {
     let d = Path::new("/l");
     assert_eq!(terraform(d, Runtime::Docker, "aws"), (PathBuf::from("/l/.isoloom/cloud-docker/aws"), Target::CloudDocker));
-    assert_eq!(terraform(d, Runtime::Docker, "proxmox").0, PathBuf::from("/l/.isoloom/docker-vm/proxmox"));
-    assert_eq!(terraform(d, Runtime::Vm, "proxmox").1, Target::Proxmox);
+    // Proxmox runs one VM per machine, a container lab's too: no helper VM there.
+    for runtime in [Runtime::Docker, Runtime::Vm] {
+        assert_eq!(terraform(d, runtime, "proxmox"), (PathBuf::from("/l/.isoloom/proxmox"), Target::Proxmox));
+    }
     assert_eq!(terraform(d, Runtime::Vm, "aws"), (PathBuf::from("/l/.isoloom/cloud-vm/aws"), Target::CloudVm));
     // Every cloud now has a cloud-vm module, not only AWS.
     assert_eq!(terraform(d, Runtime::Vm, "azure"), (PathBuf::from("/l/.isoloom/cloud-vm/azure"), Target::CloudVm));
