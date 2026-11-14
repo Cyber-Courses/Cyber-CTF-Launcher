@@ -59,10 +59,11 @@ fn machine(manifest: &Manifest, m: &MachineStatus, native: Option<&str>) -> Mach
 }
 
 /// `port` and the host port it is published on (none when it isn't), as the runner reports it:
-/// never the machine's own number.
+/// never the machine's own number. Its login is the spec's, filled in by the lab's status
+/// (`status::with_logins`).
 fn tcp_port(m: &MachineStatus, port: GuestPort) -> Port {
     let published = m.published.iter().find(|p| p.port == port.get() && p.protocol == Protocol::Tcp).map(|p| HostPort::new(p.host_port));
-    Port { published, target: port }
+    Port { published, target: port, login: None }
 }
 
 /// What a declared port serves: a web UI (`http`), else the port's own name (`mysql`, `ssh`), else

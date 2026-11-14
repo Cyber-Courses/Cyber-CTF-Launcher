@@ -16,17 +16,36 @@ pub struct Port {
     /// The port inside the container.
     #[ts(type = "number")]
     pub target: super::port::GuestPort,
+    /// The account the service on it ships with, as the lab declares it: shown beside the port.
+    #[ts(optional)]
+    pub login: Option<Login>,
 }
 
-/// The UI reads `published` as a number, 0 when the port isn't published.
+/// The UI reads `published` as a number, 0 when the port isn't published, and finds `login` only
+/// when the lab declares one.
 impl Serialize for Port {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct as _;
-        let mut port = s.serialize_struct("Port", 2)?;
+        let mut port = s.serialize_struct("Port", 2 + usize::from(self.login.is_some()))?;
         port.serialize_field("published", &self.published.map_or(0, super::port::HostPort::get))?;
         port.serialize_field("target", &self.target)?;
+        if let Some(login) = &self.login {
+            port.serialize_field("login", login)?;
+        }
         port.end()
     }
+}
+
+/// The fixed account a lab's service ships with (a training lab's published sign-in, not a
+/// secret), for the player to sign in with.
+#[derive(Serialize, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabLogin")]
+pub struct Login {
+    /// The account's name.
+    pub user: String,
+    /// Its password.
+    pub password: String,
 }
 
 /// One machine of a lab (a container or a VM), as the lab page and its diagram show it.

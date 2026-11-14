@@ -155,10 +155,13 @@ export function deriveLabState(i: LabStateInput) {
 export type LabState = ReturnType<typeof deriveLabState>;
 
 /** Each published container port and the local port it is bound to, so the player sees the
- *  link between a service inside the lab (web :3206) and the port on this machine (:56235). The
- *  backend lists each declared port once. */
+ *  link between a service inside the lab (web :3206) and the port on this machine (:56235), with
+ *  the account its service ships with when the lab declares one. The backend lists each declared
+ *  port once. */
 export function publishedBinds(machines: LabMachine[]) {
-  return machines.flatMap((m) => m.ports.filter((p) => p.published > 0).map((p) => ({ machine: m.name, target: p.target, published: p.published })));
+  return machines.flatMap((m) =>
+    m.ports.filter((p) => p.published > 0).map((p) => ({ machine: m.name, target: p.target, published: p.published, login: p.login ?? null })),
+  );
 }
 
 /** The host a lab's published ports answer on: its URL's, else loopback. */

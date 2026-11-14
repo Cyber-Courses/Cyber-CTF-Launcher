@@ -335,6 +335,7 @@
     "runsOn": "Runs on",
     "autoStop": "Auto-stop",
     "address": "Address",
+    "signIn": "Sign in",
     "insideLab": "Inside the lab",
     "onHost": "On {where}",
     "setup": "Setup",
