@@ -261,11 +261,25 @@ pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path)
     cmd.args(&args).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     cmd.stdin(if stdin { std::process::Stdio::piped() } else { std::process::Stdio::null() });
     let mut child = cmd.spawn().map_err(|e| Error::Invalid(format!("couldn't open {}: {e}", client.name())))?;
-    if let (true, Some(mut input), Some(p)) = (stdin, child.stdin.take(), password) {
-        use std::io::Write as _;
-        input.write_all(format!("{p}\n").as_bytes()).map_err(Error::Io)?;
-    }
-    Ok(())
+    let given = match (stdin, child.stdin.take(), password) {
+        (true, Some(mut input), Some(p)) => {
+            use std::io::Write as _;
+            input.write_all(format!("{p}\n").as_bytes()).map_err(Error::Io)
+        }
+        _ => Ok(()),
+    };
+    reap_when_done(child, client.name());
+    given
+}
+
+/// Waits for a client the learner closes in their own time, off the calling thread: a child that
+/// is never waited on stays a zombie for as long as the app runs, one per screen opened.
+fn reap_when_done(mut child: std::process::Child, name: String) {
+    std::thread::spawn(move || {
+        if let Err(e) = child.wait() {
+            log::warn!("couldn't reap {name} ({}): {e}", child.id());
+        }
+    });
 }
 
 /// Ends window `label`'s session: its bridge stops, its console's tunnel closes, its `.rdp`
@@ -383,5 +397,36 @@ mod tests {
         assert_eq!(std::fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
         close(label);
         assert!(!file.exists(), "removed with the window");
+    }
+
+    /// Regression: the Remote Desktop client was spawned and never waited on, so each one the
+    /// learner closed stayed a zombie for as long as the app ran.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_closed_remote_desktop_client_is_reaped() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let label = "screen-goad:rdp02";
+        start(label, which("rdp02")).await.unwrap();
+        connect(label, reached(Protocol::Rdp, "127.0.0.1:24003"), None).unwrap();
+        let dir = crate::testing::temp_dir("screen-rdp-reaped");
+        // A client that says its pid beside the file it was given, then closes.
+        let client = dir.join("client.sh");
+        std::fs::write(&client, "#!/bin/sh\necho $$ > \"$1.pid.tmp\" && mv \"$1.pid.tmp\" \"$1.pid\"\n").unwrap();
+        std::fs::set_permissions(&client, std::fs::Permissions::from_mode(0o700)).unwrap();
+        open_rdp(label, &rdp::Client::Mstsc(client), &dir).unwrap();
+        let said = dir.join("screen-goad-rdp02.rdp.pid");
+        let reaped = |pid: &str| std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |stat| !stat.contains(") Z "));
+        let mut gone = false;
+        for _ in 0..100 {
+            if let Ok(pid) = std::fs::read_to_string(&said)
+                && reaped(pid.trim())
+            {
+                gone = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        close(label);
+        assert!(gone, "the client that closed was left a zombie");
     }
 }

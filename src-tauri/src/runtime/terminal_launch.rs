@@ -43,6 +43,23 @@ fn applescript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// Runs `program` with `args` until it ends (osascript returns once Terminal opened the window):
+/// a failure is an error with what it printed. Only spawned, it was never waited on (a zombie
+/// per terminal opened) and its failure went unseen: with the Automation permission for Terminal
+/// denied, the button did nothing and said nothing.
+#[cfg(any(target_os = "macos", test))]
+fn run_to_end(program: &str, args: &[&str]) -> Result<()> {
+    let out = std::process::Command::new(program).args(args).stdin(std::process::Stdio::null()).output()?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let said = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+    // AppleScript's "not authorized to send Apple events" (-1743): the Automation permission.
+    let hint =
+        if said.contains("-1743") { " Allow Cyber CTF to control Terminal in System Settings > Privacy & Security > Automation, then try again." } else { "" };
+    Err(Error::Invalid(format!("couldn't open Terminal ({}): {said}.{hint}", out.status)))
+}
+
 /// Opens the OS terminal on `command`, titled "Cyber CTF attack box". The command line itself
 /// never stays on screen: the window is cleared first, and the command replaces the shell
 /// (`exec`), so leaving the box ends the session. `DOCKER_CLI_HINTS=false` drops Docker's
@@ -63,8 +80,7 @@ pub fn open_terminal(command: &ShellCommand) -> Result<()> {
              set title displays device name of t to false\nset title displays shell path of t to false\n\
              set title displays file name of t to false\nend tell"
         );
-        std::process::Command::new("osascript").arg("-e").arg(script).spawn()?;
-        Ok(())
+        run_to_end("osascript", &["-e", &script])
     }
     #[cfg(target_os = "windows")]
     {
@@ -243,6 +259,17 @@ mod tests {
             r#"/c start "Cyber CTF attack box" cmd /s /c ^""C:\Users\Tom&Jerry\AppData\Local\Temp\cyberctf-shell-1.cmd"^""#
         );
         assert_eq!(start_args(r"C:\Users\Ada Lovelace\Temp\x.cmd"), r#"/c start "Cyber CTF attack box" cmd /s /c ^""C:\Users\Ada Lovelace\Temp\x.cmd"^""#);
+    }
+
+    /// Regression: osascript was only spawned, so a refusal (the Automation permission for
+    /// Terminal denied) left the button doing nothing, silently.
+    #[cfg(unix)]
+    #[test]
+    fn a_terminal_that_fails_to_open_says_why() {
+        let denied = run_to_end("sh", &["-c", "echo 'execution error: Not authorized to send Apple events to Terminal. (-1743)' >&2; exit 1"]).unwrap_err();
+        let said = denied.to_string();
+        assert!(said.contains("Not authorized to send Apple events to Terminal") && said.contains("Privacy & Security > Automation"), "{said}");
+        assert!(run_to_end("sh", &["-c", "exit 0"]).is_ok());
     }
 
     #[test]
