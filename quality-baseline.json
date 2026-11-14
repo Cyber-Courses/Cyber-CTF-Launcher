@@ -6,6 +6,10 @@
     "win32": {}
   },
   "exceptions": {
+    "src-tauri/src/app.rs": {
+      "#[allow(clippy::needless_pass_by_value, reason = \"taking the token ends the start's claim to be the only thread\")]": 1,
+      "#[allow(unsafe_code, reason = \"the start's claim to be the only thread, which only `run` can make\")]": 1
+    },
     "src-tauri/src/commands.rs": {
       "#![allow(clippy::needless_pass_by_value, reason = \"Tauri hands a command its arguments by value\")]": 1,
       "#[allow(clippy::too_many_lines, reason = \"one line per command: a list, not logic\")]": 1
@@ -21,14 +25,20 @@
       "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the probes on Windows\"))]": 1,
       "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the restart on Windows\"))]": 1
     },
+    "src-tauri/src/machine/tools/steps.rs": {
+      "#[cfg_attr(not(target_os = \"linux\"), allow(dead_code, reason = \"only a Linux root step keeps a private folder\"))]": 1
+    },
+    "src-tauri/src/platform/env_path.rs": {
+      "#[allow(unsafe_code, reason = \"this test runs alone, so it is the only thread\")]": 1
+    },
     "src-tauri/src/platform/exec/fake.rs": {
-      "#[allow(clippy::unnecessary_wraps, reason = \"a script answers an Option, None being a missing tool\")]": 2
+      "#[expect(clippy::unnecessary_wraps, reason = \"a script answers an Option, None being a missing tool\")]": 2
     },
     "src-tauri/src/platform/exec/group.rs": {
       "#[cfg_attr(not(unix), allow(dead_code, reason = \"only unix stops a streamed tool gently, with SIGTERM\"))]": 1
     },
     "src-tauri/src/platform/sys.rs": {
-      "#![allow(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1
+      "#![expect(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1
     },
     "src/app/layout.tsx": {
       "eslint-disable-next-line @next/next/no-sync-scripts -- must run before first paint to avoid a flash of the wrong mode": 1
