@@ -71,12 +71,6 @@ pub(super) fn containers_run_on(provider: Option<Provider>) -> Result<()> {
     }
 }
 
-/// Whether the Isothrum runner runs labs of `runtime` on `provider` servers: VM labs on Proxmox
-/// (Terraform) and on ESXi (Vagrant).
-pub(in crate::runtime) fn runner_runs_on(provider: Provider, runtime: Runtime) -> bool {
-    matches!(provider, Provider::Proxmox | Provider::VmwareEsxi) && runtime == Runtime::Vm
-}
-
 /// The runner's run of VM lab `id` (in `dir`) on the ESXi server of connection `c`: its
 /// settings as params, its password as the run's connection.
 pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::LabRun> {
