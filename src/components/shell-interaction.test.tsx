@@ -2,16 +2,19 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FlaskConical, Search } from "lucide-react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandPalette, type Command } from "@/components/command-palette";
 import { UpdateBanner } from "@/components/update-banner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { QuitGuard } from "@/features/app/quit-guard";
 import { commands, installTauri } from "@/test/tauri";
-import { flush } from "@/test/ui";
+import { flush, preloadLabScreens } from "@/test/ui";
 import { blockQuit, askLaunch, focusedPalette, openMainWindow } from "@/components/shell-test-kit";
 import { emitSettled, must } from "@/components/test-support";
 import { resetUpdater, updater } from "@/components/updater-double";
+
+// The lab page's lazily loaded screens, loaded once before the tests rather than inside the first.
+beforeAll(preloadLabScreens, 60_000);
 
 vi.mock("@tauri-apps/plugin-updater", () => import("@/components/updater-double"));
 

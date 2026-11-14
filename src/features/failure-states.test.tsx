@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { HomeScreen } from "@/features/home/home-screen";
 import { LabDetail } from "@/features/labs/lab-detail";
 import { MachineSetup } from "@/features/machine/machine-setup";
@@ -16,7 +16,10 @@ import type { ActiveOperation, AuthStatus, LabStatus } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
 import { commands, installTauri, rejectWith } from "@/test/tauri";
 import { answer } from "@/lib/dev-mock";
-import { button, flush } from "@/test/ui";
+import { button, flush, preloadLabScreens } from "@/test/ui";
+
+// The lab page's lazily loaded screens, loaded once before the tests rather than inside the first.
+beforeAll(preloadLabScreens, 60_000);
 
 // The failure states of the UX audit: each one says what happened and offers the way out,
 // instead of a state that never resolves or reads as nothing happened.

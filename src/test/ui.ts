@@ -68,3 +68,10 @@ export async function clickEverything(user: UserEvent, { skip, max = 40 }: { ski
     await flush(5);
   }
 }
+
+/** Loads the screens a lab's page loads lazily (the network diagram, React Flow), for a test
+ *  file's `beforeAll`: the first test to open a lab's page otherwise pays for transforming and
+ *  loading them inside its own time limit, seconds on a loaded machine. */
+export async function preloadLabScreens(): Promise<void> {
+  await import("@/features/labs/network-diagram");
+}

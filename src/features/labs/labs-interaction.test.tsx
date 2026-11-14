@@ -1,16 +1,19 @@
 // @vitest-environment jsdom
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Labs } from "@/features/labs/labs-screen";
 import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { setPortMode } from "@/lib/settings";
 import { dockerOnlyReport, readyReport } from "@/test/fixtures";
 import { answersDialog, commands, dialogsAsked, installTauri, stream, type Handler } from "@/test/tauri";
 import type { SystemReport } from "@/lib/tauri";
-import { flush } from "@/test/ui";
+import { flush, preloadLabScreens } from "@/test/ui";
 import { must } from "@/components/test-support";
 import { VMS_HERE, containerMachine, labStatus, rejectWith, rowTitles } from "@/features/labs/labs-test-kit";
+
+// The lab page's lazily loaded screens, loaded once before the tests rather than inside the first.
+beforeAll(preloadLabScreens, 60_000);
 
 // The Labs screen as a player drives it: the real useLabs / useLabActions / deploy store behind
 // the list and the lab page, with only the Rust commands mocked. The component tests next to it
