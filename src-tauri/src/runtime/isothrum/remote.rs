@@ -219,3 +219,87 @@ pub(super) async fn status(home: &Path, client: &Client, name: &RunName, target:
         }
     }
 }
+
+/// `home`'s runner service when one runs (none is started to answer a question about it).
+async fn running_service(home: &Path) -> Option<Client> {
+    Client::connect_running(home).await.ok()
+}
+
+/// The operations of run `name` queued or running in `client`'s service.
+async fn under_way(client: &Client, name: &RunName) -> Vec<isothrum_client::v1::OperationId> {
+    match client.operations(name, 16).await {
+        Ok(rows) => rows.into_iter().filter(|o| o.ended.is_none()).map(|o| o.id).collect(),
+        Err(e) => {
+            log::warn!("the runner service's operations of {name} can't be read: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// Cancels every operation of run `name` queued or running in `home`'s service: a stop ends what
+/// runs on the run first (a launch's `up` cut short, its tools stopped).
+pub(super) async fn cancel_under_way(home: &Path, name: &RunName) {
+    let Some(client) = running_service(home).await else { return };
+    for operation in under_way(&client, name).await {
+        if let Err(e) = client.cancel(operation).await {
+            log::warn!("{name}: the runner service's operation {operation:?} couldn't be cancelled: {e}");
+        }
+    }
+}
+
+/// The runs of `home`'s service with an operation queued or running; none when no service runs.
+///
+/// # Errors
+///
+/// The service's runs can't be listed.
+pub(super) async fn busy_runs(home: &Path) -> Result<Vec<RunName>, String> {
+    let Some(client) = running_service(home).await else { return Ok(Vec::new()) };
+    let runs = client.list().await.map_err(|e| e.to_string())?;
+    let mut busy = Vec::new();
+    for run in runs {
+        if !under_way(&client, &run.name).await.is_empty() {
+            busy.push(run.name);
+        }
+    }
+    Ok(busy)
+}
+
+/// Run `name`'s operations as `home`'s service journals them, newest first (none when no service
+/// runs).
+///
+/// # Errors
+///
+/// The journal can't be read.
+pub(super) async fn journal(home: &Path, name: &RunName) -> Result<Vec<isothrum_client::v1::OperationRow>, String> {
+    let Some(client) = running_service(home).await else { return Ok(Vec::new()) };
+    client.operations(name, 20).await.map_err(|e| e.to_string())
+}
+
+/// Follows the operations of run `name` under way in `home`'s service to their end, their lines
+/// (those already told included) as `log`'s; nothing when none is under way.
+///
+/// # Errors
+///
+/// The service's stream can't be read.
+pub(super) async fn follow_under_way(home: &Path, name: &RunName, log: &mut impl FnMut(String)) -> Result<(), String> {
+    let Some(client) = running_service(home).await else { return Ok(()) };
+    let mut left = under_way(&client, name).await;
+    if left.is_empty() {
+        return Ok(());
+    }
+    let mut events = client.subscribe(Some(name.clone()), None).await.map_err(|e| e.to_string())?;
+    while let Some(item) = events.next().await {
+        let (_, event) = item.map_err(|e| e.to_string())?;
+        let Some(operation) = event.operation.filter(|o| left.contains(o)) else { continue };
+        if let Some(line) = progress::line(&event.kind) {
+            log(line);
+        }
+        if isothrum_client::v1::phase_of(&event) == Some(isothrum_runner::OperationPhase::Ended) {
+            left.retain(|o| *o != operation);
+            if left.is_empty() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}

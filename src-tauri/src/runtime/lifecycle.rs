@@ -243,7 +243,7 @@ pub async fn clear_parked(dirs: &AppDirs, lab: LabRef<'_>, log: &mut impl FnMut(
     forget_run(dir)
 }
 
-// The bodies of the lab operations the deploy worker runs (`deploy_worker::execute`), by lab id.
+// The bodies of the lab operations the run service runs in the app (`run_service::local`), by lab id.
 
 /// Parks lab `id`, declared `runtime` (pauses it or shuts it down, by `mode`), its progress lines
 /// to `log`.

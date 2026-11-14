@@ -132,6 +132,56 @@ fn vagrant_provider(provider: super::providers::Provider) -> Option<isothrum_run
     })
 }
 
+/// Cancels what the home's runner service runs or has queued on lab `id`'s run, before a stop of
+/// the lab.
+pub(crate) async fn end_operations(dirs: &crate::platform::AppDirs, id: &str) {
+    let (Ok(home), Ok(name)) = (paths::runner_home(dirs), RunName::new(&super::docker::project(id))) else { return };
+    remote::cancel_under_way(&home, &name).await;
+}
+
+/// The labs whose run has an operation queued or running in the home's runner service: what an
+/// update install waits for besides this process's own.
+///
+/// # Errors
+///
+/// The service's runs can't be listed.
+pub(crate) async fn busy_in_service(dirs: &crate::platform::AppDirs) -> std::result::Result<Vec<String>, String> {
+    let home = paths::runner_home(dirs).map_err(|e| e.to_string())?;
+    let runs = remote::busy_runs(&home).await?;
+    Ok(runs.iter().map(|r| super::docker::lab_of_project(r.as_str()).unwrap_or(r.as_str()).to_owned()).collect())
+}
+
+/// Whether lab `id`'s run ended its last operation failed, as the runner records it: its page
+/// says the launch failed rather than drawing what is left of it.
+pub(crate) fn last_run_failed(dirs: &crate::platform::AppDirs, id: &str) -> bool {
+    record_of(dirs, id).ok().flatten().is_some_and(|r| r.state == isothrum_runner::RunState::Failed)
+}
+
+/// Lab `id`'s run's operations as the home's runner service journals them, newest first, as JSON
+/// (none when no service runs).
+///
+/// # Errors
+///
+/// The journal can't be read.
+pub(crate) async fn journal_of(dirs: &crate::platform::AppDirs, id: &str) -> Result<serde_json::Value> {
+    let home = paths::runner_home(dirs)?;
+    let name = RunName::new(&super::docker::project(id)).map_err(errors::from_runner)?;
+    let rows = remote::journal(&home, &name).await.map_err(Error::Invalid)?;
+    serde_json::to_value(rows).map_err(|e| Error::Invalid(e.to_string()))
+}
+
+/// Follows lab `id`'s run's operations under way in the home's runner service to their end, their
+/// lines as `log`'s; nothing when none is under way.
+///
+/// # Errors
+///
+/// The service's stream can't be read.
+pub(crate) async fn follow_under_way(dirs: &crate::platform::AppDirs, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
+    let home = paths::runner_home(dirs)?;
+    let name = RunName::new(&super::docker::project(id)).map_err(errors::from_runner)?;
+    remote::follow_under_way(&home, &name, log).await.map_err(Error::Invalid)
+}
+
 /// Every run the runner whose home is `home` records, each in the state its last operation left
 /// it in, as its store says.
 pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
@@ -689,19 +739,8 @@ fn pin_docker(spec: &ProcessSpec) -> Option<ProcessSpec> {
 
 /// The tools every run of this process starts, shared: a tool cut short (its operation dropped,
 /// a cancel) is asked to stop on Unix and given a grace before it is ended, and this process waits
-/// for those still stopping before it exits (`stop_cut_short_tools`, `end_cut_short_tools`).
+/// for those still stopping before it exits (`end_cut_short_tools`).
 static PROCESSES: std::sync::LazyLock<SystemProcesses> = std::sync::LazyLock::new(SystemProcesses::default);
-
-/// Waits, at most `within`, for every tool cut short to stop on its own, then ends what is left:
-/// before a process exits right after cancelling an operation (a stopped deploy worker), so no
-/// tool outlives it. Unix only: on Windows a tool cut short is ended at once.
-#[cfg(unix)]
-pub(crate) async fn stop_cut_short_tools(within: std::time::Duration) {
-    if tokio::time::timeout(within, PROCESSES.stopped()).await.is_err() {
-        log::warn!("tools cut short were still stopping after {} s: ending them", within.as_secs());
-        PROCESSES.end_stopping();
-    }
-}
 
 /// Ends every tool cut short that is still stopping, at once: the app exiting now.
 pub(crate) fn end_cut_short_tools() {

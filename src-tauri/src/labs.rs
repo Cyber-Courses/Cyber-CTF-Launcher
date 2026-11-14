@@ -403,8 +403,6 @@ pub struct LaunchRequest {
 /// A launch ready to run: the lab, its `startLab` spec, and where and how it runs (the Docker
 /// context a container lab here is pinned to resolved from the chosen engine).
 pub(crate) struct PreparedLaunch {
-    /// The lab's id.
-    pub(crate) lab_id: String,
     /// Its `startLab` spec.
     pub(crate) launch: Launch,
     /// Where it runs and how.
@@ -413,14 +411,14 @@ pub(crate) struct PreparedLaunch {
 
 /// Prepares `request`'s launch: resolves the `startLab` spec (the backend's, kept for a later
 /// offline start, or the installed lab's when the backend can't be reached and the player asked)
-/// and the engine it runs on. The deploy itself runs in a detached worker, started by the command
-/// layer (so quitting the app never cuts a run short); `log` carries the one "starting offline"
-/// line the preparation may emit.
+/// and the engine it runs on. The deploy itself runs next ([`run`]), its run's operations in the
+/// runner service (so quitting the app never cuts them short); `log` carries the one "starting
+/// offline" line the preparation may emit.
 pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<PreparedLaunch> {
     let LaunchRequest { lab_id, provider, host, default_ports, offline, per_machine_vm, docker_engine } = request;
     let docker_context = pinned_context(docker_engine.as_deref(), host.as_deref()).await?;
     let launch = launch_spec(dirs, &lab_id, offline, log).await?;
-    Ok(PreparedLaunch { lab_id, launch, place: runtime::Placement { provider, host, per_machine_vm, docker_context, default_ports } })
+    Ok(PreparedLaunch { launch, place: runtime::Placement { provider, host, per_machine_vm, docker_context, default_ports } })
 }
 
 /// The Docker context a container lab here is pinned to, resolved now (on the main process, where

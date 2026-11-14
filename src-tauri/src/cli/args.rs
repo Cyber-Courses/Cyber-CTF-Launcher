@@ -138,11 +138,11 @@ pub enum Labs {
         #[command(flatten)]
         lab: LabArg,
     },
-    /// The log of the lab's last operation in a deploy worker.
+    /// The lab's operations, as the runner service journals them.
     Logs {
         /// The lab's id.
         id: String,
-        /// Follow it while its worker runs.
+        /// Follow its operations under way to their end.
         #[arg(long, short = 'f')]
         follow: bool,
     },

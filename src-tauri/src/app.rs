@@ -1,7 +1,6 @@
 //! The app shell: starting the launcher (or a deploy worker), its plugins, windows, menu and
 //! quitting, and the log file.
 
-pub(crate) mod deploy_worker;
 pub mod events;
 pub mod logging;
 pub mod menu;
@@ -53,9 +52,6 @@ enum Role {
     /// stops cleanly, from a throwaway process (see `platform::console`). Nothing of the app starts.
     #[cfg(windows)]
     Interrupter(u32),
-    /// `cyberctf-desktop deploy --job <file>`: one lab's deploy, run headless; the app that
-    /// started it only follows its log, so quitting the app never cuts a deploy short.
-    DeployWorker(PathBuf),
     /// The launcher itself.
     App,
 }
@@ -67,10 +63,8 @@ impl Role {
         if let Some(pid) = platform::console::interrupt_pid(args.iter().cloned()) {
             return Role::Interrupter(pid);
         }
-        match worker_job(args.iter().cloned()) {
-            Some(job) => Role::DeployWorker(job),
-            None => Role::App,
-        }
+        let _ = args;
+        Role::App
     }
 }
 
@@ -98,7 +92,6 @@ pub fn run() -> tauri::Result<()> {
         // Exit code 0 when it was sent, else 1 (the app reads only whether it succeeded).
         #[cfg(windows)]
         Role::Interrupter(pid) => std::process::exit(i32::from(!platform::console::send_ctrl_c(pid))),
-        Role::DeployWorker(job) => deploy_worker::worker_main(&job, started().context),
         Role::App => {
             let Started { context, proxy_note } = started();
             let app = commands::register(app_builder(proxy_note)).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
@@ -220,15 +213,6 @@ fn own_tool_dirs(identifier: &str, test_root: Option<&std::path::Path>) -> Vec<P
         None => platform::env_path::app_data_dir(identifier),
     };
     data.map(|data| crate::machine::tools::ovftool::managed_dir(&data)).into_iter().collect()
-}
-
-/// The job file when this process was started as a deploy worker (`<exe> deploy --job <file>`).
-pub(crate) fn worker_job(args: impl IntoIterator<Item = String>) -> Option<PathBuf> {
-    let args: Vec<String> = args.into_iter().collect();
-    match args.as_slice() {
-        [_, deploy, flag, job, ..] if deploy == "deploy" && flag == "--job" => Some(PathBuf::from(job)),
-        _ => None,
-    }
 }
 
 /// Under the `wdio` feature only: `CYBERCTF_WDIO_STORAGE`, a JSON object of strings, written into
@@ -408,11 +392,11 @@ fn agent_notify(handle: &AppHandle) -> std::sync::Arc<account::agent::Notify> {
     std::sync::Arc::new(move |title: &str, body: &str| notify(&handle, title, body))
 }
 
-/// How the background agent ends a lab's deploy workers before it stops the lab.
+/// How the background agent ends what the runner service runs on a lab before it stops the lab.
 fn agent_end_workers(dirs: platform::AppDirs) -> std::sync::Arc<account::agent::EndWorkers> {
     std::sync::Arc::new(move |id: &str| {
         let (dirs, id) = (dirs.clone(), id.to_owned());
-        Box::pin(async move { deploy_worker::end_workers(&dirs, &id).await })
+        Box::pin(async move { crate::runtime::isothrum::end_operations(&dirs, &id).await })
     })
 }
 
@@ -540,8 +524,6 @@ mod tests {
         std::fs::remove_file(file).unwrap();
     }
 
-    use super::worker_job;
-
     #[test]
     fn a_notification_that_cant_be_shown_is_logged() {
         // Regression: both notification helpers dropped show()'s error, one of them telling the
@@ -591,20 +573,10 @@ mod tests {
     fn the_role_is_read_from_the_arguments_alone() {
         let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
         assert_eq!(super::Role::of(&args(&["app"])), super::Role::App);
-        assert_eq!(super::Role::of(&args(&["app", "deploy", "--job", "/d/lab.json"])), super::Role::DeployWorker("/d/lab.json".into()));
+        assert_eq!(super::Role::of(&args(&["app", "deploy", "--job", "/d/lab.json"])), super::Role::App, "no deploy workers any more");
         #[cfg(windows)]
         assert_eq!(super::Role::of(&args(&["app", "interrupt", "--pid", "4242"])), super::Role::Interrupter(4242));
         #[cfg(not(windows))]
         assert_eq!(super::Role::of(&args(&["app", "interrupt", "--pid", "4242"])), super::Role::App);
-    }
-
-    #[test]
-    fn only_deploy_job_arguments_make_a_worker() {
-        let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
-        assert_eq!(worker_job(args(&["app", "deploy", "--job", "/d/lab.json"])), Some("/d/lab.json".into()));
-        assert_eq!(worker_job(args(&["app", "deploy", "--job", "/d/lab.json", "extra"])), Some("/d/lab.json".into()));
-        assert_eq!(worker_job(args(&["app", "deploy", "--job"])), None);
-        assert_eq!(worker_job(args(&["app", "deploy", "--other", "x"])), None);
-        assert_eq!(worker_job(args(&["app"])), None);
     }
 }

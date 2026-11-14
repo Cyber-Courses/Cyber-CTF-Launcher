@@ -239,7 +239,7 @@ async fn show(ctx: &Context, lab: &LabArg, show_secrets: bool) -> Answer {
     }
     let tools = tools_in(&ctx.dirs, &lab.id, runtime)?;
     let sign_in = sign_in_in(&ctx.dirs, &lab.id)?.map(|s| json!({ "user": s.user, "password": masked(&s.password, show_secrets) }));
-    let failed = crate::app::deploy_worker::last_deploy_failed(&ctx.dirs, &lab.id);
+    let failed = crate::runtime::isothrum::last_run_failed(&ctx.dirs, &lab.id);
     Ok(json!({ "id": lab.id, "runtime": runtime, "status": to_json(&status)?, "tools": to_json(&tools)?, "attackBox": sign_in, "lastLaunchFailed": failed }))
 }
 
@@ -312,20 +312,22 @@ async fn remove(ctx: &Context, out: &mut Output<'_>, id: &str) -> Answer {
     to_json(&remove_in(&ctx.dirs, id).await?)
 }
 
-/// The log of lab `id`'s last worker run, followed while it runs when `follow`.
+/// Lab `id`'s run's operations, as the runner service journals them, and with `follow` those
+/// under way followed to their end, their lines as they come.
 async fn logs(ctx: &Context, out: &mut Output<'_>, id: &str, follow: bool) -> Exit {
     if let Err(e) = crate::runtime::validate_id(id) {
         return out.fail(&e.into());
     }
-    let (text, running) = match crate::app::deploy_worker::last_log(&ctx.dirs, id) {
-        Ok(log) => log,
+    let journal = match crate::runtime::isothrum::journal_of(&ctx.dirs, id).await {
+        Ok(journal) => journal,
         Err(e) => return out.fail(&e.into()),
     };
+    let running = journal.as_array().into_iter().flatten().any(|o| o["ended"].is_null());
     if !(follow && running) {
-        return out.finish(Ok(json!({ "lab": id, "running": running, "log": text })), |l| l["log"].as_str().unwrap_or_default().to_owned());
+        return out.finish(Ok(json!({ "lab": id, "running": running, "operations": journal })), |l| journal_text(&l["operations"]));
     }
     let mut lines = Vec::new();
-    let followed = crate::app::deploy_worker::follow(&ctx.dirs, id, |line| lines.push(line)).await;
+    let followed = crate::runtime::isothrum::follow_under_way(&ctx.dirs, id, &mut |line| lines.push(line)).await;
     for line in &lines {
         out.event(&json!({ "kind": "log", "labId": id, "line": line }), Some(line));
     }
@@ -333,6 +335,20 @@ async fn logs(ctx: &Context, out: &mut Output<'_>, id: &str, follow: bool) -> Ex
         Ok(()) => out.finish(Ok(json!({ "lab": id, "running": false })), |_| String::new()),
         Err(e) => out.fail(&e.into()),
     }
+}
+
+/// A run's journal as text: one line per operation, newest first.
+fn journal_text(operations: &Value) -> String {
+    let lines: Vec<String> = operations
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|o| {
+            let ended = if o["ended"].is_null() { "under way".to_owned() } else { o["ended"].to_string() };
+            format!("{} {} {}", o["queued_at"].as_str().unwrap_or_default(), o["op"].as_str().unwrap_or_default(), ended)
+        })
+        .collect();
+    if lines.is_empty() { "no operation recorded".to_owned() } else { lines.join("\n") }
 }
 
 /// The attack box of lab `lab`: its state, address, networks and sign-in.

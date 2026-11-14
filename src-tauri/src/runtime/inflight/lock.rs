@@ -88,6 +88,7 @@ pub async fn acquire(path: &Path) -> std::io::Result<LabFileLock> {
 
 /// Whether an operation holds the lock at `path` right now: one of this process, or another
 /// process's.
+#[cfg(test)]
 pub fn held(path: &Path) -> bool {
     if HELD.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref().is_some_and(|m| m.contains_key(path)) {
         return true;

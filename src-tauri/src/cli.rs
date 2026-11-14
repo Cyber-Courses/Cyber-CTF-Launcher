@@ -62,9 +62,6 @@ impl Context {
 /// (`cyberctf deploy --job <file>`, headless). Returns the process's exit code.
 pub fn main() -> std::process::ExitCode {
     let args: Vec<OsString> = std::env::args_os().collect();
-    if let Some(job) = crate::app::worker_job(args.iter().map(|a| a.to_string_lossy().into_owned())) {
-        return std::process::ExitCode::from(u8::try_from(crate::app::deploy_worker::headless_main(&job)).unwrap_or(1));
-    }
     // A worker on Windows interrupts Terraform through this same executable (see the app's `run`).
     #[cfg(windows)]
     if let Some(pid) = crate::platform::console::interrupt_pid(std::env::args()) {

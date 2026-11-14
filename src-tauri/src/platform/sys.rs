@@ -11,10 +11,12 @@ mod windows;
 
 use std::ffi::OsStr;
 
+#[cfg(all(unix, test))]
+pub use unix::process_exists;
 #[cfg(target_os = "macos")]
 pub use unix::{boot_session, process_start};
 #[cfg(unix)]
-pub use unix::{is_root, login_name, process_exists, signal_group, signal_process};
+pub use unix::{is_root, login_name, signal_group};
 #[cfg(all(windows, test))]
 pub use windows::terminate;
 #[cfg(windows)]
