@@ -188,7 +188,20 @@ fn set_unsaved(_write: &SessionWrite, session: Option<Session>) {
 
 /// A valid access token for CyberBackend, refreshed if it expires within a minute.
 pub async fn access_token() -> Result<String> {
-    access_token_renewed_by(refresh_tokens).await
+    renewed_whatever_the_caller(refresh_tokens).await
+}
+
+/// [`access_token_renewed_by`] on a task of its own, which runs to its end even when the caller
+/// is dropped (a command cancelled by its window reloading or closing). Refresh tokens rotate:
+/// a refresh cut off after cyber-auth answered (or while it did) lost the only valid refresh
+/// token with the renewed session that was never saved, and the player was signed out at the
+/// next call.
+async fn renewed_whatever_the_caller<F, Fut>(renew: F) -> Result<String>
+where
+    F: FnOnce(String) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<TokenResponse>> + Send + 'static,
+{
+    tokio::spawn(access_token_renewed_by(renew)).await.map_err(|e| Error::Invalid(format!("renewing the session: {e}")))?
 }
 
 /// Exchanges a refresh token at cyber-auth.

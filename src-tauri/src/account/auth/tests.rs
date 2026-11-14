@@ -138,6 +138,37 @@ async fn still_waiting<T>(task: &mut tokio::task::JoinHandle<T>) -> bool {
     tokio::time::timeout(std::time::Duration::from_millis(100), task).await.is_err()
 }
 
+/// A real race (cancellation): a call whose caller was dropped mid-refresh (a command cancelled
+/// by its window reloading) dropped the refresh with it, after cyber-auth had rotated the
+/// refresh token: the renewed session was never saved, and the player was signed out at the
+/// next call. The refresh now ends, and is saved, regardless.
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn a_refresh_whose_caller_is_dropped_still_saves_the_renewed_session() {
+    let _serial = ONE_AT_A_TIME.lock().await;
+    store::store(expiring()).await.unwrap();
+    let (started_tx, started) = tokio::sync::oneshot::channel();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let caller = tokio::spawn(renewed_whatever_the_caller(move |_| async move {
+        let _ = started_tx.send(());
+        let _ = released.await;
+        Ok(renewed("renewed"))
+    }));
+    started.await.unwrap();
+    caller.abort();
+    assert!(caller.await.unwrap_err().is_cancelled());
+    release.send(()).unwrap();
+    // The refresh goes on without its caller, then saves; the next call reads it.
+    let saved = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while store::read().await.ok().flatten().and_then(|s| s.refresh_token).as_deref() != Some("r2") {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    });
+    saved.await.expect("the renewed session was saved");
+    assert_eq!(access_token().await.unwrap(), "renewed");
+    auth_logout().await.unwrap();
+}
+
 /// The refresh's renewed session used to be stored right after the sign-out's clear: the
 /// player was signed in again at the next call, and the agent kept claiming launches.
 #[cfg(debug_assertions)]
