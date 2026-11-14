@@ -165,3 +165,67 @@ pub(super) fn message(dir: &Path, target: lab::Target) -> Option<String> {
         None
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two machines on two networks (one cut off from the internet), ports of each protocol, a
+    /// check, and a message naming a published port.
+    const SPEC: &str = "version: 1\nname: t\nnetworks:\n  front: { cidr: 10.40.0.0/24 }\n  back: { cidr: 10.41.0.0/24, internet: false }\nmachines:\n  web:\n    networks: { front: 10, back: 10 }\n    ports: { site: { port: 80, protocol: http, publish: 8080 }, dns: { port: 53, protocol: udp } }\n    app: { image: nginx:1.27 }\n  db:\n    networks: { back: 20 }\n    ports: { sql: { port: 5432, protocol: tcp } }\n    app: { image: postgres:17 }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.site.published }}/\n";
+
+    fn lab() -> crate::testing::TempDir {
+        crate::runtime::test_support::write_lab(SPEC)
+    }
+
+    #[test]
+    fn the_spec_says_each_machines_ports_addresses_and_the_networks() {
+        let dir = lab();
+        let d = Described::of(&dir, Form::Containers).unwrap();
+        let web = d.machine("web").unwrap();
+        let ports: Vec<(&str, u16, bool, bool)> = web.ports.iter().map(|p| (p.name.as_str(), p.port, p.web(), p.tcp())).collect();
+        assert_eq!(ports, [("site", 80, true, true), ("dns", 53, false, false)], "in the spec's order");
+        assert_eq!(web.interfaces.iter().map(|i| i.network.as_str()).collect::<Vec<_>>(), ["front", "back"]);
+        assert!(d.machine("db").unwrap().ports.iter().all(|p| p.tcp() && !p.web()));
+        assert!(d.machine("nope").is_none());
+        let nets: Vec<(&str, &str, bool)> = d.networks.iter().map(|n| (n.name.as_str(), n.subnet.as_str(), n.internal)).collect();
+        assert_eq!(nets, [("front", "10.40.0.0/24", false), ("back", "10.41.0.0/24", true)]);
+        assert!(d.check_runners.iter().all(|r| r.starts_with("isoloom-check")) && !d.check_runners.is_empty(), "{:?}", d.check_runners);
+    }
+
+    #[test]
+    fn a_vm_form_takes_the_specs_own_addresses_and_its_runners_from_the_vagrant_project() {
+        let dir = lab();
+        let containers = Described::of(&dir, Form::Containers).unwrap();
+        let vms = Described::of(&dir, Form::Vms).unwrap();
+        let ip = |d: &Described| d.machine("db").unwrap().interfaces.iter().map(|i| i.ip.clone()).collect::<Vec<_>>();
+        assert_eq!(ip(&vms), ["10.41.0.20"], "the spec's own address");
+        assert_eq!(ip(&containers).len(), 1, "one address on its one network");
+        assert_eq!(vms.check_runners, [] as [String; 0], "no Vagrant project generated yet");
+        let checks = lab::vagrant_dir(&dir, crate::runtime::Runtime::Vm).join("checks");
+        std::fs::create_dir_all(&checks).unwrap();
+        for f in ["web.sh", "isoloom-controller.sh", "notes.txt"] {
+            std::fs::write(checks.join(f), "").unwrap();
+        }
+        assert_eq!(Described::of(&dir, Form::Vms).unwrap().check_runners, ["isoloom-controller", "web"]);
+    }
+
+    #[test]
+    fn a_check_runners_lines_read_as_passed_or_failed_with_the_reason() {
+        assert_eq!(check_line("web | isoloom-check: PASS http://web/ \r"), Some(("http://web/".into(), true, String::new())));
+        assert_eq!(check_line("isoloom-check: FAIL db: port 5432 closed\n"), Some(("db".into(), false, "port 5432 closed".into())));
+        assert_eq!(check_line("isoloom-check: FAIL bare"), Some(("bare".into(), false, String::new())));
+        for other in ["isoloom-check: END 1 passed, 0 failed", "PASS without the marker", ""] {
+            assert_eq!(check_line(other), None, "{other}");
+        }
+    }
+
+    #[test]
+    fn the_message_is_filled_for_its_target_and_a_lab_without_one_says_none() {
+        let dir = lab();
+        let said = message(&dir, lab::Target::Docker).expect("a message");
+        assert_eq!(said.trim_end(), "Open http://localhost:8080/");
+        let bare = crate::runtime::test_support::write_lab("version: 1\nname: t\nmachines:\n  web: { app: { image: nginx:1.27 } }\n");
+        assert_eq!(message(&bare, lab::Target::Docker), None);
+    }
+}

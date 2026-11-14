@@ -149,7 +149,7 @@ fn back_up(conn: &Connection, version: u32) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{backup_path, migrate_with};
+    use super::{MIGRATIONS, backup_path, migrate, migrate_with};
     use rusqlite::Connection;
 
     fn version(conn: &Connection) -> u32 {
@@ -188,5 +188,27 @@ mod tests {
         std::fs::remove_file(backup_path(&file, 2)).unwrap();
         migrate_with(&mut conn, &all).unwrap();
         assert!(!backup_path(&file, 3).is_file() && !backup_path(&file, 2).is_file(), "nothing to migrate: no backup");
+    }
+
+    #[test]
+    fn a_store_an_earlier_build_left_is_backed_up_whole_before_this_builds_migrations_change_it() {
+        // A store as the build before the runner kept start values left it (schema 2, one run's
+        // value saved), opened by this one: its copy at schema 2 is kept, with that value, before
+        // migration 3 drops the table.
+        let dir = crate::testing::temp_dir("store-earlier-build");
+        let file = dir.join("launcher.sqlite3");
+        let mut conn = Connection::open(&file).unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+        migrate_with(&mut conn, &MIGRATIONS[..2]).unwrap();
+        conn.execute("INSERT INTO run_values (run, name, value) VALUES ('cyberctf-web', 'region', 'eu-west-3')", []).unwrap();
+        migrate(&mut conn).unwrap();
+        assert_eq!(version(&conn), super::current());
+        let tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE name = 'run_values'", [], |r| r.get(0)).unwrap();
+        assert_eq!(tables, 0, "migrated");
+        let backup = Connection::open(backup_path(&file, 2)).unwrap();
+        assert_eq!(version(&backup), 2, "the copy is the store as the earlier build left it");
+        let kept: String = backup.query_row("SELECT value FROM run_values WHERE run = 'cyberctf-web'", [], |r| r.get(0)).unwrap();
+        assert_eq!(kept, "eu-west-3");
+        assert!(!backup_path(&file, 1).is_file() && !backup_path(&file, 3).is_file(), "one copy, at the version it was found at");
     }
 }

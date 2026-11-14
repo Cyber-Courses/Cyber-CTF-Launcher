@@ -90,7 +90,7 @@ pub(super) async fn read(dirs: &AppDirs, id: &str, runtime: Runtime) -> Read {
 
 #[cfg(test)]
 mod tests {
-    use super::{BTreeSet, LabStatus, Read, Runtime, Watch};
+    use super::{ALL_EVERY, BTreeSet, LabStatus, Read, Runtime, Watch};
 
     fn labs(ids: &[&str]) -> Vec<(String, Runtime)> {
         ids.iter().map(|id| ((*id).to_owned(), Runtime::Docker)).collect()
@@ -131,5 +131,30 @@ mod tests {
         // Watched again with the same runtime: nothing new to read; another runtime is.
         assert_eq!(w.set(labs(&["a"]), Vec::new()), [] as [(String, Runtime); 0]);
         assert_eq!(w.set(vec![("a".into(), Runtime::Vm)], Vec::new()).len(), 1);
+    }
+
+    #[test]
+    fn a_quiet_lab_is_read_again_at_every_full_pass_only() {
+        let mut w = Watch::default();
+        w.set(labs(&["quiet"]), Vec::new());
+        w.scanned(BTreeSet::new());
+        let reads: Vec<bool> = (0..=ALL_EVERY).map(|_| !w.next_reads(|_| false).is_empty()).collect();
+        let full = |pass: u64| pass.is_multiple_of(ALL_EVERY);
+        assert_eq!(reads, (0..=ALL_EVERY).map(full).collect::<Vec<_>>(), "passes 1 and {}", ALL_EVERY + 1);
+    }
+
+    #[test]
+    fn a_failed_read_is_told_then_its_recovery_and_an_unwatched_lab_is_told_afresh() {
+        let mut w = Watch::default();
+        w.set(labs(&["a"]), Vec::new());
+        let failed: Read = Err(crate::error::Error::Invalid("Docker doesn't answer".into()).to_wire());
+        assert!(w.told("a", &failed));
+        assert!(!w.told("a", &failed), "the same failure once");
+        assert!(w.told("a", &UP()), "back up");
+        // No longer watched: what was told of it is forgotten, so watched again it is told again.
+        w.set(Vec::new(), Vec::new());
+        assert!(!w.told("a", &UP()), "not watched");
+        assert_eq!(ids(&w.set(labs(&["a"]), Vec::new())), ["a"], "read at once");
+        assert!(w.told("a", &UP()));
     }
 }

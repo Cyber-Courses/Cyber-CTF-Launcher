@@ -190,6 +190,68 @@ async fn the_saved_servers_are_listed_and_a_default_needs_a_name() {
 }
 
 #[tokio::test]
+async fn a_saved_server_is_removed_with_yes_the_default_cleared_and_the_launchers_key_shown() {
+    let t = TestApp::new();
+    t.host("pve", "proxmox", json!({}));
+    let ran = cyberctf(&t, &["servers", "set-default", "pve", "--json"]).await;
+    assert_eq!(ran.exit, Exit::Ok);
+    let cleared = cyberctf(&t, &["servers", "set-default", "--none", "--json"]).await;
+    assert_eq!((cleared.exit, &cleared.last()["data"]), (Exit::Ok, &json!({ "default": null })));
+    assert_eq!(cyberctf(&t, &["servers", "show", "pve", "--json"]).await.last()["data"]["default"], false);
+    assert_eq!(cyberctf(&t, &["servers", "remove", "pve", "--json"]).await.exit, Exit::Usage, "needs --yes off a terminal");
+    crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
+    let removed = cyberctf(&t, &["servers", "remove", "pve", "--yes", "--json"]).await;
+    assert_eq!((removed.exit, &removed.last()["data"]), (Exit::Ok, &json!({ "removed": "pve" })), "{:?}", removed.lines);
+    assert_eq!(cyberctf(&t, &["servers", "list", "--json"]).await.last()["data"]["hosts"], json!([]));
+    // The launcher's own key, made already: shown as it is, nothing run.
+    let ssh = t.data().join("ssh");
+    std::fs::create_dir_all(&ssh).unwrap();
+    std::fs::write(ssh.join("id_ed25519"), "private").unwrap();
+    std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher\n").unwrap();
+    let tools = Tools::strict_rules(&[]);
+    let key = cyberctf(&t, &["servers", "public-key"]).await;
+    assert_eq!((key.exit, key.text.trim()), (Exit::Ok, "ssh-ed25519 AAAA cyberctf-launcher"));
+    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
+}
+
+#[tokio::test]
+async fn what_is_stored_is_shown_and_a_clean_frees_nothing_when_nothing_is_stored() {
+    use crate::platform::exec::fake::ok;
+    let t = TestApp::new();
+    let _tools = Tools::strict_rules(&[("docker image ls -q --no-trunc", ok("")), ("vagrant box list", ok(""))]);
+    let shown = cyberctf(&t, &["storage", "show", "--json"]).await;
+    assert_eq!((shown.exit, &shown.last()["data"]), (Exit::Ok, &json!({ "images": [], "boxes": [] })));
+    assert_eq!(cyberctf(&t, &["storage", "show"]).await.text.trim(), "Cyber CTF stores nothing here.");
+    let cleaned = cyberctf(&t, &["storage", "clean", "--yes", "--json"]).await;
+    assert_eq!((cleaned.exit, &cleaned.last()["data"]), (Exit::Ok, &json!({ "freed": 0 })));
+}
+
+#[tokio::test]
+async fn the_cloud_clis_status_names_every_cloud_even_with_no_cli_answering() {
+    let t = TestApp::new();
+    let _tools = Tools::rules(&[]);
+    let ran = cyberctf(&t, &["cloud", "status", "--json"]).await;
+    assert_eq!(ran.exit, Exit::Ok, "{:?}", ran.lines);
+    let data = &ran.last()["data"];
+    let clouds: Vec<&String> = data.as_object().unwrap().keys().collect();
+    assert_eq!(clouds, ["aws", "azure", "gcp", "oci"]);
+    assert!(data["aws"]["profiles"].is_array() && data["azure"]["subscriptions"].is_array(), "{data}");
+}
+
+#[tokio::test]
+async fn an_installed_lab_that_never_ran_reads_as_not_running() {
+    let t = TestApp::new();
+    let _tools = Tools::rules(&[]);
+    t.lab("web", &[("isoloom.yml", SPEC)]);
+    let ran = cyberctf(&t, &["labs", "status", "web", "--runtime", "docker", "--json"]).await;
+    assert_eq!(ran.exit, Exit::Ok, "{:?}", ran.lines);
+    let data = &ran.last()["data"];
+    assert_eq!((&data["id"], &data["runtime"], &data["status"]["running"], &data["check"]), (&json!("web"), &json!("DOCKER"), &json!(false), &Value::Null));
+    assert_eq!(data["status"]["machines"], json!([]));
+    assert_eq!(cyberctf(&t, &["labs", "status", "web", "--runtime", "docker"]).await.text.lines().next().map(|l| l.starts_with("web: ")), Some(true));
+}
+
+#[tokio::test]
 async fn an_unknown_tool_is_a_usage_error_and_a_plugin_isnt_removed_alone() {
     let t = TestApp::new();
     let tools = Tools::rules(&[]);

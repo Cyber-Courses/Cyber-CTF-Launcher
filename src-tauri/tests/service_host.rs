@@ -48,3 +48,25 @@ async fn whichever_starts_the_service_serves_the_other_one_service_per_home() {
     app.shutdown().await.unwrap();
     let _ = started.wait();
 }
+
+#[tokio::test]
+async fn a_second_service_of_a_served_home_refuses_to_start_and_a_shutdown_ends_the_first() {
+    let home = tempfile::tempdir().unwrap();
+    let app = Client::connect_exact(home.path(), Some(Path::new(EXE))).await.unwrap();
+    let second = Command::new(EXE).args(["serve", "--home"]).arg(home.path()).output().unwrap();
+    assert_eq!(second.status.code(), Some(1), "one service per home");
+    let said = String::from_utf8_lossy(&second.stderr);
+    assert!(said.starts_with("serve: "), "{said}");
+    let pid = app.service().pid;
+    app.shutdown().await.unwrap();
+    // The service is gone: nothing answers for the home any more.
+    let mut gone = false;
+    for _ in 0..200 {
+        if Client::connect_running(home.path()).await.is_err() {
+            gone = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(gone, "service {pid} still answers after its shutdown");
+}
