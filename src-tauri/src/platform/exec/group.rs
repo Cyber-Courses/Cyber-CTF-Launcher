@@ -1,12 +1,12 @@
 //! Process groups of timed and streamed tools, so a timeout, a cancellation or the app's exit
 //! kills the whole tree a tool started, not just the tool: its own process group on unix, a job
-//! object (which ends every process in it when it is closed) on Windows. On unix each group is
-//! recorded in the tools' ledger while it runs, for the next start to end it should the app be
-//! killed ([`super::ledger`]).
+//! object (which ends every process in it when it is closed) on Windows. Each tool is recorded in
+//! the tools' ledger while it runs, for the next start to end it should the app be killed
+//! outright ([`super::ledger`]).
 
 use std::sync::Mutex;
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 use crate::platform::sys;
 #[cfg(windows)]
 use crate::platform::sys::Job;
@@ -20,8 +20,7 @@ struct Live {
     stream: bool,
     #[cfg(windows)]
     job: std::sync::Arc<Job>,
-    /// Its record in the tools' ledger, removed when this drops.
-    #[cfg(unix)]
+    /// Its record in the tools' ledger, held for its drop: removed when this drops.
     record: Option<super::ledger::Recorded>,
 }
 
@@ -34,36 +33,30 @@ static LIVE_GROUPS: Mutex<Vec<Live>> = Mutex::new(Vec::new());
 pub(crate) struct GroupGuard(Option<u32>);
 
 impl GroupGuard {
-    /// For a timed probe.
-    pub(super) fn new(child: &tokio::process::Child) -> Self {
-        Self::track(child, false)
-    }
-
-    /// For a streamed tool.
-    pub(super) fn stream(child: &tokio::process::Child) -> Self {
-        Self::track(child, true)
-    }
-
-    fn track(child: &tokio::process::Child, stream: bool) -> Self {
-        let pid = child.id();
+    /// Tracks the tool `pid` (`stream`: a long run, stopped gently on unix), the leader of a
+    /// process group of its own.
+    #[cfg(not(windows))]
+    pub(super) fn track(pid: Option<u32>, stream: bool) -> Self {
         if let Some(p) = pid {
-            #[cfg(windows)]
-            let Some(job) = child.raw_handle().and_then(Job::for_process) else { return GroupGuard(None) };
             // Written before the registry is locked: no file is written under its lock.
-            #[cfg(unix)]
             let record = super::ledger::Recorded::tool(p, stream);
-            if let Ok(mut live) = LIVE_GROUPS.lock() {
-                live.push(Live {
-                    pid: p,
-                    stream,
-                    #[cfg(windows)]
-                    job: std::sync::Arc::new(job),
-                    #[cfg(unix)]
-                    record,
-                });
-            }
+            Self::enter(Live { pid: p, stream, record });
         }
         GroupGuard(pid)
+    }
+
+    /// Tracks the tool `pid`, created inside `job` (`stream`: a long run).
+    #[cfg(windows)]
+    pub(super) fn in_job(pid: u32, stream: bool, job: Job) -> Self {
+        let record = super::ledger::Recorded::tool(pid, stream);
+        Self::enter(Live { pid, stream, job: std::sync::Arc::new(job), record });
+        GroupGuard(Some(pid))
+    }
+
+    fn enter(tool: Live) {
+        if let Ok(mut live) = LIVE_GROUPS.lock() {
+            live.push(tool);
+        }
     }
 
     /// The tool exited on its own: leave whatever it started alone.
@@ -71,8 +64,8 @@ impl GroupGuard {
         if let Some(live) = forget(self.0.take()) {
             #[cfg(windows)]
             live.job.release();
-            #[cfg(not(windows))]
-            let _ = live;
+            // Done with: its record goes.
+            drop(live.record);
         }
     }
 }
@@ -128,24 +121,4 @@ pub fn kill_live_tools() {
         }
         kill(&live);
     }
-}
-
-/// `CREATE_SUSPENDED`: a tool starts paused, so it is in its job before it can start anything.
-#[cfg(windows)]
-pub(super) const CREATE_SUSPENDED: u32 = 0x0000_0004;
-
-/// Lets a tool created suspended (see [`CREATE_SUSPENDED`]) run: resumes its threads (a new
-/// process has just its first one). An error, the tool killed, when none could be resumed:
-/// left suspended it would never end.
-#[cfg(windows)]
-pub(super) fn resume(child: &tokio::process::Child) -> std::io::Result<()> {
-    let resumed = child.id().is_some_and(sys::resume_threads_of);
-    if resumed {
-        return Ok(());
-    }
-    let err = std::io::Error::last_os_error();
-    if let Some(pid) = child.id() {
-        sys::terminate(pid);
-    }
-    Err(err)
 }

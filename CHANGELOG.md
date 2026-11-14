@@ -43,6 +43,14 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Fixed
 
+- **A killed app's tools end with it, and none is left suspended (#299, #301).** On Windows a
+  tool is now created inside its kill-on-close job object, not suspended and put there after: an
+  app ended as it started one (Task Manager's End task, a crash) left that tool suspended in no
+  job for good. A tool inherits its own standard handles only. On macOS and Linux, where nothing
+  ends a tool's process group when the app dies, the tools an app or deploy worker killed outright
+  left running are ended at the next start, from a ledger in the app's data folder (kept on
+  Windows too, as a backstop).
+
 - **Labs launched from the website at once each keep their co-location check.** A launch ended the
   previous launch's check server, whatever its lab, so the website could no longer confirm that
   the first lab ran on this computer. Each lab now keeps its own until its check is answered, it
