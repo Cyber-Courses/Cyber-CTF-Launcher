@@ -240,16 +240,16 @@ export function emitEvent(page: Page, event: string, payload: unknown) {
   );
 }
 
-/** Answers the next system confirmation (`confirmDestructive`: in the preview, the browser's own
- *  confirm()) with its confirm button (`accept`) or Cancel; resolves with what it asked (the
- *  title, a blank line, then the message). Set it up before the click that asks. */
-export function answerConfirm(page: Page, accept: boolean): Promise<string> {
-  return new Promise((resolve) => {
-    page.once("dialog", (dialog) => {
-      const asked = dialog.message();
-      void (accept ? dialog.accept() : dialog.dismiss()).then(() => {
-        resolve(asked);
-      });
-    });
-  });
+/** Answers the next confirmation the app asks in its own dialog (`confirmDestructive`, and the
+ *  warning `warnInDialog` shows) with its confirm button (`accept`) or Cancel; resolves with what
+ *  it asked (the title, a blank line, then the message) once the dialog has closed. Set it up
+ *  before the click that asks. */
+export async function answerConfirm(page: Page, accept: boolean): Promise<string> {
+  const dialog = page.getByRole("alertdialog");
+  await dialog.waitFor();
+  const title = await dialog.locator("#confirm-title").innerText();
+  const asked = `${title}\n\n${await dialog.locator("#confirm-body").innerText()}`;
+  await (accept ? dialog.getByRole("button").last() : dialog.getByRole("button", { name: "Cancel" })).click();
+  await page.locator("#confirm-title", { hasText: title }).waitFor({ state: "detached" });
+  return asked;
 }

@@ -75,16 +75,12 @@ test.describe("remove lab", () => {
     await openApp(page, "&imported&remove=partial");
     await openImported(page);
     // The question, then a second dialog, which stays until read: what stayed, and why.
-    const said: string[] = [];
-    page.on("dialog", (dialog) => {
-      said.push(dialog.message());
-      void dialog.accept();
-    });
+    const question = answerConfirm(page, true);
     await removeButton(page).click();
-    await expect.poll(() => said.length).toBe(2);
-    expect(said[0]).toContain("Remove Supplier portal from this computer?");
-    expect(said[1]).toContain("Supplier portal removed, but some files stayed");
-    expect(said[1]).toContain("runs/cyberctf-local-supplier-portal: Resource busy (os error 16)");
+    expect(await question).toContain("Remove Supplier portal from this computer?");
+    const warning = await answerConfirm(page, true);
+    expect(warning).toContain("Supplier portal removed, but some files stayed");
+    expect(warning).toContain("runs/cyberctf-local-supplier-portal: Resource busy (os error 16)");
     await expect(main(page).getByRole("textbox", { name: "Search labs and skills" })).toBeVisible();
     await expect(main(page)).not.toContainText("Imported from a folder");
   });
