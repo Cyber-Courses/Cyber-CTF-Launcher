@@ -21,8 +21,21 @@ const SERVERS = new Set<string>(SERVER_PROVIDERS);
  *  names): one of the backend's local providers. */
 export const isLocalHypervisor = (p: string | null | undefined): p is Provider => !!p && (LOCAL_PROVIDERS as readonly string[]).includes(p);
 
-/** Whether the lab is built for this CPU (no architectures listed = any). */
-export const runsNatively = (rt: LabRuntimeInfo, hostArch: string) => !rt.architectures.length || rt.architectures.includes(hostArch);
+/** The CPUs, each by every name it goes by: images and labs write `arm64` and `amd64`, Rust's
+ *  machine report `aarch64` and `x86_64`, Windows `x64`. */
+const CPU_ALIASES: Readonly<Partial<Record<string, string>>> = { arm64: "aarch64", aarch64: "aarch64", amd64: "x86_64", x86_64: "x86_64", x64: "x86_64" };
+
+/** A CPU's one name (`aarch64`, `x86_64`), whichever of its names `arch` is, in any case; an
+ *  unknown one as written, lowercased. */
+export const cpuName = (arch: string): string => {
+  const lower = arch.trim().toLowerCase();
+  return CPU_ALIASES[lower] ?? lower;
+};
+
+/** Whether the lab is built for this CPU (no architectures listed = any), whichever name the
+ *  catalogue and the machine report give it. */
+export const runsNatively = (rt: LabRuntimeInfo, hostArch: string) =>
+  !rt.architectures.length || rt.architectures.some((a) => cpuName(a) === cpuName(hostArch));
 
 /** Whether `rt` runs natively here, on `hostArch`: also when the host isn't known yet (the report
  *  not in) or the lab's runtime isn't, never a wrong "emulated". */
