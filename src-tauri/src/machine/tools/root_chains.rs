@@ -20,13 +20,29 @@ enum Frame {
     Quoted,
 }
 
+/// Whether `w` is the shell word at byte `i` of `script`.
+fn word_at(script: &str, i: usize, w: &str) -> bool {
+    let bytes = script.as_bytes();
+    script[i..].starts_with(w) && (i == 0 || b" \t;(|&".contains(&bytes[i - 1])) && bytes.get(i + w.len()).is_none_or(|c| b" \t;)".contains(c))
+}
+
+/// Follows the keywords at byte `i` (outside quotes): a `case`/`esac` inside a substitution, and
+/// at the top level an `if`'s or a loop's condition, which `then`/`do` ends.
+fn keyword(script: &str, i: usize, stack: &mut [Frame], condition: &mut bool) {
+    let word = |w: &str| word_at(script, i, w);
+    match stack.last_mut() {
+        Some(Frame::Substitution { cases }) if word("case") => *cases += 1,
+        Some(Frame::Substitution { cases }) if word("esac") => *cases = cases.saturating_sub(1),
+        None if ["if", "elif", "while", "until"].into_iter().any(word) => *condition = true,
+        None if word("then") || word("do") => *condition = false,
+        _ => {}
+    }
+}
+
 /// Where `script` chains with `&&` at its top level (outside quotes and `$(…)`, and outside an
 /// `if`'s or a loop's condition, where `set -e` doesn't apply anyway), as byte offsets.
 fn top_level_chains(script: &str) -> Vec<usize> {
     let bytes = script.as_bytes();
-    let word_at = |i: usize, w: &str| {
-        script[i..].starts_with(w) && (i == 0 || b" \t;(|&".contains(&bytes[i - 1])) && bytes.get(i + w.len()).is_none_or(|c| b" \t;)".contains(c))
-    };
     let mut stack: Vec<Frame> = Vec::new();
     let mut condition = false;
     let mut found = Vec::new();
@@ -47,22 +63,11 @@ fn top_level_chains(script: &str) -> Vec<usize> {
             b')' if !quoted && matches!(stack.last(), Some(Frame::Substitution { cases: 0 })) => {
                 stack.pop();
             }
-            b'c' if !quoted && word_at(i, "case") => {
-                if let Some(Frame::Substitution { cases }) = stack.last_mut() {
-                    *cases += 1;
-                }
-            }
-            b'e' if !quoted && word_at(i, "esac") => {
-                if let Some(Frame::Substitution { cases }) = stack.last_mut() {
-                    *cases = cases.saturating_sub(1);
-                }
-            }
-            b'i' | b'e' | b'w' | b'u' if stack.is_empty() && ["if", "elif", "while", "until"].iter().any(|w| word_at(i, w)) => condition = true,
-            b't' | b'd' if stack.is_empty() && (word_at(i, "then") || word_at(i, "do")) => condition = false,
             b'&' if stack.is_empty() && !condition && bytes.get(i + 1) == Some(&b'&') => {
                 found.push(i);
                 i += 1;
             }
+            c if !quoted && c.is_ascii_lowercase() => keyword(script, i, &mut stack, &mut condition),
             _ => {}
         }
         i += 1;
