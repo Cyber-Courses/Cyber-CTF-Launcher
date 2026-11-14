@@ -1,4 +1,4 @@
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 
 /** Lets pending promises (mocked Tauri invokes) and the renders they cause settle. */
@@ -28,6 +28,11 @@ export function button(name: RegExp): HTMLElement {
     );
   return found;
 }
+
+/** The first button matching `name` ([`button`]), once there is one: waited for as the screen
+ *  settles (polled, up to `timeout`), never assumed after a fixed delay, which a loaded machine
+ *  can outlast. */
+export const findButton = (name: RegExp, timeout = 15_000): Promise<HTMLElement> => waitFor(() => button(name), { timeout });
 
 /** Types `value` into every empty text field on screen. */
 export async function fillEmptyFields(user: UserEvent, value = "10.0.0.5") {

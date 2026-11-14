@@ -1,3 +1,4 @@
+import { act } from "@testing-library/react";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { answer } from "@/lib/dev-mock";
 import type { CommandError } from "@/lib/errors";
@@ -133,8 +134,39 @@ function answerInAppDialogs(calls: Call[], handler: Handler | undefined) {
 
 const REGISTERED = backendCommands();
 
+/** The answers a test holds open on purpose (until it resolves them, or for good). */
+const HELD = new WeakSet<Promise<unknown>>();
+
+/** `handler`, whose answer the test holds open on purpose (it resolves it when it means to, or
+ *  never): [`settled`] doesn't wait for it. */
+export const held =
+  (handler: Handler): Handler =>
+  (args) => {
+    const out = handler(args);
+    if (out instanceof Promise) HELD.add(out);
+    return out;
+  };
+
+/** The commands answered asynchronously and not settled yet, held answers aside. */
+let inflight = 0;
+
+/** Waits until every command invoked has its answer (the ones a test holds aside, see [`held`]),
+ *  and the renders those answers cause have landed: waited for, never a fixed delay, which a
+ *  loaded machine can outlast. Gives up after `limit` ms, so a test that holds an answer without
+ *  saying so fails on its assertions rather than hanging. */
+export async function settled(limit = 15_000): Promise<void> {
+  const start = Date.now();
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  await act(async () => {
+    await tick();
+    while (inflight > 0 && Date.now() - start < limit) await tick();
+    await tick();
+  });
+}
+
 export function installTauri(overrides: Partial<Record<string, Handler>> = {}): Call[] {
   const calls: Call[] = [];
+  inflight = 0;
   answerInAppDialogs(calls, overrides["plugin:dialog|message"] ?? DEFAULTS["plugin:dialog|message"]);
   mockWindows("main");
   mockIPC(
@@ -146,7 +178,15 @@ export function installTauri(overrides: Partial<Record<string, Handler>> = {}): 
         throw new Error(`\`${cmd}\` isn't a command the Rust core registers (src-tauri/build.rs)`);
       }
       const handler = overrides[cmd] ?? DEFAULTS[cmd];
-      return handler ? handler(a) : answer(cmd, a);
+      const out: unknown = handler ? handler(a) : answer(cmd, a);
+      if (out instanceof Promise && !HELD.has(out)) {
+        inflight += 1;
+        const done = () => {
+          inflight -= 1;
+        };
+        out.then(done, done);
+      }
+      return out;
     },
     { shouldMockEvents: true },
   );
