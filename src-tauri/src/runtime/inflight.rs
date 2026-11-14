@@ -1,58 +1,18 @@
-//! What this process is doing to which lab right now: the per-lab operation lock (its file across
-//! processes: [`lock`]), and the registry of starts, stops and parks in flight that the quit
-//! guard and the UI read.
+//! One operation per lab at a time: the per-lab operation lock (its file across processes:
+//! [`lock`]), and the names the UI gives a lab's operations ([`Operation`]). What runs on which
+//! lab right now is the run service's to say (`run_service::LocalRunService`).
 
 pub(crate) mod lock;
 
-use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use crate::error::Result;
 use crate::platform::AppDirs;
 use crate::platform::sync::KeyedLocks;
 use tokio::sync::OwnedMutexGuard;
 
-/// What is in flight for a lab. Told apart so the UI never calls a lab being stopped
-/// "deploying", and the sidebar names each operation as it is ([`Action::operation`]).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Action {
-    /// A launch: the lab's machines created and set up.
-    Launch,
-    /// A parked lab, or the machines of it that went down, brought back.
-    Resume,
-    /// The lab's provisioners run again on its running machines.
-    Provision,
-    /// Stopping it: its machines torn down.
-    Stop,
-    /// Pausing or shutting the lab down (by its mode), machines kept: neither a deploy nor a
-    /// teardown.
-    Park(super::Park),
-    /// The attack box added to the running lab: the run brought up to date with it, which may
-    /// restart some of the lab's machines meanwhile.
-    AttachBox,
-    /// The attack box taken out of the running lab, the same way.
-    DetachBox,
-}
-
-impl Action {
-    /// The operation it is, as the UI names it (`ActiveOperation::op`).
-    #[cfg(test)]
-    pub fn operation(self) -> Operation {
-        match self {
-            Action::Launch => Operation::Launch,
-            Action::Resume => Operation::Resume,
-            Action::Provision => Operation::Provision,
-            Action::Stop => Operation::Stop,
-            Action::Park(super::Park::Pause) => Operation::Pause,
-            Action::Park(super::Park::Shutdown) => Operation::Shutdown,
-            Action::AttachBox => Operation::Attach,
-            Action::DetachBox => Operation::Detach,
-        }
-    }
-}
-
-/// A lab operation as the UI names it: an [`Action`], a pause and a shut down told apart.
+/// A lab operation as the UI names it, a pause and a shut down told apart.
 #[derive(serde::Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Operation {
@@ -72,89 +32,6 @@ pub enum Operation {
     Attach,
     /// The attack box being taken out.
     Detach,
-}
-
-/// The labs with an operation in flight in this process right now, each with its in-flight count
-/// (a lab can be re-entered). The app reads this to warn before quitting mid-operation
-/// (interrupting a cloud `terraform apply` or `destroy` leaves billable resources behind, a
-/// VM/Docker run half-created), and the UI reads it to rehydrate a lab's operation after a window
-/// reload: the map lives in this long-lived process, so a reloaded webview that lost its own
-/// deploy state can ask what each lab is doing and show that instead of a bare Start button.
-fn in_flight() -> &'static Mutex<HashMap<String, (Action, usize)>> {
-    static IN_FLIGHT: OnceLock<Mutex<HashMap<String, (Action, usize)>>> = OnceLock::new();
-    IN_FLIGHT.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// The in-flight map, locked. A thread that panicked while holding it leaves it poisoned, yet
-/// every update to it is one statement that can't stop halfway, so it is still right: read
-/// through. Read as empty instead, it would say "nothing in flight" while an operation runs, and
-/// an update install would quit the process under it.
-fn locked() -> std::sync::MutexGuard<'static, HashMap<String, (Action, usize)>> {
-    in_flight().lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// The labs with an operation of any kind in flight in this process (a start, a resume, a
-/// provisioning run, a stop or a park), each once: what a quit would cut off. The one rule for "a
-/// lab operation is running here"; with the deploy workers' labs it is what an update install
-/// waits for (`app::operations::busy_labs`).
-pub fn busy_labs() -> Vec<String> {
-    labs_with(|_| true)
-}
-
-/// Every in-process operation right now: the lab and what it is doing.
-#[cfg(test)]
-pub fn active_actions() -> Vec<(String, Action)> {
-    locked().iter().map(|(id, (a, _))| (id.clone(), *a)).collect()
-}
-
-/// Whether lab `id` is being stopped in this process right now.
-pub fn stopping(id: &str) -> bool {
-    labs_with(|a| a == Action::Stop).iter().any(|l| l == id)
-}
-
-/// The labs whose operation in flight is one `wanted` takes.
-fn labs_with(wanted: impl Fn(Action) -> bool) -> Vec<String> {
-    locked().iter().filter(|(_, (a, _))| wanted(*a)).map(|(id, _)| id.clone()).collect()
-}
-
-/// Marks its lab as starting, stopping or parking for as long as it is alive (RAII), so the mark
-/// is always cleared even if the operation errors or is cancelled.
-pub(crate) struct DeployGuard(String);
-
-impl DeployGuard {
-    pub(crate) fn new(id: &str, action: Action) -> Self {
-        {
-            let mut m = locked();
-            let e = m.entry(id.to_string()).or_insert((action, 0));
-            // The latest operation names the state (a stop right after a start is "stopping"),
-            // but a stop waiting for the lab stays the state: the start it waits for doesn't
-            // undo it, and nothing may begin beside it meanwhile (see `stopping`).
-            if e.0 != Action::Stop {
-                e.0 = action;
-            }
-            e.1 += 1;
-        }
-        Self(id.to_string())
-    }
-}
-
-impl Drop for DeployGuard {
-    fn drop(&mut self) {
-        let mut m = locked();
-        if let Some((_, c)) = m.get_mut(&self.0) {
-            *c -= 1;
-            if *c == 0 {
-                m.remove(&self.0);
-            }
-        }
-    }
-}
-
-/// Runs `work` as lab `id`'s operation `action`: listed in flight while it runs ([`busy_labs`], the
-/// page showing it busy), whatever way it ends.
-pub(crate) async fn as_operation<T>(id: &str, action: Action, work: impl std::future::Future<Output = T>) -> T {
-    let _in_flight = DeployGuard::new(id, action);
-    work.await
 }
 
 /// A lab held for one operation: this process's own lock on it, and the lock across processes
@@ -213,130 +90,14 @@ fn try_lock_lab_at(file: Option<&Path>, id: &str) -> Result<Option<LabLock>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, DeployGuard, active_actions, busy_labs, stopping, try_lock_lab_at};
-    use crate::runtime::Park;
-
-    /// Regression: a thread that panicked holding the in-flight map poisoned it, and every
-    /// reader then read it as empty: "nothing in flight" while a lab started, which an update
-    /// install takes as leave to quit every process.
-    #[test]
-    fn a_poisoned_map_still_lists_the_operations_in_flight() {
-        let _starting = DeployGuard::new("poisoned-map-lab", Action::Launch);
-        let panicked = std::thread::spawn(|| {
-            let _held = super::in_flight().lock();
-            panic!("poisons the map");
-        })
-        .join();
-        assert!(panicked.is_err() && super::in_flight().is_poisoned());
-        assert!(busy_labs().contains(&"poisoned-map-lab".to_owned()));
-    }
+    use super::try_lock_lab_at;
 
     async fn lock_lab(id: &str) -> super::LabLock {
         super::lock_lab_at(None, id).await.unwrap()
     }
 
-    /// Regression (the rig's ubuntu2404 e2e:lab box-stop): adding or taking out the attack box
-    /// held the lab's lock for an `up --wait` of some 18 s but was no operation in flight, so the
-    /// page showed nothing busy while the lab's machines could restart under it. Each is one now,
-    /// named as the UI names it, the page busy with it (it brings the run up to date), and gone
-    /// once done, however it ends.
-    #[tokio::test]
-    async fn an_attack_box_change_is_an_operation_in_flight_while_it_runs() {
-        for (action, op) in [(Action::AttachBox, super::Operation::Attach), (Action::DetachBox, super::Operation::Detach)] {
-            let (busy, actions) = super::as_operation("box-op", action, async { (busy_labs(), active_actions()) }).await;
-            assert!(busy.contains(&"box-op".to_owned()), "{busy:?}");
-            assert!(actions.contains(&("box-op".to_owned(), action)), "{actions:?}");
-            assert_eq!(action.operation(), op);
-            assert!(!busy_labs().contains(&"box-op".to_owned()), "cleared once done");
-        }
-        let failed: Result<(), &str> = super::as_operation("box-op", Action::DetachBox, async { Err("refused") }).await;
-        assert!(failed.is_err() && !busy_labs().contains(&"box-op".to_owned()), "cleared when it fails too");
-    }
-
     fn try_lock(file: Option<&std::path::Path>, id: &str) -> Option<super::LabLock> {
         try_lock_lab_at(file, id).unwrap()
-    }
-
-    #[test]
-    fn every_kind_of_operation_makes_its_lab_busy() {
-        // A stop and a park count as much as a start: quitting or updating cuts each of them off
-        // (a stop's `terraform destroy` on a cloud account most of all).
-        let ids = ["inflight-test-busy-launch", "inflight-test-busy-stop", "inflight-test-busy-park", "inflight-test-busy-provision"];
-        let actions = [Action::Launch, Action::Stop, Action::Park(Park::Shutdown), Action::Provision];
-        let guards: Vec<_> = ids.iter().zip(actions).map(|(id, a)| DeployGuard::new(id, a)).collect();
-        // Other tests hold guards of their own meanwhile: look at this test's labs only.
-        let busy = |id: &str| busy_labs().iter().any(|l| l == id);
-        assert!(ids.iter().all(|id| busy(id)));
-        // A lab re-entered is listed once.
-        let again = DeployGuard::new(ids[0], Action::Launch);
-        assert_eq!(busy_labs().iter().filter(|l| *l == ids[0]).count(), 1);
-        drop((guards, again));
-        assert!(ids.iter().all(|id| !busy(id)));
-    }
-
-    // The registry is process-wide: each test uses its own lab ids and only looks at those.
-    fn action_of(id: &str) -> Option<Action> {
-        active_actions().into_iter().find(|(l, _)| l == id).map(|(_, a)| a)
-    }
-
-    #[test]
-    fn guard_marks_the_lab_until_the_last_one_drops() {
-        let id = "inflight-test-nested";
-        let first = DeployGuard::new(id, Action::Launch);
-        assert_eq!(action_of(id), Some(Action::Launch));
-        // A stop entered while the start is still in flight names the state.
-        let second = DeployGuard::new(id, Action::Stop);
-        assert_eq!(action_of(id), Some(Action::Stop));
-        drop(second);
-        assert_eq!(action_of(id), Some(Action::Stop), "still one operation in flight");
-        drop(first);
-        assert_eq!(action_of(id), None);
-    }
-
-    #[test]
-    fn park_is_neither_a_deploy_nor_a_teardown() {
-        let id = "inflight-test-park";
-        let g = DeployGuard::new(id, Action::Park(Park::Pause));
-        assert_eq!(action_of(id), Some(Action::Park(Park::Pause)));
-        assert_ne!(Action::Park(Park::Pause), Action::Stop);
-        drop(g);
-        assert_eq!(action_of(id), None);
-    }
-
-    #[test]
-    fn a_guard_dropped_by_a_panic_clears_its_mark() {
-        // An operation that panics (a bug in a runtime step) unwinds through its guard: the lab
-        // must not stay "starting" for the rest of the app's life, holding every quit.
-        let id = "inflight-test-panic";
-        let crashed = std::thread::spawn(move || {
-            let _guard = DeployGuard::new(id, Action::Launch);
-            assert!(busy_labs().contains(&id.to_string()));
-            panic!("a step blew up");
-        })
-        .join();
-        assert!(crashed.is_err(), "the thread panicked");
-        assert_eq!(action_of(id), None, "the mark went with the guard");
-        // The registry still works afterwards (its mutex wasn't poisoned by the unwind).
-        let again = DeployGuard::new(id, Action::Park(Park::Pause));
-        assert_eq!(action_of(id), Some(Action::Park(Park::Pause)));
-        drop(again);
-        assert_eq!(action_of(id), None);
-    }
-
-    #[test]
-    fn nested_guards_release_the_lab_only_when_the_outermost_one_drops() {
-        // Three operations re-entering the same lab (a start that resumes, which parks the
-        // attacker...): the mark holds while any of them is alive, whatever the drop order.
-        let id = "inflight-test-nested-three";
-        let a = DeployGuard::new(id, Action::Launch);
-        let b = DeployGuard::new(id, Action::Launch);
-        let c = DeployGuard::new(id, Action::Launch);
-        drop(a);
-        assert_eq!(action_of(id), Some(Action::Launch), "the outermost dropped first");
-        drop(c);
-        assert_eq!(action_of(id), Some(Action::Launch));
-        drop(b);
-        assert_eq!(action_of(id), None);
     }
 
     #[tokio::test]
@@ -364,21 +125,6 @@ mod tests {
         assert!(tried.err().unwrap().to_string().starts_with("Couldn't lock the lab"));
         // Its in-process lock went with the failure: the next operation isn't held up.
         assert!(try_lock(None, "inflight-test-unlockable").is_some());
-    }
-
-    #[test]
-    fn a_lab_is_stopping_while_a_stop_guard_lives() {
-        let id = "inflight-test-stopping";
-        assert!(!stopping(id));
-        let start = DeployGuard::new(id, Action::Launch);
-        assert!(!stopping(id));
-        let stop = DeployGuard::new(id, Action::Stop);
-        assert!(stopping(id) && !stopping("inflight-test-stopping-other"));
-        // A launch that held the lab reaches its start while the stop waits: still stopping.
-        let launch = DeployGuard::new(id, Action::Launch);
-        assert!(stopping(id), "a pending stop isn't undone by the start it waits for");
-        drop((start, launch, stop));
-        assert!(!stopping(id));
     }
 
     #[tokio::test]
