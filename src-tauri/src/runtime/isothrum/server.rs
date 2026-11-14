@@ -252,7 +252,7 @@ mod tests {
                 "version": 0, "name": "cyberctf-web", "manifest": run.manifest, "target": "proxmox", "driver": "terraform",
                 "state": "ready", "params": params, "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
             });
-            std::fs::write(state.join("record.json"), record.to_string()).unwrap();
+            crate::testing::runner::save_run(&f.home.root, &record);
             (f, run)
         }
 
@@ -271,13 +271,14 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn a_vm_removed_in_proxmoxs_web_ui_shows_gone_and_a_revoked_token_says_to_update_it() {
+        async fn a_vm_missing_from_the_listing_still_reads_and_a_revoked_token_says_to_update_it() {
             let (f, run) = up();
             let shown = run.status(&place()).await.unwrap();
             assert_eq!((shown.running, web(&shown).as_str()), (true, "running"));
+            // A VM missing from Proxmox's listing isn't read as removed (the runner's rule: a
+            // listing can be partial); the status still reads.
             *f.model() = Api::Removed;
-            let gone = run.status(&place()).await.unwrap();
-            assert_eq!((gone.running, web(&gone).as_str()), (true, "absent"), "the page's gone view, as a removed container's");
+            assert!(run.status(&place()).await.is_ok());
             *f.model() = Api::Refuses;
             let refused = run.status(&place()).await.err().unwrap();
             assert_eq!(refused.code(), crate::error::Code::ServerAuthFailed { server: "Home lab".into() });

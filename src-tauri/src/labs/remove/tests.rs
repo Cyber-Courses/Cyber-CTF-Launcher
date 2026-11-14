@@ -129,8 +129,8 @@ async fn a_removal_is_refused_while_the_lab_is_up_anywhere_parked_or_busy() {
         record_run(t.data(), "local-refused", host, if host.is_some() { "vagrant" } else { "docker" }, state);
         remove(&t.dirs(), "local-refused", no_worker).await.unwrap_err()
     };
-    // Up here, starting, failed with its machines left, or parked: what the runner records.
-    for state in ["ready", "starting", "failed", "parked"] {
+    // Up here, being created, failed with its machines left, or parked: what the runner records.
+    for state in ["ready", "creating", "failed", "parked"] {
         assert_eq!(refused(state, None).await.code(), Code::LabRunningHere, "{state}");
     }
     // Up on a server: named.
@@ -148,7 +148,7 @@ async fn a_removal_is_refused_while_the_lab_is_up_anywhere_parked_or_busy() {
     let err = remove(&t.dirs(), "local-refused", || Err(Error::coded(Code::AlreadyInProgress))).await.unwrap_err();
     assert_eq!(err.code(), Code::AlreadyInProgress);
     // Through every refusal, the lab and its run's record stayed.
-    assert!(dir.join("isoloom.yml").is_file() && t.data().join("runs").join("cyberctf-local-refused").join("record.json").is_file());
+    assert!(dir.join("isoloom.yml").is_file() && crate::testing::runner::is_recorded(t.data(), "cyberctf-local-refused"));
     // A bad id is refused before anything is read.
     assert_eq!(remove(&t.dirs(), "../x", no_worker).await.unwrap_err().to_string(), "invalid lab id `../x`");
 }
@@ -164,7 +164,7 @@ fn what_couldnt_be_deleted_is_reported_and_the_rest_goes() {
     let removal = remove_files(t.data(), "local-invoice", &worker, |a, b| std::fs::rename(a, b), held).unwrap();
 
     assert_eq!(removal.left, [Leftover { path: run.display().to_string(), error: "held by another program".into() }]);
-    assert!(run.join("record.json").is_file(), "what failed is still there");
+    assert!(run.is_dir(), "what failed is still there");
     assert!(!dir.exists() && !t.data().join("labs").join(".local-invoice.removing").exists(), "the copy went");
     assert!(worker.iter().all(|f| !f.exists()) && !t.data().join("offline").join("local-invoice.json").exists(), "the rest went");
 }

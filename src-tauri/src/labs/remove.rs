@@ -76,6 +76,10 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str, worker_files: impl FnOnce()
     let extra = worker_files()?;
     let (base, owned) = (dirs.data()?.to_path_buf(), id.to_owned());
     let mut removal = blocking(move || remove_files(&base, &owned, &extra, rename_retrying, delete)).await?;
+    // The runner's record of its run, through the runner's store: its files went above.
+    if let Err(e) = runtime::isothrum::forget_run(dirs.data()?, id) {
+        log::warn!("removing lab {id}: the runner keeps its run's record: {e}");
+    }
     // Its attack box's password, once the lab is gone (a removal refused above keeps it with the
     // lab). A keychain that refuses (locked) leaves it, listed for the player to delete: never a
     // reason to keep the lab, which a computer with a broken keychain could then never remove.

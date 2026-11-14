@@ -172,8 +172,6 @@ pub(crate) mod test_support {
     /// `state` (`ready`, `parked`, `failed`, `absent`, …) by its last operation.
     pub(crate) fn record_run(home: &std::path::Path, lab: &str, host: Option<&str>, target: &str, state: &str) {
         let name = format!("cyberctf-{lab}");
-        let dir = home.join("runs").join(&name);
-        std::fs::create_dir_all(&dir).unwrap();
         let driver = if target.starts_with("cloud") || target == "proxmox" {
             "terraform"
         } else if target == "docker" {
@@ -185,7 +183,7 @@ pub(crate) mod test_support {
             "version": 0, "name": name, "manifest": home.join("labs").join(lab).join("run.json"),
             "target": target, "driver": driver, "host_label": host, "state": state, "params": {}
         });
-        std::fs::write(dir.join("record.json"), record.to_string()).unwrap();
+        crate::testing::runner::save_run(home, &record);
     }
 
     /// A temp lab folder holding `spec` as its `isoloom.yml`, for tests that load a lab from disk;

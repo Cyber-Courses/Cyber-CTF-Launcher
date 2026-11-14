@@ -377,13 +377,11 @@ mod tests {
     /// account `host`, its stop time long past. Its manifest is not there (the lab's files gone).
     fn expired_record(home: &Path, lab: &str, host: &str) {
         let name = format!("cyberctf-{lab}");
-        let dir = home.join("runs").join(&name);
-        std::fs::create_dir_all(&dir).unwrap();
         let record = serde_json::json!({
             "version": 0, "name": name, "manifest": home.join(lab).join("run.json"),
             "target": "cloud-docker", "driver": "terraform", "cloud": "aws", "host_label": host, "state": "ready", "params": {}, "expires_at": 1
         });
-        std::fs::write(dir.join("record.json"), record.to_string()).unwrap();
+        crate::testing::runner::save_run(home, &record);
     }
 
     /// A fresh runner home with each `(lab, host)` as an expired cloud run (`cyberctf-<lab>`).
@@ -414,7 +412,7 @@ mod tests {
         assert_eq!(asked.into_inner().unwrap(), ["gone1", "aws1"], "every expired run's account is looked up");
         let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, ["cyberctf-web"], "{failed:?}");
-        assert!(home.join("runs").join("cyberctf-orphan").join("record.json").is_file(), "the skipped run keeps its record");
+        assert!(crate::testing::runner::is_recorded(&home, "cyberctf-orphan"), "the skipped run keeps its record");
         std::fs::remove_dir_all(home).unwrap();
     }
 
@@ -436,7 +434,7 @@ mod tests {
         assert_eq!(asked.into_inner().unwrap(), ["aws1"], "only the free lab's account is used, never the busy one's");
         let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, ["cyberctf-web"], "the free lab is swept (its files are gone, so its destroy fails); the busy one is not touched: {failed:?}");
-        assert!(home.join("runs").join("cyberctf-busy").join("record.json").is_file(), "the busy run keeps its record (never destroyed)");
+        assert!(crate::testing::runner::is_recorded(&home, "cyberctf-busy"), "the busy run keeps its record (never destroyed)");
         std::fs::remove_dir_all(home).unwrap();
     }
 
@@ -445,10 +443,9 @@ mod tests {
     #[tokio::test]
     async fn an_expired_run_with_no_account_is_reported_as_such() {
         let home = home_with(&[("web", "aws1")]);
-        let file = home.join("runs/cyberctf-web/record.json");
-        let mut record: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let mut record = crate::testing::runner::run_record(&home, "cyberctf-web");
         record.as_object_mut().unwrap().remove("host_label");
-        std::fs::write(&file, record.to_string()).unwrap();
+        crate::testing::runner::save_run(&home, &record);
         let failed = reap_expired(&home, SystemTime::now(), |_: &str| None, |_| Some(())).await.unwrap();
         let codes: Vec<(&str, Code)> = failed.iter().map(|(name, e)| (name.as_str(), e.code())).collect();
         assert_eq!(codes, [("cyberctf-web", Code::ReapNoHost)]);

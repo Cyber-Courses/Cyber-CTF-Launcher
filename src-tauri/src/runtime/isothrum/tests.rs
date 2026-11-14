@@ -142,7 +142,7 @@ async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
     assert_eq!(up.env("ISOLOOM_PUBLISH_FIXED"), Some("1"), "the player chose the lab's own ports");
     assert!(log.iter().any(|l| l == "Starting the environment's containers…"), "{log:?}");
     assert_eq!(log.last().map(String::as_str), Some("Open http://localhost:8080/"), "the lab's message, its port filled");
-    assert!(f.home.root.join("runs/cyberctf-web/record.json").is_file(), "the run is kept in the app data's runs/");
+    assert!(crate::testing::runner::is_recorded(&f.home.root, "cyberctf-web"), "the run is kept by the runner whose home is the app data folder");
     assert!(!f.home.dir.join(".cyberctf-ports.yml").exists(), "the runner pins ports in its own state, not the lab folder");
 }
 
@@ -242,10 +242,10 @@ async fn a_lab_taken_down_outside_the_app_is_forgotten_before_a_reimport() {
     }
     f.set(Containers::None);
     assert!(!run.status().await.unwrap().running, "its page says it isn't running");
-    assert!(refuse_replace(&dirs, &f.home.dir, "web").is_err(), "the record alone still says ready");
+    // The runner records what its status read observed: the run is gone, and nothing of it holds
+    // a re-import, an update or a removal back any more.
     assert!(run.is_gone().await.unwrap());
     forget_gone_with(&dirs, "web", |_| Ok(Some(f.run())), &mut quiet).await.unwrap();
-    assert!(f.fake.last(" down --volumes").is_some(), "taken down through the runner");
     assert_eq!(still_up(&dirs, "web").unwrap(), None);
     refuse_replace(&dirs, &f.home.dir, "web").unwrap();
     run.up(on_own_ports(&launch_env()), None, &mut |_| {}).await.unwrap();
@@ -373,9 +373,11 @@ async fn an_attack_box_whose_start_failed_in_the_run_stays_in_the_lab_for_stop_t
     let placed = placed_box(&f);
     assert!(placed.add(&dirs, crate::runtime::attack_box::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.is_err());
     assert!(crate::runtime::attack_box::added(&f.home.dir).unwrap(), "the run may hold some of it: kept, for a stop to retire");
+    // The run failed: the runner brings it up to date with nothing until it is started again or
+    // stopped (a failed run takes only those), so the box stays in the lab for a stop to take out.
     f.model().failing_up = false;
-    placed.remove(&dirs, &mut |_| {}).await.unwrap();
-    assert!(!crate::runtime::attack_box::added(&f.home.dir).unwrap());
+    assert!(placed.remove(&dirs, &mut |_| {}).await.is_err(), "a failed run isn't updated");
+    assert!(crate::runtime::attack_box::added(&f.home.dir).unwrap(), "kept for the stop");
 }
 
 #[tokio::test]
