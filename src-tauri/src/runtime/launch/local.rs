@@ -26,9 +26,9 @@ pub(super) fn low_memory_warning(needed_mb: u64, available_mb: u64) -> Option<St
 }
 
 /// A lab run as `target` on `provider` (its VMs): Isoloom's own refusal of the pair, if it has
-/// one, before any VM is created. QEMU links a VM on one network only; UTM's Vagrant plugin gives
-/// a VM no private network, so a lab with a network (every lab) can't run as VMs on UTM; a TPM
-/// runs on VirtualBox, libvirt and Hyper-V only.
+/// one, before any VM is created. QEMU links a VM on one network only; UTM boots UTM-format boxes
+/// only (Debian 12 and Ubuntu 24.04 built in, each network an isolated vmnet network Isoloom
+/// attaches the VMs to); a TPM runs on VirtualBox, libvirt and Hyper-V only.
 pub(super) fn check_provider(lab: &lab::Lab, target: lab::Target, provider: super::Provider) -> Result<()> {
     match lab::refusal_on(lab, target, provider) {
         Some(why) => Err(Error::Invalid(format!(

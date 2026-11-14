@@ -32,11 +32,10 @@ fn a_container_lab_runs_where_isoloom_generates_each_form() {
     // machine on any cloud"; none of them asked the lab.
     let o = options(DUAL, Runtime::Docker);
     assert_eq!(o.docker.as_ref().map(|p| p.target.as_str()), Some("docker"));
-    // One VM per machine: not on UTM, whose VMs get no network, which says why.
+    // One VM per machine: on UTM too (Debian 12 has a UTM box, each network a vmnet network).
     let per_machine = providers(&o.vms);
-    assert!(per_machine.contains(&Provider::Hyperv) && !per_machine.contains(&Provider::Utm), "{per_machine:?}");
-    let utm = o.refused.iter().find(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant").expect("UTM's refusal");
-    assert!(matches!(&utm.cause, RefusalCause::Isoloom { reason } if reason.contains("no private network")), "{:?}", utm.cause);
+    assert!(per_machine.contains(&Provider::Hyperv) && per_machine.contains(&Provider::Utm), "{per_machine:?}");
+    assert!(!o.refused.iter().any(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant"), "{:?}", o.refused);
     // A container lab runs as true containers or true VMs, never containers inside a helper VM:
     // no server offers it, and no path or refusal names the helper VM's former target.
     assert_eq!(o.servers, [] as [RunPath; 0]);
@@ -51,7 +50,10 @@ fn a_container_lab_runs_where_isoloom_generates_each_form() {
 fn a_vm_lab_runs_its_vms_where_its_spec_and_isoloom_allow() {
     let o = options(VMS, Runtime::Vm);
     assert!(o.docker.is_none() && o.cloud_docker.is_empty());
+    // Not on UTM: no UTM box of Windows Server is known, which Isoloom says with the way out.
     assert!(!providers(&o.vms).contains(&Provider::Utm));
+    let utm = o.refused.iter().find(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant").expect("UTM's refusal");
+    assert!(matches!(&utm.cause, RefusalCause::Isoloom { reason } if reason.contains("boxes.utm")), "{:?}", utm.cause);
     // Proxmox's own target has one form: no provider in its evidence.
     assert_eq!(paths_of(&o.servers), [(Some(Provider::VmwareEsxi), "vagrant", Some("vmware_esxi")), (Some(Provider::Proxmox), "proxmox", None)]);
     // Windows runs on the clouds whose cloud-vm module takes it, and each other says why not.

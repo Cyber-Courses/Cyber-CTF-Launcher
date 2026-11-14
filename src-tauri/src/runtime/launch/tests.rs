@@ -230,7 +230,7 @@ async fn a_plain_container_start_forgets_an_earlier_per_machine_form() {
 }
 
 #[tokio::test]
-async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
+async fn one_vm_per_machine_is_refused_on_a_server() {
     use crate::runtime::paths::per_machine_vm;
     let t = TestApp::new();
     let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
@@ -240,12 +240,19 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
     let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
     assert_eq!(err, super::PER_MACHINE_NOT_ON_SERVERS);
     assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
-    // UTM: Isoloom refuses the vagrant target there (vagrant_utm gives a VM no private network),
-    // so the start is refused with its reason, before UTM is even opened.
+}
+
+/// One VM per machine on UTM: Isoloom takes the lab there (Debian 12 has a UTM box), and the
+/// start opens UTM before Vagrant drives it; a Mac without UTM stops there, saying so.
+#[tokio::test]
+async fn one_vm_per_machine_on_utm_opens_utm_first() {
+    let t = TestApp::new();
+    t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
+    let tools = Tools::strict_rules(&[("open -g -a UTM", None)]);
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Utm), &[]).await;
-    let err = r.unwrap_err().to_string();
-    assert!(err.starts_with("This lab can't run on UTM yet: ") && err.contains("vagrant_utm"), "{err}");
-    assert!(!tools.called("open"), "{:?}", tools.calls());
+    let err = r.unwrap_err();
+    assert!(matches!(err, crate::error::Error::ToolMissing { tool: "UTM" }), "{err}");
+    assert!(tools.called("open -g -a UTM"), "{:?}", tools.calls());
 }
 
 #[test]
