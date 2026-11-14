@@ -47,3 +47,9 @@ pub fn damage_store(home: &Path) {
 pub fn is_recorded(home: &Path, name: &str) -> bool {
     Runner::new(RunnerConfig::new(home)).unwrap().run_record(&RunName::new(name).unwrap()).unwrap().is_some()
 }
+
+/// The state the runner whose home is `home` records run `name` in; none for a run it doesn't
+/// record (a start that failed before it was recorded).
+pub fn run_state(home: &Path, name: &str) -> Option<RunState> {
+    Runner::new(RunnerConfig::new(home)).ok()?.run_record(&RunName::new(name).ok()?).ok()?.map(|r| r.state)
+}

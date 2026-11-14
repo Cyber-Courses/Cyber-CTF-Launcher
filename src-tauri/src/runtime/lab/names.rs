@@ -87,9 +87,3 @@ pub mod esxi {
     /// The host's settings the manifest takes as params (its password is a connection secret).
     pub const PARAMS: [&str; 5] = [HOSTNAME, HOSTPORT, USERNAME, DATASTORE, VIRTUAL_NETWORK];
 }
-
-/// The outputs of Isoloom's Terraform modules the launcher reads (Isoloom's run manifest outputs, its docs/runner.md).
-pub mod outputs {
-    /// The address to start from: the lab's VM.
-    pub const IP: &str = "ip";
-}

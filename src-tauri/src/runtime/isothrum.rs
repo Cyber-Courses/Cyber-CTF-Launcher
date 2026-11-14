@@ -16,7 +16,6 @@
 mod cloud_runs;
 pub(crate) mod errors;
 mod gone;
-mod import;
 mod one_read;
 mod opened;
 mod progress;
@@ -25,7 +24,6 @@ mod server;
 mod view;
 
 pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
-pub(crate) use import::{Outcome, import_all, runner as import_runner};
 pub(crate) use server::{ServerPlace, ServerRun};
 
 /// The form a run was started in, as the runner records it: the run manifest's target (its types,
@@ -101,10 +99,10 @@ fn vagrant_provider(provider: super::providers::Provider) -> Option<isoloom_mani
     })
 }
 
-/// Every run the runner whose home is `home` (the app data folder) records, each in the state
-/// its last operation left it in: read from its files only.
+/// Every run the runner whose home is `home` records, each in the state its last operation left
+/// it in, as its store says.
 pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
-    import::runner(home)?.runs().map_err(errors::from_runner)
+    Runner::new(host_config(home, None)).map_err(errors::from_runner)?.runs().map_err(errors::from_runner)
 }
 
 /// Forgets lab `id`'s run in the runner's store, once the lab is removed: no run is left behind

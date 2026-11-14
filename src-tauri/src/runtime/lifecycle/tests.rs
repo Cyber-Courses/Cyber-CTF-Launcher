@@ -28,28 +28,6 @@ async fn a_lab_on_a_cloud_account_is_neither_parked_nor_provisioned_there() {
 }
 
 #[tokio::test]
-async fn a_stop_says_what_it_cant_remove_of_a_deployment_the_runner_hasnt_taken_over() {
-    // Regression: the Stop went through, the deployment of the launcher's own Terraform path
-    // the runner couldn't take stayed up (nothing runs Terraform for it any more), and the
-    // player had been told Stop would remove it.
-    let t = TestApp::new();
-    let dir = t.lab("web", &[]);
-    let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true, "host": "us-east-1" }));
-    server::mark_lab(&dir, Some(&host)).unwrap();
-    let state = t.data().join("deployments/web/aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[{"type":"aws_instance"}]}"#).unwrap();
-    std::fs::write(state.join("host"), &host).unwrap();
-    let tools = Tools::strict_rules(&[]);
-    let err = stop_lab(&t.dirs(), "web", Runtime::Docker, std::future::ready(()), |_| {}).await.unwrap_err().to_string();
-    assert!(err.contains("the launcher can't remove") && err.contains("delete its resources in your AWS console"), "{err}");
-    assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-    // Once the runner took it over (no resources left in the old state), the Stop goes through.
-    std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[]}"#).unwrap();
-    stop_lab(&t.dirs(), "web", Runtime::Docker, std::future::ready(()), |_| {}).await.unwrap();
-}
-
-#[tokio::test]
 async fn the_policy_refuses_resuming_a_privileged_lab_before_anything_runs() {
     use crate::error::Code;
     use crate::platform::policy::{Key, Override};

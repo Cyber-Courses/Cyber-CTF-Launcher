@@ -29,9 +29,16 @@ pub fn validate_id(id: &str) -> Result<()> {
     if is_lab_id(id) { Ok(()) } else { Err(Error::Invalid(format!("invalid lab id `{id}`"))) }
 }
 
-/// The Isothrum runner's home: the app data folder, its runs kept under `runs/` beside `labs/`.
+/// The Isothrum runner's home: a folder of its own in the app data folder (`isothrum/`), whose
+/// files are the runner's alone (its store, its runs' folders, its SSH key, its Terraform plugin
+/// cache). The launcher reads none of them: it asks the runner.
 pub(crate) fn runner_home(dirs: &AppDirs) -> Result<PathBuf> {
-    Ok(dirs.data()?.to_path_buf())
+    Ok(runner_home_in(dirs.data()?))
+}
+
+/// [`runner_home`] under the app data folder `base`.
+pub(crate) fn runner_home_in(base: &Path) -> PathBuf {
+    base.join("isothrum")
 }
 
 /// The folder of the lab operations' records under the app data folder (`deploys/`): each lab's
@@ -82,58 +89,6 @@ pub(super) fn lab_dir_in(base: &Path, id: &str) -> Result<PathBuf> {
 /// Lab `id`'s folder under the app data folder `base`, when it is installed.
 fn installed_in(base: &Path, id: &str) -> Option<PathBuf> {
     Some(labs_root_in(base).join(id)).filter(|dir| dir.is_dir())
-}
-
-/// The ids with a Terraform deployment under the app data folder `base` (valid ids only): the
-/// labs the expired-lab reaper looks at.
-pub(crate) fn deployed_ids(base: &Path) -> Vec<String> {
-    let dir = base.join("deployments");
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
-        // The reaper then stops no expired lab: said, as a lab billing past its expiry must be.
-        Err(e) => {
-            log::warn!("the deployments in {} couldn't be listed: no expired lab is stopped this time: {e}", dir.display());
-            return Vec::new();
-        }
-    };
-    entries.flatten().filter_map(|e| e.file_name().into_string().ok()).filter(|id| validate_id(id).is_ok()).collect()
-}
-
-/// Every Terraform state folder of lab `id` under the app data folder `base`, by target
-/// (`aws`, `proxmox`, …): the current deployment's and any left from an earlier one elsewhere.
-/// None when the lab has no deployments folder; one that can't be read is an error.
-pub(crate) fn deployment_states(base: &Path, id: &str) -> std::io::Result<Vec<(String, PathBuf)>> {
-    let Some(entries) = crate::platform::entries_if_any(&base.join("deployments").join(id))? else { return Ok(Vec::new()) };
-    let mut out = Vec::new();
-    for entry in entries {
-        let entry = entry?;
-        if entry.path().is_dir()
-            && let Ok(name) = entry.file_name().into_string()
-        {
-            out.push((name, entry.path()));
-        }
-    }
-    out.sort();
-    Ok(out)
-}
-
-/// Next to a lab's Terraform state: which runtime started it (`DOCKER`, `VM` or `CLOUD`), for
-/// the auto-stop reaper.
-const RUNTIME_FILE: &str = "runtime";
-
-/// The runtime recorded at start; containers when nothing (readable) was.
-pub(super) fn recorded_runtime(state: &Path) -> Runtime {
-    std::fs::read_to_string(state.join(RUNTIME_FILE)).ok().and_then(|t| Runtime::from_tag(t.trim())).unwrap_or(Runtime::Docker)
-}
-
-/// Next to a lab's Terraform state: the host (server or cloud account id) it was applied on, so
-/// the state can still be destroyed with that host's credentials after the lab moved elsewhere.
-const HOST_FILE: &str = "host";
-
-/// The host recorded with a Terraform state, if any (states from older versions have none).
-pub(crate) fn recorded_host(state: &Path) -> Option<String> {
-    std::fs::read_to_string(state.join(HOST_FILE)).ok().map(|h| h.trim().to_string()).filter(|h| !h.is_empty())
 }
 
 /// Writes `value` to `dir/name`, or removes the file for `None` (already gone is fine). A marker
@@ -240,9 +195,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    use super::{
-        PARKED_MARKER, Park, Provider, Runtime, deployed_ids, lab_dir_in, local_vm, mark_local_vm, mark_parked, parked, recorded_runtime, validate_id,
-    };
+    use super::{PARKED_MARKER, Park, Provider, Runtime, lab_dir_in, local_vm, mark_local_vm, mark_parked, parked, validate_id};
 
     fn temp_dir(prefix: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("{prefix}-{}", rand::random::<u32>()));
@@ -320,7 +273,7 @@ mod tests {
 
     #[test]
     fn markers_are_read_trimmed_and_unknown_values_fall_back() {
-        use super::{LOCAL_VM_MARKER, recorded_host};
+        use super::LOCAL_VM_MARKER;
         let dir = temp_dir("cyberctf-markers");
         // A trailing newline (a hand edit, a tool that adds one) changes nothing; blank is none.
         std::fs::write(dir.join(LOCAL_VM_MARKER), "virtualbox\n").unwrap();
@@ -331,15 +284,6 @@ mod tests {
         assert_eq!(parked(&dir), Some(Park::Pause));
         std::fs::write(dir.join(PARKED_MARKER), "PAUSE").unwrap();
         assert_eq!(parked(&dir), None, "exact ids only");
-        std::fs::write(dir.join("host"), "  aws1 \n").unwrap();
-        assert_eq!(recorded_host(&dir).as_deref(), Some("aws1"));
-        std::fs::write(dir.join("host"), "\n").unwrap();
-        assert_eq!(recorded_host(&dir), None);
-        // The runtime tag is exact too: an unknown one reads as containers (the oldest kind).
-        std::fs::write(dir.join("runtime"), "vm").unwrap();
-        assert_eq!(recorded_runtime(&dir), Runtime::Docker);
-        std::fs::write(dir.join("runtime"), "CLOUD\n").unwrap();
-        assert_eq!(recorded_runtime(&dir), Runtime::Cloud);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -347,12 +291,11 @@ mod tests {
     fn a_runtimes_tag_is_its_serde_name_both_ways() {
         // One spelling: the tag the launcher writes and reads is what CyberBackend and the
         // webview send.
-        for r in Runtime::ALL {
+        for r in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
             assert_eq!(serde_json::to_value(r).unwrap(), r.tag());
-            assert_eq!(Runtime::from_tag(r.tag()), Some(r));
             assert_eq!(serde_json::from_value::<Runtime>(r.tag().into()).unwrap(), r);
         }
-        assert_eq!(Runtime::from_tag("vm"), None);
+        assert!(serde_json::from_value::<Runtime>("vm".into()).is_err());
     }
 
     #[test]
@@ -372,19 +315,6 @@ mod tests {
         assert_eq!(err, "lab `web-1` is not installed");
         std::fs::create_dir_all(base.join("labs").join("web-1")).unwrap();
         assert_eq!(lab_dir_in(&base, "web-1").unwrap(), base.join("labs").join("web-1"));
-        std::fs::remove_dir_all(base).unwrap();
-    }
-
-    #[test]
-    fn deployed_ids_skip_names_that_are_not_lab_ids() {
-        let base = temp_dir("cyberctf-deployed");
-        assert!(deployed_ids(&base).is_empty(), "no deployments folder yet");
-        for name in ["web-1", "sqli_basic", "not a lab", ".hidden"] {
-            std::fs::create_dir_all(base.join("deployments").join(name)).unwrap();
-        }
-        let mut ids = deployed_ids(&base);
-        ids.sort();
-        assert_eq!(ids, ["sqli_basic", "web-1"]);
         std::fs::remove_dir_all(base).unwrap();
     }
 }

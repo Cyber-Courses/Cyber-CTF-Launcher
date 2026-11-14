@@ -583,7 +583,7 @@ describe("DownloadsPanel", () => {
   });
 
   it("shows an empty list when there are no downloads", async () => {
-    installTauri({ machine_storage: () => ({ images: [], boxes: [], plugins: [] }) });
+    installTauri({ machine_storage: () => ({ images: [], boxes: [] }) });
     render(<DownloadsPanel />);
     await flush();
     expect(text()).toContain("No lab downloads yet");

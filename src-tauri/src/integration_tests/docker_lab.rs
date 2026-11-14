@@ -177,8 +177,8 @@ async fn real_lab(name: &str, e: Expect) {
             check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), f);
             let left = leftovers(&r.id).await;
             check(left.is_empty(), format!("nothing of the lab is left: {left:?}"), f);
-            let record = std::fs::read_to_string(r.home.join("runs").join(docker::project(&r.id)).join("record.json")).unwrap_or_default();
-            check(record.contains(r#""state": "absent""#), format!("the runner records the run as gone ({record})"), f);
+            let state = crate::testing::runner::run_state(&r.home, &docker::project(&r.id));
+            check(state == Some(isothrum_runner::RunState::Absent), format!("the runner records the run as gone ({state:?})"), f);
         },
     )
     .await;
