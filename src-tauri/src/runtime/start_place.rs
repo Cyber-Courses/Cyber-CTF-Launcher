@@ -72,7 +72,7 @@ where
     let options = lab::run_options(&lab, runtime);
     let last = match last {
         // Docker is asked only of a helper VM's run here, which moves to its true form.
-        Some(run) if run.target == isothrum::RunTarget::DockerVm && run.host_label.is_none() => {
+        Some(run) if isothrum::RunForm::of(&run) == isothrum::RunForm::HelperVm && run.host_label.is_none() => {
             let docker = docker().await;
             last_place(dirs, run, runtime, &options, docker)?
         }
@@ -110,16 +110,16 @@ where
 /// ([`true_form`], `docker` saying whether Docker answers). None when it can't run there now; an
 /// error when the saved servers can't be read (it would start here instead of on its server).
 fn last_place(dirs: &AppDirs, run: isothrum_runner::RunRecord, runtime: Runtime, options: &RunOptions, docker: bool) -> Result<Option<StartPlace>> {
-    use isothrum::RunTarget as Target;
+    use isothrum::RunForm as Form;
     if let Some(host) = run.host_label {
         let kind = server::host_provider(dirs, &host)?.filter(|p| !p.is_cloud());
         return Ok(kind.filter(|k| offers(&options.servers, *k)).map(|_| StartPlace { host: Some(host), ..StartPlace::default() }));
     }
     let provider = run.provider.map(|p| isothrum_runner::wire_name(&p)).as_deref().and_then(Provider::from_id);
-    Ok(match (run.target, provider) {
-        (Target::Docker, _) if options.docker.is_some() => Some(StartPlace::default()),
-        (Target::DockerVm, p) => true_form(options, p, docker),
-        (Target::Vagrant, Some(p)) if offers(&options.vms, p) => {
+    Ok(match (Form::of(&run), provider) {
+        (Form::Docker, _) if options.docker.is_some() => Some(StartPlace::default()),
+        (Form::HelperVm, p) => true_form(options, p, docker),
+        (Form::Vagrant, Some(p)) if offers(&options.vms, p) => {
             Some(StartPlace { provider: Some(p), per_machine_vm: runtime == Runtime::Docker, ..StartPlace::default() })
         }
         _ => None,

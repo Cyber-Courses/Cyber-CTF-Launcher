@@ -182,8 +182,7 @@ fn the_test_lab_generates_for_vagrant_on_esxi() {
     // Named with the copy's key, which the run hands the Vagrantfile (`ISOLOOM_KEY`).
     let keyed = format!("v.guest_name = \"{LAB}-#{{ISOLOOM_KEY}}-{MACHINE}\"");
     assert!(vagrantfile.contains(&keyed), "the VM isn't named {keyed}");
-    let manifest = std::fs::read_to_string(generated.join("run.json")).unwrap();
-    assert!(manifest.contains("\"vmware_esxi\"") && manifest.contains("check-probe"), "{manifest}");
+    assert!(generated.join("checks").is_dir(), "its checks' runners are generated beside it");
     assert_eq!(lab_run::kept_lab(&work), Some(dir), "a test cut short now is found by the next one");
     assert!(isothrum_runner::RunName::new(&crate::runtime::docker::project(&run_id("0123456789abcdef"))).is_ok());
     // The VM's name on a host is the same at every test there: the runner's key for the

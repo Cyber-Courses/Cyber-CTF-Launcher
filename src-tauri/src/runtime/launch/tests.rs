@@ -200,12 +200,10 @@ async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_fo
     assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Vm);
     assert_eq!(crate::runtime::runtime_here(&t.dirs(), "both", false), Some(Runtime::Vm));
     assert_eq!(crate::runtime::primary_url(&dir, "both", Runtime::Docker).await, None, "a VM lab has no loopback URL");
-    // Stopping it as a container lab goes to its VM run (the vagrant target's manifest) and
-    // forgets the form. The manifest is removed first, so the runner has nothing to destroy and
-    // no real `vagrant` runs here.
-    let manifest = vagrant_dir(&dir, Runtime::Vm).join("run.json");
-    assert!(manifest.is_file(), "the VM run's manifest was written");
-    std::fs::remove_file(&manifest).unwrap();
+    // Stopping it as a container lab goes to its VM run (the vagrant target's project) and
+    // forgets the form. The Vagrantfile is removed first, so the runner has nothing to destroy
+    // and no real `vagrant` runs here.
+    std::fs::remove_file(vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile")).unwrap();
     let mut log = Vec::new();
     crate::runtime::stop_lab(&t.dirs(), "both", Runtime::Docker, std::future::ready(()), |l| log.push(l)).await.unwrap();
     assert_eq!(log, ["Nothing to remove: the run has no files."], "the VM run, not a Docker one");

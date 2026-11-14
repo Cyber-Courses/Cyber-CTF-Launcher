@@ -117,15 +117,14 @@ reqwest = { version = "0.13", features = ["json", "form"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde_yaml_ng = "0.10.0"
 # Labs describe themselves with an isoloom.yml; the launcher generates their files with Isoloom's
-# layered crates, the 3.0 line. Only `src/runtime/lab/` calls them:
-# the spec (`isoloom-spec`), the backends' registry and the resolved snapshot
-# (`isoloom-targets`).
+# layered crates, the 3.0 line. Only `src/runtime/lab/` and what a lab says of itself
+# (`src/runtime/isothrum/described.rs`) call them: the spec (`isoloom-spec`), the backends'
+# registry and the resolved snapshot (`isoloom-targets`).
 isoloom-spec = "3.0.0"
 isoloom-targets = "3.0.0"
-# The run manifest's types, shared with the Isothrum runner: what `runtime/isothrum` reads of a run.
-isoloom-manifest = "3.0.0"
-# The Isothrum runner: executes the run manifest Isoloom writes; every lab runs through it
-# (`runtime/isothrum`). The 3.0 line.
+# The Isothrum runner: runs the native project Isoloom writes (a Compose file, a Vagrantfile, a
+# Terraform module), opened by its folder; every lab runs through it (`runtime/isothrum`). The 3.0
+# line.
 isothrum-runner = "3.0.0"
 # The launcher's own store (`store`): servers, tools, the storage record and the settings, one
 # SQLite file in WAL mode, every change a transaction. Bundled, so every platform runs the same

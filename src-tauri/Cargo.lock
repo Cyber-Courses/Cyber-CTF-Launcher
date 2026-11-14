@@ -1012,7 +1012,6 @@ dependencies = [
  "clap",
  "clap_complete",
  "flate2",
- "isoloom-manifest",
  "isoloom-spec",
  "isoloom-targets",
  "isothrum-client",

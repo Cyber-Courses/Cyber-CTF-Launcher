@@ -27,7 +27,7 @@ impl Fixture {
     /// cover macOS's).
     fn esxi_run(&self, place: EsxiPlace) -> LabRun {
         let mut config = self.home.config(&self.fake, []);
-        config.host = isoloom_manifest::HostOs::Linux;
+        config.host = isothrum_runner::HostOs::Linux;
         LabRun::with(config, &self.home.dir, "web", Kind::Vm).unwrap().on(place)
     }
 
@@ -280,12 +280,15 @@ fn esxi_env() -> Vec<(String, String)> {
 }
 
 #[test]
-fn an_esxi_place_takes_the_hosts_settings_as_params_and_its_password_as_the_connection() {
+fn an_esxi_place_takes_the_hosts_settings_as_values_and_its_password_as_a_secret() {
     let place = EsxiPlace::from_env("esxi-lab", "ESXi lab", &esxi_env());
     assert_eq!(place.label, "esxi-lab");
     let names: Vec<&str> = place.params.iter().map(|(k, _)| k.as_str()).collect();
     assert_eq!(names, ["ESXI_HOSTNAME", "ESXI_HOSTPORT", "ESXI_USERNAME", "ESXI_DATASTORE", "ESXI_VIRTUAL_NETWORK"]);
-    assert_eq!(place.connection().get("ESXI_PASSWORD").map(SecretValue::expose), Some("pw"));
+    let opts = place.onto(RunOptions::new());
+    assert_eq!(opts.secrets.get("ESXI_PASSWORD").map(SecretValue::expose), Some("pw"));
+    assert_eq!(opts.env.get("ESXI_HOSTNAME").map(String::is_empty), Some(false));
+    assert!(!opts.env.contains_key("ESXI_PASSWORD"), "the password is never a plain value");
     assert!(!format!("{place:?}").contains("pw\""), "never shown: {place:?}");
     // A server with no datastore or network set: those params are left to their defaults.
     let bare: Vec<(String, String)> = esxi_env().into_iter().filter(|(k, _)| k != "ESXI_DATASTORE" && k != "ESXI_VIRTUAL_NETWORK").collect();

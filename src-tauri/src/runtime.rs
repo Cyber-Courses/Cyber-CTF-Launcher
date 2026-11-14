@@ -159,8 +159,8 @@ pub(crate) mod test_support {
             "vagrant"
         };
         let record = serde_json::json!({
-            "version": 0, "name": name, "manifest": home.join("labs").join(lab).join("run.json"),
-            "target": target, "driver": driver, "host_label": host, "state": state, "params": {}
+            "version": 0, "name": name, "project": home.join("labs").join(lab).join(".isoloom").join(target),
+            "format": driver, "host_label": host, "state": state
         });
         crate::testing::runner::save_run(&crate::runtime::paths::runner_home_in(home), &record);
     }

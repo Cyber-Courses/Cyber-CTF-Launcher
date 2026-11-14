@@ -33,12 +33,6 @@ fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
     })
 }
 
-/// A lab whose files another version of the launcher made, and this one couldn't make again.
-pub(super) const EARLIER_FILES: &str = "This lab's files were made by another version of Cyber CTF, and they couldn't be made again for this one";
-
-/// What to do about a lab whose files can't be made again.
-pub(super) const ADD_AGAIN: &str = "Remove the lab and add it again from the catalogue; anything it still runs is on the Machine page.";
-
 /// The launcher's error for a runner's failure.
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
@@ -69,7 +63,7 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::SecretMissing { name } => {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
         }
-        RunnerError::Param { name, reason } => {
+        RunnerError::Input { name, reason } => {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
         }
         other => by_code(&other),
@@ -114,10 +108,7 @@ fn by_code(e: &RunnerError) -> Error {
         ErrorCode::NothingToResume => Error::coded(Code::NothingToResume),
         ErrorCode::NotRunning => Error::RefusedBeforeActing("This lab isn't running. Start it first.".into()),
         ErrorCode::NotParkable => Error::coded(Code::NotParkable),
-        // A lab's files of another version are generated again before the runner reads them
-        // (`regenerate`): one still refused is a lab that can't be generated any more.
-        ErrorCode::ManifestVersion => Error::Invalid(format!("{EARLIER_FILES}. {ADD_AGAIN} ({e})")),
-        ErrorCode::ManifestInvalid | ErrorCode::Unsupported => Error::Invalid(format!("Cyber CTF can't run this lab's generated files: {e}")),
+        ErrorCode::ProjectInvalid | ErrorCode::Unsupported => Error::Invalid(format!("Cyber CTF can't run this lab's generated files: {e}")),
         _ => Error::Invalid(e.to_string()),
     }
 }

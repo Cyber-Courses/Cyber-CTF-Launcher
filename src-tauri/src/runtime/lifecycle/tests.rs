@@ -64,10 +64,10 @@ async fn a_parked_lab_that_couldnt_be_taken_down_stays_parked_and_says_why() {
     let t = TestApp::new();
     let dir = t.lab("web", &[]);
     mark_parked(&dir, Some(Park::Pause)).unwrap();
-    // The runner can't read the run's record: the teardown fails.
-    let manifest = crate::runtime::lab::docker_manifest(&dir);
-    std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
-    std::fs::write(&manifest, "not a manifest").unwrap();
+    // The runner can't run the lab's project: the teardown fails.
+    let compose = crate::runtime::lab::compose_file(&dir);
+    std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
+    std::fs::write(&compose, "not a compose file").unwrap();
     let _tools = Tools::strict_rules(&[]);
     let lab = LabRef { dir: &dir, id: "web", runtime: Runtime::Docker };
     assert!(clear_parked(&t.dirs(), lab, &mut |_| {}).await.is_err());

@@ -15,7 +15,7 @@ impl LabRun {
     /// When the files can't be made again (the lab's own folder or spec is gone too), saying what
     /// is left, since nothing here can reach it any more.
     pub(super) fn files_back(&self) -> Result<bool> {
-        if self.manifest().is_file() {
+        if self.has_project() {
             return Ok(true);
         }
         let recorded =
@@ -44,7 +44,7 @@ impl LabRun {
     ///
     /// When the run can't be read (the engine doesn't answer): whether it is gone can't be told.
     pub(crate) async fn is_gone(&self) -> Result<bool> {
-        if !self.manifest().is_file() {
+        if !self.has_project() {
             return Ok(false);
         }
         let lab = self.lab().await?;

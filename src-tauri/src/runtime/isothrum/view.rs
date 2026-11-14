@@ -1,30 +1,30 @@
-//! The runner's view of a run, in the lab page's shapes: its status as a `LabStatus`, its check
-//! report as the launcher's `Check`. Roles, addresses, ports and networks come from the manifest
-//! (through the runner's status); nothing is scraped from container labels.
+//! The runner's view of a run, in the lab page's shapes: its status as a `LabStatus`, its checks'
+//! output as the launcher's `Check`. What a machine is (its ports, addresses, networks, whether it
+//! is the lab's or Isoloom's plumbing) comes from the lab's spec (`described`); what the runner
+//! adds is what its tool sees: each machine's state and the host ports it got.
 
-use isoloom_manifest::{Manifest, OutputRole, Protocol, Role};
-use isothrum_runner::{CheckReport, MachineState, MachineStatus, RunState, Status};
+use isothrum_runner::{MachineState, MachineStatus, Protocol, RunState, Status};
 
 use super::super::docker::{Check, CheckResult};
 use super::super::port::{GuestPort, HostPort};
-use super::super::{Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
+use super::super::{LabStatus, Machine, Park, Place, Port, Service};
+use super::described::{Declared, DeclaredPort, Described};
 
-/// The run as the lab page shows it. Running while any of its target machines runs (a lab whose
+/// The run as the lab page shows it. Running while any of the lab's machines runs (a lab whose
 /// one-shot jobs finished is up); parked as the player chose (`marked`, the lab's mark), else
-/// shut down; its URL is its entry output, once it runs. Its machines are those there; while it
-/// runs, a machine of the lab that is gone (removed outside the app) is shown too, `absent`, so
-/// the page says it is down and offers a way back rather than drawing the lab without it.
-pub(super) fn lab_status(manifest: &Manifest, status: &Status, marked: Option<Park>) -> LabStatus {
-    let running = runs(status);
-    let native = crate::screen::native::installed_here(status.native.as_ref());
-    let shown = |m: &&MachineStatus| m.state != MachineState::Absent || (running && m.role == Role::Member);
-    let url = status.outputs.iter().find(|o| o.role == OutputRole::Entry && !o.sensitive).and_then(|o| o.value.clone()).filter(|_| running);
+/// shut down; its URL is the page of its first published web port, once it runs. Its machines
+/// are those there; while it runs, a machine of the lab that is gone (removed outside the app)
+/// is shown too, `absent`, so the page says it is down and offers a way back rather than
+/// drawing the lab without it.
+pub(super) fn lab_status(lab: &Described, status: &Status, marked: Option<Park>) -> LabStatus {
+    let running = runs_in(lab, status);
+    let shown = |m: &&MachineStatus| m.state != MachineState::Absent || (running && lab.machine(&m.name).is_some());
     LabStatus {
         running,
         parked: (status.state == RunState::Parked && !running).then(|| marked.unwrap_or(Park::Shutdown)),
-        machines: status.machines.iter().filter(shown).map(|m| machine(manifest, m, native.as_deref())).collect(),
-        networks: status.networks.iter().map(|n| Network { name: n.name.clone(), subnet: n.cidr.clone(), internal: !n.internet }).collect(),
-        url,
+        machines: status.machines.iter().filter(shown).map(|m| machine(lab.machine(&m.name), m)).collect(),
+        networks: lab.networks.clone(),
+        url: entry(lab, status).filter(|_| running),
         place: Some(Place::Container),
         // The hypervisor (or engine) the run is on, as the runner recorded it: the page names it,
         // and offers Pause only where that provider can suspend (vagrant-qemu can't). A lab on a
@@ -34,43 +34,59 @@ pub(super) fn lab_status(manifest: &Manifest, status: &Status, marked: Option<Pa
     }
 }
 
-/// Whether any of the run's target machines runs (an unhealthy one runs too).
+/// Whether any of the run's machines runs (an unhealthy one runs too), Isoloom's own included:
+/// what a run with no description to read (the helper VM an earlier version left) goes by.
 pub(super) fn runs(status: &Status) -> bool {
-    status.machines.iter().any(|m| m.role == Role::Member && matches!(m.state, MachineState::Running | MachineState::Unhealthy))
+    status.machines.iter().any(|m| matches!(m.state, MachineState::Running | MachineState::Unhealthy))
+}
+
+/// Whether any of the lab's own machines runs.
+fn runs_in(lab: &Described, status: &Status) -> bool {
+    if lab.machines.is_empty() {
+        return runs(status);
+    }
+    status.machines.iter().any(|m| lab.machine(&m.name).is_some() && matches!(m.state, MachineState::Running | MachineState::Unhealthy))
+}
+
+/// The page the lab starts at: its first web port published on the host, at the host's loopback.
+fn entry(lab: &Described, status: &Status) -> Option<String> {
+    lab.machines.iter().find_map(|d| {
+        let seen = status.machines.iter().find(|m| m.name == d.name)?;
+        d.ports.iter().filter(|p| p.web()).find_map(|p| {
+            let host = published(seen, p)?;
+            Some(format!("{}://127.0.0.1:{}/", if p.protocol == "https" { "https" } else { "http" }, host.get()))
+        })
+    })
 }
 
 /// One machine: its state as Docker words it, its addresses, its TCP ports with the host port
-/// each got (0: not published), what it serves, and its screen (with `native`, the app this
-/// computer has to open it in). Isoloom's own machines (jobs, probes, route keepers, the access
-/// stand-in, observers) are plumbing: hidden from the diagram, never "down".
-fn machine(manifest: &Manifest, m: &MachineStatus, native: Option<&str>) -> Machine {
-    let declared = manifest.machines.iter().find(|d| d.name.as_str() == m.name).map(|d| d.ports.as_slice()).unwrap_or_default();
-    let interfaces: Vec<Interface> = m.addresses.iter().map(|(network, ip)| Interface { network: network.clone(), ip: ip.clone() }).collect();
+/// each got (0: not published) and what it serves, as `declared` says (none: one of Isoloom's
+/// own machines, plumbing hidden from the diagram, never "down"). No screen is offered yet.
+fn machine(declared: Option<&Declared>, m: &MachineStatus) -> Machine {
+    let interfaces = declared.map(|d| d.interfaces.clone()).unwrap_or_default();
+    let ports = declared.map(|d| d.ports.as_slice()).unwrap_or_default();
     Machine {
         name: m.name.clone(),
         state: state_word(&m.state),
         ip: interfaces.first().map(|i| i.ip.clone()).unwrap_or_default(),
-        ports: declared.iter().filter(|p| p.kind.transport() == Protocol::Tcp).map(|p| tcp_port(m, GuestPort::new(p.port.get()))).collect(),
+        ports: ports.iter().filter(|p| p.tcp()).map(|p| Port { published: published(m, p), target: GuestPort::new(p.port), login: None }).collect(),
         interfaces,
-        services: declared.iter().map(service).collect(),
-        infra: m.role != Role::Member,
-        console: m.console.as_ref().map(|c| super::super::Console::of(c, native)),
+        services: ports.iter().map(service).collect(),
+        infra: declared.is_none(),
+        console: None,
     }
 }
 
-/// `port` and the host port it is published on (none when it isn't), as the runner reports it:
-/// never the machine's own number. Its login is the spec's, filled in by the lab's status
-/// (`status::with_logins`).
-fn tcp_port(m: &MachineStatus, port: GuestPort) -> Port {
-    let published = m.published.iter().find(|p| p.port == port.get() && p.protocol == Protocol::Tcp).map(|p| HostPort::new(p.host_port));
-    Port { published, target: port, login: None }
+/// The host port `port` is published on (none when it isn't), as the runner reports it: never
+/// the machine's own number.
+fn published(m: &MachineStatus, port: &DeclaredPort) -> Option<HostPort> {
+    let tcp = port.tcp();
+    m.published.iter().find(|p| p.port == port.port && p.protocol.is_none_or(|proto| (proto == Protocol::Tcp) == tcp)).map(|p| HostPort::new(p.host_port))
 }
 
-/// What a declared port serves: a web UI (`http`), else the port's own name (`mysql`, `ssh`), else
-/// its number.
-fn service(p: &isoloom_manifest::Port) -> Service {
-    let name = p.name.as_str().to_owned();
-    Service { kind: if p.kind.http() { "web".into() } else { name.clone() }, name, ports: vec![p.port.get()] }
+/// What a declared port serves: a web UI (`http`), else the port's own name (`mysql`, `ssh`).
+fn service(p: &DeclaredPort) -> Service {
+    Service { kind: if p.web() { "web".into() } else { p.name.clone() }, name: p.name.clone(), ports: vec![p.port] }
 }
 
 /// A machine's state as the lab page reads it (`running` is what counts as up).
@@ -85,9 +101,16 @@ fn state_word(state: &MachineState) -> String {
     }
 }
 
-/// The runner's check report, with the runners' output (`lines`, as they printed it).
-pub(super) fn check(report: &CheckReport, lines: &[String]) -> Check {
-    // A check its runner never reported is in the report already, failed.
-    let results = report.results.iter().map(|r| CheckResult { name: r.name.clone(), from: r.from.clone(), ok: r.ok, reason: r.detail.clone() }).collect();
-    Check { available: true, ok: report.ok, output: lines.join("\n"), results }
+/// The checks' outcome from what their runners printed (`lines`, each with the runner it came
+/// from), by Isoloom's check protocol; failed when a runner failed without saying why.
+pub(super) fn check(lines: &[(String, String)], runners_ok: bool) -> Check {
+    let results: Vec<CheckResult> = lines
+        .iter()
+        .filter_map(|(from, line)| {
+            let (name, ok, reason) = super::described::check_line(line)?;
+            Some(CheckResult { name, from: format!("from {from}"), ok, reason })
+        })
+        .collect();
+    let ok = runners_ok && results.iter().all(|r| r.ok);
+    Check { available: true, ok, output: lines.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>().join("\n"), results }
 }
