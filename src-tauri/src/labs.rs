@@ -300,8 +300,12 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
     let _lock = runtime::lock_lab(dirs, &launch.lab_id).await?;
     let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit, runtime: launch.runtime };
     let dir = install(dirs, release, &log).await?;
-    // Fixed names for every lab; the evidence itself is never in the environment.
+    // Fixed names for every lab; the evidence itself is never in the environment. The token and
+    // the flags are redacted from the logs from now on, wherever a tool prints them.
     let env = launch_env(launch.env);
+    for (_, value) in env.iter().filter(|(name, _)| name != "CTF_API_URL") {
+        crate::platform::redact::register(value);
+    }
     let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
     start_recorded(dirs, lab, to, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
