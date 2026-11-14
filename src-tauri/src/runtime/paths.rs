@@ -104,11 +104,7 @@ pub(crate) fn deployed_ids(base: &Path) -> Vec<String> {
 /// (`aws`, `proxmox`, …): the current deployment's and any left from an earlier one elsewhere.
 /// None when the lab has no deployments folder; one that can't be read is an error.
 pub(crate) fn deployment_states(base: &Path, id: &str) -> std::io::Result<Vec<(String, PathBuf)>> {
-    let entries = match std::fs::read_dir(base.join("deployments").join(id)) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e),
-    };
+    let Some(entries) = crate::platform::entries_if_any(&base.join("deployments").join(id))? else { return Ok(Vec::new()) };
     let mut out = Vec::new();
     for entry in entries {
         let entry = entry?;

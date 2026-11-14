@@ -361,21 +361,14 @@ pub fn gcloud_script() -> RootScript {
 /// without root; the groups apply from the next login.
 #[cfg(any(target_os = "linux", test))]
 pub fn libvirt_script(user: Option<&str>) -> RootScript {
-    use std::fmt::Write as _;
     // virtiofsd: libvirt's shared folders (the attack box's /shared) need it, and it is its own
     // package from Debian 12 and Ubuntu 23.10 on (QEMU's before); a release without it skips it.
     // Separate statements: a failure inside an `&&` chain doesn't stop a script that runs `set -e`.
-    let mut s = "apt-get update; apt-get install -y libvirt-daemon-system libvirt-dev build-essential pkg-config ruby-dev virt-manager; \
-                 if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi"
-        .to_string();
-    if let Some(u) = user.filter(|u| valid_user(u)) {
-        let _ = write!(
-            s,
-            "; usermod -aG libvirt {u}; {}; echo 'Added {u} to the libvirt group: log out and back in (or restart) for it to apply.'",
-            join_kvm_group(u, KVM_DEVICE)
-        );
-    }
-    RootScript::new(s)
+    then_libvirt_groups(
+        "apt-get update; apt-get install -y libvirt-daemon-system libvirt-dev build-essential pkg-config ruby-dev virt-manager; \
+         if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi",
+        user,
+    )
 }
 
 /// QEMU and its disk tools, then the player into the group `/dev/kvm` belongs to, so vagrant-qemu
@@ -386,17 +379,35 @@ pub fn libvirt_script(user: Option<&str>) -> RootScript {
 /// the package; Debian's `xorriso` has no `mkisofs`, only `xorrisofs`.
 #[cfg(any(target_os = "linux", test))]
 pub fn qemu_script(user: Option<&str>) -> RootScript {
-    let mut s = "apt-get update; apt-get install -y qemu-system qemu-utils genisoimage".to_string();
-    if let Some(u) = user.filter(|u| valid_user(u)) {
-        s.push_str("; ");
-        s.push_str(&join_kvm_group(u, KVM_DEVICE));
-    }
-    RootScript::new(s)
+    then_kvm_group("apt-get update; apt-get install -y qemu-system qemu-utils genisoimage", user)
 }
 
 /// The KVM device.
 #[cfg(any(target_os = "linux", test))]
 const KVM_DEVICE: &str = "/dev/kvm";
+
+/// `install`, then the player `user` (a valid login name only) into the group the KVM device
+/// belongs to: it applies from the next login.
+#[cfg(any(target_os = "linux", test))]
+fn then_kvm_group(install: &str, user: Option<&str>) -> RootScript {
+    match user.filter(|u| valid_user(u)) {
+        Some(u) => RootScript::new(format!("{install}; {}", join_kvm_group(u, KVM_DEVICE))),
+        None => RootScript::new(install),
+    }
+}
+
+/// `install`, then the player `user` (a valid login name only) into the `libvirt` group and the
+/// KVM device's: they apply from the next login.
+#[cfg(any(target_os = "linux", test))]
+fn then_libvirt_groups(install: &str, user: Option<&str>) -> RootScript {
+    match user.filter(|u| valid_user(u)) {
+        Some(u) => RootScript::new(format!(
+            "{install}; usermod -aG libvirt {u}; {}; echo 'Added {u} to the libvirt group: log out and back in (or restart) for it to apply.'",
+            join_kvm_group(u, KVM_DEVICE)
+        )),
+        None => RootScript::new(install),
+    }
+}
 
 /// Player `u` into the group `dev` (the KVM device) belongs to, saying so: `kvm` where a
 /// distribution makes it `0660` (Debian, Ubuntu, Kali, openSUSE); joining it does no harm where
@@ -531,28 +542,17 @@ pub fn virtualbox_dnf_script(user: Option<&str>) -> RootScript {
 /// player into the `libvirt` group (and the KVM device's).
 #[cfg(any(target_os = "linux", test))]
 pub fn libvirt_dnf_script(user: Option<&str>) -> RootScript {
-    use std::fmt::Write as _;
-    let mut s = "dnf install -y libvirt libvirt-daemon-kvm qemu-kvm virt-install virt-manager libvirt-devel gcc make pkgconf-pkg-config ruby-devel virtiofsd; systemctl enable --now libvirtd".to_string();
-    if let Some(u) = user.filter(|u| valid_user(u)) {
-        let _ = write!(
-            s,
-            "; usermod -aG libvirt {u}; {}; echo 'Added {u} to the libvirt group: log out and back in (or restart) for it to apply.'",
-            join_kvm_group(u, KVM_DEVICE)
-        );
-    }
-    RootScript::new(s)
+    then_libvirt_groups(
+        "dnf install -y libvirt libvirt-daemon-kvm qemu-kvm virt-install virt-manager libvirt-devel gcc make pkgconf-pkg-config ruby-devel virtiofsd; systemctl enable --now libvirtd",
+        user,
+    )
 }
 
 /// QEMU and its disk tools on Fedora, with `genisoimage` for vagrant-qemu's cloud-init seeds,
 /// then the player into the KVM device's group.
 #[cfg(any(target_os = "linux", test))]
 pub fn qemu_dnf_script(user: Option<&str>) -> RootScript {
-    let mut s = "dnf install -y qemu-kvm qemu-img genisoimage".to_string();
-    if let Some(u) = user.filter(|u| valid_user(u)) {
-        s.push_str("; ");
-        s.push_str(&join_kvm_group(u, KVM_DEVICE));
-    }
-    RootScript::new(s)
+    then_kvm_group("dnf install -y qemu-kvm qemu-img genisoimage", user)
 }
 
 #[cfg(test)]

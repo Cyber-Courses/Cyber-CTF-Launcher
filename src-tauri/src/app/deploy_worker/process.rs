@@ -365,11 +365,7 @@ pub fn running(dirs: &AppDirs) -> Result<Vec<String>> {
 
 /// [`running`] for the workers' folder `d` (none when it isn't there yet).
 fn running_in(d: &Path) -> std::io::Result<Vec<String>> {
-    let entries = match std::fs::read_dir(d) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e),
-    };
+    let Some(entries) = crate::platform::entries_if_any(d)? else { return Ok(Vec::new()) };
     let mut out = Vec::new();
     for e in entries.flatten() {
         let p = e.path();

@@ -64,6 +64,14 @@ const RDP: ScreenConnection = {
 
 const fire = (m: Made, type: string, detail?: unknown) => m.viewer.dispatchEvent(new CustomEvent(type, { detail }));
 
+/** The screen window on a VNC screen at 127.0.0.1:5903, its first connection made. */
+async function openVncAt5903() {
+  made.length = 0;
+  installTauri({ screen_connect: () => ({ ...VNC, address: "127.0.0.1:5903" }) });
+  render(<ScreenWindow />);
+  await flush();
+}
+
 describe("the screen window", () => {
   it("connects its viewer to the bridge's one-time URL with the password, and says when it shows", async () => {
     made.length = 0;
@@ -99,10 +107,7 @@ describe("the screen window", () => {
   });
 
   it("says where the screen didn't answer when the bridge closes before it ever shows", async () => {
-    made.length = 0;
-    installTauri({ screen_connect: () => ({ ...VNC, address: "127.0.0.1:5903" }) });
-    render(<ScreenWindow />);
-    await flush();
+    await openVncAt5903();
     fire(made[0], "disconnect", { clean: false });
     await flush();
     expect(screen.getByText("The VM's screen didn't answer at 127.0.0.1:5903.")).toBeTruthy();
@@ -150,10 +155,7 @@ describe("the screen window", () => {
 
   it("keeps saying the password was refused once noVNC closes the connection after it", async () => {
     // noVNC fails the connection after a security failure: an unclean disconnect follows at once.
-    made.length = 0;
-    installTauri({ screen_connect: () => ({ ...VNC, address: "127.0.0.1:5903" }) });
-    render(<ScreenWindow />);
-    await flush();
+    await openVncAt5903();
     fire(made[0], "securityfailure");
     fire(made[0], "disconnect", { clean: false });
     await flush();

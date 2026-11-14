@@ -18,6 +18,15 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** `useRead` over two labs' reads, each answered when the test says, lab A's key shown first. */
+function readTwoLabs() {
+  const reads = { "lab-a": deferred<string>(), "lab-b": deferred<string>() };
+  const { result, rerender } = renderHook((p: { key: "lab-a" | "lab-b" }) => useRead(p.key, () => reads[p.key].promise, "reading"), {
+    initialProps: { key: "lab-a" as "lab-a" | "lab-b" },
+  });
+  return { reads, result, rerender };
+}
+
 describe("useRead", () => {
   it("is idle without a key, reading until the answer, then the answer", async () => {
     const answer = deferred<string>();
@@ -35,10 +44,7 @@ describe("useRead", () => {
   });
 
   it("never shows the previous key's answer, even when it arrives after the key changed", async () => {
-    const reads = { "lab-a": deferred<string>(), "lab-b": deferred<string>() };
-    const { result, rerender } = renderHook((p: { key: "lab-a" | "lab-b" }) => useRead(p.key, () => reads[p.key].promise, "reading"), {
-      initialProps: { key: "lab-a" as "lab-a" | "lab-b" },
-    });
+    const { reads, result, rerender } = readTwoLabs();
     await act(async () => {
       reads["lab-a"].resolve("brief a");
       await flush();
@@ -54,10 +60,7 @@ describe("useRead", () => {
   });
 
   it("drops a late answer for a key no longer shown", async () => {
-    const reads = { "lab-a": deferred<string>(), "lab-b": deferred<string>() };
-    const { result, rerender } = renderHook((p: { key: "lab-a" | "lab-b" }) => useRead(p.key, () => reads[p.key].promise, "reading"), {
-      initialProps: { key: "lab-a" as "lab-a" | "lab-b" },
-    });
+    const { reads, result, rerender } = readTwoLabs();
     rerender({ key: "lab-b" });
     await act(async () => {
       reads["lab-b"].resolve("brief b");

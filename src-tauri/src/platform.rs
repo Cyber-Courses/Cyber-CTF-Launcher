@@ -119,6 +119,16 @@ pub fn os_name(os: &str) -> &str {
     OS_NAMES.iter().find(|(id, _)| *id == os).map_or(os, |(_, name)| name)
 }
 
+/// The entries of folder `dir`, none when it isn't there (yet). A folder that can't be read is an
+/// error: what it holds is unknown, which a caller must not take for "nothing".
+pub(crate) fn entries_if_any(dir: &Path) -> std::io::Result<Option<std::fs::ReadDir>> {
+    match std::fs::read_dir(dir) {
+        Ok(entries) => Ok(Some(entries)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Whether a program of that name is on this process's PATH (a file there; Windows' extensions
 /// aren't tried: the callers name Linux programs).
 pub fn on_path(program: &str) -> bool {

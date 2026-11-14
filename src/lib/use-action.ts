@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { describeError } from "@/lib/errors";
 
 /** A user action as the page shows it: not started (or done), under way, or failed with why. */
-export type ActionState = { state: "idle" } | { state: "running" } | { state: "failed"; error: string };
+type ActionState = { state: "idle" } | { state: "running" } | { state: "failed"; error: string };
 
 /** A started action's handle: its state, and `run`, which starts it unless it is under way. */
 export type Action<A extends unknown[]> = {

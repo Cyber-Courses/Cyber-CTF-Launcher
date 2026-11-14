@@ -588,6 +588,16 @@ mod tests {
         assert_cancel_takes_the_tree(&file, timed).await;
     }
 
+    /// Runs, the app's way (`run_env_timed`), a stand-in tool whose long child's pid lands in
+    /// `CYBERCTF_TREE_FILE`, and waits on it until it is killed.
+    fn run_a_parent_of_a_child() {
+        let file = std::path::PathBuf::from(std::env::var("CYBERCTF_TREE_FILE").unwrap());
+        let (program, args) = parent_of_a_child(&file);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let _ = runtime.block_on(run_env_timed(program, &args, None, &[], Duration::from_secs(300)));
+    }
+
     /// The app's stand-in, run as a child process by the test below: it starts a tool the app's
     /// way (`run_env_timed`, so in a job object of its own), a tool whose long child's pid lands
     /// in `CYBERCTF_TREE_FILE`, and waits on it until it is killed.
@@ -595,11 +605,7 @@ mod tests {
     #[test]
     #[ignore = "run as a child process by a_killed_apps_tools_end_with_it"]
     fn tool_owner_helper() {
-        let file = std::path::PathBuf::from(std::env::var("CYBERCTF_TREE_FILE").unwrap());
-        let (program, args) = parent_of_a_child(&file);
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let _ = runtime.block_on(run_env_timed(program, &args, None, &[], Duration::from_secs(300)));
+        run_a_parent_of_a_child();
     }
 
     /// What a test left running is ended however the test ends: the stand-in's tree, and the
@@ -656,11 +662,7 @@ mod tests {
     #[ignore = "run as a child process by a_killed_apps_tools_end_at_the_next_start"]
     fn ledger_owner_helper() {
         record_tools_in(std::path::PathBuf::from(std::env::var("CYBERCTF_LEDGER").unwrap()));
-        let file = std::path::PathBuf::from(std::env::var("CYBERCTF_TREE_FILE").unwrap());
-        let (program, args) = parent_of_a_child(&file);
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let _ = runtime.block_on(run_env_timed(program, &args, None, &[], Duration::from_secs(300)));
+        run_a_parent_of_a_child();
     }
 
     /// Regression (#301): on unix, the tools of an app killed outright (SIGKILL, a crash, Force
