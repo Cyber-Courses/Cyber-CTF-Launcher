@@ -33,12 +33,28 @@ pub enum RegistryValue {
     Other(u32),
 }
 
+/// Proof that this process is still single-threaded, which changing its environment needs
+/// ([`set_env_at_startup`]): on Unix, another thread reading the environment meanwhile (libc's
+/// `getenv`) would be a data race. Only the start of `app::run` makes one, and it is neither
+/// `Send` nor `Clone`, so it can't outlive the start or reach another thread.
+pub struct SingleThreaded(std::marker::PhantomData<*const ()>);
+
+impl SingleThreaded {
+    /// The proof, taken on the caller's word.
+    ///
+    /// # Safety
+    ///
+    /// No other thread of this process exists, and none is started while the token lives: the
+    /// first lines of `app::run`, or a test run with `--test-threads=1`.
+    pub unsafe fn assume() -> SingleThreaded {
+        SingleThreaded(std::marker::PhantomData)
+    }
+}
+
 /// Sets this process's environment variable `name` (`PATH`, a proxy), which the tools it starts
-/// inherit. Only while the process is still single-threaded (the first lines of `run()`, or a
-/// test run with `--test-threads=1`): on Unix, another thread reading the environment meanwhile
-/// (libc's `getenv`) would be a data race.
-pub fn set_env_at_startup(name: &str, value: &OsStr) {
-    // SAFETY: called before any other thread exists (see above), so nothing reads the
-    // environment while it changes.
+/// inherit; `_only` proves no other thread can read the environment meanwhile.
+pub fn set_env_at_startup(_only: &SingleThreaded, name: &str, value: &OsStr) {
+    // SAFETY: a `SingleThreaded` exists only while no other thread does (its `assume`'s
+    // contract), so nothing reads the environment while it changes.
     unsafe { std::env::set_var(name, value) };
 }

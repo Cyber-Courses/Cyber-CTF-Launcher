@@ -37,6 +37,42 @@ pub fn open_folder(path: &std::path::Path) -> crate::error::Result<()> {
 /// How often expired cloud labs are looked for and torn down.
 const REAP_EVERY: Duration = Duration::from_secs(300);
 
+/// What this process is, read from its arguments before anything else starts.
+#[derive(Debug, PartialEq, Eq)]
+enum Role {
+    /// `cyberctf-desktop interrupt --pid <pid>` (Windows): Ctrl+C a deploy's Terraform so it
+    /// stops cleanly, from a throwaway process (see `platform::console`). Nothing of the app starts.
+    #[cfg(windows)]
+    Interrupter(u32),
+    /// `cyberctf-desktop deploy --job <file>`: one lab's deploy, run headless; the app that
+    /// started it only follows its log, so quitting the app never cuts a deploy short.
+    DeployWorker(PathBuf),
+    /// The launcher itself.
+    App,
+}
+
+impl Role {
+    /// The role `args` (the process's, program first) give this process.
+    fn of(args: &[String]) -> Role {
+        #[cfg(windows)]
+        if let Some(pid) = platform::console::interrupt_pid(args.iter().cloned()) {
+            return Role::Interrupter(pid);
+        }
+        match worker_job(args.iter().cloned()) {
+            Some(job) => Role::DeployWorker(job),
+            None => Role::App,
+        }
+    }
+}
+
+/// What the start of the process sets up for either role that runs Tauri: the context (the
+/// embedded config and assets, pointed at an end-to-end run's folders) and what was found of the
+/// system proxy, for the log once it is up.
+struct Started {
+    context: tauri::Context<AppRuntime>,
+    proxy_note: Option<String>,
+}
+
 /// Runs the launcher, as the app or as a deploy worker (see `crate::run`).
 ///
 /// # Errors
@@ -45,16 +81,33 @@ const REAP_EVERY: Duration = Duration::from_secs(300);
 pub fn run() -> tauri::Result<()> {
     // First: a panic anywhere after this lands in the log file, not in a stderr nobody sees.
     logging::install_panic_hook();
-    // `cyberctf-desktop interrupt --pid <pid>` (Windows): Ctrl+C a deploy's Terraform so it stops
-    // cleanly, from a throwaway process (see platform::console). Nothing else of the app starts.
-    #[cfg(windows)]
-    if let Some(pid) = platform::console::interrupt_pid(std::env::args()) {
+    // SAFETY: called only first thing in a role's arm, before anything starts a thread (Tauri,
+    // tokio and the plugins all start later).
+    #[allow(unsafe_code, reason = "the start's claim to be the only thread, which only `run` can make")]
+    let started = || start(unsafe { platform::sys::SingleThreaded::assume() });
+    match Role::of(&std::env::args().collect::<Vec<_>>()) {
         // Exit code 0 when it was sent, else 1 (the app reads only whether it succeeded).
-        std::process::exit(i32::from(!platform::console::send_ctrl_c(pid)));
+        #[cfg(windows)]
+        Role::Interrupter(pid) => std::process::exit(i32::from(!platform::console::send_ctrl_c(pid))),
+        Role::DeployWorker(job) => deploy_worker::worker_main(&job, started().context),
+        Role::App => {
+            let Started { context, proxy_note } = started();
+            let app = commands::register(app_builder(proxy_note)).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
+            app.run(|app, event| on_run_event(app, &event));
+            Ok(())
+        }
     }
+}
+
+/// The start both Tauri roles share, while `only` this thread runs: GUI launches don't get the
+/// shell PATH (docker, vagrant, ovftool) nor, on macOS, the proxy, so both are set here, before
+/// any thread can read the environment. The OVF Tool the setup places in the app data folder is
+/// on `PATH` too, for the deploy workers and the labs' runs.
+#[allow(clippy::needless_pass_by_value, reason = "taking the token ends the start's claim to be the only thread")]
+fn start(only: platform::sys::SingleThreaded) -> Started {
     crate::runtime::server::connection_test::mark_started();
-    // One context (the embedded config and assets) for whichever role this process plays. Its
-    // main window gets the app's frame (none on Linux and Windows) before it is created.
+    // One context for whichever role this process plays. Its main window gets the app's frame
+    // (none on Linux and Windows) before it is created.
     let mut context = tauri::generate_context!();
     window::frame_configured(context.config_mut());
     // An end-to-end run's app (a `wdio` build given the run's folder) keeps all of its own there,
@@ -63,29 +116,24 @@ pub fn run() -> tauri::Result<()> {
     if let Some(root) = &test_root {
         test_root_config(context.config_mut(), root);
     }
-    // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool), nor,
-    // on macOS, the proxy (said in the log once it is up). The OVF Tool the setup places in the
-    // app data folder is on it too, for the deploy workers and the labs' runs.
-    platform::env_path::augment(&own_tool_dirs(&context.config().identifier, test_root.as_deref()));
+    platform::env_path::augment(&only, &own_tool_dirs(&context.config().identifier, test_root.as_deref()));
     #[cfg(target_os = "macos")]
-    let proxy_note = platform::proxy::inherit_system_proxy();
+    let proxy_note = platform::proxy::inherit_system_proxy(&only);
     #[cfg(not(target_os = "macos"))]
     let proxy_note = None;
-    // `cyberctf-desktop deploy --job <file>`: this process is a deploy worker, not the app. It
-    // runs one lab's deploy headless and exits; the app that started it only follows its log, so
-    // quitting the app never cuts a deploy short.
-    if let Some(job) = worker_job(std::env::args()) {
-        return deploy_worker::worker_main(&job, context);
-    }
-    let app = commands::register(app_builder(proxy_note)).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
-    app.run(|app, event| on_run_event(app, &event));
-    Ok(())
+    Started { context, proxy_note }
+}
+
+/// The app's services, made once here and reached through the app's state: the app and a unit
+/// test's app (`testing::test_app`) are put together alike.
+pub(crate) fn services(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntime> {
+    builder.manage(terminal::Terminals::default())
 }
 
 /// The app: its plugins, window and menu events, and setup (`proxy_note`: what startup found of
 /// the system proxy, for the log).
 fn app_builder(proxy_note: Option<String>) -> tauri::Builder<AppRuntime> {
-    let mut builder = tauri::Builder::<AppRuntime>::new();
+    let mut builder = services(tauri::Builder::<AppRuntime>::new());
     // First: a cyberctf:// link opened while the app runs goes to that window (Windows/Linux would
     // otherwise start a second instance). Off during a GUI e2e run (TAURI_WEBDRIVER_PORT set), so a
     // test instance runs beside an installed app and parallel runs don't collide.
@@ -392,7 +440,7 @@ fn on_run_event(app: &AppHandle, event: &RunEvent) {
         // A tool the runner was asked to stop (an operation cancelled just before) doesn't get
         // its grace: the app is going, and it must not outlive it.
         crate::runtime::isothrum::end_cut_short_tools();
-        terminal::close_all();
+        app.state::<terminal::Terminals>().close_all();
         crate::screen::close_all();
     }
 }
@@ -501,6 +549,17 @@ mod tests {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let img = conf["app"]["security"]["csp"]["img-src"].as_str().unwrap();
         assert_eq!(img.split_whitespace().collect::<Vec<_>>(), ["'self'", "data:", "https://avatars.githubusercontent.com"]);
+    }
+
+    #[test]
+    fn the_role_is_read_from_the_arguments_alone() {
+        let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert_eq!(super::Role::of(&args(&["app"])), super::Role::App);
+        assert_eq!(super::Role::of(&args(&["app", "deploy", "--job", "/d/lab.json"])), super::Role::DeployWorker("/d/lab.json".into()));
+        #[cfg(windows)]
+        assert_eq!(super::Role::of(&args(&["app", "interrupt", "--pid", "4242"])), super::Role::Interrupter(4242));
+        #[cfg(not(windows))]
+        assert_eq!(super::Role::of(&args(&["app", "interrupt", "--pid", "4242"])), super::Role::App);
     }
 
     #[test]

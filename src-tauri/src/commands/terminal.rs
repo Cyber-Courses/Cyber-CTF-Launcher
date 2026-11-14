@@ -17,7 +17,8 @@ use crate::{AppHandle, WebviewWindow};
 #[allow(clippy::too_many_arguments, reason = "the webview sends each of the shell's fields as an argument")]
 pub async fn terminal_open(window: WebviewWindow, id: String, runtime: Runtime, cols: u16, rows: u16, events: Channel<TermEvent>) -> Result<u32> {
     let shell = terminal::Shell { id, runtime, cols, rows };
-    terminal::open(&Targets(window.app_handle()), window.label(), shell, move |e| events.send(e).is_ok()).await
+    let terminals = window.state::<terminal::Terminals>().inner().clone();
+    terminals.open(&Targets(window.app_handle()), window.label(), shell, move |e| events.send(e).is_ok()).await
 }
 
 /// The runtime's answer about a lab's attack box shell, for the app.
@@ -33,19 +34,19 @@ impl terminal::ShellTargets for Targets<'_> {
 /// Types `data` into session `session` of this window.
 #[tauri::command]
 pub fn terminal_write(window: WebviewWindow, session: u32, data: &str) -> Result<()> {
-    terminal::write(window.label(), session, data.as_bytes())
+    window.state::<terminal::Terminals>().write(window.label(), session, data.as_bytes())
 }
 
 /// Resizes session `session` of this window.
 #[tauri::command]
 pub fn terminal_resize(window: WebviewWindow, session: u32, cols: u16, rows: u16) -> Result<()> {
-    terminal::resize(window.label(), session, cols, rows)
+    window.state::<terminal::Terminals>().resize(window.label(), session, cols, rows)
 }
 
 /// Ends session `session` of this window.
 #[tauri::command]
 pub fn terminal_close(window: WebviewWindow, session: u32) {
-    terminal::close(window.label(), session);
+    window.state::<terminal::Terminals>().close(window.label(), session);
 }
 
 /// Opens a shell window for lab `id`, titled `title`. Async: see `open_settings`.

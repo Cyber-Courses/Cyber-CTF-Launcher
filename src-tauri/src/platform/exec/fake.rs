@@ -56,6 +56,9 @@ struct State {
 
 thread_local! {
     static STATE: RefCell<Option<Rc<RefCell<State>>>> = const { RefCell::new(None) };
+    /// The tool set (`exec::ToolSet`) of this thread's script: never the machine's (0), never
+    /// another script's. Apart from the script's state, which a call the script makes may hold.
+    static SET: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
 /// The scripted tools of the running test, until dropped. A call the script doesn't answer
@@ -64,8 +67,11 @@ pub struct Tools(Rc<RefCell<State>>);
 
 impl Tools {
     pub fn new(script: impl FnMut(&str, &[&str]) -> Option<Reply> + 'static) -> Tools {
+        static SETS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let set = SETS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let state = Rc::new(RefCell::new(State { script: Box::new(script), calls: Vec::new(), envs: Vec::new() }));
         STATE.with(|s| *s.borrow_mut() = Some(state.clone()));
+        SET.with(|s| s.set(Some(set)));
         Tools(state)
     }
 
@@ -103,7 +109,13 @@ impl Tools {
 impl Drop for Tools {
     fn drop(&mut self) {
         STATE.with(|s| *s.borrow_mut() = None);
+        SET.with(|s| s.set(None));
     }
+}
+
+/// The tool set of the script on this thread, when a test scripts the tools.
+pub(super) fn set() -> Option<u64> {
+    SET.with(std::cell::Cell::get)
 }
 
 /// Whether a test scripts the tools on this thread (so nothing real would run).
