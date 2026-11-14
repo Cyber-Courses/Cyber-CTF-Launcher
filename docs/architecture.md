@@ -8,17 +8,17 @@ done. For how a lab runs in each place, see [running-labs.md](running-labs.md); 
 
 A lab describes itself once as an `isoloom.yml` (its machines, networks, services and checks). The launcher uses Isoloom to read that spec and convert it to each target's native files (Compose, Vagrant, Terraform) under the lab's `.isoloom-<n>/` folder (`n`: its instance, see [running-labs.md](running-labs.md#what-says-where-a-lab-is)), then runs them in one of three modes:
 
-| Mode       | What runs the lab                                                                                                                                                                                                              |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Local**  | Docker on the player's machine (Docker Compose), or VMs through Vagrant on any local hypervisor (VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM). Containers can also run inside a local VM (`docker-vm`). |
-| **Server** | The player's own **Proxmox** or **VMware ESXi** server, through Vagrant or Terraform.                                                                                                                                          |
-| **Cloud**  | The player's own **AWS, Azure, GCP, DigitalOcean, Linode or Oracle Cloud** account, through Terraform with that provider's CLI credentials.                                                                                    |
+| Mode       | What runs the lab                                                                                                                                                                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Local**  | Docker on the player's machine (Docker Compose), or VMs through Vagrant on any local hypervisor (VirtualBox, VMware Desktop, Hyper-V, Parallels, libvirt, QEMU, UTM). A container lab with VM recipes can also run as one VM per machine. |
+| **Server** | The player's own **Proxmox** or **VMware ESXi** server, through Vagrant or Terraform.                                                                                                                                                     |
+| **Cloud**  | The player's own **AWS, Azure, GCP, DigitalOcean, Linode or Oracle Cloud** account, through Terraform with that provider's CLI credentials.                                                                                               |
 
 ### Lab engine
 
-The [Isothrum runner](https://github.com/Isothrum/isothrum) runs every lab with machines, in every mode above: it executes the versioned run manifest Isoloom writes beside the generated files (local Docker, a container lab in a local VM (`docker-vm`), local VMs, Proxmox and ESXi servers, and `cloud-docker` / `cloud-vm` in a cloud account). There is no other engine to choose: cloud-services labs (managed cloud services, no machines) run through it too, the lab's own Terraform module applied by the runner in the player's account (`runtime/cloud_services.rs`).
+The [Isothrum runner](https://github.com/Isothrum/isothrum) runs every lab with machines, in every mode above: it executes the versioned run manifest Isoloom writes beside the generated files (local Docker, local VMs, Proxmox and ESXi servers, and `cloud-docker` / `cloud-vm` in a cloud account). There is no other engine to choose: cloud-services labs (managed cloud services, no machines) run through it too, the lab's own Terraform module applied by the runner in the player's account (`runtime/cloud_services.rs`).
 
-**Proven vs. generated.** Local labs (Docker, Docker in a VM, VMs) and server labs (Proxmox and ESXi) are proven by real runs, and so are cloud labs on **AWS**: the integration tests' AWS tier runs `cloud-docker` and `cloud-vm` labs end to end in a real account ([testing/integration.md](testing/integration.md)). On the other clouds the Terraform Isoloom generates passes the cloud's official validator but hasn't been run end to end on a paid account yet.
+**Proven vs. generated.** Local labs (Docker, VMs) and server labs (Proxmox and ESXi) are proven by real runs, and so are cloud labs on **AWS**: the integration tests' AWS tier runs `cloud-docker` and `cloud-vm` labs end to end in a real account ([testing/integration.md](testing/integration.md)). On the other clouds the Terraform Isoloom generates passes the cloud's official validator but hasn't been run end to end on a paid account yet.
 
 ## The code
 

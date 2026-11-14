@@ -121,7 +121,7 @@ describe("deriveSteps: odd Vagrant output", () => {
       ["m:isoloom-dc01", "dc01", 1],
     ]);
     // The step keeps the label of its first line.
-    expect(steps(["Bringing machine 'x' up with 'y' provider...", "Opening UTM and waiting for it to answer…", "==> x: Booting"])[0]).toEqual([
+    expect(steps(["Bringing machine 'x' up with 'y' provider...", "Clearing a previous, stopped run…", "==> x: Booting"])[0]).toEqual([
       "prepare",
       "labs.deploy.steps.start",
       2,
@@ -133,7 +133,7 @@ describe("deriveSteps: odd Vagrant output", () => {
       ["download", "labs.deploy.steps.download", 3],
       ["m:dc01", "dc01", 1],
     ]);
-    expect(steps(["Running in a qemu VM on this machine", "Clearing a previous, stopped run…", "==> default: Booting VM..."])).toEqual([
+    expect(steps(["Lab installed", "Clearing a previous, stopped run…", "==> default: Booting VM..."])).toEqual([
       ["download", "labs.deploy.steps.download", 1],
       ["prepare", "labs.deploy.steps.prepareMachine", 1],
       ["m:default", "default", 1],

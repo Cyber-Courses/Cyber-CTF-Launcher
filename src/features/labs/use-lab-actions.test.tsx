@@ -231,13 +231,13 @@ describe("useLabActions: launch", () => {
     expect(notified).toHaveBeenLastCalledWith("Lab ready", "Invoice portal API is running on your server.");
   });
 
-  it("runs a container lab inside a local VM on the chosen hypervisor", async () => {
+  it("runs a container lab given a hypervisor here as one VM per machine there, never its containers in a VM", async () => {
     const { calls, hook } = setup();
     await act(() => hook.result.current.launch({ ...dockerLab, id: "act-in-vm" }, null, { provider: "virtualbox" }));
     const args = must(launchArgs(calls), "the lab_launch call");
     expect(args.provider).toBe("virtualbox");
     expect(args.host).toBeNull();
-    expect(rawLaunchArgs(calls)?.perMachineVm).toBe(false);
+    expect(rawLaunchArgs(calls)?.perMachineVm).toBe(true);
   });
 
   it("runs a container lab with VM recipes as one VM per machine on the chosen hypervisor", async () => {
@@ -313,9 +313,10 @@ describe("useLabActions: launch", () => {
     // Regression: Home's "start again" ran a container lab on Docker here whatever the lab last
     // ran on, where the lab page's Reset takes it back there.
     const sourced = { ...sourcedVmLab, id: "act-web-again", runtime: { ...must(sourcedVmLab.runtime), runtime: "DOCKER" as const } };
-    const inVm = setup({ lab_default_place: () => ({ host: null, provider: "utm", perMachineVm: false }) });
-    await act(() => inVm.hook.result.current.launch(sourced, undefined, undefined, { ports: "random" }));
-    expect(launchArgs(inVm.calls)).toMatchObject({ provider: "utm", host: null });
+    const asVms = setup({ lab_default_place: () => ({ host: null, provider: "virtualbox", perMachineVm: true }) });
+    await act(() => asVms.hook.result.current.launch(sourced, undefined, undefined, { ports: "random" }));
+    expect(launchArgs(asVms.calls)).toMatchObject({ provider: "virtualbox", host: null });
+    expect(rawLaunchArgs(asVms.calls)?.perMachineVm).toBe(true);
     const onServer = setup({ lab_default_place: () => ({ host: "pve", provider: null, perMachineVm: false }) });
     await act(() => onServer.hook.result.current.launch({ ...sourced, id: "act-web-pve" }, undefined, undefined, { ports: "random" }));
     expect(launchArgs(onServer.calls)).toMatchObject({ provider: null, host: "pve" });

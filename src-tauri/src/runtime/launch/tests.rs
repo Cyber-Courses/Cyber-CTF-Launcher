@@ -1,7 +1,6 @@
-use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{
-    Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, downloads, local_run, low_memory_warning, parse_ipv4, per_machine_runs_on,
-    record_cloud_form,
+    Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, containers_run_on, downloads, local_run, low_memory_warning, parse_ipv4,
+    per_machine_runs_on, record_cloud_form,
 };
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
@@ -136,7 +135,9 @@ const VMS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }
 #[test]
 fn a_local_run_follows_the_runtime_and_the_hypervisor() {
     assert_eq!(local_run(Runtime::Docker, None, false).unwrap(), LocalRun::Docker);
-    assert_eq!(local_run(Runtime::Docker, Some(Provider::Virtualbox), false).unwrap(), LocalRun::DockerInVm(Provider::Virtualbox));
+    // A container lab on a hypervisor here runs as one VM per machine there, never inside one VM.
+    assert_eq!(local_run(Runtime::Docker, Some(Provider::Virtualbox), false).unwrap(), LocalRun::Vm(Provider::Virtualbox));
+    assert_eq!(local_run(Runtime::Docker, Some(Provider::Virtualbox), true).unwrap(), LocalRun::Vm(Provider::Virtualbox));
     // A server provider is never a local VM: the containers run on this machine's Docker.
     assert_eq!(local_run(Runtime::Docker, Some(Provider::Proxmox), false).unwrap(), LocalRun::Docker);
     assert_eq!(local_run(Runtime::Vm, Some(Provider::Qemu), false).unwrap(), LocalRun::Vm(Provider::Qemu));
@@ -189,11 +190,11 @@ async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_fo
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Qemu), &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.contains("qemu-system"), "{err}");
-    // The vagrant target's files (one VM per machine), not docker-vm's, and the form marked.
+    // The vagrant target's files (one VM per machine), no helper VM's, and the form marked.
     assert!(vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target was generated");
-    assert!(!vagrant_dir(&dir, Runtime::Docker).join("Vagrantfile").exists(), "not docker-vm");
+    assert!(!crate::runtime::lab::docker_vm_dir(&dir).exists(), "no helper VM");
     assert!(per_machine_vm(&dir) && dir.join(PER_MACHINE_MARKER).is_file());
-    assert_eq!(crate::runtime::paths::local_vm(&dir), None, "no docker-vm mark");
+    assert_eq!(crate::runtime::paths::local_vm(&dir), None, "no helper-VM mark");
     // The webview keeps calling the lab a container lab: here it is a VM lab.
     assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Vm);
     assert_eq!(crate::runtime::runtime_here(&t.dirs(), "both", false), Some(Runtime::Vm));
@@ -246,6 +247,16 @@ async fn one_vm_per_machine_is_refused_on_a_server_and_on_utm() {
     let err = r.unwrap_err().to_string();
     assert!(err.starts_with("This lab can't run on UTM yet: ") && err.contains("vagrant_utm"), "{err}");
     assert!(!tools.called("open"), "{:?}", tools.calls());
+}
+
+#[test]
+fn a_container_labs_containers_run_on_every_cloud_and_on_no_server() {
+    for cloud in Provider::CLOUDS {
+        assert!(containers_run_on(Some(cloud)).is_ok(), "{cloud:?}");
+    }
+    for server in [Some(Provider::Proxmox), Some(Provider::VmwareEsxi), None] {
+        assert_eq!(containers_run_on(server).unwrap_err().to_string(), super::CONTAINERS_NOT_ON_SERVERS, "{server:?}");
+    }
 }
 
 #[test]
@@ -371,45 +382,6 @@ fn resolver_answers_must_be_one_ipv4() {
     assert_eq!(parse_ipv4(""), None);
 }
 
-#[test]
-fn an_automation_refusal_is_told_apart_from_a_utm_still_opening() {
-    // macOS refusing this app Apple events (no wait fixes it) against a UTM not answering yet.
-    assert!(utm_not_allowed("54:63: execution error: Not authorized to send Apple events to UTM. (-1743)"));
-    assert!(utm_not_allowed("UTM got an error: (-1743)"));
-    assert!(!utm_not_allowed("execution error: UTM got an error: Application isn't running. (-600)"));
-    assert!(!utm_not_allowed(""));
-    assert!(UTM_NOT_ALLOWED.contains("Automation"));
-}
-
-/// A UTM that answers but isn't ready for commands yet (-2700, as it refused a VM import after
-/// answering its name) is waited for like one still opening: the start goes on once it is.
-#[tokio::test]
-async fn a_utm_not_ready_for_commands_is_waited_for() {
-    use crate::platform::exec::fake::{Tools, fail, ok};
-    let mut probes = 0;
-    let tools = Tools::new(move |program, args| match (program, args) {
-        ("osascript", [_, probe]) if probe.contains("every virtual machine") => {
-            probes += 1;
-            if probes == 1 { fail("execution error: UTM got an error: UTM is not ready to accept commands. (-2700)") } else { ok("") }
-        }
-        _ => ok(""),
-    });
-    let mut lines = Vec::new();
-    check_utm(&mut |l| lines.push(l)).await.unwrap();
-    assert!(lines.iter().any(|l| l.contains("waiting for it to answer")), "{lines:?}");
-    assert!(tools.called("every virtual machine"), "asks for its VMs, which only a ready UTM lists");
-}
-
-/// The real UTM, opened cold: run by hand before a release with UTM quit (`osascript -e 'tell
-/// application "UTM" to quit'`), so the wait covers its launch.
-#[tokio::test]
-#[ignore = "opens the real UTM (macOS, UTM installed)"]
-async fn utm_is_opened_and_answers_before_a_vm_starts() {
-    let mut lines = Vec::new();
-    check_utm(&mut |l| lines.push(l)).await.unwrap();
-    println!("said: {lines:?}");
-}
-
 #[tokio::test]
 async fn the_policy_refuses_a_start_it_turns_off_before_anything_runs() {
     use crate::error::Code;
@@ -461,8 +433,11 @@ fn a_start_with_nowhere_to_run_is_refused_by_its_code_before_anything_is_downloa
     // One VM per machine on a server rather than a cloud account.
     assert_eq!(check(Runtime::Docker, per_machine(None, Some("pve"))).unwrap_err().to_string(), super::PER_MACHINE_NOT_ON_SERVERS);
     assert!(check(Runtime::Docker, per_machine(None, Some("aws1"))).is_ok());
+    // A container lab on a server, whose containers would run inside a helper VM there.
+    assert_eq!(check(Runtime::Docker, on("pve")).unwrap_err().to_string(), super::CONTAINERS_NOT_ON_SERVERS);
+    assert!(check(Runtime::Docker, on("aws1")).is_ok());
     // A start on a cloud account under DisableCloudLaunches, which needs no spec.
     let _policy = Override::with(&[Key::DisableCloudLaunches]);
     assert_eq!(check(Runtime::Docker, on("aws1")).unwrap_err().code(), Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() });
-    assert!(check(Runtime::Docker, on("pve")).is_ok());
+    assert!(check(Runtime::Vm, on("pve")).is_ok());
 }

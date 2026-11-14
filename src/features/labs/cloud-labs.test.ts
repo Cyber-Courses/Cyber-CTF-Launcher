@@ -79,9 +79,10 @@ describe("cloud labs", () => {
     });
     // Here until the backend answers.
     expect(initialTarget(vm, hosts, null)).toEqual({ kind: "local" });
-    // A container lab last run in a VM here, or as one VM per machine: there again, in that form.
+    // A container lab with a hypervisor here: one VM per machine there (never its containers in a
+    // VM, even from a place an older backend named without the per-machine flag).
     const web = rt("DOCKER", ["docker"]);
-    expect(initialTarget(web, hosts, { host: null, provider: "utm", perMachineVm: false, hypervisor: null })).toEqual({ kind: "local-vm", provider: "utm" });
+    expect(initialTarget(web, hosts, { host: null, provider: "utm", perMachineVm: false, hypervisor: null })).toEqual({ kind: "local-vms", provider: "utm" });
     expect(initialTarget(web, hosts, { host: null, provider: "qemu", perMachineVm: true, hypervisor: null })).toEqual({ kind: "local-vms", provider: "qemu" });
     // A server since removed: here.
     expect(initialTarget(web, [], onEsxi)).toEqual({ kind: "local" });

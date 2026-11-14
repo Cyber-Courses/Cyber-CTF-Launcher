@@ -359,7 +359,7 @@ fn check_only(out: &mut Out, before: &SystemReport, first: &Plan, knobs: &Knobs)
     if let Some(lab) = &knobs.lab {
         match (docker_ready, vm_ready) {
             (true, _) => out.line(&lab_item(lab), Status::CheckOnly, 0, "would start and stop it in containers"),
-            (false, Some(h)) => out.line(&lab_item(lab), Status::CheckOnly, 0, &format!("would start and stop it in a VM on {}", h.id())),
+            (false, Some(h)) => out.line(&lab_item(lab), Status::CheckOnly, 0, &format!("would start and stop it as VMs on {}", h.id())),
             (false, None) => out.line(&lab_item(lab), Status::Skipped, 0, "nothing to run it on"),
         }
     }
@@ -458,7 +458,7 @@ async fn self_test(dirs: &AppDirs, out: &mut Out, kind: Kind, provider: Option<P
     }
 }
 
-/// Where the example lab runs: in containers here, else (VM labs only) in a VM on `hypervisor`.
+/// Where the example lab runs: in containers here, else as one VM per machine on `hypervisor`.
 #[derive(Clone, Copy)]
 enum LabPlace {
     Docker,
@@ -484,7 +484,7 @@ async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
             let up = match place {
                 LabPlace::Docker => launch::start_docker_run(&home, &dir, &id, launch::Inputs::default(), &mut on_line).await,
                 LabPlace::Vm(provider) => {
-                    launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut on_line).await
+                    launch::start_vm_run(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut on_line).await
                 }
             };
             check(up.is_ok(), format!("it starts ({:?})", up.err()), f);
@@ -493,7 +493,7 @@ async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
             let on_line = |l: String| log.borrow_mut().write(&l);
             let run = match place {
                 LabPlace::Docker => isothrum::LabRun::docker(&home, &dir, &id),
-                LabPlace::Vm(_) => isothrum::LabRun::docker_in_vm(&home, &dir, &id),
+                LabPlace::Vm(_) => isothrum::LabRun::vm(&home, &dir, &id),
             };
             let stopped = match run {
                 Ok(run) => lifecycle::stop_run(run, &dir, on_line).await,
@@ -508,7 +508,7 @@ async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
     let seconds = started.elapsed().as_secs();
     let place = match place {
         LabPlace::Docker => "in containers".to_owned(),
-        LabPlace::Vm(p) => format!("in a VM on {}", p.id()),
+        LabPlace::Vm(p) => format!("as VMs on {}", p.id()),
     };
     if failures.is_empty() {
         out.line(&item, Status::Installed, seconds, &format!("started and stopped {place}"));

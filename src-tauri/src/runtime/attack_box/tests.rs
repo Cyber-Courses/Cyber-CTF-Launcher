@@ -234,7 +234,7 @@ fn each_box_gets_its_own_password_its_hash_in_a_root_only_file_never_on_a_comman
     assert!(player_account().contains(&format!(" password_hash={} sh -c ", sign_in::HASH_FILE)), "{}", player_account());
     let mut seen = Vec::new();
     // Generated for every target the box goes to: the file is placed on each.
-    let containers = [lab::Target::Docker, lab::Target::DockerVm, lab::Target::CloudDocker];
+    let containers = [lab::Target::Docker, lab::Target::CloudDocker];
     let vms = [lab::Target::Vagrant, lab::Target::CloudVm];
     for (kind, targets) in [(Kind::Container { image: "kalilinux/kali-rolling" }, &containers[..]), (Kind::Vm { desktop: true }, &vms[..])] {
         let dir = web_lab();

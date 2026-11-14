@@ -72,7 +72,7 @@ impl Checks for Vec<String> {
 /// Runs a scenario's `body` (the lab started, its checks), then its `teardown` (the lab stopped,
 /// what it left checked) whatever happens in the body: a panic there is a failed check of its own,
 /// and the teardown still runs. A lab a scenario leaves behind fails the ones after it (a UTM VM
-/// still registered makes every later docker-vm import fail). A panic in the teardown is a failed
+/// still registered made every later VM import fail). A panic in the teardown is a failed
 /// check too. Each part's failures go to `state`.
 pub(crate) async fn scenario<S: Checks>(state: &mut S, body: impl AsyncFnOnce(&mut S), teardown: impl AsyncFnOnce(&mut S)) {
     if let Err(panic) = (CatchUnwind(Box::pin(body(state)))).await {
@@ -188,7 +188,7 @@ mod tests {
     #[tokio::test]
     async fn a_scenario_that_panics_is_still_torn_down_and_says_where_it_stopped() {
         // Regression: a scenario's `expect` panicked before its teardown, its UTM VM stayed
-        // registered, and every docker-vm scenario after it failed.
+        // registered, and every VM scenario after it failed.
         let mut failures = Vec::new();
         let torn_down = std::cell::Cell::new(false);
         scenario(

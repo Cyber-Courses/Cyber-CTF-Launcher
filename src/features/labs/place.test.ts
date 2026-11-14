@@ -30,19 +30,20 @@ describe("where a lab runs", () => {
     expect(placeOf(undefined, true, "docker-desktop", hosts)).toBeNull();
   });
 
-  it("a VM lab here runs on its hypervisor; a container lab in a VM here says both", () => {
+  it("a VM lab here runs on its hypervisor, and so does a container lab whose VMs run here", () => {
     const vm = placeOf(labStatus({ running: true, place: "local_vm", provider: "qemu" }), false, "docker-desktop", hosts);
-    expect(vm).toEqual({ kind: "hypervisor", provider: "qemu", inVm: false });
+    expect(vm).toEqual({ kind: "hypervisor", provider: "qemu" });
     expect(placeText(t, must(vm))).toBe('labs.detail.thisMachineWith:{"engine":"QEMU"}');
+    // A container lab an earlier version left in a helper VM: told as any VM here.
     const inVm = placeOf(labStatus({ running: true, place: "local_vm", provider: "utm" }), true, "docker-desktop", hosts);
-    expect(inVm).toEqual({ kind: "hypervisor", provider: "utm", inVm: true });
-    expect(placeText(t, must(inVm))).toBe('labs.detail.aVmHereWith:{"hypervisor":"UTM"}');
+    expect(inVm).toEqual({ kind: "hypervisor", provider: "utm" });
+    expect(placeText(t, must(inVm))).toBe('labs.detail.thisMachineWith:{"engine":"UTM"}');
     // A container lab run as one VM per machine: its VMs are its machines, as a VM lab's are.
     const perMachine = placeOf(labStatus({ running: true, place: "local_vm", provider: "virtualbox", perMachine: true }), true, "docker-desktop", hosts);
-    expect(perMachine).toEqual({ kind: "hypervisor", provider: "virtualbox", inVm: false });
+    expect(perMachine).toEqual({ kind: "hypervisor", provider: "virtualbox" });
     expect(placeText(t, must(perMachine))).toBe('labs.detail.thisMachineWith:{"engine":"VirtualBox"}');
     // An unnamed hypervisor: the place words alone.
-    expect(placeText(t, { kind: "hypervisor", provider: "", inVm: true })).toBe("labs.detail.aVmHere");
+    expect(placeText(t, { kind: "hypervisor", provider: "" })).toBe("labs.detail.thisMachine");
   });
 
   it("a lab on a server names the saved host and its kind; one whose host isn't saved any more, the name alone", () => {
@@ -71,17 +72,14 @@ describe("where a deploy is headed (the Deployment panel)", () => {
     const engine = placeOf(labStatus({ running: true, place: "container", provider: "orbstack" }), true, null, hosts);
     expect(deployDestination(t, engine, { kind: "local" }, hosts)).toBe('labs.detail.thisMachineWith:{"engine":"OrbStack"}');
     const inVm = placeOf(labStatus({ running: true, place: "local_vm", provider: "utm" }), true, null, hosts);
-    expect(deployDestination(t, inVm, { kind: "local" }, hosts)).toBe('labs.detail.aVmHereWith:{"hypervisor":"UTM"}');
+    expect(deployDestination(t, inVm, { kind: "local" }, hosts)).toBe('labs.detail.thisMachineWith:{"engine":"UTM"}');
   });
 
   it("goes by the picker where the lab hasn't run yet", () => {
     expect(deployDestination(t, null, { kind: "host", id: "aws1" }, hosts)).toBe("My AWS");
     expect(deployDestination(t, null, { kind: "host", id: "gone" }, hosts)).toBe("labs.detail.yourServer");
-    expect(deployDestination(t, null, { kind: "local-vm", provider: "qemu" }, hosts)).toBe("labs.detail.aVmHere");
+    expect(deployDestination(t, null, { kind: "local-vms", provider: "qemu" }, hosts)).toBe("labs.detail.thisMachine");
     expect(deployDestination(t, null, { kind: "local" }, hosts)).toBe("labs.detail.thisMachine");
-    // Last run as containers here, now headed for a VM here.
-    const engine = placeOf(labStatus({ running: false, place: "container", provider: "orbstack" }), true, null, hosts);
-    expect(deployDestination(t, engine, { kind: "local-vm", provider: "qemu" }, hosts)).toBe("labs.detail.aVmHere");
   });
 
   it("tells a Docker engine from a hypervisor by one rule", () => {

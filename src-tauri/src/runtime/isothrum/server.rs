@@ -39,7 +39,8 @@ pub(crate) struct ServerPlace {
     pub(crate) jump: Option<String>,
 }
 
-/// One VM lab on a Proxmox server, run by the runner.
+/// One VM lab on a Proxmox server, run by the runner (or a container lab's helper VM an earlier
+/// version left there).
 pub(crate) struct ServerRun {
     run: OpenedRun,
 }
@@ -62,9 +63,15 @@ impl ServerRun {
     /// [`ServerRun::new`] on a runner set up with `config` (tests script its tools).
     fn with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
-        // VM labs use the per-machine Proxmox module; container labs use docker-vm on one VM there.
-        let (out, target) = lab::terraform(dir, runtime, "proxmox");
-        Ok(ServerRun { run: OpenedRun::new(config, dir, target, out.join("run.json"), name)? })
+        // A VM lab runs Proxmox's own module, one VM per machine. A container lab never starts
+        // there: its run is the helper VM an earlier version left, read from where it ran.
+        let (manifest, target) = if runtime == Runtime::Docker {
+            (lab::docker_vm_dir(dir).join("proxmox/run.json"), None)
+        } else {
+            let (out, target) = lab::terraform(dir, runtime, "proxmox");
+            (out.join("run.json"), Some(target))
+        };
+        Ok(ServerRun { run: OpenedRun::new(config, dir, target, manifest, name)? })
     }
 
     /// The runner's SSH public key (the launcher's own), made when there is none: what the node

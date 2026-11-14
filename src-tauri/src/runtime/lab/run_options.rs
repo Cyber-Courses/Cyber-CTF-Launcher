@@ -21,7 +21,7 @@ use crate::runtime::{Runtime, lab};
 pub struct RunPath {
     /// The hypervisor, server or cloud it runs on; None for this machine's Docker.
     pub provider: Option<Provider>,
-    /// The Isoloom target (`docker-vm`, `vagrant`, `cloud-vm`, …): how its badge is found, not
+    /// The Isoloom target (`docker`, `vagrant`, `cloud-vm`, …): how its badge is found, not
     /// the webview's.
     #[serde(skip)]
     #[ts(skip)]
@@ -85,12 +85,12 @@ impl Refusal {
 pub struct RunOptions {
     /// Containers on this machine's Docker.
     pub docker: Option<RunPath>,
-    /// A container lab in one VM on a local hypervisor (`docker-vm`), by hypervisor.
-    pub docker_vm: Vec<RunPath>,
     /// One VM per machine on a local hypervisor (`vagrant`): a VM lab, or a container lab with VM
     /// recipes run as one.
     pub vms: Vec<RunPath>,
-    /// The kinds of server (ESXi, Proxmox) it runs on, each by the path it takes there.
+    /// The kinds of server (ESXi, Proxmox) a VM lab runs on, each by the path it takes there (a
+    /// container lab has no form on a server: its containers run on Docker or a cloud VM, its VM
+    /// recipes here or in a cloud account).
     pub servers: Vec<RunPath>,
     /// One cloud VM with its containers (`cloud-docker`), by cloud.
     pub cloud_docker: Vec<RunPath>,
@@ -123,7 +123,6 @@ fn generated(lab: &Lab, runtime: Runtime, host: Arch) -> RunOptions {
     let spec = lab.spec();
     let emulated = !emulated_arches(&spec, host).is_empty();
     let local: Vec<Provider> = Provider::ALL.into_iter().filter(|p| !p.is_remote()).collect();
-    let docker_vm_local: Vec<Provider> = local.iter().copied().filter(|p| variants(Target::DockerVm).contains(&p.id())).collect();
     // The lab's own VMs here: on an emulator only, when they are built for another CPU.
     let vm_local: Vec<Provider> = local.iter().copied().filter(|p| !emulated || p.is_emulator()).collect();
     let mut paths = Paths { lab, targets: lab.possible(), tiers: tiers::run_tiers(), refused: Vec::new() };
@@ -131,9 +130,7 @@ fn generated(lab: &Lab, runtime: Runtime, host: Arch) -> RunOptions {
     match runtime {
         Runtime::Docker => {
             out.docker = paths.docker();
-            out.docker_vm = paths.on(Target::DockerVm, &docker_vm_local);
             out.vms = paths.on(Target::Vagrant, &vm_local);
-            out.servers = paths.on(Target::DockerVm, &Provider::SERVERS);
             out.cloud_docker = paths.on(Target::CloudDocker, &clouds(Target::CloudDocker));
             out.cloud_vm = paths.on(Target::CloudVm, &clouds(Target::CloudVm));
         }
@@ -229,7 +226,7 @@ fn with_policy(mut options: RunOptions, policy: Policy, privileged: bool) -> Run
     };
     let o = &mut options;
     if privileged && policy.is_on(Key::RefusePrivilegedLabs) {
-        let every = o.docker.take().into_iter().chain([&mut o.docker_vm, &mut o.vms, &mut o.servers].into_iter().flat_map(std::mem::take));
+        let every = o.docker.take().into_iter().chain([&mut o.vms, &mut o.servers].into_iter().flat_map(std::mem::take));
         let every: Vec<RunPath> = every.chain([&mut o.cloud_docker, &mut o.cloud_vm, &mut o.cloud_services].into_iter().flat_map(std::mem::take)).collect();
         refuse(Key::RefusePrivilegedLabs, every, &mut o.refused);
     } else if policy.is_on(Key::DisableCloudLaunches) {

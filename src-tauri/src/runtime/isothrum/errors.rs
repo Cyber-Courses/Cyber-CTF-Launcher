@@ -91,6 +91,20 @@ fn is_box_download(step: &str) -> bool {
     step.starts_with("boxes-")
 }
 
+/// What is said of a container lab an earlier version runs inside one helper VM (Isoloom's former
+/// `docker-vm`) when the runner no longer opens that run: nothing here reaches the VM any more.
+pub(crate) const HELPER_VM_LEFT: &str = "This lab still runs Docker inside a VM, as an earlier version of Cyber CTF started it, and this version can't reach that VM any more: remove it on the Machine page or in your hypervisor's app, then start the lab again";
+
+/// The runner's refusal to open the run of a helper VM an earlier version left, run `run`: when
+/// it no longer runs that form (`unsupported`), what is left and how to remove it; any other
+/// failure as [`from_runner`] says.
+pub(super) fn of_helper_vm(e: RunnerError, run: &str) -> Error {
+    match e.code() {
+        ErrorCode::Unsupported => Error::Invalid(format!("{HELPER_VM_LEFT} (its name starts with {run}).")),
+        _ => from_runner(e),
+    }
+}
+
 /// The failures whose wording needs nothing but their code (their message is kept otherwise).
 fn by_code(e: &RunnerError) -> Error {
     match e.code() {

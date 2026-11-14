@@ -6,7 +6,6 @@
     "online": "オンライン",
     "portTab": "このマシンで公開中。クリックして {url} をコピー",
     "vmSub": "このマシン上の VM",
-    "containerVmSub": "このマシン上の VM 内のコンテナ",
     "serverSubWith": "{kind} · {address}",
     "cloudSub": "{region} · {account}"
   },

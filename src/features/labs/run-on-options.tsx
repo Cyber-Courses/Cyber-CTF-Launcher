@@ -95,9 +95,9 @@ function engineStatus(t: T, dockerRunning: boolean | null): Status | undefined {
     : { tone: "warn", label: t("labs.runOn.engineStopped"), title: t("labs.runOn.engineStoppedHint") };
 }
 
-/** The "How should it run?" step, shown only when there are two forms: This machine's VM forms
- *  (helper VM, one VM per machine), or — when `account` is a cloud account — its one VM
- *  (cloud-docker) and one VM per machine (cloud-vm). The hypervisor is a later step for a local
+/** The "How should it run?" step, shown only when there are two forms: when `account` is a cloud
+ *  account, its one VM (cloud-docker) and one VM per machine (cloud-vm); this machine's VM form of
+ *  a container lab (one VM per machine) otherwise. The hypervisor is a later step for a local
  *  form, so it isn't named by one; a cloud form runs on the account, so Start finishes it. */
 export function vmFormOptions(t: T, options: LabRunOptions | null, forms: RunTarget[], account?: ServerHost | null): Option[] {
   return forms.map((form) => {
@@ -115,11 +115,10 @@ export function vmFormOptions(t: T, options: LabRunOptions | null, forms: RunTar
       };
     }
     const provider = isLocalVmForm(form) ? form.provider : null;
-    const perMachine = form.kind === "local-vms";
     return {
       target: form,
-      title: t(perMachine ? "labs.runOn.formPerMachine" : "labs.runOn.formInVm"),
-      subtitle: t(perMachine ? "labs.runOn.perMachineVmHint" : "labs.runOn.inVmFormNote"),
+      title: t("labs.runOn.formPerMachine"),
+      subtitle: t("labs.runOn.perMachineVmHint"),
       ok: true,
       badge: badgeOf(pathOf(options, form)),
       logo: <HypervisorLogo provider={provider} />,
@@ -178,9 +177,8 @@ function localPlatformRows(t: T, local: LocalRows, options: LabRunOptions | null
 
 /** The step-1 "VM" row, or null when no VM form is ready here. A VM lab runs its own VMs as
  *  `{ kind: "local" }`, refused (saying why) once the run options give it no hypervisor here; a
- *  container lab runs a helper VM (`local-vm`) and, when dual-form, one VM per machine too.
- *  Picking it leads to the form step (two forms), the hypervisor step (one form, several
- *  hypervisors), or straight to Start — no inline switch. */
+ *  dual-form container lab, one VM per machine (`local-vms`). Picking it leads to the hypervisor
+ *  step (several hypervisors), or straight to Start — no inline switch. */
 function localVmRow(t: T, local: LocalRows, options: LabRunOptions | null): Option | null {
   const { offerContainers, localNote, vmForms } = local;
   if (!offerContainers) {
@@ -190,11 +188,10 @@ function localVmRow(t: T, local: LocalRows, options: LabRunOptions | null): Opti
   }
   const first = vmForms.at(0);
   if (!first || !isLocalVmForm(first)) return null;
-  const twoForms = vmForms.length >= 2;
   return {
     target: first,
     title: t("labs.runOn.inAVm"),
-    subtitle: twoForms ? t("labs.runOn.vmForms") : t("labs.runOn.inVmFormNote"),
+    subtitle: t("labs.runOn.perMachineVmHint"),
     ok: true,
     logo: <HypervisorLogo provider={first.provider} />,
     status: { tone: "ok", label: t("labs.runOn.ready") },

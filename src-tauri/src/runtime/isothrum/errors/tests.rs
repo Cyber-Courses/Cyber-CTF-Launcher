@@ -285,6 +285,14 @@ fn a_refusal_is_known_by_its_kind_not_its_words() {
 }
 
 #[test]
+fn a_helper_vm_the_runner_no_longer_opens_says_what_is_left_and_how_to_remove_it() {
+    let gone = RunnerError::Unsupported { what: "containers run inside the run's VM".into() };
+    let said = of_helper_vm(gone, "cyberctf-web").to_string();
+    assert!(said.starts_with(HELPER_VM_LEFT) && said.contains("cyberctf-web"), "{said}");
+    assert_eq!(of_helper_vm(RunnerError::Locked { run: "r".into() }, "r").code(), from_runner(RunnerError::Locked { run: "r".into() }).code());
+}
+
+#[test]
 fn utms_passing_scripting_errors_are_tried_again_and_said_and_nothing_else_is() {
     let mut said = Vec::new();
     let mut log = |l: String| said.push(l);

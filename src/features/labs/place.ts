@@ -10,9 +10,9 @@ import type { T } from "@/lib/i18n";
 export type Place =
   /** Containers on this machine: the engine the lab runs on (null: unknown, the machine report not in). */
   | { kind: "engine"; engine: DockerEngine | null }
-  /** VMs on this machine, on `provider`; `inVm`: a container lab whose containers run in one VM
-   *  here (not one run as one VM per machine, whose VMs are its machines, as a VM lab's are). */
-  | { kind: "hypervisor"; provider: string; inVm: boolean }
+  /** VMs on this machine, on `provider` (a VM lab's, a container lab's one VM per machine, or the
+   *  helper VM an earlier version ran a container lab inside, told the same way). */
+  | { kind: "hypervisor"; provider: string }
   /** One of the player's servers (Proxmox, ESXi): the saved host, when it is still saved. */
   | { kind: "server"; name: string; provider: RemoteProvider | null; address: string | null }
   /** One of the player's cloud accounts, in `region`. */
@@ -31,7 +31,7 @@ export function placeOf(status: LabStatus | undefined, isDocker: boolean, curren
     const engine = status.provider && isDockerEngine(status.provider) ? status.provider : currentEngine;
     return { kind: "engine", engine };
   }
-  return { kind: "hypervisor", provider: status.provider ?? "", inVm: isDocker && !status.perMachine };
+  return { kind: "hypervisor", provider: status.provider ?? "" };
 }
 
 /** The place's own name: the engine, the hypervisor, the server, the cloud. */
@@ -49,15 +49,14 @@ export function placeName(place: Place): string {
 }
 
 /** The place as the header's "on …" and Details' "Runs on" say it: "this machine · Docker
- *  Desktop", "a VM on this machine · QEMU", "homelab · Proxmox", "AWS · eu-west-3". */
+ *  Desktop", "this machine · QEMU", "homelab · Proxmox", "AWS · eu-west-3". */
 export function placeText(t: T, place: Place): string {
   const name = placeName(place);
   switch (place.kind) {
     case "engine":
       return name ? t("labs.detail.thisMachineWith", { engine: name }) : t("labs.detail.thisMachine");
     case "hypervisor":
-      if (!name) return place.inVm ? t("labs.detail.aVmHere") : t("labs.detail.thisMachine");
-      return place.inVm ? t("labs.detail.aVmHereWith", { hypervisor: name }) : t("labs.detail.thisMachineWith", { engine: name });
+      return name ? t("labs.detail.thisMachineWith", { engine: name }) : t("labs.detail.thisMachine");
     case "server":
       return place.provider ? t("labs.detail.serverWith", { name, kind: PROVIDER_NAMES[place.provider] }) : name;
     case "cloud":

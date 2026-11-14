@@ -28,22 +28,20 @@ fn paths_of(paths: &[RunPath]) -> Vec<(Option<Provider>, &str, Option<&str>)> {
 
 #[test]
 fn a_container_lab_runs_where_isoloom_generates_each_form() {
-    // Regression: the picker kept its own tables: the helper VM's hypervisors, "no per-machine
-    // VMs on UTM", "one VM per machine on any cloud"; none of them asked the lab.
+    // Regression: the picker kept its own tables: "no per-machine VMs on UTM", "one VM per
+    // machine on any cloud"; none of them asked the lab.
     let o = options(DUAL, Runtime::Docker);
     assert_eq!(o.docker.as_ref().map(|p| p.target.as_str()), Some("docker"));
-    // The helper VM: every local hypervisor Isoloom's docker-vm has (Hyper-V isn't one).
-    let in_vm = providers(&o.docker_vm);
-    assert!(in_vm.contains(&Provider::Utm) && in_vm.contains(&Provider::Virtualbox) && !in_vm.contains(&Provider::Hyperv), "{in_vm:?}");
     // One VM per machine: not on UTM, whose VMs get no network, which says why.
     let per_machine = providers(&o.vms);
     assert!(per_machine.contains(&Provider::Hyperv) && !per_machine.contains(&Provider::Utm), "{per_machine:?}");
     let utm = o.refused.iter().find(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant").expect("UTM's refusal");
     assert!(matches!(&utm.cause, RefusalCause::Isoloom { reason } if reason.contains("no private network")), "{:?}", utm.cause);
-    // On a server, the helper VM: ESXi through Vagrant there, Proxmox through its module, each
-    // by its own launch path (the picker took ESXi's for `vagrant/vmware_esxi` and Proxmox's
-    // for `cloud-vm/proxmox`, neither of which Isoloom has).
-    assert_eq!(paths_of(&o.servers), [(Some(Provider::Proxmox), "docker-vm", Some("proxmox")), (Some(Provider::VmwareEsxi), "docker-vm", Some("vmware_esxi"))]);
+    // A container lab runs as true containers or true VMs, never containers inside a helper VM:
+    // no server offers it, and no path or refusal names the helper VM's former target.
+    assert_eq!(o.servers, [] as [RunPath; 0]);
+    let targets = || o.vms.iter().chain(&o.cloud_docker).chain(&o.cloud_vm).map(|p| p.target.as_str()).chain(o.refused.iter().map(|r| r.target.as_str()));
+    assert!(targets().all(|t| t != "docker-vm" && t != "hybrid"), "{:?}", targets().collect::<Vec<_>>());
     assert_eq!(providers(&o.cloud_docker), Provider::CLOUDS);
     assert_eq!(providers(&o.cloud_vm), Provider::CLOUDS);
     assert_eq!(o.cloud_services, [] as [RunPath; 0]);
@@ -52,7 +50,7 @@ fn a_container_lab_runs_where_isoloom_generates_each_form() {
 #[test]
 fn a_vm_lab_runs_its_vms_where_its_spec_and_isoloom_allow() {
     let o = options(VMS, Runtime::Vm);
-    assert!(o.docker.is_none() && o.docker_vm.is_empty() && o.cloud_docker.is_empty());
+    assert!(o.docker.is_none() && o.cloud_docker.is_empty());
     assert!(!providers(&o.vms).contains(&Provider::Utm));
     // Proxmox's own target has one form: no provider in its evidence.
     assert_eq!(paths_of(&o.servers), [(Some(Provider::VmwareEsxi), "vagrant", Some("vmware_esxi")), (Some(Provider::Proxmox), "proxmox", None)]);
@@ -88,7 +86,7 @@ fn a_windows_vm_given_a_labs_input_runs_on_no_cloud_and_says_why() {
 fn each_path_carries_its_own_tier_badge() {
     let tiers = tiers::run_tiers();
     let o = options(DUAL, Runtime::Docker);
-    for p in o.docker_vm.iter().chain(&o.vms).chain(&o.servers).chain(&o.cloud_docker).chain(&o.cloud_vm) {
+    for p in o.vms.iter().chain(&o.servers).chain(&o.cloud_docker).chain(&o.cloud_vm) {
         let tier = tiers.iter().find(|t| t.target == p.target && t.variant == p.variant).unwrap_or_else(|| panic!("{p:?} has an entry"));
         assert_eq!((p.badge, p.evidence.as_str()), (tier.badge, tier.evidence.as_str()), "{p:?}");
     }
@@ -134,7 +132,7 @@ fn the_picker_offers_no_way_the_policy_turns_off_and_says_why() {
     let privileged = DUAL.replace("networks: { lab: 10 } }", "networks: { lab: 10 }, privileged: true }");
     let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
     let o = options(&privileged, Runtime::Docker);
-    assert!(o.docker.is_none() && o.docker_vm.is_empty() && o.vms.is_empty() && o.servers.is_empty() && o.cloud_vm.is_empty(), "nowhere");
+    assert!(o.docker.is_none() && o.vms.is_empty() && o.servers.is_empty() && o.cloud_vm.is_empty(), "nowhere");
     assert!(o.refused.iter().any(|r| r.provider.is_none() && r.cause == by_policy("RefusePrivilegedLabs")), "this machine's Docker says why");
     let utm = o.refused.iter().find(|r| r.provider == Some(Provider::Utm) && r.target == "vagrant");
     assert!(utm.is_some_and(|r| matches!(r.cause, RefusalCause::Isoloom { .. })), "Isoloom's own refusals stay its own: {utm:?}");
@@ -156,8 +154,9 @@ fn vms_built_for_another_cpu_are_offered_only_on_an_emulator() {
     let emulated = options_on(VMS, Runtime::Vm, Arch::Aarch64);
     assert!(emulated.emulated);
     assert_eq!(providers(&emulated.vms), [Provider::Qemu]);
-    // A container lab's helper VM is a VM of this machine's CPU: every hypervisor as before.
+    // A container lab's machines as VMs are its VMs: emulated there too, its containers on Docker
+    // as before.
     let dual = options_on(DUAL, Runtime::Docker, Arch::Aarch64);
     assert!(dual.emulated && providers(&dual.vms) == [Provider::Qemu], "its machines as VMs: {:?}", providers(&dual.vms));
-    assert_eq!(providers(&dual.docker_vm), providers(&options_on(DUAL, Runtime::Docker, Arch::X86_64).docker_vm));
+    assert_eq!(dual.docker, options_on(DUAL, Runtime::Docker, Arch::X86_64).docker);
 }

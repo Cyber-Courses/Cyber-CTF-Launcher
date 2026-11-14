@@ -133,7 +133,7 @@ pub(super) fn open(dirs: &AppDirs, id: &str, conn: &server::Connection, dir: &Pa
 /// The test lab written into `work`, generated for Vagrant as a launch on ESXi does, and its run
 /// opened, with what the preparation step says.
 pub(super) fn prepare(dirs: &AppDirs, id: &str, conn: &server::Connection, work: &Path) -> Result<(OnEsxi, Option<String>)> {
-    let run = open(dirs, id, conn, &lab_run::write_lab(work, lab::vagrant_target(Runtime::Vm))?)?;
+    let run = open(dirs, id, conn, &lab_run::write_lab(work, lab::Target::Vagrant)?)?;
     Ok((run, Some(format!("VM {}, on port group {}", vm_name(dirs, id)?, network_of(conn)))))
 }
 

@@ -47,8 +47,8 @@ export function useLabActions(refresh: (lab: Lab, opts?: { fresh?: boolean }) =>
    * `host` = a saved server or cloud account to run the lab on, null for this machine. Omitted,
    * the lab starts where the backend says (`labDefaultPlace`: where it last ran, else a VM lab on
    * a hypervisor ready here, else the default server that runs it, else here). `vm` runs a VM lab
-   * here on that hypervisor (none: the backend's), a container lab in a VM on this machine on
-   * that hypervisor, or (`perMachine`) a container lab with VM recipes as one VM per machine there.
+   * here on that hypervisor (none: the backend's), or a container lab with VM recipes as one VM
+   * per machine there (`perMachine`; a cloud account's cloud-vm form with no hypervisor).
    * A cloud lab runs only on the cloud account `host` (never one picked implicitly: it costs).
    * `hosts` (the saved servers and cloud accounts) say which `host` is a cloud account.
    * `chosenPorts` = the host ports for a container lab here, already chosen ("Where should it run?").

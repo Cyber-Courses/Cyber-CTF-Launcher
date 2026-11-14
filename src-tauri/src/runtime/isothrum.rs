@@ -119,7 +119,7 @@ pub(crate) fn forget_run(home: &Path, id: &str) -> Result<()> {
 }
 
 /// Lab `id`'s run here, installed in `dir`, opened in the form its record says it was started in
-/// (Docker, Docker in a local VM, VMs): none without a record, or for a run recorded on a server
+/// (Docker, VMs, or the helper VM an earlier version ran a container lab in): none without a record, or for a run recorded on a server
 /// or a cloud, which isn't this machine's to read.
 pub(crate) fn recorded_here(dirs: &crate::platform::AppDirs, dir: &Path, id: &str) -> Result<Option<LabRun>> {
     let Some(record) = record_of(dirs, id)? else { return Ok(None) };
@@ -181,8 +181,10 @@ impl EsxiPlace {
     }
 }
 
-/// What a run is: a container lab on Docker, a container lab in one local VM (Isoloom's
-/// `docker-vm`), or a VM lab on a local hypervisor.
+/// What a run is: a container lab on Docker, a VM lab on a local hypervisor (a container lab's
+/// VM form included), or a container lab an earlier version ran inside one helper VM (Isoloom's
+/// former `docker-vm`), which Isoloom no longer generates: that run is read, stopped and removed
+/// as it is, never generated again nor changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Docker,
@@ -213,16 +215,17 @@ impl LabRun {
         LabRun::with(host_config(home, None), dir, id, Kind::Vm)
     }
 
-    /// Container lab `id` in one local VM (Isoloom's `docker-vm`: Docker Compose inside a VM),
-    /// installed in `dir`, on the runner whose home is `home`.
+    /// Container lab `id` left by an earlier version in one local helper VM (Isoloom's former
+    /// `docker-vm`: Docker Compose inside a VM), installed in `dir`, on the runner whose home is
+    /// `home`: to read, stop and remove that run.
     pub(crate) fn docker_in_vm(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
         LabRun::with(host_config(home, None), dir, id, Kind::DockerVm)
     }
 
     /// Lab `id`, installed in `dir` and declared `runtime`, as it runs on this machine, in the form
-    /// it was started in (`paths::local_runtime`): a container lab in one local VM, on Docker, or
-    /// as VMs (a container lab started as one VM per machine included); none for a cloud-services
-    /// lab, which runs only in a cloud account.
+    /// it was started in (`paths::local_runtime`): on Docker, as VMs (a container lab started as
+    /// one VM per machine included), or in the helper VM an earlier version left it in; none for a
+    /// cloud-services lab, which runs only in a cloud account.
     pub(crate) fn local(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<LabRun>> {
         Ok(Some(match paths::local_runtime(dir, runtime) {
             Runtime::Docker if paths::local_vm(dir).is_some() => LabRun::docker_in_vm(home, dir, id)?,
@@ -232,17 +235,18 @@ impl LabRun {
         }))
     }
 
-    /// The Isoloom target the run's files are generated for.
-    pub(crate) fn target(&self) -> lab::Target {
+    /// The Isoloom target the run's files are generated for; none for a helper VM an earlier
+    /// version left ([`Kind::DockerVm`]), whose files Isoloom no longer generates.
+    pub(crate) fn target(&self) -> Option<lab::Target> {
         match self.kind {
-            Kind::Docker => lab::Target::Docker,
-            Kind::DockerVm => lab::Target::DockerVm,
-            Kind::Vm => lab::Target::Vagrant,
+            Kind::Docker => Some(lab::Target::Docker),
+            Kind::DockerVm => None,
+            Kind::Vm => Some(lab::Target::Vagrant),
         }
     }
 
     /// VM lab `id`, installed in `dir`, on the ESXi server `place`, through the runner whose home
-    /// is `home`.
+    /// is `home`; a container lab's run there is the helper VM an earlier version left.
     pub(crate) fn on_esxi(home: &Path, dir: &Path, id: &str, runtime: Runtime, place: EsxiPlace) -> Result<LabRun> {
         let kind = if runtime == Runtime::Docker { Kind::DockerVm } else { Kind::Vm };
         Ok(LabRun::with(host_config(home, None), dir, id, kind)?.on(place))
@@ -264,7 +268,7 @@ impl LabRun {
     fn manifest(&self) -> PathBuf {
         match self.kind {
             Kind::Docker => lab::docker_manifest(&self.dir),
-            Kind::DockerVm => lab::vagrant_dir(&self.dir, Runtime::Docker).join("run.json"),
+            Kind::DockerVm => lab::docker_vm_dir(&self.dir).join("run.json"),
             Kind::Vm => lab::vagrant_dir(&self.dir, Runtime::Vm).join("run.json"),
         }
     }
@@ -274,11 +278,31 @@ impl LabRun {
     async fn lab(&self) -> Result<Running<'_>> {
         let manifest = self.manifest();
         regenerate::current(&manifest, &self.dir, self.target()).await?;
-        let lab = self.runner.open(&manifest, Some(self.name.clone())).map_err(errors::from_runner)?;
+        let lab = match self.runner.open(&manifest, Some(self.name.clone())) {
+            Ok(lab) => lab,
+            Err(e) if self.kind == Kind::DockerVm => return Err(self.helper_vm_gone(e)),
+            Err(e) => return Err(errors::from_runner(e)),
+        };
         Ok(match &self.esxi {
             Some(place) => lab.with_connection(place.connection()),
             None => lab,
         })
+    }
+
+    /// The runner's refusal `e` to open the helper VM an earlier version left this lab in. When it
+    /// no longer runs that form, nothing here reaches the VM: the lab's helper-VM mark is cleared,
+    /// so its page reads it as stopped and its next start is in its true form, and the error says
+    /// what to remove by hand.
+    fn helper_vm_gone(&self, e: isothrum_runner::Error) -> Error {
+        let unsupported = e.code() == isothrum_runner::ErrorCode::Unsupported;
+        let said = errors::of_helper_vm(e, self.name.as_str());
+        if unsupported {
+            log::warn!("{}: {said}", self.dir.display());
+            if let Err(e) = paths::mark_local_vm(&self.dir, None) {
+                log::warn!("{}: its helper-VM mark couldn't be cleared: {e}", self.dir.display());
+            }
+        }
+        said
     }
 
     /// `opts` for this run's place: on an ESXi server, its id and its settings; everywhere, the
@@ -658,8 +682,6 @@ mod engine_tests {
     }
 }
 
-#[cfg(test)]
-mod docker_vm_tests;
 #[cfg(test)]
 mod test_lab;
 #[cfg(test)]

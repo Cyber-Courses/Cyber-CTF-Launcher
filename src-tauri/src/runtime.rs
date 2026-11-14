@@ -70,7 +70,7 @@ pub(crate) use {attack_box::AttackStatus, cloud_services::Preview, docker::Check
 #[serde(rename_all = "UPPERCASE")]
 pub enum Runtime {
     /// Containers: the lab's services as Isoloom writes them for Docker (run on this machine's
-    /// engine, in a VM, or as one VM per machine).
+    /// engine or a cloud VM, or as one VM per machine).
     Docker,
     /// VMs: the lab's machines as Isoloom writes them for Vagrant or a server's or cloud's
     /// Terraform.

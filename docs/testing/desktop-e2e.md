@@ -81,7 +81,7 @@ need once:
   elsewhere the spec can't run, Hyper-V's fixture being a later follow-up).
 - A spec provides the others by passing (`export const provides`): `launch` provides
   `running-lab:fixture` (the fixture lab starts here), `lab-form-container` provides
-  `catalogue-lab` (a catalogue lab starts here, signed in), `lab-form-docker-vm` provides `vm-start`
+  `catalogue-lab` (a catalogue lab starts here, signed in), `lab-form-per-machine` provides `vm-start`
   (a VM lab starts on the hypervisor).
 
 A need not met skips every spec needing it at once, in the console and the results, with the
@@ -115,7 +115,7 @@ of what its specs need, so `launch` is in two:
 | `shell`      | smoke, title-bar, settings, onboarding, setup-screens, labs, deep-link, fail-offline, fail-badlab, fail-signedout, fail-docker, attack-on-stopped | no lab, but `labs`' import                      |
 | `lab`        | launch, restart, stop, launch-ui, attack-box, attack-shell, stop-with-box, vm-scan                                                                | the fixture lab's life                          |
 | `resilience` | launch, kill-mid-deploy, stop-during-start, double-start, close-mid-deploy, kill-worker, park-resume, reimport-running                            | what breaks a start                             |
-| `vm`         | machine, lab-form-container, lab-actions, offline-start, lab-form-docker-vm, lab-form-vm, lab-form-per-machine, screens, server-lab, cleanup      | signed in, a hypervisor, a server; cleanup last |
+| `vm`         | machine, lab-form-container, lab-actions, offline-start, lab-form-per-machine, lab-form-vm, screens, server-lab, cleanup                          | signed in, a hypervisor, a server; cleanup last |
 
 `--all` runs the groups in that order, each case once. A group that runs on another machine
 than the rest writes its own results file; `launch`'s record then appears in two of them.
@@ -141,7 +141,6 @@ this layer: the integration tests' AWS tier covers them.
 | The labs list, its search, a catalogue lab's page                               | `labs`                                                                                              | the catalogue reachable                                                    |                                                                                          |
 | Importing a lab, the imported labs and their page                               | `labs`, `launch-ui`, `reimport-running`                                                             | `CYBERCTF_TEST_LOCAL_LAB`, Docker                                          | `replace-*` (a running lab never replaced)                                               |
 | A local lab as containers                                                       | `launch`, `restart`, `stop`, `lab-form-container`                                                   | Docker; signed in for `lab-form-container`                                 | `docker-lab-hello-stack`, `docker-lab-segmented` (checks, park and resume per form)      |
-| A local lab as containers in one VM (Docker-in-a-VM)                            | `lab-form-docker-vm`                                                                                | signed in, `CYBERCTF_TEST_VM_PROVIDER`                                     | `docker-vm-lab`                                                                          |
 | A VM lab                                                                        | `lab-form-vm`                                                                                       | signed in, `CYBERCTF_TEST_VM_PROVIDER`, `CYBERCTF_TEST_CATALOGUE_VM_LAB`   | `vm-lab`                                                                                 |
 | One VM per machine                                                              | `lab-form-per-machine`                                                                              | signed in, `CYBERCTF_TEST_VM_PROVIDER`                                     | `per-machine`                                                                            |
 | A VM's Screen window (VNC framebuffer, RDP hand-off, no screen and why)         | `screens`                                                                                           | signed in, `CYBERCTF_TEST_VM_PROVIDER` (libvirt or QEMU give VNC)          | each runner's console answer and the bridge (unit tests); a server's or a cloud's screen |
@@ -203,7 +202,7 @@ so in the check line.
 
 The specs are `tests/desktop/specs/<name>.mjs` and share `tests/desktop/lib/support.mjs`. A case's
 id is its spec's name, which its summary line and its log (`<id>.log`) carry; a spec run once per
-form adds the form: `lab-form` runs as `lab-form-container`, `lab-form-docker-vm`, `lab-form-vm` and
+form adds the form: `lab-form` runs as `lab-form-container`, `lab-form-vm` and
 `lab-form-per-machine`. A new spec is a short `.mjs` there (its checks through `results()`, its
 skips through `skipAll`, its needs declared on its first lines, its waits under the cap) plus a
 row in `cases.tsv` (its id, spec, form, knobs and groups) and a row above.

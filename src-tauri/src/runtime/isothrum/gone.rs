@@ -24,7 +24,9 @@ impl LabRun {
             return Ok(false);
         }
         log::warn!("{}: the run's files are gone while it is recorded; generating them again", self.dir.display());
-        lab::prepare(&self.dir, self.target()).map(|_| true).map_err(|e| {
+        // A helper VM an earlier version left has no target to generate again: Isoloom dropped it.
+        let target = self.target().ok_or_else(|| Error::Invalid("Isoloom no longer generates Docker inside a VM".into()));
+        target.and_then(|t| lab::prepare(&self.dir, t)).map(|_| true).map_err(|e| {
             Error::Invalid(format!(
                 "This lab's files are gone ({e}), and what it started may still be running: Cyber CTF can't reach it any more. Remove its containers or VMs with Docker or your hypervisor (their names start with {}).",
                 self.name

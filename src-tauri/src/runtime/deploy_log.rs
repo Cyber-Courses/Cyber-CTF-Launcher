@@ -32,13 +32,12 @@ pub(crate) const INSTALLED: &str = "Lab installed";
 const IMPORTING: &str = "Importing ";
 /// The last line of a lab's import from a folder on this machine.
 pub(crate) const IMPORTED: &str = "Lab imported";
-const IN_LOCAL_VM: &str = "Running in a ";
 const ON_SERVER_HOST: &str = "Running on server host ";
 const IN_CLOUD_ACCOUNT: &str = "Running in your ";
 
 /// How the lines said while the lab is fetched and placed start (for the generated file).
 #[cfg(test)]
-pub(crate) const FETCH: [&str; 7] = [DOWNLOADING, INSTALLED, IMPORTING, IMPORTED, IN_LOCAL_VM, ON_SERVER_HOST, IN_CLOUD_ACCOUNT];
+pub(crate) const FETCH: [&str; 6] = [DOWNLOADING, INSTALLED, IMPORTING, IMPORTED, ON_SERVER_HOST, IN_CLOUD_ACCOUNT];
 
 /// The first line of a lab's install from the catalogue: its repository at `commit` (short).
 pub(crate) fn downloading(repository: &str, commit: &str) -> String {
@@ -48,11 +47,6 @@ pub(crate) fn downloading(repository: &str, commit: &str) -> String {
 /// The first line of lab `lab_id`'s import from the folder `from`.
 pub(crate) fn importing(lab_id: &str, from: &Path) -> String {
     format!("{IMPORTING}{lab_id} from {}", from.display())
-}
-
-/// A container lab placed in one VM on this machine, on hypervisor `provider` (its id).
-pub(crate) fn in_local_vm(provider: &str) -> String {
-    format!("{IN_LOCAL_VM}{provider} VM on this machine")
 }
 
 /// A lab placed on the saved server `name`, a `provider` (its id) host.
@@ -69,8 +63,6 @@ pub(crate) fn in_cloud_account(cloud: &str, name: &str, region: &str) -> String 
 // lab page's "Prepare this machine" step when one comes first.
 const LOW_MEMORY: &str = "This lab's VMs ask for about ";
 const EMULATING: &str = "Emulating ";
-/// UTM is opened before a lab's VMs start on it, and waited for until it answers.
-pub(crate) const OPENING_UTM: &str = "Opening UTM and waiting for it to answer…";
 /// The runner clears what a previous, stopped run left (its `LeftoversRemoved` warning).
 pub(crate) const CLEARING_LEFTOVERS: &str = "Clearing a previous, stopped run…";
 /// The runner clears what Docker kept of an earlier run and starts again (its `Recovering`
@@ -80,7 +72,7 @@ pub(crate) const RECOVERING: &str = "Docker kept something of an earlier run: cl
 /// How the lines said while this machine is readied for a lab's VMs start (for the generated
 /// file).
 #[cfg(test)]
-pub(crate) const PREPARE: [&str; 5] = [LOW_MEMORY, EMULATING, OPENING_UTM, CLEARING_LEFTOVERS, RECOVERING];
+pub(crate) const PREPARE: [&str; 4] = [LOW_MEMORY, EMULATING, CLEARING_LEFTOVERS, RECOVERING];
 
 /// A lab's VMs asking for `needed_mb` of memory with only `available_mb` free here.
 pub(crate) fn low_memory(needed_mb: u64, available_mb: u64) -> String {
@@ -114,7 +106,6 @@ mod tests {
     fn the_lines_read_as_the_lab_page_expects_them() {
         assert_eq!(downloading("CyberCTF/invoice", "0123456789ab"), "Downloading CyberCTF/invoice@0123456789ab");
         assert_eq!(importing("local-web", Path::new("/home/ada/labs/web")), "Importing local-web from /home/ada/labs/web");
-        assert_eq!(in_local_vm("qemu"), "Running in a qemu VM on this machine");
         assert_eq!(on_server_host("esxi-1", "vmware_esxi"), "Running on server host esxi-1 (vmware_esxi)");
         assert_eq!(in_cloud_account("AWS", "Labs", "eu-west-1"), "Running in your AWS account Labs (eu-west-1)");
         assert!(emulating("x86_64", "aarch64").starts_with("Emulating x86_64 on this aarch64 machine with QEMU"));
@@ -130,7 +121,6 @@ mod tests {
             INSTALLED.into(),
             importing("l", Path::new("/x")),
             IMPORTED.into(),
-            in_local_vm("p"),
             on_server_host("n", "p"),
             in_cloud_account("c", "n", "r"),
         ];
@@ -138,7 +128,7 @@ mod tests {
             assert!(FETCH.iter().any(|s| line.starts_with(s)), "{line}");
             assert!(!PREPARE.iter().any(|s| line.starts_with(s)), "{line}");
         }
-        let prepared = [low_memory(2, 1), emulating("a", "h"), OPENING_UTM.into(), CLEARING_LEFTOVERS.into(), RECOVERING.into()];
+        let prepared = [low_memory(2, 1), emulating("a", "h"), CLEARING_LEFTOVERS.into(), RECOVERING.into()];
         for line in &prepared {
             assert!(PREPARE.iter().any(|s| line.starts_with(s)), "{line}");
             assert!(!FETCH.iter().any(|s| line.starts_with(s)), "{line}");

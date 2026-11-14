@@ -109,16 +109,17 @@ fn provisioning_needs_a_running_lab_and_a_known_machine() {
 #[test]
 fn a_lab_is_parked_only_in_a_mode_its_page_is_offered() {
     use crate::runtime::lab::Target;
-    // A container lab in one VM pauses, never shuts down.
-    assert_eq!(park_refusal(Park::Pause, Target::DockerVm, Some("virtualbox")), None);
-    assert!(park_refusal(Park::Shutdown, Target::DockerVm, Some("virtualbox")).unwrap().contains("paused, not shut down"));
+    // A container lab an earlier version runs inside a helper VM is only stopped.
+    for mode in [Park::Pause, Park::Shutdown] {
+        assert_eq!(park_refusal(mode, None, Some("virtualbox")), Some(super::LEFT_IN_A_HELPER_VM));
+    }
     // Regression: a pause of containers on Docker was carried out as a shut down and
     // announced as a pause, and a pause on QEMU went to a `vagrant suspend` it refuses.
-    assert!(park_refusal(Park::Pause, Target::Docker, Some("docker")).unwrap().contains("shut it down instead"));
-    assert_eq!(park_refusal(Park::Shutdown, Target::Docker, Some("docker")), None);
-    assert!(park_refusal(Park::Pause, Target::Vagrant, Some("qemu")).unwrap().starts_with("QEMU can't pause"));
-    assert_eq!(park_refusal(Park::Shutdown, Target::Vagrant, Some("qemu")), None);
-    assert_eq!(park_refusal(Park::Pause, Target::Vagrant, Some("virtualbox")), None);
+    assert!(park_refusal(Park::Pause, Some(Target::Docker), Some("docker")).unwrap().contains("shut it down instead"));
+    assert_eq!(park_refusal(Park::Shutdown, Some(Target::Docker), Some("docker")), None);
+    assert!(park_refusal(Park::Pause, Some(Target::Vagrant), Some("qemu")).unwrap().starts_with("QEMU can't pause"));
+    assert_eq!(park_refusal(Park::Shutdown, Some(Target::Vagrant), Some("qemu")), None);
+    assert_eq!(park_refusal(Park::Pause, Some(Target::Vagrant), Some("virtualbox")), None);
     assert!(parked_message(Park::Pause).starts_with("Lab paused."));
     assert!(parked_message(Park::Shutdown).starts_with("Lab shut down."));
 }
@@ -202,9 +203,9 @@ fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
     mark_per_machine_vm(&dir, true).unwrap();
     assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")), (true, true, true, true));
     mark_per_machine_vm(&dir, false).unwrap();
-    // Containers in one local VM: paused, never shut down, provisioned nor repaired.
+    // Containers an earlier version runs inside a helper VM here: only stopped.
     mark_local_vm(&dir, Some(crate::runtime::providers::Provider::Virtualbox)).unwrap();
-    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")), (true, false, false, false));
+    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")), (false, false, false, false));
     mark_local_vm(&dir, None).unwrap();
     // A cloud-services lab on no account: nothing runs.
     assert_eq!(controls_of(&t, &dir, Runtime::Cloud, None), (false, false, false, false));

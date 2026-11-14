@@ -53,6 +53,17 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
   running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
 
+### Removed
+
+- **Docker in a VM.** A lab now runs as true containers or true VMs, never as containers inside a
+  helper VM (Isoloom no longer generates its `docker-vm` target). The run options and the place
+  picker no longer offer "Docker in a VM", nor the attack box in one; a container lab picked on a
+  hypervisor here runs as one VM per machine, and a container lab is no longer offered on an ESXi
+  or Proxmox server. A lab an earlier version left running in a helper VM can still be stopped and
+  removed while the runner still opens it, and otherwise says which VM to remove by hand; its next start picks its true form (its containers when Docker runs here, else its VM
+  form), and when its files can't be read any more they are generated in that form instead, as
+  the log says.
+
 ### Fixed
 
 - **A killed app's tools end with it, and none is left suspended (#299, #301).** On Windows a

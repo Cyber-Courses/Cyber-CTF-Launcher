@@ -152,7 +152,7 @@ impl CloudRun {
         let config = super::host_config(home, None);
         let (out, target) = lab::terraform(dir, runtime, cloud);
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
-        Ok(CloudRun { run: OpenedRun::new(config, dir, target, out.join("run.json"), name)?, cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(config, dir, Some(target), out.join("run.json"), name)?, cloud: cloud.to_owned() })
     }
 
     /// Refuses a change while the account's sign-in has run out, before anything runs: the

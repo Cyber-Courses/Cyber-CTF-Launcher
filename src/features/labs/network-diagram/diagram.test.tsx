@@ -146,17 +146,12 @@ describe("NetworkDiagram", () => {
   });
 
   it("shows the hypervisor a VM lab runs on here", async () => {
-    const { unmount } = render(<NetworkDiagram machines={[machine("dc01", { ports: [] })]} place={{ kind: "hypervisor", provider: "qemu", inVm: false }} />);
+    const { unmount } = render(<NetworkDiagram machines={[machine("dc01", { ports: [] })]} place={{ kind: "hypervisor", provider: "qemu" }} />);
     await settle();
     expect(screen.getByText("QEMU")).toBeTruthy();
     expect(screen.getByText("VMs on this machine")).toBeTruthy();
     expect(document.querySelector(".hostcard-header img")?.getAttribute("src")).toBe("/brands/qemu.svg");
     unmount();
-    // A container lab whose containers run in one VM here says so.
-    render(<NetworkDiagram machines={[machine("web", { ports: [] })]} place={{ kind: "hypervisor", provider: "utm", inVm: true }} />);
-    await settle();
-    expect(screen.getByText("UTM")).toBeTruthy();
-    expect(screen.getByText("containers in a VM on this machine")).toBeTruthy();
   });
 
   it("shows the cloud, its region and the account for a lab in a cloud account", async () => {

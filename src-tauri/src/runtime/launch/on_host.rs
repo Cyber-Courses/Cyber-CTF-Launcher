@@ -3,8 +3,8 @@
 
 use super::super::paths::local_runtime;
 use super::{
-    AppDirs, Error, Inputs, LabRef, PER_MACHINE_NOT_ON_SERVERS, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, mark_per_machine_vm, runner_home,
-    server,
+    AppDirs, CONTAINERS_NOT_ON_SERVERS, Error, Inputs, LabRef, PER_MACHINE_NOT_ON_SERVERS, Path, Provider, Result, Runtime, isothrum, lab, mark_parked,
+    mark_per_machine_vm, runner_home, server,
 };
 
 /// Starts `lab` on server `host` with the launch's `inputs`; `per_machine`: as one VM per machine
@@ -20,6 +20,11 @@ pub(super) async fn start_on_server(
     let LabRef { dir, id, runtime } = lab;
     // The per-machine form was checked with the destination (`destination`), before the download.
     let conn = server::connection(dirs, host)?;
+    // So was a container lab's place, which is never a server (ESXi, Proxmox): checked again
+    // before anything is marked, for a start that reaches here another way.
+    if runtime == Runtime::Docker {
+        containers_run_on(Some(conn.provider))?;
+    }
     // GCP labs run in the account's labs project: make sure it exists (one free billing slot).
     if conn.provider == Provider::Gcp {
         log("Checking the Cyber CTF labs project on Google Cloud…".into());
@@ -34,7 +39,7 @@ pub(super) async fn start_on_server(
         return start_cloud_run(dirs, CloudStart { dir, id, runtime, host, conn, env: inputs.values, per_machine }, log).await;
     }
     if conn.provider == Provider::VmwareEsxi {
-        lab::prepare(dir, lab::vagrant_target(runtime))?;
+        lab::prepare(dir, lab::Target::Vagrant)?;
         esxi_run(dirs, dir, id, runtime, &conn)?.up(inputs, Some(Provider::VmwareEsxi.id()), log).await?;
         return mark_parked(dir, None);
     }
@@ -54,6 +59,15 @@ pub(super) fn per_machine_runs_on(provider: Option<Provider>) -> Result<()> {
     match provider {
         Some(p) if p.is_cloud() => Ok(()),
         _ => Err(Error::Refused(PER_MACHINE_NOT_ON_SERVERS.into())),
+    }
+}
+
+/// Whether a container lab's containers run on `provider`: a cloud account's VM (Isoloom's
+/// cloud-docker), not a server's (ESXi, Proxmox), which would hold them inside a helper VM.
+pub(super) fn containers_run_on(provider: Option<Provider>) -> Result<()> {
+    match provider {
+        Some(p) if p.is_cloud() => Ok(()),
+        _ => Err(Error::Refused(CONTAINERS_NOT_ON_SERVERS.into())),
     }
 }
 

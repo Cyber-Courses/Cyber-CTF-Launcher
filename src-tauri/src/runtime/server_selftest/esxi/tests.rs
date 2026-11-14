@@ -175,7 +175,7 @@ async fn with_both_tools_the_first_step_reaches_the_hosts_ssh_port() {
 #[test]
 fn the_test_lab_generates_for_vagrant_on_esxi() {
     let work = std::env::temp_dir().join(format!("cyberctf-esxi-selftest-{}", rand::random::<u32>()));
-    let dir = lab_run::write_lab(&work, lab::vagrant_target(Runtime::Vm)).unwrap();
+    let dir = lab_run::write_lab(&work, lab::Target::Vagrant).unwrap();
     let generated = lab::vagrant_dir(&dir, Runtime::Vm);
     let vagrantfile = std::fs::read_to_string(generated.join("Vagrantfile")).unwrap();
     assert!(vagrantfile.contains("m.vm.provider \"vmware_esxi\""), "no ESXi provider block");

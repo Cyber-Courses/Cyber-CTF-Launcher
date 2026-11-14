@@ -102,7 +102,6 @@ describe("late answers", () => {
     installTauri({
       lab_run_options: () => ({
         docker: null,
-        dockerVm: [path("docker-vm", "utm"), path("docker-vm", "qemu")],
         vms: [path("vagrant", "qemu"), path("vagrant", "virtualbox")],
         servers: [],
         cloudDocker: [],
@@ -118,9 +117,10 @@ describe("late answers", () => {
       initialProps: { ready: ["utm"] as Provider[] },
     });
     await flush();
-    // UTM alone: the helper VM, but no per-machine place (Isoloom refuses the form on UTM).
-    expect(result.current.localVm).toBe("utm");
+    // UTM alone: no VM form here (Isoloom refuses one VM per machine on UTM, and there is no
+    // helper VM any more), so nothing to choose here but Docker.
     expect(result.current.perMachine).toBeNull();
+    expect(result.current.vmForms).toEqual([]);
     rerender({ ready: ["utm", "qemu"] });
     await flush();
     expect(result.current.perMachine).toMatchObject({ provider: "qemu", providers: ["qemu"] });

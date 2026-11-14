@@ -9,7 +9,6 @@
 # prove nothing about it. `known_gaps` (at the end) are the gaps the owner tracks.
 
 areas:
-
   - id: account
     title: Account and sign-in
     features:
@@ -347,11 +346,9 @@ areas:
             - src-tauri/src/labs.rs > a_leftover_staging_folder_is_replaced_whole_and_an_installed_marker_is_trimmed
           integration:
             - replace-docker
-            - replace-docker-vm
             - replace-vm
         rig:
           - container
-          - docker-vm
           - vm
         gaps:
           desktop: no spec starts a catalogue lab at a new commit
@@ -547,36 +544,6 @@ areas:
           integration: green on the rig only on debian-13 (Docker Engine); no Windows or macOS (Docker Desktop) run yet
         note: lab_launch and lab_stop serve every form; the form features below say what each adds.
 
-      - id: lab-run.docker-vm
-        what: Start a container lab inside one local VM (the helper VM) and stop it, no VM left.
-        providers:
-          - libvirt
-          - qemu
-          - virtualbox
-          - utm
-          - vmware
-          - parallels
-        host: true
-        tests:
-          unit:
-            - src-tauri/src/runtime/isothrum/docker_vm_tests.rs > a_container_lab_in_a_utm_vm_runs_with_nothing_of_the_runners_own_in_it
-            - src-tauri/src/runtime/isothrum/docker_vm_tests.rs > a_start_in_a_utm_vm_tries_again_once_after_utms_passing_refusal
-            - src-tauri/src/runtime/paths.rs > local_vm_marker_round_trips
-            - src/features/labs/use-lab-actions.test.tsx > runs a container lab inside a local VM on the chosen hypervisor
-            - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > asks where to run a container lab and starts it in a VM here
-          desktop:
-            - lab-form-docker-vm
-          integration:
-            - docker-vm-lab
-        rig:
-          - docker-vm
-          - desktop-e2e
-        gaps:
-          web: no web spec starts a container lab in a VM
-          desktop: needs a signed-in account and CYBERCTF_TEST_VM_PROVIDER; skips without them
-          integration: "up and down only: no park/resume or checks for this form; green only on libvirt (debian-13)"
-        note: Not offered on Hyper-V (Isoloom's docker-vm target has no Hyper-V provider).
-
       - id: lab-run.vm
         what: Start a VM lab as its own VMs on a local hypervisor (Vagrant), then stop it, no VM left there.
         providers:
@@ -750,7 +717,7 @@ areas:
           - desktop-e2e
         gaps:
           desktop: needs CYBERCTF_TEST_SERVER_ENV, a server and a signed-in account; skips without them
-          integration: VM labs only; a container lab on Proxmox (docker-vm over SSH) has no scenario
+          integration: VM labs only
 
       - id: lab-run.pause-resume
         what: Pause (state saved) or shut down a running lab here, then Resume it as it was.
@@ -795,7 +762,7 @@ areas:
           - desktop-e2e
         gaps:
           desktop: "container labs only, through the commands (park-resume: a Pause refused, Shut down and Resume; needs CYBERCTF_TEST_LOCAL_LAB); lab-actions' pause/resume skip on a container lab, whose page offers no Pause, and no spec presses Shut down on the page or pauses a VM lab"
-          integration: no park/resume for docker-vm or per-machine; QEMU's pause refusal untested on a real host
+          integration: no park/resume for per-machine; QEMU's pause refusal untested on a real host
 
       - id: lab-run.provision-again
         what: Run a VM lab's provisioners again, on one machine or all of them.
@@ -861,11 +828,9 @@ areas:
             - reimport-running
           integration:
             - replace-docker
-            - replace-docker-vm
             - replace-vm
         rig:
           - container
-          - docker-vm
           - vm
           - desktop-e2e
         gaps:
@@ -911,7 +876,7 @@ areas:
           integration: no scenario provokes a real port clash; lsof/ss parsing only unit-tested on canned output, Windows holder lookup untested
 
       - id: lab-run.where-it-runs
-        what: Choose where a lab runs (this machine, in a VM, per machine, a server, a cloud) in the run-on dialog, with its default place and each path's badge.
+        what: Choose where a lab runs (this machine, as VMs, per machine, a server, a cloud) in the run-on dialog, with its default place and each path's badge.
         host: false
         commands:
           - lab_default_place
@@ -930,7 +895,6 @@ areas:
             - a11y.spec.ts > the run dialog, over a stopped lab, passes too
           desktop:
             - lab-form-container/start
-            - lab-form-docker-vm/start
             - lab-form-vm/start
             - lab-form-per-machine/start
         rig:
@@ -999,7 +963,7 @@ areas:
           - server:esxi
         gaps:
           desktop: lab-actions/down waits for the down banner, not for the check's verdict
-          integration: no check for docker-vm, per-machine or cloud forms
+          integration: no check for per-machine or cloud forms
 
       - id: lab-run.deploy-progress
         what: Follow a start or operation as steps and its live log (deploy steps UI, sidebar busy marks), from the detached worker, also after a reload.
@@ -1056,7 +1020,6 @@ areas:
           web: lab-flow only sees the Get images step; no dev-mock flag makes a pull stall or fail
           integration: the scenarios pull real images, so the Get images phase runs for real, but none provokes a stalled or failed pull; the runner's own pull-phase tests are Isothrum's, outside this repository
         note: The download-phase fix (f69e4bd9) gave the stall and the failure their own codes, downloadStalled and downloadFailed, in the six languages.
-
 
       - id: lab-run.box-download
         what: A VM lab's Vagrant boxes are downloaded in a step of their own, shown as the lab page's Get boxes phase; a download that stops making progress or fails says so in the box's own words (the minutes without progress and the network hint, or Vagrant's reason), not the lab's images.
@@ -1148,12 +1111,10 @@ areas:
             - launch-commands
             - docker-lab-hello-stack
             - vm-lab
-            - docker-vm-lab
             - per-machine
             - server-lab-proxmox
         rig:
           - container
-          - docker-vm
           - vm
           - per-machine
           - server:proxmox
@@ -1252,10 +1213,8 @@ areas:
             - vm-scan
           integration:
             - vm-lab
-            - docker-vm-lab
             - per-machine
             - attack-box-vm
-            - attack-box-docker-vm
             - replace-vm
           setup:
             - libvirt
@@ -1263,10 +1222,8 @@ areas:
             - selftest:vm
         rig:
           - vm@libvirt
-          - docker-vm@libvirt
           - per-machine@libvirt
           - attack-box:vm@libvirt
-          - attack-box:docker-vm@libvirt
           - machine-setup@libvirt
         note: The only hypervisor with green rig cells (debian-13 golden:libvirt); integration uses it via CYBERCTF_TEST_VM_PROVIDER=libvirt.
 
@@ -1285,7 +1242,6 @@ areas:
             - lab-form-vm
           integration:
             - vm-lab
-            - docker-vm-lab
             - per-machine
             - attack-box-vm
           setup:
@@ -1294,10 +1250,8 @@ areas:
             - selftest:vm
         rig:
           - vm@qemu
-          - docker-vm@qemu
           - per-machine@qemu
           - attack-box:vm@qemu
-          - attack-box:docker-vm@qemu
           - machine-setup@qemu
         gaps:
           integration: the runner's default (CYBERCTF_TEST_VM_PROVIDER=qemu) but every rig qemu cell is not run; no pause on QEMU (refused)
@@ -1316,7 +1270,6 @@ areas:
             - lab-form-vm
           integration:
             - vm-lab
-            - docker-vm-lab
             - per-machine
             - attack-box-vm
           setup:
@@ -1324,10 +1277,8 @@ areas:
             - selftest:vm
         rig:
           - vm@virtualbox
-          - docker-vm@virtualbox
           - per-machine@virtualbox
           - attack-box:vm@virtualbox
-          - attack-box:docker-vm@virtualbox
           - machine-setup@virtualbox
         gaps:
           integration: runs only with CYBERCTF_TEST_VM_PROVIDER=virtualbox; every rig virtualbox cell (Linux, Windows, macOS) is prepared/not run
@@ -1364,7 +1315,7 @@ areas:
         note: vm-scan's header says it was proven green on Hyper-V by hand.
 
       - id: providers.utm
-        what: VM-form labs on UTM (macOS), the default helper-VM hypervisor for containers in a VM on a Mac.
+        what: VM-form labs on UTM (macOS).
         platforms:
           - macos
         providers:
@@ -1375,28 +1326,21 @@ areas:
             - src-tauri/src/runtime/providers.rs > an_old_utm_plugin_or_utm_reads_as_too_old_and_says_what_to_do
             - src-tauri/src/runtime/discover.rs > utm_started_vms_map_back_to_installed_labs
             - src-tauri/src/runtime/isothrum/errors.rs > utms_passing_scripting_errors_are_tried_again_and_said_and_nothing_else_is
-            - src-tauri/src/runtime/launch/tests.rs > a_utm_not_ready_for_commands_is_waited_for
           web:
             - "vm-labs.spec.ts > on Apple Silicon: a VM lab built for arm64 runs on UTM, pauses, resumes and stops"
           desktop:
             - vm-scan
-            - lab-form-docker-vm
             - lab-form-vm
           integration:
-            - docker-vm-lab
             - vm-lab
-            - attack-box-docker-vm
-            - src-tauri/src/runtime/launch/tests.rs > utm_is_opened_and_answers_before_a_vm_starts
           setup:
             - utm
             - plugin:vagrant_utm
             - selftest:vm
         rig:
           - vm@utm
-          - docker-vm@utm
           - per-machine@utm
           - attack-box:vm@utm
-          - attack-box:docker-vm@utm
           - machine-setup@utm
         gaps:
           integration: macOS lane on the owner's Mac only; every macos rig cell not run yet; per-machine refused on UTM
@@ -1417,10 +1361,8 @@ areas:
             - selftest:vm
         rig:
           - vm@vmware
-          - docker-vm@vmware
           - per-machine@vmware
           - attack-box:vm@vmware
-          - attack-box:docker-vm@vmware
           - machine-setup@vmware
         gaps:
           desktop: lab-form-vm would run with CYBERCTF_TEST_VM_PROVIDER=vmware_desktop but no run has had VMware
@@ -1442,10 +1384,8 @@ areas:
             - selftest:vm
         rig:
           - vm@parallels
-          - docker-vm@parallels
           - per-machine@parallels
           - attack-box:vm@parallels
-          - attack-box:docker-vm@parallels
           - machine-setup@parallels
         gaps:
           unit: "no Parallels-specific test: only the shared ` · ` VM-name matcher and the OS table"
@@ -1633,13 +1573,11 @@ areas:
             - stop-with-box
           integration:
             - attack-box-docker
-            - attack-box-docker-vm
             - attack-box-vm
             - attack-box-aws-docker
             - attack-box-aws-vm
         rig:
           - attack-box:docker
-          - attack-box:docker-vm
           - attack-box:vm
           - desktop-e2e
         gaps:
@@ -1685,28 +1623,6 @@ areas:
           - attack-box:docker
           - container
           - desktop-e2e
-
-      - id: attack-box.docker-vm
-        what: The attack box as a container inside the lab's helper VM, its shell through the VM.
-        providers:
-          - libvirt
-          - qemu
-          - virtualbox
-          - utm
-          - vmware
-          - parallels
-        host: true
-        tests:
-          unit:
-            - src-tauri/src/runtime/attack_box/place.rs > the_box_shell_opens_as_the_player_account_on_every_local_form
-            - src-tauri/src/runtime/isothrum/docker_vm_tests.rs > an_update_tries_again_once_after_utms_passing_refusal
-          integration:
-            - attack-box-docker-vm
-        rig:
-          - attack-box:docker-vm
-        gaps:
-          desktop: no spec adds a box to a lab in a VM
-          integration: green only on libvirt
 
       - id: attack-box.vm
         what: The attack box as a Kali VM (kali-linux-headless, installed on first start) among a VM lab's VMs.
@@ -1776,13 +1692,11 @@ areas:
             - attack-shell/whoami
           integration:
             - attack-box-docker
-            - attack-box-docker-vm
             - attack-box-vm
             - attack-box-aws-docker
             - attack-box-aws-vm
         rig:
           - attack-box:docker
-          - attack-box:docker-vm
           - attack-box:vm
           - desktop-e2e
 
@@ -1807,13 +1721,11 @@ areas:
             - src/components/ui/secret-value.test.tsx
           integration:
             - attack-box-docker
-            - attack-box-docker-vm
             - attack-box-vm
             - attack-box-aws-docker
             - attack-box-aws-vm
         rig:
           - attack-box:docker
-          - attack-box:docker-vm
           - attack-box:vm
         gaps:
           desktop: no spec reads the Credentials row or the Sign-in popover in the app
@@ -1849,11 +1761,9 @@ areas:
             - attack-shell/shared-folder
           integration:
             - attack-box-docker
-            - attack-box-docker-vm
             - attack-box-vm
         rig:
           - attack-box:docker
-          - attack-box:docker-vm
           - attack-box:vm
           - desktop-e2e
         gaps:
@@ -2694,7 +2604,6 @@ areas:
             - selftest:vm
         rig:
           - machine-setup@virtualbox
-          - docker-vm@virtualbox
         gaps:
           web: no spec walks the VirtualBox path
           integration: not run on any OS yet (Linux, Windows, macOS rows all not run)
@@ -2723,7 +2632,6 @@ areas:
             - selftest:vm
         rig:
           - machine-setup@libvirt
-          - docker-vm@libvirt
         gaps:
           integration: passed on Debian 13 inside the full path; the libvirt-only path not run; Ubuntu, Kali not run; Fedora/openSUSE/Arch get the manual path
 
@@ -2751,7 +2659,6 @@ areas:
             - selftest:vm
         rig:
           - machine-setup@qemu
-          - docker-vm@qemu
         gaps:
           web: no spec walks the QEMU path
           integration: not run on any OS; the guided setup's paths never run on macOS on the rig
@@ -2780,7 +2687,6 @@ areas:
             - selftest:vm
         rig:
           - machine-setup@utm
-          - docker-vm@utm
         gaps:
           web: dev mock only
           integration: "never run: the guided setup's paths can't run on the owner's Mac and a macOS guest has no nested Hypervisor.framework"
@@ -2803,7 +2709,6 @@ areas:
             - vmware-utility
         rig:
           - machine-setup@vmware
-          - docker-vm@vmware
         gaps:
           integration: "never run: VMware isn't installable in the rig (licence, vendor login); every vmware row is skipped"
 
@@ -2825,7 +2730,6 @@ areas:
             - plugin:vagrant-parallels
         rig:
           - machine-setup@parallels
-          - docker-vm@parallels
         gaps:
           unit: no setup-plan test builds a Parallels machine; only its vendor link and generic provider rules are checked
           integration: never run (licence; the macOS lane installs nothing)

@@ -373,7 +373,7 @@ async fn fetch_spec(url: String) -> Result<String> {
 
 /// Why Isoloom won't run `lab` as `target` on `provider` (a hypervisor, a server's kind or a
 /// cloud), if it won't: its VMs on a Vagrant provider (`qemu`, `hyperv`, …: a TPM, data disks; on
-/// `utm`, none at all), its helper VM there (`docker-vm`), a cloud whose `cloud-vm` module it drops
+/// `utm`, none at all), a cloud whose `cloud-vm` module it drops
 /// (a Windows machine given secrets on AWS or Azure), or the target itself. Isoloom's own rule, so
 /// the launcher refuses exactly what the generated files would.
 pub fn refusal_on(lab: &Lab, target: Target, provider: crate::runtime::providers::Provider) -> Option<String> {
@@ -381,7 +381,7 @@ pub fn refusal_on(lab: &Lab, target: Target, provider: crate::runtime::providers
         return isoloom_targets::refusal(lab, target)
             .or_else(|| isoloom_targets::cloud_refusals(lab, target)?.refused.into_iter().find(|r| r.cloud == provider.id()).map(|r| r.reason));
     }
-    let variant = matches!(target, Target::Vagrant | Target::DockerVm).then(|| provider.id());
+    let variant = (target == Target::Vagrant).then(|| provider.id());
     isoloom_targets::refusal_on(lab, target, variant)
 }
 

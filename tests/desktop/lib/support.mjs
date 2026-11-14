@@ -1057,7 +1057,7 @@ export async function startFromDialog(b, { place, form = "one", provider = null,
     const text = await dialog.getText();
     if (/How should it run\?/.test(text) && !answered.has("form")) {
       answered.add("form");
-      await pick(form === "per-machine" ? "One VM per machine" : "In one VM");
+      await pick(form === "per-machine" ? "One VM per machine" : "One VM");
       seen.push(form);
     } else if (/Which hypervisor\?/.test(text) && !answered.has("hypervisor")) {
       answered.add("hypervisor");

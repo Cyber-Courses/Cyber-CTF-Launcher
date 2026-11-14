@@ -213,7 +213,7 @@ async fn manifest_of(base: &Path, d: &Deployment) -> Result<PathBuf, ImportError
     let (module, target) = lab::terraform(&dir, d.runtime, tf);
     let manifest = module.join("run.json");
     if manifest.is_file() {
-        super::regenerate::current(&manifest, &dir, target).await.map_err(ImportError::Generate)?;
+        super::regenerate::current(&manifest, &dir, Some(target)).await.map_err(ImportError::Generate)?;
     } else {
         lab::prepare(&dir, target).map_err(ImportError::Generate)?;
     }

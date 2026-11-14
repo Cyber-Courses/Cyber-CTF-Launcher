@@ -305,7 +305,6 @@ export const utmPath = runPath("utm", true);
 const CLOUDS_OF_SAMPLE: Provider[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"];
 const NO_OPTIONS: LabRunOptions = {
   docker: null,
-  dockerVm: [],
   vms: [],
   servers: [],
   cloudDocker: [],
@@ -316,8 +315,8 @@ const NO_OPTIONS: LabRunOptions = {
 };
 
 /** Where the sample's labs run, as the backend reads it from their spec: a container lab on
- *  Docker, in a helper VM and on a server or a cloud VM (none has VM recipes too), a VM lab as
- *  VMs (not on UTM), cloud services on AWS. */
+ *  Docker or a cloud VM (none has VM recipes too), a VM lab as VMs (not on UTM) here, on a server
+ *  or a cloud, cloud services on AWS. */
 export function runOptions(runtime: unknown): LabRunOptions {
   const clouds = () => CLOUDS_OF_SAMPLE.map((c) => runPath(c, c !== "aws"));
   if (runtime === "CLOUD") return { ...NO_OPTIONS, cloudServices: [runPath("aws")] };
@@ -334,8 +333,6 @@ export function runOptions(runtime: unknown): LabRunOptions {
   return {
     ...NO_OPTIONS,
     docker: runPath(null),
-    dockerVm: [...local, "utm" as const].map((p) => runPath(p, p !== "virtualbox")),
-    servers: [runPath("vmware_esxi", true), runPath("proxmox", true)],
     cloudDocker: clouds(),
   };
 }
