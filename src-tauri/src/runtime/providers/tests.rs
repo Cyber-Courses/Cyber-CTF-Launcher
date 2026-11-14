@@ -1,4 +1,5 @@
 use super::*;
+use crate::platform::host::Host;
 
 /// [`unavailable_reason`] with the needs [`detect_one`] reads for `detection`.
 fn reason_of(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> Option<Unavailable> {
@@ -21,13 +22,12 @@ fn the_preferred_hypervisor_is_picked_when_ready_else_the_first_ready_one() {
 
 #[test]
 fn vmwares_desktop_hypervisor_is_named_for_the_os_and_nothing_else_is() {
-    assert_eq!(Provider::VmwareDesktop.label_on("macos"), "VMware Fusion");
-    assert_eq!(Provider::VmwareDesktop.label_on("windows"), "VMware Workstation");
-    assert_eq!(Provider::VmwareDesktop.label_on("linux"), "VMware Workstation");
-    assert_eq!(Provider::VmwareDesktop.label_on("freebsd"), "VMware");
+    assert_eq!(Provider::VmwareDesktop.label_on(Os::Macos), "VMware Fusion");
+    assert_eq!(Provider::VmwareDesktop.label_on(Os::Windows), "VMware Workstation");
+    assert_eq!(Provider::VmwareDesktop.label_on(Os::Linux), "VMware Workstation");
     for p in Provider::ALL.iter().chain(&Provider::CLOUDS).filter(|p| **p != Provider::VmwareDesktop) {
-        for os in ["macos", "linux", "windows"] {
-            assert_eq!(p.label_on(os), p.label(), "{p:?} on {os}");
+        for os in Os::ALL {
+            assert_eq!(p.label_on(os), p.label(), "{p:?} on {os:?}");
         }
     }
 }
@@ -225,11 +225,10 @@ fn ids_are_unique_and_round_trip_through_serde() {
 
 #[test]
 fn applicability_follows_the_os() {
-    use std::env::consts::OS;
-    assert_eq!(Provider::Hyperv.applicable(), OS == "windows");
-    assert_eq!(Provider::Parallels.applicable(), OS == "macos");
-    assert_eq!(Provider::Utm.applicable(), OS == "macos");
-    assert_eq!(Provider::Libvirt.applicable(), OS == "linux");
+    assert_eq!(Provider::Hyperv.applicable(), Os::HERE == Os::Windows);
+    assert_eq!(Provider::Parallels.applicable(), Os::HERE == Os::Macos);
+    assert_eq!(Provider::Utm.applicable(), Os::HERE == Os::Macos);
+    assert_eq!(Provider::Libvirt.applicable(), Os::HERE == Os::Linux);
     for remote in [Provider::VmwareEsxi, Provider::Proxmox, Provider::Qemu, Provider::Aws] {
         assert!(remote.applicable(), "{remote:?}");
     }
@@ -239,14 +238,15 @@ fn applicability_follows_the_os() {
 fn a_mac_is_offered_the_hypervisor_made_for_its_cpu_and_keeps_one_installed() {
     // Was the webview's rule alone (`usableHypervisors`): the backend listed both, and offered
     // to install VirtualBox on Apple Silicon.
-    assert!(!Provider::Virtualbox.offered_on("macos", "aarch64", false));
-    assert!(Provider::Utm.offered_on("macos", "aarch64", false));
-    assert!(Provider::Virtualbox.offered_on("macos", "x86_64", false));
-    assert!(!Provider::Utm.offered_on("macos", "x86_64", false));
-    assert!(Provider::Virtualbox.offered_on("macos", "aarch64", true), "installed: the player chose it");
-    assert!(Provider::Virtualbox.offered_on("linux", "aarch64", false));
-    assert!(!Provider::Utm.offered_on("linux", "aarch64", true), "never where it doesn't apply");
-    assert!(!Provider::Hyperv.offered_on("macos", "aarch64", true));
+    let on = |os, arch| Host { os, arch, packages: None };
+    assert!(!Provider::Virtualbox.offered_on(on(Os::Macos, Arch::Aarch64), false));
+    assert!(Provider::Utm.offered_on(on(Os::Macos, Arch::Aarch64), false));
+    assert!(Provider::Virtualbox.offered_on(on(Os::Macos, Arch::X86_64), false));
+    assert!(!Provider::Utm.offered_on(on(Os::Macos, Arch::X86_64), false));
+    assert!(Provider::Virtualbox.offered_on(on(Os::Macos, Arch::Aarch64), true), "installed: the player chose it");
+    assert!(Provider::Virtualbox.offered_on(on(Os::Linux, Arch::Aarch64), false));
+    assert!(!Provider::Utm.offered_on(on(Os::Linux, Arch::Aarch64), true), "never where it doesn't apply");
+    assert!(!Provider::Hyperv.offered_on(on(Os::Macos, Arch::Aarch64), true));
 }
 
 #[test]
@@ -392,7 +392,7 @@ fn qemu_on_linux_needs_the_kvm_device_the_labs_boot_with() {
         utility: None,
         account: relogin.then_some(AccountLacks::NewLogin),
     };
-    assert!(uses_kvm(Provider::Qemu, "linux") && !uses_kvm(Provider::Qemu, "macos") && !uses_kvm(Provider::Qemu, "windows"));
+    assert!(uses_kvm(Provider::Qemu, Os::Linux) && !uses_kvm(Provider::Qemu, Os::Macos) && !uses_kvm(Provider::Qemu, Os::Windows));
     if cfg!(target_os = "linux") {
         assert_eq!(reason_of(Provider::Qemu, true, qemu(false)), kvm_problem(), "whatever this machine's /dev/kvm says");
         assert_eq!(reason_of(Provider::Qemu, true, qemu(true)), Some(Unavailable::NewLogin { group: kvm_group() }));
@@ -400,20 +400,20 @@ fn qemu_on_linux_needs_the_kvm_device_the_labs_boot_with() {
         // HVF on a Mac, WHPX on Windows: no /dev/kvm to open.
         assert_eq!(reason_of(Provider::Qemu, true, qemu(false)), None);
     }
-    assert_eq!(login_groups(Provider::Qemu, "linux"), [kvm_group()]);
-    assert_eq!(login_groups(Provider::Qemu, "macos"), Vec::<String>::new());
-    let libvirt = login_groups(Provider::Libvirt, "linux");
+    assert_eq!(login_groups(Provider::Qemu, Os::Linux), [kvm_group()]);
+    assert_eq!(login_groups(Provider::Qemu, Os::Macos), Vec::<String>::new());
+    let libvirt = login_groups(Provider::Libvirt, Os::Linux);
     assert!(libvirt.iter().any(|g| g == "libvirt") && libvirt.contains(&kvm_group()), "{libvirt:?}");
-    assert_eq!(login_groups(Provider::Virtualbox, "linux"), Vec::<String>::new());
+    assert_eq!(login_groups(Provider::Virtualbox, Os::Linux), Vec::<String>::new());
 }
 
 #[test]
 fn qemu_without_mkisofs_says_its_vms_need_it_vagrant_first() {
     // Regression: QEMU read as ready without mkisofs, and every VM-form lab failed at its first VM
     // ("The executable 'mkisofs' Vagrant is trying to run was not found in the PATH variable").
-    assert!(needs_mkisofs(Provider::Qemu, "linux"));
-    for (p, os) in [(Provider::Qemu, "macos"), (Provider::Qemu, "windows"), (Provider::Libvirt, "linux"), (Provider::Virtualbox, "linux")] {
-        assert!(!needs_mkisofs(p, os), "{p:?} on {os}");
+    assert!(needs_mkisofs(Provider::Qemu, Os::Linux));
+    for (p, os) in [(Provider::Qemu, Os::Macos), (Provider::Qemu, Os::Windows), (Provider::Libvirt, Os::Linux), (Provider::Virtualbox, Os::Linux)] {
+        assert!(!needs_mkisofs(p, os), "{p:?} on {os:?}");
     }
     let qemu = Detection {
         unresponsive: false,
@@ -567,4 +567,28 @@ fn statuses_serialize_in_camel_case() {
     assert_eq!(v["accountLacks"], "hypervAdmin");
     assert_eq!(v["pluginInstalled"], true);
     assert_eq!(v["needs"], serde_json::json!(["plugin", "vmwareUtility"]));
+}
+
+#[test]
+fn the_hypervisor_table_says_where_each_provider_runs_and_the_setup_offers_it() {
+    let on = |os, arch| Host { os, arch, packages: None };
+    // Regression (#314): QEMU was offered and installed on Windows, where no lab runs on it.
+    assert!(!Provider::Qemu.runs_on(Os::Windows) && !Provider::Qemu.offered_on(on(Os::Windows, Arch::X86_64), true));
+    // Windows on Arm: VirtualBox and VMware aren't built for it, Hyper-V is.
+    let arm_pc = on(Os::Windows, Arch::Aarch64);
+    assert!(!Provider::Virtualbox.offered_on(arm_pc, true) && !Provider::VmwareDesktop.offered_on(arm_pc, true));
+    assert!(Provider::Hyperv.offered_on(arm_pc, false));
+    // Every server and cloud account is reached from any computer, and shares none of its folders.
+    for p in Provider::SERVERS.into_iter().chain(Provider::CLOUDS) {
+        for os in Os::ALL {
+            for arch in Arch::ALL {
+                assert!(p.offered_on(on(os, arch), false), "{p:?} on {os:?} {arch:?}");
+            }
+            assert!(!p.row().shares_folders.contains(&os), "{p:?}");
+        }
+    }
+    // The hypervisors the setup installs name their tool, and the others their vendor's page.
+    for p in Provider::ALL.into_iter().filter(|p| !p.is_remote()) {
+        assert!(p.dependency().is_some() || p.row().vendor.is_some(), "{p:?}: neither installed nor linked");
+    }
 }

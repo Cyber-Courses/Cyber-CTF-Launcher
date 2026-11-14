@@ -8,6 +8,7 @@ use isoloom_spec::model::Target;
 use isoloom_targets::Lab;
 
 use super::tiers::{self, Badge};
+use crate::platform::host::Arch;
 use crate::platform::policy::{self, Key, Policy};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Runtime, lab};
@@ -108,17 +109,17 @@ pub struct RunOptions {
 /// Every way lab `lab`, declared `runtime`, can start ([`RunOptions`]), as Isoloom generates it
 /// and this computer's policy allows.
 pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
-    run_options_on(lab, runtime, std::env::consts::ARCH)
+    run_options_on(lab, runtime, Arch::HERE)
 }
 
 /// [`run_options`] on a `host` CPU.
-fn run_options_on(lab: &Lab, runtime: Runtime, host: &str) -> RunOptions {
+fn run_options_on(lab: &Lab, runtime: Runtime, host: Arch) -> RunOptions {
     with_policy(generated(lab, runtime, host), policy::current(), lab::is_privileged(&lab.spec()))
 }
 
-/// Every way lab `lab`, declared `runtime`, can start as Isoloom generates it, on a `host` CPU
-/// (`std::env::consts::ARCH`'s name): VMs built for another CPU only on an emulator.
-fn generated(lab: &Lab, runtime: Runtime, host: &str) -> RunOptions {
+/// Every way lab `lab`, declared `runtime`, can start as Isoloom generates it, on a `host` CPU:
+/// VMs built for another CPU only on an emulator.
+fn generated(lab: &Lab, runtime: Runtime, host: Arch) -> RunOptions {
     let spec = lab.spec();
     let emulated = !emulated_arches(&spec, host).is_empty();
     let local: Vec<Provider> = Provider::ALL.into_iter().filter(|p| !p.is_remote()).collect();
@@ -238,16 +239,16 @@ fn with_policy(mut options: RunOptions, policy: Policy, privileged: bool) -> Run
     options
 }
 
-/// The CPUs (`std::env::consts::ARCH` names) a lab's VMs are built for that differ from `host`,
-/// i.e. the ones QEMU has to emulate. Any: the lab's VMs run here only on an emulator.
-pub fn emulated_arches(spec: &lab::Spec, host: &str) -> Vec<&'static str> {
-    let mut emulated: Vec<&'static str> = spec
+/// The CPUs a lab's VMs are built for that differ from `host`, i.e. the ones QEMU has to emulate.
+/// Any: the lab's VMs run here only on an emulator.
+pub fn emulated_arches(spec: &lab::Spec, host: Arch) -> Vec<Arch> {
+    let mut emulated: Vec<Arch> = spec
         .machines
         .values()
         .filter(|m| m.vm.is_some())
         .map(|m| match m.arch {
-            lab::Arch::Amd64 => "x86_64",
-            lab::Arch::Arm64 => "aarch64",
+            lab::Arch::Amd64 => Arch::X86_64,
+            lab::Arch::Arm64 => Arch::Aarch64,
         })
         .filter(|a| *a != host)
         .collect();

@@ -10,11 +10,9 @@
 
 /// The proxy variables, both cases: tools read one or the other (curl and apt the lowercase
 /// ones, Go's and Docker's either).
-#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub const VARS: [&str; 6] = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"];
 
 /// The proxy variables `var` reads that are set, as `NAME=value` (what `env` takes).
-#[cfg(any(target_os = "linux", test))]
 pub fn assignments(var: impl Fn(&str) -> Option<String>) -> Vec<String> {
     VARS.into_iter().filter_map(|name| var(name).filter(|v| !v.is_empty()).map(|v| format!("{name}={v}"))).collect()
 }

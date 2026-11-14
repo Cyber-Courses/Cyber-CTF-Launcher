@@ -3,42 +3,21 @@
 // its report as its installs run, with no core to ask. The setup window itself never works these
 // out; `setup-options.test.ts` holds this stand-in to the core's answer on every machine shape the
 // core writes (`SETUP_SHAPES`).
-import type { Dependency, DockerEngine, Provider, ProviderStatus, SetupAction, SetupOptions, SystemReport } from "@/lib/tauri";
+import type { Dependency, DockerEngine, Os, Provider, ProviderStatus, SetupAction, SetupOptions, SystemReport } from "@/lib/tauri";
 import { DOCKER_ENGINE_URLS } from "@/lib/tauri/generated/DockerEngines";
+import { ENGINES_ON, INSTALLS_AS, OWN_INSTALL_URLS, RECOMMENDED_ENGINE, VENDOR_URLS } from "@/lib/tauri/generated/SetupTables";
 
-/** The engines offered per OS, in the setup's order (Rust's `engines_on`). */
-const ENGINES_ON: Partial<Record<string, DockerEngine[]>> = {
-  macos: ["docker-desktop", "orbstack", "colima"],
-  windows: ["docker-desktop"],
-};
-const enginesOn = (os: string): DockerEngine[] => ENGINES_ON[os] ?? ["docker-desktop", "docker-engine", "colima"];
+const enginesOn = (os: Os): readonly DockerEngine[] => ENGINES_ON[os];
 
-const recommended = (os: string): DockerEngine => (os === "macos" || os === "windows" ? "docker-desktop" : "docker-engine");
+const recommended = (os: Os): DockerEngine => RECOMMENDED_ENGINE[os];
 
 const dockerReady = (r: Machine) => r.docker.installed && r.dockerRunning;
-
-/** Where the player installs a tool themselves (Rust's `own_install_url`). */
-const OWN_INSTALL: Partial<Record<Dependency, string>> = {
-  docker: "https://docs.docker.com/engine/install/",
-  vagrant: "https://developer.hashicorp.com/vagrant/install",
-  virtualbox: "https://www.virtualbox.org/wiki/Linux_Downloads",
-  qemu: "https://www.qemu.org/download/",
-  libvirt: "https://libvirt.org/",
-  "vmware-utility": "https://developer.hashicorp.com/vagrant/install/vmware",
-};
-
-/** Where a hypervisor the setup doesn't install comes from (Rust's `vendor_url`). */
-const VENDOR: Partial<Record<Provider, string>> = {
-  vmware_desktop: "https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion",
-  parallels: "https://www.parallels.com/products/desktop/",
-  hyperv: "https://learn.microsoft.com/virtualization/hyper-v-on-windows/quick-start/enable-hyper-v",
-};
 
 /** A machine as the check reports it, its setup options aside. */
 type Machine = Omit<SystemReport, "setup">;
 
 function install(r: Machine, dependency: Dependency): SetupAction {
-  if (r.os === "linux" && !r.pkgManager.installed) return { kind: "manual", reason: "distribution", dependency, url: OWN_INSTALL[dependency] ?? null };
+  if (r.os === "linux" && !r.pkgManager.installed) return { kind: "manual", reason: "distribution", dependency, url: OWN_INSTALL_URLS[dependency] ?? null };
   return { kind: "install", dependency };
 }
 
@@ -58,13 +37,7 @@ function engineActions(r: Machine, engine: DockerEngine): SetupAction[] {
   return [{ kind: "manual", reason: "vendor", dependency: null, url: DOCKER_ENGINE_URLS[engine] }];
 }
 
-function installable(provider: Provider, os: string): Dependency | null {
-  if (provider === "virtualbox" || provider === "qemu") return provider;
-  if (provider === "utm" && os === "macos") return "utm";
-  if (provider === "libvirt" && os === "linux") return "libvirt";
-  if (provider === "hyperv" && os === "windows") return "hyperv";
-  return null;
-}
+const installable = (provider: Provider, os: Os): Dependency | null => INSTALLS_AS[os][provider] ?? null;
 
 const cantRun = (p: ProviderStatus) => p.hypervisor === true && !p.available && !!p.reason && p.needs.length === 0;
 
@@ -73,7 +46,7 @@ const LIBVIRT_GROUPS = ["libvirt", "kvm"];
 
 /** The groups a player joins to use `provider` on `os` (Rust's `login_groups`): libvirt's, and
  *  /dev/kvm's for QEMU on Linux (`kvm`, its usual name; the core reads the device's own). */
-function loginGroups(provider: Provider, os: string): string[] {
+function loginGroups(provider: Provider, os: Os): string[] {
   if (provider === "libvirt") return LIBVIRT_GROUPS;
   if (provider === "qemu" && os === "linux") return ["kvm"];
   return [];
@@ -85,7 +58,7 @@ function get(r: Machine, p: ProviderStatus, hypervRestart: boolean): SetupAction
   if (p.hypervisor === true) return cantRun(p) && p.reason ? [{ kind: "blocked", reason: p.reason }] : [];
   if (p.provider === "hyperv" && hypervRestart) return [{ kind: "restart", feature: "hyperv" }];
   const dependency = installable(p.provider, r.os);
-  return [dependency ? install(r, dependency) : { kind: "manual", reason: "vendor", dependency: null, url: VENDOR[p.provider] ?? null }];
+  return [dependency ? install(r, dependency) : { kind: "manual", reason: "vendor", dependency: null, url: VENDOR_URLS[p.provider] ?? null }];
 }
 
 function vagrant(r: Machine, p: ProviderStatus): SetupAction[] {

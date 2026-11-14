@@ -3,6 +3,7 @@
 //! apply from their next login.
 
 use super::{Provider, Unavailable};
+use crate::platform::host::Os;
 
 /// Why KVM's hypervisors can't run VMs here although they are installed: vagrant-libvirt and
 /// vagrant-qemu boot KVM guests (QEMU with `accel=kvm`, as every lab asks on Linux), so they need
@@ -107,14 +108,14 @@ const LIBVIRT_GROUPS: [&str; 2] = ["libvirt", "kvm"];
 
 /// Whether `provider` boots KVM guests on `os`, through `/dev/kvm`: libvirt, and QEMU on Linux
 /// (vagrant-qemu asks for `accel=kvm` there, as every lab's Vagrantfile does; HVF on a Mac).
-pub fn uses_kvm(provider: Provider, os: &str) -> bool {
-    provider == Provider::Libvirt || (provider == Provider::Qemu && os == "linux")
+pub fn uses_kvm(provider: Provider, os: Os) -> bool {
+    provider == Provider::Libvirt || (provider == Provider::Qemu && os == Os::Linux)
 }
 
 /// The groups a player joins to use `provider` on `os`, which apply from their next login:
 /// libvirt's and `/dev/kvm`'s for libvirt, `/dev/kvm`'s for QEMU on Linux ([`kvm_group`]); none
 /// for another.
-pub fn login_groups(provider: Provider, os: &str) -> Vec<String> {
+pub fn login_groups(provider: Provider, os: Os) -> Vec<String> {
     match provider {
         Provider::Libvirt => {
             let mut groups: Vec<String> = LIBVIRT_GROUPS.map(str::to_owned).to_vec();

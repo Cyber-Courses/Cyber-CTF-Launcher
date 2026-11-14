@@ -1,6 +1,6 @@
 import { answer } from "@/lib/dev-mock";
 import { withSetup } from "@/lib/dev-mock/setup-options";
-import type { Need, ProviderStatus, SystemReport } from "@/lib/tauri";
+import type { Need, Os, ProviderStatus, SystemReport } from "@/lib/tauri";
 
 const missing = { installed: false, version: null };
 
@@ -38,7 +38,7 @@ export function dockerOnlyReport(): SystemReport {
 }
 
 /** A fresh machine: nothing installed yet. */
-export function freshReport(os = "macos"): SystemReport {
+export function freshReport(os: Os = "macos"): SystemReport {
   const r = readyReport();
   return withNeeds({
     ...r,

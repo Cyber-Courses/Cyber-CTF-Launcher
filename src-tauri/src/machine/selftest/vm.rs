@@ -6,10 +6,11 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Duration;
 
+use super::Reporter;
 use super::downloads::ensure_box;
-use super::{Arch, Reporter};
 use crate::error::{Error, Result};
 use crate::platform::exec::{Event, Step, Vagrant, run, within};
+use crate::platform::host::Arch;
 use crate::runtime::providers::{self, Provider};
 use crate::runtime::selftest_report::StepState;
 
@@ -70,8 +71,8 @@ pub(super) fn test_providers() -> impl Iterator<Item = Provider> {
 /// Small public boxes that exist for this provider and CPU, smallest first.
 pub(crate) fn candidate_boxes(p: Provider, arch: Arch) -> &'static [&'static str] {
     match (p, arch) {
-        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, Arch::Amd64) => &["generic/alpine319", "bento/debian-12"],
-        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, Arch::Arm64) => &["bento/debian-12"],
+        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, Arch::X86_64) => &["generic/alpine319", "bento/debian-12"],
+        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, Arch::Aarch64) => &["bento/debian-12"],
         (Provider::Utm, _) => &["utm/bookworm"],
         _ => &["generic/alpine319"],
     }
@@ -109,7 +110,7 @@ pub(super) async fn pick_box(p: Provider, arch: Arch) -> (&'static str, bool) {
 /// Whether `vagrant box list` has `name` for `provider` and this CPU (a box with no
 /// architecture in the listing counts for any).
 fn box_listed(list: &str, name: &str, provider: &str, arch: Arch) -> bool {
-    let arch = arch.box_arch();
+    let arch = arch.docker_name();
     crate::machine::storage::owned::listed_boxes(list).iter().any(|b| {
         let other_cpu = matches!(b.arch.as_deref(), Some(a @ ("amd64" | "arm64")) if a != arch);
         b.owned.name == name && b.owned.provider == provider && !other_cpu
@@ -238,7 +239,7 @@ async fn clear_earlier_test(dir: &Path, r: &Reporter) -> Result<()> {
 
 async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
     let provider = host_provider(preferred, r).await?;
-    let arch = Arch::here();
+    let arch = Arch::HERE;
     let (bx, _) = pick_box(provider, arch).await;
     r.step("box", "Get a small test VM image", async {
         let had = ensure_box(dir, provider, bx, arch, |l| r.progress("box", "Get a small test VM image", &l)).await?;

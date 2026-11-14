@@ -7,6 +7,7 @@ use tauri::Manager;
 use crate::app::window;
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
+use crate::platform::host::Os;
 use crate::runtime::{Runtime, host, paths};
 use crate::screen::{self, Protocol, Reached, Which, native, rdp};
 use crate::{AppHandle, WebviewWindow};
@@ -45,7 +46,7 @@ pub async fn screen_open_native(app: AppHandle, id: String, runtime: Runtime, ma
         let located = host::locate(&dirs, &dir, &id, runtime)?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
         let console = located.native_console(&dirs, &machine).await?;
         let home = crate::platform::home_dir();
-        let launch = native::pick(&console.ways, std::env::consts::OS, home.as_deref(), std::path::Path::exists, native::on_path)
+        let launch = native::pick(&console.ways, Os::HERE, home.as_deref(), std::path::Path::exists, native::on_path)
             .ok_or_else(|| Error::Invalid(format!("{} isn't installed on this computer", console.app)))?;
         match launch {
             native::Launch::Program { program, args } => native::run(&program, &args).await,
@@ -61,7 +62,7 @@ pub async fn screen_open_native(app: AppHandle, id: String, runtime: Runtime, ma
 /// Opens this window's Remote Desktop in the system's client.
 #[tauri::command]
 pub fn screen_open_rdp(window: WebviewWindow) -> Result<()> {
-    let client = client().ok_or_else(|| Error::Invalid(missing_client(std::env::consts::OS).into()))?;
+    let client = client().ok_or_else(|| Error::Invalid(missing_client(Os::HERE).into()))?;
     let dirs = AppDirs::from(window.app_handle());
     screen::open_rdp(window.label(), &client, &dirs.data()?.join("screen"))
 }
@@ -85,17 +86,17 @@ pub fn screen_sign_in(window: WebviewWindow) -> Result<Option<crate::runtime::at
 /// The system's Remote Desktop client, when this computer has one.
 fn client() -> Option<rdp::Client> {
     let home = crate::platform::home_dir();
-    rdp::find(std::env::consts::OS, home.as_deref(), std::path::Path::exists, |name| {
+    rdp::find(Os::HERE, home.as_deref(), std::path::Path::exists, |name| {
         std::env::var_os("PATH").and_then(|path| std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file()))
     })
 }
 
 /// What to install for a Remote Desktop on OS `os`.
-fn missing_client(os: &str) -> &'static str {
+fn missing_client(os: Os) -> &'static str {
     match os {
-        "macos" => "No Remote Desktop app is installed: install Windows App from the App Store, then open the screen again.",
-        "windows" => "Windows' Remote Desktop Connection (mstsc) isn't there.",
-        _ => "No Remote Desktop client is installed: install FreeRDP (xfreerdp) or Remmina, then open the screen again.",
+        Os::Macos => "No Remote Desktop app is installed: install Windows App from the App Store, then open the screen again.",
+        Os::Windows => "Windows' Remote Desktop Connection (mstsc) isn't there.",
+        Os::Linux => "No Remote Desktop client is installed: install FreeRDP (xfreerdp) or Remmina, then open the screen again.",
     }
 }
 
@@ -106,8 +107,8 @@ mod tests {
 
     #[test]
     fn a_missing_client_says_what_to_install() {
-        assert!(missing_client("macos").contains("Windows App"));
-        assert!(missing_client("linux").contains("FreeRDP"));
+        assert!(missing_client(Os::Macos).contains("Windows App"));
+        assert!(missing_client(Os::Linux).contains("FreeRDP"));
     }
 
     #[tokio::test]

@@ -48,7 +48,7 @@ it("the VM lab test is the named hypervisor's row's and its end is read from the
   });
   const report = {
     ...readyReport(),
-    os: "linux",
+    os: "linux" as const,
     ...hypervisors([hv({ provider: "virtualbox" }), hv({ provider: "libvirt", plugin: "vagrant-libvirt" }), hv({ provider: "qemu", plugin: "vagrant-qemu" })]),
   };
   render(createElement("main", null, createElement(MachineScreen, { report, onRefresh: vi.fn(), onNavigate: vi.fn() })));

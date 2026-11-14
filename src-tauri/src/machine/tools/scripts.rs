@@ -2,9 +2,7 @@
 //! vendors' apt repositories on Linux. Every repository's signing key is checked against its
 //! fingerprint, pinned here, before apt trusts it; no vendor install script runs as root.
 
-#[cfg(target_os = "macos")]
 use super::steps::Step;
-#[cfg(any(target_os = "linux", test))]
 use crate::platform::root_script::{NEED_CURL, NEED_GPG, NEED_UNZIP, RootScript, check_keys};
 
 // Download the installer with brew (no admin needed), then open it so the tool's own
@@ -15,7 +13,6 @@ use crate::platform::root_script::{NEED_CURL, NEED_GPG, NEED_UNZIP, RootScript, 
 // `brew fetch` doesn't update Homebrew, and an old Homebrew can crash reading today's cask
 // data (`undefined method 'first' for nil` in api/cask.rb), so a failed fetch updates
 // Homebrew and tries once more.
-#[cfg(target_os = "macos")]
 pub fn fetch_and_open(brew: &str, cask: &str, name: &str) -> Step {
     let script = format!(
         r#"set -e
@@ -56,12 +53,10 @@ esac"#
 /// codename: the base's (`DEBIAN_CODENAME`, LMDE), then Debian's stable releases, whose packages
 /// a derivative runs (Kali's `kali-rolling` is served by no vendor; HashiCorp serves trixie and
 /// bookworm). Empty elsewhere: an Ubuntu release Debian's packages don't fit.
-#[cfg(any(target_os = "linux", test))]
 const CODENAME: &str = r#"codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"; [ -n "$codename" ] || codename="$(lsb_release -cs)"; debian_base="$(. /etc/os-release && case " $ID ${ID_LIKE:-} " in *ubuntu*) ;; *debian*) echo "${DEBIAN_CODENAME:-} trixie bookworm" ;; esac)""#;
 
 /// A vendor's apt repository: where its packages and its signing key are, the key's pinned
 /// fingerprint, and the name its keyring and its source list take here.
-#[cfg(any(target_os = "linux", test))]
 struct VendorRepo {
     /// Who signs it, as a refusal names them.
     vendor: &'static str,
@@ -86,19 +81,16 @@ struct VendorRepo {
 /// by its `Release` file. A 2xx answer is yes and a 404 no; anything else (no answer at all: a
 /// DNS failure, a proxy, a timeout; or a server error) stops the script saying the repository
 /// couldn't be reached, so a network fault is never taken for a release the vendor doesn't serve.
-#[cfg(any(target_os = "linux", test))]
 const RELEASE_SERVED: &str = r#"release_served() { served=$(curl -s -o /dev/null -w '%{http_code}' "$1/dists/$2/Release" || true); case "$served" in 2??) return 0 ;; 404) return 1 ;; *) echo "Couldn't reach $1 (HTTP ${served:-none}). Check this machine's internet access or proxy, then try again." >&2; exit 1 ;; esac; }"#;
 
 /// curl, then [`RELEASE_SERVED`]: what a script needs before it asks a vendor's repository
 /// anything.
-#[cfg(any(target_os = "linux", test))]
 fn fetch_prelude() -> String {
     format!("{NEED_CURL}; {RELEASE_SERVED}")
 }
 
 /// [`apt_repo_setup`] after [`fetch_prelude`]: a vendor's apt repository on a machine that may
 /// lack curl.
-#[cfg(any(target_os = "linux", test))]
 fn apt_repo_script(r: &VendorRepo) -> String {
     format!("{}; {}", fetch_prelude(), apt_repo_setup(r))
 }
@@ -109,7 +101,6 @@ fn apt_repo_script(r: &VendorRepo) -> String {
 /// and to that key, and apt's lists updated. `--batch --yes`: a second run (after a partial one)
 /// overwrites the keyring instead of asking on a terminal it doesn't have. Runs in
 /// a [`RootScript`], after [`fetch_prelude`].
-#[cfg(any(target_os = "linux", test))]
 fn apt_repo_setup(r: &VendorRepo) -> String {
     let VendorRepo { vendor, fingerprint, key_url, repo, suite, component, name, by_hand } = r;
     // No packages for this release: the Debian family's fallbacks (`$debian_base`, [`CODENAME`])
@@ -130,7 +121,6 @@ fn apt_repo_setup(r: &VendorRepo) -> String {
 /// expires 2031-09-08), the one apt.releases.hashicorp.com serves at `/gpg` and signs its
 /// `InRelease` files with; keys.openpgp.org and keyserver.ubuntu.com have the same. When HashiCorp
 /// rotates it, installs stop with "isn't the expected one" until this is updated.
-#[cfg(any(target_os = "linux", test))]
 const HASHICORP: VendorRepo = VendorRepo {
     vendor: "HashiCorp",
     fingerprint: "D55C0D1AC78A8D8126CB631CFC9CA96ACA026560",
@@ -143,7 +133,6 @@ const HASHICORP: VendorRepo = VendorRepo {
 };
 
 /// HashiCorp's apt repo, then terraform.
-#[cfg(any(target_os = "linux", test))]
 pub fn terraform_script() -> RootScript {
     RootScript::new(format!("{CODENAME}; {}; apt-get install -y terraform", apt_repo_script(&HASHICORP)))
 }
@@ -151,7 +140,6 @@ pub fn terraform_script() -> RootScript {
 /// HashiCorp's apt repo, then Vagrant: the distributions' own package is older than labs need
 /// (Debian 13 ships 2.3.8; labs need 2.4.0 or later), so a setup that installed it left a machine
 /// that refused every VM lab.
-#[cfg(any(target_os = "linux", test))]
 pub fn vagrant_script() -> RootScript {
     const VAGRANT: VendorRepo = VendorRepo { by_hand: Some("https://developer.hashicorp.com/vagrant/install"), ..HASHICORP };
     RootScript::new(format!("{CODENAME}; {}; apt-get install -y vagrant", apt_repo_script(&VAGRANT)))
@@ -160,7 +148,6 @@ pub fn vagrant_script() -> RootScript {
 /// HashiCorp's apt repo, then the Vagrant VMware Utility, whose package generates its
 /// certificates and enables and starts its service. `--reinstall`: an install that is there
 /// already has its package configured again, which restarts a service that had stopped.
-#[cfg(any(target_os = "linux", test))]
 pub fn vmware_utility_script() -> RootScript {
     // HashiCorp's repository, but a release it doesn't serve yet is sent to the utility's own page.
     let repo = VendorRepo { by_hand: Some("https://developer.hashicorp.com/vagrant/install/vmware"), ..HASHICORP };
@@ -170,7 +157,6 @@ pub fn vmware_utility_script() -> RootScript {
 /// Oracle's VirtualBox archive signing key (`info@virtualbox.org`, "Oracle Corporation (VirtualBox
 /// archive signing key)"), the one www.virtualbox.org serves as `oracle_vbox_2016.asc` and
 /// download.virtualbox.org signs its `InRelease` files with.
-#[cfg(any(target_os = "linux", test))]
 const ORACLE: VendorRepo = VendorRepo {
     vendor: "Oracle",
     fingerprint: "B9F8D658297AF3EFC18D5CDFA2F683C52980AECF",
@@ -194,7 +180,6 @@ const ORACLE: VendorRepo = VendorRepo {
 /// kernel's headers but not the running one's, so the driver never built. The other families
 /// name them otherwise, where the guided setup doesn't install yet (it installs through apt):
 /// Fedora `kernel-devel-$(uname -r)`, openSUSE `kernel-default-devel`, Arch `linux-headers`.
-#[cfg(any(target_os = "linux", test))]
 const KERNEL_BUILD: &str = r#"kver="$(uname -r)"; flavour=""; f="$kver"; while [ "${f#*-}" != "$f" ]; do f="${f#*-}"; if apt-cache policy "linux-headers-$f" 2>/dev/null | grep -q 'Candidate: [0-9]'; then flavour="$f"; break; fi; done; build="gcc make perl kmod"; reboot=""; if apt-cache policy "linux-headers-$kver" 2>/dev/null | grep -q 'Candidate: [0-9]'; then build="$build linux-headers-$kver${flavour:+ linux-headers-$flavour}"; elif [ -n "$flavour" ]; then build="$build linux-image-$flavour linux-headers-$flavour"; reboot=1; else echo "VirtualBox builds its kernel driver with the running kernel's headers (linux-headers-$kver), which this machine's package sources don't have. Update the kernel, restart the computer, then install VirtualBox again." >&2; exit 1; fi"#;
 
 /// The distro's own `virtualbox` when it has one (Ubuntu), else Oracle's apt repo and its newest
@@ -203,7 +188,6 @@ const KERNEL_BUILD: &str = r#"kver="$(uname -r)"; flavour=""; f="$kver"; while [
 /// translations and the newest kernel's headers (and so that kernel) came with them, which a
 /// headless VirtualBox that Vagrant drives never uses. When the running kernel's headers were gone,
 /// it says the driver waits for a restart.
-#[cfg(any(target_os = "linux", test))]
 pub fn virtualbox_script() -> RootScript {
     RootScript::new(format!(
         r#"apt-get update; {KERNEL_BUILD}; if apt-cache policy virtualbox 2>/dev/null | grep -q 'Candidate: [0-9]'; then apt-get install -y --no-install-recommends virtualbox $build; else {CODENAME}; {}; pkg="$(apt-cache search --names-only '^virtualbox-[0-9]+\.[0-9]+$' | awk '{{print $1}}' | sort -V | tail -n 1)"; [ -n "$pkg" ] || {{ echo "No VirtualBox package found in Oracle's repo. Install it from https://www.virtualbox.org/wiki/Linux_Downloads" >&2; exit 1; }}; apt-get install -y --no-install-recommends "$pkg" $build; fi; [ -z "$reboot" ] || echo "VirtualBox is installed. This computer runs a kernel ($kver) whose headers its package sources no longer have, so the newer kernel came with its headers: restart the computer to start it, and VirtualBox's driver is built then.""#,
@@ -216,7 +200,6 @@ pub fn virtualbox_script() -> RootScript {
 /// signing subkey D3306A018370199E527AE7997EA0A9C3F273FCD8); keyserver.ubuntu.com has the same.
 /// Its repository is one per distro (`$dist`, see [`DOCKER_DIST`]), whose release is checked there
 /// (a release it doesn't serve gets the distribution's own Docker), so not again here.
-#[cfg(any(target_os = "linux", test))]
 const DOCKER: VendorRepo = VendorRepo {
     vendor: "Docker",
     fingerprint: "9DC858229FC7DD38854AE2D88D81803C0EBFCD88",
@@ -241,7 +224,6 @@ const DOCKER: VendorRepo = VendorRepo {
 /// it stops and says where to get Docker: Docker's convenience
 /// script (get.docker.com) can't be held to a key (it fetches the key and installs what it signed
 /// in one go), so it never runs as root from here.
-#[cfg(any(target_os = "linux", test))]
 pub fn docker_script(user: Option<&str>) -> RootScript {
     use std::fmt::Write as _;
     let mut s = format!(
@@ -262,22 +244,18 @@ pub fn docker_script(user: Option<&str>) -> RootScript {
 /// (`UBUNTU_CODENAME`, Mint), Debian's (`DEBIAN_CODENAME`, LMDE), else its own (Kali, Devuan),
 /// which Docker doesn't serve. Raspbian Trixie has none of Docker's: Debian's serves it (as
 /// get.docker.com does).
-#[cfg(any(target_os = "linux", test))]
 const DOCKER_DIST: &str = r#". /etc/os-release; dist=""; own=""; codename="${VERSION_CODENAME:-}"; case "$ID" in ubuntu|debian|raspbian) dist="$ID";; *) case " ${ID_LIKE:-} " in *" ubuntu "*) dist=ubuntu;; *" debian "*) dist=debian; codename="${DEBIAN_CODENAME:-$codename}";; esac;; esac; [ "$dist" != ubuntu ] || codename="${UBUNTU_CODENAME:-$codename}"; [ "$dist$codename" != raspbiantrixie ] || dist=debian; command -v apt-get >/dev/null || dist=""; if [ -n "$dist" ] && ! release_served "https://download.docker.com/linux/$dist" "$codename"; then own=1; fi"#;
 
 /// The distribution's own Docker: `docker.io`, and its Compose plugin (`docker-compose-v2` on
 /// Ubuntu, `docker-compose` on Debian and Kali), from the distribution's archive.
-#[cfg(any(target_os = "linux", test))]
 const DISTRIBUTION_DOCKER: &str = r#"echo "Docker's apt repository has no packages for $dist $codename: installing the distribution's own Docker (docker.io)."; apt-get update; apt-get install -y docker.io; if apt-cache show docker-compose-v2 >/dev/null 2>&1; then apt-get install -y docker-compose-v2; else apt-get install -y docker-compose; fi"#;
 
 /// The AWS CLI team's signing key (`aws-cli@amazon.com`, created 2019-09-18, expires 2027-07-01 as
 /// published), as AWS publishes it in "Installing or updating to the latest version of the AWS
 /// CLI" (Linux, "Verify the integrity and authenticity of the downloaded zip file"). An expired
 /// copy still verifies older signatures; refresh it from that page when AWS extends it.
-#[cfg(any(target_os = "linux", test))]
 const AWS_CLI_KEY: &str = include_str!("keys/aws-cli.asc");
 /// Its fingerprint, as that page gives it (FB5D B77F D5C1 18B8 0511 ADA8 A631 0ACC 4672 475C).
-#[cfg(any(target_os = "linux", test))]
 pub const AWS_CLI_KEY_FINGERPRINT: &str = "FB5DB77FD5C118B80511ADA8A6310ACC4672475C";
 
 /// AWS CLI v2 from Amazon's official bundle, unpacked and installed from a private directory.
@@ -286,7 +264,6 @@ pub const AWS_CLI_KEY_FINGERPRINT: &str = "FB5DB77FD5C118B80511ADA8A6310ACC46724
 /// (its `.sig`) by AWS's key, embedded here ([`AWS_CLI_KEY`]): gpgv, with only that key, must
 /// report it by its fingerprint. Then `unzip -t` checks the archive is whole before anything
 /// in it runs.
-#[cfg(any(target_os = "linux", test))]
 pub fn awscli_script() -> RootScript {
     RootScript::new(format!(
         r#"{NEED_CURL}; url="https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip"; curl -fsSL "$url" -o "$d/awscliv2.zip"; curl -fsSL "$url.sig" -o "$d/awscliv2.zip.sig"; {}; {NEED_UNZIP}; unzip -tq "$d/awscliv2.zip" >/dev/null; unzip -oq "$d/awscliv2.zip" -d "$d"; "$d/aws/install" --update"#,
@@ -296,7 +273,6 @@ pub fn awscli_script() -> RootScript {
 
 /// Stops the script unless `"$d/awscliv2.zip.sig"` is a valid signature of `"$d/awscliv2.zip"`
 /// by [`AWS_CLI_KEY`].
-#[cfg(any(target_os = "linux", test))]
 fn aws_verify() -> String {
     let key = AWS_CLI_KEY.trim_end();
     format!(
@@ -310,7 +286,6 @@ gpg --batch --yes --dearmor --homedir "$d/gnupg" -o "$d/aws-cli.gpg" "$d/aws-cli
 /// Microsoft's package signing key (`gpgsecurity@microsoft.com`, "Microsoft (Release signing)"),
 /// the one packages.microsoft.com serves at `/keys/microsoft.asc` and signs the azure-cli
 /// repository's `InRelease` files with (its key id EB3E94ADBE1229CF).
-#[cfg(any(target_os = "linux", test))]
 const MICROSOFT: VendorRepo = VendorRepo {
     vendor: "Microsoft",
     fingerprint: "BC528686B50D79E339D3721CEB3E94ADBE1229CF",
@@ -325,7 +300,6 @@ const MICROSOFT: VendorRepo = VendorRepo {
 /// Microsoft's azure-cli apt repository for this distro's codename, then `azure-cli`: what
 /// Microsoft's install script (aka.ms/InstallAzureCLIDeb) sets up, without running that script as
 /// root.
-#[cfg(any(target_os = "linux", test))]
 pub fn azurecli_script() -> RootScript {
     RootScript::new(format!("{CODENAME}; {}; apt-get install -y azure-cli", apt_repo_script(&MICROSOFT)))
 }
@@ -333,7 +307,6 @@ pub fn azurecli_script() -> RootScript {
 /// Google Cloud's package signing key ("Artifact Registry Repository Signer"), the one
 /// packages.cloud.google.com serves at `/apt/doc/apt-key.gpg` and signs the cloud-sdk
 /// repository's `InRelease` files with. One suite for every release.
-#[cfg(any(target_os = "linux", test))]
 const GOOGLE: VendorRepo = VendorRepo {
     vendor: "Google Cloud",
     fingerprint: "35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3",
@@ -347,7 +320,6 @@ const GOOGLE: VendorRepo = VendorRepo {
 
 /// Google Cloud's apt repository, then `google-cloud-cli` (gcloud), system-wide: what Google
 /// documents for Debian and Ubuntu, in place of its install script.
-#[cfg(any(target_os = "linux", test))]
 pub fn gcloud_script() -> RootScript {
     RootScript::new(format!("{}; apt-get install -y google-cloud-cli", apt_repo_script(&GOOGLE)))
 }
@@ -358,7 +330,6 @@ pub fn gcloud_script() -> RootScript {
 /// install fails building its native extension. Then the player joins the `libvirt` group (and
 /// `kvm`, where the distribution has one), so Vagrant reaches `qemu:///system` and `/dev/kvm`
 /// without root; the groups apply from the next login.
-#[cfg(any(target_os = "linux", test))]
 pub fn libvirt_script(user: Option<&str>) -> RootScript {
     // virtiofsd: libvirt's shared folders (the attack box's /shared) need it, and it is its own
     // package from Debian 12 and Ubuntu 23.10 on (QEMU's before); a release without it skips it.
@@ -376,18 +347,15 @@ pub fn libvirt_script(user: Option<&str>) -> RootScript {
 /// a VM on a lab network its settings in a cloud-init seed, an ISO Vagrant builds with `mkisofs`
 /// on Linux ([`crate::runtime::providers::needs_mkisofs`]). Every Debian and Ubuntu release has
 /// the package; Debian's `xorriso` has no `mkisofs`, only `xorrisofs`.
-#[cfg(any(target_os = "linux", test))]
 pub fn qemu_script(user: Option<&str>) -> RootScript {
     then_kvm_group("apt-get update; apt-get install -y qemu-system qemu-utils genisoimage", user)
 }
 
 /// The KVM device.
-#[cfg(any(target_os = "linux", test))]
 const KVM_DEVICE: &str = "/dev/kvm";
 
 /// `install`, then the player `user` (a valid login name only) into the group the KVM device
 /// belongs to: it applies from the next login.
-#[cfg(any(target_os = "linux", test))]
 fn then_kvm_group(install: &str, user: Option<&str>) -> RootScript {
     match user.filter(|u| valid_user(u)) {
         Some(u) => RootScript::new(format!("{install}; {}", join_kvm_group(u, KVM_DEVICE))),
@@ -397,7 +365,6 @@ fn then_kvm_group(install: &str, user: Option<&str>) -> RootScript {
 
 /// `install`, then the player `user` (a valid login name only) into the `libvirt` group and the
 /// KVM device's: they apply from the next login.
-#[cfg(any(target_os = "linux", test))]
 fn then_libvirt_groups(install: &str, user: Option<&str>) -> RootScript {
     match user.filter(|u| valid_user(u)) {
         Some(u) => RootScript::new(format!(
@@ -412,7 +379,6 @@ fn then_libvirt_groups(install: &str, user: Option<&str>) -> RootScript {
 /// distribution makes it `0660` (Debian, Ubuntu, Kali, openSUSE); joining it does no harm where
 /// it is `0666` (Fedora, Arch). Without the device (virtualization off in the firmware), or when it
 /// is root's, the `kvm` group, where the distribution has one.
-#[cfg(any(target_os = "linux", test))]
 fn join_kvm_group(u: &str, dev: &str) -> String {
     format!(
         "g=$(stat -c %G {dev} 2>/dev/null || true); case \"$g\" in ''|root|UNKNOWN) g=kvm;; esac; if getent group \"$g\" >/dev/null; then usermod -aG \"$g\" {u} && echo \"Added {u} to the $g group, which opens {dev}: log out and back in (or restart) for it to apply.\"; fi"
@@ -420,7 +386,6 @@ fn join_kvm_group(u: &str, dev: &str) -> String {
 }
 
 /// A login name safe to put in a shell script unquoted.
-#[cfg(any(target_os = "linux", test))]
 fn valid_user(u: &str) -> bool {
     !u.is_empty()
         && u.len() <= 32
@@ -436,7 +401,6 @@ fn valid_user(u: &str) -> bool {
 /// key alone (`gpgcheck=1`). `RELEASE` in the base URL is the Fedora release the repository is
 /// read for: this one, else the newest earlier one it serves (HashiCorp serves a new Fedora
 /// release weeks after it ships), else the refusal, as the apt repositories' `release_served`.
-#[cfg(any(target_os = "linux", test))]
 struct RpmRepo {
     vendor: &'static str,
     fingerprint: &'static str,
@@ -452,13 +416,11 @@ struct RpmRepo {
 /// `rpm_served <base url>`: whether an rpm repository at that URL answers (its `repodata/repomd.xml`):
 /// a 2xx is yes and a 404 no; anything else stops the script (an unreachable server is never "no
 /// packages"), as [`RELEASE_SERVED`] does for apt.
-#[cfg(any(target_os = "linux", test))]
 const RPM_SERVED: &str = r#"rpm_served() { served=$(curl -s -o /dev/null -w '%{http_code}' "$1/repodata/repomd.xml" || true); case "$served" in 2??) return 0 ;; 404) return 1 ;; *) echo "Couldn't reach $1 (HTTP $served). Check this machine's internet access or proxy, then try again." >&2; exit 1 ;; esac; }"#;
 
 /// The script that sets `r` up for dnf, after [`fetch_prelude`] in a [`RootScript`]: the
 /// release the repository serves found (`$rel`, this Fedora's or the newest earlier one of the
 /// three), the key checked and imported, the repo file written.
-#[cfg(any(target_os = "linux", test))]
 fn rpm_repo_setup(r: &RpmRepo) -> String {
     let RpmRepo { vendor, fingerprint, key_url, baseurl, name, by_hand } = r;
     let probe = baseurl.replace("$basearch", "$(uname -m)");
@@ -473,7 +435,6 @@ fn rpm_repo_setup(r: &RpmRepo) -> String {
 
 /// Docker's rpm repository for Fedora, its key pinned (`docker@docker.com`, the key
 /// download.docker.com/linux/fedora/gpg serves; not the apt one).
-#[cfg(any(target_os = "linux", test))]
 const DOCKER_RPM: RpmRepo = RpmRepo {
     vendor: "Docker",
     fingerprint: "060A61C51B558A7F742B77AAC52FEB6B621E9F35",
@@ -484,7 +445,6 @@ const DOCKER_RPM: RpmRepo = RpmRepo {
 };
 
 /// HashiCorp's rpm repository (Vagrant, Terraform), signed by the same key as its apt one.
-#[cfg(any(target_os = "linux", test))]
 const HASHICORP_RPM: RpmRepo = RpmRepo {
     vendor: "HashiCorp",
     fingerprint: "D55C0D1AC78A8D8126CB631CFC9CA96ACA026560",
@@ -496,7 +456,6 @@ const HASHICORP_RPM: RpmRepo = RpmRepo {
 
 /// Docker Engine on Fedora from Docker's own repository, its key pinned, then its service on;
 /// the player joins the `docker` group as on Debian.
-#[cfg(any(target_os = "linux", test))]
 pub fn docker_dnf_script(user: Option<&str>) -> RootScript {
     use std::fmt::Write as _;
     let mut s = format!(
@@ -511,13 +470,11 @@ pub fn docker_dnf_script(user: Option<&str>) -> RootScript {
 }
 
 /// Vagrant on Fedora from HashiCorp's rpm repository (the distribution has none).
-#[cfg(any(target_os = "linux", test))]
 pub fn vagrant_dnf_script() -> RootScript {
     RootScript::new(format!("{}; {}; dnf install -y vagrant", fetch_prelude(), rpm_repo_setup(&HASHICORP_RPM)))
 }
 
 /// Terraform on Fedora from the same repository.
-#[cfg(any(target_os = "linux", test))]
 pub fn terraform_dnf_script() -> RootScript {
     RootScript::new(format!("{}; {}; dnf install -y terraform", fetch_prelude(), rpm_repo_setup(&HASHICORP_RPM)))
 }
@@ -526,7 +483,6 @@ pub fn terraform_dnf_script() -> RootScript {
 /// months), its kernel module built here for the running kernel (akmods),
 /// then the player into `vboxusers`. RPM Fusion's release package carries its signing key, which
 /// dnf imports as it installs it.
-#[cfg(any(target_os = "linux", test))]
 pub fn virtualbox_dnf_script(user: Option<&str>) -> RootScript {
     use std::fmt::Write as _;
     let mut s = r#"dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm"; dnf install -y VirtualBox akmod-VirtualBox "kernel-devel-$(uname -r)" kernel-headers; akmods --force --kernels "$(uname -r)"; modprobe vboxdrv || echo "VirtualBox's driver isn't loaded yet: restart the computer to start it, and VirtualBox's driver is built then.""#.to_string();
@@ -539,7 +495,6 @@ pub fn virtualbox_dnf_script(user: Option<&str>) -> RootScript {
 /// libvirt on Fedora with what vagrant-libvirt builds against (libvirt's headers, a C compiler,
 /// pkg-config, Ruby's headers) and virtiofsd for the shared folders, its service on, then the
 /// player into the `libvirt` group (and the KVM device's).
-#[cfg(any(target_os = "linux", test))]
 pub fn libvirt_dnf_script(user: Option<&str>) -> RootScript {
     then_libvirt_groups(
         "dnf install -y libvirt libvirt-daemon-kvm qemu-kvm virt-install virt-manager libvirt-devel gcc make pkgconf-pkg-config ruby-devel virtiofsd; systemctl enable --now libvirtd",
@@ -549,7 +504,6 @@ pub fn libvirt_dnf_script(user: Option<&str>) -> RootScript {
 
 /// QEMU and its disk tools on Fedora, with `genisoimage` for vagrant-qemu's cloud-init seeds,
 /// then the player into the KVM device's group.
-#[cfg(any(target_os = "linux", test))]
 pub fn qemu_dnf_script(user: Option<&str>) -> RootScript {
     then_kvm_group("dnf install -y qemu-kvm qemu-img genisoimage", user)
 }

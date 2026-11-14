@@ -22,12 +22,12 @@ fn contexts_are_read_with_the_current_one_marked_by_true_or_a_star() {
 
 #[test]
 fn context_names_map_to_engines_and_default_only_counts_on_linux() {
-    assert_eq!(context_engine("desktop-linux", "macos").map(Engine::id), Some("docker-desktop"));
-    assert_eq!(context_engine("colima-dev", "macos").map(Engine::id), Some("colima"));
-    assert_eq!(context_engine("my-remote", "macos").map(Engine::id), None);
-    assert_eq!(context_engine("default", "linux").map(Engine::id), Some("docker-engine"));
-    assert_eq!(context_engine("podman-machine-default", "macos").map(Engine::id), Some("podman"));
-    assert_eq!(context_engine("rancher-desktop", "windows").map(Engine::id), Some("rancher-desktop"));
+    assert_eq!(context_engine("desktop-linux", Os::Macos).map(Engine::id), Some("docker-desktop"));
+    assert_eq!(context_engine("colima-dev", Os::Macos).map(Engine::id), Some("colima"));
+    assert_eq!(context_engine("my-remote", Os::Macos).map(Engine::id), None);
+    assert_eq!(context_engine("default", Os::Linux).map(Engine::id), Some("docker-engine"));
+    assert_eq!(context_engine("podman-machine-default", Os::Macos).map(Engine::id), Some("podman"));
+    assert_eq!(context_engine("rancher-desktop", Os::Windows).map(Engine::id), Some("rancher-desktop"));
 }
 
 /// Several engines side by side: each context is asked with `docker --context <c> info`, so
@@ -197,6 +197,6 @@ async fn an_engine_that_cannot_be_started_here_is_refused() {
 fn more_engines_by_name() {
     assert_eq!(engine_named("podman", "default").id(), "podman");
     assert_eq!(engine_named("Ubuntu", "rancher-desktop").id(), "rancher-desktop");
-    assert_eq!(context_engine("colima", "macos").map(Engine::id), Some("colima"));
-    assert_eq!(context_engine("default", "macos").map(Engine::id), None);
+    assert_eq!(context_engine("colima", Os::Macos).map(Engine::id), Some("colima"));
+    assert_eq!(context_engine("default", Os::Macos).map(Engine::id), None);
 }

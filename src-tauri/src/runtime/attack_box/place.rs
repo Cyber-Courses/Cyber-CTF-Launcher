@@ -11,8 +11,10 @@ use super::status::{AttackStatus, status_of};
 use super::{Cpu, Kind};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
+use crate::platform::host::{Arch, Os};
 use crate::runtime::host::{self, Failed, Host};
 use crate::runtime::paths::local_runtime;
+use crate::runtime::providers::Provider;
 use crate::runtime::{Runtime, lab};
 
 /// The lab the box joins: its run (`host`, [`crate::runtime::host`]), its folder, the Isoloom
@@ -142,7 +144,7 @@ impl Placed {
             },
             Host::Esxi { .. } | Host::Cloud { .. } | Host::Server { .. } => None,
         };
-        if shares_folders(self.local(), self.target, provider.as_deref(), std::env::consts::OS) {
+        if shares_folders(self.local(), self.target, provider.as_deref(), Os::HERE) {
             return Some(folder);
         }
         let why = match provider.as_deref() {
@@ -156,7 +158,7 @@ impl Placed {
 
     /// The box's CPU on this computer ([`box_cpu`]).
     fn cpu(&self) -> Cpu {
-        box_cpu(std::env::consts::ARCH, self.local(), self.target)
+        box_cpu(Arch::HERE, self.local(), self.target)
     }
 
     /// Whether the box runs here, on this machine.
@@ -179,27 +181,23 @@ impl Placed {
 /// `host_folders`); a lab on a server or in a cloud account can't reach this computer. The
 /// integration tests' `shared_for` (`tests/integration/run.sh`) lists the same hypervisors, as
 /// a test here checks.
-fn shares_folders(local: bool, target: Target, provider: Option<&str>, os: &str) -> bool {
+fn shares_folders(local: bool, target: Target, provider: Option<&str>, os: Os) -> bool {
     match target {
         _ if !local => false,
         Target::Docker => true,
-        Target::DockerVm | Target::Vagrant => match provider {
-            Some("virtualbox" | "vmware_desktop" | "parallels" | "utm" | "libvirt") => true,
-            Some("qemu") => os == "linux",
-            _ => false,
-        },
+        Target::DockerVm | Target::Vagrant => provider.and_then(Provider::from_id).is_some_and(|p| p.row().shares_folders.contains(&os)),
         _ => false,
     }
 }
 
 /// The box's CPU for a lab of `target`, run on this computer (`local`) or not, `arch` being this
-/// computer's (`std::env::consts::ARCH`): this computer's own where the lab runs on it and it is
+/// computer's: this computer's own where the lab runs on it and it is
 /// Arm (a lab's machines are amd64 unless they say otherwise; the VM a container lab runs in here
 /// is this computer's CPU too), whatever the OS; the lab's on a server or in a cloud account, and
 /// on an x86 computer.
-fn box_cpu(arch: &str, local: bool, target: Target) -> Cpu {
+fn box_cpu(arch: Arch, local: bool, target: Target) -> Cpu {
     let native = matches!(target, Target::Docker | Target::DockerVm | Target::Vagrant);
-    if local && native && arch == "aarch64" { Cpu::Arm } else { Cpu::Lab }
+    if local && native && arch == Arch::Aarch64 { Cpu::Arm } else { Cpu::Lab }
 }
 
 #[cfg(test)]
@@ -301,28 +299,28 @@ mod tests {
 
     #[test]
     fn the_shared_folder_reaches_the_box_wherever_the_lab_runs_on_this_computer_and_can_share_it() {
-        assert!(shares_folders(true, Target::Docker, None, "macos"), "Docker binds it");
+        assert!(shares_folders(true, Target::Docker, None, Os::Macos), "Docker binds it");
         for p in ["virtualbox", "vmware_desktop", "parallels", "utm"] {
-            assert!(shares_folders(true, Target::Vagrant, Some(p), "macos"), "{p}");
-            assert!(shares_folders(true, Target::DockerVm, Some(p), "windows"), "{p}");
+            assert!(shares_folders(true, Target::Vagrant, Some(p), Os::Macos), "{p}");
+            assert!(shares_folders(true, Target::DockerVm, Some(p), Os::Windows), "{p}");
         }
-        assert!(shares_folders(true, Target::Vagrant, Some("qemu"), "linux"), "QEMU with virtiofsd");
-        assert!(!shares_folders(true, Target::Vagrant, Some("qemu"), "macos"), "no virtiofsd on macOS");
-        assert!(!shares_folders(true, Target::Vagrant, Some("hyperv"), "windows"), "SMB asks for a password");
-        assert!(!shares_folders(true, Target::Vagrant, None, "linux"), "an unknown hypervisor: not assumed");
+        assert!(shares_folders(true, Target::Vagrant, Some("qemu"), Os::Linux), "QEMU with virtiofsd");
+        assert!(!shares_folders(true, Target::Vagrant, Some("qemu"), Os::Macos), "no virtiofsd on macOS");
+        assert!(!shares_folders(true, Target::Vagrant, Some("hyperv"), Os::Windows), "SMB asks for a password");
+        assert!(!shares_folders(true, Target::Vagrant, None, Os::Linux), "an unknown hypervisor: not assumed");
         for t in [Target::CloudDocker, Target::CloudVm, Target::Proxmox, Target::DockerVm] {
-            assert!(!shares_folders(false, t, Some("virtualbox"), "linux"), "{t:?} away from this computer");
+            assert!(!shares_folders(false, t, Some("virtualbox"), Os::Linux), "{t:?} away from this computer");
         }
     }
 
     /// Whether the integration tests' `shared_for` (`tests/integration/run.sh`) gives a VM
     /// box on `provider` a shared folder on `os`, read from its `case` arms: a plain `echo`
     /// always, one behind `uname -s` = Linux only there, any other arm none.
-    fn script_shares(script: &str, provider: &str, os: &str) -> bool {
+    fn script_shares(script: &str, provider: &str, os: Os) -> bool {
         let body = script.split("shared_for() {").nth(1).and_then(|b| b.split("esac").next()).expect("shared_for's case");
         let arm = body.lines().filter_map(|l| l.split_once(')')).find(|(pattern, _)| pattern.split('|').any(|p| p.trim() == provider));
         match arm {
-            Some((_, action)) if action.contains("uname -s") => action.contains("= Linux") && os == "linux",
+            Some((_, action)) if action.contains("uname -s") => action.contains("= Linux") && os == Os::Linux,
             Some((_, action)) => action.contains("echo"),
             None => false,
         }
@@ -332,11 +330,11 @@ mod tests {
     fn the_integration_tests_share_a_folder_on_the_same_hypervisors_as_the_launcher() {
         let script = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/integration/run.sh")).unwrap();
         for provider in crate::runtime::providers::Provider::ALL.map(crate::runtime::providers::Provider::id) {
-            for os in ["linux", "macos", "windows"] {
+            for os in Os::ALL {
                 assert_eq!(
                     script_shares(&script, provider, os),
                     shares_folders(true, Target::Vagrant, Some(provider), os),
-                    "{provider} on {os}: shared_for and shares_folders disagree"
+                    "{provider} on {os:?}: shared_for and shares_folders disagree"
                 );
             }
         }
@@ -344,8 +342,8 @@ mod tests {
 
     /// Every computer the launcher ships for, as Rust names its CPU: Apple Silicon and Intel Macs,
     /// Windows on x64 and Arm, Linux on x64 and Arm.
-    const ARM: &str = "aarch64";
-    const X86: &str = "x86_64";
+    const ARM: Arch = Arch::Aarch64;
+    const X86: Arch = Arch::X86_64;
 
     #[test]
     fn on_an_arm_computer_the_box_of_a_lab_here_runs_natively_on_every_local_form() {
@@ -365,7 +363,7 @@ mod tests {
     fn on_a_server_or_in_a_cloud_account_the_box_takes_the_labs_cpu_whatever_this_computer_is() {
         for arch in [ARM, X86] {
             for target in [Target::DockerVm, Target::Proxmox, Target::CloudDocker, Target::CloudVm] {
-                assert_eq!(box_cpu(arch, false, target), Cpu::Lab, "{arch} {target:?}");
+                assert_eq!(box_cpu(arch, false, target), Cpu::Lab, "{arch:?} {target:?}");
             }
         }
     }

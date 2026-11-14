@@ -1,4 +1,4 @@
-import type { MachineMetrics, ProviderStatus, SystemReport, Tool, Unavailable } from "@/lib/tauri";
+import type { MachineMetrics, Os, ProviderStatus, SystemReport, Tool, Unavailable } from "@/lib/tauri";
 import type { LastTest } from "@/lib/settings";
 import { cantRun, labHypervisor, localHypervisors } from "@/features/machine/hypervisors";
 import type { LabKind } from "@/features/machine/machine-parts";
@@ -9,8 +9,8 @@ import { OS_NAMES } from "@/lib/tauri/generated/ProviderNames";
 // live metrics and the last self-tests.
 
 /** An OS's name, by the machine report's id for it (`macos`, `windows`, `linux`): Rust's table
- *  (`platform::OS_NAMES`), the one the launcher's messages use too. */
-export const osName = (os: string): string => OS_NAMES[os] ?? os;
+ *  (`Os::name`), the one the launcher's messages use too. */
+export const osName = (os: Os): string => OS_NAMES[os];
 
 /** Free memory each lab type wants to start comfortably. */
 export const WANT_FREE: Record<LabKind, number> = { docker: 2e9, vm: 8e9 };

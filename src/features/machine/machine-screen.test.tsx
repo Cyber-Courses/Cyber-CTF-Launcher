@@ -405,7 +405,7 @@ describe("HypervisorRows", () => {
     installTauri();
     const report = {
       ...readyReport(),
-      os: "linux",
+      os: "linux" as const,
       ...hypervisors([
         hv({}),
         hv({ provider: "vmware_desktop" }),
@@ -443,7 +443,7 @@ describe("HypervisorRows", () => {
     const onToggleTest = vi.fn();
     const onTestDone = vi.fn();
     const user = userEvent.setup();
-    const report = { ...readyReport(), os: "linux", ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
+    const report = { ...readyReport(), os: "linux" as const, ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
     const r = render(rows(report, null, { onToggleTest }));
     const tests = screen.getAllByRole("button", { name: /^test$/i });
     await user.click(tests[1]);
@@ -468,7 +468,7 @@ describe("HypervisorRows", () => {
   it("marks the hypervisor chosen in Settings, not the first installed one", () => {
     installTauri();
     setVmProvider("vmware_desktop");
-    const report = { ...readyReport(), os: "linux", ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
+    const report = { ...readyReport(), os: "linux" as const, ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
     render(<HypervisorRows {...base} report={report} last={null} vm={vmSetup(report, "vmware_desktop", null)} />);
     expect(providerRows()).toEqual([
       { name: "VirtualBox", status: "Ready", slot: "Use by default", detail: "not tested yet" },
@@ -738,7 +738,7 @@ describe("MachineScreen", () => {
     render(<MachineScreen report={readyReport()} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
     await flush(50);
     expect(text()).toContain("Ready for labs");
-    expect(text()).toContain("macOS arm64");
+    expect(text()).toContain("macOS aarch64");
     expect(text()).toContain("up 3d 4h");
     expect(text()).toContain("8 cores");
     // Compact, so it fits the card's corner in every language.
@@ -787,11 +787,11 @@ describe("MachineScreen", () => {
     expect(onNavigate).toHaveBeenCalledWith("server");
   });
 
-  it("names an unknown OS as-is and counts one lab type", async () => {
+  it("names the OS by its name and counts one lab type", async () => {
     installTauri({ machine_metrics: () => metrics() });
-    render(<MachineScreen report={{ ...readyReport(), os: "freebsd", dockerRunning: false }} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
+    render(<MachineScreen report={{ ...readyReport(), os: "linux", dockerRunning: false }} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
     await flush(50);
-    expect(text()).toContain("freebsd arm64");
+    expect(text()).toContain("Linux aarch64");
     expect(text()).toContain("1 lab type needs setup");
   });
 

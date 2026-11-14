@@ -73,7 +73,7 @@ describe("AboutSection", () => {
       />,
     );
     expect(text()).toContain("v1.4.0");
-    expect(text()).toContain("macos arm64");
+    expect(text()).toContain("macos aarch64");
     expect(text()).toContain("c0ffee");
     expect(text()).toMatch(/install automatically/);
   });
@@ -193,7 +193,7 @@ describe("AboutSection", () => {
     await flush();
     const copied = writeText.mock.calls[0][0];
     expect(copied).toContain("Cyber CTF v1.4.0");
-    expect(copied).toContain("OS: macos arm64");
+    expect(copied).toContain("OS: macos aarch64");
     expect(copied).toContain("Docker: running (unknown engine)");
     expect(copied).toContain("Vagrant: installed, Terraform: installed");
     expect(copied).toContain("Hypervisors ready: virtualbox");

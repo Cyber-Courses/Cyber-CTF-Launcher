@@ -7,7 +7,9 @@ pub mod wsl;
 
 use serde::Serialize;
 
+use crate::machine::tools::install::Dependency;
 use crate::platform::exec::{docker_denied, docker_denied_error, run_read};
+use crate::platform::host::{Arch, Host, Os, Packages};
 use crate::platform::remembered::remembered;
 use crate::runtime::providers::{self, ProviderStatus};
 
@@ -50,10 +52,10 @@ pub struct CloudClis {
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemReport {
-    /// The OS, as Rust names it (`macos`, `windows`, `linux`).
-    pub os: &'static str,
-    /// The CPU architecture, as Rust names it (`aarch64`, `x86_64`).
-    pub arch: &'static str,
+    /// The OS.
+    pub os: Os,
+    /// The CPU architecture.
+    pub arch: Arch,
     /// The OS's package manager.
     pub pkg_manager: PkgManager,
     /// The Docker CLI.
@@ -113,14 +115,14 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
     // A tool installed since the last check (from the app or not) is found without a restart.
     crate::platform::env_path::refresh();
     let (docker, docker_compose, vagrant, daemon, aws, azure, gcloud, terraform) = tokio::join!(
-        probe("docker", &["--version"]),
+        probe_tool(Dependency::Docker),
         probe("docker", &["compose", "version", "--short"]),
-        probe("vagrant", &["--version"]),
+        probe_tool(Dependency::Vagrant),
         docker::daemon_os(),
-        probe("aws", &["--version"]),
+        probe_tool(Dependency::Awscli),
         probe_azure(),
-        probe("gcloud", &["--version"]),
-        probe("terraform", &["version"]),
+        probe_tool(Dependency::Gcloud),
+        probe_tool(Dependency::Terraform),
     );
     let (vm_providers, docker_engines, (ovftool, ovftool_location), wsl, groups_pending) = tokio::join!(
         providers::detect(vagrant.installed),
@@ -136,10 +138,11 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         Err(_) => None,
     };
     let ready_hypervisors = providers::ready(&vm_providers, vagrant.installed);
+    let host = Host::here();
     let mut report = SystemReport {
-        os: std::env::consts::OS,
-        arch: std::env::consts::ARCH,
-        pkg_manager: package_manager().await,
+        os: host.os,
+        arch: host.arch,
+        pkg_manager: package_manager(host).await,
         docker,
         docker_running: daemon.is_ok(),
         docker_denied,
@@ -160,7 +163,7 @@ pub async fn system_check(dirs: crate::platform::AppDirs) -> SystemReport {
         setup: crate::machine::setup::Options::empty(),
     };
     // Hyper-V turned on from here starts at the next restart: until then the setup asks for it.
-    let hyperv_restart = cfg!(windows) && wsl::hyperv_on_this_boot(&dirs);
+    let hyperv_restart = host.os == Os::Windows && wsl::hyperv_on_this_boot(&dirs);
     report.setup = crate::machine::setup::options(&report, hyperv_restart);
     report
 }
@@ -177,6 +180,15 @@ async fn probe(program: &'static str, args: &[&str]) -> Tool {
     match answer {
         Ok(out) => Tool { installed: true, version: first_line(&out) },
         Err(_) => Tool { installed: false, version: None },
+    }
+}
+
+/// A tool the guided setup installs, by the probe its row names ([`Dependency::row`]): the same
+/// command proves it installed for the check and for the setup's record.
+async fn probe_tool(dependency: Dependency) -> Tool {
+    match dependency.row().probe {
+        Some((program, args)) => probe(program, args).await,
+        None => Tool { installed: false, version: None },
     }
 }
 
@@ -200,41 +212,21 @@ pub(crate) fn first_line(out: &str) -> Option<String> {
     out.lines().map(str::trim).find(|l| !l.is_empty()).map(str::to_string)
 }
 
-async fn package_manager() -> PkgManager {
-    pkg_manager(package_manager_version().await)
+async fn package_manager(host: Host) -> PkgManager {
+    let version = match host.packages {
+        Some(packages) => version_of(packages.program()).await,
+        None => None,
+    };
+    pkg_manager(host, version)
 }
 
-/// This OS's package manager, given its `--version` output when it is installed: on Linux apt,
-/// or dnf where there is no apt-get (Fedora and the distributions built on it).
-fn pkg_manager(version: Option<String>) -> PkgManager {
-    let name = if cfg!(target_os = "windows") {
-        "winget"
-    } else if cfg!(target_os = "linux") {
-        linux_packages_name()
-    } else {
-        "Homebrew"
-    };
+/// `host`'s package manager, given its `--version` output when it is installed: the one the
+/// setup goes through, else the one its OS usually has ([`Os::usual_packages`]), not installed.
+fn pkg_manager(host: Host, version: Option<String>) -> PkgManager {
+    let name = host.packages.map_or(host.os.usual_packages(), Packages::name);
     let installed = version.is_some();
     let version = version.and_then(|v| first_line(&v)).filter(|v| !v.is_empty());
     PkgManager { name: name.to_string(), installed, version }
-}
-
-/// `--version` of the package manager, when it is installed: Homebrew (where it is installed),
-/// winget or apt.
-async fn package_manager_version() -> Option<String> {
-    #[cfg(target_os = "macos")]
-    let program = crate::platform::brew_bin()?;
-    #[cfg(target_os = "windows")]
-    let program = "winget";
-    #[cfg(target_os = "linux")]
-    let program = if linux_packages_name() == "dnf" { "dnf" } else { "apt-get" };
-    version_of(program).await
-}
-
-/// The Linux package manager's name: `apt` where apt-get is on PATH, `dnf` where dnf is and
-/// apt-get isn't, else `apt` (the name the probe then reports as not installed).
-fn linux_packages_name() -> &'static str {
-    if !crate::platform::on_path("apt-get") && crate::platform::on_path("dnf") { "dnf" } else { "apt" }
 }
 
 /// `program --version`, timed as every probe is ([`run_read`]); none when it can't run or fails
@@ -280,7 +272,7 @@ mod tests {
         assert_eq!(super::first_line("\tDocker version 27.3.1, build x\t\r\n").as_deref(), Some("Docker version 27.3.1, build x"));
         // Only blank lines: no version at all.
         assert_eq!(super::first_line("\r\n"), None);
-        assert!(super::pkg_manager(Some("\r\n".into())).version.is_none());
+        assert!(super::pkg_manager(crate::platform::host::Host::here(), Some("\r\n".into())).version.is_none());
         assert_eq!(super::azure_version("{\"azure-cli\": \"2.90.0\"}\r\n").as_deref(), Some("2.90.0"));
         assert_eq!(super::azure_version("{\"azure-cli\": 2.9}"), None, "a version that isn't text");
     }
@@ -298,20 +290,20 @@ mod tests {
     async fn a_package_manager_that_fails_its_version_is_not_installed() {
         use crate::platform::exec::fake::{Tools, fail, ok};
         let _broken = Tools::new(|program, _| if program == "brew" { fail("Error: brew is broken") } else { None });
-        assert!(!super::pkg_manager(super::version_of("brew").await).installed);
+        assert!(!super::pkg_manager(crate::platform::host::Host::here(), super::version_of("brew").await).installed);
         let _working = Tools::new(|program, _| if program == "brew" { ok("Homebrew 4.6.3\n") } else { None });
-        assert_eq!(super::pkg_manager(super::version_of("brew").await).version.as_deref(), Some("Homebrew 4.6.3"));
+        assert_eq!(super::pkg_manager(crate::platform::host::Host::here(), super::version_of("brew").await).version.as_deref(), Some("Homebrew 4.6.3"));
     }
 
     #[test]
     fn the_package_manager_reports_its_first_version_line() {
-        let pm = super::pkg_manager(Some("Homebrew 4.6.3\nHomebrew/core\n".into()));
+        let pm = super::pkg_manager(crate::platform::host::Host::here(), Some("Homebrew 4.6.3\nHomebrew/core\n".into()));
         assert!(pm.installed);
         assert_eq!(pm.version.as_deref(), Some("Homebrew 4.6.3"));
         assert_ne!(pm.name, "");
-        let empty = super::pkg_manager(Some(String::new()));
+        let empty = super::pkg_manager(crate::platform::host::Host::here(), Some(String::new()));
         assert!(empty.installed && empty.version.is_none());
-        let missing = super::pkg_manager(None);
+        let missing = super::pkg_manager(crate::platform::host::Host::here(), None);
         assert!(!missing.installed && missing.version.is_none());
         let v = serde_json::to_value(super::Tool { installed: true, version: Some("1".into()) }).unwrap();
         assert_eq!(v, serde_json::json!({ "installed": true, "version": "1" }));

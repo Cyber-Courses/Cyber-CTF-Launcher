@@ -11,7 +11,7 @@ import { withSetup } from "@/lib/dev-mock/setup-options";
 
 export const report: SystemReport = withSetup({
   os: "macos",
-  arch: "arm64",
+  arch: "aarch64",
   pkgManager: { name: "brew", installed: true, version: "4.4.0" },
   docker: { installed: true, version: "27.3.1" },
   dockerRunning: true,

@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::{UTM_APP, hyperv_enabled, qemu_binary, tool_present};
+use crate::machine::tools::install::Dependency;
 use crate::platform::exec::run_read;
+use crate::platform::host::{Arch, Host, Os};
 
 /// Where a lab's machines can run: a hypervisor here or a server (each a Vagrant provider, its id
 /// the value given to `vagrant up --provider`), Proxmox (the runner's Terraform), or a cloud.
@@ -101,13 +103,13 @@ impl Provider {
         Provider::ALL.into_iter().chain(Provider::CLOUDS).find(|p| p.id() == id)
     }
 
-    /// The provider's name as the player reads it on the OS `os` (`std::env::consts::OS`):
-    /// VMware's desktop hypervisor is Fusion on macOS and Workstation elsewhere, so nobody is
-    /// pointed at a product their OS doesn't have; every other provider is its [`Provider::label`].
-    pub fn label_on(self, os: &str) -> &'static str {
+    /// The provider's name as the player reads it on `os`: VMware's desktop hypervisor is Fusion
+    /// on macOS and Workstation elsewhere, so nobody is pointed at a product their OS doesn't have;
+    /// every other provider is its [`Provider::label`].
+    pub fn label_on(self, os: Os) -> &'static str {
         match (self, os) {
-            (Provider::VmwareDesktop, "macos") => "VMware Fusion",
-            (Provider::VmwareDesktop, "linux" | "windows") => "VMware Workstation",
+            (Provider::VmwareDesktop, Os::Macos) => "VMware Fusion",
+            (Provider::VmwareDesktop, Os::Windows | Os::Linux) => "VMware Workstation",
             _ => self.label(),
         }
     }
@@ -152,52 +154,85 @@ impl Provider {
         Self::CLOUDS.contains(&self)
     }
 
-    /// Whether this provider can run on the current OS at all. Local hypervisors are
-    /// platform-specific; remote ones (ESXi, Proxmox) apply anywhere. We only surface
-    /// providers that are possible on this machine, not the whole catalogue.
-    pub(super) fn applicable(self) -> bool {
-        self.applicable_on(std::env::consts::OS, std::env::consts::ARCH)
-    }
-
-    /// [`applicable`](Self::applicable) on `os` and CPU `arch`.
-    fn applicable_on(self, os: &str, arch: &str) -> bool {
-        // Neither ships for Windows on Arm (no installer, no Arm VMs there): VM labs on those PCs
-        // go to Hyper-V, a server or the cloud.
-        let built_for_windows_on_arm = !(matches!(self, Provider::Virtualbox | Provider::VmwareDesktop) && os == "windows" && arch == "aarch64");
-        self.runs_on(os) && built_for_windows_on_arm
-    }
-
-    /// Whether it exists on `os` (`std::env::consts::OS`) at all: Hyper-V on Windows, Parallels
-    /// and UTM on macOS, libvirt on Linux, QEMU off Windows, every other one anywhere. The one table of which OS a
-    /// hypervisor belongs to: the setup's installs and removals read it too.
-    pub fn runs_on(self, os: &str) -> bool {
+    /// Its row of the hypervisor table: where it runs (which OS, which CPU), where its VMs share
+    /// a folder of this computer and, when the setup doesn't install it, where its vendor offers
+    /// it. Read by the machine check, the guided setup
+    /// and the setup's installs and removals; how the setup installs and removes one is its tool's
+    /// row ([`Provider::dependency`]). A provider added to the enum is a compile error here until
+    /// its row says where it runs.
+    pub(crate) fn row(self) -> ProviderRow {
+        // A hypervisor built for every OS and CPU, the setup installing it, its VMs sharing a
+        // folder two-way; each row says how it differs.
+        const EVERYWHERE: ProviderRow = ProviderRow { oses: &Os::ALL, windows_on_arm: true, mac_cpu: None, vendor: None, shares_folders: &Os::ALL };
+        // A server or a cloud account: reached from any computer, sharing none of its folders.
+        const REMOTE: ProviderRow = ProviderRow { shares_folders: &[], ..EVERYWHERE };
         match self {
-            Provider::Hyperv => os == "windows",
-            Provider::Parallels | Provider::Utm => os == "macos",
-            Provider::Libvirt => os == "linux",
+            // Neither ships for Windows on Arm (no installer, no Arm VMs there): VM labs on those
+            // PCs go to Hyper-V, a server or the cloud. VirtualBox runs a Mac's labs on Intel only.
+            Provider::Virtualbox => ProviderRow { windows_on_arm: false, mac_cpu: Some(Arch::X86_64), ..EVERYWHERE },
+            Provider::VmwareDesktop => {
+                ProviderRow { windows_on_arm: false, vendor: Some("https://www.vmware.com/products/desktop-hypervisor/workstation-and-fusion"), ..EVERYWHERE }
+            }
+            // Hyper-V's SMB folders ask for a password at every start (Isoloom's `host_folders`).
+            Provider::Hyperv => ProviderRow {
+                oses: &[Os::Windows],
+                vendor: Some("https://learn.microsoft.com/virtualization/hyper-v-on-windows/quick-start/enable-hyper-v"),
+                shares_folders: &[],
+                ..EVERYWHERE
+            },
+            Provider::Parallels => ProviderRow { oses: &[Os::Macos], vendor: Some("https://www.parallels.com/products/desktop/"), ..EVERYWHERE },
+            // UTM is the hypervisor made for Apple silicon.
+            Provider::Utm => ProviderRow { oses: &[Os::Macos], mac_cpu: Some(Arch::Aarch64), ..EVERYWHERE },
+            Provider::Libvirt => ProviderRow { oses: &[Os::Linux], ..EVERYWHERE },
             // vagrant-qemu builds a networked VM's cloud-init seed with `oscdimg` on Windows (the
-            // Windows ADK's), and Isoloom gives the qemu provider Linux and macOS hosts only.
-            Provider::Qemu => os != "windows",
-            _ => true,
+            // Windows ADK's), and Isoloom gives the qemu provider Linux and macOS hosts only; it
+            // shares a folder two-way through virtiofsd, on Linux only.
+            Provider::Qemu => ProviderRow { oses: &[Os::Macos, Os::Linux], shares_folders: &[Os::Linux], ..EVERYWHERE },
+            Provider::VmwareEsxi
+            | Provider::Proxmox
+            | Provider::Aws
+            | Provider::Azure
+            | Provider::Gcp
+            | Provider::DigitalOcean
+            | Provider::Linode
+            | Provider::Oci => REMOTE,
         }
+    }
+
+    /// Whether it can run on this computer at all. Local hypervisors are platform-specific; remote
+    /// ones (ESXi, Proxmox) apply anywhere. Only providers possible on this machine are surfaced,
+    /// not the whole catalogue.
+    pub(super) fn applicable(self) -> bool {
+        self.applicable_on(Host::here())
+    }
+
+    /// [`applicable`](Self::applicable) on `host`: its OS, and on Windows on Arm, built for it.
+    fn applicable_on(self, host: Host) -> bool {
+        self.runs_on(host.os) && (self.row().windows_on_arm || !host.is_windows_on_arm())
+    }
+
+    /// Whether it exists on `os` at all ([`Provider::row`]).
+    pub fn runs_on(self, os: Os) -> bool {
+        self.row().oses.contains(&os)
     }
 
     /// Whether it is offered on this machine for a lab's VMs: applicable here, and, on a Mac, the
     /// hypervisor made for its CPU (UTM on Apple Silicon, VirtualBox on an Intel Mac). One already
     /// `installed` is offered wherever it applies: the player chose it.
     pub(super) fn offered(self, installed: bool) -> bool {
-        self.offered_on(std::env::consts::OS, std::env::consts::ARCH, installed)
+        self.offered_on(Host::here(), installed)
     }
 
-    /// [`offered`](Self::offered) on `os` and CPU `arch`.
-    pub(super) fn offered_on(self, os: &str, arch: &str, installed: bool) -> bool {
-        let apple_silicon = os == "macos" && arch == "aarch64";
-        let for_this_mac = match self {
-            Provider::Virtualbox => !apple_silicon,
-            Provider::Utm => os != "macos" || apple_silicon,
-            _ => true,
-        };
-        self.applicable_on(os, arch) && (installed || for_this_mac)
+    /// [`offered`](Self::offered) on `host`.
+    pub(crate) fn offered_on(self, host: Host, installed: bool) -> bool {
+        let for_this_mac = host.os != Os::Macos || self.row().mac_cpu.is_none_or(|cpu| cpu == host.arch);
+        self.applicable_on(host) && (installed || for_this_mac)
+    }
+
+    /// The tool the guided setup installs as this hypervisor, where it does (the row of
+    /// [`Dependency::row`] that names it).
+    pub(crate) fn dependency(self) -> Option<Dependency> {
+        Dependency::ALL.into_iter().find(|d| d.hypervisor() == Some(self))
     }
 
     /// Vagrant plugin required, if the provider is not built in: Isoloom's table for the providers
@@ -284,4 +319,21 @@ impl Provider {
         let (program, args) = self.probe()?;
         Some(tool_present(program, args).await)
     }
+}
+
+/// A provider's row of the hypervisor table ([`Provider::row`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProviderRow {
+    /// The OSes it exists on.
+    pub(crate) oses: &'static [Os],
+    /// Whether it is built for Windows on Arm.
+    pub(crate) windows_on_arm: bool,
+    /// The Mac CPU it is made for, when it is made for one: offered on the other only once
+    /// installed.
+    pub(crate) mac_cpu: Option<Arch>,
+    /// Where its vendor offers it, when the setup doesn't install it (behind a login, a licence,
+    /// or a Windows feature the player turns on by hand).
+    pub(crate) vendor: Option<&'static str>,
+    /// The OSes where its VMs share a folder of this computer two-way.
+    pub(crate) shares_folders: &'static [Os],
 }

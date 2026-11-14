@@ -17,11 +17,7 @@ fn hub_ref(image: &str) -> Option<(String, String)> {
 
 /// Docker Hub's name for this machine's CPU architecture.
 fn hub_arch() -> &'static str {
-    match std::env::consts::ARCH {
-        "aarch64" => "arm64",
-        "x86_64" => "amd64",
-        other => other,
-    }
+    crate::platform::host::Arch::HERE.docker_name()
 }
 
 /// Compressed download size in bytes of `image` for this machine, from Docker Hub.
