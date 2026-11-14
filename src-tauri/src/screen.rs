@@ -275,10 +275,11 @@ pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path)
     let file = dir.join(format!("{}.rdp", label.replace([':', '/', '\\'], "-")));
     crate::platform::private_fs::write(&file, rdp::file(&connection)).map_err(Error::Io)?;
     with_sessions(|s| s.get_mut(label).map(|s| s.rdp_file = Some(file.clone())));
-    let (program, args, stdin) = rdp::command(client, &file, &connection, password.is_some());
+    let launch = rdp::command(client, &file, &connection, password.is_some());
+    let stdin = launch.password_on_stdin;
     #[allow(clippy::disallowed_methods, reason = "the remote-desktop client opens as the player's own app, left running past the call")]
-    let mut cmd = std::process::Command::new(&program);
-    cmd.args(&args).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    let mut cmd = std::process::Command::new(&launch.program);
+    cmd.args(&launch.args).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     cmd.stdin(if stdin { std::process::Stdio::piped() } else { std::process::Stdio::null() });
     let mut child = cmd.spawn().map_err(|e| Error::Invalid(format!("couldn't open {}: {e}", client.name())))?;
     let given = match (stdin, child.stdin.take(), password) {

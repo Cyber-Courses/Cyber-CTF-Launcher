@@ -257,9 +257,9 @@ impl Provider {
 
     /// The hypervisor's name and the oldest version its plugin drives: `vagrant_utm` refuses a
     /// UTM before 4.6.5 (no import of a box, no registry for its shared folders).
-    pub(super) fn hypervisor_minimum(self) -> Option<(&'static str, &'static str)> {
+    pub(super) fn hypervisor_minimum(self) -> Option<HypervisorMinimum> {
         match self {
-            Provider::Utm => Some(("UTM", "4.6.5")),
+            Provider::Utm => Some(HypervisorMinimum { name: "UTM", version: "4.6.5" }),
             _ => None,
         }
     }
@@ -284,13 +284,14 @@ impl Provider {
     }
 
     /// Local tool that proves the hypervisor itself is installed.
-    pub(super) fn probe(self) -> Option<(&'static str, &'static [&'static str])> {
+    pub(super) fn probe(self) -> Option<Probe> {
+        let probe = |program, args| Some(Probe { program, args });
         match self {
-            Provider::Virtualbox => Some(("VBoxManage", &["--version"])),
-            Provider::VmwareDesktop => Some(("vmrun", &[])),
-            Provider::Parallels => Some(("prlctl", &["--version"])),
-            Provider::Libvirt => Some(("virsh", &["--version"])),
-            Provider::Qemu => Some((qemu_binary(), &["--version"])),
+            Provider::Virtualbox => probe("VBoxManage", &["--version"]),
+            Provider::VmwareDesktop => probe("vmrun", &[]),
+            Provider::Parallels => probe("prlctl", &["--version"]),
+            Provider::Libvirt => probe("virsh", &["--version"]),
+            Provider::Qemu => probe(qemu_binary(), &["--version"]),
             // Hyper-V is a Windows feature, UTM is checked by its app bundle, and
             // remote providers have nothing local to probe.
             Provider::Hyperv
@@ -316,9 +317,27 @@ impl Provider {
         if self == Provider::Hyperv {
             return Some(hyperv_enabled());
         }
-        let (program, args) = self.probe()?;
-        Some(tool_present(program, args).await)
+        let probe = self.probe()?;
+        Some(tool_present(probe.program, probe.args).await)
     }
+}
+
+/// The local tool that proves a hypervisor is installed, and the arguments it is asked with.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Probe {
+    /// The program.
+    pub(super) program: &'static str,
+    /// Its arguments (none for `vmrun`, which prints its usage).
+    pub(super) args: &'static [&'static str],
+}
+
+/// A hypervisor's name and the oldest version of it its plugin drives.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct HypervisorMinimum {
+    /// The hypervisor's name.
+    pub(super) name: &'static str,
+    /// The oldest version driven.
+    pub(super) version: &'static str,
 }
 
 /// A provider's row of the hypervisor table ([`Provider::row`]).

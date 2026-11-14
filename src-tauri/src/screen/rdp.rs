@@ -79,14 +79,26 @@ pub(crate) fn file(c: &Connection) -> String {
     lines.join("\r\n") + "\r\n"
 }
 
+/// How a client is started for one connection.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Launch {
+    /// The program run.
+    pub(crate) program: PathBuf,
+    /// Its arguments: the `.rdp` file, or `FreeRDP`'s own.
+    pub(crate) args: Vec<String>,
+    /// Whether it reads the password on its standard input (never on its command line).
+    pub(crate) password_on_stdin: bool,
+}
+
 /// How `client` opens the connection: its program, its arguments (the `.rdp` file at `rdp`, or
 /// `FreeRDP`'s own), and whether it reads the password on its standard input.
-pub(crate) fn command(client: &Client, rdp: &Path, c: &Connection, has_password: bool) -> (PathBuf, Vec<String>, bool) {
+pub(crate) fn command(client: &Client, rdp: &Path, c: &Connection, has_password: bool) -> Launch {
     let file = rdp.display().to_string();
+    let file_only = |program: PathBuf, args: Vec<String>| Launch { program, args, password_on_stdin: false };
     match client {
-        Client::Mstsc(p) => (p.clone(), vec![file], false),
-        Client::MacApp(app) => (PathBuf::from("open"), vec!["-a".into(), app.display().to_string(), file], false),
-        Client::Remmina(p) => (p.clone(), vec!["-c".into(), file], false),
+        Client::Mstsc(p) => file_only(p.clone(), vec![file]),
+        Client::MacApp(app) => file_only(PathBuf::from("open"), vec!["-a".into(), app.display().to_string(), file]),
+        Client::Remmina(p) => file_only(p.clone(), vec!["-c".into(), file]),
         Client::FreeRdp(p) => {
             let mut args = vec![format!("/v:{}", c.address), "/cert:ignore".to_owned(), "/dynamic-resolution".to_owned()];
             let stdin = has_password && c.user.is_some();
@@ -96,7 +108,7 @@ pub(crate) fn command(client: &Client, rdp: &Path, c: &Connection, has_password:
             if stdin {
                 args.push("/from-stdin:force".to_owned());
             }
-            (p.clone(), args, stdin)
+            Launch { program: p.clone(), args, password_on_stdin: stdin }
         }
     }
 }
@@ -143,15 +155,17 @@ mod tests {
     fn each_client_opens_the_file_and_only_freerdp_reads_the_password_on_its_input() {
         let c = Connection { address: "127.0.0.1:24001".into(), user: Some("isoloom".into()) };
         let rdp = Path::new("/data/screen/x.rdp");
-        let (p, args, stdin) = command(&Client::MacApp(PathBuf::from("/Applications/Windows App.app")), rdp, &c, true);
         assert_eq!(
-            (p, args, stdin),
-            (PathBuf::from("open"), vec!["-a".to_owned(), "/Applications/Windows App.app".into(), "/data/screen/x.rdp".into()], false)
+            command(&Client::MacApp(PathBuf::from("/Applications/Windows App.app")), rdp, &c, true),
+            Launch {
+                program: PathBuf::from("open"),
+                args: vec!["-a".to_owned(), "/Applications/Windows App.app".into(), "/data/screen/x.rdp".into()],
+                password_on_stdin: false,
+            }
         );
-        let (_, args, stdin) = command(&Client::FreeRdp(PathBuf::from("/usr/bin/xfreerdp")), rdp, &c, true);
-        assert_eq!(args, ["/v:127.0.0.1:24001", "/cert:ignore", "/dynamic-resolution", "/u:isoloom", "/from-stdin:force"]);
-        assert!(stdin && !args.iter().any(|a| a.starts_with("/p:")), "never on the command line");
-        let (_, args, _) = command(&Client::Mstsc(PathBuf::from("mstsc.exe")), rdp, &c, true);
-        assert_eq!(args, ["/data/screen/x.rdp"]);
+        let free = command(&Client::FreeRdp(PathBuf::from("/usr/bin/xfreerdp")), rdp, &c, true);
+        assert_eq!(free.args, ["/v:127.0.0.1:24001", "/cert:ignore", "/dynamic-resolution", "/u:isoloom", "/from-stdin:force"]);
+        assert!(free.password_on_stdin && !free.args.iter().any(|a| a.starts_with("/p:")), "never on the command line");
+        assert_eq!(command(&Client::Mstsc(PathBuf::from("mstsc.exe")), rdp, &c, true).args, ["/data/screen/x.rdp"]);
     }
 }
