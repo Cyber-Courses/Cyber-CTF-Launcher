@@ -71,7 +71,9 @@
         "installerHooks": "../packaging/windows/installer-hooks.nsh"
       },
       "wix": {
-        "upgradeCode": "3c132869-2900-5442-a3a5-fc9d7aa8d141"
+        "upgradeCode": "3c132869-2900-5442-a3a5-fc9d7aa8d141",
+        "fragmentPaths": ["../packaging/windows/cli-path.wxs"],
+        "componentRefs": ["CliPathEntry"]
       }
     }
   },
