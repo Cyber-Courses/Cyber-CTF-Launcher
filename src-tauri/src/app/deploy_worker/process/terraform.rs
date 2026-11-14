@@ -116,8 +116,6 @@ pub(super) fn pids(out: &str) -> Vec<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
-    use std::time::Duration;
 
     #[test]
     fn the_terraform_runs_found_are_the_workers_and_not_their_providers() {
@@ -150,20 +148,29 @@ mod tests {
 
     /// A stand-in Terraform, run as `perl -e STAND_IN docker run hashicorp/terraform:…`: one
     /// process under that command line, which stops cleanly on SIGINT (exit 130) as Terraform
-    /// does, and prints `ready` only once its handler is set. A shell with `sleep 30 & wait`
+    /// does, saying `interrupted` first, and prints `ready` only once its handler is set. A shell with `sleep 30 & wait`
     /// said `ready` before it forked and waited, so where a SIGINT landed in between (or on the
     /// fork, under the same command line, which ignores it) decided whether the run ended.
     #[cfg(unix)]
-    const STAND_IN: &str = r#"$SIG{INT} = sub { exit 130 }; $| = 1; print "ready\n"; sleep 30; exit 0"#;
+    const STAND_IN: &str = r#"$SIG{INT} = sub { print "interrupted\n"; exit 130 }; $| = 1; print "ready\n"; sleep 30; exit 0"#;
 
-    /// Waits for a stand-in Terraform to print `ready` on `out`: it has started, under its own
-    /// command line, its SIGINT handler set.
+    /// The next line a stand-in Terraform printed on `out`, once it printed it.
     #[cfg(unix)]
-    fn ready(out: std::process::ChildStdout) {
+    fn next_line(out: &mut std::io::BufReader<std::process::ChildStdout>) -> String {
         use std::io::BufRead;
         let mut line = String::new();
-        std::io::BufReader::new(out).read_line(&mut line).unwrap();
-        assert_eq!(line.trim(), "ready");
+        out.read_line(&mut line).unwrap();
+        line.trim().to_string()
+    }
+
+    /// Waits for a stand-in Terraform to print `ready` on `out`: it has started, under its own
+    /// command line, its SIGINT handler set. What it prints next is read from the reader it gives
+    /// back (kept open: a closed pipe would end it with SIGPIPE when it says it was interrupted).
+    #[cfg(unix)]
+    fn ready(out: std::process::ChildStdout) -> std::io::BufReader<std::process::ChildStdout> {
+        let mut out = std::io::BufReader::new(out);
+        assert_eq!(next_line(&mut out), "ready");
+        out
     }
 
     #[cfg(unix)]
@@ -187,8 +194,9 @@ mod tests {
         assert!(!interrupt_terraform(other.id()));
         // Once it says so, the stand-in runs under its own command line, for `pgrep` to find:
         // waited for, however long a loaded machine takes, not guessed with a few short sleeps.
-        ready(run.stdout.take().unwrap());
+        let mut out = ready(run.stdout.take().unwrap());
         assert!(interrupt_terraform(group), "terraform found in its group");
+        assert_eq!(next_line(&mut out), "interrupted");
         let status = run.wait().unwrap();
         // Ended by the interrupt, through its clean stop (its sleep alone would take 30 s).
         assert_eq!(status.code(), Some(130), "{status:?}");
@@ -223,7 +231,7 @@ mod tests {
         // the image name come from the environment, so only the stand-in Terraform's command
         // line names the image.
         use std::os::unix::process::CommandExt;
-        let run = r#"perl -e 'setpgrp(0, 0); exec @ARGV' perl -e "$STAND_IN" docker run "$IMAGE" & wait"#;
+        let run = r#"perl -e 'setpgrp(0, 0); exec @ARGV' perl -e "$STAND_IN" docker run "$IMAGE" & wait $!"#;
         let mut worker = std::process::Command::new("sh")
             .args(["-c", run])
             .env("STAND_IN", STAND_IN)
@@ -232,14 +240,14 @@ mod tests {
             .stdout(std::process::Stdio::piped())
             .spawn()
             .unwrap();
-        // The stand-in Terraform says when it runs, in its own group under the worker.
-        ready(worker.stdout.take().unwrap());
+        // The stand-in Terraform says when it runs, in its own group under the worker, and when
+        // the interrupt reached it: each waited for as it happens, however loaded the machine.
+        let mut out = ready(worker.stdout.take().unwrap());
         assert!(interrupt_terraform(worker.id()), "terraform found in its own group under the worker");
-        let started = std::time::Instant::now();
-        let waiter = std::thread::spawn(move || worker.wait());
-        while !waiter.is_finished() && started.elapsed() < Duration::from_secs(10) {
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        assert!(waiter.is_finished(), "the interrupted run ended, and the worker with it");
+        assert_eq!(next_line(&mut out), "interrupted", "the interrupt reached the stand-in Terraform");
+        // The worker ends with its run (`wait $!` gives the run's status): 130, its clean stop;
+        // without the interrupt it would end 0, after the stand-in's 30 s.
+        let status = worker.wait().unwrap();
+        assert_eq!(status.code(), Some(130), "the interrupted run ended, and the worker with it: {status:?}");
     }
 }

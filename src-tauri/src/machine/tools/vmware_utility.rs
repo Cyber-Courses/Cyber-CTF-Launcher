@@ -240,10 +240,8 @@ mod tests {
     /// A stand-in for the tool `name`: a shell script `body`.
     #[cfg(target_os = "macos")]
     fn stand_in(bin: &std::path::Path, name: &str, body: &str) {
-        use std::os::unix::fs::PermissionsExt;
         let file = bin.join(name);
-        std::fs::write(&file, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::testing::write_executable(&file, format!("#!/bin/sh\n{body}\n"));
     }
 
     #[cfg(target_os = "macos")]

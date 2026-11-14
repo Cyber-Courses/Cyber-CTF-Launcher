@@ -63,20 +63,168 @@ thread_local! {
 
 /// The scripted tools of the running test, until dropped. A call the script doesn't answer
 /// (`None`) is a missing tool.
-pub struct Tools(Rc<RefCell<State>>);
+pub struct Tools(Rc<RefCell<State>>, Option<Rc<Strict>>);
+
+/// How often a scripted call must be made, checked when the tools are dropped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Times {
+    AtLeastOnce,
+    Exactly(usize),
+    Any,
+}
+
+/// One scripted call: a program and the arguments its call starts with (`*` is any one
+/// argument), and its answer (`None`: the tool is missing).
+#[derive(Clone)]
+struct Expectation {
+    program: String,
+    args: Vec<String>,
+    reply: Option<Reply>,
+    times: Times,
+}
+
+impl Expectation {
+    fn matches(&self, program: &str, args: &[&str]) -> bool {
+        program == self.program && args.len() >= self.args.len() && self.args.iter().zip(args).all(|(want, got)| want == "*" || want == got)
+    }
+
+    fn describe(&self) -> String {
+        std::iter::once(self.program.as_str()).chain(self.args.iter().map(String::as_str)).collect::<Vec<_>>().join(" ")
+    }
+}
+
+/// A strict script for [`Tools`]: a call no expectation matches panics (and is reported again
+/// when the tools are dropped, should a task have swallowed the panic); an expectation not met
+/// panics when they are dropped; of two expectations matching a call the one naming more
+/// arguments answers, two naming as many panic. The order it is written in never matters.
+#[derive(Clone, Default)]
+#[must_use]
+pub struct Script(Vec<Expectation>);
+
+impl Script {
+    fn with(mut self, call: &str, reply: Option<Reply>, times: Times) -> Script {
+        let mut words = call.split_whitespace().map(str::to_string);
+        let program = words.next().expect("a scripted call names its program");
+        self.0.push(Expectation { program, args: words.collect(), reply, times });
+        self
+    }
+
+    /// `call` (`program arg…`, its leading arguments; `*` is any one) is made at least once, and
+    /// answered `reply` (`ok(..)`, `fail(..)`, `Some(Reply::Hang)`, or `None`: missing).
+    pub fn expect(self, call: &str, reply: Option<Reply>) -> Script {
+        self.with(call, reply, Times::AtLeastOnce)
+    }
+
+    /// `call` is made exactly `times` times.
+    pub fn expect_times(self, call: &str, times: usize, reply: Option<Reply>) -> Script {
+        self.with(call, reply, Times::Exactly(times))
+    }
+
+    /// `call` may be made, any number of times.
+    pub fn allow(self, call: &str, reply: Option<Reply>) -> Script {
+        self.with(call, reply, Times::Any)
+    }
+
+    /// The tools of this thread answering from this script, until dropped.
+    pub fn build(self) -> Tools {
+        let strict = Rc::new(Strict { used: RefCell::new(vec![0; self.0.len()]), unscripted: RefCell::new(Vec::new()), script: self });
+        let answering = strict.clone();
+        let mut tools = Tools::new(move |program, args| answering.answer(program, args));
+        tools.1 = Some(strict);
+        tools
+    }
+}
+
+/// A strict script's bookkeeping.
+struct Strict {
+    script: Script,
+    used: RefCell<Vec<usize>>,
+    unscripted: RefCell<Vec<String>>,
+}
+
+impl Strict {
+    fn answer(&self, program: &str, args: &[&str]) -> Option<Reply> {
+        let line = std::iter::once(program).chain(args.iter().copied()).collect::<Vec<_>>().join(" ");
+        let matching: Vec<(usize, &Expectation)> = self.script.0.iter().enumerate().filter(|(_, e)| e.matches(program, args)).collect();
+        let most = matching.iter().map(|(_, e)| e.args.len()).max();
+        let best: Vec<(usize, &Expectation)> = matching.into_iter().filter(|(_, e)| Some(e.args.len()) == most).collect();
+        let why = match best.as_slice() {
+            [(i, e)] => {
+                self.used.borrow_mut()[*i] += 1;
+                return e.reply.clone();
+            }
+            [] => format!(
+                "unscripted call `{line}`; the script expects:\n{}",
+                self.script.0.iter().map(|e| format!("  {}", e.describe())).collect::<Vec<_>>().join("\n")
+            ),
+            many => format!(
+                "call `{line}` matches {} expectations equally: {}",
+                many.len(),
+                many.iter().map(|(_, e)| format!("`{}`", e.describe())).collect::<Vec<_>>().join(", ")
+            ),
+        };
+        self.unscripted.borrow_mut().push(why.clone());
+        panic!("{why}");
+    }
+
+    /// What wasn't run as scripted.
+    fn unmet(&self) -> Vec<String> {
+        let mut unmet = self.unscripted.borrow().clone();
+        for (e, &n) in self.script.0.iter().zip(self.used.borrow().iter()) {
+            let met = match e.times {
+                Times::AtLeastOnce => n > 0,
+                Times::Exactly(times) => n == times,
+                Times::Any => true,
+            };
+            if !met {
+                unmet.push(format!("`{}` was expected {:?}, made {n} time(s)", e.describe(), e.times));
+            }
+        }
+        unmet
+    }
+}
 
 impl Tools {
+    /// Tools answered by `script`, a model of the tools that answers whatever it is asked.
+    /// A test that scripts a few calls uses [`Tools::script`] instead.
     pub fn new(script: impl FnMut(&str, &[&str]) -> Option<Reply> + 'static) -> Tools {
         static SETS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let set = SETS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let state = Rc::new(RefCell::new(State { script: Box::new(script), calls: Vec::new(), envs: Vec::new() }));
         STATE.with(|s| *s.borrow_mut() = Some(state.clone()));
         SET.with(|s| s.set(Some(set)));
-        Tools(state)
+        Tools(state, None)
     }
 
-    /// Tools answering by rule: the first rule whose text the call (`program arg arg…`) contains
-    /// answers; any other call succeeds with no output.
+    /// A strict script to build: see [`Script`].
+    pub fn script() -> Script {
+        Script::default()
+    }
+
+    /// Strict tools for `expected`, each `(call, reply)` made at least once (see [`Script`]).
+    pub fn expect(expected: &[(&str, Option<Reply>)]) -> Tools {
+        expected.iter().fold(Script::default(), |s, (call, reply)| s.expect(call, reply.clone())).build()
+    }
+
+    /// Every call made to `call` (`program arg…`, matched as a script matches: on the program and
+    /// its leading arguments, never on a quoted line), each as its arguments after the program.
+    pub fn made(&self, call: &str) -> Vec<Vec<String>> {
+        let mut words = call.split_whitespace();
+        let program = words.next().unwrap_or_default();
+        let want: Vec<&str> = words.collect();
+        self.calls()
+            .iter()
+            .filter_map(|line| {
+                let mut got = line.split(' ');
+                (got.next() == Some(program)).then(|| got.map(str::to_string).collect::<Vec<_>>())
+            })
+            .filter(|args| args.len() >= want.len() && want.iter().zip(args).all(|(w, g)| *w == "*" || w == g))
+            .collect()
+    }
+
+    /// Lenient tools, for the tests written before [`Tools::script`]: the first rule whose text
+    /// the call (`program arg arg…`) contains answers; any other call succeeds with no output,
+    /// so such a test can't see a call it didn't expect. New tests script their calls strictly.
     pub fn rules(rules: &[(&str, Option<Reply>)]) -> Tools {
         let rules: Vec<(String, Option<Reply>)> = rules.iter().map(|(k, r)| (k.to_string(), r.clone())).collect();
         Tools::new(move |program, args| {
@@ -110,6 +258,10 @@ impl Drop for Tools {
     fn drop(&mut self) {
         STATE.with(|s| *s.borrow_mut() = None);
         SET.with(|s| s.set(None));
+        let unmet = self.1.as_ref().map(|strict| strict.unmet()).unwrap_or_default();
+        if !unmet.is_empty() && !std::thread::panicking() {
+            panic!("the scripted tools weren't run as scripted:\n{}\ncalls made:\n{}", unmet.join("\n"), self.calls().join("\n"));
+        }
     }
 }
 
@@ -197,4 +349,74 @@ pub async fn gone(pid: u32) -> bool {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The message `f` panics with.
+    fn panic_of(f: impl FnOnce()) -> String {
+        let err = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).expect_err("it panics");
+        err.downcast_ref::<String>().cloned().or_else(|| err.downcast_ref::<&str>().map(|s| (*s).to_string())).unwrap_or_default()
+    }
+
+    /// `line` called on this thread's scripted tools (`_tools`, held so they answer).
+    fn call(_tools: &Tools, line: &str) -> Option<Reply> {
+        let mut words = line.split(' ');
+        let program = words.next().unwrap();
+        let args: Vec<&str> = words.collect();
+        reply(program, &args, &[]).and_then(|s| match s {
+            Scripted::Reply(r) => Some(r),
+            Scripted::Missing => None,
+        })
+    }
+
+    fn out(reply: Option<Reply>) -> Option<String> {
+        match reply {
+            Some(Reply::Out(text)) => Some(text),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn a_scripted_call_is_answered_whatever_order_the_script_is_in() {
+        let tools = Tools::script().allow("docker", ok("general")).allow("docker compose ps", ok("specific")).build();
+        assert_eq!(out(call(&tools, "docker compose ps -q")).as_deref(), Some("specific"));
+        assert_eq!(out(call(&tools, "docker info")).as_deref(), Some("general"));
+        assert!(call(&Tools::expect(&[("vagrant", None)]), "vagrant up").is_none(), "None is a missing tool");
+    }
+
+    #[test]
+    fn an_unscripted_call_panics_naming_it_and_the_script() {
+        let tools = Tools::script().allow("docker compose ps", ok("")).build();
+        let message = panic_of(|| drop(call(&tools, "docker info")));
+        assert!(message.contains("unscripted call `docker info`") && message.contains("docker compose ps"), "{message}");
+        let again = panic_of(move || drop(tools));
+        assert!(again.contains("unscripted call `docker info`"), "reported again when dropped: {again}");
+    }
+
+    #[test]
+    fn an_expectation_never_met_panics_when_the_tools_go() {
+        let tools = Tools::script().expect("vagrant up", ok("")).build();
+        let message = panic_of(move || drop(tools));
+        assert!(message.contains("`vagrant up` was expected AtLeastOnce, made 0 time(s)"), "{message}");
+    }
+
+    #[test]
+    fn two_expectations_matching_a_call_equally_panic() {
+        let tools = Tools::script().allow("docker * ps", ok("a")).allow("docker compose *", ok("b")).build();
+        let message = panic_of(|| drop(call(&tools, "docker compose ps")));
+        assert!(message.contains("matches 2 expectations equally"), "{message}");
+        panic_of(move || drop(tools));
+    }
+
+    #[test]
+    fn the_calls_made_are_read_by_program_and_arguments() {
+        let tools = Tools::script().allow("docker", ok("")).build();
+        call(&tools, "docker compose -p lab up");
+        call(&tools, "docker info");
+        assert_eq!(tools.made("docker compose * up"), [vec!["compose", "-p", "lab", "up"]]);
+        assert!(tools.made("dockerd").is_empty());
+    }
 }

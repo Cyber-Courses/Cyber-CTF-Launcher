@@ -458,9 +458,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_profiles_spend_is_read_with_that_profile() {
-        let tools = Tools::rules(&[("ce get-cost-and-usage", ok("12.5\n"))]);
+        let tools = Tools::expect(&[("aws ce get-cost-and-usage --time-period", ok("12.5\n"))]);
         assert_eq!(aws_month_to_date_cost(Some("work".into())).await, Some(12.5));
-        assert!(tools.called("aws ce get-cost-and-usage --time-period"), "{:?}", tools.calls());
         assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("work"));
     }
 

@@ -218,9 +218,8 @@ mod tests {
         use crate::platform::exec::fake::{Tools, ok};
         let t = crate::testing::test_app::TestApp::new();
         let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs", "monthlyLimit": 10.0 }));
-        let tools = Tools::rules(&[("ce get-cost-and-usage", ok("7.25\n"))]);
+        let tools = Tools::expect(&[("aws ce get-cost-and-usage", ok("7.25\n"))]);
         assert_eq!(account_month_spend(&t.dirs(), &cli).await.unwrap(), MonthSpend { spent: 7.25, over: false });
-        assert!(tools.called("aws ce get-cost-and-usage"), "{:?}", tools.calls());
         assert_eq!(tools.env_of("ce get-cost-and-usage", "AWS_PROFILE").as_deref(), Some("labs"));
         // At the budget, the verdict the launch gate gives: over.
         let tight = t.host("aws-tight", "aws", serde_json::json!({ "useCliCreds": true, "monthlyLimit": 7.25 }));

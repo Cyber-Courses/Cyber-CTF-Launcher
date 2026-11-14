@@ -46,9 +46,9 @@ mod tests {
     async fn subnets_in_use_excludes_our_own_and_skips_ipv6() {
         // `network ls` lists every network with its compose project; ours (by exact project) are
         // excluded, then the rest are inspected and only their IPv4 subnets kept.
-        let _tools = Tools::rules(&[
-            ("network ls", ok("bridge\t\ncyberctf-web_lab\tcyberctf-web\ncyberctf-other_lab\tcyberctf-other\n")),
-            ("network inspect", ok("172.17.0.0/16 fd00::/64\n10.9.0.0/24\n")),
+        let _tools = Tools::expect(&[
+            ("docker network ls", ok("bridge\t\ncyberctf-web_lab\tcyberctf-web\ncyberctf-other_lab\tcyberctf-other\n")),
+            ("docker network inspect", ok("172.17.0.0/16 fd00::/64\n10.9.0.0/24\n")),
         ]);
         let subnets = subnets_in_use("web").await;
         assert_eq!(subnets, ["172.17.0.0/16", "10.9.0.0/24"]);
@@ -56,7 +56,7 @@ mod tests {
 
     #[tokio::test]
     async fn subnets_in_use_is_empty_when_docker_cannot_list() {
-        let _down = Tools::rules(&[("network ls", fail("Cannot connect to the Docker daemon"))]);
+        let _down = Tools::expect(&[("docker network ls", fail("Cannot connect to the Docker daemon"))]);
         assert_eq!(subnets_in_use("web").await, Vec::<String>::new());
     }
 }

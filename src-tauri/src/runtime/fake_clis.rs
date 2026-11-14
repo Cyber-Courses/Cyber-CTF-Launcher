@@ -31,12 +31,10 @@ impl FakeBin {
         FakeBin { dir, path }
     }
 
-    /// A tool `name` running the shell `script`.
+    /// A tool `name` running the shell `script` (written by a child process: see
+    /// [`crate::testing::write_executable`]).
     fn tool(&self, name: &str, script: &str) {
-        use std::os::unix::fs::PermissionsExt;
-        let file = self.dir.join(name);
-        std::fs::write(&file, format!("#!/bin/sh\n{script}\n")).unwrap();
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::testing::write_executable(self.dir.join(name), format!("#!/bin/sh\n{script}\n"));
     }
 
     fn file(&self, name: &str) -> PathBuf {

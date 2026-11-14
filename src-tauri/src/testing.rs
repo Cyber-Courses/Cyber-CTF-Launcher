@@ -1,6 +1,11 @@
 //! What the unit tests share: an app on Tauri's mock runtime, the property tests' strategies, the
 //! scans over the crate's own source, the warnings the code logs, and the TypeScript types written
 //! from the command structs.
+//!
+//! A test never executes a file its own process wrote: a stand-in tool is written with
+//! [`write_executable`], from a child process. A file this process has open for writing is open in
+//! every process another test thread forks meanwhile, and executing it then fails with "Text file
+//! busy".
 
 pub mod logs;
 pub mod proptest_support;
@@ -9,6 +14,21 @@ pub mod test_app;
 mod ts_bindings;
 
 use std::path::{Path, PathBuf};
+
+/// Writes `contents` to `path` as an executable, from a child process (`cat`), never from the
+/// test's own: a file this process has open for writing is open in every process another test
+/// thread forks meanwhile, until that one execs, and executing the file in that window fails with
+/// "Text file busy" (ETXTBSY). A test never executes a file its own process wrote: a stand-in tool
+/// is written with this.
+#[cfg(unix)]
+pub fn write_executable(path: impl AsRef<Path>, contents: impl AsRef<str>) {
+    use std::io::Write;
+    let path = path.as_ref();
+    let mut cat =
+        std::process::Command::new("sh").arg("-c").arg("cat > \"$0\" && chmod 755 \"$0\"").arg(path).stdin(std::process::Stdio::piped()).spawn().unwrap();
+    cat.stdin.take().unwrap().write_all(contents.as_ref().as_bytes()).unwrap();
+    assert!(cat.wait().unwrap().success(), "writing {}", path.display());
+}
 
 /// A fresh folder under the temp dir for one test, named after `tag` (`cyberctf-<tag>-XXXXXX`),
 /// removed with what it holds when the returned guard drops: at the end of the test, and when a
