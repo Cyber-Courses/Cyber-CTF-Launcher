@@ -31,6 +31,7 @@ fn cli_account(profile: Option<String>) -> HostProfile {
         network: None,
         node: None,
         insecure_tls: false,
+        tls_fingerprint: None,
         auto_stop_hours: None,
         use_cli_creds: true,
         aws_profile: profile,

@@ -93,6 +93,52 @@ async fn the_bridge_listens_on_the_loopback_relays_one_viewer_and_spends_its_tok
     drop(bridge);
 }
 
+/// The screen and the answers to the viewer's pings share one connection: a pong goes out
+/// whole between screen frames while the screen streams, never inside one (Clean Code ch.13:
+/// one writer fed by a channel, rather than a lock both sides take).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_ping_is_answered_whole_while_the_screen_streams() {
+    let vnc = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let vnc_at = vnc.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (mut s, _) = vnc.accept().await.unwrap();
+        s.write_all(b"RFB 003.008\n").await.unwrap();
+        for _ in 0..400 {
+            if s.write_all(&[0xAB; 4096]).await.is_err() {
+                return;
+            }
+        }
+        // Held open: the relay runs until the test is done with it.
+        let _ = s.read(&mut [0u8; 1]).await;
+    });
+    let bridge = Bridge::bind().await.unwrap();
+    let token = bridge.arm(Target::Tcp(vnc_at));
+    let (mut viewer, head) = connect(bridge.port(), &token, "tauri://localhost").await;
+    assert!(head.starts_with("HTTP/1.1 101"), "{head}");
+    let mut ping = masked(b"hi");
+    ping[0] = 0x89;
+    viewer.write_all(&ping).await.unwrap();
+    let answered = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let mut op = [0u8; 1];
+            viewer.peek(&mut op).await.unwrap();
+            let payload = frame(&mut viewer).await;
+            match op[0] {
+                0x8A => {
+                    assert_eq!(payload, b"hi", "the ping's payload, whole");
+                    break;
+                }
+                // The first frame carries what the screen said first: its version, and what came
+                // right after it.
+                0x82 => assert!(payload.strip_prefix(b"RFB 003.008\n").unwrap_or(&payload).iter().all(|b| *b == 0xAB), "a screen frame, whole"),
+                other => panic!("an unexpected frame {other:#x}"),
+            }
+        }
+    });
+    answered.await.expect("the ping was answered");
+    drop(bridge);
+}
+
 /// The bridge to a VNC port that refuses, and to one that accepts but never speaks: the viewer's
 /// connection is closed saying where the screen didn't answer, never left waiting.
 #[tokio::test]

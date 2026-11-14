@@ -282,10 +282,7 @@ pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<V
 /// [`lab_tools`], in the app whose folders are `dirs`.
 pub(crate) fn tools_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<Vec<lab::Observer>> {
     let dir = lab_dir(dirs, id)?;
-    match local_runtime(&dir, runtime) {
-        Runtime::Cloud => Ok(Vec::new()),
-        form => lab::tools(&dir, form),
-    }
+    lab::tools(&dir, local_runtime(&dir, runtime))
 }
 
 /// Runs a lab's exploitability check: does the intended exploit path still work? Lets a

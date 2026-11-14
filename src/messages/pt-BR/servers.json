@@ -343,6 +343,22 @@
       "passed": "Aprovado",
       "warning": "Aprovado, com um aviso",
       "failed": "Falhou"
+    },
+    "trust": {
+      "title": "Confirme a identidade deste servidor",
+      "titleChanged": "A identidade deste servidor mudou",
+      "body": "Nada foi enviado a ele ainda. Compare cada impressão digital abaixo com a que o próprio servidor mostra; confirme só se forem idênticas. O Cyber CTF passará a aceitar este servidor, e só ele, neste endereço.",
+      "changedBody": "Ele mostra uma impressão digital diferente da confirmada antes, então nada foi enviado a ele. Se você reinstalou o servidor ou trocou o certificado, compare a nova impressão digital com a que o servidor mostra e confirme-a. Caso contrário, cancele: alguém pode estar interceptando a conexão.",
+      "certificate": "Certificado TLS (autoassinado)",
+      "certificateWhere": "Na interface web do Proxmox: o nó > Sistema > Certificados, a impressão digital do certificado. No nó: pvenode cert info.",
+      "sha256": "Impressão digital SHA-256",
+      "previous": "Confirmada antes",
+      "sshKeys": "Chaves de host SSH do nó",
+      "sshWhere": "No console do nó: for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done",
+      "sshUnread": "Não foi possível ler as chaves de host SSH do nó ({error}): o SSH para ele continua recusado até serem confirmadas aqui.",
+      "confirm": "Elas coincidem: confiar neste servidor",
+      "confirmChanged": "Eu o troquei: confiar no novo",
+      "cancel": "Cancelar"
     }
   }
 }

@@ -6,9 +6,14 @@ fn reason_of(provider: Provider, vagrant_installed: bool, detection: Detection<'
     unavailable_reason(provider, &needs(vagrant_installed, detection.plugin_installed, detection.utility), detection)
 }
 
+/// A plugin `vagrant plugin list` names.
+fn installed(name: &str, version: Option<&str>) -> Plugin {
+    Plugin { name: name.into(), version: version.map(str::to_owned) }
+}
+
 /// The plugin names alone, as the checks before versions mattered read them.
 fn parse_plugins(out: &str) -> Vec<String> {
-    parse_plugin_versions(out).into_iter().map(|(name, _)| name).collect()
+    parse_plugin_versions(out).into_iter().map(|installed| installed.name).collect()
 }
 
 #[test]
@@ -44,10 +49,10 @@ fn plugin_versions_are_read_and_a_missing_one_is_none() {
     assert_eq!(
         parse_plugin_versions(out),
         [
-            ("vagrant-libvirt".to_string(), Some("0.12.2".to_string())),
-            ("vagrant_utm".to_string(), Some("0.2.0".to_string())),
-            ("vagrant-vmware-esxi".to_string(), None),
-            ("vagrant-qemu".to_string(), Some("0.7.0".to_string())),
+            installed("vagrant-libvirt", Some("0.12.2")),
+            installed("vagrant_utm", Some("0.2.0")),
+            installed("vagrant-vmware-esxi", None),
+            installed("vagrant-qemu", Some("0.7.0")),
         ]
     );
 }
@@ -101,7 +106,7 @@ fn an_old_utm_plugin_or_utm_reads_as_too_old_and_says_what_to_do() {
         account: None,
     };
     // The plugin the failure was seen with: setup installs it again, which updates it.
-    assert_eq!(plugin_too_old(Provider::Utm, Some("0.1.6")), Some(("0.1.6", "0.2.0")));
+    assert_eq!(plugin_too_old(Provider::Utm, Some("0.1.6")), Some(TooOld { name: None, version: "0.1.6", min: "0.2.0" }));
     assert_eq!(
         reason_of(Provider::Utm, true, detection(Some("4.7.5"), Some("0.1.6"), false)),
         Some(Unavailable::PluginTooOld { plugin: "vagrant_utm".into(), version: "0.1.6".into(), min: "0.2.0".into() })
@@ -251,11 +256,11 @@ fn a_mac_is_offered_the_hypervisor_made_for_its_cpu_and_keeps_one_installed() {
 
 #[test]
 fn probes_name_the_hypervisors_tool() {
-    assert_eq!(Provider::Virtualbox.probe().unwrap().0, "VBoxManage");
-    assert_eq!(Provider::VmwareDesktop.probe().unwrap().0, "vmrun");
-    assert_eq!(Provider::Parallels.probe().unwrap().0, "prlctl");
-    assert_eq!(Provider::Libvirt.probe().unwrap().0, "virsh");
-    assert!(Provider::Qemu.probe().unwrap().0.starts_with("qemu-system-"));
+    assert_eq!(Provider::Virtualbox.probe().unwrap().program, "VBoxManage");
+    assert_eq!(Provider::VmwareDesktop.probe().unwrap().program, "vmrun");
+    assert_eq!(Provider::Parallels.probe().unwrap().program, "prlctl");
+    assert_eq!(Provider::Libvirt.probe().unwrap().program, "virsh");
+    assert!(Provider::Qemu.probe().unwrap().program.starts_with("qemu-system-"));
     assert_eq!(qemu_binary(), if std::env::consts::ARCH == "aarch64" { "qemu-system-aarch64" } else { "qemu-system-x86_64" });
     for none in [Provider::Hyperv, Provider::Utm, Provider::VmwareEsxi, Provider::Proxmox, Provider::Gcp, Provider::Oci] {
         assert!(none.probe().is_none(), "{none:?}");
@@ -440,7 +445,7 @@ async fn qemu_on_linux_reads_as_not_installed_without_mkisofs_which_its_install_
     // mkisofs is never asked for.
     use crate::platform::exec::fake::{Tools, ok};
     let tools = Tools::new(|program, _| if program == "mkisofs" { None } else { ok("QEMU emulator version 8.2.2\n") });
-    let plugins = Ok(vec![("vagrant-qemu".to_owned(), Some("0.8.0".to_owned()))]);
+    let plugins = Ok(vec![installed("vagrant-qemu", Some("0.8.0"))]);
     let qemu = detect_one(Provider::Qemu, true, &plugins).await.unwrap();
     if cfg!(target_os = "linux") {
         assert_eq!((qemu.hypervisor, qemu.available, qemu.reason), (Some(false), false, Some(Unavailable::MkisofsMissing)));

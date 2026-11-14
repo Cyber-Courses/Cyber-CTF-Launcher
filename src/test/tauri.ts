@@ -80,6 +80,8 @@ export const DEFAULTS: Partial<Record<string, Handler>> = {
   // The player's Proxmox server as its API lists it: one node, two storages, two bridges.
   server_proxmox_placement: () => PROXMOX_PLACEMENT,
   server_public_key: () => "ssh-ed25519 AAAAC3Nza cyberctf",
+  // The server's certificate and node keys, confirmed already: no confirmation asked.
+  server_identity: () => ({ tls: null, ssh: { pattern: "pve.lan", keys: [], state: "confirmed" }, sshError: null }),
   machine_storage_clean: () => 1_000_000_000,
   lab_launch: streams("==> api: Creating", "✓ Lab ready"),
   lab_stop: streams("==> api: Stopping"),

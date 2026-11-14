@@ -119,6 +119,8 @@
     "signInTitle": "Entrar na attack box",
     "signInHint": "Onde a tela dela pedir uma senha (um bloqueio, um login), entre como {user} com esta senha.",
     "user": "Usuário",
-    "password": "Senha"
+    "password": "Senha",
+    "shareClipboard": "Compartilhar a área de transferência deste computador com a máquina",
+    "shareClipboardHint": "Desativado por padrão: a máquina poderia ler o que você copia aqui (senhas, tokens) e alterá-lo. Só para esta janela; discos, impressoras e outros dispositivos nunca são compartilhados."
   }
 }

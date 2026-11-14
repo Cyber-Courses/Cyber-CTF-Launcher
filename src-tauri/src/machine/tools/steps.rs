@@ -9,6 +9,8 @@ use tokio::process::Command;
 
 use super::exit_codes::{self, Verb};
 use crate::error::{Error, Result};
+use crate::platform::tool_output::brew::Trouble;
+use crate::platform::tool_output::pkexec::Refusal;
 
 /// One command of an install or removal.
 pub struct Step {
@@ -33,19 +35,17 @@ pub fn step(program: impl Into<String>, args: &[&str]) -> Step {
 pub const NO_PKEXEC: &str =
     "pkexec isn't installed, so Cyber CTF can't ask for your password. Install it once in a terminal (sudo apt install pkexec), then try again.";
 
-/// A line pkexec prints when it, not the command, failed: refused ("Error executing command as
-/// another user: Not authorized"), or no agent to ask ("…: No authentication agent found.", or,
-/// with no terminal either, "Error creating textual authentication agent: …").
+/// Whether `line` is pkexec's own refusal ([`Refusal`]), not the command's output.
 fn is_pkexec_error(line: &str) -> bool {
-    line.starts_with("Error executing command as another user") || line.starts_with("Error creating textual authentication agent")
+    Refusal::of_line(line).is_some()
 }
 
 /// An unattended root step sudo refused to run without a password: nothing was changed.
 pub const SUDO_REFUSED: &str = "sudo needs a password to act as an administrator here, and none can be asked for unattended, so nothing was changed. Run it as root, or on a terminal without --yes.";
 
-/// What to tell the player when pkexec itself refused to run the command.
-fn pkexec_refusal(stderr: &str) -> &'static str {
-    if stderr.contains("No authentication agent") || stderr.contains("textual authentication agent") {
+/// What to tell the player when pkexec itself refused to run the command (`line`, its own).
+fn pkexec_refusal(line: &str) -> &'static str {
+    if Refusal::of_line(line) == Some(Refusal::NoAgent) {
         "No password prompt could be shown (no polkit agent is running). Run the command above in a terminal instead."
     } else {
         "The password prompt was cancelled or the password was refused, so nothing was changed. Try again and enter your password."
@@ -61,23 +61,13 @@ const BREW_OUTDATED: &str =
 /// A source build Homebrew refuses because the installed Xcode is older than it needs.
 const BREW_XCODE_OUTDATED: &str = "Homebrew needs a newer Xcode than the one installed to build this. Update Xcode from the App Store (or delete /Applications/Xcode.app to use the lighter Command Line Tools). Then try the install again here.";
 
-/// A broken-Homebrew condition read from brew's own error output, with how to fix it. These are
-/// the player's environment to repair (an outdated Homebrew or Xcode, a lock owned by root), not
-/// something the installer can mend on its own, so the step says what to do instead of just its
-/// exit code.
+/// How the player fixes the broken Homebrew `line` says ([`Trouble`]), if it says one.
 fn brew_trouble(line: &str) -> Option<&'static str> {
-    // A lock brew can't take: a root-owned or stale update lock (often after a `sudo brew`).
-    if (line.contains("homebrew/locks") && line.contains("Permission denied")) || (line.contains("brew update") && line.contains("already running")) {
-        Some(BREW_LOCKED)
-    // Homebrew too old to recognise this macOS, so it has no bottle rule and refuses outright.
-    } else if line.contains("unknown or unsupported macOS version") {
-        Some(BREW_OUTDATED)
-    // A build from source blocked by an Xcode older than Homebrew needs.
-    } else if line.contains("is too outdated") || line.contains("Please update to Xcode") {
-        Some(BREW_XCODE_OUTDATED)
-    } else {
-        None
-    }
+    Trouble::of_line(line).map(|t| match t {
+        Trouble::Locked => BREW_LOCKED,
+        Trouble::Outdated => BREW_OUTDATED,
+        Trouble::XcodeTooOld => BREW_XCODE_OUTDATED,
+    })
 }
 
 /// Whether this step drives Homebrew (directly, or through a shell line that calls it), so its
@@ -128,6 +118,8 @@ async fn run_step_once(step: &Step, on_line: &mut impl FnMut(String)) -> Result<
     // Installers that need a console of their own (winget, an .msi) still get none here: their
     // output streams into the app's setup log instead of a window flashing on screen.
     crate::platform::exec::headless(&mut cmd);
+    // pkexec's and Homebrew's own lines are read (`Refusal`, `Trouble`): in the C locale's words.
+    crate::platform::exec::in_c_locale(&mut cmd);
     // In a group of its own, like every tool: a step whose output fails mid-way is ended with
     // what it started, not left installing unattended (#220).
     let (mut child, group) = crate::platform::exec::spawn_group(&mut cmd, true).map_err(|e| match e.kind() {

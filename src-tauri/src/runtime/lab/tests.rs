@@ -261,6 +261,7 @@ fn observers_come_with_their_addresses() {
     assert!(image.starts_with("nicolaka/netshoot:") && image.contains("@sha256:"), "{image}");
     assert_eq!(found[0].addresses.len(), 1);
     assert_eq!(found[0].addresses[0].network, "lab");
+    assert!(tools(&dir, Runtime::Cloud).unwrap().is_empty(), "none beside cloud services");
     assert!(tools(&dir, Runtime::Vm).unwrap()[0].addresses[0].ip.starts_with("10.30.0."));
     std::fs::remove_dir_all(dir).unwrap();
 }

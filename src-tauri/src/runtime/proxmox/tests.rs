@@ -36,6 +36,7 @@ fn host(addr: &str, network: Option<&str>) -> HostProfile {
         ssh_key: None,
         image_storage: None,
         snippet_storage: None,
+        tls_fingerprint: None,
         id: "t".into(),
         name: "t".into(),
         provider: crate::runtime::providers::Provider::Proxmox,
@@ -94,7 +95,7 @@ fn storage_problems_name_the_fix() {
 
 /// "Test connection" against a real host (opt-in):
 ///   `CYBERCTF_TEST_PVE_HOST`=... `CYBERCTF_TEST_PVE_PASSWORD`=... [`CYBERCTF_TEST_PVE_TOKEN_ID=user@realm!name` `CYBERCTF_TEST_PVE_TOKEN_SECRET`=...
-///   `CYBERCTF_TEST_PVE_SSH_KEY`=<key authorized on the node>] cargo test `proxmox_live_test` -- --ignored --nocapture
+///   `CYBERCTF_TEST_PVE_SSH_KEY`=<key authorized on the node> `CYBERCTF_TEST_PVE_FINGERPRINT`=<its certificate's SHA-256>] cargo test `proxmox_live_test` -- --ignored --nocapture
 #[tokio::test]
 #[ignore = "opt-in: connects to a real Proxmox host set via CYBERCTF_TEST_PVE_* env vars"]
 async fn proxmox_live_test() {
@@ -105,6 +106,8 @@ async fn proxmox_live_test() {
         datastore: Some(var("CYBERCTF_TEST_PVE_STORAGE").unwrap_or_else(|| "local-lvm".into())),
         node: Some("pve".into()),
         insecure_tls: true,
+        // Its certificate, as `pvenode cert info` shows it: a self-signed one is refused without.
+        tls_fingerprint: var("CYBERCTF_TEST_PVE_FINGERPRINT").and_then(|f| crate::runtime::server::tls_pin::Fingerprint::parse(&f)),
         ..host(&address, Some(bridge))
     };
     let bridge = var("CYBERCTF_TEST_PVE_BRIDGE").unwrap_or_else(|| "vmbr1".into());
@@ -350,4 +353,30 @@ async fn the_sdn_check_writes_its_askpass_in_the_given_apps_folder_only() {
     drop(first);
     sdn_problem(&host("10.0.0.50", None), "pw", &second.data().join("ssh").join("id_ed25519")).await;
     assert!(!gone.exists(), "{} came back", gone.display());
+}
+
+#[tokio::test]
+async fn a_self_signed_host_gets_no_credential_until_its_certificate_is_confirmed() {
+    use crate::runtime::server::tls_pin::{
+        Fingerprint, Refusal,
+        tests::{FINGERPRINT_A, server_a},
+    };
+    let (port, requests) = server_a().await;
+    let mut h = HostProfile { port, insecure_tls: true, ..host("127.0.0.1", None) };
+    match sign_in(&h, "pw").await {
+        Err(SignInError::Certificate(Refusal::Unconfirmed { presented }, server)) => {
+            assert_eq!((presented.to_string(), server.as_str()), (FINGERPRINT_A.to_owned(), "t"))
+        }
+        other => panic!("{:?}", other.err()),
+    }
+    // Test connection says it, with its fingerprint, and a launch's error keeps its code.
+    let r = test(&h, "pw", std::path::Path::new("/nonexistent/id_ed25519")).await;
+    assert!(!r.ok && r.message.contains(FINGERPRINT_A), "{}", r.message);
+    let e = bridge_is_internal(&h, "pw").await.unwrap_err();
+    assert!(matches!(e.code(), crate::error::Code::TlsUnconfirmed { .. }), "{e}");
+    assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0, "the password never left");
+    // Confirmed: the sign-in reaches the server (whose canned answer isn't Proxmox's).
+    h.tls_fingerprint = Fingerprint::parse(FINGERPRINT_A);
+    assert!(matches!(sign_in(&h, "pw").await, Err(SignInError::Failed(_))));
+    assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

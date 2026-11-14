@@ -42,6 +42,7 @@ pub(crate) use tool::Tool;
 pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line};
 
 use crate::error::{Error, Result};
+use crate::platform::tool_output::text::{decode, locale};
 
 /// Which tools answer this thread's calls: the machine's own, or a unit test's scripted ones
 /// (`fake::Tools`, each with a set of its own). A cache of the tools' answers keys by it, so one
@@ -136,7 +137,8 @@ pub fn launch_detached(program: &str) -> Result<()> {
 }
 
 /// Builds the Command: headless, Windows batch-wrapper tools routed through `cmd /C` so they
-/// resolve, and Docker kept on the engine the user picked.
+/// resolve, its messages in the C locale ([`locale`]), and Docker kept on the engine the user
+/// picked.
 fn build(program: &str, args: &[&str]) -> Command {
     #[cfg(windows)]
     if shim::SHIMMED.contains(&program) {
@@ -148,12 +150,24 @@ fn build(program: &str, args: &[&str]) -> Command {
     let mut cmd = Command::new(program);
     cmd.args(args);
     headless(&mut cmd);
+    in_c_locale(&mut cmd);
     if docker::uses_engine(program) && docker::strips_engine_overrides(docker::cli_config().as_deref()) {
         for var in docker::ENGINE_OVERRIDES {
             cmd.env_remove(var);
         }
     }
     cmd
+}
+
+/// Sets `cmd`'s messages, numbers and times to the C locale, its character set left as the user's
+/// ([`locale`]): what the launcher reads of a tool is then in the words its readers know.
+pub fn in_c_locale(cmd: &mut Command) {
+    for (var, value) in locale(|name| std::env::var_os(name)) {
+        match value {
+            Some(value) => cmd.env(var, value),
+            None => cmd.env_remove(var),
+        };
+    }
 }
 
 /// The error a tool that couldn't start gives: missing, or the OS's own reason.
@@ -311,9 +325,9 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
     group.disarm();
     let output = waited.map_err(spawn_error(program))?;
     if !output.status.success() {
-        return Err(exit_error(program, args, output.status.code(), String::from_utf8_lossy(&output.stderr).trim().to_string()));
+        return Err(exit_error(program, args, output.status.code(), decode(&output.stderr).trim().to_string()));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(decode(&output.stdout))
 }
 
 /// Waits for a piped child to exit and returns its output, but once it has exited waits at most
@@ -488,7 +502,7 @@ fn take_line(buf: &mut Vec<u8>) -> String {
     if buf[..end].ends_with(b"\r") {
         end -= 1;
     }
-    let line = String::from_utf8_lossy(&buf[..end]).into_owned();
+    let line = decode(&buf[..end]);
     buf.clear();
     line
 }

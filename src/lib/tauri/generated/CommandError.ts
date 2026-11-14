@@ -156,4 +156,28 @@ server: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" 
 /**
  * The policy setting's name.
  */
-setting: string, } });
+setting: string, } } | { "code": "tlsUnconfirmed", "args": { 
+/**
+ * The server, by its name in Servers.
+ */
+server: string, 
+/**
+ * The SHA-256 fingerprint of the certificate it offered.
+ */
+presented: string, } } | { "code": "tlsChanged", "args": { 
+/**
+ * The server, by its name in Servers.
+ */
+server: string, 
+/**
+ * The fingerprint confirmed for it.
+ */
+pinned: string, 
+/**
+ * The fingerprint of the certificate it offered.
+ */
+presented: string, } } | { "code": "sshHostKeyRefused", "args": { 
+/**
+ * The node's address.
+ */
+host: string, } });

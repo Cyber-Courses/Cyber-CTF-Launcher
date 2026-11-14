@@ -11,6 +11,7 @@ use super::downloads::ensure_box;
 use crate::error::{Error, Result};
 use crate::platform::exec::{Event, Step, Vagrant, run, within};
 use crate::platform::host::Arch;
+use crate::platform::tool_output::ping::Ping;
 use crate::runtime::providers::{self, Provider};
 use crate::runtime::selftest_report::StepState;
 
@@ -172,6 +173,12 @@ fn ping_args(ip: &str) -> [&str; 5] {
     }
 }
 
+/// Whether `ip` answers one ping: a reply in its output, not the exit code alone, which Windows'
+/// `ping` gives as 0 for a router's "Destination host unreachable" ([`Ping`]).
+async fn answers_ping(ip: &str) -> bool {
+    run("ping", &ping_args(ip), None).await.is_ok_and(|out| Ping::of(&out) == Ping::Reply)
+}
+
 async fn destroy(dir: &Path) -> Result<String> {
     within("vagrant destroy -f", DESTROY_LIMIT, Vagrant::of(dir, &[]).run(&["destroy", "-f"])).await
 }
@@ -179,7 +186,7 @@ async fn destroy(dir: &Path) -> Result<String> {
 /// The first test address nothing answers on yet (see [`VM_IPS`]).
 async fn free_ip() -> Option<&'static str> {
     for ip in VM_IPS {
-        if run("ping", &ping_args(ip), None).await.is_err() {
+        if !answers_ping(ip).await {
             return Some(ip);
         }
     }
@@ -321,7 +328,8 @@ async fn network(provider: Provider, ip: Option<&'static str>, r: &Reporter) -> 
                 let mut last = String::new();
                 for _ in 0..PING_TRIES {
                     match run("ping", &ping_args(ip), None).await {
-                        Ok(_) => return Ok(((), Some(format!("this machine → {ip}")))),
+                        Ok(out) if Ping::of(&out) == Ping::Reply => return Ok(((), Some(format!("this machine → {ip}")))),
+                        Ok(out) => out.lines().map(str::trim).filter(|l| !l.is_empty()).nth(1).unwrap_or("no reply").clone_into(&mut last),
                         Err(e) => last = e.to_string(),
                     }
                     tokio::time::sleep(Duration::from_secs(1)).await;

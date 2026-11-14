@@ -119,6 +119,8 @@
     "signInTitle": "Sign in to the attack box",
     "signInHint": "Where its screen asks for a password (a lock, a login), sign in as {user} with this password.",
     "user": "User",
-    "password": "Password"
+    "password": "Password",
+    "shareClipboard": "Share this computer's clipboard with the machine",
+    "shareClipboardHint": "Off by default: the machine could read what you copy here (passwords, tokens) and change it. For this window only; drives, printers and other devices are never shared."
   }
 }

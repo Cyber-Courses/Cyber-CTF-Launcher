@@ -106,6 +106,9 @@ const serverHandlers: Record<string, BrowserHandler> = {
     saveHosts([...hostsOf(sc).filter((h) => h.id !== saved.id), saved]);
     return saved;
   },
+  // The preview's server: its certificate and node keys confirmed already.
+  server_identity: () => ({ tls: null, ssh: { pattern: "pve.lan", keys: [], state: "confirmed" }, sshError: null }),
+  server_trust_ssh_keys: () => null,
   // A Proxmox server's placement, as a one-node home server lists it.
   server_proxmox_placement: () => PROXMOX_PLACEMENT,
   // The preview's node "makes" the launcher's token: saved as a token setup that keeps its key.

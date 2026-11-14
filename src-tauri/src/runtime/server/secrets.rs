@@ -19,9 +19,9 @@ use crate::platform::keychain::bypassed as in_a_file;
 
 /// The secret stored for `id`. None stored is [`Code::NoPasswordStored`]; a store that can't be
 /// read (a locked keychain, its unlock prompt dismissed, a secrets file that doesn't parse) says
-/// why instead.
+/// why instead. Once read it is redacted from the logs, wherever a tool prints it.
 pub(crate) fn get_secret(id: &str) -> Result<String> {
-    read(id, &entry_name(id)).and_then(found)
+    read(id, &entry_name(id)).and_then(found).inspect(|s| crate::platform::redact::register(s))
 }
 
 /// Keeps `secret` for host `id`: in the keychain, in a file in a debug build ([`in_a_file`]).

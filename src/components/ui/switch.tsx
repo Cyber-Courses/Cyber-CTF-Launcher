@@ -13,6 +13,7 @@ export function Switch({
   disabled?: boolean;
   className?: string;
   "aria-label"?: string;
+  "aria-describedby"?: string;
   id?: string;
 }) {
   return (

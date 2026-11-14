@@ -26,6 +26,10 @@ pub struct HostInput {
     network: Option<String>,
     node: Option<String>,
     insecure_tls: Option<bool>,
+    /// Proxmox with a self-signed certificate: the fingerprint the learner confirmed for it.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    tls_fingerprint: Option<String>,
     auto_stop_hours: Option<u32>,
     /// Its secret (a password, a token's secret, a secret key or an API token); None keeps the
     /// stored one.
@@ -82,6 +86,28 @@ impl HostInput {
         self.ssh_key.is_some() && self.ssh_key == host.ssh_key && crate::runtime::proxmox::with_default_realm(self.username.trim()) == host.username
     }
 
+    /// The server's address, checked (a hostname or IP, no scheme or path).
+    pub(crate) fn address(&self) -> Result<String> {
+        let host = clean(&self.host, "host", 253)?;
+        require(valid_host(&host), "host must be a hostname or IP address, without https:// or a path")?;
+        Ok(host)
+    }
+
+    /// The port the form names, if any.
+    pub(crate) fn port(&self) -> Option<u16> {
+        self.port.filter(|p| *p > 0)
+    }
+
+    /// The port the launcher's SSH reaches the node on: the SSH key sign-in's, else 22.
+    pub(crate) fn ssh_port(&self) -> u16 {
+        self.ssh_key.as_ref().map_or(22, |k| k.port)
+    }
+
+    /// Whether this is a Proxmox server with a self-signed certificate.
+    pub(crate) fn self_signed(&self) -> bool {
+        self.provider == Provider::Proxmox && self.insecure_tls.unwrap_or(false)
+    }
+
     /// Drops any SSH key sign-in: a password or token save keeps none.
     pub(crate) fn without_ssh_key(&mut self) {
         self.ssh_key = None;
@@ -91,6 +117,20 @@ impl HostInput {
     pub(crate) fn sign_in_as(&mut self, username: String, password: Option<String>) {
         self.username = username;
         self.password = password;
+    }
+
+    /// The certificate fingerprint the learner confirmed, checked; None when the host isn't a
+    /// Proxmox server with a self-signed certificate.
+    pub(crate) fn tls_fingerprint(&self) -> Result<Option<crate::runtime::server::tls_pin::Fingerprint>> {
+        if self.provider != Provider::Proxmox || !self.insecure_tls.unwrap_or(false) {
+            return Ok(None);
+        }
+        match self.tls_fingerprint.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+            None => Ok(None),
+            Some(f) => crate::runtime::server::tls_pin::Fingerprint::parse(f)
+                .map(Some)
+                .ok_or_else(|| Error::Invalid("the certificate fingerprint must be its 64 hex digits (SHA-256)".into())),
+        }
     }
 
     /// Checks the connection fields against the provider (address or region, account,
@@ -146,6 +186,7 @@ impl HostInput {
             // Proxmox uses `node`; GCP reuses it for the optional organization id.
             node: if matches!(provider, Provider::Proxmox | Provider::Gcp) { clean_opt(self.node.as_deref(), "node")? } else { None },
             insecure_tls: provider == Provider::Proxmox && self.insecure_tls.unwrap_or(false),
+            tls_fingerprint: self.tls_fingerprint()?,
             auto_stop_hours: if provider.is_cloud() {
                 match self.auto_stop_hours.unwrap_or(DEFAULT_AUTO_STOP_HOURS) {
                     h if h <= 72 => Some(h),

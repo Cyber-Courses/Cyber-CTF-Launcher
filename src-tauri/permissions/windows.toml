@@ -140,6 +140,7 @@ permissions = [
   "allow-oci-config",
   "allow-ovftool-place",
   "allow-server-default-ssh-key",
+  "allow-server-identity",
   "allow-server-list",
   "allow-server-proxmox-placement",
   "allow-server-public-key",
@@ -147,6 +148,7 @@ permissions = [
   "allow-server-save-ssh-key",
   "allow-server-selftest",
   "allow-server-test",
+  "allow-server-trust-ssh-keys",
   "allow-system-check",
 ]
 

@@ -368,7 +368,16 @@
     "copySecret": "Copy {name}",
     "nothingExposed": "The lab is up in your cloud account. It exposes nothing to show here.",
     "billedEstimate": "Billed to you: {cost}, by the lab's estimate.",
-    "billedWhileRunning": "Billed to your cloud account while it runs."
+    "billedWhileRunning": "Billed to your cloud account while it runs.",
+    "consent": {
+      "agree": "I agree that this lab runs its own Terraform code on this computer with {credentials}.",
+      "why": "The lab's author wrote that code: it can do in this account whatever these credentials allow, not only create the lab. Start it only if you trust the lab, ideally with an account kept for labs.",
+      "awsKeys": "the access key {key} of {name}",
+      "awsCli": "the AWS CLI's credentials (profile {profile}) of {name}",
+      "azure": "the Azure CLI's sign-in, on subscription {subscription} of {name}",
+      "gcp": "gcloud's sign-in, on billing account {account} of {name}",
+      "stored": "the credentials stored for {name}"
+    }
   },
   "objectives": {
     "title": "Objectives",

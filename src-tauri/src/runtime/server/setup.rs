@@ -15,6 +15,8 @@ use crate::error::{Code, Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
 use crate::runtime::proxmox::{placement, ssh_key};
+use crate::runtime::server::tls_pin;
+use crate::runtime::ssh::known_hosts;
 
 /// Creates or updates a host from the form. The first host saved becomes the default. A host labs
 /// are still deployed on keeps its place (see `hosts::keeps_placement`). A password or token save
@@ -73,7 +75,50 @@ pub(crate) async fn placement(dirs: &AppDirs, mut input: HostInput) -> Result<pl
     };
     let profile = input.into_profile(id.unwrap_or_else(new_id), checked, None)?;
     let ip = tokio::net::lookup_host((profile.host.as_str(), profile.port)).await.ok().and_then(|mut a| a.next()).map(|a| a.ip());
-    placement::read_host(&profile, &secret, ip).await.map_err(|e| Error::Invalid(format!("Couldn't read the server's nodes, storages and bridges: {e}")))
+    placement::read_host(&profile, &secret, ip).await
+}
+
+/// What the learner confirms of a Proxmox server before the launcher signs in to it: its
+/// certificate's fingerprint when it is self-signed, and its node's SSH host keys.
+#[derive(Debug, serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "ServerIdentity")]
+pub struct Identity {
+    /// The SHA-256 fingerprint of the certificate the server offers; None when it has a trusted
+    /// one (no pin).
+    pub tls: Option<String>,
+    /// The node's SSH host keys and whether they are confirmed; None when they couldn't be read.
+    pub ssh: Option<known_hosts::Offered>,
+    /// Why the SSH host keys couldn't be read.
+    pub ssh_error: Option<String>,
+}
+
+/// What the form's server offers to be confirmed ([`Identity`]): nothing is sent to it but a TLS
+/// handshake and an SSH key exchange.
+pub(crate) async fn identity(dirs: &AppDirs, input: &HostInput) -> Result<Identity> {
+    if input.provider != Provider::Proxmox {
+        return Err(Error::Invalid("only Proxmox servers are confirmed by their fingerprints".into()));
+    }
+    let host = input.address()?;
+    let port = input.port().unwrap_or(super::profile::default_port(Provider::Proxmox));
+    let tls = if input.self_signed() { Some(tls_pin::fetch(&host, port, IDENTITY_LIMIT).await?.to_string()) } else { None };
+    let (launcher, _) = crate::runtime::ssh::ensure_key(dirs).await?;
+    let (ssh, ssh_error) = match known_hosts::offered(&host, input.ssh_port(), &crate::runtime::ssh::node_known_hosts(&launcher)).await {
+        Ok(offered) => (Some(offered), None),
+        Err(e) => (None, Some(e.to_string())),
+    };
+    Ok(Identity { tls, ssh, ssh_error })
+}
+
+/// How long reading a server's certificate may take.
+const IDENTITY_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Confirms the SSH host keys of the form's server node, which the learner was shown as
+/// `fingerprints`, for every SSH the launcher makes to it.
+pub(crate) async fn trust_ssh_keys(dirs: &AppDirs, input: &HostInput, fingerprints: &[String]) -> Result<()> {
+    let host = input.address()?;
+    let (launcher, _) = crate::runtime::ssh::ensure_key(dirs).await?;
+    known_hosts::confirm(&host, input.ssh_port(), fingerprints, &[crate::runtime::ssh::node_known_hosts(&launcher)]).await
 }
 
 /// Removes host `id`, unless labs still run on it: this host holds the credentials and state

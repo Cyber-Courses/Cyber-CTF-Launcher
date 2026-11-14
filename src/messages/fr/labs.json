@@ -368,7 +368,16 @@
     "copySecret": "Copier {name}",
     "nothingExposed": "Le lab tourne dans votre compte cloud. Il n’expose rien à afficher ici.",
     "billedEstimate": "Facturé à vous : {cost}, selon l’estimation du lab.",
-    "billedWhileRunning": "Facturé sur votre compte cloud tant qu’il tourne."
+    "billedWhileRunning": "Facturé sur votre compte cloud tant qu’il tourne.",
+    "consent": {
+      "agree": "J'accepte que ce lab exécute son propre code Terraform sur cet ordinateur avec {credentials}.",
+      "why": "C'est l'auteur du lab qui a écrit ce code : il peut faire dans ce compte tout ce que ces identifiants permettent, pas seulement créer le lab. Ne le lancez que si vous faites confiance au lab, idéalement avec un compte réservé aux labs.",
+      "awsKeys": "la clé d'accès {key} de {name}",
+      "awsCli": "les identifiants de l'AWS CLI (profil {profile}) de {name}",
+      "azure": "la connexion de l'Azure CLI, sur l'abonnement {subscription} de {name}",
+      "gcp": "la connexion de gcloud, sur le compte de facturation {account} de {name}",
+      "stored": "les identifiants enregistrés pour {name}"
+    }
   },
   "objectives": {
     "title": "Objectifs",

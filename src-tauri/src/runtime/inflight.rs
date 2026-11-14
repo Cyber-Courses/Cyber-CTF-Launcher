@@ -47,6 +47,12 @@ fn process_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
     LOCKS.get(id)
 }
 
+/// Lock order. Where an operation holds more than one of the app's locks they are taken in this
+/// order, never the other way round, so no two operations ever wait on each other in a circle:
+/// the lab (this lock, its in-process half before its file), then the status read's turn of its
+/// run (`isothrum::one_read`). A
+/// code path that needs an earlier lock while holding a later one lets the later go first.
+///
 /// One operation per lab at a time: install, start, stop and the expiry reaper all take this
 /// per-lab lock, so a user Start/Stop and the reaper can't run two Terraform (or Vagrant)
 /// operations over the same state at once, which could corrupt `terraform.tfstate`. It holds

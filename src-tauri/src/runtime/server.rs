@@ -37,6 +37,7 @@ pub(crate) mod secrets;
 pub(crate) mod setup;
 pub(crate) mod sign_in;
 pub(crate) mod store;
+pub(crate) mod tls_pin;
 
 // What the rest of the app uses, at the paths it always had. The globs carry each command's
 // generated `__cmd__*` macros along with it (lib.rs registers the commands by this path).

@@ -50,6 +50,9 @@
     "reapNoHost": "No hay ninguna cuenta registrada para él, así que el launcher no puede destruirlo. Elimina sus recursos en la consola de tu nube.",
     "pickCloudAccount": "Este lab se ejecuta en tu cuenta en la nube: elige una de tus cuentas en la nube para iniciarlo.",
     "noHypervisor": "Ningún hipervisor listo en esta máquina ejecuta este lab. Instala uno desde la página Máquina, o ejecuta el lab en un servidor o en tu cuenta en la nube.",
-    "turnedOffByPolicy": "Tu organización desactivó esta función en este equipo (ajuste de directiva {setting}). Pide ayuda a tu equipo de TI si la necesitas."
+    "turnedOffByPolicy": "Tu organización desactivó esta función en este equipo (ajuste de directiva {setting}). Pide ayuda a tu equipo de TI si la necesitas.",
+    "tlsUnconfirmed": "El certificado de {server} aún no se ha confirmado (SHA-256 {presented}), así que no se le ha enviado nada. Para confirmarlo, ábrelo en Servidores, elige Editar y compara la huella con la que muestra el propio servidor antes de confirmarla.",
+    "tlsChanged": "El certificado de {server} ha cambiado (era {pinned}, ahora es {presented}), así que no se le ha enviado nada: alguien podría estar interceptando la conexión. Si cambiaste el certificado tú mismo, ábrelo en Servidores, elige Editar y compara la huella con la que muestra el propio servidor antes de confirmarla.",
+    "sshHostKeyRefused": "La clave de host SSH de {host} no es la que se confirmó (o aún no se ha confirmado ninguna), así que se rechazó la conexión. Si el servidor se reinstaló, ábrelo en Servidores, elige Editar y comprueba su nueva clave."
   }
 }

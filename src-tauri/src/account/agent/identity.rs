@@ -12,17 +12,33 @@ pub(super) fn install_id(dirs: &AppDirs) -> Result<String> {
     install_id_at(&dirs.data()?.join("install-id"))
 }
 
-/// The install id kept at `path`, generated and written there the first time.
+/// The install id kept at `path`, generated and written there the first time. The first time is
+/// decided under an OS lock on `<path>.lock`: the agent registering and the app's window asking
+/// for the agent's info (or two processes) each found no id, made one, and the last written won,
+/// so the machine was registered under an id it then forgot, and showed twice on the website.
 fn install_id_at(path: &std::path::Path) -> Result<String> {
-    if let Ok(existing) = std::fs::read_to_string(path) {
-        let trimmed = existing.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
+    if let Some(id) = kept_id(path) {
+        return Ok(id);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(path.with_extension("lock"))?;
+    lock.lock()?;
+    // Made by another caller while this one waited.
+    if let Some(id) = kept_id(path) {
+        return Ok(id);
     }
     let id = random_hex();
     crate::platform::atomic_file::write(path, &id)?;
     Ok(id)
+}
+
+/// The install id at `path`, when one was written there.
+fn kept_id(path: &std::path::Path) -> Option<String> {
+    let existing = std::fs::read_to_string(path).ok()?;
+    let trimmed = existing.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 /// 16 random bytes as hex: install ids, co-location tokens and nonces.
@@ -90,6 +106,28 @@ pub(super) fn capabilities() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A real race (Clean Code ch.13, check-then-act): callers asking for the id at once on a
+    /// first start each made their own. Many threads released together all get one id.
+    #[test]
+    fn callers_at_once_on_a_first_start_all_get_one_id() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-install-{}", random_hex()));
+        let path = dir.join("data").join("install-id");
+        let start = std::sync::Arc::new(std::sync::Barrier::new(16));
+        let callers: Vec<_> = (0..16)
+            .map(|_| {
+                let (path, start) = (path.clone(), std::sync::Arc::clone(&start));
+                std::thread::spawn(move || {
+                    start.wait();
+                    install_id_at(&path).unwrap()
+                })
+            })
+            .collect();
+        let ids: std::collections::BTreeSet<String> = callers.into_iter().map(|c| c.join().unwrap()).collect();
+        assert_eq!(ids.len(), 1, "{ids:?}");
+        assert_eq!(ids.first(), Some(&install_id_at(&path).unwrap()), "the id kept is the one handed out");
+        std::fs::remove_dir_all(dir).ok();
+    }
 
     #[test]
     fn the_install_id_is_made_once_and_kept() {

@@ -125,7 +125,7 @@ fn check_options(opts: &[String], batch: bool, known_hosts: &str) {
     assert_eq!(&opts[..fixed.len()], fixed);
     let rest = &opts[fixed.len()..];
     assert_eq!(rest.len(), 3, "{rest:?}");
-    assert_eq!(rest[0], "StrictHostKeyChecking=accept-new");
+    assert_eq!(rest[0], "StrictHostKeyChecking=yes");
     assert_eq!(known_hosts_as_ssh_reads_it(&rest[1]), known_hosts);
     assert_eq!(rest[2], "LogLevel=ERROR");
 }

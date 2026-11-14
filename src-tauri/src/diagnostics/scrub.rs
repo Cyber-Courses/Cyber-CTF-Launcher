@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::platform::redact::redact;
+use crate::platform::redact::redact_lines;
 
 /// What a known secret, an e-mail address and a flag are replaced with.
 const REDACTED: &str = "[redacted]";
@@ -51,7 +51,8 @@ impl Scrubber {
                 out = out.replace(secret.as_str(), REDACTED);
             }
         }
-        out = out.split_inclusive('\n').map(|line| redact(line).into_owned()).collect();
+        // As the logs are redacted, line after line: a private key's lines go from its BEGIN to its END.
+        out = redact_lines(&out);
         for pattern in [&*EMAIL, &*FLAG].into_iter().flatten() {
             out = pattern.replace_all(&out, REDACTED).into_owned();
         }

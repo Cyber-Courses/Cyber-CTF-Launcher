@@ -162,11 +162,16 @@ pub struct Observer {
     pub publish: Option<u16>,
 }
 
-/// The observers of the lab in `dir` (as its instance), at their addresses in the `form` it runs
-/// as: the container ones for containers, else the ones the spec writes.
+/// The observers of the lab in `dir` (as its instance) started in `form`, at their addresses: the
+/// container ones when it runs as containers, the ones the spec writes when it runs as VMs, and
+/// none beside cloud services.
 pub fn tools(dir: &Path, form: super::Runtime) -> Result<Vec<Observer>> {
+    let key = match form {
+        super::Runtime::Cloud => return Ok(Vec::new()),
+        super::Runtime::Docker => "docker_addresses",
+        super::Runtime::Vm => "addresses",
+    };
     let snapshot = isoloom_targets::resolved::resolve_with(&lab(dir)?, instance(dir)).map_err(|e| Error::Invalid(e.to_string()))?;
-    let key = if form == super::Runtime::Docker { "docker_addresses" } else { "addresses" };
     Ok(snapshot["tools"]
         .as_object()
         .map(|tools| {

@@ -119,6 +119,8 @@
     "signInTitle": "Se connecter à l’attack box",
     "signInHint": "Là où son écran demande un mot de passe (un verrouillage, une connexion), connectez-vous en {user} avec ce mot de passe.",
     "user": "Utilisateur",
-    "password": "Mot de passe"
+    "password": "Mot de passe",
+    "shareClipboard": "Partager le presse-papiers de cet ordinateur avec la machine",
+    "shareClipboardHint": "Désactivé par défaut : la machine pourrait lire ce que vous copiez ici (mots de passe, jetons) et le modifier. Pour cette fenêtre seulement ; les disques, imprimantes et autres périphériques ne sont jamais partagés."
   }
 }

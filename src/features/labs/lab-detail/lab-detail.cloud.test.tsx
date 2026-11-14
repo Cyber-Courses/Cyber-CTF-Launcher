@@ -49,7 +49,15 @@ describe("LabDetail, a cloud lab", () => {
     const start = within(dialog)
       .getAllByRole("button")
       .filter((b) => /^start$/i.test(b.textContent.trim()));
+    // The lab's own Terraform runs with the account's credentials: Start waits for the consent,
+    // which names them.
+    expect(start[0].hasAttribute("disabled")).toBe(true);
+    const consent = within(dialog).getByRole("checkbox", { name: /runs its own Terraform code on this computer with .+ of / });
+    expect(consent.getAttribute("aria-describedby")).toBeTruthy();
+    await user.click(consent);
+    expect(start[0].hasAttribute("disabled")).toBe(false);
     await user.click(start[0]);
+    await flush();
     expect(h.onStart).toHaveBeenCalledWith({ kind: "host", id: "aws1" });
   });
 

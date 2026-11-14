@@ -53,7 +53,7 @@ fn the_status_shows_who_is_signed_in_or_why_not() {
     assert!(failed.get("sessionExpired").is_none());
 }
 
-/// Each test thread has its own session file, `UNSAVED` and `EXPIRED`, but `SESSION_WRITE` is the
+/// Each test thread has its own session file, unsaved session and `EXPIRED`, but the write lock is the
 /// process's: the tests that wait on it run one at a time. Those tests run over the dev session
 /// store, a debug build's alone: so does what they share, or a release build's test target (the
 /// `rig` profile) finds it unused.
@@ -90,17 +90,17 @@ async fn a_renewed_session_that_could_not_be_saved_is_served_then_saved_and_forg
     let stale = Session { expires_at: unix_secs() + 10, ..session() };
     store::store(stale).await.unwrap();
     let renewed = Session { access_token: "tok2".into(), refresh_token: Some("ref2".into()), expires_at: unix_secs() + 3600, ..session() };
-    set_unsaved(&SessionWrite::lock().await, Some(renewed));
+    SessionWrite::lock().await.set_unsaved(Some(renewed));
     // Served over the stored one, and saved now that the store takes it.
     assert_eq!(access_token().await.unwrap(), "tok2");
     assert!(unsaved().is_none());
     assert_eq!(store::read().await.unwrap().unwrap().refresh_token.as_deref(), Some("ref2"));
     // An older leftover never replaces a newer stored session.
-    set_unsaved(&SessionWrite::lock().await, Some(Session { access_token: "old".into(), expires_at: unix_secs() + 5, ..session() }));
+    SessionWrite::lock().await.set_unsaved(Some(Session { access_token: "old".into(), expires_at: unix_secs() + 5, ..session() }));
     assert_eq!(access_token().await.unwrap(), "tok2");
     assert!(unsaved().is_none());
     // Sign-out forgets both.
-    set_unsaved(&SessionWrite::lock().await, Some(Session { access_token: "tok3".into(), expires_at: unix_secs() + 3600, ..session() }));
+    SessionWrite::lock().await.set_unsaved(Some(Session { access_token: "tok3".into(), expires_at: unix_secs() + 3600, ..session() }));
     auth_logout().await.unwrap();
     assert!(unsaved().is_none());
     assert_eq!(access_token().await.unwrap_err().code(), Code::SignedOut);
@@ -136,6 +136,37 @@ async fn refresh_in_flight() -> (tokio::task::JoinHandle<Result<String>>, tokio:
 /// Whether `task` is still waiting a moment from now.
 async fn still_waiting<T>(task: &mut tokio::task::JoinHandle<T>) -> bool {
     tokio::time::timeout(std::time::Duration::from_millis(100), task).await.is_err()
+}
+
+/// A real race (cancellation): a call whose caller was dropped mid-refresh (a command cancelled
+/// by its window reloading) dropped the refresh with it, after cyber-auth had rotated the
+/// refresh token: the renewed session was never saved, and the player was signed out at the
+/// next call. The refresh now ends, and is saved, regardless.
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn a_refresh_whose_caller_is_dropped_still_saves_the_renewed_session() {
+    let _serial = ONE_AT_A_TIME.lock().await;
+    store::store(expiring()).await.unwrap();
+    let (started_tx, started) = tokio::sync::oneshot::channel();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let caller = tokio::spawn(renewed_whatever_the_caller(move |_| async move {
+        let _ = started_tx.send(());
+        let _ = released.await;
+        Ok(renewed("renewed"))
+    }));
+    started.await.unwrap();
+    caller.abort();
+    assert!(caller.await.unwrap_err().is_cancelled());
+    release.send(()).unwrap();
+    // The refresh goes on without its caller, then saves; the next call reads it.
+    let saved = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while store::read().await.ok().flatten().and_then(|s| s.refresh_token).as_deref() != Some("r2") {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    });
+    saved.await.expect("the renewed session was saved");
+    assert_eq!(access_token().await.unwrap(), "renewed");
+    auth_logout().await.unwrap();
 }
 
 /// The refresh's renewed session used to be stored right after the sign-out's clear: the

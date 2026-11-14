@@ -41,8 +41,9 @@ pub(crate) enum Target {
         url: String,
         /// The header that signs it in: its name and value.
         header: (String, String),
-        /// Its TLS certificate isn't verified (the server's connection says so).
-        insecure: bool,
+        /// How its TLS certificate is trusted: a self-signed one by the fingerprint the learner
+        /// confirmed for the server, as its API is.
+        trust: crate::runtime::server::tls_pin::Trust,
     },
 }
 
@@ -51,7 +52,7 @@ impl std::fmt::Debug for Target {
         match self {
             Target::Tcp(at) => write!(f, "Tcp({at})"),
             // The URL holds the console's ticket, the header its credential.
-            Target::WebSocket { insecure, .. } => write!(f, "WebSocket {{ insecure: {insecure} }}"),
+            Target::WebSocket { trust, .. } => write!(f, "WebSocket {{ trust: {trust:?} }}"),
         }
     }
 }
@@ -230,8 +231,8 @@ async fn serve(mut socket: TcpStream, port: u16, armed: Arc<Mutex<Armed>>) {
             }
             let ended = match target {
                 Target::Tcp(at) => relay_tcp(socket, rest, at).await,
-                Target::WebSocket { url, header, insecure } => {
-                    let upstream = Upstream { url: &url, header: &header, insecure, protocol: accepted.protocol.as_deref() };
+                Target::WebSocket { url, header, trust } => {
+                    let upstream = Upstream { url: &url, header: &header, trust, protocol: accepted.protocol.as_deref() };
                     relay_websocket(socket, rest, &upstream).await
                 }
             };
@@ -294,20 +295,26 @@ async fn relay_tcp(mut socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) 
         }
     };
     let (mut vnc_in, mut vnc_out) = vnc.into_split();
-    let (mut viewer_in, viewer_out) = socket.into_split();
-    let viewer_out = Arc::new(tokio::sync::Mutex::new(viewer_out));
-    let to_viewer = {
-        let viewer_out = Arc::clone(&viewer_out);
-        async move {
-            viewer_out.lock().await.write_all(&ws::binary(&first)).await?;
-            let mut buf = vec![0u8; SCREEN_CHUNK];
-            loop {
-                let n = vnc_in.read(&mut buf).await?;
-                if n == 0 {
-                    let _ = viewer_out.lock().await.write_all(&ws::close()).await;
-                    return Ok::<(), std::io::Error>(());
+    let (mut viewer_in, mut viewer_out) = socket.into_split();
+    // One writer to the viewer: the screen and the answers to its pings both go out here, the
+    // pongs handed over by the reader below, so no frame is ever written into the middle of
+    // another and no lock is shared between the two.
+    let (pongs, mut to_answer) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let to_viewer = async move {
+        viewer_out.write_all(&ws::binary(&first)).await?;
+        let mut buf = vec![0u8; SCREEN_CHUNK];
+        loop {
+            // Both cancel-safe: a read or a receive not chosen loses nothing.
+            tokio::select! {
+                read = vnc_in.read(&mut buf) => {
+                    let n = read?;
+                    if n == 0 {
+                        let _ = viewer_out.write_all(&ws::close()).await;
+                        return Ok::<(), std::io::Error>(());
+                    }
+                    viewer_out.write_all(&ws::binary(buf.get(..n).unwrap_or_default())).await?;
                 }
-                viewer_out.lock().await.write_all(&ws::binary(buf.get(..n).unwrap_or_default())).await?;
+                Some(ping) = to_answer.recv() => viewer_out.write_all(&ws::pong(&ping)).await?,
             }
         }
     };
@@ -320,7 +327,8 @@ async fn relay_tcp(mut socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) 
                         pending.drain(..used);
                         match frame {
                             ws::Frame::Data(d) => vnc_out.write_all(&d).await?,
-                            ws::Frame::Ping(p) => viewer_out.lock().await.write_all(&ws::pong(&p)).await?,
+                            // The writer is gone only once the relay ends.
+                            ws::Frame::Ping(p) => drop(pongs.send(p)),
                             ws::Frame::Pong => {}
                             ws::Frame::Close => return Ok(()),
                         }
@@ -348,8 +356,8 @@ struct Upstream<'a> {
     url: &'a str,
     /// The header that signs it in.
     header: &'a (String, String),
-    /// Its certificate isn't verified.
-    insecure: bool,
+    /// How its certificate is trusted.
+    trust: crate::runtime::server::tls_pin::Trust,
     /// The subprotocol to ask it for (the viewer's).
     protocol: Option<&'a str>,
 }
@@ -357,7 +365,7 @@ struct Upstream<'a> {
 /// Relays the viewer on `socket` (with `pending` bytes already read) to the websocket `to`,
 /// frames as they are.
 async fn relay_websocket(mut socket: TcpStream, pending: Vec<u8>, to: &Upstream<'_>) -> std::io::Result<()> {
-    let opened = tokio::time::timeout(CONNECT_LIMIT + ANSWER_LIMIT, open_websocket(to.url, to.header, to.insecure, to.protocol)).await;
+    let opened = tokio::time::timeout(CONNECT_LIMIT + ANSWER_LIMIT, open_websocket(to.url, to.header, to.trust, to.protocol)).await;
     let upstream = match opened {
         Ok(Ok(upstream)) => upstream,
         Ok(Err(e)) => {
@@ -382,14 +390,15 @@ async fn relay_websocket(mut socket: TcpStream, pending: Vec<u8>, to: &Upstream<
 
 /// Opens the websocket `url` (`wss://`) with `header`, asking for `protocol`: an HTTP/1.1
 /// upgrade, its stream once the server switched protocols.
-async fn open_websocket(url: &str, header: &(String, String), insecure: bool, protocol: Option<&str>) -> std::result::Result<reqwest::Upgraded, String> {
+async fn open_websocket(
+    url: &str,
+    header: &(String, String),
+    trust: crate::runtime::server::tls_pin::Trust,
+    protocol: Option<&str>,
+) -> std::result::Result<reqwest::Upgraded, String> {
     let https = url.strip_prefix("wss://").map(|rest| format!("https://{rest}")).ok_or("not a wss:// URL")?;
-    let client = reqwest::Client::builder()
-        .http1_only()
-        .tls_danger_accept_invalid_certs(insecure)
-        .connect_timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let pinned = crate::runtime::server::tls_pin::Client::upgrade(trust).map_err(|e| e.to_string())?;
+    let client = pinned.http.clone();
     let key = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, rand::random::<[u8; 16]>());
     let mut req = client
         .get(https)
@@ -401,7 +410,10 @@ async fn open_websocket(url: &str, header: &(String, String), insecure: bool, pr
     if let Some(p) = protocol {
         req = req.header("Sec-WebSocket-Protocol", p);
     }
-    let answer = req.send().await.map_err(|e| e.to_string())?;
+    let answer = req.send().await.map_err(|e| match pinned.refused() {
+        Some(refusal) => refusal.error("the Proxmox server").to_string(),
+        None => e.to_string(),
+    })?;
     if answer.status() != reqwest::StatusCode::SWITCHING_PROTOCOLS {
         return Err(format!("the server answered {}", answer.status()));
     }

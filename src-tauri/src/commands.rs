@@ -116,6 +116,8 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         server::server_set_default,
         server::server_test,
         server::server_public_key,
+        server::server_identity,
+        server::server_trust_ssh_keys,
         server::server_running_labs,
         server::server_capacity,
         server::server_month_to_date_cost,

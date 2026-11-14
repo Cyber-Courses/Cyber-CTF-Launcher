@@ -13,6 +13,7 @@ mod store;
 mod testing;
 mod tokens;
 mod waiting;
+mod writes;
 
 pub use device::DeviceCode;
 pub use scheme::deliver as deliver_link;
@@ -26,6 +27,7 @@ use crate::platform::clock::unix_secs;
 use crate::platform::config;
 use store::Session;
 use tokens::{TokenResponse, code_challenge, random_b64, refresh_request_at, session_from, token_request};
+use writes::{SessionWrite, unsaved};
 
 const SCOPES: &str = "openid profile email offline_access";
 /// An access token this close to expiry is refreshed before use.
@@ -108,87 +110,22 @@ fn fresh(session: &Session) -> bool {
     session.expires_at > unix_secs() + REFRESH_MARGIN_SECS
 }
 
-/// Every write of the session (a refresh, a sign-in, a sign-out) happens behind this lock, one
-/// at a time:
-/// - At start-up the agent and the first API calls all find the same expired token and would
-///   each send the same refresh token. With refresh-token rotation the second one is rejected
-///   (`invalid_grant`), and that used to wipe the session. Callers queue here and re-read the
-///   session once they hold the lock, so the first refresh serves them all.
-/// - A refresh in flight can't write its renewed session back over a sign-out (the player would
-///   be signed in again at the next call) or over another account's sign-in.
-static SESSION_WRITE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-/// `SESSION_WRITE`, held: what writes the session (the renewed one waiting to be saved
-/// included) takes it, so a write outside the lock doesn't compile.
-struct SessionWrite {
-    /// Held for its lock, never read.
-    _held: tokio::sync::MutexGuard<'static, ()>,
-}
-
-impl SessionWrite {
-    /// Waits for the other writes of the session to finish, then holds the lock.
-    async fn lock() -> SessionWrite {
-        SessionWrite { _held: SESSION_WRITE.lock().await }
-    }
-
-    /// The session calls use: the stored one, unless a newer renewed one is still waiting to be
-    /// saved (then that one, and saving is tried again).
-    async fn current_session(&self) -> Result<Session> {
-        let stored = session_or_signed_out().await;
-        let Some(renewed) = unsaved() else { return stored };
-        match stored {
-            // Signed out (or unreadable) since: the renewed session is not resurrected.
-            Err(e) => {
-                set_unsaved(self, None);
-                Err(e)
-            }
-            Ok(s) if renewed.expires_at <= s.expires_at => {
-                set_unsaved(self, None);
-                Ok(s)
-            }
-            Ok(_) => {
-                if store::store(renewed.clone()).await.is_ok() {
-                    set_unsaved(self, None);
-                }
-                Ok(renewed)
-            }
-        }
-    }
-}
-
-/// A renewed session the keychain refused to save. Refresh tokens rotate: the old one in the
-/// keychain is spent, so dropping the new one would sign the player out at the next call (an
-/// `invalid_grant`). It is served from here, and saved again at each read until that works.
-#[cfg(not(test))]
-static UNSAVED: std::sync::Mutex<Option<Session>> = std::sync::Mutex::new(None);
-#[cfg(test)]
-thread_local! {
-    /// Per test thread, like the session file (`store::dev_session_path`).
-    static UNSAVED: std::sync::Mutex<Option<Session>> = const { std::sync::Mutex::new(None) };
-}
-
-/// `f` on the renewed session waiting to be saved.
-fn with_unsaved<T>(f: impl FnOnce(&mut Option<Session>) -> T) -> T {
-    let run = |m: &std::sync::Mutex<Option<Session>>| f(&mut m.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
-    #[cfg(test)]
-    return UNSAVED.with(run);
-    #[cfg(not(test))]
-    run(&UNSAVED)
-}
-
-fn unsaved() -> Option<Session> {
-    with_unsaved(|u| u.clone())
-}
-
-/// Sets the renewed session waiting to be saved (`UNSAVED`): only under the write lock, which
-/// `_write` proves.
-fn set_unsaved(_write: &SessionWrite, session: Option<Session>) {
-    with_unsaved(|u| *u = session);
-}
-
 /// A valid access token for CyberBackend, refreshed if it expires within a minute.
 pub async fn access_token() -> Result<String> {
-    access_token_renewed_by(refresh_tokens).await
+    renewed_whatever_the_caller(refresh_tokens).await
+}
+
+/// [`access_token_renewed_by`] on a task of its own, which runs to its end even when the caller
+/// is dropped (a command cancelled by its window reloading or closing). Refresh tokens rotate:
+/// a refresh cut off after cyber-auth answered (or while it did) lost the only valid refresh
+/// token with the renewed session that was never saved, and the player was signed out at the
+/// next call.
+async fn renewed_whatever_the_caller<F, Fut>(renew: F) -> Result<String>
+where
+    F: FnOnce(String) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<TokenResponse>> + Send + 'static,
+{
+    tokio::spawn(access_token_renewed_by(renew)).await.map_err(|e| Error::Invalid(format!("renewing the session: {e}")))?
 }
 
 /// Exchanges a refresh token at cyber-auth.
@@ -228,7 +165,7 @@ where
             // 5xx, another refusal) keep it, so a blip near expiry doesn't log the user out and
             // stop the background agent.
             if e.code() == Code::SessionExpired {
-                if let Err(kept) = store::clear().await {
+                if let Err(kept) = write.clear().await {
                     log::warn!("the session the server refused stays stored: {kept}");
                 }
                 set_expired(true);
@@ -238,11 +175,11 @@ where
     };
     let renewed = session_from(tokens, Some(&session));
     let token = renewed.access_token.clone();
-    if let Err(e) = store::store(renewed.clone()).await {
+    if let Err(e) = write.store(renewed.clone()).await {
         // The rotated refresh token must not be lost with the write: keep serving the renewed
-        // session and retry saving it (see `UNSAVED`).
+        // session and retry saving it (see `writes`).
         log::warn!("the renewed session couldn't be saved yet ({e}); kept in memory until it can");
-        set_unsaved(&write, Some(renewed));
+        write.set_unsaved(Some(renewed));
     }
     Ok(token)
 }
@@ -396,9 +333,9 @@ async fn keep_tokens(tokens: TokenResponse) -> Result<AuthStatus> {
 /// another account's, would otherwise land over it). A renewed session still waiting to be saved
 /// belongs to the session this one replaces: it is dropped.
 async fn keep_signed_in(session: Session) -> Result<()> {
-    let no_refresh = SessionWrite::lock().await;
-    set_unsaved(&no_refresh, None);
-    store::store(session).await
+    let write = SessionWrite::lock().await;
+    write.set_unsaved(None);
+    write.store(session).await
 }
 
 /// Async so the keychain is read off the UI thread: a locked GNOME keyring shows its unlock
@@ -426,11 +363,11 @@ fn status_from_read(read: std::result::Result<Option<Session>, String>, expired:
 pub async fn auth_logout() -> Result<()> {
     // After a refresh in flight: it would otherwise store its renewed session right after this
     // clear, and the player would be back in at the next call.
-    let no_refresh = SessionWrite::lock().await;
-    set_unsaved(&no_refresh, None);
+    let write = SessionWrite::lock().await;
+    write.set_unsaved(None);
     // Signed out on purpose: not an expiry to explain.
     set_expired(false);
-    store::clear().await
+    write.clear().await
 }
 
 #[cfg(test)]

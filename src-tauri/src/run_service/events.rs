@@ -115,6 +115,9 @@ struct Kept {
     ends: HashMap<OperationId, Result<(), Wire>>,
     /// The operations of `ends`, oldest first.
     ended_order: VecDeque<OperationId>,
+    /// The redaction of each running operation's log, line after line (a private key spans
+    /// several), until it ends.
+    redactors: HashMap<OperationId, crate::platform::redact::Redactor>,
 }
 
 /// How many operations' outcomes are kept for a waiter.
@@ -124,11 +127,18 @@ impl EventLog {
     /// Emits `event`: kept, then told to every listener, under one lock, so the listeners hear
     /// the events in the order of their cursors whatever thread emits them (a window drops an
     /// event at or below the last cursor it took in).
-    pub fn emit(&self, event: RunEvent) {
+    /// A log line is redacted first: the log is shown in the app and sent on in bug reports, and
+    /// the tools it records (the runner, Vagrant, Docker, Terraform) may print a credential, a
+    /// flag or a private key.
+    pub fn emit(&self, mut event: RunEvent) {
         {
             let mut kept = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             kept.last += 1;
+            if let RunEvent::Log { operation, line, .. } = &mut event {
+                *line = kept.redactors.entry(operation.clone()).or_default().line(line);
+            }
             if let RunEvent::Ended { operation, error, .. } = &event {
+                kept.redactors.remove(operation);
                 kept.ends.insert(operation.clone(), error.clone().map_or(Ok(()), Err));
                 kept.ended_order.push_back(operation.clone());
                 while kept.ended_order.len() > ENDS_KEPT {
@@ -189,6 +199,57 @@ mod tests {
 
     fn log(operation: &str, line: &str) -> RunEvent {
         RunEvent::Log { operation: OperationId(operation.into()), lab_id: "web".into(), line: line.into() }
+    }
+
+    #[test]
+    fn the_deploy_log_keeps_no_secret_the_tools_print() {
+        use crate::platform::redact::samples;
+        // A launch's flag and a server's password of no recognisable shape, registered as the
+        // launcher reads them.
+        let flag = "Zq8-unshaped-flag-7731";
+        let server_password = "correct horse battery staple 9";
+        crate::platform::redact::register(flag);
+        crate::platform::redact::register(server_password);
+        let [begin, body, more, end] = samples::private_key_lines();
+        let secrets = [
+            flag.to_owned(),
+            server_password.to_owned(),
+            "flag{s33d_fl4g_v4lue}".to_owned(),
+            samples::github_classic(),
+            samples::github_fine_grained(),
+            "AKIAIOSFODNN7EXAMPLE".to_owned(),
+            samples::aws_secret(),
+            samples::digitalocean(),
+            samples::azure_secret(),
+            samples::google_api_key(),
+            body.clone(),
+            more.clone(),
+        ];
+        let events = EventLog::default();
+        for line in [
+            format!("==> web: CTF_FLAG_MAIN={flag}"),
+            format!("terraform: proxmox password {server_password} rejected"),
+            "web_1 | the flag is flag{s33d_fl4g_v4lue}".to_owned(),
+            format!("git: using {} for the clone", secrets[3]),
+            format!("token {}", secrets[4]),
+            format!("aws: key {} secret {}", secrets[5], secrets[6]),
+            format!("export DIGITALOCEAN_TOKEN {}", secrets[7]),
+            format!("az: client secret {} set", secrets[8]),
+            format!("gcloud: key {}", secrets[9]),
+            begin,
+            body,
+            more,
+            end,
+            "Machine booted and ready!".to_owned(),
+        ] {
+            events.emit(log("op-1", &line));
+        }
+        let written: Vec<String> =
+            events.since(None).into_iter().filter_map(|c| if let RunEvent::Log { line, .. } = c.event { Some(line) } else { None }).collect();
+        for secret in &secrets {
+            assert!(!written.iter().any(|l| l.contains(secret.as_str())), "{secret} survived in:\n{written:#?}");
+        }
+        assert_eq!(written.last().map(String::as_str), Some("Machine booted and ready!"), "the rest is kept");
     }
 
     #[test]

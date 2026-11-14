@@ -4,6 +4,7 @@
 
 use isothrum_runner::{Detail, Error as RunnerError, ErrorCode, ErrorDetail, TimedOut};
 
+use super::runner_said;
 use crate::error::{Code, Error};
 use crate::platform::exec::DockerSaid;
 use crate::runtime::port::HostPort;
@@ -40,15 +41,16 @@ pub(super) fn from_runner(e: RunnerError) -> Error {
         RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port: HostPort::new(port.get()), holder: None }),
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
+        RunnerError::ToolUnanswered { tool, reason, .. } if tool == "docker" => docker_unanswered(&reason),
         RunnerError::Timeout { step, timed_out } => timed_out_step(&step, &timed_out),
         // The lab's images, pulled before its containers start: a slow connection, not the
         // resources of Docker, the hypervisor or the server.
         // A Vagrant box, downloaded before its VMs boot, in a step of its own (`boxes-<step>`).
-        RunnerError::DownloadStalled { step, after_s, .. } if is_box_download(&step) => {
+        RunnerError::DownloadStalled { step, after_s, .. } if runner_said::is_box_download(&step) => {
             Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) })
         }
         // Vagrant ends its sentences with a period; the message adds its own.
-        RunnerError::DownloadFailed { step, reason } if is_box_download(&step) => {
+        RunnerError::DownloadFailed { step, reason } if runner_said::is_box_download(&step) => {
             Error::coded(Code::BoxDownloadFailed { reason: reason.trim().trim_end_matches('.').to_owned() })
         }
         RunnerError::DownloadStalled { after_s, .. } => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
@@ -79,12 +81,6 @@ pub(crate) fn on_server(e: Error, name: &str) -> Error {
     }
 }
 
-/// Whether a download step is the one that fetches the boxes a Vagrant start boots: the runner
-/// names it `boxes-<step>`, after the step it downloads for (`boxes-up`).
-fn is_box_download(step: &str) -> bool {
-    step.starts_with("boxes-")
-}
-
 /// What is said of a container lab an earlier version runs inside one helper VM (Isoloom's former
 /// `docker-vm`) when the runner no longer opens that run: nothing here reaches the VM any more.
 pub(crate) const HELPER_VM_LEFT: &str = "This lab still runs Docker inside a VM, as an earlier version of Cyber CTF started it, and this version can't reach that VM any more: remove it on the Machine page or in your hypervisor's app, then start the lab again";
@@ -108,11 +104,14 @@ pub(crate) fn from_service(code: ErrorCode, message: &str, step: Option<&str>, d
     match detail.map(|d| &d.data) {
         Some(Detail::PortInUse { port, .. }) => Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: None }),
         Some(Detail::ToolMissing { tool }) => Error::coded(Code::ToolMissing { tool: tool.clone() }),
+        Some(Detail::ToolUnanswered { tool }) if tool == "docker" => docker_unanswered(message),
         Some(Detail::ToolTooOld { tool, found, required }) => {
             Error::coded(Code::ToolTooOld { tool: tool_name(tool), found: found.clone(), required: required.clone() })
         }
         Some(Detail::Timeout { timed_out }) => timed_out_step(step, timed_out),
-        Some(Detail::DownloadStalled { after_s }) if is_box_download(step) => Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) }),
+        Some(Detail::DownloadStalled { after_s }) if runner_said::is_box_download(step) => {
+            Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) })
+        }
         Some(Detail::DownloadStalled { after_s }) => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
         Some(Detail::ServerAuthFailed { server }) => Error::coded(Code::ServerAuthFailed { server: server.clone().unwrap_or_else(|| "the server".into()) }),
         Some(Detail::PartlyGone { machines }) => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
@@ -162,37 +161,6 @@ fn tool_name(tool: &str) -> String {
     }
 }
 
-/// What a cloud's tools say when the sign-in they use has run out or is missing: Terraform's
-/// providers and the clouds' CLIs, from a CLI login or SSO session, an expired session token,
-/// application-default credentials gone stale, or a profile that was never signed in.
-const EXPIRED_SIGN_IN: [&str; 21] = [
-    // AWS
-    "login session has expired",
-    "please reauthenticate",
-    "expiredtoken",
-    "security token included in the request is expired",
-    "token has expired",
-    "error loading sso token",
-    "unable to locate credentials",
-    "aws login",
-    // Azure
-    "az login",
-    "aadsts700082",
-    "aadsts50173",
-    "refresh token has expired",
-    "interactive authentication is needed",
-    // Google Cloud
-    "reauthentication failed",
-    "problem refreshing your current auth tokens",
-    "gcloud auth application-default login",
-    "could not find default credentials",
-    "invalid_grant",
-    // Oracle Cloud
-    "session is no longer valid",
-    "oci session authenticate",
-    "notauthenticated",
-];
-
 /// A cloud that signs in through its CLI: its name, and how its sign-in is made again (its row's,
 /// [`crate::runtime::server::kind::CliSignIn`]).
 fn sign_in_of(cloud: Provider) -> Option<(&'static str, &'static str)> {
@@ -208,8 +176,7 @@ fn cloud_in(reason: &str) -> Option<Provider> {
 /// is missing (`cloud`, when known): sign in again, then try again, a refusal before acting
 /// (nothing could change without the sign-in); `None` for any other failure.
 pub(crate) fn expired_sign_in(reason: &str, cloud: Option<Provider>) -> Option<Error> {
-    let lower = reason.to_ascii_lowercase();
-    if !EXPIRED_SIGN_IN.iter().any(|s| lower.contains(s)) {
+    if !crate::platform::tool_output::cloud_sign_in::expired(reason) {
         return None;
     }
     let (name, again) = cloud.or_else(|| cloud_in(reason)).and_then(sign_in_of).map_or(("the cloud account", String::new()), |(n, a)| (n, format!(" ({a})")));
@@ -219,20 +186,18 @@ pub(crate) fn expired_sign_in(reason: &str, cloud: Option<Provider>) -> Option<E
     )))
 }
 
-/// A step's tool that ran and failed: Docker not answering its probe reads as the engine being
-/// stopped (or this account not allowed to use it); a cloud sign-in that ran out, as signing in
-/// again; an address block another network holds, as what to do about it; anything else, as the
-/// command that failed.
+/// Docker not answering the runner's probe (`tool_unanswered`), Docker's own words `said`: the
+/// engine stopped, or this account not allowed to use it.
+fn docker_unanswered(said: &str) -> Error {
+    if DockerSaid::is_refusal(&said.to_ascii_lowercase()) { crate::platform::exec::docker_denied_error() } else { Error::coded(Code::DockerNotRunning) }
+}
+
+/// A step's tool that ran and failed: a cloud sign-in that ran out reads as signing in again; an
+/// address block another network holds, as what to do about it; anything else, as the command
+/// that failed.
 fn tool_failed(step: &str, reason: &str) -> Error {
     if let Some(expired) = expired_sign_in(reason, None) {
         return expired;
-    }
-    if step == "tools" && reason.starts_with("`docker` doesn't answer") {
-        return if DockerSaid::is_refusal(&reason.to_ascii_lowercase()) {
-            crate::platform::exec::docker_denied_error()
-        } else {
-            Error::coded(Code::DockerNotRunning)
-        };
     }
     super::super::docker::explain_pool_overlap(Error::CommandFailed { command: format!("lab step {step}"), stderr: reason.to_owned() })
 }
@@ -243,12 +208,15 @@ fn tool_failed(step: &str, reason: &str) -> Error {
 /// a reload), while UTM runs and answers every other command; and `AppleEvent timed out.
 /// (-1712)` from the same reads while UTM is busy. The same operation then goes through. The
 /// other -600, a UTM that really isn't reachable, the start's UTM check catches before.
-const UTM_TRANSIENT: &[(&str, &str)] = &[("(-600)", "\"Application isn't running\" while it runs"), ("(-1712)", "\"AppleEvent timed out\" while busy")];
-
-/// How UTM's passing scripting error `e` is said, if `e` is one ([`UTM_TRANSIENT`]).
+///
+/// How `e` is said, if it is one of them (by its Apple event error number, [`AppleEvent`]).
 fn utm_transient(e: &Error) -> Option<&'static str> {
-    let text = e.to_string();
-    UTM_TRANSIENT.iter().find(|(code, _)| text.contains(code)).map(|(_, said)| *said)
+    use crate::platform::tool_output::apple_events::AppleEvent;
+    match AppleEvent::of(&e.to_string())? {
+        AppleEvent::AppNotRunning => Some("\"Application isn't running\" while it runs"),
+        AppleEvent::TimedOut => Some("\"AppleEvent timed out\" while busy"),
+        AppleEvent::NotAuthorized | AppleEvent::Other(_) => None,
+    }
 }
 
 /// What the log says before an operation UTM refused in passing (`said`) is tried once more.

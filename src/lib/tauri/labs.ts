@@ -222,8 +222,9 @@ export const screenOpenNative = (id: string, runtime: Runtime, machine: string) 
  *  system's client. */
 export const screenConnect = () => invoke<ScreenConnection>("screen_connect");
 
-/** Opens the calling screen window's Remote Desktop in the system's client. */
-export const screenOpenRdp = () => invokeUnit("screen_open_rdp");
+/** Opens the calling screen window's Remote Desktop in the system's client; `clipboard`: this
+ *  computer's clipboard is shared with the machine for this session (off unless the player asks). */
+export const screenOpenRdp = (clipboard: boolean) => invokeUnit("screen_open_rdp", { clipboard });
 
 /** The calling screen window's Remote Desktop password, to copy on request. */
 export const screenPassword = () => invoke<string>("screen_password");

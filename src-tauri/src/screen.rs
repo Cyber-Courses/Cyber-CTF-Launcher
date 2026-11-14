@@ -70,8 +70,13 @@ pub(crate) struct TunnelClosed {
 
 impl Reached {
     /// The runner's `console`, kept for the window's life, and its SSH tunnel when one carries
-    /// it: the caller keeps that alive too ([`Reached::hold`]), and watches it end.
-    pub(crate) fn of(mut console: isothrum_runner::Console) -> Result<(Reached, Option<isothrum_runner::Tunnel>)> {
+    /// it: the caller keeps that alive too ([`Reached::hold`]), and watches it end. `trust`: how
+    /// the server's certificate is trusted, when its console is reached through its API (a
+    /// self-signed one by the fingerprint the learner confirmed for it).
+    pub(crate) fn of(
+        mut console: isothrum_runner::Console,
+        trust: crate::runtime::server::tls_pin::Trust,
+    ) -> Result<(Reached, Option<isothrum_runner::Tunnel>)> {
         let tunnel = console.tunnel.take();
         let protocol = match crate::runtime::isothrum::protocol_word(console.protocol) {
             "vnc" => Protocol::Vnc,
@@ -83,7 +88,7 @@ impl Reached {
             isothrum_runner::Endpoint::ProxmoxVnc(vnc) => bridge::Target::WebSocket {
                 url: vnc.websocket.expose().to_owned(),
                 header: (vnc.authorization.0.clone(), vnc.authorization.1.expose().to_owned()),
-                insecure: vnc.insecure,
+                trust: if vnc.insecure { trust } else { crate::runtime::server::tls_pin::Trust::System },
             },
             _ => return Err(Error::Invalid("the runner reached the screen where this launcher can't show it".into())),
         };
@@ -263,22 +268,24 @@ pub(crate) fn password(label: &str) -> Result<String> {
 }
 
 /// Opens window `label`'s Remote Desktop in `client`: its `.rdp` file written owner-only in
-/// `dir` (removed when the window closes), `FreeRDP` given the password on its input.
-pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path) -> Result<()> {
+/// `dir` (removed when the window closes), `FreeRDP` given the password on its input, this
+/// computer's clipboard shared with the machine only when the learner asked (`clipboard`).
+pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path, clipboard: bool) -> Result<()> {
     let (connection, password) = with_sessions(|s| {
         let r = s.get(label).and_then(|s| s.reached.as_ref()).filter(|r| r.protocol == Protocol::Rdp)?;
         let bridge::Target::Tcp(at) = &r.at else { return None };
-        Some((rdp::Connection { address: at.to_string(), user: r.user.clone() }, r.password.clone()))
+        Some((rdp::Connection { address: at.to_string(), user: r.user.clone(), clipboard }, r.password.clone()))
     })
     .ok_or_else(|| Error::Invalid("this screen isn't a Remote Desktop".into()))?;
     crate::platform::private_fs::create_dir(dir).map_err(Error::Io)?;
     let file = dir.join(format!("{}.rdp", label.replace([':', '/', '\\'], "-")));
     crate::platform::private_fs::write(&file, rdp::file(&connection)).map_err(Error::Io)?;
     with_sessions(|s| s.get_mut(label).map(|s| s.rdp_file = Some(file.clone())));
-    let (program, args, stdin) = rdp::command(client, &file, &connection, password.is_some());
+    let launch = rdp::command(client, &file, &connection, password.is_some());
+    let stdin = launch.password_on_stdin;
     #[allow(clippy::disallowed_methods, reason = "the remote-desktop client opens as the player's own app, left running past the call")]
-    let mut cmd = std::process::Command::new(&program);
-    cmd.args(&args).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    let mut cmd = std::process::Command::new(&launch.program);
+    cmd.args(&launch.args).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     cmd.stdin(if stdin { std::process::Stdio::piped() } else { std::process::Stdio::null() });
     let mut child = cmd.spawn().map_err(|e| Error::Invalid(format!("couldn't open {}: {e}", client.name())))?;
     let given = match (stdin, child.stdin.take(), password) {
@@ -421,7 +428,7 @@ mod tests {
         connect(label, reached(Protocol::Rdp, "127.0.0.1:24002"), None).unwrap();
         let dir = crate::testing::temp_dir("screen-rdp");
         // `true` stands in for the client: it opens nothing.
-        open_rdp(label, &rdp::Client::Mstsc("true".into()), &dir).unwrap();
+        open_rdp(label, &rdp::Client::Mstsc("true".into()), &dir, false).unwrap();
         let file = dir.join("screen-goad-rdp01.rdp");
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(text.contains("full address:s:127.0.0.1:24002") && !text.contains("pw-1"), "{text}");
@@ -444,7 +451,7 @@ mod tests {
         let client = dir.join("client.sh");
         std::fs::write(&client, "#!/bin/sh\necho $$ > \"$1.pid.tmp\" && mv \"$1.pid.tmp\" \"$1.pid\"\n").unwrap();
         std::fs::set_permissions(&client, std::fs::Permissions::from_mode(0o700)).unwrap();
-        open_rdp(label, &rdp::Client::Mstsc(client), &dir).unwrap();
+        open_rdp(label, &rdp::Client::Mstsc(client), &dir, false).unwrap();
         let said = dir.join("screen-goad-rdp02.rdp.pid");
         let reaped = |pid: &str| std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |stat| !stat.contains(") Z "));
         let mut gone = false;

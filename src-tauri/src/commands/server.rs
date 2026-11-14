@@ -65,6 +65,20 @@ pub async fn server_proxmox_placement(app: AppHandle, input: HostInput) -> Resul
     setup::placement(&AppDirs::from(&app), input).await
 }
 
+/// What the form's Proxmox server offers to be confirmed: its certificate's fingerprint and its
+/// node's SSH host keys (see `server::setup::identity`).
+#[tauri::command]
+pub async fn server_identity(app: AppHandle, input: HostInput) -> Result<setup::Identity> {
+    setup::identity(&AppDirs::from(&app), &input).await
+}
+
+/// Confirms the form's server node's SSH host keys, shown as `fingerprints` (see
+/// `server::setup::trust_ssh_keys`).
+#[tauri::command]
+pub async fn server_trust_ssh_keys(app: AppHandle, input: HostInput, fingerprints: Vec<String>) -> Result<()> {
+    setup::trust_ssh_keys(&AppDirs::from(&app), &input, &fingerprints).await
+}
+
 /// Saves a Proxmox host set up with the player's SSH key (see `server::setup::save_with_ssh_key`).
 #[tauri::command]
 pub async fn server_save_ssh_key(app: AppHandle, input: HostInput) -> Result<HostProfile> {
