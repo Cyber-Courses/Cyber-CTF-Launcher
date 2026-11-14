@@ -237,15 +237,6 @@ async fn version_of(program: &'static str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    /// Runs the real probes against this machine: `cargo test -- --ignored --nocapture`.
-    #[tokio::test]
-    #[ignore = "depends on the host's installed tools"]
-    async fn prints_this_machines_report() {
-        let t = crate::testing::test_app::TestApp::new();
-        let report = super::system_check(t.dirs()).await;
-        println!("{}", serde_json::to_string_pretty(&report).unwrap());
-    }
-
     #[test]
     fn the_azure_cli_version_comes_from_its_json_without_a_quoted_query() {
         let out = "{\n  \"azure-cli\": \"2.90.0\",\n  \"azure-cli-core\": \"2.90.0\",\n  \"extensions\": {}\n}\n";

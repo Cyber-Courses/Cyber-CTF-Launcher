@@ -1953,8 +1953,6 @@ areas:
             - failures.spec.ts > a failed machine check offers Try again
           desktop:
             - machine/page
-          integration:
-            - src-tauri/src/machine/system.rs > prints_this_machines_report
           setup:
             - ready:docker
             - ready:compose
@@ -1964,7 +1962,7 @@ areas:
           - desktop-e2e
         gaps:
           desktop: machine/page only checks the panel words (Providers, CPU, Memory, Disk, Running now, Downloads) appear; no figure or readiness verdict is checked against the machine
-          integration: prints_this_machines_report is opt-in and asserts nothing; the setup run's ready:<tool> lines are the only real check of the report, Debian 13 only so far
+          integration: no scenario checks the report; the setup run's ready:<tool> lines are the only real check of it, Debian 13 only so far
         note: Windows and macOS hosts never ran the check in any tier but unit; non-English OS output of the probes is untested.
 
       - id: machine.docker-engine-states

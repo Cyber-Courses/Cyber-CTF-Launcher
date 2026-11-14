@@ -706,7 +706,7 @@ mod tests {
         install_with(&t.dirs(), invoice("invoice", newer), &log, async || Ok(gz.clone())).await.unwrap();
         assert!(runtime::lab::installed_at(&dir, newer));
         // Ids and sources are checked before anything else.
-        assert!(install_with(&t.dirs(), invoice("../x", SHA), &log, async || panic!()).await.is_err());
+        assert!(matches!(install_with(&t.dirs(), invoice("../x", SHA), &log, async || panic!()).await.unwrap_err(), crate::error::Error::Invalid(_)));
         assert!(
             install_with(&t.dirs(), Release { lab_id: "invoice", repository: "evil/lab", commit: SHA, runtime: Runtime::Docker }, &log, async || panic!())
                 .await
@@ -830,7 +830,7 @@ mod tests {
     fn repository_names_at_the_length_boundary_and_commit_lengths() {
         let sha = "0123456789abcdef0123456789abcdef01234567";
         assert!(validate_source(&format!("CyberCTF/{}", "a".repeat(100)), sha).is_ok());
-        assert!(validate_source(&format!("CyberCTF/{}", "a".repeat(101)), sha).is_err());
+        assert!(matches!(validate_source(&format!("CyberCTF/{}", "a".repeat(101)), sha).unwrap_err(), crate::error::Error::Invalid(_)));
         assert!(validate_source("CyberCTF/lab.v2_x-y", sha).is_ok());
         for (repo, commit) in [
             ("CyberCTF/lab", &sha[..39]),

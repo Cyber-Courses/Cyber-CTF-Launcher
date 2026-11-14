@@ -370,9 +370,9 @@ mod tests {
     #[test]
     fn a_screen_window_is_named_by_lab_and_machine() {
         assert_eq!(window(&which("dc01")).unwrap(), ("screen-goad:dc01".into(), "screen?id=goad&runtime=VM&machine=dc01".into()));
-        assert!(window(&which("a/b")).is_err());
-        assert!(window(&which("x&machine=y")).is_err());
-        assert!(window(&Which { id: "../x".into(), ..which("web") }).is_err());
+        assert!(matches!(window(&which("a/b")).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(matches!(window(&which("x&machine=y")).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(matches!(window(&Which { id: "../x".into(), ..which("web") }).unwrap_err(), crate::error::Error::Invalid(_)));
     }
 
     #[test]

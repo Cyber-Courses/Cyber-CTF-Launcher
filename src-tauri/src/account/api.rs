@@ -189,7 +189,7 @@ mod tests {
 
     /// Hits the real CyberBackend anonymously: `cargo test -- --ignored`.
     #[tokio::test]
-    #[ignore = "network"]
+    #[ignore = "slow: asks the real CyberBackend over the network"]
     async fn queries_the_api_anonymously() {
         let data = super::graphql_public("{ challenges { id } me { authId } }", serde_json::Value::Null).await.unwrap();
         assert!(data["challenges"].is_array());

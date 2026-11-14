@@ -74,6 +74,6 @@ mod tests {
         assert_eq!(setup_path(None, false, Some("azure")).unwrap(), "server-setup");
         // Editing ignores the kind: the host says what it is.
         assert_eq!(setup_path(Some("ab12".into()), true, None).unwrap(), "server-setup?id=ab12");
-        assert!(setup_path(Some("../x".into()), false, None).is_err());
+        assert!(matches!(setup_path(Some("../x".into()), false, None).unwrap_err(), crate::error::Error::Invalid(_)));
     }
 }
