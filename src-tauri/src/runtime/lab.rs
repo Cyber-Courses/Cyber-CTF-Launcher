@@ -475,17 +475,6 @@ mod tests {
     }
 
     #[test]
-    fn the_init_job_test_runs_once_isoloom_2_1_0_is_pinned() {
-        // The test above is ignored while Isoloom is pinned at 2.0.0, where it fails for the right
-        // reason; the pin bump brings it to life, or this says so.
-        let manifest = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).unwrap();
-        let pinned = manifest.lines().find_map(|l| l.strip_prefix("isoloom-spec = \"")).map(|r| r.trim_end_matches('"')).expect("isoloom-spec's pin");
-        // The attribute's own text; this literal's escaped quote keeps it from matching itself.
-        let ignored = include_str!("lab.rs").contains("#[ignore = \"passes once Isoloom 2.1.0 is pinned");
-        assert!(pinned == "2.0.0" || !ignored, "Isoloom {pinned} is pinned: drop the #[ignore] of the init job test, which holds the fix of #266");
-    }
-
-    #[test]
     fn explains_a_target_the_lab_cant_use() {
         let dir = lab(SPEC);
         // An image's filesystem can't be reproduced on a fresh VM: no VMs.

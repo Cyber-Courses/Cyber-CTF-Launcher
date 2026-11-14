@@ -2,7 +2,7 @@
 //! or Win32, each behind a safe function whose `SAFETY:` comment says why the call is sound. It
 //! is reviewed as a whole; nothing else in the app shell or the domain uses `unsafe`.
 
-#![allow(unsafe_code, reason = "the audited home of the launcher's calls into libc and Win32")]
+#![expect(unsafe_code, reason = "the audited home of the launcher's calls into libc and Win32")]
 
 #[cfg(unix)]
 mod unix;

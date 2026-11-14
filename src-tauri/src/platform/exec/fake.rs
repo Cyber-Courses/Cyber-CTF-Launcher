@@ -28,13 +28,13 @@ pub(super) enum FakeOutcome<T> {
 }
 
 /// A script's answer for a tool that printed `stdout`.
-#[allow(clippy::unnecessary_wraps, reason = "a script answers an Option, None being a missing tool")]
+#[expect(clippy::unnecessary_wraps, reason = "a script answers an Option, None being a missing tool")]
 pub fn ok(stdout: impl Into<String>) -> Option<Reply> {
     Some(Reply::Out(stdout.into()))
 }
 
 /// A script's answer for a tool that failed, printing `stderr`.
-#[allow(clippy::unnecessary_wraps, reason = "a script answers an Option, None being a missing tool")]
+#[expect(clippy::unnecessary_wraps, reason = "a script answers an Option, None being a missing tool")]
 pub fn fail(stderr: impl Into<String>) -> Option<Reply> {
     Some(Reply::Fail(stderr.into()))
 }

@@ -80,13 +80,17 @@ impl std::fmt::Display for TokenError {
     }
 }
 
+/// The longest token secret taken from `pveum`'s answer: Proxmox's are UUIDs (36 characters);
+/// anything far longer is not a secret but something else printed.
+const MAX_SECRET_LEN: usize = 128;
+
 /// The token in `pveum user token add --output-format json`'s answer.
 pub(crate) fn parse_token(out: &str) -> Result<ApiToken, TokenError> {
     let json = out.lines().find(|l| l.trim_start().starts_with('{')).ok_or_else(|| TokenError::NoToken(out.trim().to_owned()))?;
     let v: serde_json::Value = serde_json::from_str(json).map_err(|e| TokenError::NotJson(e.to_string()))?;
     let id = v["full-tokenid"].as_str().unwrap_or_default().to_string();
     let secret = v["value"].as_str().unwrap_or_default().to_string();
-    let secret_ok = !secret.is_empty() && secret.len() <= 128 && secret.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    let secret_ok = !secret.is_empty() && secret.len() <= MAX_SECRET_LEN && secret.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !is_token(&id) || !secret_ok {
         return Err(TokenError::Malformed);
     }

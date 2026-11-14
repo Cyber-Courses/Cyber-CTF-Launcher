@@ -164,7 +164,7 @@ pub(crate) async fn start(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, 
 }
 
 /// Starts the lab on this machine as `run` says (see [`local_run`]).
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "the local-launch helper mirrors start_locked's launch specification: the lab, how it runs, its engine, its inputs and a log sink"
 )]
