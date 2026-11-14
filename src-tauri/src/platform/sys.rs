@@ -15,11 +15,13 @@ use std::ffi::OsStr;
 pub use unix::{boot_session, process_start};
 #[cfg(unix)]
 pub use unix::{login_name, process_exists, signal_group, signal_process};
+#[cfg(all(windows, test))]
+pub use windows::terminate;
 #[cfg(windows)]
 pub use windows::{
-    ElevatedProcess, Hive, Job, child_processes, delete_user_registry_value, in_hyperv_admins, is_elevated, keep_std_handles, launch_elevated, process_created,
-    registry_key_exists, registry_string, registry_value_exists, registry_values, resume_threads_of, send_ctrl_c, set_path, set_user_registry_string,
-    take_ctrl_c, terminate,
+    Created, ElevatedProcess, Hive, Job, create_in_job, delete_user_registry_value, exit_code, in_hyperv_admins, is_elevated, keep_std_handles,
+    launch_elevated, process_created, registry_key_exists, registry_string, registry_value_exists, registry_values, send_ctrl_c, set_path,
+    set_user_registry_string, take_ctrl_c, terminate_process,
 };
 
 /// A registry value as the launcher reads it: a `REG_DWORD`'s number, or the type of any other.

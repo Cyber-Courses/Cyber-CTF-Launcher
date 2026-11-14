@@ -8,77 +8,23 @@ fn proc(pid: u32, boot: u128, start: u64) -> Proc {
 #[test]
 fn a_record_reads_back_from_its_line_and_a_damaged_one_reads_as_none() {
     let owner = proc(4242, 0xab, 987_654);
-    for record in [
-        Record::Tool { owner, tool: proc(77, 0xab, 990_000), stream: true },
-        Record::Tool { owner, tool: proc(78, 0xab, 990_001), stream: false },
-        Record::Spawn { owner, since: 133_000_000_000_000_000, program: r"C:\Program Files\Docker\docker.exe".into() },
-    ] {
+    for record in [Record { owner, tool: proc(77, 0xab, 990_000), stream: true }, Record { owner, tool: proc(78, 0xab, 990_001), stream: false }] {
         assert_eq!(Record::parse(&record.line()), Some(record));
     }
-    let tool = Record::Tool { owner, tool: proc(77, 0xab, 990_000), stream: true }.line();
+    let tool = Record { owner, tool: proc(77, 0xab, 990_000), stream: true }.line();
     for damaged in [
         "",
         "tool",
         &tool[..tool.len() - 1],
         &tool.replace("stream", "maybe"),
         &tool.replace("tool ", "toll "),
+        &tool.replace('\n', " more\n"),
         "spawn 4242:ab-987654 12 \n",
         "spawn 4242:ab-987654 x docker\n",
         "spawn 4242 12 docker\n",
     ] {
         assert_eq!(Record::parse(damaged), None, "{damaged:?}");
     }
-}
-
-#[test]
-fn a_program_is_named_as_its_image_is() {
-    for (program, name) in [
-        ("docker", "docker"),
-        ("docker.exe", "docker"),
-        ("DOCKER.EXE", "DOCKER"),
-        (r"C:\Tools\vagrant.exe", "vagrant"),
-        ("/usr/bin/terraform", "terraform"),
-        ("cmd", "cmd"),
-        (".exe", ""),
-        ("exe", "exe"),
-    ] {
-        assert_eq!(program_name(program), name, "{program}");
-    }
-}
-
-#[test]
-fn a_moment_reads_in_windows_creation_time_ticks() {
-    assert_eq!(filetime(std::time::UNIX_EPOCH), Some(116_444_736_000_000_000));
-    assert_eq!(filetime(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)), Some(116_444_736_010_000_000));
-    assert_eq!(filetime(std::time::UNIX_EPOCH - std::time::Duration::from_secs(1)), None, "before 1970");
-}
-
-/// What a dead app was creating as it died is its child of the program recorded, created since,
-/// in its boot; nothing a later process with its id started, nor anything else it started.
-#[test]
-fn the_tool_a_dead_app_was_creating_is_its_child_of_that_program_created_since() {
-    let boot = 0x5;
-    let owner = proc(4100, boot, 1_000);
-    let since = 50_000_000;
-    let child = |pid, image: &str, start| Child { pid, image: image.into(), id: Identity { boot, start } };
-    let children = [
-        child(1, "docker.exe", since + 10),
-        // Windows' creation time comes from a coarser clock than the moment recorded.
-        child(2, "DOCKER.EXE", since - 100),
-        // Started before the tool was being created: Docker Desktop, the browser.
-        child(3, "docker.exe", since - CREATION_SLACK - 1),
-        child(4, "Docker Desktop.exe", since + 10),
-        child(5, "msedge.exe", since + 10),
-        Child { pid: 6, image: "docker.exe".into(), id: Identity { boot: boot + 1, start: since + 10 } },
-    ];
-    assert_eq!(window_orphans(owner, since, "docker", None, &children), [1, 2]);
-    assert_eq!(window_orphans(owner, since, r"C:\bin\docker.exe", None, &children), [1, 2]);
-    // The owner's id names a process started since: what that one started is its own.
-    assert_eq!(window_orphans(owner, since, "docker", Some(since + 5), &children), [2]);
-    assert_eq!(window_orphans(owner, since, "vagrant", None, &children), [] as [u32; 0]);
-    // A process can't have been started by the owner before the owner itself started.
-    let late_owner = proc(4100, boot, since + 5);
-    assert_eq!(window_orphans(late_owner, since, "docker", None, &children), [1]);
 }
 
 #[cfg(unix)]
@@ -125,14 +71,12 @@ mod ending {
         let (mut probe, mut streamed, mut mine, mut other) = (tool(), tool(), tool(), tool());
         let dead = dead_owner();
         let of = |c: &std::process::Child| Proc::of(c.id()).unwrap();
-        let kept = write(dir.path(), me().unwrap().pid, &Record::Tool { owner: me().unwrap(), tool: of(&mine), stream: false }).unwrap();
+        let kept = write(dir.path(), me().unwrap().pid, &Record { owner: me().unwrap(), tool: of(&mine), stream: false }).unwrap();
         for record in [
-            Record::Tool { owner: dead, tool: of(&probe), stream: false },
-            Record::Tool { owner: dead, tool: of(&streamed), stream: true },
+            Record { owner: dead, tool: of(&probe), stream: false },
+            Record { owner: dead, tool: of(&streamed), stream: true },
             // Its id names another process now (`other`, a later start).
-            Record::Tool { owner: dead, tool: Proc { pid: other.id(), id: Identity { start: of(&other).id.start + 1, ..of(&other).id } }, stream: false },
-            // Spawning is Windows': nothing to end here.
-            Record::Spawn { owner: dead, since: 1, program: "docker".into() },
+            Record { owner: dead, tool: Proc { pid: other.id(), id: Identity { start: of(&other).id.start + 1, ..of(&other).id } }, stream: false },
         ] {
             std::mem::forget(write(dir.path(), dead.pid, &record).unwrap());
         }

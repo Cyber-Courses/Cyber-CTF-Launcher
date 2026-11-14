@@ -8,15 +8,14 @@
 //!   that started it dies: a `vagrant up` or a `terraform apply` ran to its end, holding the lab's
 //!   Vagrant lock or Terraform state, with nobody reading its output (#301). Each tool's record
 //!   names it, from just after it started until it ended.
-//! - On Windows a tool's job object ends its tree when the process that holds the job dies, but
-//!   only once the tool is in it: a tool is created suspended and put in its job before it runs,
-//!   and one created as the app died was in no job, suspended for good (#299). A record names the
-//!   tool being created, from just before it is created until it is in its job.
+//! - On Windows each tool is created inside a kill-on-close job object, which ends its tree when
+//!   the process that holds the job dies, however it dies (#299). Its record is the backstop, for
+//!   a tree the job didn't hold.
 //!
-//! A record says which process wrote it (its owner: its id and [`Identity`]), and the tool, by its
-//! [`Identity`] on unix, or by its program and when it was being created on Windows. The next start
-//! ([`end_orphans`]) ends what each record of a dead owner names, only when it is still that very
-//! process (an id now naming another process is left alone), and removes the records.
+//! A record says which process wrote it (its owner) and the tool, each by its id and
+//! [`Identity`]. The next start ([`end_orphans`]) ends the tool each record of a dead owner names,
+//! only when it is still that very process (an id now naming another process is left alone), and
+//! removes the records.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -83,55 +82,31 @@ fn me() -> Option<Proc> {
     *ME.get_or_init(|| Proc::of(std::process::id()))
 }
 
-/// What a record names.
+/// What a record names: the tool its owner started; `stream`, one asked to stop before it is
+/// killed (on unix), as the app's exit does.
 #[derive(Debug, PartialEq, Eq)]
-enum Record {
-    /// A tool running in its own process group (unix); `stream`: one asked to stop before it is
-    /// killed, as the app's exit does.
-    Tool { owner: Proc, tool: Proc, stream: bool },
-    /// A tool being created (Windows): `program` (as started: `cmd` for a shimmed tool), from
-    /// `since` on (as a process's creation time, in its [`Identity`]'s units).
-    Spawn { owner: Proc, since: u64, program: String },
+struct Record {
+    owner: Proc,
+    tool: Proc,
+    stream: bool,
 }
 
 impl Record {
-    fn owner(&self) -> Proc {
-        match self {
-            Record::Tool { owner, .. } | Record::Spawn { owner, .. } => *owner,
-        }
-    }
-
-    /// The record's line: `tool <owner> <tool> stream|probe`, or `spawn <owner> <since> <program>`
-    /// (the program last: a path may hold spaces).
+    /// The record's line: `tool <owner> <tool> stream|probe`.
     fn line(&self) -> String {
-        match self {
-            Record::Tool { owner, tool, stream } => format!("tool {} {} {}\n", owner.word(), tool.word(), if *stream { "stream" } else { "probe" }),
-            Record::Spawn { owner, since, program } => format!("spawn {} {since} {program}\n", owner.word()),
-        }
+        format!("tool {} {} {}\n", self.owner.word(), self.tool.word(), if self.stream { "stream" } else { "probe" })
     }
 
     fn parse(text: &str) -> Option<Record> {
-        let text = text.strip_suffix('\n')?;
-        let (kind, rest) = text.split_once(' ')?;
-        let (owner, rest) = rest.split_once(' ')?;
-        let owner = Proc::parse(owner)?;
-        match kind {
-            "tool" => {
-                let (tool, how) = rest.split_once(' ')?;
-                let stream = match how {
-                    "stream" => true,
-                    "probe" => false,
-                    _ => return None,
-                };
-                Some(Record::Tool { owner, tool: Proc::parse(tool)?, stream })
-            }
-            "spawn" => {
-                let (since, program) = rest.split_once(' ')?;
-                let program = (!program.is_empty()).then(|| program.to_owned())?;
-                Some(Record::Spawn { owner, since: since.parse().ok()?, program })
-            }
-            _ => None,
-        }
+        let text = text.strip_suffix('\n')?.strip_prefix("tool ")?;
+        let mut words = text.split(' ');
+        let (owner, tool, how) = (Proc::parse(words.next()?)?, Proc::parse(words.next()?)?, words.next()?);
+        let stream = match how {
+            "stream" => true,
+            "probe" => false,
+            _ => return None,
+        };
+        words.next().is_none().then_some(Record { owner, tool, stream })
     }
 }
 
@@ -140,21 +115,12 @@ impl Record {
 pub(super) struct Recorded(PathBuf);
 
 impl Recorded {
-    /// Records the tool `pid` just started in a process group of its own; `stream`, a long run.
-    /// None when no ledger is kept or the tool is gone already.
-    #[cfg(unix)]
+    /// Records the tool `pid` just started (in a process group of its own, or its job); `stream`,
+    /// a long run. None when no ledger is kept or the tool is gone already.
     pub(super) fn tool(pid: u32, stream: bool) -> Option<Recorded> {
         let (dir, owner) = (FOLDER.get()?, me()?);
         let tool = Proc::of(pid)?;
-        write(dir, owner.pid, &Record::Tool { owner, tool, stream })
-    }
-
-    /// Records the tool `program` about to be created (Windows: until it is in its job).
-    #[cfg(windows)]
-    pub(super) fn spawning(program: &std::ffi::OsStr) -> Option<Recorded> {
-        let (dir, owner) = (FOLDER.get()?, me()?);
-        let since = filetime(std::time::SystemTime::now())?;
-        write(dir, owner.pid, &Record::Spawn { owner, since, program: program.to_string_lossy().into_owned() })
+        write(dir, owner.pid, &Record { owner, tool, stream })
     }
 
     /// Leaves the record for the next start: a tool asked to stop as this process exits, which
@@ -207,24 +173,22 @@ pub async fn end_orphans(dir: &Path) -> Vec<u32> {
             }
             continue;
         };
-        if record.owner().alive() {
+        if record.owner.alive() {
             continue;
         }
-        match record {
+        let Record { tool, stream, .. } = record;
+        if tool.alive() {
+            log::warn!("ending tool {} a killed app or deploy worker left running", tool.pid);
+            ended.push(tool.pid);
             #[cfg(unix)]
-            Record::Tool { tool, stream, .. } if tool.alive() => {
-                log::warn!("ending tool process group {} a killed app or deploy worker left running", tool.pid);
-                ended.push(tool.pid);
-                if stream {
-                    signal(tool.pid, libc::SIGTERM);
-                    stopping.push(tool);
-                } else {
-                    signal(tool.pid, libc::SIGKILL);
-                }
+            if stream {
+                signal(tool.pid, libc::SIGTERM);
+                stopping.push(tool);
+            } else {
+                signal(tool.pid, libc::SIGKILL);
             }
             #[cfg(windows)]
-            Record::Spawn { owner, since, program } => ended.extend(end_spawned(owner, since, &program)),
-            _ => {}
+            end_tree(tool.pid, stream);
         }
         remove(&path);
     }
@@ -268,66 +232,19 @@ async fn kill_once_stopped(mut stopping: Vec<Proc>) {
     }
 }
 
-/// Ends the tool a dead owner was creating as it died, if it is still there (suspended, in no
-/// job): a process the owner started, of the program recorded, created since. The ids ended.
+/// Ends the tool `pid` and its tree (`taskkill /T /F`): Windows has no signal to ask it first,
+/// so a streamed tool is ended as a probe is.
 #[cfg(windows)]
-fn end_spawned(owner: Proc, since: u64, program: &str) -> Vec<u32> {
-    // The owner is gone: a process with its id now is a later one.
-    let reused = identity::of(owner.pid).map(|id| id.start);
-    let children: Vec<Child> =
-        crate::platform::sys::child_processes(owner.pid).into_iter().filter_map(|(pid, image)| Some(Child { pid, image, id: identity::of(pid)? })).collect();
-    let orphans = window_orphans(owner, since, program, reused, &children);
-    for pid in &orphans {
-        log::warn!("ending tool process {pid} ({program}), left suspended outside its job by a killed app or deploy worker");
-        crate::platform::sys::terminate(*pid);
+fn end_tree(pid: u32, _stream: bool) {
+    let mut taskkill = std::process::Command::new("taskkill");
+    taskkill
+        .args(["/T", "/F", "/PID", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if let Err(e) = super::headless_std(&mut taskkill).status() {
+        log::warn!("couldn't run taskkill to end tool {pid}: {e}");
     }
-    orphans
-}
-
-/// A process another started, as Windows lists it.
-#[cfg(any(windows, test))]
-struct Child {
-    pid: u32,
-    /// Its image's file name (`docker.exe`).
-    image: String,
-    id: Identity,
-}
-
-/// How much earlier than the moment recorded before it was created a process's creation time
-/// may read (Windows stores it from a coarser clock): a second, in 100 ns ticks.
-#[cfg(any(windows, test))]
-const CREATION_SLACK: u64 = 10_000_000;
-
-/// Which of `children` (the processes `owner`'s id started) is the tool `program` it was creating
-/// from `since` on: of `owner`'s boot, created since (and before `reused`, when a later process
-/// has the owner's id now: what it started is its own), of the program recorded.
-#[cfg(any(windows, test))]
-fn window_orphans(owner: Proc, since: u64, program: &str, reused: Option<u64>, children: &[Child]) -> Vec<u32> {
-    children
-        .iter()
-        .filter(|c| c.id.boot == owner.id.boot && c.id.start.saturating_add(CREATION_SLACK) >= since && c.id.start >= owner.id.start)
-        .filter(|c| reused.is_none_or(|r| c.id.start < r))
-        .filter(|c| program_name(&c.image).eq_ignore_ascii_case(program_name(program)))
-        .map(|c| c.pid)
-        .collect()
-}
-
-/// A program's name as an image is named: its file name, without `.exe`.
-#[cfg(any(windows, test))]
-fn program_name(program: &str) -> &str {
-    let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
-    match name.len().checked_sub(4).and_then(|at| name.get(at..).map(|ext| (at, ext))) {
-        Some((at, ext)) if ext.eq_ignore_ascii_case(".exe") => name.get(..at).unwrap_or(name),
-        _ => name,
-    }
-}
-
-/// `t` as Windows stores a process's creation time: 100 ns ticks since 1601.
-#[cfg(any(windows, test))]
-fn filetime(t: std::time::SystemTime) -> Option<u64> {
-    const UNIX_EPOCH_IN_TICKS: u64 = 116_444_736_000_000_000;
-    let since_epoch = t.duration_since(std::time::UNIX_EPOCH).ok()?;
-    u64::try_from(since_epoch.as_nanos() / 100).ok()?.checked_add(UNIX_EPOCH_IN_TICKS)
 }
 
 #[cfg(test)]

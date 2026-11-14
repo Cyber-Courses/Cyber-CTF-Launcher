@@ -8,14 +8,17 @@ pub mod fake;
 mod group;
 mod ledger;
 pub(crate) mod shim;
+mod tool;
 mod vagrant;
+#[cfg(any(windows, test))]
+mod win_command;
 
 use std::path::Path;
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 
 /// The image pattern, for the bindings the tests write (`testing::ts_bindings`).
 #[cfg(test)]
@@ -32,6 +35,7 @@ pub use elevate::{OWNER_WINDOW_ENV, owner_window, set_owner_window};
 pub(crate) use group::GroupGuard;
 pub use group::kill_live_tools;
 pub use ledger::{DIR as TOOLS_DIR, end_orphans as end_orphaned_tools, record_tools_in};
+pub(crate) use tool::Tool;
 pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line};
 
 use crate::error::{Error, Result};
@@ -183,28 +187,46 @@ fn exit_error(program: &'static str, args: &[&str], code: Option<i32>, stderr: S
 }
 
 /// Starts `cmd` as a group of its own, tracked until the guard is disarmed: its own process
-/// group on unix; on Windows a job object, the process created suspended and resumed only once
-/// it is in the job, so nothing it starts in between escapes it. Dropped armed (a timeout, a
-/// cancellation), the guard ends the whole tree, and so does the app's exit
-/// ([`kill_live_tools`]). `stream`: a long-running tool, stopped gently on unix. Recorded in the
-/// tools' ledger, for the next start to end what an app killed outright left ([`ledger`]): on unix
-/// while it runs, on Windows while it is created and not yet in its job.
-pub(crate) fn spawn_group(cmd: &mut Command, stream: bool) -> std::io::Result<(Child, GroupGuard)> {
-    cmd.kill_on_drop(true);
-    #[cfg(unix)]
-    cmd.process_group(0);
+/// group on unix; on Windows a kill-on-close job object the kernel creates it in, so nothing it
+/// starts ever runs outside it, and the job ends its tree however the app ends. Dropped armed (a
+/// timeout, a cancellation), the guard ends the whole tree, and so does the app's exit
+/// ([`kill_live_tools`]). `stream`: a long-running tool, stopped gently on unix, and recorded
+/// there in the tools' ledger while it runs, for the next start to end it should the app be
+/// killed outright ([`ledger`]). Its input is the null device and its output piped, whatever
+/// `cmd` says (every caller asks for that).
+pub(crate) fn spawn_group(cmd: &mut Command, stream: bool) -> std::io::Result<(Tool, GroupGuard)> {
+    #[cfg(not(windows))]
+    {
+        cmd.kill_on_drop(true);
+        #[cfg(unix)]
+        cmd.process_group(0);
+        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let child = cmd.spawn()?;
+        let guard = GroupGuard::track(child.id(), stream);
+        Ok((Tool::from_child(child), guard))
+    }
     #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW | group::CREATE_SUSPENDED);
-    #[cfg(windows)]
-    let creating = ledger::Recorded::spawning(cmd.as_std().get_program());
-    let child = cmd.spawn()?;
-    let guard = if stream { GroupGuard::stream(&child) } else { GroupGuard::new(&child) };
-    #[cfg(windows)]
-    group::resume(&child)?;
-    // In its job (or running without one, Windows having refused it): no longer the ledger's.
-    #[cfg(windows)]
-    drop(creating);
-    Ok((child, guard))
+    {
+        let job = crate::platform::sys::Job::new()?;
+        let created = create_in_job(cmd.as_std(), &job)?;
+        let guard = GroupGuard::in_job(created.pid, stream, job);
+        Ok((Tool::from_created(created)?, guard))
+    }
+}
+
+/// Creates the tool `cmd` describes (its program found on its `PATH`, its arguments, environment
+/// changes and working folder) inside `job`.
+#[cfg(windows)]
+fn create_in_job(cmd: &std::process::Command, job: &crate::platform::sys::Job) -> std::io::Result<crate::platform::sys::Created> {
+    use std::ffi::{OsStr, OsString};
+    let changes: Vec<(OsString, Option<OsString>)> = cmd.get_envs().map(|(k, v)| (k.to_owned(), v.map(OsStr::to_owned))).collect();
+    let vars = win_command::environment(std::env::vars_os(), &changes);
+    let program = cmd.get_program().to_string_lossy();
+    let application = win_command::resolve(&program, win_command::path_of(&vars), Path::is_file)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("{program} isn't on PATH")))?;
+    let args: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+    let line = win_command::command_line(&application.to_string_lossy(), &args);
+    crate::platform::sys::create_in_job(application.as_os_str(), OsStr::new(&line), &vars, cmd.get_current_dir().map(Path::as_os_str), job)
 }
 
 /// Whether `e` is a timed tool that ran out of time (and was killed), not one that failed.
@@ -296,7 +318,7 @@ async fn run_inner(program: &'static str, args: &[&str], cwd: Option<&Path>, env
 /// process the tool left running (an ssh `ControlMaster`, a Terraform provider plugin) can hold
 /// them open for good: that hung a `run`/`run_env` teardown, and the lab lock it holds, forever.
 /// The bytes are returned raw and decoded by the caller, exactly as `wait_with_output`.
-async fn wait_output_drained(mut child: Child) -> std::io::Result<std::process::Output> {
+async fn wait_output_drained(mut child: Tool) -> std::io::Result<std::process::Output> {
     let mut out_pipe = child.stdout.take().ok_or_else(|| std::io::Error::other("the tool's output wasn't piped"))?;
     let mut err_pipe = child.stderr.take().ok_or_else(|| std::io::Error::other("the tool's error output wasn't piped"))?;
     let mut stdout = Vec::new();
@@ -370,8 +392,8 @@ async fn stream_from(program: &'static str, args: &[&str], cwd: Option<&Path>, e
 /// (`VBoxManage` and Vagrant on a French Windows, WinRM output, a compose build's), and a line
 /// that isn't UTF-8 once failed the stream, which dropped (and so killed) a `terraform apply`
 /// mid-run.
-pub async fn forward_lines(
-    child: &mut tokio::process::Child,
+pub(crate) async fn forward_lines(
+    child: &mut Tool,
     keep: usize,
     mut on_line: impl FnMut(String),
     mut on_stderr: impl FnMut(&str),

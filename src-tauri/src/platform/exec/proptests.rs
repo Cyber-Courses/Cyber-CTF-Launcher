@@ -119,14 +119,12 @@ async fn a_cancelled_read_keeps_the_start_of_its_line() {
 #[cfg(unix)]
 #[tokio::test]
 async fn forward_lines_keeps_a_line_split_by_the_other_stream_whole() {
-    let mut child = tokio::process::Command::new("sh")
-        .args(["-c", "printf 'Downloading box '; sleep 0.3; echo warning >&2; sleep 0.3; echo '50%'"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.args(["-c", "printf 'Downloading box '; sleep 0.3; echo warning >&2; sleep 0.3; echo '50%'"]);
+    let (mut child, group) = super::spawn_group(&mut cmd, false).unwrap();
     let mut lines = Vec::new();
     let (status, _) = forward_lines(&mut child, 5, |l| lines.push(l), |_| {}).await.unwrap();
+    group.disarm();
     assert!(status.success());
     assert_eq!(lines, ["warning", "Downloading box 50%"]);
 }
