@@ -24,4 +24,10 @@ fi
 
 files=$(staged_files)
 [ -z "$files" ] || format_staged "$files"
+
+# Opt-in (`git config hooks.regenerate true`): the generated files regenerated, and the commit
+# refused while that changed one the commit leaves out.
+if [ "$(git config --bool hooks.regenerate)" = true ]; then
+  "$(dirname "$0")/regenerate" --check || refuse "a generated file changed: review it, git add it, commit again"
+fi
 exit 0

@@ -133,6 +133,7 @@ fn hand_reopen_to_the_app(app: &AppHandle, event: &tauri::RunEvent) {
 fn open_main_app() {
     // Contents/MacOS/<binary> -> the .app bundle.
     let bundle = std::env::current_exe().ok().and_then(|exe| exe.ancestors().nth(3).map(std::path::Path::to_path_buf));
+    #[allow(clippy::disallowed_methods, reason = "the app starts a second copy of itself to show the deploy's window")]
     let opened = match bundle.filter(|b| b.extension().is_some_and(|e| e == "app")) {
         Some(b) => std::process::Command::new("/usr/bin/open").arg("-n").arg(&b).spawn(),
         // Not in a bundle (a dev build): run the binary without the worker arguments.

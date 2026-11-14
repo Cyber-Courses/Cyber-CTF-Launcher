@@ -32,6 +32,7 @@ pub fn inherit_system_proxy(only: &crate::platform::sys::SingleThreaded) -> Opti
     if any_set(|name| std::env::var_os(name)) {
         return None;
     }
+    #[allow(clippy::disallowed_methods, reason = "a synchronous read of macOS's proxy settings at start, before the async runtime")]
     let out = match std::process::Command::new("/usr/sbin/scutil").arg("--proxy").output() {
         Ok(out) if out.status.success() => out,
         Ok(out) => return Some(format!("couldn't read the system proxy: scutil exited with {}", out.status)),

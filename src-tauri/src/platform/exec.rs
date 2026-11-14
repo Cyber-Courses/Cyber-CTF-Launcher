@@ -1,6 +1,8 @@
 //! Running the tools labs need (docker, vagrant, terraform, cloud CLIs): never through a shell,
 //! headless on Windows, killed with their children when cancelled or timed out.
 
+#![allow(clippy::disallowed_methods, reason = "the adapter: every tool the app runs starts here")]
+
 mod docker;
 mod elevate;
 #[cfg(test)]

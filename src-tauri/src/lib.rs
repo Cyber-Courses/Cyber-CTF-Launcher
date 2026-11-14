@@ -1,6 +1,10 @@
 //! The Cyber CTF launcher: a Tauri app that installs, runs and stops CTF labs on the player's
 //! machine, servers and cloud accounts. `run` starts it, as the app or as a deploy worker.
 
+// Tests start their stand-in tools as processes of their own (clippy.toml's disallowed-methods
+// holds the shipped code to `platform::exec`).
+#![cfg_attr(test, allow(clippy::disallowed_methods, reason = "tests start their stand-in tools directly"))]
+
 mod account;
 mod app;
 mod cloud_cli;

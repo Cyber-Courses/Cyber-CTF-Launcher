@@ -1,0 +1,33 @@
+#!/bin/sh
+# Regenerates the files generated from the code: the TypeScript command types (from the Rust
+# structs, src-tauri/src/testing/ts_bindings.rs) and the feature registry's page (tests/FEATURES.md,
+# pnpm features). The pre-commit hook runs it when `git config hooks.regenerate true` is set
+# (CONTRIBUTING.md, "Git hooks"); CI runs `--check`.
+#
+#   .githooks/regenerate           write them
+#   .githooks/regenerate --check   write them, and fail (naming this command) when one changed
+# shellcheck source-path=SCRIPTDIR
+set -u
+HOOK=regenerate
+# shellcheck source=lib.sh
+. "$(dirname "$0")/lib.sh"
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+GENERATED='src/lib/tauri/generated tests/FEATURES.md'
+
+# generated_state: the generated files' status and content, to tell whether regenerating changed them.
+generated_state() {
+  # shellcheck disable=SC2086 # the paths have no spaces
+  { git status --porcelain -- $GENERATED; git diff -- $GENERATED; } | cksum
+}
+
+before=$(generated_state)
+cargo test -q --manifest-path src-tauri/Cargo.toml --lib -- --exact testing::ts_bindings::the_generated_typescript_types_are_written >/dev/null ||
+  refuse "the TypeScript types couldn't be generated (cargo test of testing::ts_bindings)"
+pnpm -s features >/dev/null || refuse "tests/FEATURES.md couldn't be written (pnpm features)"
+if [ "${1:-}" = --check ] && [ "$(generated_state)" != "$before" ]; then
+  # shellcheck disable=SC2086
+  git status --short -- $GENERATED >&2
+  refuse "generated files were stale: run .githooks/regenerate and commit what it changes"
+fi
+exit 0

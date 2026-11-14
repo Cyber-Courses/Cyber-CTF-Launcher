@@ -71,6 +71,9 @@ share the setting). They are POSIX sh and quick:
   (`brew install gitleaks`; without it the push is refused, not left unscanned), the attribution
   check over them, and CI's first refusals (`pnpm format:check`, `cargo fmt --check`), in a few
   seconds. The heavier gates stay in CI.
+- `regenerate` writes the generated files (the TypeScript command types, `tests/FEATURES.md`);
+  `.githooks/regenerate --check` fails, naming that command, when one was stale. To have every
+  commit regenerate them first (opt-in, it builds the tests): `git config hooks.regenerate true`.
 
 `.githooks/test.sh` tests them in a throwaway repository; CI runs it (`lint-infra.yml`'s `hooks`
 job). `git commit --no-verify` skips a hook when you must; the push still checks the commits.
