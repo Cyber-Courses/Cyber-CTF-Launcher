@@ -77,12 +77,6 @@ where
 use super::{LabStatus, Park, Place, Runtime, lab, paths};
 use crate::error::{Error, Result};
 
-/// The variable Isoloom's Vagrantfiles read their copy's key from (unset, they make one from their
-/// folder's path): the launcher hands the runner's key for the run on under it, so two copies of
-/// one lab (the app's, a test's) never share a VM, network or libvirt domain name, and the
-/// running-labs scan finds this copy's VMs by it ([`super::discover`]).
-pub(crate) const ISOLOOM_KEY: &str = "ISOLOOM_KEY";
-
 /// The Vagrant plugin `provider` needs, from Isoloom's table (`isoloom_manifest::Provider::plugin`,
 /// what a run manifest's provider names): none when Vagrant has it built in, and none for a
 /// provider Isoloom's Vagrantfiles don't drive (Proxmox, the clouds), which the caller knows.
@@ -277,10 +271,10 @@ impl LabRun {
     }
 
     /// `opts` for this run's place: on an ESXi server, its id and its settings; everywhere, the
-    /// run's key under the name Isoloom's Vagrantfiles read it ([`ISOLOOM_KEY`]), so the lab's VMs,
+    /// run's key under the name Isoloom's Vagrantfiles read it ([`super::lab::ISOLOOM_KEY`]), so the lab's VMs,
     /// networks and libvirt domains are named for this copy and no other.
     fn placed(&self, opts: RunOptions) -> RunOptions {
-        let opts = opts.with_env(ISOLOOM_KEY, self.runner.copy_key(&self.name));
+        let opts = opts.with_env(super::lab::ISOLOOM_KEY, self.runner.copy_key(&self.name));
         match &self.esxi {
             Some(place) => opts.with_host_label(place.label.clone()).with_params(place.params.iter().cloned()),
             None => opts,
