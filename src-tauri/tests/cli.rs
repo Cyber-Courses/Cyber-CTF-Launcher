@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, reason = "a test's helpers fail it by panicking, as its assertions do")]
 #![expect(clippy::disallowed_methods, reason = "it runs the executable it tests, as a script does")]
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 use serde_json::{Value, json};
@@ -112,5 +112,5 @@ fn it_links_no_gui_library() {
     for gui in ["gtk", "gdk", "webkit", "javascriptcore", "soup", "cairo", "pango", "X11", "wayland"] {
         assert!(!libs.to_lowercase().contains(&gui.to_lowercase()), "cyberctf links {gui}:\n{libs}");
     }
-    assert!(Path::new(env!("CARGO_BIN_EXE_cyberctf")).is_file());
+    assert!(std::path::Path::new(env!("CARGO_BIN_EXE_cyberctf")).is_file());
 }

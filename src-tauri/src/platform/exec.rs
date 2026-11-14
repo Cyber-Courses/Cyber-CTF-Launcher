@@ -25,16 +25,14 @@ use tokio::process::Command;
 /// The image pattern, for the bindings the tests write (`testing::ts_bindings`).
 #[cfg(test)]
 pub use docker::IMAGE_PATTERN;
-#[cfg(target_os = "linux")]
 pub use docker::login_name;
 pub use docker::{DockerSaid, ImageRef, docker_denied, docker_denied_error, groups_pending, valid_image};
 #[cfg(test)]
 pub(crate) use elevate::leftover_script;
 pub(crate) use elevate::ps_quote;
+#[cfg(windows)]
+pub use elevate::set_owner_window;
 pub use elevate::{Leftover, join_hyperv_admins, may_manage_hyperv, remove_hyperv_leftover};
-#[cfg(windows)]
-#[cfg(windows)]
-pub use elevate::{OWNER_WINDOW_ENV, owner_window, set_owner_window};
 pub(crate) use group::GroupGuard;
 pub use group::kill_live_tools;
 pub use ledger::{DIR as TOOLS_DIR, end_orphans as end_orphaned_tools, record_tools_in};

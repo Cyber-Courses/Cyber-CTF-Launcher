@@ -46,18 +46,7 @@ pub fn decode(bytes: &[u8]) -> String {
 /// reads them.
 #[cfg(windows)]
 fn windows_code_page(bytes: &[u8]) -> Option<String> {
-    use windows_sys::Win32::Globalization::{CP_ACP, CP_OEMCP, MB_ERR_INVALID_CHARS, MultiByteToWideChar};
-    let len = i32::try_from(bytes.len()).ok()?;
-    [CP_ACP, CP_OEMCP].into_iter().find_map(|page| {
-        // SAFETY: `bytes` is valid for `len` bytes; the first call asks for the length only (no
-        // output buffer), the second writes at most `wide.len()` units into `wide`.
-        let units = unsafe { MultiByteToWideChar(page, MB_ERR_INVALID_CHARS, bytes.as_ptr(), len, std::ptr::null_mut(), 0) };
-        let mut wide = vec![0u16; usize::try_from(units).ok().filter(|n| *n > 0)?];
-        // SAFETY: as above, `wide` holds `units` units.
-        let written = unsafe { MultiByteToWideChar(page, MB_ERR_INVALID_CHARS, bytes.as_ptr(), len, wide.as_mut_ptr(), units) };
-        wide.truncate(usize::try_from(written).ok()?);
-        String::from_utf16(&wide).ok()
-    })
+    crate::platform::sys::decode_code_page(bytes)
 }
 
 /// No code page off Windows: tools write UTF-8 there.

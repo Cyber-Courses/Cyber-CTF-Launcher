@@ -40,13 +40,11 @@ pub fn unattended() -> bool {
 
 /// `program` with `args` run as root on Linux: through pkexec (its password prompt); unattended,
 /// as is when this process is root already, else through `sudo -n`.
-#[cfg(any(target_os = "linux", test))]
 pub fn as_root(program: &str, args: &[String]) -> (String, Vec<String>) {
     as_root_with(program, args, unattended(), is_root())
 }
 
 /// [`as_root`], for an unattended process or not, root or not.
-#[cfg(any(target_os = "linux", test))]
 fn as_root_with(program: &str, args: &[String], unattended: bool, root: bool) -> (String, Vec<String>) {
     let all = |prefix: &[&str]| prefix.iter().map(ToString::to_string).chain(std::iter::once(program.to_owned())).chain(args.iter().cloned()).collect();
     match (unattended, root) {

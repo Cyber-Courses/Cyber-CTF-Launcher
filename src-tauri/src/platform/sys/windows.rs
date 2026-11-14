@@ -62,17 +62,24 @@ pub fn send_ctrl_c(pid: u32) -> bool {
     }
 }
 
-/// Takes Ctrl+C again (`SetConsoleCtrlHandler(NULL, FALSE)`), which the console programs this
-/// process starts from now on inherit. A process created in a process group of its own starts with
-/// Ctrl+C ignored, and so would every program it starts. Whether it was set.
-pub fn take_ctrl_c() -> bool {
-    use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
-    // SAFETY: no pointer: a null handler routine (this process's own Ctrl+C setting) and a flag.
-    unsafe { SetConsoleCtrlHandler(None, 0) != 0 }
-}
-
 /// `s` as a NUL-terminated UTF-16 string, for the `W` calls.
 fn wide(s: &OsStr) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     s.encode_wide().chain(std::iter::once(0)).collect()
+}
+
+/// `bytes` decoded from the ANSI code page, else the OEM one; none when neither reads them.
+pub fn decode_code_page(bytes: &[u8]) -> Option<String> {
+    use windows_sys::Win32::Globalization::{CP_ACP, CP_OEMCP, MB_ERR_INVALID_CHARS, MultiByteToWideChar};
+    let len = i32::try_from(bytes.len()).ok()?;
+    [CP_ACP, CP_OEMCP].into_iter().find_map(|page| {
+        // SAFETY: `bytes` is valid for `len` bytes; the first call asks for the length only (no
+        // output buffer), the second writes at most `wide.len()` units into `wide`.
+        let units = unsafe { MultiByteToWideChar(page, MB_ERR_INVALID_CHARS, bytes.as_ptr(), len, std::ptr::null_mut(), 0) };
+        let mut wide = vec![0u16; usize::try_from(units).ok().filter(|n| *n > 0)?];
+        // SAFETY: as above, `wide` holds `units` units.
+        let written = unsafe { MultiByteToWideChar(page, MB_ERR_INVALID_CHARS, bytes.as_ptr(), len, wide.as_mut_ptr(), units) };
+        wide.truncate(usize::try_from(written).ok()?);
+        String::from_utf16(&wide).ok()
+    })
 }

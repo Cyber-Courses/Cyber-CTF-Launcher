@@ -47,7 +47,7 @@ fn applescript_string(s: &str) -> String {
 /// a failure is an error with what it printed. Only spawned, it was never waited on (a zombie
 /// per terminal opened) and its failure went unseen: with the Automation permission for Terminal
 /// denied, the button did nothing and said nothing.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", all(unix, test)))]
 fn run_to_end(program: &str, args: &[&str]) -> Result<()> {
     #[allow(clippy::disallowed_methods, reason = "osascript asks Terminal for a window and returns: no tool adapter runs it")]
     let out = std::process::Command::new(program).args(args).stdin(std::process::Stdio::null()).output()?;

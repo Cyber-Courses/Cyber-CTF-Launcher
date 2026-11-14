@@ -5,7 +5,9 @@
 use serde_json::{Value, json};
 
 use super::Exit;
-use crate::platform::exec::fake::{Reply, Tools, fail, ok};
+use crate::platform::exec::fake::Tools;
+#[cfg(target_os = "linux")]
+use crate::platform::exec::fake::{Reply, fail, ok};
 use crate::testing::test_app::TestApp;
 
 /// A container lab's spec.
@@ -26,6 +28,7 @@ impl Ran {
     }
 
     /// The events' payloads.
+    #[cfg(target_os = "linux")]
     fn events(&self) -> Vec<&Value> {
         self.lines.iter().filter(|l| l["type"] == "event").map(|l| &l["event"]).collect()
     }

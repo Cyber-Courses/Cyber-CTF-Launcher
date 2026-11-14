@@ -2,7 +2,7 @@
 //! runner's fake processes) and scripted launcher tools (the attack box's `docker` calls): no real
 //! tool runs. The lab's project is the one Isoloom generates from the spec.
 
-use isothrum_runner::{EventKind, ProcessRunner, ProcessSpec, StepState, WarningCode};
+use isothrum_runner::{EventKind, StepState, WarningCode};
 
 use super::test_lab::prelude::*;
 use super::*;
@@ -473,6 +473,7 @@ fn a_lab_here_is_run_in_the_form_it_was_started_in() {
 /// `pid` once it runs.
 #[cfg(unix)]
 async fn cut_short_stubborn_tool(pid: &std::path::Path) -> u32 {
+    use isothrum_runner::{ProcessRunner, ProcessSpec};
     let script = format!("trap '' INT; echo $$ > '{}'; while :; do sleep 0.1; done", pid.display());
     let spec = ProcessSpec::new("sh", ["-c", script.as_str()]);
     let mut quiet = |_: isothrum_runner::Stream, _: &str| {};

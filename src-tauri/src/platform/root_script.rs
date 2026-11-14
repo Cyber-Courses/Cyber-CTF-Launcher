@@ -24,17 +24,14 @@ pub const PRIVATE_WORKDIR: &str = private_workdir!();
 /// which starts it with [`PRELUDE`]: no root script can miss stopping at its first failure, its
 /// private work directory, apt's wait for the dpkg lock, or the C locale its output is read in.
 /// The step that runs a script as root takes this type, never a `String`.
-#[cfg(any(target_os = "linux", test))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootScript(String);
 
 /// What every [`RootScript`] starts with: [`PRIVATE_WORKDIR`] (`set -e`, `$d`, apt's lock wait),
 /// then the C locale, so a tool's output the script reads (`apt-cache policy`'s `Candidate:`) is
 /// the same words on every system: pkexec keeps the player's `LANG`, and apt translates its labels.
-#[cfg(any(target_os = "linux", test))]
 pub const PRELUDE: &str = concat!(private_workdir!(), "; export LC_ALL=C");
 
-#[cfg(any(target_os = "linux", test))]
 impl RootScript {
     /// `body` after [`PRELUDE`]: its commands run in order, the first that fails stops the script
     /// with its status (a command that may fail says so itself: `|| true`, `if`).
@@ -55,7 +52,6 @@ impl RootScript {
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
 impl std::ops::Deref for RootScript {
     type Target = str;
     fn deref(&self) -> &str {
@@ -63,7 +59,6 @@ impl std::ops::Deref for RootScript {
     }
 }
 
-#[cfg(any(target_os = "linux", test))]
 impl std::fmt::Display for RootScript {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -73,11 +68,9 @@ impl std::fmt::Display for RootScript {
 /// curl, installed first where a bare system has none (Debian's minimal image): every vendor
 /// install downloads with it, and without it the repository checks read as "no packages".
 /// Through apt where it is, else dnf (Fedora and the distributions built on it).
-#[cfg(any(target_os = "linux", test))]
 pub const NEED_CURL: &str = r"command -v curl >/dev/null || { if command -v apt-get >/dev/null; then apt-get update; apt-get install -y curl ca-certificates; else dnf install -y curl ca-certificates; fi; }";
 
 /// unzip, for Amazon's AWS CLI bundle, through apt where it is, else dnf.
-#[cfg(any(target_os = "linux", test))]
 pub const NEED_UNZIP: &str =
     r"command -v unzip >/dev/null || { if command -v apt-get >/dev/null; then apt-get update; apt-get install -y unzip; else dnf install -y unzip; fi; }";
 
