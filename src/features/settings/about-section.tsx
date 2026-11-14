@@ -1,57 +1,23 @@
 "use client";
 
-import { Check, Copy, FolderOpen, RotateCcw } from "lucide-react";
+import { FolderOpen, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KeyValue } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { openLogFolder, type AgentInfo, type SystemReport, type UpdateChannel } from "@/lib/tauri";
 import { useLabsBusy } from "@/features/labs/runs/operations";
-import { getAttackImage, getVmProvider } from "@/lib/settings";
 import { Row, Section } from "@/features/settings/settings-layout";
 import { clearOnboarded } from "@/lib/onboarded-flag";
-import { diagnosticsText } from "@/features/settings/diagnostics";
+import { DiagnosticsRow } from "@/features/settings/diagnostics-row";
 import { useUpdater, type UpdateState } from "@/features/settings/use-updater";
 import { restartOnUpdate } from "@/lib/install-update";
-import { ignore, tell } from "@/lib/failure";
+import { tell } from "@/lib/failure";
 import { send } from "@/lib/event-channel";
 import { closeIfSettings, replayOnboarding as replayOnboardingAsked } from "@/lib/app-events";
 import { useFormat, useT } from "@/lib/i18n";
-import { useFlash } from "@/lib/use-flash";
 
 /* ------------------------------------------------------------------ about */
-
-/** Copies the diagnostics for a bug report; they stay in English: they go to support. */
-function DiagnosticsRow({ version, report, agent }: { version: string | null; report: SystemReport | null; agent: AgentInfo | null }) {
-  const t = useT();
-  const [copied, flashCopied] = useFlash(1600);
-  const copy = () => {
-    const text = diagnosticsText(version, report, agent, { attackImage: getAttackImage(), vmProvider: getVmProvider() });
-    // Inside the chain, so a webview without the clipboard API fails here too, quietly.
-    Promise.resolve()
-      .then(() => navigator.clipboard.writeText(text))
-      .then(flashCopied, ignore("the clipboard is unavailable"));
-  };
-  return (
-    <Row
-      title={t("settings.about.diagnostics")}
-      description={t("settings.about.diagnosticsDescription")}
-      control={
-        <Button variant="outline" size="xs" onClick={copy}>
-          {copied ? (
-            <>
-              <Check className="size-3.5 text-success" /> {t("settings.about.copied")}
-            </>
-          ) : (
-            <>
-              <Copy className="size-3.5" /> {t("settings.about.copy")}
-            </>
-          )}
-        </Button>
-      }
-    />
-  );
-}
 
 export function AboutSection({
   version,

@@ -10,6 +10,9 @@ export const openSettings = () => invokeUnit("open_settings");
 export const restartApp = () => invokeUnit("restart_app");
 /** Opens the folder of the app's log files in the system's file manager. */
 export const openLogFolder = () => invokeUnit("open_log_folder");
+/** Saves the diagnostics bundle (a .tar.gz to attach to a bug report) to `path`, with the
+ *  window's settings that matter for a report, by name. */
+export const saveDiagnostics = (path: string, settings: Record<string, string>) => invokeUnit("save_diagnostics", { path, settings });
 
 /** This machine's launcher-agent identity (for the Settings screen). */
 export const agentInfo = () => invoke<AgentInfo>("agent_info");

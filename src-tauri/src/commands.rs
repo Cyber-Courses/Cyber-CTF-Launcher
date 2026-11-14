@@ -129,6 +129,7 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         app::force_quit,
         app::open_settings,
         app::open_log_folder,
+        app::save_diagnostics,
         app::managed_settings,
     ])
 }

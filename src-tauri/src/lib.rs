@@ -5,6 +5,7 @@ mod account;
 mod app;
 mod cloud_cli;
 mod commands;
+mod diagnostics;
 mod error;
 #[cfg(test)]
 mod integration_tests;

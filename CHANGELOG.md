@@ -8,6 +8,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Added
 
+- **Save diagnostics.** Settings > About saves one file to attach to a bug report: the version,
+  the OS, the machine check, the installed labs, the last lab operations and the end of the logs,
+  with tokens, passwords, keys, flags and e-mail addresses removed and the home folder written
+  `~`. **Send to support** saves it and opens a mail to support to attach it to.
+
 - **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
   release now ships `.rpm` packages beside the `.deb` (#322).
 
