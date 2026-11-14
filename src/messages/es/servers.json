@@ -343,6 +343,19 @@
       "passed": "Correcto",
       "warning": "Correcto, con un aviso",
       "failed": "Falló"
+    },
+    "trust": {
+      "title": "Confirma la identidad de este servidor",
+      "titleChanged": "La identidad de este servidor ha cambiado",
+      "body": "Todavía no se le ha enviado nada. Compara cada huella de abajo con la que muestra el propio servidor; confirma solo si son idénticas. Cyber CTF aceptará entonces este servidor, y solo este, en esta dirección.",
+      "changedBody": "Muestra una huella distinta de la confirmada antes, así que no se le ha enviado nada. Si reinstalaste el servidor o cambiaste su certificado, compara la nueva huella con la que muestra el servidor y confírmala. Si no, cancela: alguien podría estar interceptando la conexión.",
+      "certificate": "Certificado TLS (autofirmado)",
+      "certificateWhere": "En la interfaz web de Proxmox: el nodo > Sistema > Certificados, la huella del certificado. En el nodo: pvenode cert info.",
+      "sha256": "Huella SHA-256",
+      "previous": "Confirmada antes",
+      "confirm": "Coinciden: confiar en este servidor",
+      "confirmChanged": "Lo cambié yo: confiar en el nuevo",
+      "cancel": "Cancelar"
     }
   }
 }

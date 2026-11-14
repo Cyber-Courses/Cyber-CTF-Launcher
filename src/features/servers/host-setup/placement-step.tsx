@@ -43,6 +43,7 @@ export function PlacementStep({ s }: { s: HostSetup }) {
         </Note>
       )}
       <StepError error={error} />
+      {s.trustDialog}
       <BackNav onBack={back}>
         <SaveAndTestButton onClick={saveAndTest} saving={saving} />
       </BackNav>

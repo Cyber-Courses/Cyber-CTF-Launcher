@@ -1050,6 +1050,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
  "ts-rs",
  "url",
  "windows-sys 0.61.2",

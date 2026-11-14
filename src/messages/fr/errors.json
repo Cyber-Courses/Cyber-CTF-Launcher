@@ -50,6 +50,8 @@
     "reapNoHost": "Aucun compte n'est enregistré pour lui, le launcher ne peut donc pas le détruire. Supprimez ses ressources dans la console de votre cloud.",
     "pickCloudAccount": "Ce lab tourne dans votre compte cloud : choisissez l’un de vos comptes cloud pour le démarrer.",
     "noHypervisor": "Aucun hyperviseur prêt sur cette machine ne fait tourner ce lab. Installez-en un depuis la page Machine, ou exécutez le lab sur un serveur ou dans votre compte cloud.",
-    "turnedOffByPolicy": "Votre organisation a désactivé cette fonction sur cet ordinateur (paramètre de stratégie {setting}). Demandez à votre équipe informatique si vous en avez besoin."
+    "turnedOffByPolicy": "Votre organisation a désactivé cette fonction sur cet ordinateur (paramètre de stratégie {setting}). Demandez à votre équipe informatique si vous en avez besoin.",
+    "tlsUnconfirmed": "Le certificat de {server} n'a pas encore été confirmé (SHA-256 {presented}), donc rien ne lui a été envoyé. Pour le confirmer, ouvrez-le dans Serveurs, choisissez Modifier, et comparez l'empreinte avec celle qu'affiche le serveur lui-même avant de la confirmer.",
+    "tlsChanged": "Le certificat de {server} a changé (c'était {pinned}, c'est maintenant {presented}), donc rien ne lui a été envoyé : quelqu'un intercepte peut-être la connexion. Si vous avez remplacé le certificat vous-même, ouvrez-le dans Serveurs, choisissez Modifier, et comparez l'empreinte avec celle qu'affiche le serveur lui-même avant de la confirmer."
   }
 }

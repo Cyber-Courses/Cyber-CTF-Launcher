@@ -70,8 +70,13 @@ pub(crate) struct TunnelClosed {
 
 impl Reached {
     /// The runner's `console`, kept for the window's life, and its SSH tunnel when one carries
-    /// it: the caller keeps that alive too ([`Reached::hold`]), and watches it end.
-    pub(crate) fn of(mut console: isothrum_runner::Console) -> Result<(Reached, Option<isothrum_runner::Tunnel>)> {
+    /// it: the caller keeps that alive too ([`Reached::hold`]), and watches it end. `trust`: how
+    /// the server's certificate is trusted, when its console is reached through its API (a
+    /// self-signed one by the fingerprint the learner confirmed for it).
+    pub(crate) fn of(
+        mut console: isothrum_runner::Console,
+        trust: crate::runtime::server::tls_pin::Trust,
+    ) -> Result<(Reached, Option<isothrum_runner::Tunnel>)> {
         let tunnel = console.tunnel.take();
         let protocol = match crate::runtime::isothrum::protocol_word(console.protocol) {
             "vnc" => Protocol::Vnc,
@@ -83,7 +88,7 @@ impl Reached {
             isothrum_runner::Endpoint::ProxmoxVnc(vnc) => bridge::Target::WebSocket {
                 url: vnc.websocket.expose().to_owned(),
                 header: (vnc.authorization.0.clone(), vnc.authorization.1.expose().to_owned()),
-                insecure: vnc.insecure,
+                trust: if vnc.insecure { trust } else { crate::runtime::server::tls_pin::Trust::System },
             },
             _ => return Err(Error::Invalid("the runner reached the screen where this launcher can't show it".into())),
         };

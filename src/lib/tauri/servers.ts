@@ -10,6 +10,7 @@ import type {
   SelfTestEvent,
   ServerCheck,
   ServerCheckState,
+  ServerIdentity,
   ServerTest,
   SshKeySignIn,
 } from "@/lib/tauri/generated";
@@ -17,7 +18,18 @@ import type { CloudProvider } from "@/lib/tauri/cloud";
 import { SERVER_PROVIDERS } from "@/lib/tauri/generated/ProviderNames";
 import { signal } from "@/lib/event-channel";
 
-export type { HostCapacity, MonthSpend, ProxmoxBridge, ProxmoxNodeChoices, ProxmoxPlacement, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn };
+export type {
+  HostCapacity,
+  MonthSpend,
+  ProxmoxBridge,
+  ProxmoxNodeChoices,
+  ProxmoxPlacement,
+  ServerCheck,
+  ServerCheckState,
+  ServerIdentity,
+  ServerTest,
+  SshKeySignIn,
+};
 
 // --- Server (the player's own ESXi / Proxmox host) ---
 
@@ -55,6 +67,9 @@ export const serverSaveSshKey = (input: ServerHostInput) => invoke<ServerHost>("
 /** A Proxmox server's nodes, storages and bridges, read from its API with the form's sign-in (its
  *  password or token secret, else the saved host's). Rejects when the API can't be read. */
 export const serverProxmoxPlacement = (input: ServerHostInput) => invoke<ProxmoxPlacement>("server_proxmox_placement", { input });
+/** What the form's Proxmox server offers to be confirmed before the launcher signs in to it: its
+ *  self-signed certificate's SHA-256 fingerprint. Nothing but a TLS handshake reaches the server. */
+export const serverIdentity = (input: ServerHostInput) => invoke<ServerIdentity>("server_identity", { input });
 /** The first of ~/.ssh/id_ed25519, id_ecdsa, id_rsa that exists (null when none does). */
 export const serverDefaultSshKey = () => invoke<string | null>("server_default_ssh_key");
 export const serverRemove = (id: string) => invokeUnit("server_remove", { id });

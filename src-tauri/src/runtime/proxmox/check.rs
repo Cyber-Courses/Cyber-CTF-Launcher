@@ -81,6 +81,7 @@ pub(super) fn sign_in_report(e: SignInError, token: bool) -> Report {
     match e {
         SignInError::Rejected if token => fail(Some(false), "Proxmox rejected the API token. Check the token id (user@realm!name) and its secret."),
         SignInError::Rejected => fail(Some(false), "Proxmox rejected the credentials. Use user@realm, e.g. root@pam."),
+        SignInError::Certificate(refusal, server) => fail(None, refusal.error(&server).to_string()),
         SignInError::Failed(e) => fail(None, format!("Reachable, but the API call failed: {e}")),
     }
 }
@@ -121,7 +122,10 @@ pub(super) fn outcome(node: &str, bridge: &str, problems: &[String]) -> Report {
 /// never a "no": that guess sent Terraform straight at a VM it can't reach (where it hung) and
 /// dropped the jump host of a lab already running.
 pub async fn bridge_is_internal(h: &HostProfile, secret: &str) -> crate::error::Result<bool> {
-    let session = sign_in(h, secret).await.map_err(bridge_unknown)?;
+    let session = sign_in(h, secret).await.map_err(|e| match e {
+        e @ SignInError::Certificate(..) => e.into_error("Couldn't sign in to the Proxmox server"),
+        e => bridge_unknown(e),
+    })?;
     let node = session.node(h).await.map_err(bridge_unknown)?;
     let ifaces: Vec<Iface> = session.call(&format!("/nodes/{node}/network")).await.map_err(bridge_unknown)?;
     Ok(find_iface(&ifaces, &lab_bridge(h)).is_some_and(has_no_ports))

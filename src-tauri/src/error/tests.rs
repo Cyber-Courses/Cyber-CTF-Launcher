@@ -128,11 +128,13 @@ fn form(code: &Code) -> usize {
         Code::StepSilent { .. } => 41,
         Code::StepCeiling { .. } => 42,
         Code::StepTimedOut { .. } => 43,
+        Code::TlsUnconfirmed { .. } => 44,
+        Code::TlsChanged { .. } => 45,
     }
 }
 
 /// How many forms [`form`] tells apart.
-const FORMS: usize = 44;
+const FORMS: usize = 46;
 
 #[test]
 fn every_form_has_a_sample() {
@@ -187,6 +189,8 @@ fn sample_codes() -> Vec<Code> {
         Code::StepSilent { step: "up".into(), minutes: 30 },
         Code::StepCeiling { step: "up".into(), hours: 6 },
         Code::StepTimedOut { step: "up".into(), minutes: 30 },
+        Code::TlsUnconfirmed { server: "Garage Proxmox".into(), presented: "4F:1F:C1".into() },
+        Code::TlsChanged { server: "Garage Proxmox".into(), pinned: "4F:1F:C1".into(), presented: "0A:2B:3C".into() },
     ]
 }
 

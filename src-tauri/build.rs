@@ -81,6 +81,7 @@ const COMMANDS: &[&str] = &[
     "screen_window",
     "server_capacity",
     "server_default_ssh_key",
+    "server_identity",
     "server_list",
     "server_month_to_date_cost",
     "server_open_setup",

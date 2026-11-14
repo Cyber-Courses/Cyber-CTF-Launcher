@@ -84,6 +84,7 @@ fn generate(dir: &Path) {
         runtime::server::budget::MonthSpend,
         runtime::server::TestResult,
         runtime::proxmox::placement::Placement,
+        runtime::server::setup::Identity,
         shared_folder::SharedFolderInfo,
         terminal::TermEvent,
         crate::screen::Connection,

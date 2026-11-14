@@ -212,6 +212,24 @@ pub enum Code {
         /// The policy setting's name.
         setting: String,
     },
+    /// A server with a self-signed certificate whose fingerprint the learner hasn't confirmed
+    /// yet: nothing was sent to it.
+    TlsUnconfirmed {
+        /// The server, by its name in Servers.
+        server: String,
+        /// The SHA-256 fingerprint of the certificate it offered.
+        presented: String,
+    },
+    /// A server offered another certificate than the one the learner confirmed: nothing was sent
+    /// to it.
+    TlsChanged {
+        /// The server, by its name in Servers.
+        server: String,
+        /// The fingerprint confirmed for it.
+        pinned: String,
+        /// The fingerprint of the certificate it offered.
+        presented: String,
+    },
 }
 
 impl Code {

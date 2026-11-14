@@ -343,6 +343,19 @@
       "passed": "Passed",
       "warning": "Passed, with a warning",
       "failed": "Failed"
+    },
+    "trust": {
+      "title": "Confirm this server's identity",
+      "titleChanged": "This server's identity changed",
+      "body": "Nothing has been sent to it yet. Compare each fingerprint below with the one the server itself shows; confirm only if they are identical. Cyber CTF then accepts this server, and only it, at this address.",
+      "changedBody": "It shows a different fingerprint than the one confirmed before, so nothing was sent to it. If you reinstalled the server or replaced its certificate, compare the new fingerprint with the one the server shows and confirm it. Otherwise, cancel: someone may be intercepting the connection.",
+      "certificate": "TLS certificate (self-signed)",
+      "certificateWhere": "In the Proxmox web interface: the node > System > Certificates, the certificate's fingerprint. On the node: pvenode cert info.",
+      "sha256": "SHA-256 fingerprint",
+      "previous": "Confirmed before",
+      "confirm": "They match: trust this server",
+      "confirmChanged": "I replaced it: trust the new one",
+      "cancel": "Cancel"
     }
   }
 }

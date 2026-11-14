@@ -83,6 +83,7 @@ export type * from "./ServerCheck";
 export type * from "./ServerCheckState";
 export type * from "./ServerHost";
 export type * from "./ServerHostInput";
+export type * from "./ServerIdentity";
 export type * from "./ServerList";
 export type * from "./ServerTest";
 export type * from "./SetupAction";

@@ -12,6 +12,7 @@ use serde::de::DeserializeOwned;
 
 use self::api::{Iface, Node, Ticket};
 use super::server::HostProfile;
+use super::server::tls_pin::{self, Refusal};
 use super::ssh;
 
 pub mod api;
@@ -121,6 +122,9 @@ pub struct Session {
 pub enum SignInError {
     /// The host answered and refused the credentials.
     Rejected,
+    /// Its self-signed certificate isn't the one the learner confirmed (or none was yet): nothing
+    /// was sent to it. The error says it with the host's name ([`SignInError::into_error`]).
+    Certificate(Refusal, String),
     /// Couldn't talk to the API (TLS, network, unexpected answer).
     Failed(String),
 }
@@ -129,15 +133,35 @@ impl std::fmt::Display for SignInError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SignInError::Rejected => f.write_str("Proxmox rejected the credentials"),
+            SignInError::Certificate(refusal, server) => write!(f, "{}", refusal.error(server)),
             SignInError::Failed(e) => f.write_str(e),
+        }
+    }
+}
+
+impl SignInError {
+    /// The launcher's error for it: a refused certificate keeps its code (the learner confirms it
+    /// in Servers), anything else is said after `context`.
+    pub fn into_error(self, context: &str) -> crate::error::Error {
+        match self {
+            SignInError::Certificate(refusal, server) => refusal.error(&server),
+            other => crate::error::Error::Invalid(format!("{context}: {other}")),
         }
     }
 }
 
 /// Signs in to the Proxmox API of host `h` with `secret` (its API token's secret, or its user's
 /// password for a ticket).
+///
+/// A self-signed certificate is accepted only when it is the one the learner confirmed for the host
+/// ([`tls_pin`]): any other is refused in the handshake, before the token or password is sent.
 pub async fn sign_in(h: &HostProfile, secret: &str) -> Result<Session, SignInError> {
-    let client = crate::platform::http::probe_client(TIMEOUT, h.insecure_tls).map_err(|e| SignInError::Failed(e.to_string()))?;
+    let pinned = tls_pin::Client::new(h.tls_trust(), TIMEOUT).map_err(|e| SignInError::Failed(e.to_string()))?;
+    let refused = |e: String| match pinned.refused() {
+        Some(refusal) => SignInError::Certificate(refusal, h.name.clone()),
+        None => SignInError::Failed(e),
+    };
+    let client = pinned.http.clone();
     let base = api_url(h);
     if is_token(&h.username) {
         let session = Session { client, base, auth: ("Authorization", format!("PVEAPIToken={}={secret}", h.username)) };
@@ -145,7 +169,7 @@ pub async fn sign_in(h: &HostProfile, secret: &str) -> Result<Session, SignInErr
         return match session.call::<serde::de::IgnoredAny>("/version").await {
             Ok(_) => Ok(session),
             Err(CallError::Status(401)) => Err(SignInError::Rejected),
-            Err(e) => Err(SignInError::Failed(e.to_string())),
+            Err(e) => Err(refused(e.to_string())),
         };
     }
     let res = client
@@ -153,7 +177,7 @@ pub async fn sign_in(h: &HostProfile, secret: &str) -> Result<Session, SignInErr
         .form(&[("username", h.username.as_str()), ("password", secret)])
         .send()
         .await
-        .map_err(|e| SignInError::Failed(describe(&e)))?;
+        .map_err(|e| refused(describe(&e)))?;
     if res.status().as_u16() == 401 {
         return Err(SignInError::Rejected);
     }
@@ -170,7 +194,7 @@ pub async fn sign_in(h: &HostProfile, secret: &str) -> Result<Session, SignInErr
 pub fn describe(e: &reqwest::Error) -> String {
     let detail = std::iter::successors(Some(e as &dyn std::error::Error), |e| e.source()).map(std::string::ToString::to_string).collect::<Vec<_>>().join(": ");
     if detail.to_lowercase().contains("certificate") {
-        "the host's TLS certificate isn't trusted. Proxmox uses a self-signed certificate by default: turn on \"Self-signed certificate\" for this host, or install a trusted one".into()
+        "the host's TLS certificate isn't trusted. Proxmox uses a self-signed certificate by default: turn on \"Self-signed certificate\" for this host and confirm its fingerprint, or install a trusted one".into()
     } else {
         detail
     }

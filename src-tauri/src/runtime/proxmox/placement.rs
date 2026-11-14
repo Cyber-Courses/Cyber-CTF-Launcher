@@ -62,13 +62,14 @@ pub struct Bridge {
 
 /// Signs in to `h` with `secret` and reads its choices; `server_ip` is the server's address as
 /// this machine resolves it (to pick the bridge it is on).
-pub async fn read_host(h: &HostProfile, secret: &str, server_ip: Option<IpAddr>) -> Result<Placement, String> {
+pub async fn read_host(h: &HostProfile, secret: &str, server_ip: Option<IpAddr>) -> crate::error::Result<Placement> {
+    const CONTEXT: &str = "Couldn't read the server's nodes, storages and bridges";
     let session = sign_in(h, secret).await.map_err(|e| match e {
-        super::SignInError::Rejected => "Proxmox rejected the sign-in".to_string(),
-        super::SignInError::Failed(e) => e,
+        super::SignInError::Rejected => crate::error::Error::Invalid(format!("{CONTEXT}: Proxmox rejected the sign-in")),
+        e => e.into_error(CONTEXT),
     })?;
     let session = &session;
-    read(|path| async move { session.get(&path).await }, server_ip).await.map_err(|e| e.to_string())
+    read(|path| async move { session.get(&path).await }, server_ip).await.map_err(|e| crate::error::Error::Invalid(format!("{CONTEXT}: {e}")))
 }
 
 /// The choices, from the answers' bodies `get` gives for a path (`/nodes`, `/nodes/<n>/storage`,

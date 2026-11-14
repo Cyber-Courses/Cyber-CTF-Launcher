@@ -34,7 +34,7 @@ pub(crate) async fn capacity(dirs: &AppDirs, id: &str) -> Result<Option<HostCapa
 }
 
 async fn proxmox_capacity(h: &HostProfile, password: &str) -> Result<HostCapacity> {
-    let session = crate::runtime::proxmox::sign_in(h, password).await.map_err(|e| Error::Invalid(format!("couldn't sign in to the Proxmox server: {e}")))?;
+    let session = crate::runtime::proxmox::sign_in(h, password).await.map_err(|e| e.into_error("couldn't sign in to the Proxmox server"))?;
     let node = session.node(h).await.map_err(|e| Error::Invalid(format!("couldn't list the Proxmox server's nodes: {e}")))?;
     let status: NodeStatus =
         session.call(&format!("/nodes/{node}/status")).await.map_err(|e| Error::Invalid(format!("couldn't read the node {node}'s status: {e}")))?;

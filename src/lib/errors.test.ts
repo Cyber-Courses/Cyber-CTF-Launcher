@@ -90,6 +90,8 @@ describe("command errors", () => {
         "stepSilent",
         "stepStalled",
         "stepTimedOut",
+        "tlsChanged",
+        "tlsUnconfirmed",
         "toolMissing",
         "toolTooOld",
         "turnedOffByPolicy",

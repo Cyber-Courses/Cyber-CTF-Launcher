@@ -238,9 +238,7 @@ pub async fn discovered_node(dirs: &AppDirs, id: &str) -> Result<Option<String>>
         return Ok(None);
     }
     let secret = get_secret(id)?;
-    let session = proxmox::sign_in(&host, &secret)
-        .await
-        .map_err(|e| crate::error::Error::Invalid(format!("Couldn't sign in to the Proxmox server to find its node: {e}")))?;
+    let session = proxmox::sign_in(&host, &secret).await.map_err(|e| e.into_error("Couldn't sign in to the Proxmox server to find its node"))?;
     let node = session.node(&host).await.map_err(|e| crate::error::Error::Invalid(format!("Couldn't list the Proxmox server's nodes: {e}")))?;
     Ok(Some(node))
 }
