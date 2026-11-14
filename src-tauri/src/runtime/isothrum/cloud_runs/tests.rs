@@ -161,7 +161,7 @@ fn credentials_are_connection_secrets_while_region_and_profile_are_parameters() 
 }
 
 #[test]
-fn a_destroy_takes_the_credentials_as_secrets_and_the_region_and_profile_as_values() {
+fn a_destroy_takes_the_credentials_as_secrets_only() {
     let tf_env: Vec<(String, String)> = [
         ("AWS_ACCESS_KEY_ID", "AKIA"),
         ("AWS_SECRET_ACCESS_KEY", "sk"),
@@ -172,38 +172,27 @@ fn a_destroy_takes_the_credentials_as_secrets_and_the_region_and_profile_as_valu
     .iter()
     .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
     .collect();
-    let opts = destroy_options(&tf_env, &[]);
+    let opts = destroy_options(&tf_env);
     assert_eq!(opts.secrets.get("AWS_ACCESS_KEY_ID").map(SecretValue::expose), Some("AKIA"));
     assert_eq!(opts.secrets.get("AWS_SECRET_ACCESS_KEY").map(SecretValue::expose), Some("sk"));
     assert!(opts.secrets.get("AWS_PROFILE").is_none(), "the profile is a value, not a credential");
     assert!(opts.secrets.get("AWS_REGION").is_none() && opts.secrets.get("AWS_DEFAULT_REGION").is_none(), "the region is a value");
-    assert_eq!(opts.env.get("AWS_REGION").map(String::as_str), Some("us-east-1"));
+    assert!(opts.env.is_empty(), "the runner replays the start's values");
 }
 
 #[test]
-fn an_operation_without_a_launch_sets_no_firewall_or_expiry() {
-    let place = CloudPlace { region: Some("eu-west-3".to_owned()), tf_env: vec![("AWS_ACCESS_KEY_ID".to_owned(), "k".to_owned())], ..Default::default() };
-    let opts = place.options(&[]);
-    assert!(!opts.env.contains_key("allowed_cidr"), "no firewall value at destroy");
+fn a_later_operation_gives_the_credentials_and_leaves_the_values_to_the_runners_replay() {
+    // The runner replays the start's region, firewall CIDR and profile: a stop given the
+    // account's region now would act on another region than the start's.
+    let place = CloudPlace {
+        label: "aws1".to_owned(),
+        region: Some("eu-west-3".to_owned()),
+        tf_env: vec![("AWS_ACCESS_KEY_ID".to_owned(), "k".to_owned())],
+        ..Default::default()
+    };
+    let opts = place.later_options();
+    assert!(opts.env.is_empty(), "no value over the start's");
     assert!(opts.lifetime.is_none());
-    assert_eq!(opts.env.get("region").map(String::as_str), Some("eu-west-3"));
     assert_eq!(opts.secrets.get("AWS_ACCESS_KEY_ID").map(SecretValue::expose), Some("k"));
-}
-
-#[test]
-fn a_destroy_replays_the_values_the_run_was_started_with() {
-    // Terraform's destroy needs the apply's variables: the region and firewall CIDR of the start
-    // win over the account's region now, and the account adds only what they lack.
-    let kept = vec![("region".to_owned(), "eu-west-3".to_owned()), ("allowed_cidr".to_owned(), "203.0.113.7/32".to_owned())];
-    let tf_env = vec![("AWS_ACCESS_KEY_ID".to_owned(), "k".to_owned()), ("AWS_REGION".to_owned(), "us-east-1".to_owned())];
-    let opts = destroy_options(&tf_env, &kept);
-    assert_eq!(opts.env.get("region").map(String::as_str), Some("eu-west-3"));
-    assert_eq!(opts.env.get("allowed_cidr").map(String::as_str), Some("203.0.113.7/32"));
-    assert_eq!(opts.env.get("AWS_REGION").map(String::as_str), Some("us-east-1"), "what the kept values lack");
-    assert_eq!(opts.secrets.get("AWS_ACCESS_KEY_ID").map(SecretValue::expose), Some("k"));
-    // A stop of the same run from its place: the kept values win over the place's region.
-    let place = CloudPlace { region: Some("us-west-2".to_owned()), ..CloudPlace::default() };
-    let stop = place.options_over(&[], &kept);
-    assert_eq!(stop.env.get("region").map(String::as_str), Some("eu-west-3"));
-    assert_eq!(stop.env.get("allowed_cidr").map(String::as_str), Some("203.0.113.7/32"));
+    assert_eq!(opts.host_label.as_deref(), Some("aws1"));
 }
