@@ -49,6 +49,7 @@ fn applescript_string(s: &str) -> String {
 /// denied, the button did nothing and said nothing.
 #[cfg(any(target_os = "macos", test))]
 fn run_to_end(program: &str, args: &[&str]) -> Result<()> {
+    #[allow(clippy::disallowed_methods, reason = "osascript asks Terminal for a window and returns: no tool adapter runs it")]
     let out = std::process::Command::new(program).args(args).stdin(std::process::Stdio::null()).output()?;
     if out.status.success() {
         return Ok(());
@@ -91,6 +92,7 @@ pub fn open_terminal(command: &ShellCommand) -> Result<()> {
         let run = format!("clear; DOCKER_CLI_HINTS=false; {line}");
         // gnome-terminal's `-e` takes one string, so it gets `--`; the others run what follows `-e`.
         for (term, flag) in [("x-terminal-emulator", "-e"), ("gnome-terminal", "--"), ("konsole", "-e"), ("xterm", "-e")] {
+            #[allow(clippy::disallowed_methods, reason = "a terminal window opens as the player's own app, left running past the call")]
             let Ok(mut child) = std::process::Command::new(term).args([flag, "sh", "-c", &run]).spawn() else { continue };
             // A terminal that can't start (e.g. zutty without its font) dies within a moment
             // without a window, so give it that moment and fall through to the next one.
@@ -139,6 +141,7 @@ pub(crate) fn windows_line(command: &ShellCommand) -> String {
 pub fn open_terminal_cmd(line: &str) -> Result<()> {
     use std::os::windows::process::CommandExt;
     let bat = write_shell_script(&std::env::temp_dir(), line)?;
+    #[allow(clippy::disallowed_methods, reason = "a terminal window opens as the player's own app, left running past the call")]
     std::process::Command::new("cmd").raw_arg(start_args(&bat.display().to_string())).env("DOCKER_CLI_HINTS", "false").spawn()?;
     Ok(())
 }

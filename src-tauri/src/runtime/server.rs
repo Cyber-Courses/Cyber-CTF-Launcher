@@ -21,6 +21,9 @@ mod azure_size;
 pub(crate) mod budget;
 pub(crate) mod capacity;
 pub(crate) mod checks;
+/// Every claim of the host kinds table has a witness that it changes what runs.
+#[cfg(test)]
+mod claims;
 mod cloud_checks;
 pub(crate) mod connection_test;
 mod contract;

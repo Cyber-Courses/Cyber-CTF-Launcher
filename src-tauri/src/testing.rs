@@ -7,6 +7,7 @@
 //! every process another test thread forks meanwhile, and executing it then fails with "Text file
 //! busy".
 
+mod guardrails;
 pub mod logs;
 pub mod proptest_support;
 pub mod source_scan;

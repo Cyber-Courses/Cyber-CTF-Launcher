@@ -13,3 +13,11 @@ doc-valid-idents = ["AppleScript", "CyberBackend", "CyberCTF", "ESXi", "HashiCor
 # `pub(crate)`: functions, types, their fields and variants, constants), not on a module's own
 # private helpers.
 missing-docs-in-crate-items = true
+# A process starts only in the modules that drive tools (`platform::exec` and the few that need a
+# std process of their own): elsewhere code asks those, which time, log, group and end what they
+# start. Each start outside `platform::exec` carries `#[expect(clippy::disallowed_methods)]` with its
+# reason. Tests start their stand-ins directly (lib.rs allows it under `cfg(test)`).
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "start a tool through platform::exec, which times, logs, groups and ends it" },
+    { path = "tokio::process::Command::new", reason = "start a tool through platform::exec, which times, logs, groups and ends it" },
+]

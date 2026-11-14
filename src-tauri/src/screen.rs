@@ -257,6 +257,7 @@ pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path)
     crate::platform::private_fs::write(&file, rdp::file(&connection)).map_err(Error::Io)?;
     with_sessions(|s| s.get_mut(label).map(|s| s.rdp_file = Some(file.clone())));
     let (program, args, stdin) = rdp::command(client, &file, &connection, password.is_some());
+    #[allow(clippy::disallowed_methods, reason = "the remote-desktop client opens as the player's own app, left running past the call")]
     let mut cmd = std::process::Command::new(&program);
     cmd.args(&args).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     cmd.stdin(if stdin { std::process::Stdio::piped() } else { std::process::Stdio::null() });

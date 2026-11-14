@@ -120,6 +120,7 @@ pub(crate) async fn run(program: &Path, args: &[String]) -> Result<()> {
 async fn run_within(program: &Path, args: &[String], within: Duration) -> Result<()> {
     use tokio::io::AsyncReadExt as _;
     let name = program.file_name().map_or_else(|| program.display().to_string(), |n| n.to_string_lossy().into_owned());
+    #[allow(clippy::disallowed_methods, reason = "the hypervisor's own console client, waited for a moment then left to the player")]
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| Error::Invalid(format!("couldn't open {name}: {e}")))?;

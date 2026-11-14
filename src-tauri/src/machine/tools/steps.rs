@@ -1,6 +1,8 @@
 //! Running install and removal steps: one program each, its output streamed to the setup log,
 //! pkexec's own refusals told apart from the script's failures.
 
+#![allow(clippy::disallowed_methods, reason = "the install and removal steps' runner: each step streams to the setup log through its own process")]
+
 use std::process::Stdio;
 
 use tokio::process::Command;

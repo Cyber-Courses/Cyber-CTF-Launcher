@@ -4,6 +4,9 @@
 mod exit_codes;
 pub mod install;
 pub mod ovftool;
+/// No root script chains with `&&` at its top level.
+#[cfg(test)]
+mod root_chains;
 mod scripts;
 pub mod steps;
 pub mod uninstall;

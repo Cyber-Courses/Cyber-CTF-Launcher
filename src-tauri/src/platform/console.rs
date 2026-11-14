@@ -39,6 +39,7 @@ pub fn let_tools_take_ctrl_c() {
 #[cfg(windows)]
 pub fn interrupt(pid: u32) -> bool {
     let Ok(exe) = std::env::current_exe() else { return false };
+    #[allow(clippy::disallowed_methods, reason = "the app's own console helper, started to interrupt a tool's process group")]
     let mut cmd = std::process::Command::new(exe);
     cmd.args(["interrupt", "--pid", &pid.to_string()]);
     crate::platform::exec::headless_std(&mut cmd).status().is_ok_and(|s| s.success())

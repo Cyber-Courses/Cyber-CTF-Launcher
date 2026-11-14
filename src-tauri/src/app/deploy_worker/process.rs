@@ -1,6 +1,8 @@
 //! Worker processes: starting one detached, telling a live worker from a stale pidfile, listing
 //! the running ones, and stopping one with everything it started.
 
+#![allow(clippy::disallowed_methods, reason = "the deploy worker's own processes: started detached, found and ended by pid")]
+
 use std::path::Path;
 use std::time::Duration;
 
