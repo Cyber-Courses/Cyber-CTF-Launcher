@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use super::watch::{self, Watch};
 use super::{AttachPick, BoxFuture, EventLog, OperationId, Request, RunEvent, RunService};
 use crate::error::{Code, Error, Result, Wire};
 use crate::platform::AppDirs;
@@ -34,6 +35,8 @@ pub(crate) struct LocalRunService {
     events: Arc<EventLog>,
     /// The operations under way, by id.
     running: Arc<Mutex<HashMap<OperationId, Running>>>,
+    /// What is watched, and what was told of it.
+    watch: Arc<Mutex<Watch>>,
 }
 
 /// The services of this process, one per data folder: the app's windows, the website agent and
@@ -47,7 +50,12 @@ impl LocalRunService {
     /// The service of the app whose folders are `dirs`: no window or app handle needed, so the
     /// command line runs it as the app does.
     pub(crate) fn new(dirs: AppDirs) -> LocalRunService {
-        LocalRunService { dirs, events: Arc::new(EventLog::default()), running: Arc::new(Mutex::new(HashMap::new())) }
+        LocalRunService {
+            dirs,
+            events: Arc::new(EventLog::default()),
+            running: Arc::new(Mutex::new(HashMap::new())),
+            watch: Arc::new(Mutex::new(Watch::default())),
+        }
     }
 
     /// This process's service for the data folder of `dirs`, made on first use.
@@ -62,8 +70,7 @@ impl LocalRunService {
     }
 
     /// Whether an operation acts on lab `id` now.
-    #[cfg(test)]
-    pub(super) fn busy(&self, id: &str) -> bool {
+    pub(super) fn is_busy(&self, id: &str) -> bool {
         self.running.lock().unwrap_or_else(PoisonError::into_inner).values().any(|r| r.lab_id == id)
     }
 
@@ -164,6 +171,19 @@ async fn unpanicked<T>(work: impl Future<Output = Result<T>>) -> Result<T> {
         .unwrap_or_else(|panic| Err(Error::Invalid(format!("the operation stopped on an internal error: {}", crate::platform::unwind::panic_message(&*panic)))))
 }
 
+/// Reads lab `id`, declared `runtime`, and tells its status when it says something new.
+async fn tell_status(dirs: &AppDirs, events: &EventLog, watched: &Mutex<Watch>, id: String, runtime: Runtime) {
+    let read = watch::read(dirs, &id, runtime).await;
+    if !watched.lock().unwrap_or_else(PoisonError::into_inner).told(&id, &read) {
+        return;
+    }
+    let (status, error) = match read {
+        Ok(status) => (Some(status), None),
+        Err(error) => (None, Some(error)),
+    };
+    events.emit(RunEvent::Status { lab_id: id, status, error });
+}
+
 /// Tells operation `id`'s end (failed with `error`, or done), once.
 fn end(events: &EventLog, running: &Mutex<HashMap<OperationId, Running>>, id: &OperationId, error: Option<Wire>) {
     let Some(r) = running.lock().unwrap_or_else(PoisonError::into_inner).remove(id) else { return };
@@ -202,6 +222,33 @@ impl RunService for LocalRunService {
 
     fn events(&self) -> &EventLog {
         &self.events
+    }
+
+    fn watch(&self, labs: Vec<(String, Runtime)>, open: Vec<String>) {
+        let fresh = self.watch.lock().unwrap_or_else(PoisonError::into_inner).set(labs, open);
+        if fresh.is_empty() {
+            return;
+        }
+        let (dirs, events, watched) = (self.dirs.clone(), Arc::clone(&self.events), Arc::clone(&self.watch));
+        tauri::async_runtime::spawn(async move {
+            for (id, runtime) in fresh {
+                tell_status(&dirs, &events, &watched, id, runtime).await;
+            }
+        });
+    }
+
+    fn reconcile_once(&self) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            let seen = crate::runtime::discover::running_lab_ids(&self.dirs).await.into_iter().collect::<std::collections::BTreeSet<_>>();
+            let lab_ids: Vec<String> = seen.iter().cloned().collect();
+            if self.watch.lock().unwrap_or_else(PoisonError::into_inner).scanned(seen) {
+                self.events.emit(RunEvent::Running { lab_ids });
+            }
+            let picked = self.watch.lock().unwrap_or_else(PoisonError::into_inner).to_read(|id| self.is_busy(id));
+            for (id, runtime) in picked {
+                tell_status(&self.dirs, &self.events, &self.watch, id, runtime).await;
+            }
+        })
     }
 
     fn follow_runner(&self) -> BoxFuture<'static, ()> {

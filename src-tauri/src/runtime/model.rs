@@ -7,7 +7,7 @@ use ts_rs::TS;
 
 /// A port the software inside a container binds: `target` is the port inside the
 /// container, `published` is where it is reachable on 127.0.0.1 (0 = not published).
-#[derive(Clone, TS)]
+#[derive(Clone, Debug, PartialEq, TS)]
 #[ts(rename = "LabPort")]
 pub struct Port {
     /// Where it is reachable on 127.0.0.1 (0: not published).
@@ -38,7 +38,7 @@ impl Serialize for Port {
 
 /// The fixed account a lab's service ships with (a training lab's published sign-in, not a
 /// secret), for the player to sign in with.
-#[derive(Serialize, Clone, TS)]
+#[derive(Serialize, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabLogin")]
 pub struct Login {
@@ -48,8 +48,15 @@ pub struct Login {
     pub password: String,
 }
 
+// Leaves the password out, so a debug line never prints it.
+impl std::fmt::Debug for Login {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Login").field("user", &self.user).finish_non_exhaustive()
+    }
+}
+
 /// One machine of a lab (a container or a VM), as the lab page and its diagram show it.
-#[derive(Serialize, Clone, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabMachine")]
 pub struct Machine {
@@ -128,7 +135,7 @@ pub struct Service {
 }
 
 /// One network interface of a machine: the lab network it sits on and its address there.
-#[derive(Serialize, Clone, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabInterface")]
 pub struct Interface {
@@ -139,7 +146,7 @@ pub struct Interface {
 }
 
 /// A network segment of the lab (a Docker network = a switch the machines plug into).
-#[derive(Serialize, Clone, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabNetwork")]
 pub struct Network {
@@ -152,7 +159,7 @@ pub struct Network {
 }
 
 /// Where a lab runs, for the UI: its own runtime here, a VM here, a server, or a cloud account.
-#[derive(Serialize, Clone, Copy, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, Copy, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(rename = "LabPlace")]
 pub enum Place {
@@ -199,7 +206,7 @@ impl Park {
 
 /// A lab as the UI shows it right now: whether it runs, its machines and networks, where it
 /// runs and what can be done to it there.
-#[derive(Serialize, Clone, Default, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, Default, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct LabStatus {
     /// Whether the lab is up (a lab whose launch failed reads as not running:

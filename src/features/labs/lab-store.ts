@@ -6,6 +6,7 @@ import type { Lab } from "@/features/labs/use-labs";
 import { structurallyEqual } from "@/lib/equal";
 import { describeError } from "@/lib/errors";
 import { warn } from "@/lib/failure";
+import type { LabEvent } from "@/lib/tauri/run-events";
 
 /**
  * What this machine knows about the labs, kept outside the React tree and shared by every
@@ -21,8 +22,8 @@ type LabState = {
   statusErrors: Record<string, unknown>;
   /** Labs whose status has been asked at least once (answered or not). */
   probed: Set<string>;
-  /** Labs the infrastructure scan (Docker, the hypervisors) sees up: only which labs to read
-   *  again (`hotLabs`), never whether one runs, which is its status's word alone. */
+  /** Labs the core's infrastructure scan (Docker, the hypervisors) sees up: never whether one
+   *  runs, which is its status's word alone. */
   scanRunning: Set<string>;
   /** The catalogue last loaded, for the sign-in state (`key`) it was loaded under. */
   catalogue: { key: unknown; labs: Lab[] } | null;
@@ -109,6 +110,24 @@ function setStatusError(id: string, error: unknown) {
   if (error !== undefined) warn(`reading the status of lab ${id}`)(error);
   const others = Object.entries(state.statusErrors).filter(([lab]) => lab !== id);
   set({ statusErrors: Object.fromEntries(error === undefined ? others : [...others, [id, error]]) });
+}
+
+/** Takes in a lab event of the core's reconcile: a status read (or why it failed), or what its
+ *  scan sees up. The one way statuses arrive besides a read right after an operation. */
+export function takeLabEvent(e: LabEvent) {
+  if (e.kind === "running") {
+    setScanRunning(e.labIds);
+    return;
+  }
+  // A read of this window's own in flight is newer than the event's: it lands after.
+  if (inFlight.has(e.labId)) return;
+  if (e.status) {
+    setStatusError(e.labId, undefined);
+    if (!structurallyEqual(state.statuses[e.labId], e.status)) set({ statuses: { ...state.statuses, [e.labId]: e.status } });
+  } else if (e.error) {
+    setStatusError(e.labId, e.error);
+  }
+  if (!state.probed.has(e.labId)) set({ probed: new Set(state.probed).add(e.labId) });
 }
 
 /** What the last scan saw up. */

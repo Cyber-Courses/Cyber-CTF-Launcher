@@ -15,7 +15,7 @@ use crate::run_service::{self, AttachPick, OperationId, Request};
 use crate::runtime::attack_box::AttackStatus;
 use crate::runtime::paths::{installed_lab_dir, lab_dir, local_runtime};
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Park, Runtime, attack_box, cloud_services, discover, docker, lab, start_place, status, terminal_launch};
+use crate::runtime::{LabStatus, Park, Runtime, attack_box, cloud_services, docker, lab, start_place, status, terminal_launch};
 
 /// Starts a lab (see [`labs::prepare_launch`]): the operation's id, its log and end as run events.
 #[tauri::command]
@@ -176,6 +176,27 @@ pub(crate) async fn status_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Res
     Ok(status::status(dirs, &dir, id, runtime).await?.unless_launch_failed(failed))
 }
 
+/// Watches `labs` (each with its catalogue runtime), `open` among them looked at closely (a lab
+/// page shows it): their statuses, and what the scan of this machine sees up, come as run events
+/// from now on (see [`run_service::RunService::watch`]). Replaces what this app watched.
+#[tauri::command]
+pub async fn labs_watch(app: AppHandle, labs: Vec<WatchedLab>, open: Vec<String>) -> Result<()> {
+    for lab in &labs {
+        crate::runtime::validate_id(&lab.id)?;
+    }
+    run_service::of(&app).watch(labs.into_iter().map(|l| (l.id, l.runtime)).collect(), open);
+    Ok(())
+}
+
+/// A lab to watch: its id and its catalogue runtime.
+#[derive(serde::Deserialize)]
+pub struct WatchedLab {
+    /// The lab's id.
+    id: String,
+    /// Its catalogue runtime.
+    runtime: Runtime,
+}
+
 /// Before a cloud-services lab starts: its cloud, its cost estimate, what it asks for at launch
 /// and what it exposes, from its spec at the catalogue's pinned commit. None for other labs.
 #[tauri::command]
@@ -247,15 +268,6 @@ pub(crate) fn tools_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<Vec
         Runtime::Cloud => Ok(Vec::new()),
         form => lab::tools(&dir, form),
     }
-}
-
-/// The ids of labs with something up on this machine right now, found by asking Docker and each
-/// hypervisor directly (`vmrun`, `VBoxManage`, `prlctl`, `utmctl`, `virsh`, Hyper-V). One scan for
-/// every lab, unlike `lab_status`: the UI reads it only to pick which labs to read the status of
-/// again (one started from the website, or after a crash or restart), never as whether one runs.
-#[tauri::command]
-pub async fn running_labs(app: AppHandle) -> Vec<String> {
-    discover::running_lab_ids(&AppDirs::from(&app)).await
 }
 
 /// Runs a lab's exploitability check: does the intended exploit path still work? Lets a
@@ -348,7 +360,7 @@ mod tests {
     use super::{
         attack_box_attach, attack_box_detach, attack_box_sign_in, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_cloud_preview,
         lab_default_place, lab_installed, lab_launch, lab_launch_local, lab_park, lab_provision, lab_remove, lab_resume, lab_run_options, lab_status, lab_stop,
-        lab_tools, running_labs,
+        lab_tools,
     };
     use crate::commands::lines;
     use crate::platform::exec::fake::Tools;
@@ -405,16 +417,6 @@ mod tests {
         assert!(removal.left.is_empty(), "{removal:?}");
         assert!(!dir.exists() && !deploys.join("local-t.log").exists());
         assert!(!lab_installed(app(), "local-t".into()).await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn running_labs_lists_nothing_when_no_lab_is_running() {
-        // An installed but never-started lab is not running; the quit guard and the tray read
-        // this. A running lab's listing is covered by the integration tests.
-        let t = TestApp::new();
-        t.lab("web", &[("isoloom.yml", SPEC)]);
-        let _tools = Tools::rules(&[]);
-        assert_eq!(running_labs(t.handle().clone()).await, Vec::<String>::new());
     }
 
     #[tokio::test]

@@ -41,6 +41,7 @@ pub(crate) async fn finished(app: &crate::AppHandle, id: &OperationId) -> (std::
 struct Fake {
     events: EventLog,
     taken: Mutex<Vec<(OperationId, String, Operation)>>,
+    watched: Mutex<Vec<(Vec<(String, Runtime)>, Vec<String>)>>,
 }
 
 impl RunService for Fake {
@@ -56,6 +57,14 @@ impl RunService for Fake {
 
     fn follow_runner(&self) -> super::BoxFuture<'static, ()> {
         Box::pin(std::future::pending())
+    }
+
+    fn watch(&self, labs: Vec<(String, Runtime)>, open: Vec<String>) {
+        self.watched.lock().unwrap().push((labs, open));
+    }
+
+    fn reconcile_once(&self) -> super::BoxFuture<'_, ()> {
+        Box::pin(async {})
     }
 }
 
@@ -154,7 +163,7 @@ async fn a_second_operation_on_a_busy_lab_is_refused_and_a_panicking_one_still_e
     service.begin(started(&panics), true, |_| Box::pin(async { buggy_step() })).unwrap();
     let outcome = service.events().ended(&panics).await;
     assert!(outcome.unwrap_err().message.contains("internal error: a bug in a step"));
-    assert!(!service.busy("web"));
+    assert!(!service.is_busy("web"));
 }
 
 #[tokio::test]
@@ -178,6 +187,7 @@ async fn an_operation_run_outside_a_request_is_told_like_the_others() {
             RunEvent::Started { .. } => "started",
             RunEvent::Log { .. } => "log",
             RunEvent::Ended { .. } => "ended",
+            RunEvent::Status { .. } | RunEvent::Running { .. } => "lab",
         })
         .collect();
     assert_eq!(kinds, ["started", "log", "ended"]);
@@ -186,4 +196,45 @@ async fn an_operation_run_outside_a_request_is_told_like_the_others() {
 /// A step with a bug: it panics.
 fn buggy_step() -> crate::error::Result<()> {
     panic!("a bug in a step")
+}
+
+#[tokio::test]
+async fn a_watched_lab_has_its_status_told_at_once_then_only_when_it_changes() {
+    let t = TestApp::new();
+    let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+    let service = super::LocalRunService::new(t.dirs());
+    // Not installed: not running, read without touching any engine.
+    service.watch(vec![("web".into(), Runtime::Docker)], Vec::new());
+    let statuses = || -> Vec<(String, bool)> {
+        service
+            .events()
+            .since(None)
+            .into_iter()
+            .filter_map(|e| match e.event {
+                RunEvent::Status { lab_id, status: Some(s), .. } => Some((lab_id, s.running)),
+                _ => None,
+            })
+            .collect()
+    };
+    for _ in 0..500 {
+        if !statuses().is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(statuses(), [("web".to_owned(), false)]);
+    // A pass that reads it again finds the same: nothing more is told.
+    service.reconcile_once().await;
+    assert_eq!(statuses(), [("web".to_owned(), false)]);
+}
+
+#[tokio::test]
+async fn the_webview_says_what_it_watches_through_its_command() {
+    let t = TestApp::new();
+    let fake = Arc::new(Fake::default());
+    serving(&t, Arc::clone(&fake));
+    let lab = |id: &str| serde_json::from_value(serde_json::json!({ "id": id, "runtime": "VM" })).unwrap();
+    crate::commands::labs::labs_watch(t.handle().clone(), vec![lab("ad")], vec!["ad".into()]).await.unwrap();
+    assert_eq!(*fake.watched.lock().unwrap(), [(vec![("ad".to_owned(), Runtime::Vm)], vec!["ad".to_owned()])]);
+    assert!(crate::commands::labs::labs_watch(t.handle().clone(), vec![lab("../x")], Vec::new()).await.is_err(), "a bad id");
 }

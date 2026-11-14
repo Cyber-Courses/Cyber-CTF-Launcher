@@ -145,7 +145,7 @@ async fn operate(ctx: &Context, out: &mut Output<'_>, request: Request) -> Exit 
         let event = tokio::select! {
             event = rx.recv() => event,
             _ = tokio::signal::ctrl_c() => {
-                let failure = Failure::of_operation(crate::error::Error::Invalid("interrupted: an operation in a deploy worker goes on there (`cyberctf labs logs <lab> --follow`)".into()).to_wire(), Some(operation.to_string()));
+                let failure = Failure::of_operation(crate::error::Error::Invalid("interrupted: what the lab's run was asked goes on in the runner service (`cyberctf labs logs <lab> --follow`)".into()).to_wire(), Some(operation.to_string()));
                 return out.fail(&failure);
             }
         };
@@ -153,7 +153,7 @@ async fn operate(ctx: &Context, out: &mut Output<'_>, request: Request) -> Exit 
         let text = match &event {
             RunEvent::Started { op, lab_id, .. } => Some(format!("{op:?} of {lab_id} (operation {operation})")),
             RunEvent::Log { line, .. } => Some(line.clone()),
-            RunEvent::Ended { .. } => None,
+            RunEvent::Ended { .. } | RunEvent::Status { .. } | RunEvent::Running { .. } => None,
         };
         out.event(&event, text.as_deref());
         if let RunEvent::Ended { operation: ended, lab_id, op, error } = event

@@ -265,9 +265,9 @@ describe("worker log", () => {
     expect(result.current.lines).toEqual([]);
     act(() => {
       takeIn([
-        { cursor: 1, event: started },
-        { cursor: 2, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "line 1" } },
-        { cursor: 3, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "line 2" } },
+        { cursor: 101, event: started },
+        { cursor: 102, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "line 1" } },
+        { cursor: 103, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "line 2" } },
       ]);
     });
     expect(result.current.lines).toEqual(["line 1", "line 2"]);
@@ -281,10 +281,10 @@ describe("worker log", () => {
     await flush();
     act(() => {
       takeIn([
-        { cursor: 1, event: started },
-        { cursor: 2, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "==> pulling" } },
+        { cursor: 101, event: started },
+        { cursor: 102, event: { kind: "log", operation: "op-1", labId: "lab-goad", line: "==> pulling" } },
         {
-          cursor: 3,
+          cursor: 103,
           event: { kind: "ended", operation: "op-1", labId: "lab-goad", op: "launch", error: { code: "dockerNotRunning", message: "Docker isn't running." } },
         },
       ]);

@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use super::OperationId;
 use crate::error::Wire;
-use crate::runtime::{Operation, Runtime};
+use crate::runtime::{LabStatus, Operation, Runtime};
 
 pub use crate::app::events::RUN_EVENT;
 
@@ -58,6 +58,23 @@ pub enum RunEvent {
         op: Operation,
         /// Why it failed; none when it went through.
         error: Option<Wire>,
+    },
+    /// What a lab watched looks like now, as the service read it (told when it changed, and when
+    /// the lab is first watched).
+    Status {
+        /// The lab.
+        lab_id: String,
+        /// Its status; none when it couldn't be read.
+        status: Option<LabStatus>,
+        /// Why it couldn't be read.
+        error: Option<Wire>,
+    },
+    /// The labs the scan of this machine sees up (Docker, the hypervisors), told when that
+    /// changed: which labs started or went down outside the app, never whether one runs (its
+    /// status says).
+    Running {
+        /// The labs seen up.
+        lab_ids: Vec<String>,
     },
 }
 

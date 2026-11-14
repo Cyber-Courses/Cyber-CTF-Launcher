@@ -62,6 +62,8 @@ registerReset(forgetRunEvents);
 
 /** `run` with the frame's event applied (the operation it is of, as it now stands). */
 function applied(runs: Map<OperationId, OperationRun>, { event }: Cursored, at: number, copied: Set<OperationId>) {
+  // A lab's state, not an operation's: for the readers of `onLabEvent`.
+  if (event.kind === "status" || event.kind === "running") return;
   const run = runs.get(event.operation);
   switch (event.kind) {
     case "started":
@@ -109,6 +111,19 @@ export function takeIn(frames: readonly Cursored[]) {
   for (const f of fresh) applied(runs, f, at, copied);
   state = { cursor: fresh.at(-1)?.cursor ?? state.cursor, operations: runs };
   for (const l of listeners) l();
+  for (const f of fresh) if (f.event.kind === "status" || f.event.kind === "running") for (const l of labListeners) l(f.event);
+}
+
+/** A lab's state as the core's reconcile tells it: a status read, or what the scan sees up. */
+export type LabEvent = Extract<Cursored["event"], { kind: "status" | "running" }>;
+const labListeners = new Set<(e: LabEvent) => void>();
+
+/** Hears every lab event taken in from now on (the lab store's feed); returns an unsubscribe. */
+export function onLabEvent(cb: (e: LabEvent) => void) {
+  labListeners.add(cb);
+  return () => {
+    labListeners.delete(cb);
+  };
 }
 
 /** Subscribes this window to the run events, once: the live ones are held while the missed ones

@@ -31,8 +31,8 @@ describe("Tauri bindings", () => {
   });
 
   it("returns what the command answers", async () => {
-    installTauri({ running_labs: () => ["a", "b"] });
-    expect(await tauri.runningLabs()).toEqual(["a", "b"]);
+    installTauri({ lab_installed: () => true });
+    expect(await tauri.labInstalled("a")).toBe(true);
   });
 
   it("rejects when the command fails", async () => {

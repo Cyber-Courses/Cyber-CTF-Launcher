@@ -3,7 +3,7 @@
 // `logs` argument, and how it ends, become the run events the webview follows (`run-events`), as
 // the core sends them. A handler that throws before it awaits anything is the core refusing the
 // command (the invoke rejects, nothing runs); one that fails later is the operation failing.
-import type { CommandError, Cursored, Operation, OperationId, Runtime } from "@/lib/tauri/generated";
+import type { CommandError, Cursored, LabStatus, Operation, OperationId, Runtime } from "@/lib/tauri/generated";
 import type { ActiveOperation } from "@/lib/tauri/run-events";
 import { forgetRunEvents, takeIn } from "@/lib/tauri/run-events";
 import { registerReset } from "@/lib/module-state";
@@ -98,10 +98,11 @@ function asError(e: unknown): CommandError {
 /**
  * The events after `after` (all for none), as `run_events` answers: the ones kept, after the
  * operations `inFlight` says were already running when the core started (the mock's sample of
- * deploys under way), each told as started.
+ * deploys under way), each told as started, and what its first scan saw up (`scan`).
  */
-export function replay(after: number | null, inFlight: readonly ActiveOperation[]): Cursored[] {
+export function replay(after: number | null, inFlight: readonly ActiveOperation[], scan: readonly string[] = []): Cursored[] {
   if (cursor === 0) {
+    kept.push({ cursor: ++cursor, event: { kind: "running", labIds: [...scan] } });
     for (const o of inFlight) {
       const operation = `op-mock-${String(cursor + 1)}`;
       const frame: Cursored = {
@@ -120,9 +121,39 @@ export function replay(after: number | null, inFlight: readonly ActiveOperation[
 export function endOperationsOf(labId: string, error: CommandError | null = null) {
   const open = new Map<string, Operation>();
   for (const { event } of kept) {
-    if (event.labId !== labId) continue;
+    if ((event.kind !== "started" && event.kind !== "ended") || event.labId !== labId) continue;
     if (event.kind === "started") open.set(event.operation, event.op);
     if (event.kind === "ended") open.delete(event.operation);
   }
   for (const [operation, op] of open) emit({ kind: "ended", operation, labId, op, error });
+}
+
+/**
+ * `labs_watch` as the core's reconcile answers it: the scan's labs up (the mock's `running_labs`)
+ * and each watched lab's status (its `lab_status`, or why that failed), told as lab events. The
+ * mock tells them at once, on every watch: a test that changes a status watches again, or tells
+ * it with `tellStatus`.
+ */
+export async function watchLabs(args: Args, handle: (cmd: string, args: Args) => unknown): Promise<null> {
+  const labs = (args?.labs as { id: string; runtime: Runtime }[] | undefined) ?? [];
+  const running = (await handle("running_labs", undefined)) as string[] | null;
+  emit({ kind: "running", labIds: running ?? [] });
+  for (const { id, runtime } of labs) {
+    try {
+      tellStatus(id, (await handle("lab_status", { id, runtime })) as LabStatus);
+    } catch (e: unknown) {
+      emit({ kind: "status", labId: id, status: null, error: asError(e) });
+    }
+  }
+  return null;
+}
+
+/** Tells lab `labId`'s status as the core's reconcile does when it changed. */
+export function tellStatus(labId: string, status: LabStatus) {
+  emit({ kind: "status", labId, status, error: null });
+}
+
+/** Tells what the core's scan sees up, as its reconcile does when that changed. */
+export function tellRunning(labIds: string[]) {
+  emit({ kind: "running", labIds });
 }
