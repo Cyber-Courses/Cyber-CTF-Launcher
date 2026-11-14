@@ -10,16 +10,27 @@ use super::{errors, remote};
 use crate::error::{Error, Result};
 use crate::runtime::lab;
 
-/// A lab's run on the runner, opened by its name from the module Isoloom generated for it.
+/// What a run's Terraform module is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Module {
+    /// The one Isoloom generates for a target.
+    Generated(lab::Target),
+    /// The lab's own, hand-written (a cloud-services lab's `cloud/`).
+    Own,
+    /// A helper VM's an earlier version left on a Proxmox server, whose files Isoloom no longer
+    /// generates: only read, stopped and removed.
+    HelperVm,
+}
+
+/// A lab's run on the runner, opened by its name from its Terraform module.
 pub(crate) struct OpenedRun {
     pub(super) runner: Runner,
     /// The runner's home: where its SSH key is (`ssh/id_ed25519`), the launcher's own.
     home: PathBuf,
     /// The lab's folder.
     pub(super) dir: PathBuf,
-    /// The Isoloom target the run's files are generated for; none for a helper VM an earlier
-    /// version left on a Proxmox server, whose files Isoloom no longer generates.
-    target: Option<lab::Target>,
+    /// What its module is.
+    module: Module,
     /// The run's Terraform module.
     pub(super) project: PathBuf,
     pub(super) name: RunName,
@@ -29,13 +40,13 @@ pub(crate) struct OpenedRun {
 }
 
 impl OpenedRun {
-    /// The run of lab `id` in `dir`, whose Terraform module `project` is generated for `target`
-    /// (none: a helper VM's, see [`OpenedRun::target`]), on a runner set up with `config`, its
-    /// operations through the home's runner service when `service` (in this process for a test's).
-    pub(super) fn new(config: RunnerConfig, dir: &Path, id: &str, (project, target): (PathBuf, Option<lab::Target>), service: bool) -> Result<Self> {
+    /// The run of lab `id` in `dir`, whose Terraform module `project` is `module`, on a runner
+    /// set up with `config`, its operations through the home's runner service when `service` (in
+    /// this process for a test's).
+    pub(super) fn new(config: RunnerConfig, dir: &Path, id: &str, (project, module): (PathBuf, Module), service: bool) -> Result<Self> {
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(errors::from_runner)?;
         let home = config.home.clone();
-        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, home, dir: dir.to_path_buf(), target, project, name, service })
+        Ok(OpenedRun { runner: Runner::new(config).map_err(errors::from_runner)?, home, dir: dir.to_path_buf(), module, project, name, service })
     }
 
     /// `act` on the run with `opts`, its events as `log`'s lines: through the home's runner
@@ -67,18 +78,26 @@ impl OpenedRun {
         std::fs::read_dir(&self.project).is_ok_and(|mut entries| entries.any(|e| e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "tf"))))
     }
 
-    /// The Isoloom target the run's files are generated for; none for a run an earlier version
-    /// left in a helper VM, which is only read, stopped and removed.
+    /// The Isoloom target the run's files are generated for; none for a module of the lab's own
+    /// and for a run an earlier version left in a helper VM.
     pub(crate) fn target(&self) -> Option<lab::Target> {
-        self.target
+        match self.module {
+            Module::Generated(target) => Some(target),
+            Module::Own | Module::HelperVm => None,
+        }
+    }
+
+    /// What the run's module is.
+    pub(crate) fn module(&self) -> Module {
+        self.module
     }
 
     /// The lab's module, opened under the run's name.
     pub(super) fn running(&self) -> Result<Running<'_>> {
-        self.runner.open_as(&self.project, Format::Terraform, Some(self.name.clone())).map_err(|e| match self.target {
-            Some(_) => errors::from_runner(e),
+        self.runner.open_as(&self.project, Format::Terraform, Some(self.name.clone())).map_err(|e| match self.module {
+            Module::Generated(_) | Module::Own => errors::from_runner(e),
             // A helper VM an earlier version left on a server: said what to remove if not opened.
-            None => errors::of_helper_vm(e, self.name.as_str()),
+            Module::HelperVm => errors::of_helper_vm(e, self.name.as_str()),
         })
     }
 

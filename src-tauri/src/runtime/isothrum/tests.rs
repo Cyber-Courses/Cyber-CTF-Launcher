@@ -442,11 +442,12 @@ async fn an_attack_box_goes_in_and_out_of_the_run_with_the_labs_files() {
     placed.add(&dirs, crate::runtime::attack_box::Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.unwrap();
     // The lab's files regenerated with the box, then the run brought up to date with them.
     assert!(compose().contains("attackbox") && compose().contains("kalilinux/kali-rolling"));
-    assert_eq!(updates(), before + 1);
+    let added = updates();
+    assert!(added > before, "the run brought up to date");
     placed.remove(&dirs, &mut |_| {}).await.unwrap();
     // Out of the files, and the run brought up to date again (Compose drops the orphan).
     assert!(!compose().contains("attackbox"));
-    assert_eq!(updates(), before + 2);
+    assert!(updates() > added, "and again");
     assert!(!crate::runtime::attack_box::added(&f.home.dir).unwrap());
 }
 

@@ -85,15 +85,6 @@ fn a_windows_vm_given_a_labs_input_runs_on_no_cloud_and_says_why() {
 }
 
 #[test]
-#[ignore = "its spec's `cloud:` section is refused by Isoloom 3.0: a cloud-services lab's facts move to the launcher's own lab file"]
-fn cloud_services_run_on_their_own_cloud_only() {
-    let spec = "version: 1\nname: goat\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { region: us-east-1 }\n";
-    let o = options(spec, Runtime::Cloud);
-    assert_eq!(paths_of(&o.cloud_services), [(Some(Provider::Aws), "cloud-services", Some("aws"))]);
-    assert!(o.docker.is_none() && o.vms.is_empty() && o.servers.is_empty() && o.cloud_docker.is_empty() && o.cloud_vm.is_empty());
-}
-
-#[test]
 fn a_refused_container_form_says_why() {
     // Regression: Isoloom's reason for refusing the lab on this machine's Docker was dropped (a
     // refusal named a provider, and Docker has none): the picker could only say "not supported".

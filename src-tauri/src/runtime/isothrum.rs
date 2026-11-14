@@ -26,6 +26,8 @@ mod gate;
 mod gone;
 mod one_read;
 mod opened;
+#[cfg(feature = "cloud-services")]
+mod own_module;
 mod progress;
 mod remote;
 mod retry;
@@ -37,7 +39,15 @@ pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_c
 use engine::PROCESSES;
 pub(crate) use engine::{ENGINE_VAR, EngineProcesses};
 pub(crate) use esxi::EsxiPlace;
+pub(crate) use opened::Module;
 pub(crate) use server::{ServerPlace, ServerRun};
+
+/// The input variables the Terraform module in `dir` declares, read by the runner from the
+/// module itself: nothing runs.
+#[cfg(feature = "cloud-services")]
+pub(crate) fn module_variables(dir: &Path) -> Result<Vec<isothrum_runner::InputVariable>> {
+    isothrum_runner::variables_of(dir).map_err(errors::from_runner)
+}
 
 /// The folder Isoloom generates a lab's files in, at its root (`.isoloom`, `.isoloom-<n>` for an
 /// instance).

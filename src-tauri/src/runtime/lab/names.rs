@@ -62,14 +62,9 @@ pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> (PathBuf, Target) {
         (Runtime::Docker, cloud) => (out.join("cloud-docker").join(cloud), Target::CloudDocker),
         // Isoloom generates a cloud-vm module per cloud it can model the lab on; a cloud a lab
         // doesn't support has no module, and the run surfaces that when the directory is missing.
-        (Runtime::Vm, cloud) => (out.join("cloud-vm").join(cloud), Target::CloudVm),
-        // Isoloom's variables for the lab's own module (see `cloud_services`).
-        #[cfg(feature = "cloud-services")]
-        (Runtime::Cloud, _) => (out.join("cloud-services"), Target::CloudServices),
-        // No target of its own without the feature: such a lab starts nowhere and is located
-        // nowhere, so it is never asked for; it reads as one VM per machine.
-        #[cfg(not(feature = "cloud-services"))]
-        (Runtime::Cloud, cloud) => (out.join("cloud-vm").join(cloud), Target::CloudVm),
+        // A cloud-services lab has no Isoloom target: it runs its own module (`cloud_services`), and
+        // is never asked for here; it reads as one VM per machine.
+        (Runtime::Vm | Runtime::Cloud, cloud) => (out.join("cloud-vm").join(cloud), Target::CloudVm),
     }
 }
 

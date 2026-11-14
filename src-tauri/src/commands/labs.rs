@@ -227,6 +227,11 @@ pub fn cloud_services_supported() -> bool {
 /// with no machines of its own (cloud services).
 #[tauri::command]
 pub async fn lab_requirements(app: AppHandle, id: String, source: LabSource) -> Result<Option<lab::Requirements>> {
+    // A cloud-services lab (its own lab file) has no machines of its own here.
+    #[cfg(feature = "cloud-services")]
+    if crate::runtime::cloud_services::preview_at(&AppDirs::from(&app), &id, source.checked()).await?.is_some() {
+        return Ok(None);
+    }
     let lab = lab::lab_at(&AppDirs::from(&app), &id, source.checked()).await?;
     Ok(lab::requirements(&lab))
 }
@@ -266,6 +271,10 @@ pub async fn lab_default_place(
 /// its launch path, and where Isoloom refuses it. What the launch picker offers.
 #[tauri::command]
 pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, source: LabSource) -> Result<lab::RunOptions> {
+    #[cfg(feature = "cloud-services")]
+    if runtime == Runtime::Cloud {
+        return crate::runtime::cloud_services::run_options_at(&AppDirs::from(&app), &id, source.checked()).await;
+    }
     let lab = lab::lab_at(&AppDirs::from(&app), &id, source.checked()).await?;
     Ok(lab::run_options(&lab, runtime))
 }
@@ -465,8 +474,7 @@ mod tests {
         use super::lab_cloud_preview;
         let t = TestApp::new();
         let commit = "0123456789abcdef0123456789abcdef01234567";
-        let spec = "version: 1\nname: goat\ncloud:\n  provider: aws\n  terraform: terraform\n  hourly_usd: 0.02\n";
-        t.lab("goat", &[("isoloom.yml", spec), ("terraform/main.tf", ""), (crate::runtime::lab::COMMIT_MARKER, commit)]);
+        t.lab("goat", &[("cloud/lab.yml", "provider: aws\nhourly_usd: 0.02\n"), ("cloud/main.tf", ""), (crate::runtime::lab::COMMIT_MARKER, commit)]);
         let preview = lab_cloud_preview(t.handle().clone(), "goat".into(), source("CyberCTF/goat", commit)).await.unwrap();
         assert_eq!(preview.map(|p| p.provider).as_deref(), Some("aws"));
         // Refused before anything is downloaded: a bad lab id, another owner, a short commit.
