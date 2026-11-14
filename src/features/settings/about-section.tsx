@@ -14,8 +14,8 @@ import { diagnosticsText } from "@/features/settings/diagnostics";
 import { useUpdater, type UpdateState } from "@/features/settings/use-updater";
 import { restartOnUpdate } from "@/lib/install-update";
 import { ignore, tell } from "@/lib/failure";
-import { emit } from "@tauri-apps/api/event";
-import { closeIfSettings, REPLAY_ONBOARDING_EVENT } from "@/lib/app-events";
+import { send } from "@/lib/event-channel";
+import { closeIfSettings, replayOnboarding as replayOnboardingAsked } from "@/lib/app-events";
 import { useFormat, useT } from "@/lib/i18n";
 import { useFlash } from "@/lib/use-flash";
 
@@ -75,7 +75,7 @@ export function AboutSection({
   // reloaded the Settings window, which never shows it).
   function replayOnboarding() {
     clearOnboarded();
-    emit(REPLAY_ONBOARDING_EVENT).catch(tell(t("settings.about.replayFailed")));
+    send(replayOnboardingAsked).catch(tell(t("settings.about.replayFailed")));
     closeIfSettings();
   }
 

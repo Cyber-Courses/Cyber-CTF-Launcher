@@ -15,6 +15,7 @@ import type {
 } from "@/lib/tauri/generated";
 import type { CloudProvider } from "@/lib/tauri/cloud";
 import { SERVER_PROVIDERS } from "@/lib/tauri/generated/ProviderNames";
+import { signal } from "@/lib/event-channel";
 
 export type { HostCapacity, MonthSpend, ProxmoxBridge, ProxmoxNodeChoices, ProxmoxPlacement, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn };
 
@@ -80,3 +81,5 @@ export const serverOpenSetup = (id: string | null, kind: "server" | "cloud" = "s
   invokeUnit("server_open_setup", provider ? { id, kind, provider } : { id, kind });
 /** Emitted by the setup window after a save; the main window reloads its host list. */
 export const SERVER_CHANGED = "server:changed";
+/** A host was saved in the setup window. */
+export const serverChanged = signal(SERVER_CHANGED);

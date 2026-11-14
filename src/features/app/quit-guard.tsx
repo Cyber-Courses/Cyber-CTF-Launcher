@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { forceQuit, lingerQuit } from "@/lib/tauri";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useTauriEvent } from "@/lib/use-tauri-event";
-import { EVENTS } from "@/lib/tauri/generated/Events";
+import { quitBlocked } from "@/lib/tauri/events";
 import { useT } from "@/lib/i18n";
 import { tell } from "@/lib/failure";
 
@@ -21,9 +21,7 @@ export function QuitGuard() {
   const [count, setCount] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  useTauriEvent(EVENTS.quitBlocked, (n) => {
-    setCount(typeof n === "number" ? n : 1);
-  });
+  useTauriEvent(quitBlocked, setCount);
   // Escape is "keep waiting", the choice that changes nothing.
   useFocusTrap(ref, count !== null, () => {
     setCount(null);

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { emit } from "@tauri-apps/api/event";
 import { authStatus, type AuthStatus } from "@/lib/tauri";
-import { AUTH_CHANGED_EVENT } from "@/lib/app-events";
+import { authChanged } from "@/lib/app-events";
+import { send } from "@/lib/event-channel";
 import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
 import { ignore, warn } from "@/lib/failure";
 import { useTauriEvent } from "@/lib/use-tauri-event";
@@ -74,12 +74,12 @@ export function useAuthSession() {
   });
   // Signing in or out in the Settings window: `focus` doesn't fire reliably when moving between
   // the app's own windows, so the other windows hear it as an app event.
-  useTauriEvent(AUTH_CHANGED_EVENT, reread);
+  useTauriEvent(authChanged, reread);
 
   /** Signed in or out here: the other windows (Settings, if open) hear it too. */
   const changed = useCallback((status: AuthStatus) => {
     setAuth(status);
-    emit(AUTH_CHANGED_EVENT).catch(warn("Couldn't tell the other windows about the sign-in"));
+    send(authChanged).catch(warn("Couldn't tell the other windows about the sign-in"));
   }, []);
 
   /** The first read (see [`readSessionOnce`]). */

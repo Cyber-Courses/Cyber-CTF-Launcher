@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Cpu } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-pill";
@@ -11,7 +10,7 @@ import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import { labRequirements, type LabRequirements, type LabRunOptions, type Provider, type ServerHost } from "@/lib/tauri";
 import { cn } from "@/lib/class-names";
 import { useT, type MessageKey, type T } from "@/lib/i18n";
-import { warn } from "@/lib/failure";
+import { useRead, valueOf } from "@/lib/use-read";
 import { gigabytes, MIB } from "@/lib/format";
 
 /** What a place the lab supports but the launcher isn't set up for yet tells the player to do. */
@@ -24,25 +23,9 @@ const SETUP_HINT: Partial<Record<string, MessageKey>> = {
 /** A lab's minimum-to-run requirements, read from its spec at the catalogue's commit (null until
  *  read, or when the lab has no machines of its own). */
 function useLabRequirements(labId: string, runtime: LabRuntimeInfo): LabRequirements | null {
-  const [reqs, setReqs] = useState<LabRequirements | null>(null);
   const { repository, commit } = runtime;
-  useEffect(() => {
-    if (!repository || !commit) return;
-    let alive = true;
-    labRequirements(labId, repository, commit)
-      .then((r) => {
-        if (alive) setReqs(r);
-      })
-      .catch(
-        warn("reading the lab's requirements", () => {
-          if (alive) setReqs(null);
-        }),
-      );
-    return () => {
-      alive = false;
-    };
-  }, [labId, repository, commit]);
-  return reqs;
+  const key = repository && commit ? `${labId}@${repository}/${commit}` : null;
+  return valueOf(useRead(key, () => labRequirements(labId, repository ?? "", commit ?? ""), "reading the lab's requirements"));
 }
 
 /** "2–6 vCPU · 2.7–13 GB RAM · 20–60 GB disk" from a lab's lightest-to-heaviest range, a single

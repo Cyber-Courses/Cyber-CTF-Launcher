@@ -7,6 +7,7 @@ import { confirmLaunch, type LaunchConfirmRequest } from "@/lib/tauri";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { EVENTS } from "@/lib/tauri/generated/Events";
+import { DROP, channel } from "@/lib/event-channel";
 import { tell } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 
@@ -21,6 +22,9 @@ const PLACES = Object.keys(ICONS) as Place[];
 /** How long before the agent stops waiting (the request's `expiresAtMs`) the prompt stops taking
  *  an answer, so one given at the very end isn't lost on its way. */
 export const ANSWER_MARGIN_MS = 5_000;
+
+/** A website launch asks for the player's answer: the request, when the payload is one. */
+const launchConfirm = channel<Request>(EVENTS.launchConfirm, (payload) => parseRequest(payload) ?? DROP);
 
 /** The request in a `launch-confirm` event's payload, or null for anything else. */
 function parseRequest(payload: unknown): Request | null {
@@ -41,10 +45,7 @@ function useLaunchRequest() {
   // The request whose answer window ran out: it can only be dismissed.
   const [expired, setExpired] = useState<string | null>(null);
 
-  useTauriEvent(EVENTS.launchConfirm, (payload) => {
-    const next = parseRequest(payload);
-    if (next) setReq(next);
-  });
+  useTauriEvent(launchConfirm, setReq);
   useEffect(() => {
     if (!req) return;
     const timer = setTimeout(
