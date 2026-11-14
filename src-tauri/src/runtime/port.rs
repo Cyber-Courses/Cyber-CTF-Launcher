@@ -71,11 +71,18 @@ mod tests {
         assert_eq!(HostPort::published(41873), Some(HostPort::new(41873)));
     }
 
-    /// The lab page reads a port as `{published, target}`, `published` 0 when it isn't.
+    /// The lab page reads a port as `{published, target}`, `published` 0 when it isn't, with its
+    /// `login` only when the lab declares one.
     #[test]
     fn a_lab_port_reads_as_the_ui_expects() {
-        let port = |published, target| crate::runtime::Port { published, target: GuestPort::new(target) };
+        let port = |published, target| crate::runtime::Port { published, target: GuestPort::new(target), login: None };
         assert_eq!(serde_json::to_value(port(Some(HostPort::new(8080)), 80)).unwrap(), serde_json::json!({"published": 8080, "target": 80}));
         assert_eq!(serde_json::to_value(port(None, 22)).unwrap(), serde_json::json!({"published": 0, "target": 22}));
+        let login = crate::runtime::Login { user: "admin".into(), password: "admin".into() };
+        let with_login = crate::runtime::Port { login: Some(login), ..port(Some(HostPort::new(8080)), 80) };
+        assert_eq!(
+            serde_json::to_value(with_login).unwrap(),
+            serde_json::json!({"published": 8080, "target": 80, "login": {"user": "admin", "password": "admin"}})
+        );
     }
 }
