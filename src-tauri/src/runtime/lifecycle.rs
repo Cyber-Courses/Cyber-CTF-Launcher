@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::host::{self, Host};
-use super::inflight::{Action, DeployGuard, lock_lab};
+use super::inflight::lock_lab;
 use super::launch::policy_allows;
 use super::paths::{lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm};
 use super::providers::Provider;
@@ -18,7 +18,6 @@ use crate::error::{Error, Result};
 async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     let _lock = lock_lab(dirs, id).await?;
-    let _deploy = DeployGuard::new(id, Action::Park(mode));
     refuse_cloud_park(runtime)?;
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
     let run = local_run(dirs, lab, "Pausing a lab on a server or a cloud account isn't available. Stop it instead.")?;
@@ -132,7 +131,6 @@ fn parked_message(mode: Park) -> &'static str {
 async fn resume(dirs: &AppDirs, lab: LabRef<'_>, mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     let _lock = lock_lab(dirs, id).await?;
-    let _deploy = DeployGuard::new(id, Action::Resume);
     refuse_cloud_park(runtime)?;
     policy_allows(dirs, runtime, None, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
     let run = local_run(dirs, lab, "A lab on a server or a cloud account isn't parked, so there is nothing to resume: start it again.")?;
@@ -157,7 +155,6 @@ async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut l
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
     let _lock = lock_lab(dirs, id).await?;
-    let _deploy = DeployGuard::new(id, Action::Provision);
     // Through the runner: a VM lab on this machine, or on an ESXi host. Proxmox and the clouds
     // aren't re-provisioned in place yet.
     let Some(Host::Local(run) | Host::Esxi { run, .. }) = host::locate(dirs, dir, id, runtime)? else {
@@ -196,7 +193,6 @@ async fn stop(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut(String)) -> Resul
 /// it must not call `stop`, which would deadlock): the integration tests.
 pub(crate) async fn stop_locked(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
-    let _deploy = DeployGuard::new(id, Action::Stop);
     // Wherever it runs, through the runner (its attack box, a machine of it, goes with it): on
     // this machine, or on a server host or cloud account, destroyed there with the parameters it
     // was applied with and the connection that works now. A cloud-services lab on no account has
@@ -289,7 +285,6 @@ pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
 /// down under its lock.
 pub async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_first: impl Future<Output = ()>, log: impl FnMut(String)) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
-    let _stopping = DeployGuard::new(id, Action::Stop);
     end_first.await;
     stop(dirs, LabRef { dir: &dir, id, runtime }, log).await
 }

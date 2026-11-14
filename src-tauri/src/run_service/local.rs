@@ -66,6 +66,37 @@ impl LocalRunService {
         self.running.lock().unwrap_or_else(PoisonError::into_inner).values().any(|r| r.lab_id == id)
     }
 
+    /// The labs with an operation of any kind under way in this process (a start, a resume, a
+    /// provisioning run, a stop, a park, the attack box), each once: what a quit would cut off
+    /// (the launcher's own steps; the run's operations go on in the runner service).
+    pub(crate) fn busy_labs(&self) -> Vec<String> {
+        let running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut labs: Vec<String> = running.values().map(|r| r.lab_id.clone()).collect();
+        labs.sort();
+        labs.dedup();
+        labs
+    }
+
+    /// Marks lab `id` as under operation `op` until the hold drops (a test's stand-in for an
+    /// operation under way).
+    #[cfg(test)]
+    pub(crate) fn hold(self: &Arc<Self>, id: &str, op: Operation) -> impl Drop {
+        struct Hold(Arc<LocalRunService>, OperationId);
+        impl Drop for Hold {
+            fn drop(&mut self) {
+                self.0.running.lock().unwrap_or_else(PoisonError::into_inner).remove(&self.1);
+            }
+        }
+        let operation = OperationId::new();
+        self.running.lock().unwrap_or_else(PoisonError::into_inner).insert(operation.clone(), Running { lab_id: id.to_owned(), op });
+        Hold(Arc::clone(self), operation)
+    }
+
+    /// Whether lab `id` is being stopped in this process now.
+    pub(crate) fn stopping(&self, id: &str) -> bool {
+        self.running.lock().unwrap_or_else(PoisonError::into_inner).values().any(|r| r.lab_id == id && r.op == Operation::Stop)
+    }
+
     /// Admits operation `operation`, `op` on `lab_id`, as under way: refused when `exclusive`
     /// and another acts on the lab. Checked and recorded as one step: two starts racing each
     /// other (a double click) never both pass.
@@ -218,18 +249,13 @@ async fn attach_box(dirs: &AppDirs, id: &str, runtime: Runtime, pick: AttachPick
     let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime)?;
     let mut line = move |l: String| log(l);
     let image = image.unwrap_or_else(|| attack_box::default_image().to_owned());
-    // In flight like every lab operation: nothing that would collide begins meanwhile, while
-    // bringing the run up to date may restart some of its machines.
-    crate::runtime::as_operation(id, crate::runtime::Action::AttachBox, async {
-        let attach = run.add(dirs, attack_box::Pick { image: &image, desktop }, network.as_deref(), &mut line);
-        // Only an image pulled on this machine is the app's to account for.
-        if !run.pulls_image_here() {
-            return Box::pin(attach).await;
-        }
-        // Boxed: the runner's attach future is large, and tracking it adds to it.
-        Box::pin(crate::machine::storage::owned::tracked(dirs.clone(), std::slice::from_ref(&image), &[], attach)).await
-    })
-    .await
+    let attach = run.add(dirs, attack_box::Pick { image: &image, desktop }, network.as_deref(), &mut line);
+    // Only an image pulled on this machine is the app's to account for.
+    if !run.pulls_image_here() {
+        return Box::pin(attach).await;
+    }
+    // Boxed: the runner's attach future is large, and tracking it adds to it.
+    Box::pin(crate::machine::storage::owned::tracked(dirs.clone(), std::slice::from_ref(&image), &[], attach)).await
 }
 
 /// Takes the attack box back out of running lab `id`, leaving the rest of the lab up.
@@ -238,5 +264,5 @@ async fn detach_box(dirs: &AppDirs, id: &str, runtime: Runtime, log: Log) -> Res
     let _lock = crate::runtime::lock_lab(dirs, id).await?;
     let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime)?;
     let mut line = move |l: String| log(l);
-    crate::runtime::as_operation(id, crate::runtime::Action::DetachBox, Box::pin(run.remove(dirs, &mut line))).await
+    Box::pin(run.remove(dirs, &mut line)).await
 }

@@ -9,8 +9,6 @@ use std::time::{Duration, Instant};
 use crate::AppHandle;
 use tauri::Manager;
 
-use crate::runtime;
-
 /// Where the app stands on quitting: one state for the close/exit handlers, the background
 /// finish and the prompt, read and changed under one lock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +49,7 @@ const QUIT_AGAIN_WINDOW: Duration = Duration::from_secs(20);
 const LINGER_CAP: Duration = Duration::from_secs(60 * 60);
 
 /// Quit by finishing in the background: the windows go away now; the process exits once the
-/// lab operations of this process ([`runtime::busy_labs`]: a stop, a park, or a start when no
+/// lab operations of this process ([`busy`]: a stop, a park, or a start when no
 /// worker could be started) are done.
 pub fn linger_quit(app: AppHandle) {
     for (_, w) in app.webview_windows() {
@@ -67,7 +65,7 @@ pub fn linger_quit(app: AppHandle) {
         // Bounded: a wedged operation (a hung VBoxManage) must not keep an invisible app alive
         // for good. Past the cap it exits anyway; a detached worker would have been unaffected.
         let deadline = Instant::now() + LINGER_CAP;
-        while !runtime::busy_labs().is_empty() && Instant::now() < deadline && phase() == Phase::Lingering {
+        while busy(&app) > 0 && Instant::now() < deadline && phase() == Phase::Lingering {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
         // Relaunched meanwhile (the windows are back): stay open. A quit forced meanwhile, or
@@ -107,12 +105,24 @@ fn should_prompt(visible: bool, prompted_at: Option<Instant>) -> bool {
     visible && !insisting
 }
 
-/// If a lab operation runs in this process ([`runtime::busy_labs`], a stop as much as a start) and
+/// The labs with an operation of this process under way (its run service's: a stop as much as a
+/// start), counted.
+fn busy(app: &AppHandle) -> usize {
+    match crate::run_service::LocalRunService::of(&crate::platform::AppDirs::from(app)) {
+        Ok(service) => service.busy_labs().len(),
+        Err(e) => {
+            log::warn!("the operations under way can't be told ({e}): the quit goes on");
+            0
+        }
+    }
+}
+
+/// If a lab operation runs in this process ([`busy`], a stop as much as a start) and
 /// the user hasn't already confirmed, keep the app open and ask the frontend to confirm. Returns true when the quit was intercepted. Nothing is
 /// intercepted when no window could show the prompt (the app already lingers hidden), nor on a
 /// second quit within a few seconds of the prompt: that is the user insisting.
 pub fn intercept(app: &AppHandle) -> bool {
-    let busy = runtime::busy_labs().len();
+    let busy = busy(app);
     if phase() == Phase::Forced || busy == 0 {
         return false;
     }
@@ -151,7 +161,8 @@ mod tests {
     fn a_background_finish_stays_open_once_relaunched_and_a_forced_quit_exits_at_once() {
         let t = crate::testing::test_app::TestApp::new();
         // A deploy in flight holds the background finish (it looks again every 2 s).
-        let deploy = runtime::DeployGuard::new("quit-test-linger", runtime::Action::Launch);
+        let service = crate::run_service::LocalRunService::of(&t.dirs()).unwrap();
+        let deploy = service.hold("quit-test-linger", crate::runtime::Operation::Launch);
         linger_quit(t.handle().clone());
         assert_eq!(phase(), Phase::Lingering);
         // Opened again meanwhile: once the deploy is done, the app stays open.
@@ -166,7 +177,7 @@ mod tests {
         let exit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| force_quit(t.handle())));
         assert!(exit.is_err(), "the runtime was asked to exit");
         assert_eq!(phase(), Phase::Forced);
-        let deploy = runtime::DeployGuard::new("quit-test-forced", runtime::Action::Launch);
+        let deploy = service.hold("quit-test-forced", crate::runtime::Operation::Launch);
         assert!(!intercept(t.handle()), "a forced quit is never held");
         drop(deploy);
     }

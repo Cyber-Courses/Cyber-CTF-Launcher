@@ -56,7 +56,7 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<Removal> {
     runtime::validate_id(id)?;
     // Held to the end: a start or a stop waits.
     let busy = || Error::coded(Code::AlreadyInProgress);
-    if runtime::stopping(id) {
+    if crate::run_service::LocalRunService::of(dirs)?.stopping(id) {
         return Err(busy());
     }
     let _lock = runtime::try_lock_lab(dirs, id)?.ok_or_else(busy)?;
