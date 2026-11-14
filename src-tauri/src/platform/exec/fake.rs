@@ -45,10 +45,10 @@ enum Scripted {
     Missing,
 }
 
-type Script = Box<dyn FnMut(&str, &[&str]) -> Option<Reply>>;
+type Answer = Box<dyn FnMut(&str, &[&str]) -> Option<Reply>>;
 
 struct State {
-    script: Script,
+    script: Answer,
     calls: Vec<String>,
     /// The environment each call was given, beside `calls`.
     envs: Vec<Vec<(String, String)>>,
