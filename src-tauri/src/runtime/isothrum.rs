@@ -182,6 +182,20 @@ pub(crate) async fn follow_under_way(dirs: &crate::platform::AppDirs, id: &str, 
     remote::follow_under_way(&home, &name, log).await.map_err(Error::Invalid)
 }
 
+/// Follows the home's runner service (started when none runs) for as long as its stream lasts,
+/// telling `on` what another process asked of it and when a run leaves its standing state.
+///
+/// # Errors
+///
+/// No service can be reached, or its stream ended.
+pub(crate) async fn follow_others(dirs: &crate::platform::AppDirs, on: &mut impl FnMut(remote::Others)) -> Result<()> {
+    let home = paths::runner_home(dirs)?;
+    let client = remote::client(&home).await.ok_or_else(|| Error::Invalid("no runner service can be reached".into()))?;
+    remote::follow_others(&client, on).await.map_err(Error::Invalid)
+}
+
+pub(crate) use remote::Others;
+
 /// Every run the runner whose home is `home` records, each in the state its last operation left
 /// it in, as its store says.
 pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {

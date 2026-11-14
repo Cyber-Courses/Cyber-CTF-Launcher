@@ -197,13 +197,14 @@ pub(crate) trait RunService: Send + Sync {
     /// The events of every operation.
     fn events(&self) -> &EventLog;
 
-    /// Picks up the operations started before this app did (by an earlier run of it), so their
-    /// log and their end are events too.
-    fn pick_up_running(&self);
+    /// Follows the home's runner service for as long as its stream lasts: the operations another
+    /// process queued there (the command line, an earlier run of the app) told as events too,
+    /// and the screens of a lab whose run leaves its standing state ended.
+    fn follow_runner(&self) -> BoxFuture<'static, ()>;
 }
 
-/// How often the app looks for workers it didn't start.
-const PICK_UP_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+/// How long the app waits before following the runner service again once its stream ended.
+const FOLLOW_AGAIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// A boxed future, as a trait object's method returns one.
 pub(crate) type BoxFuture<'a, T> = std::pin::Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -242,14 +243,12 @@ pub(crate) fn start(app: &AppHandle) {
     let service = of(app);
     let to = app.clone();
     service.events().listen(Box::new(move |e| crate::app::events::emit(&to, RUN_EVENT, e.clone())));
-    // The workers this app didn't start (an earlier run of it, the command line), picked up as
-    // they are found: off the main thread, each look asks the OS about their processes.
-    let picking = Arc::clone(&service);
+    // What another process asks of the runner service (an earlier run of the app, the command
+    // line), told as it happens; followed again whenever the service's stream ends.
     tauri::async_runtime::spawn(async move {
         loop {
-            let service = Arc::clone(&picking);
-            let _ = tokio::task::spawn_blocking(move || service.pick_up_running()).await;
-            tokio::time::sleep(PICK_UP_EVERY).await;
+            service.follow_runner().await;
+            tokio::time::sleep(FOLLOW_AGAIN).await;
         }
     });
 }

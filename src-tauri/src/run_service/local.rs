@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use super::{AttachPick, BoxFuture, EventLog, OperationId, Request, RunEvent, RunService};
 use crate::error::{Code, Error, Result, Wire};
 use crate::platform::AppDirs;
+use crate::runtime::isothrum::Others;
 use crate::runtime::paths::lab_dir;
 use crate::runtime::{Operation, Runtime, attack_box};
 
@@ -203,10 +204,66 @@ impl RunService for LocalRunService {
         &self.events
     }
 
-    fn pick_up_running(&self) {
-        // Every operation that outlives the app runs in the home's runner service: what an
-        // earlier run of the app left there is the service's to report (its event stream).
+    fn follow_runner(&self) -> BoxFuture<'static, ()> {
+        let (dirs, events, running) = (self.dirs.clone(), Arc::clone(&self.events), Arc::clone(&self.running));
+        Box::pin(async move {
+            let mut told: HashMap<i64, (OperationId, String)> = HashMap::new();
+            let followed = crate::runtime::isothrum::follow_others(&dirs, &mut |seen| tell(&events, &running, &mut told, seen)).await;
+            if let Err(e) = followed {
+                log::debug!("the runner service isn't followed now: {e}");
+            }
+            // Told begun and not ended: their end is the service's to tell, which the next follow
+            // can't (it tells only what happens from then on).
+            let lost = || Error::Invalid("the runner service's stream ended before the operation did: see `cyberctf labs logs`".into()).to_wire();
+            for (id, _) in told.into_values() {
+                end(&events, &running, &id, Some(lost()));
+            }
+        })
     }
+}
+
+/// Tells what the runner service did that this process didn't ask for (`seen`), as run events:
+/// another process's operation (`told`: those begun, by the service's id), and a run that left
+/// its standing state, whose lab's screens end.
+fn tell(events: &EventLog, running: &Mutex<HashMap<OperationId, Running>>, told: &mut HashMap<i64, (OperationId, String)>, seen: Others) {
+    let lab_of = |run: &str| crate::runtime::lab_of_project(run).unwrap_or(run).to_owned();
+    match seen {
+        Others::Began { operation, run, op } => {
+            let Some(op) = ui_op(op) else { return };
+            let (id, lab_id) = (OperationId(format!("runner-{operation}")), lab_of(&run));
+            running.lock().unwrap_or_else(PoisonError::into_inner).insert(id.clone(), Running { lab_id: lab_id.clone(), op });
+            let deploying = !matches!(op, Operation::Stop | Operation::Pause | Operation::Shutdown);
+            events.emit(RunEvent::Started { operation: id.clone(), lab_id: lab_id.clone(), op, machine: None, runtime: None, deploying, at: now_ms() });
+            told.insert(operation, (id, lab_id));
+        }
+        Others::Line { operation, line } => {
+            if let Some((id, lab_id)) = told.get(&operation) {
+                events.emit(RunEvent::Log { operation: id.clone(), lab_id: lab_id.clone(), line });
+            }
+        }
+        Others::Ended { operation, error } => {
+            if let Some((id, _)) = told.remove(&operation) {
+                end(events, running, &id, error.map(|e| e.to_wire()));
+            }
+        }
+        Others::Left { run } => crate::screen::close_lab(&lab_of(&run)),
+    }
+}
+
+/// The UI's name of the runner's operation `op`; none for one the UI doesn't show (a check, an
+/// update of the run's project).
+fn ui_op(op: isothrum_runner::Op) -> Option<Operation> {
+    use isothrum_runner::Op;
+    Some(match op {
+        Op::Up => Operation::Launch,
+        Op::Down => Operation::Stop,
+        Op::Park => Operation::Pause,
+        Op::Resume => Operation::Resume,
+        Op::Provision => Operation::Provision,
+        Op::Attach => Operation::Attach,
+        Op::Detach | Op::Retire => Operation::Detach,
+        _ => return None,
+    })
 }
 
 /// Runs `request` in the app whose folders are `dirs`, its log lines to `log`.
