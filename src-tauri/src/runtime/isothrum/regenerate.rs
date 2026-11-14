@@ -43,8 +43,7 @@ pub(super) async fn current(manifest: &Path, dir: &Path, target: lab::Target) ->
     let Some(found) = stale_version(manifest) else { return Ok(()) };
     log::info!("{}: its run manifest is version {found}, which this version doesn't read; generating the lab's files again", manifest.display());
     let dir = dir.to_path_buf();
-    let generated = tokio::task::spawn_blocking(move || lab::prepare(&dir, target).map(drop)).await.map_err(|e| Error::Invalid(e.to_string()))?;
-    generated.map_err(|e| Error::Invalid(format!("{EARLIER_FILES}: {e}. {ADD_AGAIN}")))
+    crate::platform::off_runtime(move || lab::prepare(&dir, target).map(drop).map_err(|e| Error::Invalid(format!("{EARLIER_FILES}: {e}. {ADD_AGAIN}")))).await
 }
 
 /// The Isoloom target whose files hold a run manifest of `target` (what the runner records of a
