@@ -441,8 +441,8 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   come from. The `DisableUpdater` policy turns it off the same way.
 - **Tests, scripts and docs, reorganised.** End-to-end tests are under `e2e/` (`web/` with
   Playwright, `desktop/` with WebDriver), the integration tests (real labs on real tools) in
-  `src-tauri/src/integration_tests/`, run by tier with `pnpm test:integration`; the Proxmox and
-  ESXi builders moved to `infra/test-servers/` and the Windows installer smoke to `packaging/`.
+  `src-tauri/src/integration_tests/`, run by tier with `pnpm test:integration`; the Windows
+  installer smoke moved to `packaging/`.
   The suite runners share `scripts/lib/suite.sh` and take `--help`; `docs/` has an index, how labs
   run (`running-labs.md`) and the testing guide (`docs/testing/`).
 - **"Add a provider" on the Machine page is a provider picker.** It opened the lab-type guide,

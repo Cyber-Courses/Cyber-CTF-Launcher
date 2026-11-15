@@ -71,7 +71,7 @@ Not in the gate, run when the release touches them:
 - `packaging/windows/smoke-test.ps1`: the NSIS installer on Windows (paths with spaces, second
   instance, corrupt settings, read-only data folder, uninstall keeps data).
 - The integration tests, `tests/integration/run.sh` ([integration.md](integration.md)): real labs on
-  Docker, local VMs, an AWS account and servers (`infra/test-servers/` makes throwaway ones), with
+  Docker, local VMs, an AWS account and servers you provide (by their settings), with
   the attack box on each form. Run it when the release touches running labs.
 - The other ignored Rust tests that need real tools: `real_flag_labs_the_flag_contract_holds_on_the_runner` (the flag
   contract, with the backend), `fake_clis` (cloud reaper and hung CLI, `--test-threads=1`),

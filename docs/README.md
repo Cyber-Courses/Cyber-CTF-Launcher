@@ -43,5 +43,4 @@ the way in: what the launcher is, how to install it, and what it needs.
 | [Release process](release-process.md)                   | making a release: version, tag, what the workflow signs and checks, its secrets |
 | [Design system](design-system.md)                       | the launcher's design system: tokens, type, surfaces, components, patterns      |
 | [Scripts](../scripts/README.md)                         | the repository's runner scripts                                                 |
-| [Test servers](../infra/test-servers/README.md)         | throwaway Proxmox and ESXi hosts for the integration tests                      |
 | [Microsoft Store listing](../packaging/store/README.md) | the Store listing that ships with each release                                  |

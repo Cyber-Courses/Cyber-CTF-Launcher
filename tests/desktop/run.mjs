@@ -229,11 +229,10 @@ if (SESSION) {
 
 // --- Fixtures --------------------------------------------------------------------------------
 /** The lab folder the local specs import: CYBERCTF_TEST_LOCAL_LAB, else the fixture lab checked
- *  out (the same lab the server tests deploy, under infra/test-servers/.state; on Windows under
- *  tests/desktop/.state), pulled when it is there already. */
+ *  out under tests/desktop/.state, pulled when it is there already. */
 function fixtureLab() {
   if (process.env.CYBERCTF_TEST_LOCAL_LAB) return process.env.CYBERCTF_TEST_LOCAL_LAB;
-  const dir = join(WINDOWS ? join(HERE, ".state") : join(ROOT, "infra", "test-servers", ".state"), "labs", "invoice-portal-api");
+  const dir = join(HERE, ".state", "labs", "invoice-portal-api");
   try {
     if (existsSync(join(dir, ".git"))) execFileSync("git", ["-C", dir, "pull", "-q"], { stdio: "ignore", timeout: 120000 });
     else execFileSync("git", ["clone", "-q", "https://github.com/CyberCTF/invoice-portal-api", dir], { stdio: "ignore", timeout: 300000 });

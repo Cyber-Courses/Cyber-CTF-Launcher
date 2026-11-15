@@ -38,8 +38,8 @@ tests/
 `coverage.yml`, `e2e.yml`, `lint-infra.yml`) but the Terraform templates' validation, one verdict
 per step; `pnpm release-check` adds the desktop end-to-end
 ([release-check.md](../docs/testing/release-check.md)). [integration.md](../docs/testing/integration.md)
-lists the integration scenarios and what each guards against; `infra/test-servers/` makes
-throwaway Proxmox and ESXi hosts for their server tier.
+lists the integration scenarios and what each guards against, and the settings that name the
+Proxmox and ESXi hosts of their server tier.
 
 ## Knobs
 
