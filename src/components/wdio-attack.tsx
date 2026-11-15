@@ -1,11 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import { AttackBoxPanel } from "@/features/labs/attack-box-panel";
 import { useAttackBox } from "@/features/labs/use-attack-box";
 import { useLabShell } from "@/features/labs/lab-detail/use-lab-shell";
 
-/** The lab id a test asked the attack-box panel to mount for, read once. */
+/**
+ * What a spec dispatches on `window` once it has set `__wdio_attack__`: the panel mounts then,
+ * with no page reload (a reload right after launch ends the Windows app with a fast-fail).
+ */
+export const WDIO_ATTACK_EVENT = "cyberctf:wdio-attack";
+
+/** Calls `changed` whenever a spec says the lab to mount the panel for changed. */
+function subscribe(changed: () => void): () => void {
+  window.addEventListener(WDIO_ATTACK_EVENT, changed);
+  return () => {
+    window.removeEventListener(WDIO_ATTACK_EVENT, changed);
+  };
+}
+
+/** The lab id a test asked the attack-box panel to mount for. */
 function wdioAttackLab(): string | null {
   try {
     return localStorage.getItem("__wdio_attack__");
@@ -23,8 +37,8 @@ function wdioAttackLab(): string | null {
  * Mounted only in a build that carries the e2e hooks (`WdioHooks`), never a release build.
  */
 export function WdioAttack() {
-  // Read once at mount (like the Settings-driven flags), so there is no setState in an effect.
-  const [labId] = useState<string | null>(wdioAttackLab);
+  // Read at mount, and again whenever a spec dispatches WDIO_ATTACK_EVENT.
+  const labId = useSyncExternalStore(subscribe, wdioAttackLab, () => null);
   if (!labId) return null;
   return <WdioAttackPanel labId={labId} />;
 }
