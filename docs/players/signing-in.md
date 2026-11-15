@@ -1,6 +1,6 @@
 # Signing in
 
-The launcher signs in to [Cyber Auth](https://www.cyberauth.co) the way desktop and CLI apps should (RFC 8252): the player never copies a token. The code is in [`src-tauri/src/account/`](../src-tauri/src/account/).
+The launcher signs in to [Cyber Auth](https://www.cyberauth.co) the way desktop and CLI apps should (RFC 8252): the player never copies a token. The code is in [`src-tauri/src/account/`](../../src-tauri/src/account/).
 
 1. **Sign in** opens the system browser on cyberauth.co with an OAuth 2.0 authorization code request protected by PKCE (S256). A player already signed in there only confirms the account (`prompt=select_account`).
 2. cyber-auth redirects to a one-shot server the launcher runs on `http://127.0.0.1:<port>/callback` (the first free one of 47290, 47291, 47292). The launcher checks the `state`, exchanges the code with its PKCE verifier, and only then tells the browser tab "You're signed in. You can close this tab."
@@ -17,4 +17,4 @@ The sidebar and **Settings > Account** show who is signed in (name and email fro
 
 The OAuth client in cyber-auth must be first-party and public (`token_endpoint_auth_method: none`, PKCE required, consent skipped), use the `authorization_code` and `refresh_token` grants, and have these redirect URIs: `http://127.0.0.1:47290/callback`, `http://127.0.0.1:47291/callback`, `http://127.0.0.1:47292/callback`. **Use a code instead** also needs the `urn:ietf:params:oauth:grant-type:device_code` grant on that client; until it has it, cyber-auth answers `unauthorized_client` and the launcher says signing in with a code isn't available yet, pointing to the copy-the-link fallback.
 
-The endpoints and the client id can be overridden for testing: see [reference/configuration.md](reference/configuration.md).
+The endpoints and the client id can be overridden for testing: see [reference/configuration.md](../admins/configuration.md).

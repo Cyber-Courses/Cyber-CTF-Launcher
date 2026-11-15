@@ -9,7 +9,7 @@ ESXi server, or in your own cloud account (AWS, Azure, Google Cloud, DigitalOcea
 Cloud), and installs and checks the tools each of them needs.
 
 It is for learners, for the trainers and teams who run Cyber CTF labs, and for the IT teams who
-deploy it: the [administrator guide](docs/admin-guide.md) has what a security review and a managed
+deploy it: the [administrator guide](docs/admins/admin-guide.md) has what a security review and a managed
 deployment need.
 
 ![The launcher's Overview: a running lab, one deploying, and the lab list (an earlier version)](packaging/store/images/en-us/screenshot-1.png)
@@ -18,7 +18,7 @@ deployment need.
 
 Every release is on [GitHub Releases](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/releases),
 with `SHA256SUMS` and a build provenance attestation for each file
-([verify a download](docs/admin-guide.md#verify-a-download)).
+([verify a download](docs/admins/admin-guide.md#verify-a-download)).
 
 ### macOS (Apple silicon and Intel)
 
@@ -80,9 +80,9 @@ What labs need, on the computer that runs them:
 - **VM labs**: hardware virtualization (Intel VT-x or AMD-V) turned on, a hypervisor (VirtualBox,
   VMware, Hyper-V, Parallels, libvirt, QEMU or UTM) and Vagrant.
 - **Server and cloud labs**: Terraform, and for a cloud its own CLI; see
-  [running labs](docs/running-labs.md#accounts-and-servers) for what a Proxmox or ESXi server needs.
+  [running labs](docs/players/running-labs.md#accounts-and-servers) for what a Proxmox or ESXi server needs.
 - **Network**: Cyber CTF's online services for signing in, the catalogue and starting labs. The
-  launcher can't run air-gapped ([network endpoints](docs/admin-guide.md#network)).
+  launcher can't run air-gapped ([network endpoints](docs/admins/admin-guide.md#network)).
 
 The launcher's first-run setup and its **Machine** page check all of this and install what is
 missing.
@@ -95,15 +95,15 @@ missing.
 4. When it is up, **Open attacker shell** and start hacking.
 5. **Stop & remove** when you're done.
 
-[Getting started](docs/getting-started.md) walks through it in detail;
-[troubleshooting](docs/troubleshooting.md) helps when something goes wrong.
+[Getting started](docs/players/getting-started.md) walks through it in detail;
+[troubleshooting](docs/players/troubleshooting.md) helps when something goes wrong.
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md) and [troubleshooting](docs/troubleshooting.md)
-- [Administrator guide](docs/admin-guide.md): silent install, network endpoints and ports, proxy
+- [Getting started](docs/players/getting-started.md) and [troubleshooting](docs/players/troubleshooting.md)
+- [Administrator guide](docs/admins/admin-guide.md): silent install, network endpoints and ports, proxy
   and certificates, files and data, machine changes, privacy, uninstall; and the
-  [policy reference](docs/reference/policy.md)
+  [policy reference](docs/admins/policy.md)
 - [All the docs](docs/README.md), by what you came to do
 
 ## Signed releases
@@ -121,12 +121,12 @@ missing.
 - Questions and bugs: [SUPPORT.md](SUPPORT.md). Settings > About has the diagnostics and logs to
   attach.
 - Security vulnerabilities: report them privately, as [SECURITY.md](SECURITY.md) says. Only the
-  latest release gets fixes ([versioning and support policy](docs/reference/versioning.md)).
+  latest release gets fixes ([versioning and support policy](docs/admins/versioning.md)).
 
 ## Contributing
 
 Contributions are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the tests and the
-gates, and [docs/architecture.md](docs/architecture.md) maps the code. Please follow the
+gates, and [docs/contributing/architecture.md](docs/contributing/architecture.md) maps the code. Please follow the
 [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Licence

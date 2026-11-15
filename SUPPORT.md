@@ -2,8 +2,8 @@
 
 | You want to…                                              | Go to                                                                                  |
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Install the launcher or fix a common problem              | the [README](README.md) and [troubleshooting](docs/troubleshooting.md)                 |
-| Deploy it in a company (network, files, silent install)   | the [administrator guide](docs/admin-guide.md)                                         |
+| Install the launcher or fix a common problem              | the [README](README.md) and [troubleshooting](docs/players/troubleshooting.md)         |
+| Deploy it in a company (network, files, silent install)   | the [administrator guide](docs/admins/admin-guide.md)                                  |
 | Report a bug or ask for a feature                         | [GitHub issues](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/issues/new/choose) |
 | Ask about your account, a subscription or a lab's content | [cyberctf.com/contact](https://www.cyberctf.com/contact)                               |
 | Report a security problem                                 | [SECURITY.md](SECURITY.md), privately: not in an issue                                 |
@@ -28,6 +28,6 @@ machine, a server, a cloud account).
 ## What we support
 
 The latest release, on the platforms in the [README](README.md#system-requirements). Older
-versions get no fixes: update first ([versioning and support policy](docs/reference/versioning.md)).
+versions get no fixes: update first ([versioning and support policy](docs/admins/versioning.md)).
 Issues are answered on a best-effort basis; there is no guaranteed response time outside security
 reports.

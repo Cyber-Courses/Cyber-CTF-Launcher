@@ -33,7 +33,7 @@ the fixture lab (the Invoice Portal API lab, under `tests/desktop/.state/labs`) 
 It is safe on a machine someone uses: the app keeps all of its own (data, settings, logs, webview
 data, session, secrets) in a folder made for the run and removed after it, and every clean-up
 removes only what the run made, by the records it wrote: never the user's labs, images, boxes or
-apps ([tests/README.md](../../tests/README.md#a-desktop-runs-own-folder)).
+apps ([tests/README.md](../../../tests/README.md#a-desktop-runs-own-folder)).
 
 ## Results
 
@@ -59,7 +59,7 @@ check, named `<spec>/<check>` (counted once, under the spec):
 
 With `--results <file>` (`-Results` on Windows) the runner also appends a JSON record per spec and
 per check there, and `--list` (`-List`) prints its cases, each with its knobs, groups and needs
-([tests/README.md](../../tests/README.md#results)).
+([tests/README.md](../../../tests/README.md#results)).
 Its exit status: 0 nothing failed, 1 a spec failed, 2 the runner itself couldn't run; `STRICT=1`
 fails a skip. Logs: `tests/desktop/.state/logs/<spec>.log`, and the apps' own logs under
 `tests/desktop/.state/logs/app/` (copied from the run's folder before it goes, without the lines
@@ -122,13 +122,13 @@ than the rest writes its own results file; `launch`'s record then appears in two
 ## Knobs
 
 From the environment or the `--knobs` file (`KEY=value` lines, read literally, never sourced,
-as the test rig writes its settings files). [tests/README.md](../../tests/README.md#knobs) lists
+as the test rig writes its settings files). [tests/README.md](../../../tests/README.md#knobs) lists
 each, with the specs that read it.
 
 ## Feature map
 
 Every feature a player uses, the spec that drives it, what it needs, and what is left to the
-integration tests (`docs/testing/integration.md`) or the unit tests. Cloud accounts are out of
+integration tests (`docs/contributing/testing/integration.md`) or the unit tests. Cloud accounts are out of
 this layer: the integration tests' AWS tier covers them.
 
 | Feature                                                                         | Spec                                                                                                | Needs                                                                      | Left to the integration or unit tests                                                    |
@@ -235,7 +235,7 @@ xvfb-run -a dbus-run-session -- tests/desktop/run.sh --all --knobs ~/e2e.env
 pwsh -File tests\desktop\run.ps1 -All -Knobs $HOME\e2e.env
 ```
 
-Such a caller reads the records `--results` writes ([tests/README.md](../../tests/README.md#results)):
+Such a caller reads the records `--results` writes ([tests/README.md](../../../tests/README.md#results)):
 a line per spec, and a line per check as `<spec>/<check>`; the summary on screen says the same.
 
 ## Why the runner does what it does

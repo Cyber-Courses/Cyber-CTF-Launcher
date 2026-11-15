@@ -4,7 +4,7 @@ name: Native GUI e2e
 # WebDriver server, `--features wdio`, and the frontend's test hooks, `NEXT_PUBLIC_WDIO=1`) driven
 # through its own window under Xvfb, against the runner's Docker engine: the scenarios in
 # tests/desktop/, as scripts/release/release-check.sh runs them on a developer machine
-# (docs/testing/release-check.md).
+# (docs/contributing/testing/release-check.md).
 # Manual for now: the scenarios build the fixture lab's images and take a while, and a Linux
 # runner has no hypervisor, so the VM scan is skipped here (a Mac with UTM runs it locally).
 # Promote to a schedule once a few manual runs are green.

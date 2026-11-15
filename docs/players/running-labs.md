@@ -273,4 +273,4 @@ macOS the runner's ovftool wrapper for ESXi hands over to that same first `ovfto
 `ovftool` in a folder already on your shell's `PATH` (when the launcher is started from a
 terminal) comes before them all when a lab runs.
 
-`docs/testing/integration.md` runs a lab on a Proxmox or ESXi host given by its settings.
+`docs/contributing/testing/integration.md` runs a lab on a Proxmox or ESXi host given by its settings.

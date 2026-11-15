@@ -6,7 +6,7 @@ account and an internet connection.
 
 ## 1. Install the launcher
 
-Install it for your system as the [README](../README.md#install) says, then open **Cyber CTF**.
+Install it for your system as the [README](../../README.md#install) says, then open **Cyber CTF**.
 
 ## 2. Sign in
 

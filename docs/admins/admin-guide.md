@@ -17,7 +17,7 @@ In short:
   macOS DMG or Homebrew cask, `.deb`). The
   tools labs need are installed on demand, each through the OS's own elevation prompt.
 - Machine-wide settings an administrator can enforce are in the
-  [policy reference](reference/policy.md).
+  [policy reference](policy.md).
 
 ## Contents
 
@@ -90,7 +90,7 @@ The package depends on `libwebkit2gtk-4.1-0`, `libgtk-3-0` and `pkexec` (or `pol
 builds target glibc 2.35 (Ubuntu 22.04) and later.
 
 **Admin policy.** Settings that apply to every user of a machine, and that users cannot change,
-are described in the [policy reference](reference/policy.md).
+are described in the [policy reference](policy.md).
 
 ## Updates
 
@@ -113,11 +113,11 @@ it waits while any lab operation runs (a start, a stop, a pause or a provisionin
 or in a deploy worker), because installing quits every Cyber CTF process. On Windows the update
 runs the same kind of installer as the installed one (NSIS or MSI); the MSI needs administrator
 rights. For a managed fleet, deploy new
-versions with your own tooling and see the [policy reference](reference/policy.md) for turning the
+versions with your own tooling and see the [policy reference](policy.md) for turning the
 updater off.
 
 Versions follow semantic versioning, and only the latest release gets security fixes
-([versioning and support policy](reference/versioning.md)).
+([versioning and support policy](versioning.md)).
 
 ## Verify a download
 
@@ -167,7 +167,7 @@ The app window shows the account's profile picture when the identity provider gi
 account's initials); everything else in the window is bundled with the app.
 
 The endpoints of Cyber CTF's services are fixed in a released build; only development builds read
-them from the environment ([configuration reference](reference/configuration.md)).
+them from the environment ([configuration reference](configuration.md)).
 
 ### Traffic of the tools the launcher runs
 
@@ -327,7 +327,7 @@ launcher never asks for or stores a password itself.
   `tools/ovftool/` in the app data folder, once it holds VMware's OVF Tool; on macOS only once the
   program and its libraries are verified as signed by VMware's Developer ID (team `EG7KH642X6`),
   and it then removes `com.apple.quarantine` from that copy, not from the download. It is refused
-  under `DisableToolInstalls`. Details: [running labs](running-labs.md#the-ovf-tool-for-esxi).
+  under `DisableToolInstalls`. Details: [running labs](../players/running-labs.md#the-ovf-tool-for-esxi).
 
 **Windows.**
 
@@ -406,7 +406,7 @@ machine. To keep user names out of the machine name, set `CYBERCTF_AGENT_NAME` f
 A launch started from the website never runs unattended: the launcher brings its window forward
 and asks the user to approve it, naming the lab, where it would run (this computer, or the server
 or cloud account by name) and whether it has privileged machines. A decline, or no answer within
-three minutes, refuses it and tells the website why. The [policy reference](reference/policy.md) says how an administrator
+three minutes, refuses it and tells the website why. The [policy reference](policy.md) says how an administrator
 controls this.
 
 Cyber CTF's privacy policy: <https://www.cyberctf.com/privacy>.

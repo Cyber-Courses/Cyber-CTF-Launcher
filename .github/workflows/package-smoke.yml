@@ -171,7 +171,7 @@ jobs:
           Write-Host "Still running after $($env:SMOKE_SECONDS)s."
           Stop-Process -Id $app.Id -Force
 
-      # The silent install and removal docs/admin-guide.md gives administrators: msiexec /qn.
+      # The silent install and removal docs/admins/admin-guide.md gives administrators: msiexec /qn.
       - name: Install, launch and remove (Windows, the MSI)
         if: runner.os == 'Windows' && matrix.bundles == 'msi'
         shell: pwsh

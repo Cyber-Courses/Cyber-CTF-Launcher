@@ -5,7 +5,7 @@
 The launcher follows [semantic versioning](https://semver.org/spec/v2.0.0.html), `MAJOR.MINOR.PATCH`,
 for what its users and administrators rely on: how it is installed and removed, the
 [policy](policy.md) and [configuration](configuration.md) it reads, the files and keychain entries
-it keeps ([administrator guide](../admin-guide.md#files-and-data)), and the labs it can run.
+it keeps ([administrator guide](admin-guide.md#files-and-data)), and the labs it can run.
 
 | Part  | Goes up when                                                                                                                                                              |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -9,7 +9,7 @@ name: Release
 # CycloneDX SBOMs of the Rust and npm dependencies, SHA256SUMS of every asset, and a signed build
 # provenance attestation of each (`gh attestation verify <file> --repo <this repo>`). A tag build
 # stops before building when a signing secret is missing, and checks every signature it made.
-# docs/release-process.md walks a maintainer through it.
+# docs/contributing/release-process.md walks a maintainer through it.
 
 on:
   push:

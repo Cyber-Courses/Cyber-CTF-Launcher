@@ -101,7 +101,7 @@ Every runner script takes `--help`.
 ## The gates
 
 A pull request must pass what CI runs. `pnpm check` runs all of it on your machine, one
-verdict per step ([docs/testing/release-check.md](docs/testing/release-check.md) lists them):
+verdict per step ([docs/contributing/testing/release-check.md](docs/contributing/testing/release-check.md) lists them):
 versions, the docs' links, formatting, types, ESLint, the build, the quality ratchet, the unit
 tests with the coverage floors, the committed bindings, clippy for the other platforms, `cargo
 deny`, `pnpm audit`, shellcheck, actionlint, the actions' pins, the Store listings' JSON and
@@ -144,7 +144,7 @@ pnpm check                             # what CI runs (pnpm release-check adds t
 
 ## Where things are
 
-[docs/architecture.md](docs/architecture.md) maps the code: the Next.js UI (`src/`), the Rust core
+[docs/contributing/architecture.md](docs/contributing/architecture.md) maps the code: the Next.js UI (`src/`), the Rust core
 (`src-tauri/`), and how labs run through Isoloom and the Isothrum runner.
-[docs/design-system.md](docs/design-system.md) is the UI's design system, and
-[docs/release-process.md](docs/release-process.md) how a release is made.
+[docs/contributing/design-system.md](docs/contributing/design-system.md) is the UI's design system, and
+[docs/contributing/release-process.md](docs/contributing/release-process.md) how a release is made.

@@ -2,7 +2,7 @@
 
 For maintainers: how a version of the launcher is made, signed and shipped. A release is a
 `vX.Y.Z` tag on `main`; `.github/workflows/release.yml` does the rest. Version numbers follow the
-[versioning policy](reference/versioning.md).
+[versioning policy](../admins/versioning.md).
 
 ## Before the tag
 
@@ -15,7 +15,7 @@ For maintainers: how a version of the launcher is made, signed and shipped. A re
 3. **Changelog.** Rename `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] — YYYY-MM-DD` and
    start a new empty `## [Unreleased]` above it.
 4. **Store listing.** Update `releaseNotes` in `packaging/store/listings/<lang>.json`
-   ([packaging/store/README.md](../packaging/store/README.md)).
+   ([packaging/store/README.md](../../packaging/store/README.md)).
 5. Commit as `Cyber CTF X.Y.Z`, with a short summary of the release in the body, on `main`.
 
 ## Tag
@@ -32,7 +32,7 @@ git push origin vX.Y.Z
 | `preflight`   | the Tauri JS/Rust versions agree; on a tag, says which signing secrets are missing (a warning: what they sign ships unsigned, the release goes on)                                |
 | `e2e`         | the web end-to-end suite (`e2e.yml`); red, the release stops here                                                                                                                 |
 | `prepare`     | creates the draft GitHub release (through the `cyber-ctf-creator` GitHub App), once `preflight` and `e2e` are green                                                               |
-| `third-party` | `pnpm notices` and `pnpm sbom` ([scripts/release/third-party.ts](../scripts/release/third-party.ts)): THIRD_PARTY_NOTICES and the CycloneDX SBOMs, attached to the release        |
+| `third-party` | `pnpm notices` and `pnpm sbom` ([scripts/release/third-party.ts](../../scripts/release/third-party.ts)): THIRD_PARTY_NOTICES and the CycloneDX SBOMs, attached to the release     |
 | `release`     | builds on five runners (macOS universal, Linux x64 and arm64 on Ubuntu 22.04, Windows x64 and Arm64), signs, **verifies the signatures**, uploads to the draft; notarizes the DMG |
 | `attest`      | `SHA256SUMS` of every asset, and a build provenance attestation of each                                                                                                           |
 | `publish`     | takes the draft live (tags only), its notes naming any platform whose build failed; one platform's failure never holds the others back                                            |
