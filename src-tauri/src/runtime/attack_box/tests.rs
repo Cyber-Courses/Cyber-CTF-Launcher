@@ -146,6 +146,36 @@ fn layer_machine(dir: &Path) -> Value {
     layer["machines"][NAME].clone()
 }
 
+/// The toolset's part of the set-up run on stand-ins for `dpkg-query` and `apt-get` (the box has
+/// the toolset when `installed`): the `apt-get` calls it made.
+#[cfg(unix)]
+fn toolset_calls(installed: bool) -> Vec<String> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = crate::testing::temp_dir("attack-box-toolset");
+    let calls = dir.join("apt-calls");
+    let status = if installed { "install ok installed" } else { "" };
+    let stubs = [("dpkg-query", format!("#!/bin/sh\nprintf '%s' '{status}'\n")), ("apt-get", format!("#!/bin/sh\necho \"$*\" >> '{}'\n", calls.display()))];
+    for (name, body) in stubs {
+        std::fs::write(dir.join(name), body).unwrap();
+        std::fs::set_permissions(dir.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let script = format!("keep=''\n{}", super::TOOLSET);
+    let path = format!("{}:/usr/bin:/bin", dir.display());
+    #[allow(clippy::disallowed_methods, reason = "the test runs the script's own shell on stand-ins")]
+    let ran = std::process::Command::new("sh").args(["-c", &script]).env("PATH", path).status().unwrap();
+    assert!(ran.success());
+    std::fs::read_to_string(&calls).map(|t| t.lines().map(str::to_owned).collect()).unwrap_or_default()
+}
+
+/// Regression (#303): every new box upgraded Kali's toolset from the rolling archive. A box whose
+/// image has it takes nothing from the archive; one that lacks it is given it.
+#[cfg(unix)]
+#[test]
+fn a_box_whose_image_has_the_toolset_installs_nothing_and_one_without_is_given_it() {
+    assert_eq!(toolset_calls(true), [] as [String; 0], "the image's toolset is never upgraded at a box's creation");
+    assert_eq!(toolset_calls(false), ["update", "install -y kali-linux-headless"]);
+}
+
 #[test]
 fn a_vm_box_makes_the_player_account_once_its_toolset_is_in() {
     // Regression: the box's shell opened as the VM's login (`vagrant` on Windows' Hyper-V),

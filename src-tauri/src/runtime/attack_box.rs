@@ -101,7 +101,7 @@ fn setup_script(desktop: bool) -> String {
         "  {PRIVATE_WORKDIR}\n  {NEED_GPG}\n  curl -fsSL https://archive.kali.org/archive-keyring.gpg -o \"$d/key\"\n  {}\n  install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg\n",
         check_keys(&KALI_ARCHIVE_KEYS, "Kali's archive")
     );
-    [SETUP_START, &keyring, SETUP_REST, &player_account(), "\n", if desktop { DESKTOP } else { "" }].concat()
+    [SETUP_START, &keyring, SETUP_REST, TOOLSET, &player_account(), "\n", if desktop { DESKTOP } else { "" }].concat()
 }
 
 /// The set-up up to Kali's archive keyring, on a Debian VM.
@@ -128,8 +128,15 @@ const SETUP_REST: &str = r"  echo 'deb [signed-by=/usr/share/keyrings/kali-archi
   apt-get full-upgrade -y --allow-downgrades $keep
   apt-get install -f -y $keep
 fi
-apt-get update
-apt-get install -y $keep kali-linux-headless
+";
+
+/// Kali's headless toolset, installed only on a box that lacks it: the toolset is the box image's,
+/// installed and upgraded once when the image is built, so a box that has it takes nothing of
+/// Kali's rolling archive when it is created.
+const TOOLSET: &str = r"if ! dpkg-query -W -f='${Status}' kali-linux-headless 2>/dev/null | grep -q 'ok installed'; then
+  apt-get update
+  apt-get install -y $keep kali-linux-headless
+fi
 ";
 
 /// Its disk: room for Kali's headless toolset (about 12 GB) beside the image, and for the desktop
