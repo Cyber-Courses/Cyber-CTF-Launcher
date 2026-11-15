@@ -7,7 +7,7 @@
 #
 #   tests/integration/run.sh                                            the local tier: Docker, VMs here
 #   CYBERCTF_TEST_INTEGRATION_TIERS="local aws" tests/integration/run.sh   and the AWS tier (billed while it runs)
-#   CYBERCTF_TEST_INTEGRATION_TIERS=server tests/integration/run.sh        a lab on a Proxmox / ESXi host (infra/test-servers)
+#   CYBERCTF_TEST_INTEGRATION_TIERS=server tests/integration/run.sh        a lab on a Proxmox / ESXi host (its settings below)
 #   ONLY="attack-box-docker attack-box-vm" tests/integration/run.sh
 #   tests/integration/run.sh --only vm-lab@virtualbox                   one scenario on one hypervisor (the rig's shard)
 #   tests/integration/run.sh --results results.jsonl                    and a JSON record per scenario there
@@ -48,7 +48,6 @@
 #   CYBERCTF_TEST_PVE_ENDPOINT, _TOKEN, _NODE, _BRIDGE, _RUNNER_HOME (and _JUMP when the lab bridge
 #                                    is internal to the node): the Proxmox host of server-lab-proxmox
 #   CYBERCTF_TEST_ESXI_HOST, _PASSWORD (and _DATASTORE, _NETWORK): the ESXi host of server-lab-esxi
-#                                    (infra/test-servers/README.md makes either host)
 #   ONLY, SKIP, STRICT               as every suite runner (scripts/lib/suite.sh)
 #
 # Old names still read, while the workspace's test rig sets them (remove once it has moved):
@@ -556,15 +555,14 @@ if in_tier aws; then
 fi
 
 if in_tier server; then
-  # A lab on a server through the runner, as the launcher drives it; each host by its own knobs
-  # (infra/test-servers/README.md makes a throwaway one).
+  # A lab on a server through the runner, as the launcher drives it; each host by its own knobs.
   # Every setting a host's test reads checked first: one missing made the test panic, recorded FAIL.
   needs=$(unset_of CYBERCTF_TEST_PVE_ENDPOINT CYBERCTF_TEST_PVE_TOKEN CYBERCTF_TEST_PVE_NODE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_PVE_RUNNER_HOME)
-  [ -z "$needs" ] || NOT_HERE="not set: $needs (infra/test-servers/README.md)"
+  [ -z "$needs" ] || NOT_HERE="not set: $needs"
   scenario server-lab-proxmox vm proxmox "$PROXMOX" CYBERCTF_TEST_PVE_LAB="$SOLO"
   needs=$(unset_of CYBERCTF_TEST_ESXI_HOST CYBERCTF_TEST_ESXI_PASSWORD)
   NOT_HERE=""
-  [ -z "$needs" ] || NOT_HERE="not set: $needs (infra/test-servers/README.md)"
+  [ -z "$needs" ] || NOT_HERE="not set: $needs"
   scenario server-lab-esxi vm esxi "$ESXI" CYBERCTF_TEST_ESXI_LAB="$SOLO"
 fi
 

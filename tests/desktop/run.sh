@@ -38,7 +38,7 @@
 # Knobs (environment, or the knobs file; tests/README.md has each spec's):
 #   CYBERCTF_TEST_DESKTOP_APP     the app (default: the wdio `cargo build`, built here)
 #   CYBERCTF_TEST_LOCAL_LAB       the lab folder to import (default: a checkout of the Invoice Portal
-#                                 API lab under infra/test-servers/.state/labs)
+#                                 API lab under tests/desktop/.state/labs)
 #   CYBERCTF_TEST_ACCOUNT_SESSION a signed-in session (a dev-session.json), placed in the run's folder
 #                                 (its home/.cyberctf/), where the run's app reads it whatever the build
 #   CYBERCTF_TEST_VM_PROVIDER     the hypervisor for the VM specs (libvirt, virtualbox, hyperv, qemu, utm)

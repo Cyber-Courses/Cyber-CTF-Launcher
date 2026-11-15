@@ -96,7 +96,7 @@ signed out (a failure under `STRICT=1`).
 
 ## Server tier
 
-A Proxmox or an ESXi host (`infra/test-servers/` makes a throwaway one), named by its knobs: the lab
+A Proxmox or an ESXi host you provide, named by its knobs: the lab
 runs on it through the runner, as the launcher drives it, then nothing of it is left. Without
 every setting its test reads, its scenario is skipped, naming those not set (Proxmox:
 `CYBERCTF_TEST_PVE_ENDPOINT`, `_TOKEN`, `_NODE`, `_BRIDGE` and `CYBERCTF_TEST_PVE_RUNNER_HOME`, plus

@@ -28,8 +28,7 @@ from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A pac
 `native-e2e.yml` builds it
 (the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). Before the specs, the runner
 starts the app once and stops with a clear message when no WebDriver server answers. It checks out
-the fixture lab (the Invoice Portal API lab, under `infra/test-servers/.state/labs`, or
-`tests\desktop\.state\labs` on Windows) unless `CYBERCTF_TEST_LOCAL_LAB` names one.
+the fixture lab (the Invoice Portal API lab, under `tests/desktop/.state/labs`) unless `CYBERCTF_TEST_LOCAL_LAB` names one.
 
 It is safe on a machine someone uses: the app keeps all of its own (data, settings, logs, webview
 data, session, secrets) in a folder made for the run and removed after it, and every clean-up

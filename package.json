@@ -13,7 +13,7 @@
     "build": "next build",
     "lint": "eslint src scripts tests",
     "format": "pnpm format:check --write && cargo fmt --manifest-path src-tauri/Cargo.toml",
-    "format:check": "prettier --check \"{src,scripts,tests}/**/*.{ts,tsx,css,mjs}\" \"{*,docs/**/*,infra/**/*,scripts/**/*,tests/**/*}.md\"",
+    "format:check": "prettier --check \"{src,scripts,tests}/**/*.{ts,tsx,css,mjs}\" \"{*,docs/**/*,scripts/**/*,tests/**/*}.md\"",
     "typecheck": "next typegen && tsc --noEmit",
     "check:tauri": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check/tauri-versions.ts",
     "check:docs": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check/doc-links.ts",
