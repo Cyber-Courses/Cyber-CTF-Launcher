@@ -235,7 +235,7 @@ pub(super) async fn storage(command: Storage, ctx: &Context, out: &mut Output<'_
 /// The storage as text: each kind's items, with their sizes.
 fn storage_text(s: &Value) -> String {
     let mut lines = Vec::new();
-    for kind in ["images", "boxes", "plugins"] {
+    for kind in ["images", "boxes"] {
         for item in s[kind].as_array().into_iter().flatten() {
             lines.push(format!("{kind:<8} {:>14} {}", item["bytes"], item["name"].as_str().unwrap_or_default()));
         }
