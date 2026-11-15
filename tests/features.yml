@@ -1669,7 +1669,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/attack_box/place.rs > the_box_shell_opens_as_the_player_account_on_every_local_form
-            - src-tauri/src/runtime/attack_box/tests.rs > the_image_and_its_smoke_test_name_the_launchers_player_account
+            - src-tauri/src/runtime/attack_box/tests.rs > a_container_box_makes_the_player_account_where_it_starts_then_idles
             - src-tauri/src/runtime/attack_box/tests.rs > a_vm_box_makes_the_player_account_once_its_toolset_is_in
           desktop:
             - attack-shell/whoami
