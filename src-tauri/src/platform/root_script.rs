@@ -17,7 +17,9 @@ macro_rules! private_workdir {
 /// apt waits up to ten minutes for the dpkg lock there (`APT_CONFIG`, a file in `$d`): a fresh
 /// Debian runs unattended-upgrades at boot, and the guided setup's Vagrant install met its lock
 /// ("Could not get lock /var/lib/dpkg/lock-frontend. It is held by process … (unattended-upgr)",
-/// exit 100) and failed instead of waiting.
+/// exit 100) and failed instead of waiting. Every root script gets it through [`PRELUDE`]; on its
+/// own, only the tests below read it (the attack box's VM set-up, which used it, is pinned now).
+#[cfg(test)]
 pub const PRIVATE_WORKDIR: &str = private_workdir!();
 
 /// A shell script run as root (pkexec on Linux). The only way to make one is [`RootScript::new`],

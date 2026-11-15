@@ -3,7 +3,7 @@ import { IMAGE_PATTERN } from "@/lib/tauri/generated/Patterns";
 import { translate } from "@/lib/i18n";
 import { readStored, readStoredOneOf, writeStored } from "@/lib/local-store";
 import { ignore } from "@/lib/failure";
-import defaultAttackBox from "../../src-tauri/attack-box-image.json";
+import defaultAttackBox from "../../src-tauri/attack-box/image.json";
 
 /** Per-machine launcher preferences, kept locally. */
 
@@ -11,8 +11,8 @@ const ATTACK_IMAGE_KEY = "cyberctf.attackbox.image";
 
 /**
  * Default attack box: the Cyber CTF image (Kali with its standard toolset, published to
- * Docker Hub by the attack-box workflow), pinned by digest so every player on one launcher
- * version gets the same tested box. The digest lives in `src-tauri/attack-box-image.json`
+ * Docker Hub by the attack box repository, CyberCTF/attack-box), pinned by digest so every player on one launcher
+ * version gets the same tested box. The digest lives in `src-tauri/attack-box/image.json`
  * (the Rust core reads it too), which the workflow's bump PR rewrites after each smoke-tested
  * publish. Exegol is licensed (free for personal use, paid for pro/commercial), so it's only
  * an opt-in preset.
@@ -78,7 +78,7 @@ export const ATTACK_PRESETS: { image: string; label: string; note: string; large
 ];
 
 /** The attack box image the learner saved, null when they follow the default (the backend then
- *  runs its own, read from the same `attack-box-image.json`). A saved old default is migrated:
+ *  runs its own, read from the same `src-tauri/attack-box/image.json`). A saved old default is migrated:
  *  the key is cleared, so this machine follows the default from then on. */
 export function savedAttackImage(): string | null {
   const saved = readStored(ATTACK_IMAGE_KEY);

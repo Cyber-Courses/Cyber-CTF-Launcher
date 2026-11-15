@@ -13,7 +13,6 @@ on:
       - "**/*.tf"
       - "**/*.hcl"
       - "**/*.sh"
-      - "images/attack-box/**"
       - "src/messages/**"
       - "packaging/store/**"
   push:

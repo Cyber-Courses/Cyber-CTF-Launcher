@@ -24,9 +24,10 @@ case "${1:-}" in
   shellcheck)
     # Real scripts only: test fixtures under testdata/ are sample inputs. The git hooks
     # (.githooks/) have no extension. Read line by line: bash 3.2 has no mapfile. Intentional
-    # exceptions are marked in the scripts with a reason.
+    # exceptions are marked in the scripts with a reason. The attack box's VM parts are pinned
+    # copies of fragments of one script, checked in their own repository.
     scripts=()
-    while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files '*.sh' '*.bash' 'images/attack-box/bashrc.cyberctf' '.githooks/*' ':(exclude)*/testdata/*')
+    while IFS= read -r f; do scripts+=("$f"); done < <(git ls-files '*.sh' '*.bash' '.githooks/*' ':(exclude)*/testdata/*' ':(exclude)src-tauri/attack-box/vm/*')
     shellcheck --severity=warning --external-sources "${scripts[@]}"
     ;;
   -h | --help)

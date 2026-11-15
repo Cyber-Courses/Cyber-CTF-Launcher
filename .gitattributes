@@ -1,6 +1,6 @@
 # LF everywhere, whatever core.autocrlf says: Git for Windows defaults to CRLF checkouts, which
-# fail `pnpm check` (Prettier wants LF) and break the shell scripts copied into Linux images
-# (images/attack-box/*.sh, bashrc.cyberctf).
+# fail `pnpm check` (Prettier wants LF) and break the shell scripts run in Linux boxes
+# (src-tauri/attack-box/).
 * text=auto eol=lf
 
 # Windows-only scripts keep CRLF.
