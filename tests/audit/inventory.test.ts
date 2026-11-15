@@ -179,6 +179,15 @@ describe("the hypervisors' objects", () => {
     expect(parse("vmware-network", "hosts.txt")).toEqual([]);
   });
 
+  it("reads Workstation's virtual networks on Windows as snapshot.ps1 writes its VMnetConfig key", () => {
+    // #352: a lab's vmnet on Windows went unreported (the kind was Linux and macOS only).
+    expect(parse("vmware-network", "vmware-network-windows.txt").map((n) => n.name)).toEqual([
+      "vmnet1 192.168.115.0/255.255.255.0 host-only",
+      "vmnet2 10.80.0.0/255.255.255.0 host-only",
+      "vmnet8 192.168.40.0/255.255.255.0 nat",
+    ]);
+  });
+
   it("reads UTM's and Parallels' VMs by UUID", () => {
     expect(parse("utm-vm", "utm-vm.txt").map((v) => [v.key, v.name])).toEqual([
       ["6C7E3B58-2D4F-4C1A-9F65-1B2D3C4E5F60", "hello-stack - isoloom-docker-host"],
