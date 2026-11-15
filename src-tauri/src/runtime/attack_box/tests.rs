@@ -383,3 +383,21 @@ fn a_shared_folder_with_a_combining_mark_in_its_name_is_mounted() {
         remove(&dir).unwrap();
     }
 }
+
+#[test]
+fn a_test_runs_bare_box_skips_kalis_toolset_and_nothing_else() {
+    // The integration runner's attack-box-vm scenarios: the box without the toolset install that
+    // took them past their caps; its account, desktop and Kali archive set up as ever.
+    for desktop in [false, true] {
+        let (full, bare) = (setup_script_with(desktop, true), setup_script_with(desktop, false));
+        assert!(full.contains(TOOLSET) && !bare.contains("kali-linux-headless"), "the toolset's install alone goes");
+        let marker = "# Kali's toolset left out: a test run's bare box (CYBERCTF_TEST_BOX_SKIP_TOOLS).\n";
+        assert_eq!(bare, full.replace(TOOLSET, marker), "everything else as it was");
+        assert!(bare.contains(&player_account()) && bare.contains(SETUP_REST));
+    }
+    // Only `1` turns it off, and only in a test build (`toolset_wanted` is `true` in the app's).
+    assert!(!toolset_wanted_given(Some("1")));
+    for other in [None, Some("0"), Some(""), Some("yes")] {
+        assert!(toolset_wanted_given(other), "{other:?}");
+    }
+}

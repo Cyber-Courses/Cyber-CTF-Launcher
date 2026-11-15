@@ -93,15 +93,49 @@ const SETUP_FILE: &str = "cyberctf-attackbox.sh";
 const KALI_ARCHIVE_KEYS: [&str; 2] = ["827C8569F2518CC677FECA1AED65462EC8D5E4C5", "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6"];
 
 /// The set-up script: [`SETUP_START`], Kali's archive keyring downloaded into a private work
-/// directory and checked there, then [`SETUP_REST`], then the player's account
-/// ([`player_account`], once the toolset brought sudo), then the desktop when it has one.
+/// directory and checked there, then [`SETUP_REST`], then Kali's toolset ([`TOOLSET`]) unless a
+/// test run switched it off ([`toolset_wanted`]), then the player's account ([`player_account`]),
+/// then the desktop when it has one.
 fn setup_script(desktop: bool) -> String {
+    setup_script_with(desktop, toolset_wanted())
+}
+
+/// The variable a test run (the integration runner's attack-box-vm scenarios) sets to `1` to make
+/// a VM box without Kali's toolset: the bare machine, everything else of the box as it is (its
+/// player account, shared folder, network and shell). Installing the toolset took most of those
+/// scenarios' time, past their caps. Read in test builds only: the app and the command line never
+/// read it, and offer no such choice.
+#[cfg(test)]
+pub(crate) const SKIP_TOOLSET: &str = "CYBERCTF_TEST_BOX_SKIP_TOOLS";
+
+/// Whether the box's set-up installs Kali's toolset: always, but in a test run that set
+/// [`SKIP_TOOLSET`] to `1`.
+#[cfg(test)]
+fn toolset_wanted() -> bool {
+    toolset_wanted_given(std::env::var(SKIP_TOOLSET).ok().as_deref())
+}
+
+/// Whether the box's set-up installs Kali's toolset: always, outside a test build.
+#[cfg(not(test))]
+const fn toolset_wanted() -> bool {
+    true
+}
+
+/// [`toolset_wanted`] with [`SKIP_TOOLSET`] read as `skip`.
+#[cfg(test)]
+fn toolset_wanted_given(skip: Option<&str>) -> bool {
+    skip != Some("1")
+}
+
+/// [`setup_script`] with Kali's toolset installed or not (`toolset`).
+fn setup_script_with(desktop: bool, toolset: bool) -> String {
     use crate::platform::root_script::{NEED_GPG, PRIVATE_WORKDIR, check_keys};
     let keyring = format!(
         "  {PRIVATE_WORKDIR}\n  {NEED_GPG}\n  curl -fsSL https://archive.kali.org/archive-keyring.gpg -o \"$d/key\"\n  {}\n  install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg\n",
         check_keys(&KALI_ARCHIVE_KEYS, "Kali's archive")
     );
-    [SETUP_START, &keyring, SETUP_REST, TOOLSET, &player_account(), "\n", if desktop { DESKTOP } else { "" }].concat()
+    let toolset = if toolset { TOOLSET } else { "# Kali's toolset left out: a test run's bare box (CYBERCTF_TEST_BOX_SKIP_TOOLS).\n" };
+    [SETUP_START, &keyring, SETUP_REST, toolset, &player_account(), "\n", if desktop { DESKTOP } else { "" }].concat()
 }
 
 /// The set-up up to Kali's archive keyring, on a Debian VM.
