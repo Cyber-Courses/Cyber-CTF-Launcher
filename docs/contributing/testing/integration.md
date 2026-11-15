@@ -105,8 +105,8 @@ setting a scenario needs, it is skipped, naming those not set:
   `_TOKEN_SECRET` and `_SSH_KEY` it also checks the API token (`_FINGERPRINT` pins a self-signed
   certificate; `_STORAGE`, `_BRIDGE` and `_NODE` default to `local-lvm`, `vmbr1` and `pve`).
 - `server-lab-proxmox`: `CYBERCTF_TEST_PVE_ENDPOINT`, `_TOKEN_ID`, `_TOKEN_SECRET`, `_NODE`,
-  `_BRIDGE` and `CYBERCTF_TEST_PVE_RUNNER_HOME`, plus `_JUMP` when the lab bridge is internal to the
-  node.
+  `_BRIDGE`, `_SSH_KEY` (the snippet upload signs in to the node with it) and
+  `CYBERCTF_TEST_PVE_RUNNER_HOME`, plus `_JUMP` when the lab bridge is internal to the node.
 - `server-lab-esxi`: `CYBERCTF_TEST_ESXI_HOST` and `_PASSWORD`, plus `_DATASTORE` and `_NETWORK`.
 
 `--results <file>` records each scenario with its verdict and log, as every tier does.
