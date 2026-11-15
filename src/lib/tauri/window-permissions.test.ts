@@ -39,7 +39,9 @@ describe("window permissions", () => {
     expect(sorted(new Set(sets.keys()))).toEqual(Object.keys(WINDOWS).sort());
   });
 
-  it.each(Object.entries(WINDOWS))("%s allows exactly the commands its pages invoke", (set, entries) => {
+  // The first window walks most of the app's files (parsed once, then shared by the others): a
+  // limit of its own, the parse of a few hundred files under a loaded machine's share of the CPU.
+  it.each(Object.entries(WINDOWS))("%s allows exactly the commands its pages invoke", { timeout: 60_000 }, (set, entries) => {
     expect(sorted(sets.get(set))).toEqual(sorted(commandsFrom(entries)));
   });
 
