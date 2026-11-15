@@ -118,7 +118,8 @@ impl Placed {
                 // The network the box joined, as the lab's spec (with the box added) says.
                 let spec = lab::lab(&self.dir)?.spec();
                 let network = spec.machines.get(&name).and_then(|m| m.networks.keys().next().cloned());
-                status_of(&status, &name, network.as_deref(), self.vm)
+                let declared = network.as_deref().and_then(|net| declared_address(&self.dir, &name, net, self.vm));
+                status_of(&status, &name, network.as_deref(), declared.as_deref(), self.vm)
             }
         };
         Ok(AttackStatus { reachable: true, networks: pickable, default_network: default, ..seen })
@@ -204,6 +205,14 @@ fn shares_folders(local: bool, target: Target, provider: Option<&str>, os: Os) -
 fn box_cpu(arch: Arch, local: bool, target: Target) -> Cpu {
     let native = matches!(target, Target::Docker | Target::Vagrant);
     if local && native && arch == Arch::Aarch64 { Cpu::Arm } else { Cpu::Lab }
+}
+
+/// The address the lab's spec gives machine `name` on `network` in the form it runs in (its
+/// Docker address in a container, its own as a VM); none when the spec can't be read.
+fn declared_address(dir: &Path, name: &str, network: &str, vm: bool) -> Option<String> {
+    let snapshot = lab::resolved(dir).ok()?;
+    let key = if vm { "addresses" } else { "docker_addresses" };
+    snapshot["machines"][name][key][network].as_str().map(str::to_owned)
 }
 
 #[cfg(test)]
