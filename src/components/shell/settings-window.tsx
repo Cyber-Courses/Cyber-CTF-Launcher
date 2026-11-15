@@ -1,5 +1,6 @@
 "use client";
 
+import { DialogPrompts } from "@/components/destructive-prompt";
 import { SettingsScreen } from "@/features/settings/settings-screen";
 import { Toaster } from "@/components/ui/toaster";
 import type { AuthStatus } from "@/lib/tauri";
@@ -23,6 +24,8 @@ export function SettingsWindowView({ auth, onAuthChange }: { auth: AuthStatus | 
   return (
     <main className="flex h-dvh flex-col overflow-clip bg-background text-foreground">
       <Toaster />
+      {/* Its own root: its removals and clean-ups ask in its own dialogs (#383). */}
+      <DialogPrompts />
       <WindowTitleBar title={t("shell.tabs.settings")} className="border-b border-border" />
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[52rem] px-7 pt-7 pb-10">

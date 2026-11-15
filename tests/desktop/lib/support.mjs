@@ -10,7 +10,7 @@ import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, wr
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
-import { appExit, startEnded, stuckLabReport } from "./diagnose.mjs";
+import { appExit, boxReport, fromRunEvents, startEnded, stuckLabReport } from "./diagnose.mjs";
 import { dockerPluginDirs, engineSilence, portStillHeld, runBounded, waitPortFree } from "./host.mjs";
 
 export { runContainers } from "./owned.mjs";
@@ -236,8 +236,8 @@ const LAB_TICK_MS = 4000;
 const DIAGNOSE_EVERY = 5;
 
 /**
- * Lab `id` as the app knows it (`active_operations`, `lab_status`, `lab_deploy_log`), each read
- * on its own and a read that fails noted, for `stuckLabReport`.
+ * Lab `id` as the app knows it (its run events, `run_events`, and `lab_status`), each read on its
+ * own and a read that fails noted, for `stuckLabReport`.
  */
 export async function labDiagnosis(b, id) {
   const errors = [];
@@ -246,10 +246,26 @@ export async function labDiagnosis(b, id) {
       errors.push(e?.message ?? String(e));
       return null;
     });
-  const operations = await read("active_operations", {});
+  const frames = await read("run_events", { after: null });
   const status = await read("lab_status", { id, runtime: "DOCKER" });
-  const log = await read("lab_deploy_log", { id });
-  return { status, operations, log, error: errors.length ? errors.join("; ") : null };
+  const { operations, last } = fromRunEvents(id, frames);
+  return { status, operations: frames ? operations : null, log: last ? last.log : frames ? "" : null, error: errors.length ? errors.join("; ") : null };
+}
+
+/**
+ * Lab `id`'s attack box as the app knows it (`attack_box_status`, its run events), for
+ * `boxReport`: what a spec says when the box never came up.
+ */
+export async function boxDiagnosis(b, id, runtime = "DOCKER") {
+  const errors = [];
+  const read = (cmd, args) =>
+    invokeCmd(b, cmd, args, { timeoutMs: 10000 }).catch((e) => {
+      errors.push(e?.message ?? String(e));
+      return null;
+    });
+  const box = await read("attack_box_status", { id, runtime });
+  const frames = await read("run_events", { after: null });
+  return boxReport(id, { box, frames, error: errors.length ? errors.join("; ") : null });
 }
 
 /**

@@ -114,3 +114,91 @@ fn it_links_no_gui_library() {
     }
     assert!(std::path::Path::new(env!("CARGO_BIN_EXE_cyberctf")).is_file());
 }
+
+/// The runner service the command line started for `home` (its data folder's `isothrum`), shut
+/// down when this drops, failed assertion or not: detached, it would serve a deleted folder until
+/// it idled out.
+#[cfg(unix)]
+struct EndsService(PathBuf);
+
+#[cfg(unix)]
+impl Drop for EndsService {
+    fn drop(&mut self) {
+        let Ok(runtime) = tokio::runtime::Runtime::new() else { return };
+        runtime.block_on(async {
+            if let Ok(client) = isothrum_client::Client::connect_running(&self.0).await {
+                let _ = client.shutdown().await;
+            }
+        });
+    }
+}
+
+/// A Docker the test scripts, on the scratch PATH (which holds nothing else, so it uses the
+/// shell's builtins only): Compose's answers for one project with `web` (port 80 published) and
+/// Isoloom's probe, up after an `up` and gone after a `down`, kept in `state`; every call
+/// appended to `calls`.
+#[cfg(unix)]
+fn scripted_docker(scratch: &Scratch) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch.0.display();
+    let script = format!(
+        r#"#!/bin/sh
+echo "$*" >>"{dir}/calls"
+state=down; [ -f "{dir}/state" ] && read -r state <"{dir}/state"
+case " $* " in
+  *" compose version"*) echo 2.29.7 ;;
+  *" config --services"*) printf 'web\nisoloom-probe\n' ;;
+  *" config --format json"*) echo '{{"services":{{"web":{{"ports":[{{"target":80,"host_ip":"127.0.0.1","published":"","protocol":"tcp"}}]}},"isoloom-probe":{{}}}},"networks":{{"lab":{{"name":"cyberctf-lab_lab"}}}}}}' ;;
+  *" up "*) echo up >"{dir}/state" ;;
+  *" down"*) echo down >"{dir}/state" ;;
+  *" ps "*)
+    if [ "$state" = up ]; then
+      echo '{{"Service":"web","State":"running","Health":"","ExitCode":0,"Publishers":[{{"URL":"127.0.0.1","PublishedPort":41873,"TargetPort":80,"Protocol":"tcp"}}]}}'
+      echo '{{"Service":"isoloom-probe","State":"running","Health":"","ExitCode":0,"Publishers":[]}}'
+    fi ;;
+  *" container ls"*) [ "$state" = up ] && echo c1 ;;
+  " version "*|*" version --format"*) echo 27.3.1 ;;
+  *" info"*) echo 27.3.1 ;;
+esac
+exit 0
+"#
+    );
+    let docker = scratch.0.join("bin").join("docker");
+    std::fs::write(&docker, script).unwrap();
+    std::fs::set_permissions(&docker, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// A container lab installed here starts, reads as running, and stops, through the command line
+/// alone (its runner service started from `cyberctf` itself), on a scripted Docker: what a script
+/// on a server without the app does.
+#[cfg(unix)]
+#[test]
+fn a_lab_starts_runs_and_stops_from_the_command_line_alone() {
+    let s = Scratch::new("start");
+    let _service = EndsService(s.0.join("data").join("isothrum"));
+    scripted_docker(&s);
+    // A lab of the player's own, from its folder: installed and started, no catalogue, no sign-in.
+    let folder = s.0.join("my-lab");
+    std::fs::create_dir_all(&folder).unwrap();
+    let spec = "version: 1\nname: lab\nnetworks:\n  lab: { cidr: 10.44.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { site: { port: 80, protocol: http, publish: 8080 } }\n    app: { image: nginx:1.27 }\n";
+    std::fs::write(folder.join("isoloom.yml"), spec).unwrap();
+    let started = cyberctf(&s, &["labs", "install", &folder.display().to_string(), "--json"]);
+    let calls = std::fs::read_to_string(s.0.join("calls")).unwrap_or_default();
+    assert_eq!(started.code, Some(0), "{:?}\n{}\ndocker was asked:\n{calls}", started.lines, started.stderr);
+    assert!(calls.contains(" up "), "Compose brought it up:\n{calls}");
+    let id = started.lines.iter().find_map(|l| l["event"]["labId"].as_str()).unwrap_or_default().to_owned();
+    assert!(id.starts_with("local-"), "{:?}", started.lines);
+
+    let listed = cyberctf(&s, &["labs", "list", "--json"]);
+    assert_eq!(listed.code, Some(0), "{}", listed.stderr);
+    assert!(listed.lines[0]["data"].as_array().is_some_and(|l| l.iter().any(|lab| lab["id"] == id.as_str())), "{:?}", listed.lines);
+    let status = cyberctf(&s, &["labs", "status", &id, "--json"]);
+    assert_eq!(status.code, Some(0), "{}", status.stderr);
+    assert_eq!(status.lines[0]["data"]["status"]["running"], true, "{:?}", status.lines);
+
+    let stopped = cyberctf(&s, &["labs", "stop", &id, "--yes", "--json"]);
+    assert_eq!(stopped.code, Some(0), "{:?}\n{}", stopped.lines, stopped.stderr);
+    assert!(std::fs::read_to_string(s.0.join("calls")).unwrap().contains(" down"), "Compose took it down");
+    let status = cyberctf(&s, &["labs", "status", &id, "--json"]);
+    assert_eq!(status.lines[0]["data"]["status"]["running"], false, "{:?}", status.lines);
+}

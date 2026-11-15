@@ -182,6 +182,8 @@ const machineCommands = {
     ],
     boxes: [{ name: "StefanScherer/windows_2019", bytes: 11.2 * GB }],
   }),
+  // What a clean-up frees: what the sample holds but the image the attack box runs (in use).
+  machine_storage_clean: () => (0.43 + 11.2) * GB,
   attack_box_status: () => attackBox(),
   attack_box_sign_in: () => ({ user: "player", password: "dev-mock-password" }),
   image_download_size: () => 4.1 * GB,

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { MachineSetup } from "@/features/machine/machine-setup";
 import { Toaster } from "@/components/ui/toaster";
+import { DialogPrompts } from "@/components/destructive-prompt";
 import { DevMockGate } from "@/components/dev-mock-gate";
 import { warn } from "@/lib/failure";
 import { useMachineReport } from "@/features/machine/use-machine-report";
@@ -39,8 +40,9 @@ function MachineSetupWindow() {
   return (
     <>
       <MachineSetup report={report} checkError={checkError} onRefresh={refreshReport} onClose={close} startAt={startAt} />
-      {/* This window has its own root (no app shell), so it mounts its own toasts. */}
+      {/* This window has its own root (no app shell), so it mounts its own toasts and dialogs. */}
       <Toaster />
+      <DialogPrompts />
     </>
   );
 }

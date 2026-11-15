@@ -41,3 +41,15 @@ export function WarningPrompt() {
     </ConfirmDialog>
   );
 }
+
+/** The app's own confirmation and warning dialogs, for a window's root: each window that runs
+ *  code asking `confirmDestructive` or `warnInDialog` mounts them (the main window's shell, and
+ *  the Settings and setup windows, which have roots of their own). */
+export function DialogPrompts() {
+  return (
+    <>
+      <DestructivePrompt />
+      <WarningPrompt />
+    </>
+  );
+}
