@@ -80,7 +80,7 @@ What labs need, on the computer that runs them:
 - **VM labs**: hardware virtualization (Intel VT-x or AMD-V) turned on, a hypervisor (VirtualBox,
   VMware, Hyper-V, Parallels, libvirt, QEMU or UTM) and Vagrant.
 - **Server and cloud labs**: Terraform, and for a cloud its own CLI; see
-  [running labs](docs/players/running-labs.md#accounts-and-servers) for what a Proxmox or ESXi server needs.
+  [running labs](docs/players/running-labs.md#what-a-server-needs) for what a Proxmox or ESXi server needs.
 - **Network**: Cyber CTF's online services for signing in, the catalogue and starting labs. The
   launcher can't run air-gapped ([network endpoints](docs/admins/admin-guide.md#network)).
 
