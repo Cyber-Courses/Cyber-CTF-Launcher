@@ -1,6 +1,7 @@
 //! Isoloom's path and naming conventions, in one place: where it writes a target's files
-//! (`.isoloom[-<n>]/docker|docker-vm|vagrant|proxmox|cloud-docker/<cloud>|cloud-vm/<cloud>|
-//! cloud-services`, the Compose file and the run manifest among them), the environment its
+//! (`.isoloom[-<n>]/docker|vagrant|proxmox|cloud-docker/<cloud>|cloud-vm/<cloud>|cloud-services`,
+//! the Compose file among them, and the `docker-vm` folder an earlier version
+//! left), the environment its
 //! Vagrantfiles read to reach an ESXi host (`ESXI_*`), and the output of its cloud modules the
 //! launcher reads (`ip`). The rest of the launcher asks here instead of spelling them out.
 
@@ -16,52 +17,62 @@ pub fn out(dir: &Path) -> PathBuf {
     dir.join(isoloom_spec::instance::output_dir(instance(dir)))
 }
 
-/// The lab's Compose file (local Docker, and inside "Docker on one VM").
+/// The lab's Compose file (local Docker).
 pub fn compose_file(dir: &Path) -> PathBuf {
     out(dir).join("docker/compose.yml")
 }
 
-/// The lab's run manifest on local Docker (Isoloom writes it beside the Compose file): what the
-/// Isothrum runner executes.
-pub fn docker_manifest(dir: &Path) -> PathBuf {
-    out(dir).join("docker/run.json")
+/// The lab's Compose project on local Docker (the folder of its Compose file): what the Isothrum
+/// runner opens.
+pub fn docker_dir(dir: &Path) -> PathBuf {
+    out(dir).join("docker")
 }
 
-/// Where the Vagrantfile of a local or ESXi run is: Docker on one VM for container labs, one
-/// VM per machine for VM labs.
+/// Where the Vagrantfile of a local or ESXi run is: one VM per machine (`vagrant`); for a
+/// container lab, the folder of the one helper VM an earlier version ran it in
+/// ([`docker_vm_dir`]).
 pub fn vagrant_dir(dir: &Path, runtime: Runtime) -> PathBuf {
     match runtime {
-        Runtime::Docker => out(dir).join("docker-vm"),
+        Runtime::Docker => docker_vm_dir(dir),
         Runtime::Vm => out(dir).join("vagrant"),
         // No Vagrant: its generated files (Terraform variables and scripts).
         Runtime::Cloud => out(dir).join("cloud-services"),
     }
 }
 
-/// The Isoloom target of a Vagrant run.
-pub fn vagrant_target(runtime: Runtime) -> Target {
-    match runtime {
-        Runtime::Docker => Target::DockerVm,
-        Runtime::Vm => Target::Vagrant,
-        Runtime::Cloud => Target::CloudServices,
-    }
+/// Where an earlier version ran a container lab as Docker Compose inside one helper VM (Isoloom's
+/// former `docker-vm` target), here or on ESXi, and (`proxmox/` under it) on a Proxmox server.
+/// Isoloom no longer generates that form: the folder is only read, to stop and remove a run left
+/// in it.
+pub fn docker_vm_dir(dir: &Path) -> PathBuf {
+    out(dir).join(DOCKER_VM_FOLDER)
 }
 
+/// The folder name of [`docker_vm_dir`], by which a run's project is known as one in a helper VM.
+pub const DOCKER_VM_FOLDER: &str = "docker-vm";
+
 /// The Terraform module and its Isoloom target for a server or cloud (`tf` is the launcher's
-/// Terraform target: `proxmox`, `aws`, `azure`, `gcp`, `digitalocean`, `linode`, `oci`).
+/// Terraform target: `proxmox`, `aws`, `azure`, `gcp`, `digitalocean`, `linode`, `oci`). On
+/// Proxmox, a lab runs as one VM per machine whatever its catalogue form: a container lab left in
+/// a helper VM there by an earlier version is read from [`docker_vm_dir`] instead.
 pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> (PathBuf, Target) {
     let out = out(dir);
     match (runtime, tf) {
-        (Runtime::Docker, "proxmox") => (out.join("docker-vm/proxmox"), Target::DockerVm),
-        (Runtime::Vm, "proxmox") => (out.join("proxmox"), Target::Proxmox),
+        (Runtime::Docker | Runtime::Vm, "proxmox") => (out.join("proxmox"), Target::Proxmox),
         (Runtime::Docker, cloud) => (out.join("cloud-docker").join(cloud), Target::CloudDocker),
         // Isoloom generates a cloud-vm module per cloud it can model the lab on; a cloud a lab
         // doesn't support has no module, and the run surfaces that when the directory is missing.
-        (Runtime::Vm, cloud) => (out.join("cloud-vm").join(cloud), Target::CloudVm),
-        // Isoloom's variables for the lab's own module (see `cloud_services`).
-        (Runtime::Cloud, _) => (out.join("cloud-services"), Target::CloudServices),
+        // A cloud-services lab has no Isoloom target: it runs its own module (`cloud_services`), and
+        // is never asked for here; it reads as one VM per machine.
+        (Runtime::Vm | Runtime::Cloud, cloud) => (out.join("cloud-vm").join(cloud), Target::CloudVm),
     }
 }
+
+/// The variable Isoloom's Vagrantfiles read their copy's key from (unset, they make one from their
+/// folder's path): the launcher hands the runner's key for the run on under it, so two copies of
+/// one lab (the app's, a test's) never share a VM, network or libvirt domain name, and the
+/// running-labs scan finds this copy's VMs by it ([`crate::runtime::discover`]).
+pub(crate) const ISOLOOM_KEY: &str = "ISOLOOM_KEY";
 
 /// The environment Isoloom's Vagrantfiles read to reach an ESXi host (the `vagrant-vmware-esxi`
 /// plugin's settings), also the vagrant target's run-manifest params by the same names.
@@ -80,10 +91,4 @@ pub mod esxi {
     pub const VIRTUAL_NETWORK: &str = "ESXI_VIRTUAL_NETWORK";
     /// The host's settings the manifest takes as params (its password is a connection secret).
     pub const PARAMS: [&str; 5] = [HOSTNAME, HOSTPORT, USERNAME, DATASTORE, VIRTUAL_NETWORK];
-}
-
-/// The outputs of Isoloom's Terraform modules the launcher reads (Isoloom's run manifest outputs, its docs/runner.md).
-pub mod outputs {
-    /// The address to start from: the lab's VM.
-    pub const IP: &str = "ip";
 }

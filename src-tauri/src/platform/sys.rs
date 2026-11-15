@@ -2,7 +2,7 @@
 //! or Win32, each behind a safe function whose `SAFETY:` comment says why the call is sound. It
 //! is reviewed as a whole; nothing else in the app shell or the domain uses `unsafe`.
 
-#![allow(unsafe_code, reason = "the audited home of the launcher's calls into libc and Win32")]
+#![expect(unsafe_code, reason = "the audited home of the launcher's calls into libc and Win32")]
 
 #[cfg(unix)]
 mod unix;
@@ -11,15 +11,19 @@ mod windows;
 
 use std::ffi::OsStr;
 
+#[cfg(all(unix, test))]
+pub use unix::process_exists;
 #[cfg(target_os = "macos")]
 pub use unix::{boot_session, process_start};
 #[cfg(unix)]
-pub use unix::{login_name, process_exists, signal_group, signal_process};
+pub use unix::{is_root, login_name, signal_group};
+#[cfg(all(windows, test))]
+pub use windows::terminate;
 #[cfg(windows)]
 pub use windows::{
-    ElevatedProcess, Hive, Job, delete_user_registry_value, in_hyperv_admins, is_elevated, keep_std_handles, launch_elevated, process_created,
-    registry_key_exists, registry_string, registry_value_exists, registry_values, resume_threads_of, send_ctrl_c, set_path, set_user_registry_string,
-    take_ctrl_c, terminate,
+    Created, ElevatedProcess, Hive, Job, create_in_job, decode_code_page, delete_user_registry_value, exit_code, in_hyperv_admins, is_elevated,
+    keep_std_handles, launch_elevated, process_created, registry_key_exists, registry_string, registry_value_exists, registry_values, send_ctrl_c, set_path,
+    set_user_registry_string, terminate_process,
 };
 
 /// A registry value as the launcher reads it: a `REG_DWORD`'s number, or the type of any other.
@@ -33,12 +37,28 @@ pub enum RegistryValue {
     Other(u32),
 }
 
+/// Proof that this process is still single-threaded, which changing its environment needs
+/// ([`set_env_at_startup`]): on Unix, another thread reading the environment meanwhile (libc's
+/// `getenv`) would be a data race. Only the start of `app::run` makes one, and it is neither
+/// `Send` nor `Clone`, so it can't outlive the start or reach another thread.
+pub struct SingleThreaded(std::marker::PhantomData<*const ()>);
+
+impl SingleThreaded {
+    /// The proof, taken on the caller's word.
+    ///
+    /// # Safety
+    ///
+    /// No other thread of this process exists, and none is started while the token lives: the
+    /// first lines of `app::run`, or a test run with `--test-threads=1`.
+    pub unsafe fn assume() -> SingleThreaded {
+        SingleThreaded(std::marker::PhantomData)
+    }
+}
+
 /// Sets this process's environment variable `name` (`PATH`, a proxy), which the tools it starts
-/// inherit. Only while the process is still single-threaded (the first lines of `run()`, or a
-/// test run with `--test-threads=1`): on Unix, another thread reading the environment meanwhile
-/// (libc's `getenv`) would be a data race.
-pub fn set_env_at_startup(name: &str, value: &OsStr) {
-    // SAFETY: called before any other thread exists (see above), so nothing reads the
-    // environment while it changes.
+/// inherit; `_only` proves no other thread can read the environment meanwhile.
+pub fn set_env_at_startup(_only: &SingleThreaded, name: &str, value: &OsStr) {
+    // SAFETY: a `SingleThreaded` exists only while no other thread does (its `assume`'s
+    // contract), so nothing reads the environment while it changes.
     unsafe { std::env::set_var(name, value) };
 }

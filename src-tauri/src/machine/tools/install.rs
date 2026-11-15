@@ -2,22 +2,25 @@
 //! It never shows a custom password prompt: it uses the OS's own trusted flow (winget's
 //! UAC, Linux pkexec, or downloading the official app/installer for macOS casks and
 //! letting the tool's own installer run).
+//!
+//! The guided setup as data: each tool's row ([`Dependency::row`]) says where it exists, what
+//! proves it installed and where else the player gets it; its install ([`plan_on`]) and its
+//! removal (`uninstall::plan_on`) are one exhaustive match per OS over the tool and the package
+//! manager ([`Host`]), so a tool, an OS or a package manager added is a compile error until each
+//! says what it does there. Every plan is built on any OS, so the tests read every row.
 
 use serde::Deserialize;
 
-#[cfg(target_os = "macos")]
-use super::scripts::fetch_and_open;
-#[cfg(target_os = "linux")]
 use super::scripts::{
-    awscli_script, azurecli_script, docker_dnf_script, docker_script, gcloud_script, libvirt_dnf_script, libvirt_script, qemu_dnf_script, qemu_script,
-    terraform_dnf_script, terraform_script, vagrant_dnf_script, vagrant_script, virtualbox_dnf_script, virtualbox_script, vmware_utility_script,
+    awscli_script, azurecli_script, docker_dnf_script, docker_script, fetch_and_open, gcloud_script, libvirt_dnf_script, libvirt_script, qemu_dnf_script,
+    qemu_script, terraform_dnf_script, terraform_script, vagrant_dnf_script, vagrant_script, virtualbox_dnf_script, virtualbox_script, vmware_utility_script,
 };
-#[cfg(any(target_os = "macos", windows))]
-use super::steps::step;
-use super::steps::{Step, command_line, run_step, run_steps};
+use super::steps::{Step, command_line, run_step, run_steps, step};
 use super::uninstall;
 use crate::error::{Error, Result};
+use crate::platform::host::{Arch, Host, LinuxPackages, Os, Packages};
 use crate::platform::policy::{self, Key};
+use crate::platform::root_script::RootScript;
 use crate::runtime::providers::Provider;
 
 /// A tool the guided setup installs, as the webview names it.
@@ -55,52 +58,41 @@ pub enum Dependency {
     Hyperv,
 }
 
-impl Dependency {
-    /// Whether it exists on `os` (`std::env::consts::OS`): a hypervisor where
-    /// [`Provider::runs_on`] says, WSL on Windows,
-    /// every other tool anywhere. An install or a removal elsewhere is refused ([`not_here`]).
-    pub fn runs_on(self, os: &str) -> bool {
-        match self {
-            Dependency::Wsl => os == "windows",
-            Dependency::Utm => Provider::Utm.runs_on(os),
-            Dependency::Libvirt => Provider::Libvirt.runs_on(os),
-            Dependency::Hyperv => Provider::Hyperv.runs_on(os),
-            _ => true,
-        }
-    }
-
-    /// Its name on this OS, as the setup installs it here (Docker Engine on Linux, from Docker's
-    /// repository or the distribution's `docker.io`; Docker Desktop elsewhere): what a message and Settings' list of installed
-    /// tools call it.
-    pub fn name(self) -> &'static str {
-        self.name_on(std::env::consts::OS)
-    }
-
-    /// [`name`](Self::name) on `os`.
-    fn name_on(self, os: &str) -> &'static str {
-        match self {
-            Dependency::Docker if os == "linux" => "Docker Engine",
-            Dependency::Docker => "Docker Desktop",
-            Dependency::Vagrant => "Vagrant",
-            Dependency::Terraform => "Terraform",
-            Dependency::Virtualbox => Provider::Virtualbox.label(),
-            Dependency::Qemu => Provider::Qemu.label(),
-            Dependency::Utm => Provider::Utm.label(),
-            Dependency::Libvirt => Provider::Libvirt.label(),
-            Dependency::Awscli => "AWS CLI",
-            Dependency::Azurecli => "Azure CLI",
-            Dependency::Gcloud => "Google Cloud CLI",
-            Dependency::Wsl => "WSL 2",
-            Dependency::VmwareUtility => "Vagrant VMware Utility",
-            Dependency::Hyperv => Provider::Hyperv.label(),
-        }
-    }
+/// Where a tool exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Runs {
+    /// On these OSes.
+    On(&'static [Os]),
+    /// Where this hypervisor does ([`Provider::row`]): the one table of which OS a hypervisor
+    /// belongs to.
+    As(Provider),
 }
 
-#[cfg(test)]
+/// A program and the arguments it answers with its version.
+pub(crate) type Probe = (&'static str, &'static [&'static str]);
+
+/// A tool's row of the guided setup's table ([`Dependency::row`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ToolRow {
+    /// Its name as the player reads it (Docker's on Linux is [`Dependency::name_on`]'s).
+    pub(crate) name: &'static str,
+    /// Where it exists.
+    pub(crate) runs: Runs,
+    /// The command that proves it installed, when there is one worth trusting (`wsl.exe` ships
+    /// with Windows whether WSL is set up or not; UTM is an app; VMware's utility a service).
+    pub(crate) probe: Option<Probe>,
+    /// The app bundle that proves it installed on macOS, also before its CLI is on PATH.
+    pub(crate) mac_app: Option<&'static str>,
+    /// Its winget package, when winget installs and removes it on Windows.
+    pub(crate) winget: Option<&'static str>,
+    /// Where the player installs it themselves when the setup can't (a Linux distribution
+    /// without apt or dnf).
+    pub(crate) own_url: Option<&'static str>,
+}
+
 impl Dependency {
     /// Every tool the app installs.
-    pub(super) const ALL: [Dependency; 13] = [
+    pub const ALL: [Dependency; 13] = [
         Dependency::Docker,
         Dependency::Vagrant,
         Dependency::Terraform,
@@ -115,16 +107,98 @@ impl Dependency {
         Dependency::VmwareUtility,
         Dependency::Hyperv,
     ];
+
+    /// Its row of the guided setup's table.
+    #[allow(clippy::too_many_lines, reason = "one row per tool: the table itself")]
+    pub(crate) fn row(self) -> ToolRow {
+        const ANY: Runs = Runs::On(&Os::ALL);
+        /// A row with no macOS app.
+        fn row(name: &'static str, runs: Runs, probe: Option<Probe>, winget: Option<&'static str>, own_url: Option<&'static str>) -> ToolRow {
+            ToolRow { name, runs, probe, mac_app: None, winget, own_url }
+        }
+        match self {
+            Dependency::Docker => ToolRow {
+                mac_app: Some("/Applications/Docker.app"),
+                ..row("Docker Desktop", ANY, Some(("docker", &["--version"])), Some("Docker.DockerDesktop"), Some("https://docs.docker.com/engine/install/"))
+            },
+            Dependency::Vagrant => {
+                row("Vagrant", ANY, Some(("vagrant", &["--version"])), Some("Hashicorp.Vagrant"), Some("https://developer.hashicorp.com/vagrant/install"))
+            }
+            Dependency::Terraform => row("Terraform", ANY, Some(("terraform", &["version"])), Some("Hashicorp.Terraform"), None),
+            Dependency::Virtualbox => ToolRow {
+                mac_app: Some("/Applications/VirtualBox.app"),
+                ..row(
+                    Provider::Virtualbox.label(),
+                    Runs::As(Provider::Virtualbox),
+                    Some(("VBoxManage", &["--version"])),
+                    Some("Oracle.VirtualBox"),
+                    Some("https://www.virtualbox.org/wiki/Linux_Downloads"),
+                )
+            },
+            Dependency::Qemu => {
+                row(Provider::Qemu.label(), Runs::As(Provider::Qemu), Some(("qemu-img", &["--version"])), None, Some("https://www.qemu.org/download/"))
+            }
+            Dependency::Utm => ToolRow { mac_app: Some("/Applications/UTM.app"), ..row(Provider::Utm.label(), Runs::As(Provider::Utm), None, None, None) },
+            Dependency::Libvirt => {
+                row(Provider::Libvirt.label(), Runs::As(Provider::Libvirt), Some(("virsh", &["--version"])), None, Some("https://libvirt.org/"))
+            }
+            Dependency::Awscli => row("AWS CLI", ANY, Some(("aws", &["--version"])), Some("Amazon.AWSCLI"), None),
+            Dependency::Azurecli => row("Azure CLI", ANY, Some(("az", &["version"])), Some("Microsoft.AzureCLI"), None),
+            Dependency::Gcloud => row("Google Cloud CLI", ANY, Some(("gcloud", &["--version"])), Some("Google.CloudSDK"), None),
+            Dependency::Wsl => row("WSL 2", Runs::On(&[Os::Windows]), None, None, None),
+            Dependency::VmwareUtility => row("Vagrant VMware Utility", ANY, None, None, Some("https://developer.hashicorp.com/vagrant/install/vmware")),
+            Dependency::Hyperv => row(Provider::Hyperv.label(), Runs::As(Provider::Hyperv), None, None, None),
+        }
+    }
+
+    /// The tool the guided setup installs as hypervisor `provider`, where it does (the row that
+    /// names it).
+    pub(crate) fn of_hypervisor(provider: Provider) -> Option<Dependency> {
+        Dependency::ALL.into_iter().find(|d| d.hypervisor() == Some(provider))
+    }
+
+    /// The hypervisor it is, when it is one.
+    pub(crate) fn hypervisor(self) -> Option<Provider> {
+        match self.row().runs {
+            Runs::As(provider) => Some(provider),
+            Runs::On(_) => None,
+        }
+    }
+
+    /// Whether it exists on `os`: a hypervisor where [`Provider::runs_on`] says, the rest by its
+    /// row. An install or a removal elsewhere is refused ([`not_here`]).
+    pub fn runs_on(self, os: Os) -> bool {
+        match self.row().runs {
+            Runs::On(oses) => oses.contains(&os),
+            Runs::As(provider) => provider.runs_on(os),
+        }
+    }
+
+    /// Its name on this OS, as the setup installs it here (Docker Engine on Linux, from Docker's
+    /// repository or the distribution's `docker.io`; Docker Desktop elsewhere): what a message and
+    /// Settings' list of installed tools call it.
+    pub fn name(self) -> &'static str {
+        self.name_on(Os::HERE)
+    }
+
+    /// [`name`](Self::name) on `os`.
+    pub(crate) fn name_on(self, os: Os) -> &'static str {
+        match (self, os) {
+            (Dependency::Docker, Os::Linux) => "Docker Engine",
+            _ => self.row().name,
+        }
+    }
 }
 
 /// The install steps on macOS: Homebrew formulae, or a cask whose installer the user finishes.
-#[cfg(target_os = "macos")]
-fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
+fn macos_plan(dep: Dependency, host: Host) -> Result<Vec<Step>> {
     // HashiCorp's own package, not Homebrew's: needs no Homebrew.
     if dep == Dependency::VmwareUtility {
-        return Ok(vec![super::vmware_utility::mac_install(std::env::consts::ARCH)]);
+        return Ok(vec![super::vmware_utility::mac_install(host.arch)]);
     }
-    let brew = crate::platform::brew_bin().ok_or_else(|| Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()))?;
+    let Some(Packages::Homebrew(brew)) = host.packages else {
+        return Err(Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()));
+    };
     Ok(match dep {
         // Docker Desktop: download the app with brew, then open its installer; the user
         // finishes in Docker's own flow (includes the docker CLI + compose).
@@ -148,9 +222,10 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
                 format!("'{brew}' update || echo 'Homebrew was not updated; continuing with the install.'\nHOMEBREW_NO_AUTO_UPDATE=1 '{brew}' install qemu"),
             ],
             note: Some("Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into()),
+            private: None,
         }],
         Dependency::Utm => vec![fetch_and_open(brew, "utm", "UTM")],
-        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(not_here(dep)),
+        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(not_here(dep, Os::Macos)),
         // Cloud CLIs (brew formulae; gcloud is a cask).
         Dependency::Awscli => vec![step(brew, &["install", "awscli"])],
         // Microsoft's prebuilt cask instead of the `azure-cli` formula: on recent macOS the
@@ -166,15 +241,17 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
                 program: "sh".into(),
                 args: vec!["-c".into(), format!("'{brew}' trust azure/azure-cli 2>/dev/null || true")],
                 note: Some("Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into()),
+                private: None,
             },
             Step {
                 program: brew.to_string(),
                 args: vec!["install".into(), "--cask".into(), "azure-cli-preview".into()],
                 note: Some("Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into()),
+                private: None,
             },
         ],
         Dependency::Gcloud => vec![step(brew, &["install", "--cask", "google-cloud-sdk"])],
-        Dependency::VmwareUtility => vec![super::vmware_utility::mac_install(std::env::consts::ARCH)],
+        Dependency::VmwareUtility => vec![super::vmware_utility::mac_install(host.arch)],
     })
 }
 
@@ -183,42 +260,39 @@ fn macos_plan(dep: Dependency) -> Result<Vec<Step>> {
 /// a clean Windows 11 the Store source's certificate pinning failed (0x8a15005e, "The server
 /// certificate did not match any of the expected values") and Docker Desktop's install with it.
 /// Every package the setup installs is in the `winget` source.
-#[cfg(any(target_os = "windows", test))]
 pub(super) fn winget(verb: &str, id: &str, extra: &[&str]) -> Step {
     let mut args = vec![verb, "-e", "--id", id, "--source", "winget"];
     args.extend_from_slice(extra);
-    super::steps::step("winget", &args)
+    step("winget", &args)
 }
 
-/// The winget package of `dep`, when winget installs it on Windows.
-#[cfg(target_os = "windows")]
-pub(super) fn winget_package(dep: Dependency) -> Option<&'static str> {
-    Some(match dep {
-        Dependency::Docker => "Docker.DockerDesktop",
-        Dependency::Vagrant => "Hashicorp.Vagrant",
-        Dependency::Terraform => "Hashicorp.Terraform",
-        Dependency::Virtualbox => "Oracle.VirtualBox",
-        Dependency::Qemu => "SoftwareFreedomConservancy.QEMU",
-        Dependency::Awscli => "Amazon.AWSCLI",
-        Dependency::Azurecli => "Microsoft.AzureCLI",
-        Dependency::Gcloud => "Google.CloudSDK",
-        Dependency::Utm | Dependency::Libvirt | Dependency::Wsl | Dependency::VmwareUtility | Dependency::Hyperv => return None,
+/// Why `dep` isn't installed on Windows on Arm, where the hypervisor it is or serves (VMware's
+/// utility serves VMware Workstation) isn't built for it ([`Provider::row`]).
+fn not_on_windows_on_arm(dep: Dependency, arch: Arch) -> Option<Error> {
+    let provider = match dep {
+        Dependency::VmwareUtility => Provider::VmwareDesktop,
+        other => other.hypervisor()?,
+    };
+    (arch == Arch::Aarch64 && !provider.row().windows_on_arm).then(|| {
+        Error::Invalid(format!("{} doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.", provider.label_on(Os::Windows)))
     })
 }
 
-/// The install step on Windows: a winget package, or WSL's own elevated installer.
-#[cfg(target_os = "windows")]
-fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
-    if dep == Dependency::Virtualbox && std::env::consts::ARCH == "aarch64" {
-        return Err(Error::Invalid("VirtualBox doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.".into()));
+/// The install step on Windows: a winget package, or WSL's, Hyper-V's and VMware's utility's
+/// own elevated installers.
+fn windows_plan(dep: Dependency, arch: Arch) -> Result<Vec<Step>> {
+    if let Some(refusal) = not_on_windows_on_arm(dep, arch) {
+        return Err(refusal);
     }
-    match (dep, winget_package(dep)) {
-        (_, Some(id)) => Ok(vec![winget("install", id, &["--accept-source-agreements", "--accept-package-agreements"])]),
+    if let Some(id) = dep.row().winget {
+        return Ok(vec![winget("install", id, &["--accept-source-agreements", "--accept-package-agreements"])]);
+    }
+    match dep {
         // Turns on the WSL and Virtual Machine Platform features and installs the WSL 2 kernel.
         // Elevated through Windows' own UAC prompt; the features need a restart to take effect.
         // `-PassThru` surfaces wsl.exe's own exit code (without it PowerShell exits 0 whatever
         // happened); a declined UAC prompt throws, reported as ERROR_CANCELLED.
-        (Dependency::Wsl, None) => Ok(vec![step(
+        Dependency::Wsl => Ok(vec![step(
             "powershell",
             &[
                 "-NoProfile",
@@ -229,150 +303,141 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
         // Turns the Hyper-V feature on with Windows' own servicing tool, elevated through Windows'
         // UAC prompt: DISM's 3010 is "done, restart to finish". Windows Home has no Hyper-V: said
         // before anything runs.
-        (Dependency::Hyperv, None) => Ok(vec![step("powershell", &["-NoProfile", "-Command", HYPERV_ON])]),
-
-        // VMware Workstation doesn't run on Windows on Arm, so neither does its utility.
-        (Dependency::VmwareUtility, None) if std::env::consts::ARCH == "aarch64" => {
-            Err(Error::Invalid("VMware Workstation doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.".into()))
-        }
-        (Dependency::VmwareUtility, None) => Ok(vec![super::vmware_utility::windows_install()]),
-        (_, None) => Err(not_here(dep)),
+        Dependency::Hyperv => Ok(vec![step("powershell", &["-NoProfile", "-Command", HYPERV_ON])]),
+        Dependency::VmwareUtility => Ok(vec![super::vmware_utility::windows_install()]),
+        Dependency::Utm | Dependency::Libvirt | Dependency::Qemu => Err(not_here(dep, Os::Windows)),
+        Dependency::Docker
+        | Dependency::Vagrant
+        | Dependency::Terraform
+        | Dependency::Virtualbox
+        | Dependency::Awscli
+        | Dependency::Azurecli
+        | Dependency::Gcloud => Err(Error::Invalid(format!("{} has no winget package to install.", dep.name_on(Os::Windows)))),
     }
 }
 
 /// Turns Hyper-V on (Windows): refused on Windows Home, which has no Hyper-V; else DISM, elevated,
 /// its "restart to finish" (3010) a success; a declined UAC prompt reported as `ERROR_CANCELLED`.
-#[cfg(any(target_os = "windows", test))]
 const HYPERV_ON: &str = "if ((Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').EditionID -like 'Core*') { Write-Output 'This edition of Windows (Home) has no Hyper-V. Run VM labs with VirtualBox, on a server or in the cloud.'; exit 1 }; try { $p = Start-Process -FilePath dism.exe -ArgumentList '/Online','/Enable-Feature','/FeatureName:Microsoft-Hyper-V','/All','/NoRestart','/Quiet' -Verb RunAs -Wait -PassThru; if ($p.ExitCode -eq 3010) { exit 0 }; exit $p.ExitCode } catch { exit 1223 }";
 
 /// `script` run as root through pkexec, which raises a graphical password prompt (polkit). pkexec
 /// clears the environment, so the proxy variables set here (`proxy`, `NAME=value`) are handed to
-/// the script through `env`: behind a corporate proxy apt and curl need them.
-#[cfg(any(target_os = "linux", test))]
-fn as_root(script: String, proxy: Vec<String>) -> Step {
-    let mut args = vec!["env".to_string()];
-    args.extend(proxy);
-    args.extend(["sh".to_string(), "-c".to_string(), script]);
-    Step { program: "pkexec".into(), args, note: None }
+/// the script: behind a corporate proxy apt and curl need them. Not on pkexec's command line,
+/// which every local user can read (`ps`, `/proc/<pid>/cmdline`) while the prompt is up, a
+/// proxy's password with it: in an owner-only file in a private folder of the player's, kept as
+/// long as the step, which the script reads right after its prelude ([`read_proxy`]).
+fn as_root(script: RootScript, proxy: &[String]) -> Result<Step> {
+    // Through pkexec, or unattended through sudo (see `platform::elevation`).
+    let root = |script: String| {
+        let (program, args) = crate::platform::elevation::as_root("env", &["sh".into(), "-c".into(), script]);
+        Step { program, args, note: None, private: None }
+    };
+    // A value over two lines can't be one line of the file; no proxy has one.
+    let proxy: Vec<&str> = proxy.iter().map(String::as_str).filter(|a| !a.contains(['\n', '\r'])).collect();
+    if proxy.is_empty() {
+        return Ok(root(script.into_string()));
+    }
+    // Owner-only from its creation, under a name no one can take first.
+    let mut private = tempfile::Builder::new();
+    private.prefix("cyberctf-root-");
+    #[cfg(unix)]
+    private.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
+    let dir = private.tempdir()?;
+    let file = dir.path().join("proxy");
+    let mut lines = proxy.join("\n");
+    lines.push('\n');
+    crate::platform::private_fs::write(&file, lines)?;
+    let mut step = root(script.with_after_prelude(&read_proxy(&file)));
+    step.private = Some(dir);
+    Ok(step)
+}
+
+/// The shell that exports the proxy variables `file` lists (`NAME=value`, one a line), read as
+/// data: a line naming anything but a proxy variable is skipped, and nothing in a value is run.
+fn read_proxy(file: &std::path::Path) -> String {
+    let names = crate::platform::proxy::VARS.map(|name| format!("{name}=*")).join("|");
+    format!(r#"while IFS= read -r v; do case "$v" in {names}) export "$v" ;; esac; done < {}"#, crate::runtime::ssh::sh_quote(&file.to_string_lossy()))
 }
 
 /// `script` run as root through pkexec ([`as_root`]), with this process's proxy: every install
 /// and removal step on Linux.
-#[cfg(target_os = "linux")]
-pub(super) fn root(script: String) -> Step {
-    as_root(script, crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
+pub(super) fn root(script: RootScript) -> Result<Step> {
+    as_root(script, &crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
 }
 
-/// The install steps on Linux: apt and the vendors' apt repositories, as root through pkexec.
-#[cfg(target_os = "linux")]
-fn linux_plan(dep: Dependency) -> Result<Vec<Step>> {
-    linux_plan_with(dep, packages_here())
-}
-
-/// The package manager a Linux install goes through: apt (Debian, Ubuntu and the distributions
-/// built on them), dnf (Fedora and those built on it), or none the guided setup knows.
-#[cfg(target_os = "linux")]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Packages {
-    /// apt-get: Debian, Ubuntu and the distributions built on them.
-    Apt,
-    /// dnf: Fedora and the distributions built on it.
-    Dnf,
-    /// Neither: the player installs each tool themselves (openSUSE, Arch, …).
-    None,
-}
-
-/// [`linux_plan`] on a machine with that package manager.
-#[cfg(target_os = "linux")]
-fn linux_plan_with(dep: Dependency, packages: Packages) -> Result<Vec<Step>> {
-    let user = crate::platform::exec::login_name();
-    let user = user.as_deref();
-    Ok(match (dep, packages) {
-        (Dependency::Wsl | Dependency::Hyperv | Dependency::Utm, _) => return Err(not_here(dep)),
-        (_, Packages::None) => return Err(without_packages(dep)),
-        // Fedora: the vendors' rpm repositories (Docker's, HashiCorp's), RPM Fusion's VirtualBox,
-        // the distribution's libvirt and QEMU; the cloud CLIs and VMware's utility through apt only
-        // for now.
-        (Dependency::Docker, Packages::Dnf) => vec![root(docker_dnf_script(user))],
-        (Dependency::Vagrant, Packages::Dnf) => vec![root(vagrant_dnf_script())],
-        (Dependency::Terraform, Packages::Dnf) => vec![root(terraform_dnf_script())],
-        (Dependency::Virtualbox, Packages::Dnf) => vec![root(virtualbox_dnf_script(user))],
-        (Dependency::Qemu, Packages::Dnf) => vec![root(qemu_dnf_script(user))],
-        (Dependency::Libvirt, Packages::Dnf) => vec![root(libvirt_dnf_script(user))],
+/// The install step on Linux, as root through pkexec, for the player `user`: apt and the vendors'
+/// apt repositories, or dnf and the vendors' rpm repositories.
+fn linux_plan(dep: Dependency, packages: Option<Packages>, user: Option<&str>) -> Result<Vec<Step>> {
+    let Some(packages) = packages.and_then(Packages::linux) else {
+        return Err(without_packages(dep));
+    };
+    let script = match (dep, packages) {
+        (Dependency::Wsl | Dependency::Hyperv | Dependency::Utm, _) => return Err(not_here(dep, Os::Linux)),
+        // From HashiCorp's apt repository, not the distribution's (older than labs need).
+        (Dependency::Vagrant, LinuxPackages::Apt) => vagrant_script(),
+        (Dependency::Vagrant, LinuxPackages::Dnf) => vagrant_dnf_script(),
+        (Dependency::Docker, LinuxPackages::Apt) => docker_script(user),
+        (Dependency::Docker, LinuxPackages::Dnf) => docker_dnf_script(user),
+        (Dependency::Terraform, LinuxPackages::Apt) => terraform_script(),
+        (Dependency::Terraform, LinuxPackages::Dnf) => terraform_dnf_script(),
+        // Fedora: RPM Fusion's VirtualBox, the distribution's libvirt and QEMU.
+        (Dependency::Virtualbox, LinuxPackages::Apt) => virtualbox_script(),
+        (Dependency::Virtualbox, LinuxPackages::Dnf) => virtualbox_dnf_script(user),
+        // The player joins /dev/kvm's group: the labs' VMs boot with KVM.
+        (Dependency::Qemu, LinuxPackages::Apt) => qemu_script(user),
+        (Dependency::Qemu, LinuxPackages::Dnf) => qemu_dnf_script(user),
+        (Dependency::Libvirt, LinuxPackages::Apt) => libvirt_script(user),
+        (Dependency::Libvirt, LinuxPackages::Dnf) => libvirt_dnf_script(user),
         // AWS CLI v2 from Amazon's signed bundle, in a private temporary directory: no package
         // manager's.
-        (Dependency::Awscli, Packages::Apt | Packages::Dnf) => vec![root(awscli_script())],
-        (_, Packages::Dnf) => return Err(apt_only(dep)),
-        (Dependency::Docker, Packages::Apt) => vec![root(docker_script(user))],
-        // From HashiCorp's apt repository, not the distribution's (older than labs need).
-        (Dependency::Vagrant, Packages::Apt) => vec![root(vagrant_script())],
-        // Terraform via HashiCorp's official apt repo (best effort across Debian/Ubuntu).
-        (Dependency::Terraform, Packages::Apt) => vec![root(terraform_script())],
-        (Dependency::Virtualbox, Packages::Apt) => vec![root(virtualbox_script())],
-        // The player joins /dev/kvm's group: the labs' VMs boot with KVM.
-        (Dependency::Qemu, Packages::Apt) => vec![root(qemu_script(user))],
-        (Dependency::Libvirt, Packages::Apt) => vec![root(libvirt_script(user))],
-        // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned.
-        (Dependency::Azurecli, Packages::Apt) => vec![root(azurecli_script())],
-        (Dependency::Gcloud, Packages::Apt) => vec![root(gcloud_script())],
-        (Dependency::VmwareUtility, Packages::Apt) => vec![root(vmware_utility_script())],
-    })
-}
-
-/// The package manager on this machine's PATH: apt-get, else dnf, else none the guided setup
-/// installs through (openSUSE's zypper, Arch's pacman: the player installs themselves).
-#[cfg(target_os = "linux")]
-pub(super) fn packages_here() -> Packages {
-    if crate::platform::on_path("apt-get") {
-        Packages::Apt
-    } else if crate::platform::on_path("dnf") {
-        Packages::Dnf
-    } else {
-        Packages::None
-    }
+        (Dependency::Awscli, LinuxPackages::Apt | LinuxPackages::Dnf) => awscli_script(),
+        // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned;
+        // through apt only for now, as VMware's utility.
+        (Dependency::Azurecli, LinuxPackages::Apt) => azurecli_script(),
+        (Dependency::Gcloud, LinuxPackages::Apt) => gcloud_script(),
+        (Dependency::VmwareUtility, LinuxPackages::Apt) => vmware_utility_script(),
+        (Dependency::Azurecli | Dependency::Gcloud | Dependency::VmwareUtility, LinuxPackages::Dnf) => return Err(apt_only(dep)),
+    };
+    Ok(vec![root(script)?])
 }
 
 /// What an install of `dep` says on a Linux distribution with neither apt nor dnf: the guided
 /// setup doesn't install there yet, so the player installs it themselves; instead of a command
 /// that fails.
-#[cfg(any(target_os = "linux", test))]
 pub(crate) fn without_packages(dep: Dependency) -> Error {
     Error::Invalid(format!(
         "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install {} yourself, then re-check.",
-        dep.name()
+        dep.name_on(Os::Linux)
     ))
 }
 
 /// What an install of `dep` says on a dnf distribution for a tool the guided setup installs
 /// through apt only for now (the cloud CLIs, VMware's utility).
-#[cfg(target_os = "linux")]
 pub(crate) fn apt_only(dep: Dependency) -> Error {
-    Error::Invalid(format!("The guided setup installs {} through apt only for now: install it yourself, then re-check.", dep.name()))
+    Error::Invalid(format!("The guided setup installs {} through apt only for now: install it yourself, then re-check.", dep.name_on(Os::Linux)))
 }
 
-/// The ordered install steps for a dependency on this OS.
+/// The ordered install steps for a dependency on `host`, for the player `user` (Linux joins
+/// them to the groups a tool's devices need).
+pub(super) fn plan_on(dep: Dependency, host: Host, user: Option<&str>) -> Result<Vec<Step>> {
+    if !dep.runs_on(host.os) {
+        return Err(not_here(dep, host.os));
+    }
+    match host.os {
+        Os::Macos => macos_plan(dep, host),
+        Os::Windows => windows_plan(dep, host.arch),
+        Os::Linux => linux_plan(dep, host.packages, user),
+    }
+}
+
+/// The ordered install steps for a dependency on this computer.
 fn plan(dep: Dependency) -> Result<Vec<Step>> {
-    if !dep.runs_on(std::env::consts::OS) {
-        return Err(not_here(dep));
-    }
-    #[cfg(target_os = "macos")]
-    {
-        macos_plan(dep)
-    }
-    #[cfg(target_os = "windows")]
-    {
-        windows_plan(dep)
-    }
-    #[cfg(target_os = "linux")]
-    {
-        linux_plan(dep)
-    }
+    plan_on(dep, Host::here(), crate::platform::exec::login_name().as_deref())
 }
 
-/// Why `dep` can't be installed or removed on this OS: it doesn't run here ([`Dependency::runs_on`]).
-pub(super) fn not_here(dep: Dependency) -> Error {
-    let os = crate::platform::os_name(std::env::consts::OS);
-    Error::Invalid(format!("{} doesn't run on {os}: there is nothing of it to install or remove here.", dep.name()))
+/// Why `dep` can't be installed or removed on `os`: it doesn't run there ([`Dependency::runs_on`]).
+pub(super) fn not_here(dep: Dependency, os: Os) -> Error {
+    Error::Invalid(format!("{} doesn't run on {}: there is nothing of it to install or remove here.", dep.name_on(os), os.name()))
 }
 
 /// Refused when this computer's policy turns one-click installs off (`DisableToolInstalls`): the
@@ -422,7 +487,7 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
     if !valid_plugin(&plugin) {
         return Err(Error::Invalid(format!("invalid plugin name `{plugin}`")));
     }
-    let step = Step { program: "vagrant".into(), args: vec!["plugin".into(), "install".into(), plugin], note: None };
+    let step = Step { program: "vagrant".into(), args: vec!["plugin".into(), "install".into(), plugin], note: None, private: None };
     on_line(command_line(&step));
     run_step(&step, &mut on_line).await?;
     on_line("Done. Re-checking this machine…".into());
@@ -430,319 +495,4 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Regression (rig windows-bare, a clean Windows 11): `winget install -e --id
-    /// Docker.DockerDesktop` without a source failed with 0x8a15005e, the Microsoft Store source's
-    /// certificate pinning failing, in both passes. winget is asked of its own source alone.
-    #[test]
-    fn winget_installs_and_removes_from_its_own_source_alone() {
-        let install = winget("install", "Docker.DockerDesktop", &["--accept-source-agreements", "--accept-package-agreements"]);
-        assert_eq!(
-            command_line(&install),
-            "$ winget install -e --id Docker.DockerDesktop --source winget --accept-source-agreements --accept-package-agreements"
-        );
-        assert_eq!(command_line(&winget("uninstall", "Hashicorp.Vagrant", &[])), "$ winget uninstall -e --id Hashicorp.Vagrant --source winget");
-    }
-
-    #[test]
-    fn docker_is_named_as_the_setup_installs_it_on_each_os() {
-        assert_eq!(Dependency::Docker.name_on("linux"), "Docker Engine");
-        assert_eq!(Dependency::Docker.name_on("macos"), "Docker Desktop");
-        assert_eq!(Dependency::Docker.name_on("windows"), "Docker Desktop");
-        assert_eq!(Dependency::Awscli.name_on("linux"), "AWS CLI");
-    }
-
-    #[test]
-    fn each_tool_runs_on_its_os_and_is_refused_elsewhere_in_one_message() {
-        for (dep, oses) in [
-            (Dependency::Utm, ["macos"].as_slice()),
-            (Dependency::Libvirt, &["linux"]),
-            (Dependency::Wsl, &["windows"]),
-            (Dependency::Hyperv, &["windows"]),
-            (Dependency::Docker, &["macos", "linux", "windows"]),
-            (Dependency::Qemu, &["macos", "linux", "windows"]),
-        ] {
-            for os in ["macos", "linux", "windows"] {
-                assert_eq!(dep.runs_on(os), oses.contains(&os), "{dep:?} on {os}");
-            }
-        }
-        // Here: every tool this OS doesn't have is refused before any step, saying so.
-        for dep in Dependency::ALL.into_iter().filter(|d| !d.runs_on(std::env::consts::OS)) {
-            let said = plan(dep).err().map(|e| e.to_string()).unwrap_or_default();
-            assert_eq!(said, super::not_here(dep).to_string());
-            assert!(said.starts_with(&format!("{} doesn't run on ", dep.name())), "{said}");
-        }
-    }
-
-    #[tokio::test]
-    async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
-        let _policy = policy::Override::with(&[Key::DisableToolInstalls]);
-        let tools = crate::platform::exec::fake::Tools::rules(&[]);
-        let t = crate::testing::test_app::TestApp::new();
-        let mut lines = Vec::new();
-        let err = install_dependency(t.dirs(), Dependency::Docker, |l| lines.push(l)).await.unwrap_err();
-        assert_eq!(err.code(), crate::error::Code::TurnedOffByPolicy { setting: "DisableToolInstalls".into() });
-        assert_eq!(lines, [err.to_string()], "said on the install's log");
-        let err = install_vagrant_plugin("vagrant-vmware-esxi".into(), |_| {}).await.unwrap_err();
-        assert!(err.to_string().contains("DisableToolInstalls"), "{err}");
-        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-    }
-
-    #[test]
-    fn a_root_install_carries_the_proxy_through_pkexec() {
-        let step = as_root("apt-get update".into(), vec!["https_proxy=http://proxy.corp:3128".into(), "no_proxy=.corp".into()]);
-        assert_eq!(step.program, "pkexec");
-        assert_eq!(step.args, ["env", "https_proxy=http://proxy.corp:3128", "no_proxy=.corp", "sh", "-c", "apt-get update"]);
-        assert_eq!(as_root("true".into(), Vec::new()).args, ["env", "sh", "-c", "true"]);
-    }
-
-    #[test]
-    fn only_vagrant_plugin_names_are_installed() {
-        assert!(valid_plugin("vagrant-vmware-esxi") && valid_plugin("vagrant_proxmox"));
-        assert!(!valid_plugin("vagrant-x; touch /tmp/x") && !valid_plugin("--plugin-source") && !valid_plugin("rails"));
-        assert!(!valid_plugin(&format!("vagrant-{}", "a".repeat(64))));
-    }
-
-    /// The plan for every dependency on this OS: the ones that install here have steps, the
-    /// others say why not.
-    fn plans() -> Vec<(Dependency, Result<Vec<Step>>)> {
-        Dependency::ALL.into_iter().map(|d| (d, plan(d))).collect()
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn macos_installs_through_homebrew() {
-        if crate::platform::brew_bin().is_none() {
-            assert!(plan(Dependency::Docker).err().unwrap().to_string().contains("Homebrew is required"));
-            return;
-        }
-        for (dep, p) in plans() {
-            match dep {
-                Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => assert!(p.is_err(), "{dep:?}"),
-                _ => assert!(!p.unwrap().is_empty(), "{dep:?}"),
-            }
-        }
-        let azure = plan(Dependency::Azurecli).unwrap();
-        assert_eq!(azure.len(), 3);
-        assert!(azure[2].note.is_some() && azure[2].args.contains(&"azure-cli-preview".to_string()));
-        // QEMU is one shell step: a best-effort Homebrew update that never aborts the install
-        // (`|| …`), then the install itself. It must not be a second, fatal `brew update` step.
-        let qemu = plan(Dependency::Qemu).unwrap();
-        assert_eq!(qemu.len(), 1);
-        assert_eq!(qemu[0].program, "sh");
-        let script = qemu[0].args.join(" ");
-        assert!(script.contains("update ||") && script.contains("install qemu"), "{script}");
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_installs_through_pkexec() {
-        for (dep, p) in plans() {
-            match dep {
-                Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => assert!(p.is_err(), "{dep:?}"),
-                _ => assert_eq!(p.unwrap()[0].program, "pkexec", "{dep:?}"),
-            }
-        }
-        // libvirt brings what the vagrant-libvirt plugin builds against, and joins its group.
-        let libvirt = plan(Dependency::Libvirt).unwrap()[0].args.join(" ");
-        assert!(libvirt.contains("libvirt-dev") && libvirt.contains("build-essential"), "{libvirt}");
-        let aws = plan(Dependency::Awscli).unwrap()[0].args.join(" ");
-        assert!(aws.contains("awscli-exe-linux") && !aws.contains("/tmp/aws"), "{aws}");
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn windows_installs_through_winget_and_wsl_through_its_installer() {
-        for (dep, p) in plans() {
-            match dep {
-                Dependency::Utm | Dependency::Libvirt => assert!(p.is_err(), "{dep:?}"),
-                Dependency::Virtualbox | Dependency::VmwareUtility if std::env::consts::ARCH == "aarch64" => assert!(p.is_err()),
-                Dependency::Wsl | Dependency::VmwareUtility | Dependency::Hyperv => assert_eq!(p.unwrap()[0].program, "powershell"),
-                _ => {
-                    let steps = p.unwrap();
-                    assert_eq!(steps[0].program, "winget");
-                    assert!(steps[0].args.contains(&"--accept-package-agreements".to_string()));
-                    assert!(steps[0].args.windows(2).any(|w| w == ["--source", "winget"]), "{dep:?}: {:?}", steps[0].args);
-                }
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn vagrant_comes_from_hashicorps_repository_not_the_distributions() {
-        // Regression: the setup ran `apt-get install vagrant`, Debian 13's 2.3.8, and every VM lab
-        // then refused it ("needs Vagrant 2.4.0 or later").
-        let plan = linux_plan_with(Dependency::Vagrant, Packages::Apt).unwrap();
-        let script = plan.iter().flat_map(|s| s.args.iter()).cloned().collect::<Vec<_>>().join(" ");
-        assert!(script.contains("apt.releases.hashicorp.com") && script.contains("apt-get install -y vagrant"), "{script}");
-        assert!(!script.contains("apt-get update && apt-get install -y vagrant"), "the distribution's package: {script}");
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anything_runs() {
-        // Regression: Fedora, openSUSE and Arch got `apt-get: not found` from a pkexec prompt.
-        for dep in [Dependency::Vagrant, Dependency::Virtualbox, Dependency::Libvirt, Dependency::Qemu, Dependency::Docker] {
-            let err = linux_plan_with(dep, Packages::None).err().unwrap_or_else(|| panic!("{dep:?} refused"));
-            assert_eq!(err.to_string(), without_packages(dep).to_string());
-            assert!(linux_plan_with(dep, Packages::Apt).is_ok(), "{dep:?}");
-        }
-        assert!(linux_plan_with(Dependency::Utm, Packages::None).err().is_some_and(|e| e.to_string().starts_with("UTM doesn't run on Linux")));
-    }
-
-    #[test]
-    fn without_apt_or_dnf_the_install_says_the_distribution_isnt_supported_yet_and_what_to_install() {
-        let err = without_packages(Dependency::Virtualbox).to_string();
-        assert_eq!(err, "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install VirtualBox yourself, then re-check.");
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn a_dnf_distribution_installs_docker_the_hypervisors_and_vagrant_through_dnf_and_the_rest_by_hand() {
-        // Fedora: every setup shard failed on "this distribution isn't supported" (2026-11-12).
-        for dep in
-            [Dependency::Docker, Dependency::Vagrant, Dependency::Terraform, Dependency::Virtualbox, Dependency::Qemu, Dependency::Libvirt, Dependency::Awscli]
-        {
-            let plan = linux_plan_with(dep, Packages::Dnf).unwrap_or_else(|e| panic!("{dep:?}: {e}"));
-            let script = plan.iter().flat_map(|s| s.args.iter()).cloned().collect::<Vec<_>>().join(" ");
-            let own = script
-                .replace(crate::platform::root_script::NEED_CURL, "")
-                .replace(crate::platform::root_script::NEED_GPG, "")
-                .replace(crate::platform::root_script::NEED_UNZIP, "");
-            assert!(!own.contains("apt-get"), "{dep:?} through apt: {script}");
-            if dep != Dependency::Awscli {
-                assert!(script.contains("dnf install -y"), "{dep:?}: {script}");
-            }
-        }
-        for dep in [Dependency::Azurecli, Dependency::Gcloud, Dependency::VmwareUtility] {
-            assert_eq!(linux_plan_with(dep, Packages::Dnf).err().map(|e| e.to_string()), Some(apt_only(dep).to_string()), "{dep:?}");
-        }
-    }
-
-    #[test]
-    fn hyper_v_is_turned_on_by_dism_elevated_and_refused_on_windows_home() {
-        // DISM's "done, restart to finish" (3010) is a success; Home has no Hyper-V to turn on.
-        assert!(HYPERV_ON.contains("/FeatureName:Microsoft-Hyper-V") && HYPERV_ON.contains("/NoRestart") && HYPERV_ON.contains("-Verb RunAs"));
-        assert!(HYPERV_ON.contains("-eq 3010) { exit 0 }") && HYPERV_ON.contains("EditionID -like 'Core*'"));
-    }
-
-    #[test]
-    fn dependencies_use_lowercase_names() {
-        assert_eq!(serde_json::to_string(&Dependency::Azurecli).unwrap(), "\"azurecli\"");
-        assert_eq!(serde_json::from_str::<Dependency>("\"wsl\"").unwrap(), Dependency::Wsl);
-        assert_eq!(serde_json::to_string(&Dependency::Hyperv).unwrap(), "\"hyperv\"");
-    }
-
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    use crate::platform::exec::fake::{Tools, fail, ok};
-    use crate::testing::test_app::{Sink, TestApp};
-
-    /// A dependency this OS doesn't install (on macOS without Homebrew, none does).
-    fn not_here() -> Dependency {
-        if cfg!(windows) { Dependency::Utm } else { Dependency::Wsl }
-    }
-
-    /// Scripted tools for an install of Terraform: `terraform version` answers once `installed`
-    /// is set, and the install step (whichever package manager runs it) sets it when `works`.
-    fn terraform_tools(installed: Rc<Cell<bool>>, works: bool) -> Tools {
-        Tools::new(move |program, _| {
-            if program == "terraform" {
-                return if installed.get() { ok("Terraform v1.9.8") } else { fail("terraform: not found") };
-            }
-            if !works {
-                return fail("E: Unable to locate package terraform");
-            }
-            installed.set(true);
-            ok("Setting up terraform (1.9.8-1) ...")
-        })
-    }
-
-    #[tokio::test]
-    async fn a_dependency_this_os_does_not_install_is_refused_in_the_log_before_running_anything() {
-        let t = TestApp::new();
-        let tools = Tools::rules(&[]);
-        let log = Sink::default();
-        let err = install_dependency(t.dirs(), not_here(), log.on_line()).await.unwrap_err();
-        assert_eq!(log.lines(), [err.to_string()]);
-        assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-        assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
-    }
-
-    #[tokio::test]
-    async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
-        let Ok(steps) = plan(Dependency::Terraform) else { return }; // macOS without Homebrew
-        let t = TestApp::new();
-        let tools = terraform_tools(Rc::new(Cell::new(false)), true);
-        let log = Sink::default();
-        install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
-        let lines = log.lines();
-        assert_eq!(lines.first(), Some(&command_line(&steps[0])), "{lines:?}");
-        assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
-        assert_eq!(lines.last().map(String::as_str), Some("Done. Re-checking this machine…"));
-        assert!(tools.called(&format!("{} {}", steps[0].program, steps[0].args.join(" "))));
-        let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
-        assert_eq!(ours, [Dependency::Terraform]);
-
-        // Cleanup removes it, then forgets it: a second removal is refused.
-        let log = Sink::default();
-        uninstall::uninstall_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
-        assert_eq!(log.lines().last().map(String::as_str), Some("Removed."));
-        assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
-        let err = uninstall::uninstall_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap_err();
-        assert_eq!(err.to_string(), "Cyber CTF didn't install this tool, so it won't remove it.");
-    }
-
-    #[tokio::test]
-    async fn a_tool_that_was_already_there_is_never_recorded() {
-        if plan(Dependency::Terraform).is_err() {
-            return;
-        }
-        let t = TestApp::new();
-        let _tools = terraform_tools(Rc::new(Cell::new(true)), true);
-        install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
-        assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
-    }
-
-    #[tokio::test]
-    async fn a_tool_not_found_yet_counts_once_a_later_check_finds_it() {
-        if plan(Dependency::Terraform).is_err() {
-            return;
-        }
-        let t = TestApp::new();
-        let present = Rc::new(Cell::new(false));
-        // The step "works" but the tool isn't on PATH yet (an installer left open).
-        let probe = present.clone();
-        let _tools = Tools::new(move |program, _| if program == "terraform" && !probe.get() { fail("not found") } else { ok("") });
-        install_dependency(t.dirs(), Dependency::Terraform, Sink::default().on_line()).await.unwrap();
-        assert!(uninstall::installed_tools(t.dirs()).await.is_empty(), "pending, not shown");
-        present.set(true);
-        let ours: Vec<_> = uninstall::installed_tools(t.dirs()).await.into_iter().map(|t| t.dependency).collect();
-        assert_eq!(ours, [Dependency::Terraform]);
-    }
-
-    #[tokio::test]
-    async fn a_failed_install_says_so_and_records_nothing() {
-        if plan(Dependency::Terraform).is_err() {
-            return;
-        }
-        let t = TestApp::new();
-        let _tools = terraform_tools(Rc::new(Cell::new(false)), false);
-        let log = Sink::default();
-        let err = install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap_err();
-        assert!(err.to_string().contains("exited with"), "{err}");
-        assert!(log.lines().contains(&"E: Unable to locate package terraform".to_string()));
-        assert!(!log.lines().iter().any(|l| l.starts_with("Done.")));
-        assert!(uninstall::installed_tools(t.dirs()).await.is_empty());
-    }
-
-    #[tokio::test]
-    async fn an_invalid_plugin_is_refused_before_running_anything() {
-        let err = install_vagrant_plugin("rails".into(), |_| {}).await.unwrap_err();
-        assert_eq!(err.to_string(), "invalid plugin name `rails`");
-    }
-}
+mod tests;

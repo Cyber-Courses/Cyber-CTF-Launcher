@@ -30,10 +30,11 @@ import {
   withProvider,
 } from "@/features/servers/host-setup/setup-model";
 import { useCloudAccounts } from "@/features/servers/host-setup/use-cloud-accounts";
+import { useTrustCheck } from "@/features/servers/host-setup/use-trust-check";
 import { useRunLog } from "@/lib/use-run-log";
 import { testHost } from "@/features/servers/use-server-list";
 import { translate, useT } from "@/lib/i18n";
-import { describeError } from "@/lib/errors";
+import { useAction } from "@/lib/use-action";
 import { useStepper } from "@/lib/use-stepper";
 import { ignore } from "@/lib/failure";
 import { useToolInstallsOff } from "@/lib/use-managed";
@@ -68,8 +69,9 @@ export function useHostSetup({ initial, providerChosen, report, onRefresh, onSav
   const signIn = useSignIn(initial);
   const made = sameSshKey(signIn.madeWith, signIn.sshKey) && isProxmoxToken(v.username);
   const payload = savePayload(v, signIn.signInMethod, signIn.sshKey, made);
-  const saving = useSaveAndTest(payload, onSaved, stepper.next);
-  const connecting = useConnect(payload, form.setV, signIn.setMadeWith, onSaved, stepper.next);
+  const trust = useTrustCheck(form.setV);
+  const saving = useSaveAndTest(payload, trust.ensure, onSaved, stepper.next);
+  const connecting = useConnect(payload, trust.ensure, { setV: form.setV, setMadeWith: signIn.setMadeWith }, onSaved, stepper.next);
   const title = setupTitle({ saved: saving.saved, test: saving.test, editing, cloud: traits.cloud, initialName: initial.name });
 
   // Grouped by concern: each step reads the groups it needs.
@@ -100,6 +102,8 @@ export function useHostSetup({ initial, providerChosen, report, onRefresh, onSav
     tools: { ...tools, ...machineTools(v.provider, report) },
     /** Saving the host and testing it. */
     save: saving,
+    /** The question confirming a Proxmox server's certificate and node keys, while it is asked. */
+    trustDialog: trust.dialog,
   };
 }
 
@@ -149,39 +153,26 @@ function useSignIn(initial: ServerHostInput) {
  *  server's options with it; the form then edits that saved host. */
 function useConnect(
   payload: ServerHostInput,
-  setV: React.Dispatch<React.SetStateAction<ServerHostInput>>,
-  setMadeWith: (k: SshKeySignIn | null) => void,
+  ensure: Ensure,
+  { setV, setMadeWith }: { setV: React.Dispatch<React.SetStateAction<ServerHostInput>>; setMadeWith: (k: SshKeySignIn | null) => void },
   onSaved: (h: ServerHost) => void,
   next: () => void,
 ) {
-  const [connecting, setConnecting] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
-  async function connect() {
-    if (!makesToken(payload)) {
+  const connect = useAction(async () => {
+    // The server's certificate and node keys first: nothing is sent to it before they are confirmed.
+    const trusted = await ensure(payload);
+    if (!trusted) return;
+    if (!makesToken(trusted)) {
       next();
       return;
     }
-    setConnecting(true);
-    setConnectError(null);
-    try {
-      const h = await serverSaveSshKey(payload);
-      setV((s) => ({ ...s, id: h.id, username: h.username, password: null }));
-      setMadeWith(h.sshKey ?? payload.sshKey ?? null);
-      onSaved(h);
-      next();
-    } catch (err) {
-      setConnectError(describeError(err));
-    } finally {
-      setConnecting(false);
-    }
-  }
-  return {
-    connecting,
-    connectError,
-    connect: () => {
-      if (!connecting) void connect();
-    },
-  };
+    const h = await serverSaveSshKey(trusted);
+    setV((s) => ({ ...s, id: h.id, username: h.username, password: null }));
+    setMadeWith(h.sshKey ?? trusted.sshKey ?? null);
+    onSaved(h);
+    next();
+  });
+  return { connecting: connect.running, connectError: connect.error, connect: connect.run };
 }
 
 /** The steps this setup takes, and where the player is among them. */
@@ -227,9 +218,7 @@ function useToolInstall(onRefresh: () => void) {
 
 /** Saving the host (`v`, as `savePayload` builds it: with an SSH key sign-in, through the node
  *  bootstrap), then moving to the Test step (`next`) and testing the saved host. */
-function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, next: () => void) {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function useSaveAndTest(v: ServerHostInput, ensure: Ensure, onSaved: (h: ServerHost) => void, next: () => void) {
   const [saved, setSaved] = useState<ServerHost | null>(null);
   const [test, setTest] = useState<ServerTest | "testing" | null>(null);
 
@@ -239,34 +228,31 @@ function useSaveAndTest(v: ServerHostInput, onSaved: (h: ServerHost) => void, ne
     setTest(await testHost(id));
   }
 
-  async function saveAndTest() {
-    setSaving(true);
-    setError(null);
-    try {
-      const h = await (makesToken(v) ? serverSaveSshKey(v) : serverSave(v));
-      setSaved(h);
-      onSaved(h);
-      next();
-      void runTest(h.id);
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setSaving(false);
-    }
-  }
+  // Guarded: a second click while the save is under way would save the host twice.
+  const save = useAction(async () => {
+    // A certificate turned self-signed on this step is confirmed before the save.
+    const trusted = await ensure(v);
+    if (!trusted) return;
+    const h = await (makesToken(trusted) ? serverSaveSshKey(trusted) : serverSave(trusted));
+    setSaved(h);
+    onSaved(h);
+    next();
+    void runTest(h.id);
+  });
 
   return {
-    saving,
-    error,
+    saving: save.running,
+    error: save.error,
     saved,
     test,
     runTest: (id: string) => {
       void runTest(id);
     },
-    saveAndTest: () => {
-      void saveAndTest();
-    },
+    saveAndTest: save.run,
   };
 }
 
 export type HostSetup = ReturnType<typeof useHostSetup>;
+
+/** Confirms what a Proxmox server offers (`useTrustCheck`): the payload to go on with, or null. */
+type Ensure = (v: ServerHostInput) => Promise<ServerHostInput | null>;

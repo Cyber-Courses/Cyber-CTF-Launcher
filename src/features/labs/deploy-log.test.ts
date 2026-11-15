@@ -133,7 +133,7 @@ describe("deriveSteps: odd Vagrant output", () => {
       ["download", "labs.deploy.steps.download", 3],
       ["m:dc01", "dc01", 1],
     ]);
-    expect(steps(["Running in a qemu VM on this machine", "Clearing a previous, stopped run…", "==> default: Booting VM..."])).toEqual([
+    expect(steps(["Lab installed", "Clearing a previous, stopped run…", "==> default: Booting VM..."])).toEqual([
       ["download", "labs.deploy.steps.download", 1],
       ["prepare", "labs.deploy.steps.prepareMachine", 1],
       ["m:default", "default", 1],

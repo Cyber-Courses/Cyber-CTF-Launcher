@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { LabDetail } from "@/features/labs/lab-detail";
 import type { Lab, LabRuntimeInfo } from "@/features/labs/use-labs";
 import type { LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
 import { answersDialog, commands, dialogsAsked, installTauri, type Handler } from "@/test/tauri";
 import { NOTHING, VMS_HERE, containerMachine, rejectWith, startIn, upStatus } from "@/features/labs/labs-test-kit";
 import { renderLabPage } from "@/features/labs/lab-detail/lab-detail-test-kit";
-import { flush } from "@/test/ui";
+import { flush, preloadLabScreens } from "@/test/ui";
 import { getDockerEngine, getLocalVmForm, getVmProvider, setDockerEngine, setLocalVmForm, setPortMode, setVmProvider } from "@/lib/settings";
+
+// The lab page's lazily loaded screens, loaded once before the tests rather than inside the first.
+beforeAll(preloadLabScreens, 60_000);
 
 afterEach(() => {
   setPortMode(null);
@@ -42,13 +45,12 @@ const vmLab: Lab = {
   runtime: { runtime: "VM", architectures: ["x86_64"], providers: ["virtualbox", "vmware_esxi"], ...SOURCE },
 };
 
-/** A launch path on `provider`, unbadged. */
-const path = (provider: Provider): LabRunPath => ({ provider, badge: "none", evidence: "" });
+/** A launch path on `provider`. */
+const path = (provider: Provider): LabRunPath => ({ provider });
 
 /** The backend's run options with only `paths` set. */
 const runOptions = (paths: Partial<LabRunOptions>): LabRunOptions => ({
   docker: path("virtualbox"),
-  dockerVm: [],
   vms: [],
   servers: [],
   cloudDocker: [],
@@ -59,11 +61,10 @@ const runOptions = (paths: Partial<LabRunOptions>): LabRunOptions => ({
   ...paths,
 });
 
-/** A container lab with VM recipes too, as the backend reads it: in one VM or one VM per machine
+/** A container lab with VM recipes too, as the backend reads it: on Docker or one VM per machine
  *  here, and on every cloud in both forms. */
 const bothForms = () =>
   runOptions({
-    dockerVm: [path("virtualbox")],
     vms: [path("virtualbox")],
     cloudDocker: ["aws", "azure"].map((c) => path(c as Provider)),
     cloudVm: ["aws", "azure"].map((c) => path(c as Provider)),
@@ -148,8 +149,9 @@ describe("LabDetail: starting", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("asks where to run a container lab and starts it in a VM here", async () => {
-    installTauri(quiet);
+  it("asks where to run a container lab and starts it as one VM per machine here", async () => {
+    // A container lab with VM recipes: one VM per machine here is its other way to run.
+    installTauri({ ...quiet, lab_run_options: bothForms });
     const { user, h } = await clickStart({ readyVms: ["virtualbox"] });
     const dialog = screen.getByRole("dialog");
     // Two rows: Containers and In a VM. The port choice is NOT on this step.
@@ -158,12 +160,12 @@ describe("LabDetail: starting", () => {
     expect(within(dialog).queryByText("Ports on this machine")).toBeNull();
     await user.click(within(dialog).getByText("VM"));
     await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
-    expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vm", provider: "virtualbox" });
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vms", provider: "virtualbox" });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it('keeps a hypervisor picked without "Don\'t ask again" to that launch: the next one asks again', async () => {
-    installTauri({ ...quiet, lab_run_options: () => runOptions({ dockerVm: [path("virtualbox"), path("qemu")] }) });
+    installTauri({ ...quiet, lab_run_options: () => runOptions({ vms: [path("virtualbox"), path("qemu")] }) });
     const { user } = await clickStart({ readyVms: ["virtualbox", "qemu"] });
     await user.click(within(screen.getByRole("dialog")).getByText("VM"));
     await user.click(within(screen.getByRole("dialog")).getByText("QEMU"));
@@ -176,16 +178,16 @@ describe("LabDetail: starting", () => {
   });
 
   it('saves the hypervisor and the VM form picked with "Don\'t ask again"', async () => {
-    installTauri({ ...quiet, lab_run_options: () => runOptions({ dockerVm: [path("virtualbox"), path("qemu")] }) });
+    installTauri({ ...quiet, lab_run_options: () => runOptions({ vms: [path("virtualbox"), path("qemu")] }) });
     const { user, h } = await clickStart({ readyVms: ["virtualbox", "qemu"] });
     const dialog = screen.getByRole("dialog");
     await user.click(within(dialog).getByText("VM"));
     await user.click(within(dialog).getByText("QEMU"));
     await user.click(within(dialog).getByRole("switch", { name: "Don't ask again" }));
     await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
-    expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vm", provider: "qemu" });
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vms", provider: "qemu" });
     expect(getVmProvider()).toBe("qemu");
-    expect(getLocalVmForm()).toBe("vm");
+    expect(getLocalVmForm()).toBe("vms");
   });
 
   it("reads the lab's run options and the saved servers once for the page and its picker", async () => {
@@ -198,7 +200,8 @@ describe("LabDetail: starting", () => {
   });
 
   it("sends Containers to a ports step, and Back returns to the places", async () => {
-    installTauri(quiet);
+    // A container lab with VM recipes: one VM per machine here is its other way to run.
+    installTauri({ ...quiet, lab_run_options: bothForms });
     const { user } = await clickStart({ readyVms: ["virtualbox"] });
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
@@ -215,7 +218,8 @@ describe("LabDetail: starting", () => {
   });
 
   it("passes the ports picked in the dialog for containers here, and Cancel starts nothing", async () => {
-    installTauri(quiet);
+    // A container lab with VM recipes: one VM per machine here is its other way to run.
+    installTauri({ ...quiet, lab_run_options: bothForms });
     const { user, h } = await clickStart({ readyVms: ["virtualbox"] });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -227,27 +231,20 @@ describe("LabDetail: starting", () => {
     expect(h.onStart).toHaveBeenCalledWith({ kind: "local", ports: "default" });
   });
 
-  it("sends a dual-form lab's In a VM row to a form step, and Back returns to the places", async () => {
+  it("runs a dual-form lab's In a VM row as one VM per machine: no form step, never containers in a VM", async () => {
     installTauri({ ...quiet, lab_run_options: bothForms });
     const both: Lab = { ...dockerLab, id: "lab-both", runtime: { ...dockerRuntime, docker: true, vm: true } };
-    const { user } = await clickStart({ lab: both, readyVms: ["virtualbox"] });
+    const { user, h } = await clickStart({ lab: both, readyVms: ["virtualbox"] });
     const dialog = screen.getByRole("dialog");
-    // Step 1: two rows; the VM forms are a step in.
     expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
     expect(within(dialog).getByText("Container")).toBeTruthy();
     expect(within(dialog).getByText("VM")).toBeTruthy();
-    expect(within(dialog).queryByText("One VM per machine")).toBeNull();
     await user.click(within(dialog).getByText("VM"));
-    // Step 2: only the two VM forms, no Containers.
-    expect(within(dialog).getByText("How should it run?")).toBeTruthy();
-    expect(within(dialog).getByText("In one VM")).toBeTruthy();
-    expect(within(dialog).getByText("One VM per machine")).toBeTruthy();
-    expect(within(dialog).queryByText("Container")).toBeNull();
-    // Back returns to the places.
-    await user.click(within(dialog).getByRole("button", { name: "Back" }));
-    expect(within(dialog).getByText("Where should it run?")).toBeTruthy();
-    expect(within(dialog).getByText("Container")).toBeTruthy();
-    expect(within(dialog).queryByText("One VM per machine")).toBeNull();
+    // One form, one hypervisor: nothing more to ask.
+    expect(within(dialog).queryByText("How should it run?")).toBeNull();
+    expect(within(dialog).queryByText("Which hypervisor?")).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: /^Start$/ }));
+    expect(h.onStart).toHaveBeenCalledWith({ kind: "local-vms", provider: "virtualbox" });
   });
 
   it("offers a dual-form container lab on a cloud the two cloud forms, and starts one VM per machine", async () => {
@@ -384,7 +381,8 @@ describe("LabDetail: starting", () => {
   });
 
   it("asks where to run once a sign-in from the header went through, when there is a choice", async () => {
-    installTauri(quiet);
+    // A container lab with VM recipes: one VM per machine here is its other way to run.
+    installTauri({ ...quiet, lab_run_options: bothForms });
     const user = userEvent.setup();
     const onLogin = vi.fn(() => Promise.resolve(true));
     const onStart = vi.fn();
@@ -460,7 +458,7 @@ describe("LabDetail: a lab that is up", () => {
     const user = userEvent.setup();
     const h = renderDetail({ lab: vmLab, status: vmRunning });
     await flush();
-    // A VM lab here can be shut down too (only a container lab in a VM can't).
+    // A VM lab here can be shut down too.
     expect(screen.getByRole("button", { name: /Shut down/ })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /^\s*Pause$/ }));
     expect(h.onPark).toHaveBeenCalledWith("pause");
@@ -619,7 +617,7 @@ describe("LabDetail: a lab that is up", () => {
     expect(h.onResume).toHaveBeenCalled();
   });
 
-  it("offers Start them where the backend can bring machines back: a container lab run as one VM per machine, not one in a helper VM", async () => {
+  it("offers Start them where the backend can bring machines back: a container lab run as one VM per machine, not one an earlier version left in a helper VM", async () => {
     installTauri(quiet);
     const machines = [machine("web", "running"), machine("db", "poweroff")];
     const perMachine = status({ machines, place: "local_vm", provider: "virtualbox", perMachine: true, url: null, controls: VMS_HERE });
@@ -627,9 +625,12 @@ describe("LabDetail: a lab that is up", () => {
     await flush();
     expect(screen.getByRole("button", { name: /Start them/ })).toBeTruthy();
     cleanup();
-    renderDetail({ status: { ...perMachine, perMachine: false, controls: ["pause"] } });
+    // The helper VM's run is only stopped: the page still shows it, with nothing but its stop.
+    renderDetail({ status: { ...perMachine, perMachine: false, controls: [] } });
     await flush();
     expect(screen.queryByRole("button", { name: /Start them/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^\s*Pause$/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /Stop/ }).length).toBeGreaterThan(0);
   });
 });
 

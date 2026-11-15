@@ -10,7 +10,7 @@ import { AnswerForm } from "@/features/labs/objectives/answer-form";
 import { GuidedHelp } from "@/features/labs/objectives/guided-help";
 import { initiallyOpen, usedHelp, type Challenge, type LabProgress, type SubmitResult } from "@/features/labs/objectives/objectives";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 export interface ObjectiveActions {
   submit: (key: string, answer: string) => Promise<SubmitResult>;

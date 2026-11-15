@@ -110,6 +110,7 @@
     "rdpHint": "Er öffnet sich in {client}. Lass dieses Fenster offen, solange du ihn nutzt: Schließen beendet die Verbindung.",
     "noClient": "Es ist keine Remotedesktop-App installiert. Auf dem Mac installiere Windows App aus dem App Store, unter Linux FreeRDP (xfreerdp) oder Remmina. Dann versuche es erneut.",
     "tunnelled": "Er läuft durch einen verschlüsselten SSH-Tunnel von diesem Computer, der sich mit diesem Fenster schließt.",
+    "tunnelClosed": "Der Tunnel der Konsole wurde geschlossen: {reason}",
     "openFailed": "Die Remotedesktop-App konnte nicht geöffnet werden",
     "openRdp": "In {client} öffnen",
     "copyPassword": "Passwort kopieren",
@@ -118,6 +119,8 @@
     "signInTitle": "Bei der Attack-Box anmelden",
     "signInHint": "Wo ihr Bildschirm ein Passwort verlangt (eine Sperre, eine Anmeldung), melde dich als {user} mit diesem Passwort an.",
     "user": "Benutzer",
-    "password": "Passwort"
+    "password": "Passwort",
+    "shareClipboard": "Die Zwischenablage dieses Computers mit der Maschine teilen",
+    "shareClipboardHint": "Standardmäßig aus: Die Maschine könnte lesen, was du hier kopierst (Passwörter, Tokens), und es ändern. Nur für dieses Fenster; Laufwerke, Drucker und andere Geräte werden nie geteilt."
   }
 }

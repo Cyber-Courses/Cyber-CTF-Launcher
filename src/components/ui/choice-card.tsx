@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 
 // Pick one of several equivalent options, as a grid of cards (e.g. container engines).

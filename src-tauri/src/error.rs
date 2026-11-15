@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::english;
+
 /// What went wrong, as the UI knows it: a code it can branch on and say in the player's
 /// language, with the values its message needs. `Other` and the refusals are the codes the UI
 /// shows as the error's own (English) message (`Code::OWN_MESSAGE`).
@@ -35,7 +37,8 @@ pub enum Code {
     /// path when it can be found, so the player knows what to stop.
     PortInUse {
         /// The host port that is taken.
-        port: u16,
+        #[ts(type = "number")]
+        port: crate::runtime::port::HostPort,
         /// What holds the port, when it could be found.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         holder: Option<String>,
@@ -134,6 +137,65 @@ pub enum Code {
         /// Why, in Vagrant's words.
         reason: String,
     },
+    /// A tool the lab needs answers at a version older than the one it needs.
+    ToolTooOld {
+        /// The tool, as the player knows it (`Vagrant`).
+        tool: String,
+        /// The version this computer has.
+        found: String,
+        /// The oldest version the lab takes.
+        required: String,
+    },
+    /// Hyper-V's commands need administrator rights, and they couldn't be had: the prompt
+    /// declined or unanswered, the elevated session ended.
+    ElevationFailed {
+        /// Why, in the runner's words.
+        reason: String,
+    },
+    /// The lab started, but a check that it is ready didn't hold.
+    LabNotReady {
+        /// What didn't hold, in the runner's words.
+        detail: String,
+    },
+    /// A resume found some of the lab's machines removed outside the app.
+    MachinesGone {
+        /// The machines gone, comma separated.
+        machines: String,
+    },
+    /// A resume found nothing of the lab left (its stopped containers or VMs are gone).
+    NothingToResume,
+    /// The lab can't be paused or shut down: it has no way to.
+    NotParkable,
+    /// A step of the lab printed lines but none new for `minutes`, so it was stopped.
+    StepStalled {
+        /// The step (`up`).
+        step: String,
+        /// How long it went without progress, in minutes.
+        minutes: u64,
+        /// The last line it printed.
+        last_line: String,
+    },
+    /// A step of the lab printed nothing for `minutes`, so it was stopped.
+    StepSilent {
+        /// The step (`up`).
+        step: String,
+        /// How long it printed nothing, in minutes.
+        minutes: u64,
+    },
+    /// A step of the lab still worked after the longest any step may run, so it was stopped.
+    StepCeiling {
+        /// The step (`up`).
+        step: String,
+        /// The longest a step may run, in hours.
+        hours: u64,
+    },
+    /// A step of the lab ran into its time limit, so it was stopped.
+    StepTimedOut {
+        /// The step (`up`).
+        step: String,
+        /// Its limit, in minutes.
+        minutes: u64,
+    },
     /// The server the lab runs on (Proxmox, ESXi) refused its saved credentials: its API token
     /// was revoked, or its password changed.
     ServerAuthFailed {
@@ -150,6 +212,30 @@ pub enum Code {
         /// The policy setting's name.
         setting: String,
     },
+    /// A server with a self-signed certificate whose fingerprint the learner hasn't confirmed
+    /// yet: nothing was sent to it.
+    TlsUnconfirmed {
+        /// The server, by its name in Servers.
+        server: String,
+        /// The SHA-256 fingerprint of the certificate it offered.
+        presented: String,
+    },
+    /// A server offered another certificate than the one the learner confirmed: nothing was sent
+    /// to it.
+    TlsChanged {
+        /// The server, by its name in Servers.
+        server: String,
+        /// The fingerprint confirmed for it.
+        pinned: String,
+        /// The fingerprint of the certificate it offered.
+        presented: String,
+    },
+    /// A server node's SSH host key isn't one the learner confirmed (none yet, or another one):
+    /// the connection was refused.
+    SshHostKeyRefused {
+        /// The node's address.
+        host: String,
+    },
 }
 
 impl Code {
@@ -160,98 +246,23 @@ impl Code {
     #[cfg(test)]
     pub const OWN_MESSAGE: [Code; 3] = [Code::Other, Code::Refused, Code::RefusedBeforeActing];
 
-    /// The English message, for the log and for a UI without this code's translation; for a code
-    /// of `Code::OWN_MESSAGE`, what is said when an error has none of its own.
+    /// The English message, for the log and for a UI without this code's translation: the English
+    /// catalogue's sentence (`errors.codes.*`, what the English UI shows), then a port clash's
+    /// holder as the lab page says it under the error (`labs.failure.portHeldBy`). For a code of
+    /// `Code::OWN_MESSAGE`, which the catalogue doesn't have, what is said when an error has none
+    /// of its own.
     fn message(&self) -> String {
         match self {
             Code::Other => "Something went wrong.".into(),
             Code::Refused => "The operation was refused before it changed anything.".into(),
             Code::RefusedBeforeActing => "The change was refused before it acted: nothing changed.".into(),
-            Code::SignedOut => "You're signed out. Sign in again to continue.".into(),
-            Code::SessionExpired => "Your session expired: you're signed out. Sign in again to continue.".into(),
-            Code::LoginTimeout { minutes } => format!("Sign-in wasn't finished within {minutes} minutes, so it was cancelled. Try again."),
-            Code::AlreadyInProgress => "Another operation on this lab is already in progress; wait for it to finish.".into(),
-            Code::NoPasswordStored => "No password is stored for this host. Edit it and enter one.".into(),
-            Code::SignInCancelled => "Sign-in cancelled.".into(),
-            Code::SignInDenied => "Sign-in was declined at Cyber Auth, so you're still signed out. Sign in again and allow Cyber CTF to continue.".into(),
-            Code::SignInCodeUnavailable => {
-                "Signing in with a code isn't available yet. Copy the sign-in link into any browser instead, on this machine or another.".into()
+            Code::PortInUse { holder: Some(holder), .. } => {
+                let held = english::sentence(&english::LABS["failure"], "portHeldBy", &serde_json::json!({ "holder": holder }));
+                format!("{} {held}", english::coded(&english::ERRORS["codes"], self))
             }
-            Code::Unreachable { detail } => format!("Cyber CTF can't be reached ({detail}). Check your connection and try again."),
-            Code::OfflineReady { detail } => {
-                format!("Cyber CTF can't be reached ({detail}). This lab is installed here, so it can start offline, without saving progress.")
-            }
-            Code::PortInUse { port, holder } => {
-                let clash = format!(
-                    "Host port {port} is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again."
-                );
-                // What holds it, as the lab page says it under the error (`labs.failure.portHeldBy`):
-                // the catalogue has one form, the holder its own line.
-                match holder {
-                    Some(holder) => format!("{clash} Held by {holder}. Stop it, then start the lab again."),
-                    None => clash,
-                }
-            }
-            Code::DockerNotRunning => {
-                "Docker isn't running. Start your container engine (Docker Desktop, or the docker service on Linux), then start the lab again.".into()
-            }
-            Code::DockerDenied { user } => format!(
-                "Docker is running, but your account can't use it yet. Add yourself to the docker group in a terminal (sudo usermod -aG docker {user}), then log out and back in."
-            ),
-            Code::DockerDeniedWindows { user } => format!(
-                "Docker is running, but your account can't use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users \"{user}\" /add), then sign out and back in."
-            ),
-            Code::ReapNoHost => "No account is recorded for it, so the launcher can't destroy it. Remove its resources in your cloud console.".into(),
-            Code::PlacementLockedHost { count, fields } => placement_locked(*count, "host", fields),
-            Code::PlacementLockedAccount { count, fields } => placement_locked(*count, "account", fields),
-            Code::LabRunningHere => "This lab is still running on this machine (or its machines are still there). Stop it, then try again.".into(),
-            Code::LabRunningOn { host } => format!("This lab is still running on {host}. Stop it there, then try again."),
-            Code::HostHasLabs { count } => {
-                let (labs, them) = if *count == 1 { ("lab", "it") } else { ("labs", "them") };
-                format!("{count} {labs} still running on this host. Stop {them} before removing the host.")
-            }
-            Code::ToolMissing { tool } => format!("`{tool}` is not installed or not on PATH"),
-            Code::CommandFailed { command, stderr } => format!("`{command}` failed: {stderr}"),
-            Code::DownloadStalled { .. } | Code::DownloadFailed { .. } | Code::BoxDownloadStalled { .. } | Code::BoxDownloadFailed { .. } => {
-                download_message(self)
-            }
-            Code::ServerAuthFailed { server } => server_refused(server),
-            Code::PickCloudAccount => "This lab runs in your cloud account: pick one of your cloud accounts to start it on.".into(),
-            Code::NoHypervisor => {
-                "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account."
-                    .into()
-            }
-            Code::TurnedOffByPolicy { setting } => {
-                format!("Your organization turned this off on this computer (policy setting {setting}). Ask your IT team if you need it.")
-            }
+            _ => english::coded(&english::ERRORS["codes"], self),
         }
     }
-}
-
-/// The server `server` refused the lab's saved credentials.
-fn server_refused(server: &str) -> String {
-    format!("Cyber CTF can't sign in to {server}: its token was revoked or its password changed. Update it in Servers.")
-}
-
-/// The message of a download that stalled or failed (`code`): the lab's images, or its VM box.
-fn download_message(code: &Code) -> String {
-    match code {
-        Code::DownloadStalled { minutes } => format!(
-            "Downloading the lab's images stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again: what was already downloaded is kept."
-        ),
-        Code::DownloadFailed { reason } => format!("Couldn't download the lab's images: {reason}. Check your internet connection, then try again."),
-        Code::BoxDownloadStalled { minutes } => format!(
-            "Downloading the lab's VM box stopped making progress (nothing new for {minutes} minutes), so it was stopped. Check your internet connection, then try again."
-        ),
-        Code::BoxDownloadFailed { reason } => format!("Couldn't download the lab's VM box: {reason}. Check your internet connection, then try again."),
-        other => other.message(),
-    }
-}
-
-/// "2 labs are still on this account: stop them before changing its region."
-fn placement_locked(count: u64, what: &str, fields: &str) -> String {
-    let (labs, them) = if count == 1 { ("lab is", "it") } else { ("labs are", "them") };
-    format!("{count} {labs} still on this {what}: stop {them} before changing its {fields}.")
 }
 
 /// A failure of the launcher's own code, as its functions return it; the webview gets it as a
@@ -386,205 +397,4 @@ impl Serialize for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn errors_reach_the_webview_with_their_code_and_message() {
-        let cases = [
-            (Error::Invalid("bad id".into()), json!({ "code": "other", "message": "bad id" })),
-            (Error::Refused("still running".into()), json!({ "code": "refused", "message": "still running" })),
-            (Error::RefusedBeforeActing("not running".into()), json!({ "code": "refusedBeforeActing", "message": "not running" })),
-            (Error::Cancelled, json!({ "code": "signInCancelled", "message": "Sign-in cancelled." })),
-            (
-                Error::Unreachable("API unreachable: timed out".into()),
-                json!({ "code": "unreachable", "args": { "detail": "API unreachable: timed out" }, "message": "API unreachable: timed out" }),
-            ),
-            (
-                Error::ToolMissing { tool: "vagrant" },
-                json!({ "code": "toolMissing", "args": { "tool": "vagrant" }, "message": "`vagrant` is not installed or not on PATH" }),
-            ),
-            (
-                Error::CommandFailed { command: "docker ps".into(), stderr: "daemon down".into() },
-                json!({ "code": "commandFailed", "args": { "command": "docker ps", "stderr": "daemon down" }, "message": "`docker ps` failed: daemon down" }),
-            ),
-            (Error::from(std::io::Error::new(std::io::ErrorKind::NotFound, "no such file")), json!({ "code": "other", "message": "no such file" })),
-            (Error::coded(Code::SignedOut), json!({ "code": "signedOut", "message": "You're signed out. Sign in again to continue." })),
-            (
-                Error::coded(Code::PortInUse { port: 8080, holder: None }),
-                json!({ "code": "portInUse", "args": { "port": 8080 }, "message": Code::PortInUse { port: 8080, holder: None }.message() }),
-            ),
-            (
-                // With the holder found, it travels in the args (for the player-facing notice) and
-                // in the English message.
-                Error::coded(Code::PortInUse { port: 8080, holder: Some("nginx (pid 4123)".into()) }),
-                json!({
-                    "code": "portInUse",
-                    "args": { "port": 8080, "holder": "nginx (pid 4123)" },
-                    "message": "Host port 8080 is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again. Held by nginx (pid 4123). Stop it, then start the lab again."
-                }),
-            ),
-        ];
-        for (error, wire) in cases {
-            assert_eq!(serde_json::to_value(&error).unwrap(), wire);
-        }
-    }
-
-    #[test]
-    fn a_refusal_read_back_from_the_wire_is_still_one() {
-        // A deploy worker hands its error back as a Wire: a refusal it read as Other came back as
-        // Invalid, neither a refusal nor refused before acting.
-        let back = Error::from(Error::Refused("still running on esxi1".into()).to_wire());
-        assert!(back.is_refusal() && back.to_string() == "still running on esxi1", "{back:?}");
-        let back = Error::from(Error::RefusedBeforeActing("the run isn't up".into()).to_wire());
-        assert!(matches!(&back, Error::RefusedBeforeActing(m) if m == "the run isn't up"), "{back:?}");
-    }
-
-    #[test]
-    fn a_coded_error_says_its_code_in_english() {
-        let e = Error::coded(Code::LoginTimeout { minutes: 5 });
-        assert_eq!(e.to_string(), "Sign-in wasn't finished within 5 minutes, so it was cancelled. Try again.");
-        assert_eq!(e.code(), Code::LoginTimeout { minutes: 5 });
-    }
-
-    /// Each code's English message is said twice: here (the log, a worker's ✗ line) and in the
-    /// webview's catalog (`errors.codes.*`, what the English UI shows). They must agree, for every
-    /// form of every code ([`form`]). A port clash with its holder is the catalogue's sentence,
-    /// then the holder's line the lab page shows under it (`labs.failure.portHeldBy`): the
-    /// catalogue has no holder form of its own.
-    #[test]
-    fn every_code_says_what_the_english_catalog_says() {
-        let catalog: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/errors.json")).unwrap();
-        let labs: serde_json::Value = serde_json::from_str(include_str!("../../src/messages/en/labs.json")).unwrap();
-        for code in sample_codes().into_iter().filter(|c| !Code::OWN_MESSAGE.contains(c)) {
-            let wire = serde_json::to_value(Wire { code: code.clone(), message: String::new() }).unwrap();
-            let entry = &catalog["codes"][wire["code"].as_str().unwrap()];
-            // A plural ({ one, other }) by its `count`, as the webview picks it in English.
-            let form = if wire["args"]["count"] == 1 { "one" } else { "other" };
-            let mut text = entry.as_str().or_else(|| entry[form].as_str()).unwrap_or_else(|| panic!("no message for {wire}")).to_string();
-            for (name, value) in wire["args"].as_object().into_iter().flatten() {
-                let value = value.as_str().map_or_else(|| value.to_string(), str::to_string);
-                text = text.replace(&format!("{{{name}}}"), &value);
-            }
-            if let Code::PortInUse { holder: Some(holder), .. } = &code {
-                let held = labs["failure"]["portHeldBy"].as_str().unwrap().replace("{holder}", holder);
-                text = format!("{text} {held}");
-            }
-            assert_eq!(code.message(), text, "{wire}");
-        }
-    }
-
-    /// Which form of a code `code` is: its variant, a port clash told with or without its holder.
-    /// No wildcard: a new variant doesn't compile here until it has a form, and then
-    /// [`every_form_has_a_sample`] fails until [`sample_codes`] has one.
-    fn form(code: &Code) -> usize {
-        match code {
-            Code::Other => 0,
-            Code::SignedOut => 1,
-            Code::SessionExpired => 2,
-            Code::LoginTimeout { .. } => 3,
-            Code::AlreadyInProgress => 4,
-            Code::NoPasswordStored => 5,
-            Code::PortInUse { holder: None, .. } => 6,
-            Code::PortInUse { holder: Some(_), .. } => 7,
-            Code::SignInCancelled => 8,
-            Code::SignInDenied => 9,
-            Code::SignInCodeUnavailable => 10,
-            Code::Unreachable { .. } => 11,
-            Code::OfflineReady { .. } => 12,
-            Code::DockerNotRunning => 13,
-            Code::DockerDenied { .. } => 14,
-            Code::DockerDeniedWindows { .. } => 15,
-            Code::ReapNoHost => 16,
-            Code::PlacementLockedHost { .. } => 17,
-            Code::PlacementLockedAccount { .. } => 18,
-            Code::LabRunningHere => 19,
-            Code::LabRunningOn { .. } => 20,
-            Code::HostHasLabs { .. } => 21,
-            Code::ToolMissing { .. } => 22,
-            Code::CommandFailed { .. } => 23,
-            Code::TurnedOffByPolicy { .. } => 24,
-            Code::Refused => 25,
-            Code::RefusedBeforeActing => 26,
-            Code::PickCloudAccount => 27,
-            Code::NoHypervisor => 28,
-            Code::DownloadStalled { .. } => 29,
-            Code::DownloadFailed { .. } => 30,
-            Code::BoxDownloadStalled { .. } => 31,
-            Code::BoxDownloadFailed { .. } => 32,
-            Code::ServerAuthFailed { .. } => 33,
-        }
-    }
-
-    /// How many forms [`form`] tells apart.
-    const FORMS: usize = 34;
-
-    #[test]
-    fn every_form_has_a_sample() {
-        let covered: std::collections::BTreeSet<usize> = sample_codes().iter().map(form).collect();
-        assert_eq!(covered, (0..FORMS).collect(), "a form of a code without a sample in sample_codes");
-    }
-
-    fn sample_codes() -> Vec<Code> {
-        vec![
-            Code::Other,
-            Code::Refused,
-            Code::RefusedBeforeActing,
-            Code::SignedOut,
-            Code::SessionExpired,
-            Code::LoginTimeout { minutes: 5 },
-            Code::SignInCancelled,
-            Code::SignInDenied,
-            Code::SignInCodeUnavailable,
-            Code::Unreachable { detail: "API unreachable: timed out".into() },
-            Code::OfflineReady { detail: "API unreachable: timed out".into() },
-            Code::AlreadyInProgress,
-            Code::NoPasswordStored,
-            Code::PortInUse { port: 443, holder: None },
-            Code::PortInUse { port: 8000, holder: Some("nginx (pid 4123)".into()) },
-            Code::DockerNotRunning,
-            Code::DockerDenied { user: "player".into() },
-            Code::DockerDeniedWindows { user: "Ada Lovelace".into() },
-            Code::PlacementLockedHost { count: 1, fields: "node, host".into() },
-            Code::PlacementLockedAccount { count: 2, fields: "region".into() },
-            Code::HostHasLabs { count: 1 },
-            Code::HostHasLabs { count: 3 },
-            Code::LabRunningHere,
-            Code::LabRunningOn { host: "My Proxmox".into() },
-            Code::ReapNoHost,
-            Code::ToolMissing { tool: "terraform".into() },
-            Code::CommandFailed { command: "vagrant up".into(), stderr: "locked".into() },
-            Code::DownloadStalled { minutes: 15 },
-            Code::DownloadFailed { reason: "toomanyrequests: You have reached your pull rate limit".into() },
-            Code::BoxDownloadStalled { minutes: 15 },
-            Code::BoxDownloadFailed { reason: "The box 'bento/debian-12' could not be found".into() },
-            Code::ServerAuthFailed { server: "Home lab Proxmox".into() },
-            Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() },
-            Code::PickCloudAccount,
-            Code::NoHypervisor,
-        ]
-    }
-
-    #[test]
-    fn every_code_round_trips_through_the_wire() {
-        for code in sample_codes() {
-            // As the core raises it: its own variant where it has one, else coded.
-            let error = match code.clone() {
-                Code::Other => Error::Invalid("bad id".into()),
-                Code::Refused => Error::Refused("still running elsewhere".into()),
-                Code::RefusedBeforeActing => Error::RefusedBeforeActing("the run isn't up".into()),
-                Code::SignInCancelled => Error::Cancelled,
-                Code::Unreachable { detail } => Error::Unreachable(detail),
-                c => Error::coded(c),
-            };
-            let wire = error.to_wire();
-            assert_eq!(wire.code, code);
-            let text = serde_json::to_string(&wire).unwrap();
-            let back: Wire = serde_json::from_str(&text).unwrap();
-            assert_eq!(back, wire, "{text}");
-            let error = Error::from(back);
-            assert_eq!(error.to_wire(), wire, "{text}");
-        }
-    }
-}
+mod tests;

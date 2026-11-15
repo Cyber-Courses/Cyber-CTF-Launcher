@@ -102,8 +102,8 @@ async fn teardown(r: &Run, name: &str, f: &mut Vec<String>) {
     check(left.is_empty(), format!("{name}: nothing of it is left ({left:?})"), f);
     // Gone means either recorded absent, or never recorded at all (a start that failed before
     // generation wrote no record).
-    let record = std::fs::read_to_string(r.home.join("runs").join(docker::project(&r.id)).join("record.json")).unwrap_or_default();
-    let gone = record.is_empty() || record.contains(r#""state": "absent""#);
+    let state = crate::testing::runner::run_state(&r.home, &docker::project(&r.id));
+    let gone = state.is_none_or(|s| s == isothrum_runner::RunState::Absent);
     check(gone, format!("{name}: the runner records the run as gone"), f);
 }
 

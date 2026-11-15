@@ -132,9 +132,10 @@ pub fn open_shell(app: &AppHandle, id: &str, runtime: Runtime, title: &str) -> R
         .resizable(true)
         .build()
         .map_err(fail)?;
+    let terminals = app.state::<terminal::Terminals>().inner().clone();
     window.on_window_event(move |e| {
         if matches!(e, tauri::WindowEvent::Destroyed) {
-            terminal::close_window(&label);
+            terminals.close_window(&label);
         }
     });
     Ok(())
@@ -149,7 +150,11 @@ pub async fn open_screen(app: &AppHandle, which: crate::screen::Which, title: &s
         return Ok(());
     }
     let machine = which.machine.clone();
-    let port = crate::screen::start(&label, which).await?;
+    // Asked twice at once (a double click): the first open owns the window and its session.
+    let Some(port) = crate::screen::start(&label, which).await? else {
+        focus_existing(app, &label);
+        return Ok(());
+    };
     let fail = |e: tauri::Error| Error::Invalid(format!("could not open the screen window: {e}"));
     let built = builder(app, &label, page).map(|b| {
         b.title(format!("{machine} · {}", terminal::window_title(title)))

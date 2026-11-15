@@ -40,8 +40,9 @@ impl TestRun for OnServer {
     async fn up(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()> {
         self.run.up(&self.place, &[], &mut |l| log(l)).await
     }
+    #[expect(clippy::unused_async_trait_impl, reason = "the trait's checks are async; a Proxmox run's has nothing to wait for")]
     async fn check(&self) -> Result<Check> {
-        self.run.check().await
+        Ok(self.run.check())
     }
     async fn down(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()> {
         self.run.down(&self.place, &mut |l| log(l)).await
@@ -281,7 +282,6 @@ mod tests {
         let work = std::env::temp_dir().join(format!("cyberctf-pve-selftest-{}", rand::random::<u32>()));
         let dir = write_lab(&work).unwrap();
         let module = lab::terraform(&dir, Runtime::Vm, "proxmox").0;
-        assert!(module.join("run.json").is_file());
         let tf: String = std::fs::read_dir(&module)
             .unwrap()
             .flatten()

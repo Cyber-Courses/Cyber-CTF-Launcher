@@ -73,7 +73,7 @@ describe("AboutSection", () => {
       />,
     );
     expect(text()).toContain("v1.4.0");
-    expect(text()).toContain("macos arm64");
+    expect(text()).toContain("macos aarch64");
     expect(text()).toContain("c0ffee");
     expect(text()).toMatch(/install automatically/);
   });
@@ -147,6 +147,21 @@ describe("AboutSection", () => {
     expect(calls.filter((c) => c.cmd === "restart_app")).toHaveLength(2);
   });
 
+  it("installs once when Install update is clicked twice before the first click is answered", async () => {
+    // Regression: the button stays enabled while the running labs are asked, so a double click
+    // downloaded and installed the update twice at once.
+    const calls = installTauri({ busy_labs: () => [], active_operations: () => [] });
+    const downloadAndInstall = vi.fn(async () => {});
+    updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall });
+    await checkForUpdates();
+    const install = button(/install update/i);
+    fireEvent.click(install);
+    fireEvent.click(install);
+    await flush();
+    expect(downloadAndInstall).toHaveBeenCalledOnce();
+    expect(calls.filter((c) => c.cmd === "restart_app")).toHaveLength(1);
+  });
+
   it("offers the update again when its install fails", async () => {
     const calls = installTauri({ busy_labs: () => [], active_operations: () => [] });
     updater.answer = () => Promise.resolve({ version: "1.5.0", downloadAndInstall: () => Promise.reject(new Error("bad signature")) });
@@ -178,7 +193,7 @@ describe("AboutSection", () => {
     await flush();
     const copied = writeText.mock.calls[0][0];
     expect(copied).toContain("Cyber CTF v1.4.0");
-    expect(copied).toContain("OS: macos arm64");
+    expect(copied).toContain("OS: macos aarch64");
     expect(copied).toContain("Docker: running (unknown engine)");
     expect(copied).toContain("Vagrant: installed, Terraform: installed");
     expect(copied).toContain("Hypervisors ready: virtualbox");

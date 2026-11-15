@@ -58,9 +58,9 @@ use super::support::lab::install_copy;
 use super::support::results::{self, Record, Verdict};
 use super::support::{check, scenario};
 use crate::machine::selftest::{self, Kind};
-use crate::machine::setup::{Action, ManualReason, Plan, SetupPath, Step, Wanted, WindowsFeature, plan};
+use crate::machine::setup::run::{Event, OnFailure, Outcome, would};
+use crate::machine::setup::{self, Action, Plan, SetupPath, Step, Wanted, plan};
 use crate::machine::system::{self, SystemReport, docker};
-use crate::machine::tools::install;
 use crate::platform::AppDirs;
 use crate::runtime::providers::{Provider, UtilityState};
 use crate::runtime::{isothrum, launch, lifecycle};
@@ -268,8 +268,8 @@ fn setup_root() -> PathBuf {
 
 /// The end of a pass that doesn't stop at a restart: the entry's folder is dropped when the pass
 /// installed nothing, since only an installed item's record names it among what is left on the
-/// machine (the leftover audit reported it after every check-only or nothing-to-install pass:
-/// fedora45-bare's setup shards, where the guided setup installs nothing, 2026-11-12). A pass
+/// machine (the leftover audit reported it after every check-only or nothing-to-install pass,
+/// a bare Fedora's where the guided setup installs nothing). A pass
 /// that installed something keeps it: its marks are the next pass's.
 fn end_of_pass(installed: usize, root: &Path) {
     if installed == 0 {
@@ -288,65 +288,18 @@ fn dirs() -> AppDirs {
     AppDirs::new(Some(data), Some(cache))
 }
 
-/// What `step` does, by the function the window's command for it calls, into `log`: its status
-/// and note.
-async fn run_step(dirs: &AppDirs, step: &Step, log: &mut Log) -> (Status, String) {
-    if let Some(left) = left_alone(&step.action) {
-        return left;
-    }
-    let mut on_line = |l: String| log.write(&l);
-    let done = match &step.action {
-        Action::Install { dependency } => {
-            install::install_dependency(dirs.clone(), *dependency, &mut on_line).await.map(|()| format!("{} installed", dependency.name()))
-        }
-        Action::Plugin { plugin } => install::install_vagrant_plugin(plugin.clone(), &mut on_line).await.map(|()| format!("{plugin} installed")),
-        Action::StartEngine { engine } => docker::docker_start_engine(engine.id().to_owned()).await.map(|()| format!("{} started", engine.id())),
-        Action::UseEngine { engine } => docker::docker_use_engine(engine.id().to_owned()).await.map(|()| format!("Docker uses {}", engine.id())),
-        Action::Manual { .. } | Action::Blocked { .. } => unreachable!("left alone above"),
-        Action::Restart { .. } | Action::Relogin => unreachable!("a pass ends at a restart or a new login"),
-    };
-    match done {
-        Ok(note) => (Status::Installed, note),
-        Err(e) => {
-            log.write(&format!("failed: {e}"));
-            (Status::Failed, format!("{e}; see {}", log.name))
-        }
+/// An outcome of the setup's run ([`setup::run::Outcome`]) as an item's status and note.
+fn status_of(outcome: Outcome) -> (Status, String) {
+    match outcome {
+        Outcome::Done(note) => (Status::Installed, note),
+        Outcome::Skipped(note) => (Status::Skipped, note),
+        Outcome::Failed(note) => (Status::Failed, note),
     }
 }
 
-/// A step the setup doesn't run itself, as a pass records it: the player's to take (skipped) or one
-/// that can't run here (failed). None for a step the setup runs.
+/// A step the setup doesn't run itself, as a pass records it ([`setup::run::left_alone`]).
 fn left_alone(action: &Action) -> Option<(Status, String)> {
-    Some(match action {
-        Action::Manual { reason: ManualReason::Distribution, dependency, .. } => {
-            let what = dependency.map_or("it", |d| d.name());
-            (Status::Skipped, format!("this distribution isn't supported by the guided setup yet: install {what} yourself"))
-        }
-        Action::Manual { reason: ManualReason::Vendor, url, .. } => (Status::Skipped, format!("links out: {}", url.as_deref().unwrap_or("its vendor's site"))),
-        Action::Blocked { reason } => (Status::Failed, format!("can't run here: {reason}")),
-        _ => return None,
-    })
-}
-
-/// What the setup would do for a step it runs, said by a check-only pass (`would …`); None for
-/// one it leaves alone ([`left_alone`]).
-fn would(action: &Action) -> Option<String> {
-    Some(match action {
-        Action::Install { dependency } => format!("would install {}", dependency.name()),
-        Action::Plugin { plugin } => format!("would install the Vagrant plugin {plugin}"),
-        Action::StartEngine { engine } => format!("would start {}", engine.id()),
-        Action::UseEngine { engine } => format!("would point Docker at {}", engine.id()),
-        Action::Restart { feature } => format!(
-            "would restart the computer to turn {} on",
-            match feature {
-                WindowsFeature::Wsl => "WSL 2",
-                WindowsFeature::Hyperv => "Hyper-V",
-            }
-        ),
-        Action::Relogin => "would sign out and back in".to_owned(),
-        Action::Blocked { reason } if action.ends_pass() => format!("would restart the computer: {reason}"),
-        Action::Manual { .. } | Action::Blocked { .. } => return None,
-    })
+    setup::run::left_alone(action).map(status_of)
 }
 
 /// Whether a step about `item` sets up `tool` (a `ready:` line's): its own item, or for Docker and
@@ -406,48 +359,44 @@ fn check_only(out: &mut Out, before: &SystemReport, first: &Plan, knobs: &Knobs)
     if let Some(lab) = &knobs.lab {
         match (docker_ready, vm_ready) {
             (true, _) => out.line(&lab_item(lab), Status::CheckOnly, 0, "would start and stop it in containers"),
-            (false, Some(h)) => out.line(&lab_item(lab), Status::CheckOnly, 0, &format!("would start and stop it in a VM on {}", h.id())),
+            (false, Some(h)) => out.line(&lab_item(lab), Status::CheckOnly, 0, &format!("would start and stop it as VMs on {}", h.id())),
             (false, None) => out.line(&lab_item(lab), Status::Skipped, 0, "nothing to run it on"),
         }
     }
 }
 
-/// The setup's actions on this machine, one at a time, the report read again after each (an
-/// install changes what comes next: Docker installed asks to start it, or for a new login). The
+/// The setup's actions on this machine, one at a time, the report read again after each
+/// ([`setup::run::walk`], as the command line's setup runs them), each into its own log. The
 /// hypervisor is the one the first plan picked: one that can't run once installed is a failure,
 /// not a reason to set up another. Returns the restart or the new login that ends the pass, if
 /// one does, and the machine as it is then.
-async fn act(dirs: &AppDirs, out: &mut Out, wanted: &Wanted, mut report: SystemReport) -> (Option<Step>, SystemReport, Vec<String>) {
-    let mut done: Vec<Step> = Vec::new();
-    loop {
-        let p = plan(&report, &report.setup, wanted);
-        let Some(step) = p.steps.iter().find(|s| !s.action.ends_pass() && !done.contains(s)).cloned() else {
-            let acted = done.into_iter().map(|s| s.item).collect();
-            return (p.steps.into_iter().find(|s| s.action.ends_pass()), report, acted);
-        };
-        let started = Instant::now();
-        let mut log = Log::create(&out.file(&format!("{}-{}", step.item, kind(&step.action)), "log"));
-        log.write(&format!("{}: {:?}", step.item, step.action));
-        let (status, note) = run_step(dirs, &step, &mut log).await;
-        out.line(&step.item, status, started.elapsed().as_secs(), &note);
-        done.push(step.clone());
-        report = system::system_check(dirs.clone()).await;
-        out.save_report(&format!("report-after-{}", step.item), &report);
-    }
-}
-
-/// An action's kind, for its log's name.
-fn kind(action: &Action) -> &'static str {
-    match action {
-        Action::Install { .. } => "install",
-        Action::Plugin { .. } => "plugin",
-        Action::StartEngine { .. } => "start",
-        Action::UseEngine { .. } => "use",
-        Action::Restart { .. } => "restart",
-        Action::Relogin => "relogin",
-        Action::Manual { .. } => "manual",
-        Action::Blocked { .. } => "blocked",
-    }
+async fn act(dirs: &AppDirs, out: &mut Out, wanted: &Wanted, report: SystemReport) -> (Option<Step>, SystemReport, Vec<String>) {
+    let mut log: Option<(Log, Instant)> = None;
+    let walked = setup::run::walk(dirs, wanted, report, OnFailure::Continue, |event| match event {
+        Event::Started { item, kind, action } => {
+            let mut file = Log::create(&out.file(&format!("{item}-{kind}"), "log"));
+            file.write(&format!("{item}: {action:?}"));
+            log = Some((file, Instant::now()));
+        }
+        Event::Line { line, .. } => {
+            if let Some((file, _)) = log.as_mut() {
+                file.write(&line);
+            }
+        }
+        Event::Ended { item, outcome } => {
+            let Some((mut file, started)) = log.take() else { return };
+            let (status, mut note) = status_of(outcome);
+            if status == Status::Failed {
+                file.write(&format!("failed: {note}"));
+                note = format!("{note}; see {}", file.name);
+            }
+            out.line(&item, status, started.elapsed().as_secs(), &note);
+        }
+    })
+    .await;
+    let after = system::system_check(dirs.clone()).await;
+    out.save_report("report-after-setup", &after);
+    (walked.ends, after, walked.acted)
 }
 
 /// Whether each wanted tool is ready by the machine report `r`: Docker installed and answering,
@@ -456,7 +405,7 @@ fn kind(action: &Action) -> &'static str {
 fn readiness(r: &SystemReport, wanted: &Wanted, hypervisor: Option<Provider>) -> Vec<(String, bool, String)> {
     let mut ready = Vec::new();
     if wanted.paths.contains(&SetupPath::Docker) {
-        if r.os == "windows" {
+        if r.os == crate::platform::host::Os::Windows {
             let state = r.wsl.as_ref().map_or_else(|| "not reported".to_owned(), |w| format!("{:?}", w.state));
             ready.push(("wsl".to_owned(), r.setup.wsl.is_empty(), format!("WSL 2: {state}")));
         }
@@ -509,7 +458,7 @@ async fn self_test(dirs: &AppDirs, out: &mut Out, kind: Kind, provider: Option<P
     }
 }
 
-/// Where the example lab runs: in containers here, else (VM labs only) in a VM on `hypervisor`.
+/// Where the example lab runs: in containers here, else as one VM per machine on `hypervisor`.
 #[derive(Clone, Copy)]
 enum LabPlace {
     Docker,
@@ -535,7 +484,7 @@ async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
             let up = match place {
                 LabPlace::Docker => launch::start_docker_run(&home, &dir, &id, launch::Inputs::default(), &mut on_line).await,
                 LabPlace::Vm(provider) => {
-                    launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut on_line).await
+                    launch::start_vm_run(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut on_line).await
                 }
             };
             check(up.is_ok(), format!("it starts ({:?})", up.err()), f);
@@ -544,7 +493,7 @@ async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
             let on_line = |l: String| log.borrow_mut().write(&l);
             let run = match place {
                 LabPlace::Docker => isothrum::LabRun::docker(&home, &dir, &id),
-                LabPlace::Vm(_) => isothrum::LabRun::docker_in_vm(&home, &dir, &id),
+                LabPlace::Vm(_) => isothrum::LabRun::vm(&home, &dir, &id),
             };
             let stopped = match run {
                 Ok(run) => lifecycle::stop_run(run, &dir, on_line).await,
@@ -559,7 +508,7 @@ async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
     let seconds = started.elapsed().as_secs();
     let place = match place {
         LabPlace::Docker => "in containers".to_owned(),
-        LabPlace::Vm(p) => format!("in a VM on {}", p.id()),
+        LabPlace::Vm(p) => format!("as VMs on {}", p.id()),
     };
     if failures.is_empty() {
         out.line(&item, Status::Installed, seconds, &format!("started and stopped {place}"));

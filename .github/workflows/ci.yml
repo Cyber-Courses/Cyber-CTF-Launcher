@@ -124,7 +124,7 @@ jobs:
           if [ -n "$(git status --porcelain -- src/lib/tauri/generated)" ]; then
             git status --short -- src/lib/tauri/generated
             git diff -- src/lib/tauri/generated
-            echo "::error::src/lib/tauri/generated differs from the Rust structs: run cargo test and commit the result"
+            echo "::error::src/lib/tauri/generated differs from the Rust structs: run .githooks/regenerate and commit the result"
             exit 1
           fi
 

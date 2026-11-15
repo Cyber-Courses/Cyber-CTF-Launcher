@@ -44,7 +44,15 @@ min: string, } } | { "code": "pluginMissing", "args": {
 /**
  * The plugin's name.
  */
-plugin: string, } } | { "code": "vmwareUtilityStopped" } | { "code": "vmwareUtilityMissing" } | { "code": "virtualboxDriver", "args": { 
+plugin: string, } } | { "code": "pluginsUnknown", "args": { 
+/**
+ * The plugin's name.
+ */
+plugin: string, 
+/**
+ * What `vagrant plugin list` said.
+ */
+reason: string, } } | { "code": "vmwareUtilityStopped" } | { "code": "vmwareUtilityMissing" } | { "code": "virtualboxDriver", "args": { 
 /**
  * The running kernel (`uname -r`).
  */

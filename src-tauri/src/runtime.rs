@@ -1,24 +1,14 @@
 //! Lab runtimes. A lab is a directory under `<app data>/labs/<lab id>/` with an `isoloom.yml`
 //! at its root; the files of the target it runs on are generated under its instance's
-//! `.isoloom-<n>/` (`.isoloom/` for a lab with no instance; see `lab`). The UI only ever passes a lab id and a runtime; paths and commands are built here.
+//! `.isoloom-<n>/` (`.isoloom/` for a lab with no instance; see `lab`). The UI only ever passes a
+//! lab id and a runtime; paths and commands are built here.
 //!
-//! - `launch`: starting a lab, here or on a server host.
-//! - `cloud_services`: cloud-services labs, a Terraform module of the lab's own applied into the
-//!   player's cloud account.
-//! - `lifecycle`: park, resume, provision and stop; `reaper`: the auto-stop of expired cloud labs.
-//! - `status`: what a lab looks like right now, wherever it runs.
-//! - `terminal_launch`: opening the OS terminal on the attack box shell the runner builds.
-//!
-//! The Tauri commands over all of the above are thin adapters in `crate::commands` (lab commands
-//! in `commands::labs`, server-host commands in `commands::server`).
-//! - `inflight`, `paths`, `ssh`: the per-lab lock and in-flight registry, a lab's files and
-//!   markers, and SSH to a lab host.
-//! - `isothrum`: every lab run through the Isothrum runner: on this machine (Docker, one VM, or
-//!   VMs), on a server, in a cloud account.
-//! - `attack_machine`: the learner's attack box, a machine the launcher adds to the lab (through
-//!   its overlay, `lab::overlay`) and takes out again, wherever the lab runs.
+//! The Tauri commands over these modules are thin adapters in `crate::commands` (lab commands in
+//! `commands::labs`, server-host commands in `commands::server`); each module's own doc says what
+//! it holds.
 
-pub(crate) mod attack_machine;
+pub(crate) mod attack_box;
+#[cfg(feature = "cloud-services")]
 pub(crate) mod cloud_services;
 pub(crate) mod deploy_log;
 pub(crate) mod discover;
@@ -34,6 +24,7 @@ pub(crate) mod launch;
 pub(crate) mod lifecycle;
 mod model;
 pub(crate) mod paths;
+pub(crate) mod port;
 pub mod providers;
 pub(crate) mod proxmox;
 mod reaper;
@@ -44,24 +35,19 @@ pub(crate) mod ssh;
 pub(crate) mod start_place;
 pub(crate) mod status;
 pub(crate) mod terminal_launch;
-pub(crate) mod terraform;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use docker::{LEGACY_ATTACK_BOX_SUFFIXES, lab_of_project, legacy_attack_box_names, project as compose_project, subnets_in_use};
-/// For tests elsewhere that need an operation in flight.
-#[cfg(test)]
-pub(crate) use inflight::DeployGuard;
-pub(crate) use inflight::lock as lab_file_lock;
-pub use inflight::{Action, Operation, active_actions, busy_labs, stopping};
-pub(crate) use inflight::{as_operation, lock_lab, try_lock_lab};
+pub use inflight::Operation;
+pub(crate) use inflight::{lock_lab, try_lock_lab};
 pub use isothrum_runner::ShellCommand;
 #[cfg(test)]
 pub(crate) use launch::start;
 pub(crate) use launch::{Destination, Downloads, Placement, check_destination, downloads, policy_allows, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
-pub use model::{Console, Control, Interface, LabStatus, Machine, Network, Park, Place, Port, Service};
+pub use model::{Console, Control, Interface, LabStatus, Login, Machine, Network, Park, Place, Port, Preview, Service};
 #[cfg(test)]
 pub use paths::LOCAL_VM_MARKER;
 pub(crate) use paths::deploys_dir;
@@ -70,31 +56,34 @@ pub use paths::validate_id;
 pub use reaper::reap_expired_labs;
 pub(crate) use status::{forget_gone, refuse_replace};
 pub use status::{lab_installed, lab_present, primary_url};
-pub use terraform::{PLUGIN_CACHE as TERRAFORM_PLUGINS, clear_plugin_cache};
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]
-pub(crate) use {attack_machine::AttackStatus, cloud_services::Preview, docker::Check};
+pub(crate) use {attack_box::AttackStatus, docker::Check};
 
 /// Mirrors `LabRuntime` in CyberBackend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Runtime {
     /// Containers: the lab's services as Isoloom writes them for Docker (run on this machine's
-    /// engine, in a VM, or as one VM per machine).
+    /// engine or a cloud VM, or as one VM per machine).
     Docker,
     /// VMs: the lab's machines as Isoloom writes them for Vagrant or a server's or cloud's
     /// Terraform.
     Vm,
     /// Cloud services (Isoloom's `cloud-services`): a Terraform module of the lab's own,
-    /// applied into the player's cloud account. See `cloud_services`.
+    /// applied into the player's cloud account. See `cloud_services`, built with the
+    /// `cloud-services` feature only; without it such a lab starts nowhere
+    /// ([`CLOUD_UNSUPPORTED`]).
     Cloud,
 }
 
-impl Runtime {
-    /// Every runtime a lab can declare.
-    pub const ALL: [Runtime; 3] = [Runtime::Docker, Runtime::Vm, Runtime::Cloud];
+/// What a lab that runs its own cloud services says in a build without the `cloud-services`
+/// feature.
+#[cfg_attr(feature = "cloud-services", allow(dead_code, reason = "said only without the feature"))]
+pub const CLOUD_UNSUPPORTED: &str = "This lab runs its own cloud services, which this version of Cyber CTF doesn't run.";
 
-    /// Its tag as CyberBackend, the webview and the files next to a lab's state spell it
+impl Runtime {
+    /// Its tag as CyberBackend and the webview spell it
     /// (`DOCKER`, `VM`, `CLOUD`): its serde name.
     pub fn tag(self) -> &'static str {
         match self {
@@ -102,11 +91,6 @@ impl Runtime {
             Runtime::Vm => "VM",
             Runtime::Cloud => "CLOUD",
         }
-    }
-
-    /// The runtime tagged `tag` ([`Runtime::tag`]), if one is.
-    pub fn from_tag(tag: &str) -> Option<Runtime> {
-        Runtime::ALL.into_iter().find(|r| r.tag() == tag)
     }
 }
 
@@ -166,13 +150,11 @@ pub(crate) mod test_support {
         }
     }
 
-    /// Lab `lab`'s run as the runner whose home is `home` (the app data folder) records it:
+    /// Lab `lab`'s run as the app's runner (its home in the app data folder `home`) records it:
     /// `cyberctf-<lab>`, of `target`, on the place labelled `host` (none: this machine), left in
     /// `state` (`ready`, `parked`, `failed`, `absent`, …) by its last operation.
     pub(crate) fn record_run(home: &std::path::Path, lab: &str, host: Option<&str>, target: &str, state: &str) {
         let name = format!("cyberctf-{lab}");
-        let dir = home.join("runs").join(&name);
-        std::fs::create_dir_all(&dir).unwrap();
         let driver = if target.starts_with("cloud") || target == "proxmox" {
             "terraform"
         } else if target == "docker" {
@@ -181,10 +163,10 @@ pub(crate) mod test_support {
             "vagrant"
         };
         let record = serde_json::json!({
-            "version": 0, "name": name, "manifest": home.join("labs").join(lab).join("run.json"),
-            "target": target, "driver": driver, "host_label": host, "state": state, "params": {}
+            "version": 0, "name": name, "project": home.join("labs").join(lab).join(".isoloom").join(target),
+            "format": driver, "host_label": host, "state": state
         });
-        std::fs::write(dir.join("record.json"), record.to_string()).unwrap();
+        crate::testing::runner::save_run(&crate::runtime::paths::runner_home_in(home), &record);
     }
 
     /// A temp lab folder holding `spec` as its `isoloom.yml`, for tests that load a lab from disk;

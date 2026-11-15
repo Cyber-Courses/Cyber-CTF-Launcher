@@ -10,7 +10,7 @@ mod account;
 pub(crate) mod app;
 mod cloud;
 pub(crate) mod labs;
-mod machine;
+pub(crate) mod machine;
 mod screen;
 pub(crate) mod server;
 mod setup_window;
@@ -82,10 +82,10 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         labs::lab_provision,
         labs::lab_status,
         labs::lab_cloud_preview,
+        labs::cloud_services_supported,
         labs::lab_requirements,
         labs::lab_default_place,
         labs::lab_run_options,
-        labs::running_labs,
         labs::lab_check,
         labs::lab_tools,
         labs::attack_box_status,
@@ -116,19 +116,22 @@ pub fn register(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntim
         server::server_set_default,
         server::server_test,
         server::server_public_key,
+        server::server_identity,
+        server::server_trust_ssh_keys,
         server::server_running_labs,
         server::server_capacity,
         server::server_month_to_date_cost,
         server::server_selftest,
         setup_window::server_open_setup,
         labs::busy_labs,
+        labs::run_events,
+        labs::labs_watch,
         app::restart_app,
-        labs::active_operations,
-        labs::lab_deploy_log,
         app::linger_quit,
         app::force_quit,
         app::open_settings,
         app::open_log_folder,
+        app::save_diagnostics,
         app::managed_settings,
     ])
 }

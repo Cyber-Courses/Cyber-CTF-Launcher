@@ -12,26 +12,41 @@ use crate::account::{api, auth};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::policy::{self, Key};
+use crate::platform::sync::OwnedTask;
 use crate::runtime::server;
 
 /// Upserts this machine as the player's launcher agent and returns the server agent id.
 async fn register(dirs: &AppDirs) -> Result<String> {
-    let data = api::graphql(
+    let data = api::graphql_signed_in(
         "mutation ($i: ID!, $n: String!, $c: [String!]!, $a: String, $t: [LaunchTargetInput!], $v: String, $o: String) { registerLauncher(installId: $i, name: $n, capabilities: $c, arch: $a, targets: $t, version: $v, os: $o) { id } }",
         json!({ "i": install_id(dirs)?, "n": machine_name(), "c": capabilities(), "a": arch(), "t": server::launch_targets(dirs)?, "v": app_version(), "o": os_label() }),
-        true,
     )
     .await?;
-    data["registerLauncher"]["id"].as_str().map(String::from).ok_or_else(|| Error::Invalid("registerLauncher returned no id".into()))
+    let registered: Registered = serde_json::from_value(data).map_err(|e| Error::Invalid(format!("registerLauncher returned no id: {e}")))?;
+    Ok(registered.register_launcher.id)
+}
+
+/// The data of the `registerLauncher` answer.
+#[derive(serde::Deserialize)]
+struct Registered {
+    /// The agent the server keeps for this machine.
+    #[serde(rename = "registerLauncher")]
+    register_launcher: Agent,
+}
+
+/// An agent as the server names it.
+#[derive(serde::Deserialize)]
+struct Agent {
+    /// Its id.
+    id: String,
 }
 
 /// Keep-alive, re-reporting the targets so hosts added since registering show on the website, and
 /// the app version and OS, so an update installed since registering shows too.
 async fn heartbeat(dirs: &AppDirs, agent_id: &str) -> Result<()> {
-    api::graphql(
+    api::graphql_signed_in(
         "mutation ($id: ID!, $t: [LaunchTargetInput!], $v: String, $o: String) { launcherHeartbeat(agentId: $id, targets: $t, version: $v, os: $o) { id } }",
         json!({ "id": agent_id, "t": server::launch_targets(dirs)?, "v": app_version(), "o": os_label() }),
-        true,
     )
     .await
     .map(|_| ())
@@ -92,9 +107,10 @@ fn heartbeat_agent(current: &Mutex<Option<Registration>>, user: Option<&str>) ->
 /// Heartbeats (~30s) for the current registration, on its own task: claiming and running a lab
 /// can block for a long time (a cloud launch waits on terraform apply, up to tens of minutes),
 /// and the machine must keep reporting that it's online for the whole launch, not drop offline
-/// while busy.
-fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>) {
-    tokio::spawn(async move {
+/// while busy. It lives as long as what it returns is kept: the agent loop keeps it, so it ends
+/// (and is cancelled) with the loop.
+fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>) -> OwnedTask {
+    OwnedTask::spawn(async move {
         loop {
             // A session that can't be read is logged by the agent loop: no heartbeat then.
             if let Ok(user) = auth::signed_in_user().await
@@ -106,7 +122,7 @@ fn spawn_heartbeat(dirs: AppDirs, current: &'static Mutex<Option<Registration>>)
             }
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
-    });
+    })
 }
 
 /// Runs the background agent, unless the policy turns it off: waits for login, registers, then
@@ -121,32 +137,36 @@ pub async fn run(deps: Deps) {
         return;
     }
     let current = &REGISTRATION;
-    spawn_heartbeat(deps.dirs().clone(), current);
+    let _heartbeat = spawn_heartbeat(deps.dirs().clone(), current);
     loop {
         let read = auth::signed_in_user().await;
         let registered = registration(current).clone();
-        match next_step(registered.as_ref(), read.as_ref().map(Option::as_deref)) {
+        // How long to wait before starting the cycle over, when this one can't poll.
+        let start_over_after = match next_step(registered.as_ref(), read.as_ref().map(Option::as_deref)) {
             Next::Unreadable => {
                 if let Err(e) = &read {
                     log::warn!("the agent can't read the session, and waits with its registration kept: {e}");
                 }
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                continue;
+                Some(Duration::from_secs(30))
             }
             Next::SignedOut => {
                 *registration(current) = None;
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                continue;
+                Some(Duration::from_secs(5))
             }
             Next::Register => {
                 // Not online for the account registered before while this one registers.
                 *registration(current) = None;
                 // No token yet, or registering failed: wait and start the cycle over.
-                if register_step(&deps, current, read.ok().flatten()).await {
-                    continue;
+                match try_register(&deps, current, read.ok().flatten()).await {
+                    Attempt::Registered => None,
+                    Attempt::RetryAfter(wait) => Some(wait),
                 }
             }
-            Next::Run => {}
+            Next::Run => None,
+        };
+        if let Some(wait) = start_over_after {
+            tokio::time::sleep(wait).await;
+            continue;
         }
         if let Some(agent_id) = agent_id_of(current)
             && auth::access_token().await.is_ok()
@@ -157,24 +177,30 @@ pub async fn run(deps: Deps) {
     }
 }
 
-/// Registers this machine for `user`, keeping its agent id in `current`. Returns whether the loop
-/// should wait and start over — there was no access token yet, or `registerLauncher` failed — so a
-/// poll is never made for an account this machine isn't registered as.
-async fn register_step(deps: &Deps, current: &Mutex<Option<Registration>>, user: Option<String>) -> bool {
+/// How one registration attempt ended.
+enum Attempt {
+    /// This machine is registered: the loop goes on to poll.
+    Registered,
+    /// Not registered: the loop waits this long and starts over, so a poll is never made for an
+    /// account this machine isn't registered as.
+    RetryAfter(Duration),
+}
+
+/// Registers this machine for `user`, keeping its agent id in `current`. Retries after a while
+/// when there is no access token yet, or `registerLauncher` failed.
+async fn try_register(deps: &Deps, current: &Mutex<Option<Registration>>, user: Option<String>) -> Attempt {
     if auth::access_token().await.is_err() {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        return true;
+        return Attempt::RetryAfter(Duration::from_secs(5));
     }
     match register(deps.dirs()).await {
         Ok(agent_id) => {
             log::info!("launcher agent online: {agent_id}");
             *registration(current) = Some(Registration { user: user.unwrap_or_default(), agent_id });
-            false
+            Attempt::Registered
         }
         Err(e) => {
             log::warn!("registerLauncher failed, retrying: {e}");
-            tokio::time::sleep(Duration::from_secs(15)).await;
-            true
+            Attempt::RetryAfter(Duration::from_secs(15))
         }
     }
 }

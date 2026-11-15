@@ -3,20 +3,15 @@
 
 use super::Provider;
 
-/// Each plugin of `vagrant plugin list` with its version, from lines like `vagrant-libvirt
-/// (0.12.2, global)`; `None` for a line that names no version (a wrapped or cut line).
-pub(super) fn parse_plugin_versions(out: &str) -> Vec<(String, Option<String>)> {
-    out.lines()
-        .filter_map(|l| {
-            let mut words = l.split_whitespace();
-            let name = words.next().filter(|name| name.starts_with("vagrant-") || name.starts_with("vagrant_"))?;
-            let version = words
-                .next()
-                .map(|w| w.trim_matches(|c: char| matches!(c, '(' | ')' | ',')).to_string())
-                .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()));
-            Some((name.to_string(), version))
-        })
-        .collect()
+/// A version found older than the oldest one the launcher drives labs with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TooOld<'a> {
+    /// What is installed: the hypervisor's name, or none for a plugin (named by its provider).
+    pub(super) name: Option<&'static str>,
+    /// The version installed.
+    pub(super) version: &'a str,
+    /// The oldest version driven.
+    pub(super) min: &'static str,
 }
 
 /// Whether version `found` is `min` or later: dot-separated numbers compared in turn, a missing
@@ -38,14 +33,14 @@ pub(super) fn version_at_least(found: &str, min: &str) -> bool {
 /// The version `installed` of `provider`'s plugin when it is older than the one the launcher
 /// drives (`plugin_minimum`), with that minimum; `None` when it is recent enough, unknown, or
 /// the plugin has no minimum.
-pub(super) fn plugin_too_old(provider: Provider, installed: Option<&str>) -> Option<(&str, &'static str)> {
+pub(super) fn plugin_too_old(provider: Provider, installed: Option<&str>) -> Option<TooOld<'_>> {
     let (version, min) = installed.zip(provider.plugin_minimum())?;
-    (!version_at_least(version, min)).then_some((version, min))
+    (!version_at_least(version, min)).then_some(TooOld { name: None, version, min })
 }
 
 /// The version `installed` of `provider`'s hypervisor when it is older than the one its plugin
 /// drives (`hypervisor_minimum`), with the hypervisor's name and that minimum.
-pub(super) fn hypervisor_too_old(provider: Provider, installed: Option<&str>) -> Option<(&'static str, &str, &'static str)> {
-    let (version, (name, min)) = installed.zip(provider.hypervisor_minimum())?;
-    (!version_at_least(version, min)).then_some((name, version, min))
+pub(super) fn hypervisor_too_old(provider: Provider, installed: Option<&str>) -> Option<TooOld<'_>> {
+    let (version, minimum) = installed.zip(provider.hypervisor_minimum())?;
+    (!version_at_least(version, minimum.version)).then_some(TooOld { name: Some(minimum.name), version, min: minimum.version })
 }

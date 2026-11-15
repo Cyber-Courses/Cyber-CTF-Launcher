@@ -64,6 +64,14 @@ const RDP: ScreenConnection = {
 
 const fire = (m: Made, type: string, detail?: unknown) => m.viewer.dispatchEvent(new CustomEvent(type, { detail }));
 
+/** The screen window on a VNC screen at 127.0.0.1:5903, its first connection made. */
+async function openVncAt5903() {
+  made.length = 0;
+  installTauri({ screen_connect: () => ({ ...VNC, address: "127.0.0.1:5903" }) });
+  render(<ScreenWindow />);
+  await flush();
+}
+
 describe("the screen window", () => {
   it("connects its viewer to the bridge's one-time URL with the password, and says when it shows", async () => {
     made.length = 0;
@@ -99,10 +107,7 @@ describe("the screen window", () => {
   });
 
   it("says where the screen didn't answer when the bridge closes before it ever shows", async () => {
-    made.length = 0;
-    installTauri({ screen_connect: () => ({ ...VNC, address: "127.0.0.1:5903" }) });
-    render(<ScreenWindow />);
-    await flush();
+    await openVncAt5903();
     fire(made[0], "disconnect", { clean: false });
     await flush();
     expect(screen.getByText("The VM's screen didn't answer at 127.0.0.1:5903.")).toBeTruthy();
@@ -148,6 +153,16 @@ describe("the screen window", () => {
     expect(screen.getByText("The machine's screen refused the password it was given.")).toBeTruthy();
   });
 
+  it("keeps saying the password was refused once noVNC closes the connection after it", async () => {
+    // noVNC fails the connection after a security failure: an unclean disconnect follows at once.
+    await openVncAt5903();
+    fire(made[0], "securityfailure");
+    fire(made[0], "disconnect", { clean: false });
+    await flush();
+    expect(screen.getByText("The machine's screen refused the password it was given.")).toBeTruthy();
+    expect(screen.queryByText("The VM's screen didn't answer at 127.0.0.1:5903.")).toBeNull();
+  });
+
   it("opens a Remote Desktop in the system's client and copies its password only on request", async () => {
     const calls = installTauri({ screen_connect: () => RDP, screen_open_rdp: () => null, screen_password: () => "pw-rdp" });
     const user = userEvent.setup();
@@ -163,6 +178,21 @@ describe("the screen window", () => {
     await flush();
     expect(commands(calls)).toEqual(expect.arrayContaining(["screen_open_rdp", "screen_password"]));
     expect(written).toEqual(["pw-rdp"]);
+  });
+
+  it("shares this computer's clipboard with a Remote Desktop only when turned on for the session", async () => {
+    const calls = installTauri({ screen_connect: () => RDP, screen_open_rdp: () => null });
+    const user = userEvent.setup();
+    render(<ScreenWindow />);
+    await flush();
+    const share = screen.getByRole("switch", { name: /Share this computer's clipboard/ });
+    expect(share.getAttribute("aria-checked")).toBe("false");
+    await user.click(screen.getByRole("button", { name: /Open in Windows App/ }));
+    await user.click(share);
+    expect(share.getAttribute("aria-checked")).toBe("true");
+    await user.click(screen.getByRole("button", { name: /Open in Windows App/ }));
+    await flush();
+    expect(calls.filter((c) => c.cmd === "screen_open_rdp").map((c) => c.args)).toEqual([{ clipboard: false }, { clipboard: true }]);
   });
 
   it("says what to install when there is no Remote Desktop app", async () => {

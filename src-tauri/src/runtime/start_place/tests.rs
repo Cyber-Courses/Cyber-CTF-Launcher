@@ -48,13 +48,23 @@ async fn place(t: &TestApp, id: &str, runtime: Runtime, ready: &[Provider]) -> S
 
 /// [`place`], the player preferring hypervisor `preferred`.
 async fn preferring(t: &TestApp, id: &str, runtime: Runtime, ready: &[Provider], preferred: Option<Provider>) -> StartPlace {
+    placed(t, (id, runtime), (ready, preferred), false).await
+}
+
+/// [`place`] with this machine's Docker answering (`docker`).
+async fn with_docker(t: &TestApp, id: &str, runtime: Runtime, docker: bool) -> StartPlace {
+    placed(t, (id, runtime), (&[], None), docker).await
+}
+
+/// Where lab `id` starts, as [`preferring`] says, Docker answering here when `docker`.
+async fn placed(t: &TestApp, (id, runtime): (&str, Runtime), (ready, preferred): (&[Provider], Option<Provider>), docker: bool) -> StartPlace {
     let ready = ready.to_vec();
     Box::pin(default_place_with(
         &t.dirs(),
         (id, runtime),
         lab::Source { repository: "CyberCTF/lab", commit: SHA, check: |_, _| Ok(()) },
         preferred,
-        async move || ready,
+        (async move || ready, async move || docker),
     ))
     .await
     .unwrap()
@@ -70,9 +80,9 @@ fn here_on(p: Provider) -> StartPlace {
     StartPlace { provider: Some(p), hypervisor: Some(p), ..StartPlace::default() }
 }
 
-/// A container lab here in a VM on hypervisor `p`.
-fn in_vm_on(p: Provider) -> StartPlace {
-    StartPlace { provider: Some(p), ..StartPlace::default() }
+/// A container lab here as one VM per machine on hypervisor `p`.
+fn per_machine_on(p: Provider) -> StartPlace {
+    StartPlace { provider: Some(p), per_machine_vm: true, ..StartPlace::default() }
 }
 
 #[tokio::test]
@@ -87,8 +97,8 @@ async fn a_vm_lab_runs_here_when_a_hypervisor_here_runs_it_else_on_the_default_s
     let pve = t.host("pve", "proxmox", serde_json::json!({}));
     default_server(&t, &pve);
     assert_eq!(place(&t, "ad", Runtime::Vm, &[Provider::Virtualbox]).await, here_on(Provider::Virtualbox));
-    // A hypervisor that can't run it (UTM: no network for its VMs) doesn't count.
-    assert_eq!(place(&t, "ad", Runtime::Vm, &[Provider::Utm]).await, host("pve"));
+    // UTM runs it too (one isolated network per lab network).
+    assert_eq!(place(&t, "ad", Runtime::Vm, &[Provider::Utm]).await, here_on(Provider::Utm));
     assert_eq!(place(&t, "ad", Runtime::Vm, &[]).await, host("pve"));
     // VMs built for another CPU run here only emulated.
     installed(&t, "other", &vms_on(foreign));
@@ -131,15 +141,20 @@ async fn a_lab_starts_again_where_it_last_ran() {
     record_run(t.data(), "ad", None, "vagrant", "absent");
     set_provider(&t, "ad", "libvirt");
     assert_eq!(place(&t, "ad", Runtime::Vm, &[]).await, here_on(Provider::Libvirt));
-    // A container lab: in its helper VM on UTM, or as one VM per machine.
+    // A container lab: as one VM per machine.
     installed(&t, "web", &dual());
     assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace::default(), "never ran: on Docker here");
-    record_run(t.data(), "web", None, "docker-vm", "absent");
-    set_provider(&t, "web", "utm");
-    assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, in_vm_on(Provider::Utm));
     record_run(t.data(), "web", None, "vagrant", "parked");
     set_provider(&t, "web", "virtualbox");
-    assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace { per_machine_vm: true, ..in_vm_on(Provider::Virtualbox) });
+    assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, per_machine_on(Provider::Virtualbox));
+    // Last in a helper VM an earlier version ran it inside: its true form, on Docker when Docker
+    // answers, else as one VM per machine on that hypervisor while its spec runs there.
+    record_run(t.data(), "web", None, "docker-vm", "absent");
+    set_provider(&t, "web", "virtualbox");
+    assert_eq!(with_docker(&t, "web", Runtime::Docker, true).await, StartPlace::default());
+    assert_eq!(with_docker(&t, "web", Runtime::Docker, false).await, per_machine_on(Provider::Virtualbox));
+    set_provider(&t, "web", "utm");
+    assert_eq!(with_docker(&t, "web", Runtime::Docker, false).await, per_machine_on(Provider::Utm));
     // A server no longer saved: as if it never ran there.
     record_run(t.data(), "web", Some("gone"), "docker-vm", "absent");
     assert_eq!(place(&t, "web", Runtime::Docker, &[]).await, StartPlace::default());
@@ -156,10 +171,10 @@ async fn a_vm_lab_starts_here_on_the_preferred_hypervisor_when_it_is_ready_and_r
     let ready = [Provider::Virtualbox, Provider::Libvirt];
     assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, Some(Provider::Libvirt)).await, here_on(Provider::Libvirt));
     assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, None).await, here_on(Provider::Virtualbox), "no choice: the first ready");
-    // Preferred but not ready, or ready but unable to run it (UTM: no network for its VMs): not it.
+    // Preferred but not ready: not it. UTM, ready and preferred, runs it.
     assert_eq!(preferring(&t, "ad", Runtime::Vm, &ready, Some(Provider::Parallels)).await, here_on(Provider::Virtualbox));
     let utm = [Provider::Utm, Provider::Virtualbox];
-    assert_eq!(preferring(&t, "ad", Runtime::Vm, &utm, Some(Provider::Utm)).await, here_on(Provider::Virtualbox));
+    assert_eq!(preferring(&t, "ad", Runtime::Vm, &utm, Some(Provider::Utm)).await, here_on(Provider::Utm));
     // Where it last ran here comes first: its VMs are there.
     record_run(t.data(), "ad", None, "vagrant", "absent");
     set_provider(&t, "ad", "virtualbox");
@@ -168,20 +183,20 @@ async fn a_vm_lab_starts_here_on_the_preferred_hypervisor_when_it_is_ready_and_r
 
 #[tokio::test]
 async fn a_lab_last_on_a_server_is_an_error_when_the_saved_servers_cant_be_read() {
-    // Regression: an unreadable server.json read as "no such server", so a lab last run on
+    // Regression: an unreadable server list read as "no such server", so a lab last run on
     // Proxmox started here instead.
     let t = TestApp::new();
     installed(&t, "ad", &vms_on(arches().0));
     let pve = t.host("pve", "proxmox", serde_json::json!({}));
     record_run(t.data(), "ad", Some(&pve), "proxmox", "absent");
-    std::fs::write(t.data().join("server.json"), "{ not json").unwrap();
+    crate::runtime::server::store::damage(&t.dirs());
     let ready = vec![Provider::Virtualbox];
     let place = Box::pin(default_place_with(
         &t.dirs(),
         ("ad", Runtime::Vm),
         lab::Source { repository: "CyberCTF/lab", commit: SHA, check: |_, _| Ok(()) },
         None,
-        async move || ready,
+        (async move || ready, async || false),
     ))
     .await;
     assert!(place.is_err(), "{place:?}");
@@ -189,8 +204,8 @@ async fn a_lab_last_on_a_server_is_an_error_when_the_saved_servers_cant_be_read(
 
 /// Lab `id`'s recorded run used Vagrant's `provider`.
 fn set_provider(t: &TestApp, id: &str, provider: &str) {
-    let path = t.data().join("runs").join(format!("cyberctf-{id}")).join("record.json");
-    let mut record: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let home = crate::runtime::paths::runner_home_in(t.data());
+    let mut record = crate::testing::runner::run_record(&home, &format!("cyberctf-{id}"));
     record["provider"] = provider.into();
-    std::fs::write(path, record.to_string()).unwrap();
+    crate::testing::runner::save_run(&home, &record);
 }

@@ -27,12 +27,7 @@ pub(super) struct Session {
     pub picture: Option<String>,
 }
 
-/// Whether this build keeps the session in a file (a dev build, a test build whatever its
-/// profile, or an end-to-end run's app, `platform::test_root`) rather than the keychain: a test
-/// binary built with a release-like profile (the rig's `rig`) has no debug assertions.
-fn in_a_file() -> bool {
-    cfg!(debug_assertions) || cfg!(test) || crate::platform::test_root::root().is_some()
-}
+use crate::platform::keychain::bypassed as in_a_file;
 
 /// The keychain entry holding the session, or its head when it is split (see [`split_chunks`]).
 const SESSION: &str = "session";
@@ -152,7 +147,7 @@ fn load_file(path: &std::path::Path) -> std::result::Result<Option<Session>, Str
 /// file holds the session's tokens).
 fn save_file(path: &std::path::Path, raw: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
-        crate::platform::private_fs::dir(dir)?;
+        crate::platform::private_fs::create_dir(dir)?;
     }
     crate::platform::atomic_file::write_private(path, raw)?;
     Ok(())
@@ -245,7 +240,7 @@ fn clear_chunks_from(from: usize) -> Result<()> {
 /// `save_blocking` on a blocking thread (the keychain may prompt).
 pub(super) async fn store(session: Session) -> Result<()> {
     let file = session_file();
-    tokio::task::spawn_blocking(move || save_blocking(&session, file.as_deref())).await.map_err(|e| Error::Invalid(e.to_string()))?
+    crate::platform::off_runtime(move || save_blocking(&session, file.as_deref())).await
 }
 
 fn clear_blocking(file: Option<&std::path::Path>) -> Result<()> {
@@ -270,7 +265,7 @@ fn remove_file(path: &std::path::Path) -> Result<()> {
 /// When the keychain (the session file, in a dev build) still holds it.
 pub(super) async fn clear() -> Result<()> {
     let file = session_file();
-    tokio::task::spawn_blocking(move || clear_blocking(file.as_deref())).await.map_err(|e| Error::Invalid(e.to_string()))?
+    crate::platform::off_runtime(move || clear_blocking(file.as_deref())).await
 }
 
 #[cfg(test)]

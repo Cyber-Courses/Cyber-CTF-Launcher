@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { managedSettings } from "@/lib/tauri";
 import { installAndRestart, restartOnUpdate } from "@/lib/install-update";
 import { useLabsBusy } from "@/features/labs/runs/operations";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { ignore } from "@/lib/failure";
 import { useT } from "@/lib/i18n";
 

@@ -9,7 +9,7 @@ test.describe("navigation", () => {
       ["Machine", "Machine"],
       ["Servers", "Servers"],
       ["Cloud", "Cloud"],
-      ["Overview", /Florian/],
+      ["Overview", /Ada/],
     ] as const) {
       await navButton(page, tab).click();
       await expect(navButton(page, tab)).toHaveAttribute("aria-current", "page");

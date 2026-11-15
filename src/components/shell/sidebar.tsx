@@ -7,7 +7,7 @@ import { CtfMark } from "@/components/brand/mark";
 import { StatusDot } from "@/components/ui/status-pill";
 import { operationLabel } from "@/features/labs/runs/operations";
 import type { AuthStatus } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 import { useAgentInfo } from "@/lib/use-agent-info";
 import { NAV, type ActiveLab, type Tab } from "@/components/shell/shell-model";

@@ -18,6 +18,16 @@
     "boxDownloadStalled": "Der Download der VM-Box des Labs kam nicht mehr voran ({minutes} Minuten lang nichts Neues) und wurde deshalb abgebrochen. Prüfe deine Internetverbindung und versuche es erneut.",
     "boxDownloadFailed": "Die VM-Box des Labs konnte nicht heruntergeladen werden: {reason}. Prüfe deine Internetverbindung und versuche es erneut.",
     "serverAuthFailed": "Cyber CTF kann sich nicht bei {server} anmelden: Sein Token wurde widerrufen oder sein Passwort geändert. Aktualisiere es unter Server.",
+    "toolTooOld": "Dieses Lab braucht {tool} {required} oder neuer, und dieser Computer hat {found}. Aktualisiere es und starte das Lab dann erneut.",
+    "elevationFailed": "Hyper-V braucht Administratorrechte, und sie konnten nicht erlangt werden ({reason}). Starte das Lab erneut und bestätige die Abfrage.",
+    "labNotReady": "Das Lab wurde gestartet, ist aber nicht bereit geworden: {detail}",
+    "machinesGone": "Einige Maschinen dieses Labs sind weg ({machines}): Sie wurden außerhalb von Cyber CTF entfernt, daher kann es nicht wie zuvor fortgesetzt werden. Starte es erneut für eine frische Kopie.",
+    "nothingToResume": "Von diesem Lab ist nichts mehr zum Fortsetzen übrig (seine gestoppten Container oder VMs sind weg). Starte es erneut für eine frische Kopie.",
+    "notParkable": "Dieses Lab kann nicht pausiert oder heruntergefahren werden. Stoppe es stattdessen.",
+    "stepStalled": "Der Schritt `{step}` des Labs hat {minutes} Minuten lang keinen Fortschritt gezeigt und wurde daher gestoppt. Seine letzte Ausgabe war: „{lastLine}“. Starte das Lab erneut; wenn es wieder passiert, prüfe das Netzwerk und die Ressourcen von Docker, dem Hypervisor oder dem Server.",
+    "stepSilent": "Der Schritt `{step}` des Labs hat {minutes} Minuten lang nichts ausgegeben und wurde daher gestoppt. Starte das Lab erneut; wenn es wieder passiert, prüfe das Netzwerk und die Ressourcen von Docker, dem Hypervisor oder dem Server.",
+    "stepCeiling": "Der Schritt `{step}` des Labs lief nach {hours} Stunden, der längsten Zeit, die ein Schritt laufen darf, noch immer und wurde daher gestoppt. Starte das Lab erneut; wenn es wieder passiert, prüfe das Netzwerk und die Ressourcen von Docker, dem Hypervisor oder dem Server.",
+    "stepTimedOut": "Der Schritt `{step}` des Labs hat sein Limit von {minutes} Minuten erreicht und wurde daher gestoppt. Starte das Lab erneut; wenn es wieder passiert, prüfe das Netzwerk und die Ressourcen von Docker, dem Hypervisor oder dem Server.",
     "signInCancelled": "Anmeldung abgebrochen.",
     "signInDenied": "Die Anmeldung wurde bei Cyber Auth abgelehnt, du bist also weiterhin abgemeldet. Melde dich erneut an und erlaube Cyber CTF, um fortzufahren.",
     "signInCodeUnavailable": "Die Anmeldung mit einem Code ist noch nicht verfügbar. Kopiere stattdessen den Anmeldelink in einen beliebigen Browser, auf diesem oder einem anderen Rechner.",
@@ -40,6 +50,9 @@
     "reapNoHost": "Für es ist kein Konto hinterlegt, daher kann der Launcher es nicht zerstören. Entferne seine Ressourcen in der Konsole deiner Cloud.",
     "pickCloudAccount": "Dieses Lab läuft in deinem Cloud-Konto: Wähle eines deiner Cloud-Konten, um es zu starten.",
     "noHypervisor": "Kein auf diesem Rechner bereiter Hypervisor führt dieses Lab aus. Installiere einen über die Seite Rechner oder führe das Lab auf einem Server oder in deinem Cloud-Konto aus.",
-    "turnedOffByPolicy": "Deine Organisation hat diese Funktion auf diesem Computer deaktiviert (Richtlinieneinstellung {setting}). Wende dich an deine IT, wenn du sie brauchst."
+    "turnedOffByPolicy": "Deine Organisation hat diese Funktion auf diesem Computer deaktiviert (Richtlinieneinstellung {setting}). Wende dich an deine IT, wenn du sie brauchst.",
+    "tlsUnconfirmed": "Das Zertifikat von {server} wurde noch nicht bestätigt (SHA-256 {presented}), daher wurde nichts an ihn gesendet. Um es zu bestätigen, öffne ihn unter Server, wähle Bearbeiten und vergleiche den Fingerabdruck mit dem, den der Server selbst anzeigt, bevor du ihn bestätigst.",
+    "tlsChanged": "Das Zertifikat von {server} hat sich geändert (es war {pinned}, jetzt ist es {presented}), daher wurde nichts an ihn gesendet: Jemand könnte die Verbindung abfangen. Wenn du das Zertifikat selbst ersetzt hast, öffne ihn unter Server, wähle Bearbeiten und vergleiche den Fingerabdruck mit dem, den der Server selbst anzeigt, bevor du ihn bestätigst.",
+    "sshHostKeyRefused": "Der SSH-Hostschlüssel von {host} ist nicht der bestätigte (oder es wurde noch keiner bestätigt), daher wurde die Verbindung abgelehnt. Wenn der Server neu installiert wurde, öffne ihn unter Server, wähle Bearbeiten und prüfe seinen neuen Schlüssel."
   }
 }

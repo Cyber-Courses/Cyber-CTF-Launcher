@@ -1,6 +1,6 @@
 //! OS plumbing: the app's folders, the wall clock as Unix time, removing what may already be
 //! gone, running tools, files only this user can read, whole-file writes, the service endpoints,
-//! HTTP clients with limits, the PATH and the proxy a GUI launch is missing, the console's Ctrl+C
+//! HTTP clients with limits, a process's identity the clock can't move, the PATH and the proxy a GUI launch is missing, the console's Ctrl+C
 //! on Windows, the files a Store build saved before, the administrator's policy, the pieces of a
 //! root script that checks what it downloads, and a future's panic caught where it is polled.
 
@@ -12,11 +12,15 @@ pub mod atomic_file;
 pub mod clock;
 pub mod config;
 pub mod console;
+pub mod elevation;
 pub mod env_path;
 pub mod exec;
 pub mod fs;
+pub mod host;
 pub mod http;
+pub mod identity;
 pub mod keychain;
+pub mod loopback_http;
 #[cfg(any(windows, test))]
 pub mod msix_data;
 pub mod policy;
@@ -28,6 +32,7 @@ pub mod root_script;
 pub mod sync;
 pub mod sys;
 pub mod test_root;
+pub mod tool_output;
 pub mod tree_link;
 pub mod unwind;
 
@@ -60,7 +65,23 @@ impl AppDirs {
     pub fn cache(&self) -> Result<&Path> {
         self.cache.as_deref().ok_or_else(|| Error::Invalid("the app's cache folder is unknown".into()))
     }
+
+    /// The app's folders as Tauri resolves them for the app ([`APP_IDENTIFIER`]), worked out
+    /// without Tauri: what a process of the app's that runs without it (the command line, a
+    /// deploy worker started by it) shares with the app. An end-to-end run's app keeps them in
+    /// its own folder ([`test_root`]).
+    pub fn standard() -> AppDirs {
+        if let Some(root) = test_root::root() {
+            let app = test_root::app_dir(&root);
+            return AppDirs::new(Some(app.clone()), Some(app.join("caches")));
+        }
+        AppDirs::new(env_path::app_data_dir(APP_IDENTIFIER), env_path::app_cache_dir(APP_IDENTIFIER))
+    }
 }
+
+/// The app's identifier (`identifier` in tauri.conf.json, which a test holds it to): the name of
+/// its folders under the OS's data and cache folders.
+pub const APP_IDENTIFIER: &str = "org.cyberctf.desktop";
 
 /// The user's home folder (`USERPROFILE` on Windows, `HOME` elsewhere).
 pub fn home_dir() -> Option<PathBuf> {
@@ -102,29 +123,26 @@ pub(crate) fn sh_parses(script: &str) -> bool {
     }
 }
 
-/// Homebrew, where its installer puts it (Apple silicon, then Intel).
-#[cfg(target_os = "macos")]
-pub fn brew_bin() -> Option<&'static str> {
-    ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].into_iter().find(|p| std::path::Path::new(p).exists())
-}
-
-/// Each OS's name as the player reads it, by `std::env::consts::OS`'s id for it: the one table the
-/// launcher's messages and the webview (`OS_NAMES`, generated) name an OS from.
-pub const OS_NAMES: [(&str, &str); 3] = [("macos", "macOS"), ("windows", "Windows"), ("linux", "Linux")];
-
-/// The name of OS `os` ([`OS_NAMES`]); the id itself for any other.
-pub fn os_name(os: &str) -> &str {
-    OS_NAMES.iter().find(|(id, _)| *id == os).map_or(os, |(_, name)| name)
-}
-
 /// Whether a program of that name is on this process's PATH (a file there; Windows' extensions
 /// aren't tried: the callers name Linux programs).
 pub fn on_path(program: &str) -> bool {
     std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
 }
 
+/// `f`, a call that blocks (the keychain, a file tree, a generator), run on the async runtime's
+/// blocking threads so it holds up no task; a panic in it is an error, not a crash.
+pub async fn off_runtime<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| Error::Invalid(e.to_string()))?
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_identifier_is_the_apps() {
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(config["identifier"], super::APP_IDENTIFIER);
+    }
+
     #[test]
     fn bytes_read_as_two_lowercase_hex_digits_each() {
         assert_eq!(super::hex(&[0x00, 0x0f, 0xab, 0xff]), "000fabff");

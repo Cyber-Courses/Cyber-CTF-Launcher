@@ -102,7 +102,9 @@ jobs:
           # Installing resolves the package's Depends on a clean system's terms.
           sudo apt-get install -y "./$deb"
           pkg=$(dpkg-deb -f "$deb" Package)
-          bin=$(dpkg -L "$pkg" | grep '^/usr/bin/' | head -1)
+          # The app, not the command line beside it (/usr/bin/cyberctf), which runs with no display.
+          bin=$(dpkg -L "$pkg" | grep '^/usr/bin/' | grep -v '^/usr/bin/cyberctf$' | head -1)
+          env -u DISPLAY -u WAYLAND_DISPLAY /usr/bin/cyberctf version --json | tee smoke-logs/cli.txt
           echo "Launching $bin"
           export WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1 RUST_BACKTRACE=1
           xvfb-run -a dbus-run-session -- "$bin" > smoke-logs/app.log 2>&1 &
@@ -124,7 +126,9 @@ jobs:
         run: |
           set -euo pipefail
           app=$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
-          exe=$(find "$app/Contents/MacOS" -type f -perm -u+x | head -1)
+          # The app's executable, not the command line beside it (cyberctf).
+          exe=$(find "$app/Contents/MacOS" -type f -perm -u+x ! -name cyberctf | head -1)
+          "$app/Contents/MacOS/cyberctf" version --json | tee smoke-logs/cli.txt
           plutil -lint "$app/Contents/Info.plist"
           echo "Launching $exe"
           RUST_BACKTRACE=1 "$exe" > smoke-logs/app.log 2>&1 &
@@ -151,7 +155,10 @@ jobs:
           $setup = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$dir" -Wait -PassThru
           if ($setup.ExitCode -ne 0) { throw "The installer failed (exit $($setup.ExitCode))" }
           Get-ChildItem $dir | Out-File smoke-logs/installed.txt
-          $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notmatch 'unins' } | Select-Object -First 1
+          # The app, not the command line beside it (cyberctf.exe) nor the uninstaller.
+          $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notmatch 'unins' -and $_.Name -ne 'cyberctf.exe' } | Select-Object -First 1
+          & (Join-Path $dir 'cyberctf.exe') version --json | Tee-Object smoke-logs/cli.txt
+          if ($LASTEXITCODE -ne 0) { throw "cyberctf version failed (exit $LASTEXITCODE)" }
           Write-Host "Launching $($exe.FullName)"
           $env:RUST_BACKTRACE = '1'
           $app = Start-Process -FilePath $exe.FullName -PassThru -WindowStyle Minimized `
@@ -176,7 +183,9 @@ jobs:
           $setup = Start-Process -FilePath msiexec.exe -ArgumentList '/i', "`"$($msi.FullName)`"", '/qn', '/norestart', "INSTALLDIR=`"$dir`"", '/l*v', "`"$log`"" -Wait -PassThru
           if ($setup.ExitCode -ne 0) { throw "msiexec /i failed (exit $($setup.ExitCode)); see msiexec-install.log" }
           Get-ChildItem $dir | Out-File smoke-logs/installed.txt
-          $exe = Get-ChildItem $dir -Filter *.exe | Select-Object -First 1
+          $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -ne 'cyberctf.exe' } | Select-Object -First 1
+          & (Join-Path $dir 'cyberctf.exe') version --json | Tee-Object smoke-logs/cli.txt
+          if ($LASTEXITCODE -ne 0) { throw "cyberctf version failed (exit $LASTEXITCODE)" }
           Write-Host "Launching $($exe.FullName)"
           $env:RUST_BACKTRACE = '1'
           $app = Start-Process -FilePath $exe.FullName -PassThru -WindowStyle Minimized `

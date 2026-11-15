@@ -72,12 +72,6 @@ pub fn open_log_folder(app: &crate::AppHandle) -> crate::error::Result<()> {
     super::open_folder(&dir)
 }
 
-/// The deploy worker's log file for this lab. A lab id that isn't one (a damaged job file)
-/// shares a fallback file rather than becoming part of a path.
-pub fn worker_log_name(lab_id: &str) -> String {
-    if crate::runtime::is_lab_id(lab_id) { format!("deploy-{lab_id}") } else { "deploy-unknown".to_owned() }
-}
-
 /// Records every panic in the log file, with where it happened and a backtrace, then runs the
 /// default hook (stderr). A panic in an async task doesn't end the app, so without this it would
 /// pass unseen; one on the main thread does, and this is its only trace.
@@ -148,17 +142,5 @@ mod tests {
         assert_eq!((level_problem(Some("")), level_problem(Some("  "))), (None, None), "blank is unset");
         assert_eq!(level_problem(Some("debug")), None);
         assert_eq!(level_problem(Some("loud")).as_deref(), Some(r#"CYBERCTF_LOG="loud" isn't a log level (error, warn, info, debug, trace): logging at info"#));
-    }
-
-    #[test]
-    fn a_worker_log_is_named_after_its_lab() {
-        assert_eq!(worker_log_name("web-sqli_01"), "deploy-web-sqli_01");
-    }
-
-    #[test]
-    fn a_damaged_lab_id_never_becomes_part_of_a_path() {
-        for bad in ["", "../../evil", "a\\b", "C:", "lab name", "con.txt", &"x".repeat(65)] {
-            assert_eq!(worker_log_name(bad), "deploy-unknown", "{bad:?}");
-        }
     }
 }

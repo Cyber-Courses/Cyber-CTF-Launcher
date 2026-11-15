@@ -31,18 +31,23 @@ use crate::runtime::server::store::{load, update};
 #[ts(rename = "ServerList")]
 pub struct HostList {
     /// The default host's id, when one is set.
-    default: Option<String>,
+    pub(crate) default: Option<String>,
     /// Every saved server and cloud account.
-    hosts: Vec<HostProfile>,
+    pub(crate) hosts: Vec<HostProfile>,
     /// Each account's monthly budget in USD, by id: the ones a cloud launch is checked against
     /// (AWS accounts with a positive limit), whose spend the Cloud page reads.
-    budgets: std::collections::BTreeMap<String, f64>,
+    pub(crate) budgets: std::collections::BTreeMap<String, f64>,
 }
 
 /// The saved servers and cloud accounts, with the default's id.
 #[tauri::command]
 pub fn server_list(app: AppHandle) -> Result<HostList> {
-    let store = load(&AppDirs::from(&app))?;
+    host_list(&AppDirs::from(&app))
+}
+
+/// [`server_list`], in the app whose folders are `dirs`.
+pub(crate) fn host_list(dirs: &AppDirs) -> Result<HostList> {
+    let store = load(dirs)?;
     let budgets = store.hosts.iter().filter_map(|h| Some((h.id.clone(), budget_limit(h)?))).collect();
     Ok(HostList { default: store.default, hosts: store.hosts, budgets })
 }
@@ -58,6 +63,20 @@ pub async fn server_save(app: AppHandle, input: HostInput) -> Result<HostProfile
 #[tauri::command]
 pub async fn server_proxmox_placement(app: AppHandle, input: HostInput) -> Result<placement::Placement> {
     setup::placement(&AppDirs::from(&app), input).await
+}
+
+/// What the form's Proxmox server offers to be confirmed: its certificate's fingerprint and its
+/// node's SSH host keys (see `server::setup::identity`).
+#[tauri::command]
+pub async fn server_identity(app: AppHandle, input: HostInput) -> Result<setup::Identity> {
+    setup::identity(&AppDirs::from(&app), &input).await
+}
+
+/// Confirms the form's server node's SSH host keys, shown as `fingerprints` (see
+/// `server::setup::trust_ssh_keys`).
+#[tauri::command]
+pub async fn server_trust_ssh_keys(app: AppHandle, input: HostInput, fingerprints: Vec<String>) -> Result<()> {
+    setup::trust_ssh_keys(&AppDirs::from(&app), &input, &fingerprints).await
 }
 
 /// Saves a Proxmox host set up with the player's SSH key (see `server::setup::save_with_ssh_key`).
@@ -83,7 +102,12 @@ pub async fn server_remove(app: AppHandle, id: String) -> Result<()> {
 /// Sets (or clears, with None) the host VM labs run on by default.
 #[tauri::command]
 pub fn server_set_default(app: AppHandle, id: Option<String>) -> Result<()> {
-    update(&AppDirs::from(&app), |store| set_default_host(store, id))
+    set_default_in(&AppDirs::from(&app), id)
+}
+
+/// [`server_set_default`], in the app whose folders are `dirs`.
+pub(crate) fn set_default_in(dirs: &AppDirs, id: Option<String>) -> Result<()> {
+    update(dirs, |store| set_default_host(store, id))
 }
 
 /// "Test connection" of a saved host (see `server::connection_test`).
@@ -97,7 +121,12 @@ pub async fn server_test(app: AppHandle, id: String) -> Result<TestResult> {
 /// over SSH; the setup form shows it for those hosts.
 #[tauri::command]
 pub async fn server_public_key(app: AppHandle) -> Result<String> {
-    Ok(crate::runtime::ssh::ensure_key(&AppDirs::from(&app)).await?.1)
+    public_key_in(&AppDirs::from(&app)).await
+}
+
+/// [`server_public_key`], in the app whose folders are `dirs`.
+pub(crate) async fn public_key_in(dirs: &AppDirs) -> Result<String> {
+    Ok(crate::runtime::ssh::ensure_key(dirs).await?.1)
 }
 
 /// How many installed labs are currently running on each host, keyed by host id (each lab's
@@ -140,9 +169,48 @@ mod tests {
     use crate::runtime::providers::Provider;
     use crate::runtime::server::HOST_MARKER;
 
+    /// A public host key (made for these tests) and the fingerprint `ssh-keygen -lf` gives it.
+    const NODE_KEY: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIMV/X9GBl8lRmDMg/hSFR41QZH/fgA5PLNatzgxigSSL";
+    const NODE_FINGERPRINT: &str = "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ";
+
+    #[tokio::test]
+    async fn a_proxmox_servers_identity_is_read_then_its_node_keys_confirmed_through_the_commands() {
+        use crate::platform::exec::fake::{Tools, ok};
+        use crate::runtime::server::tls_pin::tests::{FINGERPRINT_A, server_a};
+        let t = crate::testing::test_app::TestApp::new();
+        let app = || t.handle().clone();
+        // The launcher's own key, already made: nothing runs ssh-keygen.
+        let ssh = t.data().join("ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        std::fs::write(ssh.join("id_ed25519"), "private").unwrap();
+        std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher").unwrap();
+        let (port, requests) = server_a().await;
+        let input = |provider: &str| -> HostInput {
+            serde_json::from_value(serde_json::json!({
+                "name": "pve", "provider": provider, "host": "127.0.0.1", "port": port, "username": "root@pam", "insecureTls": true
+            }))
+            .unwrap()
+        };
+        let refused = server_identity(app(), input("vmware_esxi")).await.unwrap_err();
+        assert!(matches!(&refused, crate::error::Error::Invalid(m) if m == "only Proxmox servers are confirmed by their fingerprints"), "{refused}");
+        let tools = Tools::strict_rules(&[("ssh-keyscan", ok(format!("127.0.0.1 ssh-ed25519 {NODE_KEY}\n")))]);
+        let shown = server_identity(app(), input("proxmox")).await.unwrap();
+        assert_eq!(shown.tls.as_deref(), Some(FINGERPRINT_A), "the certificate's fingerprint, for the learner to compare");
+        assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0, "nothing but a handshake reached the server");
+        let offered = shown.ssh.expect("the node's keys");
+        assert_eq!(
+            (offered.state, offered.keys.iter().map(|k| k.fingerprint.as_str()).collect::<Vec<_>>()),
+            (crate::runtime::ssh::known_hosts::State::New, vec![NODE_FINGERPRINT])
+        );
+        assert_eq!(shown.ssh_error, None);
+        server_trust_ssh_keys(app(), input("proxmox"), vec![NODE_FINGERPRINT.into()]).await.unwrap();
+        assert_eq!(std::fs::read_to_string(ssh.join("nodes_known_hosts")).unwrap(), format!("127.0.0.1 ssh-ed25519 {NODE_KEY}\n"));
+        assert!(tools.called("ssh-keyscan -T 10 -p 22 -t ed25519,ecdsa,rsa 127.0.0.1"), "{:?}", tools.calls());
+    }
+
     #[tokio::test]
     async fn hosts_are_saved_listed_tested_and_removed_through_the_commands() {
-        use crate::platform::exec::fake::{Tools, ok};
+        use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         let input = |id: Option<&str>| -> HostInput {
@@ -161,7 +229,7 @@ mod tests {
         assert_eq!(server_set_default(app(), Some(saved.id.clone())).unwrap_err().to_string(), "a cloud account can't be the default host");
         server_set_default(app(), None).unwrap();
         // Testing it asks the Azure CLI (no network here).
-        let tools = Tools::rules(&[("account show", ok("Pay-As-You-Go\n"))]);
+        let tools = Tools::strict_rules(&crate::platform::exec::fake::azure_signed_in());
         let result = server_test(app(), saved.id.clone()).await.unwrap();
         assert!(tools.called("az account show --subscription 00000000-0000-0000-0000-000000000000"));
         assert!(!result.checks.is_empty());
@@ -212,7 +280,7 @@ mod tests {
     #[tokio::test]
     async fn the_vm_test_runs_on_proxmox_and_esxi_hosts_only() {
         let t = crate::testing::test_app::TestApp::new();
-        let tools = crate::platform::exec::fake::Tools::rules(&[]);
+        let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
         let app = || t.handle().clone();
         let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
 
@@ -245,7 +313,7 @@ mod tests {
     async fn the_esxi_vm_test_stops_at_its_first_step_without_vagrants_esxi_plugin() {
         let t = crate::testing::test_app::TestApp::new();
         // No Vagrant on this computer: no ESXi plugin either.
-        let _tools = crate::platform::exec::fake::Tools::rules(&[("vagrant", None)]);
+        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[("ovftool --version", crate::platform::exec::fake::ok("")), ("vagrant", None)]);
         crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
         t.host("esx", "vmware_esxi", serde_json::json!({ "host": "192.0.2.1", "port": 22, "username": "root" }));
         crate::runtime::server::secrets::set_secret("esx", "pw").unwrap();

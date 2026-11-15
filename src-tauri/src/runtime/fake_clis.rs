@@ -3,7 +3,7 @@
 //! cloud. They change the process's PATH, so they are opt-in and run alone:
 //!
 //!   cargo test `fake_clis` -- --ignored --test-threads=1
-#![allow(
+#![expect(
     unsafe_code,
     reason = "set_var, to put the stand-in tools first on PATH, is unsafe in edition 2024; these tests run alone (--test-threads=1, see above) so nothing else reads the environment meanwhile"
 )]
@@ -31,12 +31,10 @@ impl FakeBin {
         FakeBin { dir, path }
     }
 
-    /// A tool `name` running the shell `script`.
+    /// A tool `name` running the shell `script` (written by a child process: see
+    /// [`crate::testing::write_executable`]).
     fn tool(&self, name: &str, script: &str) {
-        use std::os::unix::fs::PermissionsExt;
-        let file = self.dir.join(name);
-        std::fs::write(&file, format!("#!/bin/sh\n{script}\n")).unwrap();
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::testing::write_executable(self.dir.join(name), format!("#!/bin/sh\n{script}\n"));
     }
 
     fn file(&self, name: &str) -> PathBuf {
@@ -50,65 +48,6 @@ impl Drop for FakeBin {
         unsafe { std::env::set_var("PATH", &self.path) };
         let _ = std::fs::remove_dir_all(&self.dir);
     }
-}
-
-/// A lab `id` on an AWS account (CLI credentials) whose Isoloom module exists, deployed in
-/// `region` and past its stop time. Returns the lab folder and the state folder.
-fn deployed_on_aws(t: &TestApp, id: &str, region: &str) -> (PathBuf, PathBuf) {
-    let dir = t.lab(id, &[(".isoloom/cloud-docker/aws/main.tf", "")]);
-    let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true, "host": "us-east-1" }));
-    crate::runtime::server::mark_lab(&dir, Some(&host)).unwrap();
-    let state = t.data().join("deployments").join(id).join("aws");
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::write(state.join("terraform.tfstate"), r#"{"resources":[{"type":"aws_instance"}]}"#).unwrap();
-    std::fs::write(state.join("run.json"), format!(r#"{{"expires_at":1,"region":"{region}","env":{{"AWS_REGION":"{region}"}}}}"#)).unwrap();
-    std::fs::write(state.join("host"), &host).unwrap();
-    (dir, state)
-}
-
-/// A fake terraform that, on `destroy`, writes the region it was given to `seen` and runs `then`.
-fn terraform(bin: &FakeBin, then: &str) -> PathBuf {
-    let seen = bin.file("seen");
-    bin.tool(
-        "terraform",
-        &format!(
-            r#"case "$1" in version) echo "Terraform v1.9.8";; init) echo initialized;; destroy) echo "$TF_VAR_region $AWS_REGION" > '{}'; {then};; esac"#,
-            seen.display()
-        ),
-    );
-    seen
-}
-
-#[tokio::test]
-#[ignore = "changes PATH: run alone, see the module"]
-async fn fake_clis_the_reaper_destroys_where_the_lab_was_created_and_is_not_held_by_a_leftover() {
-    let bin = FakeBin::new();
-    // The destroy leaves a process holding its output open (a provider plugin, an ssh master).
-    let seen = terraform(&bin, "sleep 60 & echo destroyed");
-    let t = TestApp::new();
-    let (dir, state) = deployed_on_aws(&t, "e2e-reap", "eu-west-3");
-    let started = Instant::now();
-    Box::pin(crate::runtime::reap_expired_labs(&t.dirs(), &|_: &str, _: &str| {})).await;
-    assert!(started.elapsed() < Duration::from_secs(20), "held by the leftover: {:?}", started.elapsed());
-    assert_eq!(std::fs::read_to_string(seen).unwrap().trim(), "eu-west-3 eu-west-3", "the account now says us-east-1");
-    assert!(!state.join("terraform.tfstate").exists() && crate::runtime::server::marked_host(&dir).is_none());
-}
-
-#[tokio::test]
-#[ignore = "changes PATH: run alone, see the module"]
-async fn fake_clis_a_failing_auto_stop_is_recorded_until_the_credentials_work() {
-    let bin = FakeBin::new();
-    terraform(&bin, "echo 'Error: ExpiredToken: The security token included in the request is expired' >&2; exit 1");
-    let t = TestApp::new();
-    let (_, state) = deployed_on_aws(&t, "e2e-reap-fail", "eu-west-3");
-    Box::pin(crate::runtime::reap_expired_labs(&t.dirs(), &|_: &str, _: &str| {})).await;
-    let shown = crate::runtime::reaper::last_failure(&t.dirs(), "e2e-reap-fail").expect("recorded").message;
-    assert!(shown.contains("ExpiredToken"), "{shown}");
-    assert!(state.join("terraform.tfstate").is_file());
-    terraform(&bin, "echo destroyed");
-    Box::pin(crate::runtime::reap_expired_labs(&t.dirs(), &|_: &str, _: &str| {})).await;
-    assert_eq!(crate::runtime::reaper::last_failure(&t.dirs(), "e2e-reap-fail"), None);
-    assert!(!state.join("terraform.tfstate").exists());
 }
 
 #[tokio::test]

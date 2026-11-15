@@ -110,6 +110,7 @@
     "rdpHint": "It opens in {client}. Keep this window open while you use it: closing it ends the connection.",
     "noClient": "No Remote Desktop app is installed. On a Mac, install Windows App from the App Store; on Linux, FreeRDP (xfreerdp) or Remmina. Then try again.",
     "tunnelled": "It goes through an encrypted SSH tunnel from this computer, which closes with this window.",
+    "tunnelClosed": "The console's tunnel closed: {reason}",
     "openFailed": "Couldn't open the Remote Desktop app",
     "openRdp": "Open in {client}",
     "copyPassword": "Copy password",
@@ -118,6 +119,8 @@
     "signInTitle": "Sign in to the attack box",
     "signInHint": "Where its screen asks for a password (a lock, a login), sign in as {user} with this password.",
     "user": "User",
-    "password": "Password"
+    "password": "Password",
+    "shareClipboard": "Share this computer's clipboard with the machine",
+    "shareClipboardHint": "Off by default: the machine could read what you copy here (passwords, tokens) and change it. For this window only; drives, printers and other devices are never shared."
   }
 }

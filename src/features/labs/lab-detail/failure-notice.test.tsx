@@ -47,3 +47,21 @@ describe("a server refusing the lab's credentials", () => {
     expect(renderHook(() => useOpenServer(null)).result.current).toBeUndefined();
   });
 });
+
+describe("a failed operation's id (#379)", () => {
+  it("is shown under the failure for the player to quote, and only when there is one", () => {
+    render(<FailureNotice title="Blind orders" op="launch" message="boom" kind={null} operation="op-0123abcd" stillUp={false} onDismiss={() => {}} />);
+    expect(screen.getByText("Operation op-0123abcd: quote it when you ask for help.")).toBeTruthy();
+  });
+
+  it("comes with the failure of an operation the action followed through the run events", async () => {
+    const { operationOf, takeIn, awaitOperation } = await import("@/lib/tauri/run-events");
+    installTauri({ run_events: () => [] });
+    takeIn([{ cursor: 1, event: { kind: "started", operation: "op-9", labId: "web", op: "launch", machine: null, runtime: null, deploying: true, at: 0 } }]);
+    const failed = awaitOperation("op-9", () => {});
+    takeIn([{ cursor: 2, event: { kind: "ended", operation: "op-9", labId: "web", op: "launch", error: { code: "other", message: "boom" } } }]);
+    const error: unknown = await failed.catch((e: unknown) => e);
+    expect(operationOf(error)).toBe("op-9");
+    expect(operationOf({ code: "other", message: "a refusal" })).toBeNull();
+  });
+});

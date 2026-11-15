@@ -49,8 +49,12 @@ fn extra_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         dirs.push("/Applications/Docker.app/Contents/Resources/bin".into());
-        // utmctl, which the running-labs scan asks for UTM's started VMs, ships inside UTM.
+        // utmctl, which the running-labs scan asks for UTM's started VMs, ships inside UTM, which
+        // is in /Applications or the player's own ~/Applications.
         dirs.push("/Applications/UTM.app/Contents/MacOS".into());
+        if let Some(home) = super::home_dir() {
+            dirs.push(home.join("Applications/UTM.app/Contents/MacOS"));
+        }
         // ovftool, which vagrant-vmware-esxi needs, ships inside VMware Fusion.
         dirs.push("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool".into());
         dirs.push("/Applications/VMware Fusion.app/Contents/Library".into());
@@ -76,7 +80,7 @@ pub(crate) fn windows_dirs(var: impl Fn(&str) -> Option<OsString>) -> Vec<PathBu
         dirs.push(pf.join("Docker").join("Docker").join("resources").join("bin"));
         // QEMU's installer (winget's SoftwareFreedomConservancy.QEMU) adds nothing to PATH
         // either: without this folder the tool read as absent right after its install, and the
-        // setup offered to install it again every pass (the review of 2026-11-13).
+        // setup offered to install it again every pass.
         dirs.push(pf.join("qemu"));
     }
     if let Some(pf86) = var("ProgramFiles(x86)").map(PathBuf::from) {
@@ -135,6 +139,19 @@ pub fn app_data_dir(identifier: &str) -> Option<PathBuf> {
     data.filter(|d| !d.as_os_str().is_empty()).map(|d| d.join(identifier))
 }
 
+/// The app cache folder of the app `identifier`, as Tauri resolves it (`app_cache_dir`: the OS's
+/// cache folder, then the identifier), for a process of the app's that runs without Tauri.
+pub fn app_cache_dir(identifier: &str) -> Option<PathBuf> {
+    let cache = if cfg!(target_os = "macos") {
+        super::home_dir().map(|h| h.join("Library").join("Caches"))
+    } else if cfg!(windows) {
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+    } else {
+        std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).filter(|d| d.is_absolute()).or_else(|| super::home_dir().map(|h| h.join(".cache")))
+    };
+    cache.filter(|d| !d.as_os_str().is_empty()).map(|d| d.join(identifier))
+}
+
 /// Merges the PATH an installer has since written to the registry (machine, then user), and
 /// the tool folders that exist now, into this process's PATH. Children inherit it, so a restart
 /// from the app keeps it too. Cheap (two registry reads): call before each machine check.
@@ -166,12 +183,11 @@ fn user_path() -> Option<OsString> {
     registry_string(Hive::CurrentUser, "Environment", "Path")
 }
 
-/// Call first thing in `run()`, before any thread is spawned, with the folders of the tools the
-/// app places itself (`own`, which may not exist yet).
-pub fn augment(own: &[PathBuf]) {
+/// Puts on `PATH` the shell's folders a GUI launch misses and the folders of the tools the app
+/// places itself (`own`, which may not exist yet), while `only` this thread runs.
+pub fn augment(only: &crate::platform::sys::SingleThreaded, own: &[PathBuf]) {
     if let Some(path) = augmented(std::env::var_os("PATH").as_deref(), own) {
-        // At the very start of `run()`: no thread is started yet (Tauri, tokio, a plugin).
-        crate::platform::sys::set_env_at_startup("PATH", &path);
+        crate::platform::sys::set_env_at_startup(only, "PATH", &path);
     }
 }
 
@@ -185,10 +201,13 @@ mod tests {
     #[test]
     #[ignore = "changes the process PATH: run alone, with --test-threads=1"]
     fn finder_path_finds_tools() {
-        crate::platform::sys::set_env_at_startup("PATH", OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
+        // SAFETY: run alone, with --test-threads=1 (see the `ignore` reason).
+        #[allow(unsafe_code, reason = "this test runs alone, so it is the only thread")]
+        let only = unsafe { crate::platform::sys::SingleThreaded::assume() };
+        crate::platform::sys::set_env_at_startup(&only, "PATH", OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
         let found = |tool: &str| std::process::Command::new(tool).arg("--version").output().is_ok();
         assert!(!found("docker"), "docker should be missing on the bare Finder PATH");
-        augment(&[]);
+        augment(&only, &[]);
         for tool in ["docker", "vagrant"] {
             assert!(found(tool), "{tool} not found after augment(); PATH={:?}", std::env::var("PATH"));
         }
@@ -208,8 +227,8 @@ mod tests {
 
     #[test]
     fn windows_finds_the_hypervisors_that_never_join_path() {
-        // Regression (#218): VirtualBox read as not installed right after its installer ran, and
-        // VMware Workstation's vmrun was never found.
+        // Regression: VirtualBox read as not installed right after its installer ran, and VMware
+        // Workstation's vmrun was never found.
         let env = |name: &str| -> Option<OsString> {
             match name {
                 "VBOX_MSI_INSTALL_PATH" => Some(r"D:\VBox\".into()),
@@ -225,7 +244,7 @@ mod tests {
         assert!(has(r"C:\Program Files (x86)\VMware\VMware Workstation"), "{dirs:?}");
         // ovftool, inside Workstation in a folder of its own.
         assert!(has(r"C:\Program Files (x86)\VMware\VMware Workstation\OVFTool") && has(r"C:\Program Files\VMware\VMware Workstation\OVFTool"), "{dirs:?}");
-        // QEMU's winget install, which adds nothing to PATH (the review of 2026-11-13).
+        // QEMU's winget install, which adds nothing to PATH.
         assert!(has(r"C:\Program Files\qemu"), "{dirs:?}");
         // The installer's own answer comes first: a VirtualBox moved elsewhere wins.
         assert_eq!(dirs[0], PathBuf::from(r"D:\VBox\"));
@@ -274,9 +293,12 @@ mod tests {
         std::fs::create_dir_all(&own).unwrap();
         std::fs::write(own.join(exe), "").unwrap();
         let first = std::env::split_paths(&path).map(|d| d.join(exe)).find(|f| f.is_file());
-        let fusion = Path::new("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool/ovftool");
-        assert!(first == Some(own.join(exe)) || first.as_deref() == Some(fusion), "{first:?}");
+        // A copy this machine already has in a tool folder (Fusion's, a user-level install) comes
+        // first by design; otherwise the search reaches the app's own.
+        let host_copy = first.as_deref().and_then(Path::parent).is_some_and(|d| extra_dirs().iter().any(|e| e == d));
+        assert!(first == Some(own.join(exe)) || host_copy, "{first:?}");
         if cfg!(target_os = "macos") {
+            let fusion = Path::new("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool/ovftool");
             let fusion_dir = extra_dirs().iter().position(|d| d.as_path() == fusion.parent().unwrap());
             assert!(fusion_dir.is_some(), "Fusion's ovftool folder is a tool folder");
         }

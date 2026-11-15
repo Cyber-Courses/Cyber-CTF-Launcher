@@ -21,11 +21,11 @@ use crate::runtime::Runtime;
 /// The machine a screen window shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Which {
-    /// The lab.
+    /// The lab's id, its folder under `<app data>/labs/`.
     pub(crate) id: String,
     /// The lab's runtime, as the page declares it.
     pub(crate) runtime: Runtime,
-    /// The machine.
+    /// The machine's name in the lab's spec.
     pub(crate) machine: String,
 }
 
@@ -44,7 +44,7 @@ pub(crate) struct Reached {
     /// Whether an SSH tunnel carries it.
     pub(crate) tunnelled: bool,
     /// What keeps it reachable while the window lives (the runner's console, its tunnel).
-    pub(crate) _keep: Option<Box<dyn Send>>,
+    pub(crate) keep: Option<Box<dyn Send>>,
 }
 
 /// A console's protocol.
@@ -58,9 +58,26 @@ pub(crate) enum Protocol {
     Rdp,
 }
 
+/// A screen window's SSH tunnel that ended on its own, as the window is told
+/// ([`crate::app::events::SCREEN_TUNNEL_CLOSED`]).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct TunnelClosed {
+    /// The window's label.
+    pub(crate) label: String,
+    /// Why it ended, in the runner's words.
+    pub(crate) reason: String,
+}
+
 impl Reached {
-    /// The runner's `console`, kept for the window's life.
-    pub(crate) fn of(console: isothrum_runner::Console) -> Result<Reached> {
+    /// The runner's `console`, kept for the window's life, and its SSH tunnel when one carries
+    /// it: the caller keeps that alive too ([`Reached::hold`]), and watches it end. `trust`: how
+    /// the server's certificate is trusted, when its console is reached through its API (a
+    /// self-signed one by the fingerprint the learner confirmed for it).
+    pub(crate) fn of(
+        mut console: isothrum_runner::Console,
+        trust: crate::runtime::server::tls_pin::Trust,
+    ) -> Result<(Reached, Option<isothrum_runner::Tunnel>)> {
+        let tunnel = console.tunnel.take();
         let protocol = match crate::runtime::isothrum::protocol_word(console.protocol) {
             "vnc" => Protocol::Vnc,
             "rdp" => Protocol::Rdp,
@@ -71,19 +88,26 @@ impl Reached {
             isothrum_runner::Endpoint::ProxmoxVnc(vnc) => bridge::Target::WebSocket {
                 url: vnc.websocket.expose().to_owned(),
                 header: (vnc.authorization.0.clone(), vnc.authorization.1.expose().to_owned()),
-                insecure: vnc.insecure,
+                trust: if vnc.insecure { trust } else { crate::runtime::server::tls_pin::Trust::System },
             },
             _ => return Err(Error::Invalid("the runner reached the screen where this launcher can't show it".into())),
         };
-        Ok(Reached {
+        let reached = Reached {
             protocol,
             at,
             user: console.user.clone(),
             password: console.password.as_ref().map(|p| p.expose().to_owned()),
             note: console.note.clone(),
-            tunnelled: console.tunnelled(),
-            _keep: Some(Box::new(console)),
-        })
+            tunnelled: tunnel.is_some(),
+            keep: Some(Box::new(console)),
+        };
+        Ok((reached, tunnel))
+    }
+
+    /// Keeps `guard` (what owns the console's tunnel) for as long as the console is kept: the
+    /// window closing, or connecting again, drops it and ends the tunnel.
+    pub(crate) fn hold(&mut self, guard: Box<dyn Send>) {
+        self.keep = Some(Box::new((self.keep.take(), guard)));
     }
 }
 
@@ -171,12 +195,19 @@ pub(crate) fn csp_with_bridge(csp: &str, port: u16) -> String {
 }
 
 /// Starts screen window `label`'s session for `which`, its bridge bound (its port is what the
-/// window's policy lets it connect to).
-pub(crate) async fn start(label: &str, which: Which) -> Result<u16> {
+/// window's policy lets it connect to). None when the window already has one (it is open, or
+/// another open of it is under way): that session is kept. Replacing it, a second click on the
+/// same screen took the session from under the window the first click opened.
+pub(crate) async fn start(label: &str, which: Which) -> Result<Option<u16>> {
     let bridge = bridge::Bridge::bind().await?;
     let port = bridge.port();
-    with_sessions(|s| s.insert(label.to_owned(), Session { which, bridge, reached: None, rdp_file: None }));
-    Ok(port)
+    Ok(with_sessions(|s| match s.entry(label.to_owned()) {
+        std::collections::hash_map::Entry::Occupied(_) => None,
+        std::collections::hash_map::Entry::Vacant(v) => {
+            v.insert(Session { which, bridge, reached: None, rdp_file: None });
+            Some(port)
+        }
+    }))
 }
 
 /// Window `label`'s machine.
@@ -237,28 +268,45 @@ pub(crate) fn password(label: &str) -> Result<String> {
 }
 
 /// Opens window `label`'s Remote Desktop in `client`: its `.rdp` file written owner-only in
-/// `dir` (removed when the window closes), `FreeRDP` given the password on its input.
-pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path) -> Result<()> {
+/// `dir` (removed when the window closes), `FreeRDP` given the password on its input, this
+/// computer's clipboard shared with the machine only when the learner asked (`clipboard`).
+pub(crate) fn open_rdp(label: &str, client: &rdp::Client, dir: &std::path::Path, clipboard: bool) -> Result<()> {
     let (connection, password) = with_sessions(|s| {
         let r = s.get(label).and_then(|s| s.reached.as_ref()).filter(|r| r.protocol == Protocol::Rdp)?;
         let bridge::Target::Tcp(at) = &r.at else { return None };
-        Some((rdp::Connection { address: at.to_string(), user: r.user.clone() }, r.password.clone()))
+        Some((rdp::Connection { address: at.to_string(), user: r.user.clone(), clipboard }, r.password.clone()))
     })
     .ok_or_else(|| Error::Invalid("this screen isn't a Remote Desktop".into()))?;
-    crate::platform::private_fs::dir(dir).map_err(Error::Io)?;
+    crate::platform::private_fs::create_dir(dir).map_err(Error::Io)?;
     let file = dir.join(format!("{}.rdp", label.replace([':', '/', '\\'], "-")));
     crate::platform::private_fs::write(&file, rdp::file(&connection)).map_err(Error::Io)?;
     with_sessions(|s| s.get_mut(label).map(|s| s.rdp_file = Some(file.clone())));
-    let (program, args, stdin) = rdp::command(client, &file, &connection, password.is_some());
-    let mut cmd = std::process::Command::new(&program);
-    cmd.args(&args).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    let launch = rdp::command(client, &file, &connection, password.is_some());
+    let stdin = launch.password_on_stdin;
+    #[allow(clippy::disallowed_methods, reason = "the remote-desktop client opens as the player's own app, left running past the call")]
+    let mut cmd = std::process::Command::new(&launch.program);
+    cmd.args(&launch.args).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     cmd.stdin(if stdin { std::process::Stdio::piped() } else { std::process::Stdio::null() });
     let mut child = cmd.spawn().map_err(|e| Error::Invalid(format!("couldn't open {}: {e}", client.name())))?;
-    if let (true, Some(mut input), Some(p)) = (stdin, child.stdin.take(), password) {
-        use std::io::Write as _;
-        input.write_all(format!("{p}\n").as_bytes()).map_err(Error::Io)?;
-    }
-    Ok(())
+    let given = match (stdin, child.stdin.take(), password) {
+        (true, Some(mut input), Some(p)) => {
+            use std::io::Write as _;
+            input.write_all(format!("{p}\n").as_bytes()).map_err(Error::Io)
+        }
+        _ => Ok(()),
+    };
+    reap_when_done(child, client.name());
+    given
+}
+
+/// Waits for a client the learner closes in their own time, off the calling thread: a child that
+/// is never waited on stays a zombie for as long as the app runs, one per screen opened.
+fn reap_when_done(mut child: std::process::Child, name: String) {
+    std::thread::spawn(move || {
+        if let Err(e) = child.wait() {
+            log::warn!("couldn't reap {name} ({}): {e}", child.id());
+        }
+    });
 }
 
 /// Ends window `label`'s session: its bridge stops, its console's tunnel closes, its `.rdp`
@@ -270,6 +318,26 @@ pub(crate) fn close(label: &str) {
         && e.kind() != std::io::ErrorKind::NotFound
     {
         log::warn!("the screen's .rdp file wasn't removed: {e}");
+    }
+}
+
+/// Ends the sessions of lab `id`'s windows, its run having left its standing state (taken down,
+/// a machine retired, failed): their bridges and tunnels go, as the run's own down ends those it
+/// holds.
+pub(crate) fn close_lab(id: &str) {
+    let labels: Vec<String> = with_sessions(|s| s.iter().filter(|(_, session)| session.which.id == id).map(|(label, _)| label.clone()).collect());
+    for label in labels {
+        log::info!("{label}: its lab's run left its standing state: the screen's session ends");
+        close(&label);
+    }
+}
+
+/// Ends every window's session, as the app quits: their bridges, tunnels and `.rdp` files go
+/// with it, rather than outliving the app.
+pub(crate) fn close_all() {
+    let labels: Vec<String> = with_sessions(|s| s.keys().cloned().collect());
+    for label in labels {
+        close(&label);
     }
 }
 
@@ -295,16 +363,16 @@ mod tests {
             password: Some("pw-1".into()),
             note: None,
             tunnelled: protocol == Protocol::Rdp,
-            _keep: None,
+            keep: None,
         }
     }
 
     #[test]
     fn a_screen_window_is_named_by_lab_and_machine() {
         assert_eq!(window(&which("dc01")).unwrap(), ("screen-goad:dc01".into(), "screen?id=goad&runtime=VM&machine=dc01".into()));
-        assert!(window(&which("a/b")).is_err());
-        assert!(window(&which("x&machine=y")).is_err());
-        assert!(window(&Which { id: "../x".into(), ..which("web") }).is_err());
+        assert!(matches!(window(&which("a/b")).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(matches!(window(&which("x&machine=y")).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(matches!(window(&Which { id: "../x".into(), ..which("web") }).unwrap_err(), crate::error::Error::Invalid(_)));
     }
 
     #[test]
@@ -314,10 +382,24 @@ mod tests {
         assert_eq!(csp_with_bridge("default-src 'self'", 4100), "default-src 'self'; connect-src 'self' ws://127.0.0.1:4100");
     }
 
+    /// Regression: a double click on a machine's screen started its session twice; the second
+    /// replaced the first, and once its own window failed to open (the first had it) it closed
+    /// the session, so the open window had none ("this screen window has no session").
+    #[tokio::test]
+    async fn a_second_start_of_the_same_windowkeeps_its_session() {
+        let label = "screen-goad:dc02";
+        let port = start(label, which("dc02")).await.unwrap().expect("a new session");
+        assert_eq!(start(label, which("dc02")).await.unwrap(), None, "the window already has a session");
+        let vnc = connect(label, reached(Protocol::Vnc, "127.0.0.1:5900"), None).unwrap();
+        assert!(vnc.url.unwrap().starts_with(&format!("ws://127.0.0.1:{port}/")), "the first session's bridge serves the window");
+        close(label);
+        assert!(!has_session(label));
+    }
+
     #[tokio::test]
     async fn a_vnc_screen_gets_a_one_time_url_and_an_rdp_one_its_address_and_client() {
         let label = "screen-goad:web";
-        let port = start(label, which("web")).await.unwrap();
+        let port = start(label, which("web")).await.unwrap().expect("a new session");
         let vnc = connect(label, reached(Protocol::Vnc, "127.0.0.1:5900"), None).unwrap();
         let url = vnc.url.unwrap();
         assert!(url.starts_with(&format!("ws://127.0.0.1:{port}/")) && url.len() > 30, "{url}");
@@ -342,16 +424,47 @@ mod tests {
     async fn the_rdp_file_is_owner_only_and_goes_with_the_window() {
         use std::os::unix::fs::PermissionsExt as _;
         let label = "screen-goad:rdp01";
-        start(label, which("rdp01")).await.unwrap();
+        start(label, which("rdp01")).await.unwrap().expect("a new session");
         connect(label, reached(Protocol::Rdp, "127.0.0.1:24002"), None).unwrap();
         let dir = crate::testing::temp_dir("screen-rdp");
         // `true` stands in for the client: it opens nothing.
-        open_rdp(label, &rdp::Client::Mstsc("true".into()), &dir).unwrap();
+        open_rdp(label, &rdp::Client::Mstsc("true".into()), &dir, false).unwrap();
         let file = dir.join("screen-goad-rdp01.rdp");
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(text.contains("full address:s:127.0.0.1:24002") && !text.contains("pw-1"), "{text}");
         assert_eq!(std::fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
         close(label);
         assert!(!file.exists(), "removed with the window");
+    }
+
+    /// Regression: the Remote Desktop client was spawned and never waited on, so each one the
+    /// learner closed stayed a zombie for as long as the app ran.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_closed_remote_desktop_client_is_reaped() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let label = "screen-goad:rdp02";
+        start(label, which("rdp02")).await.unwrap();
+        connect(label, reached(Protocol::Rdp, "127.0.0.1:24003"), None).unwrap();
+        let dir = crate::testing::temp_dir("screen-rdp-reaped");
+        // A client that says its pid beside the file it was given, then closes.
+        let client = dir.join("client.sh");
+        std::fs::write(&client, "#!/bin/sh\necho $$ > \"$1.pid.tmp\" && mv \"$1.pid.tmp\" \"$1.pid\"\n").unwrap();
+        std::fs::set_permissions(&client, std::fs::Permissions::from_mode(0o700)).unwrap();
+        open_rdp(label, &rdp::Client::Mstsc(client), &dir, false).unwrap();
+        let said = dir.join("screen-goad-rdp02.rdp.pid");
+        let reaped = |pid: &str| std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |stat| !stat.contains(") Z "));
+        let mut gone = false;
+        for _ in 0..100 {
+            if let Ok(pid) = std::fs::read_to_string(&said)
+                && reaped(pid.trim())
+            {
+                gone = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        close(label);
+        assert!(gone, "the client that closed was left a zombie");
     }
 }

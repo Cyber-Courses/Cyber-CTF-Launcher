@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 
 /** A small indeterminate spinner that inherits the current text color. */

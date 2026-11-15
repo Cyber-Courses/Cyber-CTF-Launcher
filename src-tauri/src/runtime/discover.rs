@@ -2,10 +2,12 @@
 //! Docker for its running containers, and the hypervisors (VirtualBox, Parallels, VMware, UTM,
 //! libvirt and Hyper-V) for their running VMs. Never a cache or a marker: Vagrant's global index,
 //! for one, keeps saying "running" long after the VMs are gone. Each lab is deployed under a
-//! predictable name, a Compose project `cyberctf-<id>` or VMs named for the lab (`<lab> · <machine>` on
-//! VirtualBox/VMware/Parallels/UTM, `<lab>_<machine>` on libvirt, `<lab>-<machine>` on Hyper-V),
+//! predictable name, a Compose project `cyberctf-<id>` or VMs named for the lab's copy on this
+//! machine (`<stem> - <machine>` on VirtualBox/Parallels/UTM, `<stem>_<machine>` on libvirt,
+//! `<stem>-<machine>` on Hyper-V, the stem being `<lab>-<key>`, the lab's name and its run's key),
 //! so one scan recovers which labs are up even after a crash or restart, when the in-memory
-//! "deploying" set and the status cache are gone.
+//! "deploying" set and the status cache are gone. The key is the runner's for the lab's run, so
+//! another copy of the same lab (a test's, another app's) never reads as this one running.
 //!
 //! Not covered: VMs that vagrant-qemu runs directly, with no libvirt and no registry to list them
 //! (a bare `qemu-system` process per VM). They would have to be found by scanning the process table
@@ -19,8 +21,9 @@ use super::is_lab_id;
 use crate::platform::AppDirs;
 use crate::platform::exec::run_read;
 
-/// Between the lab's name and the machine's in a VM name (`minilab · dc01`).
-const VM_NAME_SEP: &str = " · ";
+/// Between the copy's stem and the machine's name in a VM's display name (`minilab-1-k3x9a2 -
+/// dc01`), as Isoloom writes it.
+const VM_NAME_SEP: &str = " - ";
 
 /// Lab ids from the Compose project labels of running containers. Input is one project name per
 /// line (`docker ps --format '{{.Label "com.docker.compose.project"}}'`); containers with no such
@@ -50,10 +53,12 @@ pub(crate) fn isoloom_name(yaml: &str) -> Option<String> {
     serde_yaml_ng::from_str::<Named>(yaml).ok()?.name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty())
 }
 
-/// Installed labs by the name their VMs carry: the lab's name as its instance on this machine
-/// (`<name>-<instance>`, as Isoloom generates it), from `labs/<id>/isoloom.yml`. A name two labs
-/// share can't tell which one runs, so it is left out rather than guessed.
-pub(crate) fn lab_names(labs_dir: &Path) -> HashMap<String, String> {
+/// Installed labs by the stem their VMs' names start with: the lab's name as its instance on this
+/// machine (`<name>-<instance>`, as Isoloom generates it, from `labs/<id>/isoloom.yml`), then the
+/// key of the lab's run on the runner whose home is `home` (`<name>-<instance>-<key>`, as Isoloom
+/// names a copy's VMs). A stem two labs share can't tell which one runs, so it is left out rather
+/// than guessed.
+pub(crate) fn lab_stems(labs_dir: &Path, home: &Path) -> HashMap<String, String> {
     let mut by_name: HashMap<String, Option<String>> = HashMap::new();
     let Ok(entries) = std::fs::read_dir(labs_dir) else { return HashMap::new() };
     for e in entries.flatten() {
@@ -61,7 +66,7 @@ pub(crate) fn lab_names(labs_dir: &Path) -> HashMap<String, String> {
         if !is_lab_id(&id) {
             continue;
         }
-        let Some(name) = vm_name_prefix(&e.path()) else { continue };
+        let Some(name) = vm_stem(&e.path(), &id, home) else { continue };
         by_name
             .entry(name)
             .and_modify(|seen| {
@@ -73,7 +78,16 @@ pub(crate) fn lab_names(labs_dir: &Path) -> HashMap<String, String> {
     by_name.into_iter().filter_map(|(name, id)| Some((name, id?))).collect()
 }
 
-/// The `<lab>` of a lab's VM names (`<lab> · <machine>`): its name as this instance
+/// The stem the VMs of lab `id`, installed in `dir`, are named with when it runs on the runner
+/// whose home is `home`: `<name>-<instance>-<key>` (see [`lab_stems`]); none when its spec names
+/// none.
+pub(crate) fn vm_stem(dir: &Path, id: &str, home: &Path) -> Option<String> {
+    let prefix = vm_name_prefix(dir)?;
+    let run = isothrum_runner::RunName::new(&super::docker::project(id)).ok()?;
+    Some(format!("{prefix}-{}", isothrum_runner::copy_key(home, &run)))
+}
+
+/// The start of a lab's VM names' stem (`<lab>-<key>`): its name as this instance
 /// (`<name>-<instance>`, the name Isoloom's `instance::apply` gives it), or the plain `name:`
 /// of a lab with no instance. Read from the spec's `name:` alone, not the whole spec: the scan is
 /// polled.
@@ -85,8 +99,9 @@ fn vm_name_prefix(dir: &Path) -> Option<String> {
     })
 }
 
-/// The lab ids of running VMs named `<lab> · <machine>`, for the labs in `by_name`. A VM of an
-/// unknown lab (or one named differently) is not ours and is ignored.
+/// The lab ids of running VMs named `<stem> - <machine>`, for the labs whose stems are in
+/// `by_name`. A VM of an unknown lab, of another copy, or named differently is not ours and is
+/// ignored.
 pub(crate) fn lab_ids_from_vm_names<'a>(names: impl Iterator<Item = &'a str>, by_name: &HashMap<String, String>) -> Vec<String> {
     let mut ids = BTreeSet::new();
     for name in names {
@@ -99,11 +114,11 @@ pub(crate) fn lab_ids_from_vm_names<'a>(names: impl Iterator<Item = &'a str>, by
     ids.into_iter().collect()
 }
 
-/// The lab ids of running VMs named `<lab><sep><machine>`, for the labs in `by_name`: libvirt
-/// domains (`<lab>_<machine>`, from vagrant-libvirt's `default_prefix`) and Hyper-V VMs
-/// (`<lab>-<machine>`). An ESXi host's VMs aren't this machine's: never scanned. Unlike the ` · ` separator, `_` and `-` can occur inside a lab's own name,
-/// so a lab is matched as a prefix, not by splitting: the longest installed name that leaves a
-/// non-empty machine wins.
+/// The lab ids of running VMs named `<stem><sep><machine>`, for the labs whose stems are in
+/// `by_name`: libvirt domains (`<stem>_<machine>`, from vagrant-libvirt's `default_prefix`) and
+/// Hyper-V VMs (`<stem>-<machine>`). An ESXi host's VMs aren't this machine's: never scanned.
+/// Unlike the ` - ` separator, `_` and `-` can occur inside a stem, so a lab is matched as a
+/// prefix, not by splitting: the longest installed stem that leaves a non-empty machine wins.
 pub(crate) fn lab_ids_from_prefixed_vm_names<'a>(names: impl Iterator<Item = &'a str>, by_name: &HashMap<String, String>, sep: char) -> Vec<String> {
     let mut ids = BTreeSet::new();
     for name in names {
@@ -125,21 +140,14 @@ pub(crate) fn lab_ids_from_prefixed_vm_names<'a>(names: impl Iterator<Item = &'a
     ids.into_iter().collect()
 }
 
-/// VM names from `VBoxManage list runningvms` (`"<name>" {<uuid>}` per line).
+/// VM names from `VBoxManage list runningvms` ([`crate::platform::tool_output::vboxmanage::vms`]).
 pub(crate) fn vbox_vm_names(out: &str) -> Vec<String> {
-    out.lines()
-        .filter_map(|l| {
-            let l = l.trim();
-            let rest = l.strip_prefix('"')?;
-            let end = rest.find('"')?;
-            Some(rest[..end].to_string())
-        })
-        .collect()
+    crate::platform::tool_output::vboxmanage::vms(out).into_iter().map(|vm| vm.name).collect()
 }
 
 /// Names of the started VMs from `utmctl list` (`<uuid>  <status>  <name>`, under a `UUID Status
-/// Name` header). Only `started` VMs count. A UTM VM's name is the lab's `<lab> · <machine>` label
-/// (as VirtualBox's and Parallels's), so it carries spaces and the ` · ` and is taken whole as the
+/// Name` header). Only `started` VMs count. A UTM VM's name is the lab's `<stem> - <machine>` label
+/// (as VirtualBox's and Parallels's), so it carries spaces and the ` - ` and is taken whole as the
 /// line's remainder after the two leading columns, never split on its own spaces.
 pub(crate) fn utm_running_vm_names(out: &str) -> Vec<String> {
     out.lines()
@@ -221,7 +229,10 @@ async fn scan(dirs: &AppDirs) -> Vec<String> {
         Err(e) => log::warn!("running-labs scan: docker ps failed: {e}"),
     }
     // Hypervisors: their running VMs, named after the installed labs.
-    let by_name = super::paths::labs_root(dirs).map(|d| lab_names(&d)).unwrap_or_default();
+    let by_name = match (super::paths::labs_root(dirs), super::paths::runner_home(dirs)) {
+        (Ok(labs), Ok(home)) => lab_stems(&labs, &home),
+        _ => HashMap::new(),
+    };
     ids.extend(vm_lab_ids(&by_name).await);
     let ids: Vec<String> = ids.into_iter().collect();
     log::debug!("running-labs scan: {} running lab(s) {:?}", ids.len(), ids);
@@ -241,13 +252,13 @@ async fn vm_lab_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
         return ids;
     }
     // The two name-based families, each its own helper so this stays small as hypervisors are
-    // added: the ` · ` label (VirtualBox, Parallels, UTM) and the `<sep>` prefix (libvirt, Hyper-V).
+    // added: the ` - ` label (VirtualBox, Parallels, UTM) and the `<sep>` prefix (libvirt, Hyper-V).
     ids.extend(middot_vm_ids(by_name).await);
     ids.extend(prefixed_vm_ids(by_name).await);
     ids
 }
 
-/// Lab ids from the hypervisors that name a VM `<lab> · <machine>`: VirtualBox, Parallels and UTM.
+/// Lab ids from the hypervisors that name a VM `<stem> - <machine>`: VirtualBox, Parallels and UTM.
 /// Each may be absent, which contributes nothing. `by_name` is assumed non-empty (the caller skips
 /// these when no lab is installed, since the match is by the installed labs' names).
 async fn middot_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
@@ -259,7 +270,7 @@ async fn middot_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
     if let Some(out) = read_vms("Parallels", "prlctl", &["list", "--running", "--no-header", "-o", "name"]).await {
         ids.extend(lab_ids_from_vm_names(out.lines().map(str::trim), by_name));
     }
-    // UTM (macOS): a started VM carries the same `<lab> · <machine>` label. Only ask utmctl when
+    // UTM (macOS): a started VM carries the same `<stem> - <machine>` label. Only ask utmctl when
     // UTM is already running: `utmctl list` launches UTM.app otherwise, popping the app open on
     // every running-labs scan. `pgrep -x UTM` is a read-only check that cannot launch it (and on
     // Linux/Windows it finds nothing, so utmctl is skipped there too).
@@ -276,7 +287,7 @@ async fn middot_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
 /// (`-`). Each may be absent, which contributes nothing. `by_name` is assumed non-empty.
 async fn prefixed_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> {
     let mut ids = BTreeSet::new();
-    // libvirt/KVM, and QEMU through libvirt: a running domain is `<lab>_<machine>` (vagrant-libvirt's
+    // libvirt/KVM, and QEMU through libvirt: a running domain is `<stem>_<machine>` (vagrant-libvirt's
     // `default_prefix`). Ask both the default URI (a user session, or `$LIBVIRT_DEFAULT_URI`) and
     // the system instance, since vagrant-libvirt deploys to `qemu:///system` by default, which a
     // plain user `virsh` does not read.
@@ -289,7 +300,7 @@ async fn prefixed_vm_ids(by_name: &HashMap<String, String>) -> BTreeSet<String> 
         }
     }
     // Hyper-V (Windows only; elsewhere the command isn't there and the probe just contributes
-    // nothing): a VM is `<lab>-<machine>` (Hyper-V allows no `·`). The running ones by name. A
+    // nothing): a VM is `<stem>-<machine>`. The running ones by name. A
     // Windows without Hyper-V's module lists nothing, rather than failing every scan.
     if let Some(out) = read_vms("Hyper-V", "powershell", &["-NoProfile", "-Command", HYPERV_RUNNING]).await {
         ids.extend(lab_ids_from_prefixed_vm_names(out.lines(), by_name, '-'));
@@ -321,291 +332,7 @@ async fn read_vms(name: &str, program: &'static str, args: &[&str]) -> Option<St
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    #[tokio::test]
-    async fn every_hypervisor_probe_says_a_failure_and_stays_quiet_when_not_installed() {
-        // Regression: only VirtualBox's failure was logged; a broken Parallels, UTM, libvirt,
-        // VMware or Hyper-V hid its running labs without a word.
-        use crate::platform::exec::fake::{Tools, fail, ok};
-        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
-        let _tools = Tools::new(|program, _| match program {
-            "pgrep" => ok("123"),
-            _ => fail("permission denied"),
-        });
-        crate::testing::logs::take_warnings();
-        assert_eq!(super::vm_lab_ids(&by_name).await, std::collections::BTreeSet::new());
-        let said = crate::testing::logs::take_warnings();
-        for name in ["VMware", "VirtualBox", "Parallels", "UTM", "libvirt (default URI)", "libvirt (qemu:///system)", "Hyper-V"] {
-            assert!(said.iter().any(|w| w.contains(&format!("{name} couldn't list its running VMs"))), "{name}: {said:?}");
-        }
-        // None installed: nothing to find, nothing said.
-        let _tools = Tools::new(|program, _| if program == "pgrep" { ok("123") } else { None });
-        super::vm_lab_ids(&by_name).await;
-        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0]);
-    }
-
-    #[tokio::test]
-    async fn only_the_apps_own_timeout_reads_as_virtualbox_not_responding() {
-        // Regression: any failure whose text said "timed out" (the tool's own) was logged as
-        // VirtualBox not responding; only the app's timeout of the call is.
-        use crate::platform::exec::fake::{Tools, fail};
-        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
-        let _tools = Tools::new(|program, _| match program {
-            "VBoxManage" => fail("VBoxManage: error: the guest session timed out"),
-            _ => None,
-        });
-        crate::testing::logs::take_warnings();
-        assert_eq!(super::middot_vm_ids(&by_name).await, std::collections::BTreeSet::new());
-        // Said, as a failure of its own: a broken VirtualBox hides its labs from the scan.
-        let said = crate::testing::logs::take_warnings();
-        assert!(said.iter().all(|w| !w.contains("isn't responding")) && said.iter().any(|w| w.contains("couldn't list its running VMs")), "{said:?}");
-        // Not installed: nothing to find, nothing said.
-        let _tools = Tools::new(|_, _| None);
-        super::middot_vm_ids(&by_name).await;
-        assert_eq!(crate::testing::logs::take_warnings(), [] as [String; 0]);
-        let _tools = Tools::new(|program, _| match program {
-            "VBoxManage" => fail("timed out after 8s"),
-            _ => None,
-        });
-        super::middot_vm_ids(&by_name).await;
-        assert!(crate::testing::logs::take_warnings().iter().any(|w| w.contains("VirtualBox isn't responding")));
-    }
-
-    /// The UTM probe end to end with a scripted `utmctl`, once `pgrep` reports UTM running: its
-    /// started VMs reach the installed labs through the name reader and the ` · ` matcher. A
-    /// `utmctl` that fails (UTM quit between the check and the call) contributes nothing, without
-    /// failing the scan.
-    #[tokio::test]
-    async fn a_scripted_utmctl_maps_started_vms_to_labs_and_a_failing_one_contributes_nothing() {
-        use crate::platform::exec::fake::{Tools, fail, ok};
-        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
-        let listing = "UUID  Status  Name\na started  minilab · dc01\nb started  minilab · ws01\nc stopped  minilab · router\n";
-        let tools = Tools::new(move |program, _| match program {
-            "pgrep" => ok("4242"),
-            "utmctl" => ok(listing),
-            _ => None,
-        });
-        let found = std::collections::BTreeSet::from(["mid".to_string()]);
-        assert_eq!(super::middot_vm_ids(&by_name).await, found);
-        assert_eq!(super::vm_lab_ids(&by_name).await, found);
-        assert!(tools.called("utmctl list"), "{:?}", tools.calls());
-        drop(tools);
-        let tools = Tools::new(|program, _| match program {
-            "pgrep" => ok("4242"),
-            "utmctl" => fail("Error: UTM is not running"),
-            _ => None,
-        });
-        assert!(super::middot_vm_ids(&by_name).await.is_empty());
-        assert!(super::vm_lab_ids(&by_name).await.is_empty());
-        assert!(tools.called("utmctl list"), "{:?}", tools.calls());
-    }
-
-    /// The fix for UTM popping open on every scan: when `pgrep` reports UTM is not running,
-    /// `utmctl` is never called, since calling it would launch UTM.app.
-    #[tokio::test]
-    async fn utmctl_is_not_called_when_utm_is_not_running() {
-        use crate::platform::exec::fake::{Tools, fail, ok};
-        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
-        let tools = Tools::new(|program, _| match program {
-            "pgrep" => fail("no matching process"),
-            // Scripted so that, were it ever reached, it would map a VM: the point is that it is not.
-            "utmctl" => ok("UUID  Status  Name\na started  minilab · dc01\n"),
-            _ => None,
-        });
-        assert!(super::middot_vm_ids(&by_name).await.is_empty());
-        assert!(!tools.called("utmctl list"), "utmctl must not run when UTM is down: {:?}", tools.calls());
-    }
-
-    #[test]
-    fn docker_projects_keep_only_cyberctf_labs_stripped_and_unique() {
-        let out = "cyberctf-invoice-portal-api\n\ncyberctf-invoice-portal-api\nother-project\ncyberctf-goad-light\n";
-        // Blank lines (containers with no compose label) and foreign projects are dropped; the
-        // prefix is stripped and duplicates (web + database of one lab) collapse to one id.
-        assert_eq!(super::lab_ids_from_docker_projects(out), vec!["goad-light".to_string(), "invoice-portal-api".to_string()]);
-    }
-
-    #[test]
-    fn docker_ignores_an_attack_sidecar_without_the_compose_label() {
-        // A sidecar run outside Compose prints a blank line (no project label), so it never shows.
-        assert_eq!(super::lab_ids_from_docker_projects("\n\n"), Vec::<String>::new());
-    }
-
-    #[test]
-    fn isoloom_name_reads_the_labs_name() {
-        assert_eq!(super::isoloom_name("version: 1\nname: minilab\nnetworks:\n").as_deref(), Some("minilab"));
-        assert_eq!(super::isoloom_name("name: \"goad light\"\n").as_deref(), Some("goad light"));
-        assert_eq!(super::isoloom_name("version: 1\n"), None);
-    }
-
-    #[test]
-    fn running_vms_map_back_to_installed_labs_by_name() {
-        // Regression: the scan used to trust `vagrant global-status`, a cache that kept saying
-        // "running" after the VMs were gone. Only a VM the hypervisor lists, named after an
-        // installed lab, counts.
-        let by_name: HashMap<String, String> = [("minilab".to_string(), "bf08e551".to_string())].into();
-        let out = "\"WindowsServer2019_1791271622558_72151\" {a4dc}\n\"minilab · dc01\" {0185}\n\"minilab · ws01\" {3eeb}\n\"other · box\" {1111}\n";
-        let names = super::vbox_vm_names(out);
-        assert_eq!(names.len(), 4);
-        // Two VMs of one lab collapse to one id; a box import and an unknown lab's VM are ignored.
-        assert_eq!(super::lab_ids_from_vm_names(names.iter().map(String::as_str), &by_name), vec!["bf08e551".to_string()]);
-    }
-
-    #[test]
-    fn utmctl_lists_only_started_vms_keeping_each_name_whole() {
-        // `utmctl list` columns are space-padded; a name carries its own spaces and the ` · `, so it
-        // must come back whole (not collapsed, not cut at its first space). Only `started` counts.
-        let out = "UUID                                 Status   Name\n\
-                   11111111-1111-1111-1111-111111111111 started  minilab · dc01\n\
-                   22222222-2222-2222-2222-222222222222 stopped  minilab · ws01\n\
-                   33333333-3333-3333-3333-333333333333 paused   minilab · router\n\
-                   44444444-4444-4444-4444-444444444444 started  other box\n";
-        assert_eq!(super::utm_running_vm_names(out), vec!["minilab · dc01".to_string(), "other box".to_string()]);
-        // No VMs, or only the header, is empty (not a panic).
-        assert_eq!(super::utm_running_vm_names("UUID Status Name\n"), Vec::<String>::new());
-        assert_eq!(super::utm_running_vm_names(""), Vec::<String>::new());
-    }
-
-    #[test]
-    fn utm_started_vms_map_back_to_installed_labs() {
-        // The full UTM path: utmctl output, through the name reader, through the ` · ` matcher.
-        let by_name: HashMap<String, String> = [("minilab".to_string(), "mid".to_string())].into();
-        let out = "UUID  Status  Name\n\
-                   a started  minilab · dc01\n\
-                   b started  minilab · ws01\n\
-                   c stopped  minilab · router\n\
-                   d started  minilab · kali\n\
-                   e started  elsewhere · box\n";
-        let names = super::utm_running_vm_names(out);
-        assert_eq!(names, ["minilab · dc01", "minilab · ws01", "minilab · kali", "elsewhere · box"]);
-        // Machines of the lab are up: the lab runs (once), the foreign VM aside.
-        assert_eq!(super::lab_ids_from_vm_names(names.iter().map(String::as_str), &by_name), vec!["mid".to_string()]);
-    }
-
-    #[test]
-    fn vmrun_paths_name_the_lab_by_its_folder() {
-        let out = "Total running VMs: 1\n/Users/x/Library/App/labs/goad-light/.isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/x.vmx\n";
-        assert_eq!(super::lab_ids_from_vmrun(out), vec!["goad-light".to_string()]);
-        assert_eq!(super::lab_ids_from_vmrun("Total running VMs: 0\n"), Vec::<String>::new());
-    }
-
-    #[test]
-    fn installed_labs_are_found_by_their_isoloom_name() {
-        let labs = std::env::temp_dir().join(format!("cyberctf-discover-{}", rand::random::<u32>()));
-        assert!(super::lab_names(&labs).is_empty(), "no labs folder yet");
-        for (id, yaml) in [("minilab-1", Some("name: minilab\n")), ("no-name", Some("version: 1\n")), ("no-spec", None), ("bad id!", Some("name: x\n"))] {
-            let d = labs.join(id);
-            std::fs::create_dir_all(&d).unwrap();
-            if let Some(y) = yaml {
-                std::fs::write(d.join("isoloom.yml"), y).unwrap();
-            }
-        }
-        let by_name = super::lab_names(&labs);
-        assert_eq!(by_name.len(), 1);
-        assert_eq!(by_name["minilab"], "minilab-1");
-        std::fs::remove_dir_all(labs).unwrap();
-    }
-
-    #[test]
-    fn isoloom_name_takes_the_top_level_key_only() {
-        // A commented-out or indented `name:` (a machine's, a tool's) is not the lab's.
-        assert_eq!(super::isoloom_name("# name: old\nmachines:\n  name: web\nname: minilab\n").as_deref(), Some("minilab"));
-        assert_eq!(super::isoloom_name("name:minilab\n"), None, "no space after the colon: no key, as YAML reads it");
-        assert_eq!(super::isoloom_name("name: 'minilab'\n").as_deref(), Some("minilab"));
-        assert_eq!(super::isoloom_name("name:   \n").as_deref(), None, "blank");
-        assert_eq!(super::isoloom_name("namespace: x\nname_old: y\n"), None, "other keys starting with name");
-        // Windows line endings and a trailing space are no part of the name.
-        assert_eq!(super::isoloom_name("version: 1\r\nname: minilab \r\n").as_deref(), Some("minilab"));
-    }
-
-    #[test]
-    fn a_comment_after_the_name_is_not_part_of_it() {
-        // Regression: a comment after the lab's name (`name: minilab # ...`) was kept in it, so no VM
-        // name matched and a VirtualBox/Parallels lab was never found running.
-        let yaml = "version: 1\nname: minilab # the lab's name\n";
-        let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(yaml).unwrap();
-        assert_eq!(parsed["name"].as_str(), Some("minilab"), "what the spec parser (and the VM names) say");
-        assert_eq!(super::isoloom_name(yaml).as_deref(), Some("minilab"));
-    }
-
-    #[test]
-    fn docker_project_ids_are_checked_at_the_id_boundaries() {
-        let max = "a".repeat(64);
-        let over = "a".repeat(65);
-        let out = format!("cyberctf-{max}\ncyberctf-{over}\ncyberctf-\ncyberctf-é\ncyberctf-a b\ncyberctf-ok_id-1\r\n  cyberctf-spaced  \ncyberctf-x/../y\n");
-        assert_eq!(super::lab_ids_from_docker_projects(&out), vec![max, "ok_id-1".to_string(), "spaced".to_string()]);
-    }
-
-    #[test]
-    fn vbox_listings_skip_lines_that_are_not_a_quoted_name() {
-        let out = "\"minilab-1 · dc01\" {0185}\r\ninaccessible {dead}\n\n\"\" {empty}\n  \"spaced · ws01\" {3eeb}\n\"unterminated {x}\n";
-        assert_eq!(super::vbox_vm_names(out), ["minilab-1 · dc01", "", "spaced · ws01"]);
-    }
-
-    #[test]
-    fn a_vm_without_the_separator_does_not_mean_a_lab_runs() {
-        let by_name: HashMap<String, String> = [("minilab-1".to_string(), "goad".to_string())].into();
-        assert_eq!(super::lab_ids_from_vm_names(["minilab-1", "minilab-1·dc01", " · dc01"].into_iter(), &by_name), Vec::<String>::new());
-        assert_eq!(super::lab_ids_from_vm_names(["minilab-1 · dc01"].into_iter(), &by_name), ["goad".to_string()]);
-        assert_eq!(super::lab_ids_from_vm_names(["minilab-1 · "].into_iter(), &by_name), ["goad".to_string()], "an empty machine name still names the lab");
-    }
-
-    #[test]
-    fn libvirt_domains_name_their_lab_by_the_underscore_prefix() {
-        // vagrant-libvirt names a running domain `<lab>_<machine>` (its default_prefix). The lab is
-        // matched as a prefix, so a name carrying its own `-` reads whole.
-        let by_name: HashMap<String, String> = [("minilab".to_string(), "id1".to_string()), ("goad-light".to_string(), "id2".to_string())].into();
-        let domains = ["minilab_dc01", "goad-light_dc01", "goad-light_ws01", "unknown_x"];
-        // Two machines of goad-light collapse to one id; an unknown domain is ignored.
-        assert_eq!(super::lab_ids_from_prefixed_vm_names(domains.into_iter(), &by_name, '_'), vec!["id1".to_string(), "id2".to_string()]);
-    }
-
-    #[test]
-    fn hyperv_vms_name_their_lab_by_the_dash_prefix_longest_first() {
-        // Hyper-V allows no `·`, so a VM is `<lab>-<machine>`; the `-` also joins a kebab lab name,
-        // so the longest installed name that leaves a machine wins.
-        let by_name: HashMap<String, String> = [("goad".to_string(), "g".to_string()), ("goad-light".to_string(), "gl".to_string())].into();
-        assert_eq!(super::lab_ids_from_prefixed_vm_names(["goad-light-dc01"].into_iter(), &by_name, '-'), vec!["gl".to_string()]);
-        assert_eq!(super::lab_ids_from_prefixed_vm_names(["goad-ws01"].into_iter(), &by_name, '-'), vec!["g".to_string()]);
-        // A bare lab name (no machine) and a foreign VM do not count.
-        assert_eq!(super::lab_ids_from_prefixed_vm_names(["other-vm", "goad"].into_iter(), &by_name, '-'), Vec::<String>::new());
-    }
-
-    #[test]
-    fn vmrun_reads_windows_paths_and_skips_odd_lines() {
-        let out = "Total running VMs: 2\r\nC:\\Users\\me\\AppData\\Roaming\\com.cyberctf\\labs\\goad-light\\.isoloom\\vagrant\\.vagrant\\machines\\dc01\\vmware_desktop\\x.vmx\r\n/Users/me/labs/\n/Users/me/labs/bad id/x.vmx\n/Users/me/other/x.vmx\n";
-        assert_eq!(super::lab_ids_from_vmrun(out), vec!["goad-light".to_string()]);
-    }
-
-    #[test]
-    fn a_labs_folder_earlier_in_the_path_does_not_mislead_the_vmrun_scan() {
-        // Regression: a parent folder also named `labs` (`/Users/labs/…`) came before the app's own and
-        // its next segment was taken as the lab id.
-        let out = "Total running VMs: 1\n/Users/labs/Library/Application Support/com.cyberctf/labs/goad-light/.isoloom/vagrant/.vagrant/machines/dc01/vmware_desktop/x.vmx\n";
-        assert_eq!(super::lab_ids_from_vmrun(out), vec!["goad-light".to_string()]);
-    }
-
-    #[test]
-    fn an_unreadable_or_duplicate_name_leaves_the_lab_out_of_the_scan() {
-        let labs = std::env::temp_dir().join(format!("cyberctf-discover-dup-{}", rand::random::<u32>()));
-        // Three labs: two with the same instance name (never guessed), one with a marker that
-        // isn't an instance (plain name), and a folder that is a file.
-        for (id, yaml, marker) in [("a", "name: twin\n", Some("1")), ("b", "name: twin\n", Some("1")), ("c", "name: solo\n", Some("0"))] {
-            let d = labs.join(id);
-            std::fs::create_dir_all(&d).unwrap();
-            std::fs::write(d.join("isoloom.yml"), yaml).unwrap();
-            if let Some(m) = marker {
-                std::fs::write(d.join(crate::runtime::lab::INSTANCE_MARKER), m).unwrap();
-            }
-        }
-        std::fs::write(labs.join("d"), "a file, not a lab").unwrap();
-        let by_name = super::lab_names(&labs);
-        assert_eq!(by_name.len(), 1, "{by_name:?}");
-        assert_eq!(by_name.get("solo").map(String::as_str), Some("c"), "a marker of 0 is no instance: the plain name");
-        std::fs::remove_dir_all(labs).unwrap();
-    }
-}
+mod tests;
 
 #[cfg(test)]
 mod proptests;

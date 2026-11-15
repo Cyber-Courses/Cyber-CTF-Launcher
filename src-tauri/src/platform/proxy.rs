@@ -5,16 +5,14 @@
 //!   system's proxy (System Settings > Network > Proxies, or an MDM profile, as `scutil --proxy`
 //!   reports it) is put into this process's environment at startup, which every child inherits.
 //!   A proxy auto-config (PAC) file can't be put into variables: the log says so.
-//! - pkexec (Linux installs) clears the environment: `assignments` hands the variables to the
-//!   root command explicitly.
+//! - pkexec (Linux installs) clears the environment: `assignments` lists the variables the root
+//!   command is handed, through an owner-only file it reads, never its command line.
 
 /// The proxy variables, both cases: tools read one or the other (curl and apt the lowercase
 /// ones, Go's and Docker's either).
-#[cfg(any(target_os = "linux", target_os = "macos", test))]
 pub const VARS: [&str; 6] = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"];
 
 /// The proxy variables `var` reads that are set, as `NAME=value` (what `env` takes).
-#[cfg(any(target_os = "linux", test))]
 pub fn assignments(var: impl Fn(&str) -> Option<String>) -> Vec<String> {
     VARS.into_iter().filter_map(|name| var(name).filter(|v| !v.is_empty()).map(|v| format!("{name}={v}"))).collect()
 }
@@ -25,13 +23,14 @@ fn any_set(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> bool {
     VARS.into_iter().any(|name| var(name).is_some_and(|v| !v.is_empty()))
 }
 
-/// macOS: when no proxy variable is set, sets them from the system's proxy. Call at the very
-/// start of `run()`, before any thread is spawned. What happened, for the log (which isn't up yet).
+/// macOS: when no proxy variable is set, sets them from the system's proxy, while `only` this
+/// thread runs. What happened, for the log (which isn't up yet).
 #[cfg(target_os = "macos")]
-pub fn inherit_system_proxy() -> Option<String> {
+pub fn inherit_system_proxy(only: &crate::platform::sys::SingleThreaded) -> Option<String> {
     if any_set(|name| std::env::var_os(name)) {
         return None;
     }
+    #[allow(clippy::disallowed_methods, reason = "a synchronous read of macOS's proxy settings at start, before the async runtime")]
     let out = match std::process::Command::new("/usr/sbin/scutil").arg("--proxy").output() {
         Ok(out) if out.status.success() => out,
         Ok(out) => return Some(format!("couldn't read the system proxy: scutil exited with {}", out.status)),
@@ -39,7 +38,7 @@ pub fn inherit_system_proxy() -> Option<String> {
     };
     let found = from_scutil(&String::from_utf8_lossy(&out.stdout));
     for (name, value) in &found.vars {
-        crate::platform::sys::set_env_at_startup(name, std::ffi::OsStr::new(value));
+        crate::platform::sys::set_env_at_startup(only, name, std::ffi::OsStr::new(value));
     }
     found.note
 }

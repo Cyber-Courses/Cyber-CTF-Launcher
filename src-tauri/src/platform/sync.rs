@@ -1,8 +1,7 @@
 //! Locks by key: one async lock per lab, per run folder or per run key, handed out by the key
 //! and shared by every holder of it, so two operations on one lab wait on each other and two
 //! labs never do. Written four times before (the in-flight registry, the regeneration lock, the
-//! status read's turn, the lab file locks): one type, one place to evict (Clean Code G5, ch.13,
-//! 2026-11-13).
+//! status read's turn, the lab file locks): one type, one place to evict.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -11,8 +10,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 /// A single-flight flag taken for as long as the guard lives: a scan or a download that runs
 /// once at a time, whoever asks meanwhile told so. Released on drop, so a cancelled flight frees
-/// the next one. Written twice before (`ResetOnDrop`, the downloads' `Busy`); one type (Clean
-/// Code G5, 2026-11-13).
+/// the next one. Written twice before (`ResetOnDrop`, the downloads' `Busy`); one type.
 pub struct Busy(&'static std::sync::atomic::AtomicBool);
 
 impl Busy {
@@ -29,6 +27,25 @@ impl Drop for Busy {
     }
 }
 
+/// A background task owned by whoever keeps this: aborted when it is dropped, so the task lives
+/// exactly as long as its owner (a loop beside another, ended and cancelled with it), never
+/// detached for the life of the process.
+#[derive(Debug)]
+pub struct OwnedTask(tokio::task::JoinHandle<()>);
+
+impl OwnedTask {
+    /// Spawns `work` on the current runtime, owned by the value returned.
+    pub fn spawn(work: impl std::future::Future<Output = ()> + Send + 'static) -> OwnedTask {
+        OwnedTask(tokio::spawn(work))
+    }
+}
+
+impl Drop for OwnedTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// The locks for keys of type `K`, each guarding a `T` (`()` for a plain lock).
 #[derive(Debug)]
 pub struct KeyedLocks<K, T = ()> {
@@ -41,11 +58,12 @@ impl<K: Ord, T> KeyedLocks<K, T> {
         KeyedLocks { locks: Mutex::new(BTreeMap::new()) }
     }
 
-    /// The lock for `key`, the same one for every caller asking for that key: made on the first
-    /// ask (with `T::default()`), then shared. The registry's own lock is held only for the
-    /// lookup: a poisoned registry (a panic while holding it) still hands the map back, as the
-    /// per-key locks inside are what guard the real work, and losing the registry would wedge
-    /// every key.
+    /// The lock for `key`, the same one for every caller asking for that key while any of them
+    /// keeps it: made on the first ask (with `T::default()`), then shared. Its guarded value
+    /// lasts only that long: a `T` is state for the callers in line, never a cache for later.
+    /// The registry's own lock is held only for the lookup: a poisoned registry (a panic while
+    /// holding it) still hands the map back, as the per-key locks inside are what guard the real
+    /// work, and losing the registry would wedge every key.
     pub fn get<Q>(&self, key: &Q) -> Arc<AsyncMutex<T>>
     where
         K: std::borrow::Borrow<Q> + for<'a> From<&'a Q>,
@@ -56,6 +74,10 @@ impl<K: Ord, T> KeyedLocks<K, T> {
         if let Some(lock) = locks.get(key) {
             return Arc::clone(lock);
         }
+        // A key's lock nobody holds, nor waits for, nor will take (every handle comes from here,
+        // under this lock) is dropped as a new key comes: the map holds the keys in use, not every
+        // lab or folder the app ever touched. The next ask for it makes a fresh one.
+        locks.retain(|_, lock| Arc::strong_count(lock) > 1);
         let lock = Arc::new(AsyncMutex::new(T::default()));
         locks.insert(K::from(key), Arc::clone(&lock));
         lock
@@ -97,6 +119,42 @@ mod tests {
         drop(held);
     }
 
+    /// The map never grew back down: one lock per lab or folder ever touched, for the life of
+    /// the app. A lock no one keeps goes when another key comes; one kept stays, held or not.
+    #[tokio::test]
+    async fn a_lock_no_one_keeps_is_dropped_and_one_kept_stays() {
+        let locks: KeyedLocks<String> = KeyedLocks::new();
+        let kept = locks.get("kept");
+        let held = locks.get("held");
+        let _guard = Arc::clone(&held).lock_owned().await;
+        drop(held);
+        for i in 0..100 {
+            drop(locks.get(format!("lab-{i}").as_str()));
+        }
+        assert_eq!(locks.len(), 3, "the kept, the held and the last key asked for");
+        assert!(Arc::ptr_eq(&kept, &locks.get("kept")), "a kept lock is the same one");
+        assert!(locks.get("held").try_lock().is_err(), "a held lock is the same one, still held");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_owned_task_ends_with_its_owner() {
+        let alive = Arc::new(());
+        let task = {
+            let alive = Arc::clone(&alive);
+            super::OwnedTask::spawn(async move {
+                std::future::pending::<()>().await;
+                drop(alive);
+            })
+        };
+        tokio::task::yield_now().await;
+        assert_eq!(Arc::strong_count(&alive), 2, "running while owned");
+        drop(task);
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(Arc::strong_count(&alive), 1, "aborted, what it held dropped, once its owner let go");
+    }
+
     #[tokio::test]
     async fn a_path_key_is_asked_for_by_its_borrowed_form() {
         static LOCKS: KeyedLocks<PathBuf, Option<u64>> = KeyedLocks::new();
@@ -106,8 +164,8 @@ mod tests {
     }
 
     /// Many tasks on many threads, each taking its key's lock and bumping a counter under it: the
-    /// counters end exact, so no two tasks held one key's lock at once (Clean Code ch.13: run
-    /// with more threads than processors).
+    /// counters end exact, so no two tasks held one key's lock at once (more threads than
+    /// processors, so the tasks interleave).
     #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
     async fn the_locks_exclude_across_threads() {
         let locks: Arc<KeyedLocks<String>> = Arc::new(KeyedLocks::new());
@@ -129,6 +187,6 @@ mod tests {
             task.await.unwrap();
         }
         assert!(counters.iter().all(|c| c.load(Ordering::SeqCst) == 16), "every key's lock excluded its takers");
-        assert_eq!(locks.len(), 4);
+        assert!(locks.len() <= 4, "a lock no one keeps may have gone since");
     }
 }

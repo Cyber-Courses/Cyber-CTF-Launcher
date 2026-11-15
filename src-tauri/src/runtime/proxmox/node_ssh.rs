@@ -2,6 +2,7 @@
 //! bridge can be reached through it.
 
 use super::{HostProfile, ssh, token_user};
+use crate::runtime::ssh::CommandLine;
 
 /// The node's SSH login (`user@host`) for going through it.
 pub fn node_login(h: &HostProfile) -> String {
@@ -16,7 +17,7 @@ pub async fn authorize_launcher_key(h: &HostProfile, password: &str, identity: &
     // on Linux /tmp is common to every account, and a file another user left there under this
     // name can't be rewritten (or could be swapped for something else).
     let env = password_env(identity, password)?;
-    ssh_with(&authorize_args(h, identity, public), &env, AUTHORIZE_TIMEOUT).await.map(|_| ())
+    ssh_with(&h.host, &authorize_args(h, identity, public), &env, AUTHORIZE_TIMEOUT).await.map(|_| ())
 }
 
 /// The most letting the key in may take: a node that stops answering must not hang the launch.
@@ -26,11 +27,10 @@ const AUTHORIZE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60
 /// `CYBERCTF_SSH_PASSWORD`. Windows' OpenSSH can't run a `sh` script: there it is a `.cmd`, the
 /// password echoed after the line is parsed (delayed expansion), so `&`, `|` or `%` in it are
 /// printed, not run.
-pub(super) fn askpass_script(windows: bool) -> (&'static str, &'static str) {
-    if windows {
-        ("askpass.cmd", "@echo off\r\nsetlocal EnableDelayedExpansion\r\necho(!CYBERCTF_SSH_PASSWORD!\r\n")
-    } else {
-        ("askpass.sh", "#!/bin/sh\nprintf '%s\\n' \"$CYBERCTF_SSH_PASSWORD\"\n")
+pub(super) fn askpass_script(line: CommandLine) -> (&'static str, &'static str) {
+    match line {
+        CommandLine::Windows => ("askpass.cmd", "@echo off\r\nsetlocal EnableDelayedExpansion\r\necho(!CYBERCTF_SSH_PASSWORD!\r\n"),
+        CommandLine::Sh => ("askpass.sh", "#!/bin/sh\nprintf '%s\\n' \"$CYBERCTF_SSH_PASSWORD\"\n"),
     }
 }
 
@@ -47,14 +47,14 @@ fn password_env(identity: &std::path::Path, password: &str) -> crate::error::Res
 }
 
 /// `ssh` with `args` and `env`, for at most `timeout`: its output.
-async fn ssh_with(args: &[String], env: &[(String, String)], timeout: std::time::Duration) -> crate::error::Result<String> {
+async fn ssh_with(host: &str, args: &[String], env: &[(String, String)], timeout: std::time::Duration) -> crate::error::Result<String> {
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    crate::platform::exec::run_env_timed("ssh", &refs, None, env, timeout).await
+    crate::platform::exec::run_env_timed("ssh", &refs, None, env, timeout).await.map_err(|e| ssh::known_hosts::refused_key(host, e))
 }
 
 /// The askpass helper next to the launcher's key (see [`askpass_script`]), this user's only.
 pub(super) fn write_askpass(identity: &std::path::Path) -> crate::error::Result<std::path::PathBuf> {
-    let (name, script) = askpass_script(cfg!(windows));
+    let (name, script) = askpass_script(CommandLine::HERE);
     let askpass = identity.with_file_name(name);
     std::fs::write(&askpass, script)?;
     #[cfg(unix)]
@@ -79,7 +79,7 @@ pub(super) fn password_ssh_args(h: &HostProfile, identity: &std::path::Path, com
     let password_auth =
         ["PreferredAuthentications=password,keyboard-interactive".to_string(), "NumberOfPasswordPrompts=1".to_string(), "ConnectTimeout=10".to_string()];
     let mut args: Vec<String> = Vec::new();
-    for o in password_auth.into_iter().chain(ssh::options(false, &known_hosts)) {
+    for o in password_auth.into_iter().chain(ssh::options(&known_hosts)) {
         args.extend(["-o".into(), o]);
     }
     // `--`: the login comes from the host profile, so it can never be read as an ssh option
@@ -111,7 +111,7 @@ pub(super) async fn sdn_problem(h: &HostProfile, password: &str, identity: &std:
             Ok(env) => env,
             Err(e) => return Some(format!("Couldn't check the node's network configuration over SSH ({e}).")),
         };
-        ssh_with(&password_ssh_args(h, identity, SDN_SOURCE_CHECK), &env, timeout).await
+        ssh_with(&h.host, &password_ssh_args(h, identity, SDN_SOURCE_CHECK), &env, timeout).await
     };
     sdn_outcome(checked, (!token).then(|| node_login(h)))
 }

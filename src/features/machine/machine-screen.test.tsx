@@ -245,12 +245,13 @@ describe("EngineRows", () => {
   type Engine = SystemReport["dockerEngines"][number];
   const found = (engine: Engine["engine"], over: Partial<Engine> = {}): Engine => ({ engine, context: engine, running: true, current: false, ...over });
 
-  it("lists every engine found, each with its own state and test, the current one marked with the labs' last test", async () => {
+  /** Three engines found: OrbStack the current one, Docker Desktop running too (its own last test
+   *  failed), Colima stopped; the labs' last test passed an hour ago. */
+  function renderThreeEngines() {
     const calls = installTauri();
     const onToggleTest = vi.fn();
     const onFix = vi.fn();
     const onRefresh = vi.fn();
-    const user = userEvent.setup();
     const report: SystemReport = {
       ...readyReport(),
       dockerEngine: "orbstack",
@@ -269,6 +270,11 @@ describe("EngineRows", () => {
         last={{ result: "ok", at: base.now - 3_600_000 }}
       />,
     );
+    return { calls, onToggleTest, onFix, onRefresh };
+  }
+
+  it("lists every engine found, each with its own state, the current one marked with the labs' last test", () => {
+    renderThreeEngines();
     // Three rows, in the check's order: the current one (the default), another running (its own
     // test failed, so said so), one stopped. The same words whichever is the default.
     expect(providerRows()).toEqual([
@@ -278,7 +284,11 @@ describe("EngineRows", () => {
     ]);
     // Not installed here: not a row (Add a provider covers it).
     expect(text()).not.toContain("Podman");
-    // Every running engine has its own test; the stopped one its fix.
+  });
+
+  it("gives every running engine its own test and the stopped one its fix", async () => {
+    const { onToggleTest, onFix } = renderThreeEngines();
+    const user = userEvent.setup();
     const tests = screen.getAllByRole("button", { name: /^test$/i });
     expect(tests).toHaveLength(2);
     await user.click(tests[0]);
@@ -287,8 +297,11 @@ describe("EngineRows", () => {
     expect(onToggleTest).toHaveBeenLastCalledWith("docker:docker-desktop");
     await user.click(button(/^fix$/i));
     expect(onFix).toHaveBeenCalledWith("docker", undefined);
-    // The other running engine can become the one labs use: Docker is pointed at it, the machine re-read.
-    await user.click(button(/use by default/i));
+  });
+
+  it("points Docker at another running engine made the default, then re-reads the machine", async () => {
+    const { calls, onRefresh } = renderThreeEngines();
+    await userEvent.setup().click(button(/use by default/i));
     await flush();
     expect(calls.find((c) => c.cmd === "docker_use_engine")?.args).toEqual({ engine: "docker-desktop" });
     expect(onRefresh).toHaveBeenCalledOnce();
@@ -392,7 +405,7 @@ describe("HypervisorRows", () => {
     installTauri();
     const report = {
       ...readyReport(),
-      os: "linux",
+      os: "linux" as const,
       ...hypervisors([
         hv({}),
         hv({ provider: "vmware_desktop" }),
@@ -430,7 +443,7 @@ describe("HypervisorRows", () => {
     const onToggleTest = vi.fn();
     const onTestDone = vi.fn();
     const user = userEvent.setup();
-    const report = { ...readyReport(), os: "linux", ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
+    const report = { ...readyReport(), os: "linux" as const, ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
     const r = render(rows(report, null, { onToggleTest }));
     const tests = screen.getAllByRole("button", { name: /^test$/i });
     await user.click(tests[1]);
@@ -455,7 +468,7 @@ describe("HypervisorRows", () => {
   it("marks the hypervisor chosen in Settings, not the first installed one", () => {
     installTauri();
     setVmProvider("vmware_desktop");
-    const report = { ...readyReport(), os: "linux", ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
+    const report = { ...readyReport(), os: "linux" as const, ...hypervisors([hv({}), hv({ provider: "vmware_desktop" })]) };
     render(<HypervisorRows {...base} report={report} last={null} vm={vmSetup(report, "vmware_desktop", null)} />);
     expect(providerRows()).toEqual([
       { name: "VirtualBox", status: "Ready", slot: "Use by default", detail: "not tested yet" },
@@ -570,7 +583,7 @@ describe("DownloadsPanel", () => {
   });
 
   it("shows an empty list when there are no downloads", async () => {
-    installTauri({ machine_storage: () => ({ images: [], boxes: [], plugins: [] }) });
+    installTauri({ machine_storage: () => ({ images: [], boxes: [] }) });
     render(<DownloadsPanel />);
     await flush();
     expect(text()).toContain("No lab downloads yet");
@@ -725,7 +738,7 @@ describe("MachineScreen", () => {
     render(<MachineScreen report={readyReport()} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
     await flush(50);
     expect(text()).toContain("Ready for labs");
-    expect(text()).toContain("macOS arm64");
+    expect(text()).toContain("macOS aarch64");
     expect(text()).toContain("up 3d 4h");
     expect(text()).toContain("8 cores");
     // Compact, so it fits the card's corner in every language.
@@ -774,11 +787,11 @@ describe("MachineScreen", () => {
     expect(onNavigate).toHaveBeenCalledWith("server");
   });
 
-  it("names an unknown OS as-is and counts one lab type", async () => {
+  it("names the OS by its name and counts one lab type", async () => {
     installTauri({ machine_metrics: () => metrics() });
-    render(<MachineScreen report={{ ...readyReport(), os: "freebsd", dockerRunning: false }} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
+    render(<MachineScreen report={{ ...readyReport(), os: "linux", dockerRunning: false }} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
     await flush(50);
-    expect(text()).toContain("freebsd arm64");
+    expect(text()).toContain("Linux aarch64");
     expect(text()).toContain("1 lab type needs setup");
   });
 

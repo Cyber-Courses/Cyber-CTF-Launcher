@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { commandError, describeError, errorCode, type ErrorCode } from "@/lib/errors";
 import { registerReset } from "@/lib/module-state";
 import { failedLine, failureOf } from "@/lib/log-marks";
+import { operationOf } from "@/lib/tauri/run-events";
 import type { LabOperation } from "@/features/labs/runs/operations";
 
 // The live state of lab start/stop, kept outside the React tree so it survives navigating away
@@ -30,6 +31,8 @@ export type DeployRun = {
   failureCode?: ErrorCode | null;
   /** For a port clash, what holds the host port ("nginx (pid 4123)"), when the backend found it. */
   failureHolder?: string | null;
+  /** The id of the operation that failed, for the player to quote. */
+  failureOperation?: string | null;
 };
 /** Every lab with a run in flight or just finished, keyed by lab id (none for a lab without
  *  one). A single global slot would cross-contaminate: with two deploys running, the second's
@@ -96,7 +99,7 @@ export function failDeploy(labId: string, e: unknown) {
   appendDeployLog(labId, failedLine(describeError(e)));
   flushDeployLogs();
   const prev = state.runs[labId];
-  if (prev) setRun(labId, { ...prev, failureCode: errorCode(e), failureHolder: portHolder(e) });
+  if (prev) setRun(labId, { ...prev, failureCode: errorCode(e), failureHolder: portHolder(e), failureOperation: operationOf(e) });
 }
 
 /** What holds the clashing host port, from a port-clash error's args; null for any other error. */

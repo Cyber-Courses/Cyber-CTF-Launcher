@@ -5,11 +5,12 @@ use std::path::Path;
 
 use crate::platform::AppDirs;
 
-use super::inflight::{Action, DeployGuard};
+#[cfg(feature = "cloud-services")]
+use super::cloud_services;
 pub(crate) use super::isothrum::Inputs;
 use super::paths::{mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, runner_home};
 use super::providers::Provider;
-use super::{LabRef, Runtime, cloud_services, docker, isothrum, lab, server};
+use super::{LabRef, Runtime, docker, isothrum, lab, server};
 use crate::error::{Code, Error, Result};
 use crate::platform::policy::Key;
 
@@ -20,14 +21,18 @@ mod port_holder;
 #[cfg(test)]
 use local::low_memory_warning;
 use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
+#[cfg(feature = "cloud-services")]
+#[cfg(feature = "cloud-services")]
+pub(super) use on_host::check_aws_budget;
 pub(in crate::runtime) use on_host::esxi_run;
+#[cfg(any(test, feature = "cloud-services"))]
+pub(super) use on_host::public_ip;
+pub(super) use on_host::server_place;
 #[cfg(test)]
 pub(crate) use on_host::{CloudStart, start_cloud_run};
 #[cfg(test)]
 use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from, record_cloud_form};
-pub(super) use on_host::{check_aws_budget, public_ip};
-use on_host::{per_machine_runs_on, start_on_server};
-pub(super) use on_host::{runner_runs_on, server_place};
+use on_host::{containers_run_on, per_machine_runs_on, start_on_server};
 
 /// Where a lab is started: on this machine (with a local `provider`, and `per_machine_vm`
 /// picking the one-VM-per-machine form for a container lab), or on the server `host`; and
@@ -97,7 +102,6 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
     let place = destination(dirs, runtime, &to)?;
     let Destination { host, per_machine_vm, docker_context, default_ports, .. } = to;
     let inputs = Inputs { values: env, default_ports };
-    let _deploy = DeployGuard::new(id, Action::Launch);
     privileged_allowed(|| Ok(lab::is_privileged(&lab::load(dir)?)))?;
     // A lab runs in one place: starting it here (or on another host) while its run is still up
     // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud
@@ -109,7 +113,10 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
         return Err(super::status::still_running(&up));
     }
     if runtime == Runtime::Cloud {
+        #[cfg(feature = "cloud-services")]
         return cloud_services::start(dirs, lab, host, env, &mut log).await;
+        #[cfg(not(feature = "cloud-services"))]
+        return Err(Error::Refused(super::CLOUD_UNSUPPORTED.into()));
     }
     match place {
         Place::Here(run) => start_here(dirs, lab, run, docker_context, inputs, &mut log).await,
@@ -164,7 +171,7 @@ pub(crate) async fn start(dirs: &AppDirs, lab: LabRef<'_>, to: Destination<'_>, 
 }
 
 /// Starts the lab on this machine as `run` says (see [`local_run`]).
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "the local-launch helper mirrors start_locked's launch specification: the lab, how it runs, its engine, its inputs and a log sink"
 )]
@@ -192,7 +199,6 @@ async fn start_here(
     let home = runner_home(dirs)?;
     let started = match run {
         LocalRun::Docker => start_docker_run(&home, dir, id, inputs, log).await,
-        LocalRun::DockerInVm(p) => start_docker_in_vm_run(&home, dir, id, VmStart { provider: p, inputs }, log).await,
         LocalRun::Vm(p) => start_vm_run(&home, dir, id, VmStart { provider: p, inputs }, log).await,
     };
     // A clash is on a host port either form binds here, so name what holds it: the player can
@@ -203,58 +209,13 @@ async fn start_here(
     }
 }
 
-/// The runner's start of a container lab in one VM (Isoloom's `docker-vm`, runner home `home`) on
-/// the local hypervisor: its files generated, then up. Takes no app handle, so the integration
-/// tests run exactly this.
-pub(crate) async fn start_docker_in_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-    let VmStart { provider, inputs } = start;
-    let prepared = lab::prepare(dir, lab::vagrant_target(Runtime::Docker))?;
-    check_provider(&prepared.lab, lab::Target::DockerVm, provider)?;
-    mark_local_vm(dir, Some(provider))?;
-    log(super::deploy_log::in_local_vm(provider.id()));
-    if provider == Provider::Utm {
-        check_utm(log).await?;
-    }
-    up_in_vm(dir, provider, inputs, || isothrum::LabRun::docker_in_vm(home, dir, id), log).await
-}
-
-/// Brings up a container lab's helper VM on `provider` (the run [`isothrum::LabRun`] `run_of`
-/// opens) with the launch's `inputs`: on UTM its passing `-600` refusal goes on as
-/// [`isothrum::LabRun::start`] says, and a start that failed takes down what it half created.
-pub(in crate::runtime) async fn up_in_vm(
-    dir: &Path,
-    provider: Provider,
-    inputs: Inputs<'_>,
-    run_of: impl Fn() -> Result<isothrum::LabRun>,
-    log: &mut impl FnMut(String),
-) -> Result<()> {
-    let run = run_of()?;
-    // Marked before the start: status, stop and the attack box read the lab as in this VM.
-    mark_local_vm(dir, Some(provider))?;
-    let Err(e) = run.start(inputs, provider.id(), log).await else {
-        return mark_parked(dir, None);
-    };
-    // A failed start can leave a half-created helper VM holding host ports (e.g. the QEMU
-    // SSH forward), and that lingering VM trips the next launch with a port-collision
-    // error. Destroy it before surfacing the failure; the teardown is best-effort, so its
-    // own error is logged, never allowed to mask the start's.
-    log("Start failed: removing the half-created VM so the next launch starts clean".into());
-    let teardown = match run_of() {
-        Ok(vm) => super::lifecycle::stop_run(vm, dir, &mut *log).await,
-        Err(e) => Err(e),
-    };
-    if let Err(teardown) = teardown {
-        log(format!("Could not fully remove the failed VM: {teardown}"));
-    }
-    Err(e)
-}
-
 /// The runner's start of a container lab (runner home `home`): its files generated (the run
 /// manifest with them), then up, or resumed as it was when it is parked (the runner's own rule).
 /// Takes no app handle, so the integration tests run exactly this.
 pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, inputs: Inputs<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     recheck_instance(dir, id, log).await?;
     lab::prepare(dir, lab::Target::Docker)?;
+    // A helper VM an earlier version ran the lab in was stopped with it: its mark goes too.
     mark_local_vm(dir, None)?;
     isothrum::LabRun::docker(home, dir, id)?.up(inputs, None, log).await?;
     mark_parked(dir, None)
@@ -270,28 +231,31 @@ pub(crate) struct VmStart<'a> {
 }
 
 /// The runner's start of a VM lab (runner home `home`) on `provider`: its files generated (the
-/// run manifest with them), the memory warning and QEMU's emulator check, then up (a parked run
+/// run manifest with them), the memory warning, QEMU's emulator check and UTM open and answering
+/// ([`check_utm`]: Vagrant's UTM plugin drives it with Apple events), then up (a parked run
 /// is resumed as it was). The learner's attack box is added to the lab afterwards, from the lab
-/// page or with the lab (`attack_machine`), not by the launch. Takes no app handle, so the
+/// page or with the lab (`attack_box`), not by the launch. Takes no app handle, so the
 /// integration tests run exactly this.
 pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let VmStart { provider, inputs } = start;
     let prepared = lab::prepare(dir, lab::Target::Vagrant)?;
-    // A container lab's VM form leaves no local-VM mark behind: that one names docker-vm.
+    // A container lab's VM form leaves no helper-VM mark behind (an earlier version's).
     mark_local_vm(dir, None)?;
     check_provider(&prepared.lab, lab::Target::Vagrant, provider)?;
     warn_if_low_memory(&prepared.spec, log);
     if provider == Provider::Qemu {
         check_qemu(&prepared, log).await?;
     }
+    if provider == Provider::Utm {
+        check_utm(log).await?;
+    }
     isothrum::LabRun::vm(home, dir, id)?.start(inputs, provider.id(), log).await?;
     mark_parked(dir, None)
 }
 
-/// Why the launcher refuses to start the lab installed in `dir` as `target` (Isoloom's `vagrant`
-/// or `docker-vm`) on the local hypervisor `provider`, before anything runs: the refusal
-/// [`start_vm_run`] and [`start_docker_in_vm_run`] make, read from the lab's spec alone (nothing
-/// generated). None when it would start there. What the integration tests skip on, saying why.
+/// Why the launcher refuses to start the lab installed in `dir` as `target` (Isoloom's `vagrant`)
+/// on the local hypervisor `provider`, before anything runs: the refusal [`start_vm_run`] makes,
+/// read from the lab's spec alone (nothing generated). None when it would start there. What the integration tests skip on, saying why.
 #[cfg(test)]
 pub(crate) fn refusal_here(dir: &Path, target: lab::Target, provider: Provider) -> Result<Option<Error>> {
     Ok(check_provider(&lab::lab(dir)?, target, provider).err())
@@ -329,7 +293,8 @@ enum Place<'a> {
 /// downloaded: the policy's `DisableCloudLaunches` ([`cloud_allowed`]); on this machine, a form
 /// that runs here ([`local_run`]: a cloud-services lab needs a cloud account, a VM lab a
 /// hypervisor here, one VM per machine a hypervisor here, ESXi or Proxmox a host); on a host, one
-/// VM per machine only on a cloud account ([`per_machine_runs_on`]). The codes are said in the
+/// VM per machine only on a cloud account ([`per_machine_runs_on`]), and a container lab's
+/// containers too ([`containers_run_on`]). The codes are said in the
 /// player's language.
 fn destination<'a>(dirs: &AppDirs, runtime: Runtime, to: &Destination<'a>) -> Result<Place<'a>> {
     cloud_allowed(dirs, runtime, to.host)?;
@@ -338,6 +303,8 @@ fn destination<'a>(dirs: &AppDirs, runtime: Runtime, to: &Destination<'a>) -> Re
         Some(host) => {
             if to.per_machine_vm {
                 per_machine_runs_on(server::host_provider(dirs, host)?)?;
+            } else if runtime == Runtime::Docker {
+                containers_run_on(server::host_provider(dirs, host)?)?;
             }
             Ok(Place::Host(host))
         }
@@ -347,6 +314,11 @@ fn destination<'a>(dirs: &AppDirs, runtime: Runtime, to: &Destination<'a>) -> Re
 /// The per-machine form runs on this machine or a cloud account, not on a server.
 pub(super) const PER_MACHINE_NOT_ON_SERVERS: &str =
     "One VM per machine runs on this machine or a cloud account: on a server (ESXi, Proxmox), the lab runs as it is published.";
+
+/// A container lab's containers run on this machine's Docker or on a cloud account's VM, not on a
+/// server, where they would run inside a helper VM.
+pub(super) const CONTAINERS_NOT_ON_SERVERS: &str =
+    "A container lab runs on this machine (on Docker, or as one VM per machine) or in a cloud account, not on a server (ESXi, Proxmox).";
 
 /// What a start downloads to this machine, for the layer above to record as the app's (Storage
 /// cleans what the app downloaded): container images, Vagrant boxes.
@@ -367,7 +339,7 @@ pub(crate) fn downloads(runtime: Runtime, to: &Destination<'_>) -> Downloads {
     }
     match local_run(runtime, to.provider, to.per_machine_vm) {
         Ok(LocalRun::Docker) => Downloads { images: true, boxes: false },
-        Ok(LocalRun::DockerInVm(_) | LocalRun::Vm(_)) => Downloads { images: false, boxes: true },
+        Ok(LocalRun::Vm(_)) => Downloads { images: false, boxes: true },
         Err(_) => Downloads::default(),
     }
 }
@@ -375,27 +347,23 @@ pub(crate) fn downloads(runtime: Runtime, to: &Destination<'_>) -> Downloads {
 /// How a lab runs on this machine.
 #[derive(Debug, PartialEq)]
 enum LocalRun {
-    /// A container lab in one VM on this hypervisor (Isoloom's docker-vm).
-    DockerInVm(Provider),
     /// A container lab on this machine's Docker.
     Docker,
     /// A VM lab, one VM per machine on this hypervisor.
     Vm(Provider),
 }
 
-/// The local run for `runtime` on `provider`: a container lab with a local hypervisor runs in a
-/// VM there, without one on Docker, and with `per_machine_vm` as one VM per machine (its spec's
-/// VM recipes, as a VM lab); a VM lab needs a local hypervisor.
+/// The local run for `runtime` on `provider`: a container lab runs as containers on Docker, or,
+/// on a local hypervisor, as one VM per machine there (its spec's VM recipes, as a VM lab):
+/// never as containers inside a VM. `per_machine_vm` asks for that VM form, which then needs a
+/// local hypervisor. A VM lab needs a local hypervisor.
 fn local_run(runtime: Runtime, provider: Option<Provider>, per_machine_vm: bool) -> Result<LocalRun> {
     match runtime {
-        Runtime::Docker if per_machine_vm => {
-            let provider = provider.filter(|p| !p.is_remote()).ok_or_else(|| Error::Refused("One VM per machine needs a hypervisor on this machine".into()))?;
-            Ok(LocalRun::Vm(provider))
-        }
-        Runtime::Docker => Ok(match provider.filter(|p| !p.is_remote()) {
-            Some(p) => LocalRun::DockerInVm(p),
-            None => LocalRun::Docker,
-        }),
+        Runtime::Docker => match provider.filter(|p| !p.is_remote()) {
+            Some(p) => Ok(LocalRun::Vm(p)),
+            None if per_machine_vm => Err(Error::Refused("One VM per machine needs a hypervisor on this machine".into())),
+            None => Ok(LocalRun::Docker),
+        },
         Runtime::Vm => {
             let provider = provider.ok_or_else(|| Error::coded(Code::NoHypervisor))?;
             if provider.is_remote() {

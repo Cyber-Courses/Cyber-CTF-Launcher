@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SERVER_CHANGED, serverList, serverTest, type ServerHost, type ServerList } from "@/lib/tauri";
+import { serverChanged, serverList, serverTest, type ServerHost, type ServerList } from "@/lib/tauri";
 import { useTauriEvent } from "@/lib/use-tauri-event";
 import { describeError } from "@/lib/errors";
 import { useLatest } from "@/lib/use-latest";
@@ -49,7 +49,7 @@ export function useServerList({
   }, [begin, tellFailure]);
   useEffect(reload, [reload]);
   // The setup window saves hosts; refresh when it says so.
-  useTauriEvent(SERVER_CHANGED, () => {
+  useTauriEvent(serverChanged, () => {
     onChanged?.();
     reload();
   });

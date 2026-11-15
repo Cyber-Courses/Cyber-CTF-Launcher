@@ -12,7 +12,39 @@ const vagrant = [
 ];
 const at = (n: number, step = 1000) => Array.from({ length: n }, (_, i) => 1_000_000 + i * step);
 
+const pulse = (name: RegExp) => screen.getByRole("button", { name }).querySelector(".animate-pulse");
+
 describe("DeploySteps", () => {
+  it("in a Docker VM, ends the images step when the machine's own lines go on", () => {
+    // Regression: the images step, made after the VM's machine step, stayed running while the
+    // machine's later lines went to the machine step.
+    const lines = [
+      "==> web: Booting VM...",
+      "Pulling the environment's images in the VM",
+      " Image nginx Pulled",
+      "Starting the environment's containers in the VM",
+      "==> web: Running provisioner: shell...",
+    ];
+    render(<DeploySteps lines={lines} times={at(5)} busy ready={false} />);
+    expect(pulse(/Get images/)).toBeNull();
+    expect(pulse(/^web/)).not.toBeNull();
+  });
+
+  it("puts what runs after Ready (the attack box) in a step of its own below Ready, the start's steps all done", () => {
+    // Regression: the attack box's image pull went back into the start's "Get images" step,
+    // which turned running again under a green Ready.
+    const start = [" Image nginx Pulling", " Image nginx Pulled", " Container web Started", "✓ Lab is running"];
+    const attack = [" Image kali-attack Pulling", "Adding the attack box…"];
+    render(<DeploySteps lines={[...start, ...attack]} times={at(6)} busy ready={false} />);
+    expect(pulse(/Get images/)).toBeNull();
+    expect(pulse(/Add the attack box/)).not.toBeNull();
+    const items = screen.getAllByRole("listitem").map((li) => li.textContent);
+    const readyAt = items.findIndex((text) => text.includes("Ready"));
+    const attackAt = items.findIndex((text) => text.includes("Add the attack box"));
+    expect(readyAt).toBeGreaterThanOrEqual(0);
+    expect(attackAt).toBeGreaterThan(readyAt);
+  });
+
   it("shows a Vagrant start as one step per machine with its duration, the last one running", () => {
     render(<DeploySteps lines={vagrant} times={at(4, 2000)} busy ready={false} where="this machine" />);
     expect(screen.getByText("Starting")).toBeTruthy();

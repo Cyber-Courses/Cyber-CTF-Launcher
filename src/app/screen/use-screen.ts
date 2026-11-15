@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, type RefObject } from "react";
+import { useCallback, useEffect, type RefObject } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { describeError } from "@/lib/errors";
+import { screenTunnelClosed, type TunnelClosed } from "@/lib/tauri/events";
+import { useTauriEvent } from "@/lib/use-tauri-event";
 import { screenConnect, type ScreenConnection } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
 
@@ -42,10 +45,12 @@ type Watch = { setState: (s: ScreenState) => void; ended: () => boolean; passwor
  *  disconnected then). Gives what stops the wait. */
 function follow(v: Viewer, w: Watch): () => void {
   let shown = false;
-  let timedOut = false;
+  // Said already, by the wait running out or the server refusing the password: the disconnect
+  // that follows (noVNC fails the connection after either) must not say it again differently.
+  let settled = false;
   const timer = setTimeout(() => {
     if (shown || w.ended()) return;
-    timedOut = true;
+    settled = true;
     v.disconnect();
     w.setState({ kind: "failed", message: w.noAnswer });
   }, SHOW_WITHIN_MS);
@@ -58,11 +63,13 @@ function follow(v: Viewer, w: Watch): () => void {
     v.sendCredentials({ password: w.password });
   });
   v.addEventListener("securityfailure", () => {
+    settled = true;
+    clearTimeout(timer);
     w.setState({ kind: "failed", message: w.refused });
   });
   v.addEventListener("disconnect", (e) => {
     clearTimeout(timer);
-    if (w.ended() || timedOut) return;
+    if (w.ended() || settled) return;
     const clean = (e as CustomEvent<{ clean: boolean }>).detail.clean;
     // Closed before the screen ever showed: it didn't answer (the bridge closes such a one).
     if (!shown) w.setState({ kind: "failed", message: w.noAnswer });
@@ -123,4 +130,26 @@ export function useScreen(host: RefObject<HTMLDivElement | null>, attempt: numbe
       viewer?.disconnect();
     };
   }, [host, attempt, setState, t]);
+}
+
+/** This window's label; none where no Tauri window hosts the page (the browser's dev mock). */
+function ownLabel(): string | null {
+  try {
+    return getCurrentWindow().label;
+  } catch {
+    return null;
+  }
+}
+
+/** Says, when the SSH tunnel carrying this window's screen ends on its own, that it closed and
+ *  why: the screen can't come back through it, so the window offers to connect again. */
+export function useTunnelClosed(setState: (s: ScreenState) => void) {
+  const t = useT();
+  const onClosed = useCallback(
+    (closed: TunnelClosed) => {
+      if (closed.label === ownLabel()) setState({ kind: "failed", message: t("shell.vmScreen.tunnelClosed", { reason: closed.reason }) });
+    },
+    [setState, t],
+  );
+  useTauriEvent(screenTunnelClosed, onClosed);
 }

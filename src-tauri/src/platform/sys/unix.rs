@@ -1,9 +1,10 @@
-//! libc: process liveness, process-group signals, a process's start (macOS), and the password
+//! libc: process-group signals, a process's start (macOS), and the password
 //! database.
 
 /// Whether process `pid` exists, by signal 0 (nothing is sent): it does when the signal could be
 /// sent, or was refused (another user's process). An id that would name a group (0, or past
 /// `pid_t` and so negative) never does.
+#[cfg(test)]
 pub fn process_exists(pid: u32) -> bool {
     let Ok(pid) = libc::pid_t::try_from(pid) else { return false };
     if pid <= 0 {
@@ -26,6 +27,7 @@ pub fn signal_group(group: u32, signal: libc::c_int) -> std::io::Result<()> {
 /// Sends `signal` to process `pid` alone. Never to an id that would name a group (0, 1, or past
 /// `pid_t`), as `kill(1)` reads them: that is an error. A process that is gone already (`ESRCH`)
 /// is no failure; any other refusal (`EPERM`) is.
+#[cfg(test)]
 pub fn signal_process(pid: u32, signal: libc::c_int) -> std::io::Result<()> {
     let pid = one_id(pid, "a process")?;
     // SAFETY: a plain syscall on a process id; no memory is involved.
@@ -93,6 +95,12 @@ pub fn boot_session() -> Option<String> {
     }
     let text = buf.get(..len)?;
     std::ffi::CStr::from_bytes_until_nul(text).ok().and_then(|s| s.to_str().ok()).map(str::to_owned)
+}
+
+/// Whether this process runs as root (its effective user is 0).
+pub fn is_root() -> bool {
+    // SAFETY: geteuid takes nothing, can't fail, and touches no memory of ours.
+    unsafe { libc::geteuid() == 0 }
 }
 
 #[cfg(test)]

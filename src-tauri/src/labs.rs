@@ -186,8 +186,8 @@ fn stage(labs: &Path, dir: &Path, tarball: &[u8], lab_id: &str, commit: &str) ->
     let staging = staging_dir(labs, lab_id);
     clear_leftover(&staging);
     std::fs::create_dir_all(&staging)?;
-    // A staging that can't be filled (a refused archive) goes at once, not at the next install
-    // (the review of 2026-11-13: `labs/.<id>.staging` stayed).
+    // A staging that can't be filled (a refused archive) goes at once, not at the next install:
+    // left, `labs/.<id>.staging` stays until then.
     if let Err(e) = fill_staging(&staging, dir, tarball, commit) {
         clear_leftover(&staging);
         return Err(e);
@@ -300,8 +300,12 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
     let _lock = runtime::lock_lab(dirs, &launch.lab_id).await?;
     let release = Release { lab_id: &launch.lab_id, repository: &launch.repository, commit: &launch.commit, runtime: launch.runtime };
     let dir = install(dirs, release, &log).await?;
-    // Fixed names for every lab; the evidence itself is never in the environment.
+    // Fixed names for every lab; the evidence itself is never in the environment. The token and
+    // the flags are redacted from the logs from now on, wherever a tool prints them.
     let env = launch_env(launch.env);
+    for (_, value) in env.iter().filter(|(name, _)| name != "CTF_API_URL") {
+        crate::platform::redact::register(value);
+    }
     let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
     start_recorded(dirs, lab, to, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
@@ -311,7 +315,13 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
 /// Stops lab `id` wherever it runs ([`runtime::stop_lab`]), first ending the deploy still running
 /// in its worker, if any (`end_workers`: the app shell runs the workers), and the website's
 /// co-location check of it.
-pub(crate) async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, end_workers: impl Future<Output = ()>, log: impl FnMut(String)) -> Result<()> {
+pub(crate) async fn stop_lab_retiring_colocation(
+    dirs: &AppDirs,
+    id: &str,
+    runtime: Runtime,
+    end_workers: impl Future<Output = ()>,
+    log: impl FnMut(String),
+) -> Result<()> {
     let end_first = async {
         end_workers.await;
         crate::account::colocation::retire(id);
@@ -331,10 +341,9 @@ struct StartLabData {
 }
 
 /// The backend's `startLab` answer for `lab_id`: what to download and run, and the launch's
-/// values, typed at the boundary (Clean Code ch.8, 2026-11-13: the raw JSON crossed into the
-/// caller, which typed it a step later).
+/// values, typed at the boundary rather than as raw JSON the caller types a step later.
 async fn start_lab(lab_id: &str) -> Result<Launch> {
-    let data = api::graphql(START_LAB, json!({ "id": lab_id }), true).await?;
+    let data = api::graphql_signed_in(START_LAB, json!({ "id": lab_id })).await?;
     let answer: StartLabData = serde_json::from_value(data).map_err(|e| Error::Invalid(format!("invalid launch spec: {e}")))?;
     Ok(answer.start_lab)
 }
@@ -374,6 +383,7 @@ async fn launch_spec(dirs: &AppDirs, lab_id: &str, offline: bool, log: &impl Fn(
 }
 
 /// What the player asked to start, and how.
+#[derive(Debug, Clone)]
 pub struct LaunchRequest {
     /// The lab.
     pub lab_id: String,
@@ -397,8 +407,6 @@ pub struct LaunchRequest {
 /// A launch ready to run: the lab, its `startLab` spec, and where and how it runs (the Docker
 /// context a container lab here is pinned to resolved from the chosen engine).
 pub(crate) struct PreparedLaunch {
-    /// The lab's id.
-    pub(crate) lab_id: String,
     /// Its `startLab` spec.
     pub(crate) launch: Launch,
     /// Where it runs and how.
@@ -407,14 +415,14 @@ pub(crate) struct PreparedLaunch {
 
 /// Prepares `request`'s launch: resolves the `startLab` spec (the backend's, kept for a later
 /// offline start, or the installed lab's when the backend can't be reached and the player asked)
-/// and the engine it runs on. The deploy itself runs in a detached worker, started by the command
-/// layer (so quitting the app never cuts a run short); `log` carries the one "starting offline"
-/// line the preparation may emit.
+/// and the engine it runs on. The deploy itself runs next ([`run`]), its run's operations in the
+/// runner service (so quitting the app never cuts them short); `log` carries the one "starting
+/// offline" line the preparation may emit.
 pub(crate) async fn prepare_launch(dirs: &AppDirs, request: LaunchRequest, log: &impl Fn(String)) -> Result<PreparedLaunch> {
     let LaunchRequest { lab_id, provider, host, default_ports, offline, per_machine_vm, docker_engine } = request;
     let docker_context = pinned_context(docker_engine.as_deref(), host.as_deref()).await?;
     let launch = launch_spec(dirs, &lab_id, offline, log).await?;
-    Ok(PreparedLaunch { lab_id, launch, place: runtime::Placement { provider, host, per_machine_vm, docker_context, default_ports } })
+    Ok(PreparedLaunch { launch, place: runtime::Placement { provider, host, per_machine_vm, docker_context, default_ports } })
 }
 
 /// The Docker context a container lab here is pinned to, resolved now (on the main process, where
@@ -488,8 +496,7 @@ async fn start_recorded(
     env: &[(String, String)],
     log: impl FnMut(String),
 ) -> Result<()> {
-    let runtime::Downloads { images, boxes } = runtime::downloads(lab.runtime, &to);
-    let before = crate::machine::storage::owned::Before::take(images, boxes).await;
+    let before = crate::machine::storage::owned::Before::take(runtime::downloads(lab.runtime, &to)).await;
     let started = runtime::start_locked(dirs, lab, to, env, log).await;
     crate::machine::storage::claim_lab(dirs.clone(), lab.dir, lab.id, &before).await;
     started
@@ -699,7 +706,7 @@ mod tests {
         install_with(&t.dirs(), invoice("invoice", newer), &log, async || Ok(gz.clone())).await.unwrap();
         assert!(runtime::lab::installed_at(&dir, newer));
         // Ids and sources are checked before anything else.
-        assert!(install_with(&t.dirs(), invoice("../x", SHA), &log, async || panic!()).await.is_err());
+        assert!(matches!(install_with(&t.dirs(), invoice("../x", SHA), &log, async || panic!()).await.unwrap_err(), crate::error::Error::Invalid(_)));
         assert!(
             install_with(&t.dirs(), Release { lab_id: "invoice", repository: "evil/lab", commit: SHA, runtime: Runtime::Docker }, &log, async || panic!())
                 .await
@@ -716,9 +723,9 @@ mod tests {
         let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         let dir = install_with(&t.dirs(), invoice("invoice", SHA), &|_| {}, async || Ok(gz.clone())).await.unwrap();
         crate::runtime::paths::mark_parked(&dir, Some(runtime::Park::Shutdown)).unwrap();
-        let manifest = runtime::lab::docker_manifest(&dir);
-        std::fs::create_dir_all(manifest.parent().unwrap()).unwrap();
-        std::fs::write(&manifest, "not a manifest").unwrap();
+        let compose = runtime::lab::compose_file(&dir);
+        std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
+        std::fs::write(&compose, "not a compose file").unwrap();
         let newer = "1123456789abcdef0123456789abcdef01234567";
         let err = install_with(&t.dirs(), invoice("invoice", newer), &|_| {}, async || Ok(gz.clone())).await.unwrap_err();
         assert!(matches!(err, Error::Refused(_)), "{err:?}");
@@ -823,7 +830,7 @@ mod tests {
     fn repository_names_at_the_length_boundary_and_commit_lengths() {
         let sha = "0123456789abcdef0123456789abcdef01234567";
         assert!(validate_source(&format!("CyberCTF/{}", "a".repeat(100)), sha).is_ok());
-        assert!(validate_source(&format!("CyberCTF/{}", "a".repeat(101)), sha).is_err());
+        assert!(matches!(validate_source(&format!("CyberCTF/{}", "a".repeat(101)), sha).unwrap_err(), crate::error::Error::Invalid(_)));
         assert!(validate_source("CyberCTF/lab.v2_x-y", sha).is_ok());
         for (repo, commit) in [
             ("CyberCTF/lab", &sha[..39]),

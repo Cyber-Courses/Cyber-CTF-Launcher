@@ -85,8 +85,9 @@ describe("deriveLabState", () => {
       status: status({ running: true, place: "local_vm", perMachine: true, controls: ["pause", "shutdown", "provision", "repair"] }),
     });
     expect([asVms.canPause, asVms.canShutdown, asVms.canProvision, asVms.canRepair]).toEqual([true, true, true, true]);
-    const inVm = derive({ status: status({ running: true, place: "local_vm", controls: ["pause"] }) });
-    expect([inVm.canPause, inVm.canShutdown, inVm.canProvision, inVm.canRepair]).toEqual([true, false, false, false]);
+    // A container lab an earlier version runs inside a helper VM: only stopped (no controls).
+    const inVm = derive({ status: status({ running: true, place: "local_vm", controls: [] }) });
+    expect([inVm.canPause, inVm.canShutdown, inVm.canProvision, inVm.canRepair]).toEqual([false, false, false, false]);
     // Nothing the backend doesn't offer, whatever the catalogue says.
     const remote = derive({ runtime: vm, status: status({ running: true, host: "pve", hostId: "pve", place: "server", provider: "proxmox" }) });
     expect([remote.canPause, remote.canShutdown, remote.canProvision, remote.canRepair]).toEqual([false, false, false, false]);
@@ -228,26 +229,26 @@ describe("restartTarget", () => {
     expect(restartTarget({ ...vms, perMachine: false }, hosts, "DOCKER", here, null)).toEqual({ kind: "host", id: "aws1" });
   });
   it("keeps the pick when the host it ran on is no longer saved (a renamed one is still found)", () => {
-    const pick: RunTarget = { kind: "local-vm", provider: "qemu" };
+    const pick: RunTarget = { kind: "local-vms", provider: "qemu" };
     expect(restartTarget(status({ host: "gone", hostId: "h9", place: "server" }), hosts, "VM", pick, null)).toEqual(pick);
     expect(restartTarget(status({ host: "renamed", hostId: "h1", place: "server" }), hosts, "VM", pick, null)).toEqual({ kind: "host", id: "h1" });
   });
-  it("starts a container lab again in one VM here, on the hypervisor it ran on", () => {
+  it("starts a container lab an earlier version ran inside a helper VM again on Docker here", () => {
     const inVm = status({ place: "local_vm", provider: "qemu" });
-    expect(restartTarget(inVm, hosts, "DOCKER", here, "virtualbox")).toEqual({ kind: "local-vm", provider: "qemu" });
+    expect(restartTarget(inVm, hosts, "DOCKER", here, "virtualbox")).toEqual({ kind: "local" });
   });
   it("starts a container lab run as one VM per machine again in that form", () => {
     const perMachine = status({ place: "local_vm", provider: "virtualbox", perMachine: true });
     expect(restartTarget(perMachine, hosts, "DOCKER", here, "qemu")).toEqual({ kind: "local-vms", provider: "virtualbox" });
   });
   it("falls back to the pick's hypervisor, then the default, when the status names none", () => {
-    const inVm = status({ place: "local_vm", provider: null });
-    expect(restartTarget(inVm, hosts, "DOCKER", { kind: "local-vm", provider: "parallels" }, "virtualbox")).toEqual({
-      kind: "local-vm",
+    const inVms = status({ place: "local_vm", provider: null, perMachine: true });
+    expect(restartTarget(inVms, hosts, "DOCKER", { kind: "local-vms", provider: "parallels" }, "virtualbox")).toEqual({
+      kind: "local-vms",
       provider: "parallels",
     });
-    expect(restartTarget(inVm, hosts, "DOCKER", here, "virtualbox")).toEqual({ kind: "local-vm", provider: "virtualbox" });
-    expect(restartTarget(inVm, hosts, "DOCKER", here, null)).toEqual({ kind: "local" });
+    expect(restartTarget(inVms, hosts, "DOCKER", here, "virtualbox")).toEqual({ kind: "local-vms", provider: "virtualbox" });
+    expect(restartTarget(inVms, hosts, "DOCKER", here, null)).toEqual({ kind: "local" });
   });
   it("starts a VM lab here as its own VMs, and a container lab on its engine", () => {
     expect(restartTarget(status({ place: "local_vm", provider: "virtualbox" }), hosts, "VM", here, null)).toEqual({ kind: "local", provider: "virtualbox" });
@@ -270,7 +271,13 @@ describe("publishedBinds", () => {
         ],
       }),
     ];
-    expect(publishedBinds(machines)).toEqual([{ machine: "web", target: 80, published: 5000 }]);
+    expect(publishedBinds(machines)).toEqual([{ machine: "web", target: 80, published: 5000, login: null }]);
+  });
+
+  it("carries the login a port's service ships with", () => {
+    const login = { user: "alice", password: "alice" };
+    const machines = [machine("gitea", "running", { ports: [{ published: 5001, target: 3000, login }] })];
+    expect(publishedBinds(machines)).toEqual([{ machine: "gitea", target: 3000, published: 5001, login }]);
   });
 });
 

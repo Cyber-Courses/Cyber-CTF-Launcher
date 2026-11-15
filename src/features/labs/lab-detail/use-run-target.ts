@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { cloudAccountsFor, formProviders, hostSupports, isCloudLab, isContainerLab, vmFormTarget } from "@/features/labs/lab-runtime";
 import type { PickerStep, Platform } from "@/features/labs/run-on";
-import { fromSavedForm, isLocalVmForm, toSavedForm, type LocalVmForm, type RunTarget } from "@/features/labs/run-target";
+import { isLocalVmForm, type LocalVmForm, type RunTarget } from "@/features/labs/run-target";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
 import {
   getDockerEngine,
@@ -62,20 +62,20 @@ export function useRunTarget(
   const optionsRead = useLabRunOptions(lab.id, rt);
   const options = optionsRead.value;
   const place = useLabAnswer(lab.id, rt, askDefaultPlace).value;
-  // The VM forms a container lab can run here as, and the hypervisors each can run on.
+  // The VM form a container lab can run here as, and the hypervisors it can run on.
   const vm = useLocalVmChoice(rt, { readyVms, options }, isDocker, setRunOn);
-  const { localVm, localVms, perMachineVm, perMachineVms, perMachine, pickProvider } = vm;
+  const { perMachineVm, perMachineVms, perMachine, pickProvider } = vm;
   const hostOk = useCallback((h: ServerHost) => hostSupports(rt, h, options), [rt, options]);
   const { hosts } = useSavedHosts();
   const cloudAccounts = cloudAccountsFor(rt, hosts, options);
   // A server picked, then removed in its setup window: back to where Start points at first.
   const runOn = picked && (picked.kind !== "host" || hosts.some((h) => h.id === picked.id)) ? picked : initialTarget(rt, hosts, place, options);
-  const vmForms = vmFormTargets(isCloud, isDocker, localVm, perMachineVm);
+  const vmForms = vmFormTargets(isCloud, isDocker, perMachineVm);
   const cloudFormsFor = (id: string) => cloudForms(options, hosts, id);
   const pickedHost = runOn.kind === "host" ? hosts.find((h) => h.id === runOn.id) : undefined;
   // What the form step offers: the cloud account's forms when one is picked, else this machine's.
   const formTargets = runOn.kind === "host" ? cloudFormsFor(runOn.id) : vmForms;
-  const hypervisorsFor = (form: RunTarget): Provider[] => (form.kind === "local-vm" ? localVms : form.kind === "local-vms" ? perMachineVms : []);
+  const hypervisorsFor = (form: RunTarget): Provider[] => (form.kind === "local-vms" ? perMachineVms : []);
   const steps = usePickerSteps({ runOn, setRunOn, setPickedEngine, pickProvider, vmForms, cloudFormsFor, hypervisorsFor, engines });
   // Start, with "don't ask again" checked, saves what the path chose so the steps are skipped next time.
   const commitChoice = () => {
@@ -96,9 +96,8 @@ export function useRunTarget(
     steps,
     ports,
     setPorts,
-    /** The helper-VM hypervisor a container lab here would use (for restarting it in the same one). */
-    localVm,
-    /** The VM forms This machine's "In a VM" row offers (helper VM, one VM per machine). */
+    /** The VM forms This machine's "In a VM" row offers (a VM lab's own VMs, or a container lab's
+     *  one VM per machine). */
     vmForms,
     /** The form step's rows: a picked cloud account's forms (one VM / one VM per machine), else
      *  This machine's VM forms. Empty when there is no form to choose. */
@@ -122,7 +121,7 @@ export function useRunTarget(
     pickedAccount: runOn.kind === "host" ? cloudAccounts.find((h) => h.id === runOn.id) : undefined,
     /** With servers saved, a VM here, several container engines not yet settled, or a cloud lab,
      *  Start asks first; otherwise it runs here at once (carrying any saved engine). */
-    hasChoice: isCloud || hosts.length > 0 || localVm !== null || perMachine !== null || (engines.length > 1 && getDockerEngine() === null),
+    hasChoice: isCloud || hosts.length > 0 || perMachine !== null || (engines.length > 1 && getDockerEngine() === null),
     /** The target picked, with the host ports and chosen engine for a container lab here. */
     chosen: (): RunTarget => (runOn.kind === "local" && isDocker ? { kind: "local", ports, engine: chosenEngine ?? undefined } : runOn),
   };
@@ -143,8 +142,7 @@ function savedHyp(hyps: Provider[]): Provider | null {
 /** The saved VM form's target when it is still available in `vmForms`, else null: its step is then
  *  skipped straight to it. */
 function savedFormTarget(vmForms: RunTarget[]): RunTarget | null {
-  const saved = getLocalVmForm();
-  return saved ? (vmForms.find((t) => t.kind === fromSavedForm(saved)) ?? null) : null;
+  return getLocalVmForm() === "vms" ? (vmForms.find(isLocalVmForm) ?? null) : null;
 }
 
 /** The container engines that answer here and the one a lab runs on: the engine-step pick, else the
@@ -170,46 +168,41 @@ function saveLaunchChoice(runOn: RunTarget, { ports, engine, engineCount, hyperv
     setPortMode(ports);
     if (engineCount > 1) setDockerEngine(engine);
   } else if (isLocalVmForm(runOn)) {
-    setLocalVmForm(toSavedForm(runOn.kind));
+    setLocalVmForm("vms");
     if (hypervisorCount > 1) setVmProvider(runOn.provider);
   }
 }
 
-/** This machine's VM forms for a container lab: the helper VM (`localVm`, on any ready hypervisor in
- *  `localVms`) and, for a dual-form lab, one VM per machine (`perMachine`, on `perMachineVms`, which
- *  excludes UTM). `pickProvider` selects the form and its hypervisor for this launch only (Start
- *  saves it with "don't ask again"). Both default to the hypervisor chosen in Settings (readyVms lists it first), else the first ready. */
+/** This machine's VM form for a dual-form container lab: one VM per machine (`perMachine`, on
+ *  `perMachineVms`: the hypervisors Isoloom takes the lab's VMs on). `pickProvider` selects the
+ *  form and its hypervisor for this launch only (Start saves it with "don't ask again"). It
+ *  defaults to the hypervisor chosen in Settings (readyVms lists it first), else the first ready. */
 function useLocalVmChoice(
   rt: LabRuntimeInfo | null,
   { readyVms, options }: { readyVms: Provider[]; options: LabRunOptions | null },
   isDocker: boolean,
   setRunOn: (t: RunTarget) => void,
 ) {
-  // The helper VM is this machine's own CPU's; one VM per machine runs the lab's own, on an
-  // emulator only when that is another (the backend's run options say which).
-  const localVms = isDocker && rt && options ? readyVms.filter((p) => formProviders(options.dockerVm).includes(p)) : [];
+  // One VM per machine runs the lab's own CPU, on an emulator only when that is another (the
+  // backend's run options say which).
   const perMachineVms = isDocker && rt && options ? readyVms.filter((p) => formProviders(options.vms).includes(p)) : [];
   const [switched, setSwitched] = useState<Provider | null>(null);
   const resolved = (list: Provider[]) => (switched && list.includes(switched) ? switched : list.at(0)) ?? null;
-  const localVm = resolved(localVms);
   const perMachineVm = resolved(perMachineVms);
   const perMachine = perMachineVm ? { provider: perMachineVm, providers: perMachineVms } : null;
   const pickProvider = (form: LocalVmForm["kind"], provider: Provider) => {
     setSwitched(provider);
     setRunOn(vmFormTarget(form, provider));
   };
-  return { localVm, localVms, perMachineVm, perMachineVms, perMachine, pickProvider };
+  return { perMachineVm, perMachineVms, perMachine, pickProvider };
 }
 
 /** The VM forms This machine's "In a VM" row offers: a VM lab runs its own VMs (`local`); a
- *  container lab runs a helper VM (`local-vm`) and, when dual-form, one VM per machine (`local-vms`). */
-function vmFormTargets(isCloud: boolean, isDocker: boolean, localVm: Provider | null, perMachineVm: Provider | null): RunTarget[] {
+ *  dual-form container lab, one VM per machine (`local-vms`); never containers inside a VM. */
+function vmFormTargets(isCloud: boolean, isDocker: boolean, perMachineVm: Provider | null): RunTarget[] {
   if (isCloud) return [];
   if (!isDocker) return [{ kind: "local" }];
-  const forms: RunTarget[] = [];
-  if (localVm) forms.push({ kind: "local-vm", provider: localVm });
-  if (perMachineVm) forms.push({ kind: "local-vms", provider: perMachineVm });
-  return forms;
+  return perMachineVm ? [{ kind: "local-vms", provider: perMachineVm }] : [];
 }
 
 type StepsDeps = {
@@ -307,7 +300,8 @@ export function initialTarget(rt: LabRuntimeInfo | null, hosts: ServerHost[], pl
   }
   if (place?.host) return hosts.some((h) => h.id === place.host) ? { kind: "host", id: place.host } : { kind: "local" };
   if (!place?.provider) return { kind: "local" };
-  return isContainerLab(rt) ? vmFormTarget(place.perMachineVm ? "local-vms" : "local-vm", place.provider) : { kind: "local", provider: place.provider };
+  // A container lab with a hypervisor starts as one VM per machine there (the backend's own rule).
+  return isContainerLab(rt) ? vmFormTarget("local-vms", place.provider) : { kind: "local", provider: place.provider };
 }
 
 export type RunTargetChoice = ReturnType<typeof useRunTarget>;

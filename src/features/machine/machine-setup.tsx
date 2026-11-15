@@ -26,7 +26,7 @@ import { AddProvider } from "@/features/machine/setup-steps/add-provider";
 import { useWindowSteps, type StartAt, type WindowStep } from "@/features/machine/use-window-steps";
 import { getLastTest } from "@/lib/settings";
 import type { SystemReport } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 
 /** The guided "set up this machine" window. The steps themselves are shared with the

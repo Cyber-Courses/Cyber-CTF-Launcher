@@ -1,12 +1,16 @@
 //! Running install and removal steps: one program each, its output streamed to the setup log,
 //! pkexec's own refusals told apart from the script's failures.
 
+#![allow(clippy::disallowed_methods, reason = "the install and removal steps' runner: each step streams to the setup log through its own process")]
+
 use std::process::Stdio;
 
 use tokio::process::Command;
 
-use super::exit_codes;
+use super::exit_codes::{self, Verb};
 use crate::error::{Error, Result};
+use crate::platform::tool_output::brew::Trouble;
+use crate::platform::tool_output::pkexec::Refusal;
 
 /// One command of an install or removal.
 pub struct Step {
@@ -16,27 +20,32 @@ pub struct Step {
     pub args: Vec<String>,
     /// A note shown before the step (e.g. when we open a download instead of installing).
     pub note: Option<String>,
+    /// A private folder of files the step reads (a root step's proxy settings), removed with
+    /// the step.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code, reason = "only a Linux root step keeps a private folder"))]
+    pub private: Option<tempfile::TempDir>,
 }
 
 /// A step that runs `program` with `args`, with no note.
 pub fn step(program: impl Into<String>, args: &[&str]) -> Step {
-    Step { program: program.into(), args: args.iter().map(ToString::to_string).collect(), note: None }
+    Step { program: program.into(), args: args.iter().map(ToString::to_string).collect(), note: None, private: None }
 }
 
 /// Without pkexec there is no graphical password prompt (Debian ships it apart from polkit).
 pub const NO_PKEXEC: &str =
     "pkexec isn't installed, so Cyber CTF can't ask for your password. Install it once in a terminal (sudo apt install pkexec), then try again.";
 
-/// A line pkexec prints when it, not the command, failed: refused ("Error executing command as
-/// another user: Not authorized"), or no agent to ask ("…: No authentication agent found.", or,
-/// with no terminal either, "Error creating textual authentication agent: …").
+/// Whether `line` is pkexec's own refusal ([`Refusal`]), not the command's output.
 fn is_pkexec_error(line: &str) -> bool {
-    line.starts_with("Error executing command as another user") || line.starts_with("Error creating textual authentication agent")
+    Refusal::of_line(line).is_some()
 }
 
-/// What to tell the player when pkexec itself refused to run the command.
-fn pkexec_refusal(stderr: &str) -> &'static str {
-    if stderr.contains("No authentication agent") || stderr.contains("textual authentication agent") {
+/// An unattended root step sudo refused to run without a password: nothing was changed.
+pub const SUDO_REFUSED: &str = "sudo needs a password to act as an administrator here, and none can be asked for unattended, so nothing was changed. Run it as root, or on a terminal without --yes.";
+
+/// What to tell the player when pkexec itself refused to run the command (`line`, its own).
+fn pkexec_refusal(line: &str) -> &'static str {
+    if Refusal::of_line(line) == Some(Refusal::NoAgent) {
         "No password prompt could be shown (no polkit agent is running). Run the command above in a terminal instead."
     } else {
         "The password prompt was cancelled or the password was refused, so nothing was changed. Try again and enter your password."
@@ -52,23 +61,13 @@ const BREW_OUTDATED: &str =
 /// A source build Homebrew refuses because the installed Xcode is older than it needs.
 const BREW_XCODE_OUTDATED: &str = "Homebrew needs a newer Xcode than the one installed to build this. Update Xcode from the App Store (or delete /Applications/Xcode.app to use the lighter Command Line Tools). Then try the install again here.";
 
-/// A broken-Homebrew condition read from brew's own error output, with how to fix it. These are
-/// the player's environment to repair (an outdated Homebrew or Xcode, a lock owned by root), not
-/// something the installer can mend on its own, so the step says what to do instead of just its
-/// exit code.
+/// How the player fixes the broken Homebrew `line` says ([`Trouble`]), if it says one.
 fn brew_trouble(line: &str) -> Option<&'static str> {
-    // A lock brew can't take: a root-owned or stale update lock (often after a `sudo brew`).
-    if (line.contains("homebrew/locks") && line.contains("Permission denied")) || (line.contains("brew update") && line.contains("already running")) {
-        Some(BREW_LOCKED)
-    // Homebrew too old to recognise this macOS, so it has no bottle rule and refuses outright.
-    } else if line.contains("unknown or unsupported macOS version") {
-        Some(BREW_OUTDATED)
-    // A build from source blocked by an Xcode older than Homebrew needs.
-    } else if line.contains("is too outdated") || line.contains("Please update to Xcode") {
-        Some(BREW_XCODE_OUTDATED)
-    } else {
-        None
-    }
+    Trouble::of_line(line).map(|t| match t {
+        Trouble::Locked => BREW_LOCKED,
+        Trouble::Outdated => BREW_OUTDATED,
+        Trouble::XcodeTooOld => BREW_XCODE_OUTDATED,
+    })
 }
 
 /// Whether this step drives Homebrew (directly, or through a shell line that calls it), so its
@@ -119,6 +118,8 @@ async fn run_step_once(step: &Step, on_line: &mut impl FnMut(String)) -> Result<
     // Installers that need a console of their own (winget, an .msi) still get none here: their
     // output streams into the app's setup log instead of a window flashing on screen.
     crate::platform::exec::headless(&mut cmd);
+    // pkexec's and Homebrew's own lines are read (`Refusal`, `Trouble`): in the C locale's words.
+    crate::platform::exec::in_c_locale(&mut cmd);
     // In a group of its own, like every tool: a step whose output fails mid-way is ended with
     // what it started, not left installing unattended (#220).
     let (mut child, group) = crate::platform::exec::spawn_group(&mut cmd, true).map_err(|e| match e.kind() {
@@ -156,37 +157,35 @@ async fn run_step_once(step: &Step, on_line: &mut impl FnMut(String)) -> Result<
 /// output (the first one seen: an update's lock error comes before the install error it leads
 /// to, so it wins; shown only if the step fails).
 struct Watch {
-    winget: bool,
-    pkexec: bool,
+    /// The program the step runs, as far as its output is read.
+    program: Program,
     brew: bool,
     installer_code: Option<u32>,
     pkexec_error: Option<String>,
+    /// sudo's refusal to run without a password, when it said so.
+    sudo_refused: bool,
     brew_help: Option<&'static str>,
 }
 
 impl Watch {
     fn new(step: &Step) -> Watch {
-        Watch {
-            winget: step.program == "winget",
-            pkexec: step.program == "pkexec",
-            brew: is_brew_step(step),
-            installer_code: None,
-            pkexec_error: None,
-            brew_help: None,
-        }
+        Watch { program: Program::of(step), brew: is_brew_step(step), installer_code: None, pkexec_error: None, sudo_refused: false, brew_help: None }
     }
 
     /// A line of the step's output, either stream.
     fn line(&mut self, line: &str) {
-        if self.winget {
+        if self.program == Program::Winget {
             self.installer_code = exit_codes::installer_exit_code(line).or(self.installer_code);
         }
     }
 
     /// A line of the step's error output.
     fn error_line(&mut self, line: &str) {
-        if self.pkexec && is_pkexec_error(line) {
+        if self.program == Program::Pkexec && is_pkexec_error(line) {
             self.pkexec_error = Some(line.to_string());
+        }
+        if self.program == Program::UnattendedSudo && line.starts_with("sudo: ") && line.contains("password") {
+            self.sudo_refused = true;
         }
         if self.brew && self.brew_help.is_none() {
             self.brew_help = brew_trouble(line);
@@ -202,8 +201,11 @@ impl Watch {
         if let Some(why) = self.pkexec_error.filter(|_| matches!(status.code(), Some(126 | 127))) {
             return Err(Error::Invalid(pkexec_refusal(&why).into()));
         }
-        let removing = step.args.first().is_some_and(|a| a == "uninstall");
-        match end_of(&step.program, removing, status.code(), self.installer_code) {
+        if self.sudo_refused && !status.success() {
+            return Err(Error::Refused(SUDO_REFUSED.into()));
+        }
+        let verb = if step.args.first().is_some_and(|a| a == "uninstall") { Verb::Remove } else { Verb::Install };
+        match end_of(&step.program, verb, status.code(), self.installer_code) {
             End::Done(note) => Ok(note),
             // A recognised broken-Homebrew cause reads as the fix for it; the raw brew lines stay
             // in the log. Otherwise a known code reads as what happened, with the raw codes after.
@@ -218,6 +220,31 @@ impl Watch {
     }
 }
 
+/// The programs whose output a step's watch reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Program {
+    /// winget: the installer it ran exits with a code of its own.
+    Winget,
+    /// pkexec: its own refusals, told apart from the script's.
+    Pkexec,
+    /// `sudo -n` (an unattended root step): its refusal to run without a password.
+    UnattendedSudo,
+    /// Any other.
+    Other,
+}
+
+impl Program {
+    /// The program `step` runs.
+    fn of(step: &Step) -> Program {
+        match step.program.as_str() {
+            "winget" => Program::Winget,
+            "pkexec" => Program::Pkexec,
+            "sudo" if step.args.first().is_some_and(|a| a == "-n") => Program::UnattendedSudo,
+            _ => Program::Other,
+        }
+    }
+}
+
 /// How a step that exited with `code` ended.
 #[derive(Debug, PartialEq)]
 enum End {
@@ -228,194 +255,20 @@ enum End {
 }
 
 /// What `program`'s exit `code` means for its step: winget's own codes, and an installer run
-/// through PowerShell (WSL's) exiting with the installer's code. `removing`: an uninstall.
-fn end_of(program: &str, removing: bool, code: Option<i32>, installer_code: Option<u32>) -> End {
+/// through PowerShell (WSL's) exiting with the installer's code, worded for the step's `verb`.
+fn end_of(program: &str, verb: Verb, code: Option<i32>, installer_code: Option<u32>) -> End {
     if code == Some(0) {
         return End::Done(None);
     }
     match program {
-        "winget" => match exit_codes::winget_done(code, removing) {
+        "winget" => match exit_codes::winget_done(code, verb) {
             Some(note) => End::Done(Some(note)),
-            None => End::Failed(exit_codes::winget_failure(code, installer_code, removing)),
+            None => End::Failed(exit_codes::winget_failure(code, installer_code, verb)),
         },
-        "powershell" => End::Failed(exit_codes::installer_failure(code, removing)),
+        "powershell" => End::Failed(exit_codes::installer_failure(code, verb)),
         _ => End::Failed(None),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn what_a_check_read_while_a_step_ran_is_forgotten_once_it_ends() {
-        // Regression: the kept answers were forgotten only before the step, so a machine check
-        // during a `vagrant plugin install` kept the plugin list without the plugin, and the
-        // finished install still read as "needs setup" for minutes.
-        use crate::platform::remembered::{is_kept, keep};
-        let key = format!("vagrant plugin list {}", rand::random::<u32>());
-        let during = key.clone();
-        let _tools = crate::platform::exec::fake::Tools::new(move |_, _| {
-            keep(&during, "vagrant-qemu (0.8.0, global)");
-            crate::platform::exec::fake::ok("Installed the plugin 'vagrant-vmware-desktop (3.0.5)'!")
-        });
-        run_step(&step("vagrant", &["plugin", "install", "vagrant-vmware-desktop"]), &mut |_| {}).await.unwrap();
-        assert!(!is_kept(&key), "the list read mid-install still stands");
-    }
-
-    /// An exit status with `code`, as the OS reports it.
-    #[cfg(unix)]
-    fn exited(code: i32) -> std::process::ExitStatus {
-        std::os::unix::process::ExitStatusExt::from_raw(code << 8)
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn each_program_is_watched_for_what_its_own_output_says() {
-        // pkexec: its refusal, only with its own exit codes; a script's lines aren't watched.
-        let pkexec = step("pkexec", &["sh", "-c", "apt-get install -y x"]);
-        let mut w = Watch::new(&pkexec);
-        w.error_line("Error executing command as another user: Not authorized");
-        assert!(w.end(&pkexec, exited(126)).unwrap_err().to_string().contains("cancelled"));
-        let mut w = Watch::new(&step("sh", &["-c", "x"]));
-        w.error_line("Error executing command as another user: Not authorized");
-        assert_eq!(w.pkexec_error, None);
-        // brew: the first broken-Homebrew cause, said when the step fails, not when it succeeds.
-        let brew = step("brew", &["install", "qemu"]);
-        let mut w = Watch::new(&brew);
-        w.error_line("/opt/homebrew/var/homebrew/locks/update: Permission denied");
-        w.error_line("Error: unknown or unsupported macOS version");
-        assert_eq!(w.brew_help, Some(BREW_LOCKED));
-        assert_eq!(w.end(&brew, exited(1)).unwrap_err().to_string(), BREW_LOCKED);
-        let mut w = Watch::new(&brew);
-        w.error_line("Error: unknown or unsupported macOS version");
-        assert_eq!(w.end(&brew, exited(0)).unwrap(), None);
-        // winget: the installer's code from any line of its output; other programs' lines aren't read.
-        let mut w = Watch::new(&step("winget", &["install", "-e", "--id", "Docker.DockerDesktop"]));
-        w.line("Installer failed with exit code: 1602");
-        assert_eq!(w.installer_code, Some(1602));
-        let mut w = Watch::new(&step("powershell", &["-Command", "x"]));
-        w.line("Installer failed with exit code: 1602");
-        assert_eq!(w.installer_code, None);
-    }
-
-    #[test]
-    fn pkexec_refusals_name_their_cause() {
-        // pkexec's own lines (polkit 126), as it prints them.
-        let refused = "Error executing command as another user: Not authorized";
-        let no_agent = "Error executing command as another user: No authentication agent found.";
-        let no_tty =
-            "Error creating textual authentication agent: Error opening current controlling terminal for the process (`/dev/tty'): No such device or address";
-        assert!(is_pkexec_error(refused) && is_pkexec_error(no_agent) && is_pkexec_error(no_tty));
-        assert!(pkexec_refusal(refused).contains("cancelled"));
-        assert!(pkexec_refusal(no_agent).contains("polkit agent") && pkexec_refusal(no_tty).contains("polkit agent"));
-        // The script's own output never passes for pkexec's.
-        assert!(!is_pkexec_error("sh: 1: gpg: not found"));
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn steps_stream_both_outputs_and_report_a_failure() {
-        let mut lines = Vec::new();
-        let ok = Step { program: "sh".into(), args: vec!["-c".into(), "echo out; echo err >&2".into()], note: Some("Note first".into()) };
-        let fail = step("sh", &["-c", "exit 3"]);
-        let err = run_steps(&[ok, fail], &mut |l| lines.push(l)).await.unwrap_err();
-        assert_eq!(lines[0], "Note first");
-        assert!(lines.contains(&"out".to_string()) && lines.contains(&"err".to_string()));
-        assert_eq!(lines.last().map(String::as_str), Some("$ sh -c exit 3"));
-        assert!(err.to_string().starts_with("`sh` exited with"), "{err}");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_script_exiting_126_or_127_with_pkexecs_words_is_still_its_own_failure() {
-        // Only pkexec's own refusal (126/127 *and* its message, from pkexec itself) reads as the
-        // prompt being cancelled; a script that prints the same words and exits 126 is a plain
-        // failure of that program, raw code kept.
-        let mut lines = Vec::new();
-        let s = step("sh", &["-c", "echo 'Error executing command as another user: Not authorized' >&2; exit 126"]);
-        let err = run_step(&s, &mut |l| lines.push(l)).await.unwrap_err();
-        assert_eq!(err.to_string(), "`sh` exited with exit status: 126");
-        assert_eq!(lines, ["Error executing command as another user: Not authorized"]);
-        let err = run_step(&step("sh", &["-c", "exit 127"]), &mut |_| {}).await.unwrap_err();
-        assert_eq!(err.to_string(), "`sh` exited with exit status: 127");
-    }
-
-    #[test]
-    fn a_winget_step_ends_by_winget_s_codes() {
-        let winget = |code: u32, installer| end_of("winget", false, Some(code.cast_signed()), installer);
-        assert_eq!(end_of("winget", false, Some(0), None), End::Done(None));
-        // Regression (#220): nothing to do, or a restart to finish, is a step done.
-        assert!(matches!(winget(0x8A15_002B, None), End::Done(Some(note)) if note.starts_with("Already installed")));
-        assert!(matches!(winget(0x8A15_0109, None), End::Done(Some(note)) if note.contains("Restart Windows")));
-        assert!(matches!(winget(0x8A15_0006, Some(1602)), End::Failed(Some(why)) if why.contains("cancelled")));
-        assert_eq!(winget(1, None), End::Failed(None));
-    }
-
-    #[test]
-    fn another_step_ends_by_its_own_codes() {
-        // Only winget's codes are winget's: another program exiting with one just failed.
-        assert_eq!(end_of("sh", false, Some(0x8A15_002B_u32.cast_signed()), None), End::Failed(None));
-        assert!(matches!(end_of("powershell", true, Some(1223), None), End::Failed(Some(why)) if why.starts_with("The removal was cancelled")));
-        assert_eq!(end_of("pkexec", false, None, None), End::Failed(None), "killed by a signal");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_step_whose_output_fails_takes_what_it_started_with_it() {
-        // Regression (#220): an install step was spawned without kill_on_drop or a group, so a
-        // failed read of its output left it (and its installer) running unattended.
-        let file = std::env::temp_dir().join(format!("cyberctf-step-tree-{}", rand::random::<u32>()));
-        let script = format!("sleep 120 & echo $! > '{}'; wait", file.display());
-        let started = tokio::time::timeout(std::time::Duration::from_secs(2), run_step(&step("sh", &["-c", &script]), &mut |_| {})).await;
-        assert!(started.is_err(), "cancelled while it ran");
-        let pid: u32 = std::fs::read_to_string(&file).expect("the step started its child").trim().parse().unwrap();
-        let _ = std::fs::remove_file(&file);
-        assert!(crate::platform::exec::fake::gone(pid).await, "the step's child {pid} was left running");
-    }
-
-    #[test]
-    fn brew_trouble_names_a_broken_homebrew_and_its_fix() {
-        assert_eq!(brew_trouble("/opt/homebrew/var/homebrew/locks/update: Permission denied"), Some(BREW_LOCKED));
-        assert_eq!(brew_trouble("Error: Another `brew update` process is already running."), Some(BREW_LOCKED));
-        assert_eq!(brew_trouble("Error: unknown or unsupported macOS version: :dunno"), Some(BREW_OUTDATED));
-        assert_eq!(brew_trouble("Error: Your Xcode (26.6) at /Applications/Xcode.app is too outdated."), Some(BREW_XCODE_OUTDATED));
-        assert_eq!(brew_trouble("Please update to Xcode 27.0 (or delete it)."), Some(BREW_XCODE_OUTDATED));
-        // Ordinary brew progress isn't a fault.
-        assert_eq!(brew_trouble("==> Fetching qemu"), None);
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_failing_brew_step_surfaces_the_homebrew_fix_not_the_exit_code() {
-        // A brew install (its command line mentions brew) that dies on an outdated Xcode reports
-        // the fix, not the bare exit code; the raw brew line is still streamed to the log.
-        let mut lines = Vec::new();
-        let s = step("sh", &["-c", "echo 'Error: Your Xcode (26.6) is too outdated.' >&2; exit 1  # brew install qemu"]);
-        let err = run_step(&s, &mut |l| lines.push(l)).await.unwrap_err();
-        assert_eq!(err.to_string(), BREW_XCODE_OUTDATED);
-        assert!(lines.iter().any(|l| l.contains("is too outdated")), "the raw brew output is still shown: {lines:?}");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_non_brew_step_is_not_read_for_homebrew_trouble() {
-        // The same words from apt or a lab are not reinterpreted: only brew steps are read.
-        let err = run_step(&step("sh", &["-c", "echo 'is too outdated' >&2; exit 1"]), &mut |_| {}).await.unwrap_err();
-        assert_eq!(err.to_string(), "`sh` exited with exit status: 1");
-    }
-
-    #[tokio::test]
-    async fn a_missing_program_says_so() {
-        let err = run_step(&step("cyberctf-no-such-tool", &[]), &mut |_| {}).await.unwrap_err();
-        assert_eq!(err.to_string(), "cyberctf-no-such-tool is not available on this machine.");
-    }
-
-    #[test]
-    fn a_command_line_reads_as_typed() {
-        assert_eq!(command_line(&step("brew", &["install", "qemu"])), "$ brew install qemu");
-        // A proxy's password never reaches the setup log.
-        let root = step("pkexec", &["env", "https_proxy=http://ada:s3cret@proxy.corp:3128", "sh", "-c", "apt-get update"]);
-        assert_eq!(command_line(&root), "$ pkexec env https_proxy=http://ada:[redacted]@proxy.corp:3128 sh -c apt-get update");
-    }
-}
+mod tests;

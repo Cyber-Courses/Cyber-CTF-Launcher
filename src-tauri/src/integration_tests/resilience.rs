@@ -234,7 +234,7 @@ async fn a_port_the_lab_publishes_taken_at_start_is_named_and_a_start_once_free_
         let refused = crate::runtime::launch::start_docker_run(&l.home, &l.dir, &l.id, fixed, &mut log(&l.id)).await;
         let code = refused.as_ref().err().map(crate::error::Error::code);
         check(
-            matches!(code, Some(crate::error::Code::PortInUse { port: p, .. }) if p == port),
+            matches!(code, Some(crate::error::Code::PortInUse { port: p, .. }) if p.get() == port),
             format!("the start is refused for port {port}, named ({:?})", refused.as_ref().err().map(ToString::to_string)),
             f,
         );

@@ -45,9 +45,16 @@ network: string | null,
  */
 node: string | null, 
 /**
- * Proxmox: accept the API's self-signed certificate (the Proxmox default).
+ * Proxmox: the API has a self-signed certificate (the Proxmox default), trusted by its
+ * fingerprint ([`HostProfile::tls_fingerprint`]) instead of the system's trust store.
  */
 insecureTls: boolean, 
+/**
+ * Proxmox with a self-signed certificate: the SHA-256 fingerprint of the certificate the
+ * learner confirmed for it; the only one accepted. None until they have (nothing is sent to
+ * the server then).
+ */
+tlsFingerprint?: string | null, 
 /**
  * Clouds: terminate a lab's instance this many hours after it starts (0 = never).
  */

@@ -21,8 +21,21 @@ const SERVERS = new Set<string>(SERVER_PROVIDERS);
  *  names): one of the backend's local providers. */
 export const isLocalHypervisor = (p: string | null | undefined): p is Provider => !!p && (LOCAL_PROVIDERS as readonly string[]).includes(p);
 
-/** Whether the lab is built for this CPU (no architectures listed = any). */
-export const runsNatively = (rt: LabRuntimeInfo, hostArch: string) => !rt.architectures.length || rt.architectures.includes(hostArch);
+/** The CPUs, each by every name it goes by: images and labs write `arm64` and `amd64`, Rust's
+ *  machine report `aarch64` and `x86_64`, Windows `x64`. */
+const CPU_ALIASES: Readonly<Partial<Record<string, string>>> = { arm64: "aarch64", aarch64: "aarch64", amd64: "x86_64", x86_64: "x86_64", x64: "x86_64" };
+
+/** A CPU's one name (`aarch64`, `x86_64`), whichever of its names `arch` is, in any case; an
+ *  unknown one as written, lowercased. */
+export const cpuName = (arch: string): string => {
+  const lower = arch.trim().toLowerCase();
+  return CPU_ALIASES[lower] ?? lower;
+};
+
+/** Whether the lab is built for this CPU (no architectures listed = any), whichever name the
+ *  catalogue and the machine report give it. */
+export const runsNatively = (rt: LabRuntimeInfo, hostArch: string) =>
+  !rt.architectures.length || rt.architectures.some((a) => cpuName(a) === cpuName(hostArch));
 
 /** Whether `rt` runs natively here, on `hostArch`: also when the host isn't known yet (the report
  *  not in) or the lab's runtime isn't, never a wrong "emulated". */
@@ -38,8 +51,7 @@ const ways = (rt: LabRuntimeInfo) => ({
 });
 
 /** The hypervisors a form of the lab runs on here, as the backend's run options say (`paths`:
- *  the helper VM's, or one VM per machine's, which for VMs built for another CPU are the emulators
- *  alone). */
+ *  one VM per machine's, which for VMs built for another CPU are the emulators alone). */
 export const formProviders = (paths: LabRunOptions["vms"]): Provider[] => paths.flatMap((p) => (p.provider ? [p.provider] : []));
 
 /** Whether an emulator (QEMU) is among the hypervisors `ready` here (the machine report's). */
@@ -48,10 +60,10 @@ export const emulatorReady = (ready: readonly Provider[]) => ready.some((p) => E
 /** The hypervisors on this machine that can run a VM lab's VMs: as the backend's run options say
  *  (`options`, once read: VMs built for another CPU on an emulator only, by the backend's rule),
  *  else, until then, those the catalogue lists, a VM lab built for another CPU only emulated. A
- *  container lab's helper VM is the run options' too (`formProviders`), and none for cloud
- *  services. */
+ *  container lab's VM form (one VM per machine) is the run options' too (`formProviders`), and
+ *  none for cloud services. */
 export function localProviders(rt: LabRuntimeInfo, hostArch?: string, options?: LabRunOptions | null): Provider[] {
-  if (rt.runtime !== "VM") return options ? formProviders(options.dockerVm) : [];
+  if (rt.runtime !== "VM") return options ? formProviders(options.vms) : [];
   if (options) return formProviders(options.vms);
   // A VM edition built for another CPU runs here only emulated (whatever hypervisors it lists).
   return hostArch && !runsNatively(rt, hostArch) ? [...EMULATORS] : rt.providers.filter(isLocalHypervisor);
@@ -100,16 +112,17 @@ export function runPlaces(rt: LabRuntimeInfo, hostArch?: string, emulates = fals
   const w = ways(rt);
   // Cloud services (no container or VM edition) run in the player's cloud account only.
   if (w.cloud && !w.docker && !w.vm) return cloudPlaces(rt, hosts, options);
-  // A container lab runs in a helper VM here where the backend's run options say, else (until
-  // they are read) wherever the catalogue lists no server or cloud only.
-  const local = options ? options.dockerVm.length > 0 : rt.providers.some((p) => !SERVERS.has(p) && !isCloudProvider(p));
+  // A container lab runs as VMs here (one per machine) where the backend's run options say, else
+  // (until they are read) when the catalogue publishes a VM form too.
+  const local = options ? options.vms.length > 0 : w.vm;
   // The VM edition built for another CPU runs here only emulated (containers run emulated anyway):
   // the backend's word once its run options are read, the catalogue's until then.
   const vmForeignCpu = w.vm && (options ? options.emulated : !!hostArch && !runsNatively(rt, hostArch));
   const localVmSupported = (w.vm || (w.docker && local)) && (!vmForeignCpu || emulates);
   const localVmReady = readyVms.some((p) => localProviders(rt, hostArch, options).includes(p));
   const containerSupported = options ? options.docker !== null : w.docker;
-  const serverSupported = options ? options.servers.length > 0 : (w.vm || w.docker) && rt.providers.some((p) => SERVERS.has(p));
+  // A container lab has no form on a server: its VM edition alone runs there.
+  const serverSupported = options ? options.servers.length > 0 : w.vm && rt.providers.some((p) => SERVERS.has(p));
   const serverReady = hosts.some((h) => SERVERS.has(h.provider) && hostSupports(rt, h, options));
   const cloudSupported = options ? cloudPaths(options).length > 0 : rt.providers.some((p) => isCloudProvider(p));
   return [
@@ -153,6 +166,5 @@ export const cloudNames = (providers: readonly string[]): string[] => providers.
 export const cloudAccountsFor = (rt: LabRuntimeInfo | null | undefined, hosts: ServerHost[], options?: LabRunOptions | null) =>
   rt && isCloudLab(rt) ? hosts.filter((h) => isCloudProvider(h.provider) && hostSupports(rt, h, options)) : [];
 
-/** A container lab's VM form here (`local-vm`: one helper VM, `local-vms`: one VM per machine) on
- *  hypervisor `provider`. */
+/** A container lab's VM form here (`local-vms`: one VM per machine) on hypervisor `provider`. */
 export const vmFormTarget = (form: LocalVmForm["kind"], provider: Provider): LocalVmForm => ({ kind: form, provider });

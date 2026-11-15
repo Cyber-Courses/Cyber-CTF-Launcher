@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use crate::error::Result;
 use crate::machine::storage::owned;
 use crate::platform::AppDirs;
+use crate::platform::host::Arch;
 use crate::runtime::providers::Provider;
 use crate::runtime::selftest_report::{Event, Reporter};
 
@@ -55,18 +56,13 @@ pub(crate) fn work_dir(dirs: &AppDirs, kind: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Whether this machine's CPU is ARM (the test boxes differ).
-fn arm() -> bool {
-    std::env::consts::ARCH == "aarch64"
-}
-
 /// Runs `op`, a self-test of `kind`, recording what it downloaded as the app's (the test image,
 /// or the test box of whichever provider it used), for Storage to clean up.
 async fn tracked<T>(dirs: &AppDirs, kind: Kind, op: impl std::future::Future<Output = T>) -> T {
     match kind {
         Kind::Docker => owned::tracked(dirs.clone(), &[IMAGE.to_string()], &[], op).await,
         Kind::Vm => {
-            let boxes: Vec<String> = vm::test_providers().flat_map(|p| candidate_boxes(p, arm()).iter().map(ToString::to_string)).collect();
+            let boxes: Vec<String> = vm::test_providers().flat_map(|p| candidate_boxes(p, Arch::HERE).iter().map(ToString::to_string)).collect();
             owned::tracked(dirs.clone(), &[], &boxes, op).await
         }
     }
@@ -79,12 +75,12 @@ pub async fn machine_selftest_prefetch(dirs: AppDirs, kind: Kind, provider: Opti
         Kind::Docker => owned::tracked(dirs, &[IMAGE.to_string()], &[], downloads::ensure_image(&[])).await.map(|_| ()),
         Kind::Vm => {
             let Some(p) = vm::test_provider(provider).await else { return Ok(()) };
-            let (bx, cached) = vm::pick_box(p, arm()).await;
+            let (bx, cached) = vm::pick_box(p, Arch::HERE).await;
             if cached {
                 return Ok(());
             }
             let dir = work_dir(&dirs, "vm")?;
-            owned::tracked(dirs, &[], &[bx.to_string()], downloads::ensure_box(&dir, p, bx, arm(), |_| {})).await.map(|_| ())
+            owned::tracked(dirs, &[], &[bx.to_string()], downloads::ensure_box(&dir, p, bx, Arch::HERE, |_| {})).await.map(|_| ())
         }
     }
 }
@@ -145,7 +141,7 @@ mod tests {
         let err = r.step::<()>("two", "Second", async { Err(Error::Invalid("Cannot connect to the Docker daemon".into())) }).await.unwrap_err();
         assert!(err.to_string().contains("Docker daemon"));
         assert!(seen.messages()[1]["detail"].as_str().unwrap().starts_with("The container engine isn't reachable"));
-        let _ = arm();
+        let _ = Arch::HERE;
     }
 
     #[test]
@@ -192,13 +188,22 @@ mod tests {
         machine_selftest_prefetch(t.dirs(), Kind::Docker, None).await.unwrap();
     }
 
+    /// What a container test's bookkeeping asks before and after the run, answered as on a
+    /// machine with nothing of the test's left: no images listed, the test lab already down.
+    fn clean_slate() -> [(&'static str, Option<crate::platform::exec::fake::Reply>); 2] {
+        use crate::platform::exec::fake::ok;
+        [("docker image ls -q", ok("")), ("docker compose -p cyberctf-selftest -f docker-compose.yml down", ok(""))]
+    }
+
     /// The Machine page tests one engine among several: every Docker call of the run, the
     /// probe, the pull, compose and the clean-up, goes to that engine's context.
     #[tokio::test]
     async fn the_container_test_runs_on_the_engine_asked_for() {
         use crate::platform::exec::fake::{Tools, fail, ok};
         let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::rules(&[("docker info", ok("27.3.1\n")), ("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
+        let [image_list, down] = clean_slate();
+        let tools =
+            Tools::strict_rules(&[image_list, down, ("docker info", ok("27.3.1\n")), ("image inspect", fail("No such image")), ("pull", fail("timed out"))]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Docker, None, Some("orbstack".into()), channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:ok", "pull:running", "pull:fail"]);
@@ -215,7 +220,7 @@ mod tests {
         // tore each other's test lab down.
         use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[]);
         let first = one_at_a_time(Kind::Docker).lock().await;
         let (channel, seen) = events();
         let second = tokio::time::timeout(std::time::Duration::from_millis(200), machine_selftest(t.dirs(), Kind::Docker, None, None, channel)).await;
@@ -228,7 +233,13 @@ mod tests {
     async fn a_failed_container_test_stops_at_its_step_and_still_cleans_up() {
         use crate::platform::exec::fake::{Tools, fail};
         let t = crate::testing::test_app::TestApp::new();
-        let tools = Tools::rules(&[("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"))]);
+        let [image_list, down] = clean_slate();
+        let tools = Tools::strict_rules(&[
+            image_list,
+            down,
+            ("docker image inspect", crate::platform::exec::fake::ok("")),
+            ("docker info", fail("Cannot connect to the Docker daemon at unix:///var/run/docker.sock")),
+        ]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Docker, None, None, channel).await.is_err());
         assert_eq!(states(&seen), ["engine:running", "engine:fail"]);
@@ -236,10 +247,10 @@ mod tests {
         assert!(tools.called("down -v"), "the test lab is torn down even so");
     }
 
-    /// Regression (the rig's Debian 13, `docker.io` 26.1.5): Docker 26 and older exit 0
-    /// from `docker info --format …` with an empty line when the daemon doesn't answer, and the
-    /// engine step passed ("Docker ") to fail at the pull. It fails with the reason `docker
-    /// version` gives, asked of the same engine.
+    /// Regression (Debian 13's `docker.io` 26.1.5): Docker 26 and older exit 0 from `docker info
+    /// --format …` with an empty line when the daemon doesn't answer, and the engine step passed
+    /// ("Docker ") to fail at the pull. It fails with the reason `docker version` gives, asked of
+    /// the same engine.
     #[tokio::test]
     async fn an_engine_whose_docker_info_answers_nothing_fails_the_engine_step() {
         use crate::platform::exec::fake::{Tools, fail, ok};
@@ -272,6 +283,8 @@ mod tests {
             ("vagrant", ["box", "list"]) => ok(boxes),
             ("vagrant", ["--version"]) => ok("Vagrant 2.4.3\n"),
             ("vagrant", ["ssh", "-c", _]) => ok("cyberctf-uname:Linux 6.6 x86_64\n"),
+            // Every address answers, as a ping's reply line says (an exit 0 alone isn't a reply).
+            ("ping", _) => ok("64 bytes from 192.168.56.250: icmp_seq=1 ttl=64 time=0.412 ms\n"),
             _ => ok(""),
         });
         let (channel, seen) = events();
@@ -291,7 +304,7 @@ mod tests {
     #[tokio::test]
     async fn without_vagrant_the_vm_test_stops_at_once() {
         let t = crate::testing::test_app::TestApp::new();
-        let _tools = crate::platform::exec::fake::Tools::rules(&[("vagrant", None)]);
+        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[("VBoxManage list vms", crate::platform::exec::fake::ok("")), ("vagrant", None)]);
         let (channel, seen) = events();
         assert!(machine_selftest(t.dirs(), Kind::Vm, None, None, channel).await.is_err());
         assert_eq!(states(&seen), ["vagrant:running", "vagrant:fail"]);

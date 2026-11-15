@@ -221,11 +221,12 @@ export const setDockerEngine = (engine: DockerEngine | null) => {
   writeStored(DOCKER_ENGINE_KEY, engine);
 };
 
-/** For a dual-form lab here, the VM form saved by "don't ask again": `vm` = one helper VM,
- *  `vms` = one VM per machine. Null: ask which (the form step). */
-export type SavedVmForm = "vm" | "vms";
+/** For a dual-form lab here, the VM form saved by "don't ask again": `vms` = one VM per machine.
+ *  Null: ask (the form step). A saved `vm` (a helper VM, which the launcher no longer runs) reads
+ *  as null. */
+export type SavedVmForm = "vms";
 
-export const getLocalVmForm = (): SavedVmForm | null => readStoredOneOf(LOCAL_VM_FORM_KEY, ["vm", "vms"]);
+export const getLocalVmForm = (): SavedVmForm | null => readStoredOneOf(LOCAL_VM_FORM_KEY, ["vms"]);
 
 export const setLocalVmForm = (form: SavedVmForm | null) => {
   writeStored(LOCAL_VM_FORM_KEY, form);

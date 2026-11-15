@@ -2,19 +2,26 @@
 //! while instead of asked on every machine check: each is a process start, on Windows a Ruby one
 //! of a second or two of CPU, and the Machine page checks the machine again whenever it is shown.
 //! Only an answer that found the tool is kept: one installed since is found at the next check.
-//! Installing or removing a tool from the app forgets them all ([`forget_all`]).
+//! Installing or removing a tool from the app forgets them all ([`forget_all`]). An answer is kept
+//! for the tools that gave it (`exec::ToolSet`): a unit test's scripted tools never read the
+//! machine's, nor another test's.
 
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use crate::platform::exec::{ToolSet, tools_in_use};
+
 /// How long a kept answer stands: a tool changed outside the app shows up after this at most.
 pub const KEPT_FOR: Duration = Duration::from_secs(600);
 
-/// The kept answers, by key, with when each was asked.
-fn kept() -> MutexGuard<'static, BTreeMap<String, (Instant, String)>> {
-    static KEPT: Mutex<BTreeMap<String, (Instant, String)>> = Mutex::new(BTreeMap::new());
+/// The kept answers, by the tools that gave them and key, with when each was asked.
+type Kept = BTreeMap<(ToolSet, String), (Instant, String)>;
+
+/// The kept answers.
+fn kept() -> MutexGuard<'static, Kept> {
+    static KEPT: Mutex<Kept> = Mutex::new(BTreeMap::new());
     KEPT.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -24,22 +31,19 @@ fn kept() -> MutexGuard<'static, BTreeMap<String, (Instant, String)>> {
 ///
 /// `ask`'s, which isn't kept: the next call asks again.
 pub async fn remembered<E>(key: &str, ask: impl Future<Output = Result<String, E>>) -> Result<String, E> {
-    // Unit tests script each tool's answers per test: one test's must never stand for another's.
-    if cfg!(test) {
-        return ask.await;
-    }
     remembered_at(key, Instant::now(), ask).await
 }
 
 /// [`remembered`] at time `now`.
 async fn remembered_at<E>(key: &str, now: Instant, ask: impl Future<Output = Result<String, E>>) -> Result<String, E> {
-    if let Some((at, answer)) = kept().get(key)
+    let key = (tools_in_use(), key.to_string());
+    if let Some((at, answer)) = kept().get(&key)
         && now.saturating_duration_since(*at) < KEPT_FOR
     {
         return Ok(answer.clone());
     }
     let answer = ask.await?;
-    kept().insert(key.to_string(), (now, answer.clone()));
+    kept().insert(key, (now, answer.clone()));
     Ok(answer)
 }
 
@@ -51,13 +55,13 @@ pub fn forget_all() {
 /// Keeps `answer` for `key` now, as a machine check would: for a test of who forgets it.
 #[cfg(test)]
 pub fn keep(key: &str, answer: &str) {
-    kept().insert(key.to_string(), (Instant::now(), answer.to_string()));
+    kept().insert((tools_in_use(), key.to_string()), (Instant::now(), answer.to_string()));
 }
 
 /// Whether an answer is kept for `key`.
 #[cfg(test)]
 pub fn is_kept(key: &str) -> bool {
-    kept().contains_key(key)
+    kept().contains_key(&(tools_in_use(), key.to_string()))
 }
 
 #[cfg(test)]

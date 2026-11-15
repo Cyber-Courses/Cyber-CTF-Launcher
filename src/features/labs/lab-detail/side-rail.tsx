@@ -111,7 +111,7 @@ export function LabSideRail({ page, props: p, meta, cost }: { page: LabPage; pro
           <ScreensPanel machines={status.machines} onOpen={screen.open} onOpenNative={screen.openNative} error={screen.error} />
         </Dimmed>
       )}
-      {removal.installed && <RemoveLabPanel imported={!!lab.imported} blocked={blocked} removing={removal.removing} onRemove={() => void removal.remove()} />}
+      {removal.installed && <RemoveLabPanel imported={!!lab.imported} blocked={blocked} removing={removal.removing} onRemove={removal.remove} />}
       {!p.loggedIn && !lab.imported && <p className="px-1 text-[0.75rem] text-muted-foreground">{t("labs.detail.signInToRun")}</p>}
     </aside>
   );

@@ -6,7 +6,7 @@ test.describe("layout", () => {
     expect(page.viewportSize()).toEqual({ width: 1280, height: 800 });
     await openApp(page);
     for (const [tab, heading] of [
-      ["Overview", /Florian/],
+      ["Overview", /Ada/],
       ["Labs", "Labs"],
       ["Machine", "Machine"],
       ["Servers", "Servers"],
@@ -31,7 +31,7 @@ test.describe("layout", () => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await openApp(page);
     for (const [tab, heading] of [
-      ["Overview", /Florian/],
+      ["Overview", /Ada/],
       ["Labs", "Labs"],
       ["Machine", "Machine"],
       ["Servers", "Servers"],

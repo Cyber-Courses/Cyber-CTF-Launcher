@@ -80,13 +80,17 @@ impl std::fmt::Display for TokenError {
     }
 }
 
+/// The longest token secret taken from `pveum`'s answer: Proxmox's are UUIDs (36 characters);
+/// anything far longer is not a secret but something else printed.
+const MAX_SECRET_LEN: usize = 128;
+
 /// The token in `pveum user token add --output-format json`'s answer.
 pub(crate) fn parse_token(out: &str) -> Result<ApiToken, TokenError> {
     let json = out.lines().find(|l| l.trim_start().starts_with('{')).ok_or_else(|| TokenError::NoToken(out.trim().to_owned()))?;
     let v: serde_json::Value = serde_json::from_str(json).map_err(|e| TokenError::NotJson(e.to_string()))?;
     let id = v["full-tokenid"].as_str().unwrap_or_default().to_string();
     let secret = v["value"].as_str().unwrap_or_default().to_string();
-    let secret_ok = !secret.is_empty() && secret.len() <= 128 && secret.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    let secret_ok = !secret.is_empty() && secret.len() <= MAX_SECRET_LEN && secret.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !is_token(&id) || !secret_ok {
         return Err(TokenError::Malformed);
     }
@@ -131,6 +135,13 @@ fn detail(e: &Error) -> String {
     }
 }
 
+/// Which part failed when ssh gave `e`: ssh itself (no connection, the key refused, a host key
+/// that isn't the confirmed one), else `command`'s part.
+fn failed_part(e: &Error, command: Part) -> Part {
+    let refused = matches!(e, Error::Coded { code: crate::error::Code::SshHostKeyRefused { .. }, .. });
+    if refused || ssh_failed(&detail(e)) { Part::Ssh } else { command }
+}
+
 /// Whether ssh itself failed (no connection, the key refused, an unknown host key), rather than
 /// the command it ran on the node.
 fn ssh_failed(stderr: &str) -> bool {
@@ -159,16 +170,14 @@ pub fn target(host: &str, key: &SshKeySignIn) -> ssh::Target {
 
 /// Lets the launcher's key (`public`) into the node's `authorized_keys` for the key's user, over
 /// SSH with the player's key; `true` when it was added, `false` when it was there already. The
-/// node's host key is pinned in the launcher's node `known_hosts` (`known_hosts`).
+/// node's host key must be one the learner confirmed in the launcher's node `known_hosts`
+/// (`known_hosts`).
 pub async fn authorize(host: &str, key: &SshKeySignIn, known_hosts: &Path, public: &str) -> Result<bool, Failure> {
     match target(host, key).exec_timed(known_hosts, &authorize_command(public), SSH_TIMEOUT).await {
         Ok(out) if out.lines().any(|l| l.trim() == "added") => Ok(true),
         Ok(out) if out.lines().any(|l| l.trim() == "present") => Ok(false),
         Ok(out) => Err(Failure { part: Part::Key, detail: format!("unexpected answer: {}", out.trim()) }),
-        Err(e) => {
-            let detail = detail(&e);
-            Err(Failure { part: if ssh_failed(&detail) { Part::Ssh } else { Part::Key }, detail })
-        }
+        Err(e) => Err(Failure { part: failed_part(&e, Part::Key), detail: detail(&e) }),
     }
 }
 
@@ -188,10 +197,10 @@ pub struct Made {
 pub async fn bootstrap(host: &str, key: &SshKeySignIn, known_hosts: &Path, public: &str) -> Result<Made, Failure> {
     let key_added = authorize(host, key, known_hosts, public).await?;
     let command = token_command(&key.user, &token_name(public));
-    let out = target(host, key).exec_timed(known_hosts, &command, SSH_TIMEOUT).await.map_err(|e| {
-        let detail = detail(&e);
-        Failure { part: if ssh_failed(&detail) { Part::Ssh } else { Part::Token }, detail }
-    })?;
+    let out = target(host, key)
+        .exec_timed(known_hosts, &command, SSH_TIMEOUT)
+        .await
+        .map_err(|e| Failure { part: failed_part(&e, Part::Token), detail: detail(&e) })?;
     let ApiToken { id: token_id, secret } = parse_token(&out).map_err(|e| Failure { part: Part::Token, detail: e.to_string() })?;
     Ok(Made { token_id, secret, key_added })
 }
@@ -258,7 +267,7 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_authorizes_the_launcher_key_then_makes_the_token() {
-        let tools = Tools::rules(&[("authorized_keys", ok("added\n")), ("pveum user token", ok(ANSWER))]);
+        let tools = Tools::strict_rules(&[("authorized_keys", ok("added\n")), ("pveum user token", ok(ANSWER))]);
         let made = bootstrap("10.0.0.50", &sign_in(), Path::new("/data/ssh/nodes_known_hosts"), PUBLIC).await.unwrap();
         assert_eq!(made, Made { token_id: "root@pam!cyberctf-0a1b2c3d".into(), secret: "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab".into(), key_added: true });
         let calls = tools.calls();
@@ -270,7 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_key_already_authorized_is_not_added_twice() {
-        let _tools = Tools::rules(&[("authorized_keys", ok("present\n")), ("pveum user token", ok(ANSWER))]);
+        let _tools = Tools::strict_rules(&[("authorized_keys", ok("present\n")), ("pveum user token", ok(ANSWER))]);
         let made = bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap();
         assert!(!made.key_added);
         // The command itself only appends when grep finds no identical line.
@@ -282,7 +291,7 @@ mod tests {
     #[tokio::test]
     async fn each_failure_names_its_part() {
         async fn authorize_failing(stderr: &str) -> Failure {
-            let _tools = Tools::rules(&[("authorized_keys", fail(stderr))]);
+            let _tools = Tools::strict_rules(&[("authorized_keys", fail(stderr))]);
             bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap_err()
         }
         let refused = authorize_failing("root@10.0.0.50: Permission denied (publickey,password).").await;
@@ -290,7 +299,7 @@ mod tests {
         assert!(refused.to_string().starts_with("Couldn't sign in to the node over SSH with your key: root@10.0.0.50: Permission denied"));
         assert_eq!(authorize_failing("bash: /root/.ssh/authorized_keys: Read-only file system").await.part, Part::Key);
 
-        let _tools = Tools::rules(&[("authorized_keys", ok("present")), ("pveum user token", fail("user 'root@pam' does not exist"))]);
+        let _tools = Tools::strict_rules(&[("authorized_keys", ok("present")), ("pveum user token", fail("user 'root@pam' does not exist"))]);
         let token = bootstrap("10.0.0.50", &sign_in(), Path::new("/kh"), PUBLIC).await.unwrap_err();
         assert_eq!(token, Failure { part: Part::Token, detail: "user 'root@pam' does not exist".into() });
     }

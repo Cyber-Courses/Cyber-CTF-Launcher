@@ -2,7 +2,7 @@
 
 import { CornerDownLeft } from "lucide-react";
 import type { Command } from "@/components/command-palette";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 
 /** The id of the `i`th option of the list `listId`. */

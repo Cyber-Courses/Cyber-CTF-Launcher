@@ -23,7 +23,7 @@ use super::support::lab::{Run, install_copy, leftovers};
 use super::support::{check, fetch, log, scenario};
 use crate::platform::AppDirs;
 use crate::platform::exec::run;
-use crate::runtime::attack_machine::Placed;
+use crate::runtime::attack_box::Placed;
 use crate::runtime::host::Host;
 use crate::runtime::{LabStatus, Place, docker, isothrum};
 
@@ -68,7 +68,7 @@ fn check_status(s: &LabStatus, e: &Expect, f: &mut Vec<String>) {
                 check(services.iter().any(|s| s == want), format!("{} declares {want}", t.name), f);
             }
             if e.published {
-                check(t.ports.iter().any(|p| p.published > 0), format!("{} publishes a port on this machine", t.name), f);
+                check(t.ports.iter().any(|p| p.published.is_some()), format!("{} publishes a port on this machine", t.name), f);
             }
             check(!t.interfaces.is_empty() && !t.ip.is_empty(), format!("{} has an address on the lab network", t.name), f);
         }
@@ -100,7 +100,7 @@ async fn exercise(r: &Run, e: &Expect, f: &mut Vec<String>) {
 async fn attack_box_up(r: &Run, e: &Expect, f: &mut Vec<String>) -> Option<Placed> {
     let run = isothrum::LabRun::docker(&r.home, &r.dir, &r.id).ok()?;
     let placed = Placed { host: Host::Local(run), dir: r.dir.clone(), target: crate::runtime::lab::Target::Docker, vm: false };
-    let image = std::env::var("CYBERCTF_TEST_BOX_IMAGE").unwrap_or_else(|_| crate::runtime::attack_machine::default_image().to_owned());
+    let image = std::env::var("CYBERCTF_TEST_BOX_IMAGE").unwrap_or_else(|_| crate::runtime::attack_box::default_image().to_owned());
     add_box(&placed, &AppDirs::new(None, None), &image, &mut log(&r.id), f).await;
     box_reaches(&placed, e.target, "once up", f).await;
     Some(placed)
@@ -177,8 +177,8 @@ async fn real_lab(name: &str, e: Expect) {
             check(stopped.is_ok(), format!("the lab stops ({:?})", stopped.err()), f);
             let left = leftovers(&r.id).await;
             check(left.is_empty(), format!("nothing of the lab is left: {left:?}"), f);
-            let record = std::fs::read_to_string(r.home.join("runs").join(docker::project(&r.id)).join("record.json")).unwrap_or_default();
-            check(record.contains(r#""state": "absent""#), format!("the runner records the run as gone ({record})"), f);
+            let state = crate::testing::runner::run_state(&r.home, &docker::project(&r.id));
+            check(state == Some(isothrum_runner::RunState::Absent), format!("the runner records the run as gone ({state:?})"), f);
         },
     )
     .await;

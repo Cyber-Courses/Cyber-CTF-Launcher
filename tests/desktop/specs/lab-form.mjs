@@ -5,14 +5,13 @@
 // left. One form a run (`CYBERCTF_TEST_LAB_FORM`), so the runner gives each its own verdict:
 //
 //   container    the lab as containers on this machine's engine
-//   docker-vm    its containers in one VM (the helper VM), on CYBERCTF_TEST_VM_PROVIDER
 //   per-machine  one VM per machine, from its VM recipes, on CYBERCTF_TEST_VM_PROVIDER
 //   vm           a VM lab's own VMs (CYBERCTF_TEST_CATALOGUE_VM_LAB), on CYBERCTF_TEST_VM_PROVIDER
 //
 // Needs the app signed in (a catalogue lab starts only so; a debug build reads its session from
 // ~/.cyberctf/dev-session.json, which the runner can place from CYBERCTF_TEST_ACCOUNT_SESSION). The
 // labs' own checks, status and park/resume per form are the integration tests' (docker-lab,
-// docker-vm-lab, vm-lab, per-machine); an imported lab's start is labs' and launch-ui's.
+// vm-lab, per-machine); an imported lab's start is labs' and launch-ui's.
 import {
   CATALOGUE_LAB,
   docker,
@@ -35,19 +34,18 @@ import {
   waitLabPageRunning,
 } from "../lib/support.mjs";
 
-export const needs = { container: ["session", "engine"], "docker-vm": ["session", "hypervisor"], vm: ["vm-start"], "per-machine": ["vm-start"] };
-export const provides = { container: ["catalogue-lab"], "docker-vm": ["vm-start"] };
+export const needs = { container: ["session", "engine"], "per-machine": ["session", "hypervisor"], vm: ["vm-start"] };
+export const provides = { container: ["catalogue-lab"], "per-machine": ["vm-start"] };
 const r = results();
 const FORM = process.env.CYBERCTF_TEST_LAB_FORM || "container";
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || (process.platform === "darwin" ? "utm" : "");
 const FORMS = {
   container: { place: "container", lab: CATALOGUE_LAB, start: LAB_START_MS },
-  "docker-vm": { place: "vm", form: "one", lab: CATALOGUE_LAB, start: VM_START_MS },
   "per-machine": { place: "vm", form: "per-machine", lab: CATALOGUE_LAB, start: VM_START_MS },
   vm: { place: "vm", form: "one", lab: process.env.CYBERCTF_TEST_CATALOGUE_VM_LAB || "", start: VM_START_MS },
 };
 const want = FORMS[FORM];
-if (!want) r.skipAll(`unknown CYBERCTF_TEST_LAB_FORM "${FORM}" (container, docker-vm, per-machine or vm)`);
+if (!want) r.skipAll(`unknown CYBERCTF_TEST_LAB_FORM "${FORM}" (container, per-machine or vm)`);
 if (!want.lab) r.skipAll("no VM lab named: set CYBERCTF_TEST_CATALOGUE_VM_LAB to a catalogue VM lab's title");
 if (want.place === "container" && !dockerUp()) r.skipAll("no Docker engine answers here");
 if (want.place === "vm" && !PROVIDER) r.skipAll("no hypervisor named: set CYBERCTF_TEST_VM_PROVIDER (libvirt, virtualbox, hyperv, qemu, utm…)");

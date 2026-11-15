@@ -7,18 +7,56 @@ use ts_rs::TS;
 
 /// A port the software inside a container binds: `target` is the port inside the
 /// container, `published` is where it is reachable on 127.0.0.1 (0 = not published).
-#[derive(Serialize, Clone, TS)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq, TS)]
 #[ts(rename = "LabPort")]
 pub struct Port {
     /// Where it is reachable on 127.0.0.1 (0: not published).
-    pub published: u16,
+    #[ts(type = "number")]
+    pub published: Option<super::port::HostPort>,
     /// The port inside the container.
-    pub target: u16,
+    #[ts(type = "number")]
+    pub target: super::port::GuestPort,
+    /// The account the service on it ships with, as the lab declares it: shown beside the port.
+    #[ts(optional)]
+    pub login: Option<Login>,
+}
+
+/// The UI reads `published` as a number, 0 when the port isn't published, and finds `login` only
+/// when the lab declares one.
+impl Serialize for Port {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct as _;
+        let mut port = s.serialize_struct("Port", 2 + usize::from(self.login.is_some()))?;
+        port.serialize_field("published", &self.published.map_or(0, super::port::HostPort::get))?;
+        port.serialize_field("target", &self.target)?;
+        if let Some(login) = &self.login {
+            port.serialize_field("login", login)?;
+        }
+        port.end()
+    }
+}
+
+/// The fixed account a lab's service ships with (a training lab's published sign-in, not a
+/// secret), for the player to sign in with.
+#[derive(Serialize, PartialEq, Clone, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "LabLogin")]
+pub struct Login {
+    /// The account's name.
+    pub user: String,
+    /// Its password.
+    pub password: String,
+}
+
+// Leaves the password out, so a debug line never prints it.
+impl std::fmt::Debug for Login {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Login").field("user", &self.user).finish_non_exhaustive()
+    }
 }
 
 /// One machine of a lab (a container or a VM), as the lab page and its diagram show it.
-#[derive(Serialize, Clone, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabMachine")]
 pub struct Machine {
@@ -97,7 +135,7 @@ pub struct Service {
 }
 
 /// One network interface of a machine: the lab network it sits on and its address there.
-#[derive(Serialize, Clone, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabInterface")]
 pub struct Interface {
@@ -108,7 +146,7 @@ pub struct Interface {
 }
 
 /// A network segment of the lab (a Docker network = a switch the machines plug into).
-#[derive(Serialize, Clone, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabNetwork")]
 pub struct Network {
@@ -121,14 +159,14 @@ pub struct Network {
 }
 
 /// Where a lab runs, for the UI: its own runtime here, a VM here, a server, or a cloud account.
-#[derive(Serialize, Clone, Copy, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, Copy, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(rename = "LabPlace")]
 pub enum Place {
     /// In containers on this machine's Docker.
     Container,
-    /// In VMs on this machine: a VM lab, or a container lab in a VM (one helper VM, or one VM per
-    /// machine).
+    /// In VMs on this machine: a VM lab, or a container lab as one VM per machine (or in the
+    /// helper VM an earlier version ran it inside).
     LocalVm,
     /// On a saved server (Proxmox or ESXi).
     Server,
@@ -168,7 +206,7 @@ impl Park {
 
 /// A lab as the UI shows it right now: whether it runs, its machines and networks, where it
 /// runs and what can be done to it there.
-#[derive(Serialize, Clone, Default, TS)]
+#[derive(Serialize, Debug, PartialEq, Clone, Default, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct LabStatus {
     /// Whether the lab is up (a lab whose launch failed reads as not running:
@@ -282,4 +320,22 @@ mod tests {
             assert_eq!(Park::from_id(bad), None, "{bad:?}");
         }
     }
+}
+
+/// What the launch dialog shows before a cloud-services lab starts (in a build with the
+/// `cloud-services` feature): its cloud, what it costs and what it asks for. Read from the lab's spec at its pinned commit.
+#[derive(serde::Serialize, Debug, PartialEq, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename = "CloudPreview")]
+pub struct Preview {
+    /// The cloud the module runs on, by id (`aws`, `azure`, …).
+    pub provider: String,
+    /// What the spec says it costs per hour, in US dollars; None when it doesn't say.
+    pub hourly_usd: Option<f64>,
+    /// The launch-time inputs it takes.
+    pub inputs: Vec<String>,
+    /// Whether it opens something to this machine's public IP only.
+    pub allow_list: bool,
+    /// The names of what it exposes once up.
+    pub outputs: Vec<String>,
 }

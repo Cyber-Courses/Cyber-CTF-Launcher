@@ -1,3 +1,4 @@
+import type { ActiveOperation } from "@/lib/tauri/run-events";
 import type { ImportedLab, LabRunOptions, LabRunPath, LabStatus, Provider } from "@/lib/tauri";
 import { argText } from "@/lib/dev-mock/command";
 import { objectivesAnswer } from "@/lib/dev-mock/objectives";
@@ -248,6 +249,8 @@ export const importedSample: ImportedLab = {
 /** The lab commands: their status, a cloud lab's preview, what runs and deploys. */
 export const labCommands = {
   lab_status: (args) => (args?.id === "lab-invoice" ? invoiceStatus : stopped),
+  // The mock answers as a build with the `cloud-services` feature, which its cloud labs show.
+  cloud_services_supported: () => true,
   lab_cloud_preview: (args) =>
     args?.id === "lab-goat" ? { provider: "aws", hourlyUsd: 0.02, inputs: ["PLAYER_CIDR"], allowList: true, outputs: ["access_key_id", "secret_key"] } : null,
   lab_requirements: (args) =>
@@ -264,8 +267,6 @@ export const labCommands = {
   lab_run_options: (args) => runOptions(args?.runtime),
   running_labs: () => ["lab-invoice"],
   busy_labs: () => ["lab-goad"],
-  active_operations: () => [{ labId: "lab-goad", op: "launch", machine: "SRV02", deploying: true, step: "Configure SRV02 (ansible 41/88)" }],
-  lab_deploy_log: () => "",
   lab_tools: () => [{ name: "Burp Suite", image: null, addresses: [{ network: "default", ip: "10.42.0.9" }], publish: null }],
   // No lab imported from a folder in the sample (the preview's `imported` switch adds one).
   imported_labs: () => [],
@@ -293,20 +294,15 @@ export function apiQuery(args: Args): unknown {
   return {};
 }
 
-/** A badge-less path, or a Beta one. */
-const runPath = (provider: Provider | null, beta = false): LabRunPath => ({
-  provider,
-  badge: beta ? "beta" : "none",
-  evidence: beta ? "validated only; tier 1 pending: linux, macos, windows" : "real runs: macos (mac, 2026-10-17)",
-});
+/** A launch path on `provider`. */
+const runPath = (provider: Provider | null): LabRunPath => ({ provider });
 
 /** UTM's path for a VM lab whose spec has a recipe for it. */
-export const utmPath = runPath("utm", true);
+export const utmPath = runPath("utm");
 
 const CLOUDS_OF_SAMPLE: Provider[] = ["aws", "azure", "gcp", "digitalocean", "linode", "oci"];
 const NO_OPTIONS: LabRunOptions = {
   docker: null,
-  dockerVm: [],
   vms: [],
   servers: [],
   cloudDocker: [],
@@ -317,17 +313,17 @@ const NO_OPTIONS: LabRunOptions = {
 };
 
 /** Where the sample's labs run, as the backend reads it from their spec: a container lab on
- *  Docker, in a helper VM and on a server or a cloud VM (none has VM recipes too), a VM lab as
- *  VMs (not on UTM), cloud services on AWS. */
+ *  Docker or a cloud VM (none has VM recipes too), a VM lab as VMs (not on UTM) here, on a server
+ *  or a cloud, cloud services on AWS. */
 export function runOptions(runtime: unknown): LabRunOptions {
-  const clouds = () => CLOUDS_OF_SAMPLE.map((c) => runPath(c, c !== "aws"));
+  const clouds = () => CLOUDS_OF_SAMPLE.map((c) => runPath(c));
   if (runtime === "CLOUD") return { ...NO_OPTIONS, cloudServices: [runPath("aws")] };
   const local: Provider[] = ["virtualbox", "vmware_desktop", "parallels", "libvirt", "qemu"];
   const utm = { provider: "utm" as const, cause: { kind: "isoloom" as const, reason: "a VM on UTM gets no private network" } };
   if (runtime === "VM")
     return {
       ...NO_OPTIONS,
-      vms: [...local, "hyperv" as const].map((p) => runPath(p, p !== "virtualbox")),
+      vms: [...local, "hyperv" as const].map((p) => runPath(p)),
       servers: [runPath("vmware_esxi"), runPath("proxmox")],
       cloudVm: clouds(),
       refused: [utm],
@@ -335,8 +331,12 @@ export function runOptions(runtime: unknown): LabRunOptions {
   return {
     ...NO_OPTIONS,
     docker: runPath(null),
-    dockerVm: [...local, "utm" as const].map((p) => runPath(p, p !== "virtualbox")),
-    servers: [runPath("vmware_esxi", true), runPath("proxmox", true)],
     cloudDocker: clouds(),
   };
 }
+
+/** The operations the sample's core is running when the preview opens (a run event replay's
+ *  first events): GOAD deploying, at its SRV02 step. */
+export const SAMPLE_IN_FLIGHT: ActiveOperation[] = [
+  { labId: "lab-goad", op: "launch", machine: "SRV02", deploying: true, step: "Configure SRV02 (ansible 41/88)" },
+];

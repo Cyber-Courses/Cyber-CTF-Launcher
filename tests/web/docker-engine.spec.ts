@@ -81,7 +81,7 @@ test.describe("Docker engine states", () => {
     await expect(containerRow(page)).toContainText("No permission");
     // The core's hint, by its code, in the player's language, with the account to add.
     await expect(containerRow(page)).toContainText(
-      "Docker is running, but your account can't use it yet. Add yourself to the docker group in a terminal (sudo usermod -aG docker florian), then log out and back in.",
+      "Docker is running, but your account can't use it yet. Add yourself to the docker group in a terminal (sudo usermod -aG docker ada), then log out and back in.",
     );
     // Nothing to fix from here: the group is joined in a terminal.
     await expect(containerRow(page).getByRole("button", { name: "Fix", exact: true })).toHaveCount(0);
@@ -96,7 +96,7 @@ test.describe("Docker engine states", () => {
     await navButton(page, "Machine").click();
     await expect(containerRow(page)).toContainText("No permission");
     await expect(containerRow(page)).toContainText(
-      'Docker is running, but your account can\'t use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users "florian" /add), then sign out and back in.',
+      'Docker is running, but your account can\'t use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users "ada" /add), then sign out and back in.',
     );
   });
 });

@@ -98,11 +98,10 @@ describe("late answers", () => {
 
   it("offers one VM per machine where the backend's run options have it: a ready hypervisor that isn't UTM", async () => {
     // The backend reads the lab's spec: Isoloom refuses its per-machine VMs on UTM (no network).
-    const path = (target: string, provider: Provider) => ({ provider, target, variant: provider, badge: "none" as const, evidence: "" });
+    const path = (target: string, provider: Provider) => ({ provider, target, variant: provider });
     installTauri({
       lab_run_options: () => ({
         docker: null,
-        dockerVm: [path("docker-vm", "utm"), path("docker-vm", "qemu")],
         vms: [path("vagrant", "qemu"), path("vagrant", "virtualbox")],
         servers: [],
         cloudDocker: [],
@@ -118,9 +117,10 @@ describe("late answers", () => {
       initialProps: { ready: ["utm"] as Provider[] },
     });
     await flush();
-    // UTM alone: the helper VM, but no per-machine place (Isoloom refuses the form on UTM).
-    expect(result.current.localVm).toBe("utm");
+    // UTM alone: no VM form here (Isoloom refuses one VM per machine on UTM, and there is no
+    // helper VM any more), so nothing to choose here but Docker.
     expect(result.current.perMachine).toBeNull();
+    expect(result.current.vmForms).toEqual([]);
     rerender({ ready: ["utm", "qemu"] });
     await flush();
     expect(result.current.perMachine).toMatchObject({ provider: "qemu", providers: ["qemu"] });

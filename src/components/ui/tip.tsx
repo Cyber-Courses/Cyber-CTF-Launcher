@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /**
  * A hover / keyboard-focus tooltip drawn in the page, for controls that swap when clicked (Shut

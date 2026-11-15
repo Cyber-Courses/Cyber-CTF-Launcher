@@ -34,7 +34,6 @@ function runner(cargo: string, env: Record<string, string>, args: string[] = [])
     SUITE_NESTED: "",
     CYBERCTF_TEST_INTEGRATION_TIMEOUT: "",
     CYBERCTF_TEST_VM_PROVIDER: "",
-    CYBERCTF_TEST_DOCKER_VM_PROVIDER: "",
     CYBERCTF_TEST_ISOLOOM_DIR: dir,
     CYBERCTF_TEST_INTEGRATION_LOGS: dir,
     ...env,
@@ -42,6 +41,13 @@ function runner(cargo: string, env: Record<string, string>, args: string[] = [])
   const r = spawnSync("bash", [RUNNER, ...args], { env: { ...clean, PATH: `${dir}:${process.env.PATH ?? ""}` }, encoding: "utf8" });
   return { status: r.status, out: r.stdout + r.stderr, dir };
 }
+
+/** The caps the cases run under: one a case meant to end on its own never reaches (30 s), and one
+ *  a case meant to be capped (its stand-ins sleep a minute) reaches only after its stand-ins have
+ *  started (6 s). 2 s raced the start on an x64 Mac, where a freshly written script took longer
+ *  than that to run the first time: a passing case read FAIL, a capped one had made nothing yet. */
+const ENDS = "30";
+const CAPPED = "6";
 
 /** The verdict a summary line gives `step`. */
 const verdict = (out: string, step: string) => new RegExp(`^ {3}${step} +(ok|FAIL|skip) `, "m").exec(out)?.[1];
@@ -58,14 +64,14 @@ describe("an integration scenario's verdict", () => {
     expect(scenario(`echo "test result: ok. 0 passed; 0 failed"`)).toBe("FAIL");
   });
 
-  it("is FAIL, saying so, when the test ran past its cap, cargo and what it ran killed", () => {
-    // A cargo that would run for a minute, under a cap of 2 s (the runner looks every 2 s).
+  it("is FAIL, saying so, when the test ran past its cap, cargo and what it ran killed", { timeout: 30000 }, () => {
+    // A cargo that would run for a minute, under a cap of CAPPED s (the runner looks every 2 s).
     const r = runner(`echo "FAILED: nothing yet"; sleep 60 & echo $! > "$CYBERCTF_TEST_INTEGRATION_LOGS/sleeper"; wait`, {
       ONLY: "docker-lab-hello-stack",
-      CYBERCTF_TEST_INTEGRATION_TIMEOUT: "2",
+      CYBERCTF_TEST_INTEGRATION_TIMEOUT: CAPPED,
     });
     expect(verdict(r.out, "docker-lab-hello-stack")).toBe("FAIL");
-    expect(r.out).toMatch(/docker-lab-hello-stack +FAIL +\d+s {2}exceeded its 2s \(FAILED: nothing yet\)/);
+    expect(r.out).toMatch(new RegExp(`docker-lab-hello-stack +FAIL +\\d+s {2}exceeded its ${CAPPED}s \\(FAILED: nothing yet\\)`));
     // The test binary's children went with it: nothing of the lab's start is left running.
     const sleeper = Number(readFileSync(join(r.dir, "sleeper"), "utf8").trim());
     expect(() => process.kill(sleeper, 0)).toThrow();
@@ -82,7 +88,7 @@ describe("an integration scenario's verdict", () => {
       'case "$CASE" in',
       '  pass) echo "test result: ok. 1 passed; 0 failed" ;;',
       '  fail) echo "test result: FAILED. 0 passed; 1 failed"; exit 101 ;;',
-      `  hang) (trap '' TERM; exec sh -c 'sleep 30; :' "$TMPDIR/cyberctf-vm-2/qemu") & echo $! >"$CYBERCTF_TEST_INTEGRATION_LOGS/vm"; sleep 30 ;;`,
+      `  hang) (trap '' TERM; exec sh -c 'sleep 60; :' "$TMPDIR/cyberctf-vm-2/qemu") & echo $! >"$CYBERCTF_TEST_INTEGRATION_LOGS/vm"; sleep 60 ;;`,
       "esac",
     ].join("\n");
     const ours = () => readdirSync(machine).filter((n) => n.startsWith("cyberctf"));
@@ -91,7 +97,12 @@ describe("an integration scenario's verdict", () => {
       ["fail", "FAIL"],
       ["hang", "FAIL"],
     ]) {
-      const r = runner(cargo, { ONLY: "docker-lab-hello-stack", CASE: kase, TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: "2" });
+      const r = runner(cargo, {
+        ONLY: "docker-lab-hello-stack",
+        CASE: kase,
+        TMPDIR: machine,
+        CYBERCTF_TEST_INTEGRATION_TIMEOUT: kase === "hang" ? CAPPED : ENDS,
+      });
       expect(verdict(r.out, "docker-lab-hello-stack"), kase).toBe(result);
       const temp = readFileSync(join(r.dir, "temp"), "utf8").trim();
       expect(temp, kase).toMatch(/\/cyberctf-it\.[A-Za-z0-9]{6}$/);
@@ -108,8 +119,11 @@ describe("an integration scenario's verdict", () => {
 
   it("past its cap, ends its lab's VirtualBox VMs, which live outside its temp folder, before the folder goes", { timeout: 60000 }, () => {
     // Vagrant keeps a VirtualBox VM in ~/VirtualBox VMs and its id in the lab's .vagrant; a
-    // VirtualBox stood in for by a VBoxManage that knows that one VM and records what it's asked.
+    // VirtualBox stood in for by a VBoxManage that knows that one VM and records what it's asked,
+    // where VirtualBox's installer puts it on a Mac (/usr/local/bin), on none of the runner's PATH
+    // (a Mac's outside a login shell: a capped scenario's VMs stayed registered there).
     const machine = folder();
+    const root = folder();
     const id = "3c32882b-cf96-4a01-a754-ca7386e37b49";
     const vbox = [
       "#!/bin/sh",
@@ -117,14 +131,15 @@ describe("an integration scenario's verdict", () => {
       `case "$1 $2" in "showvminfo ${id}") echo 'name="solo-web - attackbox"' ;; showvminfo*) exit 1 ;; esac`,
     ].join("\n");
     const cargo = [
-      `printf '%s\\n' '${vbox.replaceAll("'", "'\\''")}' >"$(dirname "$0")/VBoxManage"`,
-      'chmod +x "$(dirname "$0")/VBoxManage"',
+      'mkdir -p "$TOOL_ROOT/usr/local/bin"',
+      `printf '%s\\n' '${vbox.replaceAll("'", "'\\''")}' >"$TOOL_ROOT/usr/local/bin/VBoxManage"`,
+      'chmod +x "$TOOL_ROOT/usr/local/bin/VBoxManage"',
       'mkdir -p "$TMPDIR/cyberctf-box-1/.vagrant/machines/attackbox/virtualbox" "$TMPDIR/cyberctf-box-1/.vagrant/machines/web/virtualbox"',
       `echo ${id} >"$TMPDIR/cyberctf-box-1/.vagrant/machines/attackbox/virtualbox/id"`,
       'echo 00000000-0000-0000-0000-000000000000 >"$TMPDIR/cyberctf-box-1/.vagrant/machines/web/virtualbox/id"',
-      'case "$CASE" in hang) sleep 30 ;; pass) echo "test result: ok. 1 passed; 0 failed" ;; esac',
+      'case "$CASE" in hang) sleep 60 ;; pass) echo "test result: ok. 1 passed; 0 failed" ;; esac',
     ].join("\n");
-    const capped = runner(cargo, { ONLY: "attack-box-vm", CASE: "hang", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: "2" });
+    const capped = runner(cargo, { ONLY: "attack-box-vm", CASE: "hang", TMPDIR: machine, TOOL_ROOT: root, CYBERCTF_TEST_INTEGRATION_TIMEOUT: CAPPED });
     expect(verdict(capped.out, "attack-box-vm")).toBe("FAIL");
     const calls = readFileSync(join(capped.dir, "vbox.calls"), "utf8").split("\n").filter(Boolean);
     expect([...calls].sort()).toEqual(
@@ -141,9 +156,85 @@ describe("an integration scenario's verdict", () => {
     );
     expect(readdirSync(machine).filter((n) => n.startsWith("cyberctf"))).toEqual([]);
     // A scenario that ended on its own cleaned up after itself, or the leftover audit says what it left.
-    const ended = runner(cargo, { ONLY: "attack-box-vm", CASE: "pass", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: "20" });
+    const ended = runner(cargo, { ONLY: "attack-box-vm", CASE: "pass", TMPDIR: machine, TOOL_ROOT: root, CYBERCTF_TEST_INTEGRATION_TIMEOUT: ENDS });
     expect(verdict(ended.out, "attack-box-vm")).toBe("ok");
     expect(existsSync(join(ended.dir, "vbox.calls"))).toBe(false);
+  });
+
+  it("past its cap, ends its lab's UTM VMs too, defined in UTM's own library: each stopped, then deleted", { timeout: 60000 }, () => {
+    // vagrant_utm keeps each machine's UTM VM by its uuid in the lab's .vagrant, the controller's
+    // too; a UTM stood in for by a utmctl that records what it's asked, inside UTM's app, where
+    // utmctl ships (on no PATH). A capped attack-box-vm on UTM left all three defined (2026-11-14).
+    const machine = folder();
+    const root = folder();
+    const app = "$TOOL_ROOT/Applications/UTM.app/Contents/MacOS";
+    const ids = {
+      web: "5e1b0c1a-0d4c-4a35-9b0e-1f4e2d6a7b01",
+      attackbox: "5e1b0c1a-0d4c-4a35-9b0e-1f4e2d6a7b02",
+      "isoloom-controller": "5e1b0c1a-0d4c-4a35-9b0e-1f4e2d6a7b03",
+    };
+    const utmctl = ["#!/bin/sh", 'echo "$*" >>"$CYBERCTF_TEST_INTEGRATION_LOGS/utm.calls"'].join("\n");
+    const cargo = [
+      `mkdir -p "${app}"`,
+      `printf '%s\\n' '${utmctl.replaceAll("'", "'\\''")}' >"${app}/utmctl"`,
+      `chmod +x "${app}/utmctl"`,
+      ...Object.entries(ids).flatMap(([m, id]) => [
+        `mkdir -p "$TMPDIR/cyberctf-box-1/.vagrant/machines/${m}/utm"`,
+        `echo ${id} >"$TMPDIR/cyberctf-box-1/.vagrant/machines/${m}/utm/id"`,
+      ]),
+      'case "$CASE" in hang) sleep 60 ;; pass) echo "test result: ok. 1 passed; 0 failed" ;; esac',
+    ].join("\n");
+    const capped = runner(cargo, { ONLY: "attack-box-vm", CASE: "hang", TMPDIR: machine, TOOL_ROOT: root, CYBERCTF_TEST_INTEGRATION_TIMEOUT: CAPPED });
+    expect(verdict(capped.out, "attack-box-vm")).toBe("FAIL");
+    const calls = readFileSync(join(capped.dir, "utm.calls"), "utf8").split("\n").filter(Boolean);
+    expect([...calls].sort()).toEqual(
+      Object.values(ids)
+        .flatMap((id) => [`stop --kill ${id}`, `delete ${id}`])
+        .sort(),
+    );
+    for (const id of Object.values(ids)) {
+      expect(calls.indexOf(`stop --kill ${id}`), `${id} stopped, then deleted`).toBeLessThan(calls.indexOf(`delete ${id}`));
+    }
+    const log = readFileSync(join(capped.dir, "attack-box-vm.log"), "utf8");
+    for (const id of Object.values(ids)) expect(log).toContain(`suite: stopping the scenario's UTM VM ${id}: stopped and deleted`);
+    expect(readdirSync(machine).filter((n) => n.startsWith("cyberctf"))).toEqual([]);
+    const ended = runner(cargo, { ONLY: "attack-box-vm", CASE: "pass", TMPDIR: machine, TOOL_ROOT: root, CYBERCTF_TEST_INTEGRATION_TIMEOUT: ENDS });
+    expect(verdict(ended.out, "attack-box-vm")).toBe("ok");
+    expect(existsSync(join(ended.dir, "utm.calls"))).toBe(false);
+  });
+
+  it("past its cap, takes down the Compose projects its labs started, and only those", { timeout: 60000 }, () => {
+    // Compose labels a project's containers with its working folder: the scenario's are inside its
+    // temp folder. A Docker stood in for by one that lists the scenario's project and another's,
+    // and records what it's asked. A capped attack-box-docker left its project behind (2026-11-14).
+    const machine = folder();
+    const cargo = [
+      'cat >"$(dirname "$0")/docker" <<STUB',
+      "#!/bin/sh",
+      'echo "\\$*" >>"\\$CYBERCTF_TEST_INTEGRATION_LOGS/docker.calls"',
+      'case "\\$1" in',
+      `  ps) printf 'cyberctf-box-13814\\t%s\\n' "$TMPDIR/cyberctf-box-1/runs/box/compose"; printf 'cyberctf-box-13814\\t%s\\n' "$TMPDIR/cyberctf-box-1/runs/box/compose"; printf 'players-own\\t/home/someone/lab\\n' ;;`,
+      '  volume) [ "\\$2" = ls ] && echo cyberctf-box-13814_isoloom-probe ;;',
+      "esac",
+      "STUB",
+      'chmod +x "$(dirname "$0")/docker"',
+      'case "$CASE" in hang) sleep 60 ;; pass) echo "test result: ok. 1 passed; 0 failed" ;; esac',
+    ].join("\n");
+    const capped = runner(cargo, { ONLY: "attack-box-docker", CASE: "hang", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: CAPPED });
+    expect(verdict(capped.out, "attack-box-docker")).toBe("FAIL");
+    const calls = readFileSync(join(capped.dir, "docker.calls"), "utf8").split("\n").filter(Boolean);
+    expect(calls.filter((c) => !c.startsWith("ps "))).toEqual([
+      "compose -p cyberctf-box-13814 down -v --remove-orphans",
+      "volume ls -q --filter label=com.docker.compose.project=cyberctf-box-13814",
+      "volume rm -f cyberctf-box-13814_isoloom-probe",
+    ]);
+    expect(calls.join("\n"), "the player's own project is left alone").not.toContain("players-own");
+    expect(readFileSync(join(capped.dir, "attack-box-docker.log"), "utf8")).toContain(
+      "suite: taking down the scenario's Compose project cyberctf-box-13814: containers, networks and volumes",
+    );
+    const ended = runner(cargo, { ONLY: "attack-box-docker", CASE: "pass", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: ENDS });
+    expect(verdict(ended.out, "attack-box-docker")).toBe("ok");
+    expect(existsSync(join(ended.dir, "docker.calls"))).toBe(false);
   });
 
   it("gives its app's folders a root in its temp folder, so a capped one's lab runs and VirtualBox VMs go with it (#308)", { timeout: 60000 }, () => {
@@ -163,9 +254,9 @@ describe("an integration scenario's verdict", () => {
       'chmod +x "$(dirname "$0")/VBoxManage"',
       'state="$CYBERCTF_TEST_APP_ROOT/com.cyberctf.unit-test.1-2/runs/pm-1/vagrant/machines/web/virtualbox"',
       `mkdir -p "$state" && echo ${id} >"$state/id"`,
-      "sleep 30",
+      "sleep 60",
     ].join("\n");
-    const r = runner(cargo, { ONLY: "per-machine", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: "2" });
+    const r = runner(cargo, { ONLY: "per-machine", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: CAPPED });
     expect(verdict(r.out, "per-machine")).toBe("FAIL");
     const temp = readFileSync(join(r.dir, "temp"), "utf8").trim();
     expect(readFileSync(join(r.dir, "root"), "utf8").trim(), "the scenario's temp folder").toBe(temp);
@@ -198,7 +289,7 @@ describe("an integration scenario's verdict", () => {
   it("takes --only <scenario>@<provider>: that scenario alone, on that hypervisor", () => {
     const out = join(folder(), "results.jsonl");
     runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "vm-lab@virtualbox", "--results", out]);
-    runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "attack-box-docker@docker", "--only", "docker-vm-lab@hyperv", "--results", out]);
+    runner(`echo "test result: ok. 1 passed; 0 failed"`, {}, ["--only", "attack-box-docker@docker", "--only", "per-machine@hyperv", "--results", out]);
     const records = readFileSync(out, "utf8")
       .trim()
       .split("\n")
@@ -206,7 +297,7 @@ describe("an integration scenario's verdict", () => {
     expect(records.map((r) => [r.case, r.provider, r.result])).toEqual([
       ["vm-lab", "virtualbox", "pass"],
       ["attack-box-docker", "", "pass"],
-      ["docker-vm-lab", "hyperv", "pass"],
+      ["per-machine", "hyperv", "pass"],
     ]);
   });
 
@@ -349,15 +440,14 @@ describe("--results", () => {
     () => {
       const out = join(folder(), "results.jsonl");
       // vm-lab fails with the launcher's own refusal of UTM: the VM scenarios after it on UTM are
-      // skipped with that line, the docker ones (no provider) and those on another hypervisor run.
+      // skipped with that line, the docker ones (no provider) and those before it run.
       const refusal = "FAILED: it starts: This lab can't run on UTM yet: `web` is on a network, and vagrant_utm gives a VM no private network.";
       const cargo = `case "$*" in *integration_tests::vm_lab::*) echo "${refusal.replaceAll("`", "\\`")}"; echo "test result: FAILED. 0 passed; 1 failed"; exit 101 ;; *) echo "test result: ok. 1 passed; 0 failed" ;; esac`;
       runner(
         cargo,
         {
-          ONLY: "attack-box-vm docker-lab-hello-stack vm-lab per-machine replace-docker-vm replace-vm resilience-docker-port-taken resilience-vm-destroyed resilience-vm-killed-provisioning",
+          ONLY: "attack-box-vm docker-lab-hello-stack vm-lab per-machine replace-vm resilience-docker-port-taken resilience-vm-destroyed resilience-vm-killed-provisioning",
           CYBERCTF_TEST_VM_PROVIDER: "utm",
-          CYBERCTF_TEST_DOCKER_VM_PROVIDER: "qemu",
         },
         ["--results", out],
       );
@@ -374,7 +464,7 @@ describe("--results", () => {
           reason: `utm failed on the platform earlier in this run: ${refusal}`,
           seconds: 0,
         });
-      for (const other of ["attack-box-vm", "docker-lab-hello-stack", "replace-docker-vm", "resilience-docker-port-taken"])
+      for (const other of ["attack-box-vm", "docker-lab-hello-stack", "resilience-docker-port-taken"])
         expect(of(other), other).toMatchObject({ result: "pass" });
       // Docker is a provider of its own: Docker down ends its scenarios.
       const down = join(folder(), "results.jsonl");

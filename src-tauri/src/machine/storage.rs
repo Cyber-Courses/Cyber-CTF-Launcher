@@ -1,7 +1,7 @@
 //! What Cyber CTF stores on this machine, for the Machine page: the container images and
-//! Vagrant boxes it downloaded itself (see `owned`), and the Terraform provider plugins every lab's
-//! runs share (the app's alone: they live in its data folder), with sizes, and a clean-up that
-//! removes only those. An image or box the player had before, or pulled for their own projects, is never
+//! Vagrant boxes it downloaded itself (see `owned`), with sizes, and a clean-up that removes only
+//! those (the runner's own Terraform plugin cache is the runner's, in its home). An image or box
+//! the player had before, or pulled for their own projects, is never
 //! listed nor removed, even when a lab uses the same one. Images still used by a container, or
 //! boxes used by a VM, are left alone (Docker/Vagrant refuse).
 
@@ -42,24 +42,12 @@ pub struct Storage {
     pub images: Vec<StoredItem>,
     /// Vagrant boxes the app downloaded, present locally.
     pub boxes: Vec<StoredItem>,
-    /// The Terraform provider plugins server and cloud labs share (one entry, when there are any).
-    pub plugins: Vec<StoredItem>,
 }
 
 impl Storage {
     fn total(&self) -> u64 {
-        self.images.iter().chain(&self.boxes).chain(&self.plugins).map(|i| i.bytes).sum()
+        self.images.iter().chain(&self.boxes).map(|i| i.bytes).sum()
     }
-}
-
-/// The shared Terraform plugin cache, beside the downloads record `store` in the app data folder.
-fn plugin_cache(store: &Path) -> PathBuf {
-    store.with_file_name(crate::runtime::TERRAFORM_PLUGINS)
-}
-
-/// The plugin cache as one item with its size, when it holds anything.
-fn plugin_items(bytes: u64) -> Vec<StoredItem> {
-    if bytes == 0 { Vec::new() } else { vec![StoredItem { name: "Terraform provider plugins".into(), bytes }] }
 }
 
 /// Images an installed Docker lab's compose file references.
@@ -130,7 +118,7 @@ fn lab_boxes(dir: &Path) -> Vec<String> {
 /// Records as the app's what a lab start on this machine downloaded: the images its Compose file
 /// names and the boxes its Vagrantfiles name, that weren't here `before` it.
 pub(crate) async fn claim_lab(dirs: impl Into<AppDirs>, dir: &Path, id: &str, before: &owned::Before) {
-    let Ok(store) = owned::path(&dirs.into()) else { return };
+    let Ok(store) = owned::place(&dirs.into()) else { return };
     let images = if before.tracks_images() && crate::runtime::lab::compose_file(dir).is_file() { lab_images(dir, id).await } else { Vec::new() };
     owned::claim(&store, before, &images, &lab_boxes(dir)).await;
 }
@@ -156,24 +144,34 @@ fn parse_image_line(out: &str) -> Option<(String, u64)> {
     Some((id.trim().to_string(), size.trim().parse().unwrap_or(0))).filter(|(id, _)| !id.is_empty())
 }
 
-/// The app's images present now, as (reference, image id, size): a recorded reference only while
-/// it still names the image the app pulled.
-async fn present_images(candidates: &[(String, Option<String>)]) -> Vec<(String, String, u64)> {
+/// An image of the app's present on the engine now.
+struct PresentImage {
+    /// The reference it was pulled by (two references can name one image).
+    reference: String,
+    /// The engine's image id.
+    id: String,
+    /// Its size on disk.
+    bytes: u64,
+}
+
+/// The app's images present now: a recorded reference only while it still names the image the
+/// app pulled.
+async fn present_images(candidates: &[(String, Option<String>)]) -> Vec<PresentImage> {
     let mut found = Vec::new();
     for (reference, want) in candidates {
-        if let Some((id, size)) = inspect_image(reference).await
+        if let Some((id, bytes)) = inspect_image(reference).await
             && want.as_ref().is_none_or(|w| *w == id)
         {
-            found.push((reference.clone(), id, size));
+            found.push(PresentImage { reference: reference.clone(), id, bytes });
         }
     }
     found
 }
 
 /// The listed images: one per image (two references to one image are one download on disk).
-fn image_items(found: &[(String, String, u64)]) -> Vec<StoredItem> {
+fn image_items(found: &[PresentImage]) -> Vec<StoredItem> {
     let mut seen = BTreeSet::new();
-    found.iter().filter(|(_, id, _)| seen.insert(id.clone())).map(|(reference, _, bytes)| StoredItem { name: reference.clone(), bytes: *bytes }).collect()
+    found.iter().filter(|i| seen.insert(i.id.clone())).map(|i| StoredItem { name: i.reference.clone(), bytes: i.bytes }).collect()
 }
 
 /// Where Vagrant keeps a box version for a provider: `<box>/<version>/<provider>`, or with the
@@ -199,63 +197,49 @@ fn box_label(b: &OwnedBox) -> String {
 
 /// What of the app's downloads is here now.
 struct Present {
-    images: Vec<(String, String, u64)>,
+    images: Vec<PresentImage>,
     boxes: Vec<(OwnedBox, u64)>,
-    /// The plugin cache's size.
-    plugins: u64,
 }
 
 impl Present {
-    /// What of `owned` (and of `extra_images`) is here, boxes under Vagrant's `home`, and the
-    /// plugin cache at `plugins`.
-    async fn find(owned: &Owned, extra_images: &[String], home: Option<&Path>, plugins: &Path) -> Present {
+    /// What of `owned` (and of `extra_images`) is here, boxes under Vagrant's `home`.
+    async fn find(owned: &Owned, extra_images: &[String], home: Option<&Path>) -> Present {
         let images = present_images(&image_candidates(owned, extra_images)).await;
         let boxes = home.map(|home| present_boxes(home, &owned.boxes)).unwrap_or_default();
-        Present { images, boxes, plugins: dir_size(plugins) }
+        Present { images, boxes }
     }
 
     fn storage(&self) -> Storage {
-        Storage {
-            images: image_items(&self.images),
-            boxes: self.boxes.iter().map(|(b, bytes)| StoredItem { name: box_label(b), bytes: *bytes }).collect(),
-            plugins: plugin_items(self.plugins),
-        }
+        Storage { images: image_items(&self.images), boxes: self.boxes.iter().map(|(b, bytes)| StoredItem { name: box_label(b), bytes: *bytes }).collect() }
     }
 }
 
 /// `extra_images`: the attack-box images the UI knows about; only those of the attack box's own
 /// repository count (see [`image_candidates`]), any other is the player's unless recorded.
 pub async fn machine_storage(dirs: AppDirs, extra_images: Vec<String>) -> Result<Storage> {
-    let store = owned::path(&dirs)?;
-    Ok(Present::find(&owned::load(&store)?, &extra_images, vagrant_home().as_deref(), &plugin_cache(&store)).await.storage())
+    let store = owned::place(&dirs)?;
+    Ok(Present::find(&owned::load(&store)?, &extra_images, vagrant_home().as_deref()).await.storage())
 }
 
-/// Removes what `machine_storage` lists (see [`clean`]). Returns the bytes freed. `workers`:
-/// whether a deploy worker runs a lab operation (the app shell's to say).
-pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>, workers: bool) -> Result<u64> {
-    // A lab operation running may still use the plugins its `init` linked: they stay then.
-    let busy = !crate::runtime::busy_labs().is_empty() || workers;
-    clean(&owned::path(&dirs)?, &extra_images, vagrant_home().as_deref(), !busy).await
+/// Removes what `machine_storage` lists (see [`clean`]). Returns the bytes freed.
+pub async fn machine_storage_clean(dirs: AppDirs, extra_images: Vec<String>) -> Result<u64> {
+    clean(&owned::place(&dirs)?, &extra_images, vagrant_home().as_deref()).await
 }
 
 /// Removes the app's downloads recorded in `store` (and the attack box's of `extra_images`):
 /// each image reference it pulled (untagged, so an image the player tagged too stays), each box
-/// version for its provider (never `--all`), and with `plugins` the plugin cache (unless an `init`
-/// holds it). Ones still in use stay. Then forgets what is gone. Returns the bytes freed.
-async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>, plugins: bool) -> Result<u64> {
-    let cache = plugin_cache(store);
-    let before = Present::find(&owned::load(store)?, extra_images, home, &cache).await;
-    for (reference, _, _) in &before.images {
-        stayed(reference, run("docker", &["image", "rm", reference], None).await);
+/// version for its provider (never `--all`). Ones still in use stay. Then forgets what is gone.
+/// Returns the bytes freed.
+async fn clean(store: &Path, extra_images: &[String], home: Option<&Path>) -> Result<u64> {
+    let before = Present::find(&owned::load(store)?, extra_images, home).await;
+    for image in &before.images {
+        stayed(&image.reference, run("docker", &["image", "rm", &image.reference], None).await);
     }
     for (b, _) in &before.boxes {
         // No --force: Vagrant refuses to remove a box a VM still uses.
         stayed(&box_label(b), run("vagrant", &["box", "remove", &b.name, "--provider", &b.provider, "--box-version", &b.version], None).await);
     }
-    if plugins && cache.is_dir() {
-        crate::runtime::clear_plugin_cache(&cache);
-    }
-    let after = Present::find(&owned::load(store)?, extra_images, home, &cache).await;
+    let after = Present::find(&owned::load(store)?, extra_images, home).await;
     forget_gone(store).await?;
     Ok(before.storage().total().saturating_sub(after.storage().total()))
 }
@@ -342,8 +326,8 @@ mod tests {
 
     #[test]
     fn two_references_to_one_image_are_listed_once() {
-        let found =
-            [("cyberctf/attack-box:latest".to_string(), "sha256:a".to_string(), 3000), ("cyberctf/attack-box@sha256:d".into(), "sha256:a".into(), 3000)];
+        let image = |reference: &str| PresentImage { reference: reference.into(), id: "sha256:a".into(), bytes: 3000 };
+        let found = [image("cyberctf/attack-box:latest"), image("cyberctf/attack-box@sha256:d")];
         let items = image_items(&found);
         assert_eq!(items.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("cyberctf/attack-box:latest", 3000)]);
     }
@@ -417,7 +401,7 @@ mod tests {
     #[tokio::test]
     async fn clean_up_removes_only_the_apps_downloads_and_forgets_what_went() {
         let t = crate::testing::test_app::TestApp::new();
-        let store = owned::path(&t.dirs()).unwrap();
+        let store = owned::place(&t.dirs()).unwrap();
         let home = t.data().join("vagrant-home");
         let alpine = owned_box("generic/alpine319", "virtualbox", "4.3.12");
         download_box(&home, &alpine, None, 1000);
@@ -441,7 +425,7 @@ mod tests {
             "generic/alpine319 (virtualbox, 4.3.12)\nbento/debian-12 (virtualbox, 1)\n",
         );
         let extra = ["cyberctf/attack-box:latest".to_string(), "kalilinux/kali-rolling".into()];
-        clean(&store, &extra, Some(&home), true).await.unwrap();
+        clean(&store, &extra, Some(&home)).await.unwrap();
         let calls = tools.calls();
         assert!(
             calls.contains(&"docker image rm nginx:1.27".to_string()) && calls.contains(&"docker image rm cyberctf/attack-box:latest".to_string()),
@@ -462,7 +446,7 @@ mod tests {
         drop(tools);
         // Docker down and Vagrant gone: nothing can be told, so nothing is forgotten.
         let _down = Tools::rules(&[("docker", crate::platform::exec::fake::fail("Cannot connect to the Docker daemon")), ("vagrant", None)]);
-        clean(&store, &[], Some(&home), true).await.unwrap();
+        clean(&store, &[], Some(&home)).await.unwrap();
         assert_eq!(owned::load(&store).unwrap(), owned, "the record survives a clean-up the tools couldn't answer");
     }
 
@@ -471,7 +455,7 @@ mod tests {
         // Regression: each removal's failure was dropped, and an item in use showed only as fewer
         // bytes freed.
         let t = crate::testing::test_app::TestApp::new();
-        let (store, home) = (owned::path(&t.dirs()).unwrap(), t.data().join("vagrant-home"));
+        let (store, home) = (owned::place(&t.dirs()).unwrap(), t.data().join("vagrant-home"));
         let alpine = owned_box("generic/alpine319", "virtualbox", "4.3.12");
         download_box(&home, &alpine, None, 1000);
         let nginx = owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() };
@@ -491,7 +475,7 @@ mod tests {
             ("image ls", crate::platform::exec::fake::ok("sha256:nginx\n")),
         ]);
         crate::testing::logs::take_warnings();
-        clean(&store, &[], Some(&home), false).await.unwrap();
+        clean(&store, &[], Some(&home)).await.unwrap();
         let logged = crate::testing::logs::take_warnings();
         assert!(logged.iter().any(|w| w.starts_with("Storage's clean-up kept nginx:1.27: ") && w.contains("container 1a2b is using it")), "{logged:?}");
         assert!(
@@ -501,30 +485,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_shared_terraform_plugins_are_counted_and_cleaned_as_the_apps() {
-        // Regression: each lab and target kept its own copy of the provider plugins (several
-        // hundred MB for AWS), long after the lab was gone, and the Storage view didn't count them.
-        // The shared cache is the app's alone (in its data folder): listed and cleaned with it.
-        let t = crate::testing::test_app::TestApp::new();
-        let _tools = Tools::rules(&[]);
-        let store = owned::path(&t.dirs()).unwrap();
-        let aws = t.data().join(crate::runtime::TERRAFORM_PLUGINS).join("registry.terraform.io/hashicorp/aws/5.0.0/darwin_arm64");
-        std::fs::create_dir_all(&aws).unwrap();
-        std::fs::write(aws.join("terraform-provider-aws"), vec![0u8; 2048]).unwrap();
-        let s = machine_storage(t.dirs(), Vec::new()).await.unwrap();
-        assert_eq!(s.plugins.iter().map(|i| (i.name.as_str(), i.bytes)).collect::<Vec<_>>(), [("Terraform provider plugins", 2048)]);
-        // A deploy worker running: they stay. (Not running: `clean` itself, the in-process "is a
-        // lab operation running" is process-wide, and other tests run lab operations meanwhile.)
-        assert_eq!(machine_storage_clean(t.dirs(), Vec::new(), true).await.unwrap(), 0);
-        assert_eq!(clean(&store, &[], None, false).await.unwrap(), 0);
-        assert_eq!(clean(&store, &[], None, true).await.unwrap(), 2048);
-        assert!(machine_storage(t.dirs(), Vec::new()).await.unwrap().plugins.is_empty());
-    }
-
-    #[tokio::test]
     async fn a_download_recorded_during_a_clean_up_is_kept() {
         let t = crate::testing::test_app::TestApp::new();
-        let store = owned::path(&t.dirs()).unwrap();
+        let store = owned::place(&t.dirs()).unwrap();
         let _tools = docker(&[("nginx:1.27", "sha256:nginx", 1000)], &[], "");
         let recorded = || owned::OwnedImage { reference: "nginx:1.27".into(), id: "sha256:nginx".into() };
         // Recorded after the clean-up looked (a worker's lab start): `forget_gone` reads it again.
@@ -552,17 +515,18 @@ mod tests {
     #[ignore = "needs Docker"]
     async fn real_docker_clean_up_keeps_the_players_image() {
         let (mine, apps) = ("cyberctf-e2e-player:1", "cyberctf-e2e-app:1");
-        let store = std::env::temp_dir().join(format!("cyberctf-e2e-store-{}", rand::random::<u32>())).join("storage.json");
+        let store = std::env::temp_dir().join(format!("cyberctf-e2e-store-{}", rand::random::<u32>()));
         build_throwaway(mine, "player").await;
-        let before = owned::Before::take(true, false).await;
+        let before = owned::Before::take(crate::runtime::Downloads { images: true, boxes: false }).await;
         build_throwaway(apps, "app").await;
         owned::claim(&store, &before, &[apps.to_string(), mine.to_string()], &[]).await;
-        let freed = clean(&store, &[], None, true).await.unwrap();
+        let freed = clean(&store, &[], None).await.unwrap();
         let exists = |tag: &'static str| async move { crate::platform::exec::run("docker", &["image", "inspect", tag], None).await.is_ok() };
         let (mine_left, apps_left) = (exists(mine).await, exists(apps).await);
         let _ = crate::platform::exec::run("docker", &["image", "rm", mine], None).await;
         let _ = crate::platform::exec::run("docker", &["image", "rm", apps], None).await;
-        std::fs::remove_dir_all(store.parent().unwrap()).ok();
+        crate::store::forget(&store);
+        std::fs::remove_dir_all(&store).ok();
         assert!(mine_left, "the player's image stays");
         assert!(!apps_left, "the app's image went");
         assert!(freed > 0, "the app's image's size is freed");
@@ -570,7 +534,8 @@ mod tests {
 
     #[test]
     fn a_vm_labs_boxes_are_read_from_its_vagrantfiles() {
-        // One VM per machine (vagrant) or Docker in one VM (docker-vm); a VM lab's attack box is
+        // One VM per machine (vagrant), or the helper VM an earlier version ran a container lab
+        // inside (docker-vm); a VM lab's attack box is
         // a machine of the lab, so its box is among the vagrant ones.
         let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("ad", &[]);

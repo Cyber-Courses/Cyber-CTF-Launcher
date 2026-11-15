@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +9,8 @@ import {
   leftoverIsTheRuns,
   ownedDownloads,
   ownedProjects,
+  projectVolumes,
+  removeDangling,
   parseBoxList,
   parseComposeLs,
   parseImageIds,
@@ -222,18 +223,34 @@ describe("the run's downloads", () => {
 });
 
 describe("the command line", () => {
-  it("lists nothing as the run's for a run with no lab, and refuses a missing folder", () => {
-    const root = run();
-    const script = join(import.meta.dirname, "lib", "owned.mjs");
-    // Whatever Docker runs here, none of it is the run's: the run installed no lab.
-    const r = spawnSync(process.execPath, [script, "projects", root], { encoding: "utf8" });
-    expect(r.status).toBe(0);
-    expect(r.stdout).not.toMatch(/^ours/m);
-    expect(spawnSync(process.execPath, [script, "projects"], { encoding: "utf8" }).status).toBe(2);
-  });
-
+  // Its run against this machine's Docker is owned.cli.test.ts, in the opt-in harness.
   it("finds the run's folder in CYBERCTF_WDIO_ROOT", () => {
     expect(runRoot({ CYBERCTF_WDIO_ROOT: "/tmp/run" })).toBe("/tmp/run");
     expect(runRoot({})).toBeNull();
+  });
+});
+
+describe("the volumes a project's containers hold", () => {
+  const A = "e465cfbd5789f9aff3cbbc62398bb3830e0f74b37b835640ad9d85b7a9dcbae1";
+  const B = "135385800a74aaa45a61d725cd8c13a7f4cb47a4822ee6f28defae9b133c1b08";
+
+  it("are read from the containers by the project's label, each once", () => {
+    const sh = tools({ "docker ps -aq": "c1\nc2\n", "docker inspect": `${A}\n${B}\n${A}\n` });
+    expect(projectVolumes("cyberctf-local-a", sh)).toEqual([A, B]);
+    expect(sh.calls[0]).toBe("docker ps -aq --filter label=com.docker.compose.project=cyberctf-local-a");
+    expect(sh.calls[1].endsWith(" c1 c2")).toBe(true);
+  });
+
+  it("are none without a container, and none when the engine doesn't answer", () => {
+    expect(projectVolumes("cyberctf-local-a", tools({ "docker ps -aq": "" }))).toEqual([]);
+    expect(projectVolumes("cyberctf-local-a", tools({}))).toEqual([]);
+  });
+
+  it("are removed after the down only where the engine holds them dangling", () => {
+    const sh = tools({ "docker volume ls": `${B}\nother\n`, "docker volume rm": "" });
+    expect(removeDangling([A, B], sh)).toEqual([B]);
+    expect(sh.calls).toContain(`docker volume rm --force ${B}`);
+    expect(removeDangling([], sh)).toEqual([]);
+    expect(removeDangling([A], tools({ "docker volume ls": "" }))).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 //! Reading a container lab running here: where it is reachable (the URL Open goes to), and the
-//! address blocks Docker's networks hold.
+//! address blocks Docker's networks hold; and whether this machine's Docker answers at all.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -7,12 +7,19 @@ use std::path::Path;
 use super::compose::{self, PsEntry, Publisher};
 use crate::platform::exec::run_read;
 use crate::runtime::Service;
+use crate::runtime::port::HostPort;
 
 mod networks;
 
 pub use networks::subnets_in_use;
 #[cfg(test)]
 use networks::{ipv4_subnets, networks_of_others};
+
+/// Whether this machine's Docker answers: `docker version` reaches its daemon (for this account),
+/// which names its OS. A Docker that isn't installed or isn't running doesn't.
+pub async fn answers() -> bool {
+    run_read("docker", &["version", "--format", "{{.Server.Os}}"], None).await.is_ok_and(|os| !os.trim().is_empty())
+}
 
 /// Whole words of a service's name or image repository that mark it as no web UI: a
 /// datastore, or a non-HTTP network service (a daemon's name with or without its `d`).
@@ -77,9 +84,9 @@ fn tcp(p: &Publisher) -> bool {
     p.protocol.is_empty() || p.protocol == "tcp"
 }
 
-/// The loopback URL of the lowest of `ports` (published TCP ports, 0 for none).
-fn lowest_url(ports: impl Iterator<Item = u16>) -> Option<String> {
-    ports.filter(|p| *p > 0).min().map(|port| format!("http://127.0.0.1:{port}"))
+/// The loopback URL of the lowest of `ports` (published TCP ports).
+fn lowest_url(ports: impl Iterator<Item = HostPort>) -> Option<String> {
+    ports.min().map(|port| format!("http://127.0.0.1:{port}"))
 }
 
 /// Where Open goes: a service the lab declares as HTTP (Isoloom's `isoloom.port.*` labels, in
@@ -88,7 +95,10 @@ fn open_url(entries: &[PsEntry], declared: &HashMap<String, Inspected>) -> Optio
     let running = || entries.iter().filter(|e| e.state == "running");
     let web_ports = running().flat_map(|e| {
         let web: Vec<&Service> = declared.get(&e.name).map(|i| i.services.iter().filter(|s| s.kind == "web").collect()).unwrap_or_default();
-        e.publishers.iter().filter(move |p| tcp(p) && web.iter().any(|s| s.ports.is_empty() || s.ports.contains(&p.target_port))).map(|p| p.published_port)
+        e.publishers
+            .iter()
+            .filter(move |p| tcp(p) && web.iter().any(|s| s.ports.is_empty() || s.ports.contains(&p.target().get())))
+            .filter_map(Publisher::published)
     });
     lowest_url(web_ports).or_else(|| first_published_url(entries))
 }
@@ -98,7 +108,9 @@ fn open_url(entries: &[PsEntry], declared: &HashMap<String, Inspected>) -> Optio
 /// so Open never lands on a database port or a service whose container has exited. None if
 /// no web service is up and publishing yet.
 fn first_published_url(entries: &[PsEntry]) -> Option<String> {
-    lowest_url(entries.iter().filter(|e| e.state == "running" && !is_datastore(e)).flat_map(|e| &e.publishers).filter(|p| tcp(p)).map(|p| p.published_port))
+    lowest_url(
+        entries.iter().filter(|e| e.state == "running" && !is_datastore(e)).flat_map(|e| &e.publishers).filter(|p| tcp(p)).filter_map(Publisher::published),
+    )
 }
 
 /// What `docker inspect` tells about one running container: the services the lab declares in

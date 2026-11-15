@@ -15,19 +15,13 @@ use super::profile::HostProfile;
 use crate::error::{Code, Error, Result};
 use crate::platform::keychain;
 
-/// Whether this build keeps the secrets in a file (a dev build, a test build whatever its profile,
-/// or an end-to-end run's app) rather than the keychain. A test binary built with a release-like
-/// profile (the rig's `rig`) has no debug assertions, and went to the system's keychain: the real
-/// Secret Service on a headless Linux clone, which refused.
-fn in_a_file() -> bool {
-    cfg!(debug_assertions) || cfg!(test) || crate::platform::test_root::root().is_some()
-}
+use crate::platform::keychain::bypassed as in_a_file;
 
 /// The secret stored for `id`. None stored is [`Code::NoPasswordStored`]; a store that can't be
 /// read (a locked keychain, its unlock prompt dismissed, a secrets file that doesn't parse) says
-/// why instead.
+/// why instead. Once read it is redacted from the logs, wherever a tool prints it.
 pub(crate) fn get_secret(id: &str) -> Result<String> {
-    read(id, &entry_name(id)).and_then(found)
+    read(id, &entry_name(id)).and_then(found).inspect(|s| crate::platform::redact::register(s))
 }
 
 /// Keeps `secret` for host `id`: in the keychain, in a file in a debug build ([`in_a_file`]).
@@ -141,7 +135,8 @@ mod dev_file {
     }
 
     /// The secrets in `path`: none when it isn't there. A file that can't be read or doesn't parse
-    /// is an error, never "no secrets": the next save would write the one secret over all the others.
+    /// is an error, never "no secrets": the next save would write the one secret over all the
+    /// others.
     pub(super) fn read_at(path: &Path) -> Result<BTreeMap<String, String>> {
         let raw = match std::fs::read_to_string(path) {
             Ok(raw) => raw,
@@ -165,7 +160,7 @@ mod dev_file {
     /// folder this user's only from the start.
     pub(super) fn write_at(path: &Path, map: &BTreeMap<String, String>) -> Result<()> {
         if let Some(dir) = path.parent() {
-            crate::platform::private_fs::dir(dir)?;
+            crate::platform::private_fs::create_dir(dir)?;
         }
         let raw = serde_json::to_string(map).map_err(|e| Error::Invalid(e.to_string()))?;
         crate::platform::atomic_file::write_private(path, raw)?;

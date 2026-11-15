@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** The drawing's size, in viewBox units (it stretches to its box). */
 const W = 160;

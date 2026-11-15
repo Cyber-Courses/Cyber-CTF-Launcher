@@ -18,45 +18,39 @@
 //! match, or an installer error fails the step, and the machine check then says whether the
 //! service answers. Nothing reports success on the strength of an installer merely opened.
 
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 use super::steps::Step;
+use crate::platform::exec::ps_quote;
+use crate::platform::host::Arch;
 
 /// The release installed. Its files and checksums are HashiCorp's published ones
 /// (`releases.hashicorp.com/vagrant-vmware-utility/<version>/…_SHA256SUMS`, signed with HashiCorp's
 /// release key); a new release changes the version and every checksum below together.
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 const VERSION: &str = "1.0.24";
 
 /// Where HashiCorp publishes the release's files.
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 fn url(file: &str) -> String {
     format!("https://releases.hashicorp.com/vagrant-vmware-utility/{VERSION}/{file}")
 }
 
-/// The macOS disk image for CPU `arch` (`std::env::consts::ARCH`), with its SHA-256. HashiCorp
+/// The macOS disk image for CPU `arch`, with its SHA-256. HashiCorp
 /// publishes one universal image under both names.
-#[cfg(any(target_os = "macos", test))]
-fn mac_image(arch: &str) -> (String, &'static str) {
-    let arch = if arch == "aarch64" { "arm64" } else { "amd64" };
+fn mac_image(arch: Arch) -> (String, &'static str) {
+    let arch = arch.docker_name();
     (format!("vagrant-vmware-utility_{VERSION}_darwin_{arch}.dmg"), "5f42cb017dd07270409eaee7c3b4a164ffa7c0f21d85c65840c4f81aab21d457")
 }
 
 /// The team of HashiCorp's Apple Developer ID, which signs the package (and is notarized).
-#[cfg(any(target_os = "macos", test))]
 const HASHICORP_TEAM: &str = "D38WU7D763";
 
 /// The Windows installer, with its SHA-256.
-#[cfg(any(target_os = "windows", test))]
 const WINDOWS_MSI: (&str, &str) = ("vagrant-vmware-utility_1.0.24_windows_amd64.msi", "8ee7bea062d7552a484b7d9ade369744e5cd9ab1b55eed8b7bd35a1b006666d6");
 
 /// That MSI's product code, which `msiexec /x` removes it by.
-#[cfg(any(target_os = "windows", test))]
 const WINDOWS_PRODUCT_CODE: &str = "{DE47C4D6-3BD9-4286-A93D-1DCA1CBADDA7}";
 
 /// The root half of the macOS install, run by `/bin/sh -c` with the downloaded image as `$1`:
 /// copied where only root writes (so nothing can swap it between the check and the install),
 /// checked, mounted there, its package checked as HashiCorp's and installed.
-#[cfg(any(target_os = "macos", test))]
 fn mac_root_script(sha256: &str) -> String {
     format!(
         r#"set -e
@@ -77,7 +71,6 @@ installer -pkg "$p" -target /"#
 /// folder, its checksum (a broken download stops before any prompt), then the root half through
 /// macOS's administrator prompt, the image's path handed over as an argument (never spliced into
 /// the script).
-#[cfg(any(target_os = "macos", test))]
 fn mac_script(file: &str, sha256: &str) -> String {
     let url = url(file);
     format!(
@@ -99,25 +92,18 @@ echo "$out""#
 }
 
 /// The macOS install: one step, as the player, raising macOS's administrator prompt itself.
-#[cfg(any(target_os = "macos", test))]
-pub fn mac_install(arch: &str) -> Step {
+pub fn mac_install(arch: Arch) -> Step {
     let (file, sha256) = mac_image(arch);
     Step {
         program: "sh".into(),
         args: vec!["-c".into(), mac_script(&file, sha256), "sh".into(), mac_root_script(sha256)],
         note: Some(format!("Downloading HashiCorp's Vagrant VMware Utility {VERSION}…")),
+        private: None,
     }
 }
 
 /// The macOS removal, as the package's own `uninstall.tool` does it: the service, then its folder.
-#[cfg(target_os = "macos")]
 pub const MAC_UNINSTALL: &str = "/opt/vagrant-vmware-desktop/bin/vagrant-vmware-utility service uninstall; rm -rf /opt/vagrant-vmware-desktop && (pkgutil --forget com.vagrant.vagrant-vmware-utility || true)";
-
-/// `text` as a PowerShell single-quoted string.
-#[cfg(any(target_os = "windows", test))]
-fn ps_quoted(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "''"))
-}
 
 /// The elevated half of the Windows install, with the downloaded MSI's path in `$msi` (set by
 /// the player's half, before this): an install already there only has its service started
@@ -125,7 +111,6 @@ fn ps_quoted(text: &str) -> String {
 /// (SHA-256, then Authenticode signature by HashiCorp) and installed. Exits 0 when done (3010,
 /// "restart to finish", is done), 2 on a checksum and 3 on a signature that doesn't match, else
 /// msiexec's own code.
-#[cfg(any(target_os = "windows", test))]
 fn windows_elevated(sha256: &str) -> String {
     format!(
         r#"$ErrorActionPreference = 'Stop'
@@ -149,10 +134,9 @@ try {{
 /// checksum, then the elevated half through the UAC prompt (`-Verb RunAs`), given the MSI's path
 /// inside its own script (an elevated process gets neither this one's pipes nor its
 /// environment). A declined prompt exits 1223 (`ERROR_CANCELLED`), which reads as cancelled.
-#[cfg(any(target_os = "windows", test))]
 fn windows_script(file: &str, sha256: &str) -> String {
     let url = url(file);
-    let elevated = ps_quoted(&windows_elevated(sha256));
+    let elevated = ps_quote(&windows_elevated(sha256));
     format!(
         r"$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -174,18 +158,17 @@ try {{
 }
 
 /// The Windows install: one PowerShell step, raising the UAC prompt itself.
-#[cfg(any(target_os = "windows", test))]
 pub fn windows_install() -> Step {
     let (file, sha256) = WINDOWS_MSI;
     Step {
         program: "powershell".into(),
         args: vec!["-NoProfile".into(), "-NonInteractive".into(), "-Command".into(), windows_script(file, sha256)],
         note: Some(format!("Downloading HashiCorp's Vagrant VMware Utility {VERSION}…")),
+        private: None,
     }
 }
 
 /// The Windows removal: the pinned release's MSI removed by its product code, through UAC.
-#[cfg(any(target_os = "windows", test))]
 pub fn windows_uninstall() -> Step {
     Step {
         program: "powershell".into(),
@@ -198,6 +181,7 @@ pub fn windows_uninstall() -> Step {
             ),
         ],
         note: Some("Removing the Vagrant VMware Utility (Windows asks for an administrator's approval)…".into()),
+        private: None,
     }
 }
 
@@ -207,7 +191,7 @@ mod tests {
 
     #[test]
     fn the_mac_install_checks_hashicorps_file_and_signature_before_installing_as_root() {
-        let step = mac_install("aarch64");
+        let step = mac_install(Arch::Aarch64);
         assert_eq!(step.program, "sh");
         let [c, user, zero, root] = step.args.as_slice() else { panic!("{:?}", step.args) };
         assert_eq!((c.as_str(), zero.as_str()), ("-c", "sh"));
@@ -221,8 +205,8 @@ mod tests {
         assert!(at("pkgutil --check-signature") < at("spctl --assess --type install") && at("spctl --assess") < at("installer -pkg"));
         assert!(root.contains("Hashicorp, Inc. (D38WU7D763)") && root.contains("mktemp -d /private/tmp/"), "{root}");
         // The image is the same file whatever the Mac's CPU: one checksum for both names.
-        assert_eq!(mac_image("aarch64").1, mac_image("x86_64").1);
-        assert!(mac_image("x86_64").0.ends_with("_darwin_amd64.dmg"));
+        assert_eq!(mac_image(Arch::Aarch64).1, mac_image(Arch::X86_64).1);
+        assert!(mac_image(Arch::X86_64).0.ends_with("_darwin_amd64.dmg"));
     }
 
     /// Runs `script` with `sh -c`, `args` after it, with `bin` (stand-ins for the system's tools)
@@ -237,10 +221,8 @@ mod tests {
     /// A stand-in for the tool `name`: a shell script `body`.
     #[cfg(target_os = "macos")]
     fn stand_in(bin: &std::path::Path, name: &str, body: &str) {
-        use std::os::unix::fs::PermissionsExt;
         let file = bin.join(name);
-        std::fs::write(&file, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::testing::write_executable(&file, format!("#!/bin/sh\n{body}\n"));
     }
 
     #[cfg(target_os = "macos")]
@@ -250,7 +232,7 @@ mod tests {
         let bin = app.data();
         stand_in(bin, "curl", r#"while [ $# -gt 0 ]; do [ "$1" = -o ] && echo tampered > "$2"; shift; done"#);
         stand_in(bin, "osascript", "echo prompted >&2; exit 0");
-        let (file, sha256) = mac_image("aarch64");
+        let (file, sha256) = mac_image(Arch::Aarch64);
         let (code, stderr) = run_sh(&mac_script(&file, sha256), &["true"], bin);
         assert_eq!(code, 1, "{stderr}");
         assert!(stderr.contains("SHA-256 doesn't match") && !stderr.contains("prompted"), "{stderr}");
@@ -283,14 +265,13 @@ mod tests {
         );
         assert!(elevated.contains("'HashiCorp, Inc.'") && elevated.contains("$env:SystemRoot"), "{elevated}");
         // The elevated script is one PowerShell string inside the player's: every quote doubled.
-        assert!(script.contains(&ps_quoted(&elevated)));
-        assert_eq!(ps_quoted("it's"), "'it''s'");
+        assert!(script.contains(&ps_quote(&elevated)));
         assert!(windows_uninstall().args.last().unwrap().contains(WINDOWS_PRODUCT_CODE));
     }
 
     #[test]
     fn every_pinned_checksum_is_a_sha256() {
-        for sha in [mac_image("aarch64").1, WINDOWS_MSI.1] {
+        for sha in [mac_image(Arch::Aarch64).1, WINDOWS_MSI.1] {
             assert!(sha.len() == 64 && sha.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{sha}");
         }
         assert!(WINDOWS_MSI.0.contains(VERSION));

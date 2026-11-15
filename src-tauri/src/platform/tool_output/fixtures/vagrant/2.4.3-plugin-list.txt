@@ -1,0 +1,4 @@
+vagrant-libvirt (0.12.2, global)
+  - Version Constraint: > 0
+vagrant-vmware-desktop (3.0.4, global)
+vagrant_utm (0.2

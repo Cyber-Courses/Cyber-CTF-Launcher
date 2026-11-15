@@ -343,6 +343,22 @@
       "passed": "Bestanden",
       "warning": "Bestanden, mit einer Warnung",
       "failed": "Fehlgeschlagen"
+    },
+    "trust": {
+      "title": "Bestätige die Identität dieses Servers",
+      "titleChanged": "Die Identität dieses Servers hat sich geändert",
+      "body": "Es wurde noch nichts an ihn gesendet. Vergleiche jeden Fingerabdruck unten mit dem, den der Server selbst anzeigt; bestätige nur, wenn sie identisch sind. Cyber CTF akzeptiert dann diesen Server, und nur ihn, unter dieser Adresse.",
+      "changedBody": "Er zeigt einen anderen Fingerabdruck als den zuvor bestätigten, daher wurde nichts an ihn gesendet. Wenn du den Server neu installiert oder sein Zertifikat ersetzt hast, vergleiche den neuen Fingerabdruck mit dem, den der Server anzeigt, und bestätige ihn. Sonst brich ab: Jemand könnte die Verbindung abfangen.",
+      "certificate": "TLS-Zertifikat (selbstsigniert)",
+      "certificateWhere": "In der Proxmox-Weboberfläche: der Knoten > System > Zertifikate, der Fingerabdruck des Zertifikats. Auf dem Knoten: pvenode cert info.",
+      "sha256": "SHA-256-Fingerabdruck",
+      "previous": "Zuvor bestätigt",
+      "sshKeys": "SSH-Hostschlüssel des Knotens",
+      "sshWhere": "Auf der Konsole des Knotens: for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done",
+      "sshUnread": "Die SSH-Hostschlüssel des Knotens konnten nicht gelesen werden ({error}): SSH zu ihm bleibt abgelehnt, bis sie hier bestätigt sind.",
+      "confirm": "Sie stimmen überein: diesem Server vertrauen",
+      "confirmChanged": "Ich habe ihn ersetzt: dem neuen vertrauen",
+      "cancel": "Abbrechen"
     }
   }
 }

@@ -4,7 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "engines": {
-    "node": "^22.12.0 || ^24.0.0 || ^25.0.0 || >=26.0.0"
+    "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3206",
@@ -25,6 +25,7 @@
     "release-check": "scripts/release/release-check.sh",
     "test": "vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
     "test:watch": "vitest",
+    "test:harness": "vitest run --config vitest.harness.config.mts",
     "test:web": "playwright test",
     "test:desktop": "tests/desktop/run.sh",
     "test:integration": "tests/integration/run.sh",

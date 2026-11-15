@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compiles and lints the Rust core for the platforms this machine is not (Linux and Windows on
-# x64), so code behind `#[cfg(target_os = …)]` is checked before CI's matrix runs it. Clippy only:
+# x64, macOS on arm64), so code behind `#[cfg(target_os = …)]` is checked before CI's matrix runs it. Clippy only:
 # nothing is linked and no test runs. The C dependencies' build scripts (dbus, aws-lc, ring, the
 # Windows resource) need a cross toolchain this machine may not have; stand-ins that answer every
 # probe and write empty objects take their place, which is enough for `cargo check`, never for a
@@ -9,7 +9,8 @@
 #   scripts/check/other-platforms.sh                  every other platform
 #   ONLY="linux" scripts/check/other-platforms.sh
 #
-# Steps: linux (x86_64-unknown-linux-gnu), windows (x86_64-pc-windows-msvc), each followed by its
+# Steps: linux (x86_64-unknown-linux-gnu), windows (x86_64-pc-windows-msvc), macos
+# (aarch64-apple-darwin), each followed by its
 # -docs step (rustdoc, every intra-doc link resolving with that platform's items). Needs rustup (a
 # Rust from Homebrew or a distribution can't add targets): without it the run stops. A target that
 # isn't installed is skipped (rustup target add <triple>).
@@ -89,4 +90,5 @@ lint() {
 RUSTDOC_DENY="-D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags"
 lint linux x86_64-unknown-linux-gnu
 lint windows x86_64-pc-windows-msvc
+lint macos aarch64-apple-darwin
 suite_end "other platforms"

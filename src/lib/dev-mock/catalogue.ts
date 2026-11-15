@@ -31,7 +31,9 @@ export const runOptionsQuery: BrowserHandler = (args, { sc }) => {
   const onUtm = generic.vms.length > 0 && !!lab?.runtime.providers.includes("utm");
   const options = onUtm ? { ...generic, vms: [...generic.vms, utmPath], refused: generic.refused.filter((r) => r.provider !== "utm") } : generic;
   const cpus = lab?.runtime.architectures ?? [];
-  const emulated = options.vms.length > 0 && cpus.length > 0 && !cpus.includes(sc.arch);
+  // A lab names its CPUs as images do (`arm64`), the machine as Rust does (`aarch64`).
+  const machineCpu = sc.arch === "aarch64" ? "arm64" : sc.arch;
+  const emulated = options.vms.length > 0 && cpus.length > 0 && !cpus.includes(machineCpu);
   return emulated ? { ...options, emulated, vms: options.vms.filter((p) => p.provider !== null && EMULATORS.includes(p.provider)) } : options;
 };
 

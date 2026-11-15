@@ -37,7 +37,7 @@ use std::path::Path;
 #[cfg(any(windows, test))]
 use self::collect::{WorkDir, follow_batch};
 #[cfg(any(windows, test))]
-use self::script::{Plan, env_json, forwarded_env, own_env, powershell_args, ps_quote, script};
+use self::script::{Plan, env_json, forwarded_env, own_env, powershell_args, script};
 #[cfg(any(windows, test))]
 use super::vagrant::{Event, Outcome, Step};
 use crate::error::{Error, Result};
@@ -53,8 +53,8 @@ pub(super) enum Mode {
 
 /// How Vagrant runs for machines on Hyper-V (`hyperv`) or not.
 pub(super) fn mode(hyperv: bool) -> Mode {
-    // Never in unit tests: they answer from the scripted tools, and must never raise a prompt.
-    decide(cfg!(windows) && !cfg!(test), hyperv, may_manage_hyperv)
+    // Scripted tools answer Vagrant itself, and must never raise a prompt.
+    decide(cfg!(windows) && super::tools_in_use().are_the_machines(), hyperv, may_manage_hyperv)
 }
 
 /// The decision itself: only Hyper-V on Windows goes through the script, elevated only when this
@@ -366,6 +366,21 @@ fn powershell() -> std::path::PathBuf {
     Path::new(&root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
 }
 
+/// `s` as a PowerShell single-quoted string. PowerShell also takes the typographic single quotes
+/// as quote characters, so every one of them is doubled too.
+pub(crate) fn ps_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(c);
+        }
+        out.push(c);
+    }
+    out.push('\'');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,7 +391,8 @@ mod tests {
         assert_eq!(decide(true, true, || true), Mode::Script { runas: false }, "an admin (or Hyper-V admin) runs it without a prompt");
         assert_eq!(decide(true, false, || false), Mode::Direct, "other providers never need it");
         assert_eq!(decide(false, true, || false), Mode::Direct, "never off Windows");
-        assert_eq!(mode(true), Mode::Direct, "never in unit tests");
+        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
+        assert_eq!(mode(true), Mode::Direct, "never with scripted tools");
     }
 
     #[test]

@@ -60,7 +60,7 @@ describe("AWS account setup", () => {
     await go(user, /^continue$/i);
     expect(heading()).toBe("AWS CLI");
     expect(document.body.textContent).toContain("Signed in as");
-    expect(document.body.textContent).toContain("arn:aws:iam::482100000193:user/florian");
+    expect(document.body.textContent).toContain("arn:aws:iam::482100000193:user/ada");
     await user.selectOptions(selects()[0], "lab");
     await flush();
     expect(argsOf(calls, "aws_cli_identity").at(-1)).toEqual({ profile: "lab" });

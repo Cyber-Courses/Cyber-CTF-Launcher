@@ -15,7 +15,7 @@ impl LabRun {
     /// When the files can't be made again (the lab's own folder or spec is gone too), saying what
     /// is left, since nothing here can reach it any more.
     pub(super) fn files_back(&self) -> Result<bool> {
-        if self.manifest().is_file() {
+        if self.has_project() {
             return Ok(true);
         }
         let recorded =
@@ -24,7 +24,9 @@ impl LabRun {
             return Ok(false);
         }
         log::warn!("{}: the run's files are gone while it is recorded; generating them again", self.dir.display());
-        lab::prepare(&self.dir, self.target()).map(|_| true).map_err(|e| {
+        // A helper VM an earlier version left has no target to generate again: Isoloom dropped it.
+        let target = self.target().ok_or_else(|| Error::Invalid("Isoloom no longer generates Docker inside a VM".into()));
+        target.and_then(|t| lab::prepare(&self.dir, t)).map(|_| true).map_err(|e| {
             Error::Invalid(format!(
                 "This lab's files are gone ({e}), and what it started may still be running: Cyber CTF can't reach it any more. Remove its containers or VMs with Docker or your hypervisor (their names start with {}).",
                 self.name
@@ -42,12 +44,12 @@ impl LabRun {
     ///
     /// When the run can't be read (the engine doesn't answer): whether it is gone can't be told.
     pub(crate) async fn is_gone(&self) -> Result<bool> {
-        if !self.manifest().is_file() {
+        if !self.has_project() {
             return Ok(false);
         }
-        let lab = self.lab().await?;
-        let status = self.read(&lab).await?;
-        Ok(status.live && !status.machines.is_empty() && status.machines.iter().all(|m| m.state == isothrum_runner::MachineState::Absent))
+        let status = self.read().await?;
+        // A live read lists what it found: none, or only machines absent, is nothing left.
+        Ok(status.live && status.machines.iter().all(|m| m.state == isothrum_runner::MachineState::Absent))
     }
 
     /// `e`, an operation's failure on this run, as the player reads it: on this machine's Docker,

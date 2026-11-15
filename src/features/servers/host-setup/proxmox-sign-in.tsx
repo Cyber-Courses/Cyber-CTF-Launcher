@@ -39,6 +39,7 @@ export function ProxmoxSignIn({ s, signInFields, authorizeKey }: { s: HostSetup;
       {signInMethod === "sshKey" ? <SshKeyFields s={s} /> : signInFields}
       {signInMethod === "token" && authorizeKey}
       <StepError error={connectError} />
+      {s.trustDialog}
       <BackNav onBack={back}>
         <Button onClick={connect} disabled={!connectionOk || connecting}>
           {connecting ? (

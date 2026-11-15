@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
+import { test, expect, agreeToCloudTerraform as agree, openApp, navButton, pageTitle } from "./fixtures";
 
 // A VM lab's and a cloud lab's start failing in the dev mock (`launch=fail`: the first start of
 // the page load fails, after a few lines of its log; see src/lib/dev-mock/lab-ops.ts), then Retry
@@ -18,11 +18,13 @@ async function openLab(page: Page, search: string, title: string) {
   await expect(pageTitle(page)).toHaveText(title);
 }
 
-/** Start lab (or Retry), then Start in "Where should it run?" on the place already picked. */
-async function start(page: Page, from: "Start lab" | "Retry", picked: RegExp) {
+/** Start lab (or Retry), then Start in "Where should it run?" on the place already picked; in a
+ *  cloud account, once the player agreed to the lab's own Terraform running there (`cloud`). */
+async function start(page: Page, from: "Start lab" | "Retry", picked: RegExp, cloud = false) {
   await button(page, from).click();
   const where = page.getByRole("dialog", { name: "Where should the lab run?" });
   await expect(where.getByRole("radio", { name: picked })).toHaveAttribute("aria-checked", "true");
+  if (cloud) await agree(where);
   await where.getByRole("button", { name: "Start", exact: true }).click();
   await expect(where).toBeHidden();
 }
@@ -50,14 +52,14 @@ test.describe("a start that fails, then a retry", () => {
   test("a cloud lab: Terraform's failure under the header, then Retry creates the services", async ({ page }) => {
     await openApp(page, "&launch=fail");
     await openLab(page, "ssrf", "EC2 SSRF");
-    await start(page, "Start lab", /AWS sandbox/);
+    await start(page, "Start lab", /AWS sandbox/, true);
 
     await expect(main(page)).toContainText("Failed to start");
     const notice = main(page).getByRole("alert").filter({ hasText: "Couldn’t start EC2 SSRF" });
     await expect(notice).toContainText("Error: creating EC2 Instance: UnauthorizedOperation: You are not authorized to perform this operation.");
     await expect(page.getByRole("alert").filter({ hasText: "Couldn’t start EC2 SSRF" })).toHaveCount(2);
 
-    await start(page, "Retry", /AWS sandbox/);
+    await start(page, "Retry", /AWS sandbox/, true);
     await expect(main(page)).toContainText("Running·on AWS · eu-west-3");
     await expect(main(page)).not.toContainText("Failed to start");
     await expect(main(page).getByRole("heading", { level: 3, name: "Cloud services" })).toBeVisible();

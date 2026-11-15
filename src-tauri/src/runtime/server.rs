@@ -1,6 +1,6 @@
 //! Server hosts and cloud accounts: the player's own ESXi / Proxmox server (VM labs run there
 //! through Vagrant or Terraform) and their AWS / Azure / GCP / `DigitalOcean` / Linode / OCI
-//! accounts. Profiles (non-secret) live in `<app data>/server.json`; each host's secret lives
+//! accounts. Profiles (non-secret) live in the launcher's store (`crate::store`); each host's secret lives
 //! in the OS keychain (a file in debug builds, like the auth session).
 //!
 //! Neither `vagrant-vmware-esxi` nor `vagrant-proxmox` reads environment variables on its
@@ -21,6 +21,9 @@ mod azure_size;
 pub(crate) mod budget;
 pub(crate) mod capacity;
 pub(crate) mod checks;
+/// Every claim of the host kinds table has a witness that it changes what runs.
+#[cfg(test)]
+mod claims;
 mod cloud_checks;
 pub(crate) mod connection_test;
 mod contract;
@@ -34,6 +37,7 @@ pub(crate) mod secrets;
 pub(crate) mod setup;
 pub(crate) mod sign_in;
 pub(crate) mod store;
+pub(crate) mod tls_pin;
 
 // What the rest of the app uses, at the paths it always had. The globs carry each command's
 // generated `__cmd__*` macros along with it (lib.rs registers the commands by this path).

@@ -1,4 +1,4 @@
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { WDIO_PICK, wdioAnswer } from "@/lib/wdio";
 
 /** What a picker is told: its title, and where it opens. */
@@ -23,4 +23,12 @@ export async function pickFile(options: PickerOptions): Promise<string | null> {
   if (answered !== null) return answered;
   const picked = await open({ ...options, directory: false, multiple: false });
   return typeof picked === "string" ? picked : null;
+}
+
+/** The system's save dialog: the file chosen to write, or null when the player closed it. Under
+ *  the GUI e2e, the specs' path, as [`pickFolder`]'s. */
+export async function pickSaveFile(options: PickerOptions & { filters?: { name: string; extensions: string[] }[] }): Promise<string | null> {
+  const answered = wdioAnswer(WDIO_PICK);
+  if (answered !== null) return answered;
+  return (await save(options)) ?? null;
 }

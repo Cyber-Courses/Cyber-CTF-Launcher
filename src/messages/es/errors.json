@@ -18,6 +18,16 @@
     "boxDownloadStalled": "La descarga de la box de VM del lab dejó de avanzar ({minutes} minutos sin nada nuevo), así que se detuvo. Revisa tu conexión a Internet e inténtalo de nuevo.",
     "boxDownloadFailed": "No se pudo descargar la box de VM del lab: {reason}. Revisa tu conexión a Internet e inténtalo de nuevo.",
     "serverAuthFailed": "Cyber CTF no puede iniciar sesión en {server}: su token se revocó o su contraseña cambió. Actualízalo en Servidores.",
+    "toolTooOld": "Este lab necesita {tool} {required} o posterior, y este equipo tiene {found}. Actualízalo y vuelve a iniciar el lab.",
+    "elevationFailed": "Hyper-V necesita derechos de administrador, y no se pudieron obtener ({reason}). Vuelve a iniciar el lab y acepta la solicitud.",
+    "labNotReady": "El lab se inició, pero no llegó a estar listo: {detail}",
+    "machinesGone": "Algunas máquinas de este lab ya no están ({machines}): se eliminaron fuera de Cyber CTF, así que no puede reanudarse como estaba. Vuelve a iniciarlo para obtener una copia nueva.",
+    "nothingToResume": "No queda nada de este lab para reanudar (sus contenedores o VM detenidos ya no están). Vuelve a iniciarlo para obtener una copia nueva.",
+    "notParkable": "Este lab no se puede pausar ni apagar. Detenlo en su lugar.",
+    "stepStalled": "El paso `{step}` del lab no mostró progreso durante {minutes} minutos, así que se detuvo. Su última salida fue: «{lastLine}». Vuelve a iniciar el lab; si sigue ocurriendo, revisa la red y los recursos de Docker, del hipervisor o del servidor.",
+    "stepSilent": "El paso `{step}` del lab no mostró nada durante {minutes} minutos, así que se detuvo. Vuelve a iniciar el lab; si sigue ocurriendo, revisa la red y los recursos de Docker, del hipervisor o del servidor.",
+    "stepCeiling": "El paso `{step}` del lab seguía trabajando después de {hours} horas, lo máximo que puede durar un paso, así que se detuvo. Vuelve a iniciar el lab; si sigue ocurriendo, revisa la red y los recursos de Docker, del hipervisor o del servidor.",
+    "stepTimedOut": "El paso `{step}` del lab llegó a su límite de {minutes} minutos, así que se detuvo. Vuelve a iniciar el lab; si sigue ocurriendo, revisa la red y los recursos de Docker, del hipervisor o del servidor.",
     "signInCancelled": "Inicio de sesión cancelado.",
     "signInDenied": "El inicio de sesión se rechazó en Cyber Auth, así que sigues sin sesión. Vuelve a iniciar sesión y permite Cyber CTF para continuar.",
     "signInCodeUnavailable": "Iniciar sesión con un código aún no está disponible. Copia el enlace de inicio de sesión en cualquier navegador, en esta máquina u otra.",
@@ -40,6 +50,9 @@
     "reapNoHost": "No hay ninguna cuenta registrada para él, así que el launcher no puede destruirlo. Elimina sus recursos en la consola de tu nube.",
     "pickCloudAccount": "Este lab se ejecuta en tu cuenta en la nube: elige una de tus cuentas en la nube para iniciarlo.",
     "noHypervisor": "Ningún hipervisor listo en esta máquina ejecuta este lab. Instala uno desde la página Máquina, o ejecuta el lab en un servidor o en tu cuenta en la nube.",
-    "turnedOffByPolicy": "Tu organización desactivó esta función en este equipo (ajuste de directiva {setting}). Pide ayuda a tu equipo de TI si la necesitas."
+    "turnedOffByPolicy": "Tu organización desactivó esta función en este equipo (ajuste de directiva {setting}). Pide ayuda a tu equipo de TI si la necesitas.",
+    "tlsUnconfirmed": "El certificado de {server} aún no se ha confirmado (SHA-256 {presented}), así que no se le ha enviado nada. Para confirmarlo, ábrelo en Servidores, elige Editar y compara la huella con la que muestra el propio servidor antes de confirmarla.",
+    "tlsChanged": "El certificado de {server} ha cambiado (era {pinned}, ahora es {presented}), así que no se le ha enviado nada: alguien podría estar interceptando la conexión. Si cambiaste el certificado tú mismo, ábrelo en Servidores, elige Editar y compara la huella con la que muestra el propio servidor antes de confirmarla.",
+    "sshHostKeyRefused": "La clave de host SSH de {host} no es la que se confirmó (o aún no se ha confirmado ninguna), así que se rechazó la conexión. Si el servidor se reinstaló, ábrelo en Servidores, elige Editar y comprueba su nueva clave."
   }
 }

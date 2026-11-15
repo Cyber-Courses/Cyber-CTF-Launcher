@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, answerConfirm } from "./fixtures";
+import { test, expect, agreeToCloudTerraform as agree, openApp, navButton, pageTitle, answerConfirm } from "./fixtures";
 
 // Cloud labs (EC2 SSRF, cloud services in the player's AWS account) through the dev mock: a cloud
 // start streams a Terraform log and leaves outputs and an auto-stop. `cloud=none`: no cloud
@@ -31,6 +31,7 @@ test.describe("cloud labs", () => {
     await expect(where).toContainText("Billed to your cloud account.");
     await expect(where).toContainText("about $0.02 an hour (about $0.08 until it auto-stops in 4 h)");
     await expect(where).toContainText("It lets in your public IP only.");
+    await agree(where);
     await where.getByRole("button", { name: "Start", exact: true }).click();
 
     // Terraform's steps, then the lab's services in the account.
@@ -103,6 +104,7 @@ test.describe("cloud labs", () => {
     await button(page, "Start lab").click();
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
     await expect(where.getByRole("radio", { name: /Lab AWS/ })).toHaveAttribute("aria-checked", "true");
+    await agree(where);
     await where.getByRole("button", { name: "Start", exact: true }).click();
     await expect(main(page)).toContainText("Running·on AWS · eu-west-3");
     await expect(main(page).getByText("Lab AWS", { exact: true })).toBeVisible();

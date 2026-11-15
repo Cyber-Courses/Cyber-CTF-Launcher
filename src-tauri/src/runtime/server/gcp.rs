@@ -4,6 +4,7 @@
 //! refuses past that limit ("billing quota exceeded"); one project needs a single free slot,
 //! checked here with a clear message instead of a failed launch.
 
+use crate::platform::tool_output::gcloud as gcloud_said;
 use std::time::Duration;
 
 use crate::platform::AppDirs;
@@ -33,15 +34,36 @@ enum Project {
 pub async fn labs_project(dirs: &AppDirs, id: &str) -> Result<String> {
     // One at a time: two launches (or a test and a launch) at once each saw no project yet and
     // created one, and the last to save won. The second waits, then finds the first's project.
+    // In this process first, then across processes: the app and the command line are two
+    // processes, and each may launch a lab on the account or test it.
     static CREATING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    let _one_at_a_time = CREATING.lock().await;
+    let one_at_a_time = CREATING.lock().await;
+    let one_process_at_a_time = crate::runtime::inflight::lock::acquire(&creating_lock(dirs)?).await.map_err(crate::runtime::inflight::lock::unavailable)?;
     // Read fresh under the lock, and only this host's field is written back (the rest of the
     // store may have been edited meanwhile).
     let host = find(&load(dirs)?, id)?;
-    match host.gcp_project.as_deref() {
-        Some(p) if project_state(p).await? == Project::Active => Ok(p.to_string()),
-        _ => create_project(dirs, &host).await,
+    if let Some(p) = host.gcp_project.as_deref()
+        && project_state(p).await? == Project::Active
+    {
+        return Ok(p.to_string());
     }
+    // Made, set up and saved (or deleted) on a task of its own, the locks with it: a caller
+    // dropped meanwhile (the account's test, its window reloaded) left a project made but never
+    // saved nor deleted, holding one of the billing account's few slots.
+    let dirs = dirs.clone();
+    let creating = tokio::spawn(async move {
+        let _held = (one_at_a_time, one_process_at_a_time);
+        create_project(&dirs, &host).await
+    });
+    creating.await.map_err(|e| Error::Invalid(format!("creating the Cyber CTF labs project: {e}")))?
+}
+
+/// The OS lock held across processes while the labs project is checked and, when needed,
+/// created and saved (see [`labs_project`]).
+fn creating_lock(dirs: &AppDirs) -> Result<std::path::PathBuf> {
+    let dir = dirs.data()?;
+    std::fs::create_dir_all(dir)?;
+    Ok(dir.join("gcp-project.lock"))
 }
 
 /// A gcloud call given up after `limit`.
@@ -59,7 +81,7 @@ async fn project_state(p: &str) -> Result<Project> {
             "DELETE_REQUESTED" | "DELETE_IN_PROGRESS" => Ok(Project::Gone),
             other => Err(Error::Invalid(format!("the Cyber CTF labs project {p} is {other}, so labs can't run in it. Check it in the Google Cloud console."))),
         },
-        Err(Error::CommandFailed { stderr, .. }) if stderr.contains("NOT_FOUND") => Ok(Project::Gone),
+        Err(Error::CommandFailed { stderr, .. }) if gcloud_said::not_found(&stderr) => Ok(Project::Gone),
         Err(e) => Err(Error::Invalid(format!(
             "couldn't check the Cyber CTF labs project {p}: {}. Check your connection and that gcloud is signed in as the account that owns it (gcloud auth login), then try again.",
             last_error_line(&e)
@@ -126,7 +148,7 @@ fn create_args<'a>(project: &'a str, org: Option<&'a str>) -> Vec<&'a str> {
 /// Why the labs project couldn't be linked to `billing`: no free project slot (said plainly,
 /// with the way out), or gcloud's own reason.
 fn link_failure(billing: &str, why: &str) -> String {
-    if why.contains("quota") || why.contains("Precondition") {
+    if gcloud_said::no_project_slot(why) {
         format!(
             "No free project slot on billing account {billing}: Google allows only a few projects per billing account. Unlink one you don't use (gcloud billing projects unlink <project>) or request an increase at https://support.google.com/code/contact/billing_quota_increase"
         )
@@ -171,7 +193,7 @@ mod tests {
             "ERROR: (gcloud.projects.describe) User [other@example.com] does not have permission to access projects instance [cyberctf-labs-aaaaaa] (or it may not exist)",
             "timed out after 60s (the tool or its backend may be stuck)",
         ] {
-            let tools = Tools::rules(&[("projects describe", fail(stderr))]);
+            let tools = Tools::strict_rules(&[("projects describe", fail(stderr))]);
             let err = labs_project(&t.dirs(), &id).await.unwrap_err().to_string();
             assert!(err.starts_with("couldn't check the Cyber CTF labs project cyberctf-labs-aaaaaa:"), "{err}");
             assert!(!tools.called("projects create"), "{:?}", tools.calls());
@@ -183,16 +205,43 @@ mod tests {
     async fn an_active_project_is_kept_and_a_deleted_one_replaced() {
         let t = TestApp::new();
         let id = account(&t, Some("cyberctf-labs-aaaaaa"));
-        let tools = Tools::rules(&[("projects describe", ok("ACTIVE\n"))]);
+        let tools = Tools::strict_rules(&[("projects describe", ok("ACTIVE\n"))]);
         assert_eq!(labs_project(&t.dirs(), &id).await.unwrap(), "cyberctf-labs-aaaaaa");
         assert!(!tools.called("projects create") && !tools.called("services enable"));
         drop(tools);
-        let tools = Tools::rules(&[("projects describe", fail("ERROR: NOT_FOUND: project not found"))]);
+        let tools = Tools::strict_rules(&[
+            ("projects describe", fail("ERROR: NOT_FOUND: project not found")),
+            ("projects create", ok("")),
+            ("projects link", ok("")),
+            ("services enable", ok("")),
+        ]);
         let made = labs_project(&t.dirs(), &id).await.unwrap();
         assert!(made.starts_with("cyberctf-labs-") && made != "cyberctf-labs-aaaaaa", "{made}");
         assert!(tools.called("billing projects link") && tools.called("--billing-account 0X0X0X-0X0X0X-0X0X0X"));
         assert!(tools.called(&format!("services enable compute.googleapis.com --project {made}")));
         assert_eq!(saved_project(&t), Some(made));
+    }
+
+    /// A real race (across processes): the lock was this process's own, so two labs launched
+    /// together on an account without a project (one from the app, one from the command line)
+    /// each made one; the last to save won and the other lab ran on, billing, in a
+    /// project the launcher no longer knew. Another process holding the lock (a handle of its
+    /// own here) is waited for, and the project it saved is the one used.
+    #[tokio::test]
+    async fn a_project_being_made_by_another_process_is_waited_for_then_used() {
+        let t = TestApp::new();
+        let id = account(&t, None);
+        let tools = Tools::rules(&[("projects describe", ok("ACTIVE\n"))]);
+        let other = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(creating_lock(&t.dirs()).unwrap()).unwrap();
+        other.lock().unwrap();
+        let waited = tokio::time::timeout(Duration::from_millis(600), labs_project(&t.dirs(), &id)).await;
+        assert!(waited.is_err(), "waits while another process makes the project");
+        assert!(!tools.called("projects create"), "{:?}", tools.calls());
+        // The other process saved its project and let go.
+        save_project(&t.dirs(), &id, "cyberctf-labs-bbbbbb").unwrap();
+        drop(other);
+        assert_eq!(labs_project(&t.dirs(), &id).await.unwrap(), "cyberctf-labs-bbbbbb");
+        assert!(!tools.called("projects create"), "{:?}", tools.calls());
     }
 
     #[tokio::test]
@@ -205,7 +254,7 @@ mod tests {
 
     /// What `project_state` makes of a `describe` answering `describe`.
     async fn state_of(describe: Option<crate::platform::exec::fake::Reply>) -> Result<Project> {
-        let _tools = Tools::rules(&[("projects describe", describe)]);
+        let _tools = Tools::strict_rules(&[("projects describe", describe)]);
         project_state("p").await
     }
 
@@ -216,13 +265,26 @@ mod tests {
         let t = TestApp::new();
         let id = account(&t, None);
         for (step, stderr) in [("services enable", "ERROR: quota exceeded"), ("billing projects link", "Cloud billing quota exceeded")] {
-            let tools = Tools::rules(&[(step, fail(stderr))]);
+            // The steps before the failing one succeed; each step's rule is longer than these,
+            // so it answers its own call.
+            let tools = Tools::strict_rules(&[
+                ("projects create", ok("")),
+                ("projects link", ok("")),
+                ("services", ok("")),
+                ("projects delete", ok("")),
+                (step, fail(stderr)),
+            ]);
             assert!(labs_project(&t.dirs(), &id).await.is_err());
             assert!(tools.called("projects delete"), "{step}: {:?}", tools.calls());
             assert_eq!(saved_project(&t), None);
         }
         // Not even deletable: the error names it, to delete by hand.
-        let _tools = Tools::rules(&[("services enable", fail("quota")), ("projects delete", fail("permission denied"))]);
+        let _tools = Tools::strict_rules(&[
+            ("projects create", ok("")),
+            ("projects link", ok("")),
+            ("services enable", fail("quota")),
+            ("projects delete", fail("permission denied")),
+        ]);
         let err = labs_project(&t.dirs(), &id).await.unwrap_err().to_string();
         assert!(err.contains("couldn't be deleted either: delete it in the Google Cloud console"), "{err}");
         assert_eq!(saved_project(&t), None);

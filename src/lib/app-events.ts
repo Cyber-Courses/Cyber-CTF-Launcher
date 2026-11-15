@@ -1,6 +1,6 @@
-import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { warn } from "@/lib/failure";
+import { DROP, channel, send, signal } from "@/lib/event-channel";
 
 /**
  * Events between the app's windows (the main window and the Settings window), broadcast with
@@ -14,9 +14,16 @@ export const NAVIGATE_EVENT = "cyberctf:navigate";
 /** Show the onboarding again in the main window. */
 export const REPLAY_ONBOARDING_EVENT = "cyberctf:replay-onboarding";
 
+/** Sign-in changed in another window. */
+export const authChanged = signal(AUTH_CHANGED_EVENT);
+/** Another window asks the main one to show a screen: the screen's name (a string). */
+export const navigate = channel<string>(NAVIGATE_EVENT, (tab) => (typeof tab === "string" ? tab : DROP));
+/** Another window asks the main one to show the onboarding again. */
+export const replayOnboarding = signal(REPLAY_ONBOARDING_EVENT);
+
 /** Asks the main window to show `tab`, and closes this window when it is the Settings one. */
 export function showInMainWindow(tab: string) {
-  emit(NAVIGATE_EVENT, tab).catch(warn("asking the main window to switch screens"));
+  send(navigate, tab).catch(warn("asking the main window to switch screens"));
   closeIfSettings();
 }
 

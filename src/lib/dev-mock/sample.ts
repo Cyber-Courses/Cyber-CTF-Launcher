@@ -11,7 +11,7 @@ import { withSetup } from "@/lib/dev-mock/setup-options";
 
 export const report: SystemReport = withSetup({
   os: "macos",
-  arch: "arm64",
+  arch: "aarch64",
   pkgManager: { name: "brew", installed: true, version: "4.4.0" },
   docker: { installed: true, version: "27.3.1" },
   dockerRunning: true,
@@ -132,7 +132,7 @@ const servers = (): ServerList => ({
 });
 
 let cpu = 38;
-let sharedFolder = { enabled: false, path: "/Users/florian/cyberctf-share", mountPoint: "/workspace/share" };
+let sharedFolder = { enabled: false, path: "/Users/ada/cyberctf-share", mountPoint: "/workspace/share" };
 
 /** The sample account's picture: drawn here, so the preview shows one without a CDN. */
 const PICTURE =
@@ -140,14 +140,14 @@ const PICTURE =
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#1d1d22"/><circle cx="32" cy="25" r="11" fill="#5ad4a4"/><path d="M12 58c2-13 10-19 20-19s18 6 20 19z" fill="#5ad4a4"/></svg>',
   );
-const player = () => ({ loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org", picture: PICTURE });
+const player = () => ({ loggedIn: true, name: "Ada Lovelace", email: "ada@example.org", picture: PICTURE });
 
 /** The player, this install and the API. */
 const accountCommands = {
   auth_status: player,
   auth_login: player,
   auth_login_device: player,
-  agent_info: () => ({ installId: "c0ffee", name: "florian-mbp", arch: "arm64", capabilities: ["docker", "vagrant"], state: "online" }),
+  agent_info: () => ({ installId: "c0ffee", name: "ada-laptop", arch: "arm64", capabilities: ["docker", "vagrant"], state: "online" }),
   api_query: apiQuery,
 } satisfies Handlers;
 
@@ -181,7 +181,6 @@ const machineCommands = {
       { name: "postgres:16", bytes: 0.43 * GB },
     ],
     boxes: [{ name: "StefanScherer/windows_2019", bytes: 11.2 * GB }],
-    plugins: [{ name: "Terraform provider plugins", bytes: 0.6 * GB }],
   }),
   attack_box_status: () => attackBox(),
   attack_box_sign_in: () => ({ user: "player", password: "dev-mock-password" }),
@@ -202,14 +201,14 @@ const serverCommands = {
   server_running_labs: () => ({}),
   server_test: () => ({ ok: true, reachable: true, authenticated: true, latencyMs: 12, message: "Connected", checks: [] }),
   aws_month_to_date_cost: () => 6.4,
-  aws_cli_identity: () => "arn:aws:iam::482100000193:user/florian",
+  aws_cli_identity: () => "arn:aws:iam::482100000193:user/ada",
   aws_profiles: () => ["default"],
   // The other clouds' sign-in reads, so their setup steps render in the preview as AWS's do.
   azure_subscriptions: () => [
     { name: "Pay-As-You-Go", id: "0f1e2d3c-4b5a-4968-8776-655443322110", isDefault: true },
     { name: "Lab sandbox", id: "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d", isDefault: false },
   ],
-  gcp_account: () => "florian@cyberctf.org",
+  gcp_account: () => "ada@example.org",
   gcp_billing_accounts: () => [{ id: "01AB23-CD45EF-67GH89", name: "Cyber CTF billing", open: true }],
   gcp_organizations: () => [{ id: "123456789012", name: "cyberctf.org" }],
   oci_config: () => ({ configured: false, tenancy: "", region: "" }),
@@ -240,6 +239,15 @@ const appCommands = {
 
 // A Map, not an object lookup: a command named like an Object.prototype member is unknown too.
 const HANDLERS = new Map<string, Handler>(Object.entries({ ...accountCommands, ...labCommands, ...machineCommands, ...serverCommands, ...appCommands }));
+
+/**
+ * The mock's own answers that no command asks: `running_labs` is what the core's scan sees up,
+ * which the mock tells through `labs_watch` and `run_events` as the core's reconcile does.
+ */
+export const MOCK_KNOBS: ReadonlySet<string> = new Set(["running_labs"]);
+
+/** The commands the mock answers. */
+export const mockedCommands = (): string[] => [...HANDLERS.keys()].filter((name) => !MOCK_KNOBS.has(name));
 
 /** The mock's answer to a command; null for one it doesn't know. */
 export function answer(cmd: string, args: Args): unknown {

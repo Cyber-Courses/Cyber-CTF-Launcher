@@ -2,7 +2,7 @@
 
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { DoorOpen, Lock, Monitor, Network, ShieldCheck, Terminal } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { ComputerData, ServiceRow, ZoneData, attack, isIp, netLabel, publishHandle, serviceMeta } from "@/features/labs/network-diagram/model";
 import { useT, type T } from "@/lib/i18n";
 import { CopyText } from "@/features/labs/network-diagram/copy-text";

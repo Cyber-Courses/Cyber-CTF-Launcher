@@ -125,7 +125,7 @@ test.describe("cloud setup", () => {
     await button(setup, "Continue").click();
 
     await expect(stepOf(setup)).toHaveText("Step 4 of 6");
-    await expect(setup.getByText("arn:aws:iam::482100000193:user/florian")).toBeVisible();
+    await expect(setup.getByText("arn:aws:iam::482100000193:user/ada")).toBeVisible();
     await setup.getByRole("combobox", { name: "Region" }).selectOption("eu-central-1");
     await button(setup, "Continue").click();
 

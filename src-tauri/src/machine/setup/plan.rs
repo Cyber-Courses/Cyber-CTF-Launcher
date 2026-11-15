@@ -31,6 +31,7 @@ pub enum SetupPath {
 /// What a whole setup is for.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Wanted {
+    /// The lab types to ready the machine for.
     pub paths: Vec<SetupPath>,
     /// The engine to set up; none: the setup's own ([`Options::engine`]).
     pub engine: Option<Engine>,
@@ -43,7 +44,9 @@ pub struct Wanted {
 /// `<hypervisor>`, `plugin:<name>`, `vmware-utility`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Step {
+    /// The item it is about.
     pub item: String,
+    /// What it does.
     pub action: Action,
 }
 
@@ -127,7 +130,7 @@ pub fn plan(r: &SystemReport, options: &Options, wanted: &Wanted) -> Plan {
                 if matches!(action, Action::Install { .. } | Action::Relogin) || docker_install(&action) { "docker".into() } else { engine_item.clone() };
             plan.steps.push(Step { item, action });
         }
-        if r.os == "windows" {
+        if r.os == crate::platform::host::Os::Windows {
             plan.items.push("wsl".into());
         }
         plan.items.extend(["docker".to_owned(), engine_item]);

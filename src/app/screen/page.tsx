@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { KeyRound, Monitor, MonitorOff, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import { Toaster } from "@/components/ui/toaster";
 import { DevMockGate } from "@/components/dev-mock-gate";
 import { WindowEndedBar } from "@/components/window-ended-bar";
@@ -13,7 +14,7 @@ import { tell } from "@/lib/failure";
 import { toast } from "@/lib/toast";
 import { useT } from "@/lib/i18n";
 import { screenOpenRdp, screenPassword, type ScreenConnection } from "@/lib/tauri";
-import { useScreen, type ScreenState } from "@/app/screen/use-screen";
+import { useScreen, useTunnelClosed, type ScreenState } from "@/app/screen/use-screen";
 import { SignInPopover } from "@/app/screen/sign-in";
 
 /** A lab machine's screen window (opened by `screen_window`): its VNC screen drawn by noVNC through
@@ -25,6 +26,7 @@ function Screen() {
   const [state, setState] = useState<ScreenState>({ kind: "connecting" });
   const [attempt, setAttempt] = useState(0);
   useScreen(host, attempt, setState);
+  useTunnelClosed(setState);
   const retry = useCallback(() => {
     setState({ kind: "connecting" });
     setAttempt((a) => a + 1);
@@ -78,9 +80,12 @@ function Unavailable({ message, onRetry }: { message: string; onRetry: () => voi
 }
 
 /** A Remote Desktop: where it answers, the system's client to open it in (or what to install), and
- *  its password copied on request. The window holds the connection (a tunnel, for a cloud's) open. */
+ *  its password copied on request. The window holds the connection (a tunnel, for a cloud's) open.
+ *  This computer's clipboard is shared with the machine only when the player turns it on, for this
+ *  window's session: nothing else of this computer (drives, printers, devices) is. */
 function RemoteDesktop({ connection }: { connection: ScreenConnection }) {
   const t = useT();
+  const [clipboard, setClipboard] = useState(false);
   const copyPassword = () => {
     screenPassword()
       .then((p) => navigator.clipboard.writeText(p))
@@ -100,9 +105,20 @@ function RemoteDesktop({ connection }: { connection: ScreenConnection }) {
       </p>
       {connection.note && <p className="max-w-md text-[0.75rem]">{connection.note}</p>}
       {connection.tunnelled && <p className="max-w-md text-[0.75rem]">{t("shell.vmScreen.tunnelled")}</p>}
+      {connection.client && (
+        <label className="flex max-w-md items-start gap-3 text-left">
+          <Switch checked={clipboard} onCheckedChange={setClipboard} aria-describedby="rdp-clipboard-hint" className="mt-0.5" />
+          <span>
+            <span className="block text-[0.8125rem] text-foreground">{t("shell.vmScreen.shareClipboard")}</span>
+            <span id="rdp-clipboard-hint" className="block text-[0.75rem]">
+              {t("shell.vmScreen.shareClipboardHint")}
+            </span>
+          </span>
+        </label>
+      )}
       <div className="flex gap-2">
         {connection.client && (
-          <Button variant="primary" size="sm" onClick={() => void screenOpenRdp().catch(tell(t("shell.vmScreen.openFailed")))}>
+          <Button variant="primary" size="sm" onClick={() => void screenOpenRdp(clipboard).catch(tell(t("shell.vmScreen.openFailed")))}>
             <Monitor className="size-3.5" /> {t("shell.vmScreen.openRdp", { client: connection.client })}
           </Button>
         )}

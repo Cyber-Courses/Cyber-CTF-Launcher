@@ -3,6 +3,7 @@
 
 use crate::error::Result;
 use crate::platform::AppDirs;
+use crate::platform::host::Os;
 
 /// A stable identifier for this installation, generated once and kept in the app data
 /// dir. It is the merge key for the agent, so reinstalling re-registers the same machine
@@ -11,17 +12,33 @@ pub(super) fn install_id(dirs: &AppDirs) -> Result<String> {
     install_id_at(&dirs.data()?.join("install-id"))
 }
 
-/// The install id kept at `path`, generated and written there the first time.
+/// The install id kept at `path`, generated and written there the first time. The first time is
+/// decided under an OS lock on `<path>.lock`: the agent registering and the app's window asking
+/// for the agent's info (or two processes) each found no id, made one, and the last written won,
+/// so the machine was registered under an id it then forgot, and showed twice on the website.
 fn install_id_at(path: &std::path::Path) -> Result<String> {
-    if let Ok(existing) = std::fs::read_to_string(path) {
-        let trimmed = existing.trim();
-        if !trimmed.is_empty() {
-            return Ok(trimmed.to_string());
-        }
+    if let Some(id) = kept_id(path) {
+        return Ok(id);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(path.with_extension("lock"))?;
+    lock.lock()?;
+    // Made by another caller while this one waited.
+    if let Some(id) = kept_id(path) {
+        return Ok(id);
     }
     let id = random_hex();
     crate::platform::atomic_file::write(path, &id)?;
     Ok(id)
+}
+
+/// The install id at `path`, when one was written there.
+fn kept_id(path: &std::path::Path) -> Option<String> {
+    let existing = std::fs::read_to_string(path).ok()?;
+    let trimmed = existing.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 /// 16 random bytes as hex: install ids, co-location tokens and nonces.
@@ -32,11 +49,11 @@ pub(super) fn random_hex() -> String {
 /// A human label for this machine (editable server-side later). Not an identifier.
 pub(super) fn machine_name() -> String {
     let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).ok();
-    machine_name_from(std::env::var("CYBERCTF_AGENT_NAME").ok(), user, std::env::consts::OS)
+    machine_name_from(std::env::var("CYBERCTF_AGENT_NAME").ok(), user, Os::HERE)
 }
 
 /// The machine label from an explicit name, else the user and the OS.
-fn machine_name_from(explicit: Option<String>, user: Option<String>, os: &str) -> String {
+fn machine_name_from(explicit: Option<String>, user: Option<String>, os: Os) -> String {
     if let Some(n) = explicit
         && !n.trim().is_empty()
     {
@@ -44,10 +61,9 @@ fn machine_name_from(explicit: Option<String>, user: Option<String>, os: &str) -
     }
     let user = user.filter(|s| !s.trim().is_empty());
     let os = match os {
-        "macos" => "Mac",
-        "windows" => "PC",
-        "linux" => "Linux",
-        other => other,
+        Os::Macos => "Mac",
+        Os::Windows => "PC",
+        Os::Linux => "Linux",
     };
     match user {
         Some(u) => format!("{u}'s {os}"),
@@ -56,7 +72,7 @@ fn machine_name_from(explicit: Option<String>, user: Option<String>, os: &str) -
 }
 
 pub(super) fn arch() -> &'static str {
-    std::env::consts::ARCH
+    crate::platform::host::Arch::HERE.id()
 }
 
 /// The launcher app's own version (semver), reported so the website can tell which build each
@@ -69,7 +85,7 @@ pub(super) fn app_version() -> &'static str {
 /// This machine's OS as the website shows it: `"macos 15.1"`, `"windows 11"`, `"linux 24.04"`, or
 /// the family alone when the version can't be read.
 pub(super) fn os_label() -> String {
-    os_label_from(std::env::consts::OS, sysinfo::System::os_version().as_deref())
+    os_label_from(Os::HERE.id(), sysinfo::System::os_version().as_deref())
 }
 
 /// The OS label from its family and the version the OS reports, lowercased; only the version's
@@ -91,6 +107,28 @@ pub(super) fn capabilities() -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// A real race (Clean Code ch.13, check-then-act): callers asking for the id at once on a
+    /// first start each made their own. Many threads released together all get one id.
+    #[test]
+    fn callers_at_once_on_a_first_start_all_get_one_id() {
+        let dir = std::env::temp_dir().join(format!("cyberctf-install-{}", random_hex()));
+        let path = dir.join("data").join("install-id");
+        let start = std::sync::Arc::new(std::sync::Barrier::new(16));
+        let callers: Vec<_> = (0..16)
+            .map(|_| {
+                let (path, start) = (path.clone(), std::sync::Arc::clone(&start));
+                std::thread::spawn(move || {
+                    start.wait();
+                    install_id_at(&path).unwrap()
+                })
+            })
+            .collect();
+        let ids: std::collections::BTreeSet<String> = callers.into_iter().map(|c| c.join().unwrap()).collect();
+        assert_eq!(ids.len(), 1, "{ids:?}");
+        assert_eq!(ids.first(), Some(&install_id_at(&path).unwrap()), "the id kept is the one handed out");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
     #[test]
     fn the_install_id_is_made_once_and_kept() {
         let dir = std::env::temp_dir().join(format!("cyberctf-install-{}", random_hex()));
@@ -108,11 +146,11 @@ mod tests {
 
     #[test]
     fn the_machine_name_prefers_the_explicit_name_then_the_user() {
-        assert_eq!(machine_name_from(Some("  Lab box ".into()), Some("ada".into()), "linux"), "Lab box");
-        assert_eq!(machine_name_from(Some("  ".into()), Some("ada".into()), "macos"), "ada's Mac");
-        assert_eq!(machine_name_from(None, Some("bob".into()), "windows"), "bob's PC");
-        assert_eq!(machine_name_from(None, Some(" ".into()), "linux"), "Cyber CTF Linux");
-        assert_eq!(machine_name_from(None, None, "freebsd"), "Cyber CTF freebsd");
+        assert_eq!(machine_name_from(Some("  Lab box ".into()), Some("ada".into()), Os::Linux), "Lab box");
+        assert_eq!(machine_name_from(Some("  ".into()), Some("ada".into()), Os::Macos), "ada's Mac");
+        assert_eq!(machine_name_from(None, Some("bob".into()), Os::Windows), "bob's PC");
+        assert_eq!(machine_name_from(None, Some(" ".into()), Os::Linux), "Cyber CTF Linux");
+        assert_eq!(machine_name_from(None, None, Os::Macos), "Cyber CTF Mac");
         assert_ne!(machine_name(), "");
         assert_eq!(capabilities(), vec!["docker".to_string()]);
         assert_eq!(arch(), std::env::consts::ARCH);

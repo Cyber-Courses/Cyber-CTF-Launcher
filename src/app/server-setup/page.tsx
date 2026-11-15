@@ -2,15 +2,15 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { HostSetupPage, SetupTrademarks } from "@/features/servers/host-setup";
 import { startingSetup } from "@/features/servers/host-setup/setup-model";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/toaster";
 import { WindowTitleBar } from "@/components/window-title-bar";
-import { SERVER_CHANGED, isCloudProvider, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
+import { isCloudProvider, serverChanged, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
 import { warn } from "@/lib/failure";
+import { send } from "@/lib/event-channel";
 import { useT } from "@/lib/i18n";
 import { DevMockGate } from "@/components/dev-mock-gate";
 
@@ -56,7 +56,7 @@ function Setup() {
                 report={report}
                 onRefresh={check}
                 onSaved={() => {
-                  emit(SERVER_CHANGED).catch(warn("telling the main window a server changed"));
+                  send(serverChanged).catch(warn("telling the main window a server changed"));
                 }}
                 onDone={close}
               />

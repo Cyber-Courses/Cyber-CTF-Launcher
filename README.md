@@ -53,7 +53,7 @@ echo "deb [signed-by=/usr/share/keyrings/cyberctf.asc] https://cyber-courses.git
 sudo apt update && sudo apt install cyber-ctf
 ```
 
-Or download the `.deb` (`_amd64.deb`, `_arm64.deb`) or the `.AppImage` (`_amd64`, `_aarch64`).
+Or download the `.deb` (`_amd64.deb`, `_arm64.deb`), the `.rpm` for Fedora and RHEL (`.x86_64.rpm`, `.aarch64.rpm`) or the `.AppImage` (`_amd64`, `_aarch64`).
 
 ### Updates
 

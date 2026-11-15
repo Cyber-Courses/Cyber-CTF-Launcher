@@ -6,7 +6,6 @@
 mod attack_box;
 mod corpus_docker;
 mod docker_lab;
-mod docker_vm_lab;
 mod flag_contract;
 mod launch_commands;
 mod per_machine;
@@ -21,9 +20,9 @@ mod vm_lab;
 /// A scenario starts and stops its lab through the launcher's own functions (`launch::start_*`,
 /// `runtime::start`, `lifecycle::stop_run`, `stop_lab`), never by calling the runner's `up` or
 /// `down` on a run it opened itself: what the launcher does around the runner (generating the
-/// files, the form's marks, opening UTM and trying its passing `-600` refusal again) is what a
-/// real run goes through. `docker_vm_lab`'s scenario once built its start by hand, so it skipped that
-/// retry and failed on a UTM run where the app would not have.
+/// files, the form's marks, the hypervisor's checks and retries) is what a real run goes through.
+/// A scenario once built its start by hand, so it skipped UTM's retry and failed on a UTM run
+/// where the app would not have.
 #[cfg(test)]
 /// The scenarios' Rust sources (their files and their folders: `support/`, a family's own
 /// modules), each as its path under `src/integration_tests` and its text, but the files
@@ -89,17 +88,17 @@ mod start_path {
 
     #[test]
     fn a_run_started_by_hand_is_told_from_one_read_or_handed_over() {
-        // docker_vm_lab.rs as it was: the run opened and brought up in one expression.
-        let by_hand = "let up = async {\n lab::prepare(&dir, t)?;\n isothrum::LabRun::docker_in_vm(&home, &dir, &id)?.up(&[], Some(p), &mut log(&id)).await\n}";
+        // A scenario that once did: the run opened and brought up in one expression.
+        let by_hand = "let up = async {\n lab::prepare(&dir, t)?;\n isothrum::LabRun::vm(&home, &dir, &id)?.up(&[], Some(p), &mut log(&id)).await\n}";
         assert_eq!(direct_changes(by_hand).len(), 1);
         // A run bound to a variable, then brought up or down.
         assert_eq!(direct_changes("let run = ServerRun::new(&home, &dir, id).unwrap();\nlet up = run.up(&place, &[], &mut log).await;\nlet down = run.down(&place, &mut log).await;").len(), 2);
         // Read, checked, or handed to the launcher's stop: fine.
         for fine in [
-            "isothrum::LabRun::docker_in_vm(&home, &dir, &id).unwrap().status().await;",
+            "isothrum::LabRun::vm(&home, &dir, &id).unwrap().status().await;",
             "isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.check().await;",
-            "let stopped = lifecycle::stop_run(isothrum::LabRun::docker_in_vm(&home, &dir, &id).unwrap(), &dir, log(&id)).await;",
-            "let started = launch::start_docker_in_vm_run(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut log(&id)).await;",
+            "let stopped = lifecycle::stop_run(isothrum::LabRun::vm(&home, &dir, &id).unwrap(), &dir, log(&id)).await;",
+            "let started = launch::start_vm_run(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut log(&id)).await;",
         ] {
             assert!(direct_changes(fine).is_empty(), "{fine}");
         }
@@ -158,7 +157,7 @@ mod reached {
 
 /// Every scenario runs through `support::scenario`, so its lab is torn down whatever happens in
 /// its checks: one left behind fails the scenarios after it (a UTM VM still registered made every
-/// later docker-vm import fail, after an `expect` ended a scenario before its stop).
+/// later VM import fail, after an `expect` ended a scenario before its stop).
 #[cfg(test)]
 mod teardown {
     #[test]

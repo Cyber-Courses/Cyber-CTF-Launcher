@@ -1,10 +1,9 @@
 //! The runner's events as the launcher's progress: the lines of a deploy log (the lab page shows
-//! them as they come, and the sidebar takes its step from the last one). A step's own line (the
-//! manifest's note for it), what its tool prints, and what the runner warns about are shown;
+//! them as they come, and the sidebar takes its step from the last one). A step's own line (its note), what its tool prints, and what the runner warns about are shown;
 //! state moves, outputs and the final result or error are not (the caller says how it ended).
 
 use super::super::deploy_log;
-use isothrum_runner::{Event, EventKind, Events, ReadyState, StepState, WarningCode};
+use isothrum_runner::{Event, EventKind, Events, StepState, WarningCode};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 /// An operation's event sink, and the lines it sends: the sink crosses threads (the runner's
@@ -57,7 +56,6 @@ pub(super) fn line(kind: &EventKind) -> Option<String> {
     match kind {
         EventKind::Step { state: StepState::Running, note: Some(note), .. } => Some(note.clone()),
         EventKind::Log { line, .. } => Some(line.clone()),
-        EventKind::Ready { state: ReadyState::Waiting, detail, .. } if !detail.is_empty() => Some(format!("Waiting for the lab to be ready: {detail}")),
         EventKind::Warning { code, message } => warning(*code, message),
         _ => None,
     }

@@ -11,11 +11,10 @@ import { flush } from "@/test/ui";
 // The launch picker's steps: a remembered choice skips its step, Back walks to the step before,
 // and "Don't ask again" saves what the path chose.
 
-const path = (target: string, provider: Provider): LabRunPath => ({ provider, badge: "none", evidence: target });
-/** A dual-form lab's run options here: its helper VM and one VM per machine, each on VirtualBox and QEMU. */
+const path = (_target: string, provider: Provider): LabRunPath => ({ provider });
+/** A dual-form lab's run options here: Docker, and one VM per machine on VirtualBox and QEMU. */
 const options: LabRunOptions = {
   docker: path("compose", "virtualbox"),
-  dockerVm: [path("docker-vm", "virtualbox"), path("docker-vm", "qemu")],
   vms: [path("vagrant", "virtualbox"), path("vagrant", "qemu")],
   servers: [],
   cloudDocker: [],
@@ -40,38 +39,34 @@ beforeEach(() => {
 });
 
 describe("useRunTarget's steps", () => {
-  it("asks for the form, then the hypervisor, and Back from the hypervisor returns to the form", async () => {
+  it("offers a container lab one VM form here, one VM per machine, then asks its hypervisor; Back returns to the places", async () => {
     const run = await picker();
+    expect(run.current.vmForms).toEqual([{ kind: "local-vms", provider: "virtualbox" }]);
     act(() => {
       run.current.steps.pickPlatform({ kind: "vm" });
     });
-    expect(run.current.steps.step).toBe("form");
-    act(() => {
-      run.current.steps.pickForm({ kind: "local-vm", provider: "virtualbox" });
-    });
     expect(run.current.steps.step).toBe("hypervisor");
     expect(run.current.steps.isLastStep).toBe(true);
+    expect(run.current.runOn.kind).toBe("local-vms");
     act(() => {
       run.current.steps.back();
     });
-    expect(run.current.steps.step).toBe("form");
+    expect(run.current.steps.step).toBe("platform");
   });
 
-  it("skips the hypervisor step for the one Settings remembers, the form step ending the path on it", async () => {
+  it("skips the hypervisor step for the one Settings remembers", async () => {
     setVmProvider("qemu");
     const run = await picker();
     act(() => {
       run.current.steps.pickPlatform({ kind: "vm" });
     });
-    act(() => {
-      run.current.steps.pickForm({ kind: "local-vm", provider: "virtualbox" });
-    });
-    expect(run.current.steps.step).toBe("form");
-    expect(run.current.steps.isLastStep).toBe(true);
-    expect(run.current.runOn).toEqual({ kind: "local-vm", provider: "qemu" });
+    expect(run.current.steps.step).toBe("platform");
+    expect(run.current.runOn).toEqual({ kind: "local-vms", provider: "qemu" });
   });
 
-  it("skips the form step for a remembered form, and Back from the hypervisor returns to the places", async () => {
+  it("reads a remembered helper VM (a form no longer offered) as nothing remembered", async () => {
+    localStorage.setItem("cyberctf.labs.vmForm", "vm");
+    expect(getLocalVmForm()).toBeNull();
     setLocalVmForm("vms");
     const run = await picker();
     act(() => {
@@ -79,10 +74,6 @@ describe("useRunTarget's steps", () => {
     });
     expect(run.current.steps.step).toBe("hypervisor");
     expect(run.current.runOn.kind).toBe("local-vms");
-    act(() => {
-      run.current.steps.back();
-    });
-    expect(run.current.steps.step).toBe("platform");
   });
 
   it("asks for the ports after the engine, unless they are remembered: the engine step ends the path then", async () => {
@@ -136,9 +127,6 @@ describe("useRunTarget's Don't ask again", () => {
     const run = await picker();
     act(() => {
       run.current.steps.pickPlatform({ kind: "vm" });
-    });
-    act(() => {
-      run.current.steps.pickForm({ kind: "local-vms", provider: "virtualbox" });
     });
     act(() => {
       run.current.steps.pickHypervisor("qemu");

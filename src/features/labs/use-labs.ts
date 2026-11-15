@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiQuery, type LabChallenge, type LabFileProblem, type Provider, type Runtime } from "@/lib/tauri";
 import { catalogueFor, refreshStatus, setCatalogue, useLabState } from "@/features/labs/lab-store";
-import { useLabPolling } from "@/features/labs/lab-polling";
+import { useWatchLabs } from "@/features/labs/lab-watch";
 import { useImportedLabs } from "@/features/labs/imported-labs";
 import type { T } from "@/lib/i18n";
 import { describeError } from "@/lib/errors";
@@ -104,8 +104,8 @@ const NONE_COMPLETED = new Set<string>();
  */
 export function useLabs(reloadKey: unknown = 0) {
   const { labs, error, completed, retry } = useCatalogue(reloadKey);
-  // Each lab's own status alone says whether it runs: the infrastructure scan only picks which
-  // labs to read again (`hotLabs`). A lab whose launch failed has its machines up, which the scan
+  // Each lab's own status alone says whether it runs: the infrastructure scan only tells the
+  // core which labs to read again. A lab whose launch failed has its machines up, which the scan
   // sees, but is not running.
   const statuses = useLabState("statuses");
   // What the scan sees up: only for the labs the catalogue doesn't list (`runningUnlisted`).
@@ -113,11 +113,11 @@ export function useLabs(reloadKey: unknown = 0) {
   // Labs whose status has been asked at least once (answered or not): a page can wait for its
   // first answer instead of rendering a "not started" lab that flips to running a beat later.
   const probed = useLabState("probed");
-  // One poll for the window, however many screens use this (see lab-polling).
-  useLabPolling(labs);
-  // The labs imported from a folder: no catalogue lists them, their statuses polled the same way.
+  // Watched by the core for the window, however many screens use this (see lab-watch).
+  useWatchLabs(labs);
+  // The labs imported from a folder: no catalogue lists them, their statuses watched the same way.
   const imported = useImportedLabs();
-  useLabPolling(imported);
+  useWatchLabs(imported);
   return { labs, imported, error, retry, statuses, scanned, completed, refreshStatus, probed };
 }
 

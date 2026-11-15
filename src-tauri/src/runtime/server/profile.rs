@@ -35,9 +35,16 @@ pub struct HostProfile {
     /// Proxmox node name. GCP: the optional organization id.
     #[serde(default)]
     pub node: Option<String>,
-    /// Proxmox: accept the API's self-signed certificate (the Proxmox default).
+    /// Proxmox: the API has a self-signed certificate (the Proxmox default), trusted by its
+    /// fingerprint ([`HostProfile::tls_fingerprint`]) instead of the system's trust store.
     #[serde(default)]
     pub insecure_tls: bool,
+    /// Proxmox with a self-signed certificate: the SHA-256 fingerprint of the certificate the
+    /// learner confirmed for it; the only one accepted. None until they have (nothing is sent to
+    /// the server then).
+    #[serde(default)]
+    #[ts(optional = nullable, as = "Option<String>")]
+    pub tls_fingerprint: Option<crate::runtime::server::tls_pin::Fingerprint>,
     /// Clouds: terminate a lab's instance this many hours after it starts (0 = never).
     #[serde(default)]
     pub auto_stop_hours: Option<u32>,
@@ -87,6 +94,13 @@ pub struct SshKeySignIn {
 }
 
 impl HostProfile {
+    /// How this host's TLS certificate is trusted: by its confirmed fingerprint when it is
+    /// self-signed, else by the system's trust store.
+    pub fn tls_trust(&self) -> crate::runtime::server::tls_pin::Trust {
+        use crate::runtime::server::tls_pin::Trust;
+        if self.insecure_tls { Trust::Pinned(self.tls_fingerprint) } else { Trust::System }
+    }
+
     /// Whether the keychain holds a secret for this host. AWS in CLI mode, Azure, GCP and OCI
     /// sign in through their own CLI / config, so the launcher keeps nothing for them.
     pub(crate) fn keeps_secret(&self) -> bool {
@@ -179,6 +193,7 @@ pub(crate) mod tests {
             network: Some("vmbr1".into()),
             node: Some("pve".into()),
             insecure_tls: false,
+            tls_fingerprint: None,
             auto_stop_hours: None,
             use_cli_creds: false,
             aws_profile: None,
@@ -246,7 +261,7 @@ pub(crate) mod tests {
         let json = serde_json::to_string(&p).unwrap();
         let back: HostProfile = serde_json::from_str(&json).unwrap();
         assert_eq!(back, p);
-        // Optional fields default when absent (older server.json files).
+        // Optional fields default when absent (profiles saved by older versions).
         let minimal = r#"{"id":"ab12","name":"L","provider":"proxmox","host":"10.0.0.5","port":8006,"username":"root@pam"}"#;
         let m: HostProfile = serde_json::from_str(minimal).unwrap();
         assert_eq!(m.datastore, None);

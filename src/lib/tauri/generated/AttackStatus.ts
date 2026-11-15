@@ -6,7 +6,7 @@ import type { LabConsole } from "./LabConsole";
  */
 export type AttackStatus = { 
 /**
- * Whether the launcher reaches a run of the lab to put a box in (`attack_machine::locate`):
+ * Whether the launcher reaches a run of the lab to put a box in (`attack_box::locate`):
  * not on an ESXi host, nor beside a cloud-services lab.
  */
 reachable: boolean, 
@@ -29,7 +29,7 @@ labNetwork: string,
  */
 networks: Array<string>, 
 /**
- * The network the box joins when the learner picks none (`attack_machine::Networks`).
+ * The network the box joins when the learner picks none (`attack_box::Networks`).
  */
 defaultNetwork: string, 
 /**

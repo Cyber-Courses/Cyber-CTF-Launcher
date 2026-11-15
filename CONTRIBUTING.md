@@ -11,8 +11,9 @@ Found a security problem? Don't open an issue: see [SECURITY.md](SECURITY.md).
 
 You need:
 
-- Node 22.12 or a later 22, 24, 25, or 26 and later (`engines` in `package.json`:
-  `^22.12.0 || ^24.0.0 || ^25.0.0 || >=26.0.0`); `.nvmrc` says 22, the one CI and the release
+- Node 22.12 or a later 22, 24, or 26 and later (`engines` in `package.json`:
+  `^22.12.0 || ^24.0.0 || >=26.0.0`, Vitest's own range: Node 25 is refused, `engineStrict` in
+  `pnpm-workspace.yaml` holding it); `.nvmrc` says 22, the one CI and the release
   check use (`pnpm release-check` stops on another major), and the major `@types/node` stays on
   (Dependabot ignores later ones in `.github/dependabot.yml`: move both with `.nvmrc`); and pnpm
   (the version in `packageManager`; `corepack enable` installs it);
@@ -71,6 +72,9 @@ share the setting). They are POSIX sh and quick:
   (`brew install gitleaks`; without it the push is refused, not left unscanned), the attribution
   check over them, and CI's first refusals (`pnpm format:check`, `cargo fmt --check`), in a few
   seconds. The heavier gates stay in CI.
+- `regenerate` writes the generated files (the TypeScript command types, `tests/FEATURES.md`);
+  `.githooks/regenerate --check` fails, naming that command, when one was stale. To have every
+  commit regenerate them first (opt-in, it builds the tests): `git config hooks.regenerate true`.
 
 `.githooks/test.sh` tests them in a throwaway repository; CI runs it (`lint-infra.yml`'s `hooks`
 job). `git commit --no-verify` skips a hook when you must; the push still checks the commits.
@@ -80,11 +84,15 @@ job). `git commit --no-verify` skips a hook when you must; the push still checks
 | What                                                              | Command                 |
 | ----------------------------------------------------------------- | ----------------------- |
 | Unit tests: the frontend's, the scripts' and the Rust ones        | `pnpm test`             |
+| The test runners' own tests, which run them in child processes    | `pnpm test:harness`     |
 | The UI in Chromium against the dev mock (Playwright, `dev:web`)   | `pnpm test:web`         |
 | The real app through its embedded WebDriver (Docker, a VM)        | `pnpm test:desktop`     |
 | Real labs on Docker and local VMs (more tiers: `tests/README.md`) | `pnpm test:integration` |
 | What CI runs, one verdict per step                                | `pnpm check`            |
 | Everything, the desktop end-to-end too: the gate before a release | `pnpm release-check`    |
+
+`pnpm test` stays fast: the test runners' own tests, which start a runner in child processes with
+real timers and take seconds each, are `pnpm test:harness`; `pnpm check` runs both.
 
 [tests/README.md](tests/README.md) says what each tier proves and needs, how to run it, every knob,
 and where a new test goes.

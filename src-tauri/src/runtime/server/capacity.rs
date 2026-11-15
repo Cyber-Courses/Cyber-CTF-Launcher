@@ -8,6 +8,7 @@ use super::store::load_host;
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::providers::Provider;
+use crate::runtime::proxmox::api::NodeStatus;
 
 /// A host's cores and memory (bytes), as its node reports them.
 #[derive(Serialize, ts_rs::TS)]
@@ -33,15 +34,17 @@ pub(crate) async fn capacity(dirs: &AppDirs, id: &str) -> Result<Option<HostCapa
 }
 
 async fn proxmox_capacity(h: &HostProfile, password: &str) -> Result<HostCapacity> {
-    let session = crate::runtime::proxmox::sign_in(h, password).await.map_err(|e| Error::Invalid(format!("couldn't sign in to the Proxmox server: {e}")))?;
+    let session = crate::runtime::proxmox::sign_in(h, password).await.map_err(|e| e.into_error("couldn't sign in to the Proxmox server"))?;
     let node = session.node(h).await.map_err(|e| Error::Invalid(format!("couldn't list the Proxmox server's nodes: {e}")))?;
-    let status = session.call(&format!("/nodes/{node}/status")).await.map_err(|e| Error::Invalid(format!("couldn't read the node {node}'s status: {e}")))?;
+    let status: NodeStatus =
+        session.call(&format!("/nodes/{node}/status")).await.map_err(|e| Error::Invalid(format!("couldn't read the node {node}'s status: {e}")))?;
     capacity_from(&status).ok_or_else(|| Error::Invalid(format!("the node {node} reported no cores or memory figures")))
 }
 
 /// A Proxmox node's `/status` as the row's capacity (None when a figure is missing).
-fn capacity_from(d: &serde_json::Value) -> Option<HostCapacity> {
-    Some(HostCapacity { cores: d["cpuinfo"]["cpus"].as_u64()?, mem_total: d["memory"]["total"].as_u64()?, mem_free: d["memory"]["free"].as_u64()? })
+fn capacity_from(d: &NodeStatus) -> Option<HostCapacity> {
+    let (cpu, memory) = (d.cpuinfo.as_ref()?, d.memory.as_ref()?);
+    Some(HostCapacity { cores: cpu.cpus?, mem_total: memory.total?, mem_free: memory.free? })
 }
 
 #[cfg(test)]
@@ -50,10 +53,10 @@ mod tests {
 
     #[test]
     fn capacity_needs_every_figure() {
-        let d = serde_json::json!({"cpuinfo": {"cpus": 8}, "memory": {"total": 64, "free": 20}});
-        let c = capacity_from(&d).unwrap();
+        let status = |json: serde_json::Value| -> NodeStatus { serde_json::from_value(json).unwrap() };
+        let c = capacity_from(&status(serde_json::json!({"cpuinfo": {"cpus": 8}, "memory": {"total": 64, "free": 20}}))).unwrap();
         assert_eq!((c.cores, c.mem_total, c.mem_free), (8, 64, 20));
-        assert!(capacity_from(&serde_json::json!({"cpuinfo": {"cpus": 8}})).is_none());
+        assert!(capacity_from(&status(serde_json::json!({"cpuinfo": {"cpus": 8}}))).is_none());
     }
 
     #[tokio::test]

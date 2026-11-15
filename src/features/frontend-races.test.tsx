@@ -232,12 +232,9 @@ describe("the running scan", () => {
     });
     const { result } = renderHook(() => useLabs("failed-launch"));
     await advance(0);
-    expect(commands(calls)).toContain("running_labs");
-    expect(result.current.statuses["lab-e"].running).toBe(false);
-    // Seen up, it is read again on the next poll, and stays not running.
-    const reads = commands(calls).filter((c) => c === "lab_status").length;
-    await advance(6000);
-    expect(commands(calls).filter((c) => c === "lab_status").length).toBeGreaterThan(reads);
+    expect(commands(calls)).toContain("labs_watch");
+    expect([...result.current.scanned]).toEqual(["lab-e"]);
+    // Seen up by the scan, it stays not running: its status alone says.
     expect(result.current.statuses["lab-e"].running).toBe(false);
   });
 });

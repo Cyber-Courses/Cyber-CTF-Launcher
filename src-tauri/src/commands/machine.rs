@@ -103,8 +103,9 @@ impl workloads::LabRuntime for AppHandle {
     }
 
     fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send {
-        let dirs = AppDirs::from(self);
-        async move { super::labs::stop_lab(&dirs, id, runtime, |_| {}).await }
+        let app = self.clone();
+        let request = crate::run_service::Request::Stop { lab_id: id.to_owned(), runtime };
+        async move { crate::app::runs::run(&app, request).await }
     }
 }
 
@@ -117,9 +118,12 @@ pub async fn machine_storage(app: AppHandle, extra_images: Vec<String>) -> Resul
 /// Removes what Cyber CTF stored that no lab needs now; the bytes freed.
 #[tauri::command]
 pub async fn machine_storage_clean(app: AppHandle, extra_images: Vec<String>) -> Result<u64> {
-    let dirs = AppDirs::from(&app);
-    let workers = !crate::app::deploy_worker::running(&dirs).is_empty();
-    storage::machine_storage_clean(dirs, extra_images, workers).await
+    storage_clean_in(AppDirs::from(&app), extra_images).await
+}
+
+/// [`machine_storage_clean`], in the app whose folders are `dirs`.
+pub(crate) async fn storage_clean_in(dirs: AppDirs, extra_images: Vec<String>) -> Result<u64> {
+    storage::machine_storage_clean(dirs, extra_images).await
 }
 
 /// Installs `dependency`, each command and its output sent on `logs`.
@@ -166,6 +170,19 @@ mod tests {
 
     use super::*;
     use crate::testing::test_app::TestApp;
+
+    /// Nothing downloaded yet: nothing listed and nothing removed; Docker and Vagrant are asked
+    /// only what they hold (an unscripted call fails the test).
+    #[tokio::test]
+    async fn nothing_downloaded_is_listed_nor_removed_through_the_commands() {
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = TestApp::new();
+        let tools = Tools::strict_rules(&[("docker image ls -q --no-trunc", ok("")), ("vagrant box list", ok(""))]);
+        let stored = machine_storage(t.handle().clone(), Vec::new()).await.unwrap();
+        assert!(stored.images.is_empty() && stored.boxes.is_empty());
+        assert_eq!(machine_storage_clean(t.handle().clone(), Vec::new()).await.unwrap(), 0);
+        assert!(tools.calls().iter().all(|c| c.starts_with("docker image ls") || c.starts_with("vagrant box list")), "nothing removed: {:?}", tools.calls());
+    }
 
     /// Opening a new window sizes it to the screen, which Tauri's mock runtime can't tell: the
     /// open one is driven here.

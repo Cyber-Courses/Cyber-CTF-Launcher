@@ -12,17 +12,26 @@ account, what the player picked); the runner does the work and keeps the run's s
 
 ## Places and forms
 
-| Place          | Lab                                        | Isoloom target          | What runs                                                             |
-| -------------- | ------------------------------------------ | ----------------------- | --------------------------------------------------------------------- |
-| This machine   | containers                                 | `docker`                | Docker Compose on the engine picked at launch                         |
-| This machine   | containers, "in a VM"                      | `docker-vm`             | one Vagrant VM (any local hypervisor but Hyper-V), Compose inside     |
-| This machine   | VMs, or containers as "one VM per machine" | `vagrant`               | one Vagrant VM per machine                                            |
-| Proxmox server | containers                                 | `docker-vm` (Proxmox)   | one VM made by Terraform, Compose inside over SSH                     |
-| Proxmox server | VMs                                        | `proxmox`               | one VM per machine, made by Terraform                                 |
-| ESXi server    | VMs (containers in one VM)                 | `vagrant` / `docker-vm` | Vagrant's `vmware_esxi`, the runner relaying the host from macOS      |
-| Cloud account  | containers                                 | `cloud-docker`          | one instance made by Terraform, Compose inside over SSH               |
-| Cloud account  | VMs, or containers as "one VM per machine" | `cloud-vm`              | one instance per machine (AWS, Azure, GCP, DigitalOcean, Linode, OCI) |
-| Cloud account  | cloud services (no machines)               | `cloud-services`        | the lab's own Terraform module                                        |
+| Place          | Lab                                        | Isoloom target   | What runs                                                             |
+| -------------- | ------------------------------------------ | ---------------- | --------------------------------------------------------------------- |
+| This machine   | containers                                 | `docker`         | Docker Compose on the engine picked at launch                         |
+| This machine   | VMs, or containers as "one VM per machine" | `vagrant`        | one Vagrant VM per machine                                            |
+| Proxmox server | VMs                                        | `proxmox`        | one VM per machine, made by Terraform                                 |
+| ESXi server    | VMs                                        | `vagrant`        | Vagrant's `vmware_esxi`, the runner relaying the host from macOS      |
+| Cloud account  | containers                                 | `cloud-docker`   | one instance made by Terraform, Compose inside over SSH               |
+| Cloud account  | VMs, or containers as "one VM per machine" | `cloud-vm`       | one instance per machine (AWS, Azure, GCP, DigitalOcean, Linode, OCI) |
+| Cloud account  | cloud services (no machines)               | `cloud-services` | the lab's own Terraform module and `cloud/lab.yml` (a build feature)  |
+
+A lab runs as true containers or true VMs, never as containers inside a helper VM: a container
+lab runs on Docker here or on a cloud account's instance, or, with VM recipes, as one VM per
+machine here or in a cloud account; it has no form on a server. A container lab an earlier
+version ran inside one helper VM (Isoloom's former `docker-vm`, here, on ESXi or on Proxmox) is
+still read, stopped and removed through the runner as it was started; nothing else changes it,
+and its next start is in its true form (on Docker when Docker answers here, else as one VM per
+machine). When that run's manifest is a version this build can't read, the lab's files are
+generated in the true form instead, and the log says so; when the runner no longer opens that
+form at all, its helper-VM mark is cleared and the lab says which VM to remove by hand (the
+Machine page lists it).
 
 The catalogue names a lab by its own runtime (containers or VMs); every operation on a started
 lab finds its run through `runtime::host::locate`, which reads where it runs and the form it was
@@ -34,15 +43,15 @@ A running lab is the runner's run `cyberctf-<lab id>`, its state under
 `<app data>/runs/<run>/` (`record.json`, `events.jsonl`, the Terraform state for a server or a
 cloud). Beside the lab, in its folder:
 
-| File                       | Says                                                                                        |
-| -------------------------- | ------------------------------------------------------------------------------------------- |
-| `.cyberctf-host`           | the server or cloud account it runs on (`server::mark_lab`)                                 |
-| `.cyberctf-local-vm`       | a container lab here runs in a VM, and on which hypervisor                                  |
-| `.cyberctf-per-machine-vm` | a container lab started as one VM per machine                                               |
-| `.cyberctf-engine`         | the Docker context it was started on, when not the current one                              |
-| `.cyberctf-parked`         | parked (paused or shut down): the next start resumes it                                     |
-| `.cyberctf-overlay.yml`    | the machines the launcher added to the lab (the attack box), merged into its spec when read |
-| `.cyberctf-instance`       | its instance number, given at install: its networks' blocks and its generated files' folder |
+| File                       | Says                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `.cyberctf-host`           | the server or cloud account it runs on (`server::mark_lab`)                                  |
+| `.cyberctf-local-vm`       | a container lab here runs in a helper VM an earlier version started, and on which hypervisor |
+| `.cyberctf-per-machine-vm` | a container lab started as one VM per machine                                                |
+| `.cyberctf-engine`         | the Docker context it was started on, when not the current one                               |
+| `.cyberctf-parked`         | parked (paused or shut down): the next start resumes it                                      |
+| `.cyberctf-overlay.yml`    | the machines the launcher added to the lab (the attack box), merged into its spec when read  |
+| `.cyberctf-instance`       | its instance number, given at install: its networks' blocks and its generated files' folder  |
 
 A stop clears them once the run is gone (`lifecycle::forget_run`), so the next start is the lab
 as published. The instance number stays: it is the installed lab's, not the run's.
@@ -50,12 +59,12 @@ as published. The instance number stays: it is the installed lab's, not the run'
 ## The attack box
 
 The learner's attack box is one more machine of the lab, wherever it runs: the launcher adds
-`attackbox` to the lab's spec through its overlay (`runtime/attack_machine`), regenerates the
+`attackbox` to the lab's spec through its overlay (`runtime/attack_box`), regenerates the
 lab for its form and brings the run up to date (`Running::update`). Taking it out retires it
 from the run (`Running::retire`: Vagrant forgets a VM its Vagrantfile no longer has), removes it
 from the overlay and updates again. Its status is the run's status of that machine; its shell is
 the runner's console into it as the player's account (`Running::console_command` with `player`,
-`attack_machine::PLAYER`): `exec --user` into a container, a `sudo -i` login on a VM, whatever
+`attack_box::PLAYER`): `exec --user` into a container, a `sudo -i` login on a VM, whatever
 account the way in logs in as (`vagrant`, a cloud image's).
 
 The box has that account on every form, with a home and sudo without a password
@@ -69,7 +78,7 @@ image's own user.
 The account also has a password, for wherever the box asks for one: a desktop box's screen locker
 or LightDM's login after a logout, a VM's console login on its Screen, `su`, SSH where the box's
 `sshd` takes passwords. The launcher makes a new one each time it adds a box
-(`attack_machine/sign_in.rs`): 20 random characters of lowercase letters and digits without
+(`attack_box/sign_in.rs`): 20 random characters of lowercase letters and digits without
 look-alikes, in four groups (`k7mpq-zrt4w-hn8xc-ls2vd`, 100 bits). It keeps it with its other
 secrets (the OS keychain, `attack-box:<lab>`; a 0600 file in a dev build), registers it with the
 log redaction, and forgets it when the box is taken out. The box gets only its SHA-512 crypt hash
@@ -208,7 +217,7 @@ back to the Labs list, with a toast.
 login`, Azure `az login`, Google Cloud's application-default credentials, OCI's
   `~/.oci/config`). Before any change to a lab in an account, the launcher asks that CLI whether
   the sign-in still holds and refuses, saying how to sign in again, when it ran out
-  (`runtime/isothrum/cloud.rs`): a sign-in that runs out halfway leaves a lab behind.
+  (`runtime/isothrum/cloud_runs.rs`): a sign-in that runs out halfway leaves a lab behind.
 - A cloud lab's firewall opens its SSH and published ports to this machine's public IP only,
   which two independent services must agree on (`launch::public_ip`). AWS launches also check
   the account's budget first.

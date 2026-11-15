@@ -3,7 +3,7 @@
 import { memo, useEffect, useRef } from "react";
 import { Check, ChevronRight, X } from "lucide-react";
 import { LogConsole } from "@/components/ui/log-console";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { formatDuration } from "@/lib/format";
 import type { Step, Timed } from "@/features/labs/deploy-log";
 import { useNow } from "@/lib/use-now";
@@ -134,3 +134,35 @@ export const RawLog = memo(function RawLog({ timed, origin, shown, onToggle }: {
     </div>
   );
 });
+
+/** What ran after Ready (the attack box, a change to the lab), below Ready: running while it runs. */
+export function AfterReadyStep({
+  step,
+  failed,
+  busy,
+  origin,
+  open,
+  setOpen,
+}: {
+  step: Step;
+  failed: boolean;
+  busy: boolean;
+  origin: number | undefined;
+  open: string | null;
+  setOpen: (id: string | null) => void;
+}) {
+  const expanded = open === step.id;
+  return (
+    <StepItem
+      step={step}
+      state={failed ? "fail" : busy ? "running" : "ok"}
+      from={step.rows[0].at}
+      to={busy ? null : step.rows[step.rows.length - 1].at}
+      origin={origin ?? step.rows[0].at}
+      expanded={expanded}
+      onToggle={() => {
+        setOpen(expanded ? null : step.id);
+      }}
+    />
+  );
+}

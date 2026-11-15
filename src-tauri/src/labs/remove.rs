@@ -1,10 +1,9 @@
 //! Removing a lab from this computer: the app's copy of it (the folder an import copied, or a
-//! release unpacked) and every record the app keeps for it under its data folder: the runner's run
-//! folder (its record, its event log, what it last saw, Vagrant's state of it), the deployments of
-//! the launcher's own Terraform path, the deploy workers' job, logs and verdicts, an update's or an
-//! import's leftover copies, a catalogue lab's source kept for an offline start, and the password
+//! release unpacked) and every record the app keeps for it under its data folder: the deploy
+//! workers' job, logs and verdicts, an update's or an import's leftover copies, a catalogue lab's source kept for an offline start, and the password
 //! kept for its attack box (the OS keychain's `attack-box:<lab id>`). The generated project
-//! (Compose files, Vagrantfiles, run manifest) is inside the copy and goes with it.
+//! (Compose files, Vagrantfiles, run manifest) is inside the copy and goes with it. Its run is the
+//! runner's: the runner forgets it (its own home is the runner's to keep).
 //!
 //! Nothing outside the app's data folder is touched. An imported lab's own folder, the one it was
 //! imported from, is the player's: the copy keeps no link out of itself (`TreeLinks`), and a
@@ -44,9 +43,7 @@ pub struct Leftover {
     pub error: String,
 }
 
-/// Removes lab `id` from this computer (see the module's documentation). `worker_files` gives the
-/// files of the lab's deploy worker once the lab is held, or refuses while a worker runs on it (the
-/// app shell runs the workers). The lab's copy is moved aside first, all or nothing: a copy that
+/// Removes lab `id` from this computer (see the module's documentation). The lab's copy is moved aside first, all or nothing: a copy that
 /// won't move (a file in it held open on Windows) refuses the removal with nothing deleted. What
 /// can't be deleted after that is in the answer, the lab gone from the app all the same: its
 /// attack box's password too, which a keychain that refuses leaves behind.
@@ -55,11 +52,11 @@ pub struct Leftover {
 ///
 /// An invalid id, a lab that isn't installed, one still up somewhere or busy, a copy that won't
 /// move aside.
-pub(crate) async fn remove(dirs: &AppDirs, id: &str, worker_files: impl FnOnce() -> Result<Vec<PathBuf>>) -> Result<Removal> {
+pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<Removal> {
     runtime::validate_id(id)?;
-    // Held to the end: a start, a stop or a worker waits, and a new worker isn't started.
+    // Held to the end: a start or a stop waits.
     let busy = || Error::coded(Code::AlreadyInProgress);
-    if runtime::stopping(id) {
+    if crate::run_service::LocalRunService::of(dirs)?.stopping(id) {
         return Err(busy());
     }
     let _lock = runtime::try_lock_lab(dirs, id)?.ok_or_else(busy)?;
@@ -73,16 +70,19 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str, worker_files: impl FnOnce()
     if paths::parked(&dir).is_some() {
         return Err(Error::coded(Code::LabRunningHere));
     }
-    let extra = worker_files()?;
     let (base, owned) = (dirs.data()?.to_path_buf(), id.to_owned());
-    let mut removal = blocking(move || remove_files(&base, &owned, &extra, rename_retrying, delete)).await?;
+    let mut removal = blocking(move || remove_files(&base, &owned, &[], rename_retrying, delete)).await?;
+    // The runner's record of its run, through the runner's store: its files went above.
+    if let Err(e) = runtime::isothrum::forget_run(&runtime::paths::runner_home(dirs)?, id) {
+        log::warn!("removing lab {id}: the runner keeps its run's record: {e}");
+    }
     // Its attack box's password, once the lab is gone (a removal refused above keeps it with the
     // lab). A keychain that refuses (locked) leaves it, listed for the player to delete: never a
     // reason to keep the lab, which a computer with a broken keychain could then never remove.
     // No keychain at all, or no password kept, is nothing to delete.
-    if let Err(e) = runtime::attack_machine::forget_password(&dir) {
+    if let Err(e) = runtime::attack_box::forget_password(&dir) {
         log::warn!("removing lab {id}: its attack box's password stayed in the keychain: {e}");
-        let entry = runtime::attack_machine::password_entry(&dir);
+        let entry = runtime::attack_box::password_entry(&dir);
         removal.left.push(Leftover { path: format!("the attack box's password is still in the keychain ({entry})"), error: e.to_string() });
     }
     Ok(removal)
@@ -95,17 +95,11 @@ fn aside(labs: &Path, id: &str) -> PathBuf {
 }
 
 /// What the app keeps for lab `id` under its data folder `base`, beside its copy: an earlier
-/// removal's, update's or import's leftover copy, the runner's run folder, the Terraform
-/// deployments and the kept offline source.
+/// removal's, update's or import's leftover copy and the kept offline source. The run is the
+/// runner's: its record is forgotten through the runner.
 fn traces(base: &Path, id: &str) -> Vec<PathBuf> {
     let labs = paths::labs_root_in(base);
-    vec![
-        labs.join(format!(".{id}.staging")),
-        labs.join(format!(".{id}.old")),
-        base.join("runs").join(runtime::compose_project(id)),
-        base.join("deployments").join(id),
-        super::offline::kept_path(base, id),
-    ]
+    vec![labs.join(format!(".{id}.staging")), labs.join(format!(".{id}.old")), super::offline::kept_path(base, id)]
 }
 
 /// Moves lab `id`'s copy under `base` aside with `rename`, then deletes it and every trace of the

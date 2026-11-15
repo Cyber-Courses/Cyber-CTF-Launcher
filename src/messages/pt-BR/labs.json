@@ -63,10 +63,8 @@
     "heading": "Onde ele deve rodar?",
     "formHeading": "Como ele deve rodar?",
     "formContainers": "Contêiner",
-    "formInVm": "Numa VM",
     "formPerMachine": "Uma VM por máquina",
     "inAVm": "VM",
-    "vmForms": "Numa VM ou uma por máquina",
     "back": "Voltar",
     "hostSubtitle": "{kind} · {host}",
     "hostSubtitleCloud": "{kind}, cobrado de você · {host}",
@@ -82,12 +80,9 @@
     "servers": "Servidores",
     "cloud": "Nuvem",
     "notSupported": "Não suportado por este lab",
-    "beta": "Beta",
-    "experimental": "Experimental",
     "rememberChoice": "Não perguntar de novo",
     "engineHeading": "Qual motor?",
     "defaultChoice": "Padrão",
-    "inVmFormNote": "Contêineres numa VM",
     "cloudFormOneVm": "Uma VM",
     "cloudFormPerMachine": "Uma VM por máquina",
     "cloudOneVmHint": "Seus contêineres em uma VM na nuvem",
@@ -146,7 +141,9 @@
       "tfApply": "Criar a infraestrutura",
       "tfReady": "Instalar e iniciar o lab",
       "prepareLab": "Preparar o lab",
-      "preparing": "Preparando"
+      "preparing": "Preparando",
+      "attackBox": "Adicionar a máquina de ataque",
+      "afterReady": "Alterar o laboratório em execução"
     },
     "title": "Implantação",
     "on": "em <where>{where}</where>",
@@ -257,7 +254,6 @@
     "labProvisioned": "✓ Lab provisionado",
     "labReady": "Lab pronto",
     "readyOnServer": "{title} está rodando no seu servidor.",
-    "readyInVm": "{title} está rodando numa VM nesta máquina.",
     "readyHere": "{title} está rodando nesta máquina.",
     "back": "{title} voltou.",
     "refused": "Outra operação ainda está em andamento neste lab",
@@ -267,8 +263,6 @@
     "systemRequirements": "Requer",
     "requirementsSummary": "{cpu} vCPU · {ram} GB de RAM · {disk} GB de disco",
     "yourServer": "seu servidor",
-    "aVmHere": "uma VM nesta máquina",
-    "aVmHereWith": "uma VM nesta máquina · {hypervisor}",
     "serverWith": "{name} · {kind}",
     "cloudWith": "{cloud} · {region}",
     "thisMachine": "esta máquina",
@@ -333,6 +327,7 @@
     "runsOn": "Roda em",
     "autoStop": "Parada automática",
     "address": "Endereço",
+    "signIn": "Login",
     "insideLab": "Dentro do lab",
     "onHost": "Em {where}",
     "setup": "Configuração",
@@ -349,6 +344,7 @@
     "removeKeep": " Para mantê-las, desligue o lab.",
     "cloudServices": "serviços de nuvem",
     "cloudServicesTitle": "Serviços de nuvem",
+    "cloudServicesUnsupported": "Este lab executa seus próprios serviços de nuvem, que esta versão do Cyber CTF não executa.",
     "cloudLeftover": "Um início anterior deixou serviços de nuvem na sua conta. Pare o lab para removê-los e inicie de novo.",
     "cloudIdle": "Inicie o lab para criar seus serviços de nuvem na sua conta. Pare-o quando terminar: isso os remove e encerra o custo deles.",
     "connectAccountOn": "Conectar uma conta {clouds}",
@@ -372,7 +368,16 @@
     "copySecret": "Copiar {name}",
     "nothingExposed": "O lab está no ar na sua conta de nuvem. Ele não expõe nada para mostrar aqui.",
     "billedEstimate": "Cobrado de você: {cost}, pela estimativa do lab.",
-    "billedWhileRunning": "Cobrado na sua conta de nuvem enquanto roda."
+    "billedWhileRunning": "Cobrado na sua conta de nuvem enquanto roda.",
+    "consent": {
+      "agree": "Concordo que este lab execute seu próprio código Terraform neste computador com {credentials}.",
+      "why": "Esse código foi escrito pelo autor do lab: ele pode fazer nesta conta tudo o que essas credenciais permitem, não só criar o lab. Inicie-o só se confiar no lab, de preferência com uma conta reservada para labs.",
+      "awsKeys": "a chave de acesso {key} de {name}",
+      "awsCli": "as credenciais da AWS CLI (perfil {profile}) de {name}",
+      "azure": "o login da Azure CLI, na assinatura {subscription} de {name}",
+      "gcp": "o login do gcloud, na conta de faturamento {account} de {name}",
+      "stored": "as credenciais salvas para {name}"
+    }
   },
   "objectives": {
     "title": "Objetivos",
@@ -437,7 +442,8 @@
       "disk": "Esta máquina está sem espaço em disco. Libere um pouco (a página Máquina lista as imagens que os labs guardam) e tente de novo.",
       "tool": "Falta aqui uma ferramenta de que este lab precisa. Instale-a pela página Máquina e tente de novo.",
       "serverAuth": "O servidor recusou as credenciais que o Cyber CTF tem para ele. Abra as configurações dele, informe o novo token ou senha e tente de novo."
-    }
+    },
+    "operationId": "Operação {id}: informe-a ao pedir ajuda."
   },
   "offline": {
     "question": "Iniciar {title} offline?",

@@ -12,16 +12,14 @@ export type LabRunOptions = {
  */
 docker: LabRunPath | null, 
 /**
- * A container lab in one VM on a local hypervisor (`docker-vm`), by hypervisor.
- */
-dockerVm: Array<LabRunPath>, 
-/**
  * One VM per machine on a local hypervisor (`vagrant`): a VM lab, or a container lab with VM
  * recipes run as one.
  */
 vms: Array<LabRunPath>, 
 /**
- * The kinds of server (ESXi, Proxmox) it runs on, each by the path it takes there.
+ * The kinds of server (ESXi, Proxmox) a VM lab runs on, each by the path it takes there (a
+ * container lab has no form on a server: its containers run on Docker or a cloud VM, its VM
+ * recipes here or in a cloud account).
  */
 servers: Array<LabRunPath>, 
 /**

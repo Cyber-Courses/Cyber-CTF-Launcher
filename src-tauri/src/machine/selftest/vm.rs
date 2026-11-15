@@ -6,11 +6,14 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Duration;
 
+use super::Reporter;
 use super::downloads::ensure_box;
-use super::{Reporter, arm};
 use crate::error::{Error, Result};
 use crate::platform::exec::{Event, Step, Vagrant, run, within};
+use crate::platform::host::Arch;
+use crate::platform::tool_output::ping::Ping;
 use crate::runtime::providers::{self, Provider};
+use crate::runtime::selftest_report::StepState;
 
 /// The test VM's address on its private lab network (VirtualBox's default host-only range):
 /// the first of these that nothing answers on yet. One that answers already (another VM on it)
@@ -56,7 +59,8 @@ fn responds(p: Provider) -> Option<(&'static str, &'static [&'static str])> {
         Provider::VmwareDesktop => Some(("vmrun", &["list"])),
         Provider::Parallels => Some(("prlctl", &["list", "--all"])),
         Provider::Libvirt => Some(("virsh", &["-c", "qemu:///system", "list", "--all"])),
-        Provider::Utm => Some(("/Applications/UTM.app/Contents/MacOS/utmctl", &["list"])),
+        // Inside UTM's bundle, wherever UTM is installed.
+        Provider::Utm => Some((crate::runtime::providers::utmctl(), &["list"])),
         _ => None,
     }
 }
@@ -67,10 +71,10 @@ pub(super) fn test_providers() -> impl Iterator<Item = Provider> {
 }
 
 /// Small public boxes that exist for this provider and CPU, smallest first.
-pub(crate) fn candidate_boxes(p: Provider, arm: bool) -> &'static [&'static str] {
-    match (p, arm) {
-        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, false) => &["generic/alpine319", "bento/debian-12"],
-        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, true) => &["bento/debian-12"],
+pub(crate) fn candidate_boxes(p: Provider, arch: Arch) -> &'static [&'static str] {
+    match (p, arch) {
+        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, Arch::X86_64) => &["generic/alpine319", "bento/debian-12"],
+        (Provider::Virtualbox | Provider::VmwareDesktop | Provider::Parallels, Arch::Aarch64) => &["bento/debian-12"],
         (Provider::Utm, _) => &["utm/bookworm"],
         _ => &["generic/alpine319"],
     }
@@ -96,10 +100,10 @@ fn has_private_network(p: Provider) -> bool {
 
 /// Picks a candidate box already downloaded for this provider, else the first candidate.
 /// Returns (box, already downloaded).
-pub(super) async fn pick_box(p: Provider, arm: bool) -> (&'static str, bool) {
-    let candidates = candidate_boxes(p, arm);
+pub(super) async fn pick_box(p: Provider, arch: Arch) -> (&'static str, bool) {
+    let candidates = candidate_boxes(p, arch);
     let list = run("vagrant", &["box", "list"], None).await.unwrap_or_default();
-    match candidates.iter().find(|c| box_listed(&list, c, box_provider(p), arm)) {
+    match candidates.iter().find(|c| box_listed(&list, c, box_provider(p), arch)) {
         Some(c) => (c, true),
         None => (candidates[0], false),
     }
@@ -107,8 +111,8 @@ pub(super) async fn pick_box(p: Provider, arm: bool) -> (&'static str, bool) {
 
 /// Whether `vagrant box list` has `name` for `provider` and this CPU (a box with no
 /// architecture in the listing counts for any).
-fn box_listed(list: &str, name: &str, provider: &str, arm: bool) -> bool {
-    let arch = if arm { "arm64" } else { "amd64" };
+fn box_listed(list: &str, name: &str, provider: &str, arch: Arch) -> bool {
+    let arch = arch.docker_name();
     crate::machine::storage::owned::listed_boxes(list).iter().any(|b| {
         let other_cpu = matches!(b.arch.as_deref(), Some(a @ ("amd64" | "arm64")) if a != arch);
         b.owned.name == name && b.owned.provider == provider && !other_cpu
@@ -170,6 +174,12 @@ fn ping_args(ip: &str) -> [&str; 5] {
     }
 }
 
+/// Whether `ip` answers one ping: a reply in its output, not the exit code alone, which Windows'
+/// `ping` gives as 0 for a router's "Destination host unreachable" ([`Ping`]).
+async fn answers_ping(ip: &str) -> bool {
+    run("ping", &ping_args(ip), None).await.is_ok_and(|out| Ping::of(&out) == Ping::Reply)
+}
+
 async fn destroy(dir: &Path) -> Result<String> {
     within("vagrant destroy -f", DESTROY_LIMIT, Vagrant::of(dir, &[]).run(&["destroy", "-f"])).await
 }
@@ -177,7 +187,7 @@ async fn destroy(dir: &Path) -> Result<String> {
 /// The first test address nothing answers on yet (see [`VM_IPS`]).
 async fn free_ip() -> Option<&'static str> {
     for ip in VM_IPS {
-        if run("ping", &ping_args(ip), None).await.is_err() {
+        if !answers_ping(ip).await {
             return Some(ip);
         }
     }
@@ -223,9 +233,9 @@ async fn clear_earlier_test(dir: &Path, r: &Reporter) -> Result<()> {
     }
     match leftover::clear(dir).await {
         Ok(removed) if removed.is_empty() => {}
-        Ok(removed) => r.send(STEP.0, STEP.1, "ok", Some(format!("removed from {}", removed.join(", ")))),
+        Ok(removed) => r.send(STEP.0, STEP.1, StepState::Ok, Some(format!("removed from {}", removed.join(", ")))),
         Err(e) => {
-            r.send(STEP.0, STEP.1, "fail", Some(e.to_string()));
+            r.send(STEP.0, STEP.1, StepState::Fail, Some(e.to_string()));
             return Err(e);
         }
     }
@@ -237,10 +247,10 @@ async fn clear_earlier_test(dir: &Path, r: &Reporter) -> Result<()> {
 
 async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
     let provider = host_provider(preferred, r).await?;
-    let arm = arm();
-    let (bx, _) = pick_box(provider, arm).await;
+    let arch = Arch::HERE;
+    let (bx, _) = pick_box(provider, arch).await;
     r.step("box", "Get a small test VM image", async {
-        let had = ensure_box(dir, provider, bx, arm, |l| r.progress("box", "Get a small test VM image", &l)).await?;
+        let had = ensure_box(dir, provider, bx, arch, |l| r.progress("box", "Get a small test VM image", &l)).await?;
         Ok(((), Some(if had { format!("{bx} (ready)") } else { bx.to_string() })))
     })
     .await?;
@@ -319,7 +329,8 @@ async fn network(provider: Provider, ip: Option<&'static str>, r: &Reporter) -> 
                 let mut last = String::new();
                 for _ in 0..PING_TRIES {
                     match run("ping", &ping_args(ip), None).await {
-                        Ok(_) => return Ok(((), Some(format!("this machine → {ip}")))),
+                        Ok(out) if Ping::of(&out) == Ping::Reply => return Ok(((), Some(format!("this machine → {ip}")))),
+                        Ok(out) => out.lines().map(str::trim).filter(|l| !l.is_empty()).nth(1).unwrap_or("no reply").clone_into(&mut last),
                         Err(e) => last = e.to_string(),
                     }
                     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -329,210 +340,13 @@ async fn network(provider: Provider, ip: Option<&'static str>, r: &Reporter) -> 
             .await?;
         }
         None if has_private_network(provider) => {
-            r.send("network", "VM reachable on a lab network", "skip", Some(format!("every test address ({}…) is taken on this machine", VM_IPS[0])));
+            r.send("network", "VM reachable on a lab network", StepState::Skip, Some(format!("every test address ({}…) is taken on this machine", VM_IPS[0])));
         }
-        None => r.send("network", "VM reachable on a lab network", "skip", Some(format!("{} has no private networks", provider.id()))),
+        None => r.send("network", "VM reachable on a lab network", StepState::Skip, Some(format!("{} has no private networks", provider.id()))),
     }
 
     Ok(())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn the_vm_test_picks_no_hypervisor_without_vagrant() {
-        // Regression: the test's own copy of "ready" never asked whether Vagrant was there, and
-        // picked a hypervisor whose every Vagrant call would then fail.
-        use crate::platform::exec::fake::{Tools, ok};
-        let tools = Tools::new(|program, _| if program == "vagrant" { None } else { ok("") });
-        assert_eq!(test_provider(Some(Provider::Virtualbox)).await, None);
-        assert!(tools.called("vagrant --version"), "{:?}", tools.calls());
-    }
-
-    #[tokio::test]
-    async fn the_test_vm_takes_an_address_nothing_answers_on_yet() {
-        // Regression: the test VM always took .250, so another VM there made the ping pass.
-        use crate::platform::exec::fake::{Tools, fail, ok};
-        let _tools = Tools::new(|program, args| match (program, args.last().copied()) {
-            ("ping", Some("192.168.56.250")) => ok("64 bytes from 192.168.56.250"),
-            ("ping", _) => fail("Request timeout"),
-            _ => ok(""),
-        });
-        assert_eq!(free_ip().await, Some("192.168.56.249"));
-        let v = vagrantfile(Provider::Virtualbox, "x", free_ip().await, Path::new("/t"));
-        assert!(v.contains("ip: \"192.168.56.249\"") && !v.contains(".250"), "{v}");
-        let _all = Tools::rules(&[]);
-        assert_eq!(free_ip().await, None, "every address answers");
-        assert!(!vagrantfile(Provider::Virtualbox, "x", None, Path::new("/t")).contains("private_network"));
-    }
-
-    #[test]
-    fn the_command_output_is_told_from_vagrants_own_lines() {
-        assert_eq!(uname_line("warning: something\ncyberctf-uname:Linux 6.6 x86_64\nConnection to 172.20.0.5 closed.\n"), "Linux 6.6 x86_64");
-        assert_eq!(uname_line("Connection to x closed.\n"), "");
-        assert_eq!(uname_command(), "echo cyberctf-uname:$(uname -srm)");
-        assert!(
-            vagrantfile(Provider::Hyperv, "x", Some(VM_IPS[0]), Path::new("/t"))
-                .contains("config.vm.network \"public_network\", bridge: ENV[\"ISOLOOM_HYPERV_SWITCH\"]")
-        );
-        assert!(!vagrantfile(Provider::Virtualbox, "x", Some(VM_IPS[0]), Path::new("/t")).contains("public_network"));
-    }
-
-    #[test]
-    fn the_qemu_test_vm_boots_with_the_acceleration_the_labs_ask_for() {
-        // Regression: without a usable /dev/kvm the test VM fell back to software emulation
-        // (`accel=tcg`) and passed on Debian 13, where every lab's `accel=kvm` was refused.
-        let v = vagrantfile(Provider::Qemu, "generic/alpine319", Some(VM_IPS[0]), Path::new("/t"));
-        assert!(v.contains("h.memory = \"1G\"") && !v.contains("h.machine") && !v.contains("accel") && !v.contains("h.cpu"), "{v}");
-    }
-
-    #[test]
-    fn no_hypervisor_ready_says_what_keeps_the_preferred_one_from_running_vms() {
-        use crate::runtime::providers::{ProviderStatus, Unavailable};
-        let status = |provider, reason: Option<Unavailable>| ProviderStatus {
-            provider,
-            remote: false,
-            available: reason.is_none(),
-            hypervisor: Some(true),
-            plugin: None,
-            plugin_installed: true,
-            utility: None,
-            needs: Vec::new(),
-            reason,
-            account_lacks: None,
-        };
-        let kvm = Unavailable::KvmDenied { group: "kvm".into() };
-        let statuses = [status(Provider::Virtualbox, Some(Unavailable::VirtualboxStuck)), status(Provider::Qemu, Some(kvm.clone()))];
-        assert_eq!(none_ready(Some(Provider::Qemu), &statuses), format!("QEMU can't run VMs here: {kvm}"));
-        assert!(none_ready(None, &statuses).starts_with("VirtualBox can't run VMs here: "), "the first installed one");
-        assert_eq!(none_ready(Some(Provider::Qemu), &[]), "no local hypervisor with its Vagrant plugin is installed");
-    }
-
-    #[test]
-    fn a_box_counts_only_for_its_provider_and_cpu() {
-        let list = "bento/debian-12   (virtualbox, 202510.26.0, (amd64))\ngeneric/alpine319 (libvirt, 4.3.12)\n";
-        assert!(box_listed(list, "bento/debian-12", "virtualbox", false));
-        assert!(!box_listed(list, "bento/debian-12", "virtualbox", true));
-        assert!(!box_listed(list, "bento/debian-12", "parallels", false));
-        // No architecture listed: any CPU.
-        assert!(box_listed(list, "generic/alpine319", "libvirt", true));
-        assert!(!box_listed(list, "generic/alpine", "libvirt", true));
-    }
-
-    #[test]
-    fn box_listings_with_windows_endings_wide_spacing_or_look_alike_names_match_exactly() {
-        // CRLF from Vagrant on Windows, tabs or runs of spaces before the parenthesis, a name
-        // that merely starts with the wanted one, and the empty listing.
-        let list = "bento/debian-12\t(virtualbox, 1)\r\nbento/debian-120    (virtualbox, 1)\r\ngeneric/alpine319 (vmware_desktop, 4.3.12, (arm64))\r\n";
-        assert!(box_listed(list, "bento/debian-12", "virtualbox", false));
-        assert!(box_listed(list, "bento/debian-120", "virtualbox", true));
-        assert!(!box_listed(list, "bento/debian-1", "virtualbox", false));
-        assert!(box_listed(list, "generic/alpine319", "vmware_desktop", true));
-        assert!(!box_listed(list, "generic/alpine319", "vmware_desktop", false), "an ARM box is not an x86 one");
-        assert!(!box_listed(list, "generic/alpine319", "vmware", true), "the provider id is whole");
-        assert!(!box_listed("There are no installed boxes! Use `vagrant box add` to add some.\n", "generic/alpine319", "qemu", false));
-        assert!(!box_listed("", "generic/alpine319", "qemu", false));
-    }
-
-    #[test]
-    fn the_test_vm_is_on_a_private_network_where_the_provider_has_one() {
-        assert!(vagrantfile(Provider::Virtualbox, "x", Some(VM_IPS[0]), Path::new("/t")).contains(VM_IPS[0]));
-        assert!(!vagrantfile(Provider::Utm, "x", Some(VM_IPS[0]), Path::new("/t")).contains(VM_IPS[0]));
-        assert_eq!(ping_args("10.0.0.1")[4], "10.0.0.1");
-    }
-
-    /// The Windows uninstaller's removal of the test VM (packaging/windows): the app's own, for the
-    /// test's folder in the app's cache (`%LOCALAPPDATA%\<identifier>\selftest\vm`). Written by
-    /// this test; a change shows in the diff, and CI fails on one left uncommitted.
-    #[test]
-    fn the_uninstaller_removes_the_test_vm_as_the_app_does() {
-        let under = format!("\"$env:LOCALAPPDATA\\{}\\selftest\\vm\\\"", crate::platform::config::KEYCHAIN_SERVICE);
-        let script = format!(
-            "# Written by `cargo test` (machine/selftest/vm.rs) from the app's own removal: don't edit.\n# Run by installer-hooks.nsh before the uninstaller removes the app's folders.\n{}",
-            crate::platform::exec::leftover_script(VM_NAME, &under)
-        );
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../packaging/windows/remove-test-vm.ps1");
-        let crlf = script.replace('\n', "\r\n");
-        if std::fs::read_to_string(&path).ok().as_deref() != Some(crlf.as_str()) {
-            std::fs::write(&path, &crlf).unwrap();
-        }
-        assert!(script.contains(r#"StartsWith("$env:LOCALAPPDATA\org.cyberctf.desktop\selftest\vm\", "#), "{script}");
-    }
-
-    #[test]
-    fn a_virtualbox_test_vm_carries_its_folder_so_a_leftover_is_known_as_the_tests() {
-        let v = vagrantfile(Provider::Virtualbox, "x", None, Path::new(r"C:\Users\O'Brien\selftest\vm"));
-        assert!(v.contains(r#"h.customize ["modifyvm", :id, "--description", 'cyberctf-selftest:C:\\Users\\O\'Brien\\selftest\\vm']"#), "{v}");
-    }
-
-    #[tokio::test]
-    async fn an_earlier_tests_vm_is_removed_before_the_test_and_a_foreign_one_stops_it() {
-        // Regression: a VM left running that Vagrant no longer knew made every later test fail at
-        // `vagrant up`; the destroy's failure was dropped and nothing removed the VM.
-        use crate::platform::exec::fake::{Tools, fail, ok};
-        let dir = std::env::temp_dir().join(format!("cyberctf-selftest-vm-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(dir.join(".vagrant").join("machines").join("default").join("virtualbox")).unwrap();
-        let ours = format!("description=\"{}\"\n", leftover::vbox_description(&dir));
-        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let seen = events.clone();
-        let r = Reporter::new(move |e: crate::runtime::selftest_report::Event| seen.lock().unwrap().push(format!("{}:{}", e.step, e.state)));
-        let tools = Tools::rules(&[
-            ("vagrant destroy", fail("The machine isn't created")),
-            ("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")),
-            ("VBoxManage showvminfo abc", ok(&ours)),
-            ("vagrant --version", fail("stop here")),
-        ]);
-        crate::testing::logs::take_warnings();
-        let _ = run_test(&dir, None, &r).await;
-        assert!(tools.called("VBoxManage unregistervm abc --delete"), "{:?}", tools.calls());
-        assert!(!dir.join(".vagrant").exists(), "Vagrant's stale state is gone");
-        assert!(tools.called("vagrant --version"), "the test went on: {:?}", tools.calls());
-        assert_eq!(events.lock().unwrap()[0], "leftover:ok");
-        assert!(crate::testing::logs::take_warnings().iter().any(|w| w.contains("The machine isn't created")), "the destroy's failure is logged");
-
-        let tools = Tools::rules(&[("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")), ("VBoxManage showvminfo abc", ok("description=\"\"\n"))]);
-        events.lock().unwrap().clear();
-        let err = run_test(&dir, None, &r).await.unwrap_err();
-        assert!(err.to_string().contains("isn't this test's"), "{err}");
-        assert!(!tools.called("unregistervm") && !tools.called("vagrant --version"), "{:?}", tools.calls());
-        assert_eq!(*events.lock().unwrap(), ["leftover:fail"]);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn every_provider_gets_its_own_vm_settings() {
-        for (p, needle) in [
-            (Provider::Virtualbox, "h.name = \"CyberCTF test VM\""),
-            (Provider::VmwareDesktop, "h.vmx[\"displayName\"]"),
-            (Provider::Parallels, "h.name = "),
-            (Provider::Libvirt, "h.default_prefix = \"cyberctf-\""),
-            (Provider::Hyperv, "h.vmname = "),
-            (Provider::Utm, "h.name = "),
-        ] {
-            let v = vagrantfile(p, "box/x", Some(VM_IPS[0]), Path::new("/t"));
-            assert!(v.contains(needle) && v.contains(&format!("config.vm.provider \"{}\"", p.id())), "{v}");
-            assert!(v.starts_with("Vagrant.configure") && v.ends_with("end\n"));
-        }
-    }
-
-    #[test]
-    fn probes_and_boxes_per_provider() {
-        assert_eq!(responds(Provider::Virtualbox).map(|r| r.0), Some("VBoxManage"));
-        assert_eq!(responds(Provider::VmwareDesktop).map(|r| r.0), Some("vmrun"));
-        assert_eq!(responds(Provider::Parallels).map(|r| r.0), Some("prlctl"));
-        assert_eq!(responds(Provider::Libvirt).map(|r| r.0), Some("virsh"));
-        assert!(responds(Provider::Utm).is_some_and(|r| r.0.ends_with("utmctl")));
-        assert!(responds(Provider::Qemu).is_none());
-        assert_eq!(candidate_boxes(Provider::Virtualbox, false), ["generic/alpine319", "bento/debian-12"]);
-        assert_eq!(candidate_boxes(Provider::Parallels, true), ["bento/debian-12"]);
-        assert_eq!(candidate_boxes(Provider::Utm, true), ["utm/bookworm"]);
-        assert_eq!(candidate_boxes(Provider::Qemu, true), ["generic/alpine319"]);
-        assert!(has_private_network(Provider::Libvirt) && !has_private_network(Provider::Qemu) && !has_private_network(Provider::Hyperv));
-        // QEMU stores and lists its box as libvirt (vagrant-qemu boots a libvirt box); others use their own id.
-        assert_eq!(box_provider(Provider::Qemu), "libvirt");
-        assert_eq!(box_provider(Provider::Virtualbox), "virtualbox");
-        assert_eq!(box_provider(Provider::Libvirt), "libvirt");
-    }
-}
+mod tests;

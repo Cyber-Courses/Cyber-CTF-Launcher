@@ -2,9 +2,12 @@
 //! with a stable code; the launcher's wording (and the codes its UI knows) is decided here, from
 //! that code, the same as the launcher's own Docker path says it.
 
-use isothrum_runner::{Error as RunnerError, ErrorCode, TimedOut};
+use isothrum_runner::{Detail, Error as RunnerError, ErrorCode, ErrorDetail, TimedOut};
 
+use super::runner_said;
 use crate::error::{Code, Error};
+use crate::platform::exec::DockerSaid;
+use crate::runtime::port::HostPort;
 use crate::runtime::providers::Provider;
 use crate::runtime::server::kind::{KINDS, kind};
 
@@ -20,72 +23,52 @@ pub(crate) fn refused_before_acting(e: &Error) -> bool {
 /// What a step stopped for taking too long says: how long it went without progress (and what it
 /// last printed), or that it hit the longest any step may run.
 fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
-    const AGAIN: &str = "Start the lab again; if it keeps happening, check the network and the resources of Docker, the hypervisor or the server.";
+    let step = step.to_owned();
     let minutes = timed_out.after_s().div_ceil(60);
-    Error::Invalid(match timed_out {
-        TimedOut::NoProgress { last_line: Some(line), .. } => {
-            format!("The lab's `{step}` step showed no progress for {minutes} minutes, so it was stopped. Its last output was: \u{201c}{line}\u{201d}. {AGAIN}")
-        }
-        TimedOut::NoProgress { last_line: None, .. } => {
-            format!("The lab's `{step}` step printed nothing for {minutes} minutes, so it was stopped. {AGAIN}")
-        }
-        TimedOut::Ceiling { after_s } => format!(
-            "The lab's `{step}` step was still working after {} hours, the longest any step may run, so it was stopped. {AGAIN}",
-            after_s.div_ceil(3600)
-        ),
+    Error::coded(match timed_out {
+        TimedOut::NoProgress { last_line: Some(line), .. } => Code::StepStalled { step, minutes, last_line: line.clone() },
+        TimedOut::NoProgress { last_line: None, .. } => Code::StepSilent { step, minutes },
+        TimedOut::Ceiling { after_s, .. } => Code::StepCeiling { step, hours: after_s.div_ceil(3600) },
         // A reason added later reads as the plain limit.
-        _ => format!("The lab's `{step}` step ran into its {minutes}-minute limit, so it was stopped. {AGAIN}"),
+        _ => Code::StepTimedOut { step, minutes },
     })
 }
-
-/// A lab whose files another version of the launcher made, and this one couldn't make again.
-pub(super) const EARLIER_FILES: &str = "This lab's files were made by another version of Cyber CTF, and they couldn't be made again for this one";
-
-/// What to do about a lab whose files can't be made again.
-pub(super) const ADD_AGAIN: &str = "Remove the lab and add it again from the catalogue; anything it still runs is on the Machine page.";
 
 /// The launcher's error for a runner's failure.
 pub(super) fn from_runner(e: RunnerError) -> Error {
     match e {
         // The holder is filled in later, on the launch path, where an async lookup can run.
-        RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port, holder: None }),
+        RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port: HostPort::new(port.get()), holder: None }),
         RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
         RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
+        RunnerError::ToolUnanswered { tool, reason, .. } if tool == "docker" => docker_unanswered(&reason),
         RunnerError::Timeout { step, timed_out } => timed_out_step(&step, &timed_out),
         // The lab's images, pulled before its containers start: a slow connection, not the
         // resources of Docker, the hypervisor or the server.
         // A Vagrant box, downloaded before its VMs boot, in a step of its own (`boxes-<step>`).
-        RunnerError::DownloadStalled { step, after_s, .. } if is_box_download(&step) => {
+        RunnerError::DownloadStalled { step, after_s, .. } if runner_said::is_box_download(&step) => {
             Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) })
         }
         // Vagrant ends its sentences with a period; the message adds its own.
-        RunnerError::DownloadFailed { step, reason } if is_box_download(&step) => {
+        RunnerError::DownloadFailed { step, reason } if runner_said::is_box_download(&step) => {
             Error::coded(Code::BoxDownloadFailed { reason: reason.trim().trim_end_matches('.').to_owned() })
         }
         RunnerError::DownloadStalled { after_s, .. } => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
         RunnerError::DownloadFailed { reason, .. } => Error::coded(Code::DownloadFailed { reason: reason.trim().to_owned() }),
         // Named by the address the run's settings give until [`on_server`] names it as Servers does.
         RunnerError::ServerAuthFailed { server, .. } => Error::coded(Code::ServerAuthFailed { server: server.unwrap_or_else(|| "the server".into()) }),
-        RunnerError::ToolTooOld { tool, found, required } => Error::Invalid(format!(
-            "This lab needs {} {required} or later, and this computer has {found}. Update it, then start the lab again.",
-            tool_name(&tool)
-        )),
+        RunnerError::ToolTooOld { tool, found, required } => Error::coded(Code::ToolTooOld { tool: tool_name(&tool), found, required }),
         // The prompt declined or unanswered, or the elevated session ended (the reason says which).
-        RunnerError::Elevation { reason } => {
-            Error::Invalid(format!("Hyper-V needs administrator rights, and they couldn't be had ({reason}). Start the lab again and accept the prompt."))
-        }
-        RunnerError::NotReady { detail, .. } => Error::Invalid(format!("The lab started, but didn't become ready: {detail}")),
-        RunnerError::PartlyGone { machines, .. } => Error::Invalid(format!(
-            "Some of this lab's machines are gone ({}): they were removed outside Cyber CTF, so it can't resume as it was. Start it again for a fresh copy.",
-            machines.join(", ")
-        )),
+        RunnerError::Elevation { reason } => Error::coded(Code::ElevationFailed { reason }),
+        RunnerError::NotReady { detail, .. } => Error::coded(Code::LabNotReady { detail }),
+        RunnerError::PartlyGone { machines, .. } => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
         RunnerError::SecretMissing { name } => {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
         }
-        RunnerError::Param { name, reason } => {
+        RunnerError::Input { name, reason } => {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
         }
-        other => by_code(&other),
+        other => by_code(other.code(), &other),
     }
 }
 
@@ -98,51 +81,74 @@ pub(crate) fn on_server(e: Error, name: &str) -> Error {
     }
 }
 
-/// Whether a download step is the one that fetches the boxes a Vagrant start boots: the runner
-/// names it `boxes-<step>`, after the step it downloads for (`boxes-up`).
-fn is_box_download(step: &str) -> bool {
-    step.starts_with("boxes-")
-}
+/// What is said of a container lab an earlier version runs inside one helper VM (Isoloom's former
+/// `docker-vm`) when the runner no longer opens that run: nothing here reaches the VM any more.
+pub(crate) const HELPER_VM_LEFT: &str = "This lab still runs Docker inside a VM, as an earlier version of Cyber CTF started it, and this version can't reach that VM any more: remove it on the Machine page or in your hypervisor's app, then start the lab again";
 
-/// The failures whose wording needs nothing but their code (their message is kept otherwise).
-fn by_code(e: &RunnerError) -> Error {
+/// The runner's refusal to open the run of a helper VM an earlier version left, run `run`: when
+/// it no longer runs that form (`unsupported`), what is left and how to remove it; any other
+/// failure as [`from_runner`] says.
+pub(super) fn of_helper_vm(e: RunnerError, run: &str) -> Error {
     match e.code() {
-        ErrorCode::AlreadyRunning => Error::Refused("This lab is already running on this machine. Stop it before starting it again.".into()),
-        ErrorCode::RunningElsewhere => Error::Refused("This lab is still running somewhere else. Stop it there before starting it here.".into()),
-        ErrorCode::Locked => Error::coded(Code::AlreadyInProgress),
-        ErrorCode::NothingToResume => {
-            Error::Invalid("Nothing is left of this lab to resume (its stopped containers or VMs are gone). Start it again for a fresh copy.".into())
-        }
-        ErrorCode::NotRunning => Error::RefusedBeforeActing("This lab isn't running. Start it first.".into()),
-        ErrorCode::NotParkable => Error::Invalid("This lab can't be paused or shut down. Stop it instead.".into()),
-        // A lab's files of another version are generated again before the runner reads them
-        // (`regenerate`): one still refused is a lab that can't be generated any more.
-        ErrorCode::ManifestVersion => Error::Invalid(format!("{EARLIER_FILES}. {ADD_AGAIN} ({e})")),
-        ErrorCode::ManifestInvalid | ErrorCode::Unsupported => Error::Invalid(format!("Cyber CTF can't run this lab's generated files: {e}")),
-        _ => Error::Invalid(e.to_string()),
+        ErrorCode::Unsupported => Error::Invalid(format!("{HELPER_VM_LEFT} (its name starts with {run}).")),
+        _ => from_runner(e),
     }
 }
 
-/// What Docker's CLI says when its engine doesn't answer: stopped, or quit while a step ran (on
-/// Windows, its named pipe gone).
-const ENGINE_DOWN: [&str; 3] = ["cannot connect to the docker daemon", "is the docker daemon running", "error during connect"];
+/// The launcher's error for an operation that failed in the runner service: its code `code`, the
+/// runner's `message`, the `step` that failed and the failure's typed fields (`detail`), worded as
+/// [`from_runner`] words the same failure in this process; by its code alone, its message kept,
+/// where the service gives no fields this build reads.
+pub(crate) fn from_service(code: ErrorCode, message: &str, step: Option<&str>, detail: Option<&ErrorDetail>) -> Error {
+    let step = step.unwrap_or_default();
+    match detail.map(|d| &d.data) {
+        Some(Detail::PortInUse { port, .. }) => Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: None }),
+        Some(Detail::ToolMissing { tool }) => Error::coded(Code::ToolMissing { tool: tool.clone() }),
+        Some(Detail::ToolUnanswered { tool }) if tool == "docker" => docker_unanswered(message),
+        Some(Detail::ToolTooOld { tool, found, required }) => {
+            Error::coded(Code::ToolTooOld { tool: tool_name(tool), found: found.clone(), required: required.clone() })
+        }
+        Some(Detail::Timeout { timed_out }) => timed_out_step(step, timed_out),
+        Some(Detail::DownloadStalled { after_s }) if runner_said::is_box_download(step) => {
+            Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) })
+        }
+        Some(Detail::DownloadStalled { after_s }) => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
+        Some(Detail::ServerAuthFailed { server }) => Error::coded(Code::ServerAuthFailed { server: server.clone().unwrap_or_else(|| "the server".into()) }),
+        Some(Detail::PartlyGone { machines }) => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
+        Some(Detail::SecretMissing { name }) => {
+            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
+        }
+        Some(Detail::InputInvalid { name }) => {
+            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: {message}. Start it from the catalogue again."))
+        }
+        _ => match code {
+            ErrorCode::ToolFailed => tool_failed(step, message),
+            _ => by_code(code, message),
+        },
+    }
+}
+
+/// The failures whose wording needs nothing but their code `code` (the runner's words `e`, kept
+/// otherwise).
+fn by_code(code: ErrorCode, e: impl std::fmt::Display) -> Error {
+    match code {
+        ErrorCode::AlreadyRunning => Error::Refused("This lab is already running on this machine. Stop it before starting it again.".into()),
+        ErrorCode::RunningElsewhere => Error::Refused("This lab is still running somewhere else. Stop it there before starting it here.".into()),
+        ErrorCode::Locked => Error::coded(Code::AlreadyInProgress),
+        ErrorCode::NothingToResume => Error::coded(Code::NothingToResume),
+        ErrorCode::NotRunning => Error::RefusedBeforeActing("This lab isn't running. Start it first.".into()),
+        ErrorCode::NotParkable => Error::coded(Code::NotParkable),
+        ErrorCode::ProjectInvalid | ErrorCode::Unsupported => Error::Invalid(format!("Cyber CTF can't run this lab's generated files: {e}")),
+        _ => Error::Invalid(e.to_string()),
+    }
+}
 
 /// `e`, a container lab's step on this machine's Docker that failed, as the player reads it: the
 /// engine stopped while the step ran (Docker Desktop quit, the service stopped) is said as a
 /// stopped engine, as the start's own probe says it, not as the step's failure. Only for a lab on
 /// this machine's Docker: a container lab in a VM runs its Docker inside the VM.
 pub(super) fn engine_stopped(e: Error) -> Error {
-    match &e {
-        Error::CommandFailed { stderr, .. } => {
-            let said = stderr.to_ascii_lowercase();
-            if ENGINE_DOWN.iter().any(|m| said.contains(m)) && !said.contains("permission denied") && !said.contains("access is denied") {
-                Error::coded(Code::DockerNotRunning)
-            } else {
-                e
-            }
-        }
-        _ => e,
-    }
+    if DockerSaid::of_error(&e) == Some(DockerSaid::EngineDown) { Error::coded(Code::DockerNotRunning) } else { e }
 }
 
 /// A tool as the player knows it (`vagrant` is Vagrant).
@@ -154,37 +160,6 @@ fn tool_name(tool: &str) -> String {
         other => format!("`{other}`"),
     }
 }
-
-/// What a cloud's tools say when the sign-in they use has run out or is missing: Terraform's
-/// providers and the clouds' CLIs, from a CLI login or SSO session, an expired session token,
-/// application-default credentials gone stale, or a profile that was never signed in.
-const EXPIRED_SIGN_IN: [&str; 21] = [
-    // AWS
-    "login session has expired",
-    "please reauthenticate",
-    "expiredtoken",
-    "security token included in the request is expired",
-    "token has expired",
-    "error loading sso token",
-    "unable to locate credentials",
-    "aws login",
-    // Azure
-    "az login",
-    "aadsts700082",
-    "aadsts50173",
-    "refresh token has expired",
-    "interactive authentication is needed",
-    // Google Cloud
-    "reauthentication failed",
-    "problem refreshing your current auth tokens",
-    "gcloud auth application-default login",
-    "could not find default credentials",
-    "invalid_grant",
-    // Oracle Cloud
-    "session is no longer valid",
-    "oci session authenticate",
-    "notauthenticated",
-];
 
 /// A cloud that signs in through its CLI: its name, and how its sign-in is made again (its row's,
 /// [`crate::runtime::server::kind::CliSignIn`]).
@@ -201,8 +176,7 @@ fn cloud_in(reason: &str) -> Option<Provider> {
 /// is missing (`cloud`, when known): sign in again, then try again, a refusal before acting
 /// (nothing could change without the sign-in); `None` for any other failure.
 pub(crate) fn expired_sign_in(reason: &str, cloud: Option<Provider>) -> Option<Error> {
-    let lower = reason.to_ascii_lowercase();
-    if !EXPIRED_SIGN_IN.iter().any(|s| lower.contains(s)) {
+    if !crate::platform::tool_output::cloud_sign_in::expired(reason) {
         return None;
     }
     let (name, again) = cloud.or_else(|| cloud_in(reason)).and_then(sign_in_of).map_or(("the cloud account", String::new()), |(n, a)| (n, format!(" ({a})")));
@@ -212,20 +186,18 @@ pub(crate) fn expired_sign_in(reason: &str, cloud: Option<Provider>) -> Option<E
     )))
 }
 
-/// A step's tool that ran and failed: Docker not answering its probe reads as the engine being
-/// stopped (or this account not allowed to use it); a cloud sign-in that ran out, as signing in
-/// again; an address block another network holds, as what to do about it; anything else, as the
-/// command that failed.
+/// Docker not answering the runner's probe (`tool_unanswered`), Docker's own words `said`: the
+/// engine stopped, or this account not allowed to use it.
+fn docker_unanswered(said: &str) -> Error {
+    if DockerSaid::is_refusal(&said.to_ascii_lowercase()) { crate::platform::exec::docker_denied_error() } else { Error::coded(Code::DockerNotRunning) }
+}
+
+/// A step's tool that ran and failed: a cloud sign-in that ran out reads as signing in again; an
+/// address block another network holds, as what to do about it; anything else, as the command
+/// that failed.
 fn tool_failed(step: &str, reason: &str) -> Error {
     if let Some(expired) = expired_sign_in(reason, None) {
         return expired;
-    }
-    if step == "tools" && reason.starts_with("`docker` doesn't answer") {
-        return if reason.to_ascii_lowercase().contains("permission denied") {
-            crate::platform::exec::docker_denied_error()
-        } else {
-            Error::coded(Code::DockerNotRunning)
-        };
     }
     super::super::docker::explain_pool_overlap(Error::CommandFailed { command: format!("lab step {step}"), stderr: reason.to_owned() })
 }
@@ -236,12 +208,15 @@ fn tool_failed(step: &str, reason: &str) -> Error {
 /// a reload), while UTM runs and answers every other command; and `AppleEvent timed out.
 /// (-1712)` from the same reads while UTM is busy. The same operation then goes through. The
 /// other -600, a UTM that really isn't reachable, the start's UTM check catches before.
-const UTM_TRANSIENT: &[(&str, &str)] = &[("(-600)", "\"Application isn't running\" while it runs"), ("(-1712)", "\"AppleEvent timed out\" while busy")];
-
-/// How UTM's passing scripting error `e` is said, if `e` is one ([`UTM_TRANSIENT`]).
+///
+/// How `e` is said, if it is one of them (by its Apple event error number, [`crate::platform::tool_output::apple_events::AppleEvent`]).
 fn utm_transient(e: &Error) -> Option<&'static str> {
-    let text = e.to_string();
-    UTM_TRANSIENT.iter().find(|(code, _)| text.contains(code)).map(|(_, said)| *said)
+    use crate::platform::tool_output::apple_events::AppleEvent;
+    match AppleEvent::of(&e.to_string())? {
+        AppleEvent::AppNotRunning => Some("\"Application isn't running\" while it runs"),
+        AppleEvent::TimedOut => Some("\"AppleEvent timed out\" while busy"),
+        AppleEvent::NotAuthorized | AppleEvent::Other(_) => None,
+    }
 }
 
 /// What the log says before an operation UTM refused in passing (`said`) is tried once more.
@@ -261,294 +236,4 @@ pub(super) fn try_again_after_utm(e: &Error, log: &mut impl FnMut(String)) -> bo
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn said(e: RunnerError) -> (Code, String) {
-        let e = from_runner(e);
-        (e.code(), e.to_string())
-    }
-
-    #[test]
-    fn a_taken_port_and_a_missing_tool_keep_the_codes_the_ui_knows() {
-        assert_eq!(said(RunnerError::PortInUse { port: 8080, protocol: "tcp".into() }).0, Code::PortInUse { port: 8080, holder: None });
-        assert_eq!(said(RunnerError::ToolMissing { step: "tools".into(), tool: "docker".into() }).0, Code::ToolMissing { tool: "docker".into() });
-        assert_eq!(said(RunnerError::Locked { run: "cyberctf-web".into() }).0, Code::AlreadyInProgress);
-    }
-
-    #[test]
-    fn docker_not_answering_its_probe_reads_as_a_stopped_engine() {
-        let down = RunnerError::ToolFailed { step: "tools".into(), reason: "`docker` doesn't answer: Cannot connect to the Docker daemon".into() };
-        assert_eq!(said(down).0, Code::DockerNotRunning);
-        let denied = RunnerError::ToolFailed { step: "tools".into(), reason: "`docker` doesn't answer: permission denied while trying to connect".into() };
-        assert!(matches!(said(denied).0, Code::DockerDenied { .. } | Code::DockerDeniedWindows { .. }));
-    }
-
-    #[test]
-    fn docker_stopped_while_a_step_ran_reads_as_a_stopped_engine_on_this_machine_only() {
-        // Regression: Docker Desktop quit while the lab's `compose up` ran, and the lab said "`lab
-        // step up` failed: Cannot connect to the Docker daemon…" rather than to start Docker.
-        for stderr in [
-            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
-            "error during connect: Get \"http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.47/containers/json\": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.",
-        ] {
-            let failed = from_runner(RunnerError::ToolFailed { step: "up".into(), reason: stderr.into() });
-            assert_eq!(engine_stopped(failed).code(), Code::DockerNotRunning, "{stderr}");
-        }
-        // A daemon that answers but refuses this account, or any other failure, keeps its words.
-        let denied =
-            from_runner(RunnerError::ToolFailed { step: "up".into(), reason: "error during connect: open //./pipe/docker_engine: Access is denied.".into() });
-        assert!(matches!(engine_stopped(denied).code(), Code::CommandFailed { .. }));
-        let other = from_runner(RunnerError::ToolFailed { step: "up".into(), reason: "exit status 1".into() });
-        assert!(matches!(engine_stopped(other).code(), Code::CommandFailed { .. }));
-    }
-
-    #[test]
-    fn a_resume_with_machines_removed_outside_names_them_and_says_to_start_again() {
-        let e = from_runner(RunnerError::PartlyGone { run: "cyberctf-web".into(), machines: vec!["web".into(), "db".into()] });
-        assert_eq!(
-            e.to_string(),
-            "Some of this lab's machines are gone (web, db): they were removed outside Cyber CTF, so it can't resume as it was. Start it again for a fresh copy."
-        );
-        assert!(!refused_before_acting(&e), "the run was recorded failed: the next start clears it");
-    }
-
-    #[test]
-    fn a_failed_step_says_which_and_why_and_a_pool_overlap_what_to_do() {
-        let (code, text) = said(RunnerError::ToolFailed { step: "up".into(), reason: "exit status 1".into() });
-        assert_eq!(code, Code::CommandFailed { command: "lab step up".into(), stderr: "exit status 1".into() });
-        assert_eq!(text, "`lab step up` failed: exit status 1");
-        let overlap = RunnerError::ToolFailed { step: "up".into(), reason: "invalid pool request: Pool overlaps with other one on this address space".into() };
-        assert!(said(overlap).1.starts_with("Another Docker network already uses the addresses this lab needs."));
-    }
-
-    #[test]
-    fn a_cloud_is_known_by_its_terraform_provider_and_named_by_its_label() {
-        assert_eq!(cloud_in("provider[\"registry.terraform.io/hashicorp/azurerm\"]"), Some(Provider::Azure));
-        assert_eq!(cloud_in("provider[\"registry.terraform.io/oracle/oci\"]"), Some(Provider::Oci));
-        assert_eq!(cloud_in("nothing of a cloud"), None);
-        assert_eq!(sign_in_of(Provider::Gcp).map(|(name, _)| name), Some("Google Cloud"));
-        // A cloud signed in with a stored API token has no CLI sign-in to make again.
-        assert_eq!(sign_in_of(Provider::DigitalOcean), None);
-        assert_eq!(sign_in_of(Provider::Linode), None);
-    }
-
-    #[test]
-    fn the_lifecycle_refusals_say_what_to_do() {
-        let (code, text) = said(RunnerError::AlreadyRunning { run: "cyberctf-web".into() });
-        assert_eq!((code, text.as_str()), (Code::Refused, "This lab is already running on this machine. Stop it before starting it again."));
-        assert!(matches!(from_runner(RunnerError::AlreadyRunning { run: "r".into() }), Error::Refused(_)), "a refusal leaves the last verdict as it was");
-        assert!(said(RunnerError::NothingToResume { run: "r".into() }).1.starts_with("Nothing is left of this lab to resume"));
-        assert!(said(RunnerError::NotRunning { run: "r".into() }).1.contains("Start it first"));
-        let expired = "with provider[\"registry.terraform.io/hashicorp/aws\"] Error: failed to refresh cached credentials, create oauth2 token: login session has expired, please reauthenticate (exited with code 1)";
-        let said_expired = said(RunnerError::ToolFailed { step: "destroy".into(), reason: expired.into() }).1;
-        assert!(said_expired.starts_with("Your sign-in to AWS has expired") && said_expired.contains("`aws login`"), "{said_expired}");
-        for (reason, cloud, again) in [
-            ("ERROR: AADSTS700082: The refresh token has expired due to inactivity. Please run 'az login'", Provider::Azure, "`az login`"),
-            ("Reauthentication failed. cannot prompt during non-interactive execution.", Provider::Gcp, "`gcloud auth application-default login`"),
-            (
-                "ServiceError: NotAuthenticated: The required information to complete authentication was not provided",
-                Provider::Oci,
-                "`oci session authenticate`",
-            ),
-        ] {
-            let said = expired_sign_in(reason, Some(cloud)).expect("an expired sign-in").to_string();
-            assert!(said.contains(again) && said.contains(cloud.label()), "{said}");
-        }
-        assert!(expired_sign_in("Error: creating EC2 Instance: InsufficientInstanceCapacity", Some(Provider::Aws)).is_none());
-        let stalled = TimedOut::NoProgress { after_s: 1800, last_line: Some("web Downloading 1.121GB".into()) };
-        assert_eq!(
-            said(RunnerError::Timeout { step: "up".into(), timed_out: stalled }).1,
-            "The lab's `up` step showed no progress for 30 minutes, so it was stopped. Its last output was: \u{201c}web Downloading 1.121GB\u{201d}. Start the lab again; if it keeps happening, check the network and the resources of Docker, the hypervisor or the server."
-        );
-        let silent = TimedOut::NoProgress { after_s: 1800, last_line: None };
-        assert!(said(RunnerError::Timeout { step: "up".into(), timed_out: silent }).1.starts_with("The lab's `up` step printed nothing for 30 minutes"));
-        assert!(said(RunnerError::SecretMissing { name: "CTF_FLAG_MAIN".into() }).1.contains("`CTF_FLAG_MAIN`"));
-    }
-
-    #[test]
-    fn a_download_that_stalled_or_failed_says_so_not_the_resources() {
-        // Regression: an 11 GB attack box still downloading through a slow connection was
-        // stopped with the start's `up`, and the player was told to check Docker's resources.
-        let stalled = RunnerError::DownloadStalled { step: "pull-up".into(), after_s: 900, last_line: Some("36b0bafd7f97 Downloading 1.283GB".into()) };
-        let (code, text) = said(stalled);
-        assert_eq!(code, Code::DownloadStalled { minutes: 15 });
-        assert_eq!(
-            text,
-            "Downloading the lab's images stopped making progress (nothing new for 15 minutes), so it was stopped. Check your internet connection, then try again: what was already downloaded is kept."
-        );
-        let failed = RunnerError::DownloadFailed {
-            step: "pull-up".into(),
-            reason: "Error response from daemon: toomanyrequests: You have reached your pull rate limit\n".into(),
-        };
-        let (code, text) = said(failed);
-        assert_eq!(code, Code::DownloadFailed { reason: "Error response from daemon: toomanyrequests: You have reached your pull rate limit".into() });
-        assert_eq!(
-            text,
-            "Couldn't download the lab's images: Error response from daemon: toomanyrequests: You have reached your pull rate limit. Check your internet connection, then try again."
-        );
-        for text in [said(RunnerError::DownloadStalled { step: "pull-up".into(), after_s: 900, last_line: None }).1, text] {
-            assert!(!text.contains("resources"), "{text}");
-        }
-        // A step that ran out of time still says to check the resources.
-        let up = TimedOut::NoProgress { after_s: 1800, last_line: None };
-        assert!(said(RunnerError::Timeout { step: "up".into(), timed_out: up }).1.contains("the resources of Docker"));
-    }
-
-    /// Regression: a Vagrant box download that stalled or failed (the runner's `boxes-<step>`)
-    /// was told as "the lab's images", a container lab's words.
-    #[test]
-    fn a_vm_box_download_that_stalled_or_failed_is_said_as_the_box() {
-        let stalled = RunnerError::DownloadStalled { step: "boxes-up".into(), after_s: 900, last_line: Some("box: Progress: 41% (Rate: 0/s)".into()) };
-        let (code, text) = said(stalled);
-        assert_eq!(code, Code::BoxDownloadStalled { minutes: 15 });
-        assert_eq!(
-            text,
-            "Downloading the lab's VM box stopped making progress (nothing new for 15 minutes), so it was stopped. Check your internet connection, then try again."
-        );
-        let failed = RunnerError::DownloadFailed { step: "boxes-up".into(), reason: "The box 'bento/debian-12' could not be found.\n".into() };
-        let (code, text) = said(failed);
-        assert_eq!(code, Code::BoxDownloadFailed { reason: "The box 'bento/debian-12' could not be found".into() });
-        assert_eq!(text, "Couldn't download the lab's VM box: The box 'bento/debian-12' could not be found. Check your internet connection, then try again.");
-        // A manifest's own download step, or the images' pull, is still the lab's images.
-        for step in ["pull-up", "pull-start", "boxes"] {
-            let (code, _) = said(RunnerError::DownloadStalled { step: step.into(), after_s: 60, last_line: None });
-            assert_eq!(code, Code::DownloadStalled { minutes: 1 }, "{step}");
-        }
-    }
-
-    /// Regression (tests/resilience.md N4): a revoked Proxmox token or a changed ESXi password
-    /// showed only as the step's raw failure.
-    #[test]
-    fn a_server_refusing_the_credentials_says_to_update_them_in_servers() {
-        let refused = RunnerError::ServerAuthFailed {
-            step: "up".into(),
-            server: Some("10.0.0.5".into()),
-            reason: "received an HTTP 401 response - Reason: authentication failure".into(),
-        };
-        let (code, _) = said(refused);
-        assert_eq!(code, Code::ServerAuthFailed { server: "10.0.0.5".into() });
-        let named = on_server(from_runner(RunnerError::ServerAuthFailed { step: "status".into(), server: None, reason: "401".into() }), "Home lab");
-        assert_eq!(named.code(), Code::ServerAuthFailed { server: "Home lab".into() });
-        assert_eq!(named.to_string(), "Cyber CTF can't sign in to Home lab: its token was revoked or its password changed. Update it in Servers.");
-        // Any other failure keeps its own words.
-        let other = on_server(from_runner(RunnerError::NotRunning { run: "r".into() }), "Home lab");
-        assert!(!other.to_string().contains("sign in"), "{other}");
-    }
-
-    #[test]
-    fn a_vm_labs_own_failures_say_what_to_do() {
-        let old = RunnerError::ToolTooOld { tool: "vagrant".into(), found: "2.3.8".into(), required: "2.4.0".into() };
-        assert_eq!(said(old).1, "This lab needs Vagrant 2.4.0 or later, and this computer has 2.3.8. Update it, then start the lab again.");
-        let declined = RunnerError::Elevation { reason: "the prompt was declined".into() };
-        assert_eq!(
-            said(declined).1,
-            "Hyper-V needs administrator rights, and they couldn't be had (the prompt was declined). Start the lab again and accept the prompt."
-        );
-        let ceiling = TimedOut::Ceiling { after_s: 21600 };
-        assert!(
-            said(RunnerError::Timeout { step: "up".into(), timed_out: ceiling })
-                .1
-                .starts_with("The lab's `up` step was still working after 6 hours, the longest any step may run")
-        );
-    }
-
-    #[test]
-    fn the_remaining_runner_failures_each_get_their_wording() {
-        // A run recorded elsewhere is a refusal (the last verdict stays), worded as what to do.
-        let elsewhere = from_runner(RunnerError::RunningElsewhere { run: "r".into(), recorded: "A".into(), asked: "B".into() });
-        assert!(matches!(elsewhere, Error::Refused(_)));
-        assert!(elsewhere.to_string().contains("still running somewhere else"), "{elsewhere}");
-        // A lab with no park steps, and files the runner can't run, are plain messages.
-        assert!(said(RunnerError::NotParkable { run: "r".into(), mode: "pause" }).1.contains("can't be paused or shut down"));
-        assert!(said(RunnerError::Unsupported { what: "driver vagrant".into() }).1.contains("can't run this lab's generated files"));
-        // A ready condition that never held keeps its detail.
-        assert!(
-            said(RunnerError::NotReady { condition: "tcp 127.0.0.1:8080".into(), detail: "connection refused".into() })
-                .1
-                .contains("didn't become ready: connection refused")
-        );
-        // `tool_name` turns the runner's short id into the player's name (Docker, Docker Compose),
-        // and quotes an unknown one verbatim.
-        let docker = said(RunnerError::ToolTooOld { tool: "docker".into(), found: "20".into(), required: "24".into() }).1;
-        assert!(docker.starts_with("This lab needs Docker 24 or later"), "{docker}");
-        let compose = said(RunnerError::ToolTooOld { tool: "docker-compose".into(), found: "1".into(), required: "2".into() }).1;
-        assert!(compose.contains("Docker Compose 2 or later"), "{compose}");
-        let other = said(RunnerError::ToolTooOld { tool: "qemu".into(), found: "6".into(), required: "8".into() }).1;
-        assert!(other.contains("`qemu` 8 or later"), "{other}");
-    }
-
-    #[test]
-    fn a_manifest_of_another_version_says_to_add_the_lab_again() {
-        let source = isoloom_manifest::parse(r#"{"manifest_version": 0}"#).unwrap_err();
-        let (code, text) = said(RunnerError::Manifest { path: "run.json".into(), source });
-        assert_eq!(code, Code::Other);
-        assert!(text.starts_with("This lab's files were made by another version of Cyber CTF, and they couldn't be made again for this one. Remove the lab and add it again from the catalogue"), "{text}");
-        assert!(text.contains("(run.json: manifest_version 0"), "the runner's words follow: {text}");
-        assert!(!text.contains("Update Cyber CTF"), "updating doesn't help a lab that can't be generated again: {text}");
-    }
-
-    #[test]
-    fn anything_else_keeps_the_runners_words() {
-        let e = RunnerError::MachineUnknown { run: "r".into(), machine: "web".into() };
-        let text = e.to_string();
-        assert_eq!(said(e).1, text);
-        // A placeholder the manifest names but the run doesn't have: its generated files are wrong.
-        let unbound = RunnerError::Unbound { at: "lifecycle.up.up".into(), placeholder: "params.X".into() };
-        let text = unbound.to_string();
-        assert_eq!(said(unbound).1, format!("Cyber CTF can't run this lab's generated files: {text}"));
-    }
-
-    #[test]
-    fn a_missing_or_refused_value_changed_nothing() {
-        // The runner checks the launch's values before it runs anything: a change refused for one
-        // is rolled back like one refused for a run that isn't up.
-        for e in [
-            RunnerError::SecretMissing { name: "CTF_FLAG_MAIN".into() },
-            RunnerError::Param { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() },
-        ] {
-            let launcher = from_runner(e);
-            assert!(refused_before_acting(&launcher), "{launcher}");
-        }
-        let param = from_runner(RunnerError::Param { name: "ISOLOOM_DERIVED".into(), reason: "`2` isn't one of 0, 1".into() });
-        assert!(param.to_string().contains("`ISOLOOM_DERIVED`") && param.to_string().contains("`2` isn't one of 0, 1"), "{param}");
-        assert!(!refused_before_acting(&Error::Invalid("a step failed".into())));
-    }
-
-    #[test]
-    fn a_refusal_is_known_by_its_kind_not_its_words() {
-        // The run not up, a cloud sign-in that ran out, a busy run, a missing tool, a run up
-        // already: refused before acting, whatever they say.
-        for refused in [
-            from_runner(RunnerError::NotRunning { run: "r".into() }),
-            expired_sign_in("Error: login session has expired", Some(Provider::Aws)).expect("an expired sign-in"),
-            from_runner(RunnerError::Locked { run: "r".into() }),
-            from_runner(RunnerError::ToolMissing { step: "tools".into(), tool: "vagrant".into() }),
-            from_runner(RunnerError::AlreadyRunning { run: "r".into() }),
-        ] {
-            assert!(refused_before_acting(&refused), "{refused}");
-            assert_eq!(refused.code(), refused.to_wire().code, "the UI gets the same code: {refused}");
-        }
-        // The same words from anything else are no refusal.
-        assert!(!refused_before_acting(&Error::Invalid("This lab isn't running. Start it first.".into())));
-        let failed_step = from_runner(RunnerError::ToolFailed { step: "up".into(), reason: "exit status 1".into() });
-        assert!(!refused_before_acting(&failed_step), "{failed_step}");
-    }
-
-    #[test]
-    fn utms_passing_scripting_errors_are_tried_again_and_said_and_nothing_else_is() {
-        let mut said = Vec::new();
-        let mut log = |l: String| said.push(l);
-        let refused = Error::Invalid(
-            "`vagrant reload default --no-provision` failed: read_forwarded_ports.applescript: execution error: UTM got an error: Application isn\u{2019}t running. (-600)".into(),
-        );
-        assert!(try_again_after_utm(&refused, &mut log));
-        // Busy, UTM lets the provider's AppleEvent time out: as passing.
-        let timed_out = Error::Invalid(
-            "`vagrant up` failed: osascript read_forwarded_ports.applescript: execution error: UTM got an error: AppleEvent timed out. (-1712)".into(),
-        );
-        assert!(try_again_after_utm(&timed_out, &mut log));
-        assert!(!try_again_after_utm(&Error::Invalid("a step failed".into()), &mut log));
-        assert_eq!(said, [utm_retry_line("\"Application isn't running\" while it runs"), utm_retry_line("\"AppleEvent timed out\" while busy")]);
-    }
-}
+mod tests;

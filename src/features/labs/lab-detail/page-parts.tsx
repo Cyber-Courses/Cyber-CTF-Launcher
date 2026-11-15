@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** Back to the list, with its Esc shortcut. */
 export function BackLink({ onBack }: { onBack: () => void }) {

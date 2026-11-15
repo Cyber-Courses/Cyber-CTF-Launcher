@@ -99,84 +99,89 @@ export function useCloudAccounts(v: ServerHostInput, setV: SetInput, editing: bo
   };
 }
 
+/** A read of what a cloud's CLI knows (`read`, which never fails: it answers what it couldn't
+ *  read as nothing, or as its error), applied by `apply`: run when `enabled` turns on or `read`
+ *  changes, and again by `reload`, `checking` while it runs. Only the newest read applies: a
+ *  sign-in or another profile reads again, and an older read answering after it must not show
+ *  what was there before. */
+function useCliRead<T>(enabled: boolean, read: () => Promise<T>, apply: (answer: T) => void) {
+  const [checking, setChecking] = useState(false);
+  const beginRead = useLatest();
+  const reload = useCallback(() => {
+    const latest = beginRead();
+    setChecking(true);
+    void read()
+      .then((answer) => {
+        if (latest()) apply(answer);
+      })
+      .finally(() => {
+        if (latest()) setChecking(false);
+      });
+  }, [beginRead, read, apply]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its "checking" state at once
+    if (enabled) reload();
+  }, [enabled, reload]);
+  return { checking, reload };
+}
+
 /** AWS, which connects through the CLI (a profile / browser sign-in) or with access keys: the
  *  CLI's profiles, and in CLI mode the profile's signed-in identity and this month's spend. */
 function useAwsAccount(aws: boolean, awsCli: boolean, awsProfile: string | null) {
   const [profiles, setProfiles] = useState<string[]>([]);
   const [awsIdentity, setAwsIdentity] = useState<string | null>(null);
-  const [checkingId, setCheckingId] = useState(false);
   const [mtdCost, setMtdCost] = useState<number | null>(null);
   useEffect(() => {
     if (aws) awsProfiles().then(setProfiles).catch(ignore("profiles are a convenience; typed by hand otherwise"));
   }, [aws]);
-  // Only the newest read applies: switching profiles starts a new one, and an older read answering
-  // after it must not show the previous profile's account or spend.
-  const beginIdentityRead = useLatest();
-  const checkAwsIdentity = useCallback(
-    (profile: string | null) => {
-      const latest = beginIdentityRead();
-      setCheckingId(true);
-      // The identity and the spend each read as nothing when they can't be read.
-      void awsCliIdentity(profile ?? undefined)
-        .catch(ignore("the profile isn't signed in: no account shown", () => null))
-        .then((id) => {
-          if (latest()) setAwsIdentity(id);
-        })
-        .finally(() => {
-          if (latest()) setCheckingId(false);
-        });
-      void awsMonthToDateCost(profile ?? undefined)
-        .catch(ignore("Cost Explorer isn't readable with this profile: no spend shown", () => null))
-        .then((c) => {
-          if (latest()) setMtdCost(c);
-        });
-    },
-    [beginIdentityRead],
+  // The identity and the spend each read as nothing when they can't be read; switching profiles
+  // reads both again.
+  const readIdentity = useCallback(
+    () => awsCliIdentity(awsProfile ?? undefined).catch(ignore("the profile isn't signed in: no account shown", () => null)),
+    [awsProfile],
   );
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its "checking" state at once
-    if (awsCli) checkAwsIdentity(awsProfile);
-  }, [awsCli, awsProfile, checkAwsIdentity]);
+  const readCost = useCallback(
+    () => awsMonthToDateCost(awsProfile ?? undefined).catch(ignore("Cost Explorer isn't readable with this profile: no spend shown", () => null)),
+    [awsProfile],
+  );
+  const { checking: checkingId } = useCliRead(awsCli, readIdentity, setAwsIdentity);
+  useCliRead(awsCli, readCost, setMtdCost);
   return { profiles, awsIdentity, setAwsIdentity, checkingId, mtdCost };
+}
+
+/** The Azure subscriptions the signed-in account can see; none, with why, when they can't be
+ *  read (a signed-out or missing `az` answers none; a failed read says why, as GCP's). */
+async function readAzureSubscriptions(): Promise<{ subs: AzureSubscription[]; error: string | null }> {
+  try {
+    return { subs: await azureSubscriptions(), error: null };
+  } catch (e: unknown) {
+    warn("reading the Azure subscriptions")(e);
+    return { subs: [], error: describeError(e) };
+  }
 }
 
 /** Azure: the subscriptions the signed-in account can see, so you pick one instead of typing an
  *  id. The account's default subscription is chosen if none is yet. */
 function useAzureSubscriptions(azure: boolean, setV: SetInput) {
   const [azureSubs, setAzureSubs] = useState<AzureSubscription[]>([]);
-  const [azureChecking, setAzureChecking] = useState(false);
   const [azureError, setAzureError] = useState<string | null>(null);
-  // Numbered as the AWS reads are: a sign-in reads again, and an older read answering after it
-  // must not show the subscriptions from before.
-  const beginSubsRead = useLatest();
-  const loadAzureSubs = useCallback(() => {
-    const latest = beginSubsRead();
-    setAzureChecking(true);
-    azureSubscriptions()
-      .then((subs) => {
-        if (!latest()) return;
-        setAzureSubs(subs);
-        setAzureError(null);
-        // Default to the account's default subscription if none chosen yet.
-        setV((s) => (s.provider === "azure" && !s.username && subs.length > 0 ? { ...s, username: (subs.find((x) => x.isDefault) ?? subs[0]).id } : s));
-      })
-      .catch((e: unknown) => {
-        // A signed-out or missing `az` answers no subscriptions; a failed read says why, as GCP's.
-        warn("reading the Azure subscriptions")(e);
-        if (!latest()) return;
-        setAzureSubs([]);
-        setAzureError(describeError(e));
-      })
-      .finally(() => {
-        if (latest()) setAzureChecking(false);
-      });
-  }, [setV, beginSubsRead]);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its "checking" state at once
-    if (azure) loadAzureSubs();
-  }, [azure, loadAzureSubs]);
+  const apply = useCallback(
+    ({ subs, error }: Awaited<ReturnType<typeof readAzureSubscriptions>>) => {
+      setAzureSubs(subs);
+      setAzureError(error);
+      if (error) return;
+      // Default to the account's default subscription if none chosen yet.
+      setV((s) => (s.provider === "azure" && !s.username && subs.length > 0 ? { ...s, username: (subs.find((x) => x.isDefault) ?? subs[0]).id } : s));
+    },
+    [setV],
+  );
+  const { checking: azureChecking, reload: loadAzureSubs } = useCliRead(azure, readAzureSubscriptions, apply);
   return { azureSubs, azureChecking, azureError, loadAzureSubs };
 }
+
+/** GCP's signed-in account, billing accounts and organizations, each read on its own: one call
+ *  failing (no permission to list organizations, say) keeps what the others found. */
+const readGcpAccounts = () => Promise.allSettled([gcpAccount(), gcpBillingAccounts(), gcpOrganizations()]);
 
 /** GCP: the signed-in account, its billing accounts and organizations. The first open billing
  *  account is chosen if none is yet. */
@@ -184,36 +189,23 @@ function useGcpAccounts(gcp: boolean, setV: SetInput) {
   const [gcpBilling, setGcpBilling] = useState<GcpBillingAccount[]>([]);
   const [gcpOrgs, setGcpOrgs] = useState<GcpOrganization[]>([]);
   const [gcpEmail, setGcpEmail] = useState<string | null>(null);
-  const [gcpChecking, setGcpChecking] = useState(false);
   const [gcpError, setGcpError] = useState<string | null>(null);
-  // Numbered as the AWS reads are (see there).
-  const beginProjectsRead = useLatest();
-  const loadGcpProjects = useCallback(() => {
-    const latest = beginProjectsRead();
-    setGcpChecking(true);
-    // Each list on its own: one call failing (no permission to list organizations, say) keeps
-    // what the others found, and says what went wrong.
-    void Promise.allSettled([gcpAccount(), gcpBillingAccounts(), gcpOrganizations()])
-      .then(([email, billing, orgs]) => {
-        if (!latest()) return;
-        setGcpEmail(email.status === "fulfilled" ? email.value : null);
-        const accounts = billing.status === "fulfilled" ? billing.value : [];
-        setGcpBilling(accounts);
-        setGcpOrgs(orgs.status === "fulfilled" ? orgs.value : []);
-        const failed = [email, billing, orgs].find((r) => r.status === "rejected");
-        setGcpError(failed ? describeError(failed.reason) : null);
-        // Default to the first open billing account if none chosen yet.
-        const open = accounts.find((b) => b.open) ?? accounts.at(0);
-        setV((s) => (s.provider === "gcp" && !s.username && open ? { ...s, username: open.id } : s));
-      })
-      .finally(() => {
-        if (latest()) setGcpChecking(false);
-      });
-  }, [setV, beginProjectsRead]);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its "checking" state at once
-    if (gcp) loadGcpProjects();
-  }, [gcp, loadGcpProjects]);
+  const apply = useCallback(
+    ([email, billing, orgs]: Awaited<ReturnType<typeof readGcpAccounts>>) => {
+      setGcpEmail(email.status === "fulfilled" ? email.value : null);
+      const accounts = billing.status === "fulfilled" ? billing.value : [];
+      setGcpBilling(accounts);
+      setGcpOrgs(orgs.status === "fulfilled" ? orgs.value : []);
+      // What went wrong, of the reads that failed.
+      const failed = [email, billing, orgs].find((r) => r.status === "rejected");
+      setGcpError(failed ? describeError(failed.reason) : null);
+      // Default to the first open billing account if none chosen yet.
+      const open = accounts.find((b) => b.open) ?? accounts.at(0);
+      setV((s) => (s.provider === "gcp" && !s.username && open ? { ...s, username: open.id } : s));
+    },
+    [setV],
+  );
+  const { checking: gcpChecking, reload: loadGcpProjects } = useCliRead(gcp, readGcpAccounts, apply);
   return { gcpBilling, gcpOrgs, gcpEmail, gcpChecking, gcpError, loadGcpProjects };
 }
 

@@ -5,7 +5,7 @@
 # the run. docs/testing/integration.md says what each scenario guards against; tests/README.md
 # lists every knob and the results' format.
 #
-#   tests/integration/run.sh                                            the local tier: Docker, docker-vm, VMs here
+#   tests/integration/run.sh                                            the local tier: Docker, VMs here
 #   CYBERCTF_TEST_INTEGRATION_TIERS="local aws" tests/integration/run.sh   and the AWS tier (billed while it runs)
 #   CYBERCTF_TEST_INTEGRATION_TIERS=server tests/integration/run.sh        a lab on a Proxmox / ESXi host (infra/test-servers)
 #   ONLY="attack-box-docker attack-box-vm" tests/integration/run.sh
@@ -32,7 +32,7 @@
 #
 # Options:
 #   --only <scenario>[@<provider>]  only that scenario (as ONLY), on that hypervisor (as
-#                       CYBERCTF_TEST_VM_PROVIDER, and the docker-vm one); may repeat
+#                       CYBERCTF_TEST_VM_PROVIDER); may repeat
 #   --results <file>    append a JSON record per scenario to <file> (tests/README.md, "Results")
 #   --list              print a JSON line per scenario (its id, tier, form, test and knobs) and exit
 #   -h, --help          this
@@ -43,8 +43,6 @@
 #   CYBERCTF_TEST_INTEGRATION_TIMEOUT seconds a scenario may take (480; the attack-box ones 600)
 #   CYBERCTF_TEST_ISOLOOM_DIR        an Isoloom checkout, for its example labs (default: ../isoloom)
 #   CYBERCTF_TEST_VM_PROVIDER        the hypervisor for VM labs (default: qemu)
-#   CYBERCTF_TEST_DOCKER_VM_PROVIDER the one for a container lab in a VM (default: utm on macOS, else
-#                                    CYBERCTF_TEST_VM_PROVIDER)
 #   CYBERCTF_TEST_AWS_REGION         the AWS tier's region (default: eu-west-3)
 #   CYBERCTF_TEST_CORPUS_LABS        lab folders, comma-separated, for the corpus-docker scenario
 #   CYBERCTF_TEST_PVE_ENDPOINT, _TOKEN, _NODE, _BRIDGE, _RUNNER_HOME (and _JUMP when the lab bridge
@@ -74,7 +72,7 @@ while [ $# -gt 0 ]; do
       ONLY="${ONLY:+$ONLY }${only%%@*}"
       case $only in
         *@docker | *@) ;;
-        *@*) export CYBERCTF_TEST_VM_PROVIDER=${only#*@} CYBERCTF_TEST_DOCKER_VM_PROVIDER=${only#*@} ;;
+        *@*) export CYBERCTF_TEST_VM_PROVIDER=${only#*@} ;;
       esac
       export ONLY
       shift
@@ -109,7 +107,6 @@ fi
 EXAMPLES="$ISOLOOM/examples"
 TIERS=${CYBERCTF_TEST_INTEGRATION_TIERS:-local}
 VM_PROVIDER=${CYBERCTF_TEST_VM_PROVIDER:-qemu}
-if [ "$(uname -s)" = Darwin ]; then DOCKER_VM_PROVIDER=${CYBERCTF_TEST_DOCKER_VM_PROVIDER:-utm}; else DOCKER_VM_PROVIDER=${CYBERCTF_TEST_DOCKER_VM_PROVIDER:-$VM_PROVIDER}; fi
 AWS_REGION=${CYBERCTF_TEST_AWS_REGION:-eu-west-3}
 LOGS=${CYBERCTF_TEST_INTEGRATION_LOGS:-$ROOT/tests/integration/.state/logs}
 [ -n "$LISTING" ] || mkdir -p "$LOGS"
@@ -141,7 +138,6 @@ LOCAL_BOX="$BOX::the_attack_box_is_a_machine_of_the_lab_on_every_local_form"
 AWS_BOX="$BOX::the_attack_box_is_a_machine_of_an_aws_lab"
 HELLO_STACK=integration_tests::docker_lab::hello_stack_runs_end_to_end
 SEGMENTED=integration_tests::docker_lab::segmented_runs_end_to_end
-DOCKER_VM_LAB=integration_tests::docker_vm_lab::a_container_lab_runs_in_a_local_vm_end_to_end
 VM_LAB=integration_tests::vm_lab::a_vm_lab_runs_end_to_end_through_the_runner
 PER_MACHINE=integration_tests::per_machine::a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end
 LAUNCH_COMMANDS=integration_tests::launch_commands::a_local_lab_launches_and_tears_down_through_the_commands
@@ -171,7 +167,6 @@ reads() {
     "$AWS_BOX") echo CYBERCTF_TEST_BOX_LAB CYBERCTF_TEST_BOX_FORM CYBERCTF_TEST_BOX_TARGET CYBERCTF_TEST_AWS_REGION CYBERCTF_TEST_CLOUD_REAL_IP ;;
     "$HELLO_STACK") echo CYBERCTF_TEST_HELLO_LAB CYBERCTF_TEST_BOX_IMAGE ;;
     "$SEGMENTED") echo CYBERCTF_TEST_SEGMENTED_LAB CYBERCTF_TEST_BOX_IMAGE ;;
-    "$DOCKER_VM_LAB") echo CYBERCTF_TEST_DOCKER_VM_LAB CYBERCTF_TEST_VM_PROVIDER ;;
     "$VM_LAB") echo CYBERCTF_TEST_VM_LAB CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
     "$PER_MACHINE") echo CYBERCTF_TEST_PER_MACHINE_LAB CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
     "$LAUNCH_COMMANDS") echo CYBERCTF_TEST_LOCAL_LAB ;;
@@ -245,13 +240,13 @@ scenario_temp() {
   if command -v cygpath >/dev/null 2>&1; then SCENARIO_TEMP_NATIVE=$(cygpath -w "$SCENARIO_TEMP"); fi
 }
 # drop_temp <folder> <log> [vms]: a scenario's temp folder gone, what it left with it: with `vms`
-# (a scenario past its cap, a runner stopped midway) its labs' VirtualBox VMs first (drop_vbox), then
+# (a scenario past its cap, a runner stopped midway) its labs' VMs first (drop_vms), then
 # a process still naming it (a VM, a QEMU hub: daemonized, they outlive a killed test's process
 # group) is stopped (TERM, then KILL), then the folder removed; the log says so.
 drop_temp() {
   local dir=$1 log=$2 pids
   [ -n "$dir" ] && [ -d "$dir" ] || return 0
-  [ "${3:-}" != vms ] || drop_vbox "$dir" "$log"
+  [ "${3:-}" != vms ] || drop_vms "$dir" "$log"
   # By the folder's own name (random), whichever path to it a process was given (/tmp or /private/tmp).
   pids=$(pgrep -f -- "${dir##*/}" 2>/dev/null | tr '\n' ' ')
   if [ -n "${pids// /}" ]; then
@@ -267,27 +262,108 @@ drop_temp() {
   [ "$dir" = "$SCENARIO_TEMP" ] && SCENARIO_TEMP=""
   return 0
 }
-# drop_vbox <folder> <log>: the VirtualBox VMs Vagrant made for the folder's labs (each machine's
-# <state>/machines/<machine>/virtualbox/id, the state folder a run's `vagrant` under its runner
-# home's runs/<lab>, or a Vagrantfile's .vagrant), each one still registered powered off and
-# deleted (`VBoxManage controlvm poweroff`, `unregistervm --delete`), the log saying so. Vagrant
-# puts them in ~/VirtualBox VMs, outside the folder, and VBoxHeadless names a UUID alone, so
-# stopping what names the folder never reached them: a capped attack-box-vm on VirtualBox left its
-# VM running (`solo-web - attackbox`, the test rig's studio, 2026-11-12). Read before the folder goes.
-drop_vbox() {
-  local dir=$1 log=$2 file id name
-  command -v VBoxManage >/dev/null 2>&1 || return 0
+# tool_path <tool>: where the hypervisor or engine tool is: on PATH, else where its installer puts
+# it, as the launcher looks (platform::env_path): a scenario's cleanup runs with the PATH the runner
+# was started with, which on macOS lacks /usr/local/bin outside a login shell (VBoxManage, prlctl),
+# and utmctl ships inside UTM's app, on no PATH. Fails when it's in none. With TOOL_ROOT (a test's),
+# the known places alone, under it.
+tool_path() {
+  local tool=$1 place file
+  [ -n "${TOOL_ROOT:-}" ] || ! command -v "$tool" 2>/dev/null || return 0
+  for place in /usr/local/bin /opt/homebrew/bin /usr/bin "$HOME/.docker/bin" \
+    /Applications/UTM.app/Contents/MacOS "$HOME/Applications/UTM.app/Contents/MacOS" \
+    /Applications/VirtualBox.app/Contents/MacOS "/Applications/Parallels Desktop.app/Contents/MacOS" \
+    "/Applications/VMware Fusion.app/Contents/Library" /Applications/Docker.app/Contents/Resources/bin \
+    "/c/Program Files/Oracle/VirtualBox" "/c/Program Files (x86)/VMware/VMware Workstation" \
+    "/c/Program Files/VMware/VMware Workstation" "/c/Program Files/Docker/Docker/resources/bin"; do
+    for file in "${TOOL_ROOT:-}$place/$tool" "${TOOL_ROOT:-}$place/$tool.exe"; do
+      [ -x "$file" ] && { echo "$file"; return 0; }
+    done
+  done
+  return 1
+}
+# drop_vms <folder> <log>: the VMs Vagrant made for the folder's labs, each still defined stopped
+# and deleted with its own hypervisor's tool (tool_path), the log saying so, then the folder's
+# Compose projects (drop_compose). Vagrant keeps each machine's VM by its
+# id in <state>/machines/<machine>/<provider>/id (the state folder a run's `vagrant` under its runner
+# home's runs/<lab>, or a Vagrantfile's .vagrant), and the VMs live in the hypervisor's own place,
+# outside the folder, so stopping what names the folder never reached them: a capped attack-box-vm
+# left its VirtualBox VM running (2026-11-12), and on UTM its three VMs defined in UTM's library,
+# two of them running (2026-11-14). Read before the folder goes.
+drop_vms() {
+  local dir=$1 log=$2 file id provider hypervisor stop del
   while IFS= read -r file; do
-    id=$(tr -d '[:space:]' <"$file")
-    [[ $id =~ ^[0-9a-fA-F-]{36}$ ]] || continue
-    name=$(VBoxManage showvminfo "$id" --machinereadable 2>/dev/null | sed -n 's/^name="\(.*\)"$/\1/p')
-    [ -n "$name" ] || continue
-    echo "suite: stopping the scenario's VirtualBox VM $name ($id): powered off and deleted" >>"$log"
-    VBoxManage controlvm "$id" poweroff >>"$log" 2>&1
+    id=$(tr -d '\r\n' <"$file")
+    provider=${file%/id}
+    provider=${provider##*/}
+    [ -n "$id" ] || continue
+    case $provider in
+      virtualbox) drop_vbox "$id" "$log"; continue ;;
+      libvirt) drop_libvirt "$id" "$log"; continue ;;
+      utm) hypervisor=UTM stop=(utmctl stop --kill "$id") del=(utmctl delete "$id") ;;
+      vmware_desktop) hypervisor=VMware stop=(vmrun stop "$id" hard) del=(vmrun deleteVM "$id") ;;
+      parallels) hypervisor=Parallels stop=(prlctl stop "$id" --kill) del=(prlctl delete "$id") ;;
+      hyperv)
+        hypervisor=Hyper-V
+        stop=(powershell -NoProfile -Command "Get-VM -Id '$id' | Stop-VM -TurnOff -Force")
+        del=(powershell -NoProfile -Command "Get-VM -Id '$id' | Remove-VM -Force")
+        ;;
+      *) continue ;;
+    esac
+    stop[0]=$(tool_path "${stop[0]}") || continue
+    del[0]=${stop[0]}
+    echo "suite: stopping the scenario's $hypervisor VM $id: stopped and deleted" >>"$log"
+    "${stop[@]}" >>"$log" 2>&1
     sleep 2
-    VBoxManage unregistervm "$id" --delete >>"$log" 2>&1 || echo "suite: couldn't delete the VirtualBox VM $name ($id)" >>"$log"
-  done < <(find "$dir" -maxdepth 10 -path '*/machines/*/virtualbox/id' -type f 2>/dev/null)
+    "${del[@]}" >>"$log" 2>&1 || echo "suite: couldn't delete the $hypervisor VM $id" >>"$log"
+  done < <(find "$dir" -maxdepth 10 -path '*/machines/*/*/id' -type f 2>/dev/null)
+  drop_compose "$dir" "$log"
   return 0
+}
+# drop_compose <folder> <log>: the Compose projects the folder's labs started, each taken down with
+# its volumes and orphans (`docker compose -p <project> down -v --remove-orphans`), then any volume
+# still labelled with it removed, the log saying so. A project is the folder's when its containers'
+# working folder (Compose's com.docker.compose.project.working_dir label) is inside it: a capped
+# attack-box-docker left its project's three containers, network and volume (2026-11-14).
+drop_compose() {
+  local dir=$1 log=$2 project docker
+  docker=$(tool_path docker) || return 0
+  while IFS= read -r project; do
+    [ -n "$project" ] || continue
+    echo "suite: taking down the scenario's Compose project $project: containers, networks and volumes" >>"$log"
+    "$docker" compose -p "$project" down -v --remove-orphans >>"$log" 2>&1 || echo "suite: couldn't take down the Compose project $project" >>"$log"
+    "$docker" volume ls -q --filter "label=com.docker.compose.project=$project" 2>/dev/null | while IFS= read -r volume; do
+      [ -z "$volume" ] || "$docker" volume rm -f "$volume" >>"$log" 2>&1
+    done
+  done < <("$docker" ps -a --filter label=com.docker.compose.project \
+    --format '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null |
+    awk -F '\t' -v dir="$dir" -v alt="/private$dir" '(index($2, dir "/") == 1 || $2 == dir || index($2, alt "/") == 1) && !seen[$1]++ { print $1 }')
+  return 0
+}
+# drop_libvirt <id> <log>: the libvirt domain `id` (vagrant-libvirt's UUID) destroyed and undefined
+# with its storage, from the user's session and the system instance (vagrant-libvirt's default).
+drop_libvirt() {
+  local id=$1 log=$2 uri virsh
+  virsh=$(tool_path virsh) || return 0
+  for uri in "" qemu:///system; do
+    "$virsh" ${uri:+-c "$uri"} dominfo "$id" >/dev/null 2>&1 || continue
+    echo "suite: stopping the scenario's libvirt domain $id${uri:+ ($uri)}: destroyed and undefined" >>"$log"
+    "$virsh" ${uri:+-c "$uri"} destroy "$id" >>"$log" 2>&1
+    "$virsh" ${uri:+-c "$uri"} undefine "$id" --remove-all-storage >>"$log" 2>&1 || echo "suite: couldn't undefine the libvirt domain $id" >>"$log"
+  done
+}
+# drop_vbox <id> <log>: the VirtualBox VM `id`, still registered, powered off and deleted
+# (`VBoxManage controlvm poweroff`, `unregistervm --delete`); VBoxHeadless names a UUID alone.
+drop_vbox() {
+  local id=$1 log=$2 name vbox
+  vbox=$(tool_path VBoxManage) || return 0
+  [[ $id =~ ^[0-9a-fA-F-]{36}$ ]] || return 0
+  name=$("$vbox" showvminfo "$id" --machinereadable 2>/dev/null | sed -n 's/^name="\(.*\)"$/\1/p')
+  [ -n "$name" ] || return 0
+  echo "suite: stopping the scenario's VirtualBox VM $name ($id): powered off and deleted" >>"$log"
+  "$vbox" controlvm "$id" poweroff >>"$log" 2>&1
+  sleep 2
+  "$vbox" unregistervm "$id" --delete >>"$log" 2>&1 || echo "suite: couldn't delete the VirtualBox VM $name ($id)" >>"$log"
 }
 # capped <command...>: the command in a process group of its own, killed whole (cargo and the test
 # binary, which holds the VMs) when `logged` ends it past its cap.
@@ -299,6 +375,24 @@ capped() {
   set +m
   trap 'kill -- -'"$pid"' 2>/dev/null' TERM
   wait "$pid"
+}
+# cap_of <scenario> <provider>: its cap in seconds: CYBERCTF_TEST_INTEGRATION_TIMEOUT when set, else
+# its own where it was measured slower than CAP allows (its measured time and about half again, the
+# measure named), else BOX_CAP for the attack-box ones, else CAP. Raised one scenario on one
+# provider at a time, never for all: a cap is how a hang shows.
+cap_of() {
+  [ -z "${CYBERCTF_TEST_INTEGRATION_TIMEOUT:-}" ] || { echo "$CYBERCTF_TEST_INTEGRATION_TIMEOUT"; return; }
+  case $1@$2 in
+    # per-machine passed in 441 s on QEMU, arm64 Mac (2026-11-14, runner 47b9852). UTM on the same
+    # Mac has no complete run yet: QEMU's figure until it has.
+    per-machine@qemu | per-machine@utm) echo 660 ;;
+    # vm-lab passed end to end in 669 s on libvirt, x64 Debian (2026-11-14, runner 40efa9b, with a
+    # 1200 s cap); on QEMU, arm64 Mac, it passed every check through re-provision and was cut at
+    # 480 s before its stop (runner 47b9852). UTM has no complete run yet (its checks hung, F17).
+    vm-lab@libvirt | vm-lab@qemu | vm-lab@utm) echo 1000 ;;
+    attack-box-*) echo "$BOX_CAP" ;;
+    *) echo "$CAP" ;;
+  esac
 }
 # scenario <id> <form> <provider> <test> [VAR=value...]: the opt-in test, alone, with its knobs,
 # capped. It passes when the test ran and passed; a test that returned early for a missing knob,
@@ -324,7 +418,7 @@ scenario() {
   fi
   wanted "$name" || return 0
   log="$LOGS/$name.log"
-  case $name in attack-box-*) cap=$BOX_CAP ;; *) cap=$CAP ;; esac
+  cap=$(cap_of "$name" "$provider")
   # Its own temp folder (TMPDIR for Unix's tools, TMP and TEMP for Windows'), its app's folders
   # there too (CYBERCTF_TEST_APP_ROOT, read by the test's TestApp::scenario: a lab's runs, Vagrant's
   # state and a VM's disks, go with the folder, where the system's place kept a capped scenario's
@@ -338,7 +432,7 @@ scenario() {
   passed=$?
   if [ -n "$SCENARIO_TEMP" ]; then
     echo "suite: the scenario's temp folder was $SCENARIO_TEMP" >>"$log"
-    # Past its cap, its lab's VirtualBox VMs go with the folder (a test that ended on its own
+    # Past its cap, its lab's VMs go with the folder (a test that ended on its own
     # cleaned up itself, or the leftover audit says what it left).
     if grep -q "^suite: $name exceeded its" "$log"; then drop_temp "$SCENARIO_TEMP" "$log" vms; else drop_temp "$SCENARIO_TEMP" "$log"; fi
   fi
@@ -377,7 +471,7 @@ unset_of() {
 }
 # shared_for <provider> <scenario>: the shared folder a VM box gets on that hypervisor here, empty
 # where it can't share one. The same providers as the launcher's `shares_folders`
-# (src-tauri/src/runtime/attack_machine/place.rs), which a unit test there holds to this list.
+# (src-tauri/src/runtime/attack_box/place.rs), which a unit test there holds to this list.
 # QEMU only on Linux (virtiofsd); Hyper-V and any other hypervisor: none.
 shared_for() {
   case "$1" in
@@ -394,15 +488,11 @@ if in_tier local; then
   # folder seen both ways from inside it (where the form can share one), taken out.
   scenario attack-box-docker docker "" "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=docker \
     CYBERCTF_TEST_BOX_SHARED_FOLDER="$LOGS/shared/attack-box-docker"
-  scenario attack-box-docker-vm docker-vm "$DOCKER_VM_PROVIDER" "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=docker-vm \
-    CYBERCTF_TEST_VM_PROVIDER="$DOCKER_VM_PROVIDER" CYBERCTF_TEST_BOX_SHARED_FOLDER="$(shared_for "$DOCKER_VM_PROVIDER" attack-box-docker-vm)"
   scenario attack-box-vm vm "$VM_PROVIDER" "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=vm \
     CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER" CYBERCTF_TEST_BOX_SHARED_FOLDER="$(shared_for "$VM_PROVIDER" attack-box-vm)"
   # A lab's whole life on each local form: up, status, park and resume, checks, down, nothing left.
   scenario docker-lab-hello-stack docker "" "$HELLO_STACK" CYBERCTF_TEST_HELLO_LAB="$EXAMPLES/hello-stack"
   scenario docker-lab-segmented docker "" "$SEGMENTED" CYBERCTF_TEST_SEGMENTED_LAB="$EXAMPLES/segmented"
-  scenario docker-vm-lab docker-vm "$DOCKER_VM_PROVIDER" "$DOCKER_VM_LAB" \
-    CYBERCTF_TEST_DOCKER_VM_LAB="$SOLO" CYBERCTF_TEST_VM_PROVIDER="$DOCKER_VM_PROVIDER"
   scenario vm-lab vm "$VM_PROVIDER" "$VM_LAB" CYBERCTF_TEST_VM_LAB="$SOLO" CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
   scenario per-machine per-machine "$VM_PROVIDER" "$PER_MACHINE" \
     CYBERCTF_TEST_PER_MACHINE_LAB="$EXAMPLES/supplier-portal-api" CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER" \
@@ -413,8 +503,6 @@ if in_tier local; then
   # A running lab's folder is never replaced under it: an update and a re-import are refused
   # while it is up on each local form, and go through once it is stopped.
   scenario replace-docker docker "" "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$EXAMPLES/hello-stack" CYBERCTF_TEST_REPLACE_FORM=docker
-  scenario replace-docker-vm docker-vm "$DOCKER_VM_PROVIDER" "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$SOLO" CYBERCTF_TEST_REPLACE_FORM=docker-vm \
-    CYBERCTF_TEST_VM_PROVIDER="$DOCKER_VM_PROVIDER"
   scenario replace-vm vm "$VM_PROVIDER" "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$SOLO" CYBERCTF_TEST_REPLACE_FORM=vm \
     CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
   # What a player does that breaks a lab (tests/resilience.md): a container or VM removed, stopped

@@ -164,7 +164,7 @@ mod tests {
     #[tokio::test]
     async fn single_commands_answer_as_the_plain_tools_do() {
         // In tests (and anywhere but a non-elevated Windows on Hyper-V) nothing is elevated.
-        let tools = Tools::rules(&[("vagrant ssh", ok("Linux\n")), ("vagrant destroy", fail("locked"))]);
+        let tools = Tools::expect(&[("vagrant ssh", ok("Linux\n")), ("vagrant destroy", fail("locked"))]);
         let d = dir();
         let v = Vagrant::new(&d, &[], true);
         assert_eq!(v.run(&["ssh", "-c", "uname"]).await.unwrap(), "Linux\n");

@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use crate::error::{Code, Error};
 use crate::platform::exec;
+use crate::runtime::port::HostPort;
 
 /// How long the lookup may take before it is abandoned. It runs on the failure path only, so it
 /// stays short: a missing answer is better than a slow one.
@@ -29,7 +30,7 @@ pub(super) async fn with_holder(e: Error) -> Error {
 
 /// A short description of what listens on host TCP `port` ("nginx (pid 4123)"), or None when
 /// nothing obvious holds it or the lookup isn't available on this machine.
-async fn tcp_listener(port: u16) -> Option<String> {
+async fn tcp_listener(port: HostPort) -> Option<String> {
     #[cfg(windows)]
     {
         windows_listener(port).await
@@ -42,7 +43,7 @@ async fn tcp_listener(port: u16) -> Option<String> {
 
 /// macOS and Linux: `lsof` is on both; on a Linux box without it, `ss` is the fallback.
 #[cfg(not(windows))]
-async fn unix_listener(port: u16) -> Option<String> {
+async fn unix_listener(port: HostPort) -> Option<String> {
     let spec = format!("-iTCP:{port}");
     if let Ok(text) = exec::run_env_timed("lsof", &["-nP", &spec, "-sTCP:LISTEN", "-FpcL"], None, &[], LOOKUP_TIMEOUT).await
         && let Some(holder) = from_lsof(&text)
@@ -56,7 +57,7 @@ async fn unix_listener(port: u16) -> Option<String> {
 
 /// Windows: ask the TCP stack which process listens on the port, then its name.
 #[cfg(windows)]
-async fn windows_listener(port: u16) -> Option<String> {
+async fn windows_listener(port: HostPort) -> Option<String> {
     let script = format!(
         "$ErrorActionPreference='SilentlyContinue'; $c = Get-NetTCPConnection -LocalPort {port} -State Listen | Select-Object -First 1; \
          if ($c) {{ $p = Get-Process -Id $c.OwningProcess; if ($p) {{ Write-Output \"$($p.ProcessName) (pid $($p.Id))\" }} }}"

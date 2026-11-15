@@ -249,6 +249,33 @@ describe("a lab whose brief can't be read", () => {
     expect(document.body.textContent).not.toContain("No briefing for this lab yet.");
   });
 
+  // Clean Code ch.13: an answer for a lab the page moved away from used to land last and show
+  // that lab's brief on the next one's page.
+  it("shows the brief of the lab shown, whichever answer comes last", async () => {
+    const answers: Record<string, (brief: string) => void> = {};
+    installTauri({
+      api_query: (args) =>
+        new Promise((resolve) => {
+          const id = (args?.variables as { id: string }).id;
+          answers[id] = (brief) => {
+            resolve({ labs: [{ contentMd: brief }] });
+          };
+        }),
+    });
+    const { rerender } = render(<LabBrief labId="lab-a" />);
+    await flush();
+    rerender(<LabBrief labId="lab-b" />);
+    await flush();
+    await act(async () => {
+      must(answers["lab-b"])("Brief of lab B");
+      await flush();
+      must(answers["lab-a"])("Brief of lab A");
+      await flush();
+    });
+    expect(document.body.textContent).toContain("Brief of lab B");
+    expect(document.body.textContent).not.toContain("Brief of lab A");
+  });
+
   it("says a lab without a brief has none", async () => {
     installTauri({ api_query: () => ({ labs: [{ contentMd: null }] }) });
     render(<LabBrief labId="lab-sqli" />);

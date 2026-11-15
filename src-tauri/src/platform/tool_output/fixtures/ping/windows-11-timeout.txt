@@ -1,0 +1,6 @@
+
+Pinging 192.168.56.250 with 32 bytes of data:
+Request timed out.
+
+Ping statistics for 192.168.56.250:
+    Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),

@@ -1,25 +1,23 @@
 //! The labs' commands: launching a lab, its runtime operations (stop, park, resume, provision,
 //! status, checks, tools, attack box), and the operations in flight. Each is a thin adapter: it
-//! validates what the UI passes (ids, images, boxes, machine names), turns channels into log
-//! sinks, and calls the runtime domain (`crate::runtime`).
+//! validates what the UI passes (ids, images, boxes, machine names) and asks the run service
+//! (`crate::run_service`) for an operation, or the runtime domain (`crate::runtime`) for a read.
+//! An operation's command answers with its id; its log and its end reach the webview as run events.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use tauri::ipc::Channel;
-
-use super::lines;
 use crate::AppHandle;
-use crate::app::deploy_worker::{self, Job, Op};
-use crate::app::operations::{self, ActiveOperation};
+use crate::app::operations;
 use crate::error::{Error, Result};
 use crate::labs::{self, LaunchRequest};
 use crate::platform::AppDirs;
-use crate::runtime::attack_machine::AttackStatus;
+use crate::run_service::{self, AttachPick, OperationId, Request};
+use crate::runtime::attack_box::AttackStatus;
 use crate::runtime::paths::{installed_lab_dir, lab_dir, local_runtime};
 use crate::runtime::providers::Provider;
-use crate::runtime::{LabStatus, Park, Runtime, attack_machine, cloud_services, discover, docker, lab, start_place, status, terminal_launch};
+use crate::runtime::{LabStatus, Park, Runtime, attack_box, docker, lab, start_place, status, terminal_launch};
 
-/// Starts a lab, the deploy's log sent on `logs` (see [`labs::prepare_launch`]).
+/// Starts a lab (see [`labs::prepare_launch`]): the operation's id, its log and end as run events.
 #[tauri::command]
 #[allow(clippy::too_many_arguments, reason = "the webview sends each of the request's fields as an argument")]
 pub async fn lab_launch(
@@ -31,8 +29,7 @@ pub async fn lab_launch(
     offline: Option<bool>,
     per_machine_vm: Option<bool>,
     docker_engine: Option<String>,
-    logs: Channel<String>,
-) -> Result<()> {
+) -> Result<OperationId> {
     let request = LaunchRequest {
         lab_id,
         provider,
@@ -42,21 +39,41 @@ pub async fn lab_launch(
         per_machine_vm: per_machine_vm.unwrap_or(false),
         docker_engine,
     };
-    // The deploy runs in a detached worker process, so quitting (or crashing) the app never cuts a
-    // vagrant/docker/terraform run short; this command only follows the worker's log.
-    let launch = labs::prepare_launch(&AppDirs::from(&app), request, &lines(logs.clone())).await?;
-    deploy_worker::run_job(&app, Job::from(launch), logs).await
+    crate::app::runs::of(&app).start(Request::Launch(request))
 }
 
-/// Imports and starts a lab from a local directory `path` (an unpublished lab), the deploy's log
-/// sent on `logs` (see [`labs::local_id`]).
+/// Imports and starts a lab from a local directory `path` (an unpublished lab; see
+/// [`labs::local_id`]): the operation's id.
 #[tauri::command]
-pub async fn lab_launch_local(app: AppHandle, path: String, logs: Channel<String>) -> Result<()> {
-    let src = PathBuf::from(path);
+pub async fn lab_launch_local(app: AppHandle, path: String) -> Result<OperationId> {
+    crate::app::runs::of(&app).start(local_request(PathBuf::from(path))?)
+}
+
+/// The request that imports and starts the lab in folder `src`, under the id it gets here
+/// ([`labs::local_id`]): refused for a folder that isn't a lab.
+pub(crate) fn local_request(src: PathBuf) -> Result<Request> {
     let lab_id = labs::local_id(&src)?;
-    // Detached worker, like every lab operation; this command only follows its log.
-    let job = Job::on_lab(&lab_id, Op::LaunchLocal { src: src.to_string_lossy().into_owned() });
-    deploy_worker::run_job(&app, job, logs).await
+    Ok(Request::LaunchLocal { lab_id, src })
+}
+
+/// Starts `request` on `service` once it passes the checks every caller of the run service makes
+/// (the app's commands, the command line): an operation on an installed lab needs it installed,
+/// and a machine name or an image that could reach a command line is refused. The operation's id.
+pub(crate) fn start_checked(dirs: &AppDirs, service: &dyn run_service::RunService, request: Request) -> Result<OperationId> {
+    if !matches!(request, Request::Launch(_) | Request::LaunchLocal { .. }) {
+        lab_dir(dirs, request.lab_id())?;
+    }
+    match &request {
+        Request::Provision { machine: Some(m), .. } if !valid_machine_name(m) => return Err(Error::Invalid(format!("invalid machine name `{m}`"))),
+        Request::AttachBox { pick: AttachPick { image: Some(image), .. }, .. } => check_image(image)?,
+        _ => {}
+    }
+    service.start(request)
+}
+
+/// Starts `request` on the app's run service, checked ([`start_checked`]).
+fn start(app: &AppHandle, request: Request) -> Result<OperationId> {
+    start_checked(&AppDirs::from(app), &*crate::app::runs::of(app), request)
 }
 
 /// The labs imported from a folder installed here, each with what its own `.ctf/` folder says
@@ -77,8 +94,16 @@ pub async fn lab_installed(app: AppHandle, id: String) -> Result<bool> {
 /// runs on it (see [`labs::remove`]). What couldn't be deleted is in the answer.
 #[tauri::command]
 pub async fn lab_remove(app: AppHandle, id: String) -> Result<labs::remove::Removal> {
-    let dirs = AppDirs::from(&app);
-    labs::remove::remove(&dirs, &id, || deploy_worker::idle_files(&dirs, &id)).await
+    remove_in(&AppDirs::from(&app), &id).await
+}
+
+/// [`lab_remove`], in the app whose folders are `dirs`.
+pub(crate) async fn remove_in(dirs: &AppDirs, id: &str) -> Result<labs::remove::Removal> {
+    // Refused while the runner service runs or holds an operation of the lab's run.
+    if crate::runtime::isothrum::busy_in_service(dirs).await.map_err(Error::Invalid)?.iter().any(|l| l == id) {
+        return Err(Error::coded(crate::error::Code::AlreadyInProgress));
+    }
+    labs::remove::remove(dirs, id).await
 }
 
 /// The labs with any operation in flight, in this process or a deploy worker: what an update
@@ -88,64 +113,50 @@ pub async fn busy_labs(app: AppHandle) -> std::result::Result<Vec<String>, Strin
     operations::busy_labs(AppDirs::from(&app)).await
 }
 
-/// Every lab operation in flight, here or in a deploy worker.
+/// The run events after cursor `after` (every one kept, for none): what a window that (re)loads
+/// replays before it follows the live ones.
 #[tauri::command]
-pub async fn active_operations(app: AppHandle) -> Vec<ActiveOperation> {
-    operations::active_operations(AppDirs::from(&app)).await
-}
-
-/// The log of lab `id`'s last deploy.
-#[tauri::command]
-pub async fn lab_deploy_log(app: AppHandle, id: String) -> Result<String> {
-    operations::lab_deploy_log(AppDirs::from(&app), id).await
+pub async fn run_events(app: AppHandle, after: Option<u64>) -> Vec<run_service::Cursored> {
+    crate::app::runs::of(&app).events().since(after)
 }
 
 fn check_image(image: &str) -> Result<()> {
     if crate::platform::exec::valid_image(image) { Ok(()) } else { Err(Error::Invalid(format!("invalid attack-box image `{image}`"))) }
 }
 
+/// The longest machine name Isoloom accepts (a DNS label's length).
+const MACHINE_NAME_MAX: usize = 64;
+
 /// A machine name as Vagrant and Isoloom spell them: plain characters, dots allowed, not empty.
 fn valid_machine_name(m: &str) -> bool {
-    !m.is_empty() && m.len() <= 64 && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    !m.is_empty() && m.len() <= MACHINE_NAME_MAX && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
-/// Stops lab `id` wherever it runs and removes it, its log lines sent on `logs` (see [`stop_lab`]).
+/// Stops lab `id` wherever it runs and removes it, what still runs on it ended first (see
+/// [`labs::stop_lab_retiring_colocation`]): the operation's id.
 #[tauri::command]
-pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    stop_lab(&AppDirs::from(&app), &id, runtime, lines(logs)).await
-}
-
-/// Stops lab `id` wherever it runs, the deploy still running in its worker ended first (see
-/// [`labs::stop_lab`]).
-pub(crate) async fn stop_lab(dirs: &AppDirs, id: &str, runtime: Runtime, log: impl FnMut(String)) -> Result<()> {
-    labs::stop_lab(dirs, id, runtime, deploy_worker::end_workers(dirs, id), log).await
+pub async fn lab_stop(app: AppHandle, id: String, runtime: Runtime) -> Result<OperationId> {
+    start(&app, Request::Stop { lab_id: id, runtime })
 }
 
 /// Pauses (state saved) or shuts down (powered off) a lab on this machine, keeping its machines
-/// so it resumes as it was. Runs detached (a worker), like every lab operation.
+/// so it resumes as it was: the operation's id.
 #[tauri::command]
-pub async fn lab_park(app: AppHandle, id: String, runtime: Runtime, mode: Park, logs: Channel<String>) -> Result<()> {
-    lab_dir(&AppDirs::from(&app), &id)?;
-    deploy_worker::run_job(&app, Job::on_lab(&id, Op::Park { runtime, mode }), logs).await
+pub async fn lab_park(app: AppHandle, id: String, runtime: Runtime, mode: Park) -> Result<OperationId> {
+    start(&app, Request::Park { lab_id: id, runtime, mode })
 }
 
-/// Runs a VM lab's provisioners again, on one machine (`machine`) or all of them.
+/// Runs a VM lab's provisioners again, on one machine (`machine`) or all of them: the operation's
+/// id.
 #[tauri::command]
-pub async fn lab_provision(app: AppHandle, id: String, runtime: Runtime, machine: Option<String>, logs: Channel<String>) -> Result<()> {
-    lab_dir(&AppDirs::from(&app), &id)?;
-    if let Some(m) = &machine
-        && !valid_machine_name(m)
-    {
-        return Err(Error::Invalid(format!("invalid machine name `{m}`")));
-    }
-    deploy_worker::run_job(&app, Job::on_lab(&id, Op::Provision { runtime, machine }), logs).await
+pub async fn lab_provision(app: AppHandle, id: String, runtime: Runtime, machine: Option<String>) -> Result<OperationId> {
+    start(&app, Request::Provision { lab_id: id, runtime, machine })
 }
 
-/// Brings a parked lab back (or the machines of a lab that went down).
+/// Brings a parked lab back (or the machines of a lab that went down): the operation's id.
 #[tauri::command]
-pub async fn lab_resume(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    lab_dir(&AppDirs::from(&app), &id)?;
-    deploy_worker::run_job(&app, Job::on_lab(&id, Op::Resume { runtime }), logs).await
+pub async fn lab_resume(app: AppHandle, id: String, runtime: Runtime) -> Result<OperationId> {
+    start(&app, Request::Resume { lab_id: id, runtime })
 }
 
 /// What lab `id` looks like right now, wherever it runs; not running when its last launch or
@@ -155,17 +166,60 @@ pub async fn lab_resume(app: AppHandle, id: String, runtime: Runtime, logs: Chan
 /// its download, as a failure of its own ("lab … is not installed").
 #[tauri::command]
 pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<LabStatus> {
-    let dirs = AppDirs::from(&app);
-    let Some(dir) = installed_lab_dir(&dirs, &id)? else { return Ok(LabStatus::default()) };
-    let failed = deploy_worker::last_deploy_failed(&dirs, &id);
-    Ok(status::status(&dirs, &dir, &id, runtime).await?.unless_launch_failed(failed))
+    status_in(&AppDirs::from(&app), &id, runtime).await
+}
+
+/// [`lab_status`], in the app whose folders are `dirs`.
+pub(crate) async fn status_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<LabStatus> {
+    let Some(dir) = installed_lab_dir(dirs, id)? else { return Ok(LabStatus::default()) };
+    let failed = crate::runtime::isothrum::last_run_failed(dirs, id);
+    Ok(status::status(dirs, &dir, id, runtime).await?.unless_launch_failed(failed))
+}
+
+/// Watches `labs` (each with its catalogue runtime), `open` among them looked at closely (a lab
+/// page shows it): their statuses, and what the scan of this machine sees up, come as run events
+/// from now on (see [`run_service::RunService::watch`]). Replaces what this app watched.
+#[tauri::command]
+pub async fn labs_watch(app: AppHandle, labs: Vec<WatchedLab>, open: Vec<String>) -> Result<()> {
+    for lab in &labs {
+        crate::runtime::validate_id(&lab.id)?;
+    }
+    crate::app::runs::of(&app).watch(labs.into_iter().map(|l| (l.id, l.runtime)).collect(), open);
+    Ok(())
+}
+
+/// A lab to watch: its id and its catalogue runtime.
+#[derive(serde::Deserialize)]
+pub struct WatchedLab {
+    /// The lab's id.
+    id: String,
+    /// Its catalogue runtime.
+    runtime: Runtime,
 }
 
 /// Before a cloud-services lab starts: its cloud, its cost estimate, what it asks for at launch
 /// and what it exposes, from its spec at the catalogue's pinned commit. None for other labs.
 #[tauri::command]
-pub async fn lab_cloud_preview(app: AppHandle, id: String, source: LabSource) -> Result<Option<cloud_services::Preview>> {
-    cloud_services::preview_at(&AppDirs::from(&app), &id, source.checked()).await
+#[cfg(feature = "cloud-services")]
+pub async fn lab_cloud_preview(app: AppHandle, id: String, source: LabSource) -> Result<Option<crate::runtime::Preview>> {
+    crate::runtime::cloud_services::preview_at(&AppDirs::from(&app), &id, source.checked()).await
+}
+
+/// [`lab_cloud_preview`] in a build without the `cloud-services` feature: none, as for a lab of
+/// another kind.
+#[tauri::command]
+#[cfg(not(feature = "cloud-services"))]
+pub async fn lab_cloud_preview(app: AppHandle, id: String, source: LabSource) -> Result<Option<crate::runtime::Preview>> {
+    let _ = (app, source);
+    crate::runtime::validate_id(&id)?;
+    Ok(None)
+}
+
+/// Whether this build runs labs of their own cloud services (the `cloud-services` feature): the
+/// webview offers such labs, and the filter for them, only when it does.
+#[tauri::command]
+pub fn cloud_services_supported() -> bool {
+    cfg!(feature = "cloud-services")
 }
 
 /// A lab's minimum-to-run system requirements (CPU, memory, disk), as a lightest-to-heaviest
@@ -173,6 +227,11 @@ pub async fn lab_cloud_preview(app: AppHandle, id: String, source: LabSource) ->
 /// with no machines of its own (cloud services).
 #[tauri::command]
 pub async fn lab_requirements(app: AppHandle, id: String, source: LabSource) -> Result<Option<lab::Requirements>> {
+    // A cloud-services lab (its own lab file) has no machines of its own here.
+    #[cfg(feature = "cloud-services")]
+    if crate::runtime::cloud_services::preview_at(&AppDirs::from(&app), &id, source.checked()).await?.is_some() {
+        return Ok(None);
+    }
     let lab = lab::lab_at(&AppDirs::from(&app), &id, source.checked()).await?;
     Ok(lab::requirements(&lab))
 }
@@ -209,9 +268,13 @@ pub async fn lab_default_place(
 
 /// Every way lab `id`, declared `runtime`, can start ([`lab::run_options`]): per form, the
 /// hypervisors, servers and clouds its spec at the catalogue's pinned commit runs on, each with
-/// its launch path's badge, and where Isoloom refuses it. What the launch picker offers.
+/// its launch path, and where Isoloom refuses it. What the launch picker offers.
 #[tauri::command]
 pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, source: LabSource) -> Result<lab::RunOptions> {
+    #[cfg(feature = "cloud-services")]
+    if runtime == Runtime::Cloud {
+        return crate::runtime::cloud_services::run_options_at(&AppDirs::from(&app), &id, source.checked()).await;
+    }
     let lab = lab::lab_at(&AppDirs::from(&app), &id, source.checked()).await?;
     Ok(lab::run_options(&lab, runtime))
 }
@@ -222,20 +285,13 @@ pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, sourc
 /// lab run as one VM per machine included); none beside cloud services.
 #[tauri::command]
 pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<Vec<lab::Observer>> {
-    let dir = lab_dir(&AppDirs::from(&app), &id)?;
-    match local_runtime(&dir, runtime) {
-        Runtime::Cloud => Ok(Vec::new()),
-        form => lab::tools(&dir, form == Runtime::Docker),
-    }
+    tools_in(&AppDirs::from(&app), &id, runtime)
 }
 
-/// The ids of labs with something up on this machine right now, found by asking Docker and each
-/// hypervisor directly (`vmrun`, `VBoxManage`, `prlctl`, `utmctl`, `virsh`, Hyper-V). One scan for
-/// every lab, unlike `lab_status`: the UI reads it only to pick which labs to read the status of
-/// again (one started from the website, or after a crash or restart), never as whether one runs.
-#[tauri::command]
-pub async fn running_labs(app: AppHandle) -> Vec<String> {
-    discover::running_lab_ids(&AppDirs::from(&app)).await
+/// [`lab_tools`], in the app whose folders are `dirs`.
+pub(crate) fn tools_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<Vec<lab::Observer>> {
+    let dir = lab_dir(dirs, id)?;
+    lab::tools(&dir, local_runtime(&dir, runtime))
 }
 
 /// Runs a lab's exploitability check: does the intended exploit path still work? Lets a
@@ -244,26 +300,23 @@ pub async fn running_labs(app: AppHandle) -> Vec<String> {
 /// lab), or on an ESXi host (from its controller).
 #[tauri::command]
 pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<docker::Check> {
-    let dirs = AppDirs::from(&app);
-    let dir = lab_dir(&dirs, &id)?;
-    match crate::runtime::host::locate(&dirs, &dir, &id, runtime)? {
+    check_in(&AppDirs::from(&app), &id, runtime).await
+}
+
+/// [`lab_check`], in the app whose folders are `dirs`.
+pub(crate) async fn check_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<docker::Check> {
+    let dir = lab_dir(dirs, id)?;
+    match crate::runtime::host::locate(dirs, &dir, id, runtime)? {
         Some(host) => host.check().await,
         None => Ok(docker::Check::default()),
     }
-}
-
-/// Where lab `id`'s attack box goes ([`attack_machine::locate`]), or an error when the launcher
-/// reaches no run of the lab.
-fn with_attack_box(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<attack_machine::Placed> {
-    attack_machine::locate(dirs, dir, id, runtime)?
-        .ok_or_else(|| Error::Invalid("This lab has no attack box the launcher can reach. Work from what the lab gives you.".into()))
 }
 
 /// The command the runner builds to open a shell into lab `id`'s attack box (the in-app terminal
 /// and the system terminal both run it).
 pub(crate) async fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<isothrum_runner::ShellCommand> {
     let dir = lab_dir(dirs, id)?;
-    with_attack_box(dirs, &dir, id, runtime)?.shell_command().await
+    attack_box::reachable(dirs, &dir, id, runtime)?.shell_command().await
 }
 
 /// The attack box's status for the lab detail view: the machine the launcher added to the lab,
@@ -273,10 +326,14 @@ pub(crate) async fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime
 /// status future is large, and awaiting it inline would make every caller's future large too.
 #[tauri::command]
 pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime) -> Result<AttackStatus> {
+    box_status_in(&AppDirs::from(&app), &id, runtime).await
+}
+
+/// [`attack_box_status`], in the app whose folders are `dirs`.
+pub(crate) async fn box_status_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<AttackStatus> {
     Box::pin(async move {
-        let dirs = AppDirs::from(&app);
-        let dir = lab_dir(&dirs, &id)?;
-        match attack_machine::locate(&dirs, &dir, &id, runtime)? {
+        let dir = lab_dir(dirs, id)?;
+        match attack_box::locate(dirs, &dir, id, runtime)? {
             Some(placed) => placed.status().await,
             None => Ok(AttackStatus::default()),
         }
@@ -284,77 +341,32 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime) -> 
     .await
 }
 
-/// The learner's pick for an attach: which lab network to join (none: the seat the lab declares,
-/// else its first network), with which image for a container box (none: the launcher's default,
-/// [`attack_machine::default_image`]; a VM box is Kali whatever is picked). One argument so the
-/// command stays within Tauri's argument count.
-#[derive(serde::Deserialize)]
-pub struct AttachPick {
-    network: Option<String>,
-    image: Option<String>,
-    /// A VM box gets Kali's desktop (the Settings choice; a container box has none). Absent:
-    /// headless.
-    #[serde(default)]
-    desktop: bool,
-}
-
 /// Adds the attack box to the running lab as a machine of it, on the network the learner picked
-/// (else the seat the lab declares, else its first network), then brings the run up to date; a
-/// container box pulls its image on the first add.
+/// (else the seat the lab declares, else its first network), then brings the run up to date: the
+/// operation's id. A container box pulls its image on the first add.
 #[tauri::command]
-pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pick: AttachPick, logs: Channel<String>) -> Result<()> {
-    Box::pin(async move {
-        let AttachPick { network, image, desktop } = pick;
-        let dirs = AppDirs::from(&app);
-        let dir = lab_dir(&dirs, &id)?;
-        if let Some(image) = &image {
-            check_image(image)?;
-        }
-        // Held for the whole attach, like every lab operation: a pause or a stop from another
-        // window or the agent waits, rather than halting the VMs the attach is working in.
-        let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
-        let run = with_attack_box(&dirs, &dir, &id, runtime)?;
-        let mut log = lines(logs);
-        let image = image.unwrap_or_else(|| attack_machine::default_image().to_owned());
-        // In flight like every lab operation: the page shows the lab busy and offers nothing that
-        // would collide, while bringing the run up to date may restart some of its machines.
-        let attach = crate::runtime::as_operation(&id, crate::runtime::Action::AttachBox, async {
-            let attach = run.add(&dirs, attack_machine::Pick { image: &image, desktop }, network.as_deref(), &mut log);
-            // Only an image pulled on this machine is the app's to account for.
-            if !run.pulls_image_here() {
-                return Box::pin(attach).await;
-            }
-            // Boxed: the runner's attach future is large, and tracking it adds to it.
-            Box::pin(crate::machine::storage::owned::tracked(&app, std::slice::from_ref(&image), &[], attach)).await
-        });
-        Box::pin(attach).await
-    })
-    .await
+pub async fn attack_box_attach(app: AppHandle, id: String, runtime: Runtime, pick: AttachPick) -> Result<OperationId> {
+    start(&app, Request::AttachBox { lab_id: id, runtime, pick })
 }
 
-/// Takes the attack box back out of the running lab, leaving the rest of the lab up.
+/// Takes the attack box back out of the running lab, leaving the rest of the lab up: the
+/// operation's id.
 #[tauri::command]
-pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime, logs: Channel<String>) -> Result<()> {
-    Box::pin(async move {
-        let dirs = AppDirs::from(&app);
-        let dir = lab_dir(&dirs, &id)?;
-        let _lock = crate::runtime::lock_lab(&dirs, &id).await?;
-        let run = with_attack_box(&dirs, &dir, &id, runtime)?;
-        // In flight like every lab operation (see `attack_box_attach`). Boxed: the runner's
-        // removal is a large future.
-        let mut log = lines(logs);
-        crate::runtime::as_operation(&id, crate::runtime::Action::DetachBox, Box::pin(run.remove(&dirs, &mut log))).await
-    })
-    .await
+pub async fn attack_box_detach(app: AppHandle, id: String, runtime: Runtime) -> Result<OperationId> {
+    start(&app, Request::DetachBox { lab_id: id, runtime })
 }
 
 /// How the player signs in to lab `id`'s attack box where it asks for a password (its screen's
 /// login, `su`, SSH): its account and the password the launcher keeps for it; none when the lab
 /// has no box, or the launcher keeps no password for it. The lab page's Credentials row.
 #[tauri::command]
-pub async fn attack_box_sign_in(app: AppHandle, id: String) -> Result<Option<attack_machine::SignIn>> {
-    let dir = lab_dir(&AppDirs::from(&app), &id)?;
-    attack_machine::sign_in(&dir, None)
+pub async fn attack_box_sign_in(app: AppHandle, id: String) -> Result<Option<attack_box::SignIn>> {
+    sign_in_in(&AppDirs::from(&app), &id)
+}
+
+/// [`attack_box_sign_in`], in the app whose folders are `dirs`.
+pub(crate) fn sign_in_in(dirs: &AppDirs, id: &str) -> Result<Option<attack_box::SignIn>> {
+    attack_box::sign_in(&lab_dir(dirs, id)?, None)
 }
 
 /// Opens the attack box shell of a running lab in the system terminal, on the command the runner
@@ -368,13 +380,14 @@ pub async fn lab_attack_shell(app: AppHandle, id: String, runtime: Runtime) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::{AttachPick, LabSource, check_image, lines, valid_machine_name};
+    use super::{AttachPick, LabSource, check_image, valid_machine_name};
     use super::{
-        attack_box_attach, attack_box_detach, attack_box_sign_in, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_cloud_preview,
-        lab_default_place, lab_installed, lab_launch, lab_launch_local, lab_park, lab_provision, lab_remove, lab_resume, lab_run_options, lab_status, lab_stop,
-        lab_tools, running_labs,
+        attack_box_attach, attack_box_detach, attack_box_sign_in, attack_box_status, imported_labs, lab_attack_shell, lab_check, lab_default_place,
+        lab_installed, lab_launch, lab_launch_local, lab_park, lab_provision, lab_remove, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools,
     };
+    use crate::commands::lines;
     use crate::platform::exec::fake::Tools;
+    use crate::run_service::tests::finished;
     use crate::runtime::{Park, Runtime, providers::Provider, server};
     use crate::testing::test_app::TestApp;
     use tauri::ipc::{Channel, InvokeResponseBody};
@@ -386,11 +399,16 @@ mod tests {
         let dirs = t.dirs();
         let dir = super::lab_dir(&dirs, id)?;
         let lab = crate::runtime::LabRef { dir: &dir, id, runtime: Runtime::Docker };
-        crate::runtime::start(&dirs, lab, crate::runtime::Destination::default(), &[], super::lines(logs)).await
+        crate::runtime::start(&dirs, lab, crate::runtime::Destination::default(), &[], crate::commands::lines(logs)).await
     }
 
     fn sink() -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()))
+    }
+
+    #[test]
+    fn cloud_services_are_offered_only_in_a_build_with_their_feature() {
+        assert_eq!(super::cloud_services_supported(), cfg!(feature = "cloud-services"));
     }
 
     #[tokio::test]
@@ -407,7 +425,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_installed_lab_is_removed_with_its_workers_files_and_refused_while_a_worker_runs() {
+    async fn an_installed_lab_is_removed_and_refused_while_an_operation_holds_it() {
         let t = TestApp::new();
         let app = || t.handle().clone();
         assert!(!lab_installed(app(), "local-t".into()).await.unwrap());
@@ -415,28 +433,16 @@ mod tests {
         assert!(lab_installed(app(), "../x".into()).await.is_err());
         let dir = t.lab("local-t", &[("isoloom.yml", SPEC)]);
         assert!(lab_installed(app(), "local-t".into()).await.unwrap());
-        let deploys = crate::runtime::deploys_dir(&t.dirs()).unwrap();
-        // A worker being started on it (its pidfile claimed, empty): refused, nothing deleted.
-        std::fs::write(deploys.join("local-t.pid"), "").unwrap();
-        std::fs::write(deploys.join("local-t.log"), "the last deploy").unwrap();
+        // An operation holds the lab (its lock, as a start or a stop takes it): refused, nothing deleted.
+        let held = crate::runtime::try_lock_lab(&t.dirs(), "local-t").unwrap().expect("the lab's lock");
         assert_eq!(lab_remove(app(), "local-t".into()).await.unwrap_err().code(), crate::error::Code::AlreadyInProgress);
-        assert!(dir.is_dir() && deploys.join("local-t.log").is_file());
-        // No worker: the lab goes, with its worker's files.
-        std::fs::remove_file(deploys.join("local-t.pid")).unwrap();
+        assert!(dir.is_dir());
+        // Released: the lab goes.
+        drop(held);
         let removal = lab_remove(app(), "local-t".into()).await.unwrap();
         assert!(removal.left.is_empty(), "{removal:?}");
-        assert!(!dir.exists() && !deploys.join("local-t.log").exists());
+        assert!(!dir.exists());
         assert!(!lab_installed(app(), "local-t".into()).await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn running_labs_lists_nothing_when_no_lab_is_running() {
-        // An installed but never-started lab is not running; the quit guard and the tray read
-        // this. A running lab's listing is covered by the integration tests.
-        let t = TestApp::new();
-        t.lab("web", &[("isoloom.yml", SPEC)]);
-        let _tools = Tools::rules(&[]);
-        assert_eq!(running_labs(t.handle().clone()).await, Vec::<String>::new());
     }
 
     #[tokio::test]
@@ -462,12 +468,13 @@ mod tests {
         LabSource { repository: repository.into(), commit: commit.into() }
     }
 
+    #[cfg(feature = "cloud-services")]
     #[tokio::test]
     async fn the_preview_command_reads_the_installed_copy_and_refuses_a_source_the_catalogue_doesnt_allow() {
+        use super::lab_cloud_preview;
         let t = TestApp::new();
         let commit = "0123456789abcdef0123456789abcdef01234567";
-        let spec = "version: 1\nname: goat\ncloud:\n  provider: aws\n  terraform: terraform\n  hourly_usd: 0.02\n";
-        t.lab("goat", &[("isoloom.yml", spec), ("terraform/main.tf", ""), (crate::runtime::lab::COMMIT_MARKER, commit)]);
+        t.lab("goat", &[("cloud/lab.yml", "provider: aws\nhourly_usd: 0.02\n"), ("cloud/main.tf", ""), (crate::runtime::lab::COMMIT_MARKER, commit)]);
         let preview = lab_cloud_preview(t.handle().clone(), "goat".into(), source("CyberCTF/goat", commit)).await.unwrap();
         assert_eq!(preview.map(|p| p.provider).as_deref(), Some("aws"));
         // Refused before anything is downloaded: a bad lab id, another owner, a short commit.
@@ -526,7 +533,7 @@ mod tests {
         server::mark_lab(&dir, Some(&t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
         // The box is a machine the launcher adds to the lab, the run updated with the account's
         // place: cloud-docker (the default), a container among the lab's in its cloud VM.
-        let placed = |runtime| match crate::runtime::attack_machine::locate(&t.dirs(), &dir, "srv", runtime).unwrap() {
+        let placed = |runtime| match crate::runtime::attack_box::locate(&t.dirs(), &dir, "srv", runtime).unwrap() {
             Some(b) => match &b.host {
                 crate::runtime::host::Host::Cloud { place, .. } => (place.label.clone(), b.target, b.vm),
                 _ => panic!("in the cloud account"),
@@ -562,22 +569,22 @@ mod tests {
         let s = sink();
         let missing = "lab `gone` is not installed";
         assert_eq!(start_docker(&t, "gone", channel(s.clone())).await.unwrap_err().to_string(), missing);
-        assert_eq!(lab_stop(app(), "gone".into(), Runtime::Docker, channel(s.clone())).await.unwrap_err().to_string(), missing);
-        assert_eq!(lab_park(app(), "gone".into(), Runtime::Docker, Park::Pause, channel(s.clone())).await.unwrap_err().to_string(), missing);
-        assert_eq!(lab_resume(app(), "gone".into(), Runtime::Vm, channel(s.clone())).await.unwrap_err().to_string(), missing);
-        assert_eq!(lab_provision(app(), "gone".into(), Runtime::Vm, None, channel(s.clone())).await.unwrap_err().to_string(), missing);
+        assert_eq!(lab_stop(app(), "gone".into(), Runtime::Docker).await.unwrap_err().to_string(), missing);
+        assert_eq!(lab_park(app(), "gone".into(), Runtime::Docker, Park::Pause).await.unwrap_err().to_string(), missing);
+        assert_eq!(lab_resume(app(), "gone".into(), Runtime::Vm).await.unwrap_err().to_string(), missing);
+        assert_eq!(lab_provision(app(), "gone".into(), Runtime::Vm, None).await.unwrap_err().to_string(), missing);
         assert!(lab_tools(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(lab_check(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(lab_attack_shell(app(), "gone".into(), Runtime::Docker).await.is_err());
         assert!(attack_box_status(app(), "gone".into(), Runtime::Docker).await.is_err());
-        assert!(kali_attach_fails(app(), "gone", channel(s.clone())).await);
-        assert!(attack_box_detach(app(), "gone".into(), Runtime::Docker, channel(s.clone())).await.is_err());
+        assert!(kali_attach_fails(app(), "gone").await);
+        assert!(attack_box_detach(app(), "gone".into(), Runtime::Docker).await.is_err());
         // Installed, but a machine name or image that could reach a command line is refused.
         t.lab("ad", &[]);
-        let err = lab_provision(app(), "ad".into(), Runtime::Vm, Some("a;rm".into()), channel(s.clone())).await.unwrap_err().to_string();
+        let err = lab_provision(app(), "ad".into(), Runtime::Vm, Some("a;rm".into())).await.unwrap_err().to_string();
         assert_eq!(err, "invalid machine name `a;rm`");
         assert_eq!(
-            attack_box_attach(app(), "ad".into(), Runtime::Vm, AttachPick { network: None, image: Some("-x/y z".into()), desktop: false }, channel(s.clone()))
+            attack_box_attach(app(), "ad".into(), Runtime::Vm, AttachPick { network: None, image: Some("-x/y z".into()), desktop: false })
                 .await
                 .unwrap_err()
                 .to_string(),
@@ -604,17 +611,22 @@ mod tests {
         server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
         let s = sink();
         assert!(attack_box_status(t.handle().clone(), "srv".into(), Runtime::Docker).await.is_err());
-        assert!(kali_attach_fails(t.handle().clone(), "srv", channel(s.clone())).await);
-        assert!(!crate::runtime::attack_machine::added(&dir).unwrap(), "the lab is as published");
-        attack_box_detach(t.handle().clone(), "srv".into(), Runtime::Docker, channel(s.clone())).await.unwrap();
+        assert!(kali_attach_fails(t.handle().clone(), "srv").await);
+        assert!(!crate::runtime::attack_box::added(&dir).unwrap(), "the lab is as published");
+        let detach = attack_box_detach(t.handle().clone(), "srv".into(), Runtime::Docker).await.unwrap();
+        assert_eq!(finished(t.handle(), &detach).await.0, Ok(()));
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         assert!(s.lock().unwrap().is_empty());
     }
 
-    /// Whether attaching the Kali attack box to lab `id`, a Docker lab, fails.
-    async fn kali_attach_fails(app: crate::AppHandle, id: &str, logs: Channel<String>) -> bool {
+    /// Whether attaching the Kali attack box to lab `id`, a Docker lab, fails: refused, or failed
+    /// as it ran.
+    async fn kali_attach_fails(app: crate::AppHandle, id: &str) -> bool {
         let pick = AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()), desktop: false };
-        attack_box_attach(app, id.into(), Runtime::Docker, pick, logs).await.is_err()
+        match attack_box_attach(app.clone(), id.into(), Runtime::Docker, pick).await {
+            Err(_) => true,
+            Ok(operation) => finished(&app, &operation).await.0.is_err(),
+        }
     }
 
     /// A channel whose messages land in `sink`.
@@ -638,16 +650,16 @@ mod tests {
 
     #[tokio::test]
     async fn the_attack_box_sign_in_is_the_kept_password_of_the_box_and_none_without_one() {
-        use crate::runtime::attack_machine::{self, Cpu, Kind, PLAYER};
+        use crate::runtime::attack_box::{self, Cpu, Kind, PLAYER};
         let t = TestApp::new();
         let dir = t.lab("web", &[("isoloom.yml", SPEC)]);
         let sign_in = || attack_box_sign_in(t.handle().clone(), "web".into());
         assert_eq!(sign_in().await.unwrap(), None, "no box");
-        attack_machine::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
+        attack_box::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
         let got = sign_in().await.unwrap().expect("the box's sign-in");
         assert_eq!(got.user, PLAYER);
         assert_eq!(got.password.len(), 23);
-        attack_machine::remove(&dir).unwrap();
+        attack_box::remove(&dir).unwrap();
         assert_eq!(sign_in().await.unwrap(), None, "taken out: forgotten");
         assert!(attack_box_sign_in(t.handle().clone(), "../x".into()).await.is_err(), "a bad id");
     }
@@ -656,7 +668,6 @@ mod tests {
     async fn attack_box_commands_refuse_bad_ids_and_images_before_touching_the_runner() {
         let t = TestApp::new();
         assert!(attack_box_status(t.handle().clone(), "../x".into(), Runtime::Docker).await.is_err());
-        let sink = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         t.lab("web", &[("isoloom.yml", SPEC)]);
         assert!(
             attack_box_attach(
@@ -664,23 +675,17 @@ mod tests {
                 "a b".into(),
                 Runtime::Docker,
                 AttachPick { network: None, image: Some("kalilinux/kali-rolling".into()), desktop: false },
-                channel(sink.clone())
             )
             .await
             .is_err()
         );
-        let bad_image = attack_box_attach(
-            t.handle().clone(),
-            "web".into(),
-            Runtime::Docker,
-            AttachPick { network: None, image: Some("x;y".into()), desktop: false },
-            channel(sink.clone()),
-        )
-        .await
-        .unwrap_err()
-        .to_string();
+        let bad_image =
+            attack_box_attach(t.handle().clone(), "web".into(), Runtime::Docker, AttachPick { network: None, image: Some("x;y".into()), desktop: false })
+                .await
+                .unwrap_err()
+                .to_string();
         assert_eq!(bad_image, "invalid attack-box image `x;y`");
-        assert!(sink.lock().unwrap().is_empty(), "nothing ran");
+        assert!(crate::app::runs::of(t.handle()).events().since(None).is_empty(), "nothing ran");
     }
 
     #[tokio::test]
@@ -690,7 +695,7 @@ mod tests {
         let tools = Tools::rules(&[]);
         let s = sink();
         for bad in ["", "dc01é", "dc01 ", "dc01\n", "ws01/x"] {
-            let err = lab_provision(t.handle().clone(), "ad".into(), Runtime::Vm, Some(bad.into()), channel(s.clone())).await.unwrap_err().to_string();
+            let err = lab_provision(t.handle().clone(), "ad".into(), Runtime::Vm, Some(bad.into())).await.unwrap_err().to_string();
             assert_eq!(err, format!("invalid machine name `{bad}`"));
         }
         assert!(tools.calls().is_empty() && s.lock().unwrap().is_empty());
@@ -714,13 +719,13 @@ mod tests {
 
     #[tokio::test]
     async fn lab_launch_offline_refuses_a_lab_that_is_not_installed() {
-        // An offline start runs the installed lab: with none installed it is refused here, before
-        // the backend or a deploy worker is involved, so nothing streams.
+        // An offline start runs the installed lab: with none installed it fails before the backend
+        // or a deploy worker is involved.
         let t = TestApp::new();
-        let s = sink();
-        let err = lab_launch(t.handle().clone(), "invoice".into(), None, None, None, Some(true), None, None, channel(s.clone())).await;
-        assert!(err.is_err(), "{err:?}");
-        assert!(s.lock().unwrap().is_empty(), "nothing ran");
+        let id = lab_launch(t.handle().clone(), "invoice".into(), None, None, None, Some(true), None, None).await.unwrap();
+        let (outcome, _) = finished(t.handle(), &id).await;
+        assert!(outcome.is_err(), "{outcome:?}");
+        assert!(!t.data().join("deploys").join("invoice.pid").exists(), "no worker");
     }
 
     #[tokio::test]
@@ -729,11 +734,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cyberctf-notalab-cmd-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let s = sink();
         // No isoloom.yml: there is no local id, so the command refuses before it reaches a worker.
-        let err = lab_launch_local(t.handle().clone(), dir.to_string_lossy().into_owned(), channel(s.clone())).await;
+        let err = lab_launch_local(t.handle().clone(), dir.to_string_lossy().into_owned()).await;
         let _ = std::fs::remove_dir_all(&dir);
         assert!(err.is_err(), "a folder with no isoloom.yml is not a lab");
-        assert!(s.lock().unwrap().is_empty(), "nothing ran");
     }
 }

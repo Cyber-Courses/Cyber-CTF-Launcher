@@ -6,7 +6,6 @@
     "online": "online",
     "portTab": "Publicada nesta máquina. Clique para copiar {url}",
     "vmSub": "VMs nesta máquina",
-    "containerVmSub": "contêineres em uma VM nesta máquina",
     "serverSubWith": "{kind} · {address}",
     "cloudSub": "{region} · {account}"
   },

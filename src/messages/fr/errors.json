@@ -18,6 +18,16 @@
     "boxDownloadStalled": "Le téléchargement de la box de VM du lab n'avançait plus (rien de nouveau depuis {minutes} minutes), il a donc été arrêté. Vérifiez votre connexion Internet, puis réessayez.",
     "boxDownloadFailed": "Impossible de télécharger la box de VM du lab : {reason}. Vérifiez votre connexion Internet, puis réessayez.",
     "serverAuthFailed": "Cyber CTF ne peut pas se connecter à {server} : son jeton a été révoqué ou son mot de passe a changé. Mettez-le à jour dans Serveurs.",
+    "toolTooOld": "Ce lab nécessite {tool} {required} ou une version ultérieure, et cet ordinateur a {found}. Mettez-le à jour, puis relancez le lab.",
+    "elevationFailed": "Hyper-V nécessite des droits d'administrateur, qui n'ont pas pu être obtenus ({reason}). Relancez le lab et acceptez la demande.",
+    "labNotReady": "Le lab a démarré, mais n'est pas devenu prêt : {detail}",
+    "machinesGone": "Certaines machines de ce lab ont disparu ({machines}) : elles ont été supprimées en dehors de Cyber CTF, il ne peut donc pas reprendre tel quel. Relancez-le pour une copie neuve.",
+    "nothingToResume": "Il ne reste rien de ce lab à reprendre (ses conteneurs ou VM arrêtés ont disparu). Relancez-le pour une copie neuve.",
+    "notParkable": "Ce lab ne peut pas être mis en pause ni éteint. Arrêtez-le plutôt.",
+    "stepStalled": "L'étape `{step}` du lab n'a montré aucun progrès pendant {minutes} minutes, elle a donc été arrêtée. Sa dernière sortie était : « {lastLine} ». Relancez le lab ; si cela se reproduit, vérifiez le réseau et les ressources de Docker, de l'hyperviseur ou du serveur.",
+    "stepSilent": "L'étape `{step}` du lab n'a rien affiché pendant {minutes} minutes, elle a donc été arrêtée. Relancez le lab ; si cela se reproduit, vérifiez le réseau et les ressources de Docker, de l'hyperviseur ou du serveur.",
+    "stepCeiling": "L'étape `{step}` du lab travaillait encore après {hours} heures, la durée maximale d'une étape, elle a donc été arrêtée. Relancez le lab ; si cela se reproduit, vérifiez le réseau et les ressources de Docker, de l'hyperviseur ou du serveur.",
+    "stepTimedOut": "L'étape `{step}` du lab a atteint sa limite de {minutes} minutes, elle a donc été arrêtée. Relancez le lab ; si cela se reproduit, vérifiez le réseau et les ressources de Docker, de l'hyperviseur ou du serveur.",
     "signInCancelled": "Connexion annulée.",
     "signInDenied": "La connexion a été refusée sur Cyber Auth, vous êtes donc toujours déconnecté. Reconnectez-vous et autorisez Cyber CTF pour continuer.",
     "signInCodeUnavailable": "La connexion avec un code n'est pas encore disponible. Copiez plutôt le lien de connexion dans n'importe quel navigateur, sur cette machine ou une autre.",
@@ -40,6 +50,9 @@
     "reapNoHost": "Aucun compte n'est enregistré pour lui, le launcher ne peut donc pas le détruire. Supprimez ses ressources dans la console de votre cloud.",
     "pickCloudAccount": "Ce lab tourne dans votre compte cloud : choisissez l’un de vos comptes cloud pour le démarrer.",
     "noHypervisor": "Aucun hyperviseur prêt sur cette machine ne fait tourner ce lab. Installez-en un depuis la page Machine, ou exécutez le lab sur un serveur ou dans votre compte cloud.",
-    "turnedOffByPolicy": "Votre organisation a désactivé cette fonction sur cet ordinateur (paramètre de stratégie {setting}). Demandez à votre équipe informatique si vous en avez besoin."
+    "turnedOffByPolicy": "Votre organisation a désactivé cette fonction sur cet ordinateur (paramètre de stratégie {setting}). Demandez à votre équipe informatique si vous en avez besoin.",
+    "tlsUnconfirmed": "Le certificat de {server} n'a pas encore été confirmé (SHA-256 {presented}), donc rien ne lui a été envoyé. Pour le confirmer, ouvrez-le dans Serveurs, choisissez Modifier, et comparez l'empreinte avec celle qu'affiche le serveur lui-même avant de la confirmer.",
+    "tlsChanged": "Le certificat de {server} a changé (c'était {pinned}, c'est maintenant {presented}), donc rien ne lui a été envoyé : quelqu'un intercepte peut-être la connexion. Si vous avez remplacé le certificat vous-même, ouvrez-le dans Serveurs, choisissez Modifier, et comparez l'empreinte avec celle qu'affiche le serveur lui-même avant de la confirmer.",
+    "sshHostKeyRefused": "La clé d'hôte SSH de {host} n'est pas celle qui a été confirmée (ou aucune ne l'a encore été), donc la connexion a été refusée. Si le serveur a été réinstallé, ouvrez-le dans Serveurs, choisissez Modifier, et vérifiez sa nouvelle clé."
   }
 }

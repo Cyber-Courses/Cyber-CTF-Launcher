@@ -63,8 +63,8 @@ mod tests {
 
     #[test]
     fn a_wrapped_tool_cmd_cant_find_is_missing() {
-        // Regression (#218): `cmd /C oci` with no OCI CLI exits 9009, which read as "OCI rejected
-        // the request" instead of "install the OCI CLI".
+        // Regression: `cmd /C oci` with no OCI CLI exits 9009, which read as "OCI rejected the
+        // request" instead of "install the OCI CLI".
         use super::missing_behind_cmd;
         for tool in ["az", "gcloud", "oci"] {
             assert!(missing_behind_cmd(tool, Some(9009)), "{tool}");
@@ -120,8 +120,8 @@ mod tests {
 
     #[test]
     fn every_literal_argument_the_crate_passes_a_wrapped_tool_goes_through() {
-        // Regression (#219): the Machine page's Azure probe passed `"azure-cli"` (quotes
-        // included) to az; the guard refused it on every OS, and az read as not installed.
+        // Regression: the Machine page's Azure probe passed `"azure-cli"` (quotes included) to az;
+        // the guard refused it on every OS, and az read as not installed.
         let mut checked = 0;
         for src in crate::testing::source_scan::crate_sources() {
             for (tool, args) in literal_calls(&src.code) {

@@ -6,7 +6,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { PROSE } from "@/components/ui/screen-width";
 import { apiQuery } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 import { warn } from "@/lib/failure";
 import { describeError } from "@/lib/errors";
@@ -18,16 +18,25 @@ type BriefRead = { content: string | null } | { error: string };
  *  without a brief. */
 export function LabBrief({ labId }: { labId: string }) {
   const t = useT();
-  const [read, setRead] = useState<BriefRead | undefined>(undefined);
+  // The read and the lab it is for: the page can move to another lab while one is read, and a
+  // read for a lab no longer shown is never shown (the brief shows as loading until its own).
+  const [answer, setAnswer] = useState<{ labId: string; read: BriefRead } | undefined>(undefined);
+  const read = answer?.labId === labId ? answer.read : undefined;
   useEffect(() => {
+    // An answer for a lab no longer shown is dropped, so a slow one never replaces the brief of
+    // the lab now shown.
+    let shown = true;
     apiQuery<{ labs: { contentMd: string | null }[] }>("labBrief", { id: labId })
       .then((d) => {
-        setRead({ content: d.labs[0]?.contentMd ?? null });
+        if (shown) setAnswer({ labId, read: { content: d.labs[0]?.contentMd ?? null } });
       })
       .catch((e: unknown) => {
         warn("reading the lab's brief")(e);
-        setRead({ error: describeError(e) });
+        if (shown) setAnswer({ labId, read: { error: describeError(e) } });
       });
+    return () => {
+      shown = false;
+    };
   }, [labId]);
   return (
     <Panel>

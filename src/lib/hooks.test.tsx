@@ -8,6 +8,7 @@ import { notify } from "@/lib/notify";
 import { useNow } from "@/lib/use-now";
 import { usePoll, usePolled } from "@/lib/use-poll";
 import { useTauriEvent } from "@/lib/use-tauri-event";
+import { channel } from "@/lib/event-channel";
 import { Toaster } from "@/components/ui/toaster";
 import { commands, installTauri } from "@/test/tauri";
 import { flush, settle } from "@/test/ui";
@@ -281,6 +282,9 @@ describe("timers", () => {
   });
 });
 
+/** The screen asked for, as sent. */
+const navigateAsked = channel<unknown>("navigate", (p) => p);
+
 describe("useTauriEvent", () => {
   it("calls the latest handler with each payload while enabled", async () => {
     installTauri();
@@ -288,7 +292,7 @@ describe("useTauriEvent", () => {
     const second = vi.fn();
     const { rerender, unmount } = renderHook(
       ({ h, on }) => {
-        useTauriEvent("navigate", h, on);
+        useTauriEvent(navigateAsked, h, on);
       },
       { initialProps: { h: first, on: true } },
     );

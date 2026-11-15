@@ -5,7 +5,6 @@
 identifier = "main-window"
 description = "The main window: every screen of the app, but not the attack box terminals."
 permissions = [
-  "allow-active-operations",
   "allow-agent-info",
   "allow-api-query",
   "allow-attack-box-attach",
@@ -18,6 +17,7 @@ permissions = [
   "allow-auth-logout",
   "allow-auth-status",
   "allow-busy-labs",
+  "allow-cloud-services-supported",
   "allow-confirm-launch",
   "allow-docker-start-engine",
   "allow-docker-use-engine",
@@ -31,7 +31,6 @@ permissions = [
   "allow-lab-check",
   "allow-lab-cloud-preview",
   "allow-lab-default-place",
-  "allow-lab-deploy-log",
   "allow-lab-installed",
   "allow-lab-launch",
   "allow-lab-launch-local",
@@ -44,6 +43,7 @@ permissions = [
   "allow-lab-status",
   "allow-lab-stop",
   "allow-lab-tools",
+  "allow-labs-watch",
   "allow-linger-quit",
   "allow-machine-metrics",
   "allow-machine-open-setup",
@@ -58,7 +58,8 @@ permissions = [
   "allow-open-log-folder",
   "allow-open-settings",
   "allow-restart-app",
-  "allow-running-labs",
+  "allow-run-events",
+  "allow-save-diagnostics",
   "allow-screen-window",
   "allow-screen-open-native",
   "allow-server-capacity",
@@ -82,7 +83,6 @@ permissions = [
 identifier = "settings-window"
 description = "The Settings window: account, machine, tools and shared folder settings, plus the hooks the app shell runs before it shows Settings."
 permissions = [
-  "allow-active-operations",
   "allow-agent-info",
   "allow-api-query",
   "allow-auth-login",
@@ -99,6 +99,7 @@ permissions = [
   "allow-install-vagrant-plugin",
   "allow-installed-tools",
   "allow-lab-status",
+  "allow-labs-watch",
   "allow-machine-selftest",
   "allow-machine-storage",
   "allow-machine-storage-clean",
@@ -107,7 +108,8 @@ permissions = [
   "allow-managed-settings",
   "allow-open-log-folder",
   "allow-restart-app",
-  "allow-running-labs",
+  "allow-run-events",
+  "allow-save-diagnostics",
   "allow-shared-folder-get",
   "allow-shared-folder-open",
   "allow-shared-folder-set",
@@ -138,6 +140,7 @@ permissions = [
   "allow-oci-config",
   "allow-ovftool-place",
   "allow-server-default-ssh-key",
+  "allow-server-identity",
   "allow-server-list",
   "allow-server-proxmox-placement",
   "allow-server-public-key",
@@ -145,6 +148,7 @@ permissions = [
   "allow-server-save-ssh-key",
   "allow-server-selftest",
   "allow-server-test",
+  "allow-server-trust-ssh-keys",
   "allow-system-check",
 ]
 

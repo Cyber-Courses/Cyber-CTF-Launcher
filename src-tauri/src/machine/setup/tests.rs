@@ -134,9 +134,9 @@ fn libvirt_joined_since_logging_in_asks_for_a_new_login_after_the_rest() {
 
 #[test]
 fn qemu_without_mkisofs_is_installed_again_which_brings_it() {
-    // Regression (the rig's ubuntu2404 attack-box-vm@qemu): QEMU read as set up without the
-    // mkisofs its VMs need on Linux, and every VM-form lab failed at its first VM. Its install
-    // (which adds genisoimage) is the way: the setup runs it, never passes QEMU over.
+    // Regression: QEMU read as set up without the mkisofs its VMs need on Linux, and every VM-form
+    // lab failed at its first VM. Its install (which adds genisoimage) is the way: the setup runs
+    // it, never passes QEMU over.
     let r = shapes::debian_qemu_without_mkisofs();
     assert_eq!(get_of(&r, Provider::Qemu), [Action::Install { dependency: Dependency::Qemu }]);
     let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Qemu]));
@@ -149,10 +149,10 @@ fn qemu_without_mkisofs_is_installed_again_which_brings_it() {
 
 #[test]
 fn virtualboxs_driver_waiting_for_the_newer_kernel_ends_the_pass_with_a_restart() {
-    // Regression (the rig's bare Debian 13): the install couldn't build VirtualBox's driver for the
-    // running kernel, whose headers the archive no longer had; VirtualBox read as ready and the
-    // self-test's VM found no driver. Now it waits for the restart into the kernel its install
-    // brought, which ends the pass as a restart (`again: reboot`), and it isn't passed over.
+    // Regression: the install couldn't build VirtualBox's driver for the running kernel, whose
+    // headers the archive no longer had; VirtualBox read as ready and the self-test's VM found no
+    // driver. Now it waits for the restart into the kernel its install brought, which ends the pass
+    // as a restart (`again: reboot`), and it isn't passed over.
     let r = shapes::debian_virtualbox_awaits_restart();
     let restart = Action::Blocked { reason: Unavailable::KernelRestart { kernel: "6.12.116+deb13-amd64".into() } };
     assert_eq!(get_of(&r, Provider::Virtualbox), std::slice::from_ref(&restart));
@@ -189,9 +189,9 @@ fn virtualbox_reads(mut r: SystemReport, reason: &Unavailable) -> SystemReport {
 
 #[test]
 fn the_setups_own_hypervisor_that_cant_run_here_gives_way_to_one_that_can() {
-    // Regression (the rig's debian13-bare setup-full, pass 3): VirtualBox, the setup's own, was
-    // installed but its driver wouldn't load after the restart, and the setup failed with "none of
-    // the offered ones can be set up here" while libvirt and QEMU could be.
+    // Regression: VirtualBox, the setup's own, was installed but its driver wouldn't load after the
+    // restart, and the setup failed with "none of the offered ones can be set up here" while
+    // libvirt and QEMU could be.
     let stuck = virtualbox_reads(shapes::debian_virtualbox_awaits_restart(), &Unavailable::VirtualboxDriver { kernel: "6.12.116+deb13-amd64".into() });
     assert_eq!(stuck.setup.hypervisor, Some(Provider::Virtualbox), "still the one installed, as the window shows it");
     let p = plan_of(&stuck, &wanted(&[SetupPath::Vm], &[]));
@@ -204,9 +204,9 @@ fn the_setups_own_hypervisor_that_cant_run_here_gives_way_to_one_that_can() {
 
 #[test]
 fn virtualbox_is_never_installed_while_kvm_holds_the_cpus_virtualization() {
-    // Regression (the rig's debian13-bare setup-full, pass 1): Linux 6.12 turns VT-x on as KVM's
-    // module loads, so VirtualBox can't start a VM ("VT-x is being used by another hypervisor");
-    // the setup installed it anyway, asked for a restart for its driver, then dropped it.
+    // Regression: Linux 6.12 turns VT-x on as KVM's module loads, so VirtualBox can't start a VM
+    // ("VT-x is being used by another hypervisor"); the setup installed it anyway, asked for a
+    // restart for its driver, then dropped it.
     let r = virtualbox_reads(shapes::bare_debian(), &Unavailable::KvmHoldsVirtualization);
     let held = Action::Blocked { reason: Unavailable::KvmHoldsVirtualization };
     assert_eq!(get_of(&r, Provider::Virtualbox), std::slice::from_ref(&held));
@@ -242,7 +242,7 @@ fn qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test() {
     assert_eq!(steps(&p).last().map(String::as_str), Some("qemu: relogin"), "{:?}", steps(&p));
     // On a Mac QEMU runs on HVF: a group pending is no reason to log in again.
     let mut mac = shapes::debian_qemu_awaits_relogin();
-    mac.os = "macos";
+    mac.os = crate::platform::host::Os::Macos;
     for p in mac.vm_providers.iter_mut().filter(|p| p.provider == Provider::Qemu) {
         (p.available, p.reason, p.account_lacks) = (true, None, None);
     }
@@ -251,8 +251,8 @@ fn qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test() {
 
 #[test]
 fn a_bare_fedora_installs_through_dnf_as_a_bare_debian_does_through_apt() {
-    // Regression: every Fedora bare setup shard ended on "this distribution isn't supported by
-    // the guided setup yet" (2026-11-12).
+    // Regression: on a bare Fedora the guided setup ended on "this distribution isn't supported
+    // by the guided setup yet".
     let r = shapes::bare_fedora();
     let p = plan_of(&r, &wanted(&BOTH, &[Provider::Libvirt, Provider::Virtualbox]));
     assert_eq!(steps(&p), ["docker: install docker", "libvirt: install libvirt", "vagrant: install vagrant", "plugin:vagrant-libvirt: plugin vagrant-libvirt"]);
@@ -294,7 +294,8 @@ fn a_linux_without_apt_or_dnf_is_told_to_install_each_tool_itself_instead_of_a_f
 fn a_mac_with_docker_and_no_vagrant_sets_up_only_the_vm_path() {
     let r = shapes::mac_docker_without_vagrant();
     assert_eq!(plan_of(&r, &wanted(&[SetupPath::Docker], &[])).steps, []);
-    // The setup's own hypervisor: the first it installs on Apple Silicon (VMware and Parallels link out).
+    // The setup's own hypervisor: the first it installs on Apple Silicon (VMware and Parallels link
+    // out).
     assert_eq!(r.setup.hypervisor, Some(Provider::Qemu));
     let p = plan_of(&r, &wanted(&BOTH, &[Provider::Utm]));
     assert_eq!(steps(&p), ["utm: install utm", "vagrant: install vagrant", "plugin:vagrant_utm: plugin vagrant_utm"]);
@@ -341,7 +342,7 @@ fn each_engine_says_what_makes_it_the_one_docker_uses() {
     let w = Wanted { engine: Some(Engine::DockerDesktop), ..wanted(&[SetupPath::Docker], &[]) };
     assert_eq!(steps(&plan(&r, &r.setup, &w)), ["engine:docker-desktop: use docker-desktop"]);
     // Nothing installed: the recommended one is installed, the others link out.
-    let r = bare("macos", "x86_64");
+    let r = bare(crate::platform::host::Os::Macos, crate::platform::host::Arch::X86_64);
     assert_eq!(r.setup.recommended_engine, Engine::DockerDesktop);
     assert_eq!(r.setup.engines[0].actions, [Action::Install { dependency: Dependency::Docker }]);
     assert!(matches!(r.setup.engines[1].actions.as_slice(), [Action::Manual { reason: ManualReason::Vendor, .. }]));

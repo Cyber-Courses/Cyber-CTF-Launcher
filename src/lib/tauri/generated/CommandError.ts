@@ -88,7 +88,67 @@ minutes: number, } } | { "code": "boxDownloadFailed", "args": {
 /**
  * Why, in Vagrant's words.
  */
-reason: string, } } | { "code": "serverAuthFailed", "args": { 
+reason: string, } } | { "code": "toolTooOld", "args": { 
+/**
+ * The tool, as the player knows it (`Vagrant`).
+ */
+tool: string, 
+/**
+ * The version this computer has.
+ */
+found: string, 
+/**
+ * The oldest version the lab takes.
+ */
+required: string, } } | { "code": "elevationFailed", "args": { 
+/**
+ * Why, in the runner's words.
+ */
+reason: string, } } | { "code": "labNotReady", "args": { 
+/**
+ * What didn't hold, in the runner's words.
+ */
+detail: string, } } | { "code": "machinesGone", "args": { 
+/**
+ * The machines gone, comma separated.
+ */
+machines: string, } } | { "code": "nothingToResume" } | { "code": "notParkable" } | { "code": "stepStalled", "args": { 
+/**
+ * The step (`up`).
+ */
+step: string, 
+/**
+ * How long it went without progress, in minutes.
+ */
+minutes: number, 
+/**
+ * The last line it printed.
+ */
+lastLine: string, } } | { "code": "stepSilent", "args": { 
+/**
+ * The step (`up`).
+ */
+step: string, 
+/**
+ * How long it printed nothing, in minutes.
+ */
+minutes: number, } } | { "code": "stepCeiling", "args": { 
+/**
+ * The step (`up`).
+ */
+step: string, 
+/**
+ * The longest a step may run, in hours.
+ */
+hours: number, } } | { "code": "stepTimedOut", "args": { 
+/**
+ * The step (`up`).
+ */
+step: string, 
+/**
+ * Its limit, in minutes.
+ */
+minutes: number, } } | { "code": "serverAuthFailed", "args": { 
 /**
  * The server, by its name in Servers.
  */
@@ -96,4 +156,28 @@ server: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" 
 /**
  * The policy setting's name.
  */
-setting: string, } });
+setting: string, } } | { "code": "tlsUnconfirmed", "args": { 
+/**
+ * The server, by its name in Servers.
+ */
+server: string, 
+/**
+ * The SHA-256 fingerprint of the certificate it offered.
+ */
+presented: string, } } | { "code": "tlsChanged", "args": { 
+/**
+ * The server, by its name in Servers.
+ */
+server: string, 
+/**
+ * The fingerprint confirmed for it.
+ */
+pinned: string, 
+/**
+ * The fingerprint of the certificate it offered.
+ */
+presented: string, } } | { "code": "sshHostKeyRefused", "args": { 
+/**
+ * The node's address.
+ */
+host: string, } });

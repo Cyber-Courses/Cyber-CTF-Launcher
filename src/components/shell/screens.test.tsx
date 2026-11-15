@@ -12,7 +12,7 @@ import { commands, installTauri } from "@/test/tauri";
 import { clickEverything, flush } from "@/test/ui";
 import { must } from "@/components/test-support";
 
-const signedIn = { loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" };
+const signedIn = { loggedIn: true, name: "Ada Lovelace", email: "ada@example.org" };
 // Controls that leave the screen or open another window: pressed in their own tests.
 const LEAVE = /^(home|labs|overview)$/i;
 
@@ -29,7 +29,7 @@ describe("MachineScreen", () => {
   });
 
   it("lists what a fresh machine is missing", async () => {
-    const calls = installTauri({ machine_workloads: () => [], machine_storage: () => ({ images: [], boxes: [], plugins: [] }) });
+    const calls = installTauri({ machine_workloads: () => [], machine_storage: () => ({ images: [], boxes: [] }) });
     const user = userEvent.setup();
     render(<MachineScreen report={freshReport("windows")} onRefresh={vi.fn()} onNavigate={vi.fn()} />);
     await flush(50);

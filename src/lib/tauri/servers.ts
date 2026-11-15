@@ -10,13 +10,30 @@ import type {
   SelfTestEvent,
   ServerCheck,
   ServerCheckState,
+  ServerIdentity,
   ServerTest,
+  SshHostKey,
+  SshHostKeys,
   SshKeySignIn,
 } from "@/lib/tauri/generated";
 import type { CloudProvider } from "@/lib/tauri/cloud";
 import { SERVER_PROVIDERS } from "@/lib/tauri/generated/ProviderNames";
+import { signal } from "@/lib/event-channel";
 
-export type { HostCapacity, MonthSpend, ProxmoxBridge, ProxmoxNodeChoices, ProxmoxPlacement, ServerCheck, ServerCheckState, ServerTest, SshKeySignIn };
+export type {
+  HostCapacity,
+  MonthSpend,
+  ProxmoxBridge,
+  ProxmoxNodeChoices,
+  ProxmoxPlacement,
+  ServerCheck,
+  ServerCheckState,
+  ServerIdentity,
+  ServerTest,
+  SshHostKey,
+  SshHostKeys,
+  SshKeySignIn,
+};
 
 // --- Server (the player's own ESXi / Proxmox host) ---
 
@@ -54,6 +71,13 @@ export const serverSaveSshKey = (input: ServerHostInput) => invoke<ServerHost>("
 /** A Proxmox server's nodes, storages and bridges, read from its API with the form's sign-in (its
  *  password or token secret, else the saved host's). Rejects when the API can't be read. */
 export const serverProxmoxPlacement = (input: ServerHostInput) => invoke<ProxmoxPlacement>("server_proxmox_placement", { input });
+/** What the form's Proxmox server offers to be confirmed before the launcher signs in to it: its
+ *  self-signed certificate's SHA-256 fingerprint, and its node's SSH host keys. Nothing but a TLS
+ *  handshake and an SSH key exchange reaches the server. */
+export const serverIdentity = (input: ServerHostInput) => invoke<ServerIdentity>("server_identity", { input });
+/** Confirms the node's SSH host keys the player was shown (`fingerprints`); rejects when the node
+ *  offers others by now. */
+export const serverTrustSshKeys = (input: ServerHostInput, fingerprints: string[]) => invokeUnit("server_trust_ssh_keys", { input, fingerprints });
 /** The first of ~/.ssh/id_ed25519, id_ecdsa, id_rsa that exists (null when none does). */
 export const serverDefaultSshKey = () => invoke<string | null>("server_default_ssh_key");
 export const serverRemove = (id: string) => invokeUnit("server_remove", { id });
@@ -80,3 +104,5 @@ export const serverOpenSetup = (id: string | null, kind: "server" | "cloud" = "s
   invokeUnit("server_open_setup", provider ? { id, kind, provider } : { id, kind });
 /** Emitted by the setup window after a save; the main window reloads its host list. */
 export const SERVER_CHANGED = "server:changed";
+/** A host was saved in the setup window. */
+export const serverChanged = signal(SERVER_CHANGED);

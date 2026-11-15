@@ -28,6 +28,7 @@ use tokio::net::{TcpListener, TcpStream};
 
 use super::ws;
 use crate::error::{Error, Result};
+use crate::platform::loopback_http::{ct_eq, header};
 
 /// Where the bridge relays to.
 #[derive(Clone)]
@@ -40,8 +41,9 @@ pub(crate) enum Target {
         url: String,
         /// The header that signs it in: its name and value.
         header: (String, String),
-        /// Its TLS certificate isn't verified (the server's connection says so).
-        insecure: bool,
+        /// How its TLS certificate is trusted: a self-signed one by the fingerprint the learner
+        /// confirmed for the server, as its API is.
+        trust: crate::runtime::server::tls_pin::Trust,
     },
 }
 
@@ -50,10 +52,15 @@ impl std::fmt::Debug for Target {
         match self {
             Target::Tcp(at) => write!(f, "Tcp({at})"),
             // The URL holds the console's ticket, the header its credential.
-            Target::WebSocket { insecure, .. } => write!(f, "WebSocket {{ insecure: {insecure} }}"),
+            Target::WebSocket { trust, .. } => write!(f, "WebSocket {{ trust: {trust:?} }}"),
         }
     }
 }
+
+/// How much of the screen's stream one read takes to the viewer: frames come in bursts.
+const SCREEN_CHUNK: usize = 64 * 1024;
+/// How much of the viewer's input one read takes to the screen: key and pointer events, small.
+const INPUT_CHUNK: usize = 16 * 1024;
 
 /// The Next dev server a dev build's window loads: `tauri.conf.json`'s `devUrl`.
 pub(crate) const DEV_SERVER_ORIGIN: &str = "http://127.0.0.1:3206";
@@ -63,20 +70,6 @@ pub(crate) const DEV_SERVER_ORIGIN: &str = "http://127.0.0.1:3206";
 /// the Next dev server.
 fn origin_allowed_in(origin: &str, dev: bool) -> bool {
     matches!(origin, "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost") || (dev && origin == DEV_SERVER_ORIGIN)
-}
-
-/// Constant-time string equality, so the token check doesn't leak through timing.
-fn ct_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-/// A request header's value.
-fn header<'a>(req: &'a str, name: &str) -> Option<&'a str> {
-    req.lines().skip(1).find_map(|l| {
-        let (k, v) = l.split_once(':')?;
-        k.trim().eq_ignore_ascii_case(name).then(|| v.trim())
-    })
 }
 
 /// Why the bridge refuses a request.
@@ -238,8 +231,8 @@ async fn serve(mut socket: TcpStream, port: u16, armed: Arc<Mutex<Armed>>) {
             }
             let ended = match target {
                 Target::Tcp(at) => relay_tcp(socket, rest, at).await,
-                Target::WebSocket { url, header, insecure } => {
-                    let upstream = Upstream { url: &url, header: &header, insecure, protocol: accepted.protocol.as_deref() };
+                Target::WebSocket { url, header, trust } => {
+                    let upstream = Upstream { url: &url, header: &header, trust, protocol: accepted.protocol.as_deref() };
                     relay_websocket(socket, rest, &upstream).await
                 }
             };
@@ -302,25 +295,31 @@ async fn relay_tcp(mut socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) 
         }
     };
     let (mut vnc_in, mut vnc_out) = vnc.into_split();
-    let (mut viewer_in, viewer_out) = socket.into_split();
-    let viewer_out = Arc::new(tokio::sync::Mutex::new(viewer_out));
-    let to_viewer = {
-        let viewer_out = Arc::clone(&viewer_out);
-        async move {
-            viewer_out.lock().await.write_all(&ws::binary(&first)).await?;
-            let mut buf = vec![0u8; 64 * 1024];
-            loop {
-                let n = vnc_in.read(&mut buf).await?;
-                if n == 0 {
-                    let _ = viewer_out.lock().await.write_all(&ws::close()).await;
-                    return Ok::<(), std::io::Error>(());
+    let (mut viewer_in, mut viewer_out) = socket.into_split();
+    // One writer to the viewer: the screen and the answers to its pings both go out here, the
+    // pongs handed over by the reader below, so no frame is ever written into the middle of
+    // another and no lock is shared between the two.
+    let (pongs, mut to_answer) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let to_viewer = async move {
+        viewer_out.write_all(&ws::binary(&first)).await?;
+        let mut buf = vec![0u8; SCREEN_CHUNK];
+        loop {
+            // Both cancel-safe: a read or a receive not chosen loses nothing.
+            tokio::select! {
+                read = vnc_in.read(&mut buf) => {
+                    let n = read?;
+                    if n == 0 {
+                        let _ = viewer_out.write_all(&ws::close()).await;
+                        return Ok::<(), std::io::Error>(());
+                    }
+                    viewer_out.write_all(&ws::binary(buf.get(..n).unwrap_or_default())).await?;
                 }
-                viewer_out.lock().await.write_all(&ws::binary(buf.get(..n).unwrap_or_default())).await?;
+                Some(ping) = to_answer.recv() => viewer_out.write_all(&ws::pong(&ping)).await?,
             }
         }
     };
     let from_viewer = async move {
-        let mut chunk = vec![0u8; 16 * 1024];
+        let mut chunk = vec![0u8; INPUT_CHUNK];
         loop {
             loop {
                 match ws::decode(&pending) {
@@ -328,7 +327,8 @@ async fn relay_tcp(mut socket: TcpStream, mut pending: Vec<u8>, at: SocketAddr) 
                         pending.drain(..used);
                         match frame {
                             ws::Frame::Data(d) => vnc_out.write_all(&d).await?,
-                            ws::Frame::Ping(p) => viewer_out.lock().await.write_all(&ws::pong(&p)).await?,
+                            // The writer is gone only once the relay ends.
+                            ws::Frame::Ping(p) => drop(pongs.send(p)),
                             ws::Frame::Pong => {}
                             ws::Frame::Close => return Ok(()),
                         }
@@ -356,8 +356,8 @@ struct Upstream<'a> {
     url: &'a str,
     /// The header that signs it in.
     header: &'a (String, String),
-    /// Its certificate isn't verified.
-    insecure: bool,
+    /// How its certificate is trusted.
+    trust: crate::runtime::server::tls_pin::Trust,
     /// The subprotocol to ask it for (the viewer's).
     protocol: Option<&'a str>,
 }
@@ -365,7 +365,7 @@ struct Upstream<'a> {
 /// Relays the viewer on `socket` (with `pending` bytes already read) to the websocket `to`,
 /// frames as they are.
 async fn relay_websocket(mut socket: TcpStream, pending: Vec<u8>, to: &Upstream<'_>) -> std::io::Result<()> {
-    let opened = tokio::time::timeout(CONNECT_LIMIT + ANSWER_LIMIT, open_websocket(to.url, to.header, to.insecure, to.protocol)).await;
+    let opened = tokio::time::timeout(CONNECT_LIMIT + ANSWER_LIMIT, open_websocket(to.url, to.header, to.trust, to.protocol)).await;
     let upstream = match opened {
         Ok(Ok(upstream)) => upstream,
         Ok(Err(e)) => {
@@ -390,14 +390,15 @@ async fn relay_websocket(mut socket: TcpStream, pending: Vec<u8>, to: &Upstream<
 
 /// Opens the websocket `url` (`wss://`) with `header`, asking for `protocol`: an HTTP/1.1
 /// upgrade, its stream once the server switched protocols.
-async fn open_websocket(url: &str, header: &(String, String), insecure: bool, protocol: Option<&str>) -> std::result::Result<reqwest::Upgraded, String> {
+async fn open_websocket(
+    url: &str,
+    header: &(String, String),
+    trust: crate::runtime::server::tls_pin::Trust,
+    protocol: Option<&str>,
+) -> std::result::Result<reqwest::Upgraded, String> {
     let https = url.strip_prefix("wss://").map(|rest| format!("https://{rest}")).ok_or("not a wss:// URL")?;
-    let client = reqwest::Client::builder()
-        .http1_only()
-        .tls_danger_accept_invalid_certs(insecure)
-        .connect_timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let pinned = crate::runtime::server::tls_pin::Client::upgrade(trust).map_err(|e| e.to_string())?;
+    let client = pinned.http.clone();
     let key = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, rand::random::<[u8; 16]>());
     let mut req = client
         .get(https)
@@ -409,7 +410,10 @@ async fn open_websocket(url: &str, header: &(String, String), insecure: bool, pr
     if let Some(p) = protocol {
         req = req.header("Sec-WebSocket-Protocol", p);
     }
-    let answer = req.send().await.map_err(|e| e.to_string())?;
+    let answer = req.send().await.map_err(|e| match pinned.refused() {
+        Some(refusal) => refusal.error("the Proxmox server").to_string(),
+        None => e.to_string(),
+    })?;
     if answer.status() != reqwest::StatusCode::SWITCHING_PROTOCOLS {
         return Err(format!("the server answered {}", answer.status()));
     }
@@ -421,195 +425,4 @@ async fn open_websocket(url: &str, header: &(String, String), insecure: bool, pr
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A viewer's upgrade request to the bridge on `port`, with `token`, from `origin`.
-    fn request(port: u16, token: &str, origin: &str) -> String {
-        format!(
-            "GET /{token} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: {origin}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: binary\r\n\r\n"
-        )
-    }
-
-    #[test]
-    fn the_apps_page_with_the_token_is_accepted_and_answered_as_rfc_6455_says() {
-        let a = judge(&request(4100, "t0k", "tauri://localhost"), Some("t0k"), 4100, false).unwrap();
-        assert!(a.answer.starts_with("HTTP/1.1 101 Switching Protocols\r\n"), "{}", a.answer);
-        assert!(a.answer.contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"));
-        assert_eq!(a.protocol.as_deref(), Some("binary"));
-        for origin in ["http://tauri.localhost", "https://tauri.localhost"] {
-            assert!(judge(&request(4100, "t0k", origin), Some("t0k"), 4100, false).is_ok(), "{origin}");
-        }
-    }
-
-    #[test]
-    fn a_wrong_or_spent_token_another_origin_or_host_is_refused() {
-        let req = request(4100, "t0k", "tauri://localhost");
-        assert_eq!(judge(&req, Some("other"), 4100, false), Err(Refusal::Token));
-        assert_eq!(judge(&req, None, 4100, false), Err(Refusal::Token), "spent");
-        assert_eq!(judge(&request(4100, "", "tauri://localhost"), Some("t0k"), 4100, false), Err(Refusal::Token));
-        for origin in ["https://evil.example", "null", "tauri://localhost.evil", "http://127.0.0.1:3206", "http://localhost:3206"] {
-            assert_eq!(judge(&request(4100, "t0k", origin), Some("t0k"), 4100, false), Err(Refusal::Origin), "{origin}");
-        }
-        assert!(judge(&request(4100, "t0k", "http://127.0.0.1:3206"), Some("t0k"), 4100, true).is_ok(), "the dev server, in a dev build");
-        assert_eq!(judge(&request(4100, "t0k", "http://localhost:3206"), Some("t0k"), 4100, true), Err(Refusal::Origin), "not the address it listens on");
-        let rebound = req.replace("Host: 127.0.0.1:4100", "Host: attacker.example:4100");
-        assert_eq!(judge(&rebound, Some("t0k"), 4100, false), Err(Refusal::Host));
-        assert_eq!(judge(&req, Some("t0k"), 4101, false), Err(Refusal::Host), "another port");
-        let no_origin = req.replace("Origin: tauri://localhost\r\n", "");
-        assert_eq!(judge(&no_origin, Some("t0k"), 4100, false), Err(Refusal::Origin));
-        let plain = "GET /t0k HTTP/1.1\r\nHost: 127.0.0.1:4100\r\n\r\n";
-        assert_eq!(judge(plain, Some("t0k"), 4100, false), Err(Refusal::NotWebSocket));
-    }
-
-    /// A viewer's masked binary frame.
-    fn masked(payload: &[u8]) -> Vec<u8> {
-        let mask = [3u8, 1, 4, 1];
-        let mut out = vec![0x82, 0x80 | u8::try_from(payload.len()).unwrap()];
-        out.extend_from_slice(&mask);
-        out.extend(payload.iter().zip(mask.iter().cycle()).map(|(b, m)| b ^ m));
-        out
-    }
-
-    /// Connects to the bridge as the screen window's viewer would, with `token` from `origin`.
-    async fn connect(port: u16, token: &str, origin: &str) -> (TcpStream, String) {
-        let mut s = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        s.write_all(request(port, token, origin).as_bytes()).await.unwrap();
-        let mut head = Vec::new();
-        let mut b = [0u8; 1];
-        while !head.ends_with(b"\r\n\r\n") {
-            if s.read(&mut b).await.unwrap() == 0 {
-                break;
-            }
-            head.push(b[0]);
-        }
-        (s, String::from_utf8_lossy(&head).into_owned())
-    }
-
-    #[tokio::test]
-    async fn the_bridge_listens_on_the_loopback_relays_one_viewer_and_spends_its_token() {
-        // A fake VNC server: says its version, then echoes what it reads.
-        let vnc = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let vnc_at = vnc.local_addr().unwrap();
-        tokio::spawn(async move {
-            let (mut s, _) = vnc.accept().await.unwrap();
-            s.write_all(b"RFB 003.008\n").await.unwrap();
-            let mut buf = [0u8; 64];
-            let n = s.read(&mut buf).await.unwrap();
-            s.write_all(&buf[..n]).await.unwrap();
-        });
-        let bridge = Bridge::bind().await.unwrap();
-        let port = bridge.port();
-        assert!(bridge.local.ip().is_loopback(), "bound to the loopback only: {}", bridge.local);
-        let token = bridge.arm(Target::Tcp(vnc_at));
-        let (_, refused) = connect(port, &token, "https://evil.example").await;
-        assert!(refused.starts_with("HTTP/1.1 403"), "{refused}");
-        let (mut viewer, head) = connect(port, &token, "tauri://localhost").await;
-        assert!(head.starts_with("HTTP/1.1 101"), "{head}");
-        let mut frame = [0u8; 14];
-        viewer.read_exact(&mut frame).await.unwrap();
-        assert_eq!(&frame, b"\x82\x0cRFB 003.008\n", "the server's bytes in a binary frame");
-        viewer.write_all(&masked(b"RFB 003.008\n")).await.unwrap();
-        viewer.read_exact(&mut frame).await.unwrap();
-        assert_eq!(&frame, b"\x82\x0cRFB 003.008\n", "the viewer's bytes reached the server unmasked");
-        let (_, again) = connect(port, &token, "tauri://localhost").await;
-        assert!(again.starts_with("HTTP/1.1 403"), "the token was spent: {again}");
-        drop(bridge);
-    }
-
-    /// The bridge to a VNC port that refuses, and to one that accepts but never speaks: the viewer's
-    /// connection is closed saying where the screen didn't answer, never left waiting.
-    #[tokio::test]
-    async fn a_screen_that_doesnt_answer_closes_the_viewers_connection_saying_why() {
-        let bridge = Bridge::bind().await.unwrap();
-        // A port nothing listens on: bound, then freed.
-        let free = TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
-        let token = bridge.arm(Target::Tcp(free));
-        let (mut viewer, head) = connect(bridge.port(), &token, "tauri://localhost").await;
-        assert!(head.starts_with("HTTP/1.1 101"), "{head}");
-        let closed = close_reason(&mut viewer).await;
-        assert!(closed.starts_with(&format!("the VM's screen didn't answer at {free}")), "{closed}");
-        drop(bridge);
-
-        let silent = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let at = silent.local_addr().unwrap();
-        let accepting = tokio::spawn(async move { silent.accept().await.map(|(s, _)| s) });
-        let bridge = Bridge::bind().await.unwrap();
-        let token = bridge.arm(Target::Tcp(at));
-        let (mut viewer, _) = connect(bridge.port(), &token, "tauri://localhost").await;
-        tokio::time::pause();
-        let closed = close_reason(&mut viewer).await;
-        assert_eq!(closed, format!("the VM's screen at {at} accepted the connection but said nothing within 15 s"));
-        accepting.abort();
-    }
-
-    /// The reason of the close frame the bridge sends (status 1011).
-    async fn close_reason(s: &mut TcpStream) -> String {
-        let mut head = [0u8; 2];
-        s.read_exact(&mut head).await.unwrap();
-        assert_eq!(head[0], 0x88, "a close frame");
-        let mut payload = vec![0u8; usize::from(head[1] & 0x7F)];
-        s.read_exact(&mut payload).await.unwrap();
-        assert_eq!(&payload[..2], &1011u16.to_be_bytes());
-        String::from_utf8(payload[2..].to_vec()).unwrap()
-    }
-
-    /// One frame from the bridge (unmasked): its payload.
-    async fn frame(s: &mut TcpStream) -> Vec<u8> {
-        let mut head = [0u8; 2];
-        s.read_exact(&mut head).await.unwrap();
-        let len = match head[1] & 0x7F {
-            126 => {
-                let mut l = [0u8; 2];
-                s.read_exact(&mut l).await.unwrap();
-                usize::from(u16::from_be_bytes(l))
-            }
-            127 => {
-                let mut l = [0u8; 8];
-                s.read_exact(&mut l).await.unwrap();
-                usize::try_from(u64::from_be_bytes(l)).unwrap()
-            }
-            n => usize::from(n),
-        };
-        let mut payload = vec![0u8; len];
-        s.read_exact(&mut payload).await.unwrap();
-        payload
-    }
-
-    /// `n` bytes of the server's, across as many frames as they came in.
-    async fn server_bytes(s: &mut TcpStream, buf: &mut Vec<u8>, n: usize) -> Vec<u8> {
-        while buf.len() < n {
-            buf.extend(frame(s).await);
-        }
-        buf.drain(..n).collect()
-    }
-
-    /// The bridge to a real VNC server (a lab VM's console): the RFB handshake through it, up to
-    /// the server's framebuffer size. `CYBERCTF_TEST_SCREEN_VNC=127.0.0.1:5900 cargo test --lib --
-    /// --ignored a_real_vnc_server`.
-    #[tokio::test]
-    #[ignore = "needs a VNC server with no password: CYBERCTF_TEST_SCREEN_VNC=<loopback host:port>"]
-    async fn a_real_vnc_server_answers_through_the_bridge() {
-        let at: SocketAddr = std::env::var("CYBERCTF_TEST_SCREEN_VNC").expect("CYBERCTF_TEST_SCREEN_VNC").parse().unwrap();
-        let bridge = Bridge::bind().await.unwrap();
-        let token = bridge.arm(Target::Tcp(at));
-        let (mut viewer, head) = connect(bridge.port(), &token, "tauri://localhost").await;
-        assert!(head.starts_with("HTTP/1.1 101"), "{head}");
-        let mut buf = Vec::new();
-        let version = server_bytes(&mut viewer, &mut buf, 12).await;
-        assert!(version.starts_with(b"RFB 003.00"), "{version:?}");
-        viewer.write_all(&masked(b"RFB 003.008\n")).await.unwrap();
-        let count = server_bytes(&mut viewer, &mut buf, 1).await[0];
-        let types = server_bytes(&mut viewer, &mut buf, usize::from(count)).await;
-        assert!(types.contains(&1), "the server takes no-password: {types:?}");
-        viewer.write_all(&masked(&[1])).await.unwrap();
-        assert_eq!(server_bytes(&mut viewer, &mut buf, 4).await, [0, 0, 0, 0], "security result: OK");
-        viewer.write_all(&masked(&[1])).await.unwrap();
-        let init = server_bytes(&mut viewer, &mut buf, 24).await;
-        let (w, h) = (u16::from_be_bytes([init[0], init[1]]), u16::from_be_bytes([init[2], init[3]]));
-        let name_len = usize::try_from(u32::from_be_bytes([init[20], init[21], init[22], init[23]])).unwrap();
-        let name = server_bytes(&mut viewer, &mut buf, name_len).await;
-        println!("the screen through the bridge: {w}x{h}, {}", String::from_utf8_lossy(&name));
-        assert!(w > 0 && h > 0);
-    }
-}
+mod tests;

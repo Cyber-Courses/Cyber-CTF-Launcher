@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CopyValue } from "@/components/ui/copy-value";
 import { SecretValue } from "@/components/ui/secret-value";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import type { LabRuntimeInfo } from "@/features/labs/use-labs";
-import { labCloudPreview, type CloudPreview, type LabOutput } from "@/lib/tauri";
+import { cloudServicesSupported, labCloudPreview, type CloudPreview, type LabOutput, type ServerHost } from "@/lib/tauri";
 import { useT, type T } from "@/lib/i18n";
 import { formatUsd } from "@/lib/format";
-import { warn } from "@/lib/failure";
-import { describeError } from "@/lib/errors";
+import { useRead, valueOf } from "@/lib/use-read";
 
 /** "about $0.02 an hour (about $0.08 until it auto-stops in 4 h)" from a lab's own estimate. */
 export function costEstimate(t: T, hourlyUsd: number | null | undefined, autoStopHours?: number | null): string | null {
@@ -20,31 +19,19 @@ export function costEstimate(t: T, hourlyUsd: number | null | undefined, autoSto
 
 /** A cloud lab's preview as read: its cost and inputs (null until read, or for a lab that isn't
  *  cloud services), or why it couldn't be read. */
-export type CloudPreviewRead = { preview: CloudPreview | null; error: string | null };
+export type CloudPreviewRead = { preview: CloudPreview | null; error: string | null; supported: boolean };
 
 /** A cloud lab's cost and inputs, from its spec at the catalogue's commit; a failed read is kept
  *  as its reason, never taken for a lab without an estimate. */
 export function useCloudPreview(labId: string, rt: LabRuntimeInfo | null): CloudPreviewRead {
-  const [read, setRead] = useState<CloudPreviewRead>({ preview: null, error: null });
-  const cloud = rt?.runtime === "CLOUD";
   const repository = rt?.repository;
   const commit = rt?.commit;
-  useEffect(() => {
-    if (!cloud || !repository || !commit) return;
-    let alive = true;
-    labCloudPreview(labId, repository, commit)
-      .then((preview) => {
-        if (alive) setRead({ preview, error: null });
-      })
-      .catch((e: unknown) => {
-        warn("reading the cloud lab's preview")(e);
-        if (alive) setRead({ preview: null, error: describeError(e) });
-      });
-    return () => {
-      alive = false;
-    };
-  }, [cloud, labId, repository, commit]);
-  return read;
+  const key = rt?.runtime === "CLOUD" && repository && commit ? `${labId}@${repository}/${commit}` : null;
+  const read = useRead(key, () => labCloudPreview(labId, repository ?? "", commit ?? ""), "reading the cloud lab's preview");
+  // A build without the core's `cloud-services` feature runs none: the page says so (supported
+  // until it answers, so a page never flashes the refusal).
+  const supported = useRead(key && "cloud-services", cloudServicesSupported, "asking whether this build runs cloud services");
+  return { preview: valueOf(read), error: read.state === "failed" ? read.error : null, supported: valueOf(supported) ?? true };
 }
 
 /** What the launch dialog says of the estimate: the cost, that the estimate couldn't be read and
@@ -73,6 +60,73 @@ export function CloudLaunchNote({ read, autoStopHours }: { read: CloudPreviewRea
       {preview?.allowList && <p>{t("labs.cloud.allowList")}</p>}
     </div>
   );
+}
+
+/** The credentials a cloud lab's own Terraform runs with on this computer, as the consent names
+ *  them: the account's stored key, or its cloud CLI's sign-in. */
+function cloudCredentials(t: T, account: ServerHost): string {
+  const name = account.name;
+  switch (account.provider) {
+    case "aws":
+      return account.useCliCreds
+        ? t("labs.cloud.consent.awsCli", { name, profile: account.awsProfile ?? "default" })
+        : t("labs.cloud.consent.awsKeys", { name, key: account.username });
+    case "azure":
+      return t("labs.cloud.consent.azure", { name, subscription: account.username });
+    case "gcp":
+      return t("labs.cloud.consent.gcp", { name, account: account.username });
+    default:
+      return t("labs.cloud.consent.stored", { name });
+  }
+}
+
+/**
+ * The consent a cloud lab's start waits for: the lab's own Terraform module runs on this computer
+ * with the picked account's credentials (named in full), and can do in that account what they
+ * allow. Unticked until the player ticks it, for each start.
+ */
+function CloudConsent({ account, agreed, onAgreed }: { account: ServerHost; agreed: boolean; onAgreed: (yes: boolean) => void }) {
+  const t = useT();
+  const id = `cloud-consent-${account.id}`;
+  return (
+    <div className="mt-3 flex items-start gap-2.5 rounded-panel bg-glass px-3.5 py-3 text-[0.75rem] leading-relaxed text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)]">
+      <input
+        id={id}
+        type="checkbox"
+        className="mt-0.5 size-4 shrink-0 accent-[var(--jewel-solid)]"
+        checked={agreed}
+        onChange={(e) => {
+          onAgreed(e.target.checked);
+        }}
+        aria-describedby={`${id}-why`}
+      />
+      <span>
+        <label htmlFor={id} className="block font-medium text-foreground">
+          {t("labs.cloud.consent.agree", { credentials: cloudCredentials(t, account) })}
+        </label>
+        <span id={`${id}-why`} className="block">
+          {t("labs.cloud.consent.why")}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/** The consent for the cloud account picked (`account`, none yet): whether it is given, and the
+ *  checkbox that gives it. Picking another account asks again. */
+export function useCloudConsent(account: ServerHost | undefined) {
+  const [agreedFor, setAgreedFor] = useState<string | null>(null);
+  const agreed = !!account && agreedFor === account.id;
+  const consent = account ? (
+    <CloudConsent
+      account={account}
+      agreed={agreed}
+      onAgreed={(yes) => {
+        setAgreedFor(yes ? account.id : null);
+      }}
+    />
+  ) : null;
+  return { agreed, consent };
 }
 
 /** One output: copyable, a secret masked until asked. */

@@ -18,7 +18,7 @@ test.describe("signed out", () => {
     await openApp(page, "&auth=out");
     // The sidebar: Sign in in place of the account.
     await expect(sidebar(page).getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    await expect(sidebar(page)).not.toContainText("Florian");
+    await expect(sidebar(page)).not.toContainText("Ada");
 
     // The Labs list: one banner above the labs, the count without what is solved (nothing is
     // tracked signed out), the labs still open.
@@ -52,14 +52,14 @@ test.describe("signed out", () => {
 
     // Sign in there: Settings shows the account and this machine online.
     await settings.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(settings.getByText("Florian Amette", { exact: true })).toBeVisible();
-    await expect(settings.getByText("florian@cyberctf.org")).toBeVisible();
+    await expect(settings.getByText("Ada Lovelace", { exact: true })).toBeVisible();
+    await expect(settings.getByText("ada@example.org")).toBeVisible();
     await expect(settings.getByRole("button", { name: "Sign out" })).toBeVisible();
     await expect(settings.getByText("Online", { exact: true })).toBeVisible();
     await expect(settings.getByText("Not signed in")).toHaveCount(0);
 
     // The main window heard it: the account in the sidebar, Start lab on the lab, no banner.
-    await expect(sidebar(page)).toContainText("Florian Amette");
+    await expect(sidebar(page)).toContainText("Ada Lovelace");
     await expect(sidebar(page).getByRole("button", { name: "Sign in", exact: true })).toHaveCount(0);
     await expect(button(page, "Start lab")).toBeEnabled();
     await expect(button(page, "Sign in to start")).toHaveCount(0);
@@ -74,7 +74,7 @@ test.describe("signed out", () => {
     const banner = main(page).getByText("Sign in to start labs").locator("xpath=ancestor::div[.//button][1]");
     await banner.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(main(page)).not.toContainText("Sign in to start labs");
-    await expect(sidebar(page)).toContainText("Florian Amette");
+    await expect(sidebar(page)).toContainText("Ada Lovelace");
     await main(page).getByRole("button", { name: "Open Blind orders", exact: true }).click();
     await expect(button(page, "Start lab")).toBeEnabled();
   });
@@ -98,13 +98,13 @@ test.describe("signed out", () => {
     await code.getByRole("button", { name: "Cancel" }).dispatchEvent("click");
     await expect(sidebar(page).getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
     await expect(sidebar(page)).not.toContainText("expired");
-    await expect(sidebar(page)).not.toContainText("Florian");
+    await expect(sidebar(page)).not.toContainText("Ada");
     // Signed in once the browser is done: said once, and the account takes the button's place.
     await sidebar(page).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(sidebar(page).getByText("Continue in your browser")).toBeVisible();
     await release(page, "login");
-    await expect(page.getByRole("status").filter({ hasText: "Signed in as Florian Amette" })).toBeVisible();
-    await expect(sidebar(page)).toContainText("Florian Amette");
+    await expect(page.getByRole("status").filter({ hasText: "Signed in as Ada Lovelace" })).toBeVisible();
+    await expect(sidebar(page)).toContainText("Ada Lovelace");
     // The account's picture, over the initials.
     await expect(sidebar(page).locator("img")).toHaveAttribute("src", /^data:image\/svg\+xml/);
   });
@@ -117,7 +117,7 @@ test.describe("signed out", () => {
     // Signed in: the start the player asked for goes on, where to run asked first (there is a choice).
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
     await expect(where).toBeVisible();
-    await expect(sidebar(page)).toContainText("Florian Amette");
+    await expect(sidebar(page)).toContainText("Ada Lovelace");
     await where.getByRole("button", { name: "Start", exact: true }).click();
     await expect(where).toBeHidden();
     await expect(button(page, "Stop & remove")).toBeEnabled();
@@ -135,7 +135,7 @@ test.describe("signed out", () => {
     await row.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(pageTitle(page)).toHaveText("Blind orders");
     await expect(button(page, "Start lab")).toBeEnabled();
-    await expect(sidebar(page)).toContainText("Florian Amette");
+    await expect(sidebar(page)).toContainText("Ada Lovelace");
   });
 
   test("a session that expired under the app is said, in the sidebar and in Settings, until the next sign-in", async ({ page, context }) => {
@@ -155,7 +155,7 @@ test.describe("signed out", () => {
     await settings.close();
     // Signed in again: the reason is gone with the sign-in.
     await sidebar(page).getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(sidebar(page)).toContainText("Florian Amette");
+    await expect(sidebar(page)).toContainText("Ada Lovelace");
     await expect(sidebar(page)).not.toContainText(why);
   });
 });

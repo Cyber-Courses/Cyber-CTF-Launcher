@@ -343,6 +343,22 @@
       "passed": "Réussi",
       "warning": "Réussi, avec un avertissement",
       "failed": "Échec"
+    },
+    "trust": {
+      "title": "Confirmez l'identité de ce serveur",
+      "titleChanged": "L'identité de ce serveur a changé",
+      "body": "Rien ne lui a encore été envoyé. Comparez chaque empreinte ci-dessous avec celle qu'affiche le serveur lui-même ; ne confirmez que si elles sont identiques. Cyber CTF acceptera alors ce serveur, et lui seul, à cette adresse.",
+      "changedBody": "Il présente une empreinte différente de celle confirmée auparavant, donc rien ne lui a été envoyé. Si vous avez réinstallé le serveur ou remplacé son certificat, comparez la nouvelle empreinte avec celle qu'affiche le serveur et confirmez-la. Sinon, annulez : quelqu'un intercepte peut-être la connexion.",
+      "certificate": "Certificat TLS (auto-signé)",
+      "certificateWhere": "Dans l'interface web de Proxmox : le nœud > Système > Certificats, l'empreinte du certificat. Sur le nœud : pvenode cert info.",
+      "sha256": "Empreinte SHA-256",
+      "previous": "Confirmée auparavant",
+      "sshKeys": "Clés d'hôte SSH du nœud",
+      "sshWhere": "Sur la console du nœud : for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done",
+      "sshUnread": "Les clés d'hôte SSH du nœud n'ont pas pu être lues ({error}) : SSH vers lui reste refusé tant qu'elles ne sont pas confirmées ici.",
+      "confirm": "Elles correspondent : faire confiance à ce serveur",
+      "confirmChanged": "Je l'ai remplacé : faire confiance au nouveau",
+      "cancel": "Annuler"
     }
   }
 }

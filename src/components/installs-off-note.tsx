@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** Why the install buttons beside it are off: this computer's policy (`DisableToolInstalls`). */
 export function InstallsOffNote({ className }: { className?: string }) {

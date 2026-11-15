@@ -10,6 +10,16 @@
 use crate::error::{Error, Result};
 use crate::platform::config::KEYCHAIN_SERVICE;
 
+/// Whether this build keeps the app's secrets (the sign-in session, the servers' secrets) in a
+/// file of the app's rather than the keychain: a dev build (every `tauri dev` rebuild is a new
+/// unsigned binary the keychain would re-prompt for), a test build whatever its profile (a test
+/// binary built with a release-like profile has no debug assertions, and went to the system's
+/// keychain), or an end-to-end run's app (`platform::test_root`). One decision, which every store
+/// of a secret asks.
+pub fn bypassed() -> bool {
+    cfg!(debug_assertions) || cfg!(test) || crate::platform::test_root::root().is_some()
+}
+
 fn entry(name: &str) -> Result<keyring::Entry> {
     keyring::Entry::new(KEYCHAIN_SERVICE, name).map_err(|e| failed(&e))
 }

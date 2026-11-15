@@ -13,19 +13,20 @@ use super::docker::IMAGE;
 use super::vm::{box_provider, pick_box};
 use crate::error::Result;
 use crate::platform::exec::{run_env, run_env_timed, stream, within};
+use crate::platform::host::Arch;
 use crate::platform::sync::Busy;
 use crate::runtime::providers::Provider;
 
-static DOCKER_DL: AtomicBool = AtomicBool::new(false);
-static VM_DL: AtomicBool = AtomicBool::new(false);
+static DOCKER_IMAGE_PULLING: AtomicBool = AtomicBool::new(false);
+static VM_BOX_DOWNLOADING: AtomicBool = AtomicBool::new(false);
 /// The test image is 2 MB: past this the engine is stuck, not the network slow.
 const PULL_LIMIT: Duration = Duration::from_secs(300);
 /// A test box is hundreds of MB (far larger than the image), so a generous bound: past it the
 /// download is stalled, not just a slow link. Without it a wedged `vagrant box add` spins for
-/// good, and a test waiting on the `VM_DL` busy flag polls it forever.
+/// good, and a test waiting on the `VM_BOX_DOWNLOADING` busy flag polls it forever.
 const BOX_LIMIT: Duration = Duration::from_secs(1800);
 /// Last line of the VM box download, so a test waiting on it can show progress.
-static VM_DL_LINE: Mutex<String> = Mutex::new(String::new());
+static VM_BOX_PROGRESS: Mutex<String> = Mutex::new(String::new());
 
 /// Makes sure the test image is local on the engine `env` points Docker at (`DOCKER_CONTEXT`,
 /// or none for the CLI's current one). Returns whether it already was (or a background download
@@ -36,7 +37,7 @@ pub(super) async fn ensure_image(env: &[(String, String)]) -> Result<bool> {
         if run_env("docker", &["image", "inspect", IMAGE], None, env).await.is_ok() {
             return Ok(true);
         }
-        if let Some(_busy) = Busy::try_take(&DOCKER_DL) {
+        if let Some(_busy) = Busy::try_take(&DOCKER_IMAGE_PULLING) {
             run_env_timed("docker", &["pull", "-q", IMAGE], None, env, PULL_LIMIT).await?;
             return Ok(waited);
         }
@@ -47,19 +48,19 @@ pub(super) async fn ensure_image(env: &[(String, String)]) -> Result<bool> {
 
 /// Makes sure the test box is local. `on_line` sees download progress, including from a
 /// background download this call is waiting on. Returns whether it was already there.
-pub(super) async fn ensure_box(dir: &Path, p: Provider, bx: &'static str, arm: bool, mut on_line: impl FnMut(String)) -> Result<bool> {
+pub(super) async fn ensure_box(dir: &Path, p: Provider, bx: &'static str, arch: Arch, mut on_line: impl FnMut(String)) -> Result<bool> {
     let mut waited = false;
     loop {
-        if pick_box(p, arm).await == (bx, true) {
+        if pick_box(p, arch).await == (bx, true) {
             return Ok(true);
         }
-        if let Some(_busy) = Busy::try_take(&VM_DL) {
+        if let Some(_busy) = Busy::try_take(&VM_BOX_DOWNLOADING) {
             on_line(format!("Downloading {bx} for {}, once…", p.id()));
             add_box(dir, p, bx, BOX_LIMIT, &mut on_line).await?;
             return Ok(waited);
         }
         waited = true;
-        let line = VM_DL_LINE.lock().map(|l| l.clone()).unwrap_or_default();
+        let line = VM_BOX_PROGRESS.lock().map(|l| l.clone()).unwrap_or_default();
         on_line(if line.trim().is_empty() { format!("Finishing the background download of {bx}…") } else { line });
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
@@ -73,7 +74,7 @@ async fn add_box(dir: &Path, p: Provider, bx: &str, limit: Duration, mut on_line
         "vagrant box add",
         limit,
         stream("vagrant", &["box", "add", bx, "--provider", box_provider(p), "--force"], Some(dir), &[], |l| {
-            if let Ok(mut last) = VM_DL_LINE.lock() {
+            if let Ok(mut last) = VM_BOX_PROGRESS.lock() {
                 last.clone_from(&l);
             }
             on_line(l);
@@ -100,12 +101,12 @@ mod tests {
     async fn ensure_image_pulls_only_when_the_test_image_is_missing() {
         use crate::platform::exec::fake::{Tools, fail, ok};
         // Already local: `image inspect` answers, so nothing is pulled and it reports "was there".
-        let present = Tools::rules(&[("image inspect", ok("sha256:abc"))]);
+        let present = Tools::strict_rules(&[("image inspect", ok("sha256:abc"))]);
         assert!(ensure_image(&[]).await.unwrap(), "already local");
         assert!(!present.called("pull"), "nothing pulled: {:?}", present.calls());
         drop(present);
         // Missing: `image inspect` fails, the image is pulled quietly, and this call did the pull.
-        let pulled = Tools::rules(&[("image inspect", fail("Error: No such image")), ("pull", ok(""))]);
+        let pulled = Tools::strict_rules(&[("image inspect", fail("Error: No such image")), ("pull", ok(""))]);
         let ctx = [("DOCKER_CONTEXT".to_string(), "orbstack".to_string())];
         assert!(!ensure_image(&ctx).await.unwrap(), "pulled now, not already there");
         assert!(pulled.called("pull -q"), "{:?}", pulled.calls());
@@ -114,7 +115,7 @@ mod tests {
         assert_eq!(pulled.env_of("pull -q", "DOCKER_CONTEXT").as_deref(), Some("orbstack"));
         drop(pulled);
         // The pull itself fails (a wedged engine): surfaced as an error, not a false "ready".
-        let _failed = Tools::rules(&[("image inspect", fail("Error: No such image")), ("pull", fail("timed out"))]);
+        let _failed = Tools::strict_rules(&[("image inspect", fail("Error: No such image")), ("pull", fail("timed out"))]);
         assert!(ensure_image(&[]).await.is_err());
     }
 
@@ -125,9 +126,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         // `box list` shows nothing, so the box is added once; the lines Vagrant prints, and the
         // "Downloading …" notice, reach on_line.
-        let tools = Tools::rules(&[("box list", ok("")), ("box add", ok("Progress: 10%\nProgress: 100%"))]);
+        let tools = Tools::strict_rules(&[("box list", ok("")), ("box add", ok("Progress: 10%\nProgress: 100%"))]);
         let mut lines = Vec::new();
-        let was_there = ensure_box(&dir, Provider::Virtualbox, "bento/ubuntu-24.04", false, |l| lines.push(l)).await.unwrap();
+        let was_there = ensure_box(&dir, Provider::Virtualbox, "bento/ubuntu-24.04", Arch::X86_64, |l| lines.push(l)).await.unwrap();
         assert!(!was_there, "it had to be downloaded");
         assert!(tools.called("box add bento/ubuntu-24.04 --provider virtualbox"), "{:?}", tools.calls());
         assert!(lines.iter().any(|l| l.contains("Downloading bento/ubuntu-24.04 for")), "the notice: {lines:?}");
@@ -143,7 +144,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         // `vagrant box add` never returns (a wedged download): bounded by the limit, it surfaces as
         // a timeout instead of hanging the test (and, in the app, the self-test's box step) for good.
-        let _tools = Tools::rules(&[("box add", Some(Reply::Hang))]);
+        let _tools = Tools::strict_rules(&[("box add", Some(Reply::Hang))]);
         let started = std::time::Instant::now();
         let err = add_box(&dir, Provider::Virtualbox, "bento/debian-12", Duration::from_millis(200), |_| {}).await.unwrap_err();
         assert!(timed_out(&err), "a stalled box add is a timeout, not an endless wait: {err:?}");

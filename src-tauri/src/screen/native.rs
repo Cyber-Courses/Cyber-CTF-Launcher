@@ -12,6 +12,7 @@ use std::time::Duration;
 use isothrum_runner::{NativeApp, NativeNeed, NativeOpen};
 
 use crate::error::{Error, Result};
+use crate::platform::host::Os;
 
 /// How this computer opens a VM in its app.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,13 +40,13 @@ fn mac_app_places(app: &Path, home: Option<&Path>) -> Vec<PathBuf> {
 
 /// Where this computer has what `need` names: a program (on `PATH`, or by its full path), a macOS
 /// app (`os` is a Mac's), the browser (always). `None` when it hasn't.
-fn found(need: &NativeNeed, os: &str, home: Option<&Path>, exists: &impl Fn(&Path) -> bool, on_path: &impl Fn(&str) -> Option<PathBuf>) -> Option<PathBuf> {
+fn found(need: &NativeNeed, os: Os, home: Option<&Path>, exists: &impl Fn(&Path) -> bool, on_path: &impl Fn(&str) -> Option<PathBuf>) -> Option<PathBuf> {
     match need {
         NativeNeed::Program(program) => {
             let path = Path::new(program);
             if path.is_absolute() { exists(path).then(|| path.to_path_buf()) } else { on_path(program) }
         }
-        NativeNeed::MacApp(app) if os == "macos" => mac_app_places(app, home).into_iter().find(|p| exists(p)),
+        NativeNeed::MacApp(app) if os == Os::Macos => mac_app_places(app, home).into_iter().find(|p| exists(p)),
         NativeNeed::Browser => Some(PathBuf::new()),
         _ => None,
     }
@@ -55,7 +56,7 @@ fn found(need: &NativeNeed, os: &str, home: Option<&Path>, exists: &impl Fn(&Pat
 /// "Open in …" button says; `None` hides the button.
 pub(crate) fn installed(
     app: Option<&NativeApp>,
-    os: &str,
+    os: Os,
     home: Option<&Path>,
     exists: impl Fn(&Path) -> bool,
     on_path: impl Fn(&str) -> Option<PathBuf>,
@@ -66,7 +67,7 @@ pub(crate) fn installed(
 
 /// [`installed`] on this computer: its OS, the user's home, its files and its `PATH`.
 pub(crate) fn installed_here(app: Option<&NativeApp>) -> Option<String> {
-    installed(app, std::env::consts::OS, crate::platform::home_dir().as_deref(), Path::exists, on_path)
+    installed(app, Os::HERE, crate::platform::home_dir().as_deref(), Path::exists, on_path)
 }
 
 /// `name` where this computer's `PATH` has it (on Windows, `name.exe` too).
@@ -81,7 +82,7 @@ pub(crate) fn on_path(name: &str) -> Option<PathBuf> {
 /// take, as it takes it.
 pub(crate) fn pick(
     ways: &[NativeOpen],
-    os: &str,
+    os: Os,
     home: Option<&Path>,
     exists: impl Fn(&Path) -> bool,
     on_path: impl Fn(&str) -> Option<PathBuf>,
@@ -113,27 +114,40 @@ pub(crate) async fn run(program: &Path, args: &[String]) -> Result<()> {
     if let Some(scripted) = crate::platform::exec::fake::answer_step(&program.to_string_lossy(), args, &mut |_| {}) {
         return scripted;
     }
+    run_within(program, args, FAILS_WITHIN).await
+}
+
+/// [`run`], the program given `within` to fail.
+async fn run_within(program: &Path, args: &[String], within: Duration) -> Result<()> {
+    use tokio::io::AsyncReadExt as _;
     let name = program.file_name().map_or_else(|| program.display().to_string(), |n| n.to_string_lossy().into_owned());
+    #[allow(clippy::disallowed_methods, reason = "the hypervisor's own console client, waited for a moment then left to the player")]
     let mut cmd = tokio::process::Command::new(program);
     cmd.args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| Error::Invalid(format!("couldn't open {name}: {e}")))?;
-    let stderr = child.stderr.take();
-    match tokio::time::timeout(FAILS_WITHIN, child.wait()).await {
+    // Read as it comes, for as long as the program runs: a pipe nobody reads fills up and blocks
+    // it, and one whose reading end is closed kills it (SIGPIPE) at its next warning.
+    let mut stderr = child.stderr.take();
+    let said = tokio::spawn(async move {
+        let mut bytes = Vec::new();
+        if let Some(err) = stderr.as_mut() {
+            let _ = err.read_to_end(&mut bytes).await;
+        }
+        String::from_utf8_lossy(&bytes).into_owned()
+    });
+    match tokio::time::timeout(within, child.wait()).await {
         Ok(Ok(status)) if !status.success() => {
-            let mut said = String::new();
-            if let Some(mut err) = stderr {
-                use tokio::io::AsyncReadExt as _;
-                let _ = err.read_to_string(&mut said).await;
-            }
+            let said = said.await.unwrap_or_default();
             let said = said.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("it failed").to_owned();
             Err(Error::Invalid(format!("{name} couldn't open the VM: {said}")))
         }
         Ok(Ok(_)) => Ok(()),
         Ok(Err(e)) => Err(Error::Invalid(format!("couldn't open {name}: {e}"))),
         Err(_) => {
-            // Still open (a viewer's window): reaped once it ends.
+            // Still open (a viewer's window): reaped once it ends, its error output read until then.
             tokio::spawn(async move {
                 let _ = child.wait().await;
+                let _ = said.await;
             });
             Ok(())
         }
@@ -164,40 +178,40 @@ mod tests {
     #[test]
     fn the_app_is_offered_only_where_this_computer_has_it() {
         let vbox = app("VirtualBox", &[NativeNeed::Program("VBoxManage".into())]);
-        assert_eq!(installed(Some(&vbox), "linux", None, exists_of(&[]), path_with(&["VBoxManage"])), Some("VirtualBox".into()));
-        assert_eq!(installed(Some(&vbox), "linux", None, exists_of(&[]), path_with(&[])), None, "not installed");
+        assert_eq!(installed(Some(&vbox), Os::Linux, None, exists_of(&[]), path_with(&["VBoxManage"])), Some("VirtualBox".into()));
+        assert_eq!(installed(Some(&vbox), Os::Linux, None, exists_of(&[]), path_with(&[])), None, "not installed");
         let fusion = app("VMware Fusion", &[NativeNeed::MacApp("/Applications/VMware Fusion.app".into())]);
         let home = Path::new("/Users/u");
         assert_eq!(
-            installed(Some(&fusion), "macos", Some(home), exists_of(&["/Users/u/Applications/VMware Fusion.app"]), path_with(&[])),
+            installed(Some(&fusion), Os::Macos, Some(home), exists_of(&["/Users/u/Applications/VMware Fusion.app"]), path_with(&[])),
             Some("VMware Fusion".into()),
             "in the user's own Applications"
         );
-        assert_eq!(installed(Some(&fusion), "macos", Some(home), exists_of(&[]), path_with(&[])), None);
-        assert_eq!(installed(Some(&fusion), "linux", None, exists_of(&["/Applications/VMware Fusion.app"]), path_with(&[])), None, "a Mac app off a Mac");
+        assert_eq!(installed(Some(&fusion), Os::Macos, Some(home), exists_of(&[]), path_with(&[])), None);
+        assert_eq!(installed(Some(&fusion), Os::Linux, None, exists_of(&["/Applications/VMware Fusion.app"]), path_with(&[])), None, "a Mac app off a Mac");
         let workstation = app("VMware Workstation", &[NativeNeed::Program(r"C:\Program Files (x86)\VMware\VMware Workstation\vmware.exe".into())]);
-        assert_eq!(installed(Some(&workstation), "windows", None, exists_of(&[]), path_with(&[])), None);
+        assert_eq!(installed(Some(&workstation), Os::Windows, None, exists_of(&[]), path_with(&[])), None);
         let esxi = app("ESXi", &[NativeNeed::Browser]);
-        assert_eq!(installed(Some(&esxi), "linux", None, exists_of(&[]), path_with(&[])), Some("ESXi".into()), "a web console needs only the browser");
-        assert_eq!(installed(None, "macos", None, exists_of(&[]), path_with(&[])), None, "vagrant-qemu has no app");
+        assert_eq!(installed(Some(&esxi), Os::Linux, None, exists_of(&[]), path_with(&[])), Some("ESXi".into()), "a web console needs only the browser");
+        assert_eq!(installed(None, Os::Macos, None, exists_of(&[]), path_with(&[])), None, "vagrant-qemu has no app");
     }
 
     #[test]
     fn the_first_way_this_computer_has_is_taken() {
         let libvirt = [program("virt-viewer", &["--connect", "qemu:///system", "lab_web"]), program("remote-viewer", &["vnc://127.0.0.1:2"])];
         assert_eq!(
-            pick(&libvirt, "linux", None, exists_of(&[]), path_with(&["remote-viewer"])),
+            pick(&libvirt, Os::Linux, None, exists_of(&[]), path_with(&["remote-viewer"])),
             Some(Launch::Program { program: "/bin/remote-viewer".into(), args: vec!["vnc://127.0.0.1:2".into()] }),
             "virt-viewer isn't installed"
         );
         assert_eq!(
-            pick(&libvirt, "linux", None, exists_of(&[]), path_with(&["virt-viewer", "remote-viewer"])),
+            pick(&libvirt, Os::Linux, None, exists_of(&[]), path_with(&["virt-viewer", "remote-viewer"])),
             Some(Launch::Program { program: "/bin/virt-viewer".into(), args: vec!["--connect".into(), "qemu:///system".into(), "lab_web".into()] })
         );
-        assert_eq!(pick(&libvirt, "linux", None, exists_of(&[]), path_with(&[])), None);
+        assert_eq!(pick(&libvirt, Os::Linux, None, exists_of(&[]), path_with(&[])), None);
         let parallels = [NativeOpen::MacApp { app: "/Applications/Parallels Desktop.app".into(), args: vec!["/Users/u/Parallels/web.pvm".into()] }];
         assert_eq!(
-            pick(&parallels, "macos", None, exists_of(&["/Applications/Parallels Desktop.app"]), path_with(&[])),
+            pick(&parallels, Os::Macos, None, exists_of(&["/Applications/Parallels Desktop.app"]), path_with(&[])),
             Some(Launch::Program {
                 program: "/usr/bin/open".into(),
                 args: vec!["-a".into(), "/Applications/Parallels Desktop.app".into(), "/Users/u/Parallels/web.pvm".into()]
@@ -205,16 +219,16 @@ mod tests {
         );
         let proxmox = [NativeOpen::Url { url: "https://pve:8006/?console=kvm&novnc=1&vmid=104&node=pve".into() }];
         assert_eq!(
-            pick(&proxmox, "linux", None, exists_of(&[]), path_with(&[])),
+            pick(&proxmox, Os::Linux, None, exists_of(&[]), path_with(&[])),
             Some(Launch::Url("https://pve:8006/?console=kvm&novnc=1&vmid=104&node=pve".into()))
         );
         let plain = [NativeOpen::Url { url: "http://esxi/ui".into() }];
-        assert_eq!(pick(&plain, "linux", None, exists_of(&[]), path_with(&[])), None, "only https is opened");
+        assert_eq!(pick(&plain, Os::Linux, None, exists_of(&[]), path_with(&[])), None, "only https is opened");
     }
 
     #[tokio::test]
     async fn a_program_that_fails_at_once_says_why_and_one_that_stays_open_is_left_running() {
-        let tools = crate::platform::exec::fake::Tools::rules(&[(
+        let tools = crate::platform::exec::fake::Tools::strict_rules(&[(
             "startvm",
             crate::platform::exec::fake::fail("VBoxManage: error: The machine is already locked for a session"),
         )]);
@@ -222,7 +236,35 @@ mod tests {
         assert!(err.to_string().contains("VBoxManage"), "{err}");
         assert_eq!(tools.calls(), ["/bin/VBoxManage startvm web --type separate"]);
         drop(tools);
-        let _ok = crate::platform::exec::fake::Tools::rules(&[]);
+        let _ok = crate::platform::exec::fake::Tools::strict_rules(&[("virt-viewer lab_web", crate::platform::exec::fake::ok(""))]);
         run(Path::new("/bin/virt-viewer"), &["lab_web".into()]).await.unwrap();
+    }
+    /// Regression: a viewer left running had its error output's pipe closed under it, so the
+    /// first warning it printed after the launcher stopped waiting killed it (SIGPIPE): the VM's
+    /// window closed by itself.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_viewer_left_running_survives_printing_warnings() {
+        let dir = crate::testing::temp_dir("native-viewer");
+        let alive = dir.join("alive");
+        let script = format!("sleep 0.5; echo 'Gtk-WARNING: a late warning' >&2; echo yes > '{}'", alive.display());
+        run_within(Path::new("/bin/sh"), &["-c".into(), script], Duration::from_millis(100)).await.unwrap();
+        let mut seen = false;
+        for _ in 0..60 {
+            if std::fs::read_to_string(&alive).is_ok_and(|s| s.trim() == "yes") {
+                seen = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(seen, "the viewer was killed by its first warning");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_program_that_fails_in_time_says_its_last_line() {
+        let err =
+            run_within(Path::new("/bin/sh"), &["-c".into(), "echo first >&2; echo 'no such VM' >&2; exit 1".into()], Duration::from_secs(5)).await.unwrap_err();
+        assert_eq!(err.to_string(), "sh couldn't open the VM: no such VM");
     }
 }

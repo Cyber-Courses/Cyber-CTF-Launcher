@@ -1,5 +1,5 @@
-//! The app's own commands: its windows, quitting and restarting, the log folder, and what this
-//! computer's administrator manages.
+//! The app's own commands: its windows, quitting and restarting, the log folder, the diagnostics
+//! bundle, and what this computer's administrator manages.
 
 use crate::AppHandle;
 use crate::app::{logging, quit, updates, window};
@@ -47,6 +47,19 @@ pub fn open_log_folder(app: AppHandle) -> Result<()> {
     logging::open_log_folder(&app)
 }
 
+/// Saves the diagnostics bundle (see `crate::diagnostics`) to `path`, the file the player picked,
+/// with `settings`, the window's settings that matter for a report, by name.
+#[tauri::command]
+pub async fn save_diagnostics(app: AppHandle, path: String, settings: std::collections::BTreeMap<String, String>) -> Result<()> {
+    let sources = crate::diagnostics::Sources {
+        dirs: crate::platform::AppDirs::from(&app),
+        log_dir: logging::log_dir(&app).ok(),
+        home: crate::platform::home_dir(),
+        settings,
+    };
+    crate::diagnostics::export(&sources, std::path::Path::new(&path)).await
+}
+
 /// What this computer's administrator and package manager decide for the app.
 #[tauri::command]
 pub fn managed_settings() -> ManagedSettings {
@@ -66,6 +79,18 @@ mod tests {
         let _policy = policy::Override::with(&[policy::Key::DisableUpdater, policy::Key::DisableToolInstalls]);
         let managed = serde_json::to_value(managed_settings()).unwrap();
         assert_eq!(managed, serde_json::json!({ "policy": ["DisableUpdater", "DisableToolInstalls"], "updates": "policy" }));
+    }
+
+    #[tokio::test]
+    async fn diagnostics_are_saved_where_the_player_picked() {
+        let _tools = crate::platform::exec::fake::Tools::new(|_, _| None);
+        let t = TestApp::new();
+        let out = t.data().join("picked.tar.gz");
+        let settings = std::collections::BTreeMap::from([("vmProvider".to_owned(), "qemu".to_owned())]);
+        save_diagnostics(t.handle().clone(), out.display().to_string(), settings).await.unwrap();
+        let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(std::fs::File::open(&out).unwrap()));
+        let names: Vec<String> = archive.entries().unwrap().map(|e| e.unwrap().path().unwrap().display().to_string()).collect();
+        assert!(names.contains(&"cyberctf-diagnostics/host-report.json".to_owned()), "{names:?}");
     }
 
     #[tokio::test]

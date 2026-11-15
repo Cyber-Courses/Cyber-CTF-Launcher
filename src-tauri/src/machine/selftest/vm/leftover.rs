@@ -11,6 +11,7 @@ use std::path::Path;
 use super::VM_NAME;
 use crate::error::{Error, Result};
 use crate::platform::exec::{Leftover, remove_hyperv_leftover, run};
+use crate::platform::tool_output::vboxmanage;
 
 /// What a test VM's VirtualBox description says: it is the test's in `dir`.
 pub(super) fn vbox_description(dir: &Path) -> String {
@@ -28,20 +29,19 @@ pub(super) async fn clear(dir: &Path) -> Result<Vec<&'static str>> {
     let mut removed = Vec::new();
     // Hyper-V asks for administrator rights: only when its disk folder says a VM was left.
     if dir.join(".vagrant").join("machines").join("default").join("hyperv").join("Virtual Hard Disks").is_dir() {
-        found("Hyper-V", remove_hyperv_leftover(VM_NAME, dir).await?, &mut removed)?;
+        removed.extend(found("Hyper-V", remove_hyperv_leftover(VM_NAME, dir).await?)?);
     }
-    found("VirtualBox", remove_vbox_leftover(dir).await?, &mut removed)?;
+    removed.extend(found("VirtualBox", remove_vbox_leftover(dir).await?)?);
     Ok(removed)
 }
 
-/// Adds `hypervisor` to `removed` when its leftover was removed; a foreign VM is an error.
-fn found(hypervisor: &'static str, leftover: Leftover, removed: &mut Vec<&'static str>) -> Result<()> {
+/// `hypervisor` when its leftover was removed; a foreign VM is an error.
+fn found(hypervisor: &'static str, leftover: Leftover) -> Result<Option<&'static str>> {
     match leftover {
-        Leftover::None => Ok(()),
+        Leftover::None => Ok(None),
         Leftover::Removed => {
             log::info!("removed the VM an earlier self-test left on {hypervisor}");
-            removed.push(hypervisor);
-            Ok(())
+            Ok(Some(hypervisor))
         }
         Leftover::Foreign => Err(Error::Invalid(format!(
             "{hypervisor} has a VM named \"{VM_NAME}\" that isn't this test's, so it was left alone. Rename or remove it in {hypervisor}, then test again."
@@ -60,7 +60,7 @@ async fn remove_vbox_leftover(dir: &Path) -> Result<Leftover> {
     let ours = vbox_description(dir);
     for id in &ids {
         let info = run("VBoxManage", &["showvminfo", id, "--machinereadable"], None).await?;
-        if vbox_value(&info, "description").as_deref() != Some(ours.as_str()) {
+        if vboxmanage::value(&info, "description").as_deref() != Some(ours.as_str()) {
             return Ok(Leftover::Foreign);
         }
     }
@@ -74,16 +74,9 @@ async fn remove_vbox_leftover(dir: &Path) -> Result<Leftover> {
     Ok(Leftover::Removed)
 }
 
-/// The ids of the VMs named exactly `name` in `VBoxManage list vms` (`"name" {uuid}` lines).
+/// The ids of the VMs named exactly `name` in `VBoxManage list vms`.
 fn vbox_ids_named(list: &str, name: &str) -> Vec<String> {
-    let quoted = format!("\"{name}\" ");
-    list.lines().filter_map(|l| l.trim().strip_prefix(&quoted)).map(|id| id.trim().trim_matches(['{', '}']).to_string()).collect()
-}
-
-/// The value of `key` in `VBoxManage showvminfo --machinereadable` (`key="value"` lines).
-fn vbox_value(info: &str, key: &str) -> Option<String> {
-    let prefix = format!("{key}=\"");
-    info.lines().find_map(|l| l.trim().strip_prefix(&prefix)?.strip_suffix('"').map(str::to_string))
+    vboxmanage::vms(list).into_iter().filter(|vm| vm.name == name).map(|vm| vm.uuid).collect()
 }
 
 #[cfg(test)]
@@ -97,15 +90,16 @@ mod tests {
         assert_eq!(vbox_ids_named(list, VM_NAME), ["11111111-2222"]);
         assert_eq!(vbox_ids_named("", VM_NAME), [] as [String; 0]);
         let info = "name=\"CyberCTF test VM\"\ndescription=\"cyberctf-selftest:/tmp/vm\"\nVMState=\"running\"\n";
-        assert_eq!(vbox_value(info, "description").as_deref(), Some("cyberctf-selftest:/tmp/vm"));
-        assert_eq!(vbox_value(info, "missing"), None);
+        assert_eq!(vboxmanage::value(info, "description").as_deref(), Some("cyberctf-selftest:/tmp/vm"));
+        assert_eq!(vboxmanage::value(info, "missing"), None);
     }
 
     #[tokio::test]
     async fn the_tests_own_leftover_is_removed_and_anyone_elses_left_alone() {
         let dir = Path::new("/data/selftest/vm");
         let ours = format!("description=\"{}\"\n", vbox_description(dir));
-        let tools = Tools::rules(&[
+        let tools = Tools::strict_rules(&[
+            ("VBoxManage unregistervm", crate::platform::exec::fake::ok("")),
             ("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")),
             ("VBoxManage showvminfo abc", ok(&ours)),
             ("VBoxManage controlvm abc poweroff", fail("not running")),
@@ -113,14 +107,15 @@ mod tests {
         assert_eq!(clear(dir).await.unwrap(), ["VirtualBox"]);
         assert!(tools.called("VBoxManage unregistervm abc --delete"), "{:?}", tools.calls());
 
-        let tools = Tools::rules(&[("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")), ("VBoxManage showvminfo abc", ok("description=\"\"\n"))]);
+        let tools =
+            Tools::strict_rules(&[("VBoxManage list vms", ok("\"CyberCTF test VM\" {abc}\n")), ("VBoxManage showvminfo abc", ok("description=\"\"\n"))]);
         let err = clear(dir).await.unwrap_err().to_string();
         assert!(err.contains("isn't this test's, so it was left alone"), "{err}");
         assert!(!tools.called("unregistervm") && !tools.called("controlvm"), "{:?}", tools.calls());
 
-        let _none = Tools::rules(&[("VBoxManage list vms", ok("\"lab · web\" {x}\n"))]);
+        let _none = Tools::strict_rules(&[("VBoxManage list vms", ok("\"lab · web\" {x}\n"))]);
         assert_eq!(clear(dir).await.unwrap(), [] as [&str; 0]);
-        let _no_vbox = Tools::rules(&[("VBoxManage", fail("not found"))]);
+        let _no_vbox = Tools::strict_rules(&[("VBoxManage", fail("not found"))]);
         assert!(clear(dir).await.unwrap().is_empty(), "no VirtualBox here");
     }
 }

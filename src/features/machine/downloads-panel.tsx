@@ -13,7 +13,7 @@ import { confirmDestructive } from "@/lib/confirm";
 import { describeError } from "@/lib/errors";
 import { getAttackImage, OLD_ATTACK_IMAGES } from "@/lib/settings";
 import { machineStorage, machineStorageClean, type Storage } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** The attack box images to count: the one in use, and an older launcher's default (several GB,
  *  by tag or earlier digest) so it can be cleaned up. The bare repo is `:latest` again. Only the
@@ -92,7 +92,7 @@ function useDownloads() {
 export function DownloadsPanel() {
   const t = useT();
   const { storage, readError, cleaning, freed, clean } = useDownloads();
-  const storeItems = storage ? [...storage.images, ...storage.boxes, ...storage.plugins] : [];
+  const storeItems = storage ? [...storage.images, ...storage.boxes] : [];
   const storeTotal = storeItems.reduce((a, i) => a + i.bytes, 0);
   return (
     <Panel>

@@ -52,7 +52,7 @@ describe("engine step: switching and starting", () => {
     const user = userEvent.setup();
     const report = {
       ...readyReport(),
-      os: "macos",
+      os: "macos" as const,
       dockerEngine: "docker-desktop" as const,
       dockerEnginesRunning: ["docker-desktop", "orbstack"] as SystemReport["dockerEnginesRunning"],
     };
@@ -238,15 +238,6 @@ describe("Machine page", () => {
   });
 });
 
-describe("Downloads panel: Terraform plugins", () => {
-  it("counts the provider plugins labs share in what is stored", async () => {
-    installTauri({ machine_storage: () => ({ images: [], boxes: [], plugins: [{ name: "Terraform provider plugins", bytes: 700_000_000 }] }) });
-    render(<DownloadsPanel />);
-    await flush();
-    expect(screen.getAllByText(/700(\.0)? MB/).length).toBeGreaterThan(0);
-  });
-});
-
 describe("Downloads panel: a failed read", () => {
   it("says the read failed and why, never that nothing was downloaded", async () => {
     installTauri({ machine_storage: () => rejectWith({ code: "other", message: "docker images: permission denied" }) });
@@ -261,7 +252,6 @@ describe("Downloads panel: clean-up", () => {
   const storage = () => ({
     images: [{ name: "cyberctf/attack:latest", bytes: 3_400_000_000 }],
     boxes: [{ name: "generic/alpine318", bytes: 600_000_000 }],
-    plugins: [] as { name: string; bytes: number }[],
   });
 
   it("asks in the system dialog before removing anything, and Cancel keeps everything", async () => {

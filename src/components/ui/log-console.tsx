@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNow } from "@/lib/use-now";
 import { Check, ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { formatElapsed } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { isFailedLine } from "@/lib/log-marks";

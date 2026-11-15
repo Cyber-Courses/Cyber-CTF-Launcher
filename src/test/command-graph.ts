@@ -8,7 +8,7 @@ import ts from "typescript";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
 const BINDINGS = path.join(SRC, "lib/tauri");
-const INVOKERS = new Set(["invoke", "invokeUnit", "invokeStreaming"]);
+const INVOKERS = new Set(["invoke", "invokeUnit", "invokeStreaming", "invokeOperation"]);
 
 const parse = (file: string) => ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
 const isBinding = (file: string) => file.startsWith(BINDINGS + path.sep) && !file.includes(".test.");

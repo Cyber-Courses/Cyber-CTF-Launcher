@@ -12,6 +12,11 @@
 
 The launcher gathers it for you, in **Settings > About**:
 
+- **Diagnostics > Save diagnostics**: one file (`cyberctf-diagnostics-….tar.gz`) with the
+  launcher's version, the OS, the machine check, the installed labs, the last lab operations and
+  the end of the logs, with tokens, passwords, keys, flags and e-mail addresses removed and your
+  home folder written `~`. Attach it to the issue. **Send to support** saves it the same way and
+  opens a mail to support@cyberctf.org: attach the file there (a mail link can't attach it for you).
 - **Diagnostics > Copy**: the launcher's version, the OS and the machine's setup status. Paste it
   into the issue.
 - **Log files > Open folder**: `cyberctf.log`, and a `deploy-<lab>.log` per lab. Attach the ones

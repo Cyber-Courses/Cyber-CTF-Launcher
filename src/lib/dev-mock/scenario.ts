@@ -1,14 +1,14 @@
 // The browser preview's scenarios: the switches next to `?mock` in the URL, and the machine the
 // system check reports for them.
 import type { CommandError } from "@/lib/errors";
-import type { DockerEngine, Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
+import type { Arch, DockerEngine, Os, Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
 import { type Holdable, isHoldable } from "@/lib/dev-mock/holds";
 import { report } from "@/lib/dev-mock/sample";
 
 /**
  * Switches for the browser preview, read from the URL next to `?mock` (the end-to-end tests use
  * them; `answer` (sample.ts) stays the plain sample data the component tests build on):
- *  - `os=macos|windows|linux`, `arch=arm64|x86_64`: the machine the system check reports.
+ *  - `os=macos|windows|linux`, `arch=aarch64|x86_64`: the machine the system check reports.
  *  - `machine=fresh`: nothing installed yet (no package manager, engine, Vagrant or hypervisor).
  *    `machine=many`: several of each: a second engine running and a third stopped, and on an
  *    Apple Silicon Mac Parallels ready beside UTM and VMware Fusion short of its plugin, so the
@@ -45,8 +45,8 @@ import { report } from "@/lib/dev-mock/sample";
  * the main window to show the onboarding again, a server saved in the setup) reach the others.
  */
 export type Scenario = {
-  os: "macos" | "windows" | "linux";
-  arch: "arm64" | "x86_64";
+  os: Os;
+  arch: Arch;
   fresh: boolean;
   /** Several engines and hypervisors installed (`machine=many`). */
   many: boolean;
@@ -80,7 +80,7 @@ export function scenarioFrom(search: string): Scenario {
   const docker = q.get("docker");
   return {
     os: os === "windows" || os === "linux" ? os : "macos",
-    arch: q.get("arch") === "x86_64" ? "x86_64" : "arm64",
+    arch: q.get("arch") === "x86_64" ? "x86_64" : "aarch64",
     fresh: q.get("machine") === "fresh",
     many: q.get("machine") === "many",
     docker: docker === "stopped" || docker === "denied" ? docker : "running",
@@ -163,8 +163,8 @@ function engineDown(ready: SystemReport, docker: Exclude<Scenario["docker"], "ru
   const denied = docker === "denied";
   const hint: CommandError =
     ready.os === "windows"
-      ? { code: "dockerDeniedWindows", args: { user: "florian" }, message: "docker: permission denied (add florian to the docker-users group)" }
-      : { code: "dockerDenied", args: { user: "florian" }, message: "docker: permission denied (add florian to the docker group)" };
+      ? { code: "dockerDeniedWindows", args: { user: "ada" }, message: "docker: permission denied (add ada to the docker-users group)" }
+      : { code: "dockerDenied", args: { user: "ada" }, message: "docker: permission denied (add ada to the docker group)" };
   return {
     ...ready,
     dockerRunning: false,
@@ -208,7 +208,7 @@ function offeredOnMac(p: ProviderStatus, appleSilicon: boolean): boolean {
 /** The system check's answer for a scenario. */
 export function scenarioReport(sc: Scenario): SystemReport {
   const mac = sc.os === "macos";
-  const appleSilicon = mac && sc.arch === "arm64";
+  const appleSilicon = mac && sc.arch === "aarch64";
   const local = localProviders(sc)
     .map((p) => (appleSilicon && !sc.fresh ? onAppleSilicon(p) : p))
     .filter((p) => !mac || offeredOnMac(p, appleSilicon));

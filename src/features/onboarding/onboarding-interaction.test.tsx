@@ -4,10 +4,10 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Onboarding } from "@/features/onboarding/onboarding";
 import { setLocalePreference } from "@/lib/i18n";
-import type { SystemReport } from "@/lib/tauri";
+import type { Os, SystemReport } from "@/lib/tauri";
 import { freshReport, readyReport, withSetup } from "@/test/fixtures";
-import { commands, installTauri, rejects, rejectWith, stream, type Handler } from "@/test/tauri";
-import { button, flush } from "@/test/ui";
+import { commands, held, installTauri, rejects, rejectWith, settled, stream, type Handler } from "@/test/tauri";
+import { button, findButton } from "@/test/ui";
 
 const text = () => document.body.textContent;
 const signedOut = () => ({ loggedIn: false, name: null, email: null });
@@ -19,21 +19,21 @@ const progress = () => screen.getByText((_, el) => el?.tagName === "P" && /^\d+ 
 type User = ReturnType<typeof userEvent.setup>;
 
 /** The onboarding with `handlers` answering its commands, once its first reads have settled. */
-async function renderOnboarding(handlers: Record<string, Handler> = {}, user: User = userEvent.setup()) {
+async function renderOnboarding(handlers: Record<string, Handler> = {}, user: User = userEvent.setup({ delay: null })) {
   const calls = installTauri(handlers);
   const onComplete = vi.fn();
   render(<Onboarding onComplete={onComplete} />);
-  await flush();
+  await settled();
   return { calls, user, onComplete };
 }
 
 /** Renders the onboarding on `report` and moves past the welcome and the sign-in. */
 async function atFirstMachineStep(report: SystemReport | (() => SystemReport), extra: Record<string, Handler> = {}) {
   const opened = await renderOnboarding({ auth_status: signedOut, system_check: typeof report === "function" ? report : () => report, ...extra });
-  await opened.user.click(button(/get started/i));
+  await opened.user.click(await findButton(/get started/i));
   // Signed out: the sign-in step is skipped for now.
-  await opened.user.click(button(/^skip for now$/i));
-  await flush();
+  await opened.user.click(await findButton(/^skip for now$/i));
+  await settled();
   return opened;
 }
 
@@ -43,12 +43,12 @@ async function forwardToSummary(user: User, forward: RegExp) {
     const next = screen.queryAllByRole("button").find((b) => forward.test(b.textContent.trim()) && !b.hasAttribute("disabled"));
     if (!next) return;
     await user.click(next);
-    await flush();
+    await settled();
   }
 }
 
 describe("Onboarding: the step list per OS", () => {
-  it.each([
+  it.each<[Os, number]>([
     ["macos", 10],
     ["linux", 10],
     // Windows gets the WSL step on top.
@@ -61,14 +61,14 @@ describe("Onboarding: the step list per OS", () => {
   it("puts the WSL step right after the package manager on Windows only", async () => {
     const report = { ...freshReport("windows"), pkgManager: { name: "winget", installed: true, version: "1.9" } };
     const { user } = await atFirstMachineStep(report);
-    await user.click(button(/^continue$/i));
-    await flush();
+    await user.click(await findButton(/^continue$/i));
+    await settled();
     expect(progress()).toBe("4 / 11 · Virtualization");
     expect(text()).toContain("Turn on WSL 2");
   });
 
   it("holds a fresh machine on the package manager step until one is installed, on every OS", async () => {
-    for (const os of ["macos", "windows", "linux"]) {
+    for (const os of ["macos", "windows", "linux"] as const) {
       await atFirstMachineStep(freshReport(os));
       // Continue waits: nothing past this step works without a package manager.
       expect(button(/^continue$/i).hasAttribute("disabled")).toBe(true);
@@ -91,9 +91,9 @@ describe("Onboarding: the step list per OS", () => {
 describe("Onboarding: Back, Continue and Skip", () => {
   it("goes back from the first machine step to the sign-in, then to the welcome", async () => {
     const { user } = await atFirstMachineStep(readyReport());
-    await user.click(button(/back$/i));
+    await user.click(await findButton(/back$/i));
     expect(progress()).toBe("2 / 10 · Sign in");
-    await user.click(button(/back$/i));
+    await user.click(await findButton(/back$/i));
     expect(progress()).toBe("1 / 10 · Welcome");
     expect(button(/get started/i).hasAttribute("disabled")).toBe(false);
   });
@@ -104,7 +104,7 @@ describe("Onboarding: Back, Continue and Skip", () => {
     expect(progress()).toBe("10 / 10 · Done");
     // The summary has its own way out; "Skip setup" there would be the same button twice.
     expect(screen.queryByRole("button", { name: /skip setup/i })).toBeNull();
-    await user.click(button(/browse labs/i));
+    await user.click(await findButton(/browse labs/i));
     expect(onComplete).toHaveBeenCalledOnce();
   });
 
@@ -117,7 +117,7 @@ describe("Onboarding: Back, Continue and Skip", () => {
   it("reads as signed out, and logs why, when the sign-in can't be read", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { user } = await renderOnboarding({ auth_status: () => rejectWith("keychain locked") });
-    await user.click(button(/get started/i));
+    await user.click(await findButton(/get started/i));
     expect(button(/^skip for now$/i)).toBeTruthy();
     expect(warn).toHaveBeenCalledWith("reading the sign-in:", "keychain locked");
     warn.mockRestore();
@@ -151,7 +151,7 @@ describe("Onboarding: sign-in", () => {
     let finish: () => void = () => {};
     const { user } = await renderOnboarding({
       auth_status: signedOut,
-      auth_login: () => {
+      auth_login: held(() => {
         attempt += 1;
         if (attempt === 1) throw new Error("no browser could be opened");
         return new Promise(
@@ -160,47 +160,47 @@ describe("Onboarding: sign-in", () => {
               r({ loggedIn: true, name: "Ada", email: "ada@example.com" });
             }),
         );
-      },
+      }),
     });
-    await user.click(button(/get started/i));
-    await user.click(button(/sign in with your browser/i));
-    await flush();
+    await user.click(await findButton(/get started/i));
+    await user.click(await findButton(/sign in with your browser/i));
+    await settled();
     expect(screen.getByRole("alert").textContent).toContain("no browser could be opened");
-    await user.click(button(/sign in with your browser/i));
+    await user.click(await findButton(/sign in with your browser/i));
     // Waiting for the browser again: the old reason is gone, the wait is shown in place of the button.
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByText("Continue in your browser")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /sign in with your browser/i })).toBeNull();
     finish();
-    await flush();
+    await settled();
     expect(text()).toContain("Signed in as Ada");
     expect(text()).toContain("ada@example.com");
   });
 
   it("opens the browser once however often the sign-in button is pressed", async () => {
-    const { user, calls } = await renderOnboarding({ auth_status: signedOut, auth_login: () => new Promise(() => {}) });
-    await user.click(button(/get started/i));
+    const { user, calls } = await renderOnboarding({ auth_status: signedOut, auth_login: held(() => new Promise(() => {})) });
+    await user.click(await findButton(/get started/i));
     const signIn = button(/sign in with your browser/i);
     await user.dblClick(signIn);
     await user.click(signIn);
-    await flush();
+    await settled();
     expect(commands(calls).filter((c) => c === "auth_login")).toHaveLength(1);
   });
 
   it("lets a signed-out player skip signing in for now, and says where to do it later", async () => {
     const { user, calls } = await renderOnboarding({ auth_status: signedOut });
-    await user.click(button(/get started/i));
+    await user.click(await findButton(/get started/i));
     // Optional, and said so on the button: no plain "Continue" past a step left undone.
     expect(text()).toContain("sign in later from Settings");
     expect(screen.queryByRole("button", { name: /^continue$/i })).toBeNull();
-    await user.click(button(/^skip for now$/i));
+    await user.click(await findButton(/^skip for now$/i));
     expect(commands(calls)).not.toContain("auth_login");
     expect(text()).toContain("Package manager");
   });
 
   it("says Continue on the sign-in step once signed in", async () => {
     const { user } = await renderOnboarding();
-    await user.click(button(/get started/i));
+    await user.click(await findButton(/get started/i));
     expect(button(/^continue$/i).hasAttribute("disabled")).toBe(false);
     expect(screen.queryByRole("button", { name: /skip for now/i })).toBeNull();
   });
@@ -211,7 +211,7 @@ describe("Onboarding: sign-in", () => {
         throw new Error("keychain locked");
       },
     });
-    await user.click(button(/get started/i));
+    await user.click(await findButton(/get started/i));
     expect(button(/sign in with your browser/i).hasAttribute("disabled")).toBe(false);
   });
 });
@@ -226,8 +226,8 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
     expect(text()).toContain("Couldn’t check this machine");
     expect(text()).toContain("docker info hung");
     fail = false;
-    await user.click(button(/try again/i));
-    await flush();
+    await user.click(await findButton(/try again/i));
+    await settled();
     expect(text()).not.toContain("Couldn’t check this machine");
     expect(text()).toContain("installs everything else for you");
     expect(button(/^continue$/i).hasAttribute("disabled")).toBe(false);
@@ -240,8 +240,8 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
       throw new Error(`attempt ${String(n)} failed`);
     });
     const before = commands(calls).filter((c) => c === "system_check").length;
-    await user.click(button(/try again/i));
-    await flush();
+    await user.click(await findButton(/try again/i));
+    await settled();
     expect(commands(calls).filter((c) => c === "system_check").length).toBe(before + 1);
     expect(text()).toContain(`attempt ${String(n)} failed`);
   });
@@ -261,7 +261,7 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
     act(() => {
       window.dispatchEvent(new Event("focus"));
     });
-    await flush();
+    await settled();
     expect(checks).toBe(opened + 1);
     // A minute after the last check, the one on focus.
     await act(() => vi.advanceTimersByTimeAsync(59_000));
@@ -281,7 +281,7 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
     expect(text()).toContain("Try again");
     fail = false;
     await act(() => vi.advanceTimersByTimeAsync(5000));
-    await flush();
+    await settled();
     expect(text()).not.toContain("Try again");
     vi.useRealTimers();
   });
@@ -292,7 +292,7 @@ describe("Onboarding: a machine check that fails, then recovers", () => {
     const { user } = await atFirstMachineStep(() => {
       throw new Error("hung");
     });
-    await user.click(button(/back$/i));
+    await user.click(await findButton(/back$/i));
     expect(progress()).toBe("2 / 10 · Sign in");
   });
 });
@@ -302,21 +302,21 @@ describe("Onboarding: installs that stream and then fail", () => {
     const report = { ...freshReport("windows"), pkgManager: { name: "winget", installed: true, version: "1.9" } };
     let fail: (e: Error) => void = () => {};
     const { user } = await atFirstMachineStep(report, {
-      install_dependency: (a) => {
+      install_dependency: held((a) => {
         stream(a, "Enabling Virtual Machine Platform", "Downloading WSL kernel");
         return new Promise((_, reject) => (fail = reject));
-      },
+      }),
     });
-    await user.click(button(/^continue$/i));
-    await flush();
-    await user.click(button(/turn on wsl 2/i));
-    await flush();
+    await user.click(await findButton(/^continue$/i));
+    await settled();
+    await user.click(await findButton(/turn on wsl 2/i));
+    await settled();
     expect(text()).toContain("Downloading WSL kernel");
     // An install is running: neither Back nor the forward button may leave the step.
     expect(button(/back$/i).hasAttribute("disabled")).toBe(true);
     expect(button(/done this$/i).hasAttribute("disabled")).toBe(true);
     fail(new Error("The user declined the UAC prompt"));
-    await flush();
+    await settled();
     expect(text()).toContain("✗ The user declined the UAC prompt");
     // A declined prompt is not fixed by a restart: the restart notice stays away.
     expect(screen.queryByRole("status")).toBeNull();
@@ -332,10 +332,10 @@ describe("Onboarding: installs that stream and then fail", () => {
         return brewFails(a);
       },
     });
-    await user.click(button(/^continue$/i));
-    await flush();
-    await user.click(button(/install docker desktop/i));
-    await flush();
+    await user.click(await findButton(/^continue$/i));
+    await settled();
+    await user.click(await findButton(/install docker desktop/i));
+    await settled();
     expect(calls.find((c) => c.cmd === "install_dependency")?.args).toMatchObject({ dependency: "docker" });
     const log = text();
     expect(log.indexOf("==> Downloading docker.dmg")).toBeLessThan(log.indexOf("==> Verifying checksum"));
@@ -350,12 +350,12 @@ describe("Onboarding: installs that stream and then fail", () => {
     const { user } = await atFirstMachineStep(report, {
       install_dependency: brewFails,
     });
-    await user.click(button(/^continue$/i));
-    await flush();
-    await user.click(button(/install docker desktop/i));
-    await flush();
+    await user.click(await findButton(/^continue$/i));
+    await settled();
+    await user.click(await findButton(/install docker desktop/i));
+    await settled();
     expect(text()).toContain("✗ brew exited with status 1");
-    await user.click(button(/back$/i));
+    await user.click(await findButton(/back$/i));
     expect(text()).not.toContain("✗ brew exited with status 1");
   });
 });
@@ -365,19 +365,19 @@ describe("Onboarding: the summary and the machine check", () => {
 
   it("shows who is signed in, and goes back to the welcome", async () => {
     const { user } = await renderOnboarding({ auth_status: () => ({ loggedIn: true, name: null, email: "p@example.com" }) });
-    await user.click(button(/get started/i));
-    await flush();
+    await user.click(await findButton(/get started/i));
+    await settled();
     expect(text()).toContain("Signed in");
     expect(text()).toContain("p@example.com");
-    await user.click(button(/back/i));
+    await user.click(await findButton(/back/i));
     expect(text()).toContain("Get started");
   });
 
   it("waits for the machine check before showing a machine step", async () => {
-    const { user } = await renderOnboarding({ system_check: () => new Promise(() => {}) });
-    await user.click(button(/get started/i));
-    await user.click(button(/^continue$/i));
-    await flush();
+    const { user } = await renderOnboarding({ system_check: held(() => new Promise(() => {})) });
+    await user.click(await findButton(/get started/i));
+    await user.click(await findButton(/^continue$/i));
+    await settled();
     expect(text()).toContain("Checking this machine…");
   });
 
@@ -386,7 +386,7 @@ describe("Onboarding: the summary and the machine check", () => {
     await forwardToSummary(user, /^(get started|continue|skip for now)/i);
     expect(text()).toContain("Not signed in");
     expect(screen.queryByRole("button", { name: /skip setup/i })).toBeNull();
-    await user.click(button(/browse labs/i));
+    await user.click(await findButton(/browse labs/i));
     expect(onComplete).toHaveBeenCalledOnce();
   });
 
@@ -402,16 +402,16 @@ describe("Onboarding: the summary and the machine check", () => {
       },
       userEvent.setup({ advanceTimers: vi.advanceTimersByTime }),
     );
-    await user.click(button(/get started/i));
-    await user.click(button(/^continue$/i));
-    await flush();
-    await user.click(button(/^continue$/i));
-    await flush();
+    await user.click(await findButton(/get started/i));
+    await user.click(await findButton(/^continue$/i));
+    await settled();
+    await user.click(await findButton(/^continue$/i));
+    await settled();
     expect(text()).toContain("Turn on WSL 2");
     expect(text()).toContain("4 / 11");
     fail = true;
     await act(() => vi.advanceTimersByTimeAsync(5_100));
-    await flush();
+    await settled();
     // Still on the WSL step: a failed re-check neither blanks it nor shifts the step list.
     expect(text()).toContain("Turn on WSL 2");
     expect(text()).toContain("4 / 11");

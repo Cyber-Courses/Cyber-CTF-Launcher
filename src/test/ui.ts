@@ -1,7 +1,9 @@
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import type { UserEvent } from "@testing-library/user-event";
 
-/** Lets pending promises (mocked Tauri invokes) and the renders they cause settle. */
+/** Lets pending promises (mocked Tauri invokes) and the renders they cause settle, for a fixed
+ *  `ms`. A test whose screen waits on mocked answers is better off with `settled()` (test/tauri.ts),
+ *  which waits for them however long the machine takes. */
 export const flush = (ms = 20) =>
   act(async () => {
     await new Promise((r) => setTimeout(r, ms));
@@ -28,6 +30,11 @@ export function button(name: RegExp): HTMLElement {
     );
   return found;
 }
+
+/** The first button matching `name` ([`button`]), once there is one: waited for as the screen
+ *  settles (polled, up to `timeout`), never assumed after a fixed delay, which a loaded machine
+ *  can outlast. */
+export const findButton = (name: RegExp, timeout = 15_000): Promise<HTMLElement> => waitFor(() => button(name), { timeout });
 
 /** Types `value` into every empty text field on screen. */
 export async function fillEmptyFields(user: UserEvent, value = "10.0.0.5") {
@@ -62,4 +69,11 @@ export async function clickEverything(user: UserEvent, { skip, max = 40 }: { ski
     await user.click(next);
     await flush(5);
   }
+}
+
+/** Loads the screens a lab's page loads lazily (the network diagram, React Flow), for a test
+ *  file's `beforeAll`: the first test to open a lab's page otherwise pays for transforming and
+ *  loading them inside its own time limit, seconds on a loaded machine. */
+export async function preloadLabScreens(): Promise<void> {
+  await import("@/features/labs/network-diagram");
 }

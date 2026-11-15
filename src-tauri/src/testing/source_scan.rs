@@ -240,17 +240,17 @@ fn a_files_crate_modules_are_read_from_paths_and_grouped_uses() {
     assert_eq!(crate_modules(&code).into_iter().collect::<Vec<_>>(), ["error", "labs", "machine", "platform", "runtime"]);
 }
 
-/// The layers depend downwards only: the platform (running tools, files, the OS) names no module
-/// at the crate root but its own and the crate's errors, so it can't reach up through one either;
-/// the runtime names neither the app shell nor the layers that use it (the CTF's labs, the
-/// account, the machine, the cloud sign-ins, the commands), its tests included (a test of a command over it belongs
-/// with the command); and those domain layers name neither the app shell nor the commands over
-/// them. What a layer needs from above is handed in (a source
-/// check, a hook to run first, whether a deploy worker is busy). A cycle between them came back
-/// more than once (the runtime reached for the deploy workers' lock and status files, then for
-/// the catalogue's source rule, the co-location server and Storage's records; the platform's
-/// process runner for the runtime's ESXi relay settings; the labs for the deploy workers' jobs;
-/// the runtime's AWS budget for the cloud sign-ins' month).
+/// The layers depend downwards only: the platform (running tools, files, the OS) names no module at
+/// the crate root but its own and the crate's errors, so it can't reach up through one either; the
+/// runtime names neither the app shell nor the layers that use it (the CTF's labs, the account, the
+/// machine, the cloud sign-ins, the commands), its tests included (a test of a command over it
+/// belongs with the command); and those domain layers name neither the app shell nor the commands
+/// over them. What a layer needs from above is handed in (a source check, a hook to run first,
+/// whether a deploy worker is busy). A cycle between them came back more than once (the runtime
+/// reached for the deploy workers' lock and status files, then for the catalogue's source rule, the
+/// co-location server and Storage's records; the platform's process runner for the runtime's ESXi
+/// relay settings; the labs for the deploy workers' jobs; the runtime's AWS budget for the cloud
+/// sign-ins' month).
 #[test]
 fn every_layer_names_only_the_layers_below_it() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -350,9 +350,9 @@ fn the_home_folder_is_read_only_through_platform_home_dir() {
     assert_eq!(elsewhere, [] as [String; 0], "read the home folder with crate::platform::home_dir()");
 }
 
-/// Nothing the app runs listens beyond the loopback. Regression (#230): the port check bound
-/// 0.0.0.0, and Windows Firewall asked the player whether Cyber CTF may accept connections from
-/// public networks, mid-deploy.
+/// Nothing the app runs listens beyond the loopback. Regression: the port check bound 0.0.0.0, and
+/// Windows Firewall asked the player whether Cyber CTF may accept connections from public networks,
+/// mid-deploy.
 #[test]
 fn nothing_the_app_runs_listens_beyond_the_loopback() {
     for src in crate_sources() {

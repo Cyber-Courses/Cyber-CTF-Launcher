@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 /** A dependency-free on/off switch: the jewel when on. */
 export function Switch({
@@ -13,6 +13,7 @@ export function Switch({
   disabled?: boolean;
   className?: string;
   "aria-label"?: string;
+  "aria-describedby"?: string;
   id?: string;
 }) {
   return (

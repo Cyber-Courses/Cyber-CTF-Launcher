@@ -108,11 +108,12 @@ enum Shows {
 
 /// How `provider` lists every VM it holds (running or not, where it can say), and how a lab's
 /// shows there; none for a provider the scenario can't check (a server's, which isn't local).
+/// utmctl ships inside UTM's bundle, on no PATH.
 fn listing(provider: Provider) -> Option<(&'static str, &'static [&'static str], Shows)> {
     Some(match provider {
         Provider::Virtualbox => ("VBoxManage", &["list", "vms"], Shows::Labelled),
         Provider::Parallels => ("prlctl", &["list", "--all", "--no-header", "-o", "name"], Shows::Labelled),
-        Provider::Utm => ("utmctl", &["list"], Shows::Labelled),
+        Provider::Utm => (crate::runtime::providers::utmctl(), &["list"], Shows::Labelled),
         Provider::Libvirt => ("virsh", &["-c", "qemu:///system", "list", "--all", "--name"], Shows::Prefixed('_')),
         Provider::Hyperv => ("powershell", &["-NoProfile", "-Command", "Get-VM | ForEach-Object { $_.Name }"], Shows::Prefixed('-')),
         // vmrun lists running VMs only, by their .vmx, which Vagrant keeps in the lab's folder.
@@ -123,26 +124,30 @@ fn listing(provider: Provider) -> Option<(&'static str, &'static [&'static str],
     })
 }
 
-/// Whether `line` of a listing is a VM of the lab named `lab` in `folder`, shown as `shows`.
-fn is_labs(line: &str, shows: Shows, lab: &str, folder: &str) -> bool {
+/// Whether `line` of a listing is a VM of the lab whose VMs are named with `stem`
+/// (`<name>-<instance>-<key>`, [`crate::runtime::discover::vm_stem`]), installed in `folder`, shown
+/// as `shows`: `<stem> - <machine>` (VirtualBox, Parallels, UTM), `<stem>_<machine>` (libvirt),
+/// `<stem>-<machine>` (Hyper-V), or by a path in its folder.
+fn is_labs(line: &str, shows: Shows, stem: &str, folder: &str) -> bool {
     match shows {
-        Shows::Labelled => line.contains(&format!("{lab} · ")),
-        Shows::Prefixed(sep) => line.trim().starts_with(&format!("{lab}{sep}")),
+        Shows::Labelled => line.contains(&format!("{stem} - ")),
+        Shows::Prefixed(sep) => line.trim().starts_with(&format!("{stem}{sep}")),
         Shows::InFolder => line.contains(folder),
     }
 }
 
-/// The VMs of the lab named `lab`, installed in `dir`, that the hypervisor `provider` still holds.
+/// The VMs of the lab whose VMs are named with `stem`, installed in `dir`, that the hypervisor
+/// `provider` still holds.
 ///
 /// # Errors
 ///
 /// When it can't be told: a provider without a listing here, or one whose listing failed. Never
 /// "nothing left" by default.
-async fn left_on(provider: Provider, lab: &str, dir: &Path) -> Result<Vec<String>, String> {
+async fn left_on(provider: Provider, stem: &str, dir: &Path) -> Result<Vec<String>, String> {
     let (program, args, shows) = listing(provider).ok_or_else(|| format!("can't check what is left on {}", provider.id()))?;
     let out = crate::platform::exec::run(program, args, None).await.map_err(|e| format!("listing the VMs on {} failed: {e}", provider.id()))?;
     let folder = dir.display().to_string();
-    Ok(out.lines().filter(|l| is_labs(l, shows, lab, &folder)).map(str::to_owned).collect())
+    Ok(out.lines().filter(|l| is_labs(l, shows, stem, &folder)).map(str::to_owned).collect())
 }
 
 #[tokio::test]
@@ -169,8 +174,11 @@ async fn a_vm_lab_runs_end_to_end_through_the_runner() {
                 Err(e) => Err(e),
             };
             check(stopped.is_ok(), format!("it stops: {:?}", stopped.err()), f);
-            let name = crate::runtime::lab::lab(&lab.dir).map(|l| l.source().name.clone()).unwrap_or_default();
-            let left = left_on(provider, &name, &lab.dir).await;
+            // Read before anything goes: the stem is the spec's name and the run's key.
+            let left = match crate::runtime::discover::vm_stem(&lab.dir, &lab.id, &lab.home) {
+                Some(stem) => left_on(provider, &stem, &lab.dir).await,
+                None => Err("the lab's VM names can't be told: its spec names none".to_owned()),
+            };
             check(left.as_ref().is_ok_and(Vec::is_empty), format!("nothing of it is left on {} ({left:?})", provider.id()), f);
             check(lab.run().status().await.is_ok_and(|s| !s.running && s.machines.is_empty()), "its status reads as gone".into(), f);
         },
@@ -194,25 +202,39 @@ mod tests {
         }
         let folder = "/data/labs/web";
         let shows = |p| listing(p).unwrap().2;
-        assert!(is_labs("\"Web · srv\" {1234}", shows(Provider::Virtualbox), "Web", folder));
-        assert!(!is_labs("\"Webshop · srv\" {1234}", shows(Provider::Virtualbox), "Web", folder));
-        assert!(is_labs("Web · srv", shows(Provider::Parallels), "Web", folder));
-        assert!(is_labs("1234-5678  stopped  Web · srv", shows(Provider::Utm), "Web", folder));
-        assert!(is_labs("Web_srv", shows(Provider::Libvirt), "Web", folder));
-        assert!(!is_labs("Webshop_srv", shows(Provider::Libvirt), "Web", folder));
-        assert!(is_labs("Web-srv\r", shows(Provider::Hyperv), "Web", folder));
-        assert!(is_labs("/data/labs/web/.vagrant/machines/srv/vmware_desktop/x/srv.vmx", shows(Provider::VmwareDesktop), "Web", folder));
-        assert!(is_labs("qemu-system-aarch64 -drive file=/data/labs/web/.vagrant/machines/srv/qemu/disk.qcow2", shows(Provider::Qemu), "Web", folder));
-        assert!(!is_labs("qemu-system-aarch64 -drive file=/data/labs/other/disk.qcow2", shows(Provider::Qemu), "Web", folder));
+        // As Isoloom 3.0 names a copy's VMs: the stem (`<name>-<key>`), then the machine.
+        let stem = "web-k3y9ab";
+        assert!(is_labs("\"web-k3y9ab - srv\" {1234}", shows(Provider::Virtualbox), stem, folder));
+        assert!(!is_labs("\"web-zz9zz9 - srv\" {1234}", shows(Provider::Virtualbox), stem, folder), "another copy's");
+        assert!(!is_labs("\"webshop-k3y9ab - srv\" {1234}", shows(Provider::Virtualbox), stem, folder));
+        assert!(is_labs("web-k3y9ab - srv", shows(Provider::Parallels), stem, folder));
+        assert!(is_labs("1234-5678  stopped  web-k3y9ab - srv", shows(Provider::Utm), stem, folder));
+        assert!(is_labs("web-k3y9ab_srv", shows(Provider::Libvirt), stem, folder));
+        assert!(!is_labs("webshop-k3y9ab_srv", shows(Provider::Libvirt), stem, folder));
+        assert!(is_labs("web-k3y9ab-srv\r", shows(Provider::Hyperv), stem, folder));
+        assert!(is_labs("/data/labs/web/.vagrant/machines/srv/vmware_desktop/x/srv.vmx", shows(Provider::VmwareDesktop), stem, folder));
+        assert!(is_labs("qemu-system-aarch64 -drive file=/data/labs/web/.vagrant/machines/srv/qemu/disk.qcow2", shows(Provider::Qemu), stem, folder));
+        assert!(!is_labs("qemu-system-aarch64 -drive file=/data/labs/other/disk.qcow2", shows(Provider::Qemu), stem, folder));
+    }
+
+    #[test]
+    fn a_leftover_is_found_by_the_name_isoloom_gives_it_with_utms_own_tool() {
+        // Regression: the check looked for `<name> · <machine>`, a name 3.0 never gives: it found
+        // nothing on VirtualBox, Parallels or UTM, so "nothing is left" passed whatever was left.
+        let labelled = listing(Provider::Virtualbox).unwrap().2;
+        assert!(!is_labs("\"web-k3y9ab - srv\" {1234}", labelled, "web · ", "/data/labs/web"));
+        assert!(is_labs("\"web-k3y9ab - srv\" {1234}", labelled, "web-k3y9ab", "/data/labs/web"));
+        // UTM's tool from inside its bundle, wherever UTM is: it's on no PATH ("not installed").
+        assert!(listing(Provider::Utm).unwrap().0.ends_with("UTM.app/Contents/MacOS/utmctl"));
     }
 
     #[tokio::test]
     async fn a_listing_that_fails_or_a_server_is_an_error_not_nothing_left() {
         use crate::platform::exec::fake::{Tools, fail, ok};
-        let _tools = Tools::rules(&[("VBoxManage list vms", ok("\"Web · srv\" {1}\n\"Other · a\" {2}\n")), ("virsh", fail("not found"))]);
+        let _tools = Tools::strict_rules(&[("VBoxManage list vms", ok("\"web-k3y9ab - srv\" {1}\n\"other-k3y9ab - a\" {2}\n")), ("virsh", fail("not found"))]);
         let dir = Path::new("/data/labs/web");
-        assert_eq!(left_on(Provider::Virtualbox, "Web", dir).await.unwrap(), ["\"Web · srv\" {1}"]);
-        assert!(left_on(Provider::Libvirt, "Web", dir).await.unwrap_err().contains("listing the VMs on libvirt failed"));
-        assert!(left_on(Provider::VmwareEsxi, "Web", dir).await.unwrap_err().contains("can't check"));
+        assert_eq!(left_on(Provider::Virtualbox, "web-k3y9ab", dir).await.unwrap(), ["\"web-k3y9ab - srv\" {1}"]);
+        assert!(left_on(Provider::Libvirt, "web-k3y9ab", dir).await.unwrap_err().contains("listing the VMs on libvirt failed"));
+        assert!(left_on(Provider::VmwareEsxi, "web-k3y9ab", dir).await.unwrap_err().contains("can't check"));
     }
 }

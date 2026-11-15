@@ -5,8 +5,9 @@ import { PanelHeader } from "@/components/ui/panel";
 import { StatusDot, StatusPill } from "@/components/ui/status-pill";
 import { formatDuration } from "@/lib/format";
 import type { ActiveOperation } from "@/lib/tauri";
-import { deriveSteps, failedMachineStep, type Step, type Timed } from "@/features/labs/deploy-log";
-import { LiveDuration, RawLog, StepItem, StepMark } from "@/features/labs/deploy-step-parts";
+import { type Step, type Timed } from "@/features/labs/deploy-log";
+import { type OperationText, stepsOf } from "@/features/labs/deploy-timeline";
+import { LiveDuration, RawLog, StepItem, StepMark, AfterReadyStep } from "@/features/labs/deploy-step-parts";
 import { useT, type T } from "@/lib/i18n";
 import { failureText, isDoneLine, isFailedLine } from "@/lib/log-marks";
 
@@ -15,8 +16,6 @@ type Operation = ActiveOperation["op"];
 // Operations on a lab that is already built: one step named after them, not the launch's
 // "Building" / "Preparing", which read as a new deploy while the lab was shutting down.
 const OPERATIONS = ["resume", "pause", "shutdown", "stop"] as const;
-
-type OperationText = { busy: string; step: string; done: string };
 
 /** An operation's words (busy, its one step, done), when it is one of OPERATIONS. */
 function operationText(t: T, operation: Operation): OperationText | undefined {
@@ -40,14 +39,11 @@ function useDeployTimeline(lines: string[], times: number[], busy: boolean, oper
     const failed = timed.find((row) => isFailedLine(row.line));
     const done = timed.find((row) => isDoneLine(row.line));
     const op = operationText(t, operation);
-    const steps = op ? (timed.length > 0 ? [{ id: operation, label: op.step, rows: timed }] : []) : deriveSteps(t, timed);
-    const lastSeen = steps.at(-1)?.id;
-    const named = failed ? failedMachineStep(failed.line) : null;
-    const failedStep = failed ? (named && steps.some((s) => s.id === named) ? named : lastSeen) : null;
+    const steps = stepsOf(t, timed, { done, failed, op, operation });
     // From when the run began, when known: a run that failed on its first line otherwise read 0.0s.
     const first = timed.at(0)?.at;
     const start = startedAt !== undefined ? Math.min(startedAt, first ?? startedAt) : first;
-    return { timed, failed, done, start, op, steps, lastSeen, failedStep };
+    return { timed, failed, done, start, op, ...steps };
   }, [t, timed, operation, startedAt]);
   const { done, failed } = derived;
   const end: number | null | undefined = done?.at ?? failed?.at ?? (busy ? null : timed.at(-1)?.at);
@@ -121,7 +117,9 @@ function StepList({ timeline: tl, busy, liveStep }: { timeline: ReturnType<typeo
     <ul className="py-1 empty:hidden">
       {steps.map((p, i) => {
         const next = steps.at(i + 1)?.rows[0].at;
-        const state = p.id === tl.failedStep ? "fail" : p.id === tl.lastSeen && busy ? "running" : "ok";
+        // Once Ready has come, the start's steps are done, however long the operation takes to
+        // report itself so; what runs after Ready is its own step below.
+        const state = p.id === tl.failedStep ? "fail" : p.id === tl.lastSeen && busy && !done ? "running" : "ok";
         const to = next ?? (state === "running" ? null : (done?.at ?? failed?.at ?? lastAt(p)));
         const expanded = open === p.id;
         return (
@@ -146,6 +144,7 @@ function StepList({ timeline: tl, busy, liveStep }: { timeline: ReturnType<typeo
           <span className="text-foreground">{t("labs.deploy.ready")}</span>
         </li>
       )}
+      {tl.after && <AfterReadyStep step={tl.after} failed={tl.failedStep === tl.after.id} busy={busy} origin={tl.start} open={open} setOpen={setOpen} />}
       {busy && steps.length === 0 && liveStep && (
         <li className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-[0.8125rem]">
           <StepMark state="running" />

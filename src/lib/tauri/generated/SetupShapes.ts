@@ -105,23 +105,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "accountLacks": null
       },
       {
-        "provider": "qemu",
-        "remote": false,
-        "available": false,
-        "hypervisor": false,
-        "plugin": "vagrant-qemu",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
         "provider": "vmware_esxi",
         "remote": true,
         "available": false,
@@ -239,25 +222,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "dependency": "vagrant"
             }
           ]
-        },
-        {
-          "provider": "qemu",
-          "get": [
-            {
-              "kind": "install",
-              "dependency": "qemu"
-            }
-          ],
-          "vagrant": [
-            {
-              "kind": "install",
-              "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-qemu"
-            }
-          ]
         }
       ]
     }
@@ -356,23 +320,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": null,
         "needs": [
           "vagrant"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "qemu",
-        "remote": false,
-        "available": false,
-        "hypervisor": false,
-        "plugin": "vagrant-qemu",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -497,25 +444,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "dependency": "vagrant"
             }
           ]
-        },
-        {
-          "provider": "qemu",
-          "get": [
-            {
-              "kind": "install",
-              "dependency": "qemu"
-            }
-          ],
-          "vagrant": [
-            {
-              "kind": "install",
-              "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-qemu"
-            }
-          ]
         }
       ]
     }
@@ -614,23 +542,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": null,
         "needs": [
           "vagrant"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "qemu",
-        "remote": false,
-        "available": false,
-        "hypervisor": false,
-        "plugin": "vagrant-qemu",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -750,25 +661,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
               "dependency": "vagrant"
             }
           ]
-        },
-        {
-          "provider": "qemu",
-          "get": [
-            {
-              "kind": "install",
-              "dependency": "qemu"
-            }
-          ],
-          "vagrant": [
-            {
-              "kind": "install",
-              "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-qemu"
-            }
-          ]
         }
       ]
     }
@@ -867,23 +759,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "utility": null,
         "needs": [
           "vagrant"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "qemu",
-        "remote": false,
-        "available": false,
-        "hypervisor": false,
-        "plugin": "vagrant-qemu",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
         ],
         "reason": {
           "code": "vagrantMissing"
@@ -1006,25 +881,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
             {
               "kind": "install",
               "dependency": "vagrant"
-            }
-          ]
-        },
-        {
-          "provider": "qemu",
-          "get": [
-            {
-              "kind": "install",
-              "dependency": "qemu"
-            }
-          ],
-          "vagrant": [
-            {
-              "kind": "install",
-              "dependency": "vagrant"
-            },
-            {
-              "kind": "plugin",
-              "plugin": "vagrant-qemu"
             }
           ]
         }

@@ -6,6 +6,7 @@
 use crate::machine::system::docker::{Engine, EngineStatus};
 use crate::machine::system::wsl::{WslReport, WslState};
 use crate::machine::system::{CloudClis, PkgManager, SystemReport, Tool};
+use crate::platform::host::{Arch, Host, Os};
 use crate::runtime::providers::{Provider, ProviderStatus, Unavailable, UtilityState, needs};
 
 fn missing() -> Tool {
@@ -16,16 +17,10 @@ fn found(version: &str) -> Tool {
     Tool { installed: true, version: Some(version.to_owned()) }
 }
 
-/// The local hypervisors the check offers on `os` with CPU `arch`, then the servers (remote), in
-/// `Provider::ALL`'s order.
-fn offered(os: &str, arch: &str) -> Vec<Provider> {
-    let local: &[Provider] = match (os, arch) {
-        ("macos", "aarch64") => &[Provider::VmwareDesktop, Provider::Parallels, Provider::Qemu, Provider::Utm],
-        ("macos", _) => &[Provider::Virtualbox, Provider::VmwareDesktop, Provider::Parallels, Provider::Qemu],
-        ("windows", _) => &[Provider::Virtualbox, Provider::VmwareDesktop, Provider::Hyperv, Provider::Qemu],
-        _ => &[Provider::Virtualbox, Provider::VmwareDesktop, Provider::Libvirt, Provider::Qemu],
-    };
-    local.iter().copied().chain(Provider::SERVERS.iter().rev().copied()).collect()
+/// The local hypervisors the check offers on `host` (none installed), then the servers (remote),
+/// in `Provider::ALL`'s order: the hypervisor table's ([`Provider::offered_on`]).
+fn offered(host: Host) -> Vec<Provider> {
+    Provider::ALL.into_iter().filter(|p| p.offered_on(host, false)).collect()
 }
 
 /// `provider`'s status as the check reports it, from whether it (`installed`) and its plugin are
@@ -52,13 +47,14 @@ fn status(provider: Provider, vagrant: bool, installed: bool, plugin_installed: 
 }
 
 /// A machine with nothing but its OS and its package manager.
-pub(crate) fn bare(os: &'static str, arch: &'static str) -> SystemReport {
-    let pkg_manager = match os {
-        "windows" => PkgManager { name: "winget".into(), installed: true, version: Some("v1.9.25200".into()) },
-        "linux" => PkgManager { name: "apt".into(), installed: true, version: Some("apt 2.9.8 (amd64)".into()) },
-        _ => PkgManager { name: "Homebrew".into(), installed: true, version: Some("Homebrew 4.6.3".into()) },
+pub(crate) fn bare(os: Os, arch: Arch) -> SystemReport {
+    let version = match os {
+        Os::Windows => "v1.9.25200",
+        Os::Linux => "apt 2.9.8 (amd64)",
+        Os::Macos => "Homebrew 4.6.3",
     };
-    let wsl = (os == "windows").then_some(WslReport { state: WslState::Missing, reopens_after_restart: true, virtualization_off: false });
+    let pkg_manager = PkgManager { name: os.usual_packages().into(), installed: true, version: Some(version.into()) };
+    let wsl = (os == Os::Windows).then_some(WslReport { state: WslState::Missing, reopens_after_restart: true, virtualization_off: false });
     let mut r = SystemReport {
         os,
         arch,
@@ -76,7 +72,7 @@ pub(crate) fn bare(os: &'static str, arch: &'static str) -> SystemReport {
         ovftool: missing(),
         ovftool_location: None,
         cloud_clis: CloudClis { aws: missing(), azure: missing(), gcloud: missing() },
-        vm_providers: offered(os, arch).into_iter().map(|p| status(p, false, false, false, None)).collect(),
+        vm_providers: offered(Host { os, arch, packages: None }).into_iter().map(|p| status(p, false, false, false, None)).collect(),
         ready_hypervisors: Vec::new(),
         wsl,
         groups_pending: Vec::new(),
@@ -120,7 +116,7 @@ fn hypervisor(r: &mut SystemReport, provider: Provider, plugin: bool) {
 
 /// Windows 11, nothing installed: WSL 2 missing.
 pub(crate) fn bare_windows() -> SystemReport {
-    bare("windows", "x86_64")
+    bare(Os::Windows, Arch::X86_64)
 }
 
 /// Windows once "Turn on WSL 2" ran: it waits for a restart.
@@ -143,7 +139,7 @@ pub(crate) fn windows_hyperv_waits_for_restart() -> SystemReport {
 
 /// Debian 13, nothing installed.
 pub(crate) fn bare_debian() -> SystemReport {
-    bare("linux", "x86_64")
+    bare(Os::Linux, Arch::X86_64)
 }
 
 /// Debian once Docker Engine is installed: its daemon runs, but refuses this account until the
@@ -229,12 +225,12 @@ pub(crate) fn bare_arch() -> SystemReport {
 
 /// An Apple Silicon Mac with Docker Desktop running, but no Vagrant and no hypervisor.
 pub(crate) fn mac_docker_without_vagrant() -> SystemReport {
-    with(bare("macos", "aarch64"), false, |r| docker_running(r, Engine::DockerDesktop))
+    with(bare(Os::Macos, Arch::Aarch64), false, |r| docker_running(r, Engine::DockerDesktop))
 }
 
 /// An Apple Silicon Mac with OrbStack in use and Docker Desktop running beside it.
 pub(crate) fn mac_two_engines() -> SystemReport {
-    with(bare("macos", "aarch64"), false, |r| {
+    with(bare(Os::Macos, Arch::Aarch64), false, |r| {
         docker_running(r, Engine::Orbstack);
         r.docker_engines_running = vec![Engine::Orbstack, Engine::DockerDesktop];
         r.docker_engines.push(EngineStatus { engine: Engine::DockerDesktop, context: "desktop-linux".into(), running: true, current: false });
@@ -243,7 +239,7 @@ pub(crate) fn mac_two_engines() -> SystemReport {
 
 /// A Mac with VMware Fusion and Vagrant, but neither the VMware plugin nor HashiCorp's utility.
 pub(crate) fn mac_vmware_without_its_parts() -> SystemReport {
-    with(bare("macos", "aarch64"), false, |r| {
+    with(bare(Os::Macos, Arch::Aarch64), false, |r| {
         docker_running(r, Engine::DockerDesktop);
         hypervisor(r, Provider::VmwareDesktop, false);
     })
@@ -251,7 +247,7 @@ pub(crate) fn mac_vmware_without_its_parts() -> SystemReport {
 
 /// An Apple Silicon Mac set up: Docker Desktop running, UTM with Vagrant and its plugin.
 pub(crate) fn mac_ready() -> SystemReport {
-    with(bare("macos", "aarch64"), false, |r| {
+    with(bare(Os::Macos, Arch::Aarch64), false, |r| {
         docker_running(r, Engine::DockerDesktop);
         hypervisor(r, Provider::Utm, true);
     })

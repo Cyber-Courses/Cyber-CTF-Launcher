@@ -1,12 +1,12 @@
 //! The app shell: starting the launcher (or a deploy worker), its plugins, windows, menu and
 //! quitting, and the log file.
 
-pub(crate) mod deploy_worker;
 pub mod events;
 pub mod logging;
 pub mod menu;
 pub mod operations;
 pub mod quit;
+pub(crate) mod runs;
 pub mod setup_window;
 pub mod updates;
 pub mod window;
@@ -34,8 +34,48 @@ pub fn open_folder(path: &std::path::Path) -> crate::error::Result<()> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| crate::error::Error::Invalid(format!("couldn't open {}: {e}", path.display())))
 }
 
+/// Records this process's tools from now on in the ledger in the app's data folder, which a later
+/// start reads to end what an app or deploy worker killed outright left running; the folder,
+/// when the OS gave the app's.
+pub(crate) fn record_tools(app: &AppHandle) -> Option<PathBuf> {
+    let dir = platform::AppDirs::from(app).data_file(exec::TOOLS_DIR)?;
+    exec::record_tools_in(dir.clone());
+    Some(dir)
+}
+
 /// How often expired cloud labs are looked for and torn down.
 const REAP_EVERY: Duration = Duration::from_secs(300);
+
+/// What this process is, read from its arguments before anything else starts.
+#[derive(Debug, PartialEq, Eq)]
+enum Role {
+    /// `cyberctf-desktop interrupt --pid <pid>` (Windows): Ctrl+C a deploy's Terraform so it
+    /// stops cleanly, from a throwaway process (see `platform::console`). Nothing of the app starts.
+    #[cfg(windows)]
+    Interrupter(u32),
+    /// The launcher itself.
+    App,
+}
+
+impl Role {
+    /// The role `args` (the process's, program first) give this process.
+    fn of(args: &[String]) -> Role {
+        #[cfg(windows)]
+        if let Some(pid) = platform::console::interrupt_pid(args.iter().cloned()) {
+            return Role::Interrupter(pid);
+        }
+        let _ = args;
+        Role::App
+    }
+}
+
+/// What the start of the process sets up for either role that runs Tauri: the context (the
+/// embedded config and assets, pointed at an end-to-end run's folders) and what was found of the
+/// system proxy, for the log once it is up.
+struct Started {
+    context: tauri::Context<AppRuntime>,
+    proxy_note: Option<String>,
+}
 
 /// Runs the launcher, as the app or as a deploy worker (see `crate::run`).
 ///
@@ -45,16 +85,37 @@ const REAP_EVERY: Duration = Duration::from_secs(300);
 pub fn run() -> tauri::Result<()> {
     // First: a panic anywhere after this lands in the log file, not in a stderr nobody sees.
     logging::install_panic_hook();
-    // `cyberctf-desktop interrupt --pid <pid>` (Windows): Ctrl+C a deploy's Terraform so it stops
-    // cleanly, from a throwaway process (see platform::console). Nothing else of the app starts.
-    #[cfg(windows)]
-    if let Some(pid) = platform::console::interrupt_pid(std::env::args()) {
+    // SAFETY: called only first thing in a role's arm, before anything starts a thread (Tauri,
+    // tokio and the plugins all start later).
+    #[allow(unsafe_code, reason = "the start's claim to be the only thread, which only `run` can make")]
+    let started = || start(unsafe { platform::sys::SingleThreaded::assume() });
+    match Role::of(&std::env::args().collect::<Vec<_>>()) {
         // Exit code 0 when it was sent, else 1 (the app reads only whether it succeeded).
-        std::process::exit(i32::from(!platform::console::send_ctrl_c(pid)));
+        #[cfg(windows)]
+        Role::Interrupter(pid) => std::process::exit(i32::from(!platform::console::send_ctrl_c(pid))),
+        Role::App => {
+            let Started { context, proxy_note } = started();
+            let app = commands::register(app_builder(proxy_note)).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
+            app.run(|app, event| on_run_event(app, &event));
+            Ok(())
+        }
+    }
+}
+
+/// The start both Tauri roles share, while `only` this thread runs: GUI launches don't get the
+/// shell PATH (docker, vagrant, ovftool) nor, on macOS, the proxy, so both are set here, before
+/// any thread can read the environment. The OVF Tool the setup places in the app data folder is
+/// on `PATH` too, for the deploy workers and the labs' runs.
+#[allow(clippy::needless_pass_by_value, reason = "taking the token ends the start's claim to be the only thread")]
+fn start(only: platform::sys::SingleThreaded) -> Started {
+    // `<exe> serve --home <home>`: this process is the runner service of that home (see
+    // `run_service::host`), nothing of the app starts.
+    if let Some(code) = crate::run_service::host::serve_if_asked(std::env::args()) {
+        std::process::exit(code);
     }
     crate::runtime::server::connection_test::mark_started();
-    // One context (the embedded config and assets) for whichever role this process plays. Its
-    // main window gets the app's frame (none on Linux and Windows) before it is created.
+    // One context for whichever role this process plays. Its main window gets the app's frame
+    // (none on Linux and Windows) before it is created.
     let mut context = tauri::generate_context!();
     window::frame_configured(context.config_mut());
     // An end-to-end run's app (a `wdio` build given the run's folder) keeps all of its own there,
@@ -63,29 +124,24 @@ pub fn run() -> tauri::Result<()> {
     if let Some(root) = &test_root {
         test_root_config(context.config_mut(), root);
     }
-    // Before anything else: GUI launches don't get the shell PATH (docker, vagrant, ovftool), nor,
-    // on macOS, the proxy (said in the log once it is up). The OVF Tool the setup places in the
-    // app data folder is on it too, for the deploy workers and the labs' runs.
-    platform::env_path::augment(&own_tool_dirs(&context.config().identifier, test_root.as_deref()));
+    platform::env_path::augment(&only, &own_tool_dirs(&context.config().identifier, test_root.as_deref()));
     #[cfg(target_os = "macos")]
-    let proxy_note = platform::proxy::inherit_system_proxy();
+    let proxy_note = platform::proxy::inherit_system_proxy(&only);
     #[cfg(not(target_os = "macos"))]
     let proxy_note = None;
-    // `cyberctf-desktop deploy --job <file>`: this process is a deploy worker, not the app. It
-    // runs one lab's deploy headless and exits; the app that started it only follows its log, so
-    // quitting the app never cuts a deploy short.
-    if let Some(job) = worker_job(std::env::args()) {
-        return deploy_worker::worker_main(&job, context);
-    }
-    let app = commands::register(app_builder(proxy_note)).build(context).inspect_err(|e| log::error!("couldn't build Cyber CTF: {e}"))?;
-    app.run(|app, event| on_run_event(app, &event));
-    Ok(())
+    Started { context, proxy_note }
+}
+
+/// The app's services, made once here and reached through the app's state: the app and a unit
+/// test's app (`testing::test_app`) are put together alike.
+pub(crate) fn services(builder: tauri::Builder<AppRuntime>) -> tauri::Builder<AppRuntime> {
+    builder.manage(terminal::Terminals::default())
 }
 
 /// The app: its plugins, window and menu events, and setup (`proxy_note`: what startup found of
 /// the system proxy, for the log).
 fn app_builder(proxy_note: Option<String>) -> tauri::Builder<AppRuntime> {
-    let mut builder = tauri::Builder::<AppRuntime>::new();
+    let mut builder = services(tauri::Builder::<AppRuntime>::new());
     // First: a cyberctf:// link opened while the app runs goes to that window (Windows/Linux would
     // otherwise start a second instance). Off during a GUI e2e run (TAURI_WEBDRIVER_PORT set), so a
     // test instance runs beside an installed app and parallel runs don't collide.
@@ -151,15 +207,6 @@ fn own_tool_dirs(identifier: &str, test_root: Option<&std::path::Path>) -> Vec<P
         None => platform::env_path::app_data_dir(identifier),
     };
     data.map(|data| crate::machine::tools::ovftool::managed_dir(&data)).into_iter().collect()
-}
-
-/// The job file when this process was started as a deploy worker (`<exe> deploy --job <file>`).
-fn worker_job(args: impl IntoIterator<Item = String>) -> Option<PathBuf> {
-    let args: Vec<String> = args.into_iter().collect();
-    match args.as_slice() {
-        [_, deploy, flag, job, ..] if deploy == "deploy" && flag == "--job" => Some(PathBuf::from(job)),
-        _ => None,
-    }
 }
 
 /// Under the `wdio` feature only: `CYBERCTF_WDIO_STORAGE`, a JSON object of strings, written into
@@ -244,6 +291,13 @@ fn wdio_seed(handle: &crate::AppHandle) {
 
 fn setup(app: &mut App) {
     logging::log_startup(app.handle(), "app");
+    // Before any tool starts: this app's tools are recorded, and those an app or deploy worker
+    // killed outright left running are ended (Vagrant's lock and Terraform's state free again).
+    if let Some(dir) = record_tools(app.handle()) {
+        tauri::async_runtime::spawn(async move {
+            exec::end_orphaned_tools(&dir).await;
+        });
+    }
     // Once the log is up, so what is wrong with the policy is in it.
     let policy = platform::policy::current();
     register_updater(app.handle(), updates::channel(policy));
@@ -265,6 +319,14 @@ fn setup(app: &mut App) {
     if let Ok(dir) = app.path().app_data_dir() {
         narrow_to_this_user(&dir);
     }
+    // The launcher's store, opened before anything reads it: a store that can't be opened is in
+    // the log at once.
+    if let Err(e) = crate::store::open(&platform::AppDirs::from(app.handle())) {
+        log::error!("the launcher's store can't be opened: {e}");
+    }
+    // Every lab operation's events to the webview, and the operations an earlier run of the app
+    // left running picked up.
+    crate::app::runs::start(app.handle());
     // Linux and Windows dev builds: register cyberctf:// at runtime (installers do it otherwise).
     // Not an end-to-end run's app: the user's links stay with the app they chose.
     #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
@@ -324,11 +386,11 @@ fn agent_notify(handle: &AppHandle) -> std::sync::Arc<account::agent::Notify> {
     std::sync::Arc::new(move |title: &str, body: &str| notify(&handle, title, body))
 }
 
-/// How the background agent ends a lab's deploy workers before it stops the lab.
+/// How the background agent ends what the runner service runs on a lab before it stops the lab.
 fn agent_end_workers(dirs: platform::AppDirs) -> std::sync::Arc<account::agent::EndWorkers> {
     std::sync::Arc::new(move |id: &str| {
         let (dirs, id) = (dirs.clone(), id.to_owned());
-        Box::pin(async move { deploy_worker::end_workers(&dirs, &id).await })
+        Box::pin(async move { crate::runtime::isothrum::end_operations(&dirs, &id).await })
     })
 }
 
@@ -392,14 +454,15 @@ fn on_run_event(app: &AppHandle, event: &RunEvent) {
         // A tool the runner was asked to stop (an operation cancelled just before) doesn't get
         // its grace: the app is going, and it must not outlive it.
         crate::runtime::isothrum::end_cut_short_tools();
-        terminal::close_all();
+        app.state::<terminal::Terminals>().close_all();
+        crate::screen::close_all();
     }
 }
 
 /// Makes the app's data folder `dir` this user's alone; one that can't be is said in the log (its
 /// files then keep the folder's own permissions), and the app goes on.
 fn narrow_to_this_user(dir: &std::path::Path) {
-    if let Err(e) = private_fs::dir(dir) {
+    if let Err(e) = private_fs::create_dir(dir) {
         log::warn!("the app's data folder {} couldn't be made this user's alone: {e}", dir.display());
     }
 }
@@ -455,8 +518,6 @@ mod tests {
         std::fs::remove_file(file).unwrap();
     }
 
-    use super::worker_job;
-
     #[test]
     fn a_notification_that_cant_be_shown_is_logged() {
         // Regression: both notification helpers dropped show()'s error, one of them telling the
@@ -503,12 +564,13 @@ mod tests {
     }
 
     #[test]
-    fn only_deploy_job_arguments_make_a_worker() {
+    fn the_role_is_read_from_the_arguments_alone() {
         let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
-        assert_eq!(worker_job(args(&["app", "deploy", "--job", "/d/lab.json"])), Some("/d/lab.json".into()));
-        assert_eq!(worker_job(args(&["app", "deploy", "--job", "/d/lab.json", "extra"])), Some("/d/lab.json".into()));
-        assert_eq!(worker_job(args(&["app", "deploy", "--job"])), None);
-        assert_eq!(worker_job(args(&["app", "deploy", "--other", "x"])), None);
-        assert_eq!(worker_job(args(&["app"])), None);
+        assert_eq!(super::Role::of(&args(&["app"])), super::Role::App);
+        assert_eq!(super::Role::of(&args(&["app", "deploy", "--job", "/d/lab.json"])), super::Role::App, "no deploy workers any more");
+        #[cfg(windows)]
+        assert_eq!(super::Role::of(&args(&["app", "interrupt", "--pid", "4242"])), super::Role::Interrupter(4242));
+        #[cfg(not(windows))]
+        assert_eq!(super::Role::of(&args(&["app", "interrupt", "--pid", "4242"])), super::Role::App);
     }
 }

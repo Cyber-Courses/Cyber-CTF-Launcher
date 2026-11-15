@@ -129,7 +129,7 @@ test.describe("coded errors", () => {
     await forceCommands(page, { lab_launch: { error: { code: "signedOut", message: "no session" } } });
     await openApp(page);
     await openBlindOrders(page);
-    await expect(sidebar(page)).toContainText("Florian");
+    await expect(sidebar(page)).toContainText("Ada");
     // The session is gone from here on: the core answers so once the start found out.
     await reforce(page, { auth_status: { value: SIGNED_OUT } });
     await startHere(page);
@@ -140,7 +140,7 @@ test.describe("coded errors", () => {
     await expect(button(page, "Sign in to start")).toBeVisible();
     await expect(button(page, "Start lab")).toHaveCount(0);
     await expect(sidebar(page).getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    await expect(sidebar(page)).not.toContainText("Florian");
+    await expect(sidebar(page)).not.toContainText("Ada");
     await navButton(page, "Labs").click();
     await expect(main(page)).toContainText("Sign in to start labs");
     await expect(main(page)).toContainText("6 in the catalogue · 1 running on this machine");
@@ -150,7 +150,7 @@ test.describe("coded errors", () => {
     await reforce(page, { auth_status: null, lab_launch: null });
     await main(page).getByRole("button", { name: "Open Blind orders", exact: true }).click();
     await button(page, "Sign in to start").click();
-    await expect(sidebar(page)).toContainText("Florian");
+    await expect(sidebar(page)).toContainText("Ada");
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
     await expect(containersHere(where)).toHaveAttribute("aria-checked", "true");
     await where.getByRole("button", { name: "Start", exact: true }).click();

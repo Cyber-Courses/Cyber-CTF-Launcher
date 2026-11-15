@@ -33,7 +33,9 @@ export default defineConfig({
     command: `pnpm dev:web --port ${String(PORT)}`,
     url: `http://127.0.0.1:${String(PORT)}/?mock`,
     reuseExistingServer: !CI,
-    timeout: 180_000,
+    // A first compile under heavy disk load (parallel builds beside a local run) took over 3 min;
+    // CI's runner has the disk to itself.
+    timeout: CI ? 180_000 : 600_000,
     stdout: "ignore",
     stderr: "pipe",
   },

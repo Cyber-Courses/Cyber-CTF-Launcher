@@ -6,6 +6,173 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A command line, `cyberctf`.** The labs (list, show, status, install, start, stop, park,
+  resume, remove, logs), the attack box, the machine check and the whole guided setup (its plan
+  with `--dry-run`, then each step run and reported), the tools, the servers, the cloud CLIs, the
+  account and the storage, without the app's window and through the same code as the app. It runs
+  with no display (a server, a fresh VM, CI) and beside the open app; `--json` gives one versioned
+  JSON object a line, and its exit codes tell a failure (1) from a usage error (2) and from
+  something to put right first (3). See docs/cli.md.
+- **Save diagnostics.** Settings > About saves one file to attach to a bug report: the version,
+  the OS, the machine check, the installed labs, the last lab operations and the end of the logs,
+  with tokens, passwords, keys, flags and e-mail addresses removed and the home folder written
+  `~`. **Send to support** saves it and opens a mail to support to attach it to.
+
+- **A VM lab runs on UTM again, one VM per machine.** Isoloom's `vagrant` target has a UTM
+  provider again: each lab network is an isolated vmnet network its VMs are attached to (the Mac
+  and the other networks don't see it), each machine boots a UTM box (Debian 12 and Ubuntu 24.04
+  are built in). The start opens UTM and waits for it to answer before Vagrant drives it, and
+  says when macOS doesn't let Cyber CTF control UTM. A lab whose machines have no UTM box
+  (Windows, other Linux) is refused on UTM with Isoloom's reason, in the picker and at the start.
+  Needs UTM 4.6.5 or later from GitHub or Homebrew (the App Store build has no vmnet) and
+  vagrant_utm 0.2.0 or later, which the guided setup installs.
+- **An .rpm for Fedora and RHEL.** The AppImage needs libfuse2, which a bare Fedora lacks; the
+  release now ships `.rpm` packages beside the `.deb` (#322).
+
+### Changed
+
+- **A cloud-services lab is its own Terraform module and a lab file of the launcher's.** Isoloom
+  3.0 produces no such lab: the lab's author writes the module (`cloud/*.tf`) and `cloud/lab.yml`
+  beside it (the cloud, the hourly cost, the module's values, the variable this machine's IP goes
+  in, the outputs the lab page shows, its checks and its message). Every value the module needs is
+  checked before anything is created. The labs still need a build with the `cloud-services`
+  feature.
+
+- **Saved servers, cloud accounts and the records of what Cyber CTF installed are not carried
+  over from earlier versions.** The launcher keeps its settings in a store of its own now and
+  doesn't read the files earlier versions wrote. After updating, add your Proxmox, ESXi and cloud
+  accounts again; Settings no longer lists the tools and images an earlier version installed, so
+  Clean up won't remove those. Stop the labs running on a server or in a cloud account before you
+  update: without their saved account, Stop and the auto-stop can't remove them afterwards, and
+  a cloud lab left running keeps costing.
+
+- **Lab operations report their progress as they happen.** Starting, stopping, pausing and the
+  attack box show their steps from the operation's own events instead of reading them every few
+  seconds, and a window opened or reloaded mid-operation picks them up where they are. A failed
+  operation shows its id, to quote when you ask for help (#379).
+
+- **A release ships what built.** One platform's failed build, a missing signing secret or a
+  Store hiccup no longer stop the whole release: the release notes name the platform missing,
+  what lacks a secret ships unsigned (as 1.8.9 did), and the Store submission stays its own step.
+
+- **The runner's failures reach every language by their code (#381).** A step stopped for
+  taking too long, a tool too old, Hyper-V's elevation refused, a lab that didn't become ready,
+  machines removed outside the app, nothing left to resume, a lab that can't be paused: each now
+  reaches the window as a code with its values, said in the player's language, not as English
+  text.
+
+- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
+  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
+  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
+  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
+
+### Removed
+
+- **Docker in a VM.** A lab now runs as true containers or true VMs, never as containers inside a
+  helper VM (Isoloom no longer generates its `docker-vm` target). The run options and the place
+  picker no longer offer "Docker in a VM", nor the attack box in one; a container lab picked on a
+  hypervisor here runs as one VM per machine, and a container lab is no longer offered on an ESXi
+  or Proxmox server. A lab an earlier version left running in a helper VM can still be stopped and
+  removed while the runner still opens it, and otherwise says which VM to remove by hand; its next start picks its true form (its containers when Docker runs here, else its VM
+  form), and when its files can't be read any more they are generated in that form instead, as
+  the log says.
+
+### Fixed
+
+- **A killed app's tools end with it, and none is left suspended (#299, #301).** On Windows a
+  tool is now created inside its kill-on-close job object, not suspended and put there after: an
+  app ended as it started one (Task Manager's End task, a crash) left that tool suspended in no
+  job for good. A tool inherits its own standard handles only. On macOS and Linux, where nothing
+  ends a tool's process group when the app dies, the tools an app or deploy worker killed outright
+  left running are ended at the next start, from a ledger in the app's data folder (kept on
+  Windows too, as a backstop).
+
+- **Labs launched from the website at once each keep their co-location check.** A launch ended the
+  previous launch's check server, whatever its lab, so the website could no longer confirm that
+  the first lab ran on this computer. Each lab now keeps its own until its check is answered, it
+  expires, the lab stops or the lab is launched again.
+
+- **On a Mac without Homebrew, the tools installed from their vendors' packages can be removed.**
+  The Vagrant VMware Utility (which installs without Homebrew), Vagrant, Docker Desktop and UTM
+  were refused with "Homebrew is needed to remove this tool"; only Homebrew's own packages need it.
+- **An update install no longer proceeds when the labs' state couldn't be read.** A failed read
+  of the operations in flight was answered as "none", and the install, which quits every Cyber
+  CTF process, went ahead; it now says the state is unknown and waits.
+- **Auto-stop reports a listing failure as its own.** A sweep that couldn't list the runs was
+  reported as a lab named "runner" that couldn't be destroyed.
+- **A Stop during a deploy no longer reads as a crash.** The worker ends on the Stop's signal
+  without a verdict by design; the launch said "the deploy worker stopped without a result: it
+  exited with code 143". It says the deploy was stopped.
+- **The Windows NSIS installer builds again.** The uninstall hook named its script with a forward
+  slash, which makensis reads as part of the file pattern, so every NSIS build since the fix
+  of the hook's folder (2026-11-12, in 1.9.0) ended on "no files found"; the MSI built.
+
+- **A tool the setup installed through dnf is removed through dnf.** Cleanup's Remove on Fedora
+  ran `apt-get remove` through pkexec, which ended on `apt-get: not found` and kept the record.
+- **QEMU installed by winget reads as installed.** Its installer adds nothing to PATH and the
+  launcher didn't look in its folder, so the setup offered to install it again every pass.
+
+- **A proxy's credentials no longer show to other local users during a guided install.** On Linux
+  the proxy variables (`https_proxy=http://user:password@host`) went on pkexec's command line,
+  which any account on the computer could read while the password prompt was up. They are now
+  handed over in an owner-only file in a private folder, removed with the step, which the install
+  script reads as data.
+
+- **A shared folder whose name has an accent written as a combining mark no longer blocks the
+  attack box.** Its name went into the box's spec with an escape YAML refuses, so a folder named
+  "Café" in the decomposed form macOS file APIs give made adding the attack box fail every time
+  ("unknown escape"). The folder, the network names and the image are now quoted as YAML reads
+  them.
+- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
+  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
+  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
+  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
+
+### Added
+
+- **Windows: the attack box's terminal opens under a profile whose name has `&`.** With an account
+  named `Tom&Jerry`, Open shell split its script's path at the `&` and showed "not recognized".
+  The script's path stays quoted for both cmd.exe that read it, and the shell's command line
+  quotes any word holding a character cmd.exe reads as its own (`&|<>^()`).
+
+- **A deploy worker whose pidfile can't be written no longer runs beside the app's own deploy.**
+  When the worker started but its pidfile couldn't be written (a full disk), the app fell back to
+  deploying in-process while the worker went on too, so both deployed the same lab. The worker is
+  now ended, and waited for, before the app takes the job over.
+
+- **A failed libvirt or QEMU install fails its setup step.** On Debian, Ubuntu and Fedora, the
+  install script went on to the group step after `apt-get` or `dnf` failed (apt's lock held, the
+  network down), so the step read as done and the next machine check showed the tool missing with
+  no error. The scripts now stop at the first failing command, and wait for apt's lock as the
+  other installs do.
+
+- **VirtualBox installs on a Linux that isn't in English.** The install read apt's package
+  candidates by their English label, which apt translates: under a French locale the kernel
+  headers read as missing from the package sources and Ubuntu's own VirtualBox was missed. apt is
+  now asked in English.
+
+- **The deploy steps show the step that is actually running.** In a lab whose Docker runs in a
+  VM, "Get images" stayed running under the machine's later lines and under a green Ready, and
+  adding the attack box turned it running again. The running step is now the one holding the
+  latest line, and what runs after Ready (adding the attack box) is a step of its own below it.
+
+- **Destructive confirmations and warnings use the app's own dialog.** Removing a lab and seven
+  other confirmations opened the system's dialog, which looked foreign to the rest of the app;
+  they now open the app's dialog, and a warning has a single OK.
+
+- **A screen that refused its password keeps saying so.** The connection noVNC closes right after
+  a refused password replaced the message with "didn't answer", which sent the player looking for
+  a network problem.
+
+- **A double click on a machine's Screen keeps the window it opened.** The second click took the
+  first window's session and then closed it, so the open window said it had no session; it now
+  brings the open window forward.
+
+- **A double click on Install update installs once.** Two downloads and installs ran at once, and
+  two restarts; a second click now joins the install under way, in Settings and in the banner.
+
 ## [1.9.0] — 2026-11-13
 
 ### Added

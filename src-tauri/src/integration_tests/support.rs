@@ -72,7 +72,7 @@ impl Checks for Vec<String> {
 /// Runs a scenario's `body` (the lab started, its checks), then its `teardown` (the lab stopped,
 /// what it left checked) whatever happens in the body: a panic there is a failed check of its own,
 /// and the teardown still runs. A lab a scenario leaves behind fails the ones after it (a UTM VM
-/// still registered makes every later docker-vm import fail). A panic in the teardown is a failed
+/// still registered made every later VM import fail). A panic in the teardown is a failed
 /// check too. Each part's failures go to `state`.
 pub(crate) async fn scenario<S: Checks>(state: &mut S, body: impl AsyncFnOnce(&mut S), teardown: impl AsyncFnOnce(&mut S)) {
     if let Err(panic) = (CatchUnwind(Box::pin(body(state)))).await {
@@ -164,20 +164,26 @@ mod tests {
     /// The lab both forms of which take a private network (as Isoloom's solo-web's VM does).
     const NETWORKED: &str = "version: 1\nname: both\nnetworks:\n  lab: { cidr: 10.70.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n    app: { image: nginx:1.27, steps: [{ run: setup.sh }] }\n";
 
+    /// A lab of one Windows Server VM, which no UTM box runs.
+    const WINDOWS: &str =
+        "version: 1\nname: ad\nnetworks: { lan: { cidr: 10.20.0.0/24 } }\nmachines:\n  dc: { os: windows-server@2022, networks: { lan: 10 } }\n";
+
     #[test]
     fn a_lab_the_launcher_refuses_on_a_provider_is_skipped_with_its_words_and_one_it_runs_is_not() {
         use crate::runtime::lab::Target;
         use crate::runtime::providers::Provider;
         let t = crate::testing::test_app::TestApp::new();
         let dir = t.lab("networked", &[("isoloom.yml", NETWORKED), ("setup.sh", "true\n")]);
-        // UTM: refused, as the start itself refuses it, and nothing is generated for it.
-        let why = crate::runtime::launch::refusal_here(&dir, Target::Vagrant, Provider::Utm).unwrap().expect("refused on UTM");
-        assert!(why.to_string().starts_with("This lab can't run on UTM yet: ") && why.to_string().contains("vagrant_utm"), "{why}");
-        assert!(refused_by_launcher(&dir, Target::Vagrant, Provider::Utm));
-        assert!(!dir.join(".isoloom").exists(), "the check generates nothing");
+        // UTM with a Windows Server VM (no UTM box of it is known): refused, as the start itself
+        // refuses it, and nothing is generated for it.
+        let windows = t.lab("windows", &[("isoloom.yml", WINDOWS)]);
+        let why = crate::runtime::launch::refusal_here(&windows, Target::Vagrant, Provider::Utm).unwrap().expect("refused on UTM");
+        assert!(why.to_string().starts_with("This lab can't run on UTM yet: ") && why.to_string().contains("boxes.utm"), "{why}");
+        assert!(refused_by_launcher(&windows, Target::Vagrant, Provider::Utm));
+        assert!(!windows.join(".isoloom").exists(), "the check generates nothing");
         // A hypervisor the lab runs on: not refused, so the scenario runs, and a start that
         // fails there is its failure.
-        for provider in [Provider::Virtualbox, Provider::Libvirt, Provider::Qemu] {
+        for provider in [Provider::Virtualbox, Provider::Libvirt, Provider::Qemu, Provider::Utm] {
             assert!(!refused_by_launcher(&dir, Target::Vagrant, provider), "{provider:?}");
         }
         // Not a lab at all: not a refusal of the provider; the start says why, as a failure.
@@ -188,7 +194,7 @@ mod tests {
     #[tokio::test]
     async fn a_scenario_that_panics_is_still_torn_down_and_says_where_it_stopped() {
         // Regression: a scenario's `expect` panicked before its teardown, its UTM VM stayed
-        // registered, and every docker-vm scenario after it failed.
+        // registered, and every VM scenario after it failed.
         let mut failures = Vec::new();
         let torn_down = std::cell::Cell::new(false);
         scenario(

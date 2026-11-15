@@ -10,19 +10,18 @@ import { useT } from "@/lib/i18n";
  * Asks before a destructive action. Cancel comes first and takes the focus, so Enter or Escape
  * right after a misclick keeps everything; a click on the backdrop cancels too.
  */
-export function ConfirmDialog({
-  title,
-  children,
-  confirmLabel,
-  onConfirm,
-  onCancel,
-}: {
+/** What the dialog shows and does. */
+type ConfirmDialogProps = {
   title: string;
   children: React.ReactNode;
   confirmLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
-}) {
+  /** A warning to read, not a choice: one button, which closes it (as Escape does). */
+  acknowledge?: boolean;
+};
+
+export function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCancel, acknowledge = false }: ConfirmDialogProps) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   useFocusTrap(ref, true, onCancel);
@@ -57,10 +56,12 @@ export function ConfirmDialog({
           </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onCancel}>
-            {t("ui.confirm.cancel")}
-          </Button>
-          <Button variant="destructive" size="sm" onClick={onConfirm}>
+          {!acknowledge && (
+            <Button variant="ghost" size="sm" onClick={onCancel}>
+              {t("ui.confirm.cancel")}
+            </Button>
+          )}
+          <Button variant={acknowledge ? "default" : "destructive"} size="sm" onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </div>

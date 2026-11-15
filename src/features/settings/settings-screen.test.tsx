@@ -8,7 +8,7 @@ import { readyReport } from "@/test/fixtures";
 import { installTauri, rejectWith } from "@/test/tauri";
 import { clickEverything, flush } from "@/test/ui";
 
-const signedIn = { loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" };
+const signedIn = { loggedIn: true, name: "Ada Lovelace", email: "ada@example.org" };
 
 /** The Settings screen for the signed-in player. */
 const renderScreen = () => render(<SettingsScreen auth={signedIn} onAuthChange={vi.fn()} onNavigate={vi.fn()} />);
@@ -35,7 +35,7 @@ describe("SettingsScreen", () => {
   it("shows the account section first, with the signed-in player", async () => {
     installTauri();
     await openScreen();
-    expect(screen.getAllByText(/Florian Amette/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Ada Lovelace/).length).toBeGreaterThan(0);
   });
 
   for (const tab of [/account/i, /appearance/i, /labs/i, /maintenance/i, /about/i]) {

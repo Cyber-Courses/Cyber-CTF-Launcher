@@ -8,8 +8,7 @@ use super::super::deploy_log;
 use super::{Error, Result, lab};
 
 /// Warns (without blocking) when the host likely can't fit all of a one-VM-per-machine lab's
-/// memory, so an out-of-memory failure mid-boot isn't a surprise. Not used for a container lab
-/// in a single VM, where the total would overcount.
+/// memory, so an out-of-memory failure mid-boot isn't a surprise.
 pub(super) fn warn_if_low_memory(spec: &lab::Spec, log: &mut impl FnMut(String)) {
     use sysinfo::System;
     let needed_mb = u64::from(lab::memory_mb(spec));
@@ -26,16 +25,15 @@ pub(super) fn low_memory_warning(needed_mb: u64, available_mb: u64) -> Option<St
     (available_mb > 0 && needed_mb > available_mb).then(|| deploy_log::low_memory(needed_mb, available_mb))
 }
 
-/// A lab run as `target` on `provider` (its VMs, or the helper VM a container lab runs in):
-/// Isoloom's own refusal of the pair, if it has one, before any VM is created. QEMU links a VM on
-/// one network only; UTM's Vagrant plugin gives a VM no private network, so a lab with a network
-/// (every lab) can't run as VMs on UTM; a TPM runs on VirtualBox, libvirt and Hyper-V only; a
-/// container's host folders aren't shared into a helper VM everywhere.
+/// A lab run as `target` on `provider` (its VMs): Isoloom's own refusal of the pair, if it has
+/// one, before any VM is created. QEMU links a VM on one network only; UTM boots UTM-format boxes
+/// only (Debian 12 and Ubuntu 24.04 built in, each network an isolated vmnet network Isoloom
+/// attaches the VMs to); a TPM runs on VirtualBox, libvirt and Hyper-V only.
 pub(super) fn check_provider(lab: &lab::Lab, target: lab::Target, provider: super::Provider) -> Result<()> {
     match lab::refusal_on(lab, target, provider) {
         Some(why) => Err(Error::Invalid(format!(
             "This lab can't run on {} yet: {why}. Run it on another hypervisor, a server or in your cloud account.",
-            provider.label_on(std::env::consts::OS)
+            provider.label_on(crate::platform::host::Os::HERE)
         ))),
         None => Ok(()),
     }
@@ -45,15 +43,15 @@ pub(super) fn check_provider(lab: &lab::Lab, target: lab::Target, provider: supe
 /// (`qemu-system-x86_64` for an x86 lab on an Apple Silicon Mac). Its networks' fit (QEMU's
 /// two-VM links) is [`check_provider`]'s.
 pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(String)) -> Result<()> {
-    let host = std::env::consts::ARCH;
+    let host = crate::platform::host::Arch::HERE;
     for arch in lab::emulated_arches(&prepared.spec, host) {
-        let bin = if arch == "x86_64" { "qemu-system-x86_64" } else { "qemu-system-aarch64" };
+        let bin = arch.qemu_system();
         if crate::platform::exec::run(bin, &["--version"], None).await.is_err() {
             // The webview knows a missing tool by its code, and points at the Machine page.
-            log(format!("This lab's machines are {arch}: they need QEMU's {arch} emulator."));
+            log(format!("This lab's machines are {}: they need QEMU's {} emulator.", arch.id(), arch.id()));
             return Err(Error::ToolMissing { tool: bin });
         }
-        log(deploy_log::emulating(arch, host));
+        log(deploy_log::emulating(arch.id(), host.id()));
     }
     Ok(())
 }
@@ -105,5 +103,6 @@ pub(super) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
 /// Automation permission), which no wait fixes: `Not authorized to send Apple events to UTM.
 /// (-1743)`.
 pub(super) fn utm_not_allowed(stderr: &str) -> bool {
-    stderr.contains("-1743") || stderr.contains("Not authorized to send Apple events")
+    use crate::platform::tool_output::apple_events::AppleEvent;
+    AppleEvent::of(stderr) == Some(AppleEvent::NotAuthorized)
 }

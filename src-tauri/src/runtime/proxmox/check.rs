@@ -1,9 +1,9 @@
 //! "Test connection" for a Proxmox host: sign-in, node, storages, the lab bridge and, for a
 //! token setup, the launcher's SSH key, and the node's SDN config, each problem with its fix.
 
+use super::api::{Iface, Storage};
 use super::{
-    CallError, HostProfile, SignInError, Value, find_iface, has_no_ports, image_storage, is_token, lab_bridge, sdn_problem, sign_in, snippet_storage,
-    ssh_key_problem,
+    CallError, HostProfile, SignInError, find_iface, has_no_ports, image_storage, is_token, lab_bridge, sdn_problem, sign_in, snippet_storage, ssh_key_problem,
 };
 
 /// The outcome of "Test connection" for a Proxmox host.
@@ -21,18 +21,14 @@ pub(super) fn fail(authenticated: Option<bool>, message: impl Into<String>) -> R
 }
 
 /// What a storage accepts, from `/nodes/<node>/storage` (`content` is comma-separated).
-pub(super) fn storage_content(storages: &Value, id: &str) -> Option<Vec<String>> {
-    storages
-        .as_array()?
-        .iter()
-        .find(|s| s["storage"].as_str() == Some(id))
-        .map(|s| s["content"].as_str().unwrap_or_default().split(',').map(|c| c.trim().to_string()).collect())
+pub(super) fn storage_content(storages: &[Storage], id: &str) -> Option<Vec<String>> {
+    storages.iter().find(|s| s.id.as_deref() == Some(id)).map(Storage::contents)
 }
 
 pub(super) const STORAGE_HINT: &str = "In the Proxmox web UI: Datacenter > Storage > select it > Edit > Content";
 
 /// Missing storage content a lab launch needs, as fix-it sentences.
-pub(super) fn storage_problems(storages: &Value, vm_storage: &str, image_storage: &str, snippet_storage: &str) -> Vec<String> {
+pub(super) fn storage_problems(storages: &[Storage], vm_storage: &str, image_storage: &str, snippet_storage: &str) -> Vec<String> {
     let needs: Vec<(&str, &str, &str)> =
         vec![(image_storage, "iso", "ISO image"), (snippet_storage, "snippets", "Snippets"), (vm_storage, "images", "Disk image")];
     let mut problems = Vec::new();
@@ -61,12 +57,12 @@ pub async fn test(h: &HostProfile, secret: &str, identity: &std::path::Path) -> 
 
     let mut problems = Vec::new();
     let vm_storage = h.datastore.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "local-lvm".into());
-    match session.call(&format!("/nodes/{node}/storage")).await {
+    match session.call::<Vec<Storage>>(&format!("/nodes/{node}/storage")).await {
         Ok(storages) => problems.extend(storage_problems(&storages, &vm_storage, &image_storage(h), &snippet_storage(h))),
         Err(e) => problems.push(format!("Couldn't list the node's storage ({e}).")),
     }
     let bridge = lab_bridge(h);
-    match session.call(&format!("/nodes/{node}/network")).await {
+    match session.call::<Vec<Iface>>(&format!("/nodes/{node}/network")).await {
         Ok(ifaces) => problems.extend(bridge_problem(&ifaces, &bridge, &node)),
         Err(e) => problems.push(format!("Couldn't list the node's network ({e}).")),
     }
@@ -85,6 +81,7 @@ pub(super) fn sign_in_report(e: SignInError, token: bool) -> Report {
     match e {
         SignInError::Rejected if token => fail(Some(false), "Proxmox rejected the API token. Check the token id (user@realm!name) and its secret."),
         SignInError::Rejected => fail(Some(false), "Proxmox rejected the credentials. Use user@realm, e.g. root@pam."),
+        SignInError::Certificate(refusal, server) => fail(None, refusal.error(&server).to_string()),
         SignInError::Failed(e) => fail(None, format!("Reachable, but the API call failed: {e}")),
     }
 }
@@ -101,7 +98,7 @@ pub(super) fn node_report(e: CallError) -> Report {
 }
 
 /// The lab bridge missing from the node's interfaces, as a fix-it sentence.
-pub(super) fn bridge_problem(ifaces: &Value, bridge: &str, node: &str) -> Option<String> {
+pub(super) fn bridge_problem(ifaces: &[Iface], bridge: &str, node: &str) -> Option<String> {
     find_iface(ifaces, bridge)
         .is_none()
         .then(|| format!("Bridge \"{bridge}\" doesn't exist on {node}. Use one of the node's bridges (System > Network), e.g. vmbr0."))
@@ -125,9 +122,12 @@ pub(super) fn outcome(node: &str, bridge: &str, problems: &[String]) -> Report {
 /// never a "no": that guess sent Terraform straight at a VM it can't reach (where it hung) and
 /// dropped the jump host of a lab already running.
 pub async fn bridge_is_internal(h: &HostProfile, secret: &str) -> crate::error::Result<bool> {
-    let session = sign_in(h, secret).await.map_err(bridge_unknown)?;
+    let session = sign_in(h, secret).await.map_err(|e| match e {
+        e @ SignInError::Certificate(..) => e.into_error("Couldn't sign in to the Proxmox server"),
+        e => bridge_unknown(e),
+    })?;
     let node = session.node(h).await.map_err(bridge_unknown)?;
-    let ifaces = session.call(&format!("/nodes/{node}/network")).await.map_err(bridge_unknown)?;
+    let ifaces: Vec<Iface> = session.call(&format!("/nodes/{node}/network")).await.map_err(bridge_unknown)?;
     Ok(find_iface(&ifaces, &lab_bridge(h)).is_some_and(has_no_ports))
 }
 

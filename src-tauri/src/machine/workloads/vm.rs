@@ -20,7 +20,7 @@ use super::Workload;
 use crate::error::{Error, Result};
 use crate::machine::selftest;
 use crate::platform::AppDirs;
-use crate::platform::exec::run_env_timed;
+use crate::platform::exec::{ToolSet, run_env_timed, tools_in_use};
 use crate::runtime::paths::labs_root as labs_dir;
 
 /// `vagrant global-status` talks to VirtualBox, which can be wedged: past this it is given up.
@@ -40,13 +40,13 @@ const GLOBAL_STATUS_FRESH: Duration = Duration::from_secs(30);
 /// pile up).
 async fn global_status() -> Option<String> {
     static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-    static LAST: Mutex<Option<(Instant, String)>> = Mutex::new(None);
-    let last = || LAST.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    // The last scan, by the tools that answered it: a unit test's scripted tools never read the
+    // machine's, nor another test's.
+    static LAST: Mutex<Option<(ToolSet, Instant, String)>> = Mutex::new(None);
+    let tools = tools_in_use();
+    let last = || LAST.lock().unwrap_or_else(PoisonError::into_inner).clone().filter(|(by, ..)| *by == tools).map(|(_, at, answer)| (at, answer));
 
-    // Unit tests script each scan's answer per test: one test's must never stand for another's.
-    if !cfg!(test)
-        && let Some(answer) = fresh(last(), Instant::now())
-    {
+    if let Some(answer) = fresh(last(), Instant::now()) {
         return Some(answer);
     }
     // Released on drop too, so a cancelled scan doesn't block every later one.
@@ -56,7 +56,7 @@ async fn global_status() -> Option<String> {
     // Timed: without a limit a polled call would hang and stack up one blocked process per tick.
     let out = run_env_timed("vagrant", &["global-status", "--machine-readable"], None, &[], GLOBAL_STATUS_TIMEOUT).await.ok();
     if let Some(o) = &out {
-        *LAST.lock().unwrap_or_else(PoisonError::into_inner) = Some((Instant::now(), o.clone()));
+        *LAST.lock().unwrap_or_else(PoisonError::into_inner) = Some((tools, Instant::now(), o.clone()));
     }
     out
 }
@@ -142,7 +142,8 @@ const LEGACY_ATTACK_VM_DIR: &str = ".cyberctf-attack-vm";
 
 /// Destroys a lab's (or the self-test's) local VMs.
 pub(super) async fn stop(dirs: &AppDirs, id: &str) -> Result<()> {
-    // A lab's VMs: one per machine (.isoloom/vagrant) or Docker on one VM (.isoloom/docker-vm).
+    // A lab's VMs: one per machine (.isoloom/vagrant), or the helper VM an earlier version ran a
+    // container lab inside (.isoloom/docker-vm).
     let vagrant_dirs: Vec<PathBuf> = if id == "selftest" {
         vec![selftest::work_dir(dirs, "vm")?]
     } else {
@@ -244,7 +245,8 @@ mod tests {
         use crate::platform::exec::fake::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let lab = t.lab("goad", &[]);
-        // Docker on one VM and one VM per machine both left something: each folder is destroyed.
+        // One VM per machine and an earlier version's helper VM both left something: each folder
+        // is destroyed.
         for sub in ["vagrant", "docker-vm"] {
             let d = crate::runtime::lab::out(&lab).join(sub);
             std::fs::create_dir_all(&d).unwrap();
@@ -254,7 +256,7 @@ mod tests {
         let attack = lab.join(super::LEGACY_ATTACK_VM_DIR);
         std::fs::create_dir_all(&attack).unwrap();
         std::fs::write(attack.join("Vagrantfile"), "").unwrap();
-        let tools = Tools::rules(&[]);
+        let tools = Tools::strict_rules(&[("vagrant destroy -f", crate::platform::exec::fake::ok(""))]);
         super::stop(&t.dirs(), "goad").await.unwrap();
         assert_eq!(tools.calls().iter().filter(|c| c.as_str() == "vagrant destroy -f").count(), 3, "{:?}", tools.calls());
     }

@@ -1,5 +1,11 @@
 use super::*;
+use crate::runtime::ssh::CommandLine;
 use serde_json::json;
+
+/// `json`, a list of what a path answers, read.
+fn listed<T: serde::de::DeserializeOwned>(json: serde_json::Value) -> Vec<T> {
+    serde_json::from_value(json).unwrap()
+}
 
 #[test]
 fn a_login_without_a_realm_is_on_pam() {
@@ -30,6 +36,7 @@ fn host(addr: &str, network: Option<&str>) -> HostProfile {
         ssh_key: None,
         image_storage: None,
         snippet_storage: None,
+        tls_fingerprint: None,
         id: "t".into(),
         name: "t".into(),
         provider: crate::runtime::providers::Provider::Proxmox,
@@ -65,19 +72,20 @@ fn lab_bridge_defaults_to_vmbr0() {
 
 #[test]
 fn internal_bridges_have_no_ports() {
-    let ifaces = json!([{"iface": "vmbr0", "bridge_ports": "eno1"}, {"iface": "vmbr1", "bridge_ports": " "}, {"iface": "vmbr2"}]);
+    let ifaces: Vec<api::Iface> = listed(json!([{"iface": "vmbr0", "bridge_ports": "eno1"}, {"iface": "vmbr1", "bridge_ports": " "}, {"iface": "vmbr2"}]));
     assert!(!find_iface(&ifaces, "vmbr0").is_some_and(has_no_ports));
     assert!(find_iface(&ifaces, "vmbr1").is_some_and(has_no_ports));
     assert!(find_iface(&ifaces, "vmbr2").is_some_and(has_no_ports));
     assert!(find_iface(&ifaces, "vmbr9").is_none());
-    assert!(find_iface(&json!(null), "vmbr0").is_none());
+    assert!(find_iface(&[], "vmbr0").is_none());
 }
 
 #[test]
 fn storage_problems_name_the_fix() {
-    let ok = json!([{"storage": "local", "content": "iso,vztmpl,snippets,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]);
+    let ok: Vec<api::Storage> =
+        listed(json!([{"storage": "local", "content": "iso,vztmpl,snippets,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]));
     assert_eq!(storage_problems(&ok, "local-lvm", IMAGE_STORAGE, SNIPPET_STORAGE), Vec::<String>::new());
-    let stock = json!([{"storage": "local", "content": "iso,vztmpl,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]);
+    let stock: Vec<api::Storage> = listed(json!([{"storage": "local", "content": "iso,vztmpl,backup"}, {"storage": "local-lvm", "content": "images,rootdir"}]));
     let p = storage_problems(&stock, "local-lvm", IMAGE_STORAGE, SNIPPET_STORAGE);
     assert_eq!(p.len(), 1);
     assert!(p[0].contains("Snippets"));
@@ -87,7 +95,7 @@ fn storage_problems_name_the_fix() {
 
 /// "Test connection" against a real host (opt-in):
 ///   `CYBERCTF_TEST_PVE_HOST`=... `CYBERCTF_TEST_PVE_PASSWORD`=... [`CYBERCTF_TEST_PVE_TOKEN_ID=user@realm!name` `CYBERCTF_TEST_PVE_TOKEN_SECRET`=...
-///   `CYBERCTF_TEST_PVE_SSH_KEY`=<key authorized on the node>] cargo test `proxmox_live_test` -- --ignored --nocapture
+///   `CYBERCTF_TEST_PVE_SSH_KEY`=<key authorized on the node> `CYBERCTF_TEST_PVE_FINGERPRINT`=<its certificate's SHA-256>] cargo test `proxmox_live_test` -- --ignored --nocapture
 #[tokio::test]
 #[ignore = "opt-in: connects to a real Proxmox host set via CYBERCTF_TEST_PVE_* env vars"]
 async fn proxmox_live_test() {
@@ -98,6 +106,8 @@ async fn proxmox_live_test() {
         datastore: Some(var("CYBERCTF_TEST_PVE_STORAGE").unwrap_or_else(|| "local-lvm".into())),
         node: Some("pve".into()),
         insecure_tls: true,
+        // Its certificate, as `pvenode cert info` shows it: a self-signed one is refused without.
+        tls_fingerprint: var("CYBERCTF_TEST_PVE_FINGERPRINT").and_then(|f| crate::runtime::server::tls_pin::Fingerprint::parse(&f)),
         ..host(&address, Some(bridge))
     };
     let bridge = var("CYBERCTF_TEST_PVE_BRIDGE").unwrap_or_else(|| "vmbr1".into());
@@ -133,14 +143,13 @@ async fn proxmox_live_test() {
 
 #[test]
 fn the_configured_node_or_the_first() {
-    let nodes = json!([{"node": "pve"}, {"node": "pve2"}]);
+    let nodes: Vec<api::Node> = listed(json!([{"node": "pve"}, {"node": "pve2"}]));
     assert_eq!(pick_node(&nodes, None).unwrap(), "pve");
     assert_eq!(pick_node(&nodes, Some("")).unwrap(), "pve");
     assert_eq!(pick_node(&nodes, Some("pve2")).unwrap(), "pve2");
     let err = pick_node(&nodes, Some("nope")).unwrap_err().to_string();
     assert_eq!(err, "there is no node \"nope\" on this host (found: pve, pve2)");
-    assert_eq!(pick_node(&json!([]), None).unwrap_err().to_string(), "this user can't see any node");
-    assert!(pick_node(&json!(null), None).is_err());
+    assert_eq!(pick_node(&[], None).unwrap_err().to_string(), "this user can't see any node");
 }
 
 #[test]
@@ -170,7 +179,7 @@ fn node_listing_failures_are_signed_in_failures() {
 
 #[test]
 fn a_missing_bridge_is_a_problem() {
-    let ifaces = json!([{"iface": "vmbr0"}]);
+    let ifaces: Vec<api::Iface> = listed(json!([{"iface": "vmbr0"}]));
     assert_eq!(bridge_problem(&ifaces, "vmbr0", "pve"), None);
     assert!(bridge_problem(&ifaces, "vmbr1", "pve").unwrap().starts_with("Bridge \"vmbr1\" doesn't exist on pve."));
 }
@@ -188,10 +197,10 @@ fn the_outcome_lists_every_problem() {
 #[test]
 fn storage_needs_each_content_once() {
     // The VM disks on `local` too: still one check per (storage, content).
-    let all = json!([{"storage": "local", "content": "iso, snippets, images"}]);
+    let all: Vec<api::Storage> = listed(json!([{"storage": "local", "content": "iso, snippets, images"}]));
     assert_eq!(storage_problems(&all, "local", IMAGE_STORAGE, SNIPPET_STORAGE), Vec::<String>::new());
-    assert_eq!(storage_content(&json!([{"storage": "x"}]), "x"), Some(vec![String::new()]));
-    assert_eq!(storage_content(&json!({}), "x"), None);
+    assert_eq!(storage_content(&listed::<api::Storage>(json!([{"storage": "x"}])), "x"), Some(vec![String::new()]));
+    assert_eq!(storage_content(&[], "x"), None);
 }
 
 #[test]
@@ -222,10 +231,10 @@ fn authorizing_the_key_signs_in_by_password_once() {
 /// password host behind an internal bridge couldn't launch from Windows.
 #[test]
 fn the_askpass_helper_is_a_cmd_on_windows_and_sh_elsewhere() {
-    let (name, script) = askpass_script(true);
+    let (name, script) = askpass_script(CommandLine::Windows);
     assert_eq!(name, "askpass.cmd");
     assert!(script.starts_with("@echo off\r\n") && script.contains("EnableDelayedExpansion") && script.contains("echo(!CYBERCTF_SSH_PASSWORD!"));
-    let (name, script) = askpass_script(false);
+    let (name, script) = askpass_script(CommandLine::Sh);
     assert_eq!(name, "askpass.sh");
     assert!(script.starts_with("#!/bin/sh\n"));
 }
@@ -306,16 +315,16 @@ async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
     std::fs::create_dir_all(key.parent().unwrap()).unwrap();
     // A token setup: the launcher's key, as the token's user.
     let token = HostProfile { username: "root@pam!cyberctf-0a1b2c3d".into(), ..host("10.0.0.50", None) };
-    let tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
+    let tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
     assert_eq!(sdn_problem(&token, "secret", &key).await.as_deref(), Some(SDN_MISSING));
     let call = tools.calls().pop().unwrap();
     assert!(call.starts_with("ssh -i ") && call.contains(" root@10.0.0.50 ") && call.ends_with(SDN_SOURCE_CHECK), "{call}");
     drop(tools);
-    let tools = Tools::rules(&[("/etc/network/interfaces", ok(""))]);
+    let tools = Tools::strict_rules(&[("/etc/network/interfaces", ok(""))]);
     assert_eq!(sdn_problem(&token, "secret", &key).await, None);
     drop(tools);
     // A password setup: the password, through the askpass helper.
-    let tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
+    let tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
     assert_eq!(sdn_problem(&host("10.0.0.50", None), "pw", &key).await.as_deref(), Some(SDN_MISSING));
     assert_eq!(tools.env_of("/etc/network/interfaces", "CYBERCTF_SSH_PASSWORD").as_deref(), Some("pw"));
     assert!(tools.calls().pop().unwrap().contains("PreferredAuthentications=password"));
@@ -329,13 +338,13 @@ async fn the_sdn_check_runs_over_ssh_in_both_sign_in_modes() {
 async fn the_sdn_check_writes_its_askpass_in_the_given_apps_folder_only() {
     use crate::platform::exec::fake::{Tools, fail};
     let (first, second) = (crate::testing::test_app::TestApp::new(), crate::testing::test_app::TestApp::new());
-    let _tools = Tools::rules(&[("/etc/network/interfaces", fail(""))]);
+    let _tools = Tools::strict_rules(&[("/etc/network/interfaces", fail(""))]);
     for app in [&first, &second] {
         let key = app.data().join("ssh").join("id_ed25519");
         std::fs::create_dir_all(key.parent().unwrap()).unwrap();
         sdn_problem(&host("10.0.0.50", None), "pw", &key).await;
     }
-    let askpass = askpass_script(cfg!(windows)).0;
+    let askpass = askpass_script(CommandLine::HERE).0;
     for app in [&first, &second] {
         assert!(app.data().join("ssh").join(askpass).is_file(), "{}", app.data().display());
     }
@@ -344,4 +353,30 @@ async fn the_sdn_check_writes_its_askpass_in_the_given_apps_folder_only() {
     drop(first);
     sdn_problem(&host("10.0.0.50", None), "pw", &second.data().join("ssh").join("id_ed25519")).await;
     assert!(!gone.exists(), "{} came back", gone.display());
+}
+
+#[tokio::test]
+async fn a_self_signed_host_gets_no_credential_until_its_certificate_is_confirmed() {
+    use crate::runtime::server::tls_pin::{
+        Fingerprint, Refusal,
+        tests::{FINGERPRINT_A, server_a},
+    };
+    let (port, requests) = server_a().await;
+    let mut h = HostProfile { port, insecure_tls: true, ..host("127.0.0.1", None) };
+    match sign_in(&h, "pw").await {
+        Err(SignInError::Certificate(Refusal::Unconfirmed { presented }, server)) => {
+            assert_eq!((presented.to_string(), server.as_str()), (FINGERPRINT_A.to_owned(), "t"));
+        }
+        other => panic!("{:?}", other.err()),
+    }
+    // Test connection says it, with its fingerprint, and a launch's error keeps its code.
+    let r = test(&h, "pw", std::path::Path::new("/nonexistent/id_ed25519")).await;
+    assert!(!r.ok && r.message.contains(FINGERPRINT_A), "{}", r.message);
+    let e = bridge_is_internal(&h, "pw").await.unwrap_err();
+    assert!(matches!(e.code(), crate::error::Code::TlsUnconfirmed { .. }), "{e}");
+    assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0, "the password never left");
+    // Confirmed: the sign-in reaches the server (whose canned answer isn't Proxmox's).
+    h.tls_fingerprint = Fingerprint::parse(FINGERPRINT_A);
+    assert!(matches!(sign_in(&h, "pw").await, Err(SignInError::Failed(_))));
+    assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

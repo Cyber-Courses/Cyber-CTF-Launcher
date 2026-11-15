@@ -7,7 +7,7 @@ set -euo pipefail
 
 image=${1:?usage: smoke-test.sh <image>}
 name=attack-box-smoke-$$
-# The account the launcher's shell opens as (src-tauri `attack_machine::PLAYER`).
+# The account the launcher's shell opens as (src-tauri `attack_box::PLAYER`).
 player=player
 
 cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }

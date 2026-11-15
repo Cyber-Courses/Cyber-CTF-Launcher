@@ -11,7 +11,7 @@ import { ignore, tell, warn } from "@/lib/failure";
 import { translate, useT } from "@/lib/i18n";
 import { useNow } from "@/lib/use-now";
 import { cancelSignIn, signIn, signInWithCode, useSignIn } from "@/features/account/sign-in";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 export function initials(name: string | null, email: string | null): string {
   const src = (name || email || "").trim();

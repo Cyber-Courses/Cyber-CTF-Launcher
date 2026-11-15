@@ -8,7 +8,7 @@ import type { NetworkNote } from "@/features/labs/lab-detail/lab-state";
 import type { Place } from "@/features/labs/place";
 import type { AttackStatus, LabStatus } from "@/lib/tauri";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 
 // The diagram (React Flow and its cards) loads with the first lab page that draws one, not with
 // the app; ELK, for its layout, loads after it (network-diagram/elk-engine.ts). React.lazy rather

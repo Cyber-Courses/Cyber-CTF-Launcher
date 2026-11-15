@@ -12,5 +12,5 @@ mod pool_overlap;
 
 pub use check::{Check, CheckResult};
 pub use compose::{LEGACY_ATTACK_BOX_SUFFIXES, lab_of_project, legacy_attack_box_names, project};
-pub use inspect::{primary_url, subnets_in_use};
+pub use inspect::{answers, primary_url, subnets_in_use};
 pub(crate) use pool_overlap::explain_pool_overlap;

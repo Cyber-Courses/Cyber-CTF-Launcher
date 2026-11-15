@@ -379,6 +379,7 @@
     "hypervisorTooOld": "{name} {version} は古すぎます。{min} 以降が必要です。{name} を更新してから、もう一度確認してください。",
     "pluginTooOld": "Vagrant プラグイン `{plugin}` {version} は古すぎます。{min} 以降が必要です。更新するにはもう一度インストールしてください。",
     "pluginMissing": "Vagrant プラグイン `{plugin}` がインストールされていません。",
+    "pluginsUnknown": "Vagrant プラグイン `{plugin}` がインストールされているか判断できません。`vagrant plugin list` が失敗しました（{reason}）。ターミナルで実行して原因を確認し、再チェックしてください。",
     "vmwareUtilityStopped": "Vagrant VMware Utility はインストールされていますが、サービスが動いていません。もう一度インストールする（再起動されます）か、コンピューターを再起動してください。",
     "vmwareUtilityMissing": "Vagrant VMware Utility がインストールされていません。VMware プラグインが VMware を操作するための HashiCorp のサービスです。",
     "virtualboxDriver": "VirtualBox のカーネルドライバー（vboxdrv）がこのカーネル（{kernel}）で読み込まれていないため、VirtualBox は VM を起動できません。カーネルのヘッダー（Debian と Ubuntu では linux-headers-{kernel}）をインストールし、ドライバーをビルドしてから（Oracle の VirtualBox は sudo /sbin/vboxconfig、ディストリビューションの VirtualBox は sudo dpkg-reconfigure virtualbox-dkms）、もう一度確認してください。セキュアブートが有効な場合、ドライバーは署名しないと読み込まれません。",

@@ -17,6 +17,7 @@ import { AUTH_CHANGED_EVENT, NAVIGATE_EVENT, REPLAY_ONBOARDING_EVENT } from "@/l
 import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
 import { readyReport } from "@/test/fixtures";
 import { commands, deployingOps, installTauri } from "@/test/tauri";
+import { endOperationsOf } from "@/lib/dev-mock/run-service";
 import { flush } from "@/test/ui";
 import { blockQuit, askLaunch, focusedPalette, openMainWindow } from "@/components/shell-test-kit";
 import { emitSettled, must, toastsShown } from "@/components/test-support";
@@ -67,9 +68,12 @@ describe("UpdateBanner", () => {
     expect(screen.getByRole("status").textContent).toContain("Wait until your labs finish starting, stopping or pausing");
     const button = screen.getByRole("button", { name: "Update" });
     expect(button.hasAttribute("disabled")).toBe(true);
-    // A deploy that starts after the last poll is still caught when Update is clicked.
+    // The deploy ends (its run event); one that starts after that is still caught when Update is
+    // clicked.
     deploying = [];
-    fireEvent(window, new Event("focus"));
+    act(() => {
+      endOperationsOf("web-sqli");
+    });
     await flush();
     expect(button.hasAttribute("disabled")).toBe(false);
     deploying = ["web-sqli"];

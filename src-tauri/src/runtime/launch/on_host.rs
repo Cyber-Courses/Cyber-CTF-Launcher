@@ -3,8 +3,8 @@
 
 use super::super::paths::local_runtime;
 use super::{
-    AppDirs, Error, Inputs, LabRef, PER_MACHINE_NOT_ON_SERVERS, Path, Provider, Result, Runtime, isothrum, lab, mark_parked, mark_per_machine_vm, runner_home,
-    server,
+    AppDirs, CONTAINERS_NOT_ON_SERVERS, Error, Inputs, LabRef, PER_MACHINE_NOT_ON_SERVERS, Path, Provider, Result, Runtime, isothrum, lab, mark_parked,
+    mark_per_machine_vm, runner_home, server,
 };
 
 /// Starts `lab` on server `host` with the launch's `inputs`; `per_machine`: as one VM per machine
@@ -20,6 +20,11 @@ pub(super) async fn start_on_server(
     let LabRef { dir, id, runtime } = lab;
     // The per-machine form was checked with the destination (`destination`), before the download.
     let conn = server::connection(dirs, host)?;
+    // So was a container lab's place, which is never a server (ESXi, Proxmox): checked again
+    // before anything is marked, for a start that reaches here another way.
+    if runtime == Runtime::Docker {
+        containers_run_on(Some(conn.provider))?;
+    }
     // GCP labs run in the account's labs project: make sure it exists (one free billing slot).
     if conn.provider == Provider::Gcp {
         log("Checking the Cyber CTF labs project on Google Cloud…".into());
@@ -34,7 +39,7 @@ pub(super) async fn start_on_server(
         return start_cloud_run(dirs, CloudStart { dir, id, runtime, host, conn, env: inputs.values, per_machine }, log).await;
     }
     if conn.provider == Provider::VmwareEsxi {
-        lab::prepare(dir, lab::vagrant_target(runtime))?;
+        lab::prepare(dir, lab::Target::Vagrant)?;
         esxi_run(dirs, dir, id, runtime, &conn)?.up(inputs, Some(Provider::VmwareEsxi.id()), log).await?;
         return mark_parked(dir, None);
     }
@@ -47,8 +52,8 @@ pub(super) async fn start_on_server(
     run.up(&place, inputs.values, log).await
 }
 
-/// One VM per machine on a server host is Isoloom's cloud-vm, which every cloud account runs (how
-/// far each is proven is its run tier's badge); on a server (ESXi, Proxmox) the lab runs as the
+/// One VM per machine on a server host is Isoloom's cloud-vm, which every cloud account runs; on a
+/// server (ESXi, Proxmox) the lab runs as the
 /// catalogue publishes it.
 pub(super) fn per_machine_runs_on(provider: Option<Provider>) -> Result<()> {
     match provider {
@@ -57,10 +62,13 @@ pub(super) fn per_machine_runs_on(provider: Option<Provider>) -> Result<()> {
     }
 }
 
-/// Whether the Isothrum runner runs labs of `runtime` on `provider` servers: VM labs on Proxmox
-/// (Terraform) and on ESXi (Vagrant).
-pub(in crate::runtime) fn runner_runs_on(provider: Provider, runtime: Runtime) -> bool {
-    matches!(provider, Provider::Proxmox | Provider::VmwareEsxi) && runtime == Runtime::Vm
+/// Whether a container lab's containers run on `provider`: a cloud account's VM (Isoloom's
+/// cloud-docker), not a server's (ESXi, Proxmox), which would hold them inside a helper VM.
+pub(super) fn containers_run_on(provider: Option<Provider>) -> Result<()> {
+    match provider {
+        Some(p) if p.is_cloud() => Ok(()),
+        _ => Err(Error::Refused(CONTAINERS_NOT_ON_SERVERS.into())),
+    }
 }
 
 /// The runner's run of VM lab `id` (in `dir`) on the ESXi server of connection `c`: its
@@ -79,7 +87,9 @@ pub(in crate::runtime) async fn server_place(
     run: &isothrum::ServerRun,
 ) -> Result<isothrum::ServerPlace> {
     let public = run.public_key().await?;
-    let key = runner_home(dirs)?.join("ssh").join("id_ed25519");
+    // The launcher's own key: SSH signs in with the node's password, and the runner's public key
+    // is the one let in.
+    let (key, _) = crate::runtime::ssh::ensure_key(dirs).await?;
     Ok(isothrum::ServerPlace {
         label: host.to_owned(),
         name: conn.name.clone(),

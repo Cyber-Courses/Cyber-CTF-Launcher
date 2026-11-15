@@ -7,7 +7,7 @@ import { StatusDot, type Tone } from "@/components/ui/status-pill";
 import { Tip } from "@/components/ui/tip";
 import { MachineSelfTest, type LabKind } from "@/features/machine/machine-parts";
 import type { SelfTestTarget } from "@/features/machine/self-test";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/class-names";
 import { useT } from "@/lib/i18n";
 
 // The Machine page's providers (every container engine and hypervisor installed here) as a list

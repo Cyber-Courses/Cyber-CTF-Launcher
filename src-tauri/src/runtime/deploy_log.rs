@@ -6,23 +6,19 @@
 
 use std::path::Path;
 
-/// How a failed run's closing line starts (the lab page marks a run failed by it).
+/// How a failed run's closing line starts (the lab page marks a run failed by it, read from the
+/// webview's `DeployLog.ts`, which `ts_bindings` writes).
+#[cfg_attr(not(test), allow(dead_code, reason = "the webview's DeployLog.ts carries it, written by ts_bindings"))]
 pub(crate) const FAILED_MARK: &str = "✗";
 /// The brackets around a failed run's error code in its closing line (`✗[portInUse] Host port
 /// 8000 is already in use…`), so a page reading the log back (the run's live error gone) knows
 /// the failure by its code, not by its English words.
+#[cfg_attr(not(test), allow(dead_code, reason = "the webview's DeployLog.ts carries it, written by ts_bindings"))]
 pub(crate) const FAILED_CODE: (&str, &str) = ("[", "]");
-
-/// A failed run's closing line: the mark, the error's code ([`FAILED_CODE`]) and its message.
-pub(crate) fn failed_line(e: &crate::error::Error) -> String {
-    let wire = e.to_wire();
-    let code = serde_json::to_value(&wire).ok().and_then(|v| v["code"].as_str().map(str::to_owned)).unwrap_or_default();
-    let (open, close) = FAILED_CODE;
-    format!("{FAILED_MARK}{open}{code}{close} {}", wire.message)
-}
 
 /// How a run's closing line starts when it went through (the webview writes those: "✓ Lab is
 /// running").
+#[cfg_attr(not(test), allow(dead_code, reason = "the webview's DeployLog.ts carries it, written by ts_bindings"))]
 pub(crate) const DONE_MARK: &str = "✓";
 
 // The lines said while the lab is fetched and placed: the lab page's "Download the lab" step.
@@ -32,13 +28,13 @@ pub(crate) const INSTALLED: &str = "Lab installed";
 const IMPORTING: &str = "Importing ";
 /// The last line of a lab's import from a folder on this machine.
 pub(crate) const IMPORTED: &str = "Lab imported";
-const IN_LOCAL_VM: &str = "Running in a ";
 const ON_SERVER_HOST: &str = "Running on server host ";
+#[cfg(any(test, feature = "cloud-services"))]
 const IN_CLOUD_ACCOUNT: &str = "Running in your ";
 
 /// How the lines said while the lab is fetched and placed start (for the generated file).
 #[cfg(test)]
-pub(crate) const FETCH: [&str; 7] = [DOWNLOADING, INSTALLED, IMPORTING, IMPORTED, IN_LOCAL_VM, ON_SERVER_HOST, IN_CLOUD_ACCOUNT];
+pub(crate) const FETCH: [&str; 6] = [DOWNLOADING, INSTALLED, IMPORTING, IMPORTED, ON_SERVER_HOST, IN_CLOUD_ACCOUNT];
 
 /// The first line of a lab's install from the catalogue: its repository at `commit` (short).
 pub(crate) fn downloading(repository: &str, commit: &str) -> String {
@@ -50,17 +46,13 @@ pub(crate) fn importing(lab_id: &str, from: &Path) -> String {
     format!("{IMPORTING}{lab_id} from {}", from.display())
 }
 
-/// A container lab placed in one VM on this machine, on hypervisor `provider` (its id).
-pub(crate) fn in_local_vm(provider: &str) -> String {
-    format!("{IN_LOCAL_VM}{provider} VM on this machine")
-}
-
 /// A lab placed on the saved server `name`, a `provider` (its id) host.
 pub(crate) fn on_server_host(name: &str, provider: &str) -> String {
     format!("{ON_SERVER_HOST}{name} ({provider})")
 }
 
 /// A cloud-services lab placed in the player's `cloud` (its name) account `name`, in `region`.
+#[cfg(any(test, feature = "cloud-services"))]
 pub(crate) fn in_cloud_account(cloud: &str, name: &str, region: &str) -> String {
     format!("{IN_CLOUD_ACCOUNT}{cloud} account {name} ({region})")
 }
@@ -100,21 +92,12 @@ pub(crate) fn emulating(arch: &str, host: &str) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_failed_runs_closing_line_carries_its_errors_code() {
-        use crate::error::{Code, Error};
-        assert_eq!(failed_line(&Error::coded(Code::DockerNotRunning)), format!("✗[dockerNotRunning] {}", Error::coded(Code::DockerNotRunning)));
-        assert_eq!(failed_line(&Error::Invalid("bad id".into())), "✗[other] bad id");
-        assert_eq!(failed_line(&Error::ToolMissing { tool: "terraform" }), "✗[toolMissing] `terraform` is not installed or not on PATH");
-    }
-
     /// The lines as the deploy log shows them: the lab page's tests (`deploy-log.test.ts`) read
     /// these very lines.
     #[test]
     fn the_lines_read_as_the_lab_page_expects_them() {
         assert_eq!(downloading("CyberCTF/invoice", "0123456789ab"), "Downloading CyberCTF/invoice@0123456789ab");
         assert_eq!(importing("local-web", Path::new("/home/ada/labs/web")), "Importing local-web from /home/ada/labs/web");
-        assert_eq!(in_local_vm("qemu"), "Running in a qemu VM on this machine");
         assert_eq!(on_server_host("esxi-1", "vmware_esxi"), "Running on server host esxi-1 (vmware_esxi)");
         assert_eq!(in_cloud_account("AWS", "Labs", "eu-west-1"), "Running in your AWS account Labs (eu-west-1)");
         assert!(emulating("x86_64", "aarch64").starts_with("Emulating x86_64 on this aarch64 machine with QEMU"));
@@ -130,7 +113,6 @@ mod tests {
             INSTALLED.into(),
             importing("l", Path::new("/x")),
             IMPORTED.into(),
-            in_local_vm("p"),
             on_server_host("n", "p"),
             in_cloud_account("c", "n", "r"),
         ];

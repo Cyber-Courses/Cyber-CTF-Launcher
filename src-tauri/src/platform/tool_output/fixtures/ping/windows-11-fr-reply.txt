@@ -1,0 +1,6 @@
+
+Envoi d’une requête ‘Ping’  192.168.56.250 avec 32 octets de données :
+Réponse de 192.168.56.250 : octets=32 temps<1ms TTL=64
+
+Statistiques Ping pour 192.168.56.250:
+    Paquets : envoyés = 1, reçus = 1, perdus = 0 (perte 0%),

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { HomeScreen } from "@/features/home/home-screen";
 import { LabDetail } from "@/features/labs/lab-detail";
 import { MachineSetup } from "@/features/machine/machine-setup";
@@ -11,17 +11,21 @@ import { useLabActions } from "@/features/labs/use-lab-actions";
 import { must } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
 import { getDeploySnapshot, runFailure, startFailed, type DeployRun } from "@/features/labs/runs/deploy-runs";
-import { noteOperations, operationSeenAt } from "@/features/labs/runs/operations";
-import type { ActiveOperation, AuthStatus, LabStatus } from "@/lib/tauri";
+import { operationSeenAt } from "@/features/labs/runs/operations";
+import { takeIn } from "@/lib/tauri/run-events";
+import type { AuthStatus, LabStatus } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
 import { commands, installTauri, rejectWith } from "@/test/tauri";
 import { answer } from "@/lib/dev-mock";
-import { button, flush } from "@/test/ui";
+import { button, flush, preloadLabScreens } from "@/test/ui";
+
+// The lab page's lazily loaded screens, loaded once before the tests rather than inside the first.
+beforeAll(preloadLabScreens, 60_000);
 
 // The failure states of the UX audit: each one says what happened and offers the way out,
 // instead of a state that never resolves or reads as nothing happened.
 
-const signedIn: AuthStatus = { loggedIn: true, name: "Florian Amette", email: "florian@cyberctf.org" };
+const signedIn: AuthStatus = { loggedIn: true, name: "Ada Lovelace", email: "ada@example.org" };
 const API_DOWN = "error sending request for url (https://api.cyberctf.org/graphql): connection refused";
 const PORT_CLASH = "Host port 8080 is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again.";
 
@@ -273,14 +277,15 @@ describe("a Stop & remove that failed", () => {
 describe("a deploy with no log here", () => {
   it("shows the backend's step and counts from when the operation was first seen", async () => {
     const step = "Configure SRV02 (ansible 41/88)";
-    installTauri({
-      busy_labs: () => [goad.id],
-      active_operations: () => [{ labId: goad.id, op: "launch", machine: "SRV02", deploying: true, step }],
-      lab_deploy_log: () => "",
-      lab_status: () => stopped,
-    });
-    // First seen a minute ago (this window saw it then, before the page opened).
-    noteOperations([{ labId: goad.id, op: "launch", machine: "SRV02", deploying: true, step }], Date.now() - 61_000);
+    installTauri({ busy_labs: () => [goad.id], active_operations: () => [], lab_status: () => stopped });
+    // Begun a minute ago, as the core says, before the page opened.
+    takeIn([
+      {
+        cursor: 1,
+        event: { kind: "started", operation: "op-1", labId: goad.id, op: "launch", machine: "SRV02", runtime: null, deploying: true, at: Date.now() - 61_000 },
+      },
+      { cursor: 2, event: { kind: "log", operation: "op-1", labId: goad.id, line: step } },
+    ]);
     render(<LabDetail lab={goad} loggedIn hostArch="x86_64" readyVms={[]} onBack={vi.fn()} onStart={vi.fn()} onStop={vi.fn()} />);
     await flush(2200);
     expect(document.body.textContent).toContain(step);
@@ -291,12 +296,12 @@ describe("a deploy with no log here", () => {
     expect(document.body.textContent).toMatch(/Starting… 1:0\d/);
   });
 
-  it("keeps when an operation was first seen until it ends", () => {
-    const op: ActiveOperation = { labId: "lab-x", op: "launch", machine: null, deploying: true, step: null };
-    noteOperations([op], 1000);
-    noteOperations([op], 5000);
+  it("counts an operation from when the core began it, until it ends", () => {
+    takeIn([
+      { cursor: 1, event: { kind: "started", operation: "op-1", labId: "lab-x", op: "launch", machine: null, runtime: null, deploying: true, at: 1000 } },
+    ]);
     expect(operationSeenAt("lab-x", "launch")).toBe(1000);
-    noteOperations([], 6000);
+    takeIn([{ cursor: 2, event: { kind: "ended", operation: "op-1", labId: "lab-x", op: "launch", error: null } }]);
     expect(operationSeenAt("lab-x", "launch")).toBeUndefined();
   });
 });

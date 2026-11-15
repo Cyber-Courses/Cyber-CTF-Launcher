@@ -15,7 +15,8 @@ use crate::platform::AppDirs;
 
 /// A lab's run, where it runs.
 pub(crate) enum Host {
-    /// On this machine: on Docker, in one local VM, or as VMs ([`isothrum::LabRun::local`]).
+    /// On this machine: on Docker, or as VMs ([`isothrum::LabRun::local`]), or in the helper VM
+    /// an earlier version ran a container lab inside.
     Local(isothrum::LabRun),
     /// VMs on an ESXi server (Vagrant there), through its connection.
     Esxi {
@@ -49,12 +50,25 @@ pub(crate) enum Host {
 /// on the server host or cloud account its marker names, else on this machine. `None` for a
 /// cloud-services lab on no account: nothing of it runs anywhere.
 pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Host>> {
+    // Where the lab is marked first: a mark naming a server no longer saved says so, whatever runs.
+    let connection = server::lab_connection(dirs, dir)?;
+    // A cloud-services lab runs nowhere in a build without the feature.
+    if !cfg!(feature = "cloud-services") && runtime == Runtime::Cloud {
+        return Ok(None);
+    }
     let home = runner_home(dirs)?;
     let form = local_runtime(dir, runtime);
-    Ok(Some(match server::lab_connection(dirs, dir)? {
+    Ok(Some(match connection {
         None => return Ok(isothrum::LabRun::local(&home, dir, id, runtime)?.map(Host::Local)),
         Some(conn) if conn.provider == Provider::VmwareEsxi => Host::Esxi { run: super::launch::esxi_run(dirs, dir, id, form, &conn)?, conn },
         Some(conn) if conn.provider.is_cloud() => {
+            #[cfg(feature = "cloud-services")]
+            let run = if runtime == Runtime::Cloud {
+                isothrum::CloudRun::own(&home, dir, id, conn.terraform()?)?
+            } else {
+                isothrum::CloudRun::new(&home, dir, id, form, conn.terraform()?)?
+            };
+            #[cfg(not(feature = "cloud-services"))]
             let run = isothrum::CloudRun::new(&home, dir, id, form, conn.terraform()?)?;
             Host::Cloud { run, place: isothrum::CloudPlace::of(&conn), conn }
         }
@@ -80,8 +94,10 @@ impl Failed {
 }
 
 impl Host {
-    /// The Isoloom target the run's files are generated for.
-    pub(crate) fn target(&self) -> lab::Target {
+    /// The Isoloom target the run's files are generated for; none for a container lab an earlier
+    /// version runs inside a helper VM (here, on ESXi or on Proxmox), whose files Isoloom no
+    /// longer generates: that run is only read, stopped and removed.
+    pub(crate) fn target(&self) -> Option<lab::Target> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.target(),
             Host::Cloud { run, .. } => run.target(),
@@ -92,7 +108,7 @@ impl Host {
     /// Whether the run has machines of the lab's own: every run but a cloud-services lab's,
     /// whose services are no machines to check or to put an attack box beside.
     pub(crate) fn has_machines(&self) -> bool {
-        self.target() != lab::Target::CloudServices
+        !matches!(self, Host::Cloud { run, .. } if run.module() == isothrum::Module::Own)
     }
 
     /// The Proxmox server's place for a change of its run (its node, its SSH jump).
@@ -142,7 +158,7 @@ impl Host {
     /// The command that opens a shell into `machine`, as account `user` when given.
     pub(crate) async fn console(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
         match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.console_command(machine, user).await,
+            Host::Local(run) | Host::Esxi { run, .. } => run.console_command(machine, user),
             Host::Cloud { run, .. } => run.console_command(machine, user).await,
             Host::Server { run, .. } => run.console_command(machine, user).await,
         }
@@ -152,7 +168,7 @@ impl Host {
     pub(crate) async fn graphical_console(&self, dirs: &AppDirs, machine: &str) -> Result<isothrum_runner::Console> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.graphical_console(machine).await,
-            Host::Cloud { run, .. } => run.graphical_console(machine, isothrum_runner::Secrets::new()).await,
+            Host::Cloud { run, place, .. } => run.screen(place, machine).await,
             Host::Server { run, conn } => run.screen(&Self::server_place(dirs, run, conn).await?, machine).await,
         }
     }
@@ -162,7 +178,7 @@ impl Host {
     pub(crate) async fn native_console(&self, dirs: &AppDirs, machine: &str) -> Result<isothrum_runner::NativeConsole> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.native_console(machine).await,
-            Host::Cloud { run, .. } => run.native_console(machine, isothrum_runner::Secrets::new()).await,
+            Host::Cloud { run, place, .. } => run.native(place, machine).await,
             Host::Server { run, conn } => run.native(&Self::server_place(dirs, run, conn).await?, machine).await,
         }
     }
@@ -170,13 +186,19 @@ impl Host {
     /// Runs the lab's checks where it runs (a cloud's and a server's over SSH, an ESXi host's
     /// from its controller); none to run beside cloud services ([`Host::has_machines`]).
     pub(crate) async fn check(&self) -> Result<docker::Check> {
+        #[cfg(feature = "cloud-services")]
+        if let Host::Cloud { run, .. } = self
+            && run.module() == isothrum::Module::Own
+        {
+            return run.own_check().await;
+        }
         if !self.has_machines() {
             return Ok(docker::Check::default());
         }
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.check().await,
-            Host::Cloud { run, place, .. } => run.check(place).await,
-            Host::Server { run, .. } => run.check().await,
+            Host::Cloud { run, place, .. } => Ok(run.check(place)),
+            Host::Server { run, .. } => Ok(run.check()),
         }
     }
 }
@@ -192,7 +214,7 @@ mod tests {
     const SPEC: &str = "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, vm: { box: debian/bookworm64 }, networks: { lab: 10 } }\n";
 
     /// Where lab `t` runs, as its kind and the target its run's files are generated for.
-    fn located(t: &TestApp, dir: &Path, runtime: Runtime) -> Option<(&'static str, lab::Target)> {
+    fn located(t: &TestApp, dir: &Path, runtime: Runtime) -> Option<(&'static str, Option<lab::Target>)> {
         locate(&t.dirs(), dir, "t", runtime).unwrap().map(|h| {
             let kind = match &h {
                 Host::Local(_) => "local",
@@ -213,58 +235,68 @@ mod tests {
     #[test]
     fn a_lab_is_found_where_its_marker_says_in_the_form_it_was_started_in() {
         let t = TestApp::new();
-        let _tools = Tools::rules(&[]);
+        let _tools = Tools::strict_rules(&[]);
         let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
-        // On this machine: as its runtime says, a container lab in its helper VM, or as one VM
-        // per machine; a cloud-services lab on no account runs nowhere.
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", lab::Target::Docker)));
-        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("local", lab::Target::Vagrant)));
+        // On this machine: as its runtime says, as one VM per machine, or in the helper VM an
+        // earlier version left it in (no target: never generated again); a cloud-services lab on
+        // no account runs nowhere.
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", Some(lab::Target::Docker))));
+        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("local", Some(lab::Target::Vagrant))));
         assert_eq!(located(&t, &dir, Runtime::Cloud), None);
         mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", lab::Target::DockerVm)));
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", None)));
+        assert!(crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().is_none(), "no box goes into it");
         mark_local_vm(&dir, None).unwrap();
         mark_per_machine_vm(&dir, true).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", lab::Target::Vagrant)));
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("local", Some(lab::Target::Vagrant))));
         // In a cloud account: in the form it was started in, cloud services included.
         server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", lab::Target::CloudVm)));
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", Some(lab::Target::CloudVm))));
         mark_per_machine_vm(&dir, false).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", lab::Target::CloudDocker)));
-        assert_eq!(located(&t, &dir, Runtime::Cloud), Some(("cloud", lab::Target::CloudServices)));
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", Some(lab::Target::CloudDocker))));
+        #[cfg(feature = "cloud-services")]
+        assert_eq!(located(&t, &dir, Runtime::Cloud), Some(("cloud", None)), "its own module: no Isoloom target");
+        #[cfg(not(feature = "cloud-services"))]
+        assert_eq!(located(&t, &dir, Runtime::Cloud), None, "a build without the feature runs none");
         // On a server: Proxmox through Terraform, ESXi through Vagrant there.
         crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
         for server in ["pve", "esx"] {
             crate::runtime::server::secrets::set_secret(server, "pw").unwrap();
         }
         server::mark_lab(&dir, Some(&t.host("pve", "proxmox", serde_json::json!({})))).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("server", lab::Target::Proxmox)));
+        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("server", Some(lab::Target::Proxmox))));
         server::mark_lab(&dir, Some(&t.host("esx", "vmware_esxi", serde_json::json!({})))).unwrap();
-        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("esxi", lab::Target::Vagrant)));
+        assert_eq!(located(&t, &dir, Runtime::Vm), Some(("esxi", Some(lab::Target::Vagrant))));
+        // A container lab there is the helper VM an earlier version left, on either server.
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("esxi", None)));
+        server::mark_lab(&dir, Some("pve")).unwrap();
+        assert_eq!(located(&t, &dir, Runtime::Docker), Some(("server", None)));
     }
 
+    #[cfg(feature = "cloud-services")]
     #[tokio::test]
     async fn cloud_services_have_no_machines_to_check_nor_to_put_an_attack_box_beside() {
         let t = TestApp::new();
-        let tools = Tools::rules(&[]);
-        let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
+        let tools = Tools::strict_rules(&[]);
+        let dir = t.lab("t", &[("isoloom.yml", SPEC), ("cloud/lab.yml", "provider: aws\n"), ("cloud/main.tf", "")]);
         server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
         let host = locate(&t.dirs(), &dir, "t", Runtime::Cloud).unwrap().unwrap();
         assert!(!host.has_machines());
         let check = host.check().await.unwrap();
         assert!(!check.available && check.results.is_empty());
-        assert!(crate::runtime::attack_machine::locate(&t.dirs(), &dir, "t", Runtime::Cloud).unwrap().is_none());
+        assert!(crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", Runtime::Cloud).unwrap().is_none());
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
         // Its containers in the same account are machines of the lab's own.
         assert!(locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().unwrap().has_machines());
-        assert!(crate::runtime::attack_machine::locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().is_some());
+        assert!(crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", Runtime::Docker).unwrap().is_some());
     }
 
     #[test]
     fn only_a_container_box_on_this_machine_pulls_its_image_here() {
         let t = TestApp::new();
-        let _tools = Tools::rules(&[]);
+        let _tools = Tools::strict_rules(&[]);
         let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
-        let placed = |runtime| crate::runtime::attack_machine::locate(&t.dirs(), &dir, "t", runtime).unwrap().unwrap();
+        let placed = |runtime| crate::runtime::attack_box::locate(&t.dirs(), &dir, "t", runtime).unwrap().unwrap();
         assert!(placed(Runtime::Docker).pulls_image_here());
         assert!(!placed(Runtime::Vm).pulls_image_here(), "a Kali VM pulls no image");
         server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();

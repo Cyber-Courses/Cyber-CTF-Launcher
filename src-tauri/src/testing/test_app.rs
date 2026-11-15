@@ -36,7 +36,7 @@ impl TestApp {
             context.config_mut().app.app_directories_override = Some(tauri::utils::config::AppDirectoriesOverride::Root(root.join(&identifier)));
         }
         context.config_mut().identifier = identifier;
-        let app = tauri::test::mock_builder().build(context).expect("mock app");
+        let app = crate::app::services(tauri::test::mock_builder()).build(context).expect("mock app");
         let data = app.path().app_data_dir().expect("app data dir");
         std::fs::create_dir_all(&data).unwrap();
         TestApp { app, data }
@@ -89,22 +89,24 @@ impl TestApp {
     /// Saves a server host (`provider` as its id, e.g. `azure`), returning its id. Hosts that
     /// keep no secret only (CLI sign-in clouds, `use_cli_creds` AWS): no keychain in tests.
     pub fn host(&self, id: &str, provider: &str, extra: serde_json::Value) -> String {
-        let path = self.data.join("server.json");
-        let mut store: serde_json::Value =
-            std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(serde_json::json!({ "hosts": [] }));
         let mut host =
             serde_json::json!({ "id": id, "name": format!("Host {id}"), "provider": provider, "host": "eu-west-1", "port": 443, "username": "acct" });
         if let (Some(h), serde_json::Value::Object(e)) = (host.as_object_mut(), extra) {
             h.extend(e);
         }
-        store["hosts"].as_array_mut().unwrap().push(host);
-        std::fs::write(path, store.to_string()).unwrap();
+        let host: crate::runtime::server::profile::HostProfile = serde_json::from_value(host).unwrap();
+        crate::runtime::server::store::update(&self.dirs(), |s| {
+            s.hosts.push(host);
+            Ok(())
+        })
+        .unwrap();
         id.to_string()
     }
 }
 
 impl Drop for TestApp {
     fn drop(&mut self) {
+        crate::store::forget(&self.data);
         let _ = std::fs::remove_dir_all(&self.data);
         for dir in [self.app.path().app_cache_dir(), self.app.path().app_config_dir(), self.app.path().app_local_data_dir()].into_iter().flatten() {
             let _ = std::fs::remove_dir_all(dir);
@@ -156,8 +158,8 @@ mod tests {
 
     #[test]
     fn a_scenarios_app_keeps_every_folder_in_the_runners_root_and_they_go_when_it_drops() {
-        // Regression (#308): the integration tests' app kept a lab's runs, its VMs' disks with
-        // them, in ~/Library/Application Support, where a capped scenario's VMs kept running.
+        // Regression: the integration tests' app kept a lab's runs, its VMs' disks with them, in
+        // ~/Library/Application Support, where a capped scenario's VMs kept running.
         let root = crate::testing::temp_dir("test-app-root");
         let t = TestApp::in_root(Some(root.to_path_buf()));
         let own = t.data().to_path_buf();

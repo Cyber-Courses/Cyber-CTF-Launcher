@@ -5,7 +5,7 @@
  */
 export type TermEvent = { "kind": "data", 
 /**
- * The text.
+ * The shell's output since the last event, as UTF-8.
  */
 data: string, } | { "kind": "exit", 
 /**

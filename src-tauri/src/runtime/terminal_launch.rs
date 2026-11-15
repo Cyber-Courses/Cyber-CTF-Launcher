@@ -8,6 +8,11 @@ use isothrum_runner::ShellCommand;
 
 use crate::error::{Error, Result};
 
+/// How long a terminal gets to die on its own (one that can't start, zutty without its font,
+/// does so within a moment) before it counts as started.
+#[cfg(all(unix, not(target_os = "macos")))]
+const TERMINAL_START_GRACE: std::time::Duration = std::time::Duration::from_millis(1500);
+
 /// The POSIX command line that runs `command` in its folder: `cd <cwd> && exec <program> <args>`
 /// (the `exec` so leaving the shell ends it, no extra process in between), through `env` with
 /// the variables the command needs (a Vagrant run's state folder), when it has any. Unix
@@ -38,6 +43,24 @@ fn applescript_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// Runs `program` with `args` until it ends (osascript returns once Terminal opened the window):
+/// a failure is an error with what it printed. Only spawned, it was never waited on (a zombie
+/// per terminal opened) and its failure went unseen: with the Automation permission for Terminal
+/// denied, the button did nothing and said nothing.
+#[cfg(any(target_os = "macos", all(unix, test)))]
+fn run_to_end(program: &str, args: &[&str]) -> Result<()> {
+    #[allow(clippy::disallowed_methods, reason = "osascript asks Terminal for a window and returns: no tool adapter runs it")]
+    let out = std::process::Command::new(program).args(args).stdin(std::process::Stdio::null()).output()?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let said = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+    // AppleScript's "not authorized to send Apple events" (-1743): the Automation permission.
+    let hint =
+        if said.contains("-1743") { " Allow Cyber CTF to control Terminal in System Settings > Privacy & Security > Automation, then try again." } else { "" };
+    Err(Error::Invalid(format!("couldn't open Terminal ({}): {said}.{hint}", out.status)))
+}
+
 /// Opens the OS terminal on `command`, titled "Cyber CTF attack box". The command line itself
 /// never stays on screen: the window is cleared first, and the command replaces the shell
 /// (`exec`), so leaving the box ends the session. `DOCKER_CLI_HINTS=false` drops Docker's
@@ -58,8 +81,7 @@ pub fn open_terminal(command: &ShellCommand) -> Result<()> {
              set title displays device name of t to false\nset title displays shell path of t to false\n\
              set title displays file name of t to false\nend tell"
         );
-        std::process::Command::new("osascript").arg("-e").arg(script).spawn()?;
-        Ok(())
+        run_to_end("osascript", &["-e", &script])
     }
     #[cfg(target_os = "windows")]
     {
@@ -70,10 +92,11 @@ pub fn open_terminal(command: &ShellCommand) -> Result<()> {
         let run = format!("clear; DOCKER_CLI_HINTS=false; {line}");
         // gnome-terminal's `-e` takes one string, so it gets `--`; the others run what follows `-e`.
         for (term, flag) in [("x-terminal-emulator", "-e"), ("gnome-terminal", "--"), ("konsole", "-e"), ("xterm", "-e")] {
+            #[allow(clippy::disallowed_methods, reason = "a terminal window opens as the player's own app, left running past the call")]
             let Ok(mut child) = std::process::Command::new(term).args([flag, "sh", "-c", &run]).spawn() else { continue };
             // A terminal that can't start (e.g. zutty without its font) dies within a moment
             // without a window, so give it that moment and fall through to the next one.
-            std::thread::sleep(std::time::Duration::from_millis(1500));
+            std::thread::sleep(TERMINAL_START_GRACE);
             match child.try_wait() {
                 Ok(Some(status)) if !status.success() => {}
                 _ => {
@@ -90,11 +113,19 @@ pub fn open_terminal(command: &ShellCommand) -> Result<()> {
     }
 }
 
+/// The characters cmd.exe reads as its own outside double quotes: command separators,
+/// redirections, its escape and its blocks.
+#[cfg(any(windows, test))]
+const CMD_SPECIAL: [char; 7] = ['&', '|', '<', '>', '^', '(', ')'];
+
 /// The cmd.exe command line: `cd /d "<cwd>" && set "<VAR>=<value>" && <program> <args>`, each
-/// word double-quoted, the command's variables set first.
+/// word double-quoted when it holds a space, a quote or a character cmd.exe reads as its own (a
+/// profile folder `C:\Users\Tom&Jerry`), the command's variables set first.
 #[cfg(any(windows, test))]
 pub(crate) fn windows_line(command: &ShellCommand) -> String {
-    let quote = |w: &str| if w.contains(' ') || w.contains('"') { format!("\"{}\"", w.replace('"', "\"\"")) } else { w.to_owned() };
+    let quote = |w: &str| {
+        if w.contains([' ', '"']) || w.contains(CMD_SPECIAL) { format!("\"{}\"", w.replace('"', "\"\"")) } else { w.to_owned() }
+    };
     let mut run = std::iter::once(&command.program).chain(&command.args).map(|w| quote(w)).collect::<Vec<_>>().join(" ");
     for (name, value) in command.env.iter().rev() {
         run = format!("set \"{name}={value}\" && {run}");
@@ -105,16 +136,25 @@ pub(crate) fn windows_line(command: &ShellCommand) -> String {
 /// Opens a console window titled "Cyber CTF attack box" on `line`, a cmd.exe command line. The
 /// line goes into a temp .cmd that is run (cmd.exe's quote-stripping with nested quotes and `&`
 /// is unreliable when a path has a space): the line lives in the file with normal double-quoted
-/// paths, and the only thing cmd parses is the balanced-quoted .cmd path.
+/// paths, and the only thing cmd parses is the .cmd path ([`start_args`]).
 #[cfg(windows)]
 pub fn open_terminal_cmd(line: &str) -> Result<()> {
     use std::os::windows::process::CommandExt;
     let bat = write_shell_script(&std::env::temp_dir(), line)?;
-    std::process::Command::new("cmd")
-        .raw_arg(format!("/c start \"Cyber CTF attack box\" cmd /c \"{}\"", bat.display()))
-        .env("DOCKER_CLI_HINTS", "false")
-        .spawn()?;
+    #[allow(clippy::disallowed_methods, reason = "a terminal window opens as the player's own app, left running past the call")]
+    std::process::Command::new("cmd").raw_arg(start_args(&bat.display().to_string())).env("DOCKER_CLI_HINTS", "false").spawn()?;
     Ok(())
+}
+
+/// The arguments of the cmd.exe that opens the console on the script at `bat`: `start` a new
+/// console running `cmd /s /c ""<bat>""`, which (`/s`) strips the outer quotes and runs
+/// `"<bat>"`, quoted: `cmd /c "<bat>"` lost its quotes when the path held a special character
+/// (`C:\Users\Tom&Jerry` ran `C:\Users\Tom`, then `Jerry\…`). The outer quotes are written `^"`
+/// so the first cmd, which reads the whole line, takes them as plain characters and still reads
+/// the path inside quotes.
+#[cfg(any(windows, test))]
+fn start_args(bat: &str) -> String {
+    format!("/c start \"Cyber CTF attack box\" cmd /s /c ^\"\"{bat}\"^\"")
 }
 
 /// The temp scripts the Windows terminals run: `cyberctf-shell-<unique>.cmd`.
@@ -183,8 +223,8 @@ mod tests {
     #[test]
     fn the_lines_set_the_variables_the_command_needs() {
         assert_eq!(
-            command_line(&in_vm("/labs/x/.isoloom/docker-vm")),
-            "cd /labs/x/.isoloom/docker-vm && exec env 'VAGRANT_DOTFILE_PATH=/runs/x y/vagrant' vagrant ssh default"
+            command_line(&in_vm("/labs/x/.isoloom/vagrant")),
+            "cd /labs/x/.isoloom/vagrant && exec env 'VAGRANT_DOTFILE_PATH=/runs/x y/vagrant' vagrant ssh default"
         );
         assert_eq!(windows_line(&in_vm("C:\\labs\\x")), "cd /d C:\\labs\\x && set \"VAGRANT_DOTFILE_PATH=/runs/x y/vagrant\" && vagrant ssh default");
     }
@@ -201,6 +241,38 @@ mod tests {
             windows_line(&cmd("docker", &["compose", "exec", "kali", "bash"], "C:\\runs\\x y")),
             "cd /d \"C:\\runs\\x y\" && docker compose exec kali bash"
         );
+    }
+
+    #[test]
+    fn the_windows_line_quotes_words_cmd_would_read_as_its_own() {
+        // Regression: only words with a space or a quote were quoted, so a profile folder named
+        // `Tom&Jerry` split the line at the `&`.
+        assert_eq!(
+            windows_line(&cmd("docker", &["exec", "a(b)", "x|y"], "C:\\Users\\Tom&Jerry\\run")),
+            "cd /d \"C:\\Users\\Tom&Jerry\\run\" && docker exec \"a(b)\" \"x|y\""
+        );
+    }
+
+    #[test]
+    fn the_console_runs_a_script_whose_path_has_cmds_special_characters() {
+        // Regression: `cmd /c "<path>"` lost its quotes when the path held a special character, so
+        // under `C:\Users\Tom&Jerry` it ran `C:\Users\Tom`, then `Jerry\…`: "not recognized".
+        assert_eq!(
+            start_args(r"C:\Users\Tom&Jerry\AppData\Local\Temp\cyberctf-shell-1.cmd"),
+            r#"/c start "Cyber CTF attack box" cmd /s /c ^""C:\Users\Tom&Jerry\AppData\Local\Temp\cyberctf-shell-1.cmd"^""#
+        );
+        assert_eq!(start_args(r"C:\Users\Ada Lovelace\Temp\x.cmd"), r#"/c start "Cyber CTF attack box" cmd /s /c ^""C:\Users\Ada Lovelace\Temp\x.cmd"^""#);
+    }
+
+    /// Regression: osascript was only spawned, so a refusal (the Automation permission for
+    /// Terminal denied) left the button doing nothing, silently.
+    #[cfg(unix)]
+    #[test]
+    fn a_terminal_that_fails_to_open_says_why() {
+        let denied = run_to_end("sh", &["-c", "echo 'execution error: Not authorized to send Apple events to Terminal. (-1743)' >&2; exit 1"]).unwrap_err();
+        let said = denied.to_string();
+        assert!(said.contains("Not authorized to send Apple events to Terminal") && said.contains("Privacy & Security > Automation"), "{said}");
+        assert!(run_to_end("sh", &["-c", "exit 0"]).is_ok());
     }
 
     #[test]

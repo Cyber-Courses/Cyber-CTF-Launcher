@@ -25,7 +25,7 @@ describe("useMachineMetrics", () => {
   });
 
   it("reads one at a time: a read Docker holds up isn't stacked on", async () => {
-    // Regression (a Windows on Arm rig clone, Docker Desktop starting): the Overview read every
+    // Regression (Docker Desktop starting): the Overview read every
     // 3 s from each read's start, each read a `docker ps` that hung until its timeout, so they
     // stacked, eight at a time, and a killed app left them behind.
     const calls = installTauri({ machine_metrics: () => new Promise(() => {}) });

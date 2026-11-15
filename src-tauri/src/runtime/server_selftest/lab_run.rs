@@ -10,6 +10,7 @@ use super::{Ran, Reporter};
 use crate::error::{Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::lab;
+use crate::runtime::selftest_report::StepState;
 
 /// The test lab: one Debian VM on a lab network with internet (on Proxmox the module adds its
 /// router on the uplink), a command run inside it as its check. The `/24` is the lab's own, so
@@ -144,15 +145,15 @@ async fn command(r: &Reporter, run: &impl TestRun) -> Result<()> {
 
 /// The teardown, reported whatever happened before; a failure says what is left.
 async fn cleanup(r: &Reporter, run: &impl TestRun, course: &impl Course) -> Result<()> {
-    r.send(CLEANUP.0, CLEANUP.1, "running", None);
+    r.send(CLEANUP.0, CLEANUP.1, StepState::Running, None);
     match run.down(&mut |line| r.progress(CLEANUP.0, CLEANUP.1, &line)).await {
         Ok(()) => {
-            r.send(CLEANUP.0, CLEANUP.1, "ok", Some("Nothing of the test is left on the server.".into()));
+            r.send(CLEANUP.0, CLEANUP.1, StepState::Ok, Some("Nothing of the test is left on the server.".into()));
             Ok(())
         }
         Err(e) => {
             let left = course.left(&e);
-            r.send(CLEANUP.0, CLEANUP.1, "fail", Some(left.clone()));
+            r.send(CLEANUP.0, CLEANUP.1, StepState::Fail, Some(left.clone()));
             Err(Error::Invalid(left))
         }
     }
@@ -172,14 +173,14 @@ impl<'a, C: Course> Steps<'a, C> {
 
     fn start(&self) {
         if let Some((step, label)) = C::UP.get(self.done) {
-            self.r.send(step, label, "running", None);
+            self.r.send(step, label, StepState::Running, None);
         }
     }
 
     /// Step `done` passed, with what it says.
     fn pass(&mut self) {
         let (step, label) = C::UP[self.done];
-        self.r.send(step, label, "ok", self.course.detail(self.done));
+        self.r.send(step, label, StepState::Ok, self.course.detail(self.done));
         self.done += 1;
     }
 
@@ -216,11 +217,11 @@ impl<'a, C: Course> Steps<'a, C> {
         let (at, why) = self.course.explain(&raw).map_or((self.done.min(last), raw.clone()), |(at, why)| (at.max(self.done).min(last), why));
         while self.done < at {
             let (step, label) = C::UP[self.done];
-            self.r.send(step, label, "skip", None);
+            self.r.send(step, label, StepState::Skip, None);
             self.done += 1;
         }
         let (step, label) = C::UP[at];
-        self.r.send(step, label, "fail", Some(why.clone()));
+        self.r.send(step, label, StepState::Fail, Some(why.clone()));
         self.done = C::UP.len();
         Error::Invalid(why)
     }

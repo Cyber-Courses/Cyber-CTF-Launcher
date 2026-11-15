@@ -38,7 +38,7 @@ const startsAny = (starts: readonly string[]) => (l: string) => starts.some((sta
 // A line the launcher prints while fetching/placing the lab, before the target's own output.
 const isDownloadLine = startsAny(FETCH_LINES);
 // The launcher's own narration while it readies this machine for a lab's VMs (its memory, QEMU's
-// emulation, UTM, a previous run's leftovers).
+// emulation, a previous run's leftovers).
 const isPrepLine = startsAny(PREPARE_LINES);
 
 /** The step of the machine a Vagrant failure names ("…while executing the action on the

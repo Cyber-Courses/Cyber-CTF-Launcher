@@ -155,7 +155,7 @@ async fn a_size_list_across_regions_that_cant_be_read_still_names_the_regions_si
 async fn an_azure_cli_that_fails_says_it_couldnt_ask_never_that_the_size_isnt_offered() {
     // Regression: a failed `az vm list-skus` (signed out, throttled, a bad region) read as an
     // empty list, and the check said the size isn't offered there.
-    let _tools = Tools::rules(&[("list-skus", fail("ERROR: Please run 'az login' to setup account.")), ("list-usage", ok(USAGE))]);
+    let _tools = Tools::strict_rules(&[("list-skus", fail("ERROR: Please run 'az login' to setup account.")), ("list-usage", ok(USAGE))]);
     let c = capacity_check(&account("sub-signed-out", "westeurope")).await;
     assert_eq!(c.state, CheckState::Warn);
     assert!(c.detail.starts_with("Couldn't ask Azure whether Standard_D2als_v6 is offered in westeurope: "), "{}", c.detail);
