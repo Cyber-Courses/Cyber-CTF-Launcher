@@ -13,15 +13,15 @@
 #   tests/integration/run.sh --results results.jsonl                    and a JSON record per scenario there
 #   tests/integration/run.sh --list                                     the scenarios and the knobs each reads
 #
-# Each scenario runs with a temp folder of its own (TMPDIR, TMP and TEMP: `cyberctf-it.XXXXXX` in
-# TMPDIR, else in /tmp), which its log names and which goes when it ends, passed, failed or killed
+# Each scenario runs with a temp folder of its own (TMPDIR, TMP and TEMP: `cyberctf-it.XXXXXX`, on
+# disk: see temp_base), which its log names and which goes when it ends, passed, failed or killed
 # past its cap: what a test makes there (a lab's copy, the runner's home, a test thread's folder,
 # its app's folders: CYBERCTF_TEST_APP_ROOT) never piles up on the machine, and a process still
 # running from it (a VM or a QEMU hub a killed test started, daemonized) is stopped first. It holds
-# the labs' runs, their VMs' disks among them: on a Linux whose /tmp is a tmpfs (Debian 13's: half
-# the RAM), set TMPDIR to a folder on disk. macOS's own TMPDIR (/var/folders/…) isn't used: too long
-# for the Unix sockets made there (104 bytes). The guided setup's scenario keeps the system's: its
-# folder is kept from pass to pass.
+# the labs' runs, their VMs' disks among them: by default on Linux in /var/tmp, not /tmp (a tmpfs
+# of half the RAM on Debian 13 and Fedora); CYBERCTF_TEST_INTEGRATION_TEMP names another folder.
+# macOS's own TMPDIR (/var/folders/…) isn't used: too long for the Unix sockets made there (104
+# bytes). The guided setup's scenario keeps the system's: its folder is kept from pass to pass.
 #
 # Fail fast: each scenario is killed past its cap (8 minutes; the attack-box ones 10, until the
 # goldens carry their images), and once a scenario fails on the platform itself (the launcher's
@@ -230,14 +230,28 @@ stop_running() {
   return 0
 }
 # scenario_temp: a fresh temp folder for a scenario, its real path (macOS's /tmp is a link; Docker
-# records the Compose files' paths), in SCENARIO_TEMP. In TMPDIR when that is an absolute path (the
-# test rig's Linux clones set one on their disk) but macOS's own, else in /tmp.
+# records the Compose files' paths), in SCENARIO_TEMP, in temp_base's folder.
 scenario_temp() {
-  local base=${TMPDIR:-/tmp}
-  case $base in /var/folders/* | /private/var/folders/* | [!/]*) base=/tmp ;; esac
+  local base
+  base=$(temp_base)
+  mkdir -p "$base"
   SCENARIO_TEMP=$(cd "$(mktemp -d "${base%/}/cyberctf-it.XXXXXX")" && pwd -P)
   SCENARIO_TEMP_NATIVE=$SCENARIO_TEMP
   if command -v cygpath >/dev/null 2>&1; then SCENARIO_TEMP_NATIVE=$(cygpath -w "$SCENARIO_TEMP"); fi
+}
+# temp_base: where the scenarios' temp folders go. They hold the labs' runs, their VMs' disks
+# among them, so on disk (#317): CYBERCTF_TEST_INTEGRATION_TEMP when set; else TMPDIR when that
+# is an absolute path (the test rig's Linux clones set one on their disk) but macOS's own
+# (/var/folders/…, too long for the Unix sockets made there: 104 bytes); else /var/tmp on Linux,
+# where /tmp is a tmpfs of half the RAM on Debian 13 and Fedora and /var/tmp is on disk, and short
+# enough for a runner's socket inside it (108 bytes); else /tmp.
+temp_base() {
+  if [ -n "${CYBERCTF_TEST_INTEGRATION_TEMP:-}" ]; then echo "$CYBERCTF_TEST_INTEGRATION_TEMP"; return; fi
+  case ${TMPDIR:-} in
+    /var/folders/* | /private/var/folders/* | "" | [!/]*) ;;
+    *) echo "$TMPDIR"; return ;;
+  esac
+  if [ "$(uname -s)" = Linux ]; then echo /var/tmp; else echo /tmp; fi
 }
 # drop_temp <folder> <log> [vms]: a scenario's temp folder gone, what it left with it: with `vms`
 # (a scenario past its cap, a runner stopped midway) its labs' VMs first (drop_vms), then

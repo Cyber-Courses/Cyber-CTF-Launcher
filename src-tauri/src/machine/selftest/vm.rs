@@ -1,6 +1,7 @@
 //! The VM self-test: a real throwaway VM on a local hypervisor.
 
 mod leftover;
+mod networks;
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -210,13 +211,31 @@ fn uname_line(out: &str) -> String {
 
 pub(super) async fn run_test(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
     clear_earlier_test(dir, r).await?;
-    let res = steps(dir, preferred, r).await;
+    // The host networks there before the VM boots, once its hypervisor is known: the ones the
+    // test makes go after it (#353).
+    let before = std::sync::OnceLock::new();
+    let res = steps(dir, preferred, r, &before).await;
     // Destroy the VM whatever happened; the box stays cached for the next test.
     if dir.join("Vagrantfile").exists() {
         let down = destroy(dir).await;
+        let deleted = down.is_ok();
         r.cleanup("Delete the test VM", &res, down, Some("test box kept for next time".into()));
+        if let (true, Some((provider, before))) = (deleted, before.get()) {
+            remove_networks(*provider, before, r).await;
+        }
     }
     res
+}
+
+/// Removes the host networks the test made (see `networks`), said as a step when it removed one
+/// or couldn't; the test's result stands either way.
+async fn remove_networks(provider: Provider, before: &networks::Networks, r: &Reporter) {
+    const STEP: (&str, &str) = ("networks", "Remove the networks the test made");
+    match networks::remove_made_since(provider, before).await {
+        Ok(removed) if removed.is_empty() => {}
+        Ok(removed) => r.send(STEP.0, STEP.1, StepState::Ok, Some(removed.join(", "))),
+        Err(e) => r.send(STEP.0, STEP.1, StepState::Fail, Some(e)),
+    }
 }
 
 /// What a test interrupted last time (the window closed, the app quit or was uninstalled) may
@@ -245,8 +264,9 @@ async fn clear_earlier_test(dir: &Path, r: &Reporter) -> Result<()> {
     Ok(())
 }
 
-async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter) -> Result<()> {
+async fn steps(dir: &Path, preferred: Option<Provider>, r: &Reporter, before: &std::sync::OnceLock<(Provider, networks::Networks)>) -> Result<()> {
     let provider = host_provider(preferred, r).await?;
+    let _ = before.set((provider, networks::Networks::here(provider).await));
     let arch = Arch::HERE;
     let (bx, _) = pick_box(provider, arch).await;
     r.step("box", "Get a small test VM image", async {

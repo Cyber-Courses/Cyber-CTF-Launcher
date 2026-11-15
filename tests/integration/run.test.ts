@@ -33,6 +33,7 @@ function runner(cargo: string, env: Record<string, string>, args: string[] = [])
     STRICT: "",
     SUITE_NESTED: "",
     CYBERCTF_TEST_INTEGRATION_TIMEOUT: "",
+    CYBERCTF_TEST_INTEGRATION_TEMP: "",
     CYBERCTF_TEST_VM_PROVIDER: "",
     CYBERCTF_TEST_ISOLOOM_DIR: dir,
     CYBERCTF_TEST_INTEGRATION_LOGS: dir,
@@ -280,21 +281,27 @@ describe("an integration scenario's verdict", () => {
     expect(seen("attack-box-docker")).toBe("skip=");
   });
 
-  it("makes its temp folder in TMPDIR, a folder on disk where /tmp is a tmpfs, but in /tmp for macOS's own", () => {
+  it("makes its temp folders on disk: the folder named, else TMPDIR on disk, else /var/tmp on Linux, never a tmpfs /tmp (#317)", () => {
     const cargo = 'echo "$TMPDIR" >"$CYBERCTF_TEST_INTEGRATION_LOGS/temp"; echo "test result: ok. 1 passed; 0 failed"';
-    const temp = (tmp: string) => {
-      const r = runner(cargo, { ONLY: "docker-lab-hello-stack", TMPDIR: tmp });
-      expect(verdict(r.out, "docker-lab-hello-stack"), tmp).toBe("ok");
+    const temp = (env: Record<string, string>) => {
+      const r = runner(cargo, { ONLY: "docker-lab-hello-stack", ...env });
+      expect(verdict(r.out, "docker-lab-hello-stack"), JSON.stringify(env)).toBe("ok");
       return readFileSync(join(r.dir, "temp"), "utf8").trim();
     };
-    // The test rig's Linux clones: TMPDIR on their disk (Debian 13's /tmp is a tmpfs of half the RAM).
+    const inside = (base: string) => new RegExp(`^${realpathSync(base)}/cyberctf-it\\.[A-Za-z0-9]{6}$`);
+    // The test rig's Linux clones: TMPDIR on their disk.
     const disk = mkdtempSync("/tmp/integration-test-");
     dirs.push(disk);
-    expect(temp(disk)).toMatch(new RegExp(`^${realpathSync(disk)}/cyberctf-it\\.[A-Za-z0-9]{6}$`));
-    // macOS's own (/var/folders/…/T/), too long a path for a socket made in the folder; one that
-    // isn't a Unix path.
-    for (const tmp of ["/var/folders/xy/abc/T/", "C:\\Users\\me\\AppData\\Local\\Temp"]) {
-      expect(temp(tmp), tmp).toMatch(new RegExp(`^${realpathSync("/tmp")}/cyberctf-it\\.[A-Za-z0-9]{6}$`));
+    expect(temp({ TMPDIR: disk })).toMatch(inside(disk));
+    // The folder the runner is given wins.
+    const named = folder();
+    expect(temp({ TMPDIR: disk, CYBERCTF_TEST_INTEGRATION_TEMP: named })).toMatch(inside(named));
+    // No TMPDIR, macOS's own (too long a path for a socket made in it), or one that isn't a Unix
+    // path: /var/tmp on Linux (on disk; /tmp is a tmpfs of half the RAM on Debian 13 and Fedora),
+    // else /tmp.
+    const fallback = process.platform === "linux" ? "/var/tmp" : "/tmp";
+    for (const tmp of ["", "/var/folders/xy/abc/T/", "C:\\Users\\me\\AppData\\Local\\Temp"]) {
+      expect(temp({ TMPDIR: tmp }), tmp).toMatch(inside(fallback));
     }
   });
 
