@@ -5,7 +5,7 @@ const OLD = `cyberctf/attack-box@sha256:${"1".repeat(64)}`;
 const NEW = `cyberctf/attack-box@sha256:${"2".repeat(64)}`;
 
 // A launcher whose default was bumped once: the bump PR moved the old digest to `previous`.
-vi.mock("../../src-tauri/attack-box-image.json", () => ({ default: { image: NEW, previous: [OLD] } }));
+vi.mock("../../src-tauri/attack-box/image.json", () => ({ default: { image: NEW, previous: [OLD] } }));
 
 afterEach(() => {
   localStorage.clear();

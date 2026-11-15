@@ -68,7 +68,8 @@ the runner's console into it as the player's account (`Running::console_command`
 account the way in logs in as (`vagrant`, a cloud image's).
 
 The box has that account on every form, with a home and sudo without a password
-(`images/attack-box/player-account.sh`): the attack image is built with it, a container box makes
+(`src-tauri/attack-box/player-account.sh`, pinned from the
+[attack box repository](https://github.com/CyberCTF/attack-box)): the attack image is built with it, a container box makes
 it where it starts (its image may predate it), and a VM box at the end of its set-up. Where the
 shared folder belongs to a user the box doesn't have (a Linux computer's, through Docker or
 virtiofs), the account takes that user's uid, and it joins the folder's group (a VM's shared

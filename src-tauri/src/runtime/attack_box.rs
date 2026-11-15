@@ -33,14 +33,14 @@ pub(crate) const NAME: &str = "attackbox";
 /// The account the player works as in the box, whatever its form: its shell opens as it, in its
 /// home, with sudo that asks no password, and a password of its box's own ([`mod@sign_in`]) where
 /// something else asks (the screen locker, a login, `su`, SSH). The box makes it
-/// ([`PLAYER_ACCOUNT`]); the attack box image has it already (`images/attack-box/Dockerfile`,
-/// which a test holds to this name), without a password.
+/// ([`PLAYER_ACCOUNT`]); the attack box image has it already, under this name (the attack box
+/// repository's contract, which its smoke test checks), without a password.
 pub(crate) const PLAYER: &str = "player";
 
 /// The script that makes [`PLAYER`] in the box, as root, where it is missing, lets it write in
 /// the shared folder and gives it its password: the image's build runs it, and the launcher where
 /// the box starts or is set up ([`player_account`]).
-const PLAYER_ACCOUNT: &str = include_str!("../../../images/attack-box/player-account.sh");
+const PLAYER_ACCOUNT: &str = include_str!("../../attack-box/player-account.sh");
 
 /// [`PLAYER_ACCOUNT`] for [`PLAYER`], with the shared folder at its mount point and its password's
 /// hash in the box's root-only file ([`sign_in::HASH_FILE`], which the box's spec places): one
@@ -64,9 +64,9 @@ fn container_command() -> String {
 }
 
 /// The default attack image, shared with the frontend's Settings (`src/lib/settings.ts`): the
-/// Cyber CTF image, pinned by its digest in `attack-box-image.json`, which the attack-box workflow
-/// updates once a published image passed its smoke test.
-const IMAGE_FILE: &str = include_str!("../../attack-box-image.json");
+/// Cyber CTF image, pinned by its digest in `attack-box/image.json`, which the attack box
+/// repository's publish updates (a pull request with its files) once the image passed its smoke test.
+const IMAGE_FILE: &str = include_str!("../../attack-box/image.json");
 
 /// The attack image a container box runs when the learner picked none: [`IMAGE_FILE`]'s `image`
 /// (its repository unpinned, should the file not read: a test keeps it readable).
@@ -83,19 +83,14 @@ pub(crate) fn default_image() -> &'static str {
 /// Its set-up, a file of the lab's project (the project is what a machine gets): Kali's headless
 /// toolset, what the launcher's attack box image installs, unattended. A Debian VM (where Kali
 /// has no image for the computer's CPU) is made Kali first: Kali's archive in place of Debian's,
-/// its signing keys checked against [`KALI_ARCHIVE_KEYS`] before apt trusts them, pinned over
+/// its signing keys checked against Kali's archive keys ([`KALI`]) before apt trusts them, pinned over
 /// what Debian installed, keeping its own kernel (Kali's doesn't fit the image's boot partition).
 const SETUP_FILE: &str = "cyberctf-attackbox.sh";
 
-/// The primary keys of Kali's archive keyring (`archive.kali.org/archive-keyring.gpg`): its 2025
-/// automatic signing key, which signs the archive, and the repository key before it, which the
-/// keyring still holds. A keyring with any other key, or without one of these, is refused.
-const KALI_ARCHIVE_KEYS: [&str; 2] = ["827C8569F2518CC677FECA1AED65462EC8D5E4C5", "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6"];
-
-/// The set-up script: [`SETUP_START`], Kali's archive keyring downloaded into a private work
-/// directory and checked there, then [`SETUP_REST`], then Kali's toolset ([`TOOLSET`]) unless a
-/// test run switched it off ([`toolset_wanted`]), then the player's account ([`player_account`]),
-/// then the desktop when it has one.
+/// The set-up script, from the attack box repository's pinned parts (`attack-box/vm/`, its
+/// README says the order): [`KALI`], then Kali's toolset ([`TOOLSET`]) unless a test run switched
+/// it off ([`toolset_wanted`]), then the player's account ([`player_account`]), then the desktop
+/// ([`DESKTOP`]) when it has one.
 fn setup_script(desktop: bool) -> String {
     setup_script_with(desktop, toolset_wanted())
 }
@@ -129,49 +124,19 @@ fn toolset_wanted_given(skip: Option<&str>) -> bool {
 
 /// [`setup_script`] with Kali's toolset installed or not (`toolset`).
 fn setup_script_with(desktop: bool, toolset: bool) -> String {
-    use crate::platform::root_script::{NEED_GPG, PRIVATE_WORKDIR, check_keys};
-    let keyring = format!(
-        "  {PRIVATE_WORKDIR}\n  {NEED_GPG}\n  curl -fsSL https://archive.kali.org/archive-keyring.gpg -o \"$d/key\"\n  {}\n  install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg\n",
-        check_keys(&KALI_ARCHIVE_KEYS, "Kali's archive")
-    );
     let toolset = if toolset { TOOLSET } else { "# Kali's toolset left out: a test run's bare box (CYBERCTF_TEST_BOX_SKIP_TOOLS).\n" };
-    [SETUP_START, &keyring, SETUP_REST, toolset, &player_account(), "\n", if desktop { DESKTOP } else { "" }].concat()
+    [KALI, toolset, &player_account(), "\n", if desktop { DESKTOP } else { "" }].concat()
 }
 
-/// The set-up up to Kali's archive keyring, on a Debian VM.
-const SETUP_START: &str = r"#!/bin/sh
-# The Cyber CTF attack box: Kali's headless toolset, as the attack box image has it.
-set -e
-export DEBIAN_FRONTEND=noninteractive
-# Configuration files kept as they are; on a Debian made Kali, Debian's libraries renamed in Kali
-# (the t64 move) hand their files over to the new ones.
-keep='-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-overwrite'
-if ! grep -q '^ID=kali' /etc/os-release; then
-  apt-get update
-  apt-get install -y ca-certificates curl gnupg
-";
-
-/// The set-up once Kali's archive keyring is in place.
-const SETUP_REST: &str = r"  echo 'deb [signed-by=/usr/share/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware' > /etc/apt/sources.list.d/kali.list
-  # Kali's archive only, over what Debian installed (its versions win, older ones included).
-  rm -f /etc/apt/sources.list.d/debian.sources; : > /etc/apt/sources.list
-  printf 'Package: *\nPin: release o=Kali\nPin-Priority: 1001\n' > /etc/apt/preferences.d/kali
-  apt-get update
-  # Its own kernel stays: Kali's needs more room than the image's boot partition has.
-  apt-mark hold $(dpkg -l 'linux-image-*' | awk '/^ii/ {print $2}')
-  apt-get full-upgrade -y --allow-downgrades $keep
-  apt-get install -f -y $keep
-fi
-";
+/// The set-up on a Debian VM: Kali's archive keyring, checked against Kali's archive keys before
+/// apt trusts it, Kali's archive in place of Debian's, the VM's own kernel kept. It defines
+/// `$keep`, which the parts after it use.
+const KALI: &str = include_str!("../../attack-box/vm/kali.sh");
 
 /// Kali's headless toolset, installed only on a box that lacks it: the toolset is the box image's,
 /// installed and upgraded once when the image is built, so a box that has it takes nothing of
 /// Kali's rolling archive when it is created.
-const TOOLSET: &str = r"if ! dpkg-query -W -f='${Status}' kali-linux-headless 2>/dev/null | grep -q 'ok installed'; then
-  apt-get update
-  apt-get install -y $keep kali-linux-headless
-fi
-";
+const TOOLSET: &str = include_str!("../../attack-box/vm/toolset.sh");
 
 /// Its disk: room for Kali's headless toolset (about 12 GB) beside the image, and for the desktop
 /// (about 3 GB more) when it has one.
@@ -184,36 +149,7 @@ const DISK_GB: u32 = 40;
 /// (idle, on suspend, on a switch of user), so the player isn't locked out mid-exercise. The
 /// account, its sudo rules and its password stay as [`PLAYER_ACCOUNT`] makes them: `LightDM`'s login
 /// after a logout takes that password, as would a locker started by hand.
-const DESKTOP: &str = r#"apt-get install -y $keep kali-desktop-xfce lightdm
-# LightDM signs the player in to XFCE, on the VM's own screen; its X server never blanks it.
-mkdir -p /etc/lightdm/lightdm.conf.d
-printf '[Seat:*]\nautologin-user=player\nautologin-user-timeout=0\nautologin-session=xfce\nuser-session=xfce\nxserver-command=X -s 0 -dpms\n' > /etc/lightdm/lightdm.conf.d/50-cyberctf-autologin.conf
-groupadd -f -r autologin
-usermod -a -G autologin player
-# No screen lock: Kali's lockers don't start for the player, and at each sign-in the session
-# turns off blanking, the screensaver's lock, the power manager's and the session's own.
-mkdir -p /home/player/.config/autostart
-for locker in light-locker xfce4-screensaver; do
-  printf '[Desktop Entry]\nHidden=true\n' > "/home/player/.config/autostart/$locker.desktop"
-done
-chown -R player: /home/player/.config
-cat > /usr/local/bin/cyberctf-no-screen-lock <<'NOLOCK'
-#!/bin/sh
-xset s off -dpms
-off() { xfconf-query -c "$1" -p "$2" -n -t bool -s false; }
-off xfce4-screensaver /saver/enabled
-off xfce4-screensaver /lock/enabled
-off xfce4-power-manager /xfce4-power-manager/dpms-enabled
-off xfce4-power-manager /xfce4-power-manager/lock-screen-suspend-hibernate
-off xfce4-session /shutdown/LockScreen
-exit 0
-NOLOCK
-chmod 0755 /usr/local/bin/cyberctf-no-screen-lock
-printf '[Desktop Entry]\nType=Application\nName=No screen lock\nExec=/usr/local/bin/cyberctf-no-screen-lock\nNoDisplay=true\n' > /etc/xdg/autostart/cyberctf-no-screen-lock.desktop
-systemctl set-default graphical.target
-systemctl enable lightdm
-systemctl restart lightdm
-"#;
+const DESKTOP: &str = include_str!("../../attack-box/vm/desktop.sh");
 
 /// The memory (MB) and CPUs a box with a desktop gets: XFCE beside Kali's tools wants more than a
 /// VM's default.

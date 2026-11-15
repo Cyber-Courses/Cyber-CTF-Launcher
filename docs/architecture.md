@@ -70,7 +70,7 @@ Hyper-V only takes management commands from an administrator (or a member of "Hy
 - [x] Login with a code on another device (device authorization grant), once cyber-auth enables it for the launcher's client
 - [x] Lab catalogue from [CyberBackend](https://github.com/Cyber-Courses/CyberBackend); launch = `startLab`, download at the pinned commit, run with the launch token
 - [x] Servers (ESXi/Proxmox, credentials in the keychain) and cloud accounts (AWS, Azure, GCP, DigitalOcean, Linode, OCI)
-- [x] Attack box on the lab network (Cyber CTF image on Docker Hub, built by the attack-box workflow)
+- [x] Attack box on the lab network (Cyber CTF image on Docker Hub, built by the [attack box repository](https://github.com/CyberCTF/attack-box))
 - [x] VM lab provisioning from the lab's `isoloom.yml` (through Isoloom), re-runnable per machine from the lab page
 - [x] Signed updates: the in-app updater installs only updates signed with the launcher's key (minisign), from `latest.json` on GitHub Releases
 - [x] Signed and notarized macOS app (Developer ID)

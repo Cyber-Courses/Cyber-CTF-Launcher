@@ -25,7 +25,7 @@ import { button, flush, settle } from "@/test/ui";
 import { pressFirstTest, providerRows, renderMachineScreen } from "@/features/machine/machine-test-kit";
 import { must, toastsShown } from "@/components/test-support";
 import { Toaster } from "@/components/ui/toaster";
-import attackBoxPin from "../../../src-tauri/attack-box-image.json";
+import attackBoxPin from "../../../src-tauri/attack-box/image.json";
 
 const GB = 1e9;
 const text = () => document.body.textContent;

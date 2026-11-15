@@ -227,16 +227,16 @@ fn a_container_box_makes_the_player_account_where_it_starts_then_idles() {
     remove(&dir).unwrap();
 }
 
+/// The pinned VM set-up checks Kali's archive keyring against Kali's two archive keys before
+/// apt trusts it, and stops with nothing installed when it doesn't match.
 #[test]
-fn the_image_and_its_smoke_test_name_the_launchers_player_account() {
-    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../images/attack-box");
-    let dockerfile = std::fs::read_to_string(image.join("Dockerfile")).unwrap();
-    assert!(dockerfile.contains(&format!("ARG PLAYER={PLAYER}\n")), "{dockerfile}");
-    assert!(dockerfile.contains("RUN account=$PLAYER sh /tmp/player-account.sh"), "the same script as the launcher's: {dockerfile}");
-    assert!(!dockerfile.contains("\nUSER "), "root stays the image's user: the box sets itself up as root");
-    let smoke = std::fs::read_to_string(image.join("smoke-test.sh")).unwrap();
-    assert!(smoke.contains(&format!("\nplayer={PLAYER}\n")), "{smoke}");
-    assert!(smoke.contains(r#"[ "$(docker exec --user "$player" "$name" whoami)" = "$player" ]"#), "{smoke}");
+fn the_vm_set_up_checks_kalis_archive_keys_before_trusting_them() {
+    for key in ["827C8569F2518CC677FECA1AED65462EC8D5E4C5", "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6"] {
+        assert!(KALI.contains(key), "{key}: {KALI}");
+    }
+    let (check, trust) = (KALI.find("Nothing was installed").unwrap(), KALI.find("install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg").unwrap());
+    assert!(check < trust, "checked before it is installed: {KALI}");
+    assert!(crate::platform::sh_parses(&setup_script_with(true, true)), "the parts make one script");
 }
 
 /// Every file under `dir`, read as text (one that isn't text read as empty).
@@ -393,7 +393,7 @@ fn a_test_runs_bare_box_skips_kalis_toolset_and_nothing_else() {
         assert!(full.contains(TOOLSET) && !bare.contains("kali-linux-headless"), "the toolset's install alone goes");
         let marker = "# Kali's toolset left out: a test run's bare box (CYBERCTF_TEST_BOX_SKIP_TOOLS).\n";
         assert_eq!(bare, full.replace(TOOLSET, marker), "everything else as it was");
-        assert!(bare.contains(&player_account()) && bare.contains(SETUP_REST));
+        assert!(bare.contains(&player_account()) && bare.contains(KALI));
     }
     // Only `1` turns it off, and only in a test build (`toolset_wanted` is `true` in the app's).
     assert!(!toolset_wanted_given(Some("1")));

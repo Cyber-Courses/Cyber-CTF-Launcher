@@ -9,8 +9,6 @@ on:
   pull_request:
   push:
     branches: [main]
-  # The attack-box workflow's bump commit is pushed with GITHUB_TOKEN, which starts no push run;
-  # that workflow dispatches this one on main instead.
   workflow_dispatch:
 
 concurrency:
