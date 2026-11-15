@@ -127,7 +127,7 @@ by a start that was cut off) and no operation runs on it; the core refuses other
 the app or not:
 
 - the copy, `<app data>/labs/<lab id>/`, with the project generated in it (Compose files,
-  Vagrantfiles, the run manifest), and an update's or an import's leftover `.<lab id>.staging` and
+  Vagrantfiles, Terraform modules), and an update's or an import's leftover `.<lab id>.staging` and
   `.<lab id>.old`;
 - the runner's run folder, `<app data>/runs/cyberctf-<lab id>/` (its record, its event log, what
   it last saw, Vagrant's state of it);
