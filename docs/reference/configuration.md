@@ -37,7 +37,7 @@ The app's executable takes:
 | --------------------- | ----------------------------------------------------------------------------------- |
 | none                  | starts the app; when it already runs, brings its window forward instead             |
 | a `cyberctf://` link  | opens the link in the running app (the browser passes the website's links this way) |
-| `deploy --job <file>` | internal: the detached worker that runs one lab operation, started by the app       |
+| `serve --home <home>` | internal: the runner service of a home, started by the app or the command line      |
 
 ## Ports
 

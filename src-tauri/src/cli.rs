@@ -3,9 +3,8 @@
 //! driven and checked without a UI) and a feature for players and scripts. Every command calls
 //! the functions the app's commands call (the shared layer under `commands/`, the run service,
 //! the domain): no logic of its own beyond reading arguments and printing. It needs no window
-//! system: it never builds a Tauri app, so it runs where no display is (a server, a fresh VM, CI),
-//! and the deploy workers it starts run headless too (`deploy_worker::headless_main`). Beside an
-//! open app it shares its data folder through the same files, locks and store.
+//! system: it never builds a Tauri app, so it runs where no display is (a server, a fresh VM, CI).
+//! Beside an open app it shares its data folder through the same files, locks and store.
 
 mod account;
 mod args;
@@ -58,8 +57,7 @@ impl Context {
     }
 }
 
-/// The command line's entry (`cyberctf`, see the module), or a deploy worker it started
-/// (`cyberctf deploy --job <file>`, headless). Returns the process's exit code.
+/// The command line's entry (`cyberctf`, see the module). Returns the process's exit code.
 pub fn main() -> std::process::ExitCode {
     let args: Vec<OsString> = std::env::args_os().collect();
     // A worker on Windows interrupts Terraform through this same executable (see the app's `run`).

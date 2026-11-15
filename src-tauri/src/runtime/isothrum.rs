@@ -445,8 +445,7 @@ impl LabRun {
         self.refuse_up_when_running()?;
         let opts = self.placed(start_options(inputs, provider));
         self.act(remote::Act::Up, &opts, log).await.map_err(|e| self.said(e.into_error()))?;
-        let message = self.target().and_then(|t| described::message(&self.dir, t));
-        message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
+        described::log_message(&self.dir, self.target(), log);
         Ok(())
     }
 

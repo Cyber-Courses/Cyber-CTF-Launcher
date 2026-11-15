@@ -83,8 +83,7 @@ impl ServerRun {
     /// the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &ServerPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         self.act(super::remote::Act::Up, &options(place, env), log).await.map_err(|e| errors::on_server(e, &place.name))?;
-        let message = self.target().and_then(|t| super::described::message(&self.dir, t));
-        message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
+        super::described::log_message(&self.dir, self.target(), log);
         Ok(())
     }
 

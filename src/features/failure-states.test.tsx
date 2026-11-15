@@ -13,7 +13,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { getDeploySnapshot, runFailure, startFailed, type DeployRun } from "@/features/labs/runs/deploy-runs";
 import { operationSeenAt } from "@/features/labs/runs/operations";
 import { takeIn } from "@/lib/tauri/run-events";
-import type { ActiveOperation, AuthStatus, LabStatus } from "@/lib/tauri";
+import type { AuthStatus, LabStatus } from "@/lib/tauri";
 import { readyReport } from "@/test/fixtures";
 import { commands, installTauri, rejectWith } from "@/test/tauri";
 import { answer } from "@/lib/dev-mock";

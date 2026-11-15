@@ -157,7 +157,7 @@ impl Provider {
     /// a folder of this computer and, when the setup doesn't install it, where its vendor offers
     /// it. Read by the machine check, the guided setup
     /// and the setup's installs and removals; how the setup installs and removes one is its tool's
-    /// row ([`Provider::dependency`]). A provider added to the enum is a compile error here until
+    /// row (the machine layer's `Dependency::of_hypervisor`). A provider added to the enum is a compile error here until
     /// its row says where it runs.
     pub(crate) fn row(self) -> ProviderRow {
         // A hypervisor built for every OS and CPU, the setup installing it, its VMs sharing a

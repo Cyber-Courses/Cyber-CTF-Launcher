@@ -3,11 +3,11 @@
 //! operation does and how it ends reach every window as events ([`events`]), never through a
 //! command's own channel nor a poll. A window that (re)loads replays the events it missed.
 //!
-//! The service behind it is the launcher's own ([`local::LocalRunService`], [`of`]): each
-//! operation's launcher steps on a task of the app, what it asks of the lab's run in the home's
-//! runner service (`runtime::isothrum`), which runs it to its end whatever becomes of the app. It
-//! is also the one account of what this process is doing to which lab: what a quit, an update
-//! install and a lab's removal wait for.
+//! The service behind it is the launcher's own ([`local::LocalRunService`], made by
+//! [`local::LocalRunService::of`]): each operation's launcher steps on a task of the app, what it
+//! asks of the lab's run in the home's runner service (`runtime::isothrum`), which runs it to its
+//! end whatever becomes of the app. It is also the one account of what this process is doing to
+//! which lab: what a quit, an update install and a lab's removal wait for.
 
 pub(crate) mod events;
 pub(crate) mod host;

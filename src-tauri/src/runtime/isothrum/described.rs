@@ -166,6 +166,13 @@ pub(super) fn message(dir: &Path, target: lab::Target) -> Option<String> {
     })
 }
 
+/// Logs the lab's message ([`message`]) on `target` line by line, where a lab's run says where to
+/// start once it is up; nothing when the run has no target or the lab no message.
+pub(super) fn log_message(dir: &Path, target: Option<lab::Target>, log: &mut impl FnMut(String)) {
+    let message = target.and_then(|t| message(dir, t));
+    message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

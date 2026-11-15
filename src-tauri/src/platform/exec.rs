@@ -381,9 +381,7 @@ async fn stream_from(program: &'static str, args: &[&str], cwd: Option<&Path>, e
     }
     let mut cmd = piped_command(program, args, cwd, env, Stdio::null());
     // A cancellation ends the whole tree: `vagrant` is a wrapper whose `ruby` outlived the
-    // wrapper killed alone, and kept Vagrant's lock. A deploy worker being stopped reaches it
-    // through `kill_live_tools` (gently: SIGTERM), and Terraform's interrupt finds it as a group
-    // under the worker (see deploy_worker).
+    // wrapper killed alone, and kept Vagrant's lock.
     let (mut child, group) = spawn_group(&mut cmd, true).map_err(spawn_error(program))?;
     // Keep the last few stderr lines so a failure's error carries the actual cause, not just the
     // exit status (callers that surface the returned error, not the log channel, rely on this).
