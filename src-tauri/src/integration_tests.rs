@@ -1,7 +1,7 @@
 //! Real labs, end to end, on the real tools: Docker, local hypervisors, cloud accounts and
 //! servers, driven through the launcher's own code. Every test here is opt-in (`#[ignore]`): it
 //! reads its knobs from `CYBERCTF_TEST_*` and returns early without them. `tests/integration/run.sh`
-//! runs them by tier; docs/testing/integration.md says what each one guards against.
+//! runs them by tier; docs/contributing/testing/integration.md says what each one guards against.
 
 mod attack_box;
 mod corpus_docker;
@@ -132,7 +132,7 @@ mod reached {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let read = |p: &Path| std::fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()));
         let mut runners = read(&root.join("tests/integration/run.sh"));
-        for doc in ["docs/testing/release-check.md", "docs/testing/integration.md"] {
+        for doc in ["docs/contributing/testing/release-check.md", "docs/contributing/testing/integration.md"] {
             runners.push_str(&read(&root.join(doc)));
         }
         for entry in std::fs::read_dir(root.join(".github/workflows")).unwrap().flatten() {

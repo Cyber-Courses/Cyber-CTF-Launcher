@@ -2,7 +2,7 @@
 //! one JSON object a line on stdout, each with the shape's version (`v`), its type (`event`,
 //! `result` or `error`) and the command (`labs.start`): the events as the command goes, then its
 //! result or its error. The shape is versioned: a field is added within a version, never renamed,
-//! retyped or removed (docs/cli.md).
+//! retyped or removed (docs/players/cli.md).
 
 use std::io::Write;
 

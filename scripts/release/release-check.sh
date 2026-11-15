@@ -6,7 +6,7 @@
 # hypervisor), in one command on a developer machine, with one line per step at the end. Steps
 # keep going after a failure so one run reports everything that is wrong. A runner run as a step
 # (other-platforms, e2e-native) that skipped some of its own steps is recorded `skip`, not `ok`.
-# docs/testing/release-check.md says what each step proves.
+# docs/contributing/testing/release-check.md says what each step proves.
 #
 #   scripts/release/release-check.sh                     the whole gate (pnpm release-check)
 #   ONLY="unit-web e2e-mock" scripts/release/release-check.sh

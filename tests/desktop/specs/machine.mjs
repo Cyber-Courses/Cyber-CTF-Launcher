@@ -5,7 +5,7 @@
 // setup window (`machine-setup`). The guided setup itself opens from the Overview when Docker
 // doesn't answer (the app given a dead Docker, as fail-docker does): its first step, "What do you
 // want to run?", leads into a path. Nothing is installed: installing every tool on a bare machine
-// is the integration tests' bare-machine tier (docs/testing/integration.md).
+// is the integration tests' bare-machine tier (docs/contributing/testing/integration.md).
 //
 //   CYBERCTF_TEST_VM_PROVIDER  the hypervisor whose VM lab test to run (none: that check skipped)
 import {

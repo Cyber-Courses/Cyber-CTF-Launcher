@@ -14,7 +14,7 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   account and the storage, without the app's window and through the same code as the app. It runs
   with no display (a server, a fresh VM, CI) and beside the open app; `--json` gives one versioned
   JSON object a line, and its exit codes tell a failure (1) from a usage error (2) and from
-  something to put right first (3). See docs/cli.md.
+  something to put right first (3). See docs/players/cli.md.
 - **Save diagnostics.** Settings > About saves one file to attach to a bug report: the version,
   the OS, the machine check, the installed labs, the last lab operations and the end of the logs,
   with tokens, passwords, keys, flags and e-mail addresses removed and the home folder written
@@ -246,13 +246,13 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   build provenance attestation of each (`gh attestation verify <file> --repo
 Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependencies, and
   `THIRD_PARTY_NOTICES`, also shipped inside the installed app and the Store package.
-- **An administrator guide** (`docs/admin-guide.md`): silent install and removal, updates, the
+- **An administrator guide** (`docs/admins/admin-guide.md`): silent install and removal, updates, the
   network endpoints and local ports, proxy and certificate behaviour, what works offline, the
   files, keychain items and machine changes, what is sent to Cyber CTF, and a clean uninstall per
   platform. The docs are reorganised by purpose (`docs/README.md`), with a getting-started
   tutorial, troubleshooting, a configuration reference, a versioning and support policy and the
   release process; the README is rewritten for users and IT, and the architecture moved to
-  `docs/architecture.md`.
+  `docs/contributing/architecture.md`.
 - **Governance files**: `SECURITY.md` (private vulnerability reporting, response times),
   `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SUPPORT.md`, `CODEOWNERS`,
   issue forms and a pull request template.
@@ -269,7 +269,7 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
   macOS, `/etc/cyberctf/policy.json` on Linux. Settings, under About, lists what it turns off, and
   an operation it refuses says which setting did. A setting it doesn't know is logged and ignored;
   one whose value isn't a boolean, or a policy that can't be read, is logged and treated as on.
-  `docs/reference/policy.md` has the reference.
+  `docs/admins/policy.md` has the reference.
 - **The attack box on every form a lab runs in but ESXi.** The attack box is one more machine of
   the lab, wherever it runs: on Docker, in a VM on this machine, as VMs here, on a Proxmox
   server, or in a cloud account (containers on one VM, or one VM per machine); not yet on an ESXi

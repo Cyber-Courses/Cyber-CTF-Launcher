@@ -11,7 +11,7 @@ Microsoft Store get it through those channels.
 | The latest release (see [Releases][]) | yes                                      |
 | Anything older                        | no: update to the latest release instead |
 
-[docs/reference/versioning.md](docs/reference/versioning.md) has the versioning and support policy
+[docs/admins/versioning.md](docs/admins/versioning.md) has the versioning and support policy
 in full.
 
 [Releases]: https://github.com/Cyber-Courses/Cyber-CTF-Launcher/releases
@@ -62,11 +62,11 @@ Out of scope, report them elsewhere:
 
 ## How the launcher protects what it handles
 
-For a security review, [docs/admin-guide.md](docs/admin-guide.md) lists the network endpoints, the
+For a security review, [docs/admins/admin-guide.md](docs/admins/admin-guide.md) lists the network endpoints, the
 files and keychain items, and the changes the launcher makes to a machine;
-[docs/architecture.md](docs/architecture.md) describes the design (a webview that only calls typed
+[docs/contributing/architecture.md](docs/contributing/architecture.md) describes the design (a webview that only calls typed
 Rust commands, tools run without a shell, tokens kept in the OS keychain). Releases after 1.8.9
 are signed (Authenticode on Windows, Developer ID and notarization on macOS, minisign for in-app
 updates) and come with SHA256SUMS, SBOMs and build provenance attestations
-([docs/release-process.md](docs/release-process.md)). Up to 1.8.9, the macOS app was signed and
+([docs/contributing/release-process.md](docs/contributing/release-process.md)). Up to 1.8.9, the macOS app was signed and
 notarized but the Windows installers carried no Authenticode signature.

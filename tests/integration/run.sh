@@ -2,7 +2,7 @@
 # The integration tests: real labs, end to end, on the real tools. The regression suite for what
 # only real Docker, Vagrant, hypervisors and clouds show. Each scenario is an opt-in Rust test
 # (`#[ignore]`) run with the knobs it needs; one verdict per scenario, and a failure doesn't stop
-# the run. docs/testing/integration.md says what each scenario guards against; tests/README.md
+# the run. docs/contributing/testing/integration.md says what each scenario guards against; tests/README.md
 # lists every knob and the results' format.
 #
 #   tests/integration/run.sh                                            the local tier: Docker, VMs here
@@ -569,7 +569,7 @@ fi
 if [ -n "$LISTING" ]; then
   # Not run here: it installs real tools on the machine as an administrator. The test rig runs it
   # on a bare guest, or anywhere with CYBERCTF_TEST_SETUP_CHECK_ONLY=1, which only detects and
-  # plans (docs/testing/integration.md, "Bare-machine tier"); listed for its knobs.
+  # plans (docs/contributing/testing/integration.md, "Bare-machine tier"); listed for its knobs.
   TIER=bare-machine
   listing setup "" "$SETUP"
   exit 0

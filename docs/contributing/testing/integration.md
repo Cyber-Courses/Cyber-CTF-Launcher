@@ -23,7 +23,7 @@ check and runs the teardown after it. A lab one scenario leaves behind fails the
 UTM VM still registered made every later VM import fail).
 
 `--results <file>` appends a JSON record per scenario there, and `--list` prints the scenarios with
-the knobs each reads ([tests/README.md](../../tests/README.md#results)). `--only <scenario>@<provider>`
+the knobs each reads ([tests/README.md](../../../tests/README.md#results)). `--only <scenario>@<provider>`
 runs one scenario on one hypervisor (`vm-lab@virtualbox`: the test rig's finest shard; `@docker`
 or no `@` names none).
 
@@ -39,7 +39,7 @@ alone.
 
 A scenario's id is its file's name and, for a file of several, the form or lab it runs:
 `attack-box-vm` is `integration_tests/attack_box.rs` on the VM form.
-[tests/README.md](../../tests/README.md#knobs) lists every knob.
+[tests/README.md](../../../tests/README.md#knobs) lists every knob.
 
 ## Local tier
 
@@ -68,7 +68,7 @@ Docker, and Vagrant with QEMU (`CYBERCTF_TEST_VM_PROVIDER`). About 30 minutes, m
 | `resilience-vm-killed-start`         | the process running a VM lab's start killed while Vagrant provisions: failed, its Vagrant left to finish, a start again works                                                                                                               |                                                                                                                                                                                                                                                                           |
 | `resilience-vm-killed-provisioning`  | a VM killed by its hypervisor's own tool while `vagrant up` provisions it (throwaway machines only, `CYBERCTF_TEST_RESILIENCE_VM_KILL`): the start fails or finishes whole, a start again works                                             |                                                                                                                                                                                                                                                                           |
 
-The `resilience-*` scenarios are the real-host part of [tests/resilience.md](../../tests/resilience.md),
+The `resilience-*` scenarios are the real-host part of [tests/resilience.md](../../../tests/resilience.md),
 the catalogue of what a player does that breaks a lab. A killed-start scenario runs the start in a
 child process, this test binary again running
 `integration_tests::resilience::the_child_starts_the_lab_it_is_handed` (never a scenario of its

@@ -3,7 +3,7 @@
 # app driven through its embedded WebDriver server, every spec with the needs it declares met
 # first, one verdict per spec and one line per check, then the summary (tests/desktop/run.mjs runs
 # the specs; this builds or unpacks the app and serves a debug build's frontend). Part of
-# scripts/release/release-check.sh; the test rig's entry point (docs/testing/desktop-e2e.md says
+# scripts/release/release-check.sh; the test rig's entry point (docs/contributing/testing/desktop-e2e.md says
 # what each spec proves and needs).
 #
 # Safe on a machine someone uses: the app keeps all of its own in a folder made for the run
