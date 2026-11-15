@@ -28,6 +28,7 @@
 //! CYBERCTF_TEST_PVE_NODE=<node> CYBERCTF_TEST_PVE_BRIDGE=<bridge> CYBERCTF_TEST_PVE_JUMP=root@<address> \
 //! CYBERCTF_TEST_PVE_RUNNER_HOME=<a folder whose ssh/id_ed25519 the node lets in> \
 //! CYBERCTF_TEST_PVE_SSH_KEY=<a private key the node lets root in with: the snippet upload's> \
+//! [CYBERCTF_TEST_PVE_STORAGE=<its storage for VM disks, images and snippets; default local-lvm>] \
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::server_lab::a_vm_lab_runs_on_proxmox_through_the_runner
 //! ```
 //!
@@ -49,7 +50,7 @@ use super::support::{check, scenario};
 use crate::runtime::Runtime;
 use crate::runtime::isothrum::{EsxiPlace, LabRun, ServerPlace, ServerRun};
 use crate::runtime::lab;
-use crate::runtime::server::HostProfile;
+use crate::runtime::server::{HostProfile, SshKeySignIn};
 
 /// Knob `k`, which the test can't run without.
 fn var(k: &str) -> String {
@@ -77,15 +78,11 @@ async fn trust_on_first_use(address: &str, identities: &[&Path]) {
     known_hosts::confirm(address, 22, &shown, &files).await.unwrap();
 }
 
-#[tokio::test]
-#[ignore = "needs a Proxmox server; see the module docs"]
-async fn a_proxmox_host_passes_the_connection_test() {
-    use crate::runtime::proxmox::test;
-    let (Some(address), Some(password)) = (super::support::knob("CYBERCTF_TEST_PVE_HOST"), super::support::knob("CYBERCTF_TEST_PVE_PASSWORD")) else {
-        return;
-    };
+/// The test server as Servers saves a Proxmox profile: at `address`:`port`, signed in as
+/// `username`, its labs on `bridge`, its certificate, storage and node from the knobs.
+fn proxmox_profile(address: &str, port: u16, username: &str, bridge: &str) -> HostProfile {
     let opt = super::support::var;
-    let profile = |username: &str, bridge: &str| HostProfile {
+    HostProfile {
         gcp_project: None,
         ssh_key: None,
         image_storage: None,
@@ -95,8 +92,8 @@ async fn a_proxmox_host_passes_the_connection_test() {
         id: "t".into(),
         name: "t".into(),
         provider: crate::runtime::providers::Provider::Proxmox,
-        host: address.clone(),
-        port: 8006,
+        host: address.to_owned(),
+        port,
         username: username.into(),
         datastore: Some(opt("CYBERCTF_TEST_PVE_STORAGE").unwrap_or_else(|| "local-lvm".into())),
         network: Some(bridge.into()),
@@ -106,7 +103,18 @@ async fn a_proxmox_host_passes_the_connection_test() {
         use_cli_creds: false,
         aws_profile: None,
         monthly_limit: None,
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs a Proxmox server; see the module docs"]
+async fn a_proxmox_host_passes_the_connection_test() {
+    use crate::runtime::proxmox::test;
+    let (Some(address), Some(password)) = (super::support::knob("CYBERCTF_TEST_PVE_HOST"), super::support::knob("CYBERCTF_TEST_PVE_PASSWORD")) else {
+        return;
     };
+    let opt = super::support::var;
+    let profile = |username: &str, bridge: &str| proxmox_profile(&address, 8006, username, bridge);
     let bridge = opt("CYBERCTF_TEST_PVE_BRIDGE").unwrap_or_else(|| "vmbr1".into());
     // The launcher's key in the scenario's app folder: a password setup keeps its askpass beside it.
     let app = crate::testing::test_app::TestApp::scenario();
@@ -141,19 +149,18 @@ async fn a_proxmox_host_passes_the_connection_test() {
 async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
     let dir = copy_lab("CYBERCTF_TEST_PVE_LAB", "cyberctf-pve-runner-lab");
     lab::prepare(&dir, lab::Target::Proxmox).unwrap();
+    // The server's profile as a token setup with the node's key saves it, and its variables as a
+    // launch makes them (`lab::host_vars`).
     let endpoint = var("CYBERCTF_TEST_PVE_ENDPOINT");
-    let host = endpoint.trim_start_matches("https://").split(':').next().unwrap().to_owned();
-    let vars = [
-        ("proxmox_endpoint", endpoint.clone()),
-        ("proxmox_username", "root@pam".into()),
-        ("proxmox_insecure", "true".into()),
-        ("proxmox_ssh_address", host),
-        ("proxmox_api_token", crate::runtime::proxmox::terraform_token(&var("CYBERCTF_TEST_PVE_TOKEN_ID"), &var("CYBERCTF_TEST_PVE_TOKEN_SECRET"))),
-        ("proxmox_ssh_username", "root".into()),
-        // The key the node lets root in with: a token setup's snippet upload signs in with it.
-        (lab::NODE_KEY, var("CYBERCTF_TEST_PVE_SSH_KEY")),
-        ("uplink_bridge", var("CYBERCTF_TEST_PVE_BRIDGE")),
-    ];
+    let (address, port) = endpoint.trim_start_matches("https://").trim_end_matches('/').split_once(':').unwrap();
+    let storage = super::support::var("CYBERCTF_TEST_PVE_STORAGE");
+    let profile = HostProfile {
+        ssh_key: Some(SshKeySignIn { path: var("CYBERCTF_TEST_PVE_SSH_KEY"), user: "root".into(), port: 22 }),
+        image_storage: storage.clone(),
+        snippet_storage: storage,
+        ..proxmox_profile(address, port.parse().unwrap(), &var("CYBERCTF_TEST_PVE_TOKEN_ID"), &var("CYBERCTF_TEST_PVE_BRIDGE"))
+    };
+    let vars = lab::host_vars(&profile, &var("CYBERCTF_TEST_PVE_TOKEN_SECRET"));
     let home = PathBuf::from(var("CYBERCTF_TEST_PVE_RUNNER_HOME"));
     let run = ServerRun::new(&home, &dir, "pve-runner-lab", Runtime::Vm).unwrap();
     // The key the lab's VMs let in, as a launch gives it (`launch::server_place`).
@@ -161,7 +168,7 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
     let place = ServerPlace {
         label: "pve-lab".into(),
         name: "Proxmox test server".into(),
-        vars: vars.into_iter().map(|(k, v)| (k.to_owned(), v)).chain(keys).collect(),
+        vars: vars.into_iter().chain(keys).collect(),
         // The profile names no node: the launcher passes the server's first.
         node: Some(var("CYBERCTF_TEST_PVE_NODE")),
         jump: std::env::var("CYBERCTF_TEST_PVE_JUMP").ok().filter(|j| !j.is_empty()),
