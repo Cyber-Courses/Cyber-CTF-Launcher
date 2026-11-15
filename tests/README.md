@@ -20,19 +20,19 @@ tests/
                          (snapshot.ps1: Windows; snapshot-server.sh: Proxmox, ESXi); leftovers.md is its contract
   features.yml           the feature registry: every feature the user sees, and the tests that check it per tier
   FEATURES.md            made from it (`pnpm features`): how well each feature is checked, the biggest gaps first
-  features-rig.json      the test rig's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
+  features-rig.json      a test harness's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
   resilience.md          what a player does that breaks a lab, what the app must do, and which test holds it
 ```
 
 ## The tiers
 
-| Tier               | What it drives                                                                                               | Where                                                                                                | Needs                                                               | Run                                        | In CI                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------- |
-| Unit               | components, hooks and scripts; the backend, every external tool scripted (`platform/exec/fake.rs`)           | beside the code: `src/**/*.test.ts(x)`, `scripts/**/*.test.ts`, `tests/**/*.test.ts`, `#[cfg(test)]` | Node and Rust                                                       | `pnpm test`                                | `ci.yml`, `web-coverage.yml`, `coverage.yml`   |
-| Web end-to-end     | the real frontend in Chromium, the commands answered by the dev mock (Playwright)                            | `tests/web/`                                                                                         | Playwright's Chromium (`pnpm exec playwright install chromium`)     | `pnpm test:web`                            | `e2e.yml`; `release.yml` before a build        |
-| Desktop end-to-end | the real app binary through its embedded WebDriver, every feature, on a real Docker, hypervisor and server   | `tests/desktop/` ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md))                     | a desktop session; Docker, a hypervisor and a server for some specs | `pnpm test:desktop` (`run.ps1` on Windows) | `native-e2e.yml` (manual, Linux); the test rig |
-| Integration        | real labs through the launcher's Rust on real Docker, VMs, clouds and servers                                | `src-tauri/src/integration_tests/` (opt-in, `#[ignore]`), run by `tests/integration/run.sh`          | Docker, Vagrant and a hypervisor; an AWS account, a server by tier  | `pnpm test:integration`                    | `labs.yml` (the Docker labs)                   |
-| Packaging          | the built bundle installed and launched (the MSI silently, then removed); the Windows installer's edge cases | `package-smoke.yml`; `packaging/windows/smoke-test.ps1`                                              | the platform's installer                                            | see each                                   | `package-smoke.yml`                            |
+| Tier               | What it drives                                                                                               | Where                                                                                                | Needs                                                               | Run                                        | In CI                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| Unit               | components, hooks and scripts; the backend, every external tool scripted (`platform/exec/fake.rs`)           | beside the code: `src/**/*.test.ts(x)`, `scripts/**/*.test.ts`, `tests/**/*.test.ts`, `#[cfg(test)]` | Node and Rust                                                       | `pnpm test`                                | `ci.yml`, `web-coverage.yml`, `coverage.yml`     |
+| Web end-to-end     | the real frontend in Chromium, the commands answered by the dev mock (Playwright)                            | `tests/web/`                                                                                         | Playwright's Chromium (`pnpm exec playwright install chromium`)     | `pnpm test:web`                            | `e2e.yml`; `release.yml` before a build          |
+| Desktop end-to-end | the real app binary through its embedded WebDriver, every feature, on a real Docker, hypervisor and server   | `tests/desktop/` ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md))                     | a desktop session; Docker, a hypervisor and a server for some specs | `pnpm test:desktop` (`run.ps1` on Windows) | `native-e2e.yml` (manual, Linux); a test harness |
+| Integration        | real labs through the launcher's Rust on real Docker, VMs, clouds and servers                                | `src-tauri/src/integration_tests/` (opt-in, `#[ignore]`), run by `tests/integration/run.sh`          | Docker, Vagrant and a hypervisor; an AWS account, a server by tier  | `pnpm test:integration`                    | `labs.yml` (the Docker labs)                     |
+| Packaging          | the built bundle installed and launched (the MSI silently, then removed); the Windows installer's edge cases | `package-smoke.yml`; `packaging/windows/smoke-test.ps1`                                              | the platform's installer                                            | see each                                   | `package-smoke.yml`                              |
 
 `pnpm check` runs every check CI runs on a pull request's code (`ci.yml`, `web-coverage.yml`,
 `coverage.yml`, `e2e.yml`, `lint-infra.yml`) but the Terraform templates' validation, one verdict
@@ -98,8 +98,8 @@ suite runners' selection (`scripts/lib/suite.sh`).
 | `CYBERCTF_TEST_CLEANUP_TOOL`                                                           | `cleanup`                                                                     | a tool Settings lists as installed by Cyber CTF, to remove                                                                                                                                     | `CYBERCTF_TEST_REMOVE_TOOL`                                                                                                                                                       |
 | `CYBERCTF_TEST_WEB_PORT`                                                               | Playwright                                                                    | the port of the browser preview (`pnpm dev:web`) it starts or reuses (default 3210)                                                                                                            | `E2E_PORT`                                                                                                                                                                        |
 
-\* The old name is still read, as the workspace's test rig sets it: remove it once the rig sets
-the new one. `TAURI_WEBDRIVER_PORT` (the embedded WebDriver's port, 4445), `CYBERBACKEND_URL`
+\* The old name is still read, as a harness outside the repository may still set it: remove it
+once none does. `TAURI_WEBDRIVER_PORT` (the embedded WebDriver's port, 4445), `CYBERBACKEND_URL`
 (the backend `offline-start`'s relay forwards to), `CYBERCTF_WDIO_ROOT` (the run's folder,
 [below](#a-desktop-runs-own-folder)) and `CYBERCTF_WDIO_STORAGE` (a JSON object of strings the
 `wdio` build writes into the webview's localStorage before the page's scripts run, once per launch:
@@ -150,7 +150,7 @@ never reads or changes their labs, settings, session or secrets, and it removes 
 
 ## Results
 
-A caller that drives these tiers (the workspace's test rig) reads their results, not their
+A caller that drives these tiers (a test harness outside the repository) reads their results, not their
 screen. Each entry point appends **one JSON line per check** to a file it is given, and lists its
 cases with the knobs each reads, so a renamed case or knob fails the caller's own check, not a
 night's run:
@@ -295,8 +295,8 @@ part of a feature (it renders the page, it runs on Docker only) gets a `gaps` no
 read the test, not its name. A feature that depends on the machine (`host: true`) is Strong only
 with a real-host tier that covers it and, when it names rig cells, one of them passed. A new
 feature, or a gap the registry should track, goes in the same file (`known_gaps` holds the ones
-being built or planned). After a rig run, `pnpm features --matrix ../rig/MATRIX.md` (from the
-workspace's submodule) refreshes the rig columns.
+being built or planned). After a harness's run, `pnpm features --matrix <its matrix file>` refreshes the
+rig columns.
 
 ## Conventions
 

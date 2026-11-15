@@ -24,7 +24,7 @@ UTM VM still registered made every later VM import fail).
 
 `--results <file>` appends a JSON record per scenario there, and `--list` prints the scenarios with
 the knobs each reads ([tests/README.md](../../../tests/README.md#results)). `--only <scenario>@<provider>`
-runs one scenario on one hypervisor (`vm-lab@virtualbox`: the test rig's finest shard; `@docker`
+runs one scenario on one hypervisor (`vm-lab@virtualbox`: a harness's finest shard; `@docker`
 or no `@` names none).
 
 The runner fails fast. Each scenario is killed past its cap, 8 minutes
@@ -73,7 +73,7 @@ the catalogue of what a player does that breaks a lab. A killed-start scenario r
 child process, this test binary again running
 `integration_tests::resilience::the_child_starts_the_lab_it_is_handed` (never a scenario of its
 own), and kills it. Those marked "throwaway machines only" skip unless
-`CYBERCTF_TEST_RESILIENCE_THROWAWAY=1`, which the test rig sets on its throwaway VMs alone: they
+`CYBERCTF_TEST_RESILIENCE_THROWAWAY=1`, which a harness sets on throwaway VMs alone: they
 stop Docker, or a VM by its hypervisor's own tool, for the whole machine. A scenario whose lab the
 launcher refuses on the hypervisor it is given (a VM on a network, on UTM: Isoloom's own rule,
 as the launch says it) is recorded as skipped with the launcher's words, before anything starts.
@@ -108,15 +108,15 @@ every setting its test reads, its scenario is skipped, naming those not set (Pro
 | `server-lab-proxmox` | a VM lab on Proxmox: up, status, checks over SSH through the node, down  |
 | `server-lab-esxi`    | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down |
 
-## Bare-machine tier (the test rig, or check-only anywhere)
+## Bare-machine tier (a fresh machine, or check-only anywhere)
 
 The launcher's guided machine setup on a fresh, bare Windows or Linux guest, end to end and
 without a window: `integration_tests::setup::the_guided_setup_readies_this_machine`. It installs
 what the setup window would (the same plan, `machine::setup`, through the same functions as the
 window's commands), one action at a time with its own log, then checks each wanted tool ready by
 the machine report, runs the Docker and VM self-tests and starts and stops an example lab. It
-installs real tools as an administrator, so it is not in `tests/integration/run.sh`: the test
-rig's `setup` suite runs it from the built test binary, pass after pass (a pass ends at WSL's
+installs real tools as an administrator, so it is not in `tests/integration/run.sh`: a harness
+runs it on a fresh machine from the built test binary, pass after pass (a pass ends at WSL's
 restart or the docker group's new login), and gives its knobs (`CYBERCTF_TEST_SETUP_PATHS`,
 `_HYPERVISORS`, `_REPORT`, `_LOGS`, `_LAB`, `_CHECK_ONLY`; the test's module documentation says
 each). Without them it returns at once.
@@ -127,14 +127,3 @@ but installs, starts, removes and restarts nothing, and runs no self-test or lab
 `pass` or `fail` for what the check found, or `skip` with the reason `check-only: would <action>`
 for what the setup would do (`would install Vagrant`, `would run the Docker self-test`, a
 `ready:<tool>` that `would be ready once set up`).
-
-## Not here yet
-
-- The attack box on a server: `attack-box-*` on Proxmox, once a test host is back (a lab on ESXi has
-  no attack box).
-- The shell as a person sees it: a console whose prompt went to its error output and showed
-  nothing after Kali's MOTD (now a unit test in Isothrum: the shell is chosen first, then started
-  with nothing redirected), and a shell offered before the box finished installing (the side
-  rail waits for the box to be idle).
-- Other clouds: the same test with `CYBERCTF_TEST_BOX_FORM` and an account of theirs is the next
-  step; their sign-in check is unit-tested.
