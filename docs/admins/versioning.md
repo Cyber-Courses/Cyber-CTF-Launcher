@@ -13,9 +13,9 @@ it keeps ([administrator guide](admin-guide.md#files-and-data)), and the labs it
 | MINOR | something is added: a feature, a platform, a policy setting; deprecations are announced here                                                                              |
 | PATCH | fixes only, security fixes included                                                                                                                                       |
 
-The same number is used everywhere: the Git tag (`v1.8.9`), `package.json`,
-`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, the installers, the Microsoft Store package
-(`1.8.9.0`) and the Homebrew cask and apt package. `CHANGELOG.md` lists every release's changes.
+The same number is on the Git tag (`v1.8.9`), the installers, the Microsoft Store package
+(`1.8.9.0`), the Homebrew cask and the apt package. `CHANGELOG.md` lists every release's changes.
+(Where the source sets it: the [release process](../contributing/release-process.md).)
 
 ## Support
 

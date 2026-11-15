@@ -35,5 +35,19 @@ The OAuth client in cyber-auth must be first-party and public
 answers `unauthorized_client` and the launcher says signing in with a code isn't available yet,
 pointing to the copy-the-link fallback.
 
-The endpoints and the client id can be overridden for testing: see
+## Development settings
+
+To run the launcher against a test or local instance of Cyber CTF's services
+([`src-tauri/src/platform/config.rs`](../../src-tauri/src/platform/config.rs)):
+
+| Variable             | Default                             | What it does                                                                                                                                            |
+| -------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CYBERCTF_AUTH_BASE` | `https://www.cyberauth.co/api/auth` | the Cyber Auth (sign-in) endpoint                                                                                                                       |
+| `CYBERBACKEND_URL`   | `https://cyberbackend.com`          | the CyberBackend API, also the access token's audience                                                                                                  |
+| `CYBERCTF_CLIENT_ID` | `MORSNcedpYSLupYIwbaKyHIXdGgVhanC`  | the launcher's OAuth client in Cyber Auth (public, PKCE)                                                                                                |
+| `CYBERCTF_REDIRECT`  | `loopback`                          | `scheme` brings sign-in back as a `cyberctf://auth/callback` link instead of to `http://127.0.0.1:<port>/callback`; the OAuth client must list that URI |
+
+A released build ignores them when it runs, so nothing in the environment can redirect sign-in:
+they are read at run time only in development builds, or fixed at build time by setting them in
+the environment of `pnpm tauri build`. What an administrator can set is in
 [configuration](../admins/configuration.md).
