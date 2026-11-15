@@ -133,8 +133,8 @@ mod tests {
     #[test]
     fn only_plain_absolute_paths_are_shared() {
         let (root, home) = if cfg!(windows) { (r"C:\", r"C:\Users\alex") } else { ("/", "/Users/alex") };
-        assert!(check(Path::new("relative/dir")).is_err());
-        assert!(check(&Path::new(root).join("home").join("a\"b")).is_err());
+        assert!(matches!(check(Path::new("relative/dir")).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(matches!(check(&Path::new(root).join("home").join("a\"b")).unwrap_err(), crate::error::Error::Invalid(_)));
         assert!(check(&Path::new(home).join("CyberCTF").join("shared")).is_ok());
         assert!(check(&Path::new(home).join("My Tools")).is_ok());
     }
@@ -246,9 +246,9 @@ mod tests {
         // Regression: before the app had pointed the setting at its file, a read said "off" while
         // a save failed.
         let dirs = AppDirs::default();
-        assert!(current(&dirs).is_err());
-        assert!(shared_folder_get(&dirs).is_err());
-        assert!(shared_folder_set(&dirs, false, "").is_err());
+        assert!(matches!(current(&dirs).unwrap_err(), crate::error::Error::Invalid(_)));
+        assert!(matches!(shared_folder_get(&dirs).err(), Some(crate::error::Error::Invalid(_))));
+        assert!(matches!(shared_folder_set(&dirs, false, "").err(), Some(crate::error::Error::Invalid(_))));
     }
 
     #[test]

@@ -102,8 +102,15 @@ try {
     return `shared at ${(await invokeCmd(b, "shared_folder_get")).mountPoint} in the box: ${folder}`;
   });
 
-  // The attack VM's desktop: Desktop, then Headless (the default) again, each saved at once.
+  // The attack VM's desktop: Desktop, then Headless (the default) again, each saved at once. The
+  // folder picker had the focus last: a click the system gives a window without it selects
+  // nothing (the first click after the picker saved nothing once, under load, #319), so the
+  // Settings window takes the focus back first.
   await b.switchToWindow("settings");
+  await b.execute(() => window.focus());
+  await b
+    .waitUntil(() => b.execute(() => document.hasFocus()), { timeout: 10000, interval: 200 })
+    .catch(() => console.log("(the Settings window didn't report the focus back: clicking anyway)"));
   const desktop = (name) =>
     b.$(`//*[@role="radiogroup"][@aria-label="Attack VM desktop"]//*[@role="radio"][contains(normalize-space(), ${JSON.stringify(name)})]`);
   const stored = () => b.execute(() => localStorage.getItem("cyberctf.attackbox.desktop"));
