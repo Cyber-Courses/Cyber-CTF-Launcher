@@ -28,7 +28,7 @@ fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
     Error::coded(match timed_out {
         TimedOut::NoProgress { last_line: Some(line), .. } => Code::StepStalled { step, minutes, last_line: line.clone() },
         TimedOut::NoProgress { last_line: None, .. } => Code::StepSilent { step, minutes },
-        TimedOut::Ceiling { after_s } => Code::StepCeiling { step, hours: after_s.div_ceil(3600) },
+        TimedOut::Ceiling { after_s, .. } => Code::StepCeiling { step, hours: after_s.div_ceil(3600) },
         // A reason added later reads as the plain limit.
         _ => Code::StepTimedOut { step, minutes },
     })

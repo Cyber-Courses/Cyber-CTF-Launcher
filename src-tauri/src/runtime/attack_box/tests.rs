@@ -337,6 +337,38 @@ fn the_shared_folder_is_mounted_in_the_box_on_every_kind() {
     }
 }
 
+/// Regression: the box couldn't write in its shared folder ("Read-only file system"): Isoloom 3.0
+/// mounts a host folder read-only unless it says otherwise, and the launcher said nothing. The
+/// folder is the player's, both ways: the spec says so, and the box's Compose service mounts it
+/// read-write.
+#[test]
+fn the_shared_folder_is_mounted_read_write_both_ways() {
+    let dir = web_lab();
+    let folder = crate::testing::temp_dir("attack-box-shared");
+    add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, Some(&folder)).unwrap();
+    let spec = lab::load(&dir).unwrap();
+    assert!(spec.machines[NAME].host_folders.iter().all(|h| !h.read_only), "the spec asks it read-write");
+    lab::prepare(&dir, lab::Target::Docker).unwrap();
+    let compose: serde_json::Value = serde_yaml_ng::from_str(&std::fs::read_to_string(lab::compose_file(&dir)).unwrap()).unwrap();
+    let services = compose["services"].as_object().unwrap();
+    let (_, service) = services.iter().find(|(name, _)| name.as_str() == NAME || name.ends_with(&format!("-{NAME}"))).expect("the box's service");
+    let shared: Vec<&serde_json::Value> = service["volumes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|v| {
+            v["target"].as_str() == Some(crate::shared_folder::MOUNT_POINT)
+                || v.as_str().is_some_and(|s| s.split(':').nth(1) == Some(crate::shared_folder::MOUNT_POINT))
+        })
+        .collect();
+    assert_eq!(shared.len(), 1, "{service}");
+    let mounted = shared[0];
+    let read_only =
+        mounted["read_only"].as_bool() == Some(true) || mounted.as_str().is_some_and(|s| s.split(':').skip(2).any(|o| o.split(',').any(|f| f == "ro")));
+    assert!(!read_only, "mounted read-write: {mounted}");
+    remove(&dir).unwrap();
+}
+
 #[test]
 fn a_shared_folder_with_a_combining_mark_in_its_name_is_mounted() {
     // Regression: the folder was quoted with Rust's `{:?}`, which writes a combining mark as

@@ -295,9 +295,14 @@ pub(crate) fn add(dir: &Path, kind: Kind<'_>, cpu: Cpu, network: Option<&str>, s
         Cpu::Lab => "",
         Cpu::Arm => "hardware: { arch: arm64 }, ",
     };
-    // The learner's shared folder, mounted both ways at the same place on every form.
+    // The learner's shared folder, mounted both ways at the same place on every form: read-write
+    // said, since Isoloom mounts a host folder read-only unless told.
     let shared = shared.map_or_else(String::new, |folder| {
-        format!("host_folders: [{{ from: {}, path: {} }}], ", yaml_string(&folder.display().to_string()), yaml_string(crate::shared_folder::MOUNT_POINT))
+        format!(
+            "host_folders: [{{ from: {}, path: {}, read_only: false }}], ",
+            yaml_string(&folder.display().to_string()),
+            yaml_string(crate::shared_folder::MOUNT_POINT)
+        )
     });
     let machine = match (kind, cpu) {
         (Kind::Container { image }, _) => {

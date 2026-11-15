@@ -36,7 +36,31 @@ use versions::{TooOld, hypervisor_too_old, plugin_too_old};
 /// unresponsive (wedged), not just slow.
 const VBOX_SERVICE_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
 
-const UTM_APP: &str = "/Applications/UTM.app";
+/// UTM's app bundle where it is installed: /Applications, or the player's own ~/Applications (an
+/// install without an administrator's password); /Applications when it is in neither.
+pub(crate) fn utm_app() -> std::path::PathBuf {
+    utm_app_in(std::path::Path::new("/Applications"), crate::platform::home_dir().as_deref())
+}
+
+/// [`utm_app`] with the system's applications folder `system` and the player's home `home`.
+fn utm_app_in(system: &std::path::Path, home: Option<&std::path::Path>) -> std::path::PathBuf {
+    let in_system = system.join("UTM.app");
+    if in_system.exists() {
+        return in_system;
+    }
+    home.map(|h| h.join("Applications").join("UTM.app")).filter(|own| own.exists()).unwrap_or(in_system)
+}
+
+/// UTM's command line tool, which ships inside its app bundle ([`utm_app`]), on no PATH.
+pub(crate) fn utmctl() -> &'static str {
+    /// In the system's applications folder.
+    const IN_SYSTEM: &str = "/Applications/UTM.app/Contents/MacOS/utmctl";
+    /// In the player's own (the home doesn't change while the app runs).
+    static IN_HOME: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        crate::platform::home_dir().map_or_else(String::new, |h| h.join("Applications/UTM.app/Contents/MacOS/utmctl").to_string_lossy().into_owned())
+    });
+    if utm_app().starts_with("/Applications") || IN_HOME.is_empty() { IN_SYSTEM } else { IN_HOME.as_str() }
+}
 
 /// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.
 fn hyperv_enabled() -> bool {

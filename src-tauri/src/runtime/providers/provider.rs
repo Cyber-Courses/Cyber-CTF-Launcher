@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::{UTM_APP, hyperv_enabled, qemu_binary, tool_present};
+use super::{hyperv_enabled, qemu_binary, tool_present, utm_app};
 use crate::platform::exec::run_read;
 use crate::platform::host::{Arch, Host, Os};
 
@@ -270,8 +270,8 @@ impl Provider {
         if self != Provider::Utm {
             return None;
         }
-        let plist = format!("{UTM_APP}/Contents/Info.plist");
-        let out = run_read("defaults", &["read", &plist, "CFBundleShortVersionString"], None).await.ok()?;
+        let plist = utm_app().join("Contents").join("Info.plist");
+        let out = run_read("defaults", &["read", &plist.to_string_lossy(), "CFBundleShortVersionString"], None).await.ok()?;
         let version = out.trim().to_string();
         (!version.is_empty()).then_some(version)
     }
@@ -305,7 +305,7 @@ impl Provider {
     /// exists once the feature is on, and Windows Home has none.
     pub(super) async fn hypervisor_installed(self) -> Option<bool> {
         if self == Provider::Utm {
-            return Some(std::path::Path::new(UTM_APP).exists());
+            return Some(utm_app().exists());
         }
         if self == Provider::Hyperv {
             return Some(hyperv_enabled());

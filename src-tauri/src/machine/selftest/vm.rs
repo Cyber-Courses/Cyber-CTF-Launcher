@@ -59,7 +59,8 @@ fn responds(p: Provider) -> Option<(&'static str, &'static [&'static str])> {
         Provider::VmwareDesktop => Some(("vmrun", &["list"])),
         Provider::Parallels => Some(("prlctl", &["list", "--all"])),
         Provider::Libvirt => Some(("virsh", &["-c", "qemu:///system", "list", "--all"])),
-        Provider::Utm => Some(("/Applications/UTM.app/Contents/MacOS/utmctl", &["list"])),
+        // Inside UTM's bundle, wherever UTM is installed.
+        Provider::Utm => Some((crate::runtime::providers::utmctl(), &["list"])),
         _ => None,
     }
 }
