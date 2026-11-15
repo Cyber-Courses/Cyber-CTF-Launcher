@@ -4,8 +4,7 @@
 //! nothing listens beyond the loopback. Elsewhere, over the same split: every Tauri command is
 //! called from a test and none that opens a window is synchronous (`commands.rs`), every literal
 //! argument a cmd.exe-wrapped tool gets passes its guard (`platform/exec/shim.rs`), and only
-//! `runtime/lab/` uses Isoloom's spec and generator crates, only `runtime/isothrum/` its run
-//! manifest's (`runtime/lab.rs`).
+//! `runtime/lab/` uses Isoloom's spec and generator crates (`runtime/lab.rs`).
 
 use std::path::{Path, PathBuf};
 

@@ -90,7 +90,7 @@ mod tests {
         let o = Overrides { compose_project: Some("cyberctf-shop".into()) };
         let out = apply(vec![file(".isoloom-2/docker/compose.yml", "name: shop-2\n"), file(".isoloom-2/docker/run.json", "name: shop-2\n")], &o);
         assert_eq!(out[0].contents, "name: cyberctf-shop\n");
-        assert_eq!(out[1].contents, "name: shop-2\n", "the run manifest is left as Isoloom wrote it");
+        assert_eq!(out[1].contents, "name: shop-2\n", "the generated file is left as Isoloom wrote it");
         for other in [".isoloomx/docker/compose.yml", "docker/compose.yml", ".isoloom/docker-vm/docker/compose.yml"] {
             assert!(!is_compose_file(other), "{other}");
         }

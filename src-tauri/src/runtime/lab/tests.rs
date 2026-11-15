@@ -3,21 +3,17 @@ use crate::runtime::Runtime;
 use std::path::PathBuf;
 
 #[test]
-fn isolooms_spec_and_generators_are_used_here_alone_and_the_run_manifest_by_the_runner_module() {
+fn isolooms_spec_and_generators_are_used_here_alone() {
     // Regression: the door was said to be this module's alone while the tier evidence, the
     // attack box, the start place and the runner's view used Isoloom's crates directly.
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    // Spelled in two, so this file doesn't name the manifest's crate itself.
-    let manifest = ["isoloom", "_manifest::"].concat();
     for s in crate::testing::source_scan::crate_sources() {
         let rel = s.path.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
         let text = format!("{}\n{}", s.code, s.tests);
         let here = rel == "runtime/lab.rs" || rel.starts_with("runtime/lab/");
-        let runner = rel == "runtime/isothrum.rs" || rel.starts_with("runtime/isothrum/");
         for krate in ["isoloom_spec::", "isoloom_targets::", "isoloom_plan::", "isoloom_compose::", "isoloom_render::"] {
             assert!(here || !text.contains(krate), "{rel} uses {krate} outside runtime/lab");
         }
-        assert!(runner || !text.contains(&manifest), "{rel} reads the run manifest outside runtime/isothrum");
     }
 }
 

@@ -38,11 +38,11 @@ pub(crate) struct CloudPlace {
     /// machine reaches the lab's SSH and published ports.
     pub(crate) allowed_cidr: Option<String>,
     /// The account's Terraform environment (`conn.tf_env`): its credentials (delivered as the
-    /// manifest's connection secrets) and any profile/region (delivered as parameters).
+    /// run's secrets) and any profile/region (delivered as parameters).
     pub(crate) tf_env: Vec<(String, String)>,
     /// The account's Google Cloud project (its labs project), for a module of the lab's own.
     pub(crate) project: Option<String>,
-    /// When the run stops itself (the account's auto-stop): the manifest's `expiry`.
+    /// When the run stops itself (the account's auto-stop): the run's expiry.
     pub(crate) lifetime: Option<Duration>,
 }
 
@@ -145,7 +145,7 @@ pub(crate) struct CloudRun {
     cloud: String,
 }
 
-/// The run's opened manifest and what reads it (its status, console, update and retire) are
+/// The opened run and what reads it (its status, console, update and retire) are
 /// [`OpenedRun`]'s, shared with the other remote place (`ServerRun`).
 impl std::ops::Deref for CloudRun {
     type Target = OpenedRun;

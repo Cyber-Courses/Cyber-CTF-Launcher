@@ -169,7 +169,7 @@ fn a_vm_box_download_that_stalled_or_failed_is_said_as_the_box() {
     let (code, text) = said(failed);
     assert_eq!(code, Code::BoxDownloadFailed { reason: "The box 'bento/debian-12' could not be found".into() });
     assert_eq!(text, "Couldn't download the lab's VM box: The box 'bento/debian-12' could not be found. Check your internet connection, then try again.");
-    // A manifest's own download step, or the images' pull, is still the lab's images.
+    // A lab's own download step, or the images' pull, is still the lab's images.
     for step in ["pull-up", "pull-start", "boxes"] {
         let (code, _) = said(RunnerError::DownloadStalled { step: step.into(), after_s: 60, last_line: None });
         assert_eq!(code, Code::DownloadStalled { minutes: 1 }, "{step}");
