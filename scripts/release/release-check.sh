@@ -12,7 +12,7 @@
 #   ONLY="unit-web e2e-mock" scripts/release/release-check.sh
 #   SKIP="e2e-native" scripts/release/release-check.sh   what CI covers, without the native layer
 #
-# Steps, in order: prereqs, install, versions, docs, features, format, types, lint, build, quality, unit-web
+# Steps, in order: prereqs, install, versions, docs, features, format, clippy (this machine's), types, lint, build, quality, unit-web
 # (with the coverage floors), unit-harness (the test runners' own tests), unit-rust (each unit step fails on what its tests leave in their temp
 # folder, scripts/check/temp-leaks.ts), bindings (the generated types the Rust tests rewrote are
 # committed), docs-rust (rustdoc's intra-doc links), other-platforms (clippy for Linux and Windows, scripts/check/other-platforms.sh;
@@ -36,6 +36,8 @@ use_nvmrc_node "$ROOT"
 # The line floor coverage.yml enforces, read from it: kept in one place.
 RUST_LINES_FLOOR=${RUST_LINES_FLOOR:-$(sed -n 's/^ *RUST_LINES_FLOOR: *"\{0,1\}\([0-9.]*\)"\{0,1\} *$/\1/p' .github/workflows/coverage.yml)}
 [ -n "$RUST_LINES_FLOOR" ] || { echo "no RUST_LINES_FLOOR in .github/workflows/coverage.yml" >&2; exit 2; }
+# The files the coverage leaves out (the opt-in integration tests), read from there too.
+RUST_COV_IGNORE=$(sed -n 's/^ *RUST_COV_IGNORE: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' .github/workflows/coverage.yml)
 NODE_WANTED=$(tr -d '[:space:]' <.nvmrc)
 
 prereqs() {
@@ -63,7 +65,7 @@ format_check() {
 }
 rust_cov() {
   cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml &&
-    cargo llvm-cov report --manifest-path src-tauri/Cargo.toml --summary-only --fail-under-lines "$RUST_LINES_FLOOR"
+    cargo llvm-cov report --manifest-path src-tauri/Cargo.toml --ignore-filename-regex "$RUST_COV_IGNORE" --summary-only --fail-under-lines "$RUST_LINES_FLOOR"
 }
 
 step prereqs prereqs
@@ -72,6 +74,9 @@ step versions pnpm check:tauri
 step docs pnpm check:docs
 step features pnpm check:features
 step format format_check
+# This machine's clippy, every lint at the level Cargo.toml's [lints] sets (other-platforms runs
+# the other systems').
+step clippy cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 step types pnpm typecheck
 step lint pnpm lint
 step build pnpm build

@@ -6,7 +6,12 @@ prints one verdict per step:
 ```sh
 scripts/release/release-check.sh                     # or: pnpm release-check
 SKIP=e2e-native scripts/release/release-check.sh     # what CI runs, without the native layer: pnpm check
+pnpm check:fast                                      # the short list while you work
 ```
+
+`pnpm check:fast` runs `prereqs`, `install`, `format`, `clippy`, `unit-rust`, `other-platforms`
+(the Windows and Linux compile checks), `types`, `lint` and `unit-web`: what a change most often
+breaks, in a few minutes.
 
 It keeps going after a failure, so a single run lists everything that is wrong. `ONLY="…"` and
 `SKIP="…"` take step names (the runners it runs as steps, `other-platforms` and `e2e-native`,
@@ -25,6 +30,7 @@ the end of this page have been done for what the release changes.
 | `docs`            | `pnpm check:docs`                         | a relative link or `#anchor` in the Markdown that doesn't resolve                                                                                                   |
 | `features`        | `pnpm check:features`                     | a test the feature registry names that doesn't exist, a command, screen, scenario or desktop case no feature claims, a stale `tests/FEATURES.md`                    |
 | `format`          | prettier, `cargo fmt --check`             | formatting                                                                                                                                                          |
+| `clippy`          | `cargo clippy -D warnings`                | a lint this machine's code breaks (`other-platforms` checks the other systems')                                                                                     |
 | `types`           | `pnpm typecheck`                          | TypeScript, including the generated command bindings                                                                                                                |
 | `lint`            | `pnpm lint`                               | ESLint                                                                                                                                                              |
 | `build`           | `pnpm build`                              | the static export the app ships doesn't build                                                                                                                       |
@@ -35,7 +41,7 @@ the end of this page have been done for what the release changes.
 | `bindings`        | `git status` of `src/lib/tauri/generated` | the TypeScript command types the Rust tests rewrote differ from those committed                                                                                     |
 | `docs-rust`       | `cargo doc --document-private-items`      | an intra-doc link that resolves to nothing, or a stray HTML tag in a doc comment, as `ci.yml` checks on each platform                                               |
 | `other-platforms` | `scripts/check/other-platforms.sh`        | clippy and rustdoc for Linux and Windows, CI's matrix: the code behind another OS's `#[cfg]`; skipped without `rustup`                                              |
-| `coverage-rust`   | `cargo llvm-cov`                          | the Rust line floor `coverage.yml` enforces; skipped when `cargo-llvm-cov` is not installed                                                                         |
+| `coverage-rust`   | `cargo llvm-cov`                          | the Rust line floor `coverage.yml` enforces (the opt-in integration tests left out); skipped without `cargo-llvm-cov`                                               |
 | `deny`            | `cargo deny check`                        | a Rust dependency with an advisory, a licence `src-tauri/deny.toml` doesn't allow, or another source; skipped when `cargo-deny` is not installed                    |
 | `audit`           | `pnpm audit --prod`                       | a known vulnerability in a shipped npm dependency                                                                                                                   |
 | `shellcheck`      | `scripts/check/infra.sh shellcheck`       | a warning in the repository's shell scripts, as `lint-infra.yml` runs it; skipped when not installed                                                                |
