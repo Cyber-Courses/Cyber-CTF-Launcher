@@ -122,7 +122,7 @@ than the rest writes its own results file; `launch`'s record then appears in two
 ## Knobs
 
 From the environment or the `--knobs` file (`KEY=value` lines, read literally, never sourced,
-as the test rig writes its settings files). [tests/README.md](../../../tests/README.md#knobs) lists
+as a harness writes its settings files). [tests/README.md](../../../tests/README.md#knobs) lists
 each, with the specs that read it.
 
 ## Feature map

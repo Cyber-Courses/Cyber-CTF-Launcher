@@ -154,7 +154,7 @@ use_nvmrc_node() {
 
 # --- Results for a caller: JSON Lines --------------------------------------------------------
 # A test runner given `--results <file>` (suite_results_to) appends one record per verdict there,
-# each on its own line, for a caller that reads them (the test rig; tests/README.md, "Results"):
+# each on its own line, for a caller that reads them (a test harness; tests/README.md, "Results"):
 #
 #   {"suite":"integration","case":"vm-lab","provider":"qemu","form":"vm","result":"pass",
 #    "reason":"","seconds":612,"log":"/…/vm-lab.log"}
