@@ -77,7 +77,8 @@ pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime
     isothrum::LabRun::on_esxi(&runner_home(dirs)?, dir, id, runtime, isothrum::EsxiPlace::from_env(&c.id, &c.name, &c.env))
 }
 
-/// Where a runner's run goes on server `host` (connection `conn`): its variables, the node when
+/// Where a runner's run goes on server `host` (connection `conn`): its variables (with the
+/// runner's key for the lab's VMs), the node when
 /// its profile names none, and the node login SSH goes through first when the lab bridge is
 /// internal (the runner's key, the launcher's own, let in on the node).
 pub(in crate::runtime) async fn server_place(
@@ -93,7 +94,8 @@ pub(in crate::runtime) async fn server_place(
     Ok(isothrum::ServerPlace {
         label: host.to_owned(),
         name: conn.name.clone(),
-        vars: conn.tf_vars.clone(),
+        // The profile's variables, and the key the lab's VMs let in.
+        vars: conn.tf_vars.iter().cloned().chain(run.key_values().await?).collect(),
         node: server::discovered_node(dirs, host).await?,
         jump: server::proxmox_jump_for_host(dirs, host, &key, &public).await?,
     })
