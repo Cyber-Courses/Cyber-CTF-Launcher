@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appExit, logTail, startEnded, stuckLabReport } from "./lib/diagnose.mjs";
+import { appExit, boxReport, fromRunEvents, logTail, startEnded, stuckLabReport } from "./lib/diagnose.mjs";
 
 // What a spec says of a lab that never showed running (lib/diagnose.mjs): the words a failed
 // check's reason carries, so the rig's one-line reason says which it was: a start still in
@@ -77,5 +77,42 @@ describe("appExit", () => {
     expect(appExit({ exitCode: 1, signalCode: null })).toBe("the app exited with code 1");
     expect(appExit({ exitCode: -1073741819, signalCode: null })).toBe("the app exited with code -1073741819");
     expect(appExit({ exitCode: null, signalCode: "SIGSEGV" })).toBe("the app was ended by SIGSEGV");
+  });
+});
+
+// The run events a window replays (`run_events`): one operation ended, an attach in flight.
+const frames = [
+  { cursor: 1, event: { kind: "started", operation: "op-1", labId: ID, op: "launch" } },
+  { cursor: 2, event: { kind: "log", operation: "op-1", labId: ID, line: "Lab is up" } },
+  { cursor: 3, event: { kind: "ended", operation: "op-1", labId: ID, op: "launch", error: null } },
+  { cursor: 4, event: { kind: "started", operation: "op-2", labId: ID, op: "attach" } },
+  { cursor: 5, event: { kind: "log", operation: "op-2", labId: ID, line: "Pulling kalilinux/kali-rolling" } },
+  { cursor: 6, event: { kind: "log", operation: "op-9", labId: "other", line: "not ours" } },
+];
+
+describe("fromRunEvents", () => {
+  it("reads a lab's operations in flight at their last line, and its last one with its log", () => {
+    expect(fromRunEvents(ID, frames)).toEqual({
+      operations: [{ labId: ID, op: "attach", step: "Pulling kalilinux/kali-rolling" }],
+      last: { op: "attach", ended: null, log: "Pulling kalilinux/kali-rolling" },
+    });
+    const failed = [
+      ...frames,
+      { cursor: 7, event: { kind: "ended", operation: "op-2", labId: ID, op: "attach", error: { code: "other", message: "pull access denied" } } },
+    ];
+    expect(fromRunEvents(ID, failed)).toEqual({ operations: [], last: { op: "attach", ended: "pull access denied", log: "Pulling kalilinux/kali-rolling" } });
+    expect(fromRunEvents(ID, null)).toEqual({ operations: [], last: null });
+  });
+});
+
+describe("boxReport (#321)", () => {
+  it("says the box's status, the runner's last operation on the lab, how it ended and its log's end", () => {
+    const box = { running: false, reachable: false, ip: "", labNetwork: "lab", networks: [] };
+    expect(boxReport(ID, { box, frames })).toBe(
+      `${ID}: the box: running false, reachable false, labNetwork lab; the runner's last operation: attach, still in flight; its log ends: Pulling kalilinux/kali-rolling`,
+    );
+    expect(boxReport(ID, { box: null, frames: [], error: "attack_box_status: timed out after 10000ms" })).toBe(
+      `${ID}: no operation of the lab's; (the app couldn't be asked everything: attack_box_status: timed out after 10000ms)`,
+    );
   });
 });

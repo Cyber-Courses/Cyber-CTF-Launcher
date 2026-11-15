@@ -4,6 +4,7 @@
 // real panel, then stop the lab through the `lab_stop` command (what the lab page and the
 // Overview call) and check Docker has nothing of the lab left, box included.
 import {
+  boxDiagnosis,
   finish,
   forceVisible,
   goTo,
@@ -51,7 +52,10 @@ try {
   await waitAwake(b, async () => /Stop attack box/.test(await panel(b)), { timeout: LAB_START_MS, interval: 3000 }).catch(async () => {
     // Say what was there: the panel's words and the lab's containers (a box slow to pull or start
     // on a loaded or nested-virtualized machine reads differently from one that failed).
-    throw new Error(`the box never came up; the panel says ${JSON.stringify(await panel(b))}; the lab's containers: ${JSON.stringify(labContainers(id))}`);
+    // With what the app knows of it: the box's status, the runner's last operation and its log.
+    throw new Error(
+      `the box never came up; the panel says ${JSON.stringify(await panel(b))}; the lab's containers: ${JSON.stringify(labContainers(id))}; ${await boxDiagnosis(b, id)}`,
+    );
   });
   const withBox = containerNames(id);
   // The box is a machine of the lab: its `attackbox` service in the lab's own project.
