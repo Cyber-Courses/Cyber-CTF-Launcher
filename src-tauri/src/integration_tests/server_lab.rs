@@ -27,6 +27,7 @@
 //! CYBERCTF_TEST_PVE_TOKEN_ID='<user@realm!name>' CYBERCTF_TEST_PVE_TOKEN_SECRET=<its secret> \
 //! CYBERCTF_TEST_PVE_NODE=<node> CYBERCTF_TEST_PVE_BRIDGE=<bridge> CYBERCTF_TEST_PVE_JUMP=root@<address> \
 //! CYBERCTF_TEST_PVE_RUNNER_HOME=<a folder whose ssh/id_ed25519 the node lets in> \
+//! CYBERCTF_TEST_PVE_SSH_KEY=<a private key the node lets root in with: the snippet upload's> \
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::server_lab::a_vm_lab_runs_on_proxmox_through_the_runner
 //! ```
 //!
@@ -149,6 +150,8 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
         ("proxmox_ssh_address", host),
         ("proxmox_api_token", crate::runtime::proxmox::terraform_token(&var("CYBERCTF_TEST_PVE_TOKEN_ID"), &var("CYBERCTF_TEST_PVE_TOKEN_SECRET"))),
         ("proxmox_ssh_username", "root".into()),
+        // The key the node lets root in with: a token setup's snippet upload signs in with it.
+        (lab::NODE_KEY, var("CYBERCTF_TEST_PVE_SSH_KEY")),
         ("uplink_bridge", var("CYBERCTF_TEST_PVE_BRIDGE")),
     ];
     let home = PathBuf::from(var("CYBERCTF_TEST_PVE_RUNNER_HOME"));

@@ -65,6 +65,9 @@ fn cloud_vars(h: &HostProfile) -> Vec<(String, String)> {
     vars
 }
 
+/// The private key Proxmox's module signs in to the node with, for the snippets (a token setup).
+pub const NODE_KEY: &str = "proxmox_ssh_private_key_file";
+
 /// Isoloom's Proxmox module variables: the API connection, then node / storage / bridge.
 fn proxmox_vars(h: &HostProfile, password: &str) -> Vec<(String, String)> {
     let mut vars = vec![
@@ -74,11 +77,15 @@ fn proxmox_vars(h: &HostProfile, password: &str) -> Vec<(String, String)> {
         // Snippets go over SSH to the address the player entered.
         ("proxmox_ssh_address", h.host.clone()),
     ];
-    // An API token replaces the password for the API; the snippet upload then uses the
-    // launcher's SSH key (added at apply time, see terraform).
+    // An API token replaces the password for the API; the snippet upload then signs in to the
+    // node with a key: the player's own when the setup signed in with it, else the launcher's
+    // (`launch::server_place` adds it).
     if proxmox::is_token(&h.username) {
         vars.push(("proxmox_api_token", proxmox::terraform_token(&h.username, password)));
         vars.push(("proxmox_ssh_username", proxmox::ssh_user(&h.username).to_string()));
+        if let Some(key) = &h.ssh_key {
+            vars.push((NODE_KEY, key.path.clone()));
+        }
     } else {
         vars.push(("proxmox_password", password.to_string()));
     }

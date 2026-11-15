@@ -33,7 +33,7 @@ mod vars;
 pub use instances::*;
 pub use names::*;
 pub use run_options::{RunOptions, RunPath, emulated_arches, run_options};
-pub use vars::{esxi_env, host_vars};
+pub use vars::{NODE_KEY, esxi_env, host_vars};
 
 // What the rest of the launcher uses of Isoloom's types: through here, like its functions.
 pub use isoloom_spec::model::{Arch, Machine, Spec, Target};

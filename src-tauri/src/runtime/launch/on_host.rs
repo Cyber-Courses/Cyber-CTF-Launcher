@@ -94,11 +94,23 @@ pub(in crate::runtime) async fn server_place(
     Ok(isothrum::ServerPlace {
         label: host.to_owned(),
         name: conn.name.clone(),
-        // The profile's variables, and the key the lab's VMs let in.
-        vars: conn.tf_vars.iter().cloned().chain(run.key_values().await?).collect(),
+        vars: place_vars(conn, &key, run.key_values().await?),
         node: server::discovered_node(dirs, host).await?,
         jump: server::proxmox_jump_for_host(dirs, host, &key, &public).await?,
     })
+}
+
+/// A server run's variables: the profile's, the node key a token setup's snippet upload signs in
+/// with when the profile names none (`launcher_key`, the launcher's own), and `keys`, the key the
+/// lab's VMs let in.
+fn place_vars(conn: &server::Connection, launcher_key: &Path, keys: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut vars = conn.tf_vars.clone();
+    let token = vars.iter().any(|(k, _)| k == "proxmox_api_token");
+    if token && !vars.iter().any(|(k, _)| k == lab::NODE_KEY) {
+        vars.push((lab::NODE_KEY.to_owned(), launcher_key.to_string_lossy().into_owned()));
+    }
+    vars.extend(keys);
+    vars
 }
 
 /// What a cloud VM lab starts with: the lab (its folder, id and runtime), the account it runs on
@@ -262,4 +274,38 @@ pub(super) fn is_public_ipv4(ip: std::net::Ipv4Addr) -> bool {
         || (a == 198 && (b == 18 || b == 19))
         || a >= 240;
     !special
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn(vars: &[(&str, &str)]) -> server::Connection {
+        server::Connection {
+            id: "pve".into(),
+            provider: Provider::Proxmox,
+            name: "pve".into(),
+            env: Vec::new(),
+            tf_vars: vars.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
+            tf_env: Vec::new(),
+            region: None,
+            auto_stop_hours: None,
+        }
+    }
+
+    /// A token setup's snippet upload signs in to the node with a key (Isoloom's module asks
+    /// for a password otherwise, which a token setup has none of): the player's own when the
+    /// profile names it, else the launcher's. A password setup signs in with its password.
+    #[test]
+    fn a_token_setup_signs_in_to_the_node_with_a_key() {
+        let keys = vec![("ssh_public_key".to_owned(), "ssh-ed25519 AAAA runner".to_owned())];
+        let node_key = |vars: &[(String, String)]| vars.iter().filter(|(k, _)| k == lab::NODE_KEY).map(|(_, v)| v.clone()).collect::<Vec<_>>();
+        let launcher = Path::new("/app/ssh/id_ed25519");
+        let token = place_vars(&conn(&[("proxmox_api_token", "root@pam!t=s")]), launcher, keys.clone());
+        assert_eq!(node_key(&token), ["/app/ssh/id_ed25519"]);
+        assert!(token.contains(&keys[0]), "the runner's key for the lab's VMs: {token:?}");
+        let own = place_vars(&conn(&[("proxmox_api_token", "root@pam!t=s"), (lab::NODE_KEY, "/home/me/.ssh/pve")]), launcher, keys.clone());
+        assert_eq!(node_key(&own), ["/home/me/.ssh/pve"], "the player's own key, once");
+        assert_eq!(node_key(&place_vars(&conn(&[("proxmox_password", "pw")]), launcher, keys)), [] as [String; 0], "a password setup");
+    }
 }
