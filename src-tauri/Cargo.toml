@@ -77,8 +77,9 @@ tauri-build = { version = "2.7.0", features = [] }
 # WebdriverIO e2e: compile the embedded W3C WebDriver server into the app. Off in release builds;
 # the GUI e2e rig builds with `--features wdio`.
 wdio = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver"]
-# Labs that run their own cloud services (Isoloom's former `cloud-services` target): dormant, off
-# by default while Isoloom has no such target; it compiles again once Isoloom brings it back.
+# Labs that run their own cloud services: a hand-written Terraform module (`cloud/*.tf`) with the
+# launcher's own lab file beside it (`cloud/lab.yml`), run by Isothrum as any Terraform folder.
+# Off by default until a published lab uses it.
 cloud-services = []
 
 [dependencies]

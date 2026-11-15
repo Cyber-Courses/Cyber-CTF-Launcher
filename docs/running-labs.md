@@ -20,7 +20,7 @@ account, what the player picked); the runner does the work and keeps the run's s
 | ESXi server    | VMs                                        | `vagrant`        | Vagrant's `vmware_esxi`, the runner relaying the host from macOS      |
 | Cloud account  | containers                                 | `cloud-docker`   | one instance made by Terraform, Compose inside over SSH               |
 | Cloud account  | VMs, or containers as "one VM per machine" | `cloud-vm`       | one instance per machine (AWS, Azure, GCP, DigitalOcean, Linode, OCI) |
-| Cloud account  | cloud services (no machines)               | `cloud-services` | the lab's own Terraform module                                        |
+| Cloud account  | cloud services (no machines)               | `cloud-services` | the lab's own Terraform module and `cloud/lab.yml` (a build feature)  |
 
 A lab runs as true containers or true VMs, never as containers inside a helper VM: a container
 lab runs on Docker here or on a cloud account's instance, or, with VM recipes, as one VM per

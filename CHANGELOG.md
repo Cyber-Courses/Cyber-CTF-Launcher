@@ -33,6 +33,13 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Changed
 
+- **A cloud-services lab is its own Terraform module and a lab file of the launcher's.** Isoloom
+  3.0 produces no such lab: the lab's author writes the module (`cloud/*.tf`) and `cloud/lab.yml`
+  beside it (the cloud, the hourly cost, the module's values, the variable this machine's IP goes
+  in, the outputs the lab page shows, its checks and its message). Every value the module needs is
+  checked before anything is created. The labs still need a build with the `cloud-services`
+  feature.
+
 - **Saved servers, cloud accounts and the records of what Cyber CTF installed are not carried
   over from earlier versions.** The launcher keeps its settings in a store of its own now and
   doesn't read the files earlier versions wrote. After updating, add your Proxmox, ESXi and cloud

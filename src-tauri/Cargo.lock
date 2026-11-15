@@ -2707,18 +2707,15 @@ dependencies = [
 name = "isothrum-runner"
 version = "3.0.0"
 dependencies = [
- "flate2",
  "getrandom 0.4.3",
- "indexmap 2.14.2",
+ "hcl-rs",
  "nix 0.31.3",
  "process-wrap",
- "regex",
  "rusqlite",
  "schemars 1.2.3",
  "serde",
  "serde_json",
  "socket2",
- "tar",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

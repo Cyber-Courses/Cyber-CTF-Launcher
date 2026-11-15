@@ -123,8 +123,8 @@ impl Failure {
     /// A client call that failed (the service refused it, or the connection broke).
     fn of_client(e: ClientError) -> Failure {
         match e {
-            ClientError::Operation { code, message, step, detail } => Failure::Service { code, message, step, detail: detail.map(Box::new) },
-            ClientError::Refused { code, message, detail } => Failure::Service { code, message, step: None, detail: detail.map(Box::new) },
+            ClientError::Operation { code, message, step, detail } => Failure::Service { code, message, step, detail },
+            ClientError::Refused { code, message, detail } => Failure::Service { code, message, step: None, detail },
             other => Failure::Launcher(Error::Invalid(format!("the runner service: {other}"))),
         }
     }

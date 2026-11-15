@@ -62,6 +62,13 @@ pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> 
         None => return Ok(isothrum::LabRun::local(&home, dir, id, runtime)?.map(Host::Local)),
         Some(conn) if conn.provider == Provider::VmwareEsxi => Host::Esxi { run: super::launch::esxi_run(dirs, dir, id, form, &conn)?, conn },
         Some(conn) if conn.provider.is_cloud() => {
+            #[cfg(feature = "cloud-services")]
+            let run = if runtime == Runtime::Cloud {
+                isothrum::CloudRun::own(&home, dir, id, conn.terraform()?)?
+            } else {
+                isothrum::CloudRun::new(&home, dir, id, form, conn.terraform()?)?
+            };
+            #[cfg(not(feature = "cloud-services"))]
             let run = isothrum::CloudRun::new(&home, dir, id, form, conn.terraform()?)?;
             Host::Cloud { run, place: isothrum::CloudPlace::of(&conn), conn }
         }
@@ -100,12 +107,8 @@ impl Host {
 
     /// Whether the run has machines of the lab's own: every run but a cloud-services lab's,
     /// whose services are no machines to check or to put an attack box beside.
-    #[cfg_attr(not(feature = "cloud-services"), expect(clippy::unused_self, reason = "every run has machines without the cloud-services feature"))]
     pub(crate) fn has_machines(&self) -> bool {
-        #[cfg(feature = "cloud-services")]
-        return self.target() != Some(lab::Target::CloudServices);
-        #[cfg(not(feature = "cloud-services"))]
-        true
+        !matches!(self, Host::Cloud { run, .. } if run.module() == isothrum::Module::Own)
     }
 
     /// The Proxmox server's place for a change of its run (its node, its SSH jump).
@@ -183,6 +186,12 @@ impl Host {
     /// Runs the lab's checks where it runs (a cloud's and a server's over SSH, an ESXi host's
     /// from its controller); none to run beside cloud services ([`Host::has_machines`]).
     pub(crate) async fn check(&self) -> Result<docker::Check> {
+        #[cfg(feature = "cloud-services")]
+        if let Host::Cloud { run, .. } = self
+            && run.module() == isothrum::Module::Own
+        {
+            return run.own_check().await;
+        }
         if !self.has_machines() {
             return Ok(docker::Check::default());
         }
@@ -246,7 +255,7 @@ mod tests {
         mark_per_machine_vm(&dir, false).unwrap();
         assert_eq!(located(&t, &dir, Runtime::Docker), Some(("cloud", Some(lab::Target::CloudDocker))));
         #[cfg(feature = "cloud-services")]
-        assert_eq!(located(&t, &dir, Runtime::Cloud), Some(("cloud", Some(lab::Target::CloudServices))));
+        assert_eq!(located(&t, &dir, Runtime::Cloud), Some(("cloud", None)), "its own module: no Isoloom target");
         #[cfg(not(feature = "cloud-services"))]
         assert_eq!(located(&t, &dir, Runtime::Cloud), None, "a build without the feature runs none");
         // On a server: Proxmox through Terraform, ESXi through Vagrant there.
@@ -269,7 +278,7 @@ mod tests {
     async fn cloud_services_have_no_machines_to_check_nor_to_put_an_attack_box_beside() {
         let t = TestApp::new();
         let tools = Tools::strict_rules(&[]);
-        let dir = t.lab("t", &[("isoloom.yml", SPEC)]);
+        let dir = t.lab("t", &[("isoloom.yml", SPEC), ("cloud/lab.yml", "provider: aws\n"), ("cloud/main.tf", "")]);
         server::mark_lab(&dir, Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
         let host = locate(&t.dirs(), &dir, "t", Runtime::Cloud).unwrap().unwrap();
         assert!(!host.has_machines());

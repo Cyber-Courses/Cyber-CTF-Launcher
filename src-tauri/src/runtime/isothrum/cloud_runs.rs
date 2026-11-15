@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 
 use isothrum_runner::{Format, RunOptions, RunRecord, Runner, SecretValue, Secrets};
 
-use super::opened::OpenedRun;
+use super::opened::{Module, OpenedRun};
 use super::{errors, progress, view};
 use crate::error::{Code, Error, Result};
 use crate::runtime::docker::Check;
@@ -160,7 +160,45 @@ impl CloudRun {
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
         let config = super::host_config(home);
         let (out, target) = lab::terraform(dir, runtime, cloud);
-        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (out, Some(target)), true)?, cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (out, Module::Generated(target)), true)?, cloud: cloud.to_owned() })
+    }
+
+    /// Cloud-services lab `id`, installed in `dir`, on `cloud`: its own module (`cloud/`), run as
+    /// it is, on the runner whose home is `home`.
+    #[cfg(feature = "cloud-services")]
+    pub(crate) fn own(home: &Path, dir: &Path, id: &str, cloud: &str) -> Result<CloudRun> {
+        let module = crate::runtime::cloud_services::lab_file::module_dir(dir);
+        Ok(CloudRun { run: OpenedRun::new(super::host_config(home), dir, id, (module, Module::Own), true)?, cloud: cloud.to_owned() })
+    }
+
+    /// [`CloudRun::own`] on a runner set up with `config`, its operations in this process (a
+    /// test's scripted tools).
+    #[cfg(all(test, feature = "cloud-services"))]
+    pub(crate) fn own_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, cloud: &str) -> Result<CloudRun> {
+        let module = crate::runtime::cloud_services::lab_file::module_dir(dir);
+        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (module, Module::Own), false)?, cloud: cloud.to_owned() })
+    }
+
+    /// Brings the cloud-services lab up in the account `place` from its own module, with
+    /// `values` (its lab file's, checked against the module), and says where to start.
+    #[cfg(feature = "cloud-services")]
+    pub(crate) async fn up_own(
+        &self,
+        place: &CloudPlace,
+        values: &crate::runtime::cloud_services::values::ModuleValues,
+        log: &mut impl FnMut(String),
+    ) -> Result<()> {
+        self.signed_in(place).await?;
+        let opts = values.plain.iter().fold(place.options(&[]), |o, (k, v)| o.with_env(k.clone(), v.clone()));
+        let opts = values.secret.iter().fold(opts, |mut o, (k, v)| {
+            o.secrets.insert(k.clone(), SecretValue::new(v.clone()));
+            o
+        });
+        self.act(super::remote::Act::Up, &opts, log).await?;
+        if let Some(message) = self.own_status().await?.message {
+            message.lines().for_each(|l| log(l.to_owned()));
+        }
+        Ok(())
     }
 
     /// Refuses a change while the account's sign-in has run out, before anything runs: the
@@ -235,6 +273,10 @@ impl CloudRun {
     pub(crate) async fn status(&self) -> Result<LabStatus> {
         if !self.has_project() {
             return Ok(LabStatus { place: Some(Place::Cloud), ..LabStatus::default() });
+        }
+        #[cfg(feature = "cloud-services")]
+        if self.module() == Module::Own {
+            return self.own_status().await;
         }
         let status = self.read().await?;
         let form = if self.target() == Some(lab::Target::CloudDocker) { super::described::Form::Containers } else { super::described::Form::Vms };

@@ -13,7 +13,7 @@ use std::path::Path;
 
 use isothrum_runner::{RunOptions, SecretValue, Secrets};
 
-use super::opened::OpenedRun;
+use super::opened::{Module, OpenedRun};
 use super::{errors, view};
 use crate::error::Result;
 use crate::runtime::docker::Check;
@@ -64,13 +64,13 @@ impl ServerRun {
     fn with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime, service: bool) -> Result<ServerRun> {
         // A VM lab runs Proxmox's own module, one VM per machine. A container lab never starts
         // there: its run is the helper VM an earlier version left, read from where it ran.
-        let (project, target) = if runtime == Runtime::Docker {
-            (lab::docker_vm_dir(dir).join("proxmox"), None)
+        let module = if runtime == Runtime::Docker {
+            (lab::docker_vm_dir(dir).join("proxmox"), Module::HelperVm)
         } else {
             let (out, target) = lab::terraform(dir, runtime, "proxmox");
-            (out, Some(target))
+            (out, Module::Generated(target))
         };
-        Ok(ServerRun { run: OpenedRun::new(config, dir, id, (project, target), service)? })
+        Ok(ServerRun { run: OpenedRun::new(config, dir, id, module, service)? })
     }
 
     /// The runner's SSH public key (the launcher's own), made when there is none: what the node

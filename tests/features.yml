@@ -646,7 +646,7 @@ areas:
           integration: AWS only, opt-in billed tier; the other five clouds never run a lab; rig's cloud column excluded
 
       - id: lab-run.cloud-services
-        what: Start a cloud-services lab (its own Terraform module) in the player's account, see its outputs, then destroy it.
+        what: Start a cloud-services lab (its own Terraform module and its lab file, `cloud/lab.yml`; a build feature) in the player's account, see its outputs, then destroy it.
         providers:
           - aws
           - azure
@@ -659,8 +659,11 @@ areas:
           - cloud_services_supported
         tests:
           unit:
-            - src-tauri/src/runtime/cloud_services.rs > set_up_steps_on_this_machine_are_refused_before_anything_runs
-            - src-tauri/src/runtime/cloud_services.rs > the_allow_list_inputs_the_lab_asks_for_are_filled_with_this_machines_ip
+            - src-tauri/src/runtime/cloud_services/lab_file.rs
+            - src-tauri/src/runtime/cloud_services/values.rs > the_player_ip_goes_in_its_variable_as_one_address_or_a_list_of_one
+            - src-tauri/src/runtime/cloud_services/values.rs > a_value_the_module_doesnt_take_one_the_launch_lacks_or_one_it_needs_is_refused_by_name
+            - src-tauri/src/runtime/cloud_services.rs > a_start_missing_a_value_or_on_another_clouds_account_is_refused_before_anything_runs
+            - src-tauri/src/runtime/isothrum/own_module.rs > a_cloud_services_lab_runs_its_module_with_its_values_and_reads_its_outputs_back
             - src-tauri/src/runtime/lifecycle/tests.rs > stopping_a_cloud_lab_that_runs_nowhere_clears_its_marks_without_running_anything
             - src/features/labs/cloud-labs.test.ts
             - src/features/labs/lab-detail/lab-detail.cloud.test.tsx > shows what a running one exposes, its secrets masked until asked
@@ -900,7 +903,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/cloud_services.rs > cost_lines
-            - src-tauri/src/runtime/cloud_services.rs > a_preview_reads_the_installed_copy_at_that_commit_once_its_source_is_allowed
+            - src-tauri/src/runtime/cloud_services.rs > a_preview_and_the_run_options_read_the_installed_lab_file_at_that_commit_once_its_source_is_allowed
             - src-tauri/src/commands/labs.rs > the_preview_command_reads_the_installed_copy_and_refuses_a_source_the_catalogue_doesnt_allow
             - src/features/labs/cloud-labs.test.ts > estimate their cost from the lab
             - src/features/labs/lab-failures.test.tsx > says the estimate couldn
@@ -915,7 +918,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/lab/tests.rs > requirements_size_a_single_form_lab_as_one_value
-            - src-tauri/src/runtime/lab/tests.rs > a_cloud_services_lab_has_no_machine_footprint
             - src-tauri/src/runtime/launch/tests.rs > memory_is_a_warning_only_when_the_lab_needs_more_than_is_free
             - src/features/labs/lab-detail/where-it-runs.test.tsx > shows the lab
 
