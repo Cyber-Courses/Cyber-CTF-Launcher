@@ -140,13 +140,7 @@ hyperv	windows	firewall-rule	HNS Container Networking - DNS (UDP-In) - *	the Hos
 hyperv	windows	listening-port	:::2179 (vmms, *)	Hyper-V's Virtual Machine Management service, which VM connections reach on port 2179
 hyperv	windows	listening-port	0.0.0.0:2179 (vmms, *)	the same on IPv4
 hyperv	windows	listening-port	*:139 (System, *	NetBIOS on each new vEthernet adapter (the Default Switch's), which Windows opens on every adapter
-virtualbox	linux	vbox-hostonly	vboxnet*	the host-only adapter the self-test's private network makes, which Vagrant never removes
-virtualbox	linux	route	* dev vboxnet*	the host-only adapter's route
-virtualbox	macos	vbox-hostonly	vboxnet*	the host-only adapter the self-test's private network makes, which Vagrant never removes
-virtualbox	macos	vbox-hostonly	vagrantnet-*	VirtualBox 7's host-only network Vagrant makes on a Mac
-virtualbox	macos	route	* vboxnet*	the host-only adapter's route
 virtualbox	windows	vbox-hostonly	VirtualBox Host-Only*	the host-only adapter the self-test's private network makes, which Vagrant never removes
 virtualbox	windows	route	* VirtualBox Host-Only*	the host-only adapter's route
 vmware-utility	any	process	*vagrant-vmware-utility*	the Vagrant VMware Utility's service, which runs from its install on
-selftest:vm	linux	libvirt-network	vagrant-libvirt	vagrant-libvirt's management network, made by the self-test's first VM and kept for the next
 selftest:vm	linux	route	192.168.121.0/24 dev virbr*	the management network's bridge, routed as long as the network is up
