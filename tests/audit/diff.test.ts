@@ -255,13 +255,19 @@ describe("the allowlist", () => {
     }
   });
 
-  it("keeps the host-only adapter's route with the adapter, on each system, and no other route", () => {
-    // jarvis, debian13-quick, e2e:vm: the VirtualBox self-test's vboxnet0 was allowed, its route
-    // read as left ("192.168.56.0/24 dev vboxnet0").
-    for (const route of ["192.168.56.0/24 dev vboxnet0", "192.168.56 link vboxnet0", "192.168.56.0/24 via 0.0.0.0 VirtualBox Host-Only Ethernet Adapter"]) {
-      expect(allowanceFor(item("route", route), "clone", allowlist), route).toBeDefined();
-    }
+  it("keeps the host-only adapter's route with the adapter on Windows only, and no other route", () => {
+    // On Windows the self-test leaves its adapter (removing it asks for elevation): the adapter
+    // and its route stay allowed.
+    const windows = "192.168.56.0/24 via 0.0.0.0 VirtualBox Host-Only Ethernet Adapter";
+    expect(allowanceFor(item("route", windows), "clone", allowlist), windows).toBeDefined();
     expect(allowanceFor(item("vbox-hostonly", "VirtualBox Host-Only Ethernet Adapter #2"), "shared", allowlist)).toBeDefined();
+    // On Linux and macOS it removes the adapter it made (#353): one left is a leftover.
+    for (const route of ["192.168.56.0/24 dev vboxnet0", "192.168.56 link vboxnet0"]) {
+      expect(allowanceFor(item("route", route), "clone", allowlist), route).toBeUndefined();
+    }
+    for (const name of ["vboxnet0", "vagrantnet-vbox1"]) {
+      expect(allowanceFor(item("vbox-hostonly", name), "shared", allowlist), name).toBeUndefined();
+    }
     expect(allowanceFor(item("route", "10.20.0.0/24 dev br-ccad45594157"), "clone", allowlist)).toBeUndefined();
     expect(allowanceFor(item("route", "192.168.121.0/24 dev virbr1"), "clone", allowlist)).toBeUndefined();
   });

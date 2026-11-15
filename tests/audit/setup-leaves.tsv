@@ -143,4 +143,3 @@ hyperv	windows	listening-port	*:139 (System, *	NetBIOS on each new vEthernet ada
 virtualbox	windows	vbox-hostonly	VirtualBox Host-Only*	the host-only adapter the self-test's private network makes, which Vagrant never removes
 virtualbox	windows	route	* VirtualBox Host-Only*	the host-only adapter's route
 vmware-utility	any	process	*vagrant-vmware-utility*	the Vagrant VMware Utility's service, which runs from its install on
-selftest:vm	linux	route	192.168.121.0/24 dev virbr*	the management network's bridge, routed as long as the network is up
