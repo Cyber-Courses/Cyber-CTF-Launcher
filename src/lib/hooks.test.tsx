@@ -163,9 +163,9 @@ describe("failure helpers", () => {
       },
     });
     const w = vi.spyOn(console, "warn").mockImplementation(() => {});
-    openExternal("https://cyberctf.org");
+    openExternal("https://cyberctf.com");
     await flush();
-    expect(w.mock.calls.some((c) => String(c[1]).includes("https://cyberctf.org"))).toBe(true);
+    expect(w.mock.calls.some((c) => String(c[1]).includes("https://cyberctf.com"))).toBe(true);
   });
 
   it("notify asks for permission and never throws", async () => {

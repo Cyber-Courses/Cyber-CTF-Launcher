@@ -26,7 +26,7 @@ beforeAll(preloadLabScreens, 60_000);
 // instead of a state that never resolves or reads as nothing happened.
 
 const signedIn: AuthStatus = { loggedIn: true, name: "Ada Lovelace", email: "ada@example.org" };
-const API_DOWN = "error sending request for url (https://api.cyberctf.org/graphql): connection refused";
+const API_DOWN = "error sending request for url (https://api.cyberctf.com/graphql): connection refused";
 const PORT_CLASH = "Host port 8080 is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again.";
 
 const blind: Lab = {

@@ -24,7 +24,7 @@ describe("Markdown", () => {
     "# Title",
     "## Section",
     "### Sub",
-    "Some **bold**, *italic*, `code` and a [link](https://cyberctf.org).",
+    "Some **bold**, *italic*, `code` and a [link](https://cyberctf.com).",
     "still the same paragraph",
     "",
     "```bash",
@@ -61,10 +61,10 @@ describe("Markdown", () => {
   it("opens links in the player's browser, never in the app", async () => {
     const calls = installTauri();
     const user = userEvent.setup();
-    render(<Markdown content="See [the docs](https://cyberctf.org/docs)." />);
+    render(<Markdown content="See [the docs](https://cyberctf.com/docs)." />);
     await user.click(screen.getByText("the docs"));
     await flush();
-    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: "https://cyberctf.org/docs" });
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args).toMatchObject({ url: "https://cyberctf.com/docs" });
   });
 
   it("never injects HTML", () => {

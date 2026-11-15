@@ -212,7 +212,7 @@ const serverCommands = {
   ],
   gcp_account: () => "ada@example.org",
   gcp_billing_accounts: () => [{ id: "01AB23-CD45EF-67GH89", name: "Cyber CTF billing", open: true }],
-  gcp_organizations: () => [{ id: "123456789012", name: "cyberctf.org" }],
+  gcp_organizations: () => [{ id: "123456789012", name: "cyberctf.com" }],
   oci_config: () => ({ configured: false, tenancy: "", region: "" }),
 } satisfies Handlers;
 

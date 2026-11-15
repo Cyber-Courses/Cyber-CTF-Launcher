@@ -1,7 +1,7 @@
 {
   "title": "Cyber CTF",
   "shortDescription": "Labs práticos de cibersegurança na sua máquina, no seu servidor ou na nuvem. Inicie um lab com um clique, ganhe uma attack box na rede dele e pratique ataques reais com segurança.",
-  "description": "Cyber CTF é o launcher de desktop para labs práticos de cibersegurança. Escolha um lab, clique em Iniciar e um ambiente propositalmente vulnerável se monta sozinho, com sua própria attack box já na rede do lab. Pratique ataques web, Active Directory, contêineres e configurações incorretas de nuvem em sistemas reais e depois envie o que encontrar.\n\nRode labs onde for melhor para você:\n- Neste computador, como contêineres (Docker Desktop) ou como máquinas virtuais (VirtualBox ou VMware Workstation)\n- No seu próprio servidor: Proxmox VE ou VMware ESXi, para labs maiores com várias máquinas\n- Na sua própria conta de nuvem: AWS, Microsoft Azure ou Google Cloud, com parada automática para você só pagar enquanto pratica\n\nCada lab vem com um mapa de rede ao vivo das máquinas, serviços e portas publicadas, e uma attack box que você abre com um clique, dentro do próprio app. Labs iniciados em www.cyberctf.org abrem direto no launcher, e seu progresso acompanha sua conta Cyber CTF.\n\nFeito para estudantes, profissionais de segurança e qualquer pessoa aprendendo hacking ético. Ataque apenas os labs que o Cyber CTF monta para você.\n\nRequisitos: Docker Desktop para labs de contêiner; VirtualBox ou VMware Workstation para labs de VM neste computador. O launcher ajuda você a instalar o que faltar.",
+  "description": "Cyber CTF é o launcher de desktop para labs práticos de cibersegurança. Escolha um lab, clique em Iniciar e um ambiente propositalmente vulnerável se monta sozinho, com sua própria attack box já na rede do lab. Pratique ataques web, Active Directory, contêineres e configurações incorretas de nuvem em sistemas reais e depois envie o que encontrar.\n\nRode labs onde for melhor para você:\n- Neste computador, como contêineres (Docker Desktop) ou como máquinas virtuais (VirtualBox ou VMware Workstation)\n- No seu próprio servidor: Proxmox VE ou VMware ESXi, para labs maiores com várias máquinas\n- Na sua própria conta de nuvem: AWS, Microsoft Azure ou Google Cloud, com parada automática para você só pagar enquanto pratica\n\nCada lab vem com um mapa de rede ao vivo das máquinas, serviços e portas publicadas, e uma attack box que você abre com um clique, dentro do próprio app. Labs iniciados em www.cyberctf.com abrem direto no launcher, e seu progresso acompanha sua conta Cyber CTF.\n\nFeito para estudantes, profissionais de segurança e qualquer pessoa aprendendo hacking ético. Ataque apenas os labs que o Cyber CTF monta para você.\n\nRequisitos: Docker Desktop para labs de contêiner; VirtualBox ou VMware Workstation para labs de VM neste computador. O launcher ajuda você a instalar o que faltar.",
   "releaseNotes": "- Fedora: a configuração guiada instala Docker, libvirt, QEMU, VirtualBox e Vagrant via dnf\n- A attack box em todo tipo de lab (contêineres, VMs, nuvem), suas credenciais na página do lab, uma área de trabalho para a attack box VM\n- A tela de uma máquina do lab em sua própria janela, Abrir no VirtualBox, Remover lab na página do lab, páginas para labs importados de uma pasta\n- Um instalador MSI para Windows x64, um guia do administrador e uma política para toda a máquina\n- Linux: labs QEMU rodam com KVM, o VirtualBox recebe os cabeçalhos do kernel, o Docker é instalado no Kali e em outros derivados do Debian\n- Parar um lab não deixa nenhum volume Docker, um lab removido fora do aplicativo é importado de novo, as instalações aguardam a trava do apt\n- Cada versão assinada, com somas de verificação e proveniência de build; licença Apache-2.0",
   "features": [
     "Centenas de labs práticos: web, Active Directory, contêineres e nuvem",
@@ -12,15 +12,15 @@
     "Use seu próprio servidor Proxmox VE ou VMware ESXi para labs maiores",
     "Rode labs na sua própria conta AWS, Azure ou Google Cloud",
     "Labs na nuvem param sozinhos para manter os custos baixos",
-    "Inicie labs em www.cyberctf.org direto no app",
+    "Inicie labs em www.cyberctf.com direto no app",
     "Progresso sincronizado com sua conta Cyber CTF",
     "Temas Escuro, Preto e Claro, em 6 idiomas"
   ],
   "keywords": ["cibersegurança", "CTF", "hacking ético", "teste de invasão", "pentest", "Active Directory", "treinamento cibersegurança"],
   "copyrightAndTrademarkInfo": "© 2026 Cyber CTF",
-  "websiteUrl": "https://www.cyberctf.org",
-  "privacyPolicy": "https://www.cyberctf.org/privacy",
-  "supportContact": "https://www.cyberctf.org/contact",
+  "websiteUrl": "https://www.cyberctf.com",
+  "privacyPolicy": "https://www.cyberctf.com/privacy",
+  "supportContact": "https://www.cyberctf.com/contact",
   "screenshots": [
     {
       "file": "screenshot-1.png",

@@ -1,7 +1,7 @@
 {
   "title": "Cyber CTF",
   "shortDescription": "自分のマシン、サーバー、クラウドで動く実践的なサイバーセキュリティラボ。ワンクリックでラボを起動し、そのネットワーク上のアタックボックスから、本物の攻撃を安全に練習できます。",
-  "description": "Cyber CTF は、実践的なサイバーセキュリティラボのためのデスクトップランチャーです。ラボを選んで「起動」を押すだけで、意図的に脆弱にした環境が自動で構築され、ラボのネットワーク上にはあなた専用のアタックボックスがすでに用意されています。Web 攻撃、Active Directory、コンテナ、クラウドの設定ミスを実際のシステムで練習し、見つけたものを提出しましょう。\n\nラボは好きな場所で実行できます：\n- このコンピューター上で、コンテナ（Docker Desktop）または仮想マシン（VirtualBox または VMware Workstation）として\n- 自分のサーバー上で：Proxmox VE または VMware ESXi を使い、より大規模な複数マシンのラボを\n- 自分のクラウドアカウント上で：AWS、Microsoft Azure、Google Cloud。自動で停止するため、料金は練習している間だけです\n\nどのラボにも、マシン、サービス、公開ポートを示すライブのネットワークマップと、アプリ内からワンクリックで開けるアタックボックスが付属します。www.cyberctf.org から起動したラボはそのままランチャーで開き、進捗は Cyber CTF アカウントに同期されます。\n\n学生、セキュリティ専門家、エシカルハッキングを学ぶすべての人のために作られています。攻撃してよいのは、Cyber CTF が用意したラボだけです。\n\n動作要件：コンテナラボには Docker Desktop、このコンピューター上の VM ラボには VirtualBox または VMware Workstation が必要です。足りないものはランチャーがインストールをお手伝いします。",
+  "description": "Cyber CTF は、実践的なサイバーセキュリティラボのためのデスクトップランチャーです。ラボを選んで「起動」を押すだけで、意図的に脆弱にした環境が自動で構築され、ラボのネットワーク上にはあなた専用のアタックボックスがすでに用意されています。Web 攻撃、Active Directory、コンテナ、クラウドの設定ミスを実際のシステムで練習し、見つけたものを提出しましょう。\n\nラボは好きな場所で実行できます：\n- このコンピューター上で、コンテナ（Docker Desktop）または仮想マシン（VirtualBox または VMware Workstation）として\n- 自分のサーバー上で：Proxmox VE または VMware ESXi を使い、より大規模な複数マシンのラボを\n- 自分のクラウドアカウント上で：AWS、Microsoft Azure、Google Cloud。自動で停止するため、料金は練習している間だけです\n\nどのラボにも、マシン、サービス、公開ポートを示すライブのネットワークマップと、アプリ内からワンクリックで開けるアタックボックスが付属します。www.cyberctf.com から起動したラボはそのままランチャーで開き、進捗は Cyber CTF アカウントに同期されます。\n\n学生、セキュリティ専門家、エシカルハッキングを学ぶすべての人のために作られています。攻撃してよいのは、Cyber CTF が用意したラボだけです。\n\n動作要件：コンテナラボには Docker Desktop、このコンピューター上の VM ラボには VirtualBox または VMware Workstation が必要です。足りないものはランチャーがインストールをお手伝いします。",
   "releaseNotes": "- Fedora: ガイド付きセットアップが dnf で Docker、libvirt、QEMU、VirtualBox、Vagrant をインストール\n- あらゆる種類のラボ（コンテナ、VM、クラウド）で使えるアタックボックス、ラボページに表示される認証情報、VM アタックボックスのデスクトップ\n- ラボマシンの画面を独立したウィンドウで表示、VirtualBox で開く、ラボページからラボを削除、フォルダから取り込んだラボのページ\n- Windows x64 向け MSI インストーラー、管理者ガイド、マシン全体のポリシー\n- Linux: QEMU ラボは KVM で動作、VirtualBox にカーネルヘッダーを導入、Kali などの Debian 派生に Docker をインストール\n- ラボの停止後に Docker ボリュームが残らない、アプリ外で削除したラボを再取り込み可能、インストールは apt のロックを待機\n- すべてのリリースに署名、チェックサムとビルド来歴付き。ライセンスは Apache-2.0",
   "features": [
     "数百の実践的なラボ：Web、Active Directory、コンテナ、クラウド",
@@ -12,15 +12,15 @@
     "大規模なラボには自分の Proxmox VE または VMware ESXi サーバーを使用",
     "自分の AWS、Azure、Google Cloud アカウントでラボを実行",
     "クラウドラボは自動で停止し、コストを抑えます",
-    "www.cyberctf.org からラボを起動し、そのままアプリで開けます",
+    "www.cyberctf.com からラボを起動し、そのままアプリで開けます",
     "進捗は Cyber CTF アカウントと同期",
     "ダーク、ブラック、ライトのテーマ。6 言語に対応"
   ],
   "keywords": ["サイバーセキュリティ", "CTF", "エシカルハッキング", "ペネトレーションテスト", "ハッキングラボ", "Active Directory", "セキュリティ学習"],
   "copyrightAndTrademarkInfo": "© 2026 Cyber CTF",
-  "websiteUrl": "https://www.cyberctf.org",
-  "privacyPolicy": "https://www.cyberctf.org/privacy",
-  "supportContact": "https://www.cyberctf.org/contact",
+  "websiteUrl": "https://www.cyberctf.com",
+  "privacyPolicy": "https://www.cyberctf.com/privacy",
+  "supportContact": "https://www.cyberctf.com/contact",
   "screenshots": [
     {
       "file": "screenshot-1.png",
