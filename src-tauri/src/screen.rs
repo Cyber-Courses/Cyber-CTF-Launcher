@@ -44,7 +44,7 @@ pub(crate) struct Reached {
     /// Whether an SSH tunnel carries it.
     pub(crate) tunnelled: bool,
     /// What keeps it reachable while the window lives (the runner's console, its tunnel).
-    pub(crate) _keep: Option<Box<dyn Send>>,
+    pub(crate) keep: Option<Box<dyn Send>>,
 }
 
 /// A console's protocol.
@@ -99,7 +99,7 @@ impl Reached {
             password: console.password.as_ref().map(|p| p.expose().to_owned()),
             note: console.note.clone(),
             tunnelled: tunnel.is_some(),
-            _keep: Some(Box::new(console)),
+            keep: Some(Box::new(console)),
         };
         Ok((reached, tunnel))
     }
@@ -107,7 +107,7 @@ impl Reached {
     /// Keeps `guard` (what owns the console's tunnel) for as long as the console is kept: the
     /// window closing, or connecting again, drops it and ends the tunnel.
     pub(crate) fn hold(&mut self, guard: Box<dyn Send>) {
-        self._keep = Some(Box::new((self._keep.take(), guard)));
+        self.keep = Some(Box::new((self.keep.take(), guard)));
     }
 }
 
@@ -363,7 +363,7 @@ mod tests {
             password: Some("pw-1".into()),
             note: None,
             tunnelled: protocol == Protocol::Rdp,
-            _keep: None,
+            keep: None,
         }
     }
 
@@ -386,7 +386,7 @@ mod tests {
     /// replaced the first, and once its own window failed to open (the first had it) it closed
     /// the session, so the open window had none ("this screen window has no session").
     #[tokio::test]
-    async fn a_second_start_of_the_same_window_keeps_its_session() {
+    async fn a_second_start_of_the_same_windowkeeps_its_session() {
         let label = "screen-goad:dc02";
         let port = start(label, which("dc02")).await.unwrap().expect("a new session");
         assert_eq!(start(label, which("dc02")).await.unwrap(), None, "the window already has a session");

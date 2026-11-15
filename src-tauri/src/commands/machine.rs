@@ -105,7 +105,7 @@ impl workloads::LabRuntime for AppHandle {
     fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send {
         let app = self.clone();
         let request = crate::run_service::Request::Stop { lab_id: id.to_owned(), runtime };
-        async move { crate::run_service::run(&app, request).await }
+        async move { crate::app::runs::run(&app, request).await }
     }
 }
 
@@ -170,6 +170,19 @@ mod tests {
 
     use super::*;
     use crate::testing::test_app::TestApp;
+
+    /// Nothing downloaded yet: nothing listed and nothing removed; Docker and Vagrant are asked
+    /// only what they hold (an unscripted call fails the test).
+    #[tokio::test]
+    async fn nothing_downloaded_is_listed_nor_removed_through_the_commands() {
+        use crate::platform::exec::fake::{Tools, ok};
+        let t = TestApp::new();
+        let tools = Tools::strict_rules(&[("docker image ls -q --no-trunc", ok("")), ("vagrant box list", ok(""))]);
+        let stored = machine_storage(t.handle().clone(), Vec::new()).await.unwrap();
+        assert!(stored.images.is_empty() && stored.boxes.is_empty());
+        assert_eq!(machine_storage_clean(t.handle().clone(), Vec::new()).await.unwrap(), 0);
+        assert!(tools.calls().iter().all(|c| c.starts_with("docker image ls") || c.starts_with("vagrant box list")), "nothing removed: {:?}", tools.calls());
+    }
 
     /// Opening a new window sizes it to the screen, which Tauri's mock runtime can't tell: the
     /// open one is driven here.

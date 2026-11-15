@@ -77,8 +77,8 @@ pub fn main() -> std::process::ExitCode {
         crate::platform::env_path::augment(&only, &own);
     }
     let Ok(runtime) = tokio::runtime::Runtime::new() else { return std::process::ExitCode::from(Exit::Failed.code()) };
-    // The run service and the runner spawn on Tauri's async runtime: this one, no app needed.
-    tauri::async_runtime::set(runtime.handle().clone());
+    // The run service and the runner spawn on the app's async runtime (`crate::spawn`): this one, no app needed.
+    crate::use_runtime(runtime.handle().clone());
     let (mut stdout, mut stderr) = (std::io::stdout(), std::io::stderr());
     let tty = std::io::stdin().is_terminal();
     let exit = runtime.block_on(run(args, tty, None, &mut stdout, &mut stderr));
@@ -103,7 +103,8 @@ pub(crate) async fn run(args: Vec<OsString>, tty: bool, dirs: Option<AppDirs>, s
     let dirs = dirs.unwrap_or_else(|| cli.data_dir.as_ref().map_or_else(AppDirs::standard, |d| own_dirs(d)));
     let ctx = Context { dirs, tty, yes: cli.yes };
     crate::platform::elevation::set_unattended(ctx.unattended());
-    dispatch(cli.command, &ctx, &mut out).await
+    // Boxed: every command's future is held in it, and the callers keep theirs small.
+    Box::pin(dispatch(cli.command, &ctx, &mut out)).await
 }
 
 /// The folders under `data` (`--data-dir`): the data there, the cache in its `caches/`.

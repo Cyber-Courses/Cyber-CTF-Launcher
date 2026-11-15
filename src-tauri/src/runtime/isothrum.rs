@@ -8,27 +8,35 @@
 //! values a run takes to the runner as environment and secrets, never as files of the runner's.
 //!
 //! What stays the launcher's: the run's name (`cyberctf-<lab id>`, the Compose project the
-//! launcher always used), the runner's home (the app data folder, so runs are kept under its
-//! `runs/`), the words the player reads (the runner's events in `progress`, its error codes in
+//! launcher always used), the runner's home (`isothrum/` in the app data folder, the runner's
+//! alone), the words the player reads (the runner's events in `progress`, its error codes in
 //! `errors`) and the lab page's shapes (`view`). The attack box is no concern of the run's: the
 //! launcher adds it to the lab as one of its machines (`attack_box`), and the run is brought
 //! up to date with it ([`LabRun::update`], [`LabRun::retire`]) like with any change of the lab.
-//! An operation that outlives the app runs in the launcher's own deploy worker, which calls the runner in-process;
-//! stopping that worker drops the operation, which ends what it started.
+//! An operation goes to the home's runner service (`remote`), which this app hosts and which runs
+//! it to its end whatever becomes of the app.
 
+mod checks;
 mod cloud_runs;
 mod described;
+mod engine;
 pub(crate) mod errors;
+mod esxi;
+mod gate;
 mod gone;
 mod one_read;
 mod opened;
 mod progress;
 mod remote;
+mod retry;
 mod runner_said;
 mod server;
 mod view;
 
 pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
+use engine::PROCESSES;
+pub(crate) use engine::{ENGINE_VAR, EngineProcesses};
+pub(crate) use esxi::EsxiPlace;
 pub(crate) use server::{ServerPlace, ServerRun};
 
 /// The folder Isoloom generates a lab's files in, at its root (`.isoloom`, `.isoloom-<n>` for an
@@ -70,13 +78,8 @@ impl RunForm {
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use isothrum_runner::{
-    BoxFuture, Format, ProcessRunner, ProcessSpec, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, Status,
-    SystemProcesses,
-};
-use isothrum_runner::{Exit, OnLine, ProcessError};
+use isothrum_runner::{Format, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, Status};
 
-use super::docker::Check;
 use super::{LabStatus, Park, Place, Runtime, lab, paths};
 use crate::error::{Error, Result};
 
@@ -235,49 +238,6 @@ pub(crate) fn record_of(dirs: &crate::platform::AppDirs, id: &str) -> Result<Opt
     Ok(records(&paths::runner_home(dirs)?)?.into_iter().find(|r| r.name.as_str() == name))
 }
 
-/// Where a VM lab on an ESXi server runs (Vagrant's `vmware_esxi`): the server's id, so an
-/// operation asked for elsewhere is refused; its settings as the manifest's params; its password,
-/// given to every operation of the run (status and park too). The runner relays the host's SSH
-/// and HTTPS itself where this machine can't reach it (macOS).
-#[derive(Clone)]
-pub(crate) struct EsxiPlace {
-    /// The server's id.
-    pub(crate) label: String,
-    /// The server's name, as Servers shows it.
-    pub(crate) name: String,
-    /// The host's settings, by the manifest's param names.
-    pub(crate) params: Vec<(String, String)>,
-    password: SecretValue,
-}
-
-impl std::fmt::Debug for EsxiPlace {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EsxiPlace").field("label", &self.label).field("params", &self.params).finish_non_exhaustive()
-    }
-}
-
-impl EsxiPlace {
-    /// Server `label`'s place (`name` in Servers), from the environment the launcher keeps for its
-    /// labs (`lab::esxi_env`'s names): the settings the manifest takes, and the password.
-    pub(crate) fn from_env(label: &str, name: &str, env: &[(String, String)]) -> EsxiPlace {
-        let value = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
-        EsxiPlace {
-            label: label.to_owned(),
-            name: name.to_owned(),
-            params: lab::esxi::PARAMS.iter().filter_map(|name| value(name).map(|v| ((*name).to_owned(), v))).collect(),
-            password: SecretValue::new(value(lab::esxi::PASSWORD).unwrap_or_default()),
-        }
-    }
-
-    /// `opts` on this host: its id recorded, its settings as environment, its password among
-    /// the secrets.
-    pub(crate) fn onto(&self, opts: RunOptions) -> RunOptions {
-        let mut opts = self.params.iter().fold(opts.with_host_label(self.label.clone()), |o, (k, v)| o.with_env(k.clone(), v.clone()));
-        opts.secrets.insert(lab::esxi::PASSWORD, self.password.clone());
-        opts
-    }
-}
-
 /// What a run is: a container lab on Docker, a VM lab on a local hypervisor (a container lab's
 /// VM form included), or a container lab an earlier version ran inside one helper VM (Isoloom's
 /// former `docker-vm`), which Isoloom no longer generates: that run is read, stopped and removed
@@ -382,10 +342,10 @@ impl LabRun {
         if self.service
             && let Some(client) = remote::client(&self.home).await
         {
-            let target = remote::target(&self.project(), self.format(), &self.name);
-            return Box::pin(remote::operate(&self.home, &client, act, target, opts, log)).await;
+            let on = remote::Served { home: &self.home, client: &client, target: remote::target(&self.project(), self.format(), &self.name) };
+            return Box::pin(remote::operate(on, act, opts, log)).await;
         }
-        let lab = self.lab().await.map_err(remote::Failure::Launcher)?;
+        let lab = self.lab().map_err(remote::Failure::Launcher)?;
         Box::pin(remote::in_process(&lab, act, opts, log)).await
     }
 
@@ -417,7 +377,7 @@ impl LabRun {
 
     /// The lab's project, opened under the run's name. A Compose or Vagrant project generated by
     /// an earlier version is still one of its format: it is opened as it is.
-    async fn lab(&self) -> Result<Running<'_>> {
+    fn lab(&self) -> Result<Running<'_>> {
         match self.runner.open_as(&self.project(), self.format(), Some(self.name.clone())) {
             Ok(lab) => Ok(lab),
             Err(e) if self.kind == Kind::DockerVm => Err(self.helper_vm_gone(e)),
@@ -472,6 +432,7 @@ impl LabRun {
     /// VM lab runs on `provider`.
     pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let provider = provider.map(runner_provider).transpose()?;
+        self.refuse_up_when_running()?;
         let opts = self.placed(start_options(inputs, provider));
         self.act(remote::Act::Up, &opts, log).await.map_err(|e| self.said(e.into_error()))?;
         let message = self.target().and_then(|t| described::message(&self.dir, t));
@@ -509,6 +470,7 @@ impl LabRun {
     /// Starts the parked lab again. When nothing is left of it, the launcher's parked mark goes
     /// too, so the lab page offers a fresh start instead of a resume that can't work.
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
+        self.require_something_to_resume().await?;
         match self.act(remote::Act::Resume, &self.placed(RunOptions::new()), log).await {
             Ok(_) => Ok(()),
             Err(e) if e.code() == Some(isothrum_runner::ErrorCode::NothingToResume) => {
@@ -540,7 +502,7 @@ impl LabRun {
                 let target = remote::target(&self.project(), self.format(), &self.name);
                 return remote::status(&self.home, &client, &self.name, target).await.map_err(|e| self.said(e.into_error()));
             }
-            self.lab().await?.status().await.map_err(|e| self.said(errors::from_runner(e)))
+            self.lab()?.status().await.map_err(|e| self.said(errors::from_runner(e)))
         })
         .await
     }
@@ -559,108 +521,9 @@ impl LabRun {
         self.act_placed(remote::Act::Provision(machine, None), log).await
     }
 
-    /// Runs the lab's checks; not available when it declares none (nothing runs then).
-    pub(crate) async fn check(&self) -> Result<Check> {
-        let runners = self.described()?.check_runners;
-        if runners.is_empty() {
-            return Ok(Check::default());
-        }
-        let (mut lines, mut all_ok) = (Vec::new(), true);
-        for runner in &runners {
-            let (said, ok) = if self.kind == Kind::Docker { self.service_checks(runner).await? } else { self.vm_checks(runner).await? };
-            lines.extend(said.into_iter().map(|l| (runner.clone(), l)));
-            all_ok &= ok;
-        }
-        Ok(view::check(&lines, all_ok))
-    }
-
-    /// The checks of Compose service `runner` (`isoloom-check[-<position>]`), run as a one-off:
-    /// what it printed, and whether it passed.
-    async fn service_checks(&self, runner: &str) -> Result<(Vec<String>, bool)> {
-        let mut said = Vec::new();
-        let ok = self.act(remote::Act::Exec(runner, &[]), &self.placed(RunOptions::new()), &mut |l| said.push(l)).await.map_err(remote::Failure::into_error)?;
-        Ok((said, ok))
-    }
-
-    /// The checks of VM `vm`, through Isoloom's `checks` provisioner, which reads the check
-    /// scripts from the host again before it runs them: what it printed (the operation's log),
-    /// and whether it passed. A provisioner that fails is a check that failed when it printed any
-    /// check's line; one that printed none never ran them, and its error is the answer.
-    async fn vm_checks(&self, vm: &str) -> Result<(Vec<String>, bool)> {
-        let mut said = Vec::new();
-        let act = remote::Act::Provision(Some(vm), Some(described::VAGRANT_CHECKS));
-        match self.act(act, &self.placed(RunOptions::new()), &mut |l| said.push(l)).await {
-            Ok(ok) => Ok((said, ok)),
-            Err(_) if said.iter().any(|l| described::check_line(l).is_some()) => Ok((said, false)),
-            Err(e) => Err(e.into_error()),
-        }
-    }
-
-    /// Brings the running lab up to date with its regenerated files (a machine added to the lab
-    /// or taken out), with the parameters it was started with. A VM restarted for its new
-    /// settings boots like a started one, into the same passing UTM refusal: see
-    /// [`LabRun::after_utm_refusal`].
-    pub(crate) async fn update(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        // Boxed: each try is a whole run's operation, a large future.
-        match Box::pin(self.attempt(Op::Update, log)).await {
-            Err(e) => Box::pin(self.after_utm_refusal(Op::Update, e, log)).await,
-            done => done,
-        }
-    }
-
-    /// [`LabRun::up`] on `provider`; on UTM, a start its passing scripting refusal cut short goes
-    /// on as [`LabRun::after_utm_refusal`] says.
-    pub(crate) async fn start(&self, inputs: Inputs<'_>, provider: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        let op = Op::Up { inputs, provider };
-        match Box::pin(self.attempt(op, log)).await {
-            Err(e) if provider == super::providers::Provider::Utm.id() => Box::pin(self.after_utm_refusal(op, e, log)).await,
-            done => done,
-        }
-    }
-
-    /// `op`, once.
-    async fn attempt(&self, op: Op<'_>, log: &mut impl FnMut(String)) -> Result<()> {
-        match op {
-            Op::Up { inputs, provider } => self.up(inputs, Some(provider), log).await,
-            Op::Update => self.act_placed(remote::Act::Update, log).await,
-        }
-    }
-
-    /// What follows `op` that failed with `failed`: when that is UTM's passing scripting refusal
-    /// ([`errors::try_again_after_utm`], said in `log`), one more try, else the error. The try is
-    /// `op` again while the run still runs; when the failed attempt left it down (a restart for
-    /// new settings shut the VM down before UTM refused its boot), an update would be refused
-    /// ("isn't running"), so the try is an `up` on the current files, on the run's provider, which
-    /// brings the run back with what `op` was adding.
-    async fn after_utm_refusal(&self, op: Op<'_>, failed: Error, log: &mut impl FnMut(String)) -> Result<()> {
-        if !errors::try_again_after_utm(&failed, log) {
-            return Err(failed);
-        }
-        let Some(provider) = self.left_down().await else { return self.attempt(op, log).await };
-        log("The run isn't running after that: starting it again on its current files.".into());
-        match op {
-            Op::Up { inputs, provider } => self.up(inputs, Some(provider), log).await,
-            // An update carries no launch's values, and neither does the start that replaces it;
-            // a run whose status names no provider is on the one its lab folder records.
-            Op::Update => self.up(Inputs::default(), provider.or_else(|| paths::local_vm(&self.dir)).as_deref(), log).await,
-        }
-    }
-
-    /// The run's provider when the run is down (nothing of it running), as its status says; none
-    /// when it runs. A status that can't be read is logged, and taken for a run that runs.
-    async fn left_down(&self) -> Option<Option<String>> {
-        match self.run_status().await {
-            Ok(Some(status)) if !view::runs(&status) => Some(status.provider.map(|p| isothrum_runner::wire_name(&p))),
-            Ok(_) => None,
-            Err(e) => {
-                log::warn!("couldn't read the run's status after UTM's refusal ({e}): trying the same operation again");
-                None
-            }
-        }
-    }
-
     /// Takes `machine` out of the running lab, ahead of its removal from the lab's files.
     pub(crate) async fn retire(&self, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
+        self.require_up()?;
         self.act_placed(remote::Act::Retire(machine), log).await
     }
 
@@ -674,19 +537,19 @@ impl LabRun {
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
     /// when given.
-    pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
-        self.lab().await?.console_command(machine, user).map_err(errors::from_runner)
+    pub(crate) fn console_command(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
+        self.lab()?.console_command(machine, user).map_err(errors::from_runner)
     }
 
     /// `machine`'s graphical console (its screen), as the runner reaches it with the run's
     /// options (an ESXi host's settings and password).
     pub(crate) async fn graphical_console(&self, machine: &str) -> Result<isothrum_runner::Console> {
-        self.lab().await?.graphical_console(machine, &self.placed(RunOptions::new())).await.map_err(errors::from_runner)
+        self.lab()?.graphical_console(machine, &self.placed(RunOptions::new())).await.map_err(errors::from_runner)
     }
 
     /// What opens running VM `machine` in its hypervisor's own app, as the runner says.
     pub(crate) async fn native_console(&self, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        self.lab().await?.native_console(machine, &self.placed(RunOptions::new())).await.map_err(errors::from_runner)
+        self.lab()?.native_console(machine, &self.placed(RunOptions::new())).await.map_err(errors::from_runner)
     }
 }
 
@@ -699,63 +562,6 @@ pub(crate) fn protocol_word(protocol: isothrum_runner::ConsoleProtocol) -> &'sta
         _ => "none",
     }
 }
-
-/// An operation on a run that UTM's passing refusal may cut short ([`LabRun::after_utm_refusal`]).
-#[derive(Clone, Copy)]
-enum Op<'a> {
-    /// A start with the launch's `inputs`, on `provider`.
-    Up { inputs: Inputs<'a>, provider: &'a str },
-    /// Bringing the running run up to date with its files.
-    Update,
-}
-
-/// The variable a run's tools get the Docker context chosen at the lab's launch in (the engine
-/// marker): [`EngineProcesses`] turns it into `--context` on the run's docker calls, wherever the
-/// run executes (this process, or the runner service this app hosts).
-pub(crate) const ENGINE_VAR: &str = "CYBERCTF_DOCKER_CONTEXT";
-
-/// Pins a lab's docker/compose calls to one engine: when the run's tools get a Docker context
-/// ([`ENGINE_VAR`]), `docker …` becomes `docker --context <ctx> …`. The runner's `SystemProcesses`
-/// strips a `DOCKER_CONTEXT` env (to follow the current context), so the flag is used instead; it
-/// takes precedence and is not stripped. Non-docker tools, and docker calls that already carry
-/// `--context`, pass through untouched (the variable left out of every tool's environment).
-pub(crate) struct EngineProcesses {
-    inner: SystemProcesses,
-}
-
-impl EngineProcesses {
-    /// `inner`'s tools, their docker calls pinned as their run says.
-    pub(crate) fn new(inner: SystemProcesses) -> EngineProcesses {
-        EngineProcesses { inner }
-    }
-}
-
-impl ProcessRunner for EngineProcesses {
-    fn run<'a>(&'a self, spec: &'a ProcessSpec, on_line: OnLine<'a>) -> BoxFuture<'a, std::result::Result<Exit, ProcessError>> {
-        match pin_docker(spec) {
-            None => self.inner.run(spec, on_line),
-            Some(pinned) => Box::pin(async move { self.inner.run(&pinned, on_line).await }),
-        }
-    }
-}
-
-/// `spec` without [`ENGINE_VAR`] in its environment, and with `--context <context>` put before its
-/// arguments when it is a plain `docker` call of a run pinned to `context`; None when it needs no
-/// change (no context given).
-fn pin_docker(spec: &ProcessSpec) -> Option<ProcessSpec> {
-    let context = spec.env.iter().find(|(k, _)| k == ENGINE_VAR).map(|(_, v)| v.clone())?;
-    let mut pinned = spec.clone();
-    pinned.env.retain(|(k, _)| k != ENGINE_VAR);
-    if pinned.program == "docker" && pinned.args.first().is_none_or(|a| a != "--context") {
-        pinned.args.splice(0..0, ["--context".to_string(), context]);
-    }
-    Some(pinned)
-}
-
-/// The tools every run of this process starts, shared: a tool cut short (its operation dropped,
-/// a cancel) is asked to stop on Unix and given a grace before it is ended, and this process waits
-/// for those still stopping before it exits (`end_cut_short_tools`).
-static PROCESSES: std::sync::LazyLock<SystemProcesses> = std::sync::LazyLock::new(SystemProcesses::default);
 
 /// Ends every tool cut short that is still stopping, at once: the app exiting now.
 pub(crate) fn end_cut_short_tools() {
@@ -819,34 +625,6 @@ fn start_options(inputs: Inputs<'_>, provider: Option<isothrum_runner::Provider>
 /// never lands on a hypervisor the player didn't pick.
 fn runner_provider(id: &str) -> Result<isothrum_runner::Provider> {
     isothrum_runner::from_wire_name(id).ok_or_else(|| Error::Invalid(format!("the runner knows no hypervisor `{id}`")))
-}
-
-#[cfg(test)]
-mod engine_tests {
-    use super::{ENGINE_VAR, ProcessSpec, pin_docker};
-
-    /// `program args`, run by a run pinned to `context` when given.
-    fn spec(program: &str, args: &[&str], context: Option<&str>) -> ProcessSpec {
-        let mut spec = ProcessSpec::new(program, args.iter().copied());
-        spec.env.extend(context.map(|c| (ENGINE_VAR.to_owned(), c.to_owned())));
-        spec
-    }
-
-    #[test]
-    fn a_chosen_engine_pins_the_labs_docker_calls_through_its_context() {
-        // Every docker/compose call the runner makes for the lab gets `--context <chosen>` first,
-        // so it reaches the chosen engine however the current context changes under it.
-        let pinned = pin_docker(&spec("docker", &["compose", "-p", "cyberctf-x", "up"], Some("orbstack"))).unwrap();
-        assert_eq!(pinned.program, "docker");
-        assert_eq!(pinned.args, ["--context", "orbstack", "compose", "-p", "cyberctf-x", "up"]);
-        assert!(pinned.env.iter().all(|(k, _)| k != ENGINE_VAR), "the variable never reaches the tool");
-        // A run with no engine chosen is left exactly as it was.
-        assert!(pin_docker(&spec("docker", &["ps"], None)).is_none());
-        // A non-docker tool (vagrant for a VM form) keeps its arguments.
-        assert_eq!(pin_docker(&spec("vagrant", &["up"], Some("orbstack"))).unwrap().args, ["up"]);
-        // A docker call that already names a context is left alone (never two `--context`).
-        assert_eq!(pin_docker(&spec("docker", &["--context", "colima", "ps"], Some("orbstack"))).unwrap().args, ["--context", "colima", "ps"]);
-    }
 }
 
 #[cfg(test)]

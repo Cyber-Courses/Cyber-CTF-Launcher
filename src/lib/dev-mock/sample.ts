@@ -240,8 +240,14 @@ const appCommands = {
 // A Map, not an object lookup: a command named like an Object.prototype member is unknown too.
 const HANDLERS = new Map<string, Handler>(Object.entries({ ...accountCommands, ...labCommands, ...machineCommands, ...serverCommands, ...appCommands }));
 
+/**
+ * The mock's own answers that no command asks: `running_labs` is what the core's scan sees up,
+ * which the mock tells through `labs_watch` and `run_events` as the core's reconcile does.
+ */
+export const MOCK_KNOBS: ReadonlySet<string> = new Set(["running_labs"]);
+
 /** The commands the mock answers. */
-export const mockedCommands = (): string[] => [...HANDLERS.keys()];
+export const mockedCommands = (): string[] => [...HANDLERS.keys()].filter((name) => !MOCK_KNOBS.has(name));
 
 /** The mock's answer to a command; null for one it doesn't know. */
 export function answer(cmd: string, args: Args): unknown {

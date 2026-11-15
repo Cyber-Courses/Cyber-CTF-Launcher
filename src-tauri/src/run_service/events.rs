@@ -64,8 +64,8 @@ pub enum RunEvent {
     Status {
         /// The lab.
         lab_id: String,
-        /// Its status; none when it couldn't be read.
-        status: Option<LabStatus>,
+        /// Its status; none when it couldn't be read (boxed: the largest of the events by far).
+        status: Option<Box<LabStatus>>,
         /// Why it couldn't be read.
         error: Option<Wire>,
     },

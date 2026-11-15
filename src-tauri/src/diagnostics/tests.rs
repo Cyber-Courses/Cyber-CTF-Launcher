@@ -41,6 +41,13 @@ struct Seeded {
     logs: PathBuf,
 }
 
+impl Drop for Seeded {
+    fn drop(&mut self) {
+        // The store this process keeps open on the data folder goes before the folder.
+        crate::store::forget(&self.data);
+    }
+}
+
 impl Seeded {
     fn new() -> Seeded {
         let root = tempfile::tempdir().unwrap();
@@ -75,8 +82,14 @@ impl Seeded {
         let job = json!({ "lab_id": "api", "op": "launch", "launch": { "labId": "api", "env": [{ "name": "CTF_LAUNCH_TOKEN", "value": LAUNCH_TOKEN }, { "name": "CTF_FLAG_MAIN", "value": JOB_FLAG }] } });
         Seeded::file(self.data.join("deploys/api.json"), &job.to_string());
         Seeded::file(self.data.join("deploys/api.log"), &line);
-        let store = json!({ "default": "srv1", "hosts": [{ "id": "srv1", "name": "Garage Proxmox", "provider": "proxmox", "host": "192.0.2.44", "port": 8006, "username": "root@pam" }] });
-        Seeded::file(self.data.join("server.json"), &store.to_string());
+        let host = json!({ "id": "srv1", "name": "Garage Proxmox", "provider": "proxmox", "host": "192.0.2.44", "port": 8006, "username": "root@pam" });
+        let host: crate::runtime::server::profile::HostProfile = serde_json::from_value(host).unwrap();
+        crate::runtime::server::store::update(&self.sources().dirs, |s| {
+            s.hosts.push(host);
+            s.default = Some("srv1".into());
+            Ok(())
+        })
+        .unwrap();
         Seeded::file(self.logs.join("cyberctf.log"), &format!("[info] Cyber CTF app starting\n{line}"));
         Seeded::file(self.logs.join("deploy-api.log"), &line);
     }

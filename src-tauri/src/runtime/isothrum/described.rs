@@ -8,7 +8,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::super::{Interface, Network, lab};
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 /// A lab's own description, as one target runs it.
 #[derive(Default)]
@@ -70,7 +70,7 @@ impl Described {
     /// The lab in `dir` (as its instance) in `form`, from its spec; Vagrant's check runners are
     /// the VMs its generated project installs them in (`checks/<vm>.sh` beside the Vagrantfile).
     pub(super) fn of(dir: &Path, form: Form) -> Result<Described> {
-        let snapshot = isoloom_targets::resolved::resolve_with(&lab::lab(dir)?, lab::instance(dir)).map_err(|e| Error::Invalid(e.to_string()))?;
+        let snapshot = lab::resolved(dir)?;
         let check_runners = match form {
             Form::Containers => compose_runners(&snapshot),
             Form::Vms => vagrant_runners(&lab::vagrant_dir(dir, super::super::Runtime::Vm)),
@@ -160,9 +160,7 @@ pub(super) fn check_line(line: &str) -> Option<(String, bool, String)> {
 /// The lab's message (how to start, in Markdown) as it reads on `target`, its placeholders
 /// filled from its spec; none when it has none, or when it can't be read (logged).
 pub(super) fn message(dir: &Path, target: lab::Target) -> Option<String> {
-    let rendered =
-        lab::lab(dir).and_then(|lab| isoloom_targets::resolved::render_message_on(&lab, lab::instance(dir), target).map_err(|e| Error::Invalid(e.to_string())));
-    rendered.unwrap_or_else(|e| {
+    lab::message_on(dir, target).unwrap_or_else(|e| {
         log::warn!("{}: the lab's message couldn't be read: {e}", dir.display());
         None
     })

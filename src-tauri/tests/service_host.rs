@@ -1,5 +1,6 @@
 //! The runner service this app's executable hosts (`serve --home <home>`, internal): whichever
 //! client starts it, the app or the command line, serves the other, one service per home.
+#![expect(clippy::disallowed_methods, reason = "it runs the executable it tests, as a client does")]
 
 use std::path::Path;
 use std::process::Command;

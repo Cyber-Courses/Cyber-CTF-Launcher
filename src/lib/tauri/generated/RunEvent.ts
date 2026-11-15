@@ -70,7 +70,7 @@ error: CommandError | null, } | { "kind": "status",
  */
 labId: string, 
 /**
- * Its status; none when it couldn't be read.
+ * Its status; none when it couldn't be read (boxed: the largest of the events by far).
  */
 status: LabStatus | null, 
 /**

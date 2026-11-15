@@ -122,7 +122,7 @@ fn source(path: &str) -> String {
 /// The removal scripts: the string literals of the Linux removal plan (plain literals there).
 fn removal_scripts() -> Vec<(String, String)> {
     let src = source("machine/tools/uninstall.rs");
-    let start = src.find("fn linux_plan_with").expect("the Linux removal plan");
+    let start = src.find("fn linux_plan(").expect("the Linux removal plan");
     let body = &src[start..start + src[start..].find("\n}\n").expect("its end")];
     body.split('"').skip(1).step_by(2).map(|lit| ("removal".to_owned(), lit.to_owned())).collect()
 }

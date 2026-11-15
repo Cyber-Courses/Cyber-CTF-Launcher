@@ -67,3 +67,15 @@ pub fn run() -> tauri::Result<()> {
 pub fn cli_main() -> std::process::ExitCode {
     cli::main()
 }
+
+/// Runs `task` in the background on the app's async runtime (Tauri's; the command line sets its
+/// own with [`use_runtime`]): the domain's background work reaches the runtime through here, never
+/// through Tauri itself.
+pub(crate) fn spawn(task: impl Future<Output = ()> + Send + 'static) {
+    drop(tauri::async_runtime::spawn(task));
+}
+
+/// Makes `runtime` the one [`spawn`] runs on: the command line's, which has no app.
+pub(crate) fn use_runtime(runtime: tokio::runtime::Handle) {
+    tauri::async_runtime::set(runtime);
+}

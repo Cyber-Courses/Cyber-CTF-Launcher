@@ -50,13 +50,15 @@ pub(crate) enum Host {
 /// on the server host or cloud account its marker names, else on this machine. `None` for a
 /// cloud-services lab on no account: nothing of it runs anywhere.
 pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Host>> {
+    // Where the lab is marked first: a mark naming a server no longer saved says so, whatever runs.
+    let connection = server::lab_connection(dirs, dir)?;
     // A cloud-services lab runs nowhere in a build without the feature.
     if !cfg!(feature = "cloud-services") && runtime == Runtime::Cloud {
         return Ok(None);
     }
     let home = runner_home(dirs)?;
     let form = local_runtime(dir, runtime);
-    Ok(Some(match server::lab_connection(dirs, dir)? {
+    Ok(Some(match connection {
         None => return Ok(isothrum::LabRun::local(&home, dir, id, runtime)?.map(Host::Local)),
         Some(conn) if conn.provider == Provider::VmwareEsxi => Host::Esxi { run: super::launch::esxi_run(dirs, dir, id, form, &conn)?, conn },
         Some(conn) if conn.provider.is_cloud() => {
@@ -98,6 +100,7 @@ impl Host {
 
     /// Whether the run has machines of the lab's own: every run but a cloud-services lab's,
     /// whose services are no machines to check or to put an attack box beside.
+    #[cfg_attr(not(feature = "cloud-services"), expect(clippy::unused_self, reason = "every run has machines without the cloud-services feature"))]
     pub(crate) fn has_machines(&self) -> bool {
         #[cfg(feature = "cloud-services")]
         return self.target() != Some(lab::Target::CloudServices);
@@ -152,7 +155,7 @@ impl Host {
     /// The command that opens a shell into `machine`, as account `user` when given.
     pub(crate) async fn console(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
         match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.console_command(machine, user).await,
+            Host::Local(run) | Host::Esxi { run, .. } => run.console_command(machine, user),
             Host::Cloud { run, .. } => run.console_command(machine, user).await,
             Host::Server { run, .. } => run.console_command(machine, user).await,
         }

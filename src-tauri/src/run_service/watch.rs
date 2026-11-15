@@ -55,7 +55,7 @@ impl Watch {
     /// scan sees them up, or they ran last time it read them), those an operation acts on
     /// (`busy`), those looked at closely, those read last time (once more, to settle), and every
     /// watched lab every [`ALL_EVERY`] passes.
-    pub(super) fn to_read(&mut self, busy: impl Fn(&str) -> bool) -> Vec<(String, Runtime)> {
+    pub(super) fn next_reads(&mut self, busy: impl Fn(&str) -> bool) -> Vec<(String, Runtime)> {
         self.passes += 1;
         let all = self.passes % ALL_EVERY == 1;
         let scan = self.scan.clone().unwrap_or_default();
@@ -107,14 +107,14 @@ mod tests {
         let mut w = Watch::default();
         assert_eq!(ids(&w.set(labs(&["a", "b", "c", "d"]), vec!["d".into()])), ["a", "b", "c", "d"], "all new");
         w.scanned(BTreeSet::from(["a".to_owned()]));
-        assert_eq!(ids(&w.to_read(|_| false)), ["a", "b", "c", "d"], "every lab at the first pass");
+        assert_eq!(ids(&w.next_reads(|_| false)), ["a", "b", "c", "d"], "every lab at the first pass");
         assert!(w.told("b", &UP()));
         // a: the scan sees it; b: it ran last time; c: busy; d: its page is open.
-        assert_eq!(ids(&w.to_read(|id| id == "c")), ["a", "b", "c", "d"]);
+        assert_eq!(ids(&w.next_reads(|id| id == "c")), ["a", "b", "c", "d"]);
         assert!(w.told("b", &Ok(LabStatus::default())));
         // c's operation ended: read once more, then left until the next full pass.
-        assert_eq!(ids(&w.to_read(|_| false)), ["a", "b", "c", "d"]);
-        assert_eq!(ids(&w.to_read(|_| false)), ["a", "d"]);
+        assert_eq!(ids(&w.next_reads(|_| false)), ["a", "b", "c", "d"]);
+        assert_eq!(ids(&w.next_reads(|_| false)), ["a", "d"]);
     }
 
     #[test]
@@ -129,7 +129,7 @@ mod tests {
         assert!(!w.scanned(BTreeSet::new()));
         assert!(w.scanned(BTreeSet::from(["a".to_owned()])));
         // Watched again with the same runtime: nothing new to read; another runtime is.
-        assert!(w.set(labs(&["a"]), Vec::new()).is_empty());
+        assert_eq!(w.set(labs(&["a"]), Vec::new()), [] as [(String, Runtime); 0]);
         assert_eq!(w.set(vec![("a".into(), Runtime::Vm)], Vec::new()).len(), 1);
     }
 }

@@ -134,7 +134,7 @@ impl LocalRunService {
         self.events.emit(started);
         let work = work(self.log_of(&operation, &lab_id));
         let (events, running) = (Arc::clone(&self.events), Arc::clone(&self.running));
-        tauri::async_runtime::spawn(async move {
+        crate::spawn(async move {
             let error = unpanicked(work).await.err().map(|e| e.to_wire());
             end(&events, &running, &operation, error);
         });
@@ -178,7 +178,7 @@ async fn tell_status(dirs: &AppDirs, events: &EventLog, watched: &Mutex<Watch>, 
         return;
     }
     let (status, error) = match read {
-        Ok(status) => (Some(status), None),
+        Ok(status) => (Some(Box::new(status)), None),
         Err(error) => (None, Some(error)),
     };
     events.emit(RunEvent::Status { lab_id: id, status, error });
@@ -230,7 +230,7 @@ impl RunService for LocalRunService {
             return;
         }
         let (dirs, events, watched) = (self.dirs.clone(), Arc::clone(&self.events), Arc::clone(&self.watch));
-        tauri::async_runtime::spawn(async move {
+        crate::spawn(async move {
             for (id, runtime) in fresh {
                 tell_status(&dirs, &events, &watched, id, runtime).await;
             }
@@ -244,7 +244,7 @@ impl RunService for LocalRunService {
             if self.watch.lock().unwrap_or_else(PoisonError::into_inner).scanned(seen) {
                 self.events.emit(RunEvent::Running { lab_ids });
             }
-            let picked = self.watch.lock().unwrap_or_else(PoisonError::into_inner).to_read(|id| self.is_busy(id));
+            let picked = self.watch.lock().unwrap_or_else(PoisonError::into_inner).next_reads(|id| self.is_busy(id));
             for (id, runtime) in picked {
                 tell_status(&self.dirs, &self.events, &self.watch, id, runtime).await;
             }

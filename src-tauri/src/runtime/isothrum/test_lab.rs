@@ -19,8 +19,9 @@ pub(super) mod prelude {
     pub(in crate::runtime::isothrum) use super::{Home, Scripted, locked};
 }
 
-/// A fresh runner home, `root`, holding an installed lab `dir` (`<root>/labs/web`) with its
-/// files generated; removed when dropped.
+/// A fresh app data folder, `root`, holding an installed lab `dir` (`<root>/labs/web`) with its
+/// files generated, and the runner's home where the app keeps it ([`Home::runner`]); removed when
+/// dropped.
 pub(super) struct Home {
     pub(super) root: PathBuf,
     pub(super) dir: PathBuf,
@@ -41,12 +42,17 @@ impl Home {
         Home { root, dir }
     }
 
+    /// The runner's home, where the app's reads look for it (`<root>/isothrum`).
+    pub(super) fn runner(&self) -> PathBuf {
+        crate::runtime::paths::runner_home_in(&self.root)
+    }
+
     /// A runner on this home: its processes `fake`, its free ports `ports`, or a real machine's
     /// worth of them (41000 and up) when none is given: the runner pins every published port to
     /// a free one where the preferred number isn't fixed (Isothrum 2.1.3), and a double with no
     /// port fails every start with "no free host port", which no real machine does.
     pub(super) fn config(&self, fake: &Arc<FakeProcesses>, ports: impl IntoIterator<Item = u16>) -> RunnerConfig {
-        let mut config = RunnerConfig::new(&self.root);
+        let mut config = RunnerConfig::new(self.runner());
         config.processes = Arc::clone(fake) as Arc<dyn ProcessRunner>;
         let given: Vec<u16> = ports.into_iter().collect();
         config.ports = Arc::new(FakePorts::new(if given.is_empty() { (41000..41064).collect() } else { given }));
@@ -69,17 +75,42 @@ pub(super) struct Scripted<S> {
 }
 
 impl<S: Default + Send + 'static> Scripted<S> {
-    /// Each call answered by `answer` from the model, which starts as its default.
+    /// Each call answered by `answer` from the model, which starts as its default; the tools'
+    /// version probes are answered first ([`tool_version`]).
     pub(super) fn answered_by(home: Home, answer: fn(&Mutex<S>, &Call) -> Reply) -> Scripted<S> {
         let model = Arc::new(Mutex::new(S::default()));
         let script = Arc::clone(&model);
-        Scripted { home, model, fake: Arc::new(FakeProcesses::new(move |call| answer(&script, call))) }
+        Scripted { home, model, fake: Arc::new(FakeProcesses::new(move |call| tool_version(call).unwrap_or_else(|| answer(&script, call)))) }
     }
 
     /// The model, to read or change between calls.
     pub(super) fn model(&self) -> MutexGuard<'_, S> {
         locked(&self.model)
     }
+}
+
+impl<S> Drop for Scripted<S> {
+    /// A failed test says what its tools were asked, in order: the first thing to read when a
+    /// tool's command line changed.
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            let calls: Vec<String> = self.fake.calls().iter().map(Call::line).collect();
+            eprintln!("the scripted tools were asked:\n  {}", calls.join("\n  "));
+        }
+    }
+}
+
+/// A supported version, as each tool prints it, when `call` asks one: the runner checks the
+/// tools a run needs before it runs them.
+pub(super) fn tool_version(call: &Call) -> Option<Reply> {
+    let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
+    let said = match (call.program.as_str(), args.as_slice()) {
+        ("docker", ["compose", "version", "--short"]) => "2.32.4",
+        ("vagrant", ["--version"]) => "Vagrant 2.4.3",
+        ("terraform", ["version", "-json"]) => r#"{"terraform_version":"1.10.5"}"#,
+        _ => return None,
+    };
+    Some(Reply::ok(said))
 }
 
 /// `model` locked, a test's earlier panic notwithstanding.

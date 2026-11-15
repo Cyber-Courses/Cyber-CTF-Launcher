@@ -5,7 +5,9 @@
 use serde_json::{Value, json};
 
 use super::Exit;
-use crate::platform::exec::fake::{Reply, Tools, fail, ok};
+use crate::platform::exec::fake::Tools;
+#[cfg(target_os = "linux")]
+use crate::platform::exec::fake::{Reply, fail, ok};
 use crate::testing::test_app::TestApp;
 
 /// A container lab's spec.
@@ -26,6 +28,7 @@ impl Ran {
     }
 
     /// The events' payloads.
+    #[cfg(target_os = "linux")]
     fn events(&self) -> Vec<&Value> {
         self.lines.iter().filter(|l| l["type"] == "event").map(|l| &l["event"]).collect()
     }
@@ -164,14 +167,13 @@ async fn a_destructive_command_needs_yes_off_a_terminal() {
 }
 
 #[tokio::test]
-async fn a_labs_last_log_is_read_back() {
+async fn a_lab_that_never_ran_has_an_empty_journal_and_nothing_to_follow() {
     let t = TestApp::new();
-    let deploys = crate::runtime::deploys_dir(&t.dirs()).unwrap();
-    std::fs::write(deploys.join("web.log"), "==> Starting\n✗ it failed\n").unwrap();
     let ran = cyberctf(&t, &["labs", "logs", "web", "--follow", "--json"]).await;
     assert_eq!(ran.exit, Exit::Ok);
-    assert_eq!(ran.last()["data"], json!({ "lab": "web", "running": false, "log": "==> Starting\n✗ it failed\n" }));
-    assert_eq!(cyberctf(&t, &["labs", "logs", "other"]).await.text.trim(), "");
+    assert_eq!(ran.last()["data"], json!({ "lab": "web", "running": false, "operations": [] }));
+    assert_eq!(cyberctf(&t, &["labs", "logs", "other"]).await.text.trim(), "no operation recorded");
+    assert_eq!(cyberctf(&t, &["labs", "logs", "../x", "--json"]).await.exit, Exit::Usage, "not a lab id");
 }
 
 #[tokio::test]

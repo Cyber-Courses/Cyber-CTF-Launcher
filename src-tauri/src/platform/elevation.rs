@@ -40,13 +40,11 @@ pub fn unattended() -> bool {
 
 /// `program` with `args` run as root on Linux: through pkexec (its password prompt); unattended,
 /// as is when this process is root already, else through `sudo -n`.
-#[cfg(any(target_os = "linux", test))]
 pub fn as_root(program: &str, args: &[String]) -> (String, Vec<String>) {
     as_root_with(program, args, unattended(), is_root())
 }
 
 /// [`as_root`], for an unattended process or not, root or not.
-#[cfg(any(target_os = "linux", test))]
 fn as_root_with(program: &str, args: &[String], unattended: bool, root: bool) -> (String, Vec<String>) {
     let all = |prefix: &[&str]| prefix.iter().map(ToString::to_string).chain(std::iter::once(program.to_owned())).chain(args.iter().cloned()).collect();
     match (unattended, root) {
@@ -69,7 +67,7 @@ const CANT_ELEVATE: &str = "Nothing can be installed unattended here: no prompt 
 
 /// Whether this process can elevate unattended: it is an administrator (root, an elevated
 /// Windows shell), or on Linux sudo runs a command without a password (`sudo -n true`, through
-/// the steps' runner, which a test scripts). Run before a setup starts, so it fails before
+/// the platform's process runner, which a test scripts). Run before a setup starts, so it fails before
 /// anything changed rather than at its first root step.
 ///
 /// # Errors
@@ -80,9 +78,7 @@ pub async fn check_unattended() -> Result<()> {
         return Ok(());
     }
     if cfg!(target_os = "linux") {
-        let probe = crate::machine::tools::steps::step("sudo", &["-n", "true"]);
-        let mut quiet = |_: String| {};
-        if crate::machine::tools::steps::run_step(&probe, &mut quiet).await.is_ok() {
+        if crate::platform::exec::run("sudo", &["-n", "true"], None).await.is_ok() {
             return Ok(());
         }
         return Err(Error::Refused(format!("{CANT_ELEVATE} Run it as root, or where sudo needs no password, or on a terminal without --yes to be asked.")));

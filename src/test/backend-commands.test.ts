@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mockedCommands } from "@/lib/dev-mock/sample";
+import { MOCK_KNOBS, mockedCommands } from "@/lib/dev-mock/sample";
 import { backendCommands, callable } from "@/test/backend-commands";
 import { DEFAULTS } from "@/test/tauri";
 
@@ -16,6 +16,10 @@ describe("the doubles answer only what the Rust core registers", () => {
 
   it("the dev mock answers no command the core lacks", () => {
     expect(mockedCommands().filter((c) => !callable(registered, c))).toEqual([]);
+  });
+
+  it("the dev mock's knobs are no command the core registers", () => {
+    expect([...MOCK_KNOBS].filter((c) => callable(registered, c))).toEqual([]);
   });
 
   it("the component tests' defaults answer no command the core lacks", () => {

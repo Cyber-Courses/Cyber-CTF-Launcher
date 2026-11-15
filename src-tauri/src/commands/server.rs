@@ -169,6 +169,45 @@ mod tests {
     use crate::runtime::providers::Provider;
     use crate::runtime::server::HOST_MARKER;
 
+    /// A public host key (made for these tests) and the fingerprint `ssh-keygen -lf` gives it.
+    const NODE_KEY: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIMV/X9GBl8lRmDMg/hSFR41QZH/fgA5PLNatzgxigSSL";
+    const NODE_FINGERPRINT: &str = "SHA256:Coh2bRLeV1HsLRUtSn+G8PFvq/E3/excrj4hN1k1YEQ";
+
+    #[tokio::test]
+    async fn a_proxmox_servers_identity_is_read_then_its_node_keys_confirmed_through_the_commands() {
+        use crate::platform::exec::fake::{Tools, ok};
+        use crate::runtime::server::tls_pin::tests::{FINGERPRINT_A, server_a};
+        let t = crate::testing::test_app::TestApp::new();
+        let app = || t.handle().clone();
+        // The launcher's own key, already made: nothing runs ssh-keygen.
+        let ssh = t.data().join("ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        std::fs::write(ssh.join("id_ed25519"), "private").unwrap();
+        std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAA cyberctf-launcher").unwrap();
+        let (port, requests) = server_a().await;
+        let input = |provider: &str| -> HostInput {
+            serde_json::from_value(serde_json::json!({
+                "name": "pve", "provider": provider, "host": "127.0.0.1", "port": port, "username": "root@pam", "insecureTls": true
+            }))
+            .unwrap()
+        };
+        let refused = server_identity(app(), input("vmware_esxi")).await.unwrap_err();
+        assert!(matches!(&refused, crate::error::Error::Invalid(m) if m == "only Proxmox servers are confirmed by their fingerprints"), "{refused}");
+        let tools = Tools::strict_rules(&[("ssh-keyscan", ok(format!("127.0.0.1 ssh-ed25519 {NODE_KEY}\n")))]);
+        let shown = server_identity(app(), input("proxmox")).await.unwrap();
+        assert_eq!(shown.tls.as_deref(), Some(FINGERPRINT_A), "the certificate's fingerprint, for the learner to compare");
+        assert_eq!(requests.load(std::sync::atomic::Ordering::SeqCst), 0, "nothing but a handshake reached the server");
+        let offered = shown.ssh.expect("the node's keys");
+        assert_eq!(
+            (offered.state, offered.keys.iter().map(|k| k.fingerprint.as_str()).collect::<Vec<_>>()),
+            (crate::runtime::ssh::known_hosts::State::New, vec![NODE_FINGERPRINT])
+        );
+        assert_eq!(shown.ssh_error, None);
+        server_trust_ssh_keys(app(), input("proxmox"), vec![NODE_FINGERPRINT.into()]).await.unwrap();
+        assert_eq!(std::fs::read_to_string(ssh.join("nodes_known_hosts")).unwrap(), format!("127.0.0.1 ssh-ed25519 {NODE_KEY}\n"));
+        assert!(tools.called("ssh-keyscan -T 10 -p 22 -t ed25519,ecdsa,rsa 127.0.0.1"), "{:?}", tools.calls());
+    }
+
     #[tokio::test]
     async fn hosts_are_saved_listed_tested_and_removed_through_the_commands() {
         use crate::platform::exec::fake::Tools;

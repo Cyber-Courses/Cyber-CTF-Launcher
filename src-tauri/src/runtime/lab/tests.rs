@@ -141,6 +141,7 @@ fn requirements_size_a_single_form_lab_as_one_value() {
 }
 
 #[test]
+#[ignore = "its spec's `cloud:` section is refused by Isoloom 3.0: a cloud-services lab's facts move to the launcher's own lab file"]
 fn a_cloud_services_lab_has_no_machine_footprint() {
     let lab =
         parsed("version: 1\nname: t\ncloud:\n  provider: aws\n  terraform: terraform\n  vars: { region: us-east-1 }\n  outputs: { app: app_url }\n").unwrap();

@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::{UTM_APP, hyperv_enabled, qemu_binary, tool_present};
-use crate::machine::tools::install::Dependency;
 use crate::platform::exec::run_read;
 use crate::platform::host::{Arch, Host, Os};
 
@@ -227,12 +226,6 @@ impl Provider {
     pub(crate) fn offered_on(self, host: Host, installed: bool) -> bool {
         let for_this_mac = host.os != Os::Macos || self.row().mac_cpu.is_none_or(|cpu| cpu == host.arch);
         self.applicable_on(host) && (installed || for_this_mac)
-    }
-
-    /// The tool the guided setup installs as this hypervisor, where it does (the row of
-    /// [`Dependency::row`] that names it).
-    pub(crate) fn dependency(self) -> Option<Dependency> {
-        Dependency::ALL.into_iter().find(|d| d.hypervisor() == Some(self))
     }
 
     /// Vagrant plugin required, if the provider is not built in: Isoloom's table for the providers

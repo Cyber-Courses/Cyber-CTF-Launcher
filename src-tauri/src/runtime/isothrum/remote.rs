@@ -71,6 +71,9 @@ pub(super) enum Act<'a> {
     Update,
     /// Take a machine out of it.
     Retire(&'a str),
+    /// Start a machine the run leaves down at its start (Isoloom's controller, halted once it set
+    /// the lab up).
+    Attach(&'a str),
     /// Run its set-up again on a machine (or all), one provisioner (or all).
     Provision(Option<&'a str>, Option<&'a str>),
     /// Run a command in a machine (none: its own command, a one-off of a Compose service).
@@ -91,8 +94,8 @@ pub(super) enum Failure {
         message: String,
         /// The step that failed, when one did.
         step: Option<String>,
-        /// Its typed fields, when it has any.
-        detail: Option<ErrorDetail>,
+        /// Its typed fields, when it has any (boxed: they are large, and rare).
+        detail: Option<Box<ErrorDetail>>,
     },
     /// The launcher's.
     Launcher(Error),
@@ -112,7 +115,7 @@ impl Failure {
     pub(super) fn into_error(self) -> Error {
         match self {
             Failure::Runner(e) => errors::from_runner(e),
-            Failure::Service { code, message, step, detail } => errors::from_service(code, &message, step.as_deref(), detail.as_ref()),
+            Failure::Service { code, message, step, detail } => errors::from_service(code, &message, step.as_deref(), detail.as_deref()),
             Failure::Launcher(e) => e,
         }
     }
@@ -120,8 +123,8 @@ impl Failure {
     /// A client call that failed (the service refused it, or the connection broke).
     fn of_client(e: ClientError) -> Failure {
         match e {
-            ClientError::Operation { code, message, step, detail } => Failure::Service { code, message, step, detail },
-            ClientError::Refused { code, message, detail } => Failure::Service { code, message, step: None, detail },
+            ClientError::Operation { code, message, step, detail } => Failure::Service { code, message, step, detail: detail.map(Box::new) },
+            ClientError::Refused { code, message, detail } => Failure::Service { code, message, step: None, detail: detail.map(Box::new) },
             other => Failure::Launcher(Error::Invalid(format!("the runner service: {other}"))),
         }
     }
@@ -134,8 +137,7 @@ pub(super) fn target(project: &Path, format: Format, name: &RunName) -> Target {
 
 /// `opts` on the wire (secrets travel only over the owner-only endpoint).
 fn wire(opts: &RunOptions) -> OpOptions {
-    let mut wired = OpOptions::default();
-    wired.provider = opts.provider;
+    let mut wired = OpOptions { provider: opts.provider, ..OpOptions::default() };
     wired.env.clone_from(&opts.env);
     wired.secrets = opts.secrets.iter().map(|(k, v)| (k.to_owned(), v.expose().to_owned())).collect();
     wired.host_label.clone_from(&opts.host_label);
@@ -152,21 +154,27 @@ fn command(act: Act<'_>, target: Target, opts: &RunOptions) -> Command {
         Act::Resume => Command::Resume { target, options },
         Act::Update => Command::Update { target, options },
         Act::Retire(machine) => Command::Retire { target, options, machine: machine.to_owned() },
+        Act::Attach(machine) => Command::Attach { target, options, machine: machine.to_owned() },
         Act::Provision(machine, with) => Command::Provision { target, options, machine: machine.map(str::to_owned), with: with.map(str::to_owned) },
         Act::Exec(machine, argv) => Command::Exec { target, options, machine: machine.to_owned(), argv: argv.to_vec() },
     }
 }
 
-/// Runs `act` on `target` with `opts` through `home`'s service `client`, its events as `log`'s
+/// A run as its home's runner service is asked about it: the home (whose connection a broken one
+/// forgets), the service's client and the run.
+pub(super) struct Served<'a> {
+    /// The runner's home.
+    pub(super) home: &'a Path,
+    /// Its service, connected.
+    pub(super) client: &'a Client,
+    /// The run.
+    pub(super) target: Target,
+}
+
+/// Runs `act` with `opts` on the run `on` names through its service, its events as `log`'s
 /// lines: whether it reached its goal (false: a check failed).
-pub(super) async fn operate(
-    home: &Path,
-    client: &Client,
-    act: Act<'_>,
-    target: Target,
-    opts: &RunOptions,
-    log: &mut impl FnMut(String),
-) -> Result<bool, Failure> {
+pub(super) async fn operate(on: Served<'_>, act: Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<bool, Failure> {
+    let Served { home, client, target } = on;
     let mut followed = match client.follow(command(act, target, opts)).await {
         Ok(followed) => {
             OURS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(followed.accepted.operation.0);
@@ -187,7 +195,7 @@ pub(super) async fn operate(
         }
         match event.kind {
             EventKind::Result { ok, .. } => outcome = Some(Ok(ok)),
-            EventKind::Error { code, message, step, detail, .. } => outcome = Some(Err(Failure::Service { code, message, step, detail })),
+            EventKind::Error { code, message, step, detail, .. } => outcome = Some(Err(Failure::Service { code, message, step, detail: detail.map(Box::new) })),
             _ => {}
         }
     }
@@ -206,13 +214,12 @@ pub(super) async fn in_process(lab: &Running<'_>, act: Act<'_>, opts: &RunOption
         Act::Resume => done(when_unlocked(log, move |sink| async move { lab.resume(opts, &sink).await }).await),
         Act::Update => done(when_unlocked(log, move |sink| async move { lab.update(opts, &sink).await }).await),
         Act::Retire(machine) => done(when_unlocked(log, move |sink| async move { lab.retire(machine, opts, &sink).await }).await),
+        Act::Attach(machine) => done(when_unlocked(log, move |sink| async move { lab.attach(machine, opts, &sink).await }).await),
         Act::Provision(machine, with) => done(when_unlocked(log, move |sink| async move { lab.provision(machine, with, opts, &sink).await }).await),
         Act::Exec(machine, argv) => {
+            // What it printed reached `log` as the run's events, as through the service.
             let report = when_unlocked(log, move |sink| async move { lab.exec(machine, argv, opts, &sink).await }).await;
-            report.map(|report| {
-                report.stdout.lines().chain(report.stderr.lines()).for_each(|l| log(l.to_owned()));
-                report.exit == 0
-            })
+            report.map(|report| report.exit == 0)
         }
     };
     ran.map_err(Failure::Runner)
@@ -376,12 +383,12 @@ pub(crate) async fn follow_others(client: &Client, on: &mut impl FnMut(Others)) 
         }
         let Some(operation) = event.operation.filter(|o| !ours(*o)) else { continue };
         let id = operation.0;
-        if !told.contains_key(&id) {
+        if let std::collections::hash_map::Entry::Vacant(first) = told.entry(id) {
             if !(live || under.contains(&id)) || isothrum_client::v1::phase_of(&event) == Some(OperationPhase::Ended) {
                 continue;
             }
             let (Some(run), Some(op)) = (event.run.clone(), event.op) else { continue };
-            told.insert(id, None);
+            first.insert(None);
             on(Others::Began { operation: id, run, op });
         }
         if let Some(line) = progress::line(&event.kind) {

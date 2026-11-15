@@ -34,13 +34,15 @@ pub fn run_record(home: &Path, name: &str) -> serde_json::Value {
     serde_json::to_value(record).unwrap()
 }
 
-/// Makes the store of the runner whose home is `home` unreadable, as a damaged disk would.
+/// Makes the store of the runner whose home is `home` unreadable, as a damaged disk would: the
+/// database and the mirror the runner repairs it from both damaged.
 pub fn damage_store(home: &Path) {
     std::fs::create_dir_all(home).unwrap();
     for f in ["state.db", "state.db-wal", "state.db-shm"] {
         let _ = std::fs::remove_file(home.join(f));
     }
     std::fs::write(home.join("state.db"), "not a database").unwrap();
+    std::fs::write(home.join("state.mirror"), "not a mirror").unwrap();
 }
 
 /// Whether the runner whose home is `home` records run `name`.
