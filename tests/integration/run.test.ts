@@ -268,6 +268,18 @@ describe("an integration scenario's verdict", () => {
     expect(existsSync(temp), `${temp} is left`).toBe(false);
   });
 
+  it("runs the VM attack box bare, its toolset left out, and the container one as it is", () => {
+    const seen = (only: string) => {
+      const r = runner('echo "skip=${CYBERCTF_TEST_BOX_SKIP_TOOLS:-}" >"$CYBERCTF_TEST_INTEGRATION_LOGS/skip"; echo "test result: ok. 1 passed; 0 failed"', {
+        ONLY: only,
+      });
+      expect(verdict(r.out, only), only).toBe("ok");
+      return readFileSync(join(r.dir, "skip"), "utf8").trim();
+    };
+    expect(seen("attack-box-vm")).toBe("skip=1");
+    expect(seen("attack-box-docker")).toBe("skip=");
+  });
+
   it("makes its temp folder in TMPDIR, a folder on disk where /tmp is a tmpfs, but in /tmp for macOS's own", () => {
     const cargo = 'echo "$TMPDIR" >"$CYBERCTF_TEST_INTEGRATION_LOGS/temp"; echo "test result: ok. 1 passed; 0 failed"';
     const temp = (tmp: string) => {

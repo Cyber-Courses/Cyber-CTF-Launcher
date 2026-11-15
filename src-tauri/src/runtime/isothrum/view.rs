@@ -13,13 +13,16 @@ use super::described::{Declared, DeclaredPort, Described};
 /// The run as the lab page shows it. Running while any of the lab's machines runs (a lab whose
 /// one-shot jobs finished is up); parked as the player chose (`marked`, the lab's mark), else
 /// shut down; its URL is the page of its first published web port, once it runs. Its machines
-/// are those there; while it runs, a machine of the lab that is gone (removed outside the app)
-/// is shown too, `absent`, so the page says it is down and offers a way back rather than
-/// drawing the lab without it.
+/// are those there; while it runs, or once the runner reads it failed (a machine destroyed
+/// outside the app), a machine of the lab that is gone is shown too, `absent`, so the page says
+/// it is down and offers a way back rather than drawing the lab without it.
 pub(super) fn lab_status(lab: &Described, status: &Status, marked: Option<Park>) -> LabStatus {
     let running = runs_in(lab, status);
     let native = crate::screen::native::installed_here(status.native.as_ref());
-    let shown = |m: &&MachineStatus| m.state != MachineState::Absent || (running && lab.machine(&m.name).is_some());
+    // Regression: a gone machine was shown only while another of the lab's ran, so a one-VM lab
+    // whose VM was destroyed showed no machine at all, and no way back.
+    let gone_shown = running || status.state == RunState::Failed;
+    let shown = |m: &&MachineStatus| m.state != MachineState::Absent || (gone_shown && lab.machine(&m.name).is_some());
     LabStatus {
         running,
         parked: (status.state == RunState::Parked && !running).then(|| marked.unwrap_or(Park::Shutdown)),

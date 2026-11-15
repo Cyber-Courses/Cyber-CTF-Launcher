@@ -31,16 +31,16 @@ try {
   if (!id) throw new Error(`no local lab id on the Overview:\n${main.slice(0, 400)}`);
 
   // 3. Mount the real attack-box panel for that lab (same panel the lab page shows).
+  // Mounted with no reload: a reload right after launch ends the Windows app (a fast-fail).
   await b.execute((v) => {
     try {
       localStorage.setItem("__wdio_attack__", v);
     } catch {
       /* storage unavailable */
     }
+    window.dispatchEvent(new Event("cyberctf:wdio-attack"));
   }, id);
-  await b.refresh();
   await b.$("[data-wdio-attack]").waitForExist({ timeout: 25000 });
-  // The reload dropped the visibility override; the panel's status poll needs it back.
   await forceVisible(b);
 
   // 4. The panel auto-attaches the box; wait until it reports it up. The "Stop attack box" control

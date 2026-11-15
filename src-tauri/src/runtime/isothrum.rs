@@ -442,7 +442,6 @@ impl LabRun {
     /// VM lab runs on `provider`.
     pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let provider = provider.map(runner_provider).transpose()?;
-        self.refuse_up_when_running()?;
         let opts = self.placed(start_options(inputs, provider));
         self.act(remote::Act::Up, &opts, log).await.map_err(|e| self.said(e.into_error()))?;
         described::log_message(&self.dir, self.target(), log);
@@ -505,13 +504,15 @@ impl LabRun {
     /// box's never ask Vagrant at once.
     async fn read(&self) -> Result<Status> {
         one_read::status(&self.dir.join(self.name.as_str()), || async {
+            // The read's tools get the run's own values and secrets (an ESXi host's password).
+            let opts = self.placed(RunOptions::new());
             if self.service
                 && let Some(client) = remote::client(&self.home).await
             {
                 let target = remote::target(&self.project(), self.format(), &self.name);
-                return remote::status(&self.home, &client, &self.name, target).await.map_err(|e| self.said(e.into_error()));
+                return remote::status(&self.home, &client, &self.name, target, &opts).await.map_err(|e| self.said(e.into_error()));
             }
-            self.lab()?.status().await.map_err(|e| self.said(errors::from_runner(e)))
+            self.lab()?.status_with(&opts).await.map_err(|e| self.said(errors::from_runner(e)))
         })
         .await
     }
@@ -546,8 +547,8 @@ impl LabRun {
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
     /// when given.
-    pub(crate) fn console_command(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
-        self.lab()?.console_command(machine, user).map_err(errors::from_runner)
+    pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
+        self.lab()?.console_command(machine, user).await.map_err(errors::from_runner)
     }
 
     /// `machine`'s graphical console (its screen), as the runner reaches it with the run's
@@ -572,9 +573,11 @@ pub(crate) fn protocol_word(protocol: isothrum_runner::ConsoleProtocol) -> &'sta
     }
 }
 
-/// Ends every tool cut short that is still stopping, at once: the app exiting now.
-pub(crate) fn end_cut_short_tools() {
-    PROCESSES.end_stopping();
+/// Ends every tool the runner runs in this process, at once, and every one cut short and still
+/// stopping: the app exiting now, whose futures are never dropped (a status read's `docker
+/// compose ps` would outlive it).
+pub(crate) fn end_tools_at_exit() {
+    PROCESSES.end_all_now();
 }
 
 /// A runner at `home` with this host's tools, a container lab's docker calls pinned to the engine

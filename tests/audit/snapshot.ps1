@@ -213,6 +213,29 @@ function Get-HypervisorProbe {
   Invoke-Probe 'vbox-hostonly' 'VBoxManage' @('list', 'hostonlyifs')
   Invoke-Probe 'vbox-natnet' 'VBoxManage' @('list', 'natnets')
   Invoke-Probe 'vbox-dhcp' 'VBoxManage' @('list', 'dhcpservers')
+  Get-VmwareNetworkProbe
+}
+
+# Get-VmwareNetworkProbe: VMware Workstation's virtual networks, from its VMnetConfig registry key
+# (one subkey per vmnet<n>), written as the Linux and macOS `networking` file says them
+# (`answer VNET_<n>_<setting> <value>`), so one parser reads all three; missing without the key.
+function Get-VmwareNetworkProbe {
+  $key = @('HKLM:\SOFTWARE\WOW6432Node\VMware, Inc.\VMnetLib\VMnetConfig', 'HKLM:\SOFTWARE\VMware, Inc.\VMnetLib\VMnetConfig') |
+    Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+  if (-not $key) { Add-Probe 'vmware-network' 'registry' 'missing' 'no VMware VMnetConfig key' ''; return }
+  try {
+    $lines = foreach ($net in Get-ChildItem -LiteralPath $key | Where-Object { $_.PSChildName -match '^vmnet(\d+)$' }) {
+      $n = $Matches[1]
+      $v = Get-ItemProperty -LiteralPath $net.PSPath
+      "answer VNET_${n}_VIRTUAL_ADAPTER yes"
+      if ($v.IPSubnetAddress) { "answer VNET_${n}_HOSTONLY_SUBNET $($v.IPSubnetAddress)" }
+      if ($v.IPSubnetMask) { "answer VNET_${n}_HOSTONLY_NETMASK $($v.IPSubnetMask)" }
+      "answer VNET_${n}_NAT $(if ($v.UseNAT -eq 1) { 'yes' } else { 'no' })"
+    }
+    Add-Probe 'vmware-network' 'registry' 'ok' '' (@($lines) -join "`n")
+  } catch {
+    Add-Probe 'vmware-network' 'registry' 'failed' $_.Exception.Message ''
+  }
 }
 
 Get-DockerProbe

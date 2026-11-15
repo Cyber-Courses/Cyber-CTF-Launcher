@@ -38,8 +38,10 @@ function declared(node: ts.Node): [string, ts.Node][] {
   return [];
 }
 
-/** Each binding wrapper's name and the commands it invokes. */
+/** Each binding wrapper's name and the commands it invokes, read once. */
+let bindingsRead: Map<string, Set<string>> | null = null;
 function bindingCommands(): Map<string, Set<string>> {
+  if (bindingsRead) return bindingsRead;
   const out = new Map<string, Set<string>>();
   for (const name of fs.readdirSync(BINDINGS)) {
     const file = path.join(BINDINGS, name);
@@ -48,6 +50,7 @@ function bindingCommands(): Map<string, Set<string>> {
       declared(node).forEach(([fn, body]) => out.set(fn, invokedIn(body)));
     });
   }
+  bindingsRead = out;
   return out;
 }
 
@@ -60,26 +63,42 @@ function importedNames(node: ts.ImportDeclaration | ts.ExportDeclaration, bindin
   return named.elements.map((e) => (e.propertyName ?? e.name).text);
 }
 
+/** What one source file holds for the walk: the commands it invokes itself, the source files it
+ *  imports, and the commands of the binding wrappers it imports. */
+type Scanned = { commands: Set<string>; files: string[] };
+
+/** Each file's scan, made once: the windows' walks share most of their files, and parsing them
+ *  again for each window took the test past half a minute under load. */
+const scanned = new Map<string, Scanned>();
+function scan(file: string): Scanned {
+  const known = scanned.get(file);
+  if (known) return known;
+  const bindings = bindingCommands();
+  const source = parse(file);
+  const commands = invokedIn(source);
+  const files: string[] = [];
+  source.forEachChild((node) => {
+    if (!(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) || !node.moduleSpecifier) return;
+    const target = resolve(file, (node.moduleSpecifier as ts.StringLiteral).text);
+    if (!target) return;
+    if (isBinding(target)) importedNames(node, bindings).forEach((n) => bindings.get(n)?.forEach((c) => commands.add(c)));
+    else files.push(target);
+  });
+  const made = { commands, files };
+  scanned.set(file, made);
+  return made;
+}
+
 /** The commands reachable from `entries` (paths relative to src/). */
 export function commandsFrom(entries: string[]): Set<string> {
-  const bindings = bindingCommands();
   const seen = new Set<string>();
   const found = new Set<string>();
   const walk = (file: string) => {
     if (seen.has(file) || isBinding(file)) return;
     seen.add(file);
-    const source = parse(file);
-    invokedIn(source).forEach((c) => found.add(c));
-    source.forEachChild((node) => {
-      if (!(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) || !node.moduleSpecifier) return;
-      const target = resolve(file, (node.moduleSpecifier as ts.StringLiteral).text);
-      if (!target) return;
-      if (!isBinding(target)) {
-        walk(target);
-        return;
-      }
-      importedNames(node, bindings).forEach((n) => bindings.get(n)?.forEach((c) => found.add(c)));
-    });
+    const { commands, files } = scan(file);
+    commands.forEach((c) => found.add(c));
+    files.forEach(walk);
   };
   entries.forEach((e) => {
     walk(path.join(SRC, e));

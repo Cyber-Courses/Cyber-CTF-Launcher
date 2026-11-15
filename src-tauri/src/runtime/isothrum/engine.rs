@@ -47,7 +47,7 @@ fn pin_docker(spec: &ProcessSpec) -> Option<ProcessSpec> {
 
 /// The tools every run of this process starts, shared: a tool cut short (its operation dropped,
 /// a cancel) is asked to stop on Unix and given a grace before it is ended, and this process waits
-/// for those still stopping before it exits (`end_cut_short_tools`).
+/// for those still stopping before it exits (`end_tools_at_exit`).
 pub(super) static PROCESSES: std::sync::LazyLock<SystemProcesses> = std::sync::LazyLock::new(SystemProcesses::default);
 
 #[cfg(test)]

@@ -41,11 +41,18 @@ try {
   if (!id) throw new Error(`no local lab id on the Overview:\n${main.slice(0, 400)}`);
 
   // The real attack-box panel for that lab attaches the box; wait until the runner reports it up.
-  await b.execute((v) => localStorage.setItem("__wdio_attack__", v), id);
-  await b.refresh();
+  // Mounted with no reload: a reload right after launch ends the Windows app (a fast-fail).
+  await b.execute((v) => {
+    localStorage.setItem("__wdio_attack__", v);
+    window.dispatchEvent(new Event("cyberctf:wdio-attack"));
+  }, id);
   await b.$("[data-wdio-attack]").waitForExist({ timeout: 25000 });
   await forceVisible(b);
-  await waitAwake(b, async () => /Stop attack box/.test(await panel(b)), { timeout: LAB_START_MS, interval: 3000, timeoutMsg: "the box never came up" });
+  await waitAwake(b, async () => /Stop attack box/.test(await panel(b)), { timeout: LAB_START_MS, interval: 3000 }).catch(async () => {
+    // Say what was there: the panel's words and the lab's containers (a box slow to pull or start
+    // on a loaded or nested-virtualized machine reads differently from one that failed).
+    throw new Error(`the box never came up; the panel says ${JSON.stringify(await panel(b))}; the lab's containers: ${JSON.stringify(labContainers(id))}`);
+  });
   const withBox = containerNames(id);
   // The box is a machine of the lab: its `attackbox` service in the lab's own project.
   if (!withBox.some((n) => /-attackbox-\d+$/.test(n))) throw new Error(`no attack box container among ${JSON.stringify(withBox)}`);

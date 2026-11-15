@@ -102,6 +102,9 @@ async fn run(serve: Serve) -> std::result::Result<(), Box<dyn std::error::Error>
     let mut options = ServeOptions::new(Arc::new(RunnerEngine::new(runner)), stop);
     options.tools = Some(processes);
     options.idle = serve.detach.then_some(IDLE);
+    // The launcher reaps its own expired labs (the app's reaper, with the account's credentials a
+    // cloud lab's `down` needs, which the service has none of): the service's reaper never runs.
+    options.reap_every = None;
     service.serve(options).await?;
     Ok(())
 }

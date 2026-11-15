@@ -1,6 +1,7 @@
 //! The runner service this app's executable hosts (`serve --home <home>`, internal): whichever
 //! client starts it, the app or the command line, serves the other, one service per home.
 #![expect(clippy::disallowed_methods, reason = "it runs the executable it tests, as a client does")]
+#![allow(clippy::panic, reason = "a test's helpers fail it by panicking, as its assertions do")]
 
 use std::path::Path;
 use std::process::Command;
@@ -9,6 +10,20 @@ use isothrum_client::Client;
 
 /// The app's executable, as the clients start it.
 const EXE: &str = env!("CARGO_BIN_EXE_cyberctf-desktop");
+
+/// The client of `home`'s service, started from executable `exe` when none runs. The client gives
+/// a service it started 10 s to answer; a loaded machine can take longer to start one, and a later
+/// try then meets the service the first started: tried until it answers, within a minute.
+async fn connect_starting(home: &Path, exe: &str) -> Client {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        match Client::connect_exact(home, Some(Path::new(exe))).await {
+            Ok(client) => return client,
+            Err(isothrum_client::ClientError::Unavailable(why)) if std::time::Instant::now() < deadline => eprintln!("not answering yet: {why}"),
+            Err(e) => panic!("the service never answered: {e}"),
+        }
+    }
+}
 
 #[test]
 fn serve_refuses_to_run_without_an_absolute_home() {
@@ -23,7 +38,7 @@ async fn whichever_starts_the_service_serves_the_other_one_service_per_home() {
     // The app's client starts it; another (the command line's) finds it and starts none: its
     // binary is never run.
     let home = tempfile::tempdir().unwrap();
-    let app = Client::connect_exact(home.path(), Some(Path::new(EXE))).await.unwrap();
+    let app = connect_starting(home.path(), EXE).await;
     let cli = Client::connect_exact(home.path(), Some(Path::new("/nonexistent/cyberctf"))).await.unwrap();
     assert_eq!(app.service().pid, cli.service().pid, "one service");
     assert_eq!(app.service().version, isothrum_client::VERSION, "of the clients' release");
@@ -52,7 +67,7 @@ async fn whichever_starts_the_service_serves_the_other_one_service_per_home() {
 #[tokio::test]
 async fn a_second_service_of_a_served_home_refuses_to_start_and_a_shutdown_ends_the_first() {
     let home = tempfile::tempdir().unwrap();
-    let app = Client::connect_exact(home.path(), Some(Path::new(EXE))).await.unwrap();
+    let app = connect_starting(home.path(), EXE).await;
     let second = Command::new(EXE).args(["serve", "--home"]).arg(home.path()).output().unwrap();
     assert_eq!(second.status.code(), Some(1), "one service per home");
     let said = String::from_utf8_lossy(&second.stderr);
@@ -85,7 +100,7 @@ async fn the_command_lines_own_executable_serves_the_home_its_client_starts() {
     assert!(said.starts_with("serve: --home must be an absolute path"), "the service's own refusal, not the command line's usage: {said}");
 
     let home = tempfile::tempdir().unwrap();
-    let cli = Client::connect_exact(home.path(), Some(Path::new(CLI))).await.expect("the command line's executable serves its home");
+    let cli = connect_starting(home.path(), CLI).await;
     assert_eq!(cli.service().version, isothrum_client::VERSION);
     let app = Client::connect_exact(home.path(), Some(Path::new("/nonexistent/cyberctf-desktop"))).await.unwrap();
     assert_eq!(app.service().pid, cli.service().pid, "the app is served by the one the command line started");

@@ -488,8 +488,11 @@ if in_tier local; then
   # folder seen both ways from inside it (where the form can share one), taken out.
   scenario attack-box-docker docker "" "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=docker \
     CYBERCTF_TEST_BOX_SHARED_FOLDER="$LOGS/shared/attack-box-docker"
+  # The VM box bare: its set-up skips Kali's toolset (the owner's call, 2026-11-15: no baked box
+  # image), which alone took the scenario past its cap; its account, folder, network and shell run.
   scenario attack-box-vm vm "$VM_PROVIDER" "$LOCAL_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=vm \
-    CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER" CYBERCTF_TEST_BOX_SHARED_FOLDER="$(shared_for "$VM_PROVIDER" attack-box-vm)"
+    CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER" CYBERCTF_TEST_BOX_SHARED_FOLDER="$(shared_for "$VM_PROVIDER" attack-box-vm)" \
+    CYBERCTF_TEST_BOX_SKIP_TOOLS=1
   # A lab's whole life on each local form: up, status, park and resume, checks, down, nothing left.
   scenario docker-lab-hello-stack docker "" "$HELLO_STACK" CYBERCTF_TEST_HELLO_LAB="$EXAMPLES/hello-stack"
   scenario docker-lab-segmented docker "" "$SEGMENTED" CYBERCTF_TEST_SEGMENTED_LAB="$EXAMPLES/segmented"
@@ -532,8 +535,10 @@ if in_tier aws; then
   # Real tests ask for this machine's real public IP: the lab's firewall opens to it alone.
   scenario attack-box-aws-docker cloud-docker aws "$AWS_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=cloud-docker \
     CYBERCTF_TEST_AWS_REGION="$AWS_REGION" CYBERCTF_TEST_CLOUD_REAL_IP=1
+  # Bare, as attack-box-vm (its toolset left out).
   scenario attack-box-aws-vm cloud-vm aws "$AWS_BOX" CYBERCTF_TEST_BOX_LAB="$SOLO" CYBERCTF_TEST_BOX_FORM=cloud-vm \
-    CYBERCTF_TEST_AWS_REGION="$AWS_REGION" CYBERCTF_TEST_CLOUD_REAL_IP=1
+    CYBERCTF_TEST_AWS_REGION="$AWS_REGION" CYBERCTF_TEST_CLOUD_REAL_IP=1 \
+    CYBERCTF_TEST_BOX_SKIP_TOOLS=1
 fi
 
 if in_tier server; then
