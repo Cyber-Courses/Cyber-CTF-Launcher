@@ -48,6 +48,9 @@ What each build signs:
 | Updates  | minisign with the updater key (`TAURI_SIGNING_PRIVATE_KEY`): the `.sig` beside each update package, and `latest.json`    | by the installed apps, against the public key in `tauri.conf.json` |
 | Store    | Microsoft signs the MSIX                                                                                                 |                                                                    |
 
+Up to 1.8.9 the Windows installers shipped unsigned; from the next release `release.yml` refuses
+a tag build without the Azure Artifact Signing secrets.
+
 A manual run (`workflow_dispatch`) builds a draft for the version in `tauri.conf.json`, signs what
 it has secrets for, and publishes nothing.
 
