@@ -35,6 +35,8 @@
 #                       CYBERCTF_TEST_VM_PROVIDER); may repeat
 #   --results <file>    append a JSON record per scenario to <file> (tests/README.md, "Results")
 #   --list              print a JSON line per scenario (its id, tier, form, test and knobs) and exit
+#   --tiers <tiers>     the tiers to run, as CYBERCTF_TEST_INTEGRATION_TIERS (`--tiers server`:
+#                       the servers' tests, which `pnpm test:servers` runs)
 #   -h, --help          this
 #
 # Knobs:
@@ -45,8 +47,10 @@
 #   CYBERCTF_TEST_VM_PROVIDER        the hypervisor for VM labs (default: qemu)
 #   CYBERCTF_TEST_AWS_REGION         the AWS tier's region (default: eu-west-3)
 #   CYBERCTF_TEST_CORPUS_LABS        lab folders, comma-separated, for the corpus-docker scenario
-#   CYBERCTF_TEST_PVE_ENDPOINT, _TOKEN, _NODE, _BRIDGE, _RUNNER_HOME (and _JUMP when the lab bridge
-#                                    is internal to the node): the Proxmox host of server-lab-proxmox
+#   CYBERCTF_TEST_PVE_HOST, _PASSWORD (and _TOKEN_ID, _TOKEN_SECRET, _SSH_KEY, _FINGERPRINT, _STORAGE,
+#                                    _BRIDGE, _NODE): the Proxmox host of server-lab-proxmox-connection
+#   CYBERCTF_TEST_PVE_ENDPOINT, _TOKEN_ID, _TOKEN_SECRET, _NODE, _BRIDGE, _RUNNER_HOME (and _JUMP
+#                                    when the lab bridge is internal to the node): server-lab-proxmox
 #   CYBERCTF_TEST_ESXI_HOST, _PASSWORD (and _DATASTORE, _NETWORK): the ESXi host of server-lab-esxi
 #   ONLY, SKIP, STRICT               as every suite runner (scripts/lib/suite.sh)
 #
@@ -64,6 +68,7 @@ while [ $# -gt 0 ]; do
   case $1 in
     --results) suite_results_to integration "${2:?--results needs a file}"; shift ;;
     --list) LISTING=1 ;;
+    --tiers) CYBERCTF_TEST_INTEGRATION_TIERS=${2:?--tiers needs a list}; shift ;;
     --only)
       # <scenario>@<provider>: the scenario as ONLY, the provider as the hypervisor knobs (none, or
       # `docker`, names no hypervisor).
@@ -142,6 +147,7 @@ PER_MACHINE=integration_tests::per_machine::a_dual_form_lab_runs_as_one_vm_per_m
 LAUNCH_COMMANDS=integration_tests::launch_commands::a_local_lab_launches_and_tears_down_through_the_commands
 CORPUS=integration_tests::corpus_docker::corpus_docker_labs_run_end_to_end_on_the_runner
 REPLACE=integration_tests::replace::a_running_lab_is_not_replaced_under_it
+PROXMOX_CONNECTION=integration_tests::server_lab::a_proxmox_host_passes_the_connection_test
 PROXMOX=integration_tests::server_lab::a_vm_lab_runs_on_proxmox_through_the_runner
 ESXI=integration_tests::server_lab::a_vm_lab_runs_on_esxi_through_the_runner
 SETUP=integration_tests::setup::the_guided_setup_readies_this_machine
@@ -171,7 +177,8 @@ reads() {
     "$LAUNCH_COMMANDS") echo CYBERCTF_TEST_LOCAL_LAB ;;
     "$CORPUS") echo CYBERCTF_TEST_CORPUS_LABS ;;
     "$REPLACE") echo CYBERCTF_TEST_REPLACE_LAB CYBERCTF_TEST_REPLACE_FORM CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
-    "$PROXMOX") echo CYBERCTF_TEST_PVE_LAB CYBERCTF_TEST_PVE_ENDPOINT CYBERCTF_TEST_PVE_TOKEN CYBERCTF_TEST_PVE_NODE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_PVE_JUMP CYBERCTF_TEST_PVE_RUNNER_HOME ;;
+    "$PROXMOX_CONNECTION") echo CYBERCTF_TEST_PVE_HOST CYBERCTF_TEST_PVE_PASSWORD CYBERCTF_TEST_PVE_TOKEN_ID CYBERCTF_TEST_PVE_TOKEN_SECRET CYBERCTF_TEST_PVE_SSH_KEY CYBERCTF_TEST_PVE_FINGERPRINT CYBERCTF_TEST_PVE_STORAGE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_PVE_NODE ;;
+    "$PROXMOX") echo CYBERCTF_TEST_PVE_LAB CYBERCTF_TEST_PVE_ENDPOINT CYBERCTF_TEST_PVE_TOKEN_ID CYBERCTF_TEST_PVE_TOKEN_SECRET CYBERCTF_TEST_PVE_NODE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_PVE_JUMP CYBERCTF_TEST_PVE_RUNNER_HOME ;;
     "$ESXI") echo CYBERCTF_TEST_ESXI_LAB CYBERCTF_TEST_ESXI_HOST CYBERCTF_TEST_ESXI_PASSWORD CYBERCTF_TEST_ESXI_DATASTORE CYBERCTF_TEST_ESXI_NETWORK ;;
     "$RES_REMOVED" | "$RES_STOPPED" | "$RES_REMOVED_STARTING") echo CYBERCTF_TEST_RESILIENCE_LAB CYBERCTF_TEST_RESILIENCE_MACHINE ;;
     "$RES_PORT") echo CYBERCTF_TEST_RESILIENCE_LAB ;;
@@ -555,9 +562,14 @@ if in_tier aws; then
 fi
 
 if in_tier server; then
-  # A lab on a server through the runner, as the launcher drives it; each host by its own knobs.
-  # Every setting a host's test reads checked first: one missing made the test panic, recorded FAIL.
-  needs=$(unset_of CYBERCTF_TEST_PVE_ENDPOINT CYBERCTF_TEST_PVE_TOKEN CYBERCTF_TEST_PVE_NODE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_PVE_RUNNER_HOME)
+  # A server's connection test, then a lab on it through the runner, as the launcher drives them;
+  # each host by its own knobs. Every setting a test needs checked first, so a missing one is a
+  # skip that names it, not a panic recorded as FAIL.
+  needs=$(unset_of CYBERCTF_TEST_PVE_HOST CYBERCTF_TEST_PVE_PASSWORD)
+  [ -z "$needs" ] || NOT_HERE="not set: $needs"
+  scenario server-lab-proxmox-connection "" proxmox "$PROXMOX_CONNECTION"
+  needs=$(unset_of CYBERCTF_TEST_PVE_ENDPOINT CYBERCTF_TEST_PVE_TOKEN_ID CYBERCTF_TEST_PVE_TOKEN_SECRET CYBERCTF_TEST_PVE_NODE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_PVE_RUNNER_HOME)
+  NOT_HERE=""
   [ -z "$needs" ] || NOT_HERE="not set: $needs"
   scenario server-lab-proxmox vm proxmox "$PROXMOX" CYBERCTF_TEST_PVE_LAB="$SOLO"
   needs=$(unset_of CYBERCTF_TEST_ESXI_HOST CYBERCTF_TEST_ESXI_PASSWORD)
