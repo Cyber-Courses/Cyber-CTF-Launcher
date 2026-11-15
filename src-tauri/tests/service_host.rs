@@ -70,3 +70,24 @@ async fn a_second_service_of_a_served_home_refuses_to_start_and_a_shutdown_ends_
     }
     assert!(gone, "service {pid} still answers after its shutdown");
 }
+
+/// The command line's executable, which its client starts as the service when none runs.
+const CLI: &str = env!("CARGO_BIN_EXE_cyberctf");
+
+#[tokio::test]
+async fn the_command_lines_own_executable_serves_the_home_its_client_starts() {
+    // Regression: `cyberctf serve --home <home>` was an unknown command: the command line's
+    // client, finding no service, started it, waited out its start (10 s), and ran the operation
+    // in its own process, which the operation died with.
+    let refused = Command::new(CLI).args(["serve", "--home", "relative"]).output().unwrap();
+    assert_eq!(refused.status.code(), Some(2));
+    let said = String::from_utf8_lossy(&refused.stderr);
+    assert!(said.starts_with("serve: --home must be an absolute path"), "the service's own refusal, not the command line's usage: {said}");
+
+    let home = tempfile::tempdir().unwrap();
+    let cli = Client::connect_exact(home.path(), Some(Path::new(CLI))).await.expect("the command line's executable serves its home");
+    assert_eq!(cli.service().version, isothrum_client::VERSION);
+    let app = Client::connect_exact(home.path(), Some(Path::new("/nonexistent/cyberctf-desktop"))).await.unwrap();
+    assert_eq!(app.service().pid, cli.service().pid, "the app is served by the one the command line started");
+    app.shutdown().await.unwrap();
+}

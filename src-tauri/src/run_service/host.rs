@@ -50,6 +50,20 @@ pub(crate) fn request(args: impl IntoIterator<Item = String>) -> Option<std::res
     })
 }
 
+/// This process's exit code as the runner service, when `args` (the program's, its name first)
+/// ask for it (`serve`, see [`request`]): served until it ends, or 2 when the request is wrong (said
+/// on stderr). None when the program isn't run as the service. Both executables answer it: each
+/// client starts its own executable as the service (`Client::connect_exact`).
+pub(crate) fn serve_if_asked(args: impl IntoIterator<Item = String>) -> Option<i32> {
+    Some(match request(args)? {
+        Ok(serve) => main(serve),
+        Err(why) => {
+            eprintln!("{why}");
+            2
+        }
+    })
+}
+
 /// Runs the service `serve` asks for, in this process, until it is asked to stop (a client's
 /// `shutdown`, Ctrl-C) or, detached, idles out: the process's exit code.
 pub(crate) fn main(serve: Serve) -> i32 {

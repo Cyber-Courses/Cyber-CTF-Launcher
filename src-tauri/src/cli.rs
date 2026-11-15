@@ -57,7 +57,8 @@ impl Context {
     }
 }
 
-/// The command line's entry (`cyberctf`, see the module). Returns the process's exit code.
+/// The command line's entry (`cyberctf`, see the module), or the runner service it started
+/// (`cyberctf serve --home <home>`, internal: `run_service::host`). Returns the process's exit code.
 pub fn main() -> std::process::ExitCode {
     let args: Vec<OsString> = std::env::args_os().collect();
     // A worker on Windows interrupts Terraform through this same executable (see the app's `run`).
@@ -67,6 +68,13 @@ pub fn main() -> std::process::ExitCode {
     }
     // As the app does first (see `crate::run`): rustls's provider, the PATH of the tools it places.
     let _ = rustls::crypto::ring::default_provider().install_default();
+    // The command line's client starts this executable as the home's runner service when none
+    // runs (after ring is in, as in the app). Regression: it read `serve` as an unknown command, so
+    // every operation without the app open waited out the client's start (10 s), then ran in this
+    // process.
+    if let Some(code) = crate::run_service::host::serve_if_asked(std::env::args()) {
+        return std::process::ExitCode::from(u8::try_from(code).unwrap_or(1));
+    }
     {
         // SAFETY: before the runtime below, the first thread this process starts.
         #[allow(unsafe_code, reason = "the start's claim to be the only thread, as the app's own start makes it")]

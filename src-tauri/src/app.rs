@@ -110,14 +110,7 @@ pub fn run() -> tauri::Result<()> {
 fn start(only: platform::sys::SingleThreaded) -> Started {
     // `<exe> serve --home <home>`: this process is the runner service of that home (see
     // `run_service::host`), nothing of the app starts.
-    if let Some(serve) = crate::run_service::host::request(std::env::args()) {
-        let code = match serve {
-            Ok(serve) => crate::run_service::host::main(serve),
-            Err(why) => {
-                eprintln!("{why}");
-                2
-            }
-        };
+    if let Some(code) = crate::run_service::host::serve_if_asked(std::env::args()) {
         std::process::exit(code);
     }
     crate::runtime::server::connection_test::mark_started();
