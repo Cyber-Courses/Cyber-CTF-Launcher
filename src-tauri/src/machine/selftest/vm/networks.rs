@@ -152,7 +152,6 @@ async fn libvirt_in_use(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::exec::fake::{Tools, ok};
 
     #[test]
     fn the_names_listed_are_read_and_what_is_new_is_told_apart() {
@@ -169,6 +168,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn only_the_networks_the_test_made_and_nothing_uses_are_removed() {
+        use crate::platform::exec::fake::{Tools, ok};
         // VirtualBox. There before: vboxnet0. The test made vboxnet1 (no VM on it once the test VM
         // is gone) and vboxnet2 (a VM of the player's joined it meanwhile, so it stays).
         let tools = Tools::strict_rules(&[

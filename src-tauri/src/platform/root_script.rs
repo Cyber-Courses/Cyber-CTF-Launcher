@@ -4,7 +4,7 @@
 //! a Linux machine sets up (`machine::tools::scripts`) and Kali's archive a Debian attack VM is
 //! made Kali from (`runtime::attack_box`) go through the same check.
 
-/// [`PRIVATE_WORKDIR`]'s text, which [`PRELUDE`] starts with too.
+/// `PRIVATE_WORKDIR`'s text (a test constant), which [`PRELUDE`] starts with too.
 macro_rules! private_workdir {
     () => {
         r#"set -e; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT; printf 'DPkg::Lock::Timeout "600";\n' >"$d/apt.conf"; export APT_CONFIG="$d/apt.conf""#
@@ -29,7 +29,7 @@ pub const PRIVATE_WORKDIR: &str = private_workdir!();
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootScript(String);
 
-/// What every [`RootScript`] starts with: [`PRIVATE_WORKDIR`] (`set -e`, `$d`, apt's lock wait),
+/// What every [`RootScript`] starts with: the private work directory (`set -e`, `$d`, apt's lock wait),
 /// then the C locale, so a tool's output the script reads (`apt-cache policy`'s `Candidate:`) is
 /// the same words on every system: pkexec keeps the player's `LANG`, and apt translates its labels.
 pub const PRELUDE: &str = concat!(private_workdir!(), "; export LC_ALL=C");

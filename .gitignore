@@ -55,3 +55,6 @@ next-env.d.ts
 # release artifacts written by scripts/release/third-party.ts (pnpm notices / pnpm sbom)
 /THIRD_PARTY_NOTICES
 /sbom/
+
+# What an instrumented test process that clears its environment writes where it runs (cargo llvm-cov).
+*.profraw
