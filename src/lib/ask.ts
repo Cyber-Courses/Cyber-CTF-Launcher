@@ -24,6 +24,13 @@ export function createAsk<Question, Answer>(dismissed: Answer) {
 
   function ask(question: Question): Promise<Answer> {
     current?.resolve(dismissed);
+    // No dialog mounted to show it (a window whose root mounts none): dismissed at once, never a
+    // question waiting forever. Regression (#383): the Settings window mounted none, so its
+    // removals waited for an answer that never came, and every later question was a no.
+    if (listeners.size === 0) {
+      current = null;
+      return Promise.resolve(dismissed);
+    }
     return new Promise((resolve) => {
       current = { id: ++asked, question, resolve };
       emit();

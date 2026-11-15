@@ -41,6 +41,7 @@ type Answers = {
   machine_metrics: MachineMetrics;
   machine_workloads: Workload[];
   machine_storage: Storage;
+  machine_storage_clean: number;
   installed_tools: InstalledTool[];
   image_download_size: number | null;
   attack_box_status: AttackStatus;

@@ -14,6 +14,23 @@ async function openSettings(page: Page, section: string) {
 }
 
 test.describe("settings", () => {
+  test("a clean-up asks in the window's own dialog: no keeps everything, yes cleans, and a later question still asks (#383)", async ({ page }) => {
+    await openSettings(page, "Maintenance");
+    const cleanUp = page.getByRole("button", { name: "Clean up", exact: true });
+    const dialog = page.getByRole("alertdialog", { name: /^Remove .* of lab downloads\?$/ });
+    await cleanUp.click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(/^Freed /)).toHaveCount(0);
+    // Asked again: the window's questions aren't all a no after the first.
+    await cleanUp.click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Remove", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(/^Freed /)).toBeVisible();
+  });
+
   test("the theme switch changes the html class and is saved", async ({ page }) => {
     await openSettings(page, "Appearance");
     const theme = page.getByRole("radiogroup", { name: "Theme" });

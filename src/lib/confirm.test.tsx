@@ -67,3 +67,15 @@ describe("warnInDialog", () => {
     expect(closed).toBe(true);
   });
 });
+
+describe("a question with no dialog to show it (#383)", () => {
+  it("is a no at once, and the next one, with its dialog mounted, still asks", async () => {
+    // Regression: the Settings window mounted no dialog; its question waited for an answer that
+    // never came, and every later one was a no while it waited.
+    expect(await confirmDestructive(question)).toBe(false);
+    render(<DestructivePrompt />);
+    const answer = confirmDestructive(question);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove account" }));
+    expect(await answer).toBe(true);
+  });
+});

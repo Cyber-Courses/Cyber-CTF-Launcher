@@ -7,6 +7,7 @@ import { HostSetupPage, SetupTrademarks } from "@/features/servers/host-setup";
 import { startingSetup } from "@/features/servers/host-setup/setup-model";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/toaster";
+import { DialogPrompts } from "@/components/destructive-prompt";
 import { WindowTitleBar } from "@/components/window-title-bar";
 import { isCloudProvider, serverChanged, serverList, systemCheck, type ServerHostInput, type SystemReport } from "@/lib/tauri";
 import { warn } from "@/lib/failure";
@@ -71,6 +72,7 @@ function Setup() {
         </div>
       )}
       <Toaster />
+      <DialogPrompts />
     </div>
   );
 }
