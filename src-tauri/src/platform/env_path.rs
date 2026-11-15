@@ -49,8 +49,12 @@ fn extra_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         dirs.push("/Applications/Docker.app/Contents/Resources/bin".into());
-        // utmctl, which the running-labs scan asks for UTM's started VMs, ships inside UTM.
+        // utmctl, which the running-labs scan asks for UTM's started VMs, ships inside UTM, which
+        // is in /Applications or the player's own ~/Applications.
         dirs.push("/Applications/UTM.app/Contents/MacOS".into());
+        if let Some(home) = super::home_dir() {
+            dirs.push(home.join("Applications/UTM.app/Contents/MacOS"));
+        }
         // ovftool, which vagrant-vmware-esxi needs, ships inside VMware Fusion.
         dirs.push("/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool".into());
         dirs.push("/Applications/VMware Fusion.app/Contents/Library".into());

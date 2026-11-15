@@ -66,9 +66,7 @@ pub(crate) fn lab_stems(labs_dir: &Path, home: &Path) -> HashMap<String, String>
         if !is_lab_id(&id) {
             continue;
         }
-        let Some(prefix) = vm_name_prefix(&e.path()) else { continue };
-        let Ok(run) = isothrum_runner::RunName::new(&super::docker::project(&id)) else { continue };
-        let name = format!("{prefix}-{}", isothrum_runner::copy_key(home, &run));
+        let Some(name) = vm_stem(&e.path(), &id, home) else { continue };
         by_name
             .entry(name)
             .and_modify(|seen| {
@@ -78,6 +76,15 @@ pub(crate) fn lab_stems(labs_dir: &Path, home: &Path) -> HashMap<String, String>
             .or_insert(Some(id));
     }
     by_name.into_iter().filter_map(|(name, id)| Some((name, id?))).collect()
+}
+
+/// The stem the VMs of lab `id`, installed in `dir`, are named with when it runs on the runner
+/// whose home is `home`: `<name>-<instance>-<key>` (see [`lab_stems`]); none when its spec names
+/// none.
+pub(crate) fn vm_stem(dir: &Path, id: &str, home: &Path) -> Option<String> {
+    let prefix = vm_name_prefix(dir)?;
+    let run = isothrum_runner::RunName::new(&super::docker::project(id)).ok()?;
+    Some(format!("{prefix}-{}", isothrum_runner::copy_key(home, &run)))
 }
 
 /// The start of a lab's VM names' stem (`<lab>-<key>`): its name as this instance

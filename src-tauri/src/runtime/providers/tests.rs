@@ -595,3 +595,16 @@ fn the_hypervisor_table_says_where_each_provider_runs_and_the_setup_offers_it() 
         }
     }
 }
+
+#[test]
+fn utm_is_found_in_the_players_own_applications_folder_too() {
+    // Regression: only /Applications/UTM.app counted, so a UTM dragged into ~/Applications (no
+    // administrator's password) read as not installed, and its utmctl was never found.
+    let (system, home) = (crate::testing::temp_dir("utm-system"), crate::testing::temp_dir("utm-home"));
+    assert_eq!(utm_app_in(&system, Some(&home)), system.join("UTM.app"), "in neither: /Applications's, said missing");
+    std::fs::create_dir_all(home.join("Applications").join("UTM.app")).unwrap();
+    assert_eq!(utm_app_in(&system, Some(&home)), home.join("Applications").join("UTM.app"));
+    std::fs::create_dir_all(system.join("UTM.app")).unwrap();
+    assert_eq!(utm_app_in(&system, Some(&home)), system.join("UTM.app"), "the system's first");
+    assert_eq!(utm_app_in(&system, None), system.join("UTM.app"));
+}
