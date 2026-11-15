@@ -63,11 +63,6 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   reaches the window as a code with its values, said in the player's language, not as English
   text.
 
-- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
-  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
-  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
-  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
-
 ### Removed
 
 - **Docker in a VM.** A lab now runs as true containers or true VMs, never as containers inside a
@@ -85,9 +80,9 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   tool is now created inside its kill-on-close job object, not suspended and put there after: an
   app ended as it started one (Task Manager's End task, a crash) left that tool suspended in no
   job for good. A tool inherits its own standard handles only. On macOS and Linux, where nothing
-  ends a tool's process group when the app dies, the tools an app or deploy worker killed outright
-  left running are ended at the next start, from a ledger in the app's data folder (kept on
-  Windows too, as a backstop).
+  ends a tool's process group when the app dies, the tools an app killed outright left running
+  are ended at the next start, from a ledger in the app's data folder (kept on Windows too, as a
+  backstop).
 
 - **Labs launched from the website at once each keep their co-location check.** A launch ended the
   previous launch's check server, whatever its lab, so the website could no longer confirm that
@@ -102,9 +97,6 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   CTF process, went ahead; it now says the state is unknown and waits.
 - **Auto-stop reports a listing failure as its own.** A sweep that couldn't list the runs was
   reported as a lab named "runner" that couldn't be destroyed.
-- **A Stop during a deploy no longer reads as a crash.** The worker ends on the Stop's signal
-  without a verdict by design; the launch said "the deploy worker stopped without a result: it
-  exited with code 143". It says the deploy was stopped.
 - **The Windows NSIS installer builds again.** The uninstall hook named its script with a forward
   slash, which makensis reads as part of the file pattern, so every NSIS build since the fix
   of the hook's folder (2026-11-12, in 1.9.0) ended on "no files found"; the MSI built.
@@ -125,22 +117,11 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   "Café" in the decomposed form macOS file APIs give made adding the attack box fail every time
   ("unknown escape"). The folder, the network names and the image are now quoted as YAML reads
   them.
-- Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
-  longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
-  Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
-  running. (2.1.6: retiring the attack box or detaching an access machine removes its volumes.)
-
-### Added
 
 - **Windows: the attack box's terminal opens under a profile whose name has `&`.** With an account
   named `Tom&Jerry`, Open shell split its script's path at the `&` and showed "not recognized".
   The script's path stays quoted for both cmd.exe that read it, and the shell's command line
   quotes any word holding a character cmd.exe reads as its own (`&|<>^()`).
-
-- **A deploy worker whose pidfile can't be written no longer runs beside the app's own deploy.**
-  When the worker started but its pidfile couldn't be written (a full disk), the app fell back to
-  deploying in-process while the worker went on too, so both deployed the same lab. The worker is
-  now ended, and waited for, before the app takes the job over.
 
 - **A failed libvirt or QEMU install fails its setup step.** On Debian, Ubuntu and Fedora, the
   install script went on to the group step after `apt-get` or `dnf` failed (apt's lock held, the
@@ -153,10 +134,10 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   headers read as missing from the package sources and Ubuntu's own VirtualBox was missed. apt is
   now asked in English.
 
-- **The deploy steps show the step that is actually running.** In a lab whose Docker runs in a
-  VM, "Get images" stayed running under the machine's later lines and under a green Ready, and
-  adding the attack box turned it running again. The running step is now the one holding the
-  latest line, and what runs after Ready (adding the attack box) is a step of its own below it.
+- **The deploy steps show the step that is actually running.** "Get images" stayed running under
+  the machines' later lines and under a green Ready, and adding the attack box turned it running
+  again. The running step is now the one holding the latest line, and what runs after Ready
+  (adding the attack box) is a step of its own below it.
 
 - **Destructive confirmations and warnings use the app's own dialog.** Removing a lab and seven
   other confirmations opened the system's dialog, which looked foreign to the rest of the app;
@@ -325,9 +306,6 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Changed
 
-- **A release ships what built.** One platform's failed build, a missing signing secret or a
-  Store hiccup no longer stop the whole release: the release notes name the platform missing,
-  what lacks a secret ships unsigned (as 1.8.9 did), and the Store submission stays its own step.
 - Bundles Isothrum 2.1.7: an operation cut before its end (the app closed during an attach) no
   longer loses the lab's anonymous volumes, the next operation removes what it orphaned; a
   Docker that answers no version fails the start as a stopped one; ESXi's `powered_on` reads as
@@ -501,19 +479,6 @@ Cyber-Courses/Cyber-CTF-Launcher`), CycloneDX SBOMs of the Rust and npm dependen
 
 ### Fixed
 
-- **An update install no longer proceeds when the labs' state couldn't be read.** A failed read
-  of the operations in flight was answered as "none", and the install, which quits every Cyber
-  CTF process, went ahead; it now says the state is unknown and waits.
-- **Auto-stop reports a listing failure as its own.** A sweep that couldn't list the runs was
-  reported as a lab named "runner" that couldn't be destroyed.
-- **The Windows NSIS installer builds again.** The uninstall hook named its script with a forward
-  slash, which makensis reads as part of the file pattern, so every NSIS build since the fix
-  of the hook's folder (2026-11-12, in 1.9.0) ended on "no files found"; the MSI built.
-
-- **A tool the setup installed through dnf is removed through dnf.** Cleanup's Remove on Fedora
-  ran `apt-get remove` through pkexec, which ended on `apt-get: not found` and kept the record.
-- **QEMU installed by winget reads as installed.** Its installer adds nothing to PATH and the
-  launcher didn't look in its folder, so the setup offered to install it again every pass.
 - **VM labs on QEMU start on Linux.** Vagrant gives each QEMU VM its lab network on a small disk it
   builds with `mkisofs`, which the guided setup didn't install, so every VM lab on QEMU failed at
   its first VM ("The executable 'mkisofs' Vagrant is trying to run was not found"). The QEMU
