@@ -111,7 +111,7 @@ impl ServerRun {
         }
         // The server's API is asked with `place`'s credentials, which the module's variables
         // carry: a status reads the run's tool as an operation does.
-        let status = self.read().await.map_err(|e| errors::on_server(e, &place.name))?;
+        let status = self.read_with(&options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))?;
         let described = match self.target() {
             Some(_) => super::described::Described::of(&self.dir, super::described::Form::Vms)?,
             None => super::described::Described::default(),
@@ -156,11 +156,32 @@ fn options(place: &ServerPlace, env: &[(String, String)]) -> RunOptions {
     if let Some(node) = place.node.as_ref().filter(|_| !opts.env.contains_key("node")) {
         opts = opts.with_env("node", node.clone());
     }
+    // The server and the sign-in again under the names Proxmox's provider reads from its
+    // environment, which the runner reads too to ask the server for the VMs' states (a VM powered
+    // off or removed in Proxmox's own UI), and to reach a VM's screen.
+    let var = |name: &str| place.vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+    for (name, provider) in PROVIDER_ENV {
+        if let Some(v) = var(name) {
+            opts = opts.with_env(provider, v);
+        }
+    }
+    for (name, provider) in PROVIDER_SECRETS {
+        if let Some(v) = var(name) {
+            secrets.insert(provider.to_owned(), SecretValue::new(v));
+        }
+    }
     for (k, v) in env {
         secrets.insert(k.clone(), SecretValue::new(v.clone()));
     }
     opts.with_secrets(secrets).with_host_label(&place.label)
 }
+
+/// The module's server variables and bpg/proxmox's environment names for them.
+const PROVIDER_ENV: [(&str, &str); 3] =
+    [("proxmox_endpoint", "PROXMOX_VE_ENDPOINT"), ("proxmox_username", "PROXMOX_VE_USERNAME"), ("proxmox_insecure", "PROXMOX_VE_INSECURE")];
+
+/// The module's secret variables and bpg/proxmox's environment names for them.
+const PROVIDER_SECRETS: [(&str, &str); 2] = [("proxmox_api_token", "PROXMOX_VE_API_TOKEN"), ("proxmox_password", "PROXMOX_VE_PASSWORD")];
 
 #[cfg(test)]
 mod tests {
@@ -221,13 +242,24 @@ mod tests {
             if call.program != "curl" {
                 return Reply::ok("");
             }
+            // The runner's request (its curl config on stdin), answered with the body, then the
+            // status code on a line of its own.
             let config = call.stdin.as_ref().map(|p| std::fs::read_to_string(p).unwrap()).unwrap_or_default();
-            assert!(config.contains("Authorization: PVEAPIToken=root@pam!cyberctf=sec"), "signed in with the saved token: {config}");
-            match *locked(api) {
-                Api::Refuses => Reply::fail(22, "curl: (22) The requested URL returned error: 401"),
-                Api::Has => Reply::ok(r#"{"data":[{"vmid":104,"status":"running","type":"qemu"},{"vmid":105,"status":"running","type":"qemu"}]}"#),
-                // `web` removed in the web UI; `db` runs on.
-                Api::Removed => Reply::ok(r#"{"data":[{"vmid":105,"status":"running","type":"qemu"}]}"#),
+            assert!(config.contains("PVEAPIToken=root@pam!cyberctf=sec"), "signed in with the saved token: {config}");
+            assert!(config.contains("https://10.0.0.5:8006/"), "of the saved server: {config}");
+            let api = *locked(api);
+            if api == Api::Refuses {
+                return Reply::ok("{\"data\":null}\n401");
+            }
+            if config.contains("cluster/nextid") {
+                // A VM missing from the listing whose id is still taken: one the token may not see.
+                return Reply::ok("{\"data\":null,\"errors\":{\"vmid\":\"VM 104 already exists\"}}\n400");
+            }
+            match api {
+                Api::Removed => Reply::ok("{\"data\":[{\"vmid\":105,\"node\":\"pve\",\"status\":\"running\",\"type\":\"qemu\"}]}\n200"),
+                _ => Reply::ok(
+                    "{\"data\":[{\"vmid\":104,\"node\":\"pve\",\"status\":\"running\",\"type\":\"qemu\"},{\"vmid\":105,\"node\":\"pve\",\"status\":\"running\",\"type\":\"qemu\"}]}\n200",
+                ),
             }
         }
 
@@ -282,7 +314,6 @@ mod tests {
         }
 
         #[tokio::test]
-        #[ignore = "needs Isothrum to read a Proxmox run's VMs from the server's API (its 3.0 Terraform driver reads the state only)"]
         async fn a_vm_missing_from_the_listing_still_reads_and_a_revoked_token_says_to_update_it() {
             let (f, run) = up();
             let shown = run.status(&place()).await.unwrap();

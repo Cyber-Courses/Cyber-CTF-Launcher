@@ -369,7 +369,6 @@ async fn a_vm_lab_runs_on_an_esxi_host_through_the_runner() {
 }
 
 #[tokio::test]
-#[ignore = "needs Isothrum's status read to take the run's secrets (its 3.0 status runs the tools with none)"]
 async fn an_esxi_labs_status_reads_sign_in_with_its_password() {
     let f = Fixture::new();
     let run = f.esxi_run(EsxiPlace::from_env("esxi-lab", "ESXi lab", &esxi_env()));
@@ -386,7 +385,6 @@ async fn an_esxi_labs_status_reads_sign_in_with_its_password() {
 /// Isoloom's controller powers itself off once it has set the lab up; the lab is up all the same,
 /// and parks and resumes.
 #[tokio::test]
-#[ignore = "needs Isothrum to read a VM run whose Isoloom controller halted itself as ready (its 3.0 Vagrant driver reads it failed, which can't be parked)"]
 async fn a_vm_lab_whose_controller_halted_itself_parks_and_resumes() {
     let f = Fixture::new();
     let run = f.run();
@@ -414,7 +412,6 @@ fn esxi_refusing(states: &Mutex<BTreeMap<String, String>>, call: &Call) -> Reply
 /// Regression (tests/resilience.md N4): an ESXi host's password changed showed as Vagrant's raw
 /// failure; the lab page now says to update it in Servers, naming the server as Servers does.
 #[tokio::test]
-#[ignore = "needs Isothrum to read the ESXi plugin's refused sign-in as server_auth_failed (its 3.0 Vagrant driver says a tool failure)"]
 async fn an_esxi_password_changed_says_to_update_it_in_servers() {
     let f: Fixture = Scripted::answered_by(Home::new("-vm", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), esxi_refusing);
     let run = f.esxi_run(EsxiPlace::from_env("esxi-lab", "ESXi lab", &esxi_env()));

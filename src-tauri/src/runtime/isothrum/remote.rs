@@ -226,8 +226,8 @@ pub(super) async fn in_process(lab: &Running<'_>, act: Act<'_>, opts: &RunOption
 }
 
 /// The status of run `name` (`target`) as `home`'s service `client` reads it.
-pub(super) async fn status(home: &Path, client: &Client, name: &RunName, target: Target) -> Result<Status, Failure> {
-    match client.status(name, Some(target)).await {
+pub(super) async fn status(home: &Path, client: &Client, name: &RunName, target: Target, opts: &RunOptions) -> Result<Status, Failure> {
+    match client.status_with(name, Some(target), wire(opts)).await {
         Ok(status) => Ok(status),
         Err(e) => {
             if matches!(e, ClientError::Io(_) | ClientError::Protocol(_)) {

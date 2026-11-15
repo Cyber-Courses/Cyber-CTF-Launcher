@@ -1,8 +1,8 @@
-//! What each operation needs of the run's recorded state before it is asked of the runner: the
-//! runner runs any operation it is given whatever state the run is in (an `up` of a running run
-//! applies it again, a resume of a run of which nothing is left makes it afresh with no launch
-//! values, a check of a run never started starts its services), so the launcher refuses those
-//! itself, with the words the runner's own refusals have.
+//! What each operation needs of the run's recorded state before it is asked of the runner, where
+//! the runner doesn't refuse it itself: an update of a run that isn't up, a check of a run of which
+//! nothing runs (it would start its services), a resume of a run of which nothing is left (it would
+//! make it afresh with no launch values). The runner refuses a second `up` of a running run and a
+//! resume of a run it never recorded itself; the launcher's refusals take the words of the runner's.
 
 use isothrum_runner::{Error as RunnerError, RunState};
 
@@ -12,14 +12,6 @@ impl LabRun {
     /// The run's recorded state, none before it ever ran: read from the runner's store, no tool runs.
     fn recorded_state(&self) -> Result<Option<RunState>> {
         Ok(self.runner.run_record(&self.name).map_err(errors::from_runner)?.map(|r| r.state))
-    }
-
-    /// Refuses a start of a run that is up already: Stop it first.
-    pub(super) fn refuse_up_when_running(&self) -> Result<()> {
-        match self.recorded_state()? {
-            Some(RunState::Ready) => Err(errors::from_runner(RunnerError::AlreadyRunning { run: self.name.to_string() })),
-            _ => Ok(()),
-        }
     }
 
     /// Refuses a change to a running run (an update, a machine taken out) unless it is up, every

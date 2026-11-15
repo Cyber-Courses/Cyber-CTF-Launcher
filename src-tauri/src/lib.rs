@@ -5,6 +5,10 @@
 // Tests start their stand-in tools as processes of their own (clippy.toml's disallowed-methods
 // holds the shipped code to `platform::exec`).
 #![cfg_attr(test, allow(clippy::disallowed_methods, reason = "tests start their stand-in tools directly"))]
+// The machine agent's task (a launch, through the runner's operation and its timed tool runs) is a
+// future nested deeper than rustc's default 128 levels lets it prove `Send` (E0275 at its spawn,
+// with Isothrum 3.0's dev line of 2026-11-15).
+#![recursion_limit = "256"]
 
 mod account;
 mod app;

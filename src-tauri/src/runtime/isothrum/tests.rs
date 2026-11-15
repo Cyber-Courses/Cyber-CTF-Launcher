@@ -66,6 +66,8 @@ fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
     let has = |flag: &str| rest.iter().any(|a| a == flag);
     match verb {
         "ps" => Reply::ok(&ps(e.containers, has("--all"), e.host_port)),
+        // The services the project declares (the runner reads a service its listing lacks as gone).
+        "config" if has("--services") => Reply::ok("web\n"),
         "config" => Reply::ok(
             r#"{"services":{"web":{"ports":[{"target":80,"host_ip":"127.0.0.1","published":"","protocol":"tcp"}]}},"networks":{"lab":{"name":"cyberctf-web_lab"}}}"#,
         ),
@@ -406,7 +408,6 @@ async fn an_attack_box_whose_start_failed_in_the_run_stays_in_the_lab_for_stop_t
 }
 
 #[tokio::test]
-#[ignore = "needs Isothrum to say a registry's refusal inside Compose's `up` as download_failed (its 3.0 Compose driver says a tool failure)"]
 async fn an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull() {
     // Regression: the box's image downloading inside the start's `up` was read as the lab's `up`
     // running out of time, and the player was told to check Docker's resources.
@@ -497,16 +498,51 @@ async fn gone(pid: u32) -> bool {
     false
 }
 
+/// Held by the tests that end every tool of `PROCESSES` (as the app's exit does): run together,
+/// each ended the other's tool before it was cut short or read.
+#[cfg(unix)]
+static ENDS_EVERY_TOOL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[cfg(unix)]
 #[tokio::test]
 async fn a_tool_cut_short_never_outlives_the_apps_exit() {
     // The runner asks a cut-short tool to stop and gives it 30 s: a process exiting meanwhile
     // left it running.
+    let _alone = ENDS_EVERY_TOOL.lock().await;
     let dir = std::env::temp_dir().join(format!("cyberctf-cut-short-{}", rand::random::<u32>()));
     std::fs::create_dir_all(&dir).unwrap();
     let at_exit = cut_short_stubborn_tool(&dir.join("at-exit")).await;
-    super::end_cut_short_tools();
+    super::end_tools_at_exit();
     assert!(gone(at_exit).await, "ended at the app's exit");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// Regression (#327): a status read's `docker compose ps` still running when the app exited
+/// normally outlived it: only the tools cut short were ended, and a read's future is never dropped
+/// at exit. A tool of `PROCESSES` running when the app exits is ended with it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_tool_still_running_never_outlives_the_apps_exit() {
+    use isothrum_runner::{ProcessRunner, ProcessSpec};
+    let _alone = ENDS_EVERY_TOOL.lock().await;
+    let dir = std::env::temp_dir().join(format!("cyberctf-running-{}", rand::random::<u32>()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let pid_file = dir.join("pid");
+    let script = format!("echo $$ > '{}'; while :; do sleep 0.1; done", pid_file.display());
+    let reading = tokio::spawn(async move {
+        let spec = ProcessSpec::new("sh", ["-c", script.as_str()]);
+        let mut quiet = |_: isothrum_runner::Stream, _: &str| {};
+        super::PROCESSES.run(&spec, &mut quiet).await
+    });
+    let pid: u32 = loop {
+        if let Some(pid) = std::fs::read_to_string(&pid_file).ok().and_then(|p| p.trim().parse().ok()) {
+            break pid;
+        }
+        tokio::task::yield_now().await;
+    };
+    super::end_tools_at_exit();
+    assert!(gone(pid).await, "ended at the app's exit");
+    reading.abort();
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -538,9 +574,9 @@ fn a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out() {
     // so the page drew a healthy lab without it and offered no way back.
     let home = Home::new("gone", TWO, &[], lab::Target::Docker);
     let manifest = described::Described::of(&home.dir, described::Form::Containers).unwrap();
-    let status = |web: &str, db: &str| -> Status {
+    let status = |run: &str, web: &str, db: &str| -> Status {
         serde_json::from_value(serde_json::json!({
-            "state": "failed", "provider": null, "outputs": [],
+            "state": run, "provider": null, "outputs": [],
             "machines": [
                 { "name": "web", "state": web, "published": [] },
                 { "name": "db", "state": db, "published": [] },
@@ -548,14 +584,41 @@ fn a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out() {
         }))
         .unwrap()
     };
-    let shown = view::lab_status(&manifest, &status("absent", "running"), None);
+    let shown = view::lab_status(&manifest, &status("failed", "absent", "running"), None);
     assert!(shown.running);
     let words: Vec<(&str, &str)> = shown.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect();
     assert_eq!(words, [("web", "absent"), ("db", "running")], "the gone machine is there, down");
-    // A lab that doesn't run shows only what is there.
-    assert_eq!(view::lab_status(&manifest, &status("absent", "absent"), None).machines, [] as [crate::runtime::Machine; 0]);
-    let stopped = view::lab_status(&manifest, &status("absent", "stopped"), None);
+    // A lab taken down or parked shows only what is there.
+    assert_eq!(view::lab_status(&manifest, &status("absent", "absent", "absent"), None).machines, [] as [crate::runtime::Machine; 0]);
+    let stopped = view::lab_status(&manifest, &status("parked", "absent", "stopped"), None);
     assert_eq!(stopped.machines.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["db"]);
+}
+
+#[test]
+fn a_one_vm_labs_vm_destroyed_outside_the_app_is_shown_gone() {
+    // Regression (resilience-vm-destroyed): a gone machine was shown only while another of the
+    // lab's ran. With its one VM destroyed, the runner reads the run failed and the VM absent; the
+    // page drew no machine at all, so "web is shown gone" read None, and offered no way back.
+    let home = Home::new(
+        "one-gone",
+        "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n",
+        &[],
+        lab::Target::Vagrant,
+    );
+    let manifest = described::Described::of(&home.dir, described::Form::Vms).unwrap();
+    let status = |run: &str| -> Status {
+        serde_json::from_value(serde_json::json!({
+            "state": run, "provider": "virtualbox", "outputs": [],
+            "machines": [{ "name": "web", "state": "absent", "published": [] }],
+        }))
+        .unwrap()
+    };
+    let shown = view::lab_status(&manifest, &status("failed"), None);
+    assert!(!shown.running);
+    let words: Vec<(&str, &str)> = shown.machines.iter().map(|m| (m.name.as_str(), m.state.as_str())).collect();
+    assert_eq!(words, [("web", "absent")], "the destroyed VM is there, gone");
+    // Taken down by the app, it is gone without a word.
+    assert_eq!(view::lab_status(&manifest, &status("absent"), None).machines, [] as [crate::runtime::Machine; 0]);
 }
 
 #[tokio::test]

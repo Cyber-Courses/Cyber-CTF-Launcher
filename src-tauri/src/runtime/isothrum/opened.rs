@@ -64,13 +64,19 @@ impl OpenedRun {
 
     /// The run's status, read by the home's runner service (else by the runner in this process).
     pub(super) async fn read(&self) -> Result<isothrum_runner::Status> {
+        self.read_with(&RunOptions::new()).await
+    }
+
+    /// [`Self::read`], its tools given `opts`' values and secrets (a Proxmox server's API token,
+    /// for its VMs' states on the server).
+    pub(super) async fn read_with(&self, opts: &RunOptions) -> Result<isothrum_runner::Status> {
         if self.service
             && let Some(client) = remote::client(&self.home).await
         {
             let target = remote::target(&self.project, Format::Terraform, &self.name);
-            return remote::status(&self.home, &client, &self.name, target).await.map_err(remote::Failure::into_error);
+            return remote::status(&self.home, &client, &self.name, target, opts).await.map_err(remote::Failure::into_error);
         }
-        self.running()?.status().await.map_err(errors::from_runner)
+        self.running()?.status_with(opts).await.map_err(errors::from_runner)
     }
 
     /// Whether the module was generated (a start that failed before generation made none).

@@ -115,7 +115,7 @@ fn the_runners_failures_the_launcher_words_reach_the_webview_as_codes_it_transla
         said(RunnerError::Timeout { step: "up".into(), timed_out: stalled }).0,
         Code::StepStalled { step: "up".into(), minutes: 30, last_line: "pulling".into() }
     );
-    let ceiling = TimedOut::Ceiling { after_s: 21600 };
+    let ceiling = TimedOut::Ceiling { after_s: 21600, last_line: None };
     assert_eq!(said(RunnerError::Timeout { step: "up".into(), timed_out: ceiling }).0, Code::StepCeiling { step: "up".into(), hours: 6 });
     let old = said(RunnerError::ToolTooOld { tool: "vagrant".into(), found: "2.3".into(), required: "2.4".into() }).0;
     assert_eq!(old, Code::ToolTooOld { tool: "Vagrant".into(), found: "2.3".into(), required: "2.4".into() });
@@ -204,7 +204,7 @@ fn a_vm_labs_own_failures_say_what_to_do() {
         said(declined).1,
         "Hyper-V needs administrator rights, and they couldn't be had (the prompt was declined). Start the lab again and accept the prompt."
     );
-    let ceiling = TimedOut::Ceiling { after_s: 21600 };
+    let ceiling = TimedOut::Ceiling { after_s: 21600, last_line: None };
     assert!(
         said(RunnerError::Timeout { step: "up".into(), timed_out: ceiling })
             .1

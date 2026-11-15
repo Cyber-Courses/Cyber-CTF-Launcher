@@ -451,9 +451,9 @@ fn on_run_event(app: &AppHandle, event: &RunEvent) {
     }
     if let RunEvent::Exit = event {
         exec::kill_live_tools();
-        // A tool the runner was asked to stop (an operation cancelled just before) doesn't get
-        // its grace: the app is going, and it must not outlive it.
-        crate::runtime::isothrum::end_cut_short_tools();
+        // No tool the runner runs here outlives the app: one still running (a status read) and one
+        // asked to stop (an operation cancelled just before) are ended now, without their grace.
+        crate::runtime::isothrum::end_tools_at_exit();
         app.state::<terminal::Terminals>().close_all();
         crate::screen::close_all();
     }
