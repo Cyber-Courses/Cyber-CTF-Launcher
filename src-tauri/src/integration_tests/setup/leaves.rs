@@ -192,10 +192,11 @@ mod tests {
             }
             assert_eq!(names(item, "macos"), vec![pair(FOLDER.0, FOLDER.1)], "{item} leaves nothing of libvirt's on a Mac");
         }
-        // The self-test's first VM makes vagrant-libvirt's management network.
+        // The self-test's first VM makes vagrant-libvirt's management network, and the self-test
+        // removes it once its VM is gone (#353): neither the network nor its route stays.
         let selftest = names("selftest:vm", "linux");
         assert!(
-            selftest.contains(&pair("libvirt-network", "vagrant-libvirt")) && selftest.contains(&pair("route", "192.168.121.0/24 dev virbr*")),
+            !selftest.contains(&pair("libvirt-network", "vagrant-libvirt")) && !selftest.contains(&pair("route", "192.168.121.0/24 dev virbr*")),
             "{selftest:?}"
         );
     }
@@ -220,12 +221,13 @@ mod tests {
     }
 
     #[test]
-    fn the_virtualbox_path_leaves_the_host_only_adapter_and_its_route_on_each_system() {
-        assert!(
-            names("virtualbox", "linux").contains(&pair("vbox-hostonly", "vboxnet*"))
-                && names("virtualbox", "linux").contains(&pair("route", "* dev vboxnet*"))
-        );
-        assert!(names("virtualbox", "macos").contains(&pair("vbox-hostonly", "vagrantnet-*")));
+    fn the_virtualbox_path_leaves_the_host_only_adapter_and_its_route_on_windows_only() {
+        // On Linux and macOS the self-test removes the adapter it made (#353).
+        let linux = names("virtualbox", "linux");
+        assert!(!linux.contains(&pair("vbox-hostonly", "vboxnet*")) && !linux.contains(&pair("route", "* dev vboxnet*")), "{linux:?}");
+        assert!(!names("virtualbox", "macos").contains(&pair("vbox-hostonly", "vagrantnet-*")));
+        // On Windows removing it asks for elevation: the adapter and its route stay.
+        assert!(names("virtualbox", "windows").contains(&pair("vbox-hostonly", "VirtualBox Host-Only*")));
         assert!(names("virtualbox", "windows").contains(&pair("route", "* VirtualBox Host-Only*")));
         assert!(names("vmware-utility", "macos").contains(&pair("process", "*vagrant-vmware-utility*")));
     }
