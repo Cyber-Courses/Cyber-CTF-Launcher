@@ -29,14 +29,14 @@ fn rejects_a_wrong_token() {
 
 #[test]
 fn a_spent_token_is_refused_even_when_it_is_right() {
-    let r = build_response(&get("/health?token=secret", "https://cyberctf.org"), None, "abc123", PORT);
+    let r = build_response(&get("/health?token=secret", "https://cyberctf.com"), None, "abc123", PORT);
     assert!(r.text.starts_with("HTTP/1.1 403") && !r.text.contains("abc123") && !r.gave_nonce);
 }
 
 #[test]
 fn the_nonce_is_given_once() {
     let probe = Probe::new("secret".into(), "abc123".into(), PORT);
-    let req = get("/health?token=secret", "https://cyberctf.org");
+    let req = get("/health?token=secret", "https://cyberctf.com");
     assert!(probe.reply_to(&req).contains("\"nonce\":\"abc123\""));
     let again = probe.reply_to(&req);
     assert!(again.starts_with("HTTP/1.1 403") && !again.contains("abc123"), "{again}");
@@ -45,7 +45,7 @@ fn the_nonce_is_given_once() {
 #[test]
 fn only_a_loopback_host_on_this_port_reads_the_nonce() {
     // A DNS-rebinding page sends its own host name; the token alone isn't enough.
-    let with_host = |host: &str| format!("GET /health?token=t HTTP/1.1\r\nHost: {host}\r\nOrigin: https://cyberctf.org\r\n\r\n");
+    let with_host = |host: &str| format!("GET /health?token=t HTTP/1.1\r\nHost: {host}\r\nOrigin: https://cyberctf.com\r\n\r\n");
     for host in [format!("127.0.0.1:{PORT}"), format!("localhost:{PORT}"), format!("LOCALHOST:{PORT}")] {
         assert!(respond(&with_host(&host), "t", "n").starts_with("HTTP/1.1 200"), "{host}");
     }
@@ -54,7 +54,7 @@ fn only_a_loopback_host_on_this_port_reads_the_nonce() {
         assert!(r.starts_with("HTTP/1.1 403") && !r.contains("\"nonce\""), "{host}: {r}");
     }
     // No Host header at all: refused.
-    assert!(respond("GET /health?token=t HTTP/1.1\r\nOrigin: https://cyberctf.org\r\n\r\n", "t", "n").starts_with("HTTP/1.1 403"));
+    assert!(respond("GET /health?token=t HTTP/1.1\r\nOrigin: https://cyberctf.com\r\n\r\n", "t", "n").starts_with("HTTP/1.1 403"));
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn a_foreign_origin_gets_no_nonce_and_spends_nothing() {
         assert!(r.starts_with("HTTP/1.1 403") && !r.contains("abc123") && !r.contains("Access-Control-Allow-Origin"), "{origin}: {r}");
     }
     // The site's own check still gets it.
-    assert!(probe.reply_to(&get("/health?token=secret", "https://cyberctf.org")).contains("abc123"));
+    assert!(probe.reply_to(&get("/health?token=secret", "https://cyberctf.com")).contains("abc123"));
 }
 
 #[test]
@@ -123,7 +123,7 @@ async fn a_silent_connection_is_dropped_after_the_timeout() {
 fn the_token_is_the_first_token_parameter_read_as_typed() {
     // Among other parameters, and first of two: the one checked. A percent-encoded, a
     // prefixed (`tokens=`) or a bare `token` never matches (tokens are plain hex).
-    let origin = "https://cyberctf.org";
+    let origin = "https://cyberctf.com";
     assert!(respond(&get("/health?x=1&token=secret&token=other", origin), "secret", "n").starts_with("HTTP/1.1 200"));
     for path in ["/health?token=sec%72et", "/health?tokens=secret", "/health?token", "/health?token=", "/health"] {
         let r = respond(&get(path, origin), "secret", "n");
@@ -140,8 +140,8 @@ fn requests_with_bare_line_feeds_or_odd_header_spelling_still_answer() {
         assert!(r.starts_with("HTTP/1.1 200") && r.contains("\"nonce\":\"n\""), "{req:?}: {r}");
         r
     };
-    ok(&format!("GET /health?token=t HTTP/1.1\nHost: 127.0.0.1:{PORT}\nOrigin: https://cyberctf.org\n\n"));
-    ok(&format!("GET /health?token=t\r\nhost: localhost:{PORT}\r\norigin: https://cyberctf.org"));
+    ok(&format!("GET /health?token=t HTTP/1.1\nHost: 127.0.0.1:{PORT}\nOrigin: https://cyberctf.com\n\n"));
+    ok(&format!("GET /health?token=t\r\nhost: localhost:{PORT}\r\norigin: https://cyberctf.com"));
     // The Origin header is found whatever its case and spacing, and echoed trimmed.
     let r = ok(&format!("GET /health?token=t HTTP/1.1\r\nHOST: 127.0.0.1:{PORT}\r\nORIGIN:   http://localhost:3000  \r\n\r\n"));
     assert!(r.contains("Access-Control-Allow-Origin: http://localhost:3000\r\n"), "{r}");
@@ -156,8 +156,8 @@ fn requests_with_bare_line_feeds_or_odd_header_spelling_still_answer() {
 
 #[test]
 fn options_preflight_and_other_methods() {
-    let pre = respond("OPTIONS /health HTTP/1.1\r\nOrigin: https://cyberctf.org\r\n\r\n", "t", "n");
-    assert!(pre.starts_with("HTTP/1.1 204") && pre.contains("Access-Control-Allow-Origin: https://cyberctf.org"));
+    let pre = respond("OPTIONS /health HTTP/1.1\r\nOrigin: https://cyberctf.com\r\n\r\n", "t", "n");
+    assert!(pre.starts_with("HTTP/1.1 204") && pre.contains("Access-Control-Allow-Origin: https://cyberctf.com"));
     assert!(respond("POST /health?token=t HTTP/1.1\r\n\r\n", "t", "n").starts_with("HTTP/1.1 405"));
     assert!(respond("", "t", "n").starts_with("HTTP/1.1 405"));
     assert!(!super::ct_eq("abc", "abd") && !super::ct_eq("abc", "ab") && super::ct_eq("abc", "abc"));
@@ -167,7 +167,7 @@ fn options_preflight_and_other_methods() {
 async fn health(port: u16, token: &str) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let Ok(mut s) = tokio::net::TcpStream::connect(("127.0.0.1", port)).await else { return String::new() };
-    let _ = s.write_all(format!("GET /health?token={token} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: https://cyberctf.org\r\n\r\n").as_bytes()).await;
+    let _ = s.write_all(format!("GET /health?token={token} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: https://cyberctf.com\r\n\r\n").as_bytes()).await;
     let mut out = String::new();
     let _ = s.read_to_string(&mut out).await;
     out

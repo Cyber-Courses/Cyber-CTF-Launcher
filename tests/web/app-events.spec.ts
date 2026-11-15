@@ -21,7 +21,7 @@ test.describe("deep links", () => {
 
     // Not a lab link, or not one of ours: nothing happens.
     await navButton(page, "Servers").click();
-    for (const url of ["https://cyberctf.org/labs/goad-light", "cyberctf://labs/Not_A_Slug!", "cyberctf://account/goad-light"]) {
+    for (const url of ["https://cyberctf.com/labs/goad-light", "cyberctf://labs/Not_A_Slug!", "cyberctf://account/goad-light"]) {
       await emitEvent(page, DEEP_LINK, [url]);
     }
     await expect(pageTitle(page)).toHaveText("Servers");

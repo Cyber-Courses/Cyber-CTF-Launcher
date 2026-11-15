@@ -15,7 +15,7 @@ describe("failureKind", () => {
       ["Error response from daemon: driver failed programming external connectivity: Bind for 127.0.0.1:3306 failed", "ports"],
       ["error during connect: Is the docker daemon running?", "docker"],
       ["write /var/lib/docker/tmp: no space left on device", "disk"],
-      ["error sending request for url (https://api.cyberctf.org/graphql)", "network"],
+      ["error sending request for url (https://api.cyberctf.com/graphql)", "network"],
       ["Couldn't download the Terraform provider plugins (the first run needs internet).", "network"],
       ["curl: (6) Could not resolve host: download.docker.com", "network"],
       ["dial tcp 10.0.0.5:8006: connect: network is unreachable", "network"],

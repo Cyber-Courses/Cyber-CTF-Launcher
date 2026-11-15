@@ -76,7 +76,7 @@ managed deployment, copy the app from the DMG to `/Applications` with your MDM's
 tooling.
 
 **Linux.** The apt repository (Debian and Ubuntu, amd64 and arm64) is signed with the key
-`B4B6 770F 5BED 6F3E 91BA C67E EB61 45F4 8E6D 7C1C` ("Cyber CTF apt <apt@cyberctf.org>"):
+`B4B6 770F 5BED 6F3E 91BA C67E EB61 45F4 8E6D 7C1C` ("Cyber CTF apt <apt@cyberctf.org>", the identity the key was issued with):
 
 ```bash
 sudo curl -fsSL https://cyber-courses.github.io/apt/cyberctf-apt.asc -o /usr/share/keyrings/cyberctf.asc
@@ -409,7 +409,7 @@ or cloud account by name) and whether it has privileged machines. A decline, or 
 three minutes, refuses it and tells the website why. The [policy reference](reference/policy.md) says how an administrator
 controls this.
 
-Cyber CTF's privacy policy: <https://www.cyberctf.org/privacy>.
+Cyber CTF's privacy policy: <https://www.cyberctf.com/privacy>.
 
 ## Logs and diagnostics
 

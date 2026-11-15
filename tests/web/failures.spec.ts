@@ -13,7 +13,7 @@ const sidebar = (page: import("@playwright/test").Page) => page.locator("aside")
 
 test.describe("failure states", () => {
   test("labs running here stay listed while the catalogue can't be reached", async ({ page }) => {
-    await forceCommands(page, { api_query: { error: "error sending request for url (https://api.cyberctf.org/graphql): connection refused" } });
+    await forceCommands(page, { api_query: { error: "error sending request for url (https://api.cyberctf.com/graphql): connection refused" } });
     await openApp(page);
     // The Overview: the running lab, by its id, and the catalogue's error with a retry.
     await expect(main(page)).toContainText("1 lab running on this machine.");
