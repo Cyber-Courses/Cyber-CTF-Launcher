@@ -55,7 +55,7 @@ and the proxy. A lab you already installed and started before can still start: t
 ## Servers and cloud accounts
 
 - **Test** on the Servers or Cloud page checks the host or account before a lab runs
-  there, and says what is missing. [Running labs](running-labs.md#requirements-on-a-server) lists
+  there, and says what is missing. [Running labs](running-labs.md#what-a-server-needs) lists
   what Proxmox and ESXi need.
 - **A cloud sign-in ran out**: before changing a lab in AWS, Azure, Google Cloud or Oracle Cloud,
   the launcher checks that cloud's CLI sign-in and, when it ran out, says how to sign in again

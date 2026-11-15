@@ -67,6 +67,6 @@ a lab.
 
 - Run VM labs: finish the optional VM steps on the **Machine** page.
 - Run labs on your own Proxmox or ESXi server (**Servers**) or in your cloud account (**Cloud**):
-  [running labs](running-labs.md#accounts-and-servers) says what each needs. Cloud labs are billed
+  [running labs](running-labs.md#servers-and-cloud-accounts) says what each needs. Cloud labs are billed
   to your account; they stop on their own after the account's auto-stop time.
 - Something went wrong? See [troubleshooting](troubleshooting.md).

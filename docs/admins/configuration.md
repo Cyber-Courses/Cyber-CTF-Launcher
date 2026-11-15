@@ -43,4 +43,4 @@ The app's executable takes:
 
 The sign-in redirect listens on `127.0.0.1`, on the first free port of 47290, 47291 and 47292,
 while a sign-in waits. Each must be registered on the OAuth client as
-`http://127.0.0.1:<port>/callback` ([signing-in.md](../players/signing-in.md#the-oauth-client)).
+`http://127.0.0.1:<port>/callback` ([how sign-in works](../contributing/sign-in.md#the-oauth-client)).

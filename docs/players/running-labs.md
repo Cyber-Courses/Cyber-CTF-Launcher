@@ -1,276 +1,129 @@
 # Running labs
 
-How the launcher runs a lab, wherever it runs: the forms a lab takes in each place, the files
-that say where a lab is, the attack box, the labs imported from a folder, removing a lab, and the
-accounts and servers it reaches.
+Where a lab can run, what the attack box is, how to see a machine's screen, how to import your own
+lab, how to remove one, and what a server or a cloud account needs. To start your first lab, see
+[getting started](getting-started.md); how all this works underneath is in
+[how labs run](../contributing/how-labs-run.md).
 
-A lab describes itself once, in an `isoloom.yml`. For each place the launcher asks
-[Isoloom](https://www.isoloom.com) to generate that place's files (`lab::prepare`, into the lab's
-`.isoloom-<n>/<target>/`, `n` its instance number), then hands them to the Isothrum runner, which
-starts, reads, changes and stops the run. The launcher keeps the policy (where, with which
-account, what the player picked); the runner does the work and keeps the run's state.
+## Where a lab runs
 
-## Places and forms
+A lab runs as containers or as virtual machines (VMs), here or elsewhere:
 
-| Place          | Lab                                        | Isoloom target   | What runs                                                             |
-| -------------- | ------------------------------------------ | ---------------- | --------------------------------------------------------------------- |
-| This machine   | containers                                 | `docker`         | Docker Compose on the engine picked at launch                         |
-| This machine   | VMs, or containers as "one VM per machine" | `vagrant`        | one Vagrant VM per machine                                            |
-| Proxmox server | VMs                                        | `proxmox`        | one VM per machine, made by Terraform                                 |
-| ESXi server    | VMs                                        | `vagrant`        | Vagrant's `vmware_esxi`, the runner relaying the host from macOS      |
-| Cloud account  | containers                                 | `cloud-docker`   | one instance made by Terraform, Compose inside over SSH               |
-| Cloud account  | VMs, or containers as "one VM per machine" | `cloud-vm`       | one instance per machine (AWS, Azure, GCP, DigitalOcean, Linode, OCI) |
-| Cloud account  | cloud services (no machines)               | `cloud-services` | the lab's own Terraform module and `cloud/lab.yml` (a build feature)  |
+| Place                        | Container labs                | VM labs                        |
+| ---------------------------- | ----------------------------- | ------------------------------ |
+| **This machine**             | on Docker (or another engine) | one VM per machine (Vagrant)   |
+| **A Proxmox or ESXi server** | no                            | one VM per machine             |
+| **A cloud account**          | on one cloud instance         | one cloud instance per machine |
 
-A lab runs as true containers or true VMs, never as containers inside a helper VM: a container
-lab runs on Docker here or on a cloud account's instance, or, with VM recipes, as one VM per
-machine here or in a cloud account; it has no form on a server. A container lab an earlier
-version ran inside one helper VM (Isoloom's former `docker-vm`, here, on ESXi or on Proxmox) is
-still read, stopped and removed through the runner as it was started; nothing else changes it,
-and its next start is in its true form (on Docker when Docker answers here, else as one VM per
-machine). When that run's manifest is a version this build can't read, the lab's files are
-generated in the true form instead, and the log says so; when the runner no longer opens that
-form at all, its helper-VM mark is cleared and the lab says which VM to remove by hand (the
-Machine page lists it).
+A container lab can also run as one VM per machine, here or in a cloud account, when it offers
+that. When a lab can run in more than one place, **Start lab** asks where. Cloud labs are billed
+to your account and stop on their own after the account's auto-stop time.
 
-The catalogue names a lab by its own runtime (containers or VMs); every operation on a started
-lab finds its run through `runtime::host::locate`, which reads where it runs and the form it was
-actually started in (`paths::local_runtime`).
-
-## What says where a lab is
-
-A running lab is the runner's run `cyberctf-<lab id>`, its state under
-`<app data>/runs/<run>/` (`record.json`, `events.jsonl`, the Terraform state for a server or a
-cloud). Beside the lab, in its folder:
-
-| File                       | Says                                                                                         |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| `.cyberctf-host`           | the server or cloud account it runs on (`server::mark_lab`)                                  |
-| `.cyberctf-local-vm`       | a container lab here runs in a helper VM an earlier version started, and on which hypervisor |
-| `.cyberctf-per-machine-vm` | a container lab started as one VM per machine                                                |
-| `.cyberctf-engine`         | the Docker context it was started on, when not the current one                               |
-| `.cyberctf-parked`         | parked (paused or shut down): the next start resumes it                                      |
-| `.cyberctf-overlay.yml`    | the machines the launcher added to the lab (the attack box), merged into its spec when read  |
-| `.cyberctf-instance`       | its instance number, given at install: its networks' blocks and its generated files' folder  |
-
-A stop clears them once the run is gone (`lifecycle::forget_run`), so the next start is the lab
-as published. The instance number stays: it is the installed lab's, not the run's.
+**Pause** and **Shut down** keep a lab's state for later; **Stop & remove** removes its machines,
+and the next start begins from scratch. Closing the launcher doesn't stop a lab.
 
 ## The attack box
 
-The learner's attack box is one more machine of the lab, wherever it runs: the launcher adds
-`attackbox` to the lab's spec through its overlay (`runtime/attack_box`), regenerates the
-lab for its form and brings the run up to date (`Running::update`). Taking it out retires it
-from the run (`Running::retire`: Vagrant forgets a VM its Vagrantfile no longer has), removes it
-from the overlay and updates again. Its status is the run's status of that machine; its shell is
-the runner's console into it as the player's account (`Running::console_command` with `player`,
-`attack_box::PLAYER`): `exec --user` into a container, a `sudo -i` login on a VM, whatever
-account the way in logs in as (`vagrant`, a cloud image's).
+The attack box is the machine you attack the lab from: Kali Linux with its tools, one more
+machine on the lab's network. The lab page adds it, shows it among the lab's machines, and opens a
+terminal on it with **Open attacker shell**.
 
-The box has that account on every form, with a home and sudo without a password
-(`src-tauri/attack-box/player-account.sh`, pinned from the
-[attack box repository](https://github.com/CyberCTF/attack-box)): the attack image is built with it, a container box makes
-it where it starts (its image may predate it), and a VM box at the end of its set-up. Where the
-shared folder belongs to a user the box doesn't have (a Linux computer's, through Docker or
-virtiofs), the account takes that user's uid, and it joins the folder's group (a VM's shared
-folder mounted for `vagrant`), so it writes there as that user or group may. Root stays the
-image's own user.
+| Lab          | The attack box                                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Containers   | a container from the attack image picked in **Settings > Labs**                                                           |
+| VMs          | a Kali VM (40 GB) that installs Kali's toolset on its first start (about 16 minutes); with a desktop when Settings say so |
+| Arm computer | native: Kali's arm64 image beside containers; among VMs, a Debian arm64 VM turned into Kali on its first start            |
 
-The account also has a password, for wherever the box asks for one: a desktop box's screen locker
-or LightDM's login after a logout, a VM's console login on its Screen, `su`, SSH where the box's
-`sshd` takes passwords. The launcher makes a new one each time it adds a box
-(`attack_box/sign_in.rs`): 20 random characters of lowercase letters and digits without
-look-alikes, in four groups (`k7mpq-zrt4w-hn8xc-ls2vd`, 100 bits). It keeps it with its other
-secrets (the OS keychain, `attack-box:<lab>`; a 0600 file in a dev build), registers it with the
-log redaction, and forgets it when the box is taken out. The box gets only its SHA-512 crypt hash
-(RustCrypto's `sha-crypt`, its default 5000 rounds, a 16-character salt from the system's random
-generator), as a root-only file of its spec (`files: [{ path: /etc/cyberctf/player-password, content, mode:
-"0400" }]`, a Compose config for a container, Isoloom's files step before a VM's set-up), which
-`player-account.sh` hands to `chpasswd -e` on its standard input: the password is in none of the
-lab's or the run's files, and neither it nor its hash is on a command line. A container box sets
-it at each start, as it makes the account. The lab page shows it in the attack box's
-**Credentials** row (masked until **Show**, copied with a click), and the box's Screen window in
-its toolbar's **Sign-in** popover (`attack_box_sign_in`, `screen_sign_in`). Sudo still asks for
-none. A box added before this has no password, and no Credentials row.
+When a lab names a seat for the player (an access machine), the attack box takes that seat: its
+name and addresses. Taking the box out puts the lab's own machine back.
 
-| Form               | The box                                                                                                                                                   |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Containers         | a container from the attack image picked in Settings, on the lab's network                                                                                |
-| VMs                | a Kali VM (`kali@rolling`, 40 GB) with Kali's headless toolset, installed on its first start (~16 minutes); with Kali's XFCE desktop when Settings say so |
-| On an Arm computer | native: Kali's arm64 image beside containers; a Debian arm64 VM made Kali by its set-up among VMs                                                         |
+**Your account in the box** is `player`: its shell opens as it, in its home, and `sudo` asks no
+password. It also has a password, made for that box when it is added: use it wherever the box
+asks you to sign in (its screen, `su`, SSH). The lab page's **Credentials** row shows it (masked
+until **Show**, copied with a click), and a VM's Screen window has it in its toolbar under
+**Sign-in**. A new box gets a new password; a box added by an earlier version has none.
 
-A lab that declares an access machine (`access: true`) says with it where the player sits: the
-box takes its place there (its name, its networks and addresses, in the overlay's `replace:`), so
-the checks run from that seat run from the box; taking the box out brings the lab's own machine
-back. Without one, the box is `attackbox` on the lab's first network (or the one the player
-picks). Isoloom and Isothrum know nothing of the attack box: the launcher composes their general
-features (`.cyberctf-overlay.yml`, update, retire, the console).
+**The shared folder**: `~/CyberCTF/shared` on your computer is shared with the box. Put tools in,
+take results out.
 
-A VM box runs headless unless Settings choose its desktop (Settings, Attack box, "Attack VM
-desktop"): its set-up then installs Kali's XFCE desktop and LightDM, which signs `player` in
-(about 1 GB more to download, 3 GB more on its disk), and the VM gets 4 GB of memory and 2 CPUs.
-Its Screen shows that desktop. The `player` account, its sudo rule and its password stay as they
-are. The desktop never locks the player out: neither of Kali's screen lockers (`light-locker`,
-`xfce4-screensaver`) starts for `player`, the X server never blanks the screen, and at each
-sign-in the session turns off the screensaver's lock, the power manager's lock on suspend and the
-session's lock on a switch of user (`/usr/local/bin/cyberctf-no-screen-lock`). Should a prompt
-still show (a logout, a locker started by hand), the password takes it. A container box is
-always headless: no desktop is offered for it.
+**A desktop** (VM boxes only): turn on **Settings > Attack box > Attack VM desktop** to get Kali's
+XFCE desktop, signed in as `player`, on the box's Screen. It needs about 1 GB more to download and
+3 GB more on disk, and the VM gets 4 GB of memory and 2 CPUs. The desktop never locks you out: the
+screen never blanks or locks; should a sign-in prompt still show (after a logout), the box's
+password takes it. A container box has no desktop.
 
 ## A machine's screen
 
-A lab VM whose run offers a graphical console (its screen, keyboard and mouse) has a Screen
-button on the lab page (Screens, and the attack box's card): it opens the machine's screen in its
-own window, beside the attack box's shell window. Isoloom writes, for each VM, which console it
-has under each provider and why there is none where there isn't
-(`machines[].consoles`, its [capability matrix](https://github.com/isoloom/isoloom/blob/main/docs/matrix.md#graphical-consoles));
-the lab page shows that reason instead of a button. Isothrum reaches it
-(`Running::graphical_console`) on this computer's loopback, opening an SSH tunnel where the
-console sits behind a machine of the run (a cloud Windows VM's Remote Desktop).
+A VM with a graphical screen has a **Screen** button on the lab page (under Screens, and on the
+attack box's card): it opens the machine's screen in a window of its own. Where a machine has no
+screen, the page says why instead.
 
-- **VNC** (libvirt, QEMU, VMware Workstation and Fusion, Proxmox):
-  the window draws it with noVNC (vendored, `src/vendor/novnc/`). The webview never reaches the
-  console itself: the window's own bridge (`screen/bridge.rs`), a WebSocket server on
-  `127.0.0.1` at a free port, relays it. The bridge is bound when the window opens, and the
-  window's content security policy lets it connect to that port alone
-  (`connect-src ws://127.0.0.1:<port>`, added to that window's pages only). It takes one viewer,
-  with a one-time token, from the app's own page (its `Origin`, exactly) addressed to its own
-  loopback address (its `Host`): a website, or another program without the token, gets nothing.
-  Proxmox's console is its API's VNC websocket, which the bridge opens with the server's
-  credentials and the session's ticket.
-- **RDP** (VirtualBox's remote display, a cloud Windows VM's Remote Desktop): the window opens
-  the system's client on a `.rdp` file naming the loopback address and the account, never a
-  password: Windows' Remote Desktop Connection, on a Mac Windows App (or Microsoft Remote
-  Desktop), on Linux FreeRDP or Remmina; the window says what to install when there is none.
-  The account's password stays in the launcher until the learner copies it ("Copy password");
-  only FreeRDP is given it, on its standard input. The `.rdp` file is owner-only, and goes with
-  the window.
+- Most VMs (libvirt, QEMU, VMware, Proxmox) show their screen right in the window.
+- VirtualBox VMs and Windows VMs in a cloud open in your Remote Desktop client: Remote Desktop
+  Connection on Windows, Windows App (or Microsoft Remote Desktop) on a Mac, FreeRDP or Remmina on
+  Linux. The window says what to install when you have none. Use **Copy password** for the
+  machine's password when the client asks.
 
-Closing the window ends its session: the bridge stops, and a tunnel to the console closes.
+Closing the window ends the session.
 
-## Labs imported from a folder
+## Importing a lab from a folder
 
-**Labs > Import a lab** runs a lab that isn't published: pick a folder with an `isoloom.yml`, and
-the launcher copies it into `<app data>/labs/local-<name>/` (`name` is the spec's) and starts it as
-containers on this machine, without Cyber CTF (no sign-in, no flags, no progress saved). It is
-listed under **Imported from a folder** on the Labs screen, under **Running** in the sidebar and on
-the Overview, and each opens its lab page.
+**Labs > Import a lab** runs a lab that isn't in the catalogue: pick a folder with an
+`isoloom.yml`. The launcher copies the folder and starts the lab as containers on this machine,
+without your Cyber CTF account (no sign-in, no flags, no progress saved). It is listed under
+**Imported from a folder** on the Labs screen and under **Running** in the sidebar.
 
-No catalogue entry describes it, so its page shows what the lab's own `.ctf/` folder defines, read
-from the installed copy (the one the run uses), each file on its own:
-
-| File                   | On the page                                                                                                                                           |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.ctf/metadata.json`   | the title, description, difficulty (1 to 3), category and capabilities (as tags); without it, the title is the spec's `name` and the rest is left out |
-| `.ctf/objectives.json` | the objectives (`{ "objectives": [...] }`): each one's title, prompt and guided steps, to read only; without it, no objectives section                |
-
-The objectives are read only: progress and answers are checked and kept by Cyber CTF for
-published labs, so an imported lab's page says so instead of offering an answer field. The
-answers (`check`, `dev`) and the hint texts never leave the core. A file that is there but can't
-be read (not JSON, a missing `title`, a difficulty out of range, a key used twice) is named on the
-page with why ("metadata.json can't be read: …"); the other file is still read.
-
-Without a `.ctf/` folder the page is the lab itself: its name, state, deployment steps and log,
-network diagram, where it runs, the attack box, and Stop, Open in browser and the shell. A stopped
-imported lab starts again by importing its folder again, which picks up any change made to it.
+Its page shows the title, description and objectives the lab's own folder gives (how to write
+them: [a lab's folder](../lab-authors/lab-folder.md)); the objectives are for reading only, since
+only Cyber CTF checks answers. To pick up changes you made in the folder, stop the lab and import
+the folder again.
 
 ## Removing a lab from this computer
 
-A stopped lab's page has **On this computer > Remove lab**: an imported lab always (it is
-installed), a catalogue lab once it has been started here. It asks first, in the system's dialog,
-naming the lab, then deletes the app's copy of it and everything the app keeps for it under its
-data folder (`labs::remove`):
+A stopped lab's page has **On this computer > Remove lab**: an imported lab always, a catalogue
+lab once it has been started here. It asks first, then deletes the launcher's copy of the lab and
+everything the launcher keeps for it, including its attack box's password. The folder an imported
+lab came from is never touched, and a catalogue lab's progress stays in your Cyber CTF account.
 
-- the copy, `<app data>/labs/<lab id>/`, with the project generated in it (Compose files,
-  Vagrantfiles, the run manifest), and an update's or an import's leftover `.<lab id>.staging` and
-  `.<lab id>.old`;
-- the runner's run folder, `<app data>/runs/cyberctf-<lab id>/` (its record, its event log, what it
-  last saw, Vagrant's state of it);
-- the Terraform deployments an older launcher left in `<app data>/deployments/<lab id>/` (none of
-  them still holding resources: that counts as the lab still being up);
-- its deploy worker's job, logs and verdicts in `<app data>/deploys/`;
-- a catalogue lab's source kept for an offline start, `<app data>/offline/<lab id>.json`.
-- the password kept for its attack box (the OS keychain's `attack-box:<lab id>`), once the rest is
-  gone. A keychain that refuses (locked) leaves it, listed with why for you to delete by hand, and
-  the lab is removed all the same; no keychain at all (Linux without a Secret Service) has nothing
-  to delete.
+Remove lab is disabled, saying "Stop the lab first", while anything of the lab is up or an
+operation runs on it. If something can't be deleted (a file held open), the launcher lists it with
+why. The images and boxes the lab downloaded stay for the next lab:
+**Settings > Maintenance > Cleanup** removes them once no lab uses them.
 
-The folder an imported lab came from is never touched: the copy keeps no link out of itself, and a
-removal deletes a link, never what it points at. Two things stay: the lab's empty lock file in
-`deploys/` (every operation on the lab shares it, so deleting it could let two run at once), and
-the images and boxes its starts downloaded, which Settings > Maintenance > Cleanup removes once no
-lab uses them. A catalogue lab's progress is in the Cyber CTF account; its next start downloads it
-again.
+## Servers and cloud accounts
 
-Remove lab is disabled, with "Stop the lab first", while anything of the lab is up (running,
-starting, parked, or machines left by a start that was cut off) or an operation runs on it, and the
-core refuses it then too, called directly or not. The copy is first moved aside whole: a file in it
-held open (Windows) refuses the removal with nothing deleted. Anything that can't be deleted after
-that is listed in a dialog with why; the lab is gone from the app either way. The page then goes
-back to the Labs list, with a toast.
+Add a server on the **Servers** page and a cloud account on the **Cloud** page. **Test** checks it
+without running anything and says what is missing; the **VM test** of a server runs a throwaway
+one-machine lab there and removes it.
 
-## Accounts and servers
+- A cloud account signs in with keys stored in the launcher, or with its own command line's
+  sign-in (`aws login`, `az login`, Google Cloud's application-default credentials, OCI's
+  `~/.oci/config`). When that sign-in has run out, the launcher says how to sign in again before
+  it changes anything.
+- A cloud lab's firewall opens only to this computer's public address.
 
-- Profiles (non-secret): `<app data>/server.json`. Secrets: the OS keychain (service
-  `org.cyberctf.desktop`, account `server:<host id>`); debug builds keep them in
-  `~/.cyberctf/dev-server-secrets.json` (0600).
-- A cloud account signs in either with stored keys or with its own CLI's sign-in (AWS `aws
-login`, Azure `az login`, Google Cloud's application-default credentials, OCI's
-  `~/.oci/config`). Before any change to a lab in an account, the launcher asks that CLI whether
-  the sign-in still holds and refuses, saying how to sign in again, when it ran out
-  (`runtime/isothrum/cloud_runs.rs`): a sign-in that runs out halfway leaves a lab behind.
-- A cloud lab's firewall opens its SSH and published ports to this machine's public IP only,
-  which two independent services must agree on (`launch::public_ip`). AWS launches also check
-  the account's budget first.
-- "Test" checks a host without running anything: ESXi's SSH banner, Proxmox's API
-  ticket, each cloud's credentials and what a launch needs (`server/cloud_checks.rs`).
-- The "VM test" on a Proxmox or ESXi host runs a throwaway one-machine lab
-  (`cyberctf-server-selftest-<host id>`) through the path a lab takes there, and always removes
-  it (`runtime/server_selftest/`). On Proxmox, the lab is generated for the `proxmox` target. On
-  ESXi, it is generated for `vagrant` and run with `vmware_esxi`. The ESXi test first checks
-  `vagrant-vmware-esxi` and `ovftool` on this machine. Its upload step names the box and its
-  architecture. A test whose teardown failed or was cut short keeps its folder, and the next test
-  removes that lab first.
-
-### Requirements on a server
+### What a server needs
 
 - **Proxmox**: an API token (or root with its password); `snippets` and `iso` content on the
-  `local` storage; a bridge with DHCP for the lab VMs; KVM (nested virtualization when Proxmox
-  is itself a VM). When the lab bridge is internal to the node, the runner reaches lab VMs
-  through the node (the launcher's key let in there).
-- **ESXi**: SSH on; VMware `ovftool` on this machine (for `vagrant-vmware-esxi`); promiscuous
-  mode and forged transmits on the lab's port group.
+  `local` storage; a bridge with DHCP for the lab VMs; KVM (nested virtualization when Proxmox is
+  itself a VM). When the lab bridge is internal to the node, the launcher reaches the lab VMs
+  through the node, with its key let in there.
+- **ESXi**: SSH on; promiscuous mode and forged transmits on the lab's port group; and VMware's
+  OVF Tool on this computer (below).
 
 ### The OVF Tool for ESXi
 
-`vagrant-vmware-esxi` uploads a lab's VMs to ESXi with VMware's OVF Tool (`ovftool`). The ESXi
-setup's tools step offers three ways to get it:
+Labs reach ESXi through VMware's OVF Tool (`ovftool`). The ESXi setup's tools step offers three
+ways to get it:
 
 - **Get VMware Fusion** (macOS) or **Get VMware Workstation** (Windows and Linux on x64): both are
-  free from Broadcom and ship the OVF Tool inside them, where the launcher looks for it.
-- **Get the standalone OVF Tool**: Broadcom's download, an archive that unpacks to a folder
-  (`ovftool`, `lib/`, `env/`, `certs/`, …) that nothing looks in.
-- **Use a downloaded OVF Tool…**: pick that unpacked folder (or the one folder inside it that
-  holds `ovftool`). The launcher copies it into `tools/ovftool/` in its app data folder, replacing
-  an earlier copy, and leaves the download where it is. It refuses a folder without the
-  `ovftool` program (`ovftool.exe` on Windows) and its libraries (`lib/` beside it), or one far
-  bigger than the tool. On macOS it first checks, on the copy, that the program and every library
-  are validly signed by VMware's Developer ID (team `EG7KH642X6`: `codesign --verify --strict`,
-  then the same against a requirement naming that team), refuses anything else, and only then
-  removes the copy's `com.apple.quarantine` attribute: the standalone tool isn't notarized, so
-  Gatekeeper would refuse to start it otherwise. The download keeps its quarantine. Tool installs
-  turned off by policy (`DisableToolInstalls`) turn this off too.
+  free from Broadcom and include the OVF Tool, where the launcher finds it.
+- **Get the standalone OVF Tool**: Broadcom's download, an archive to unpack.
+- **Use a downloaded OVF Tool…**: pick the unpacked folder (or the folder inside it that holds
+  `ovftool`). The launcher copies it and leaves your download where it is. On macOS it checks the
+  copy is signed by VMware before letting it run (the standalone tool isn't notarized).
 
-The standalone macOS tool is built for Intel Macs only: on Apple Silicon it runs under Rosetta,
-and the tools step says so when Rosetta isn't installed (`softwareupdate --install-rosetta`).
-
-The machine check looks for the tool in this order and shows the version it found and where:
-Fusion's copy (`/Applications/VMware Fusion.app/Contents/Library/VMware OVF Tool`) or
-Workstation's (`VMware\VMware Workstation\OVFTool` under Program Files), then the launcher's own
-copy, then the first `ovftool` on `PATH`. The launcher's `PATH` lists those folders in the same
-order, from startup, so a copy placed while it runs is used by the next lab without a restart; on
-macOS the runner's ovftool wrapper for ESXi hands over to that same first `ovftool` on `PATH`. An
-`ovftool` in a folder already on your shell's `PATH` (when the launcher is started from a
-terminal) comes before them all when a lab runs.
-
-`docs/contributing/testing/integration.md` runs a lab on a Proxmox or ESXi host given by its settings.
+The standalone macOS tool is built for Intel Macs: on Apple silicon it runs under Rosetta, and the
+tools step says so when Rosetta isn't installed (`softwareupdate --install-rosetta`). The machine
+check shows the version it found and where. When tool installs are turned off by your
+administrator, these choices are too.

@@ -1,20 +1,43 @@
 # Signing in
 
-The launcher signs in to [Cyber Auth](https://www.cyberauth.co) the way desktop and CLI apps should (RFC 8252): the player never copies a token. The code is in [`src-tauri/src/account/`](../../src-tauri/src/account/).
+The labs of the catalogue need a Cyber CTF account; a lab imported from a folder runs without
+one. You sign in in your own browser, on cyberauth.co: the launcher never asks for your password.
 
-1. **Sign in** opens the system browser on cyberauth.co with an OAuth 2.0 authorization code request protected by PKCE (S256). A player already signed in there only confirms the account (`prompt=select_account`).
-2. cyber-auth redirects to a one-shot server the launcher runs on `http://127.0.0.1:<port>/callback` (the first free one of 47290, 47291, 47292). The launcher checks the `state`, exchanges the code with its PKCE verifier, and only then tells the browser tab "You're signed in. You can close this tab."
-3. The tokens go to the OS keychain (macOS Keychain, Secret Service on Linux, Windows Credential Manager), never to a file or the webview. The access token is refreshed silently a minute before it expires, so the session survives restarts until the refresh token is revoked. **Sign out** deletes them from the keychain; when the keychain refuses (locked, its prompt dismissed), it says so and the player stays signed in.
+## Sign in
 
-While it waits, the launcher offers two fallbacks under the spinner:
+1. Select **Sign in** (in the first-run setup, or in **Settings > Account**). Your browser opens on
+   cyberauth.co.
+2. Sign in there, or confirm the account you're already signed in with.
+3. The browser tab says you can close it, and the launcher shows your name in the sidebar and in
+   **Settings > Account**.
 
-- **Copy the sign-in link**: for a default browser that takes the link and shows nothing.
-- **Use a code instead**: the OAuth device authorization grant (RFC 8628), for a machine whose browser can't be used (a remote desktop, a kiosk, an SSH-forwarded window). The launcher shows a short code and the cyberauth.co page to enter it on, from any device, and polls until it is approved, declined or expired (at most 30 minutes).
+You stay signed in across restarts. **Settings > Account > Sign out** ends the session on this
+computer.
 
-The sidebar and **Settings > Account** show who is signed in (name and email from the ID token). Errors say what to do: a sign-in not finished within 5 minutes (or a code that expired) is cancelled, a declined consent says so, cyber-auth unreachable says to check the connection, and a keychain that can't be read (locked, its prompt dismissed, no Secret Service on Linux) is shown in Settings. Cancel always ends the wait.
+## When the browser doesn't help
 
-## The OAuth client
+While it waits, the launcher offers two other ways under the spinner:
 
-The OAuth client in cyber-auth must be first-party and public (`token_endpoint_auth_method: none`, PKCE required, consent skipped), use the `authorization_code` and `refresh_token` grants, and have these redirect URIs: `http://127.0.0.1:47290/callback`, `http://127.0.0.1:47291/callback`, `http://127.0.0.1:47292/callback`. **Use a code instead** also needs the `urn:ietf:params:oauth:grant-type:device_code` grant on that client; until it has it, cyber-auth answers `unauthorized_client` and the launcher says signing in with a code isn't available yet, pointing to the copy-the-link fallback.
+- **Copy the sign-in link**: when no browser window opens, paste the link into a browser on this
+  computer.
+- **Use a code instead**: when this computer's browser can't be used (a remote desktop, a kiosk),
+  the launcher shows a short code and a cyberauth.co page. Enter the code there from any device
+  (your phone, another computer); the launcher signs in once you approve it. The code is good for
+  up to 30 minutes.
 
-The endpoints and the client id can be overridden for testing: see [reference/configuration.md](../admins/configuration.md).
+**Cancel** always ends the wait.
+
+## What the messages mean
+
+| Message or problem                         | What to do                                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| The sign-in was cancelled after 5 minutes  | Select **Sign in** again; finish in the browser within 5 minutes, or use a code.                        |
+| You declined in the browser                | Select **Sign in** again and accept.                                                                    |
+| Cyber CTF can't be reached                 | Check the connection; behind a proxy, see [troubleshooting](troubleshooting.md#signing-in).             |
+| Signing in with a code isn't available yet | Use **Copy the sign-in link** instead.                                                                  |
+| Sign out failed: the keychain refused      | Your system's keychain is locked or its prompt was dismissed: unlock it and sign out again.             |
+| Signed out at every start (Linux)          | The session is kept in the Secret Service (GNOME Keyring, KWallet): make sure one runs and is unlocked. |
+
+Your session is kept in your system's keychain (macOS Keychain, Windows Credential Manager, the
+Secret Service on Linux), never in a file. How the sign-in works underneath, for those who change
+it: [how sign-in works](../contributing/sign-in.md).
