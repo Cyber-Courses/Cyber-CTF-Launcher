@@ -2928,7 +2928,7 @@ areas:
           - desktop-e2e
         gaps:
           desktop: needs CYBERCTF_TEST_SERVER_ENV with a Proxmox token; skips without it; only the API-token sign-in is driven
-          integration: the rig's Proxmox runs (proxmox_live_test, server-lab-proxmox) never go through server_save or the placement read
+          integration: the Proxmox scenarios (server-lab-proxmox-connection, server-lab-proxmox) never go through server_save or the placement read
 
       - id: servers.proxmox-ssh-key
         what: Sign in to Proxmox with an SSH key (the usual key found first) so the launcher authorizes its own key on the node and makes its API token; show and copy the launcher's public key.
@@ -3037,13 +3037,13 @@ areas:
             - server-lab/test
             - server-lab/listed
           integration:
-            - src-tauri/src/runtime/proxmox/tests.rs > proxmox_live_test
+            - server-lab-proxmox-connection
         rig:
           - server:proxmox
           - desktop-e2e
         gaps:
           web: the mock answers online; only the count is checked
-          integration: Proxmox only (opt-in proxmox_live_test, run by the rig as proxmox-connection); the ESXi connection test never runs for real outside the desktop spec
+          integration: Proxmox only (server-lab-proxmox-connection, the server tier); the ESXi connection test never runs for real outside the desktop spec
 
       - id: servers.vm-test
         what: Run a real VM test on a Proxmox or ESXi host (a small VM on its own network, upload progress, then torn down), from the setup window or the host's menu.

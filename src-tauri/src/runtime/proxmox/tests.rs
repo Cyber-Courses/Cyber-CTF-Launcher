@@ -93,54 +93,6 @@ fn storage_problems_name_the_fix() {
     assert!(p.iter().any(|m| m.contains("\"fast-ssd\" doesn't exist")));
 }
 
-/// "Test connection" against a real host (opt-in):
-///   `CYBERCTF_TEST_PVE_HOST`=... `CYBERCTF_TEST_PVE_PASSWORD`=... [`CYBERCTF_TEST_PVE_TOKEN_ID=user@realm!name` `CYBERCTF_TEST_PVE_TOKEN_SECRET`=...
-///   `CYBERCTF_TEST_PVE_SSH_KEY`=<key authorized on the node> `CYBERCTF_TEST_PVE_FINGERPRINT`=<its certificate's SHA-256>] cargo test `proxmox_live_test` -- --ignored --nocapture
-#[tokio::test]
-#[ignore = "opt-in: connects to a real Proxmox host set via CYBERCTF_TEST_PVE_* env vars"]
-async fn proxmox_live_test() {
-    let var = |k: &str| std::env::var(k).ok();
-    let address = var("CYBERCTF_TEST_PVE_HOST").expect("CYBERCTF_TEST_PVE_HOST");
-    let profile = |username: &str, bridge: &str| HostProfile {
-        username: username.into(),
-        datastore: Some(var("CYBERCTF_TEST_PVE_STORAGE").unwrap_or_else(|| "local-lvm".into())),
-        node: Some("pve".into()),
-        insecure_tls: true,
-        // Its certificate, as `pvenode cert info` shows it: a self-signed one is refused without.
-        tls_fingerprint: var("CYBERCTF_TEST_PVE_FINGERPRINT").and_then(|f| crate::runtime::server::tls_pin::Fingerprint::parse(&f)),
-        ..host(&address, Some(bridge))
-    };
-    let bridge = var("CYBERCTF_TEST_PVE_BRIDGE").unwrap_or_else(|| "vmbr1".into());
-    let password = var("CYBERCTF_TEST_PVE_PASSWORD").expect("CYBERCTF_TEST_PVE_PASSWORD");
-    // The launcher's key in a throwaway app folder: a password setup keeps its askpass beside it.
-    let app = crate::testing::test_app::TestApp::new();
-    let (key, _) = ssh::ensure_key(&app.dirs()).await.unwrap();
-
-    let r = test(&profile("root@pam", &bridge), &password, &key).await;
-    println!("password: ok={} {}", r.ok, r.message);
-    assert!(r.ok);
-    let r = test(&profile("root@pam", &bridge), "wrong", &key).await;
-    println!("bad password: {}", r.message);
-    assert_eq!(r.authenticated, Some(false));
-    let r = test(&profile("root@pam", "vmbr-nope"), &password, &key).await;
-    println!("bad bridge: {}", r.message);
-    assert!(!r.ok && r.message.contains("vmbr-nope"));
-
-    // CYBERCTF_TEST_SSH_KEY: the old name, which the workspace's test rig still sets (remove once it
-    // sets the new one; tests/README.md, "Knobs").
-    let ssh_key = var("CYBERCTF_TEST_PVE_SSH_KEY").or_else(|| var("CYBERCTF_TEST_SSH_KEY"));
-    if let (Some(secret), Some(key)) = (var("CYBERCTF_TEST_PVE_TOKEN_SECRET"), ssh_key) {
-        let key = std::path::PathBuf::from(key);
-        let token = var("CYBERCTF_TEST_PVE_TOKEN_ID").unwrap_or_else(|| "root@pam!cyberctf-live".into());
-        let r = test(&profile(&token, &bridge), &secret, &key).await;
-        println!("token: ok={} {}", r.ok, r.message);
-        assert!(r.ok);
-        let r = test(&profile(&token, &bridge), "00000000-0000-0000-0000-000000000000", &key).await;
-        println!("bad token: {}", r.message);
-        assert_eq!(r.authenticated, Some(false));
-    }
-}
-
 #[test]
 fn the_configured_node_or_the_first() {
     let nodes: Vec<api::Node> = listed(json!([{"node": "pve"}, {"node": "pve2"}]));

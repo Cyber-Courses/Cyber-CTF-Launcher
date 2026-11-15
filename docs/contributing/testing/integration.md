@@ -96,17 +96,26 @@ signed out (a failure under `STRICT=1`).
 
 ## Server tier
 
-A Proxmox or an ESXi host you provide, named by its knobs: the lab
-runs on it through the runner, as the launcher drives it, then nothing of it is left. Without
-every setting its test reads, its scenario is skipped, naming those not set (Proxmox:
-`CYBERCTF_TEST_PVE_ENDPOINT`, `_TOKEN`, `_NODE`, `_BRIDGE` and `CYBERCTF_TEST_PVE_RUNNER_HOME`, plus
-`_JUMP` when the lab bridge is internal to the node; ESXi: `CYBERCTF_TEST_ESXI_HOST` and
-`_PASSWORD`, plus `_DATASTORE` and `_NETWORK`).
+A Proxmox or an ESXi host you provide, named by its knobs: `pnpm test:servers` (or
+`tests/integration/run.sh --tiers server`) runs the host's connection test, then a lab on it
+through the runner, as the launcher drives it, after which nothing of it is left. Without every
+setting a scenario needs, it is skipped, naming those not set:
 
-| Scenario             | Proves                                                                   |
-| -------------------- | ------------------------------------------------------------------------ |
-| `server-lab-proxmox` | a VM lab on Proxmox: up, status, checks over SSH through the node, down  |
-| `server-lab-esxi`    | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down |
+- `server-lab-proxmox-connection`: `CYBERCTF_TEST_PVE_HOST` and `_PASSWORD`; with `_TOKEN_ID`,
+  `_TOKEN_SECRET` and `_SSH_KEY` it also checks the API token (`_FINGERPRINT` pins a self-signed
+  certificate; `_STORAGE`, `_BRIDGE` and `_NODE` default to `local-lvm`, `vmbr1` and `pve`).
+- `server-lab-proxmox`: `CYBERCTF_TEST_PVE_ENDPOINT`, `_TOKEN_ID`, `_TOKEN_SECRET`, `_NODE`,
+  `_BRIDGE` and `CYBERCTF_TEST_PVE_RUNNER_HOME`, plus `_JUMP` when the lab bridge is internal to the
+  node.
+- `server-lab-esxi`: `CYBERCTF_TEST_ESXI_HOST` and `_PASSWORD`, plus `_DATASTORE` and `_NETWORK`.
+
+`--results <file>` records each scenario with its verdict and log, as every tier does.
+
+| Scenario                        | Proves                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `server-lab-proxmox-connection` | the Servers page's Test on Proxmox: root's password, a wrong one, a missing bridge; the API token and a wrong secret |
+| `server-lab-proxmox`            | a VM lab on Proxmox: up, status, checks over SSH through the node, down                                              |
+| `server-lab-esxi`               | a VM lab on ESXi through Vagrant: up, status, checks, provisioning, down                                             |
 
 ## Bare-machine tier (a fresh machine, or check-only anywhere)
 
