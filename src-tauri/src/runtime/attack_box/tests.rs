@@ -234,7 +234,8 @@ fn the_vm_set_up_checks_kalis_archive_keys_before_trusting_them() {
     for key in ["827C8569F2518CC677FECA1AED65462EC8D5E4C5", "44C6513A8E4FB3D30875F758ED444FF07D8D0BF6"] {
         assert!(KALI.contains(key), "{key}: {KALI}");
     }
-    let (check, trust) = (KALI.find("Nothing was installed").unwrap(), KALI.find("install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg").unwrap());
+    let (check, trust) =
+        (KALI.find("Nothing was installed").unwrap(), KALI.find("install -m 0644 \"$d/key\" /usr/share/keyrings/kali-archive-keyring.gpg").unwrap());
     assert!(check < trust, "checked before it is installed: {KALI}");
     assert!(crate::platform::sh_parses(&setup_script_with(true, true)), "the parts make one script");
 }

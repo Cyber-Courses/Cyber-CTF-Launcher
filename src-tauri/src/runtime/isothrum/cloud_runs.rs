@@ -223,7 +223,10 @@ impl CloudRun {
     /// start. `env` is the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
-        self.act(super::remote::Act::Up, &place.options(env), log).await?;
+        // The key the lab's instances let in: a plain value the record keeps, so every later
+        // operation replays it.
+        let opts = self.key_values().await?.into_iter().fold(place.options(env), |o, (k, v)| o.with_env(k, v));
+        self.act(super::remote::Act::Up, &opts, log).await?;
         super::described::log_message(&self.dir, self.target(), log);
         Ok(())
     }

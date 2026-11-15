@@ -42,7 +42,7 @@
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::server_lab::a_vm_lab_runs_on_esxi_through_the_runner
 //! ```
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::support::{check, scenario};
 use crate::runtime::Runtime;
@@ -64,6 +64,16 @@ fn copy_lab(knob: &str, name: &str) -> PathBuf {
     assert!(std::process::Command::new("cp").arg("-R").arg(&src).arg(&dir).status().unwrap().success());
     let _ = std::fs::remove_dir_all(dir.join(".isoloom"));
     dir
+}
+
+/// Confirms the SSH host keys `address` offers, as the player does in Servers on first use, in the
+/// node key file beside each of `identities` (`ssh::node_known_hosts`).
+async fn trust_on_first_use(address: &str, identities: &[&Path]) {
+    use crate::runtime::ssh::{known_hosts, node_known_hosts};
+    let files: Vec<PathBuf> = identities.iter().map(|k| node_known_hosts(k)).collect();
+    let offered = known_hosts::offered(address, 22, &files[0]).await.unwrap();
+    let shown: Vec<String> = offered.keys.into_iter().map(|k| k.fingerprint).collect();
+    known_hosts::confirm(address, 22, &shown, &files).await.unwrap();
 }
 
 #[tokio::test]
@@ -100,6 +110,11 @@ async fn a_proxmox_host_passes_the_connection_test() {
     // The launcher's key in the scenario's app folder: a password setup keeps its askpass beside it.
     let app = crate::testing::test_app::TestApp::scenario();
     let (key, _) = crate::runtime::ssh::ensure_key(&app.dirs()).await.unwrap();
+    let ssh_key = opt("CYBERCTF_TEST_PVE_SSH_KEY").map(PathBuf::from);
+    // The node's SSH host keys, confirmed as the player confirms them on first use, beside each
+    // key the test signs in with.
+    let keys: Vec<&Path> = std::iter::once(key.as_path()).chain(ssh_key.as_deref()).collect();
+    trust_on_first_use(&address, &keys).await;
     let mut f = Vec::new();
 
     let r = test(&profile("root@pam", &bridge), &password, &key).await;
@@ -109,10 +124,7 @@ async fn a_proxmox_host_passes_the_connection_test() {
     let r = test(&profile("root@pam", "vmbr-nope"), &password, &key).await;
     check(!r.ok && r.message.contains("vmbr-nope"), format!("a bridge that isn't there is named ({})", r.message), &mut f);
 
-    if let (Some(token), Some(secret), Some(ssh_key)) =
-        (opt("CYBERCTF_TEST_PVE_TOKEN_ID"), opt("CYBERCTF_TEST_PVE_TOKEN_SECRET"), opt("CYBERCTF_TEST_PVE_SSH_KEY"))
-    {
-        let ssh_key = PathBuf::from(ssh_key);
+    if let (Some(token), Some(secret), Some(ssh_key)) = (opt("CYBERCTF_TEST_PVE_TOKEN_ID"), opt("CYBERCTF_TEST_PVE_TOKEN_SECRET"), ssh_key) {
         let r = test(&profile(&token, &bridge), &secret, &ssh_key).await;
         check(r.ok, format!("the API token passes ({})", r.message), &mut f);
         let r = test(&profile(&token, &bridge), "00000000-0000-0000-0000-000000000000", &ssh_key).await;
@@ -139,16 +151,18 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
         ("proxmox_ssh_username", "root".into()),
         ("uplink_bridge", var("CYBERCTF_TEST_PVE_BRIDGE")),
     ];
+    let home = PathBuf::from(var("CYBERCTF_TEST_PVE_RUNNER_HOME"));
+    let run = ServerRun::new(&home, &dir, "pve-runner-lab", Runtime::Vm).unwrap();
+    // The key the lab's VMs let in, as a launch gives it (`launch::server_place`).
+    let keys = run.key_values().await.unwrap();
     let place = ServerPlace {
         label: "pve-lab".into(),
         name: "Proxmox test server".into(),
-        vars: vars.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(),
+        vars: vars.into_iter().map(|(k, v)| (k.to_owned(), v)).chain(keys).collect(),
         // The profile names no node: the launcher passes the server's first.
         node: Some(var("CYBERCTF_TEST_PVE_NODE")),
         jump: std::env::var("CYBERCTF_TEST_PVE_JUMP").ok().filter(|j| !j.is_empty()),
     };
-    let home = PathBuf::from(var("CYBERCTF_TEST_PVE_RUNNER_HOME"));
-    let run = ServerRun::new(&home, &dir, "pve-runner-lab", Runtime::Vm).unwrap();
     let mut f = Vec::new();
     scenario(
         &mut f,
