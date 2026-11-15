@@ -128,7 +128,7 @@ pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
 }
 
 /// Refuses to replace lab `id`'s folder (`dir`), with a new version or a re-import, while
-/// something of it is up ([`still_up`]): the run's manifest and the files it bind-mounts or
+/// something of it is up ([`still_up`]): the run's generated files and the files it bind-mounts or
 /// provisions from are in that folder. A parked copy is no reason: it is taken down before the
 /// swap (`clear_parked`).
 pub(crate) fn refuse_replace(dirs: &AppDirs, dir: &Path, id: &str) -> Result<()> {

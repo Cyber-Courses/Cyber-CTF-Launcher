@@ -27,7 +27,7 @@ A lab runs as true containers or true VMs, never as containers inside a helper V
 an earlier version ran inside one helper VM (Isoloom's former `docker-vm`, here, on ESXi or on
 Proxmox) is still read, stopped and removed through the runner as it was started; nothing else
 changes it, and its next start is in its true form (on Docker when Docker answers here, else as
-one VM per machine). When that run's manifest is a version this build can't read, the lab's files
+one VM per machine). When that run is one this build can't read, the lab's files
 are generated in the true form instead, and the log says so; when the runner no longer opens that
 form at all, its helper-VM mark is cleared and the lab says which VM to remove by hand (the
 Machine page lists it).

@@ -209,8 +209,7 @@ async fn start_here(
     }
 }
 
-/// The runner's start of a container lab (runner home `home`): its files generated (the run
-/// manifest with them), then up, or resumed as it was when it is parked (the runner's own rule).
+/// The runner's start of a container lab (runner home `home`): its files generated, then up, or resumed as it was when it is parked (the runner's own rule).
 /// Takes no app handle, so the integration tests run exactly this.
 pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, inputs: Inputs<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     recheck_instance(dir, id, log).await?;
@@ -230,8 +229,8 @@ pub(crate) struct VmStart<'a> {
     pub(crate) inputs: Inputs<'a>,
 }
 
-/// The runner's start of a VM lab (runner home `home`) on `provider`: its files generated (the
-/// run manifest with them), the memory warning, QEMU's emulator check and UTM open and answering
+/// The runner's start of a VM lab (runner home `home`) on `provider`: its files generated, the memory
+/// warning, QEMU's emulator check and UTM open and answering
 /// ([`check_utm`]: Vagrant's UTM plugin drives it with Apple events), then up (a parked run
 /// is resumed as it was). The learner's attack box is added to the lab afterwards, from the lab
 /// page or with the lab (`attack_box`), not by the launch. Takes no app handle, so the

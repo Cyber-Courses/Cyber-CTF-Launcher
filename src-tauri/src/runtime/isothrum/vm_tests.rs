@@ -1,5 +1,5 @@
 //! A VM lab through the runner, against a scripted Vagrant (the runner's fake processes): no real
-//! hypervisor runs. The lab's run manifest is the one Isoloom generates for the `vagrant` target.
+//! hypervisor runs. The lab's files are the ones Isoloom generates for the `vagrant` target.
 
 use std::collections::BTreeMap;
 
@@ -350,7 +350,7 @@ async fn a_vm_lab_runs_on_an_esxi_host_through_the_runner() {
     for (name, value) in [("ESXI_HOSTNAME", "172.16.1.20"), ("ESXI_DATASTORE", "datastore1"), ("ESXI_VIRTUAL_NETWORK", "VM Network"), ("ESXI_PASSWORD", "pw")] {
         assert_eq!(up.env(name), Some(value), "{name}");
     }
-    assert_eq!(up.env("CYBERCTF_ESXI_PASSWORD"), None, "only what the manifest's slots take");
+    assert_eq!(up.env("CYBERCTF_ESXI_PASSWORD"), None, "only what the lab's slots take");
     let s = run.status().await.unwrap();
     assert!(s.running, "{:?}", s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
     assert_eq!(s.url.as_deref(), Some("http://172.16.1.53:80/"), "ESXi forwards nothing: the VM's own address");

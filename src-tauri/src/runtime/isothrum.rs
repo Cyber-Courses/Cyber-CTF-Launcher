@@ -451,7 +451,7 @@ impl LabRun {
     /// Removes everything the run created: containers, networks, volumes, its pinned ports; or
     /// its VMs and Vagrant's record of them.
     pub(crate) async fn down(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        // A run whose manifest was never written (a start that failed before generation) created
+        // A run whose files were never written (a start that failed before generation) created
         // nothing, so there is nothing to remove: a clean no-op, as the launcher's own Docker path
         // tolerates "no resource to remove". Without this, tearing down a failed launch errors on
         // the missing project.
@@ -463,12 +463,12 @@ impl LabRun {
     }
 
     /// Parks the lab, keeping what it created: Docker only stops containers, so both of the
-    /// launcher's park modes are the manifest's `shutdown` there; VMs are suspended (`Pause`) or
+    /// launcher's park modes are the runner's `Shutdown` there; VMs are suspended (`Pause`) or
     /// powered off (`Shutdown`).
     pub(crate) async fn park(&self, mode: Park, log: &mut impl FnMut(String)) -> Result<()> {
         let mode = match (self.kind, mode) {
             // VMs (a VM lab, or the VM a container lab runs in) suspend on Pause; Docker only
-            // stops its containers, so both of its park modes are the manifest's `shutdown`.
+            // stops its containers, so both of its park modes are `Shutdown`.
             (Kind::Vm | Kind::DockerVm, Park::Pause) => isothrum_runner::Park::Pause,
             _ => isothrum_runner::Park::Shutdown,
         };
@@ -588,12 +588,12 @@ fn host_config(home: &Path) -> RunnerConfig {
     config
 }
 
-/// What a start hands the lab: the launch's values for the manifest's secret and input slots (a
+/// What a start hands the lab: the launch's values for the lab's secret and input slots (a
 /// value no slot takes is never delivered), and whether its services keep their own host ports
 /// (`CTFd` on 8000) rather than free ones picked at random.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Inputs<'a> {
-    /// The launch's values, by the name of the manifest slot each goes to.
+    /// The launch's values, by the name of the lab's slot each goes to.
     pub(crate) values: &'a [(String, String)],
     /// Whether its services keep their own host ports rather than free ones picked at random.
     pub(crate) default_ports: bool,
