@@ -253,3 +253,12 @@ export async function answerConfirm(page: Page, accept: boolean): Promise<string
   await page.locator("#confirm-title", { hasText: title }).waitFor({ state: "detached" });
   return asked;
 }
+
+/** In "Where should the lab run?" on a cloud account: Start waits for the player to agree to the
+ *  lab's own Terraform running with that account's credentials, then takes it. */
+export async function agreeToCloudTerraform(where: Locator) {
+  const start = where.getByRole("button", { name: "Start", exact: true });
+  await expect(start).toBeDisabled();
+  await where.getByRole("checkbox", { name: /^I agree that this lab runs its own Terraform code/ }).check();
+  await expect(start).toBeEnabled();
+}

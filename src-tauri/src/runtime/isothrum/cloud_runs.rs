@@ -224,8 +224,7 @@ impl CloudRun {
     pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         self.signed_in(place).await?;
         self.act(super::remote::Act::Up, &place.options(env), log).await?;
-        let message = self.target().and_then(|t| super::described::message(&self.dir, t));
-        message.iter().flat_map(|m| m.lines()).for_each(|l| log(l.to_owned()));
+        super::described::log_message(&self.dir, self.target(), log);
         Ok(())
     }
 

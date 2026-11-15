@@ -71,6 +71,8 @@ fn versions_compare_number_by_number() {
 
 #[test]
 fn a_plugin_listing_that_failed_says_so_rather_than_plugin_missing() {
+    // About the plugin listing alone: this machine's /dev/kvm (absent off Linux) isn't asked.
+    assume_devices_ready();
     let detection = |plugins_unknown| Detection {
         unresponsive: false,
         hypervisor: Some(true),

@@ -1,20 +1,29 @@
 {
-  "rules": {},
+  "rules": {
+    "dup/clone": {
+      "rs:integration_tests": 1,
+      "rs:labs": 1,
+      "rs:machine": 1,
+      "rs:runtime": 1,
+      "rs:screen": 1,
+      "ts:components": 1
+    }
+  },
   "clippy": {
     "darwin": {},
     "linux": {},
     "win32": {}
   },
   "exceptions": {
+    "src-tauri/src/account/auth/writes.rs": {
+      "#[allow(clippy::unused_self, reason = \"the guard is the proof the write lock is held: its writes take it\")]": 1
+    },
     "src-tauri/src/app.rs": {
       "#[allow(clippy::needless_pass_by_value, reason = \"taking the token ends the start's claim to be the only thread\")]": 1,
       "#[allow(unsafe_code, reason = \"the start's claim to be the only thread, which only `run` can make\")]": 1
     },
-    "src-tauri/src/app/deploy_worker/process.rs": {
-      "#![allow(clippy::disallowed_methods, reason = \"the deploy worker's own processes: started detached, found and ended by pid\")]": 1
-    },
-    "src-tauri/src/app/deploy_worker/worker.rs": {
-      "#[allow(clippy::disallowed_methods, reason = \"the app starts a second copy of itself to show the deploy's window\")]": 1
+    "src-tauri/src/cli.rs": {
+      "#[allow(unsafe_code, reason = \"the start's claim to be the only thread, as the app's own start makes it\")]": 1
     },
     "src-tauri/src/commands.rs": {
       "#![allow(clippy::needless_pass_by_value, reason = \"Tauri hands a command its arguments by value\")]": 1,
@@ -27,19 +36,20 @@
       "#[allow(clippy::too_many_arguments, reason = \"the webview sends each of the shell's fields as an argument\")]": 1
     },
     "src-tauri/src/lib.rs": {
-      "#![cfg_attr(test, allow(clippy::disallowed_methods, reason = \"tests start their stand-in tools directly\"))]": 1
+      "#![cfg_attr(test, allow(clippy::disallowed_methods, reason = \"tests start their stand-in tools directly\"))]": 1,
+      "#[allow(clippy::must_use_candidate, reason = \"ExitCode is must_use itself: clippy 1.100 refuses a second one, which 1.99 still asks for\")]": 1
     },
     "src-tauri/src/machine/system/wsl.rs": {
       "#![cfg_attr(not(windows), allow(dead_code, reason = \"off Windows only the UI's types and the tests use most of this\"))]": 1,
       "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the probes on Windows\"))]": 1,
       "#[cfg_attr(not(windows), allow(clippy::unused_async, reason = \"it awaits the restart on Windows\"))]": 1
     },
+    "src-tauri/src/machine/tools/install.rs": {
+      "#[allow(clippy::too_many_lines, reason = \"one row per tool: the table itself\")]": 1
+    },
     "src-tauri/src/machine/tools/steps.rs": {
       "#![allow(clippy::disallowed_methods, reason = \"the install and removal steps' runner: each step streams to the setup log through its own process\")]": 1,
       "#[cfg_attr(not(target_os = \"linux\"), allow(dead_code, reason = \"only a Linux root step keeps a private folder\"))]": 1
-    },
-    "src-tauri/src/platform/console.rs": {
-      "#[allow(clippy::disallowed_methods, reason = \"the app's own console helper, started to interrupt a tool's process group\")]": 1
     },
     "src-tauri/src/platform/env_path.rs": {
       "#[allow(unsafe_code, reason = \"this test runs alone, so it is the only thread\")]": 1
@@ -59,8 +69,27 @@
     "src-tauri/src/platform/sys.rs": {
       "#![expect(unsafe_code, reason = \"the audited home of the launcher's calls into libc and Win32\")]": 1
     },
+    "src-tauri/src/runtime.rs": {
+      "#[cfg_attr(feature = \"cloud-services\", allow(dead_code, reason = \"said only without the feature\"))]": 1
+    },
+    "src-tauri/src/runtime/attack_box/tests.rs": {
+      "#[allow(clippy::disallowed_methods, reason = \"the test runs the script's own shell on stand-ins\")]": 1
+    },
+    "src-tauri/src/runtime/deploy_log.rs": {
+      "#[cfg_attr(not(test), allow(dead_code, reason = \"the webview's DeployLog.ts carries it, written by ts_bindings\"))]": 3
+    },
+    "src-tauri/src/runtime/isothrum/cloud_runs.rs": {
+      "#[expect(clippy::unused_self, reason = \"a run's checks are asked of the run, as on the other hosts; this one has none to run yet\")]": 1
+    },
+    "src-tauri/src/runtime/isothrum/server.rs": {
+      "#[expect(clippy::unused_self, reason = \"a run's checks are asked of the run, as on the other hosts; this one has none to run yet\")]": 1
+    },
+    "src-tauri/src/runtime/server_selftest/proxmox.rs": {
+      "#[expect(clippy::unused_async_trait_impl, reason = \"the trait's checks are async; a Proxmox run's has nothing to wait for\")]": 1
+    },
     "src-tauri/src/runtime/terminal_launch.rs": {
-      "#[allow(clippy::disallowed_methods, reason = \"a terminal window opens as the player's own app, left running past the call\")]": 3
+      "#[allow(clippy::disallowed_methods, reason = \"a terminal window opens as the player's own app, left running past the call\")]": 2,
+      "#[allow(clippy::disallowed_methods, reason = \"osascript asks Terminal for a window and returns: no tool adapter runs it\")]": 1
     },
     "src-tauri/src/screen.rs": {
       "#[allow(clippy::disallowed_methods, reason = \"the remote-desktop client opens as the player's own app, left running past the call\")]": 1
@@ -102,7 +131,7 @@
       "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1
     },
     "src/features/servers/host-setup/use-cloud-accounts.ts": {
-      "eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its \"checking\" state at once": 3
+      "eslint-disable-next-line react-hooks/set-state-in-effect -- a read starting shows its \"checking\" state at once": 1
     },
     "src/features/servers/provider-glyph.tsx": {
       "eslint-disable-next-line @next/next/no-img-element -- static export, plain asset": 1

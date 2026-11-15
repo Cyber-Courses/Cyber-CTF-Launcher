@@ -37,7 +37,7 @@ const STEP_MAX = 72;
 
 /** The step an operation's log is at: the last Vagrant action line (`==> dc01: Booting VM...`) as
  *  `dc01: Booting VM...`, else the last non-empty line, kept short; null for none. */
-export function lastStep(lines: readonly string[]): string | null {
+function lastStep(lines: readonly string[]): string | null {
   // From the end: the last action line wins, else the last other line; a long log is read only
   // back to its last action.
   let last: string | null = null;
@@ -118,9 +118,6 @@ export function useLabsBusy(): boolean {
   return useActiveOperations().size > 0;
 }
 
-/** The labs deploying in the backend as last told. */
-export const deployingLabsNow = () => deployingOf(activeNow());
-
 /** The sidebar's label for an operation, e.g. "Pausing…": the word the operation has everywhere
  *  else (header, list, deployment), running; the machine when it targets one. */
 export function operationLabel(o: ActiveOperation): string {
@@ -133,6 +130,3 @@ export function operationLabel(o: ActiveOperation): string {
 export function operationSeenAt(labId: string, op: string): number | undefined {
   return inFlight(runEventsNow()).find((r) => r.labId === labId && r.op === op)?.startedAt;
 }
-
-/** The operations in flight as last told, by lab. */
-export const activeOperationsNow = () => activeNow();

@@ -1,6 +1,6 @@
 //! A tool [`super::spawn_group`] started: its output and its exit, whatever the OS. On unix it is
 //! tokio's child, in a process group of its own. On Windows it is a process the kernel created
-//! inside its job object ([`sys::create_in_job`]), which std can't do: so a tool is never outside
+//! inside its job object (`sys::create_in_job`, Windows only), which std can't do: so a tool is never outside
 //! its job, not even suspended for a moment before it is put there.
 
 use std::process::ExitStatus;

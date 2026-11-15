@@ -25,8 +25,8 @@ function ovftoolHypervisor(report: Pick<SystemReport, "os" | "arch"> | null): { 
   // VMware's desktop hypervisor as the core names it on this OS: Fusion on a Mac, Workstation elsewhere.
   const name = (os: "macos" | "windows" | "linux") => PROVIDER_NAMES_ON[os].vmware_desktop ?? PROVIDER_NAMES.vmware_desktop;
   if (report.os === "macos") return { name: name(report.os), url: FUSION_URL };
-  const x64 = report.arch === "x86_64";
-  if (x64 && (report.os === "windows" || report.os === "linux")) return { name: name(report.os), url: WORKSTATION_URL };
+  // Windows or Linux, the other two: Workstation is x64 only.
+  if (report.arch === "x86_64") return { name: name(report.os), url: WORKSTATION_URL };
   return null;
 }
 

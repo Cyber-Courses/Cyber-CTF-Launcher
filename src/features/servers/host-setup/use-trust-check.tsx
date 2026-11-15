@@ -22,7 +22,7 @@ export type Unconfirmed = {
 };
 
 /** What of `identity` the payload `v` hasn't confirmed; null when it is all confirmed. */
-export function unconfirmed(v: ServerHostInput, identity: ServerIdentity): Unconfirmed | null {
+function unconfirmed(v: ServerHostInput, identity: ServerIdentity): Unconfirmed | null {
   const pinned = v.tlsFingerprint ?? null;
   const tls = identity.tls !== null && normal(identity.tls) !== normal(pinned) ? { presented: identity.tls, pinned: normal(pinned) ? pinned : null } : null;
   const ssh = identity.ssh && identity.ssh.state !== "confirmed" ? identity.ssh : null;

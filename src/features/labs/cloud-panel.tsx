@@ -64,7 +64,7 @@ export function CloudLaunchNote({ read, autoStopHours }: { read: CloudPreviewRea
 
 /** The credentials a cloud lab's own Terraform runs with on this computer, as the consent names
  *  them: the account's stored key, or its cloud CLI's sign-in. */
-export function cloudCredentials(t: T, account: ServerHost): string {
+function cloudCredentials(t: T, account: ServerHost): string {
   const name = account.name;
   switch (account.provider) {
     case "aws":

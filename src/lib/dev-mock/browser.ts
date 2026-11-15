@@ -13,7 +13,7 @@ import { screenHandlers, terminalHandlers } from "@/lib/dev-mock/terminal";
 import type { Args } from "@/lib/dev-mock/types";
 import type { DeviceCode, ManagedSettings } from "@/lib/tauri";
 import type { CommandError } from "@/lib/tauri/generated";
-import { isOperation, replay, startOperation, watchLabs } from "@/lib/dev-mock/run-service";
+import { isOperation, replay, seed, startOperation, watchLabs } from "@/lib/dev-mock/run-service";
 import { PROXMOX_PLACEMENT } from "@/lib/dev-mock/proxmox-sample";
 
 /** Every policy switch on (`managed`): an administrator manages this computer. */
@@ -158,12 +158,20 @@ export async function browserAnswer(cmd: string, args: Args, ctx: Context): Prom
     const handler = HANDLERS.get(cmd);
     return handler ? handler(a, ctx) : answer(cmd, a);
   };
-  // The core's run service: an operation answers its id, its log and end are run events.
-  if (isOperation(cmd)) return startOperation(cmd, args, handle);
-  if (cmd === "labs_watch") return watchLabs(args, (c, a) => HANDLERS.get(c)?.(a, ctx) ?? answer(c, a));
-  if (cmd === "run_events") {
+  // The core's run service: an operation answers its id, its log and end are run events, after
+  // the core's start (what it was running) whichever of them comes first.
+  const scanned = async () => {
     const scan = await (HANDLERS.get("running_labs")?.(undefined, ctx) ?? answer("running_labs", undefined));
-    return replay((args?.after as number | null) ?? null, inFlight(ctx), Array.isArray(scan) ? (scan as string[]) : []);
+    return Array.isArray(scan) ? (scan as string[]) : [];
+  };
+  if (isOperation(cmd)) {
+    seed(inFlight(ctx), await scanned());
+    return startOperation(cmd, args, handle, scanned);
   }
+  if (cmd === "labs_watch") {
+    seed(inFlight(ctx), await scanned());
+    return watchLabs(args, (c, a) => HANDLERS.get(c)?.(a, ctx) ?? answer(c, a));
+  }
+  if (cmd === "run_events") return replay((args?.after as number | null) ?? null, inFlight(ctx), await scanned());
   return await handle(args);
 }

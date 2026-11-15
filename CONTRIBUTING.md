@@ -11,8 +11,9 @@ Found a security problem? Don't open an issue: see [SECURITY.md](SECURITY.md).
 
 You need:
 
-- Node 22.12 or a later 22, 24, 25, or 26 and later (`engines` in `package.json`:
-  `^22.12.0 || ^24.0.0 || ^25.0.0 || >=26.0.0`); `.nvmrc` says 22, the one CI and the release
+- Node 22.12 or a later 22, 24, or 26 and later (`engines` in `package.json`:
+  `^22.12.0 || ^24.0.0 || >=26.0.0`, Vitest's own range: Node 25 is refused, `engineStrict` in
+  `pnpm-workspace.yaml` holding it); `.nvmrc` says 22, the one CI and the release
   check use (`pnpm release-check` stops on another major), and the major `@types/node` stays on
   (Dependabot ignores later ones in `.github/dependabot.yml`: move both with `.nvmrc`); and pnpm
   (the version in `packageManager`; `corepack enable` installs it);

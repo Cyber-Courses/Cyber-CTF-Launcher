@@ -27,16 +27,20 @@ export const isOperation = (cmd: string) => cmd in OPERATIONS;
 
 let cursor = 0;
 let kept: Cursored[] = [];
+/** Whether the core's start was told (`seed`): what it was running, what its first scan saw up. */
+let seeded = false;
 
 /** Forgets every event: a new core, which the webview's store follows from scratch. */
 export function resetRunService() {
   cursor = 0;
   kept = [];
+  seeded = false;
   forgetRunEvents();
 }
 registerReset(() => {
   cursor = 0;
   kept = [];
+  seeded = false;
 });
 
 /** Emits `event` as the core does: kept for a window that (re)loads, and taken in at once. */
@@ -54,13 +58,15 @@ const labOf = (cmd: string, args: Args): string => {
 };
 
 /** Runs operation command `cmd` with `handler` (its mock), as the core's run service does (see the
- *  module): its id, or the handler's refusal thrown. */
-export function startOperation(cmd: string, args: Args, handler: (args: Args) => unknown): OperationId {
+ *  module): its id, or the handler's refusal thrown. Once it ended, what `scan` (the mock's
+ *  `running_labs`) sees up is told, as the core's reconcile tells the scan an operation changed. */
+export function startOperation(cmd: string, args: Args, handler: (args: Args) => unknown, scan?: () => Promise<string[]>): OperationId {
   const operation = `op-mock-${String(cursor + 1)}`;
   const labId = labOf(cmd, args);
   const op = OPERATIONS[cmd](args);
   const ended = (error: CommandError | null) => {
     emit({ kind: "ended", operation, labId, op, error });
+    scan?.().then(tellRunning, () => undefined);
   };
   // Lines streamed before the operation is told as started (the handler's first, synchronous
   // ones) wait for it.
@@ -96,23 +102,29 @@ function asError(e: unknown): CommandError {
 }
 
 /**
- * The events after `after` (all for none), as `run_events` answers: the ones kept, after the
- * operations `inFlight` says were already running when the core started (the mock's sample of
- * deploys under way), each told as started, and what its first scan saw up (`scan`).
+ * Tells, once, what the core was doing when it started, as its first events: what its first scan
+ * saw up (`scan`), then each operation `inFlight` says was already running (the mock's sample of
+ * deploys under way), told as started, at its step. Whichever reaches the core first seeds it: a
+ * window's replay, its watch of the labs, or an operation. Seeded by the replay alone, the sample's
+ * deploys were lost whenever the watch told the scan first: the window's cursor was past them.
+ */
+export function seed(inFlight: readonly ActiveOperation[], scan: readonly string[] = []) {
+  if (seeded) return;
+  seeded = true;
+  emit({ kind: "running", labIds: [...scan] });
+  for (const o of inFlight) {
+    const operation = `op-mock-${String(cursor + 1)}`;
+    emit({ kind: "started", operation, labId: o.labId, op: o.op, machine: o.machine, runtime: o.runtime ?? null, deploying: o.deploying, at: Date.now() });
+    if (o.step) emit({ kind: "log", operation, labId: o.labId, line: o.step });
+  }
+}
+
+/**
+ * The events after `after` (all for none), as `run_events` answers: the ones kept, the core's
+ * start first (`seed`, with `inFlight` and `scan`, when nothing seeded it yet).
  */
 export function replay(after: number | null, inFlight: readonly ActiveOperation[], scan: readonly string[] = []): Cursored[] {
-  if (cursor === 0) {
-    kept.push({ cursor: ++cursor, event: { kind: "running", labIds: [...scan] } });
-    for (const o of inFlight) {
-      const operation = `op-mock-${String(cursor + 1)}`;
-      const frame: Cursored = {
-        cursor: ++cursor,
-        event: { kind: "started", operation, labId: o.labId, op: o.op, machine: o.machine, runtime: o.runtime ?? null, deploying: o.deploying, at: Date.now() },
-      };
-      kept.push(frame);
-      if (o.step) kept.push({ cursor: ++cursor, event: { kind: "log", operation, labId: o.labId, line: o.step } });
-    }
-  }
+  seed(inFlight, scan);
   return kept.filter((f) => after === null || f.cursor > after);
 }
 

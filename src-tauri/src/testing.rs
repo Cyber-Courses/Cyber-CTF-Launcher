@@ -59,22 +59,40 @@ impl AsRef<Path> for TempDir {
 
 thread_local! {
     /// This thread's folders ([`thread_dir`]), by tag; removed when the thread ends.
-    static THREAD_DIRS: std::cell::RefCell<Vec<(&'static str, TempDir)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static THREAD_DIRS: std::cell::RefCell<Vec<(&'static str, ThreadDir)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// A folder of the calling thread's own for `tag`: the same one on every call from the thread,
+/// A thread's folder ([`thread_dir`]): a path no one else has, removed with what it holds when the
+/// thread ends, if it was made at all.
+#[derive(Debug)]
+struct ThreadDir(PathBuf);
+
+impl Drop for ThreadDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// A folder of the calling thread's own for `tag`: the same path on every call from the thread,
 /// removed when the thread ends. A unit test runs on a thread of its own, so the folder is the
 /// test's, for code that finds its folder itself rather than being given one (the dev session
 /// and secrets files a test build keeps away from the player's).
+///
+/// The folder isn't made: whoever writes in it makes it (as the player's own home folder is
+/// there before the app writes in it). A thread that never ends (a worker of the app's shared
+/// runtime, which a test's launch reads the session on) only reads, so it leaves nothing behind:
+/// a folder made at the first call stayed in the temp folder after every run.
 pub fn thread_dir(tag: &'static str) -> PathBuf {
+    /// Tells this process's folders apart (with its id, from another process's).
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     THREAD_DIRS.with(|dirs| {
         let mut dirs = dirs.borrow_mut();
         if let Some((_, dir)) = dirs.iter().find(|(t, _)| *t == tag) {
-            return dir.to_path_buf();
+            return dir.0.clone();
         }
-        let dir = temp_dir(tag);
-        let path = dir.to_path_buf();
-        dirs.push((tag, dir));
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("cyberctf-{tag}-{}-{n}", std::process::id()));
+        dirs.push((tag, ThreadDir(path.clone())));
         path
     })
 }
@@ -112,12 +130,30 @@ mod tests {
 
     #[test]
     fn a_threads_folder_is_the_same_on_each_call_and_goes_with_the_thread() {
-        let (path, again, other) = std::thread::spawn(|| (thread_dir("guard-thread"), thread_dir("guard-thread"), thread_dir("guard-other"))).join().unwrap();
+        let (path, again, other) = std::thread::spawn(|| {
+            let made = thread_dir("guard-thread");
+            std::fs::create_dir(&made).unwrap();
+            std::fs::write(made.join("f"), "x").unwrap();
+            (made, thread_dir("guard-thread"), thread_dir("guard-other"))
+        })
+        .join()
+        .unwrap();
         assert_eq!(path, again, "one folder a thread");
         assert_ne!(path, other, "one a tag");
         assert!(!path.exists() && !other.exists(), "removed when the thread ended");
         let here = thread_dir("guard-thread");
         assert_ne!(here, path, "each thread its own");
-        assert!(here.is_dir());
+        assert!(here.starts_with(std::env::temp_dir()));
+    }
+
+    #[test]
+    fn a_threads_folder_is_made_by_its_first_writer_never_by_asking_for_it() {
+        // Regression: the folder was made at the first call, so a thread that never ends (a
+        // worker of the app's runtime, reading the session for a test's launch) left a
+        // `cyberctf-test-session-*` folder in the temp folder after every run.
+        let path = thread_dir("guard-unmade");
+        assert!(!path.exists(), "nothing made for a reader: {}", path.display());
+        assert_eq!(thread_dir("guard-unmade"), path);
+        assert!(!path.exists());
     }
 }

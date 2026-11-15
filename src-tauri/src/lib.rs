@@ -1,5 +1,5 @@
 //! The Cyber CTF launcher: a Tauri app that installs, runs and stops CTF labs on the player's
-//! machine, servers and cloud accounts. `run` starts it, as the app or as a deploy worker;
+//! machine, servers and cloud accounts. `run` starts it, as the app or as a home's runner service;
 //! `cli_main` is its command line, `cyberctf`, which runs without the app or a window system.
 
 // Tests start their stand-in tools as processes of their own (clippy.toml's disallowed-methods
@@ -39,8 +39,8 @@ pub(crate) type AppRuntime = tauri::test::MockRuntime;
 pub(crate) type AppHandle = tauri::AppHandle<AppRuntime>;
 /// A webview window, on the runtime the app runs on.
 pub(crate) type WebviewWindow = tauri::WebviewWindow<AppRuntime>;
-/// Starts the launcher: the app with its windows, or, when started as `deploy --job <file>`, a
-/// headless deploy worker for one lab.
+/// Starts the launcher: the app with its windows, or, when started as `serve --home <home>`, the
+/// headless runner service of a home (`run_service::host`).
 ///
 /// # Errors
 ///
@@ -63,7 +63,7 @@ pub fn run() -> tauri::Result<()> {
 /// machine setup, servers and account through the same code as the app, with no window system
 /// needed. Returns the process's exit code: 0 done, 1 failed, 2 a usage error, 3 something to put
 /// right first.
-#[must_use]
+#[allow(clippy::must_use_candidate, reason = "ExitCode is must_use itself: clippy 1.100 refuses a second one, which 1.99 still asks for")]
 pub fn cli_main() -> std::process::ExitCode {
     cli::main()
 }

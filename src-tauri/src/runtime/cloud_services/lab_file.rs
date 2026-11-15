@@ -135,15 +135,10 @@ impl LabFile {
 /// The names of the `{{ <scope>.NAME }}` placeholders in `text`, in order.
 pub(crate) fn placeholders(text: &str, scope: &str) -> Vec<String> {
     let mut found = Vec::new();
-    let mut rest = text;
-    while let Some(start) = rest.find("{{") {
-        let Some(len) = rest[start..].find("}}") else { break };
-        let inner = rest[start + 2..start + len].trim();
-        if let Some(name) = inner.strip_prefix(scope).and_then(|n| n.strip_prefix('.')) {
-            found.push(name.to_owned());
-        }
-        rest = &rest[start + len + 2..];
-    }
+    let _ = fill(text, scope, |name| {
+        found.push(name.to_owned());
+        Some(String::new())
+    });
     found
 }
 
@@ -152,7 +147,7 @@ pub(crate) fn placeholders(text: &str, scope: &str) -> Vec<String> {
 /// # Errors
 ///
 /// The first name `value` has none for (`Err(NAME)`).
-pub(crate) fn fill(text: &str, scope: &str, value: impl Fn(&str) -> Option<String>) -> std::result::Result<String, String> {
+pub(crate) fn fill(text: &str, scope: &str, mut value: impl FnMut(&str) -> Option<String>) -> std::result::Result<String, String> {
     let mut out = String::new();
     let mut rest = text;
     while let Some(start) = rest.find("{{") {

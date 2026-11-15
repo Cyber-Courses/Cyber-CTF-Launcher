@@ -209,7 +209,7 @@ fn tool_failed(step: &str, reason: &str) -> Error {
 /// (-1712)` from the same reads while UTM is busy. The same operation then goes through. The
 /// other -600, a UTM that really isn't reachable, the start's UTM check catches before.
 ///
-/// How `e` is said, if it is one of them (by its Apple event error number, [`AppleEvent`]).
+/// How `e` is said, if it is one of them (by its Apple event error number, [`crate::platform::tool_output::apple_events::AppleEvent`]).
 fn utm_transient(e: &Error) -> Option<&'static str> {
     use crate::platform::tool_output::apple_events::AppleEvent;
     match AppleEvent::of(&e.to_string())? {
