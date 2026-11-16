@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appExit, boxReport, fromRunEvents, logTail, startEnded, stuckLabReport } from "./diagnose.mjs";
+import { appExit, boxReport, fromRunEvents, isOperationId, logTail, operationEnd, startEnded, stuckLabReport } from "./diagnose.mjs";
 
 // What a spec says of a lab that never showed running (support/diagnose.mjs): the words a failed
 // check's reason carries, so the rig's one-line reason says which it was: a start still in
@@ -114,5 +114,27 @@ describe("boxReport (#321)", () => {
     expect(boxReport(ID, { box: null, frames: [], error: "attack_box_status: timed out after 10000ms" })).toBe(
       `${ID}: no operation of the lab's; (the app couldn't be asked everything: attack_box_status: timed out after 10000ms)`,
     );
+  });
+});
+
+describe("operationEnd", () => {
+  const op = "op-00000000000000a1";
+  const frame = (cursor: number, event: Record<string, unknown>) => ({ cursor, event });
+  const started = frame(1, { kind: "started", operation: op, labId: ID, op: "launch" });
+
+  it("tells an operation's id from another answer", () => {
+    expect(isOperationId(op)).toBe(true);
+    for (const answer of [null, true, "op-", "local-lab", ["op-00000000000000a1"], { running: true }]) expect(isOperationId(answer)).toBe(false);
+  });
+
+  it("is null while the operation hasn't ended, another one's end left out", () => {
+    expect(operationEnd(op, [started, frame(2, { kind: "ended", operation: "op-00000000000000b2", labId: ID, op: "stop", error: null })])).toBeNull();
+    expect(operationEnd(op, null)).toBeNull();
+  });
+
+  it("says it went through, or why it failed", () => {
+    expect(operationEnd(op, [started, frame(2, { kind: "ended", operation: op, labId: ID, op: "launch", error: null })])).toEqual({ ok: true });
+    const error = { code: "refused", message: "A container lab on Docker has no state to save: shut it down instead." };
+    expect(operationEnd(op, [started, frame(2, { kind: "ended", operation: op, labId: ID, op: "pause", error })])).toEqual({ err: error.message });
   });
 });
