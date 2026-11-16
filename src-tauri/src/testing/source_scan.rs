@@ -4,11 +4,13 @@
 //! nothing listens beyond the loopback. Elsewhere, over the same split: every Tauri command is
 //! called from a test and none that opens a window is synchronous (`commands.rs`), every literal
 //! argument a cmd.exe-wrapped tool gets passes its guard (`platform/exec/shim.rs`), only
-//! `runtime/lab/` uses Isoloom's spec and generator crates (`runtime/lab.rs`), and no code outside
-//! an allow-list that only shrinks starts a tool Isothrum runs (`source_scan/tools.rs`).
+//! `runtime/lab/` uses Isoloom's spec and generator crates (`runtime/lab.rs`), no code outside an
+//! allow-list that only shrinks starts a tool Isothrum runs (`source_scan/tools.rs`), and none
+//! matches Isothrum's errors outside `runtime/isothrum/errors.rs` (`source_scan/isothrum_errors.rs`).
 
 use std::path::{Path, PathBuf};
 
+mod isothrum_errors;
 mod tools;
 
 /// A Rust source file of the crate: its path, the code that ships, and its test code.
@@ -285,6 +287,26 @@ const MAX_FILE_LOC: usize = 400;
 /// The lines of `code` that aren't blank or only a comment.
 fn loc(code: &str) -> usize {
     code.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("//")).count()
+}
+
+/// What a rule with an allow-list finds: each `file:line` that `rule` flags in a file `allowed`
+/// doesn't list (the files `exempt` names aside), and each listed file `rule` no longer flags.
+/// The list only shrinks: both must be empty.
+fn beyond_allow_list(rule: fn(&str) -> Vec<usize>, exempt: &[&str], allowed: &[(&str, &str)]) -> (Vec<String>, Vec<String>) {
+    let mut found = Vec::new();
+    let mut offending = std::collections::BTreeSet::new();
+    for (rel, s) in by_path() {
+        let lines = rule(&s.code);
+        if exempt.contains(&rel.as_str()) || lines.is_empty() {
+            continue;
+        }
+        if !allowed.iter().any(|(path, _)| *path == rel) {
+            found.extend(lines.iter().map(|n| format!("{rel}:{n}")));
+        }
+        offending.insert(rel);
+    }
+    let stale = allowed.iter().map(|(path, _)| (*path).to_owned()).filter(|path| !offending.contains(path)).collect();
+    (found, stale)
 }
 
 /// The crate's files, by their path under `src/`.

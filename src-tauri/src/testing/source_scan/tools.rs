@@ -7,8 +7,6 @@
 //! it. It only shrinks: a file not on it fails the build, and so does an entry whose file no
 //! longer offends (take it off).
 
-use super::by_path;
-
 /// The tools the launcher leaves to Isothrum and `isothrum-machine`.
 const TOOLS: &str = r"docker|vagrant|terraform|tofu|VBoxManage|vboxmanage|prlctl|vmrun|utmctl|virsh|qemu-[a-z0-9_.-]+|aws|az|gcloud|doctl|linode-cli|oci";
 
@@ -69,19 +67,7 @@ fn the_tool_rule_sees_a_call_a_pair_and_a_constant_and_nothing_else() {
 
 #[test]
 fn no_code_outside_the_allow_list_runs_a_tool_isothrum_runs() {
-    let mut found = Vec::new();
-    let mut offending = std::collections::BTreeSet::new();
-    for (rel, s) in by_path() {
-        let lines = starts(&s.code);
-        if lines.is_empty() {
-            continue;
-        }
-        offending.insert(rel.clone());
-        if !ALLOWED.iter().any(|(path, _)| *path == rel) {
-            found.extend(lines.iter().map(|n| format!("{rel}:{n}")));
-        }
-    }
+    let (found, stale) = super::beyond_allow_list(starts, &[], ALLOWED);
     assert_eq!(found, [] as [String; 0], "these start a tool themselves: go through Isothrum or isothrum-machine");
-    let stale: Vec<&str> = ALLOWED.iter().map(|(path, _)| *path).filter(|path| !offending.contains(*path)).collect();
-    assert_eq!(stale, [] as [&str; 0], "these no longer start a tool: take them off ALLOWED");
+    assert_eq!(stale, [] as [String; 0], "these no longer start a tool: take them off ALLOWED");
 }
