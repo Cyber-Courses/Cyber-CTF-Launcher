@@ -25,8 +25,13 @@ checks the needs, runs the specs and writes the results). Without `--app` or `--
 serves the frontend such a build loads (`next dev` on 3206, `tauri.conf.json`'s `devUrl`; an app
 from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A package must be a
 `tauri build` with the hooks: `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`
-(the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). Before the specs, the runner
-starts the app once and stops with a clear message when no WebDriver server answers. It checks out
+(the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). On Linux without a display
+(`DISPLAY` and `WAYLAND_DISPLAY` empty: an SSH session, the test rig) the runner starts Xvfb for the
+run on a display number no other X server holds (`:99` and up), gives its `DISPLAY` to the specs and
+their apps, and stops it however the run ends (its output in `<logs>/xvfb.log`); without Xvfb
+installed it stops at once and names the package (`xvfb`) rather than letting the app panic.
+Before the specs, the runner starts the app once and stops with a clear message when no WebDriver
+server answers. It checks out
 the fixture lab (the Invoice Portal API lab, under `tests/e2e/desktop/.state/labs`) unless `CYBERCTF_TEST_LOCAL_LAB` names one.
 
 It is safe on a machine someone uses: the app keeps all of its own (data, settings, logs, webview
@@ -216,8 +221,10 @@ On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` 
 ## On a test machine
 
 A caller that runs the set on a fresh Linux or Windows machine runs it in the logged-in desktop
-session (on Windows a scheduled task of that account; on a headless Linux,
-`xvfb-run -a dbus-run-session --`). Its knobs file goes anywhere outside the repository, mode
+session on Windows (a scheduled task of that account). A Linux machine needs no session: over SSH,
+without a display, the runner starts its own Xvfb, so the machine needs the `xvfb` package besides
+the [Tauri prerequisites](https://tauri.app/start/prerequisites/#linux) (`libwebkit2gtk-4.1-dev`
+and the rest), Node, pnpm and Rust. Its knobs file goes anywhere outside the repository, mode
 600, `~/e2e.env` say:
 
 ```sh
@@ -230,7 +237,7 @@ CYBERCTF_TEST_SERVER_ENV=/path/to/server.env
 Then, from the launcher's checkout:
 
 ```sh
-xvfb-run -a dbus-run-session -- tests/e2e/desktop/runner/run.sh --all --knobs ~/e2e.env
+tests/e2e/desktop/runner/run.sh --all --knobs ~/e2e.env
 ```
 
 ```powershell
