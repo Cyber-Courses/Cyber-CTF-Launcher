@@ -21,7 +21,8 @@ impl CloudRun {
     /// exposes and its words, from its lab file.
     pub(crate) async fn own_status(&self) -> Result<LabStatus> {
         let file = LabFile::read(&self.dir)?;
-        let status = self.read().await?;
+        // The values the lab gives its player, sensitive ones included, read back as they are.
+        let status = self.read_with(&isothrum_runner::RunOptions::new().with_reveal()).await?;
         Ok(status_of(&file, &status))
     }
 

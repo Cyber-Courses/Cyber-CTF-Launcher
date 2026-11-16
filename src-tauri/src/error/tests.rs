@@ -132,11 +132,12 @@ fn form(code: &Code) -> usize {
         Code::TlsChanged { .. } => 45,
         Code::SshHostKeyRefused { .. } => 46,
         Code::VirtiofsdMissing { .. } => 47,
+        Code::RunnerUnreachable { .. } => 48,
     }
 }
 
 /// How many forms [`form`] tells apart.
-const FORMS: usize = 48;
+const FORMS: usize = 49;
 
 #[test]
 fn every_form_has_a_sample() {
@@ -182,6 +183,7 @@ fn sample_codes() -> Vec<Code> {
         Code::PickCloudAccount,
         Code::NoHypervisor,
         Code::VirtiofsdMissing { hypervisor: "QEMU".into() },
+        Code::RunnerUnreachable { detail: "the service at /tmp/isothrum/service.sock doesn't answer".into() },
         Code::ToolTooOld { tool: "Vagrant".into(), found: "2.3.4".into(), required: "2.4.0".into() },
         Code::ElevationFailed { reason: "the permission prompt was declined".into() },
         Code::LabNotReady { detail: "http://web:80 answered 502".into() },

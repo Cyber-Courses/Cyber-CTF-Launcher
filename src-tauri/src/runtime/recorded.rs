@@ -46,8 +46,8 @@ pub(crate) struct Recorded(Option<RunRecord>);
 impl Recorded {
     /// Lab `id`'s run as the runner records it. A record that can't be read is an error, never
     /// "nothing recorded": the lab would be read on this machine while it runs on a server.
-    pub(crate) fn of(dirs: &AppDirs, id: &str) -> Result<Recorded> {
-        Ok(Recorded::from(isothrum::record_of(dirs, id)?))
+    pub(crate) async fn of(dirs: &AppDirs, id: &str) -> Result<Recorded> {
+        Ok(Recorded::from(isothrum::record_of(dirs, id).await?))
     }
 
     /// The saved server or cloud account the run is on, by id; none: this machine.
@@ -106,13 +106,12 @@ pub(crate) fn parked(record: &RunRecord) -> Option<Park> {
 
 /// The labs whose runs run on this machine, as the runner records them: any state but parked or
 /// absent, but a failed run only while a machine of it was last seen running. Read from the
-/// home's service when one runs (what it last saw of each run), else from the records. What
+/// home's service (what it last saw of each run). What
 /// changed outside the app shows once a status read has seen it.
 pub(crate) async fn running_here(dirs: &AppDirs) -> Vec<String> {
     let Ok(home) = super::paths::runner_home(dirs) else { return Vec::new() };
     let runs: Vec<(RunRecord, bool)> = match isothrum::rows(&home).await {
-        Ok(Some(rows)) => rows.into_iter().map(|r| (r.record, r.observed.is_some_and(|o| o.machines.iter().any(|m| runs(&m.state))))).collect(),
-        Ok(None) => isothrum::records(&home).map(|rs| rs.into_iter().map(|r| (r, false)).collect()).unwrap_or_default(),
+        Ok(rows) => rows.into_iter().map(|r| (r.record, r.observed.is_some_and(|o| o.machines.iter().any(|m| runs(&m.state))))).collect(),
         Err(e) => {
             log::warn!("the runner's runs can't be listed: {e}");
             Vec::new()

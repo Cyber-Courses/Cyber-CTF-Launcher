@@ -46,7 +46,7 @@ async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
     // the lab can't race the reaper's Terraform destroy over the same state. A busy lab is left
     // for a later sweep (inside `reap_expired`).
     let lock = |id: &str| try_lock_lab(dirs, id).ok().flatten();
-    let failures = match isothrum::reap_expired_clouds(&home, std::time::SystemTime::now(), account, lock).await {
+    let failures = match isothrum::reap_expired_clouds(&home, account, lock).await {
         Ok(failures) => failures,
         Err(e) => {
             // No sweep happened: said once, as the runner's, not as a lab that couldn't be destroyed.

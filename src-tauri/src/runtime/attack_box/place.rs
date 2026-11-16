@@ -36,8 +36,8 @@ pub(crate) struct Placed {
 /// updates an ESXi run like any other), beside cloud services, which have no machines for it
 /// to join ([`Host::has_machines`]), wherever they run, or in a helper VM an earlier version ran
 /// a container lab inside, whose files can't be generated again with the box.
-pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Placed>> {
-    Ok(match host::locate(dirs, dir, id, runtime)? {
+pub(crate) async fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Placed>> {
+    Ok(match host::locate(dirs, dir, id, runtime).await? {
         None | Some(Host::Esxi { .. }) => None,
         Some(host) if !host.has_machines() => None,
         // Its machines are VMs wherever its target runs them (on Proxmox, whatever its catalogue form).
@@ -47,8 +47,10 @@ pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> 
 
 /// Where lab `id`'s attack box goes ([`locate`]), or the error an operation on the box gets when
 /// the launcher reaches no run of the lab it could join.
-pub(crate) fn reachable(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Placed> {
-    locate(dirs, dir, id, runtime)?.ok_or_else(|| Error::Invalid("This lab has no attack box the launcher can reach. Work from what the lab gives you.".into()))
+pub(crate) async fn reachable(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Placed> {
+    locate(dirs, dir, id, runtime)
+        .await?
+        .ok_or_else(|| Error::Invalid("This lab has no attack box the launcher can reach. Work from what the lab gives you.".into()))
 }
 
 /// What the learner picked for the box: the image a container box runs, and whether a VM box gets
@@ -72,7 +74,7 @@ impl Placed {
     /// in the lab, so the learner's Stop retires whatever of it the run already has.
     pub(crate) async fn add(&self, dirs: &AppDirs, pick: Pick<'_>, network: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let kind = if self.vm { Kind::Vm { desktop: pick.desktop } } else { Kind::Container { image: pick.image } };
-        let shared = self.shared_folder(dirs, log)?;
+        let shared = self.shared_folder(dirs, log).await?;
         let written = super::add(&self.dir, kind, self.cpu(), network, shared.as_deref()).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
         let failed = match written {
             Err(error) => Failed { error, run_changed: false },
@@ -136,7 +138,7 @@ impl Placed {
     /// hypervisor lacks what it shares the folder through (libvirt's or QEMU's virtiofsd on Linux,
     /// [`crate::runtime::providers::can_share`]): said before the box is added, not as the
     /// hypervisor's failure once its VM starts.
-    fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<Option<PathBuf>> {
+    async fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<Option<PathBuf>> {
         let folder = match crate::shared_folder::current(dirs) {
             Ok(Some(folder)) => folder,
             Ok(None) => return Ok(None),
@@ -147,7 +149,7 @@ impl Placed {
         };
         // The run's record says its hypervisor: no status read (a `vagrant status`) for it.
         let provider = match &self.host {
-            Host::Local(run) => match run.recorded_provider() {
+            Host::Local(run) => match run.recorded_provider().await {
                 Ok(provider) => provider,
                 Err(e) => {
                     log::warn!("couldn't read the lab's hypervisor for the shared folder: {e}");

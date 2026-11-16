@@ -68,8 +68,8 @@ async fn only_a_local_container_lab_has_a_url_here() {
     assert_eq!(primary_url(&t.dirs(), &dir, "t", Runtime::Docker).await, None);
 }
 
-#[test]
-fn a_lab_is_present_wherever_something_of_it_is_left() {
+#[tokio::test]
+async fn a_lab_is_present_wherever_something_of_it_is_left() {
     // Regression: a failed website launch asked only whether the lab ran *here* (local Docker
     // and the lab folder's Vagrant record), so a lab up on a server host or cloud account, or
     // as VMs the runner started here, read as absent, and the failed start's teardown
@@ -78,36 +78,38 @@ fn a_lab_is_present_wherever_something_of_it_is_left() {
     let t = crate::testing::test_app::TestApp::new();
     let dirs = t.dirs();
     t.lab("present", &[]);
-    assert!(!super::lab_present(&dirs, "present"), "installed, nothing of it up");
+    assert!(!super::lab_present(&dirs, "present").await, "installed, nothing of it up");
     // Its run, wherever the runner records it up: in a cloud account, as VMs here.
     record_run(t.data(), "present", Some("aws1"), "cloud-docker", "ready");
-    assert!(super::lab_present(&dirs, "present"));
+    assert!(super::lab_present(&dirs, "present").await);
     record_run(t.data(), "present", None, "vagrant", "failed");
-    assert!(super::lab_present(&dirs, "present"), "a failed start's VMs left here");
+    assert!(super::lab_present(&dirs, "present").await, "a failed start's VMs left here");
     // Taken down: absent.
     record_run(t.data(), "present", None, "vagrant", "absent");
-    assert!(!super::lab_present(&dirs, "present"));
+    assert!(!super::lab_present(&dirs, "present").await);
     assert!(super::lab_installed(&dirs, "present") && !super::lab_installed(&dirs, "gone"));
     // Parked here.
     record_run(t.data(), "present", None, "vagrant", "parked");
-    assert!(super::lab_present(&dirs, "present"));
+    assert!(super::lab_present(&dirs, "present").await);
 }
 
-#[test]
-fn a_lab_whose_run_cant_be_read_is_taken_for_up_and_says_why() {
+#[tokio::test]
+async fn a_lab_whose_run_cant_be_read_is_taken_for_up_and_says_why() {
     // Regression: why the run couldn't be read was dropped, and the failed start's teardown
     // was decided on a guess with nothing in the log. Nothing is torn down on a guess.
     let t = crate::testing::test_app::TestApp::new();
     t.lab("present", &[]);
-    crate::testing::runner::damage_store(&crate::runtime::paths::runner_home_in(t.data()));
+    let home = crate::runtime::paths::runner_home_in(t.data());
+    crate::runtime::isothrum::stop_service(&home).await;
+    crate::testing::runner::damage_store(&home);
     crate::testing::logs::take_warnings();
-    assert!(super::lab_present(&t.dirs(), "present"));
+    assert!(super::lab_present(&t.dirs(), "present").await);
     let logged = crate::testing::logs::take_warnings();
     assert!(logged.iter().any(|l| l.starts_with("couldn't tell whether present is up (") && l.ends_with("taken for up")), "{logged:?}");
 }
 
-#[test]
-fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
+#[tokio::test]
+async fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
     // Regression: an update, a re-import and a start elsewhere asked the lab folder (Vagrant's
     // `.vagrant`, local Docker), where the runner keeps nothing: a VM, a
     // docker-in-VM, an ESXi, a Proxmox or a cloud lab run by the runner read as down.
@@ -116,14 +118,14 @@ fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
     let dirs = t.dirs();
     let dir = t.lab("web", &[]);
     let pve = t.host("pve1", "proxmox", serde_json::json!({}));
-    assert_eq!(super::still_up(&dirs, "web").unwrap(), None, "never started");
+    assert_eq!(super::still_up(&dirs, "web").await.unwrap(), None, "never started");
     for (host, target) in
         [(None, "docker"), (None, "docker-vm"), (None, "vagrant"), (Some("esx1"), "vagrant"), (Some(pve.as_str()), "proxmox"), (Some("aws1"), "cloud-vm")]
     {
         record_run(t.data(), "web", host, target, "ready");
-        let up = super::still_up(&dirs, "web").unwrap().unwrap_or_else(|| panic!("{target} on {host:?}"));
+        let up = super::still_up(&dirs, "web").await.unwrap().unwrap_or_else(|| panic!("{target} on {host:?}"));
         assert_eq!((up.host.as_deref(), up.parked), (host, false), "{target}");
-        let err = super::refuse_replace(&dirs, &dir, "web").unwrap_err();
+        let err = super::refuse_replace(&dirs, &dir, "web").await.unwrap_err();
         let expected = match host {
             None => crate::error::Code::LabRunningHere,
             // A saved host by its name; one no longer saved by its id.
@@ -135,20 +137,22 @@ fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
     // Parked: only a park lets the copy go (it is taken down before the swap); machines found
     // stopped outside the app don't.
     record_run(t.data(), "web", None, "vagrant", "parked");
-    assert!(super::still_up(&dirs, "web").unwrap().is_some_and(|u| u.parked));
-    assert!(super::refuse_replace(&dirs, &dir, "web").is_err());
+    assert!(super::still_up(&dirs, "web").await.unwrap().is_some_and(|u| u.parked));
+    assert!(super::refuse_replace(&dirs, &dir, "web").await.is_err());
     crate::runtime::test_support::record_parked(t.data(), "web", "vagrant", "shutdown");
-    assert!(super::refuse_replace(&dirs, &dir, "web").is_ok());
+    assert!(super::refuse_replace(&dirs, &dir, "web").await.is_ok());
     // Down: free to replace; another lab's run is no business of this one's.
     record_run(t.data(), "web", None, "vagrant", "absent");
     record_run(t.data(), "web-2", None, "docker", "ready");
-    assert_eq!(super::still_up(&dirs, "web").unwrap(), None);
-    assert!(super::refuse_replace(&dirs, &dir, "web").is_ok());
+    assert_eq!(super::still_up(&dirs, "web").await.unwrap(), None);
+    assert!(super::refuse_replace(&dirs, &dir, "web").await.is_ok());
     // A store that can't be read stops the replacement rather than read as "down".
-    crate::testing::runner::damage_store(&crate::runtime::paths::runner_home_in(t.data()));
-    assert!(super::still_up(&dirs, "web").is_err() && super::refuse_replace(&dirs, &dir, "web").is_err());
+    let home = crate::runtime::paths::runner_home_in(t.data());
+    crate::runtime::isothrum::stop_service(&home).await;
+    crate::testing::runner::damage_store(&home);
+    assert!(super::still_up(&dirs, "web").await.is_err() && super::refuse_replace(&dirs, &dir, "web").await.is_err());
     // Nothing installed: nothing to replace.
-    assert!(super::refuse_replace(&dirs, &t.data().join("labs/none"), "none").is_ok());
+    assert!(super::refuse_replace(&dirs, &t.data().join("labs/none"), "none").await.is_ok());
 }
 
 #[tokio::test]

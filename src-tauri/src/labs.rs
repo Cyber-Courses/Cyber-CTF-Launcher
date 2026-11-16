@@ -117,7 +117,7 @@ async fn install_with(dirs: &AppDirs, release: Release<'_>, log: &impl Fn(String
     // files its run reads (its manifest, what its containers bind-mount) out from under it. Stop
     // it first. One taken down outside the app is forgotten first.
     runtime::forget_gone(dirs, lab_id, &mut |l| log(l)).await?;
-    runtime::refuse_replace(dirs, &slot.dir, lab_id)?;
+    runtime::refuse_replace(dirs, &slot.dir, lab_id).await?;
     log(runtime::deploy_log::downloading(repository, &commit[..12]));
     let bytes = fetch().await?;
     let (labs, into, id, sha) = (slot.labs.clone(), slot.dir.clone(), lab_id.to_owned(), commit.to_owned());
@@ -462,7 +462,7 @@ async fn install_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: &impl Fn(S
     // Re-importing while the previous copy is up would pull its files out from under it, as an
     // update would. Stop it first. One taken down outside the app is forgotten first.
     runtime::forget_gone(dirs, lab_id, &mut |l| log(l)).await?;
-    runtime::refuse_replace(dirs, &slot.dir, lab_id)?;
+    runtime::refuse_replace(dirs, &slot.dir, lab_id).await?;
     log(runtime::deploy_log::importing(lab_id, src));
     let (from, staging) = (src.to_path_buf(), staging_dir(&slot.labs, lab_id));
     let copied = move || {

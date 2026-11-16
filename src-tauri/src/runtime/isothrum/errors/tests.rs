@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::*;
+use isothrum_runner::Error as RunnerError;
 
 /// The runner's report, as the service and the event stream carry it: code `code`, message `m`,
 /// `step` and `detail` (its fields, version 2) when given.
@@ -277,8 +278,8 @@ fn a_server_refusing_the_credentials_is_named_as_servers_names_it() {
 #[test]
 fn a_helper_vm_the_runner_no_longer_opens_says_what_is_left_and_how_to_remove_it() {
     let gone = RunnerError::Unsupported { what: "containers run inside the run's VM".into() };
-    let said = of_helper_vm(&gone, "cyberctf-web").to_string();
+    let said = of_helper_vm(&gone.report(), "cyberctf-web").to_string();
     assert!(said.starts_with(HELPER_VM_LEFT) && said.contains("cyberctf-web"), "{said}");
     let locked = RunnerError::Locked { run: "r".into() };
-    assert_eq!(of_helper_vm(&locked, "r").code(), coded(&locked.report()).code());
+    assert_eq!(of_helper_vm(&locked.report(), "r").code(), coded(&locked.report()).code());
 }

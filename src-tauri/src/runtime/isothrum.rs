@@ -13,8 +13,9 @@
 //! `errors`) and the lab page's shapes (`view`). The attack box is no concern of the run's: the
 //! launcher adds it to the lab as one of its machines (`attack_box`), and the run is brought
 //! up to date with it ([`LabRun::update`], [`LabRun::retire`]) like with any change of the lab.
-//! An operation goes to the home's runner service (`remote`), which this app hosts and which runs
-//! it to its end whatever becomes of the app.
+//! Everything goes to the home's runner service (`remote`), which this app hosts: an operation,
+//! which it runs to its end whatever becomes of the app, a run's record, its consoles. Nothing
+//! here opens the runner's store or runs a runner of its own.
 
 mod checks;
 mod claim;
@@ -24,7 +25,6 @@ mod engine;
 pub(crate) mod errors;
 mod esxi;
 mod gone;
-mod one_read;
 mod opened;
 #[cfg(feature = "cloud-services")]
 mod own_module;
@@ -38,7 +38,6 @@ mod web;
 pub(crate) use claim::CLAIM;
 use claim::with_claim;
 pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
-use engine::PROCESSES;
 pub(crate) use engine::{ENGINE_VAR, EngineProcesses};
 pub(crate) use esxi::EsxiPlace;
 pub(crate) use opened::Module;
@@ -73,41 +72,11 @@ pub(crate) const ESXI_HOSTPORT: &str = "ESXI_HOSTPORT";
 const PUBLISH_FIXED: &str = "ISOLOOM_PUBLISH_FIXED";
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use isothrum_runner::{Format, RunName, RunOptions, Runner, RunnerConfig, Running, SecretValue, Secrets, ShellCommand, Status};
+use isothrum_runner::{Format, RunName, RunOptions, SecretValue, Secrets, ShellCommand, Status};
 
 use super::{LabStatus, Park, Place, Runtime, lab, paths};
 use crate::error::{Error, Result};
-
-/// How long an operation the player asked for waits for the run's lock: the page's own status
-/// checks (a few seconds each, every so often) hold it too, and a Pause clicked while one runs
-/// must wait for it, not fail with "another operation is in progress".
-const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
-/// Between two tries for the lock.
-const LOCK_POLL: std::time::Duration = std::time::Duration::from_secs(2);
-
-/// Whether `e` is the run's lock held by another operation, with time left to wait for it.
-fn lock_held(e: &isothrum_runner::Error, deadline: std::time::Instant) -> bool {
-    e.code() == isothrum_runner::ErrorCode::Locked && std::time::Instant::now() < deadline
-}
-
-/// Runs `op` (a runner operation given the sink of [`progress::channel`]), its lines reaching
-/// `log`; tried again while another operation holds the run's lock, for up to [`LOCK_WAIT`].
-/// The sink is `op`'s to own (not lent) so the operation's future stays `Send`.
-async fn when_unlocked<T, F>(log: &mut impl FnMut(String), mut op: impl FnMut(progress::Lines) -> F) -> std::result::Result<T, isothrum_runner::Error>
-where
-    F: Future<Output = std::result::Result<T, isothrum_runner::Error>>,
-{
-    let deadline = std::time::Instant::now() + LOCK_WAIT;
-    loop {
-        let (sink, lines) = progress::channel();
-        match progress::follow(&mut *log, lines, op(sink)).await {
-            Err(e) if lock_held(&e, deadline) => tokio::time::sleep(LOCK_POLL).await,
-            r => return r,
-        }
-    }
-}
 
 /// Cancels what the home's runner service runs or has queued on lab `id`'s run, before a stop of
 /// the lab.
@@ -130,8 +99,8 @@ pub(crate) async fn busy_in_service(dirs: &crate::platform::AppDirs) -> std::res
 
 /// Whether lab `id`'s run ended its last operation failed, as the runner records it: its page
 /// says the launch failed rather than drawing what is left of it.
-pub(crate) fn last_run_failed(dirs: &crate::platform::AppDirs, id: &str) -> bool {
-    record_of(dirs, id).ok().flatten().is_some_and(|r| r.state == isothrum_runner::RunState::Failed)
+pub(crate) async fn last_run_failed(dirs: &crate::platform::AppDirs, id: &str) -> bool {
+    record_of(dirs, id).await.ok().flatten().is_some_and(|r| r.state == isothrum_runner::RunState::Failed)
 }
 
 /// Lab `id`'s run's operations as the home's runner service journals them, newest first, as JSON
@@ -167,16 +136,17 @@ pub(crate) async fn follow_under_way(dirs: &crate::platform::AppDirs, id: &str, 
 /// No service can be reached, or its stream ended.
 pub(crate) async fn follow_others(dirs: &crate::platform::AppDirs, on: &mut impl FnMut(remote::Others)) -> Result<()> {
     let home = paths::runner_home(dirs)?;
-    let client = remote::client(&home).await.ok_or_else(|| Error::Invalid("no runner service can be reached".into()))?;
+    let client = remote::client(&home).await?;
     remote::follow_others(&client, on).await.map_err(Error::Invalid)
 }
 
-pub(crate) use remote::{Others, rows};
+pub(crate) use remote::{Others, records, rows};
+#[cfg(test)]
+pub(crate) use remote::{stop_service, unreachable as service_unreachable};
 
-/// Every run the runner whose home is `home` records, each in the state its last operation left
-/// it in, as its store says.
-pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
-    Runner::new(host_config(home)).map_err(|e| errors::coded(&e.report()))?.runs().map_err(|e| errors::coded(&e.report()))
+/// Lab `id`'s run's name (`cyberctf-<id>`).
+fn run_name(id: &str) -> Result<RunName> {
+    RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))
 }
 
 /// Forgets lab `id`'s run in the runner's store, once the lab is removed: no run is left behind
@@ -184,21 +154,17 @@ pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
 ///
 /// # Errors
 ///
-/// The runner's store can't be opened or written.
-pub(crate) fn forget_run(home: &Path, id: &str) -> Result<()> {
-    forget_named(home, &RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))?)
-}
-
-/// [`forget_run`] of run `name`.
-fn forget_named(home: &Path, name: &RunName) -> Result<()> {
-    isothrum_runner::store::Store::open(home).and_then(|store| store.write(|tx| tx.forget_run(name))).map_err(|e| errors::coded(&e.report()))
+/// No service can be reached, or it can't write its store.
+pub(crate) async fn forget_run(home: &Path, id: &str) -> Result<()> {
+    let Ok(name) = run_name(id) else { return Ok(()) };
+    remote::forget_run(home, &name).await
 }
 
 /// Lab `id`'s run here, installed in `dir`, opened in the form its record says it was started in
-/// (Docker, VMs, or the helper VM an earlier version ran a container lab in): none without a record, or for a run recorded on a server
-/// or a cloud, which isn't this machine's to read.
-pub(crate) fn recorded_here(dirs: &crate::platform::AppDirs, dir: &Path, id: &str) -> Result<Option<LabRun>> {
-    let Some(record) = record_of(dirs, id)? else { return Ok(None) };
+/// (Docker, VMs, or the helper VM an earlier version ran a container lab in): none without a
+/// record, or for a run recorded on a server or a cloud, which isn't this machine's to read.
+pub(crate) async fn recorded_here(dirs: &crate::platform::AppDirs, dir: &Path, id: &str) -> Result<Option<LabRun>> {
+    let Some(record) = record_of(dirs, id).await? else { return Ok(None) };
     let home = paths::runner_home(dirs)?;
     Ok(Some(match super::recorded::RunForm::of(&record) {
         super::recorded::RunForm::Docker => LabRun::docker(&home, dir, id)?,
@@ -209,10 +175,11 @@ pub(crate) fn recorded_here(dirs: &crate::platform::AppDirs, dir: &Path, id: &st
 }
 
 /// Lab `id`'s run as the runner whose home is the app data folder records it (`cyberctf-<id>`),
-/// if it has one: read from its files only, an unreadable record an error.
-pub(crate) fn record_of(dirs: &crate::platform::AppDirs, id: &str) -> Result<Option<isothrum_runner::RunRecord>> {
-    let name = super::docker::project(id);
-    Ok(records(&paths::runner_home(dirs)?)?.into_iter().find(|r| r.name.as_str() == name))
+/// if it has one: an unreadable record an error.
+pub(crate) async fn record_of(dirs: &crate::platform::AppDirs, id: &str) -> Result<Option<isothrum_runner::RunRecord>> {
+    // A lab whose id names no run (longer than a run's name may be) never ran.
+    let Ok(name) = run_name(id) else { return Ok(None) };
+    remote::record(&paths::runner_home(dirs)?, &name).await
 }
 
 /// What a run is: a container lab on Docker, a VM lab on a local hypervisor (a container lab's
@@ -228,19 +195,14 @@ enum Kind {
 
 /// One lab on this machine, run by the runner.
 pub(crate) struct LabRun {
-    runner: Runner,
+    /// The run, as the home's service knows it.
+    served: remote::Served,
     dir: PathBuf,
-    name: RunName,
     kind: Kind,
     /// The ESXi server a VM lab runs on, if not on this machine.
     esxi: Option<EsxiPlace>,
     /// The Docker context a container lab's launch chose (its engine marker), if any.
     engine: Option<String>,
-    /// The runner's home (its service's).
-    home: PathBuf,
-    /// Whether its operations go to the home's runner service (a test's scripted runner runs them
-    /// in this process).
-    service: bool,
 }
 
 impl LabRun {
@@ -298,32 +260,33 @@ impl LabRun {
         LabRun { esxi: Some(place), ..self }
     }
 
-    /// A run on the runner whose home is `home`, its operations through the home's service.
-    fn served(home: &Path, dir: &Path, id: &str, kind: Kind) -> Result<LabRun> {
-        Ok(LabRun { service: true, ..LabRun::with(host_config(home), dir, id, kind)? })
-    }
-
-    /// A run on a runner built from `config`, its operations in this process (tests script its
+    /// A run on a runner built from `config`, which this test process serves (tests script its
     /// tools).
-    fn with(config: RunnerConfig, dir: &Path, id: &str, kind: Kind) -> Result<LabRun> {
-        let name = RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))?;
+    #[cfg(test)]
+    fn with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, kind: Kind) -> Result<LabRun> {
         let home = config.home.clone();
-        let runner = Runner::new(config).map_err(|e| errors::coded(&e.report()))?;
-        Ok(LabRun { runner, dir: dir.to_path_buf(), name, kind, esxi: None, engine: None, home, service: false })
+        crate::testing::service::serve_home(config);
+        LabRun::served(&home, dir, id, kind)
     }
 
-    /// `act` on the run with `opts`, its events as `log`'s lines: through the home's runner
-    /// service, else in this process (none reachable, or a test's runner). Whether it reached
-    /// its goal (false: a check failed).
+    /// A run on the runner whose home is `home`, through the home's service.
+    fn served(home: &Path, dir: &Path, id: &str, kind: Kind) -> Result<LabRun> {
+        let (project, format) = match kind {
+            Kind::Docker => (lab::docker_dir(dir), Format::Compose),
+            Kind::DockerVm => (lab::docker_vm_dir(dir), Format::Vagrant),
+            Kind::Vm => (lab::vagrant_dir(dir, Runtime::Vm), Format::Vagrant),
+        };
+        let served = remote::Served { home: home.to_path_buf(), name: run_name(id)?, project, format };
+        Ok(LabRun { served, dir: dir.to_path_buf(), kind, esxi: None, engine: None })
+    }
+
+    /// `act` on the run with `opts`, its events as `log`'s lines, through the home's runner
+    /// service. Whether it reached its goal (false: a check failed).
     async fn act(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, remote::Failure> {
-        if self.service
-            && let Some(client) = remote::client(&self.home).await
-        {
-            let on = remote::Served { home: &self.home, client: &client, target: remote::target(&self.project(), self.format(), &self.name) };
-            return Box::pin(remote::operate(on, act, opts, log)).await;
+        match Box::pin(self.served.operate(act, opts, log)).await {
+            Err(e) => Err(self.refused(e).await),
+            done => done,
         }
-        let lab = self.lab().map_err(remote::Failure::Launcher)?;
-        Box::pin(remote::in_process(&lab, act, opts, log)).await
     }
 
     /// `act` on the run with this place's options, as [`LabRun::act`], its failure in the
@@ -332,33 +295,20 @@ impl LabRun {
         self.act(act, &self.placed(RunOptions::new()), log).await.map(drop).map_err(|e| self.said(e.into_error()))
     }
 
-    /// The lab's generated project: its Compose folder, or its Vagrant one.
-    fn project(&self) -> PathBuf {
-        match self.kind {
-            Kind::Docker => lab::docker_dir(&self.dir),
-            Kind::DockerVm => lab::docker_vm_dir(&self.dir),
-            Kind::Vm => lab::vagrant_dir(&self.dir, Runtime::Vm),
-        }
-    }
-
-    /// The project's format.
-    fn format(&self) -> Format {
-        if self.kind == Kind::Docker { Format::Compose } else { Format::Vagrant }
-    }
-
     /// Whether the project's own file is there (`compose.yml`, the `Vagrantfile`).
     fn has_project(&self) -> bool {
         let file = if self.kind == Kind::Docker { "compose.yml" } else { "Vagrantfile" };
-        self.project().join(file).is_file()
+        self.served.project.join(file).is_file()
     }
 
-    /// The lab's project, opened under the run's name. A Compose or Vagrant project generated by
-    /// an earlier version is still one of its format: it is opened as it is.
-    fn lab(&self) -> Result<Running<'_>> {
-        match self.runner.open_as(&self.project(), self.format(), Some(self.name.clone())) {
-            Ok(lab) => Ok(lab),
-            Err(e) if self.kind == Kind::DockerVm => Err(self.helper_vm_gone(&e)),
-            Err(e) => Err(errors::coded(&e.report())),
+    /// The service's failure `e` of the run: for the helper VM an earlier version left, the
+    /// runner's refusal to open that form ([`LabRun::helper_vm_gone`]).
+    async fn refused(&self, e: remote::Failure) -> remote::Failure {
+        match e {
+            remote::Failure::Service(report) if self.kind == Kind::DockerVm && errors::form_unsupported(&report) => {
+                remote::Failure::Launcher(self.helper_vm_gone(&report).await)
+            }
+            other => other,
         }
     }
 
@@ -372,20 +322,17 @@ impl LabRun {
         }
     }
 
-    /// The runner's refusal `e` to open the helper VM an earlier version left this lab in. When it
-    /// no longer runs that form, nothing here reaches the VM: the run's record of it is forgotten
-    /// (one on this machine), so its page reads it as stopped and its next start is in its true
-    /// form, and the error says what to remove by hand.
-    fn helper_vm_gone(&self, e: &isothrum_runner::Error) -> Error {
-        let unsupported = e.code() == isothrum_runner::ErrorCode::Unsupported;
-        let said = errors::of_helper_vm(e, self.name.as_str());
-        if unsupported {
-            log::warn!("{}: {said}", self.dir.display());
-            if self.esxi.is_none()
-                && let Err(e) = forget_named(&self.home, &self.name)
-            {
-                log::warn!("{}: its helper-VM record couldn't be forgotten: {e}", self.dir.display());
-            }
+    /// The runner's refusal `report` to open the helper VM an earlier version left this lab in:
+    /// it no longer runs that form, so nothing here reaches the VM. The run's record of it is
+    /// forgotten (one on this machine), so its page reads it as stopped and its next start is in
+    /// its true form, and the error says what to remove by hand.
+    async fn helper_vm_gone(&self, report: &isothrum_runner::ErrorReport) -> Error {
+        let said = errors::of_helper_vm(report, self.served.name.as_str());
+        log::warn!("{}: {said}", self.dir.display());
+        if self.esxi.is_none()
+            && let Err(e) = self.served.forget().await
+        {
+            log::warn!("{}: its helper-VM record couldn't be forgotten: {e}", self.dir.display());
         }
         said
     }
@@ -397,7 +344,7 @@ impl LabRun {
     /// the evidence claim's values every lab is given, empty when `opts` has none ([`with_claim`]).
     fn placed(&self, opts: RunOptions) -> RunOptions {
         let opts = with_claim(opts);
-        let opts = opts.with_env(super::lab::ISOLOOM_KEY, self.runner.copy_key(&self.name));
+        let opts = opts.with_env(super::lab::ISOLOOM_KEY, isothrum_runner::copy_key(&self.served.home, &self.served.name));
         let opts = match &self.engine {
             Some(context) => opts.with_env(ENGINE_VAR, context.clone()),
             None => opts,
@@ -433,7 +380,7 @@ impl LabRun {
         // nothing, so there is nothing to remove: a clean no-op, as the launcher's own Docker path
         // tolerates "no resource to remove". Without this, tearing down a failed launch errors on
         // the missing project.
-        if !self.files_back()? {
+        if !self.files_back().await? {
             log("Nothing to remove: the run has no files.".into());
             return Ok(());
         }
@@ -458,7 +405,7 @@ impl LabRun {
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
         match self.act(remote::Act::Resume, &self.placed(RunOptions::new()), log).await {
             Ok(_) => Ok(()),
-            Err(e) if e.code() == Some(isothrum_runner::ErrorCode::NothingToResume) => Err(e.into_error()),
+            Err(remote::Failure::Service(report)) if errors::nothing_to_resume(&report) => Err(errors::coded(&report)),
             Err(e) => Err(self.said(e.into_error())),
         }
     }
@@ -466,41 +413,32 @@ impl LabRun {
     /// The lab as its page shows it; not running before its files were ever generated.
     pub(crate) async fn status(&self) -> Result<LabStatus> {
         let place = if matches!(self.kind, Kind::Vm | Kind::DockerVm) { Place::LocalVm } else { Place::Container };
-        if !self.files_back()? {
+        if !self.files_back().await? {
             return Ok(LabStatus { place: Some(place), ..LabStatus::default() });
         }
         let status = self.read().await?;
-        let parked = self.recorded()?.as_ref().and_then(super::recorded::parked);
+        let parked = self.recorded().await?.as_ref().and_then(super::recorded::parked);
         Ok(LabStatus { place: Some(place), ..view::lab_status(&self.described()?, &status, parked) })
     }
 
-    /// The run's status, read by the home's runner service (else by the runner in this process),
-    /// one read of the run at a time in the app ([`one_read`]): the lab page's and the attack
-    /// box's never ask Vagrant at once.
+    /// The run's status, read by the home's runner service, which reads a run one read at a
+    /// time (the lab page's and the attack box's never ask Vagrant at once). The read's tools get
+    /// the run's own values and secrets (an ESXi host's password).
     async fn read(&self) -> Result<Status> {
-        one_read::status(&self.dir.join(self.name.as_str()), || async {
-            // The read's tools get the run's own values and secrets (an ESXi host's password).
-            let opts = self.placed(RunOptions::new());
-            if self.service
-                && let Some(client) = remote::client(&self.home).await
-            {
-                let target = remote::target(&self.project(), self.format(), &self.name);
-                return remote::status(&self.home, &client, &self.name, target, &opts).await.map_err(|e| self.said(e.into_error()));
-            }
-            self.lab()?.status_with(&opts).await.map_err(|e| self.said(errors::coded(&e.report())))
-        })
-        .await
+        match self.served.status(&self.placed(RunOptions::new())).await {
+            Ok(status) => Ok(status),
+            Err(e) => Err(self.said(self.refused(e).await.into_error())),
+        }
     }
 
-    /// The provider the run's record says it runs on, none before it ever ran: read from the
-    /// runner's files only, no tool runs.
-    pub(crate) fn recorded_provider(&self) -> Result<Option<String>> {
-        Ok(self.recorded()?.and_then(|r| r.provider).map(|p| isothrum_runner::wire_name(&p)))
+    /// The provider the run's record says it runs on, none before it ever ran: no tool runs.
+    pub(crate) async fn recorded_provider(&self) -> Result<Option<String>> {
+        Ok(self.recorded().await?.and_then(|r| r.provider).map(|p| isothrum_runner::wire_name(&p)))
     }
 
-    /// The run's record, none before it ever ran: read from the runner's files only.
-    fn recorded(&self) -> Result<Option<isothrum_runner::RunRecord>> {
-        Ok(self.runner.runs().map_err(|e| errors::coded(&e.report()))?.into_iter().find(|r| r.name == self.name))
+    /// The run's record, none before it ever ran: no tool runs.
+    async fn recorded(&self) -> Result<Option<isothrum_runner::RunRecord>> {
+        self.served.record().await
     }
 
     /// Runs the lab's set-up again on its running machines (`machine`, or all): its provisioners,
@@ -524,7 +462,7 @@ impl LabRun {
 
     /// The run's status as the runner reports it; None before the lab's files exist.
     pub(crate) async fn run_status(&self) -> Result<Option<Status>> {
-        if !self.files_back()? {
+        if !self.files_back().await? {
             return Ok(None);
         }
         self.read().await.map(Some)
@@ -533,18 +471,27 @@ impl LabRun {
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
     /// when given.
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
-        self.lab()?.console_command(machine, user).await.map_err(|e| errors::coded(&e.report()))
+        match self.served.console_command(machine, user).await {
+            Ok(command) => Ok(command),
+            Err(e) => Err(self.refused(e).await.into_error()),
+        }
     }
 
     /// `machine`'s graphical console (its screen), as the runner reaches it with the run's
-    /// options (an ESXi host's settings and password).
-    pub(crate) async fn graphical_console(&self, machine: &str) -> Result<isothrum_runner::Console> {
-        self.lab()?.graphical_console(machine, &self.placed(RunOptions::new())).await.map_err(|e| errors::coded(&e.report()))
+    /// options (an ESXi host's settings and password), held with its tunnel until dropped.
+    pub(crate) async fn graphical_console(&self, machine: &str) -> Result<isothrum_client::HeldConsole> {
+        match self.served.graphical_console(machine, &self.placed(RunOptions::new())).await {
+            Ok(console) => Ok(console),
+            Err(e) => Err(self.refused(e).await.into_error()),
+        }
     }
 
     /// What opens running VM `machine` in its hypervisor's own app, as the runner says.
     pub(crate) async fn native_console(&self, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        self.lab()?.native_console(machine, &self.placed(RunOptions::new())).await.map_err(|e| errors::coded(&e.report()))
+        match self.served.native_console(machine, &self.placed(RunOptions::new())).await {
+            Ok(console) => Ok(console),
+            Err(e) => Err(self.refused(e).await.into_error()),
+        }
     }
 }
 
@@ -556,21 +503,6 @@ pub(crate) fn protocol_word(protocol: isothrum_runner::ConsoleProtocol) -> &'sta
         isothrum_runner::ConsoleProtocol::Rdp => "rdp",
         _ => "none",
     }
-}
-
-/// Ends every tool the runner runs in this process, at once, and every one cut short and still
-/// stopping: the app exiting now, whose futures are never dropped (a status read's `docker
-/// compose ps` would outlive it).
-pub(crate) fn end_tools_at_exit() {
-    PROCESSES.end_all_now();
-}
-
-/// A runner at `home` with this host's tools, a container lab's docker calls pinned to the engine
-/// chosen at its launch ([`EngineProcesses`]), else the current Docker context as before.
-fn host_config(home: &Path) -> RunnerConfig {
-    let mut config = RunnerConfig::new(home);
-    config.processes = Arc::new(EngineProcesses::new(PROCESSES.clone()));
-    config
 }
 
 /// What a start hands the lab: the launch's values for the lab's secret and input slots (a

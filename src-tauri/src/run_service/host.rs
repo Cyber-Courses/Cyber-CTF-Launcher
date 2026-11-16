@@ -83,14 +83,19 @@ pub(crate) fn main(serve: Serve) -> i32 {
     }
 }
 
+/// The runner the service of `home` runs, on this host's tools (`processes`): a lab's docker
+/// calls pinned to the engine its launch chose.
+pub(crate) fn runner_config(home: &std::path::Path, processes: &SystemProcesses) -> RunnerConfig {
+    let mut config = RunnerConfig::new(home);
+    config.processes = Arc::new(crate::runtime::isothrum::EngineProcesses::new(processes.clone()));
+    config
+}
+
 /// Serves `serve.home` (see [`main`]).
 async fn run(serve: Serve) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let service = Service::hold(serve.home)?;
     let processes = SystemProcesses::default();
-    let mut config = RunnerConfig::new(service.home());
-    // A lab's docker calls pinned to the engine its launch chose, as in the app.
-    config.processes = Arc::new(crate::runtime::isothrum::EngineProcesses::new(processes.clone()));
-    let runner = Arc::new(Runner::new(config)?);
+    let runner = Arc::new(Runner::new(runner_config(service.home(), &processes))?);
     let stop: isothrum_service::StopSignal = Box::new(|| {
         Box::pin(async {
             if tokio::signal::ctrl_c().await.is_err() {

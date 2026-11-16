@@ -14,16 +14,11 @@ impl LabRun {
     ///
     /// When the files can't be made again (the lab's own folder or spec is gone too), saying what
     /// is left, since nothing here can reach it any more.
-    pub(super) fn files_back(&self) -> Result<bool> {
+    pub(super) async fn files_back(&self) -> Result<bool> {
         if self.has_project() {
             return Ok(true);
         }
-        let recorded = self
-            .runner
-            .runs()
-            .map_err(|e| errors::coded(&e.report()))?
-            .into_iter()
-            .any(|r| r.name == self.name && r.state != isothrum_runner::RunState::Absent);
+        let recorded = self.recorded().await?.is_some_and(|r| r.state != isothrum_runner::RunState::Absent);
         if !recorded {
             return Ok(false);
         }
@@ -33,7 +28,7 @@ impl LabRun {
         target.and_then(|t| lab::prepare(&self.dir, t)).map(|_| true).map_err(|e| {
             Error::Invalid(format!(
                 "This lab's files are gone ({e}), and what it started may still be running: Cyber CTF can't reach it any more. Remove its containers or VMs with Docker or your hypervisor (their names start with {}).",
-                self.name
+                self.served.name
             ))
         })
     }

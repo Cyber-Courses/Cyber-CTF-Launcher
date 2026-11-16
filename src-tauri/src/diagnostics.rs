@@ -53,19 +53,21 @@ pub(crate) struct Sources {
 pub(crate) async fn export(sources: &Sources, out: &Path) -> Result<()> {
     let report = crate::machine::system::system_check(sources.dirs.clone()).await;
     let report = serde_json::to_value(report).map_err(|e| Error::Invalid(format!("the machine check can't be written down: {e}")))?;
-    write(sources, &report, out)
+    let runner = collect::runner_operations(&sources.dirs).await;
+    write(sources, &report, runner, out)
 }
 
-/// Writes the bundle of `sources`, with the machine check `host_report`, to `out`.
+/// Writes the bundle of `sources`, with the machine check `host_report` and the runner's
+/// operations as its service lists them (`runner`), to `out`.
 ///
 /// # Errors
 ///
 /// The file can't be written.
-pub(crate) fn write(sources: &Sources, host_report: &Value, out: &Path) -> Result<()> {
+pub(crate) fn write(sources: &Sources, host_report: &Value, runner: Result<Vec<collect::Operation>>, out: &Path) -> Result<()> {
     let scrubber = scrub::Scrubber::new(sources.home.as_deref(), collect::job_secrets(&sources.dirs));
     let mut files = vec![
         ("README.txt".to_owned(), README.to_owned()),
-        ("summary.json".to_owned(), pretty(&summary(sources))),
+        ("summary.json".to_owned(), pretty(&summary(sources, runner))),
         ("host-report.json".to_owned(), pretty(host_report)),
     ];
     let logs = sources.log_dir.as_deref().map(|d| collect::logs(d, "logs")).unwrap_or_default();
@@ -86,10 +88,10 @@ fn pretty(value: &Value) -> String {
 }
 
 /// `summary.json` (see the module): what couldn't be read listed under `problems`.
-fn summary(sources: &Sources) -> Value {
+fn summary(sources: &Sources, runner: Result<Vec<collect::Operation>>) -> Value {
     let dirs = &sources.dirs;
     let mut problems = Vec::new();
-    let runner = collect::runner_operations(dirs).unwrap_or_else(|e| {
+    let runner = runner.unwrap_or_else(|e| {
         problems.push(format!("the runs' records: {e}"));
         Vec::new()
     });

@@ -21,10 +21,10 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
     let _lock = lock_lab(dirs, id).await?;
     refuse_cloud_park(runtime)?;
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
-    let run = local_run(dirs, lab, "Pausing a lab on a server or a cloud account isn't available. Stop it instead.")?;
+    let run = local_run(dirs, lab, "Pausing a lab on a server or a cloud account isn't available. Stop it instead.").await?;
     // Only what the page is offered for this run ([`controls`]): a pause of containers on Docker
     // would be carried out as a shut down, and QEMU refuses one.
-    if let Some(why) = park_refusal(mode, run.target(), run.recorded_provider()?.as_deref()) {
+    if let Some(why) = park_refusal(mode, run.target(), run.recorded_provider().await?.as_deref()) {
         return Err(Error::Refused(why.into()));
     }
     run.park(mode, &mut log).await?;
@@ -35,9 +35,9 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
 /// Lab `id`'s run on this machine ([`host::locate`]), for a lab parked or resumed here; refused
 /// with `elsewhere` for a lab on a server host or cloud account. A cloud-services lab, refused
 /// before, has none.
-fn local_run(dirs: &AppDirs, lab: LabRef<'_>, elsewhere: &str) -> Result<isothrum::LabRun> {
+async fn local_run(dirs: &AppDirs, lab: LabRef<'_>, elsewhere: &str) -> Result<isothrum::LabRun> {
     let LabRef { dir, id, runtime } = lab;
-    match host::locate(dirs, dir, id, runtime)? {
+    match host::locate(dirs, dir, id, runtime).await? {
         Some(Host::Local(run)) => Ok(run),
         Some(_) => Err(Error::Invalid(elsewhere.into())),
         None => Err(Error::Invalid(CLOUD_PARK.into())),
@@ -133,7 +133,7 @@ async fn resume(dirs: &AppDirs, lab: LabRef<'_>, mut log: impl FnMut(String)) ->
     let _lock = lock_lab(dirs, id).await?;
     refuse_cloud_park(runtime)?;
     policy_allows(dirs, runtime, None, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
-    let run = local_run(dirs, lab, "A lab on a server or a cloud account isn't parked, so there is nothing to resume: start it again.")?;
+    let run = local_run(dirs, lab, "A lab on a server or a cloud account isn't parked, so there is nothing to resume: start it again.").await?;
     log("Resuming the lab…".into());
     // The runner resumes a parked run as it was; when nothing is left of it, it reports
     // `NothingToResume` and its record reads absent, so the page offers a fresh start.
@@ -149,14 +149,14 @@ async fn resume(dirs: &AppDirs, lab: LabRef<'_>, mut log: impl FnMut(String)) ->
 async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     // A container lab run as one VM per machine has VMs to provision, like a VM lab.
-    let runtime = Recorded::of(dirs, id)?.form(runtime);
+    let runtime = Recorded::of(dirs, id).await?.form(runtime);
     if runtime != Runtime::Vm {
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
     let _lock = lock_lab(dirs, id).await?;
     // Through the runner: a VM lab on this machine, or on an ESXi host. Proxmox and the clouds
     // aren't re-provisioned in place yet.
-    let Some(Host::Local(run) | Host::Esxi { run, .. }) = host::locate(dirs, dir, id, runtime)? else {
+    let Some(Host::Local(run) | Host::Esxi { run, .. }) = host::locate(dirs, dir, id, runtime).await? else {
         return Err(Error::Invalid("Re-running provisioning isn't available for labs on Proxmox or a cloud yet.".into()));
     };
     log(provision_target(&run.status().await?, machine)?);
@@ -197,7 +197,7 @@ pub(crate) async fn stop_locked(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut
     // was applied with and the connection that works now. A cloud-services lab on no account has
     // nothing anywhere: its marks are cleared.
     let mut log = log;
-    if let Some(host) = host::locate(dirs, dir, id, runtime)? {
+    if let Some(host) = host::locate(dirs, dir, id, runtime).await? {
         host.down(dirs, &mut log).await?;
     }
     forget_run(dir)
@@ -225,11 +225,11 @@ fn forget_run(dir: &Path) -> Result<()> {
 /// recorded parked.
 pub async fn clear_parked(dirs: &AppDirs, lab: LabRef<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
-    if Recorded::of(dirs, id)?.parked().is_none() {
+    if Recorded::of(dirs, id).await?.parked().is_none() {
         return Ok(());
     }
     log("A parked copy of an older version of this lab is here: removing it…".into());
-    if let Some(host) = host::locate(dirs, dir, id, runtime)? {
+    if let Some(host) = host::locate(dirs, dir, id, runtime).await? {
         host.down(dirs, log).await?;
     }
     forget_run(dir)
@@ -261,9 +261,9 @@ pub async fn provision_lab(dirs: &AppDirs, id: &str, runtime: Runtime, machine: 
 /// (`in_vm`: its VMs, else its containers). `None` when it isn't an installed lab that runs here
 /// (removed since, the self-test, or recorded as running on a server host): its leftovers then go
 /// by name.
-pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
+pub async fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
     lab_dir(dirs, id).ok()?;
-    let recorded = Recorded::of(dirs, id).ok()?;
+    let recorded = Recorded::of(dirs, id).await.ok()?;
     if recorded.host().is_some() {
         return None;
     }

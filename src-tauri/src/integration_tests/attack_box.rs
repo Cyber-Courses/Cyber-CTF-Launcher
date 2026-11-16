@@ -192,7 +192,7 @@ async fn the_attack_box_is_a_machine_of_an_aws_lab() {
                 return;
             }
             // The box's place, as the lab page's commands find it.
-            match attack_box::locate(&dirs, &dir, &id, crate::runtime::Runtime::Docker) {
+            match attack_box::locate(&dirs, &dir, &id, crate::runtime::Runtime::Docker).await {
                 Ok(Some(placed)) => exercise(&placed, &dirs, &target, &mut l, f).await,
                 found => check(false, format!("the box's place in the account is found ({:?})", found.err()), f),
             }

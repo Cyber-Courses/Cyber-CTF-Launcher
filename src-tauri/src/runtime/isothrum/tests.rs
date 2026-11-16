@@ -281,17 +281,17 @@ async fn a_lab_taken_down_outside_the_app_is_forgotten_before_a_reimport() {
     for (left, what) in [(Containers::Up, "running"), (Containers::Stopped, "stopped outside the app")] {
         f.set(left);
         assert!(!run.is_gone().await.unwrap(), "{what}");
-        forget_gone_with(&dirs, "web", |_| Ok(Some(f.run())), &mut quiet).await.unwrap();
-        assert!(refuse_replace(&dirs, &f.home.dir, "web").is_err(), "{what}: still there, still refused");
+        forget_gone_with(&dirs, "web", |_| std::future::ready(Ok(Some(f.run()))), &mut quiet).await.unwrap();
+        assert!(refuse_replace(&dirs, &f.home.dir, "web").await.is_err(), "{what}: still there, still refused");
     }
     f.set(Containers::None);
     assert!(!run.status().await.unwrap().running, "its page says it isn't running");
     // The runner records what its status read observed: the run is gone, and nothing of it holds
     // a re-import, an update or a removal back any more.
     assert!(run.is_gone().await.unwrap());
-    forget_gone_with(&dirs, "web", |_| Ok(Some(f.run())), &mut quiet).await.unwrap();
-    assert_eq!(still_up(&dirs, "web").unwrap(), None);
-    refuse_replace(&dirs, &f.home.dir, "web").unwrap();
+    forget_gone_with(&dirs, "web", |_| std::future::ready(Ok(Some(f.run()))), &mut quiet).await.unwrap();
+    assert_eq!(still_up(&dirs, "web").await.unwrap(), None);
+    refuse_replace(&dirs, &f.home.dir, "web").await.unwrap();
     run.up(on_own_ports(&launch_env()), None, &mut |_| {}).await.unwrap();
     assert!(run.status().await.unwrap().running, "and it starts again");
 }
@@ -331,7 +331,7 @@ async fn a_lab_never_generated_reads_as_not_running() {
     let root = std::env::temp_dir().join(format!("cyberctf-isothrum-{}", rand::random::<u32>()));
     let dir = root.join("labs").join("web");
     std::fs::create_dir_all(&dir).unwrap();
-    let s = LabRun::with(RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap().status().await.unwrap();
+    let s = LabRun::with(isothrum_runner::RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap().status().await.unwrap();
     assert!(!s.running && s.machines.is_empty());
     let _ = std::fs::remove_dir_all(root);
 }
@@ -344,7 +344,7 @@ async fn tearing_down_a_lab_never_generated_is_a_clean_no_op() {
     let root = std::env::temp_dir().join(format!("cyberctf-isothrum-{}", rand::random::<u32>()));
     let dir = root.join("labs").join("web");
     std::fs::create_dir_all(&dir).unwrap();
-    let run = LabRun::with(RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap();
+    let run = LabRun::with(isothrum_runner::RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap();
     let mut lines = Vec::new();
     run.down(&mut |l| lines.push(l)).await.unwrap();
     assert_eq!(lines, ["Nothing to remove: the run has no files."]);
@@ -509,81 +509,6 @@ fn a_lab_here_is_run_in_the_form_it_was_started_in() {
     record("vagrant");
     assert_eq!(form(Runtime::Docker), Some((Kind::Vm, Some(lab::Target::Vagrant))));
     std::fs::remove_dir_all(&dir).unwrap();
-}
-
-/// A tool of `PROCESSES` cut short that ignores the request to stop (SIGINT trapped), its pid in
-/// `pid` once it runs.
-#[cfg(unix)]
-async fn cut_short_stubborn_tool(pid: &std::path::Path) -> u32 {
-    use isothrum_runner::{ProcessRunner, ProcessSpec};
-    let script = format!("trap '' INT; echo $$ > '{}'; while :; do sleep 0.1; done", pid.display());
-    let spec = ProcessSpec::new("sh", ["-c", script.as_str()]);
-    let mut quiet = |_: isothrum_runner::Stream, _: &str| {};
-    let run = super::PROCESSES.run(&spec, &mut quiet);
-    assert!(tokio::time::timeout(std::time::Duration::from_secs(2), run).await.is_err(), "cut short");
-    std::fs::read_to_string(pid).unwrap().trim().parse().unwrap()
-}
-
-/// Whether process `pid` is gone, within a few seconds.
-#[cfg(unix)]
-async fn gone(pid: u32) -> bool {
-    for _ in 0..50 {
-        if !std::path::Path::new(&format!("/proc/{pid}")).exists()
-            && std::process::Command::new("kill").args(["-0", &pid.to_string()]).status().is_ok_and(|s| !s.success())
-        {
-            return true;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-    false
-}
-
-/// Held by the tests that end every tool of `PROCESSES` (as the app's exit does): run together,
-/// each ended the other's tool before it was cut short or read.
-#[cfg(unix)]
-static ENDS_EVERY_TOOL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_tool_cut_short_never_outlives_the_apps_exit() {
-    // The runner asks a cut-short tool to stop and gives it 30 s: a process exiting meanwhile
-    // left it running.
-    let _alone = ENDS_EVERY_TOOL.lock().await;
-    let dir = std::env::temp_dir().join(format!("cyberctf-cut-short-{}", rand::random::<u32>()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let at_exit = cut_short_stubborn_tool(&dir.join("at-exit")).await;
-    super::end_tools_at_exit();
-    assert!(gone(at_exit).await, "ended at the app's exit");
-    std::fs::remove_dir_all(dir).unwrap();
-}
-
-/// Regression (#327): a status read's `docker compose ps` still running when the app exited
-/// normally outlived it: only the tools cut short were ended, and a read's future is never dropped
-/// at exit. A tool of `PROCESSES` running when the app exits is ended with it.
-#[cfg(unix)]
-#[tokio::test]
-async fn a_tool_still_running_never_outlives_the_apps_exit() {
-    use isothrum_runner::{ProcessRunner, ProcessSpec};
-    let _alone = ENDS_EVERY_TOOL.lock().await;
-    let dir = std::env::temp_dir().join(format!("cyberctf-running-{}", rand::random::<u32>()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let pid_file = dir.join("pid");
-    let script = format!("echo $$ > '{}'; while :; do sleep 0.1; done", pid_file.display());
-    let reading = tokio::spawn(async move {
-        let spec = ProcessSpec::new("sh", ["-c", script.as_str()]);
-        let mut quiet = |_: isothrum_runner::Stream, _: &str| {};
-        super::PROCESSES.run(&spec, &mut quiet).await
-    });
-    let pid: u32 = loop {
-        if let Some(pid) = std::fs::read_to_string(&pid_file).ok().and_then(|p| p.trim().parse().ok()) {
-            break pid;
-        }
-        tokio::task::yield_now().await;
-    };
-    super::end_tools_at_exit();
-    assert!(gone(pid).await, "ended at the app's exit");
-    reading.abort();
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 /// Two machines on one network, both the lab's own: one can go while the other runs.

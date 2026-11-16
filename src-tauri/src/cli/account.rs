@@ -25,9 +25,10 @@ pub(super) async fn servers(command: Servers, ctx: &Context, out: &mut Output<'_
             out.finish(answer, |r| format!("{}: {}", if r["ok"] == true { "ok" } else { "FAILED" }, r["message"].as_str().unwrap_or_default()))
         }
         Servers::Remove { id } => {
-            let answer = ctx
-                .confirm(out, &format!("Remove the saved server {id}"))
-                .and_then(|()| setup::remove(&ctx.dirs, &id).map(|()| json!({ "removed": id })).map_err(Failure::from));
+            let answer = match ctx.confirm(out, &format!("Remove the saved server {id}")) {
+                Ok(()) => setup::remove(&ctx.dirs, &id).await.map(|()| json!({ "removed": id })).map_err(Failure::from),
+                Err(e) => Err(e),
+            };
             out.finish(answer, |_| "Removed.".to_owned())
         }
         Servers::SetDefault { id, none } => {

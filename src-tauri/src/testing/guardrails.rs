@@ -222,15 +222,18 @@ const SLEEP_ALLOWED: &[(&str, &str, &str)] = &[
     ("run_service/tests.rs", "tokio::time::sleep(Duration::from_millis(10)).await;", "polls for an operation's end and its first statuses, bounded"),
     ("runtime/inflight/lock.rs", "std::thread::sleep(Duration::from_millis(25));", "eventually's poll, bounded to 40 looks"),
     ("runtime/inflight/lock.rs", "std::thread::sleep(Duration::from_millis(20));", "a lock held a moment, so the threads overlap"),
-    ("runtime/isothrum/one_read.rs", "tokio::time::sleep(std::time::Duration::from_secs(3)).await;", "a stand-in read that is slow, so the callers overlap"),
     (
         "runtime/isothrum/vm_tests.rs",
         "tokio::time::sleep(std::time::Duration::from_secs(148)).await;",
         "Tokio's paused clock: the page read while the start provisions",
     ),
-    ("runtime/isothrum/tests.rs", "tokio::time::sleep(std::time::Duration::from_millis(100)).await;", "a poll bounded to 50 looks for a process to be gone"),
     ("runtime/server/store.rs", "std::thread::sleep(std::time::Duration::from_millis(5));", "an update held a moment, so the threads overlap"),
     ("screen.rs", "tokio::time::sleep(std::time::Duration::from_millis(50)).await;", "a poll, bounded, for a viewer's pid to be reaped"),
+    (
+        "testing/service.rs",
+        "tokio::time::sleep(Duration::from_millis(10)).await;",
+        "polls bounded to 6000 looks: a test's runner service answering, a stopping one letting its home go",
+    ),
     ("screen/native.rs", "tokio::time::sleep(Duration::from_millis(20)).await;", "polls to a 120 s deadline for the viewer to start, then to warn"),
 ];
 

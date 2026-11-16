@@ -228,7 +228,7 @@ async fn claim_and_run(deps: &Deps, session_id: &str) -> Result<()> {
     let launch = &claim.launch;
     // Anything this start brought up before failing (one unhealthy service, say) is torn down, or
     // it would keep running under a FAILED session and every later launch of it would be refused.
-    let present = crate::runtime::lab_present(deps.dirs(), &launch.lab_id);
+    let present = crate::runtime::lab_present(deps.dirs(), &launch.lab_id).await;
     let url = run_claimed(deps, launch, &place, present).await?;
     // The lab is actually running now. If reporting back to the backend fails, tear down what
     // this start brought up before returning the error, so we don't leave infra running under a

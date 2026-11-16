@@ -62,15 +62,17 @@ impl std::ops::Deref for ServerRun {
 }
 
 impl ServerRun {
-    /// Running `id`, installed in `dir`, on the runner whose home is `home` (the app data folder),
-    /// with this host's tools.
-    pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
-        ServerRun::with(super::host_config(home), dir, id, runtime, true)
+    /// [`ServerRun::new`] on a runner set up with `config`, which this test process serves (tests
+    /// script its tools).
+    #[cfg(test)]
+    fn with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
+        let home = config.home.clone();
+        crate::testing::service::serve_home(config);
+        ServerRun::new(&home, dir, id, runtime)
     }
 
-    /// [`ServerRun::new`] on a runner set up with `config`, its operations through the home's
-    /// service when `service` (tests script its tools, in this process).
-    fn with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime, service: bool) -> Result<ServerRun> {
+    /// Running `id`, installed in `dir`, on the runner whose home is `home` (the app data folder).
+    pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
         // A VM lab runs Proxmox's own module, one VM per machine. A container lab never starts
         // there: its run is the helper VM an earlier version left, read from where it ran.
         let module = if runtime == Runtime::Docker {
@@ -79,13 +81,13 @@ impl ServerRun {
             let (out, target) = lab::terraform(dir, runtime, "proxmox");
             (out, Module::Generated(target))
         };
-        Ok(ServerRun { run: OpenedRun::new(config, dir, id, module, service)? })
+        Ok(ServerRun { run: OpenedRun::new(home, dir, id, module)? })
     }
 
     /// The runner's SSH public key (the launcher's own), made when there is none: what the node
     /// must let in for a jump.
     pub(crate) async fn public_key(&self) -> Result<String> {
-        self.runner.ssh_public_key().await.map_err(|e| errors::coded(&e.report()))
+        super::remote::public_key(&self.served.home).await
     }
 
     /// Brings the lab up on `place` from its generated files, and says where to start. `env` is
@@ -176,7 +178,7 @@ impl ServerRun {
 
     /// `machine`'s graphical console, Proxmox's own through its API, signed in with `place`'s
     /// credentials.
-    pub(crate) async fn screen(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_runner::Console> {
+    pub(crate) async fn screen(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_client::HeldConsole> {
         self.graphical_console(machine, &options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
@@ -342,7 +344,7 @@ mod tests {
         /// [`up`], its tools answered by `answer`.
         fn up_answered_by(answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, ServerRun) {
             let f = Scripted::answered_by(Home::new("-pve", SPEC, &[], lab::Target::Proxmox), answer);
-            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm, false).unwrap();
+            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm).unwrap();
             let state = f.home.runner().join("runs").join("cyberctf-web");
             std::fs::create_dir_all(&state).unwrap();
             std::fs::write(
@@ -422,7 +424,7 @@ mod tests {
                     _ => answer(api, call),
                 }
             });
-            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, home, Runtime::Vm, false).unwrap();
+            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, home, Runtime::Vm).unwrap();
             let state = f.home.runner().join("runs").join(format!("cyberctf-{home}"));
             std::fs::create_dir_all(&state).unwrap();
             std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"vm_id_web":{"value":104}},"resources":[{"instances":[{}]}]}"#).unwrap();
@@ -442,7 +444,8 @@ mod tests {
 
         /// The jump host run `run` recorded, if any.
         fn jump_recorded(run: &ServerRun) -> Option<String> {
-            run.runner.run_record(&run.name).unwrap().and_then(|r| r.env.get(JUMP_VALUE).cloned())
+            let record = crate::testing::runner::run_record(&run.served.home, run.served.name.as_str());
+            record["env"][JUMP_VALUE].as_str().map(str::to_owned)
         }
 
         #[tokio::test]

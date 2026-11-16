@@ -62,13 +62,13 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<Removal> {
     let _lock = runtime::try_lock_lab(dirs, id)?.ok_or_else(busy)?;
     let dir = paths::lab_dir(dirs, id)?;
     runtime::forget_gone(dirs, id, &mut |l| log::info!("{id}: {l}")).await?;
-    if let Some(up) = runtime::status::still_up(dirs, id)? {
+    if let Some(up) = runtime::status::still_up(dirs, id).await? {
         return Err(runtime::status::still_running(&up));
     }
     let (base, owned) = (dirs.data()?.to_path_buf(), id.to_owned());
     let mut removal = blocking(move || remove_files(&base, &owned, &[], rename_retrying, delete)).await?;
     // The runner's record of its run, through the runner's store: its files went above.
-    if let Err(e) = runtime::isothrum::forget_run(&runtime::paths::runner_home(dirs)?, id) {
+    if let Err(e) = runtime::isothrum::forget_run(&runtime::paths::runner_home(dirs)?, id).await {
         log::warn!("removing lab {id}: the runner keeps its run's record: {e}");
     }
     // Its attack box's password, once the lab is gone (a removal refused above keeps it with the

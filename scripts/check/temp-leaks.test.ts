@@ -23,12 +23,14 @@ function base(): string {
 const node = (script: string) => [process.execPath, "-e", script];
 
 describe("temp-leaks", () => {
-  it("names what a run left at the top of its folder, sorted, and not a tool's cache", () => {
+  it("names what a run left at the top of its folder, sorted, and not a tool's cache nor the runner's socket folder", () => {
     const dir = base();
     mkdirSync(join(dir, "cyberctf-lab-x"));
     writeFileSync(join(dir, ".tmpA"), "");
     mkdirSync(join(dir, "node-compile-cache"));
-    expect(leftovers(dir)).toEqual([".tmpA", "cyberctf-lab-x"]);
+    mkdirSync(join(dir, "isothrum-501"));
+    mkdirSync(join(dir, "isothrum-x"));
+    expect(leftovers(dir)).toEqual([".tmpA", "cyberctf-lab-x", "isothrum-x"]);
   });
 
   it("gives every platform's variable the folder, under /tmp off Windows", () => {

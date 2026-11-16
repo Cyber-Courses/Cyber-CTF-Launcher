@@ -55,7 +55,7 @@ pub(crate) fn host_list(dirs: &AppDirs) -> Result<HostList> {
 /// Creates or updates a host from the setup form (see `server::setup::save`).
 #[tauri::command]
 pub async fn server_save(app: AppHandle, input: HostInput) -> Result<HostProfile> {
-    setup::save(&AppDirs::from(&app), input)
+    setup::save(&AppDirs::from(&app), input).await
 }
 
 /// A Proxmox server's placement choices, read with the form's sign-in (see
@@ -96,7 +96,7 @@ pub fn server_default_ssh_key() -> Option<String> {
 /// Removes a host no lab runs on (see `server::setup::remove`).
 #[tauri::command]
 pub async fn server_remove(app: AppHandle, id: String) -> Result<()> {
-    setup::remove(&AppDirs::from(&app), &id)
+    setup::remove(&AppDirs::from(&app), &id).await
 }
 
 /// Sets (or clears, with None) the host VM labs run on by default.
@@ -132,8 +132,8 @@ pub(crate) async fn public_key_in(dirs: &AppDirs) -> Result<String> {
 /// How many installed labs are currently running on each host, keyed by host id (as the
 /// runner records their runs).
 #[tauri::command]
-pub fn server_running_labs(app: AppHandle) -> HashMap<String, u32> {
-    running_by_host(&AppDirs::from(&app))
+pub async fn server_running_labs(app: AppHandle) -> HashMap<String, u32> {
+    running_by_host(&AppDirs::from(&app)).await
 }
 
 /// A host's hardware headroom, for its row: `None` for a host that isn't a Proxmox server, an
@@ -240,7 +240,7 @@ mod tests {
         // A lab running on it keeps it.
         t.lab("web", &[]);
         crate::runtime::test_support::record_run(t.data(), "web", Some(&saved.id), "proxmox", "ready");
-        assert_eq!(server_running_labs(app()).get(&saved.id), Some(&1));
+        assert_eq!(server_running_labs(app()).await.get(&saved.id), Some(&1));
         assert!(server_remove(app(), saved.id.clone()).await.unwrap_err().to_string().starts_with("1 lab still running"));
         crate::runtime::test_support::record_run(t.data(), "web", Some(&saved.id), "proxmox", "absent");
         server_remove(app(), saved.id.clone()).await.unwrap();

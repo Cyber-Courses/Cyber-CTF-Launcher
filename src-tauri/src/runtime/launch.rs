@@ -17,10 +17,9 @@ use crate::platform::policy::Key;
 mod local;
 mod on_host;
 
-pub(crate) use local::check_utm;
 #[cfg(test)]
 use local::low_memory_warning;
-use local::{check_provider, check_qemu, warn_if_low_memory};
+use local::{check_provider, check_qemu, check_utm, warn_if_low_memory};
 #[cfg(feature = "cloud-services")]
 #[cfg(feature = "cloud-services")]
 pub(super) use on_host::check_aws_budget;
@@ -107,7 +106,7 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
     // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud
     // lab would keep billing). A run here taken down outside the app is forgotten first.
     super::status::forget_gone(dirs, id, &mut log).await?;
-    if let Some(up) = super::status::still_up(dirs, id)?
+    if let Some(up) = super::status::still_up(dirs, id).await?
         && up.host.as_deref() != host
     {
         return Err(super::status::still_running(&up));

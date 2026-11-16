@@ -127,8 +127,8 @@ fn modified(path: &Path) -> Option<String> {
 
 /// Each run's last operation, as the Isothrum runner records it (its `runs()`, the launcher's
 /// one way to read the runner's records); an error when the records can't be read.
-pub(crate) fn runner_operations(dirs: &AppDirs) -> crate::error::Result<Vec<Operation>> {
-    let records = runtime::isothrum::records(&runtime::paths::runner_home(dirs)?)?;
+pub(crate) async fn runner_operations(dirs: &AppDirs) -> crate::error::Result<Vec<Operation>> {
+    let records = runtime::isothrum::records(&runtime::paths::runner_home(dirs)?).await?;
     Ok(records
         .into_iter()
         .filter_map(|r| {

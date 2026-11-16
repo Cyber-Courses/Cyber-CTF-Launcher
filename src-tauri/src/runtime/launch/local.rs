@@ -56,12 +56,6 @@ pub(super) async fn check_qemu(prepared: &lab::Prepared, log: &mut impl FnMut(St
     Ok(())
 }
 
-/// How UTM is opened when it isn't running: in the background (`-g`, not brought to the front)
-/// and hidden (`-j`), so its window doesn't show: `-g` alone still showed UTM's library window
-/// over the app. Hidden, it stays hidden while Vagrant's UTM plugin starts the VM (`utmctl
-/// start`). A UTM the player already has open is left as it is.
-const OPEN_UTM: [&str; 4] = ["-g", "-j", "-a", "UTM"];
-
 /// How long UTM may take to open and answer Apple events.
 const UTM_WAIT: Duration = Duration::from_secs(60);
 
@@ -77,11 +71,11 @@ pub(super) const UTM_NOT_ALLOWED: &str =
 /// A lab on UTM: Vagrant's UTM plugin drives UTM through Apple events (`osascript`, `utmctl`),
 /// reading the VM's state and its forwarded ports from the app, so a UTM that isn't running when
 /// `vagrant up` asks, or that this app may not control, fails that read mid-start ("Application
-/// isn't running (-600)", "Not authorized to send Apple events (-1743)"). UTM is opened first and
-/// waited for until it answers; the automation refusal is named with its way out. It is opened in
-/// the background and hidden ([`OPEN_UTM`]): the player never gets its window in front of the app.
-pub(crate) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
-    if crate::platform::exec::run("open", &OPEN_UTM, None).await.is_err() {
+/// isn't running (-600)", "Not authorized to send Apple events (-1743)"). UTM is opened first, in
+/// the background (its first-launch dialogs then face the player instead of failing a launch from
+/// behind), and waited for until it answers; the automation refusal is named with its way out.
+pub(super) async fn check_utm(log: &mut impl FnMut(String)) -> Result<()> {
+    if crate::platform::exec::run("open", &["-g", "-a", "UTM"], None).await.is_err() {
         return Err(Error::ToolMissing { tool: "UTM" });
     }
     let started = std::time::Instant::now();

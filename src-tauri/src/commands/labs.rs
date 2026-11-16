@@ -172,7 +172,7 @@ pub async fn lab_status(app: AppHandle, id: String, runtime: Runtime) -> Result<
 /// [`lab_status`], in the app whose folders are `dirs`.
 pub(crate) async fn status_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<LabStatus> {
     let Some(dir) = installed_lab_dir(dirs, id)? else { return Ok(LabStatus::default()) };
-    let failed = crate::runtime::isothrum::last_run_failed(dirs, id);
+    let failed = crate::runtime::isothrum::last_run_failed(dirs, id).await;
     Ok(status::status(dirs, &dir, id, runtime).await?.unless_launch_failed(failed))
 }
 
@@ -285,13 +285,13 @@ pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, sourc
 /// lab run as one VM per machine included); none beside cloud services.
 #[tauri::command]
 pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<Vec<lab::Observer>> {
-    tools_in(&AppDirs::from(&app), &id, runtime)
+    tools_in(&AppDirs::from(&app), &id, runtime).await
 }
 
 /// [`lab_tools`], in the app whose folders are `dirs`.
-pub(crate) fn tools_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<Vec<lab::Observer>> {
+pub(crate) async fn tools_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<Vec<lab::Observer>> {
     let dir = lab_dir(dirs, id)?;
-    lab::tools(&dir, crate::runtime::recorded::Recorded::of(dirs, id)?.form(runtime))
+    lab::tools(&dir, crate::runtime::recorded::Recorded::of(dirs, id).await?.form(runtime))
 }
 
 /// Runs a lab's exploitability check: does the intended exploit path still work? Lets a
@@ -306,7 +306,7 @@ pub async fn lab_check(app: AppHandle, id: String, runtime: Runtime) -> Result<d
 /// [`lab_check`], in the app whose folders are `dirs`.
 pub(crate) async fn check_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<docker::Check> {
     let dir = lab_dir(dirs, id)?;
-    match crate::runtime::host::locate(dirs, &dir, id, runtime)? {
+    match crate::runtime::host::locate(dirs, &dir, id, runtime).await? {
         Some(host) => host.check().await,
         None => Ok(docker::Check::default()),
     }
@@ -316,7 +316,7 @@ pub(crate) async fn check_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Resu
 /// and the system terminal both run it).
 pub(crate) async fn box_shell_command(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<isothrum_runner::ShellCommand> {
     let dir = lab_dir(dirs, id)?;
-    attack_box::reachable(dirs, &dir, id, runtime)?.shell_command().await
+    attack_box::reachable(dirs, &dir, id, runtime).await?.shell_command().await
 }
 
 /// The attack box's status for the lab detail view: the machine the launcher added to the lab,
@@ -333,7 +333,7 @@ pub async fn attack_box_status(app: AppHandle, id: String, runtime: Runtime) -> 
 pub(crate) async fn box_status_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<AttackStatus> {
     Box::pin(async move {
         let dir = lab_dir(dirs, id)?;
-        match attack_box::locate(dirs, &dir, id, runtime)? {
+        match attack_box::locate(dirs, &dir, id, runtime).await? {
             Some(placed) => placed.status().await,
             None => Ok(AttackStatus::default()),
         }
@@ -524,8 +524,8 @@ mod tests {
         assert!(!vm.available);
     }
 
-    #[test]
-    fn a_cloud_lab_has_its_attack_box_in_both_forms_with_its_accounts_place() {
+    #[tokio::test]
+    async fn a_cloud_lab_has_its_attack_box_in_both_forms_with_its_accounts_place() {
         use crate::runtime::test_support::record_run;
         let t = TestApp::new();
         let _tools = Tools::rules(&[]);
@@ -534,17 +534,17 @@ mod tests {
         record_run(t.data(), "srv", Some(&aws1), "cloud-docker/aws", "ready");
         // The box is a machine the launcher adds to the lab, the run updated with the account's
         // place: cloud-docker (the default), a container among the lab's in its cloud VM.
-        let placed = |runtime| match crate::runtime::attack_box::locate(&t.dirs(), &dir, "srv", runtime).unwrap() {
+        let placed = async |runtime| match crate::runtime::attack_box::locate(&t.dirs(), &dir, "srv", runtime).await.unwrap() {
             Some(b) => match &b.host {
                 crate::runtime::host::Host::Cloud { place, .. } => (place.label.clone(), b.target, b.vm),
                 _ => panic!("in the cloud account"),
             },
             None => panic!("a box"),
         };
-        assert_eq!(placed(Runtime::Docker), ("aws1".into(), crate::runtime::lab::Target::CloudDocker, false));
+        assert_eq!(placed(Runtime::Docker).await, ("aws1".into(), crate::runtime::lab::Target::CloudDocker, false));
         // One VM per machine (cloud-vm): a Kali VM among the lab's.
         record_run(t.data(), "srv", Some(&aws1), "cloud-vm/aws", "ready");
-        assert_eq!(placed(Runtime::Docker), ("aws1".into(), crate::runtime::lab::Target::CloudVm, true));
+        assert_eq!(placed(Runtime::Docker).await, ("aws1".into(), crate::runtime::lab::Target::CloudVm, true));
     }
 
     #[tokio::test]

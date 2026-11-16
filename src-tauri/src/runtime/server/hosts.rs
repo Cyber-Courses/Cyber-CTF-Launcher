@@ -78,14 +78,14 @@ pub(crate) fn no_labs_running(running: usize) -> Result<()> {
 /// How many labs still have something on host `id`, as the runner records their runs (any state
 /// but gone, on that host): installed or not (moved elsewhere since, uninstalled), only that
 /// host's credentials can take them down. A record that can't be read is an error.
-pub(crate) fn labs_on(dirs: &AppDirs, id: &str) -> Result<usize> {
-    Ok(runs_on_hosts(dirs)?.filter(|(host, _)| host == id).count())
+pub(crate) async fn labs_on(dirs: &AppDirs, id: &str) -> Result<usize> {
+    Ok(runs_on_hosts(dirs).await?.filter(|(host, _)| host == id).count())
 }
 
 /// How many installed labs run on each host, by host id, as the runner records their runs; none
 /// counted when the records can't be read.
-pub(crate) fn running_by_host(dirs: &AppDirs) -> HashMap<String, u32> {
-    let runs = match runs_on_hosts(dirs) {
+pub(crate) async fn running_by_host(dirs: &AppDirs) -> HashMap<String, u32> {
+    let runs = match runs_on_hosts(dirs).await {
         Ok(runs) => runs,
         Err(e) => {
             log::warn!("couldn't count the labs on each host: {e}");
@@ -100,8 +100,8 @@ pub(crate) fn running_by_host(dirs: &AppDirs) -> HashMap<String, u32> {
 }
 
 /// Each run the runner records on a host (any state but gone): its host's id and its lab's id.
-fn runs_on_hosts(dirs: &AppDirs) -> Result<impl Iterator<Item = (String, String)>> {
-    let runs = crate::runtime::isothrum::records(&crate::runtime::paths::runner_home(dirs)?)?;
+async fn runs_on_hosts(dirs: &AppDirs) -> Result<impl Iterator<Item = (String, String)>> {
+    let runs = crate::runtime::isothrum::records(&crate::runtime::paths::runner_home(dirs)?).await?;
     Ok(runs.into_iter().filter(|r| r.state != isothrum_runner::RunState::Absent).filter_map(|r| {
         let lab = crate::runtime::lab_of_project(r.name.as_str())?.to_owned();
         Some((r.host_label?, lab))

@@ -3,53 +3,7 @@
 //! state moves, outputs and the final result or error are not (the caller says how it ended).
 
 use super::super::deploy_log;
-use isothrum_runner::{Event, EventKind, Events, StepState, WarningCode};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-
-/// An operation's event sink, and the lines it sends: the sink crosses threads (the runner's
-/// contract), the lines are read on the caller's task ([`follow`]).
-pub(super) fn channel() -> (Lines, UnboundedReceiver<String>) {
-    let (tx, rx) = unbounded_channel();
-    (Lines(tx), rx)
-}
-
-/// Runs `op` (an operation given the sink of [`channel`]), each line `rx` receives from it
-/// reaching `log` as it comes, in order.
-pub(super) async fn follow<T>(log: &mut impl FnMut(String), mut rx: UnboundedReceiver<String>, op: impl Future<Output = T>) -> T {
-    // On the heap: a runner operation's future is large, and kept inline it would make every
-    // future awaiting this one (the commands, the deploy worker, the agent) as large.
-    let mut running = Box::pin(op);
-    loop {
-        tokio::select! {
-            biased;
-            Some(line) = rx.recv() => log(line),
-            out = &mut running => {
-                while let Ok(line) = rx.try_recv() {
-                    log(line);
-                }
-                return out;
-            }
-        }
-    }
-}
-
-/// An event sink that discards every line: for an operation with no deploy log to show (the
-/// auto-stop reaper).
-pub(super) fn silent() -> Lines {
-    channel().0
-}
-
-/// Sends each event's line, if it has one, to the caller's task.
-pub(super) struct Lines(UnboundedSender<String>);
-
-impl Events for Lines {
-    fn emit(&self, event: &Event) {
-        if let Some(text) = line(&event.kind) {
-            // The receiver lives as long as the operation: a send can only fail once it's over.
-            let _ = self.0.send(text);
-        }
-    }
-}
+use isothrum_runner::{EventKind, StepState, WarningCode};
 
 /// The deploy log's line for an event, if it gets one.
 pub(super) fn line(kind: &EventKind) -> Option<String> {
