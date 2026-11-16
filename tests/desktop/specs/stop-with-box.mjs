@@ -5,16 +5,17 @@
 // Overview call) and check Docker has nothing of the lab left, box included.
 import {
   boxDiagnosis,
+  eventually,
   finish,
   forceVisible,
   goTo,
+  invokeCmd,
   LAB_START_MS,
   labContainers,
   localLab,
   mainText,
   openApp,
   results,
-  sleep,
   waitAwake,
   waitForLab,
 } from "../lib/support.mjs";
@@ -63,23 +64,10 @@ try {
   console.log("box attached; containers:", JSON.stringify(withBox));
 
   // Stop the lab as the lab page does: the `lab_stop` command, its log on a Tauri channel.
-  await b.execute((v) => {
-    window.__stop = "pending";
-    const internals = window.__TAURI_INTERNALS__;
-    const channel = internals.transformCallback(() => {});
-    internals.invoke("lab_stop", { id: v, runtime: "DOCKER", logs: `__CHANNEL__:${channel}` }).then(
-      () => (window.__stop = "ok"),
-      (e) => (window.__stop = "ERR " + e),
-    );
-  }, id);
-  let result = "pending";
-  for (let i = 0; i < 150 && result === "pending"; i++) {
-    await sleep(1000);
-    result = await b.execute(() => window.__stop).catch(() => "pending");
-  }
-  if (result !== "ok") throw new Error(`lab_stop: ${result}`);
-  await sleep(2000);
-  const left = containerNames(id);
+  await invokeCmd(b, "lab_stop", { id, runtime: "DOCKER" }, { streaming: true, timeoutMs: 150000 });
+  // Compose has returned; Docker lists the removed containers a moment longer.
+  let left = containerNames(id);
+  await eventually(() => (left = containerNames(id)).length === 0, 30000, 1000);
   if (left.length === 0) r.pass("stop-with-box", "stopping the lab removed its containers, attack box included");
   else {
     r.fail("stop-with-box", `containers left after stop: ${JSON.stringify(left)}`);

@@ -1,7 +1,7 @@
 // Functional GUI e2e: a running lab survives an app restart. Launch with the seed, verify running,
 // kill the app, reopen WITHOUT the seed, and assert the lab is rediscovered as running (the
 // running-labs scan, not a cache: the in-memory state died with the first process).
-import { finish, goTo, LAB_START_MS, localLab, mainText, openApp, results, sleep, stopApp, waitForLab } from "../lib/support.mjs";
+import { appEnds, finish, goTo, LAB_START_MS, localLab, mainText, openApp, results, stopApp, waitForLab } from "../lib/support.mjs";
 
 export const needs = ["running-lab:fixture"];
 const r = results();
@@ -18,8 +18,8 @@ try {
   await waitForLab(first.b, LAB_START_MS);
   console.log("phase1: running after seed");
   await finish(first.b, app1);
+  if (!(await appEnds(app1, 20000))) throw new Error("the first app never ended after its kill");
   app1 = null;
-  await sleep(4000);
 
   ({ proc: app2, b: b2 } = await openApp());
   await goTo(b2, "Overview");

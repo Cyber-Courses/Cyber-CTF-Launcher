@@ -16,6 +16,7 @@ import {
   dockerUp,
   finish,
   goTo,
+  holdsFor,
   importedLabs,
   LAB_START_MS,
   localLab,
@@ -25,7 +26,6 @@ import {
   openImportedLab,
   openLabFromList,
   results,
-  sleep,
   stopAndRemoveOnPage,
   waitLabPageRunning,
 } from "../lib/support.mjs";
@@ -113,8 +113,8 @@ try {
       await r.step("imported-runs", "the imported lab runs, as its page says", () => waitLabPageRunning(b, LAB_START_MS));
       await r.step("imported-stop", "Stop & remove stops it (confirmed in the system dialog) and it stays listed", async () => {
         await stopAndRemoveOnPage(b);
-        await sleep(2000);
-        if (!(await importedLabs(b)).some((l) => l.id === id)) throw new Error("the lab is no longer installed after its stop");
+        const installed = async () => (await importedLabs(b)).some((l) => l.id === id);
+        if (!(await holdsFor(installed, 2000))) throw new Error("the lab is no longer installed after its stop");
       });
     } else {
       for (const c of ["imported-page", "imported-runs", "imported-stop"]) r.skip(c, "the import didn't go through");

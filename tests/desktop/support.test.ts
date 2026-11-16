@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appEnds, clickThatMayQuit, containersChanged, labDown, linkTargets, mainButton, results, secondCopy } from "./lib/support.mjs";
+import { appEnds, clickThatMayQuit, containersChanged, holdsFor, labDown, linkTargets, mainButton, results, secondCopy } from "./lib/support.mjs";
 
 // The specs' shared selectors (lib/support.mjs), as WebdriverIO gets them.
 
@@ -36,6 +36,31 @@ describe("a click on a button that may end the app", () => {
     await expect(clickThatMayQuit({ click: () => Promise.resolve() }, proc, 50)).resolves.toBeUndefined();
     await expect(appEnds(proc, 20)).resolves.toBe(false);
     expect(proc.listenerCount("exit")).toBe(0);
+  });
+});
+
+describe("a condition that must hold for a while", () => {
+  it("holds when every look finds it true, looking more than once", async () => {
+    let looks = 0;
+    await expect(
+      holdsFor(
+        () => {
+          looks += 1;
+          return true;
+        },
+        30,
+        5,
+      ),
+    ).resolves.toBe(true);
+    expect(looks).toBeGreaterThan(2);
+  });
+
+  it("fails at the first look that finds it false, without waiting the rest out", async () => {
+    let looks = 0;
+    const started = Date.now();
+    await expect(holdsFor(() => ++looks < 3, 10_000, 5)).resolves.toBe(false);
+    expect(looks).toBe(3);
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });
 

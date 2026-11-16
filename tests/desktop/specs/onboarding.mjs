@@ -3,7 +3,7 @@
 // Skip setup and assert the app completes onboarding and lands on the shell. Exercises the real
 // wizard (the same machine-setup step components the standalone setup window reuses), without
 // depending on the machine report, since Skip setup leaves the machine steps untouched.
-import { connect, finish, forceVisible, launchApp, results, sleep } from "../lib/support.mjs";
+import { connect, finish, forceVisible, launchApp, results } from "../lib/support.mjs";
 
 const main = (b) =>
   b
@@ -53,16 +53,21 @@ try {
   // 3. Skip the rest of setup; the app must complete onboarding and land on the shell. Skip can
   //    land on a final "done" step (Browse labs) before the shell, so chase either.
   if (!(await clickText(b, "Skip setup"))) throw new Error("no Skip setup to finish with");
-  let done = false;
-  for (let i = 0; i < 20 && !done; i++) {
-    await forceVisible(b);
-    if (await b.$("aside nav").isExisting()) {
-      done = true;
-      break;
-    }
-    await clickText(b, "Browse labs");
-    await sleep(1000);
-  }
+  // Browse labs (the final step Skip can land on) is pressed until the shell shows.
+  const done = await b
+    .waitUntil(
+      async () => {
+        await forceVisible(b);
+        if (await b.$("aside nav").isExisting()) return true;
+        await clickText(b, "Browse labs");
+        return false;
+      },
+      { timeout: 20000, interval: 1000 },
+    )
+    .then(
+      () => true,
+      () => false,
+    );
   if (!done) throw new Error(`never reached the shell after Skip setup; main=${(await main(b)).slice(0, 160)}`);
   const onboarded = await b.execute(() => {
     try {

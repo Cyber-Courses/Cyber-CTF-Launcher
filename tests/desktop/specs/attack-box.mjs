@@ -2,7 +2,7 @@
 // attack-box panel (WdioAttack), let it attach the attack box, see it running with an address,
 // open the attacker shell, then Stop it and watch it detach. Drives the same useAttackBox /
 // AttackBoxPanel / useLabShell the catalogue lab page uses.
-import { finish, forceVisible, goTo, LAB_START_MS, localLab, mainText, openApp, results, sleep, waitAwake, waitForLab } from "../lib/support.mjs";
+import { finish, forceVisible, goTo, invokeCmd, LAB_START_MS, localLab, mainText, openApp, results, waitAwake, waitForLab } from "../lib/support.mjs";
 
 export const needs = ["running-lab:fixture"];
 const r = results();
@@ -53,52 +53,28 @@ try {
     });
   } catch (e) {
     const vis = await b.execute(() => document.visibilityState).catch(() => "?");
-    await b.execute((v) => {
-      window.__diag = "pending";
-      const inv = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
-      if (!inv) {
-        window.__diag = "no-invoke";
-        return;
-      }
-      Promise.all([
-        inv("attack_box_status", { id: v, runtime: "DOCKER" }).then(
-          (s) => ["box", s],
-          (x) => ["box-err", String(x)],
-        ),
-        inv("lab_status", { id: v, runtime: "DOCKER" }).then(
-          (s) => ["lab", s],
-          (x) => ["lab-err", String(x)],
-        ),
-      ]).then(
-        (r) => {
-          window.__diag = JSON.stringify(r);
-        },
-        (x) => {
-          window.__diag = "ERR " + x;
-        },
+    const ask = (cmd) =>
+      invokeCmd(b, cmd, { id, runtime: "DOCKER" }, { timeoutMs: 15000 }).then(
+        (s) => [cmd, s],
+        (x) => [`${cmd} failed`, x.message],
       );
-    }, id);
-    let diag = "pending";
-    for (let i = 0; i < 30 && diag === "pending"; i++) {
-      await sleep(500);
-      diag = await b.execute(() => window.__diag).catch(() => "pending");
-    }
+    const diag = JSON.stringify([await ask("attack_box_status"), await ask("lab_status")]);
     console.log(`DIAG id=${id} visibility=${vis} panel=${JSON.stringify((await text(b)).slice(0, 300))} invoke=${diag}`);
     throw e;
   }
   let ip = "(no ip shown)";
   let pt = "";
-  // getText() can glue the address to its label ("Address10.61.136.2"), so no leading word boundary.
-  for (let i = 0; i < 10; i++) {
-    await forceVisible(b);
-    pt = await text(b);
-    const m = pt.match(/\d{1,3}(?:\.\d{1,3}){3}/);
-    if (m) {
-      ip = m[0];
-      break;
-    }
-    await sleep(1500);
-  }
+  // The address follows the running state by a status read or two. getText() can glue it to its
+  // label ("Address10.61.136.2"), so no leading word boundary.
+  await waitAwake(
+    b,
+    async () => {
+      pt = await text(b);
+      ip = pt.match(/\d{1,3}(?:\.\d{1,3}){3}/)?.[0] ?? ip;
+      return ip !== "(no ip shown)";
+    },
+    { timeout: 15000, interval: 1500, timeoutMsg: "no address shown" },
+  ).catch(() => {});
   console.log(
     `ATTACK_UP box running on the lab network, address ${ip}` +
       (ip === "(no ip shown)" ? ` | panel=${JSON.stringify(pt.replace(/\s+/g, " ").slice(0, 220))}` : ""),
@@ -110,8 +86,8 @@ try {
   await shellBtn.waitForClickable({ timeout: 20000 });
   const before = await b.getWindowHandles();
   await shellBtn.click();
-  await sleep(4000);
-  const after = await b.getWindowHandles();
+  let after = before;
+  await b.waitUntil(async () => (after = await b.getWindowHandles()).length > before.length, { timeout: 4000, interval: 500 }).catch(() => {});
   if (after.length > before.length) {
     const fresh = after.find((h) => !before.includes(h));
     await b.switchToWindow(fresh);

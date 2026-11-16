@@ -13,7 +13,9 @@ import {
   confirmSystemDialogs,
   docker,
   dockerUp,
+  eventually,
   finish,
+  holdsFor,
   LAB_START_MS,
   labPageRunning,
   mainButton,
@@ -23,7 +25,6 @@ import {
   results,
   runContainers,
   signedIn,
-  sleep,
   startFromDialog,
   STOP_MS,
   stopAndRemoveOnPage,
@@ -104,8 +105,9 @@ try {
     );
     await r.step("reset", "Reset lab removes the lab and starts it again: every machine runs", async () => {
       await (await mainButton(b, "Reset lab")).click();
-      await sleep(5000);
-      await waitAwake(b, async () => !/Resetting/.test(await mainText(b)) && (await labPageRunning(b)), {
+      // Done once the page runs again with no machine down: the down banner, there until the
+      // reset begins, keeps this from taking the page before the reset for the page after it.
+      await waitAwake(b, async () => !/Resetting|is down|are down/.test(await mainText(b)) && (await labPageRunning(b)), {
         timeout: LAB_START_MS,
         interval: 5000,
         timeoutMsg: "the lab never ran again after Reset",
@@ -123,15 +125,20 @@ try {
   await r.step("remove-cancel", "Stop & remove, answered Cancel in the system dialog, leaves the lab running", async () => {
     await confirmSystemDialogs(b, "cancel");
     await (await mainButton(b, "Stop & remove")).click();
-    await sleep(5000);
-    if (!(await labPageRunning(b))) throw new Error("the lab no longer shows running after a Cancel");
-    if (runningOf(mine(before)).length === 0) throw new Error("its containers stopped after a Cancel");
+    // A Cancel shows nothing: the page and the lab's containers are watched for a stop starting.
+    let why = "";
+    const stillUp = async () => {
+      if (!(await labPageRunning(b))) why = "the lab no longer shows running after a Cancel";
+      else if (runningOf(mine(before)).length === 0) why = "its containers stopped after a Cancel";
+      return !why;
+    };
+    if (!(await holdsFor(stillUp, 5000, 1000))) throw new Error(why);
   });
   await r.step("remove", "Stop & remove, confirmed, leaves nothing of the lab", async () => {
     await stopAndRemoveOnPage(b);
-    await sleep(3000);
-    const left = mine(before).map(([n]) => n);
-    if (left.length) throw new Error(`left: ${left.join(", ")}`);
+    let left = [];
+    const gone = await eventually(() => (left = mine(before).map(([n]) => n)).length === 0, 30000, 1000);
+    if (!gone) throw new Error(`left: ${left.join(", ")}`);
   });
 } catch (e) {
   r.fail("error", e.message);

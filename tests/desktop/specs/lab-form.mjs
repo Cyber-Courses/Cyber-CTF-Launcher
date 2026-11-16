@@ -16,6 +16,7 @@ import {
   CATALOGUE_LAB,
   docker,
   dockerUp,
+  eventually,
   finish,
   hypervisorVms,
   LAB_START_MS,
@@ -25,7 +26,6 @@ import {
   openLabFromList,
   results,
   signedIn,
-  sleep,
   startFromDialog,
   STOP_MS,
   stopAndRemoveOnPage,
@@ -105,11 +105,13 @@ try {
 
   await r.step("stop", "Stop & remove from the page leaves nothing of the lab", async () => {
     if (await (await mainButton(b, "Stop & remove", "Stop & clean up")).isExisting()) await stopAndRemoveOnPage(b, STOP_MS);
-    await sleep(3000);
-    const after = snapshot();
-    const containers = added(after.containers, before.containers);
-    const vms = after.vms && before.vms ? added(after.vms, before.vms) : [];
-    if (containers.length || vms.length) throw new Error(`left: ${[...containers, ...vms].join(", ")}`);
+    let left = [];
+    const nothingLeft = () => {
+      const after = snapshot();
+      left = [...added(after.containers, before.containers), ...(after.vms && before.vms ? added(after.vms, before.vms) : [])];
+      return left.length === 0;
+    };
+    if (!(await eventually(nothingLeft, 30000, 2000))) throw new Error(`left: ${left.join(", ")}`);
   });
 } catch (e) {
   r.fail("error", e.message);

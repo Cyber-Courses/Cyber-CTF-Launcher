@@ -6,7 +6,7 @@
 // account) and an imported one when one is installed. A link to no lab, or not to a lab, leaves
 // the app usable where it was. How the system routes the scheme to the app (the installers'
 // registration, a second launch handed to the first) is the packaging smoke's.
-import { finish, goTo, importedLabs, invokeCmd, linkTargets, mainButton, mainText, openApp, results, sleep } from "../lib/support.mjs";
+import { finish, goTo, holdsFor, importedLabs, invokeCmd, linkTargets, mainButton, mainText, openApp, results } from "../lib/support.mjs";
 import { labRows } from "../lib/page.mjs";
 
 export const needs = [];
@@ -86,13 +86,14 @@ try {
 
   await goTo(b, "Overview");
   await openLink(b, "cyberctf://labs/no-such-lab-e2e");
-  await sleep(3000);
-  r.check("unknown-lab", (await b.$("aside nav").isExisting()) && !/Something went wrong/.test(await mainText(b)), "a link to no lab leaves the app usable");
+  // Nothing marks a link done with: the app is watched while it handles it.
+  const usable = async () => (await b.$("aside nav").isExisting()) && !/Something went wrong/.test(await mainText(b));
+  r.check("unknown-lab", await holdsFor(usable, 3000), "a link to no lab leaves the app usable");
   await goTo(b, "Overview");
   const before = await b.$("main h1").getText();
   await openLink(b, "cyberctf://elsewhere/thing");
-  await sleep(3000);
-  r.check("not-a-lab", (await b.$("main h1").getText()) === before, "a cyberctf:// link that isn't a lab's is ignored");
+  const unchanged = async () => (await b.$("main h1").getText()) === before;
+  r.check("not-a-lab", await holdsFor(unchanged, 3000), "a cyberctf:// link that isn't a lab's is ignored");
 } catch (e) {
   r.fail("error", e.message);
   if (b) console.log("main text:", JSON.stringify((await mainText(b)).slice(0, 600)));
