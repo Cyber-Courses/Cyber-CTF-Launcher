@@ -251,12 +251,12 @@ fn awaits_relogin(provider: Provider, plugin: bool, groups: &[&str], group: &str
 
 /// Fedora: Linux with dnf, which the guided setup installs through as it does through apt.
 pub(crate) fn bare_fedora() -> SystemReport {
-    with(bare_debian(), false, |r| r.pkg_manager = PkgManager { name: "dnf".into(), installed: true, version: Some("4.24.0".into()) })
+    with(bare_debian(), false, |r| r.pkg_manager = PackageManager { name: "dnf".into(), installed: true, version: Some("4.24.0".into()) })
 }
 
 /// Arch: Linux with neither apt nor dnf, which the guided setup doesn't install through yet.
 pub(crate) fn bare_arch() -> SystemReport {
-    with(bare_debian(), false, |r| r.pkg_manager = PkgManager { name: "apt".into(), installed: false, version: None })
+    with(bare_debian(), false, |r| r.pkg_manager = PackageManager { name: "apt".into(), installed: false, version: None })
 }
 
 /// An Apple Silicon Mac with Docker Desktop running, but no Vagrant and no hypervisor.

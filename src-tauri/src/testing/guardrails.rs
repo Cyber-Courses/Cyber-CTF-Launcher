@@ -142,7 +142,6 @@ const ADAPTERS: &[&str] = &["cloud_cli.rs", "platform/exec", "runtime/docker/", 
 /// Shipped JSON parsing outside the adapters, each with what it reads. A tool's output among them
 /// is marked so; the rest read the app's own files or answers that are no tool's.
 const PARSE_ALLOWED: &[(&str, &str, &str)] = &[
-    ("machine/system.rs", "serde_json::from_str(json.trim())", "tool output: `az version`; belongs in cloud_cli"),
     ("runtime/server/azure_size.rs", "serde_json::from_str(json)", "tool output: `az vm list-sizes`; belongs in cloud_cli"),
     ("runtime/server/azure_size.rs", "serde_json::from_str::<Vec<Value>>(out)", "tool output: `az vm list-usage`; belongs in cloud_cli"),
     ("app.rs", "serde_json::from_str(json)", "the webview's stored settings"),

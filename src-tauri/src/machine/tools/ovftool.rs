@@ -17,11 +17,11 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 
 use crate::error::{Error, Result};
-use isothrum_machine::tools::{Tool, first_line};
 use crate::platform::exec::run_read_env;
 use crate::platform::policy::{self, Key};
 use crate::platform::remembered::{forget_all, remembered};
 use crate::platform::{AppDirs, random_hex};
+use isothrum_machine::tools::{Tool, first_line};
 
 #[cfg(test)]
 mod tests;

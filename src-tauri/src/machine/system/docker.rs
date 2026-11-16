@@ -3,8 +3,8 @@
 
 use std::time::Duration;
 
-pub use isothrum_machine::docker::{Engine, EngineStatus};
 use isothrum_machine::docker::{ContextError, NoAnswer};
+pub use isothrum_machine::docker::{Engine, EngineStatus};
 
 use crate::error::{Error, Result};
 use crate::platform::exec::{docker_denied, docker_denied_error, run};

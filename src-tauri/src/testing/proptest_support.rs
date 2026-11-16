@@ -80,13 +80,3 @@ pub fn json() -> impl Strategy<Value = Value> {
         ]
     })
 }
-
-/// Arbitrary text that is sometimes JSON: what a tool may print when it changes format, fails
-/// halfway or is not the tool we expected.
-pub fn json_ish_text() -> impl Strategy<Value = String> {
-    prop_oneof![
-        json().prop_map(|v| v.to_string()),
-        proptest::collection::vec(json(), 0..4).prop_map(|vs| vs.iter().map(Value::to_string).collect::<Vec<_>>().join("\n")),
-        "(?s).{0,300}",
-    ]
-}

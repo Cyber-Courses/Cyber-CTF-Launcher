@@ -278,9 +278,9 @@ fn reopen_command() -> Option<String> {
 
 #[cfg(windows)]
 mod windows {
-    use crate::platform::sys::{delete_user_registry_value, set_user_registry_string};
     #[cfg(test)]
     use crate::platform::sys::{Hive, registry_value_exists};
+    use crate::platform::sys::{delete_user_registry_value, set_user_registry_string};
 
     const RUN_ONCE: &str = r"Software\Microsoft\Windows\CurrentVersion\RunOnce";
     const RUN_ONCE_NAME: &str = "CyberCTF";

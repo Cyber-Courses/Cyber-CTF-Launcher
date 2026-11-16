@@ -57,9 +57,11 @@ async fn contexts_that_cant_be_listed_say_so_not_that_the_engine_has_none() {
 
 #[tokio::test]
 async fn the_cli_is_pointed_at_the_context_of_the_engine_asked_for() {
-    let script = FakeProcesses::script()
-        .allow("docker context ls", Reply::ok("default *\norbstack\ncolima-dev\n"))
-        .expect_times("docker context use colima-dev", 1, Reply::ok(""));
+    let script = FakeProcesses::script().allow("docker context ls", Reply::ok("default *\norbstack\ncolima-dev\n")).expect_times(
+        "docker context use colima-dev",
+        1,
+        Reply::ok(""),
+    );
     let _machine = docker(script.build());
     docker_use_engine("colima".into()).await.unwrap();
     assert_eq!(docker_use_engine("podman".into()).await.unwrap_err().to_string(), "no Docker context for podman");

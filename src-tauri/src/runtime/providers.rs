@@ -32,12 +32,14 @@ fn machine() -> isothrum_machine::Context {
 /// with this machine's package manager, and outside the tests the version probes that rarely
 /// change (`vagrant --version`...) kept a while ([`crate::platform::remembered::Remembering`]).
 pub(crate) fn machine_check() -> isothrum_machine::Context {
-    let mut cx = machine();
+    let cx = machine();
     #[cfg(not(test))]
-    {
+    let cx = {
+        let mut cx = cx;
         cx.runner = std::sync::Arc::new(crate::platform::remembered::Remembering::new(cx.runner));
         cx.host.packages = crate::platform::host::Host::here().packages.map(crate::platform::host::Packages::isothrum);
-    }
+        cx
+    };
     cx
 }
 
@@ -57,10 +59,11 @@ fn this_machine() -> isothrum_machine::Context {
 /// The local hypervisors ready for a lab's VMs on this machine: Vagrant, the hypervisor and its
 /// plugin (what the Machine page reports as ready), in [`Provider::ALL`]'s order.
 pub async fn ready_here() -> Vec<Provider> {
-    if crate::platform::exec::run_read("vagrant", &["--version"], None).await.is_err() {
+    let cx = machine();
+    if !isothrum_machine::tools::version(&cx, isothrum_machine::tools::probes::VAGRANT).await.installed {
         return Vec::new();
     }
-    ready(&detect(true).await, true)
+    ready(&isothrum_machine::providers::detect(&cx, true).await, true)
 }
 
 /// Of `statuses` ([`detect`]'s), the local hypervisors ready for a lab's VMs: none without

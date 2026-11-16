@@ -2,7 +2,7 @@
 import type { Tool } from "./Tool";
 
 /**
- * Cloud provider CLIs, for the Cloud setup (AWS / Azure / GCP).
+ * The cloud providers' command-line tools.
  */
 export type CloudClis = { 
 /**

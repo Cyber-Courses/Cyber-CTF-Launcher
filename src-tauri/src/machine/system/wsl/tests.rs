@@ -269,7 +269,10 @@ async fn a_test_never_restarts_for_real() {
 #[tokio::test]
 async fn the_probes_answer_on_this_machine() {
     let started = std::time::Instant::now();
-    let cx = isothrum_machine::Context::new(std::sync::Arc::new(isothrum_runner::SystemProcesses::default()), crate::runtime::providers::testing::host(std::path::Path::new("/")));
+    let cx = isothrum_machine::Context::new(
+        std::sync::Arc::new(isothrum_runner::SystemProcesses::default()),
+        crate::runtime::providers::testing::host(std::path::Path::new("/")),
+    );
     let found = isothrum_machine::wsl::check(&cx, Marks::default()).await.unwrap();
     println!("{:?} -> {:?}", found.probes, found.state);
     assert!(started.elapsed() < std::time::Duration::from_secs(45));

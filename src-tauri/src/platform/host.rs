@@ -153,26 +153,6 @@ pub enum LinuxPackages {
 }
 
 impl Packages {
-    /// Its name, as the machine check reports it (`Homebrew`, `winget`, `apt`, `dnf`).
-    pub fn name(self) -> &'static str {
-        match self {
-            Packages::Homebrew(_) => "Homebrew",
-            Packages::Winget => "winget",
-            Packages::Linux(LinuxPackages::Apt) => "apt",
-            Packages::Linux(LinuxPackages::Dnf) => "dnf",
-        }
-    }
-
-    /// The program that answers its `--version`.
-    pub fn program(self) -> &'static str {
-        match self {
-            Packages::Homebrew(brew) => brew,
-            Packages::Winget => "winget",
-            Packages::Linux(LinuxPackages::Apt) => "apt-get",
-            Packages::Linux(LinuxPackages::Dnf) => "dnf",
-        }
-    }
-
     /// The same package manager as isothrum-machine names it.
     pub fn isothrum(self) -> isothrum_machine::Packages {
         match self {
@@ -227,6 +207,14 @@ pub fn brew_bin() -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_package_manager_is_isothrum_machines_of_the_same_name() {
+        let all = [Packages::Homebrew("/opt/homebrew/bin/brew"), Packages::Winget, Packages::Linux(LinuxPackages::Apt), Packages::Linux(LinuxPackages::Dnf)];
+        let named: Vec<&str> = all.iter().map(|p| p.isothrum().name()).collect();
+        assert_eq!(named, ["Homebrew", "winget", "apt", "dnf"]);
+        assert_eq!(Packages::Homebrew("/usr/local/bin/brew").isothrum().program(), "/usr/local/bin/brew");
+    }
 
     #[test]
     fn the_os_and_cpu_here_are_rusts() {
