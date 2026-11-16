@@ -11,7 +11,7 @@ use super::install::Dependency;
 use super::steps::{Step, run_steps, step};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
-use crate::platform::host::{Host, LinuxPackages, Os, Packages};
+use crate::platform::host::{Host, Os, Packages};
 
 /// A tool Cyber CTF installed, as Settings lists it: the record, and its name here.
 #[derive(Serialize, Clone, Debug, ts_rs::TS)]
@@ -327,7 +327,7 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
         (Os::Macos, Some(Packages::Homebrew(brew)), Dependency::Virtualbox) => Some(virtualbox_dmg(brew, &mut on_line).await?),
         _ => None,
     };
-    run_steps(&plan_on(dependency, host, dmg.as_deref())?, &mut on_line).await?;
+    super::steps::run_plan(&plan_on(dependency, host, dmg.as_deref())?, &mut on_line).await?;
     update(&dirs, |tools| tools.retain(|t| t.dependency != dependency));
     on_line("Removed.".into());
     Ok(())
@@ -340,18 +340,6 @@ mod tests {
     const BREW: &str = "/opt/homebrew/bin/brew";
     const MAC: Host = Host { os: Os::Macos, arch: crate::platform::host::Arch::Aarch64, packages: Some(Packages::Homebrew(BREW)) };
     const WINDOWS: Host = Host { os: Os::Windows, arch: crate::platform::host::Arch::X86_64, packages: Some(Packages::Winget) };
-    const APT: Host = Host { os: Os::Linux, arch: crate::platform::host::Arch::X86_64, packages: Some(Packages::Linux(LinuxPackages::Apt)) };
-    const DNF: Host = Host { packages: Some(Packages::Linux(LinuxPackages::Dnf)), ..APT };
-
-    #[test]
-    fn a_removal_runs_as_root_as_an_install_does() {
-        // Regression: removals built their own pkexec line, without the proxy installs hand it.
-        let steps = plan_on(Dependency::Vagrant, APT, None).unwrap();
-        assert_eq!(steps[0].program, "pkexec");
-        assert_eq!(steps[0].args.first().map(String::as_str), Some("env"));
-        let script = crate::platform::root_script::RootScript::new("apt-get remove -y vagrant");
-        assert_eq!(steps[0].args.last().map(String::as_str), Some(&*script));
-    }
 
     #[tokio::test]
     async fn the_policy_refuses_a_removal_before_anything_runs() {
@@ -512,11 +500,11 @@ mod tests {
             Dependency::Gcloud,
         ] {
             let steps = plan(dep, Some("/x/VirtualBox.dmg")).unwrap();
-            assert_eq!(steps[0].program, "winget", "{dep:?}");
-            assert!(steps[0].args.windows(2).any(|w| w == ["--source", "winget"]), "{dep:?}: {:?}", steps[0].args);
+            assert_eq!(steps.commands()[0].0, "winget", "{dep:?}");
+            assert!(steps.commands()[0].1.windows(2).any(|w| w == ["--source", "winget"]), "{dep:?}: {:?}", steps.commands()[0].1);
         }
         // Not in winget: its MSI removed by its product code.
-        assert_eq!(plan(Dependency::VmwareUtility, None).unwrap()[0].program, "powershell");
+        assert_eq!(plan(Dependency::VmwareUtility, None).unwrap().commands()[0].0, "powershell");
         assert!(
             plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err()
                 && plan(Dependency::Hyperv, None).is_err()
@@ -540,36 +528,5 @@ mod tests {
             assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
         }
         assert!(plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err() && plan(Dependency::Libvirt, Some("/x/VirtualBox.dmg")).is_err());
-    }
-
-    #[test]
-    fn every_linux_tool_has_a_way_out() {
-        let plan = |dep, dmg| plan_on(dep, APT, dmg);
-        for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Utm | Dependency::Hyperv)) {
-            assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");
-        }
-        assert!(plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err() && plan(Dependency::Utm, Some("/x/VirtualBox.dmg")).is_err());
-        // The packages holding the binaries the Machine page looks for go too, not only the
-        // metapackages the install named.
-        let script = |dep| plan(dep, Some("/x/VirtualBox.dmg")).unwrap()[0].args.join(" ");
-        assert!(script(Dependency::Qemu).contains("'qemu-system*'"));
-        assert!(script(Dependency::Libvirt).contains("libvirt-clients"));
-    }
-
-    #[test]
-    fn a_tool_installed_through_dnf_is_removed_through_dnf() {
-        for dep in [Dependency::Docker, Dependency::Vagrant, Dependency::Terraform, Dependency::Virtualbox, Dependency::Qemu, Dependency::Libvirt] {
-            let script = plan_on(dep, DNF, None).unwrap()[0].args.join(" ");
-            assert!(script.contains("dnf remove -y") && !script.contains("apt-get"), "{dep:?}: {script}");
-        }
-        // AWS CLI is a folder on every distribution.
-        assert!(plan_on(Dependency::Awscli, DNF, None).unwrap()[0].args.join(" ").contains("rm -rf /usr/local/aws-cli"));
-        assert!(plan_on(Dependency::Awscli, Host { packages: None, ..APT }, None).is_ok(), "a folder, whatever the distribution");
-        // What the setup never installed through dnf has nothing to remove through it.
-        for dep in [Dependency::Azurecli, Dependency::Gcloud, Dependency::VmwareUtility] {
-            let err = plan_on(dep, DNF, None).err().map(|e| e.to_string()).unwrap_or_default();
-            assert!(err.contains("apt only"), "{dep:?}: {err}");
-        }
-        assert!(plan_on(Dependency::Vagrant, Host { packages: None, ..APT }, None).is_err());
     }
 }

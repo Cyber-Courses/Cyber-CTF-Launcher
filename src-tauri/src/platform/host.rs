@@ -171,14 +171,6 @@ impl Packages {
             Packages::Linux(LinuxPackages::Dnf) => isothrum_machine::Packages::Linux(isothrum_machine::LinuxPackages::Dnf),
         }
     }
-
-    /// The Linux distribution's, when it is one.
-    pub fn linux(self) -> Option<LinuxPackages> {
-        match self {
-            Packages::Linux(packages) => Some(packages),
-            Packages::Homebrew(_) | Packages::Winget => None,
-        }
-    }
 }
 
 /// This computer: its OS, its CPU, and the package manager the guided setup goes through here

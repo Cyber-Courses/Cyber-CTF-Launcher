@@ -270,7 +270,10 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
     let tools = terraform_tools(Rc::new(Cell::new(false)), true);
     let log = Sink::default();
     let steps = match plan(Dependency::Terraform) {
-        Ok(steps) => steps,
+        Ok(Plan::Own(steps)) => steps,
+        // Linux: isothrum-machine's root step, run and tested there; its failures' words are
+        // tested with the steps.
+        Ok(Plan::Machine(_)) => return,
         // A host with nothing to install through (macOS without Homebrew, Linux without apt or
         // dnf): the install is refused as its plan is, before anything runs.
         Err(refused) => {

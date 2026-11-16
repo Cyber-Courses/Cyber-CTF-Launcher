@@ -81,6 +81,12 @@ impl Plan {
         }
     }
 
+    /// Whether it has no step.
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Each step as `(program, args)`.
     #[cfg(test)]
     pub fn commands(&self) -> Vec<(String, Vec<String>)> {
@@ -110,7 +116,21 @@ pub async fn run_plan(plan: &Plan, on_line: &mut impl FnMut(String)) -> Result<(
 async fn run_machine_step(step: &isothrum_machine::install::Step, on_line: &mut impl FnMut(String)) -> Result<()> {
     crate::platform::remembered::forget_all();
     let cx = crate::runtime::providers::machine_check();
-    let ran = isothrum_machine::install::run_step(&cx, step, &mut |line: &str| on_line(line.to_owned())).await;
+    // Its lines come through a channel: the step's future stays `Send` whatever `on_line` is.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let run = async move {
+        let mut send = |line: &str| {
+            // The receiver lives until the step ends: a line is never sent to no one.
+            tx.send(line.to_owned()).ok();
+        };
+        isothrum_machine::install::run_step(&cx, step, &mut send).await
+    };
+    let shown = async {
+        while let Some(line) = rx.recv().await {
+            on_line(line);
+        }
+    };
+    let (ran, ()) = tokio::join!(run, shown);
     crate::platform::remembered::forget_all();
     ran.map_err(step_failed)
 }

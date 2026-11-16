@@ -25,14 +25,6 @@ fn exited(code: i32) -> std::process::ExitStatus {
 #[cfg(unix)]
 #[test]
 fn each_program_is_watched_for_what_its_own_output_says() {
-    // pkexec: its refusal, only with its own exit codes; a script's lines aren't watched.
-    let pkexec = step("pkexec", &["sh", "-c", "apt-get install -y x"]);
-    let mut w = Watch::new(&pkexec);
-    w.error_line("Error executing command as another user: Not authorized");
-    assert!(w.end(&pkexec, exited(126)).unwrap_err().to_string().contains("cancelled"));
-    let mut w = Watch::new(&step("sh", &["-c", "x"]));
-    w.error_line("Error executing command as another user: Not authorized");
-    assert_eq!(w.pkexec_error, None);
     // brew: the first broken-Homebrew cause, said when the step fails, not when it succeeds.
     let brew = step("brew", &["install", "qemu"]);
     let mut w = Watch::new(&brew);
@@ -52,20 +44,6 @@ fn each_program_is_watched_for_what_its_own_output_says() {
     assert_eq!(w.installer_code, None);
 }
 
-#[test]
-fn pkexec_refusals_name_their_cause() {
-    // pkexec's own lines (polkit 126), as it prints them.
-    let refused = "Error executing command as another user: Not authorized";
-    let no_agent = "Error executing command as another user: No authentication agent found.";
-    let no_tty =
-        "Error creating textual authentication agent: Error opening current controlling terminal for the process (`/dev/tty'): No such device or address";
-    assert!(is_pkexec_error(refused) && is_pkexec_error(no_agent) && is_pkexec_error(no_tty));
-    assert!(pkexec_refusal(refused).contains("cancelled"));
-    assert!(pkexec_refusal(no_agent).contains("polkit agent") && pkexec_refusal(no_tty).contains("polkit agent"));
-    // The script's own output never passes for pkexec's.
-    assert!(!is_pkexec_error("sh: 1: gpg: not found"));
-}
-
 #[cfg(unix)]
 #[tokio::test]
 async fn steps_stream_both_outputs_and_report_a_failure() {
@@ -77,21 +55,6 @@ async fn steps_stream_both_outputs_and_report_a_failure() {
     assert!(lines.contains(&"out".to_string()) && lines.contains(&"err".to_string()));
     assert_eq!(lines.last().map(String::as_str), Some("$ sh -c exit 3"));
     assert!(err.to_string().starts_with("`sh` exited with"), "{err}");
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_script_exiting_126_or_127_with_pkexecs_words_is_still_its_own_failure() {
-    // Only pkexec's own refusal (126/127 *and* its message, from pkexec itself) reads as the
-    // prompt being cancelled; a script that prints the same words and exits 126 is a plain
-    // failure of that program, raw code kept.
-    let mut lines = Vec::new();
-    let s = step("sh", &["-c", "echo 'Error executing command as another user: Not authorized' >&2; exit 126"]);
-    let err = run_step(&s, &mut |l| lines.push(l)).await.unwrap_err();
-    assert_eq!(err.to_string(), "`sh` exited with exit status: 126");
-    assert_eq!(lines, ["Error executing command as another user: Not authorized"]);
-    let err = run_step(&step("sh", &["-c", "exit 127"]), &mut |_| {}).await.unwrap_err();
-    assert_eq!(err.to_string(), "`sh` exited with exit status: 127");
 }
 
 #[test]
@@ -170,4 +133,15 @@ fn a_command_line_reads_as_typed() {
     // A proxy's password never reaches the setup log.
     let root = step("pkexec", &["env", "https_proxy=http://ada:s3cret@proxy.corp:3128", "sh", "-c", "apt-get update"]);
     assert_eq!(command_line(&root), "$ pkexec env https_proxy=http://ada:[redacted]@proxy.corp:3128 sh -c apt-get update");
+}
+
+#[test]
+fn isothrum_machines_step_failures_read_as_the_launcher_said_them() {
+    use isothrum_machine::install::StepFailed;
+    assert_eq!(step_failed(StepFailed::NoPkexec).to_string(), NO_PKEXEC);
+    assert!(step_failed(StepFailed::PromptRefused).to_string().contains("cancelled"));
+    assert!(step_failed(StepFailed::NoPolkitAgent).to_string().contains("polkit agent"));
+    assert_eq!(step_failed(StepFailed::SudoRefused).to_string(), SUDO_REFUSED);
+    assert_eq!(step_failed(StepFailed::Missing { program: "vagrant".into() }).to_string(), "vagrant is not available on this machine.");
+    assert_eq!(step_failed(StepFailed::Exited { program: "pkexec".into(), code: Some(100) }).to_string(), "`pkexec` exited with exit status: 100");
 }

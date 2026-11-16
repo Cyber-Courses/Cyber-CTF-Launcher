@@ -5,8 +5,8 @@
 //!
 //! - Isothrum's home is Isothrum's: no shipped code opens a path inside it (its runs' folders,
 //!   its store, its keys); the launcher asks the runner.
-//! - A shell script handed to `sh -c` is a literal, a [`crate::platform::root_script::RootScript`],
-//!   or quoted by `runtime::ssh::sh_quote`: never text spliced in by hand.
+//! - A shell script handed to `sh -c` is a literal, an isothrum-machine `RootScript` (Linux's
+//!   installs), or quoted by `runtime::ssh::sh_quote`: never text spliced in by hand.
 //! - A tool's output is parsed (JSON) only in the modules that drive that tool.
 //!
 //! And over its test code (and the TypeScript tests'), what makes a test pass or fail by luck
@@ -101,8 +101,8 @@ fn shipped_code_opens_no_path_inside_isothrums_home() {
     assert!(wrong.is_empty(), "paths inside Isothrum's home (ask the runner instead):\n{}", wrong.join("\n"));
 }
 
-/// Where a script handed to `sh -c` may be built from parts: the root scripts' own module, and
-/// the one place a pkexec step takes a [`crate::platform::root_script::RootScript`].
+/// Where a script handed to `sh -c` may be built from parts. (Linux's root scripts are
+/// isothrum-machine's, built and checked there.)
 const SHELL_ALLOWED: &[(&str, &str, &str)] = &[
     ("machine/tools/install.rs", "format!(\"'{brew}' trust azure/azure-cli", "macOS: Homebrew's own path, found by the app, single-quoted"),
     ("machine/tools/scripts.rs", "args: vec![\"-c\".into(), script]", "macOS: the cask fetch; Homebrew's path and fixed cask names, single-quoted"),
@@ -130,7 +130,7 @@ fn spliced_shell(l: &str) -> bool {
 #[test]
 fn no_shell_script_is_spliced_by_hand() {
     // A `-c` whose script comes on a later line is read from there: `-c` and its argument.
-    let hits = shipped_lines(|file, l| file != "platform/root_script.rs" && file != "runtime/ssh.rs" && spliced_shell(l));
+    let hits = shipped_lines(|file, l| file != "runtime/ssh.rs" && spliced_shell(l));
     let wrong = unallowed(&hits, SHELL_ALLOWED);
     assert!(wrong.is_empty(), "`sh -c` given a script built by hand (use a literal, RootScript or sh_quote):\n{}", wrong.join("\n"));
 }
