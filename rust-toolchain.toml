@@ -1,8 +1,7 @@
 # The toolchain every host builds the launcher with (rustup installs it on first use), as Isoloom
-# and Isothrum pin theirs: a new stable never changes a build by itself. 1.100.0's rustc overflows
-# its stack compiling the core (`cyberctf_lib`: SIGSEGV, built with RUST_MIN_STACK raised), which
-# 1.99.0 builds; move on once a release builds it. The targets are the release's two macOS halves
-# and what `scripts/check/other-platforms.sh` lints from any host.
+# and Isothrum pin theirs: a new stable never changes a build by itself; moving on is a change of
+# its own, checked like any other. The targets are the release's two macOS halves and what
+# `scripts/check/other-platforms.sh` lints from any host.
 [toolchain]
 channel = "1.99.0"
 profile = "minimal"
