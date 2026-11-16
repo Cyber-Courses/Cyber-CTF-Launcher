@@ -375,17 +375,46 @@ pub(crate) enum Others {
 ///
 /// The service's stream can't be read, or ended.
 pub(crate) async fn follow_others(client: &Client, on: &mut impl FnMut(Others)) -> Result<(), String> {
-    use isothrum_runner::{OperationPhase, RunState};
-    let since = isothrum_runner::rfc3339(std::time::SystemTime::now());
     let mut under = std::collections::HashSet::new();
     for run in client.list().await.map_err(|e| e.to_string())? {
         under.extend(under_way(client, &run.name).await.into_iter().map(|o| o.0));
     }
+    let mut others = OthersTold::since_now(under);
     let mut events = client.subscribe(None, None).await.map_err(|e| e.to_string())?;
-    let mut told: HashMap<i64, Option<Error>> = HashMap::new();
     while let Some(item) = events.next().await {
         let (_, event) = item.map_err(|e| e.to_string())?;
-        let live = event.time >= since;
+        let mine = event.operation.is_some_and(ours);
+        others.take(&event, mine, on);
+    }
+    Err("the runner service's stream ended".into())
+}
+
+/// What [`follow_others`] tells of the service's events, one after the other: from when it began
+/// (`since`), the operations then under way (`under`) included, and those it told begun and not
+/// yet ended, each with the error it ended on so far (`told`).
+struct OthersTold {
+    /// When the following began: what happened before isn't told.
+    since: String,
+    /// The operations under way when it began, told although they began before.
+    under: std::collections::HashSet<i64>,
+    /// The operations told begun and not yet ended, with their error so far.
+    told: HashMap<i64, Option<Error>>,
+}
+
+impl OthersTold {
+    /// Following from now, `under` the operations under way.
+    fn since_now(under: std::collections::HashSet<i64>) -> OthersTold {
+        OthersTold { since: isothrum_runner::rfc3339(std::time::SystemTime::now()), under, told: HashMap::new() }
+    }
+
+    /// Tells `on` what `event` says that this process didn't ask for; `mine` when its operation
+    /// is one this process queued ([`ours`]). The service's stream can carry an operation's first
+    /// events before its queuer has its id: such an operation of ours, told begun as another's,
+    /// is told ended as soon as it shows to be ours, as its queuer tells it from there on. Left in
+    /// flight, its lab read busy and starting for as long as the app ran.
+    fn take(&mut self, event: &isothrum_runner::Event, mine: bool, on: &mut impl FnMut(Others)) {
+        use isothrum_runner::{OperationPhase, RunState};
+        let live = event.time >= self.since;
         let standing = |s: &RunState| matches!(s, RunState::Ready | RunState::Parked);
         if let (EventKind::State { from, to }, Some(run), true) = (&event.kind, &event.run, live)
             && standing(from)
@@ -393,13 +422,19 @@ pub(crate) async fn follow_others(client: &Client, on: &mut impl FnMut(Others)) 
         {
             on(Others::Left { run: run.clone() });
         }
-        let Some(operation) = event.operation.filter(|o| !ours(*o)) else { continue };
-        let id = operation.0;
-        if let std::collections::hash_map::Entry::Vacant(first) = told.entry(id) {
-            if !(live || under.contains(&id)) || isothrum_client::v1::phase_of(&event) == Some(OperationPhase::Ended) {
-                continue;
+        let Some(id) = event.operation.map(|o| o.0) else { return };
+        if mine {
+            if self.told.remove(&id).is_some() {
+                on(Others::Ended { operation: id, error: None });
             }
-            let (Some(run), Some(op)) = (event.run.clone(), event.op) else { continue };
+            return;
+        }
+        let ended = isothrum_client::v1::phase_of(event) == Some(OperationPhase::Ended);
+        if let std::collections::hash_map::Entry::Vacant(first) = self.told.entry(id) {
+            if !(live || self.under.contains(&id)) || ended {
+                return;
+            }
+            let (Some(run), Some(op)) = (event.run.clone(), event.op) else { return };
             first.insert(None);
             on(Others::Began { operation: id, run, op });
         }
@@ -407,12 +442,14 @@ pub(crate) async fn follow_others(client: &Client, on: &mut impl FnMut(Others)) 
             on(Others::Line { operation: id, line });
         }
         if let EventKind::Error(report) = &event.kind {
-            told.insert(id, Some(errors::coded(report)));
+            self.told.insert(id, Some(errors::coded(report)));
         }
-        if isothrum_client::v1::phase_of(&event) == Some(OperationPhase::Ended) {
-            let error = told.remove(&id).flatten();
+        if ended {
+            let error = self.told.remove(&id).flatten();
             on(Others::Ended { operation: id, error });
         }
     }
-    Err("the runner service's stream ended".into())
 }
+
+#[cfg(test)]
+mod tests;
