@@ -232,6 +232,16 @@ fn checks_pass(checked: crate::error::Result<crate::runtime::docker::Check>, f: 
 /// through the node when only the node reaches the lab), and its shell reaches its machine
 /// (through the node and the router).
 async fn reached(run: &ServerRun, s: &crate::runtime::LabStatus, f: &mut Vec<String>) {
+    // Where the runner says each published endpoint is reached, and why not when it isn't.
+    match run.endpoints(&isothrum_runner::RunOptions::new()).await {
+        Ok(endpoints) => {
+            for e in &endpoints {
+                println!("endpoint {}: {:?} (forwarded: {}) {}", e.name, e.address, e.forwarded, e.why.as_deref().unwrap_or_default());
+            }
+            check(endpoints.iter().all(|e| e.address.is_some()), format!("each published endpoint is reached ({endpoints:?})"), f);
+        }
+        Err(e) => check(false, format!("its endpoints read: {e}"), f),
+    }
     if let Some(url) = &s.url {
         let code = curl(url);
         check(code.as_deref() == Ok("200"), format!("{url} answers ({code:?})"), f);
