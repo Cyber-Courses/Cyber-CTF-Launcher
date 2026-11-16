@@ -33,6 +33,7 @@ mod remote;
 mod retry;
 mod runner_said;
 mod server;
+mod tunnel;
 mod view;
 
 pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};

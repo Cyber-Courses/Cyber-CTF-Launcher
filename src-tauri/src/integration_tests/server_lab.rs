@@ -17,7 +17,9 @@
 //! lab generated for `proxmox`, started with the server's profile variables (the node passed in,
 //! as the launcher discovers it), its status, its checks over SSH through the lab's router (and
 //! the node, when the lab bridge is internal to it), then stopped, nothing of it left in the
-//! runner's records. The same `isothrum::ServerRun` the lab page uses, without the app handle.
+//! runner's records. The same `isothrum::ServerRun` the lab page uses, without the app handle:
+//! with `CYBERCTF_TEST_PVE_JUMP`, Terraform's SSH to the router goes through the launcher's
+//! tunnel to the node, the node's host keys confirmed first as the player does in Servers.
 //!
 //! Opt-in (it needs a Proxmox server, the runner's key let in on its node, and a lab):
 //!
@@ -165,13 +167,18 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
     let run = ServerRun::new(&home, &dir, "pve-runner-lab", Runtime::Vm).unwrap();
     // The key the lab's VMs let in, as a launch gives it (`launch::server_place`).
     let keys = run.key_values().await.unwrap();
+    let jump = std::env::var("CYBERCTF_TEST_PVE_JUMP").ok().filter(|j| !j.is_empty());
+    if let Some((_, node)) = jump.as_deref().and_then(|j| j.split_once('@')) {
+        // The tunnel checks the node's host key against the ones confirmed beside the key.
+        trust_on_first_use(node, &[&home.join("ssh").join("id_ed25519")]).await;
+    }
     let place = ServerPlace {
         label: "pve-lab".into(),
         name: "Proxmox test server".into(),
         vars: vars.into_iter().chain(keys).collect(),
         // The profile names no node: the launcher passes the server's first.
         node: Some(var("CYBERCTF_TEST_PVE_NODE")),
-        jump: std::env::var("CYBERCTF_TEST_PVE_JUMP").ok().filter(|j| !j.is_empty()),
+        jump,
     };
     let mut f = Vec::new();
     scenario(

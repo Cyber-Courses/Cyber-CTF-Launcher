@@ -195,6 +195,29 @@ impl Target {
         crate::platform::exec::run_env_timed("ssh", &refs, None, &[], timeout).await.map_err(|e| known_hosts::refused_key(&self.host, e))
     }
 
+    /// The node login `login` (`user@host`, as a jump names it) on port 22, signed in with
+    /// `identity`; refused when it isn't one.
+    pub fn login(login: &str, identity: PathBuf) -> Result<Self> {
+        let (user, host) = login.split_once('@').ok_or_else(|| Error::Invalid("unexpected jump host".into()))?;
+        let target = Target::direct(host, user, identity);
+        target.check_endpoint()?;
+        Ok(target)
+    }
+
+    /// The `ssh` arguments of a SOCKS5 proxy on `127.0.0.1:port` through this host, signing in
+    /// to nothing else (`-N`): unattended, its host key checked against `known_hosts`, and ending
+    /// when the port can't be forwarded (taken meanwhile) rather than running on as no proxy.
+    pub fn socks_args(&self, known_hosts: &Path, port: u16) -> Result<Vec<String>> {
+        self.check_endpoint()?;
+        let mut args: Vec<String> = vec!["-N".into(), "-D".into(), format!("127.0.0.1:{port}")];
+        args.extend(["-i".into(), self.identity.to_string_lossy().to_string(), "-p".into(), self.port.to_string()]);
+        for o in batch_options(&known_hosts.to_string_lossy()).into_iter().chain(["ExitOnForwardFailure=yes".to_owned()]) {
+            args.extend(["-o".into(), o]);
+        }
+        args.push(format!("{}@{}", self.user, self.host));
+        Ok(args)
+    }
+
     /// The `ssh` arguments `exec` runs (no shell in between).
     fn exec_args(&self, known_hosts: &Path, command: &str) -> Result<Vec<String>> {
         self.check_endpoint()?;

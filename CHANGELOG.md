@@ -76,6 +76,13 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Fixed
 
+- **A VM lab starts on a Proxmox server whose lab bridge only its node reaches.** Terraform signs
+  in to the lab's router to wait for each machine's set-up, and on such a bridge (a NAT bridge)
+  the router was out of the launcher's reach: the start waited until it timed out. While a start,
+  stop, update or machine removal applies the lab there, the launcher now holds an SSH tunnel to
+  the node (with its own key, the node's confirmed host key), and Isoloom's module goes through
+  it. The tunnel ends with the operation.
+
 - **A killed app's tools end with it, and none is left suspended (#299, #301).** On Windows a
   tool is now created inside its kill-on-close job object, not suspended and put there after: an
   app ended as it started one (Task Manager's End task, a crash) left that tool suspended in no

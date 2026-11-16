@@ -3,6 +3,7 @@
 
 #![allow(clippy::disallowed_methods, reason = "the adapter: every tool the app runs starts here")]
 
+mod background;
 mod docker;
 mod elevate;
 #[cfg(test)]
@@ -22,6 +23,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
+pub use background::{Background, background};
 /// The image pattern, for the bindings the tests write (`testing::ts_bindings`).
 #[cfg(test)]
 pub use docker::IMAGE_PATTERN;
