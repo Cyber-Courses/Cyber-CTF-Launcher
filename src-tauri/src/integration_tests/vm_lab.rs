@@ -236,7 +236,8 @@ mod tests {
         assert!(!is_labs("\"web-k3y9ab - srv\" {1234}", labelled, "web · ", "/data/labs/web"));
         assert!(is_labs("\"web-k3y9ab - srv\" {1234}", labelled, "web-k3y9ab", "/data/labs/web"));
         // UTM's tool from inside its bundle, wherever UTM is: it's on no PATH ("not installed").
-        assert!(listing(Provider::Utm).unwrap().0.ends_with("UTM.app/Contents/MacOS/utmctl"));
+        // Compared by path components: a Windows build joins the bundle's parts with `\`.
+        assert!(Path::new(listing(Provider::Utm).unwrap().0).ends_with("UTM.app/Contents/MacOS/utmctl"));
     }
 
     #[tokio::test]
