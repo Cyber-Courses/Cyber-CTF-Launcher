@@ -16,8 +16,9 @@
 //! A lab on Proxmox: the
 //! lab generated for `proxmox`, started with the server's profile variables (the node passed in,
 //! as the launcher discovers it), its status with its entry where the module publishes it, its
-//! checks passing (run in its machines over SSH, through the node first when only it reaches the
-//! lab), then stopped, nothing of it left in the
+//! link answering from this computer (a local forward through the node when only it reaches the
+//! lab), a command run through its shell, its checks passing (run in its machines over SSH,
+//! through the node first), then stopped, nothing of it left in the
 //! runner's records. The same `isothrum::ServerRun` the lab page uses, without the app handle:
 //! with `CYBERCTF_TEST_PVE_JUMP`, Terraform's SSH to the router goes through the launcher's
 //! tunnel to the node, the node's host keys confirmed first as the player does in Servers.
@@ -198,6 +199,7 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
                 Ok(s) => {
                     println!("status: running={} url={:?} machines={:?}", s.running, s.url, s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
                     check(s.running && s.url.is_some(), format!("it runs, with its entry (running={} url={:?})", s.running, s.url), f);
+                    reached(&run, &s, f).await;
                 }
                 Err(e) => check(false, format!("its status reads: {e}"), f),
             }
@@ -223,6 +225,48 @@ fn checks_pass(checked: crate::error::Result<crate::runtime::docker::Check>, f: 
             check(c.ok, format!("its checks pass ({})", c.output.trim()), f);
         }
         Err(e) => check(false, format!("its checks run: {e}"), f),
+    }
+}
+
+/// The lab of status `s` is reached from this computer: its link answers (at a local forward
+/// through the node when only the node reaches the lab), and its shell reaches its machine
+/// (through the node and the router).
+async fn reached(run: &ServerRun, s: &crate::runtime::LabStatus, f: &mut Vec<String>) {
+    if let Some(url) = &s.url {
+        let code = curl(url);
+        check(code.as_deref() == Ok("200"), format!("{url} answers ({code:?})"), f);
+    }
+    match s.machines.iter().find(|m| !m.infra) {
+        Some(m) => shell_runs(run, &m.name, f).await,
+        None => check(false, "it has a machine of its own".into(), f),
+    }
+}
+
+/// A command runs in `machine` through its shell's command ("Open shell"'s, without a terminal).
+async fn shell_runs(run: &ServerRun, machine: &str, f: &mut Vec<String>) {
+    let shell = match run.console_command(machine, None).await {
+        Ok(shell) => shell,
+        Err(e) => return check(false, format!("{machine}'s shell opens: {e}"), f),
+    };
+    let ran = tokio::process::Command::new(&shell.program)
+        .args(&shell.args)
+        .arg("echo shell-reached-$(hostname)")
+        .envs(shell.env.iter().map(|(k, v)| (k, v)))
+        .current_dir(&shell.cwd)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await;
+    match ran {
+        Ok(out) => {
+            let said = String::from_utf8_lossy(&out.stdout);
+            println!("shell: {}", said.trim());
+            check(
+                out.status.success() && said.contains("shell-reached-"),
+                format!("{machine}'s shell runs a command ({}: {})", out.status, String::from_utf8_lossy(&out.stderr).trim()),
+                f,
+            );
+        }
+        Err(e) => check(false, format!("{machine}'s shell starts: {e}"), f),
     }
 }
 

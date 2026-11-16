@@ -131,11 +131,6 @@ fn proxy_word(s: &str, line: CommandLine) -> String {
     }
 }
 
-/// A word of a `ProxyCommand` this computer's ssh runs ([`proxy_word`] for [`CommandLine::HERE`]).
-pub(crate) fn command_word(s: &str) -> String {
-    proxy_word(s, CommandLine::HERE)
-}
-
 /// `s` double-quoted for a Windows command line (the C runtime's rules, as `CommandLineToArgvW`
 /// reads them): backslashes are literal except before a `"`, so those before an inner `"` (then
 /// escaped) and before the closing one are doubled.
@@ -213,23 +208,8 @@ impl Target {
     /// to nothing else (`-N`): unattended, its host key checked against `known_hosts`, and ending
     /// when the port can't be forwarded (taken meanwhile) rather than running on as no proxy.
     pub fn socks_args(&self, known_hosts: &Path, port: u16) -> Result<Vec<String>> {
-        self.listening_args(known_hosts, ["-D".into(), format!("127.0.0.1:{port}")])
-    }
-
-    /// The `ssh` arguments of a forward of `127.0.0.1:port` through this host to `to` (`host`,
-    /// `port`, as this host reaches it), as [`Target::socks_args`].
-    pub fn forward_args(&self, known_hosts: &Path, port: u16, (host, to): (&str, u16)) -> Result<Vec<String>> {
-        if !safe_token(host) || host.contains(':') {
-            return Err(Error::Invalid("unexpected forward host".into()));
-        }
-        self.listening_args(known_hosts, ["-L".into(), format!("127.0.0.1:{port}:{host}:{to}")])
-    }
-
-    /// The `ssh` arguments of `listen` (`-D` or `-L`, and its address) through this host, as
-    /// [`Target::socks_args`] says.
-    fn listening_args(&self, known_hosts: &Path, listen: [String; 2]) -> Result<Vec<String>> {
         self.check_endpoint()?;
-        let mut args: Vec<String> = std::iter::once("-N".to_owned()).chain(listen).collect();
+        let mut args: Vec<String> = vec!["-N".into(), "-D".into(), format!("127.0.0.1:{port}")];
         args.extend(["-i".into(), self.identity.to_string_lossy().to_string(), "-p".into(), self.port.to_string()]);
         for o in batch_options(&known_hosts.to_string_lossy()).into_iter().chain(["ExitOnForwardFailure=yes".to_owned()]) {
             args.extend(["-o".into(), o]);

@@ -6,10 +6,9 @@ use std::path::{Path, PathBuf};
 
 use isothrum_runner::{Format, RunName, RunOptions, Runner, RunnerConfig, Running};
 
-use super::reach::Reach;
 use super::{errors, remote};
-use crate::error::{Error, Result};
-use crate::runtime::{lab, ssh};
+use crate::error::Result;
+use crate::runtime::lab;
 
 /// What a run's Terraform module is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,29 +146,19 @@ impl OpenedRun {
     }
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
-    /// when given: SSH with the runner's key (the launcher's own), as the module's `ssh_user`, to
-    /// the machine's address through the module's router (its `ip` output) as a jump host, and
-    /// through the server's node first when only it reaches the lab ([`Reach`], as the run
-    /// recorded it). The runner's own console signs in as `user`, who doesn't let the runner's key
-    /// in; this one signs in as the module's user, then becomes `user`.
+    /// when given: the runner's, an SSH along the route the module's outputs give (through its
+    /// router, and through the jump host the run recorded first, `ssh_jump`), as the module's
+    /// user, then a login shell as `user`.
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<isothrum_runner::ShellCommand> {
-        let status = self.read().await?;
-        let output = |name: &str| status.outputs.iter().find(|o| o.name == name).and_then(|o| o.revealed()).map(str::to_owned);
-        let (Some(router), Some(login)) = (output("ip"), output("ssh_user")) else {
-            return Err(Error::Invalid("This lab isn't up: its router's address isn't known yet.".into()));
-        };
-        let address = status.machines.iter().find(|m| m.name == machine).and_then(|m| m.address.clone());
-        let Some(address) = address else { return Err(Error::Invalid(format!("{machine} has no address yet: start the lab first."))) };
         // Made when there is none: the key the module's machines let in.
         self.runner.ssh_public_key().await.map_err(errors::from_runner)?;
-        let way = Way { node: self.reach()?.node().map(str::to_owned), router, login, address };
-        Ok(ssh_through(&self.home, &way, user.map(checked_user).transpose()?))
+        self.running()?.console_command(machine, user).await.map_err(errors::from_runner)
     }
 
-    /// How the player reaches the run, as its last start or update recorded it.
-    pub(crate) fn reach(&self) -> Result<Reach> {
-        let record = self.runner.run_record(&self.name).map_err(errors::from_runner)?;
-        Ok(Reach::of_record(record.as_ref()))
+    /// The service endpoints the module publishes, by name, where this computer reaches each
+    /// one (the runner's: through the run's jump host, a local forward it keeps), with `opts`.
+    pub(crate) async fn endpoints(&self, opts: &RunOptions) -> Result<Vec<isothrum_runner::ServiceEndpoint>> {
+        self.running()?.service_endpoints(opts).await.map_err(errors::from_runner)
     }
 
     /// `machine`'s graphical console (its screen), as the runner reaches it with `opts` (the
@@ -182,112 +171,5 @@ impl OpenedRun {
     /// the runner says with `opts`.
     pub(crate) async fn native_console(&self, machine: &str, opts: &RunOptions) -> Result<isothrum_runner::NativeConsole> {
         self.running()?.native_console(machine, opts).await.map_err(errors::from_runner)
-    }
-}
-
-/// `user`, when it can name an account: letters, digits, `_`, `-` and `.`, not starting with `-`.
-fn checked_user(user: &str) -> Result<&str> {
-    let fits = !user.is_empty() && !user.starts_with('-') && user.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
-    if fits { Ok(user) } else { Err(Error::Invalid(format!("`{user}` can't name an account"))) }
-}
-
-/// Where a console goes: the machine's `address`, signed in as `login`, through the module's
-/// `router` (as `login` too) when the machine is behind it, and through the server's `node` first
-/// when only it reaches the lab.
-struct Way {
-    node: Option<String>,
-    router: String,
-    login: String,
-    address: String,
-}
-
-/// SSH along `way` with the key of the runner whose home is `home`: each hop an `ssh -W` in the
-/// `ProxyCommand` of the next; straight to the machine when it is the router's address itself (a
-/// cloud's one public VM, the Docker host). As account `user` when given (`sudo -iu`). The lab's
-/// host keys aren't kept across runs (its machines are made anew at each start); the node's are
-/// the ones the player confirmed for it ([`ssh::node_known_hosts`]), checked strictly.
-fn ssh_through(home: &Path, way: &Way, user: Option<&str>) -> isothrum_runner::ShellCommand {
-    let key = home.join("ssh").join("id_ed25519");
-    let lab_known = home.join("ssh").join("lab_known_hosts");
-    let options = |known: &Path, strict: &str| {
-        [
-            "-i".to_owned(),
-            key.display().to_string(),
-            "-o".to_owned(),
-            "IdentitiesOnly=yes".to_owned(),
-            "-o".to_owned(),
-            format!("StrictHostKeyChecking={strict}"),
-            "-o".to_owned(),
-            format!("UserKnownHostsFile={}", ssh::ssh_config_path(&known.to_string_lossy())),
-        ]
-    };
-    // Each hop's own ssh takes the same key (`-J` alone would use the default one), reached
-    // through the one before it; `ssh` expands `%` in a ProxyCommand once per level.
-    let hop = |options: &[String], before: Option<String>, to: &str| {
-        let mut words: Vec<String> = std::iter::once("ssh".to_owned()).chain(options.iter().cloned()).collect();
-        if let Some(before) = before {
-            words.extend(["-o".to_owned(), format!("ProxyCommand={before}")]);
-        }
-        let line = words.iter().map(|w| ssh::command_word(w)).collect::<Vec<_>>().join(" ");
-        format!("{} -W %h:%p {to}", line.replace('%', "%%"))
-    };
-    let node = way.node.as_ref().map(|node| hop(&options(&ssh::node_known_hosts(&key), "yes"), None, node));
-    let lab_options = options(&lab_known, "no");
-    let proxy = if way.address == way.router { node } else { Some(hop(&lab_options, node, &format!("{}@{}", way.login, way.router))) };
-    let mut args: Vec<String> = lab_options.into();
-    if let Some(proxy) = proxy {
-        args.extend(["-o".to_owned(), format!("ProxyCommand={proxy}")]);
-    }
-    if user.is_some() {
-        args.push("-t".to_owned());
-    }
-    args.push(format!("{}@{}", way.login, way.address));
-    if let Some(user) = user {
-        args.extend(["sudo".to_owned(), "-iu".to_owned(), user.to_owned()]);
-    }
-    isothrum_runner::ShellCommand::new("ssh", args, home)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn way(node: Option<&str>, address: &str) -> Way {
-        Way { node: node.map(str::to_owned), router: "192.0.2.10".into(), login: "isoloom".into(), address: address.into() }
-    }
-
-    #[test]
-    fn a_modules_machine_is_reached_through_its_router_with_the_runners_key() {
-        let home = Path::new("/data/isothrum");
-        let cmd = ssh_through(home, &way(None, "10.40.0.11"), Some("player"));
-        assert_eq!(cmd.program, "ssh");
-        // The key and known hosts are the home's files, in this OS's separators.
-        let key = home.join("ssh").join("id_ed25519").display().to_string();
-        let known = ssh::ssh_config_path(&home.join("ssh").join("lab_known_hosts").display().to_string());
-        let line = cmd.args.join(" ");
-        assert!(line.contains(&format!("-i {key}")) && line.contains(&format!("UserKnownHostsFile={known}")), "{line}");
-        assert!(line.contains(&format!("ProxyCommand=ssh -i {}", ssh::command_word(&key))) && line.contains("-W %h:%p isoloom@192.0.2.10"), "{line}");
-        assert!(line.ends_with("-t isoloom@10.40.0.11 sudo -iu player"), "{line}");
-        assert!(checked_user("-oProxyCommand=x").is_err());
-        // The machine at the router's address itself: reached straight, no jump to itself.
-        let direct = ssh_through(home, &way(None, "192.0.2.10"), None).args.join(" ");
-        assert!(!direct.contains("ProxyCommand") && direct.ends_with("isoloom@192.0.2.10"), "{direct}");
-    }
-
-    #[test]
-    fn a_lab_only_its_node_reaches_is_reached_through_the_node_first_its_host_key_the_confirmed_one() {
-        let home = Path::new("/data/isothrum");
-        let cmd = ssh_through(home, &way(Some("root@node.lab"), "10.40.0.11"), Some("player"));
-        let proxy = cmd.args.iter().find_map(|a| a.strip_prefix("ProxyCommand=")).expect("a ProxyCommand").to_owned();
-        assert!(proxy.ends_with("-W %h:%p isoloom@192.0.2.10"), "the machine through the router: {proxy}");
-        assert!(proxy.contains("-W %%h:%%p root@node.lab"), "the router through the node, a level down: {proxy}");
-        let nodes = ssh::ssh_config_path(&ssh::node_known_hosts(&home.join("ssh").join("id_ed25519")).display().to_string());
-        assert!(proxy.contains(&format!("UserKnownHostsFile={nodes}")), "the node's confirmed keys: {proxy}");
-        assert!(proxy.contains("StrictHostKeyChecking=yes"), "{proxy}");
-        assert!(cmd.args.join(" ").ends_with("-t isoloom@10.40.0.11 sudo -iu player"));
-        // The router itself: through the node alone.
-        let router = ssh_through(home, &way(Some("root@node.lab"), "192.0.2.10"), None);
-        let proxy = router.args.iter().find_map(|a| a.strip_prefix("ProxyCommand=")).expect("a ProxyCommand");
-        assert!(proxy.ends_with("-W %h:%p root@node.lab") && !proxy.contains("isoloom@"), "{proxy}");
     }
 }
