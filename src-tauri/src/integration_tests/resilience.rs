@@ -18,10 +18,10 @@
 //! cargo test --lib integration_tests::resilience:: -- --ignored --nocapture --test-threads=1
 //! ```
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
-use super::support::lab::{Run, install_copy, leftovers};
+use super::support::lab::{Run, every_machine_runs, leftovers};
 use super::support::{Wait, check, eventually, fetch, knob, log, scenario, var};
 use crate::error::Code;
 use crate::platform::exec::run;
@@ -86,11 +86,6 @@ pub(super) fn states(s: &LabStatus) -> Vec<(String, String)> {
     s.machines.iter().filter(|m| !m.infra).map(|m| (m.name.clone(), m.state.clone())).collect()
 }
 
-/// Whether the lab reads as up, every one of its machines running.
-pub(super) fn whole(s: &LabStatus) -> bool {
-    s.running && !s.machines.is_empty() && s.machines.iter().filter(|m| !m.infra).all(|m| m.state == "running")
-}
-
 /// The lab started (as the lab page's Start does), then up, its URL answering: each a check.
 async fn starts_whole(l: &Run, f: &mut Vec<String>, when: &str) -> bool {
     let started = l.start(&[], &mut log(&l.id)).await;
@@ -115,7 +110,7 @@ pub(super) async fn whole_after(
 
 /// `s`, a lab's status just after its start: every machine running, its URL answering.
 async fn up_and_answering(s: crate::error::Result<LabStatus>, f: &mut Vec<String>, when: &str) {
-    check(s.as_ref().is_ok_and(whole), format!("{when}: every machine runs ({:?})", s.as_ref().map(states)), f);
+    check(s.as_ref().is_ok_and(every_machine_runs), format!("{when}: every machine runs ({:?})", s.as_ref().map(states)), f);
     if let Some(url) = s.ok().and_then(|s| s.url) {
         let answered = fetch(&url).await;
         check(answered.as_ref().is_ok_and(reqwest::StatusCode::is_success), format!("{when}: {url} answers ({answered:?})"), f);
@@ -144,15 +139,14 @@ async fn stops_clean(l: &Run, f: &mut Vec<String>) {
     check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), f);
     let left = leftovers(&l.id).await;
     check(left.is_empty(), format!("nothing of it is left ({left:?})"), f);
-    let _ = std::fs::remove_dir_all(&l.dir);
-    let _ = std::fs::remove_dir_all(&l.home);
+    l.remove_files();
 }
 
 /// Runs `body` on a fresh copy of the lab in `CYBERCTF_TEST_RESILIENCE_LAB`, then stops it and
 /// checks nothing is left, whatever happened; fails the test on any failed check.
 async fn on_lab(name: &str, body: impl AsyncFnOnce(&Run, &mut Vec<String>)) {
     let Some(src) = knob("CYBERCTF_TEST_RESILIENCE_LAB") else { return };
-    let l = copy_of(&src, "resil");
+    let l = Run::fresh(Path::new(&src), "resil");
     let mut f = Vec::new();
     scenario(&mut f, async |f: &mut Vec<String>| body(&l, f).await, async |f: &mut Vec<String>| stops_clean(&l, f).await).await;
     assert!(f.is_empty(), "{name}:\n{}", f.join("\n"));
@@ -189,7 +183,7 @@ async fn a_container_stopped_while_the_lab_runs_shows_down_and_a_resume_brings_i
         let resumed = l.resume(&mut log(&l.id)).await;
         check(resumed.is_ok(), format!("a resume brings it back ({:?})", resumed.err()), f);
         let s = l.status().await;
-        check(s.as_ref().is_ok_and(whole), format!("every machine runs again ({:?})", s.as_ref().map(states)), f);
+        check(s.as_ref().is_ok_and(every_machine_runs), format!("every machine runs again ({:?})", s.as_ref().map(states)), f);
     })
     .await;
 }
@@ -217,7 +211,7 @@ async fn a_container_removed_while_the_start_waits_fails_it_or_shows_it_and_a_st
             // Docker's own words, the only thing that says the container went: no code of the
             // launcher's names it (the runner passes the failed step's output on as it is).
             check(e.to_string().contains("No such container"), "the failure says the container went (Docker's words)".into(), f);
-            check(!s.as_ref().is_ok_and(whole), format!("the lab isn't read as whole ({:?})", s.as_ref().map(states)), f);
+            check(!s.as_ref().is_ok_and(every_machine_runs), format!("the lab isn't read as whole ({:?})", s.as_ref().map(states)), f);
         } else {
             // It went after the start's wait: the page shows it gone.
             let shown = state_of(&s, &machine);
@@ -404,15 +398,6 @@ async fn docker_stopped_while_the_lab_starts_says_so_and_a_start_once_it_is_back
         starts_whole(l, f, "once Docker is back").await;
     })
     .await;
-}
-
-/// A fresh copy of the lab in `src`, as the launcher installs one, with its own id
-/// (`<prefix>-<n>`) and runner home.
-pub(super) fn copy_of(src: &str, prefix: &str) -> Run {
-    let id = format!("{prefix}-{}", rand::random::<u16>());
-    let dir: PathBuf = install_copy(Path::new(src), &id);
-    let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
-    Run { dir, id, home }
 }
 
 #[cfg(test)]

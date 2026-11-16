@@ -27,7 +27,7 @@
 use std::path::Path;
 
 use super::support::attack_box::{add_box, box_reaches, in_box, password_works, remove_box};
-use super::support::lab::{install_copy, leftovers};
+use super::support::lab::{Run, leftovers};
 use super::support::{check, log, scenario};
 use crate::platform::AppDirs;
 use crate::runtime::attack_box::{self, Placed};
@@ -86,9 +86,7 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
     let form = std::env::var("CYBERCTF_TEST_BOX_FORM").unwrap_or_else(|_| "docker".into());
     let target = std::env::var("CYBERCTF_TEST_BOX_TARGET").unwrap_or_else(|_| "web".into());
     let provider = super::support::vm_provider(Provider::Qemu);
-    let id = format!("box-{}", rand::random::<u16>());
-    let dir = install_copy(Path::new(&src), &id);
-    let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
+    let Run { dir, id, home } = Run::fresh(Path::new(&src), "box");
     // The app's data folder is the runner's home, as in the app: the shared folder's setting too.
     let dirs = AppDirs::new(Some(home.clone()), None);
     let (target_kind, vm) = match form.as_str() {

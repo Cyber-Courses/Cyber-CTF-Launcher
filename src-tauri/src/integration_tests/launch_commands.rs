@@ -12,16 +12,11 @@
 //! cargo test --lib -- --ignored --nocapture --test-threads=1 --exact integration_tests::launch_commands::a_local_lab_launches_and_tears_down_through_the_commands
 //! ```
 
-use super::support::lab::leftovers;
+use super::support::lab::{every_machine_runs, leftovers};
 use super::support::{check, log, scenario};
 use crate::commands::labs::{lab_check, lab_status};
 use crate::labs::{local_id, run_local};
-use crate::runtime::{LabStatus, Park, Runtime, park_lab, resume_lab, stop_lab};
-
-/// Every non-infra machine of a running lab is up.
-fn up(s: &LabStatus) -> bool {
-    s.running && !s.machines.is_empty() && s.machines.iter().filter(|m| !m.infra).all(|m| m.state == "running")
-}
+use crate::runtime::{Park, Runtime, park_lab, resume_lab, stop_lab};
 
 #[tokio::test]
 #[ignore = "needs Docker and a local lab folder (CYBERCTF_TEST_LOCAL_LAB)"]
@@ -43,7 +38,11 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
                 return;
             }
             let s = lab_status(app.clone(), id.clone(), Runtime::Docker).await;
-            check(s.as_ref().is_ok_and(up), format!("{id}: lab_status reports it up ({})", s.as_ref().err().map(ToString::to_string).unwrap_or_default()), f);
+            check(
+                s.as_ref().is_ok_and(every_machine_runs),
+                format!("{id}: lab_status reports it up ({})", s.as_ref().err().map(ToString::to_string).unwrap_or_default()),
+                f,
+            );
             let c = lab_check(app.clone(), id.clone(), Runtime::Docker).await;
             check(c.as_ref().is_ok_and(|c| c.available && c.ok && !c.results.is_empty()), format!("{id}: lab_check passes ({c:?})"), f);
             let parked = park_lab(&dirs, &id, Runtime::Docker, Park::Shutdown, log(&id)).await;
@@ -52,7 +51,7 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
             check(resumed.is_ok(), format!("{id}: it resumes ({:?})", resumed.err()), f);
             let again = lab_status(app.clone(), id.clone(), Runtime::Docker).await;
             check(
-                again.as_ref().is_ok_and(up),
+                again.as_ref().is_ok_and(every_machine_runs),
                 format!("{id}: it is up again after resume ({})", again.as_ref().err().map(ToString::to_string).unwrap_or_default()),
                 f,
             );

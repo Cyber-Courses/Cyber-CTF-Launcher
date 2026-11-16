@@ -54,7 +54,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use super::support::lab::install_copy;
+use super::support::lab::Run;
 use super::support::results::{self, Record, Verdict};
 use super::support::{check, scenario};
 use crate::machine::selftest::{self, Kind};
@@ -470,9 +470,7 @@ async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
     let name = src.file_name().map_or_else(|| "lab".to_owned(), |n| n.to_string_lossy().into_owned());
     let item = lab_item(src);
     let started = Instant::now();
-    let id = format!("setup-{name}-{}", rand::random::<u16>());
-    let dir = install_copy(src, &id);
-    let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
+    let Run { dir, id, home } = Run::fresh(src, &format!("setup-{name}"));
     let log_path = out.file(&item, "log");
     let log_name = log_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let log = std::cell::RefCell::new(Log::create(&log_path));
