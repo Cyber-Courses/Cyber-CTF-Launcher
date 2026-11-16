@@ -13,9 +13,10 @@ pub use provider::Provider;
 
 use crate::platform::host::Os;
 
-/// What isothrum-machine detects with: this machine's tools, run by the runner's processes, and
-/// its devices. A test's own when it set one (`testing::Machine`), else every tool missing:
-/// a test never reads the machine running it.
+/// What isothrum-machine detects with: this machine's ([`this_machine`]). In a test, the test's
+/// own when it set one (`testing::Machine`), this machine's in a real-lab scenario
+/// (`testing::read_this_machine`), else every tool missing: a unit test never reads the machine
+/// running it.
 fn machine() -> isothrum_machine::Context {
     #[cfg(test)]
     {
@@ -23,16 +24,21 @@ fn machine() -> isothrum_machine::Context {
     }
     #[cfg(not(test))]
     {
-        let os = Os::HERE.isothrum();
-        let host = isothrum_machine::Host {
-            os,
-            arch: crate::platform::host::Arch::HERE.isothrum(),
-            // Detection doesn't read it; the setup's own installs look it up.
-            packages: None,
-            devices: isothrum_machine::Devices::here(os),
-        };
-        isothrum_machine::Context::new(std::sync::Arc::new(isothrum_runner::SystemProcesses::default()), host)
+        this_machine()
     }
+}
+
+/// This machine: its tools, run by the runner's processes, and its devices.
+fn this_machine() -> isothrum_machine::Context {
+    let os = Os::HERE.isothrum();
+    let host = isothrum_machine::Host {
+        os,
+        arch: crate::platform::host::Arch::HERE.isothrum(),
+        // Detection doesn't read it; the setup's own installs look it up.
+        packages: None,
+        devices: isothrum_machine::Devices::here(os),
+    };
+    isothrum_machine::Context::new(std::sync::Arc::new(isothrum_runner::SystemProcesses::default()), host)
 }
 
 /// The local hypervisors ready for a lab's VMs on this machine: Vagrant, the hypervisor and its
@@ -143,12 +149,25 @@ fn share_on(provider: Provider, os: Os, found: impl FnOnce(isothrum_runner::Prov
 pub(crate) mod testing {
     use std::cell::RefCell;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use isothrum_runner::ProcessRunner;
     use isothrum_runner::fake::{FakeProcesses, Reply};
 
     thread_local! {
         static MACHINE: RefCell<Option<(Arc<dyn ProcessRunner>, isothrum_machine::Host)>> = const { RefCell::new(None) };
+    }
+
+    /// Whether this process's detection reads this machine ([`read_this_machine`]).
+    static THIS_MACHINE: AtomicBool = AtomicBool::new(false);
+
+    /// Detection reads this machine from now on, on every thread of this process, where no test
+    /// set its own ([`Machine`]): a real-lab scenario's (`integration_tests`), which runs alone
+    /// in its process on the real tools. Without it, a scenario's lab was checked against a
+    /// machine with nothing installed: the attack box's shared folder on libvirt was refused for
+    /// want of the virtiofsd this machine has.
+    pub(crate) fn read_this_machine() {
+        THIS_MACHINE.store(true, Ordering::Relaxed);
     }
 
     /// The machine detection reads on this test's thread, until dropped.
@@ -178,9 +197,14 @@ pub(crate) mod testing {
         }
     }
 
-    /// The test's machine, else one where every tool is missing and no device is there.
+    /// The test's machine, else this one in a real-lab scenario ([`read_this_machine`]), else one
+    /// where every tool is missing and no device is there.
     pub(super) fn context() -> isothrum_machine::Context {
-        let (runner, host) = MACHINE.with(|m| m.borrow().clone()).unwrap_or_else(|| {
+        let set = MACHINE.with(|m| m.borrow().clone());
+        if set.is_none() && THIS_MACHINE.load(Ordering::Relaxed) {
+            return super::this_machine();
+        }
+        let (runner, host) = set.unwrap_or_else(|| {
             let nothing: Arc<dyn ProcessRunner> = Arc::new(FakeProcesses::model(|_| Reply::missing()));
             (nothing, host(std::path::Path::new("/nonexistent/cyberctf-test-machine")))
         });
