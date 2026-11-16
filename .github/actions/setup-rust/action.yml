@@ -1,6 +1,6 @@
 name: Rust toolchain
 description: >-
-  Install the pinned stable Rust toolchain, restore the shared cargo cache and (by default) write
+  Install the Rust toolchain rust-toolchain.toml pins, restore the shared cargo cache and (by default) write
   a placeholder frontend the crate can embed at compile time. Shared by the Rust jobs
   (ci, gate, package-smoke, release, msix). The pinned action SHAs live here.
 inputs:
@@ -33,11 +33,18 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10
-      with:
-        toolchain: stable
-        targets: ${{ inputs.targets }}
-        components: ${{ inputs.components }}
+    # rustup is on every runner image: it installs the toolchain rust-toolchain.toml pins (with its
+    # components and targets), then this job's extra ones to that same toolchain.
+    - shell: bash
+      env:
+        TARGETS: ${{ inputs.targets }}
+        COMPONENTS: ${{ inputs.components }}
+      run: |
+        set -euo pipefail
+        rustup toolchain install
+        if [ -n "$COMPONENTS" ]; then rustup component add ${COMPONENTS//,/ }; fi
+        if [ -n "$TARGETS" ]; then rustup target add ${TARGETS//,/ }; fi
+        rustc -V
     - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: ${{ inputs.cache-workspaces }}
