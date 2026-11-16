@@ -131,6 +131,11 @@ fn proxy_word(s: &str, line: CommandLine) -> String {
     }
 }
 
+/// A word of a `ProxyCommand` this computer's ssh runs ([`proxy_word`] for [`CommandLine::HERE`]).
+pub(crate) fn command_word(s: &str) -> String {
+    proxy_word(s, CommandLine::HERE)
+}
+
 /// `s` double-quoted for a Windows command line (the C runtime's rules, as `CommandLineToArgvW`
 /// reads them): backslashes are literal except before a `"`, so those before an inner `"` (then
 /// escaped) and before the closing one are doubled.

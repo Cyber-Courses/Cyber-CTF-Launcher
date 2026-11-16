@@ -15,6 +15,7 @@ use std::path::Path;
 use isothrum_runner::{RunOptions, SecretValue, Secrets};
 
 use super::opened::{Module, OpenedRun};
+use super::reach::Reach;
 use super::tunnel::Tunnel;
 use super::{errors, view};
 use crate::error::Result;
@@ -109,12 +110,17 @@ impl ServerRun {
         self.retire_with(machine, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
-    /// What an operation that applies the module on `place` runs with: its [`options`], and,
-    /// when the lab bridge is internal to the node (`place.jump`), the tunnel through the node
-    /// Terraform's SSH to the router goes through, named in the module's values. The tunnel ends
+    /// What an operation that applies the module on `place` runs with: its [`options`] with how
+    /// the lab is reached ([`Reach`], which the run records), and, when the lab bridge is internal
+    /// to the node (`place.jump`), the tunnel through the node Terraform's SSH to the router goes
+    /// through, named in the module's values. The tunnel ends
     /// when the caller drops it, once the operation is over, however it ended.
     async fn applying(&self, place: &ServerPlace, env: &[(String, String)]) -> Result<(RunOptions, Option<Tunnel>)> {
         let mut opts = options(place, env);
+        // How the lab is reached, recorded with the run for what only reads it.
+        for (k, v) in Reach::of_place(place).values() {
+            opts = opts.with_env(k, v);
+        }
         let Some(jump) = &place.jump else { return Ok((opts, None)) };
         let tunnel = Tunnel::open(jump, &self.key()).await?;
         for (k, v) in tunnel.values() {
@@ -359,6 +365,8 @@ mod tests {
             for call in &terraform {
                 assert_eq!((call.env("TF_VAR_ssh_proxy_host"), call.env("TF_VAR_ssh_proxy_port")), (Some("127.0.0.1"), Some(port.as_str())), "{}", call.line());
             }
+            // The run keeps how the lab is reached, for what only reads it (a shell, its checks).
+            assert_eq!(run.reach().unwrap(), Reach::ThroughNode { login: "root@node.lab".into() });
         }
 
         #[tokio::test]
@@ -368,6 +376,7 @@ mod tests {
             let _ = run.update(&place(), &mut |_| {}).await;
             assert!(tools.calls().is_empty(), "no ssh");
             assert!(f.fake.calls().iter().filter(|c| c.program == "terraform").all(|c| c.env("TF_VAR_ssh_proxy_host").is_none()));
+            assert_eq!(run.reach().unwrap(), Reach::Direct);
         }
 
         #[tokio::test]

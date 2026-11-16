@@ -145,6 +145,37 @@ either way. The lab's empty lock file in `deploys/` stays (every operation on th
 deleting it could let two run at once). The folder an imported lab came from is never touched: the
 copy keeps no link out of itself, and a removal deletes a link, never what it points at.
 
+## How the player reaches a lab
+
+A lab is reached from this computer three ways: its link (the page of its first published web
+port), a shell into a machine ("Open shell", the attack box's included), and its checks. Where the
+lab runs decides how, once, as one strategy every way in asks (`runtime/isothrum/reach.rs`,
+`Reach`) rather than an `if` of its own:
+
+- **Direct**: the lab's addresses are routed here. A local lab, a server whose lab bridge is on
+  its network, a cloud's public addresses, an ESXi host's VMs.
+- **Through the node**: only a node of the server reaches them: a Proxmox server whose lab bridge
+  is internal to its node. Every way in goes through the node first.
+
+**The choice.** Made where the lab's place is: the server's profile (its kind, and whether its lab
+bridge is internal, which `server::proxmox_jump_for_host` reads from the node's interfaces) gives
+the node's login (`root@<node>`), when an operation applies the module (`Reach::of_place`). The run
+records it among its values as `ssh_jump` (Isothrum's: the host every console and command of the
+run goes through first), so what only reads the run (its status, a shell, its checks) finds it
+there (`Reach::of_record`) without asking the server again.
+
+**Through the node.** Every hop signs in with the runner's key, which the node lets in for the jump
+(`server::proxmox_jump_for_host` authorizes it), and the node's host key is the one the player
+confirmed in Servers (`ssh::node_known_hosts`):
+
+- Terraform's own SSH to the router, while an operation applies the module: a SOCKS proxy through
+  the node (`isothrum/tunnel.rs`, the module's `ssh_proxy_host` and `ssh_proxy_port`), for that
+  operation only.
+- The shell: an SSH whose `ProxyCommand` is the router's, itself reached through the node's
+  (`isothrum/opened.rs`), as the module's `ssh_user`, then `sudo -iu` the account asked for. The
+  machine's address is the runner's, which takes it from the module's `machines` output where the
+  state has none (a Proxmox VM without a guest agent).
+
 ## Servers and cloud accounts
 
 - Profiles (non-secret): `<app data>/server.json`. Secrets: the OS keychain (service
