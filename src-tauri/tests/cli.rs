@@ -9,7 +9,9 @@ use std::process::Command;
 
 use serde_json::{Value, json};
 
-/// A folder of the test's own, removed when it drops.
+/// A folder of the test's own, removed when it drops, the runner service the command line started
+/// for its data folder shut down first: detached, it would serve a deleted folder until it idled
+/// out, minutes after the test.
 struct Scratch(PathBuf);
 
 impl Scratch {
@@ -23,6 +25,14 @@ impl Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
+        let home = self.0.join("data").join("isothrum");
+        if let Ok(runtime) = tokio::runtime::Runtime::new() {
+            runtime.block_on(async {
+                if let Ok(client) = isothrum_client::Client::connect_running(&home).await {
+                    let _ = client.shutdown().await;
+                }
+            });
+        }
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
@@ -115,24 +125,6 @@ fn it_links_no_gui_library() {
     assert!(std::path::Path::new(env!("CARGO_BIN_EXE_cyberctf")).is_file());
 }
 
-/// The runner service the command line started for `home` (its data folder's `isothrum`), shut
-/// down when this drops, failed assertion or not: detached, it would serve a deleted folder until
-/// it idled out.
-#[cfg(unix)]
-struct EndsService(PathBuf);
-
-#[cfg(unix)]
-impl Drop for EndsService {
-    fn drop(&mut self) {
-        let Ok(runtime) = tokio::runtime::Runtime::new() else { return };
-        runtime.block_on(async {
-            if let Ok(client) = isothrum_client::Client::connect_running(&self.0).await {
-                let _ = client.shutdown().await;
-            }
-        });
-    }
-}
-
 /// A Docker the test scripts, on the scratch PATH (which holds nothing else, so it uses the
 /// shell's builtins only): Compose's answers for one project with `web` (port 80 published) and
 /// Isoloom's probe, up after an `up` and gone after a `down`, kept in `state`; every call
@@ -175,7 +167,6 @@ exit 0
 #[test]
 fn a_lab_starts_runs_and_stops_from_the_command_line_alone() {
     let s = Scratch::new("start");
-    let _service = EndsService(s.0.join("data").join("isothrum"));
     scripted_docker(&s);
     // A lab of the player's own, from its folder: installed and started, no catalogue, no sign-in.
     let folder = s.0.join("my-lab");
