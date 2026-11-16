@@ -80,6 +80,23 @@ pub(crate) fn default_image() -> &'static str {
     &IMAGE
 }
 
+/// The defaults earlier launchers had: the repository unpinned, its floating `latest` tag and
+/// each earlier pinned digest ([`IMAGE_FILE`]'s `previous`). A player's saved image equal to one
+/// of them follows the current default (`crate::settings`).
+pub(crate) fn earlier_default_images() -> &'static [String] {
+    #[derive(serde::Deserialize)]
+    struct File {
+        #[serde(default)]
+        previous: Vec<String>,
+    }
+    static EARLIER: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+        let repository = default_image().split('@').next().unwrap_or_default().to_owned();
+        let previous = serde_json::from_str::<File>(IMAGE_FILE).map(|f| f.previous).unwrap_or_default();
+        [format!("{repository}:latest"), repository].into_iter().chain(previous).collect()
+    });
+    &EARLIER
+}
+
 /// Its set-up, a file of the lab's project (the project is what a machine gets): Kali's headless
 /// toolset, what the launcher's attack box image installs, unattended. A Debian VM (where Kali
 /// has no image for the computer's CPU) is made Kali first: Kali's archive in place of Debian's,

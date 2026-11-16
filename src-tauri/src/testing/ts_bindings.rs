@@ -89,8 +89,16 @@ fn generate(dir: &Path) {
         terminal::TermEvent,
         crate::screen::Connection,
     );
+    export_settings(&cfg);
     write_values(dir);
     write_index(dir);
+}
+
+/// Exports the settings' types: their changes and the import's answer, with the settings
+/// themselves (`crate::settings`).
+fn export_settings(cfg: &Config) {
+    crate::settings::Change::export_all(cfg).unwrap();
+    crate::settings::Imported::export_all(cfg).unwrap();
 }
 
 /// Writes the files of values (not types) the webview reads from the core's own tables.
@@ -106,6 +114,7 @@ fn write_values(dir: &Path) {
     write_error_codes(dir);
     write_patterns(dir);
     write_lab_ids(dir);
+    write_settings_defaults(dir);
 }
 
 /// The file of the machines the setup's plan is tested on ([`machine::setup::shapes`]), each as
@@ -360,6 +369,19 @@ fn write_patterns(dir: &Path) {
     fs::write(dir.join(format!("{PATTERNS}.ts")), text).unwrap();
 }
 
+/// The file of the settings' defaults ([`crate::settings::Settings`]'s `Default`): the webview's
+/// copy of the settings starts from it until the core answers, so no default is written twice
+/// (not a type: imported by its path).
+fn write_settings_defaults(dir: &Path) {
+    let json = serde_json::to_string_pretty(&crate::settings::Settings::default()).unwrap();
+    let doc = "/** The settings of a player who chose nothing (Rust's `Settings::default`). */";
+    let text = format!("{HEADER}import type {{ Settings }} from \"./Settings\";\n\n{doc}\nexport const SETTINGS_DEFAULTS: Settings = {json};\n");
+    fs::write(dir.join(format!("{SETTINGS_DEFAULTS}.ts")), text).unwrap();
+}
+
+/// The generated file of the settings' defaults (values, not types).
+const SETTINGS_DEFAULTS: &str = "SettingsDefaults";
+
 /// The generated file of the input patterns (values, not types).
 const PATTERNS: &str = "Patterns";
 
@@ -419,6 +441,7 @@ fn write_index(dir: &Path) {
                 && n != ERROR_CODES
                 && n != PATTERNS
                 && n != LAB_IDS
+                && n != SETTINGS_DEFAULTS
         })
         .collect();
     names.sort();
