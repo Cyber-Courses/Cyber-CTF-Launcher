@@ -1,6 +1,5 @@
 use super::*;
 use crate::runtime::providers::Provider;
-use crate::runtime::server::HOST_MARKER;
 use crate::runtime::server::profile::tests::profile;
 
 /// Saved host `id` on `provider`, the test profile's other fields.
@@ -107,50 +106,22 @@ fn what_is_left_on_a_host_keeps_it_from_being_removed() {
     use crate::runtime::test_support::record_run;
     let t = crate::testing::test_app::TestApp::new();
     let dirs = t.dirs();
-    let mark = |lab: &str, host: Option<&str>| {
-        let dir = t.lab(lab, &[]);
-        crate::runtime::server::mark_lab(&dir, host).unwrap();
-    };
-    assert_eq!(leftovers_on(&dirs, "aws1").unwrap(), 0);
-    // Runs the runner records on aws1: one still marked there (counted by its marker, not
-    // here), one moved elsewhere, one uninstalled, one taken down, one on another host.
-    mark("web-1", Some("aws1"));
+    assert_eq!(labs_on(&dirs, "aws1").unwrap(), 0);
+    // Runs the runner records on aws1: one installed, one uninstalled, one failed with its
+    // machines left, one taken down, one on another host.
+    t.lab("web-1", &[]);
     record_run(t.data(), "web-1", Some("aws1"), "cloud-docker", "ready");
-    mark("db-1", Some("pve1"));
     record_run(t.data(), "db-1", Some("aws1"), "cloud-vm", "failed");
     record_run(t.data(), "gone-1", Some("aws1"), "cloud-docker", "parked");
     record_run(t.data(), "down-1", Some("aws1"), "cloud-docker", "absent");
     record_run(t.data(), "api-1", Some("aws2"), "cloud-docker", "ready");
-    assert_eq!(leftovers_on(&dirs, "aws1").unwrap(), 2);
-    assert_eq!(leftovers_on(&dirs, "aws2").unwrap(), 1);
-    assert_eq!(labs_on(&dirs, "aws1").unwrap(), 3, "two left and one marked");
+    assert_eq!(labs_on(&dirs, "aws1").unwrap(), 3);
+    assert_eq!(labs_on(&dirs, "aws2").unwrap(), 1);
+    // The Servers page counts the installed labs on each.
+    let running = running_by_host(&dirs);
+    assert_eq!((running.get("aws1"), running.get("aws2")), (Some(&1), None));
     // A store that can't be read is an error, not "nothing left".
     crate::testing::runner::damage_store(&crate::runtime::paths::runner_home_in(t.data()));
-    assert!(leftovers_on(&dirs, "aws1").is_err() && labs_on(&dirs, "aws1").is_err());
-}
-
-#[test]
-fn markers_are_read_from_each_lab_folder() {
-    let labs = std::env::temp_dir().join(format!("cyberctf-markers-{}", rand::random::<u32>()));
-    assert_eq!(markers_in(&labs), Vec::<String>::new());
-    for (lab, marker) in [("a", Some("pve1\n")), ("b", Some("pve1")), ("c", None), ("d", Some(""))] {
-        std::fs::create_dir_all(labs.join(lab)).unwrap();
-        if let Some(m) = marker {
-            std::fs::write(labs.join(lab).join(HOST_MARKER), m).unwrap();
-        }
-    }
-    let mut markers = markers_in(&labs);
-    markers.sort();
-    assert_eq!(markers, ["", "pve1", "pve1"]);
-    assert_eq!(count_by_host(&markers).get("pve1"), Some(&2));
-    std::fs::remove_dir_all(labs).unwrap();
-}
-
-#[test]
-fn running_labs_count_per_host_and_skip_blank_markers() {
-    let markers: Vec<String> = ["ab", "cd", "ab", ""].iter().map(ToString::to_string).collect();
-    let counts = count_by_host(&markers);
-    assert_eq!(counts.get("ab"), Some(&2));
-    assert_eq!(counts.get("cd"), Some(&1));
-    assert_eq!(counts.len(), 2);
+    assert!(labs_on(&dirs, "aws1").is_err());
+    assert!(running_by_host(&dirs).is_empty());
 }

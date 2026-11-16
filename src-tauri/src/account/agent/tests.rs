@@ -88,16 +88,15 @@ async fn a_refused_website_launch_leaves_the_lab_running_on_the_players_account(
     let t = crate::testing::test_app::TestApp::new();
     let dirs = t.dirs();
     let id = "agent-refused";
-    let dir = t.lab(id, &[(crate::runtime::lab::COMMIT_MARKER, "ffffffffffffffffffffffffffffffffffffffff"), (".isoloom/cloud-docker/aws/main.tf", "")]);
+    t.lab(id, &[(crate::runtime::lab::COMMIT_MARKER, "ffffffffffffffffffffffffffffffffffffffff"), (".isoloom/cloud-docker/aws/main.tf", "")]);
     let aws = t.host("aws1", "aws", json!({ "useCliCreds": true }));
-    server::mark_lab(&dir, Some(&aws)).unwrap();
     crate::runtime::test_support::record_run(t.data(), id, Some(&aws), "cloud-docker", "ready");
     let tools = crate::platform::exec::fake::Tools::strict_rules(&[("docker network ls", crate::platform::exec::fake::ok(""))]);
     assert!(crate::runtime::lab_present(&dirs, id));
     let err = run_claimed(&test_deps(&t, Arc::default()), &claim_of(id).launch, &StartPlace::default(), false).await.unwrap_err();
     assert!(err.is_refusal() && err.to_string().contains("still running on Host aws1"), "{err}");
     assert!(!tools.called("terraform"), "nothing torn down: {:?}", tools.calls());
-    assert_eq!(server::marked_host(&dir).as_deref(), Some("aws1"));
+    assert_eq!(crate::runtime::recorded::Recorded::of(&dirs, id).unwrap().host(), Some("aws1"));
 }
 
 #[tokio::test]
@@ -106,15 +105,14 @@ async fn a_failed_start_of_a_lab_that_was_already_there_is_not_torn_down() {
     // Proxmox host whose start this time failed for another reason) stops nothing.
     let t = crate::testing::test_app::TestApp::new();
     let id = "agent-present";
-    let dir = t.lab(id, &[]);
-    server::mark_lab(&dir, Some("pve1")).unwrap();
+    t.lab(id, &[]);
     crate::runtime::test_support::record_run(t.data(), id, Some("pve1"), "proxmox", "ready");
     let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
     let failure = Error::Invalid("the lab host didn't answer".into());
     let err = undo_start(&test_deps(&t, Arc::default()), id, Runtime::Docker, crate::runtime::lab_present(&t.dirs(), id), failure).await;
     assert_eq!(err.to_string(), "the lab host didn't answer");
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-    assert_eq!(server::marked_host(&dir).as_deref(), Some("pve1"));
+    assert_eq!(crate::runtime::recorded::Recorded::of(&t.dirs(), id).unwrap().host(), Some("pve1"));
 }
 
 #[test]

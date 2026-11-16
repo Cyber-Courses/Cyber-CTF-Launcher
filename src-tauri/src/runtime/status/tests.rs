@@ -56,16 +56,16 @@ fn a_server_lab_says_where_it_runs() {
 
 #[tokio::test]
 async fn only_a_local_container_lab_has_a_url_here() {
-    let dir = std::env::temp_dir().join(format!("cyberctf-status-url-{}", rand::random::<u32>()));
-    std::fs::create_dir_all(&dir).unwrap();
+    use crate::runtime::test_support::record_run;
+    let t = crate::testing::test_app::TestApp::new();
+    let dir = t.lab("t", &[]);
     // A VM lab, a lab on a server host, a container lab in a local VM: no Docker probe at all.
-    assert_eq!(primary_url(&dir, "t", Runtime::Vm).await, None);
-    crate::runtime::paths::mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
-    assert_eq!(primary_url(&dir, "t", Runtime::Docker).await, None);
-    crate::runtime::paths::mark_local_vm(&dir, None).unwrap();
-    std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "h").unwrap();
-    assert_eq!(primary_url(&dir, "t", Runtime::Docker).await, None);
-    std::fs::remove_dir_all(dir).unwrap();
+    let _tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
+    assert_eq!(primary_url(&t.dirs(), &dir, "t", Runtime::Vm).await, None);
+    record_run(t.data(), "t", None, "docker-vm", "ready");
+    assert_eq!(primary_url(&t.dirs(), &dir, "t", Runtime::Docker).await, None);
+    record_run(t.data(), "t", Some("h"), "cloud-docker/aws", "ready");
+    assert_eq!(primary_url(&t.dirs(), &dir, "t", Runtime::Docker).await, None);
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn a_lab_is_present_wherever_something_of_it_is_left() {
     use crate::runtime::test_support::record_run;
     let t = crate::testing::test_app::TestApp::new();
     let dirs = t.dirs();
-    let dir = t.lab("present", &[]);
+    t.lab("present", &[]);
     assert!(!super::lab_present(&dirs, "present"), "installed, nothing of it up");
     // Its run, wherever the runner records it up: in a cloud account, as VMs here.
     record_run(t.data(), "present", Some("aws1"), "cloud-docker", "ready");
@@ -89,25 +89,21 @@ fn a_lab_is_present_wherever_something_of_it_is_left() {
     assert!(!super::lab_present(&dirs, "present"));
     assert!(super::lab_installed(&dirs, "present") && !super::lab_installed(&dirs, "gone"));
     // Parked here.
-    crate::runtime::paths::mark_parked(&dir, Some(crate::runtime::Park::Pause)).unwrap();
+    record_run(t.data(), "present", None, "vagrant", "parked");
     assert!(super::lab_present(&dirs, "present"));
 }
 
 #[test]
-fn a_lab_whose_run_cant_be_read_is_judged_by_its_marker_and_says_why() {
+fn a_lab_whose_run_cant_be_read_is_taken_for_up_and_says_why() {
     // Regression: why the run couldn't be read was dropped, and the failed start's teardown
-    // was decided on the marker alone with nothing in the log.
+    // was decided on a guess with nothing in the log. Nothing is torn down on a guess.
     let t = crate::testing::test_app::TestApp::new();
-    let dir = t.lab("present", &[]);
+    t.lab("present", &[]);
     crate::testing::runner::damage_store(&crate::runtime::paths::runner_home_in(t.data()));
     crate::testing::logs::take_warnings();
-    assert!(!super::lab_present(&t.dirs(), "present"), "no marker: down");
-    std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "aws1").unwrap();
-    assert!(super::lab_present(&t.dirs(), "present"), "marked as on a host: up there");
+    assert!(super::lab_present(&t.dirs(), "present"));
     let logged = crate::testing::logs::take_warnings();
-    assert_eq!(logged.len(), 2, "{logged:?}");
-    assert!(logged[0].starts_with("couldn't tell whether present is up (") && logged[0].ends_with("taken for down by its host marker"), "{logged:?}");
-    assert!(logged[1].ends_with("taken for up by its host marker"), "{logged:?}");
+    assert!(logged.iter().any(|l| l.starts_with("couldn't tell whether present is up (") && l.ends_with("taken for up")), "{logged:?}");
 }
 
 #[test]
@@ -136,11 +132,12 @@ fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
         assert_eq!(err.code(), expected, "{target}");
         assert!(err.is_refusal());
     }
-    // Parked: only its parked mark lets the copy go (it is taken down before the swap).
+    // Parked: only a park lets the copy go (it is taken down before the swap); machines found
+    // stopped outside the app don't.
     record_run(t.data(), "web", None, "vagrant", "parked");
     assert!(super::still_up(&dirs, "web").unwrap().is_some_and(|u| u.parked));
     assert!(super::refuse_replace(&dirs, &dir, "web").is_err());
-    crate::runtime::paths::mark_parked(&dir, Some(crate::runtime::Park::Shutdown)).unwrap();
+    crate::runtime::test_support::record_parked(t.data(), "web", "vagrant", "shutdown");
     assert!(super::refuse_replace(&dirs, &dir, "web").is_ok());
     // Down: free to replace; another lab's run is no business of this one's.
     record_run(t.data(), "web", None, "vagrant", "absent");
@@ -155,17 +152,17 @@ fn what_is_still_up_is_read_from_the_runners_record_wherever_it_runs() {
 }
 
 #[tokio::test]
-async fn a_lab_marked_on_a_host_that_is_no_longer_saved_names_that_host() {
+async fn a_lab_recorded_on_a_host_that_is_no_longer_saved_names_that_host() {
     use crate::platform::exec::fake::Tools;
     let t = crate::testing::test_app::TestApp::new();
     let dir = t.lab("web", &[]);
-    std::fs::write(dir.join(crate::runtime::server::HOST_MARKER), "gone1\n").unwrap();
+    crate::runtime::test_support::record_run(t.data(), "web", Some("gone1"), "cloud-vm/aws", "ready");
     let tools = Tools::strict_rules(&[]);
     for runtime in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
         let err = super::status(&t.dirs(), &dir, "web", runtime).await.expect_err("refused").to_string();
         assert_eq!(err, "server host `gone1` not found", "{runtime:?}");
     }
-    // Refused before anything local or remote is probed; the marker alone never makes it
+    // Refused before anything local or remote is probed; the record alone never makes it
     // run here either.
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
 }

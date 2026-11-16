@@ -55,8 +55,8 @@ pub(super) async fn start(dirs: &AppDirs, lab: LabRef<'_>, host: Option<&str>, e
     let conn = server::connection(dirs, host)?;
     check_account(file.provider, &conn)?;
     let conn = ready_account(dirs, host, conn, log).await?;
-    // Mark first, so a half-created lab can still be destroyed with the same account.
-    server::mark_lab(dir, Some(host))?;
+    // The run's record names the account from the start of its run, so a half-created lab can
+    // still be destroyed with the same account.
     log(super::deploy_log::in_cloud_account(conn.provider.label(), &conn.name, conn.region.as_deref().unwrap_or("default region")));
     if conn.provider == Provider::Aws {
         check_aws_budget(dirs, host, log).await?;
@@ -233,7 +233,7 @@ mod tests {
         let err = start(azure, vec![("CTF_LAUNCH_TOKEN".into(), "t0k".into())]).await;
         assert!(err.starts_with("This lab runs on AWS, and Host az is a Azure account. Pick a AWS account."), "{err}");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-        assert!(!dir.join(crate::runtime::server::HOST_MARKER).exists(), "not marked: nothing was created");
+        assert!(crate::runtime::recorded::Recorded::of(&t.dirs(), "bucket").unwrap().record().is_none(), "not recorded: nothing was created");
     }
 
     #[tokio::test]

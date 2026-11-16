@@ -139,11 +139,7 @@ async fn a_removal_is_refused_while_the_lab_is_up_anywhere_parked_or_busy() {
     }
     // Up on a server: named.
     assert_eq!(refused("ready", Some("esxi1")).await.code(), Code::LabRunningOn { host: "esxi1".into() });
-    // Taken down, but marked parked by the launcher: its machines are kept.
     record_run(t.data(), "local-refused", None, "docker", "absent");
-    paths::mark_parked(&dir, Some(runtime::Park::Shutdown)).unwrap();
-    assert_eq!(remove(&t.dirs(), "local-refused").await.unwrap_err().code(), Code::LabRunningHere);
-    paths::mark_parked(&dir, None).unwrap();
     // Another operation holds it.
     let held = runtime::lock_lab(&t.dirs(), "local-refused").await.unwrap();
     assert_eq!(remove(&t.dirs(), "local-refused").await.unwrap_err().code(), Code::AlreadyInProgress);

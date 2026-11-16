@@ -63,31 +63,6 @@ pub(crate) const ESXI_HOSTPORT: &str = "ESXI_HOSTPORT";
 /// rather than free ones picked at random.
 const PUBLISH_FIXED: &str = "ISOLOOM_PUBLISH_FIXED";
 
-/// The form a run was started in, as the runner records it: its project's format and folder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RunForm {
-    /// A Compose project: containers on Docker.
-    Docker,
-    /// The helper VM an earlier version ran a container lab in (Isoloom's former `docker-vm`).
-    HelperVm,
-    /// A Vagrant project: VMs.
-    Vagrant,
-    /// A Terraform module: a server's or a cloud account's.
-    Terraform,
-}
-
-impl RunForm {
-    /// The form of `record`'s run: by its format, and by its folder for the helper VM.
-    pub(crate) fn of(record: &isothrum_runner::RunRecord) -> RunForm {
-        match record.format {
-            Format::Compose => RunForm::Docker,
-            Format::Vagrant if record.project.components().any(|c| c.as_os_str() == lab::DOCKER_VM_FOLDER) => RunForm::HelperVm,
-            Format::Vagrant => RunForm::Vagrant,
-            _ => RunForm::Terraform,
-        }
-    }
-}
-
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -202,8 +177,12 @@ pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
 ///
 /// The runner's store can't be opened or written.
 pub(crate) fn forget_run(home: &Path, id: &str) -> Result<()> {
-    let name = RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))?;
-    isothrum_runner::store::Store::open(home).and_then(|store| store.write(|tx| tx.forget_run(&name))).map_err(|e| errors::coded(&e.report()))
+    forget_named(home, &RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))?)
+}
+
+/// [`forget_run`] of run `name`.
+fn forget_named(home: &Path, name: &RunName) -> Result<()> {
+    isothrum_runner::store::Store::open(home).and_then(|store| store.write(|tx| tx.forget_run(name))).map_err(|e| errors::coded(&e.report()))
 }
 
 /// Lab `id`'s run here, installed in `dir`, opened in the form its record says it was started in
@@ -212,10 +191,10 @@ pub(crate) fn forget_run(home: &Path, id: &str) -> Result<()> {
 pub(crate) fn recorded_here(dirs: &crate::platform::AppDirs, dir: &Path, id: &str) -> Result<Option<LabRun>> {
     let Some(record) = record_of(dirs, id)? else { return Ok(None) };
     let home = paths::runner_home(dirs)?;
-    Ok(Some(match RunForm::of(&record) {
-        RunForm::Docker => LabRun::docker(&home, dir, id)?,
-        RunForm::HelperVm => LabRun::docker_in_vm(&home, dir, id)?,
-        RunForm::Vagrant if record.host_label.is_none() => LabRun::vm(&home, dir, id)?,
+    Ok(Some(match super::recorded::RunForm::of(&record) {
+        super::recorded::RunForm::Docker => LabRun::docker(&home, dir, id)?,
+        super::recorded::RunForm::HelperVm => LabRun::docker_in_vm(&home, dir, id)?,
+        super::recorded::RunForm::Vagrant if record.host_label.is_none() => LabRun::vm(&home, dir, id)?,
         _ => return Ok(None),
     }))
 }
@@ -276,12 +255,12 @@ impl LabRun {
     }
 
     /// Lab `id`, installed in `dir` and declared `runtime`, as it runs on this machine, in the form
-    /// it was started in (`paths::local_runtime`): on Docker, as VMs (a container lab started as
-    /// one VM per machine included), or in the helper VM an earlier version left it in; none for a
-    /// cloud-services lab, which runs only in a cloud account.
-    pub(crate) fn local(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<LabRun>> {
-        Ok(Some(match paths::local_runtime(dir, runtime) {
-            Runtime::Docker if paths::local_vm(dir).is_some() => LabRun::docker_in_vm(home, dir, id)?,
+    /// its run's record says it was started in (`recorded`): on Docker, as VMs (a container lab
+    /// started as one VM per machine included), or in the helper VM an earlier version left it in;
+    /// none for a cloud-services lab, which runs only in a cloud account.
+    pub(crate) fn local(home: &Path, dir: &Path, id: &str, runtime: Runtime, recorded: &super::recorded::Recorded) -> Result<Option<LabRun>> {
+        Ok(Some(match recorded.form(runtime) {
+            Runtime::Docker if recorded.helper_vm() => LabRun::docker_in_vm(home, dir, id)?,
             Runtime::Docker => LabRun::docker(home, dir, id)?,
             Runtime::Vm => LabRun::vm(home, dir, id)?,
             Runtime::Cloud => return Ok(None),
@@ -385,16 +364,18 @@ impl LabRun {
     }
 
     /// The runner's refusal `e` to open the helper VM an earlier version left this lab in. When it
-    /// no longer runs that form, nothing here reaches the VM: the lab's helper-VM mark is cleared,
-    /// so its page reads it as stopped and its next start is in its true form, and the error says
-    /// what to remove by hand.
+    /// no longer runs that form, nothing here reaches the VM: the run's record of it is forgotten
+    /// (one on this machine), so its page reads it as stopped and its next start is in its true
+    /// form, and the error says what to remove by hand.
     fn helper_vm_gone(&self, e: &isothrum_runner::Error) -> Error {
         let unsupported = e.code() == isothrum_runner::ErrorCode::Unsupported;
         let said = errors::of_helper_vm(e, self.name.as_str());
         if unsupported {
             log::warn!("{}: {said}", self.dir.display());
-            if let Err(e) = paths::mark_local_vm(&self.dir, None) {
-                log::warn!("{}: its helper-VM mark couldn't be cleared: {e}", self.dir.display());
+            if self.esxi.is_none()
+                && let Err(e) = forget_named(&self.home, &self.name)
+            {
+                log::warn!("{}: its helper-VM record couldn't be forgotten: {e}", self.dir.display());
             }
         }
         said
@@ -456,16 +437,13 @@ impl LabRun {
         self.act_placed(remote::Act::Park(mode), log).await
     }
 
-    /// Starts the parked lab again. When nothing is left of it, the launcher's parked mark goes
-    /// too, so the lab page offers a fresh start instead of a resume that can't work.
+    /// Starts the parked lab again. When nothing is left of it, the runner's record reads it
+    /// absent, so the lab page offers a fresh start instead of a resume that can't work.
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
         self.require_something_to_resume().await?;
         match self.act(remote::Act::Resume, &self.placed(RunOptions::new()), log).await {
             Ok(_) => Ok(()),
-            Err(e) if e.code() == Some(isothrum_runner::ErrorCode::NothingToResume) => {
-                paths::mark_parked(&self.dir, None)?;
-                Err(e.into_error())
-            }
+            Err(e) if e.code() == Some(isothrum_runner::ErrorCode::NothingToResume) => Err(e.into_error()),
             Err(e) => Err(self.said(e.into_error())),
         }
     }
@@ -477,7 +455,8 @@ impl LabRun {
             return Ok(LabStatus { place: Some(place), ..LabStatus::default() });
         }
         let status = self.read().await?;
-        Ok(LabStatus { place: Some(place), ..view::lab_status(&self.described()?, &status, paths::parked(&self.dir)) })
+        let parked = self.recorded()?.as_ref().and_then(super::recorded::parked);
+        Ok(LabStatus { place: Some(place), ..view::lab_status(&self.described()?, &status, parked) })
     }
 
     /// The run's status, read by the home's runner service (else by the runner in this process),
@@ -501,8 +480,12 @@ impl LabRun {
     /// The provider the run's record says it runs on, none before it ever ran: read from the
     /// runner's files only, no tool runs.
     pub(crate) fn recorded_provider(&self) -> Result<Option<String>> {
-        let runs = self.runner.runs().map_err(|e| errors::coded(&e.report()))?;
-        Ok(runs.into_iter().find(|r| r.name == self.name).and_then(|r| r.provider).map(|p| isothrum_runner::wire_name(&p)))
+        Ok(self.recorded()?.and_then(|r| r.provider).map(|p| isothrum_runner::wire_name(&p)))
+    }
+
+    /// The run's record, none before it ever ran: read from the runner's files only.
+    fn recorded(&self) -> Result<Option<isothrum_runner::RunRecord>> {
+        Ok(self.runner.runs().map_err(|e| errors::coded(&e.report()))?.into_iter().find(|r| r.name == self.name))
     }
 
     /// Runs the lab's set-up again on its running machines (`machine`, or all): its provisioners,

@@ -19,8 +19,8 @@ use std::path::Path;
 
 use super::support::lab::vm_inputs;
 use super::support::{check, fetch, log, scenario};
-use crate::runtime::paths::{PER_MACHINE_MARKER, local_runtime, per_machine_vm};
 use crate::runtime::providers::Provider;
+use crate::runtime::recorded::Recorded;
 use crate::runtime::{Place, Runtime, lab, status, stop_lab};
 use crate::testing::test_app::TestApp;
 
@@ -93,8 +93,9 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
             );
             match crate::runtime::start(&t.dirs(), lab, to, &vm_inputs(), log(&id)).await {
                 Ok(()) => {
-                    check(per_machine_vm(&dir) && dir.join(PER_MACHINE_MARKER).is_file(), "the form is recorded with the lab".into(), f);
-                    check(local_runtime(&dir, Runtime::Docker) == Runtime::Vm, "the lab runs here as a VM lab".into(), f);
+                    let recorded = Recorded::of(&t.dirs(), &id);
+                    check(recorded.as_ref().is_ok_and(Recorded::per_machine), "the form is recorded with the run".into(), f);
+                    check(recorded.is_ok_and(|r| r.form(Runtime::Docker) == Runtime::Vm), "the lab runs here as a VM lab".into(), f);
                     check(lab::vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target's files were generated".into(), f);
                     check(!lab::docker_vm_dir(&dir).exists(), "no helper VM's".into(), f);
                     up_as_vms(&t, &dir, &id, f).await;
@@ -108,7 +109,7 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
             // The page's Stop, with the catalogue runtime: the VMs go, and so does the form.
             let stopped = stop_lab(&t.dirs(), &id, Runtime::Docker, std::future::ready(()), log(&id)).await;
             check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), f);
-            check(!per_machine_vm(&dir), "the form is forgotten".into(), f);
+            check(Recorded::of(&t.dirs(), &id).is_ok_and(|r| !r.per_machine()), "the form is forgotten".into(), f);
             let left = status::still_up(&t.dirs(), &id);
             check(left.as_ref().is_ok_and(Option::is_none), format!("the runner records nothing of it up ({left:?})"), f);
             let gone = status::status(&t.dirs(), &dir, &id, Runtime::Docker).await;

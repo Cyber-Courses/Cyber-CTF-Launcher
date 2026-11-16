@@ -13,7 +13,7 @@ use crate::labs::{self, LaunchRequest};
 use crate::platform::AppDirs;
 use crate::run_service::{self, AttachPick, OperationId, Request};
 use crate::runtime::attack_box::AttackStatus;
-use crate::runtime::paths::{installed_lab_dir, lab_dir, local_runtime};
+use crate::runtime::paths::{installed_lab_dir, lab_dir};
 use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Park, Runtime, attack_box, docker, lab, start_place, status, terminal_launch};
 
@@ -280,7 +280,7 @@ pub async fn lab_run_options(app: AppHandle, id: String, runtime: Runtime, sourc
 }
 
 /// The observers a lab, declared `runtime`, puts beside itself (`tools:` in its spec), at their
-/// addresses in the form it was started in ([`local_runtime`]): container addresses for a
+/// addresses in the form its run was started in (`Recorded::form`): container addresses for a
 /// container lab wherever its Compose file runs, VM addresses for a lab run as VMs (a container
 /// lab run as one VM per machine included); none beside cloud services.
 #[tauri::command]
@@ -291,7 +291,7 @@ pub async fn lab_tools(app: AppHandle, id: String, runtime: Runtime) -> Result<V
 /// [`lab_tools`], in the app whose folders are `dirs`.
 pub(crate) fn tools_in(dirs: &AppDirs, id: &str, runtime: Runtime) -> Result<Vec<lab::Observer>> {
     let dir = lab_dir(dirs, id)?;
-    lab::tools(&dir, local_runtime(&dir, runtime))
+    lab::tools(&dir, crate::runtime::recorded::Recorded::of(dirs, id)?.form(runtime))
 }
 
 /// Runs a lab's exploitability check: does the intended exploit path still work? Lets a
@@ -388,7 +388,7 @@ mod tests {
     use crate::commands::lines;
     use crate::platform::exec::fake::Tools;
     use crate::run_service::tests::finished;
-    use crate::runtime::{Park, Runtime, providers::Provider, server};
+    use crate::runtime::{Park, Runtime, providers::Provider};
     use crate::testing::test_app::TestApp;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
@@ -457,7 +457,7 @@ mod tests {
         let vms = tools(Runtime::Vm).await.unwrap();
         assert_ne!(docker[0].addresses[0].ip, vms[0].addresses[0].ip, "a container and a VM address differ");
         // A container lab run as one VM per machine: its observers are at their VM addresses.
-        crate::runtime::paths::mark_per_machine_vm(&dir, true).unwrap();
+        crate::runtime::test_support::record_run(t.data(), "obs", None, "vagrant", "ready");
         assert_eq!(tools(Runtime::Docker).await.unwrap()[0].addresses[0].ip, vms[0].addresses[0].ip);
         // Beside cloud services, none.
         assert!(tools(Runtime::Cloud).await.unwrap().is_empty());
@@ -515,8 +515,8 @@ mod tests {
     #[tokio::test]
     async fn a_lab_on_a_server_host_has_no_local_check() {
         let t = TestApp::new();
-        let dir = t.lab("web", &[]);
-        server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
+        t.lab("web", &[]);
+        crate::runtime::test_support::record_run(t.data(), "web", Some(&t.host("az1", "azure", serde_json::json!({}))), "cloud-docker/azure", "ready");
         let _tools = Tools::rules(&[]);
         let check = lab_check(t.handle().clone(), "web".into(), Runtime::Docker).await.unwrap();
         assert!(!check.available);
@@ -526,11 +526,12 @@ mod tests {
 
     #[test]
     fn a_cloud_lab_has_its_attack_box_in_both_forms_with_its_accounts_place() {
-        use crate::runtime::paths::mark_per_machine_vm;
+        use crate::runtime::test_support::record_run;
         let t = TestApp::new();
         let _tools = Tools::rules(&[]);
         let dir = t.lab("srv", &[("isoloom.yml", SPEC)]);
-        server::mark_lab(&dir, Some(&t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true })))).unwrap();
+        let aws1 = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
+        record_run(t.data(), "srv", Some(&aws1), "cloud-docker/aws", "ready");
         // The box is a machine the launcher adds to the lab, the run updated with the account's
         // place: cloud-docker (the default), a container among the lab's in its cloud VM.
         let placed = |runtime| match crate::runtime::attack_box::locate(&t.dirs(), &dir, "srv", runtime).unwrap() {
@@ -542,7 +543,7 @@ mod tests {
         };
         assert_eq!(placed(Runtime::Docker), ("aws1".into(), crate::runtime::lab::Target::CloudDocker, false));
         // One VM per machine (cloud-vm): a Kali VM among the lab's.
-        mark_per_machine_vm(&dir, true).unwrap();
+        record_run(t.data(), "srv", Some(&aws1), "cloud-vm/aws", "ready");
         assert_eq!(placed(Runtime::Docker), ("aws1".into(), crate::runtime::lab::Target::CloudVm, true));
     }
 
@@ -608,7 +609,7 @@ mod tests {
         // lab): with no spec to place it by, its status doesn't read, an attach fails and leaves
         // the lab as published, and a detach has nothing to take out; nothing runs.
         let dir = t.lab("srv", &[]);
-        server::mark_lab(&dir, Some(&t.host("az1", "azure", serde_json::json!({})))).unwrap();
+        crate::runtime::test_support::record_run(t.data(), "srv", Some(&t.host("az1", "azure", serde_json::json!({}))), "cloud-docker/azure", "ready");
         let s = sink();
         assert!(attack_box_status(t.handle().clone(), "srv".into(), Runtime::Docker).await.is_err());
         assert!(kali_attach_fails(t.handle().clone(), "srv").await);

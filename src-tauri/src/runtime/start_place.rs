@@ -72,7 +72,7 @@ where
     let options = lab::run_options(&lab, runtime);
     let last = match last {
         // Docker is asked only of a helper VM's run here, which moves to its true form.
-        Some(run) if isothrum::RunForm::of(&run) == isothrum::RunForm::HelperVm && run.host_label.is_none() => {
+        Some(run) if super::recorded::RunForm::of(&run) == super::recorded::RunForm::HelperVm && run.host_label.is_none() => {
             let docker = docker().await;
             last_place(dirs, run, runtime, &options, docker)?
         }
@@ -110,7 +110,7 @@ where
 /// ([`true_form`], `docker` saying whether Docker answers). None when it can't run there now; an
 /// error when the saved servers can't be read (it would start here instead of on its server).
 fn last_place(dirs: &AppDirs, run: isothrum_runner::RunRecord, runtime: Runtime, options: &RunOptions, docker: bool) -> Result<Option<StartPlace>> {
-    use isothrum::RunForm as Form;
+    use super::recorded::RunForm as Form;
     if let Some(host) = run.host_label {
         let kind = server::host_provider(dirs, &host)?.filter(|p| !p.is_cloud());
         return Ok(kind.filter(|k| offers(&options.servers, *k)).map(|_| StartPlace { host: Some(host), ..StartPlace::default() }));

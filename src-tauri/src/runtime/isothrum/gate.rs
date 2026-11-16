@@ -6,7 +6,7 @@
 
 use isothrum_runner::{Error as RunnerError, RunState};
 
-use super::{LabRun, Result, errors, paths};
+use super::{LabRun, Result, errors};
 
 impl LabRun {
     /// The run's recorded state, none before it ever ran: read from the runner's store, no tool runs.
@@ -38,15 +38,14 @@ impl LabRun {
     }
 
     /// Refuses a resume when nothing is left of the run to start again (never started, taken down,
-    /// or every machine removed outside the app): the parked mark goes, so the lab page offers a
-    /// fresh start, which takes the launch's values, instead.
+    /// or every machine removed outside the app), so the lab page offers a fresh start, which
+    /// takes the launch's values, instead.
     pub(super) async fn require_something_to_resume(&self) -> Result<()> {
         let gone = match self.recorded_state()? {
             None | Some(RunState::Absent) => true,
             Some(_) => self.is_gone().await?,
         };
         if gone {
-            paths::mark_parked(&self.dir, None)?;
             return Err(errors::coded(&RunnerError::NothingToResume { run: self.name.to_string() }.report()));
         }
         Ok(())

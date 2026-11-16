@@ -8,15 +8,16 @@ use crate::platform::AppDirs;
 use super::host::{self, Host};
 use super::inflight::lock_lab;
 use super::launch::policy_allows;
-use super::paths::{lab_dir, local_runtime, local_vm, mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, parked, per_machine_vm};
+use super::paths::{lab_dir, mark_engine};
 use super::providers::Provider;
-use super::{Control, LabRef, Park, Runtime, isothrum, lab, server};
+use super::recorded::Recorded;
+use super::{Control, LabRef, Park, Runtime, isothrum, lab};
 use crate::error::{Error, Result};
 
 /// Parks a lab running on this machine: its machines are kept and resume as they were, so a lab
 /// that took an hour to build comes back in seconds (paused) or a boot (shut down), not a rebuild.
 async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(String)) -> Result<()> {
-    let LabRef { dir, id, runtime } = lab;
+    let LabRef { id, runtime, .. } = lab;
     let _lock = lock_lab(dirs, id).await?;
     refuse_cloud_park(runtime)?;
     // In the form it was started in: a container lab run as one VM per machine parks as a VM lab.
@@ -27,7 +28,6 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
         return Err(Error::Refused(why.into()));
     }
     run.park(mode, &mut log).await?;
-    mark_parked(dir, Some(mode))?;
     log(parked_message(mode).into());
     Ok(())
 }
@@ -135,10 +135,9 @@ async fn resume(dirs: &AppDirs, lab: LabRef<'_>, mut log: impl FnMut(String)) ->
     policy_allows(dirs, runtime, None, || Ok(lab::is_privileged(&lab::load(dir)?)))?;
     let run = local_run(dirs, lab, "A lab on a server or a cloud account isn't parked, so there is nothing to resume: start it again.")?;
     log("Resuming the lab…".into());
-    // The runner resumes a parked run as it was; when nothing is left of it, it drops the parked
-    // mark and reports `NothingToResume`, so the page offers a fresh start.
+    // The runner resumes a parked run as it was; when nothing is left of it, it reports
+    // `NothingToResume` and its record reads absent, so the page offers a fresh start.
     run.resume(&mut log).await?;
-    mark_parked(dir, None)?;
     log("Lab resumed.".into());
     Ok(())
 }
@@ -150,7 +149,7 @@ async fn resume(dirs: &AppDirs, lab: LabRef<'_>, mut log: impl FnMut(String)) ->
 async fn provision(dirs: &AppDirs, lab: LabRef<'_>, machine: Option<&str>, mut log: impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
     // A container lab run as one VM per machine has VMs to provision, like a VM lab.
-    let runtime = local_runtime(dir, runtime);
+    let runtime = Recorded::of(dirs, id)?.form(runtime);
     if runtime != Runtime::Vm {
         return Err(Error::Invalid("Container labs aren't provisioned in place: use Reset for a clean copy.".into()));
     }
@@ -212,24 +211,21 @@ pub(crate) async fn stop_run(run: isothrum::LabRun, dir: &Path, mut log: impl Fn
     forget_run(dir)
 }
 
-/// A stopped lab's markers: where it ran, its local VM, its per-machine form, its engine, parked;
-/// and the attack box the launcher added to it (the next start is the lab as published).
+/// What a stopped lab leaves behind of its run in its folder: its engine's mark, and the attack
+/// box the launcher added to it (the next start is the lab as published). Where it ran, in what
+/// form and parked or not, the runner's record says (absent now).
 fn forget_run(dir: &Path) -> Result<()> {
     super::attack_box::remove(dir)?;
-    server::mark_lab(dir, None)?;
-    mark_local_vm(dir, None)?;
-    mark_per_machine_vm(dir, false)?;
-    mark_engine(dir, None)?;
-    mark_parked(dir, None)
+    mark_engine(dir, None)
 }
 
 /// Takes down a parked lab before its folder is replaced by a newer version of the lab: its
-/// machines would otherwise be orphaned (the runner's record of them goes with the folder).
-/// Through the runner, in the form it was parked in ([`host::locate`]), its marks cleared after;
-/// nothing to do when it isn't parked.
+/// machines would otherwise be orphaned (its generated files go with the folder). Through the
+/// runner, in the form it was parked in ([`host::locate`]); nothing to do when its run isn't
+/// recorded parked.
 pub async fn clear_parked(dirs: &AppDirs, lab: LabRef<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let LabRef { dir, id, runtime } = lab;
-    if parked(dir).is_none() {
+    if Recorded::of(dirs, id)?.parked().is_none() {
         return Ok(());
     }
     log("A parked copy of an older version of this lab is here: removing it…".into());
@@ -263,16 +259,17 @@ pub async fn provision_lab(dirs: &AppDirs, id: &str, runtime: Runtime, machine: 
 
 /// How lab `id` runs on this machine, for a Stop of what the Machine page found of it there
 /// (`in_vm`: its VMs, else its containers). `None` when it isn't an installed lab that runs here
-/// (removed since, the self-test, or marked as running on a server host): its leftovers then go
+/// (removed since, the self-test, or recorded as running on a server host): its leftovers then go
 /// by name.
 pub fn runtime_here(dirs: &AppDirs, id: &str, in_vm: bool) -> Option<Runtime> {
-    let dir = lab_dir(dirs, id).ok()?;
-    if server::marked_host(&dir).is_some_and(|h| !h.is_empty()) {
+    lab_dir(dirs, id).ok()?;
+    let recorded = Recorded::of(dirs, id).ok()?;
+    if recorded.host().is_some() {
         return None;
     }
     // Its VMs are its machines (a VM lab, or a container lab run as one VM per machine), unless
     // the one VM is the helper an earlier version ran a container lab inside.
-    Some(if per_machine_vm(&dir) || (in_vm && local_vm(&dir).is_none()) { Runtime::Vm } else { Runtime::Docker })
+    Some(if recorded.per_machine() || (in_vm && !recorded.helper_vm()) { Runtime::Vm } else { Runtime::Docker })
 }
 
 /// Stops lab `id` wherever it runs: the one Stop of the lab page, the Machine page and the

@@ -56,14 +56,10 @@ async fn up_and_answering(l: &Lab, f: &mut Vec<String>, when: &str) {
 async fn park_and_resume(l: &Lab, mode: Park, f: &mut Vec<String>) {
     let parked = l.run().park(mode, &mut log(&l.id)).await;
     check(parked.is_ok(), format!("it parks ({mode:?}): {:?}", parked.err()), f);
-    let marked = crate::runtime::paths::mark_parked(&l.dir, Some(mode));
-    check(marked.is_ok(), format!("parked ({mode:?}), the lab is marked so ({:?})", marked.err()), f);
     let s = l.run().status().await;
     check(s.as_ref().is_ok_and(|s| !s.running && s.parked == Some(mode)), format!("parked ({mode:?}), it reads as parked"), f);
     let resumed = l.run().resume(&mut log(&l.id)).await;
     check(resumed.is_ok(), format!("it resumes after {mode:?}: {:?}", resumed.err()), f);
-    let unmarked = crate::runtime::paths::mark_parked(&l.dir, None);
-    check(unmarked.is_ok(), format!("resumed after {mode:?}, its parked mark goes ({:?})", unmarked.err()), f);
     up_and_answering(l, f, &format!("resumed after {mode:?}")).await;
 }
 

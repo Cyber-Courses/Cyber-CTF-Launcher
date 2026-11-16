@@ -129,8 +129,8 @@ pub(crate) async fn public_key_in(dirs: &AppDirs) -> Result<String> {
     Ok(crate::runtime::ssh::ensure_key(dirs).await?.1)
 }
 
-/// How many installed labs are currently running on each host, keyed by host id (each lab's
-/// host marker).
+/// How many installed labs are currently running on each host, keyed by host id (as the
+/// runner records their runs).
 #[tauri::command]
 pub fn server_running_labs(app: AppHandle) -> HashMap<String, u32> {
     running_by_host(&AppDirs::from(&app))
@@ -167,7 +167,6 @@ pub async fn server_selftest(app: AppHandle, id: String, events: Channel<Event>)
 mod tests {
     use super::*;
     use crate::runtime::providers::Provider;
-    use crate::runtime::server::HOST_MARKER;
 
     /// A public host key (made for these tests) and the fingerprint `ssh-keygen -lf` gives it.
     const NODE_KEY: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIMV/X9GBl8lRmDMg/hSFR41QZH/fgA5PLNatzgxigSSL";
@@ -239,11 +238,11 @@ mod tests {
             "only an AWS account with a monthly budget reports its spend"
         );
         // A lab running on it keeps it.
-        let lab = t.lab("web", &[]);
-        std::fs::write(lab.join(HOST_MARKER), &saved.id).unwrap();
+        t.lab("web", &[]);
+        crate::runtime::test_support::record_run(t.data(), "web", Some(&saved.id), "proxmox", "ready");
         assert_eq!(server_running_labs(app()).get(&saved.id), Some(&1));
         assert!(server_remove(app(), saved.id.clone()).await.unwrap_err().to_string().starts_with("1 lab still running"));
-        std::fs::remove_file(lab.join(HOST_MARKER)).unwrap();
+        crate::runtime::test_support::record_run(t.data(), "web", Some(&saved.id), "proxmox", "absent");
         server_remove(app(), saved.id.clone()).await.unwrap();
         assert_eq!(server_list(app()).unwrap().hosts, Vec::<HostProfile>::new());
         // The launcher's key, made once.
