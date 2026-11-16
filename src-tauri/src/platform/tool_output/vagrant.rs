@@ -1,4 +1,5 @@
-//! What Vagrant prints, read: `vagrant plugin list`.
+//! What Vagrant prints, read: `vagrant plugin list`, and libvirt's refusal to start a VM without
+//! a virtiofsd.
 
 /// A Vagrant plugin `vagrant plugin list` names.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,9 +30,25 @@ pub fn plugins(out: &str) -> Vec<Plugin> {
         .collect()
 }
 
+/// libvirt's words when it starts a VM with a folder shared through virtiofs and finds no
+/// virtiofsd (`virDomainCreate`), which vagrant-libvirt passes on in a Ruby stack trace.
+const NO_VIRTIOFSD: &str = "Unable to find a satisfying virtiofsd";
+
+/// Whether a VM's start failed for libvirt finding no virtiofsd, from what it printed (`said`).
+#[must_use]
+pub fn libvirt_lacks_virtiofsd(said: &str) -> bool {
+    said.contains(NO_VIRTIOFSD)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn libvirt_finding_no_virtiofsd_is_read_from_vagrant_libvirts_stack_trace() {
+        assert!(libvirt_lacks_virtiofsd(include_str!("fixtures/vagrant/libvirt-no-virtiofsd.txt")));
+        assert!(!libvirt_lacks_virtiofsd("Call to virDomainCreate failed: Requested operation is not valid: network 'default' is not active"));
+    }
 
     fn plugin(name: &str, version: Option<&str>) -> Plugin {
         Plugin { name: name.into(), version: version.map(str::to_owned) }

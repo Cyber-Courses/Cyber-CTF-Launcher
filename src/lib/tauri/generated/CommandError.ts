@@ -152,7 +152,7 @@ minutes: number, } } | { "code": "serverAuthFailed", "args": {
 /**
  * The server, by its name in Servers.
  */
-server: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" } | { "code": "turnedOffByPolicy", "args": { 
+server: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" } | { "code": "virtiofsdMissing" } | { "code": "turnedOffByPolicy", "args": { 
 /**
  * The policy setting's name.
  */

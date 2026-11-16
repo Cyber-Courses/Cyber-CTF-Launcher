@@ -32,7 +32,7 @@ pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
 #[cfg(test)]
 use versions::version_at_least;
 use versions::{TooOld, hypervisor_too_old, plugin_too_old};
-pub(crate) use virtiofsd::{found as virtiofsd_found, needs_virtiofsd};
+pub(crate) use virtiofsd::{can_share, found as virtiofsd_found, needs_virtiofsd};
 
 /// How long VirtualBox's service gets to answer `VBoxManage list runningvms` before it reads as
 /// unresponsive (wedged), not just slow.

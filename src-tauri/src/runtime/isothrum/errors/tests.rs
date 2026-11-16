@@ -308,3 +308,17 @@ fn utms_passing_scripting_errors_are_tried_again_and_said_and_nothing_else_is() 
     assert!(!try_again_after_utm(&Error::Invalid("a step failed".into()), &mut log));
     assert_eq!(said, [utm_retry_line("\"Application isn't running\" while it runs"), utm_retry_line("\"AppleEvent timed out\" while busy")]);
 }
+
+#[test]
+fn libvirt_finding_no_virtiofsd_reads_as_its_code_not_vagrant_libvirts_stack_trace() {
+    // Regression: a lab with the attack box's shared folder on libvirt ended on the raw Ruby
+    // stack trace ("Call to virDomainCreate failed: operation failed: Unable to find a satisfying
+    // virtiofsd (Libvirt::Error)"). The check refuses it up front; a machine changed since gets
+    // the same code from the runner's failure, here and through the service.
+    let trace = include_str!("../../../platform/tool_output/fixtures/vagrant/libvirt-no-virtiofsd.txt");
+    let (code, text) = said(RunnerError::ToolFailed { step: "up".into(), reason: trace.into() });
+    assert_eq!(code, Code::VirtiofsdMissing);
+    assert!(text.contains("virtiofsd") && !text.contains("Libvirt::Error"), "{text}");
+    let e = RunnerError::ToolFailed { step: "up".into(), reason: trace.into() };
+    assert_eq!(from_service(e.code(), &e.to_string(), Some("up"), e.detail().as_ref()).code(), Code::VirtiofsdMissing);
+}
