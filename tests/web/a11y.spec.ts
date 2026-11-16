@@ -1,6 +1,7 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, animationsFinished, paletteKey, emitEvent } from "./fixtures";
+import { test, expect, openApp, animationsFinished, paletteKey, emitEvent } from "./fixtures";
+import { AppShell } from "./pages/app-shell";
 
 // Accessibility, checked by axe on the main screens in both themes: text contrast (WCAG AA,
 // 4.5:1 for the small mono and faint text the launcher uses a lot) and every rule axe rates
@@ -28,12 +29,10 @@ const SCREENS = [
 
 /** Opens the app on the page of the lab called `name`. */
 async function openLab(page: Page, name: string) {
+  const app = new AppShell(page);
   await openApp(page);
-  await navButton(page, "Labs").click();
-  await page
-    .locator("main")
-    .getByRole("button", { name: `Open ${name}`, exact: true })
-    .click();
+  await app.nav("Labs").click();
+  await app.main.getByRole("button", { name: `Open ${name}`, exact: true }).click();
 }
 
 for (const theme of ["dark", "light"] as const) {
@@ -49,10 +48,10 @@ for (const theme of ["dark", "light"] as const) {
     });
 
     for (const [tab, heading] of SCREENS) {
-      test(`the ${tab} screen passes axe's contrast, critical and serious rules`, async ({ page }) => {
+      test(`the ${tab} screen passes axe's contrast, critical and serious rules`, async ({ page, app }) => {
         await openApp(page);
-        await navButton(page, tab).click();
-        await expect(pageTitle(page)).toHaveText(heading);
+        await app.nav(tab).click();
+        await expect(app.title).toHaveText(heading);
         // Past the entrance animations (they start from a lighter state).
         await animationsFinished(page);
         expect(await violations(page)).toEqual([]);
@@ -65,10 +64,10 @@ for (const theme of ["dark", "light"] as const) {
       ["Cloud", "&cloud=none", "No cloud account connected"],
       ["Machine", "&machine=fresh", "No provider installed"],
     ] as const) {
-      test(`the empty ${tab} screen passes too`, async ({ page }) => {
+      test(`the empty ${tab} screen passes too`, async ({ page, app }) => {
         await openApp(page, query);
-        await navButton(page, tab).click();
-        await expect(page.locator("main").getByRole("region", { name: title })).toBeVisible();
+        await app.nav(tab).click();
+        await expect(app.main.getByRole("region", { name: title })).toBeVisible();
         await animationsFinished(page);
         expect(await violations(page)).toEqual([]);
       });
@@ -76,10 +75,10 @@ for (const theme of ["dark", "light"] as const) {
 
     // The Machine page with a row in every state (machine=many), a status tooltip open and a
     // row's test open: the status words, the Default mark and "Use by default" in each theme.
-    test("the Machine screen with several providers of each kind passes too", async ({ page }) => {
+    test("the Machine screen with several providers of each kind passes too", async ({ page, app }) => {
       await openApp(page, "&machine=many&deploying=none");
-      await navButton(page, "Machine").click();
-      const providers = page.locator("main").getByRole("list", { name: "Providers" });
+      await app.nav("Machine").click();
+      const providers = app.main.getByRole("list", { name: "Providers" });
       await expect(providers.locator(':scope > [role="listitem"]')).toHaveCount(6);
       await providers.getByRole("button", { name: "Test", exact: true }).first().click();
       await providers.locator('[data-slot="status"]').last().focus();

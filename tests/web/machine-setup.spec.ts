@@ -1,5 +1,5 @@
 import type { BrowserContext, Page } from "@playwright/test";
-import { test, expect, openApp, navButton, emitEvent, release } from "./fixtures";
+import { test, expect, openApp, emitEvent, release } from "./fixtures";
 import { machineCheckInterval } from "../../src/features/machine/check-cadence";
 
 // The guided machine-setup window (`/machine-setup`), opened as the app opens it: from the
@@ -104,13 +104,13 @@ test.describe("machine setup window", () => {
     await closed;
   });
 
-  test("a fresh Mac: the package manager is detected, then each install streams and the next check has it", async ({ page, context }) => {
+  test("a fresh Mac: the package manager is detected, then each install streams and the next check has it", async ({ page, app, context }) => {
     // The setup window checks the machine on its own every so often, on the test's clock: it runs
     // like the real one, and the test skips it ahead to the next check instead of waiting for it.
     await context.clock.install();
     await openApp(page, "&machine=fresh&hold=pm&os=macos&arch=arm64");
     // The Overview says to set it up.
-    const setUp = page.locator("main").getByRole("button", { name: "Set up this machine" });
+    const setUp = app.main.getByRole("button", { name: "Set up this machine" });
     const setup = await opens(context, () => setUp.click());
     await expect(pathRow(setup, "VM labs")).toContainText("0 of 4 done");
 
@@ -154,10 +154,10 @@ test.describe("machine setup window", () => {
     await closed;
   });
 
-  test("a fresh Mac: container labs install their engine, then test it", async ({ page, context }) => {
+  test("a fresh Mac: container labs install their engine, then test it", async ({ page, app, context }) => {
     await context.clock.install();
     await openApp(page, "&machine=fresh&hold=pm&os=macos&arch=arm64");
-    const setup = await opens(context, () => page.locator("main").getByRole("button", { name: "Set up this machine" }).click());
+    const setup = await opens(context, () => app.main.getByRole("button", { name: "Set up this machine" }).click());
     await expect(pathRow(setup, "Container labs")).toContainText("of 4 done");
     await pathRow(setup, "Container labs").getByRole("button").click();
     // The package manager first (Homebrew run by the player; the window's next check has it).
@@ -186,11 +186,11 @@ test.describe("machine setup window", () => {
     await closed;
   });
 
-  test("Fix opens the window at its step, a later Fix jumps there, and a failed install says why", async ({ page, context }) => {
+  test("Fix opens the window at its step, a later Fix jumps there, and a failed install says why", async ({ page, app, context }) => {
     // VMware Fusion is installed, short of its Vagrant plugin (`machine=many`): its row's Fix.
     await openApp(page, "&machine=many&install=fail");
-    await navButton(page, "Machine").click();
-    const fusion = page.locator("main").getByRole("list", { name: "Providers" }).getByRole("listitem").filter({ hasText: "VMware Fusion" });
+    await app.nav("Machine").click();
+    const fusion = app.main.getByRole("list", { name: "Providers" }).getByRole("listitem").filter({ hasText: "VMware Fusion" });
     await expect(fusion).toContainText("Needs setup");
     const setup = await opens(context, () => fusion.getByRole("button", { name: "Fix", exact: true }).click());
     await expect(setup).toHaveURL(/\/machine-setup\?step=vagrant&provider=vmware_desktop&mock&machine=many&install=fail/);

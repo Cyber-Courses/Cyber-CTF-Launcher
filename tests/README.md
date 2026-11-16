@@ -16,6 +16,7 @@ tests/
                          the cases, the needs, the groups, the verdicts a need not met gives), the app's
                          WebDriver port (host.mjs: free, held by whom, waited for)
   web/                   the Playwright specs against the dev mock (`pnpm dev:web`), `<area>.spec.ts`, and their fixtures
+  web/pages/             the page objects the specs find the app's parts through: the window's frame (app-shell.ts)
   audit/run.sh           the leftover audit: a snapshot of the machine before and after a run, their diff
                          (snapshot.ps1: Windows; snapshot-server.sh: Proxmox, ESXi); leftovers.md is its contract
   features.yml           the feature registry: every feature the user sees, and the tests that check it per tier

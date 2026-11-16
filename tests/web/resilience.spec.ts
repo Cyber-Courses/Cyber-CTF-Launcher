@@ -1,28 +1,28 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, horizontalOverflow, paletteKey, release } from "./fixtures";
+import { test, expect, openApp, horizontalOverflow, paletteKey, release } from "./fixtures";
 
 // A machine check that fails, the window at its minimum size and larger, and the main flows by
 // keyboard alone.
 
 test.describe("a failed machine check", () => {
-  test("is said where the report is needed, and Try again recovers", async ({ page }) => {
+  test("is said where the report is needed, and Try again recovers", async ({ page, app }) => {
     // Every check fails (`hold=check`, src/lib/dev-mock/holds.ts) until the machine comes back with
     // the Try again.
     await openApp(page, "&hold=check");
-    await expect(page.locator("main > [data-tauri-drag-region]")).toContainText("machine check failed");
+    await expect(app.header).toContainText("machine check failed");
 
-    await navButton(page, "Machine").click();
+    await app.nav("Machine").click();
     await expect(page.getByText("Couldn’t check this machine")).toBeVisible();
     await expect(page.getByText("docker info timed out after 20 s")).toBeVisible();
     // Labs need the report too: the same message there.
-    await navButton(page, "Labs").click();
+    await app.nav("Labs").click();
     await expect(page.getByText("Couldn’t check this machine")).toBeVisible();
 
     await release(page, "check", page.getByRole("button", { name: "Try again" }));
-    await expect(page.locator("main").getByRole("button", { name: "Open Invoice portal API", exact: true })).toBeVisible();
-    await expect(page.locator("main > [data-tauri-drag-region]")).not.toContainText("machine check failed");
-    await navButton(page, "Machine").click();
-    await expect(page.locator("main")).toContainText("Ready for labs");
+    await expect(app.main.getByRole("button", { name: "Open Invoice portal API", exact: true })).toBeVisible();
+    await expect(app.header).not.toContainText("machine check failed");
+    await app.nav("Machine").click();
+    await expect(app.main).toContainText("Ready for labs");
   });
 });
 
@@ -34,9 +34,9 @@ for (const size of [
   test.describe(`window at ${size.width}x${size.height}`, () => {
     test.use({ viewport: size });
 
-    test("every screen fits the width and keeps its primary action in view", async ({ page }) => {
+    test("every screen fits the width and keeps its primary action in view", async ({ page, app }) => {
       await openApp(page);
-      const main = page.locator("main");
+      const main = app.main;
       const screens: [string, string | RegExp, (p: Page) => ReturnType<Page["getByRole"]>][] = [
         ["Overview", /Ada/, (p) => p.locator("main").getByRole("button", { name: "Browse labs" })],
         ["Labs", "Labs", (p) => p.getByRole("textbox", { name: "Search labs and skills" })],
@@ -45,16 +45,16 @@ for (const size of [
         ["Cloud", "Cloud", (p) => p.getByRole("button", { name: "Set up cloud provider" })],
       ];
       for (const [tab, heading, primary] of screens) {
-        await navButton(page, tab).click();
-        await expect(pageTitle(page)).toHaveText(heading);
+        await app.nav(tab).click();
+        await expect(app.title).toHaveText(heading);
         await expect(primary(page)).toBeInViewport();
         expect(await horizontalOverflow(page), `${tab} overflows`).toEqual([]);
       }
 
       // A lab page: its start button, and the running one's actions.
-      await navButton(page, "Labs").click();
+      await app.nav("Labs").click();
       await main.getByRole("button", { name: "Open GOAD Light", exact: true }).click();
-      await expect(pageTitle(page)).toHaveText("GOAD Light");
+      await expect(app.title).toHaveText("GOAD Light");
       expect(await horizontalOverflow(page), "GOAD Light overflows").toEqual([]);
       await page.getByRole("button", { name: /All labs/ }).click();
       await main.getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
@@ -121,35 +121,35 @@ async function tabTo(page: Page, name: RegExp, max = 25) {
 }
 
 test.describe("keyboard only", () => {
-  test("from the sidebar to a lab and back, with Tab, Enter and Escape", async ({ page }) => {
+  test("from the sidebar to a lab and back, with Tab, Enter and Escape", async ({ page, app }) => {
     await openApp(page);
     await tabTo(page, /^Labs/);
     await page.keyboard.press("Enter");
-    await expect(pageTitle(page)).toHaveText("Labs");
+    await expect(app.title).toHaveText("Labs");
 
     await tabTo(page, /^Search labs and skills$/);
     await page.keyboard.type("blind");
     await tabTo(page, /^Open Blind orders$/);
     await page.keyboard.press("Enter");
-    await expect(pageTitle(page)).toHaveText("Blind orders");
+    await expect(app.title).toHaveText("Blind orders");
 
     await page.keyboard.press("Escape");
-    await expect(pageTitle(page)).toHaveText("Labs");
+    await expect(app.title).toHaveText("Labs");
   });
 
-  test("/ jumps to the lab search from anywhere", async ({ page }) => {
+  test("/ jumps to the lab search from anywhere", async ({ page, app }) => {
     await openApp(page);
-    await navButton(page, "Servers").click();
-    await page.locator("main h1").click();
+    await app.nav("Servers").click();
+    await app.title.click();
     await page.keyboard.press("/");
-    await expect(pageTitle(page)).toHaveText("Labs");
+    await expect(app.title).toHaveText("Labs");
     await expect(page.getByRole("textbox", { name: "Search labs and skills" })).toBeFocused();
     // In a text field, "/" is typed.
     await page.keyboard.type("a/b");
     await expect(page.getByRole("textbox", { name: "Search labs and skills" })).toHaveValue("a/b");
   });
 
-  test("the command palette runs the result picked with the arrow keys", async ({ page }) => {
+  test("the command palette runs the result picked with the arrow keys", async ({ page, app }) => {
     await openApp(page);
     await page.keyboard.press(await paletteKey(page));
     const palette = page.getByRole("dialog", { name: "Command menu" });
@@ -162,13 +162,13 @@ test.describe("keyboard only", () => {
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(palette).toBeHidden();
-    await expect(pageTitle(page)).toHaveText(second.replace(/^Go to /, "").replace("Overview", "") || /Ada/);
+    await expect(app.title).toHaveText(second.replace(/^Go to /, "").replace("Overview", "") || /Ada/);
   });
 
-  test("the start dialog keeps the focus inside, and Cancel gives it back", async ({ page }) => {
+  test("the start dialog keeps the focus inside, and Cancel gives it back", async ({ page, app }) => {
     await openApp(page);
-    await navButton(page, "Labs").click();
-    await page.locator("main").getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
+    await app.nav("Labs").click();
+    await app.main.getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
     await page.getByRole("button", { name: "Start lab" }).focus();
     await page.keyboard.press("Enter");
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
@@ -181,7 +181,7 @@ test.describe("keyboard only", () => {
     await page.keyboard.press("Enter");
     await expect(where).toBeHidden();
     await expect(page.getByRole("button", { name: "Start lab" })).toBeFocused();
-    await expect(pageTitle(page)).toHaveText("Exposed dashboard");
+    await expect(app.title).toHaveText("Exposed dashboard");
   });
 
   // BUG: Escape in "Where should it run?" closes the dialog and also leaves the lab page for the
@@ -189,28 +189,28 @@ test.describe("keyboard only", () => {
   // event; the dialog is gone by the time the lab page's window listener (useEscapeBack) runs, so
   // that one sees no dialog and goes back. The confirm dialog and the port prompt already stop it.
   // Fix: `e.stopPropagation()` (and preventDefault) in RunOnDialog's Escape handler.
-  test("Escape closes the start dialog and stays on the lab page", async ({ page }) => {
+  test("Escape closes the start dialog and stays on the lab page", async ({ page, app }) => {
     await openApp(page);
-    await navButton(page, "Labs").click();
-    await page.locator("main").getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
+    await app.nav("Labs").click();
+    await app.main.getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
     await page.getByRole("button", { name: "Start lab" }).click();
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
     await expect(where).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(where).toBeHidden();
-    await expect(pageTitle(page)).toHaveText("Exposed dashboard");
+    await expect(app.title).toHaveText("Exposed dashboard");
   });
 
   // BUG (accessibility): opening a lab from the list with Enter drops the focus on <body>: the row
   // that had it unmounts with the list, and the lab page focuses nothing. The next Tab starts over
   // from the top of the window (the sidebar). Fix: on opening a lab page, focus its heading (with
   // tabIndex={-1}) or the "All labs" back link; do the same when going back to the list.
-  test("opening a lab with Enter puts the focus on the lab page", async ({ page }) => {
+  test("opening a lab with Enter puts the focus on the lab page", async ({ page, app }) => {
     await openApp(page);
-    await navButton(page, "Labs").click();
-    await page.locator("main").getByRole("button", { name: "Open Blind orders", exact: true }).focus();
+    await app.nav("Labs").click();
+    await app.main.getByRole("button", { name: "Open Blind orders", exact: true }).focus();
     await page.keyboard.press("Enter");
-    await expect(pageTitle(page)).toHaveText("Blind orders");
+    await expect(app.title).toHaveText("Blind orders");
     expect(await page.evaluate(() => !!document.activeElement?.closest("main"))).toBe(true);
   });
 

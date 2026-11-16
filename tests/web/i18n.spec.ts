@@ -1,4 +1,4 @@
-import { test, expect, LOCALES, openApp, navButton, pageTitle, rawKeys } from "./fixtures";
+import { test, expect, LOCALES, openApp, rawKeys } from "./fixtures";
 import en from "../../src/messages/en/shell.json";
 import fr from "../../src/messages/fr/shell.json";
 import es from "../../src/messages/es/shell.json";
@@ -14,22 +14,17 @@ for (const locale of LOCALES) {
   test.describe(`i18n ${locale}`, () => {
     test.use({ appLocale: locale });
 
-    test("Overview and Labs render translated", async ({ page }) => {
+    test("Overview and Labs render translated", async ({ page, app }) => {
       const tabs = SHELL[locale].tabs;
       await openApp(page);
       await expect(page.locator("html")).toHaveAttribute("lang", locale);
-      await expect(navButton(page, tabs.home)).toHaveAttribute("aria-current", "page");
-      for (const tab of [tabs.labs, tabs.machine, tabs.server, tabs.cloud]) await expect(navButton(page, tab)).toBeVisible();
+      await expect(app.nav(tabs.home)).toHaveAttribute("aria-current", "page");
+      for (const tab of [tabs.labs, tabs.machine, tabs.server, tabs.cloud]) await expect(app.nav(tab)).toBeVisible();
       expect(await rawKeys(page), "raw keys on Overview").toEqual([]);
 
-      await navButton(page, tabs.labs).click();
-      await expect(pageTitle(page)).toHaveText(tabs.labs);
-      await expect(
-        page
-          .locator("main")
-          .getByRole("button", { name: /Invoice portal API/ })
-          .first(),
-      ).toBeVisible();
+      await app.nav(tabs.labs).click();
+      await expect(app.title).toHaveText(tabs.labs);
+      await expect(app.main.getByRole("button", { name: /Invoice portal API/ }).first()).toBeVisible();
       expect(await rawKeys(page), "raw keys on Labs").toEqual([]);
     });
   });

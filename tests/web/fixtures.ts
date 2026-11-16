@@ -1,6 +1,7 @@
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import type { Holdable } from "../../src/lib/dev-mock/holds";
 import type { CommandError } from "../../src/lib/tauri/generated/CommandError";
+import { AppShell } from "./pages/app-shell";
 
 /** The six languages the launcher ships (src/lib/i18n). */
 export const LOCALES = ["en", "fr", "es", "de", "pt-BR", "ja"] as const;
@@ -15,6 +16,8 @@ type Fixtures = {
   /** Console errors, uncaught exceptions and missing-translation warnings, on every page of the
    *  test; the test fails if any were seen. */
   consoleErrors: string[];
+  /** The main window's frame on the test's page: its sidebar, title bar and open screen. */
+  app: AppShell;
 };
 
 export const test = base.extend<Fixtures>({
@@ -47,6 +50,9 @@ export const test = base.extend<Fixtures>({
     },
     { auto: true },
   ],
+  app: async ({ page }, provide) => {
+    await provide(new AppShell(page));
+  },
 });
 
 export { expect };
@@ -55,8 +61,9 @@ export { expect };
  *  scenario switches (src/lib/dev-mock/scenario.ts, `Scenario`), e.g. "&launch=fail". */
 export async function openApp(page: Page, query = "") {
   await page.goto(`/?mock${query}`);
-  await expect(page.locator("aside nav")).toBeVisible();
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  const app = new AppShell(page);
+  await expect(app.sidebar).toBeVisible();
+  await expect(app.title).toBeVisible();
 }
 
 /** What the dev mock adds to the window for a test (src/lib/dev-mock/index.ts). */
@@ -91,16 +98,6 @@ export async function animationsFinished(page: Page) {
 export async function paletteKey(page: Page) {
   return (await page.evaluate(() => navigator.userAgent)).includes("Mac") ? "Meta+k" : "Control+k";
 }
-
-/** A sidebar entry by its label (its name may go on with a count or a shortcut). */
-export const navButton = (page: Page, name: string) =>
-  page.locator("aside nav").getByRole("button", { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) });
-
-/** The open screen's title. */
-export const pageTitle = (page: Page) => page.locator("main").getByRole("heading", { level: 1 });
-
-/** The header breadcrumb's last crumb (the open screen, or the open lab). */
-export const breadcrumb = (page: Page) => page.locator("main > [data-tauri-drag-region] b");
 
 /** Visible texts (and placeholders, labels) on the page that look like a raw message key. */
 export function rawKeys(page: Page): Promise<string[]> {
