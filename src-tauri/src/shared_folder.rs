@@ -238,6 +238,9 @@ mod tests {
         })
         .unwrap();
         assert_eq!(opened, Some(folder));
+        // The store the commands opened is a file in `root`, which Windows won't remove while
+        // it is open.
+        crate::store::forget(&root);
         std::fs::remove_dir_all(root).unwrap();
     }
 

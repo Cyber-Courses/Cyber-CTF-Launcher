@@ -273,6 +273,10 @@ mod tests {
         assert!(!super::super::added(&dir).unwrap(), "the box is out of the lab's spec again");
         assert!(!dir.join(lab::overlay::FILE).exists(), "and the launcher's layer gone");
         assert_eq!(module(&dir, "aws"), before, "the lab's files as they were");
+        // The runner's store (`state.db` in its home) and the app's (read for the shared folder)
+        // are open files in the lab's folder, which Windows won't remove while they are.
+        drop(placed);
+        crate::store::forget(dirs.data().unwrap());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
