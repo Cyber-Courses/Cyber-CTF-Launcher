@@ -3,10 +3,13 @@
 //! share of code nor is a `mod.rs`, `tauri` is used only in the shell and the commands, and
 //! nothing listens beyond the loopback. Elsewhere, over the same split: every Tauri command is
 //! called from a test and none that opens a window is synchronous (`commands.rs`), every literal
-//! argument a cmd.exe-wrapped tool gets passes its guard (`platform/exec/shim.rs`), and only
-//! `runtime/lab/` uses Isoloom's spec and generator crates (`runtime/lab.rs`).
+//! argument a cmd.exe-wrapped tool gets passes its guard (`platform/exec/shim.rs`), only
+//! `runtime/lab/` uses Isoloom's spec and generator crates (`runtime/lab.rs`), and no code outside
+//! an allow-list that only shrinks starts a tool Isothrum runs (`source_scan/tools.rs`).
 
 use std::path::{Path, PathBuf};
+
+mod tools;
 
 /// A Rust source file of the crate: its path, the code that ships, and its test code.
 pub struct Source {
