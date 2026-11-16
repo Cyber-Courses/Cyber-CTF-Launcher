@@ -17,7 +17,7 @@
 
 use std::path::Path;
 
-use super::support::lab::{Run, install_copy, leftovers};
+use super::support::lab::{Run, leftovers};
 use super::support::{check, log, scenario};
 use crate::platform::exec::run;
 use crate::runtime::{Place, docker, paths};
@@ -69,8 +69,7 @@ async fn park_and_resume(r: &Run, f: &mut Vec<String>) {
 /// stopped after. Launched with no inputs: each slot takes its manifest default.
 async fn run_corpus_lab(dir: &Path, f: &mut Vec<String>) {
     let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("lab");
-    let id = format!("ci-corpus-{}", rand::random::<u32>());
-    let r = Run { dir: install_copy(dir, &id), home: std::env::temp_dir().join(format!("cyberctf-{id}-home")), id };
+    let r = Run::install(dir, format!("ci-corpus-{}", rand::random::<u32>()));
     let started = std::time::Instant::now();
     scenario(
         f,
@@ -86,8 +85,7 @@ async fn run_corpus_lab(dir: &Path, f: &mut Vec<String>) {
     )
     .await;
     println!("{name}: {:.0?}", started.elapsed());
-    let _ = std::fs::remove_dir_all(&r.dir);
-    let _ = std::fs::remove_dir_all(&r.home);
+    r.remove_files();
 }
 
 /// Stop the lab and assert nothing of it is left, and that the runner records the run gone.

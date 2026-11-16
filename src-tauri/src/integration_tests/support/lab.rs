@@ -16,6 +16,30 @@ pub(crate) struct Run {
 }
 
 impl Run {
+    /// The lab installed in `dir` under id `id`, its runner home in the temp folder beside it.
+    pub(crate) fn in_place(dir: PathBuf, id: String) -> Run {
+        let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
+        Run { dir, id, home }
+    }
+
+    /// A fresh copy of the lab in `src` ([`install_copy`]) under id `id`.
+    pub(crate) fn install(src: &Path, id: String) -> Run {
+        Run::in_place(install_copy(src, &id), id)
+    }
+
+    /// A fresh copy of the lab in `src` under an id of its own, `<prefix>-<n>`, so a scenario's
+    /// run never meets one an earlier run left.
+    pub(crate) fn fresh(src: &Path, prefix: &str) -> Run {
+        Run::install(src, format!("{prefix}-{}", rand::random::<u16>()))
+    }
+
+    /// Removes what the scenario made on disk for the lab: its folder and its runner home. Best
+    /// effort: what is already gone, or can't go, is left.
+    pub(crate) fn remove_files(&self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+        let _ = std::fs::remove_dir_all(&self.home);
+    }
+
     /// Starts the lab with the launch's values `env`.
     pub(crate) async fn start(&self, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
         launch::start_docker_run(&self.home, &self.dir, &self.id, launch::Inputs::values(env), log).await
@@ -42,6 +66,12 @@ impl Run {
     pub(crate) async fn stop(&self, log: impl FnMut(String)) -> Result<()> {
         lifecycle::stop_run(isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?, &self.dir, log).await
     }
+}
+
+/// Whether the lab reads as up in `s`: running, and every machine of its own (not its plumbing)
+/// running.
+pub(crate) fn every_machine_runs(s: &LabStatus) -> bool {
+    s.running && !s.machines.is_empty() && s.machines.iter().filter(|m| !m.infra).all(|m| m.state == "running")
 }
 
 /// A fresh copy of the lab, as the launcher installs one: its own folder, nothing generated.

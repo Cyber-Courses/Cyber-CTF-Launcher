@@ -13,11 +13,11 @@
 //! cargo test --lib integration_tests::resilience_vm:: -- --ignored --nocapture --test-threads=1
 //! ```
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::resilience::{copy_of, killed_start, refused_as_gone, shell, states, target, throwaway, tools_of, whole, whole_after};
-use super::support::lab::{Run, vm_inputs};
+use super::resilience::{killed_start, refused_as_gone, shell, states, target, throwaway, tools_of, whole_after};
+use super::support::lab::{Run, every_machine_runs, vm_inputs};
 use super::support::{Wait, check, eventually, knob, log, refused_by_launcher, scenario};
 use crate::platform::exec::run_env;
 use crate::runtime::providers::Provider;
@@ -66,17 +66,16 @@ async fn stops_clean(l: &Run, f: &mut Vec<String>) {
     check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), f);
     let s = status(l).await;
     check(s.as_ref().is_ok_and(|s| s.machines.is_empty()), format!("no VM of it is left ({:?})", s.as_ref().map(states)), f);
-    let _ = std::fs::remove_dir_all(&l.dir);
-    let _ = std::fs::remove_dir_all(&l.home);
+    l.remove_files();
 }
 
 /// Runs `body` on a fresh copy of the lab in `CYBERCTF_TEST_RESILIENCE_VM_LAB`, then stops it and
 /// checks no VM is left, whatever happened; a lab the launcher refuses on the hypervisor is skipped.
 async fn on_lab(name: &str, body: impl AsyncFnOnce(&Run, &mut Vec<String>)) {
     let Some(src) = knob("CYBERCTF_TEST_RESILIENCE_VM_LAB") else { return };
-    let l = copy_of(&src, "resvm");
+    let l = Run::fresh(Path::new(&src), "resvm");
     if refused_by_launcher(&l.dir, lab::Target::Vagrant, provider()) {
-        let _ = std::fs::remove_dir_all(&l.dir);
+        l.remove_files();
         return;
     }
     let mut f = Vec::new();
@@ -122,7 +121,7 @@ async fn a_vm_powered_off_while_the_lab_runs_shows_off_and_a_resume_brings_it_ba
         let resumed = isothrum::LabRun::vm(&l.home, &l.dir, &l.id).expect("its run").resume(&mut log(&l.id)).await;
         check(resumed.is_ok(), format!("a resume brings it back ({:?})", resumed.err()), f);
         let s = status(l).await;
-        check(s.as_ref().is_ok_and(whole), format!("every machine runs again ({:?})", s.as_ref().map(states)), f);
+        check(s.as_ref().is_ok_and(every_machine_runs), format!("every machine runs again ({:?})", s.as_ref().map(states)), f);
     })
     .await;
 }
@@ -176,11 +175,11 @@ async fn a_vm_killed_by_its_hypervisor_while_it_provisions_fails_the_start_and_a
         let s = status(l).await;
         if let Err(e) = &started {
             println!("note: the start failed: {e}");
-            check(!s.as_ref().is_ok_and(whole), format!("the lab isn't read as whole ({:?})", s.as_ref().map(states)), f);
+            check(!s.as_ref().is_ok_and(every_machine_runs), format!("the lab isn't read as whole ({:?})", s.as_ref().map(states)), f);
         } else {
             // Vagrant booted it again on its own and finished: the lab must then be whole.
             println!("note: the start went through all the same");
-            check(s.as_ref().is_ok_and(whole), format!("a start that went through is whole ({:?})", s.as_ref().map(states)), f);
+            check(s.as_ref().is_ok_and(every_machine_runs), format!("a start that went through is whole ({:?})", s.as_ref().map(states)), f);
         }
         let left = tools_of(&docker::project(&l.id));
         check(left.is_empty(), format!("no tool of the start is left running ({left:?})"), f);

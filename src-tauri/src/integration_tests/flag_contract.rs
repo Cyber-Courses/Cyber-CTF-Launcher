@@ -222,7 +222,7 @@ async fn play(backend: &Backend, player: &str, (lab, kind): (&str, Kind)) -> Pla
     p.secrets.extend(env.iter().filter(|(k, _)| k != "CTF_API_URL").map(|(_, v)| v.clone()));
     let launch = Launch { lab_id, env };
     let id = format!("ci-flag-{lab}-{}", rand::random::<u16>());
-    let r = Run { dir: install(kind, &id), home: std::env::temp_dir().join(format!("cyberctf-{id}-home")), id };
+    let r = Run::in_place(install(kind, &id), id);
     scenario(
         &mut p,
         async |p: &mut Played| match r.start(&launch.env, &mut |l| p.log.push(l)).await {
@@ -238,8 +238,7 @@ async fn play(backend: &Backend, player: &str, (lab, kind): (&str, Kind)) -> Pla
         },
     )
     .await;
-    let _ = std::fs::remove_dir_all(&r.dir);
-    let _ = std::fs::remove_dir_all(&r.home);
+    r.remove_files();
     p
 }
 

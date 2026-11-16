@@ -19,7 +19,7 @@
 use std::path::Path;
 
 use super::support::attack_box::{add_box, box_reaches, remove_box};
-use super::support::lab::{Run, install_copy, leftovers};
+use super::support::lab::{Run, leftovers};
 use super::support::{check, fetch, log, scenario};
 use crate::platform::AppDirs;
 use crate::platform::exec::run;
@@ -160,8 +160,7 @@ async fn exercise_checks(r: &Run, f: &mut Vec<String>) {
 async fn real_lab(name: &str, e: Expect) {
     // Skipped, naming the knob, without the lab's checkout.
     let Some(src) = super::support::knob(e.lab_var) else { return };
-    let id = format!("ci-{name}-{}", rand::random::<u16>());
-    let r = Run { dir: install_copy(Path::new(&src), &id), home: std::env::temp_dir().join(format!("cyberctf-{id}-home")), id };
+    let r = Run::fresh(Path::new(&src), &format!("ci-{name}"));
     let started = std::time::Instant::now();
     let mut failures = Vec::new();
     scenario(
@@ -183,8 +182,7 @@ async fn real_lab(name: &str, e: Expect) {
         },
     )
     .await;
-    let _ = std::fs::remove_dir_all(&r.dir);
-    let _ = std::fs::remove_dir_all(&r.home);
+    r.remove_files();
     println!("{name}: {:.0?}", started.elapsed());
     assert!(failures.is_empty(), "{} failed:\n{}", name, failures.join("\n"));
 }

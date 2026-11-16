@@ -15,7 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::support::lab::{install_copy, vm_inputs};
+use super::support::lab::{Run, vm_inputs};
 use super::support::{check, fetch, log, scenario};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Park, Place, isothrum, launch, lifecycle};
@@ -155,13 +155,11 @@ async fn left_on(provider: Provider, stem: &str, dir: &Path) -> Result<Vec<Strin
 async fn a_vm_lab_runs_end_to_end_through_the_runner() {
     let Some(src) = super::support::knob("CYBERCTF_TEST_VM_LAB") else { return };
     let provider = super::support::vm_provider(Provider::Virtualbox);
-    let id = format!("vm-{}", rand::random::<u16>());
-    let dir = install_copy(Path::new(&src), &id);
+    let Run { dir, id, home } = Run::fresh(Path::new(&src), "vm");
     if super::support::refused_by_launcher(&dir, crate::runtime::lab::Target::Vagrant, provider) {
         let _ = std::fs::remove_dir_all(&dir);
         return;
     }
-    let home = std::env::temp_dir().join(format!("cyberctf-runner-{id}"));
     let lab = Lab { dir, id, home, provider };
     let mut failures = Vec::new();
     scenario(
