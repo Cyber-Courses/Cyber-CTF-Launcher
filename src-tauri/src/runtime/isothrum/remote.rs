@@ -12,7 +12,7 @@ use std::sync::{Arc, LazyLock};
 
 use isothrum_client::proto::{Command, OpOptions, Target};
 use isothrum_client::{Client, ClientError};
-use isothrum_runner::{ErrorCode, ErrorDetail, EventKind, Format, RunName, RunOptions, Running, Status};
+use isothrum_runner::{ErrorCode, ErrorReport, EventKind, Format, RunName, RunOptions, Running, Status};
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::{errors, progress, when_unlocked};
@@ -86,17 +86,8 @@ pub(super) enum Act<'a> {
 pub(super) enum Failure {
     /// The runner, in this process.
     Runner(isothrum_runner::Error),
-    /// The runner service.
-    Service {
-        /// Its code.
-        code: ErrorCode,
-        /// Its words.
-        message: String,
-        /// The step that failed, when one did.
-        step: Option<String>,
-        /// Its typed fields, when it has any (boxed: they are large, and rare).
-        detail: Option<Box<ErrorDetail>>,
-    },
+    /// The runner service: the runner's report (boxed: it is large, and rare).
+    Service(Box<ErrorReport>),
     /// The launcher's.
     Launcher(Error),
 }
@@ -106,7 +97,7 @@ impl Failure {
     pub(super) fn code(&self) -> Option<ErrorCode> {
         match self {
             Failure::Runner(e) => Some(e.code()),
-            Failure::Service { code, .. } => Some(*code),
+            Failure::Service(report) => Some(report.code),
             Failure::Launcher(_) => None,
         }
     }
@@ -114,8 +105,8 @@ impl Failure {
     /// The launcher's error for it.
     pub(super) fn into_error(self) -> Error {
         match self {
-            Failure::Runner(e) => errors::from_runner(e),
-            Failure::Service { code, message, step, detail } => errors::from_service(code, &message, step.as_deref(), detail.as_deref()),
+            Failure::Runner(e) => errors::coded(&e.report()),
+            Failure::Service(report) => errors::coded(&report),
             Failure::Launcher(e) => e,
         }
     }
@@ -123,8 +114,7 @@ impl Failure {
     /// A client call that failed (the service refused it, or the connection broke).
     fn of_client(e: ClientError) -> Failure {
         match e {
-            ClientError::Operation { code, message, step, detail } => Failure::Service { code, message, step, detail },
-            ClientError::Refused { code, message, detail } => Failure::Service { code, message, step: None, detail },
+            ClientError::Operation(report) | ClientError::Refused(report) => Failure::Service(report),
             other => Failure::Launcher(Error::Invalid(format!("the runner service: {other}"))),
         }
     }
@@ -195,11 +185,11 @@ pub(super) async fn operate(on: Served<'_>, act: Act<'_>, opts: &RunOptions, log
         }
         match event.kind {
             EventKind::Result { ok, .. } => outcome = Some(Ok(ok)),
-            EventKind::Error { code, message, step, detail, .. } => outcome = Some(Err(Failure::Service { code, message, step, detail: detail.map(Box::new) })),
+            EventKind::Error(report) => outcome = Some(Err(Failure::Service(Box::new(report)))),
             _ => {}
         }
     }
-    let cancelled = || Failure::Service { code: ErrorCode::Cancelled, message: "the operation was cancelled before it began".into(), step: None, detail: None };
+    let cancelled = || Failure::Service(Box::new(ErrorReport::new(ErrorCode::Cancelled, "the operation was cancelled before it began")));
     outcome.unwrap_or_else(|| Err(cancelled()))
 }
 
@@ -394,8 +384,8 @@ pub(crate) async fn follow_others(client: &Client, on: &mut impl FnMut(Others)) 
         if let Some(line) = progress::line(&event.kind) {
             on(Others::Line { operation: id, line });
         }
-        if let EventKind::Error { code, message, step, detail, .. } = &event.kind {
-            told.insert(id, Some(errors::from_service(*code, message, step.as_deref(), detail.as_ref())));
+        if let EventKind::Error(report) = &event.kind {
+            told.insert(id, Some(errors::coded(report)));
         }
         if isothrum_client::v1::phase_of(&event) == Some(OperationPhase::Ended) {
             let error = told.remove(&id).flatten();

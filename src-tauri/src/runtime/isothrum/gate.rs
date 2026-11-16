@@ -11,7 +11,7 @@ use super::{LabRun, Result, errors, paths};
 impl LabRun {
     /// The run's recorded state, none before it ever ran: read from the runner's store, no tool runs.
     fn recorded_state(&self) -> Result<Option<RunState>> {
-        Ok(self.runner.run_record(&self.name).map_err(errors::from_runner)?.map(|r| r.state))
+        Ok(self.runner.run_record(&self.name).map_err(|e| errors::coded(&e.report()))?.map(|r| r.state))
     }
 
     /// Refuses a change to a running run (an update, a machine taken out) unless it is up, every
@@ -34,7 +34,7 @@ impl LabRun {
 
     /// The runner's words for a run that isn't running.
     fn not_running(&self) -> crate::error::Error {
-        errors::from_runner(RunnerError::NotRunning { run: self.name.to_string() })
+        errors::coded(&RunnerError::NotRunning { run: self.name.to_string() }.report())
     }
 
     /// Refuses a resume when nothing is left of the run to start again (never started, taken down,
@@ -47,7 +47,7 @@ impl LabRun {
         };
         if gone {
             paths::mark_parked(&self.dir, None)?;
-            return Err(errors::from_runner(RunnerError::NothingToResume { run: self.name.to_string() }));
+            return Err(errors::coded(&RunnerError::NothingToResume { run: self.name.to_string() }.report()));
         }
         Ok(())
     }

@@ -16,7 +16,6 @@ use crate::platform::policy::Key;
 
 mod local;
 mod on_host;
-mod port_holder;
 
 #[cfg(test)]
 use local::low_memory_warning;
@@ -197,15 +196,10 @@ async fn start_here(
     // was and leftovers are cleared first (the runner's `Occupied::ResumeParked`). What it
     // downloads is the caller's to record ([`downloads`]).
     let home = runner_home(dirs)?;
-    let started = match run {
+    // A clash on a host port either form binds here names what holds it (the runner's lookup).
+    match run {
         LocalRun::Docker => start_docker_run(&home, dir, id, inputs, log).await,
         LocalRun::Vm(p) => start_vm_run(&home, dir, id, VmStart { provider: p, inputs }, log).await,
-    };
-    // A clash is on a host port either form binds here, so name what holds it: the player can
-    // then stop it and start again, rather than guess what "port 8080 is taken" means.
-    match started {
-        Err(e) => Err(port_holder::with_holder(e).await),
-        ok => ok,
     }
 }
 
