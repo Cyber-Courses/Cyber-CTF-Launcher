@@ -359,6 +359,9 @@ launcher never asks for or stores a password itself.
   access as well. It also installs `virtiofsd` (for the attack box's shared folder) and what the
   `vagrant-libvirt` plugin builds against (`libvirt-dev`, `build-essential`, `pkg-config`,
   `ruby-dev`), and `virt-manager`.
+- Installing QEMU on Linux adds the user to the group `/dev/kvm` belongs to (`kvm` on most
+  distributions), and installs `genisoimage` (for the VMs' network settings) and `virtiofsd` (for
+  the attack box's shared folder) with it.
 - Installing Docker (where Docker's repository serves the release), Terraform, Vagrant, the Vagrant
   VMware Utility, VirtualBox, the Azure CLI or the Google Cloud CLI adds the vendor's apt
   repository, for this machine's architecture, and its key, checked against a pinned fingerprint:

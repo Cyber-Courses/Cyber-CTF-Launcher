@@ -225,6 +225,9 @@ fn linux_installs_through_pkexec() {
     for host in [APT, DNF] {
         let libvirt = plan_on(Dependency::Libvirt, host, None).unwrap()[0].args.join(" ");
         assert!(libvirt.contains("install -y virtiofsd") || libvirt.contains(" virtiofsd;"), "{:?}: {libvirt}", host.packages);
+        // And the virtiofsd vagrant-qemu starts for QEMU's.
+        let qemu = plan_on(Dependency::Qemu, host, None).unwrap()[0].args.join(" ");
+        assert!(qemu.split([' ', ';']).any(|w| w == "virtiofsd"), "{:?}: {qemu}", host.packages);
     }
     let aws = plan_on(Dependency::Awscli, APT, None).unwrap()[0].args.join(" ");
     assert!(aws.contains("awscli-exe-linux") && !aws.contains("/tmp/aws"), "{aws}");

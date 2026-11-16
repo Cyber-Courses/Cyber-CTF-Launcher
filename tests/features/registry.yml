@@ -2627,7 +2627,7 @@ areas:
           integration: passed on Debian 13 inside the full path; the libvirt-only path not run; Ubuntu, Kali not run; Fedora/openSUSE/Arch get the manual path
 
       - id: setup.path-qemu
-        what: The QEMU path (Linux, macOS) - install QEMU, Vagrant and vagrant-qemu, test a VM (software emulation without KVM).
+        what: The QEMU path (Linux, macOS) - install QEMU (on Linux with mkisofs and virtiofsd), Vagrant and vagrant-qemu, test a VM (software emulation without KVM).
         platforms:
           - linux
           - macos
@@ -2640,6 +2640,7 @@ areas:
             - src-tauri/src/machine/selftest/vm/tests.rs > the_qemu_test_vm_boots_with_the_acceleration_the_labs_ask_for
             - src-tauri/src/machine/setup/tests.rs > qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test
             - src-tauri/src/machine/tools/scripts/tests.rs > qemu_install_adds_the_player_to_the_group_that_opens_dev_kvm
+            - src-tauri/src/machine/tools/scripts/tests.rs > qemu_install_brings_virtiofsd_for_the_shared_folder_where_the_release_has_it
             - src-tauri/src/machine/tools/install/tests.rs > macos_installs_through_homebrew
           integration:
             - setup

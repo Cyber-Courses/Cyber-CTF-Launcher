@@ -31,7 +31,8 @@ fn qemu_install_adds_the_player_to_the_group_that_opens_dev_kvm() {
     // root:kvm 0660) every lab's `accel=kvm` was refused: "Could not access KVM kernel module:
     // Permission denied".
     let s = qemu_script(Some("ada"));
-    let install = "apt-get update; apt-get install -y qemu-system qemu-utils genisoimage";
+    let install = "apt-get update; apt-get install -y qemu-system qemu-utils genisoimage; \
+                   if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi";
     assert_eq!(s, RootScript::new(format!("{install}; {}", join_kvm_group("ada", "/dev/kvm"))));
     assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
     assert_eq!(qemu_script(None), RootScript::new(install));
@@ -127,6 +128,17 @@ fn libvirt_install_brings_virtiofsd_for_the_shared_folder_where_the_release_has_
     let s = libvirt_script(None);
     assert!(s.contains("if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi"), "{s}");
     assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
+}
+
+#[test]
+fn qemu_install_brings_virtiofsd_for_the_shared_folder_where_the_release_has_it() {
+    // Regression: QEMU alone, and an attack box with the shared folder failed to start on QEMU
+    // on Linux: vagrant-qemu shares it through the virtiofsd it starts ("virtiofsd was not found
+    // or is not executable").
+    let s = qemu_script(None);
+    assert!(s.contains("if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi"), "{s}");
+    assert!(crate::platform::sh_parses(&s), "not valid sh: {s}");
+    assert!(qemu_dnf_script(None).split_whitespace().any(|w| w == "virtiofsd"), "dnf too");
 }
 
 #[test]
