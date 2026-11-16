@@ -1,5 +1,6 @@
 //! Property tests for splitting a long session across keychain entries: any session up to the
-//! largest kept comes back whole, and every entry fits a Windows credential.
+//! largest kept comes back whole, and every entry fits a Windows credential (the one system that
+//! splits it: elsewhere a session is one entry).
 
 use proptest::prelude::*;
 
@@ -32,17 +33,17 @@ proptest! {
     fn a_session_round_trips_through_the_keychain_entries_or_is_refused_whole(raw in prop_oneof![session_json(), text()]) {
         prop_assume!(!raw.starts_with(CHUNKS_PREFIX));
         let units = raw.encode_utf16().count();
-        match split_chunks(&raw) {
+        match split_chunks_at(&raw, WINDOWS_CHUNK_UNITS) {
             Ok((head, parts)) => {
-                prop_assert!(head.encode_utf16().count() <= CHUNK_UNITS);
+                prop_assert!(head.encode_utf16().count() <= WINDOWS_CHUNK_UNITS);
                 prop_assert!(parts.len() <= MAX_CHUNKS);
-                prop_assert!(parts.iter().all(|p| !p.is_empty() && p.encode_utf16().count() <= CHUNK_UNITS));
-                if units <= CHUNK_UNITS {
+                prop_assert!(parts.iter().all(|p| !p.is_empty() && p.encode_utf16().count() <= WINDOWS_CHUNK_UNITS));
+                if units <= WINDOWS_CHUNK_UNITS {
                     prop_assert!(parts.is_empty());
                 } else {
                     // As few pieces as the two-unit characters allow.
-                    prop_assert!(parts.len() >= units.div_ceil(CHUNK_UNITS));
-                    prop_assert!(parts.len() <= units.div_ceil(CHUNK_UNITS - 1));
+                    prop_assert!(parts.len() >= units.div_ceil(WINDOWS_CHUNK_UNITS));
+                    prop_assert!(parts.len() <= units.div_ceil(WINDOWS_CHUNK_UNITS - 1));
                 }
                 if !parts.is_empty() {
                     prop_assert_eq!(parts.concat(), raw.clone());
@@ -55,7 +56,7 @@ proptest! {
                 }
             }
             Err(e) => {
-                prop_assert!(units > (CHUNK_UNITS - 1) * MAX_CHUNKS, "{} units refused", units);
+                prop_assert!(units > (WINDOWS_CHUNK_UNITS - 1) * MAX_CHUNKS, "{} units refused", units);
                 prop_assert!(e.to_string().contains("too large"));
             }
         }
