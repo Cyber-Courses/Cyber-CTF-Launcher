@@ -139,7 +139,9 @@ pub async fn vmware_utility() -> UtilityState {
 }
 
 /// UTM's command line tool, which ships inside its app bundle, on no PATH: in the bundle the
-/// machine check finds (the app doesn't move while it runs).
+/// machine check finds (the app doesn't move while it runs). The integration tests read UTM's VMs
+/// with it; the app itself never runs it, as it would open UTM with its window in front.
+#[cfg(test)]
 pub(crate) fn utmctl() -> &'static str {
     static UTMCTL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
         isothrum_machine::Devices::here(isothrum_runner::HostOs::Macos).utm_app.join("Contents/MacOS/utmctl").to_string_lossy().into_owned()
