@@ -11,8 +11,9 @@ import { type Allowance, allowanceFor, globRegExp } from "./scope.ts";
 // three snapshot scripts record and the contract (docs/contributing/testing/leftovers.md); then snapshot.sh run for
 // real, with a Docker of its own, on a home and temp folder of its own.
 
-const HERE = import.meta.dirname;
-const read = (file: string) => readFileSync(join(HERE, file), "utf8");
+/** The audit's folder: its snapshot scripts and allowlists, beside src/. */
+const AUDIT = join(import.meta.dirname, "..");
+const read = (file: string) => readFileSync(join(AUDIT, file), "utf8");
 /** The kinds a script records: the first argument of its probe calls (or emit/Add-Probe). */
 const recorded = (source: string) =>
   new Set(
@@ -41,7 +42,7 @@ describe("the kinds", () => {
   });
 
   it("are each in the contract, docs/contributing/testing/leftovers.md, as a row of its inventory", () => {
-    const contract = readFileSync(join(HERE, "..", "..", "docs", "contributing", "testing", "leftovers.md"), "utf8");
+    const contract = readFileSync(join(AUDIT, "..", "..", "docs", "contributing", "testing", "leftovers.md"), "utf8");
     for (const kind of listed) expect(contract, kind).toMatch(new RegExp(`^\\| \`${kind}\` +\\|`, "m"));
   });
 
@@ -83,7 +84,7 @@ describe("snapshot.sh, run for real", () => {
       XDG_DATA_HOME: "",
       VAGRANT_HOME: "",
     };
-    const args = [join(HERE, "snapshot.sh"), "--out", join(dir, "snap.json"), ...(only ? ["--only", only] : [])];
+    const args = [join(AUDIT, "snapshot.sh"), "--out", join(dir, "snap.json"), ...(only ? ["--only", only] : [])];
     const r = spawnSync("bash", args, { env, encoding: "utf8" });
     expect(r.status, r.stderr).toBe(0);
     return { snap: readSnapshot(readFileSync(join(dir, "snap.json"), "utf8"), "snap.json"), tmp };

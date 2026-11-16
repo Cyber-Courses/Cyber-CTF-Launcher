@@ -31,7 +31,7 @@
     "test:desktop": "tests/e2e/desktop/runner/run.sh",
     "test:integration": "tests/integration/run.sh",
     "test:servers": "tests/integration/run.sh --tiers server",
-    "leftovers": "node --experimental-strip-types --no-warnings=ExperimentalWarning tests/audit/main.ts",
+    "leftovers": "node --experimental-strip-types --no-warnings=ExperimentalWarning tests/audit/src/main.ts",
     "notices": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/release/third-party.ts notices",
     "sbom": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/release/third-party.ts sbom"
   },

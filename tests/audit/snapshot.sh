@@ -18,7 +18,7 @@
 #
 # The document: {"audit": 1, "os", "host", "user", "taken" (epoch seconds), "roots", "probes": [{
 # "kind", "tool", "status" (ok, missing, denied, timeout, failed), "note", "output"}]}: each
-# probe the tool's own output, which tests/audit/inventory.ts reads (its unit tests hold each
+# probe the tool's own output, which tests/audit/src/inventory.ts reads (its unit tests hold each
 # parser to a recorded output). tests/audit/run.sh diffs two of them.
 # The `sh -c` scripts below expand their variables in their own shell, on purpose.
 # shellcheck disable=SC2016

@@ -11,7 +11,7 @@ export const HARNESS = [
   "tests/e2e/desktop/support/owned-cli.test.ts",
   "tests/e2e/desktop/support/host.test.ts",
   "tests/integration/run.test.ts",
-  "tests/audit/kinds.test.ts",
+  "tests/audit/src/kinds.test.ts",
 ];
 
 // Unit tests for the launcher's frontend logic (stores, pure helpers), the repository's scripts and

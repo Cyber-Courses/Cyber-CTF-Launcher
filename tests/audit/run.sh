@@ -8,7 +8,7 @@
 #   tests/audit/run.sh --list                                               the kinds it compares
 #
 # On Windows the snapshot is snapshot.ps1; on a Proxmox or ESXi server, snapshot-server.sh, run
-# there. The diff runs wherever Node does (main.ts --help lists its options, among them
+# there. The diff runs wherever Node does (src/main.ts --help lists its options, among them
 # `--results <file>`: a record per kind, suite `audit`, tests/README.md's "Results"). Exit status:
 # 0 nothing left, 1 the run left something, 2 the audit couldn't run.
 set -uo pipefail
@@ -22,7 +22,7 @@ case "${1:-}" in
     sed -n '2,/^[^#]/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
     ;;
   diff | inventory | --list)
-    exec node --experimental-strip-types --no-warnings=ExperimentalWarning "$here/main.ts" "$@"
+    exec node --experimental-strip-types --no-warnings=ExperimentalWarning "$here/src/main.ts" "$@"
     ;;
   *)
     echo "usage: tests/audit/run.sh snapshot|diff|inventory|--list (--help says more)" >&2

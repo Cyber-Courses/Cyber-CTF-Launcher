@@ -56,9 +56,9 @@ pub(crate) fn of(item: &str, os: &str, root: &Path) -> Vec<Leaves> {
 mod tests {
     use super::*;
 
-    /// The audit's kinds (tests/audit/kinds.ts): what a `leaves` row may name.
+    /// The audit's kinds (tests/audit/src/kinds.ts): what a `leaves` row may name.
     fn audit_kinds() -> Vec<String> {
-        include_str!("../../../../tests/audit/kinds.ts")
+        include_str!("../../../../tests/audit/src/kinds.ts")
             .lines()
             .filter_map(|l| Some(l.trim().strip_prefix("{ kind: \"").or_else(|| l.trim().strip_prefix("kind: \""))?.split('"').next()?.to_owned()))
             .collect()
@@ -79,7 +79,7 @@ mod tests {
         let mut count = 0;
         for r in rows() {
             count += 1;
-            assert!(kinds.iter().any(|k| k == r.kind), "{}: {} isn't a kind of tests/audit/kinds.ts", r.item, r.kind);
+            assert!(kinds.iter().any(|k| k == r.kind), "{}: {} isn't a kind of tests/audit/src/kinds.ts", r.item, r.kind);
             assert!(matches!(r.os, "linux" | "macos" | "windows" | "any"), "{}: os {}", r.item, r.os);
             assert!(!r.name.is_empty() && !r.item.is_empty());
         }

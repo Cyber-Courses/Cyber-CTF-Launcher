@@ -35,7 +35,7 @@ export const PARSERS: Record<string, Parser> = { ...HOST_PARSERS, ...MACHINE_PAR
 /** The kind's items, or an error naming the kind with no parser. */
 export function parseProbe(probe: Probe, taken: number): Item[] {
   const parser = PARSERS[probe.kind] as Parser | undefined;
-  if (!parser) throw new Error(`no parser for the kind ${probe.kind} (tests/audit/inventory.ts)`);
+  if (!parser) throw new Error(`no parser for the kind ${probe.kind} (tests/audit/src/inventory.ts)`);
   return parser(probe.output, taken);
 }
 
