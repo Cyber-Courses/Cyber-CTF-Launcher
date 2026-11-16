@@ -198,3 +198,13 @@ fn probes_and_boxes_per_provider() {
     assert_eq!(box_provider(Provider::Virtualbox), "virtualbox");
     assert_eq!(box_provider(Provider::Libvirt), "libvirt");
 }
+
+#[test]
+fn utm_refused_by_the_system_says_the_way_out_as_a_labs_start_does() {
+    let stderr = "There was an error while executing `utmctl`, a CLI used by vagrant-utm\nfor controlling UTM.\n\nStderr: Error from event: The operation couldn’t be completed. (OSStatus error -2700.)\nThe operation couldn’t be completed. Operation not permitted";
+    let failed = || Error::CommandFailed { command: "vagrant up --provider utm".into(), stderr: stderr.into() };
+    assert_eq!(refused(Provider::Utm, failed()).code(), crate::error::Code::HypervisorNotPermitted { hypervisor: "UTM".into() });
+    assert!(matches!(refused(Provider::Qemu, failed()), Error::CommandFailed { .. }), "another provider's words are its own");
+    let other = Error::CommandFailed { command: "vagrant up --provider utm".into(), stderr: "The box 'utm/bookworm' could not be found".into() };
+    assert!(matches!(refused(Provider::Utm, other), Error::CommandFailed { .. }));
+}

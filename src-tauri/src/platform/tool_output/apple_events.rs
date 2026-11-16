@@ -34,6 +34,18 @@ impl AppleEvent {
     }
 }
 
+/// Whether `text` (what Vagrant's UTM plugin printed) is the system refusing UTM the action: an
+/// Apple event UTM answered with the system's "Operation not permitted" (`utmctl start`'s `Error
+/// from event: … (OSStatus error -2700.) … Operation not permitted`), or one macOS didn't let this
+/// app send (`-1743`). The runner reads its own Vagrant calls the same way (`provider_refused`,
+/// need `permission`); the VM self-test runs Vagrant itself.
+#[must_use]
+pub fn refused_by_the_system(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let event_failed = lower.contains("osstatus error") || lower.contains("error from event") || AppleEvent::of(text).is_some();
+    (event_failed && lower.contains("operation not permitted")) || AppleEvent::of(text) == Some(AppleEvent::NotAuthorized)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,5 +59,14 @@ mod tests {
         assert_eq!(of("erreur d’exécution : Non autorisé à envoyer des Apple Events à UTM. (-1743)"), Some(AppleEvent::NotAuthorized));
         assert_eq!(of("execution error: Can’t get virtual machine \"x\". (-1728)"), Some(AppleEvent::Other(-1728)));
         assert_eq!(of("exit status 1"), None);
+    }
+
+    #[test]
+    fn the_system_refusing_utm_is_read_from_what_vagrant_utm_printed() {
+        let start = "There was an error while executing `utmctl`, a CLI used by vagrant-utm\nfor controlling UTM. The command and stderr is shown below.\n\nCommand: [\"start\", \"2D2607AB-D82F-4A13-A1FB-F025C1D06D12\"]\n\nStderr: Error from event: The operation couldn’t be completed. (OSStatus error -2700.)\nThe operation couldn’t be completed. Operation not permitted";
+        assert!(refused_by_the_system(start));
+        assert!(refused_by_the_system("execution error: Not authorized to send Apple events to UTM. (-1743)"));
+        assert!(!refused_by_the_system("cp: /data/disk.img: Operation not permitted"), "not an Apple event");
+        assert!(!refused_by_the_system("Error from event: The operation couldn’t be completed. (OSStatus error -2700.)"));
     }
 }

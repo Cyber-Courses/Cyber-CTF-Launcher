@@ -92,6 +92,11 @@ fn of_tool(report: &ErrorReport) -> Error {
         (ErrorCode::ProviderRefused, Some(Detail::ProviderRefused { provider, need: Some(ProviderNeed::Virtiofsd) })) => {
             Error::coded(Code::VirtiofsdMissing { hypervisor: hypervisor_name(provider) })
         }
+        // The system refused the hypervisor's app (UTM's start answered "Operation not permitted",
+        // or the Apple events refused): the way out is a permission, never a wait or a retry.
+        (ErrorCode::ProviderRefused, Some(Detail::ProviderRefused { provider, need: Some(ProviderNeed::Permission) })) => {
+            Error::coded(Code::HypervisorNotPermitted { hypervisor: hypervisor_name(provider) })
+        }
         // The prompt declined or unanswered, or the elevated session ended (the reason says which).
         (ErrorCode::ElevationFailed, Some(Detail::Elevation { reason })) => Error::coded(Code::ElevationFailed { reason: reason.clone() }),
         _ => Error::Invalid(message.to_owned()),
@@ -261,6 +266,7 @@ fn pool_overlap(failed: &Error) -> Error {
 fn hypervisor_name(provider: &str) -> String {
     match provider {
         "qemu" => "QEMU".into(),
+        "utm" => "UTM".into(),
         other => other.into(),
     }
 }
