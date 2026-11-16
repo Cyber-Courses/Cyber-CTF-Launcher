@@ -20,7 +20,6 @@ impl LabRun {
         if runners.is_empty() {
             return Ok(Check::default());
         }
-        self.require_started()?;
         let (mut lines, mut all_ok) = (Vec::new(), true);
         for runner in &runners {
             let (said, ok) = if self.kind == Kind::Docker { self.service_checks(runner).await? } else { self.vm_checks(runner).await? };

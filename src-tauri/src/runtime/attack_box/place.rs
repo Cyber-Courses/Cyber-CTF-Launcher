@@ -224,6 +224,11 @@ fn declared_address(dir: &Path, name: &str, network: &str, vm: bool) -> Option<S
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use isothrum_runner::fake::{FakeProcesses, Reply};
+
     use super::*;
     use crate::runtime::isothrum;
 
@@ -247,19 +252,53 @@ mod tests {
         files
     }
 
-    /// An add in a cloud account whose sign-in ran out is refused before the run could change,
-    /// the account's CLI asked once: the box out of the lab's spec again, its files as they were.
+    /// A Terraform whose sign-in to AWS runs out once `ran_out` is set: its apply then refuses, as
+    /// Terraform's AWS provider says it.
+    fn signing_out(ran_out: Arc<AtomicBool>) -> FakeProcesses {
+        FakeProcesses::model(move |call| match call.args.first().map(String::as_str) {
+            // The runner's key, which the lab's instances let in.
+            _ if call.program.ends_with("ssh-keygen") => {
+                if let Some(key) = call.args.iter().skip_while(|a| *a != "-f").nth(1) {
+                    std::fs::write(key, "private").unwrap();
+                    std::fs::write(format!("{key}.pub"), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest runner").unwrap();
+                }
+                Reply::ok("")
+            }
+            Some("version") => Reply::ok(r#"{"terraform_version":"1.10.5"}"#),
+            Some("show") => Reply::ok(
+                r#"{"values":{"root_module":{"resources":[{"address":"aws_instance.web","mode":"managed","type":"aws_instance","values":{"id":"i-1"}}]}}}"#,
+            ),
+            Some("output") => Reply::ok("{}"),
+            Some("apply") if ran_out.load(Ordering::SeqCst) => Reply::fail(
+                1,
+                "Error: failed to refresh cached credentials: login session has expired, please reauthenticate\n  with provider[\"registry.terraform.io/hashicorp/aws\"]",
+            ),
+            Some("apply") => isothrum::scripted_apply(call),
+            _ => Reply::ok(""),
+        })
+    }
+
+    /// An add in a cloud account whose sign-in ran out is refused before the run could change (the
+    /// runner's report says it didn't): the box out of the lab's spec again, its files as they were.
     #[tokio::test]
     async fn an_attack_box_refused_for_an_expired_cloud_sign_in_leaves_the_lab_as_published() {
-        use crate::platform::exec::fake::{Tools, fail};
         let dir = crate::runtime::test_support::write_lab(
             "version: 1\nname: t\nnetworks: { lan: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, networks: { lan: 10 } }\n",
         );
         let target = lab::terraform(&dir, Runtime::Docker, "aws").1;
         lab::prepare(&dir, target).unwrap();
-        let before = module(&dir, "aws");
         let home = dir.join("home");
-        let run = isothrum::CloudRun::new(&home, &dir, "t", Runtime::Docker, "aws").unwrap();
+        // Terraform, whose sign-in to AWS runs out once the lab is up.
+        let expired = Arc::new(AtomicBool::new(false));
+        let fake = Arc::new(signing_out(Arc::clone(&expired)));
+        let mut config = isothrum_runner::RunnerConfig::new(crate::runtime::paths::runner_home_in(&home));
+        config.processes = Arc::clone(&fake) as Arc<dyn isothrum_runner::ProcessRunner>;
+        let run = isothrum::CloudRun::new_with(config, &dir, "t", Runtime::Docker, "aws").unwrap();
+        let place =
+            || isothrum::CloudPlace { region: Some("eu-west-3".into()), allowed_cidr: Some("203.0.113.7/32".into()), ..isothrum::CloudPlace::default() };
+        run.up(&place(), &[], &mut |_| {}).await.unwrap();
+        expired.store(true, Ordering::SeqCst);
+        let before = module(&dir, "aws");
         let conn = crate::runtime::server::Connection {
             id: String::new(),
             provider: crate::runtime::providers::Provider::Aws,
@@ -270,13 +309,10 @@ mod tests {
             region: None,
             auto_stop_hours: None,
         };
-        let placed = Placed { host: Host::Cloud { run, place: isothrum::CloudPlace::default(), conn }, dir: dir.to_path_buf(), target, vm: false };
-        let tools = Tools::strict_rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
+        let placed = Placed { host: Host::Cloud { run, place: place(), conn }, dir: dir.to_path_buf(), target, vm: false };
         let dirs = AppDirs::new(Some(home), None);
         let err = placed.add(&dirs, Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.unwrap_err();
         assert!(err.to_string().starts_with("Your sign-in to AWS has expired"), "{err}");
-        let asked = tools.calls().iter().filter(|c| c.contains("sts get-caller-identity")).count();
-        assert_eq!(asked, 1, "the sign-in asked once: {:?}", tools.calls());
         assert!(!super::super::added(&dir).unwrap(), "the box is out of the lab's spec again");
         assert!(!dir.join(lab::overlay::FILE).exists(), "and the launcher's layer gone");
         assert_eq!(module(&dir, "aws"), before, "the lab's files as they were");

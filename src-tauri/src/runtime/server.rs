@@ -46,7 +46,7 @@ pub use contract::{Connection, connection, default_server, discovered_node, host
 /// The test profiles, for the tests of what is built from them elsewhere (`lab::vars`).
 #[cfg(test)]
 pub(crate) use profile::tests as profile_tests;
-pub use profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, SshKeySignIn, terraform_provider, terraform_target};
+pub use profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile, SshKeySignIn, terraform_target};
 
 /// The Isoloom module variable a cloud's instance size goes to.
 pub fn size_var(provider: crate::runtime::providers::Provider) -> Option<&'static str> {

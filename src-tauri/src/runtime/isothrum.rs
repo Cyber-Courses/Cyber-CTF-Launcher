@@ -23,7 +23,6 @@ mod described;
 mod engine;
 pub(crate) mod errors;
 mod esxi;
-mod gate;
 mod gone;
 mod one_read;
 mod opened;
@@ -31,7 +30,6 @@ mod opened;
 mod own_module;
 mod progress;
 mod remote;
-mod retry;
 mod server;
 mod tunnel;
 mod view;
@@ -45,6 +43,16 @@ pub(crate) use engine::{ENGINE_VAR, EngineProcesses};
 pub(crate) use esxi::EsxiPlace;
 pub(crate) use opened::Module;
 pub(crate) use server::{ServerPlace, ServerRun};
+
+/// A scripted Terraform `apply`, for the tests that run a module on scripted tools: it leaves its
+/// state where it is asked to.
+#[cfg(test)]
+pub(crate) fn scripted_apply(call: &isothrum_runner::fake::Call) -> isothrum_runner::fake::Reply {
+    if let Some(state) = call.args.iter().find_map(|a| a.strip_prefix("-state=")) {
+        std::fs::write(state, "{}").unwrap();
+    }
+    isothrum_runner::fake::Reply::ok("")
+}
 
 /// The input variables the Terraform module in `dir` declares, read by the runner from the
 /// module itself: nothing runs.
@@ -411,6 +419,13 @@ impl LabRun {
         Ok(())
     }
 
+    /// Brings the running lab up to date with its regenerated files (a machine added to the lab
+    /// or taken out), with the parameters it was started with; a lab that isn't up is refused by
+    /// the runner before anything acts. Its failure says whether the run may have changed.
+    pub(crate) async fn update(&self, log: &mut impl FnMut(String)) -> std::result::Result<(), super::host::Failed> {
+        self.act(remote::Act::Update, &self.placed(RunOptions::new()), log).await.map(drop).map_err(|f| f.failed(|e| self.said(e)))
+    }
+
     /// Removes everything the run created: containers, networks, volumes, its pinned ports; or
     /// its VMs and Vagrant's record of them.
     pub(crate) async fn down(&self, log: &mut impl FnMut(String)) -> Result<()> {
@@ -441,7 +456,6 @@ impl LabRun {
     /// Starts the parked lab again. When nothing is left of it, the runner's record reads it
     /// absent, so the lab page offers a fresh start instead of a resume that can't work.
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        self.require_something_to_resume().await?;
         match self.act(remote::Act::Resume, &self.placed(RunOptions::new()), log).await {
             Ok(_) => Ok(()),
             Err(e) if e.code() == Some(isothrum_runner::ErrorCode::NothingToResume) => Err(e.into_error()),
@@ -498,7 +512,6 @@ impl LabRun {
 
     /// Takes `machine` out of the running lab, ahead of its removal from the lab's files.
     pub(crate) async fn retire(&self, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        self.require_up()?;
         self.act_placed(remote::Act::Retire(machine), log).await
     }
 

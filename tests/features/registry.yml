@@ -614,7 +614,7 @@ areas:
             - src-tauri/src/runtime/launch/tests.rs > the_cloud_form_sets_the_runtime
             - src-tauri/src/runtime/launch/tests.rs > the_public_ip_is_the_one_two_resolvers_agree_on
             - src-tauri/src/runtime/launch/tests.rs > an_aws_budget_blocks_only_when_it_is_known_to_be_over
-            - src-tauri/src/runtime/isothrum/cloud_runs/tests.rs > a_change_on_aws_waits_for_a_signed_in_account
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_refusal_or_the_runners_own_words_keep_the_sentence_the_player_reads
             - src/features/labs/lab-detail/lab-detail.cloud.test.tsx > starts on one of the player
           integration:
             - attack-box-aws-docker
@@ -851,7 +851,7 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_taken_port_and_a_missing_tool_keep_the_codes_the_ui_knows
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_tools_failure_reaches_the_webview_as_the_code_it_translates
             - src-tauri/src/runtime/isothrum/errors/tests.rs > a_taken_port_names_its_holder_as_the_player_knows_it
             - src/features/labs/use-lab-actions.test.tsx > asks for the ports, remembers them, and starts on the lab
             - src/features/failure-states.test.tsx > reads Failed to start, offers Retry and, for a port clash, Retry on random ports with a hint
@@ -993,7 +993,7 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_download_that_stalled_or_failed_says_so_not_the_resources
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_download_that_stalled_or_failed_says_what_it_fetched
             - src-tauri/src/runtime/isothrum/tests.rs > an_attack_box_whose_image_cant_be_downloaded_says_so_after_its_pull
             - src/features/labs/deploy-log.test.ts > the runner's pull before the containers start is the images phase, its progress in it
             - src/features/labs/deploy-steps.test.tsx > starts over on a new run, and ticks the running step's time on its own
@@ -1024,7 +1024,7 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_vm_box_download_that_stalled_or_failed_is_said_as_the_box
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_download_that_stalled_or_failed_says_what_it_fetched
             - src/features/labs/deploy-log.test.ts > gives the boxes downloaded before a Vagrant start their own step, the lab's download its own
             - src/features/labs/failure-hints.test.ts > reads a VM box download that stalled as the network, and one that failed by Vagrant's words
             - src/lib/errors.test.ts > "boxDownloadStalled"
@@ -1139,9 +1139,7 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_failed_step_says_which_and_why_and_a_pool_overlap_what_to_do
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_vm_labs_own_failures_say_what_to_do
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > docker_not_answering_its_probe_reads_as_a_stopped_engine
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_tools_failure_reaches_the_webview_as_the_code_it_translates
             - src/features/labs/failure-hints.test.ts
             - src/features/failure-states.test.tsx > offers no port retry for another cause, and a failed stop is not a failed start
             - src/features/labs/labs-interaction.test.tsx > shows a start that fails with its reason, marks the step failed, and offers Start again
@@ -1307,7 +1305,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > utms_passing_scripting_errors_are_tried_again_and_said_and_nothing_else_is
             - src-tauri/src/runtime/launch/tests.rs > a_utm_not_ready_for_commands_is_waited_for
           web:
             - "vm-labs.spec.ts > on Apple Silicon: a VM lab built for arm64 runs on UTM, pauses, resumes and stops"
@@ -4077,7 +4074,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/isothrum/tests.rs > a_machine_removed_while_the_lab_runs_is_shown_down_not_left_out
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_resume_with_machines_removed_outside_names_them_and_says_to_start_again
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_refusal_or_the_runners_own_words_keep_the_sentence_the_player_reads
             - src/features/labs/network-diagram/diagram.test.tsx > shows each machine's state in words
           integration:
             - resilience-docker-removed
@@ -4187,7 +4184,7 @@ areas:
           - docker
         tests:
           unit:
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > docker_stopped_while_a_step_ran_reads_as_a_stopped_engine_on_this_machine_only
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_tools_failure_reaches_the_webview_as_the_code_it_translates
           integration:
             - resilience-docker-daemon-stopped
         gaps:
@@ -4235,7 +4232,7 @@ areas:
           - vmware_esxi
         tests:
           unit:
-            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_server_refusing_the_credentials_says_to_update_them_in_servers
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_server_refusing_the_credentials_is_named_as_servers_names_it
             - src-tauri/src/runtime/isothrum/vm_tests.rs > an_esxi_password_changed_says_to_update_it_in_servers
             - src/features/labs/lab-detail/failure-notice.test.tsx > says so under the failed start, with its settings a click away
             - src/features/labs/lab-detail/failure-notice.test.tsx > says so when the lab's state can't be read, and opens the server's own settings

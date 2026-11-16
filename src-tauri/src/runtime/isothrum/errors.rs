@@ -1,22 +1,152 @@
-//! The runner's failures as the player reads them. The runner's messages are plain and technical,
-//! with a stable code; the launcher's wording (and the codes its UI knows) is decided here, from
-//! that code, the same as the launcher's own Docker path says it.
+//! The runner's failures as the player reads them, in one place: [`coded`], from the runner's
+//! report (its stable code, its typed fields and its plain, technical message), whichever way the
+//! failure came. The launcher's wording (and the codes its UI knows) is decided here; the tools'
+//! words are read by the runner, never here.
 
-use isothrum_runner::{Detail, DownloadKind, Error as RunnerError, ErrorCode, ErrorReport, TimedOut};
+use isothrum_runner::{Cloud, Detail, DownloadKind, Error as RunnerError, ErrorCode, ErrorReport, ProviderNeed, TimedOut};
 
 use crate::error::{Code, Error};
-use crate::platform::exec::DockerSaid;
 use crate::runtime::providers::Provider;
-use crate::runtime::server::kind::{KINDS, kind};
+use crate::runtime::server::kind::kind;
 use isothrum_runner::HostPort;
 
-/// Whether `e` is a change of a run refused before acting on it: refused as such (the run isn't
-/// up, a value it needs is missing or unusable — the runner checks the launch's values before it
-/// runs anything —, the cloud account's sign-in ran out, asked before the change:
-/// [`Error::RefusedBeforeActing`]; the run already up or recorded elsewhere: [`Error::Refused`]),
-/// another operation holds it, or a tool it needs is missing. Nothing of the run changed then.
-pub(crate) fn refused_before_acting(e: &Error) -> bool {
-    matches!(e, Error::RefusedBeforeActing(_) | Error::Refused(_)) || matches!(e.code(), Code::AlreadyInProgress | Code::ToolMissing { .. })
+/// The launcher's error for a runner's failure, read from its report: the one place a runner's
+/// failure becomes the launcher's, whichever way it came (the runner here, an `error` event, a
+/// refusal of the service). Each code the runner has is mapped here by name ([`known`]); one a
+/// later runner adds reads as its own message.
+pub(crate) fn coded(report: &ErrorReport) -> Error {
+    known(report).unwrap_or_else(|| Error::Invalid(report.message.clone()))
+}
+
+/// [`coded`] for a code this build knows: every code the runner has, by name (the test
+/// `every_code_the_runner_has_is_mapped_by_name` holds it to that); none for a code a later
+/// runner added.
+fn known(report: &ErrorReport) -> Option<Error> {
+    Some(match report.code {
+        ErrorCode::PortInUse
+        | ErrorCode::ToolMissing
+        | ErrorCode::ToolTooOld
+        | ErrorCode::ToolFailed
+        | ErrorCode::ToolUnanswered
+        | ErrorCode::ToolDenied
+        | ErrorCode::CredentialsExpired
+        | ErrorCode::AddressPoolOverlap
+        | ErrorCode::ProviderRefused
+        | ErrorCode::ElevationFailed => of_tool(report),
+        ErrorCode::Timeout | ErrorCode::DownloadStalled | ErrorCode::DownloadFailed | ErrorCode::NotReady | ErrorCode::ServerAuthFailed => of_step(report),
+        ErrorCode::NothingToResume
+        | ErrorCode::SecretMissing
+        | ErrorCode::InputInvalid
+        | ErrorCode::AlreadyRunning
+        | ErrorCode::RunningElsewhere
+        | ErrorCode::Locked
+        | ErrorCode::NotRunning
+        | ErrorCode::NotParkable
+        | ErrorCode::ProjectInvalid
+        | ErrorCode::Unsupported => of_run(report),
+        // The runner's own words: nothing the player does differently for these.
+        ErrorCode::Io
+        | ErrorCode::Corrupt
+        | ErrorCode::RunName
+        | ErrorCode::MachineUnknown
+        | ErrorCode::MachineAmbiguous
+        | ErrorCode::NetworkUnknown
+        | ErrorCode::AdoptRefused
+        | ErrorCode::Cancelled
+        | ErrorCode::Usage
+        | ErrorCode::NoConsole
+        | ErrorCode::IllegalTransition
+        | ErrorCode::StateConflict
+        | ErrorCode::StoreVersion
+        | ErrorCode::StoreCorrupt
+        | ErrorCode::LeaseHeld => Error::Invalid(report.message.clone()),
+        _ => return None,
+    })
+}
+
+/// A tool's failure, from its code and fields: one it can't be read from keeps the runner's
+/// words.
+fn of_tool(report: &ErrorReport) -> Error {
+    let message = report.message.as_str();
+    let step = report.step.as_deref().unwrap_or_default();
+    match (report.code, report.detail.as_ref().map(|d| &d.data)) {
+        (ErrorCode::PortInUse, Some(Detail::PortInUse { port, holder, .. })) => {
+            Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: holder.as_ref().map(|h| format!("{} (pid {})", known_as(&h.program), h.pid)) })
+        }
+        (ErrorCode::ToolMissing, Some(Detail::ToolMissing { tool })) => Error::coded(Code::ToolMissing { tool: tool.clone() }),
+        (ErrorCode::ToolTooOld, Some(Detail::ToolTooOld { tool, found, required })) => {
+            Error::coded(Code::ToolTooOld { tool: tool_name(tool), found: found.clone(), required: required.clone() })
+        }
+        (ErrorCode::ToolFailed, Some(Detail::ToolFailed { reason })) => tool_failed(step, reason),
+        (ErrorCode::ToolFailed, _) => tool_failed(step, message),
+        // Docker's engine stopped, or quit while a step ran.
+        (ErrorCode::ToolUnanswered, Some(Detail::ToolUnanswered { tool })) if tool == "docker" => Error::coded(Code::DockerNotRunning),
+        // Docker's engine refused this account its socket or pipe.
+        (ErrorCode::ToolDenied, Some(Detail::ToolDenied { tool })) if tool == "docker" => crate::platform::exec::docker_denied_error(),
+        (ErrorCode::CredentialsExpired, Some(Detail::CredentialsExpired { cloud, reason })) => expired_sign_in(cloud.and_then(cloud_provider), reason),
+        (ErrorCode::CredentialsExpired, _) => expired_sign_in(None, message),
+        (ErrorCode::AddressPoolOverlap, Some(Detail::AddressPoolOverlap { reason })) => pool_overlap(&tool_failed(step, reason)),
+        (ErrorCode::AddressPoolOverlap, _) => pool_overlap(&tool_failed(step, message)),
+        // The machine changed after its check (virtiofsd removed): the hypervisor's refusal as
+        // the check says it, not vagrant-libvirt's stack trace or vagrant-qemu's words.
+        (ErrorCode::ProviderRefused, Some(Detail::ProviderRefused { provider, need: Some(ProviderNeed::Virtiofsd) })) => {
+            Error::coded(Code::VirtiofsdMissing { hypervisor: hypervisor_name(provider) })
+        }
+        // The prompt declined or unanswered, or the elevated session ended (the reason says which).
+        (ErrorCode::ElevationFailed, Some(Detail::Elevation { reason })) => Error::coded(Code::ElevationFailed { reason: reason.clone() }),
+        _ => Error::Invalid(message.to_owned()),
+    }
+}
+
+/// A step's failure (its time, its downloads, its ready condition, the server's sign-in), from
+/// its code and fields.
+fn of_step(report: &ErrorReport) -> Error {
+    let step = report.step.as_deref().unwrap_or_default();
+    match (report.code, report.detail.as_ref().map(|d| &d.data)) {
+        (ErrorCode::Timeout, Some(Detail::Timeout { timed_out })) => timed_out_step(step, timed_out),
+        // A Vagrant box, downloaded before its VMs boot.
+        (ErrorCode::DownloadStalled, Some(Detail::DownloadStalled { what: DownloadKind::Boxes, after_s })) => {
+            Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) })
+        }
+        // The lab's images, pulled before its containers start: a slow connection, not the
+        // resources of Docker, the hypervisor or the server.
+        (ErrorCode::DownloadStalled, Some(Detail::DownloadStalled { after_s, .. })) => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
+        // Vagrant ends its sentences with a period; the message adds its own.
+        (ErrorCode::DownloadFailed, Some(Detail::DownloadFailed { what: DownloadKind::Boxes, reason })) => {
+            Error::coded(Code::BoxDownloadFailed { reason: reason.trim().trim_end_matches('.').to_owned() })
+        }
+        (ErrorCode::DownloadFailed, Some(Detail::DownloadFailed { reason, .. })) => Error::coded(Code::DownloadFailed { reason: reason.trim().to_owned() }),
+        (ErrorCode::NotReady, Some(Detail::NotReady { detail, .. })) => Error::coded(Code::LabNotReady { detail: detail.clone() }),
+        // Named by the address the run's settings give until [`on_server`] names it as Servers does.
+        (ErrorCode::ServerAuthFailed, Some(Detail::ServerAuthFailed { server: Some(server) })) => {
+            Error::coded(Code::ServerAuthFailed { server: server.clone() })
+        }
+        (ErrorCode::ServerAuthFailed, _) => Error::coded(Code::ServerAuthFailed { server: "the server".into() }),
+        _ => Error::Invalid(report.message.clone()),
+    }
+}
+
+/// A refusal by the run's state or its values, said as what to do.
+fn of_run(report: &ErrorReport) -> Error {
+    let message = report.message.as_str();
+    match (report.code, report.detail.as_ref().map(|d| &d.data)) {
+        (ErrorCode::NothingToResume, Some(Detail::PartlyGone { machines })) => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
+        (ErrorCode::NothingToResume, _) => Error::coded(Code::NothingToResume),
+        (ErrorCode::SecretMissing, Some(Detail::SecretMissing { name })) => {
+            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
+        }
+        (ErrorCode::InputInvalid, Some(Detail::InputInvalid { name, reason })) => {
+            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
+        }
+        (ErrorCode::SecretMissing | ErrorCode::InputInvalid, _) => Error::RefusedBeforeActing(message.to_owned()),
+        (ErrorCode::AlreadyRunning, _) => Error::Refused("This lab is already running on this machine. Stop it before starting it again.".into()),
+        (ErrorCode::RunningElsewhere, _) => Error::Refused("This lab is still running somewhere else. Stop it there before starting it here.".into()),
+        (ErrorCode::Locked, _) => Error::coded(Code::AlreadyInProgress),
+        (ErrorCode::NotRunning, _) => Error::RefusedBeforeActing("This lab isn't running. Start it first.".into()),
+        (ErrorCode::NotParkable, _) => Error::coded(Code::NotParkable),
+        (ErrorCode::ProjectInvalid | ErrorCode::Unsupported, _) => Error::Invalid(format!("Cyber CTF can't run this lab's generated files: {message}")),
+        _ => Error::Invalid(message.to_owned()),
+    }
 }
 
 /// What a step stopped for taking too long says: how long it went without progress (and what it
@@ -31,49 +161,6 @@ fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
         // A reason added later reads as the plain limit.
         _ => Code::StepTimedOut { step, minutes },
     })
-}
-
-/// The launcher's error for a runner's failure, read from its report (the code, its typed fields
-/// and its message): the one place a runner's failure becomes the launcher's, whichever way it
-/// came (the runner here, an `error` event, a refusal of the service).
-pub(crate) fn coded(report: &ErrorReport) -> Error {
-    let step = report.step.as_deref().unwrap_or_default();
-    let message = report.message.as_str();
-    match report.detail.as_ref().map(|d| &d.data) {
-        Some(Detail::PortInUse { port, holder, .. }) => {
-            Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: holder.as_ref().map(|h| format!("{} (pid {})", known_as(&h.program), h.pid)) })
-        }
-        Some(Detail::ToolMissing { tool }) => Error::coded(Code::ToolMissing { tool: tool.clone() }),
-        Some(Detail::ToolUnanswered { tool }) if tool == "docker" => docker_unanswered(message),
-        Some(Detail::ToolTooOld { tool, found, required }) => {
-            Error::coded(Code::ToolTooOld { tool: tool_name(tool), found: found.clone(), required: required.clone() })
-        }
-        Some(Detail::ToolFailed { reason }) => tool_failed(step, reason),
-        Some(Detail::Timeout { timed_out }) => timed_out_step(step, timed_out),
-        // A Vagrant box, downloaded before its VMs boot.
-        Some(Detail::DownloadStalled { what: DownloadKind::Boxes, after_s }) => Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) }),
-        // Vagrant ends its sentences with a period; the message adds its own.
-        Some(Detail::DownloadFailed { what: DownloadKind::Boxes, reason }) => {
-            Error::coded(Code::BoxDownloadFailed { reason: reason.trim().trim_end_matches('.').to_owned() })
-        }
-        // The lab's images, pulled before its containers start: a slow connection, not the
-        // resources of Docker, the hypervisor or the server.
-        Some(Detail::DownloadStalled { after_s, .. }) => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
-        Some(Detail::DownloadFailed { reason, .. }) => Error::coded(Code::DownloadFailed { reason: reason.trim().to_owned() }),
-        // Named by the address the run's settings give until [`on_server`] names it as Servers does.
-        Some(Detail::ServerAuthFailed { server }) => Error::coded(Code::ServerAuthFailed { server: server.clone().unwrap_or_else(|| "the server".into()) }),
-        // The prompt declined or unanswered, or the elevated session ended (the reason says which).
-        Some(Detail::Elevation { reason }) => Error::coded(Code::ElevationFailed { reason: reason.clone() }),
-        Some(Detail::NotReady { detail, .. }) => Error::coded(Code::LabNotReady { detail: detail.clone() }),
-        Some(Detail::PartlyGone { machines }) => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
-        Some(Detail::SecretMissing { name }) => {
-            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
-        }
-        Some(Detail::InputInvalid { name, reason }) => {
-            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
-        }
-        _ => by_code(report.code, message),
-    }
 }
 
 /// What the player knows a process listening on a port by: Docker's several process names (and
@@ -108,29 +195,6 @@ pub(super) fn of_helper_vm(e: &RunnerError, run: &str) -> Error {
     }
 }
 
-/// The failures whose wording needs nothing but their code `code` (the runner's words `e`, kept
-/// otherwise).
-fn by_code(code: ErrorCode, e: impl std::fmt::Display) -> Error {
-    match code {
-        ErrorCode::AlreadyRunning => Error::Refused("This lab is already running on this machine. Stop it before starting it again.".into()),
-        ErrorCode::RunningElsewhere => Error::Refused("This lab is still running somewhere else. Stop it there before starting it here.".into()),
-        ErrorCode::Locked => Error::coded(Code::AlreadyInProgress),
-        ErrorCode::NothingToResume => Error::coded(Code::NothingToResume),
-        ErrorCode::NotRunning => Error::RefusedBeforeActing("This lab isn't running. Start it first.".into()),
-        ErrorCode::NotParkable => Error::coded(Code::NotParkable),
-        ErrorCode::ProjectInvalid | ErrorCode::Unsupported => Error::Invalid(format!("Cyber CTF can't run this lab's generated files: {e}")),
-        _ => Error::Invalid(e.to_string()),
-    }
-}
-
-/// `e`, a container lab's step on this machine's Docker that failed, as the player reads it: the
-/// engine stopped while the step ran (Docker Desktop quit, the service stopped) is said as a
-/// stopped engine, as the start's own probe says it, not as the step's failure. Only for a lab on
-/// this machine's Docker: a container lab in a VM runs its Docker inside the VM.
-pub(super) fn engine_stopped(e: Error) -> Error {
-    if DockerSaid::of_error(&e) == Some(DockerSaid::EngineDown) { Error::coded(Code::DockerNotRunning) } else { e }
-}
-
 /// A tool as the player knows it (`vagrant` is Vagrant).
 fn tool_name(tool: &str) -> String {
     match tool {
@@ -147,77 +211,41 @@ fn sign_in_of(cloud: Provider) -> Option<(&'static str, &'static str)> {
     kind(cloud)?.cli_sign_in.as_ref().map(|s| (cloud.label(), s.again))
 }
 
-/// The cloud a Terraform failure comes from, by its Terraform provider's name in the message.
-fn cloud_in(reason: &str) -> Option<Provider> {
-    KINDS.iter().find(|k| k.cli_sign_in.as_ref().is_some_and(|s| reason.contains(s.terraform_provider))).map(|k| k.provider)
+/// The launcher's provider for `cloud`, the runner's name of a cloud.
+fn cloud_provider(cloud: Cloud) -> Option<Provider> {
+    Provider::from_id(&isothrum_runner::wire_name(&cloud))
 }
 
-/// The launcher's word for a cloud tool's `reason` when it says the account's sign-in ran out or
-/// is missing (`cloud`, when known): sign in again, then try again, a refusal before acting
-/// (nothing could change without the sign-in); `None` for any other failure.
-pub(crate) fn expired_sign_in(reason: &str, cloud: Option<Provider>) -> Option<Error> {
-    if !crate::platform::tool_output::cloud_sign_in::expired(reason) {
-        return None;
-    }
-    let (name, again) = cloud.or_else(|| cloud_in(reason)).and_then(sign_in_of).map_or(("the cloud account", String::new()), |(n, a)| (n, format!(" ({a})")));
-    Some(Error::RefusedBeforeActing(format!(
+/// A cloud's refusal of the sign-in its tools use (`reason`, what they said), on `cloud` when the
+/// runner named it: sign in again, then try again. A refusal before acting: the cloud refused
+/// before anything was applied.
+fn expired_sign_in(cloud: Option<Provider>, reason: &str) -> Error {
+    let (name, again) = cloud.and_then(sign_in_of).map_or(("the cloud account", String::new()), |(n, a)| (n, format!(" ({a})")));
+    Error::RefusedBeforeActing(format!(
         "Your sign-in to {name} has expired or is missing, so the lab wasn't changed. Sign in again{again}, then try again. ({})",
         reason.trim()
-    )))
+    ))
 }
 
-/// Docker not answering the runner's probe (`tool_unanswered`), Docker's own words `said`: the
-/// engine stopped, or this account not allowed to use it.
-fn docker_unanswered(said: &str) -> Error {
-    if DockerSaid::is_refusal(&said.to_ascii_lowercase()) { crate::platform::exec::docker_denied_error() } else { Error::coded(Code::DockerNotRunning) }
-}
-
-/// A step's tool that ran and failed: a cloud sign-in that ran out reads as signing in again;
-/// libvirt or vagrant-qemu finding no virtiofsd, as the machine check's code for it; an address block another
-/// network holds, as what to do about it; anything else, as the command that failed.
+/// A step's tool that ran and failed (`reason`, what it said), as the command that failed.
 fn tool_failed(step: &str, reason: &str) -> Error {
-    if let Some(expired) = expired_sign_in(reason, None) {
-        return expired;
-    }
-    // The machine changed after its check (virtiofsd removed): the hypervisor's refusal as the
-    // check says it, not vagrant-libvirt's stack trace or vagrant-qemu's own words.
-    if let Some(hypervisor) = crate::platform::tool_output::vagrant::lacks_virtiofsd(reason) {
-        return Error::coded(Code::VirtiofsdMissing { hypervisor: hypervisor.to_owned() });
-    }
-    super::super::docker::explain_pool_overlap(Error::CommandFailed { command: format!("lab step {step}"), stderr: reason.to_owned() })
+    Error::CommandFailed { command: format!("lab step {step}"), stderr: reason.to_owned() }
 }
 
-/// UTM's passing scripting errors, by the code `osascript` reports, each with how the log says
-/// it: `UTM got an error: Application isn't running. (-600)` from a VM customization right after
-/// an import, or from the UTM provider reading the VM's forwarded ports while it boots (a start,
-/// a reload), while UTM runs and answers every other command; and `AppleEvent timed out.
-/// (-1712)` from the same reads while UTM is busy. The same operation then goes through. The
-/// other -600, a UTM that really isn't reachable, the start's UTM check catches before.
-///
-/// How `e` is said, if it is one of them (by its Apple event error number, [`crate::platform::tool_output::apple_events::AppleEvent`]).
-fn utm_transient(e: &Error) -> Option<&'static str> {
-    use crate::platform::tool_output::apple_events::AppleEvent;
-    match AppleEvent::of(&e.to_string())? {
-        AppleEvent::AppNotRunning => Some("\"Application isn't running\" while it runs"),
-        AppleEvent::TimedOut => Some("\"AppleEvent timed out\" while busy"),
-        AppleEvent::NotAuthorized | AppleEvent::Other(_) => None,
-    }
+/// Another network's address block in the way (`failed`, the step that failed for it), said as
+/// what to do.
+fn pool_overlap(failed: &Error) -> Error {
+    Error::Invalid(format!(
+        "Another Docker network already uses the addresses this lab needs. Stop the other lab, or remove the network left behind (`docker network prune` removes the unused ones), then start this lab again. ({failed})"
+    ))
 }
 
-/// What the log says before an operation UTM refused in passing (`said`) is tried once more.
-fn utm_retry_line(said: &str) -> String {
-    format!("UTM answered {said} (a passing UTM scripting error, seen while a VM boots): trying again.")
-}
-
-/// Whether `e` is UTM's passing scripting error ([`utm_transient`]), saying in `log` that it is
-/// tried once more when it is (which try, `LabRun::after_utm_refusal` decides from what the
-/// failed attempt left).
-pub(super) fn try_again_after_utm(e: &Error, log: &mut impl FnMut(String)) -> bool {
-    let said = utm_transient(e);
-    if let Some(said) = said {
-        log(utm_retry_line(said));
+/// A hypervisor as the machine check names it, by the runner's provider id (`qemu` is QEMU).
+fn hypervisor_name(provider: &str) -> String {
+    match provider {
+        "qemu" => "QEMU".into(),
+        other => other.into(),
     }
-    said.is_some()
 }
 
 #[cfg(test)]

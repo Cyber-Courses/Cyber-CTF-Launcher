@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::kind::{HostField, KINDS, Secret, kind};
+use super::kind::{HostField, Secret, kind};
 use crate::runtime::providers::Provider;
 
 /// A saved server (Proxmox, ESXi) or cloud account: where it is, how to sign in (its secret is
@@ -161,11 +161,6 @@ pub fn terraform_target(provider: Provider) -> Option<&'static str> {
     kind(provider).and_then(|k| k.terraform)
 }
 
-/// The provider whose Terraform target (a state folder's name) is `target`.
-pub fn terraform_provider(target: &str) -> Option<Provider> {
-    KINDS.iter().find(|k| k.terraform == Some(target)).map(|k| k.provider)
-}
-
 /// A new host id: 16 hex characters.
 pub(crate) fn new_id() -> String {
     crate::platform::random_hex(8)
@@ -225,9 +220,6 @@ pub(crate) mod tests {
         assert_eq!(terraform_target(Provider::Proxmox), Some("proxmox"));
         assert_eq!(terraform_target(Provider::Aws), Some("aws"));
         assert_eq!(terraform_target(Provider::Oci), Some("oci"));
-        assert_eq!(terraform_provider("digitalocean"), Some(Provider::DigitalOcean));
-        assert_eq!(terraform_provider("proxmox"), Some(Provider::Proxmox));
-        assert_eq!((terraform_provider("vmware_esxi"), terraform_provider("lab")), (None, None), "ESXi runs no Terraform");
         for cloud in [Provider::Azure, Provider::Gcp, Provider::DigitalOcean, Provider::Linode] {
             assert_eq!(terraform_target(cloud), Some(cloud.id()), "{cloud:?}");
         }

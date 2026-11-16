@@ -1,7 +1,7 @@
 //! A run whose surroundings changed under it: its generated files deleted while it runs, and
 //! the engine it runs on stopped while a step ran (docs/contributing/testing/resilience.md, F1 and T1).
 
-use super::{Error, Kind, LabRun, Result, errors, lab};
+use super::{Error, LabRun, Result, errors, lab};
 
 impl LabRun {
     /// Whether the run has its generated files, made again when they are gone while the runner
@@ -56,13 +56,11 @@ impl LabRun {
         Ok(status.live && status.machines.iter().all(|m| m.state == isothrum_runner::MachineState::Absent))
     }
 
-    /// `e`, an operation's failure on this run, as the player reads it: on this machine's Docker,
-    /// the engine stopped while a step ran is said as such ([`errors::engine_stopped`]).
+    /// `e`, an operation's failure on this run, as the player reads it: on an ESXi server, a
+    /// refused sign-in names the server as Servers does.
     pub(super) fn said(&self, e: Error) -> Error {
         match &self.esxi {
-            // On an ESXi server: a refused sign-in names it as Servers does.
             Some(place) => errors::on_server(e, &place.name),
-            None if self.kind == Kind::Docker => errors::engine_stopped(e),
             None => e,
         }
     }

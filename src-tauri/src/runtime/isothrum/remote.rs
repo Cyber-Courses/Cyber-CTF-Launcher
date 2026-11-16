@@ -111,6 +111,18 @@ impl Failure {
         }
     }
 
+    /// The launcher's error for it, said by `say` (a server's name, a stopped engine), with
+    /// whether the run may have changed: the runner's report says; a failure of the launcher's
+    /// own (the run not opened, the service unreachable) is taken as one that may have.
+    pub(super) fn failed(self, say: impl FnOnce(Error) -> Error) -> crate::runtime::host::Failed {
+        let run_changed = match &self {
+            Failure::Runner(e) => e.report().changed,
+            Failure::Service(report) => report.changed,
+            Failure::Launcher(_) => true,
+        };
+        crate::runtime::host::Failed { error: say(self.into_error()), run_changed }
+    }
+
     /// A client call that failed (the service refused it, or the connection broke).
     fn of_client(e: ClientError) -> Failure {
         match e {

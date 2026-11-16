@@ -8,9 +8,7 @@
 use super::contract::{connection_env, terraform_env};
 use super::kind::{KINDS, Kind, Secret};
 use super::profile::tests::profile;
-use crate::platform::exec::fake::{Tools, ok};
 use crate::runtime::Runtime;
-use crate::runtime::isothrum::{CloudPlace, CloudRun};
 use crate::runtime::lab::{host_vars, terraform};
 use crate::runtime::providers::Provider;
 
@@ -23,7 +21,7 @@ enum Claim {
     SizeVar(&'static str),
     /// The keychain keeps a secret for it, which reaches the launch.
     Secret,
-    /// A change first asks the cloud's CLI this question (its sign-in).
+    /// The account's Test and the setup ask the cloud's CLI this question (its sign-in).
     CliSignIn(&'static str, &'static [&'static str]),
 }
 
@@ -54,13 +52,8 @@ fn claims(k: &Kind) -> Vec<Claim> {
     out
 }
 
-/// The terraform target of `provider`'s row, for the witnesses that run through it.
-fn target_of(provider: Provider) -> Option<&'static str> {
-    super::kind::kind(provider).and_then(|k| k.terraform)
-}
-
 /// Why `claim` of `provider`'s row has no witness, or None when it changes the output.
-async fn unwitnessed(provider: Provider, claim: &Claim) -> Option<String> {
+fn unwitnessed(provider: Provider, claim: &Claim) -> Option<String> {
     let dir = std::path::Path::new("lab");
     match claim {
         // The module the lab runs from is the target's own, apart from every other target's.
@@ -83,30 +76,21 @@ async fn unwitnessed(provider: Provider, claim: &Claim) -> Option<String> {
             let given = [connection_env(&h, "witness-secret"), host_vars(&h, "witness-secret"), terraform_env(&h, "witness-secret")];
             (!given.iter().flatten().any(|(_, v)| v.contains("witness-secret"))).then(|| "the secret reaches nothing the launch is given".to_owned())
         }
-        // A change on the account asks the question first, of that CLI.
+        // The account's Test and the setup ask that CLI this question.
         Claim::CliSignIn(program, question) => {
-            let Some(t) = target_of(provider) else { return Some("a CLI sign-in on a row with no Terraform target".to_owned()) };
-            let home = crate::testing::temp_dir("claims");
-            let run = match CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, t) {
-                Ok(run) => run,
-                Err(e) => return Some(format!("no run on {t}: {e}")),
-            };
-            let call = format!("{program} {}", question.join(" "));
-            let tools = Tools::strict_rules(&[(call.as_str(), ok(""))]);
-            let answered = run.signed_in(&CloudPlace::default()).await.is_ok();
-            let asked = tools.calls().contains(&call);
-            (!(answered && asked)).then(|| format!("`{call}` isn't asked before a change: {:?}", tools.calls()))
+            let asked = crate::runtime::server::sign_in::sign_in_question(provider);
+            (asked != Some((program, question))).then(|| format!("the sign-in question is {asked:?}"))
         }
     }
 }
 
-#[tokio::test]
-async fn every_claim_of_the_host_kinds_table_changes_what_runs() {
+#[test]
+fn every_claim_of_the_host_kinds_table_changes_what_runs() {
     let mut missing = Vec::new();
     let mut witnessed = 0;
     for k in &KINDS {
         for claim in claims(k) {
-            match unwitnessed(k.provider, &claim).await {
+            match unwitnessed(k.provider, &claim) {
                 Some(why) => missing.push(format!("{:?} {claim:?}: {why}", k.provider)),
                 None => witnessed += 1,
             }
@@ -118,9 +102,9 @@ async fn every_claim_of_the_host_kinds_table_changes_what_runs() {
 }
 
 /// The witnesses can fail: a claim the table doesn't keep has none.
-#[tokio::test]
-async fn a_claim_the_code_does_not_keep_has_no_witness() {
-    assert!(unwitnessed(Provider::Aws, &Claim::SizeVar("not_a_module_variable")).await.is_some());
-    assert!(unwitnessed(Provider::Linode, &Claim::CliSignIn("linode-cli", &["whoami"])).await.is_some());
-    assert!(unwitnessed(Provider::Gcp, &Claim::Secret).await.is_some(), "GCP keeps no secret: nothing carries one");
+#[test]
+fn a_claim_the_code_does_not_keep_has_no_witness() {
+    assert!(unwitnessed(Provider::Aws, &Claim::SizeVar("not_a_module_variable")).is_some());
+    assert!(unwitnessed(Provider::Linode, &Claim::CliSignIn("linode-cli", &["whoami"])).is_some());
+    assert!(unwitnessed(Provider::Gcp, &Claim::Secret).is_some(), "GCP keeps no secret: nothing carries one");
 }
