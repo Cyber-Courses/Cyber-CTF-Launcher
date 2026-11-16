@@ -193,16 +193,16 @@ fn docker_unanswered(said: &str) -> Error {
 }
 
 /// A step's tool that ran and failed: a cloud sign-in that ran out reads as signing in again;
-/// libvirt finding no virtiofsd, as the machine check's code for it; an address block another
+/// libvirt or vagrant-qemu finding no virtiofsd, as the machine check's code for it; an address block another
 /// network holds, as what to do about it; anything else, as the command that failed.
 fn tool_failed(step: &str, reason: &str) -> Error {
     if let Some(expired) = expired_sign_in(reason, None) {
         return expired;
     }
-    // The machine changed after its check (virtiofsd removed): libvirt's refusal as the check says
-    // it, not vagrant-libvirt's stack trace.
-    if crate::platform::tool_output::vagrant::libvirt_lacks_virtiofsd(reason) {
-        return Error::coded(Code::VirtiofsdMissing { hypervisor: "libvirt".into() });
+    // The machine changed after its check (virtiofsd removed): the hypervisor's refusal as the
+    // check says it, not vagrant-libvirt's stack trace or vagrant-qemu's own words.
+    if let Some(hypervisor) = crate::platform::tool_output::vagrant::lacks_virtiofsd(reason) {
+        return Error::coded(Code::VirtiofsdMissing { hypervisor: hypervisor.to_owned() });
     }
     super::super::docker::explain_pool_overlap(Error::CommandFailed { command: format!("lab step {step}"), stderr: reason.to_owned() })
 }
