@@ -371,6 +371,7 @@
     "hypervOff": "Hyper-V isn't turned on (Windows Features > Hyper-V), or this edition of Windows doesn't have it.",
     "hypervNeedsAdmin": "Vagrant drives Hyper-V only for an administrator or a member of Hyper-V Administrators: choose Allow my account (then sign out of Windows and back in), or run Cyber CTF as administrator.",
     "mkisofsMissing": "QEMU VMs need mkisofs, which isn't installed: Vagrant builds with it the disk that gives each VM its lab network. Install QEMU again (that adds it), or run sudo apt-get install genisoimage, then re-check.",
+    "virtiofsdMissing": "libvirt needs virtiofsd, which isn't installed, to share a folder of this computer with a VM (the attack box's shared folder). Install libvirt again (that adds it), or run sudo apt-get install virtiofsd (sudo dnf install virtiofsd on Fedora), then re-check.",
     "notInstalled": "`{program}` was not found.",
     "notInstalledNoProgram": "Not installed.",
     "newLogin": "You were added to the {group} group since you logged in: log out and back in (or restart) for it to apply.",

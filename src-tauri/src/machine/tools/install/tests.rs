@@ -221,6 +221,11 @@ fn linux_installs_through_pkexec() {
     // libvirt brings what the vagrant-libvirt plugin builds against, and joins its group.
     let libvirt = plan_on(Dependency::Libvirt, APT, Some("ada")).unwrap()[0].args.join(" ");
     assert!(libvirt.contains("libvirt-dev") && libvirt.contains("build-essential"), "{libvirt}");
+    // And the virtiofsd libvirt shares the attack box's folder through, on apt and on dnf.
+    for host in [APT, DNF] {
+        let libvirt = plan_on(Dependency::Libvirt, host, None).unwrap()[0].args.join(" ");
+        assert!(libvirt.contains("install -y virtiofsd") || libvirt.contains(" virtiofsd;"), "{:?}: {libvirt}", host.packages);
+    }
     let aws = plan_on(Dependency::Awscli, APT, None).unwrap()[0].args.join(" ");
     assert!(aws.contains("awscli-exe-linux") && !aws.contains("/tmp/aws"), "{aws}");
 }

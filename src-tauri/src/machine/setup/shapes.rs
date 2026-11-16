@@ -196,6 +196,19 @@ pub(crate) fn debian_qemu_without_mkisofs() -> SystemReport {
     r
 }
 
+/// Debian with Vagrant, vagrant-libvirt and libvirt but no virtiofsd, which libvirt shares the
+/// attack box's folder with a VM through (libvirt installed before the setup brought virtiofsd
+/// with it): libvirt reads as not installed, saying why.
+pub(crate) fn debian_libvirt_without_virtiofsd() -> SystemReport {
+    let mut r = with(bare_debian(), false, |r| hypervisor(r, Provider::Libvirt, true));
+    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Libvirt) {
+        (p.hypervisor, p.available, p.reason) = (Some(false), false, Some(Unavailable::VirtiofsdMissing));
+    }
+    r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
+    r.setup = super::options(&r, false);
+    r
+}
+
 /// Debian with `provider` installed (its plugin as `plugin`) and the player in `groups` since
 /// logging in: `provider` waits for the new login that applies `group`.
 fn awaits_relogin(provider: Provider, plugin: bool, groups: &[&str], group: &str) -> SystemReport {
@@ -282,6 +295,7 @@ pub(crate) fn all() -> Vec<(&'static str, SystemReport)> {
         ("debianLibvirtAwaitsRelogin", debian_libvirt_awaits_relogin()),
         ("debianQemuAwaitsRelogin", debian_qemu_awaits_relogin()),
         ("debianQemuWithoutMkisofs", debian_qemu_without_mkisofs()),
+        ("debianLibvirtWithoutVirtiofsd", debian_libvirt_without_virtiofsd()),
         ("bareFedora", bare_fedora()),
         ("bareArch", bare_arch()),
         ("macDockerWithoutVagrant", mac_docker_without_vagrant()),

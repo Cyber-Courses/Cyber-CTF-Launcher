@@ -24,6 +24,10 @@ pub enum Unavailable {
     /// QEMU is installed, but not `mkisofs` (Linux), which Vagrant builds the cloud-init seed that
     /// gives a QEMU VM its lab network with: QEMU's install brings it (`genisoimage`).
     MkisofsMissing,
+    /// libvirt is installed, but no virtiofsd it finds (Linux), which it shares a folder of this
+    /// computer with a VM through (the attack box's shared folder): libvirt's install brings it
+    /// (`virtiofsd`).
+    VirtiofsdMissing,
     /// The hypervisor isn't installed.
     NotInstalled {
         /// The program looked for, which wasn't found; None for a hypervisor found otherwise.
@@ -133,6 +137,7 @@ mod tests {
             Unavailable::HypervOff,
             Unavailable::HypervNeedsAdmin,
             Unavailable::MkisofsMissing,
+            Unavailable::VirtiofsdMissing,
             Unavailable::NotInstalled { program: Some(s("virsh")) },
             Unavailable::NotInstalled { program: None },
             Unavailable::NewLogin { group: s("libvirt") },
