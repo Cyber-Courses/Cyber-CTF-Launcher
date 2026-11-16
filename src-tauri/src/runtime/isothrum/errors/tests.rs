@@ -322,3 +322,17 @@ fn libvirt_finding_no_virtiofsd_reads_as_its_code_not_vagrant_libvirts_stack_tra
     let e = RunnerError::ToolFailed { step: "up".into(), reason: trace.into() };
     assert_eq!(from_service(e.code(), &e.to_string(), Some("up"), e.detail().as_ref()).code(), Code::VirtiofsdMissing { hypervisor: "libvirt".into() });
 }
+
+#[test]
+fn vagrant_qemu_finding_no_virtiofsd_reads_as_its_code() {
+    // A QEMU lab with the attack box's shared folder on a machine whose virtiofsd went after its
+    // check (the check refuses it up front otherwise): vagrant-qemu's error reads as the check's
+    // code, naming QEMU, here and through the service.
+    let out = include_str!("../../../platform/tool_output/fixtures/vagrant/qemu-no-virtiofsd.txt");
+    let missing = Code::VirtiofsdMissing { hypervisor: "QEMU".into() };
+    let (code, text) = said(RunnerError::ToolFailed { step: "up".into(), reason: out.into() });
+    assert_eq!(code, missing);
+    assert!(text.starts_with("QEMU can't share") && text.contains("apt-get install virtiofsd"), "{text}");
+    let e = RunnerError::ToolFailed { step: "up".into(), reason: out.into() };
+    assert_eq!(from_service(e.code(), &e.to_string(), Some("up"), e.detail().as_ref()).code(), missing);
+}
