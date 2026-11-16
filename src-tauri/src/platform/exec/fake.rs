@@ -329,7 +329,6 @@ pub(super) fn set() -> Option<u64> {
 }
 
 /// Whether a test scripts the tools on this thread (so nothing real would run).
-#[cfg(windows)]
 pub fn scripted() -> bool {
     STATE.with(|s| s.borrow().is_some())
 }
@@ -362,6 +361,40 @@ pub fn answer_step(program: &str, args: &[String], on_line: &mut impl FnMut(Stri
         |_| Error::Invalid(format!("`{program}` exited with exit status: 1")),
         || Error::Invalid(format!("{program} is not available on this machine.")),
     ))
+}
+
+/// This thread's scripted tools ([`Tools`]) as an isothrum runner, for isothrum-machine's calls
+/// in a test that scripts the launcher's tools: each call answered as the launcher's exec layer
+/// would answer it (standard output on success; the reply on standard error, exit 1, on a
+/// failure; missing when unscripted). A test that sets isothrum's own fakes doesn't need it.
+pub struct AsRunner;
+
+impl isothrum_runner::ProcessRunner for AsRunner {
+    fn run<'a>(
+        &'a self,
+        spec: &'a isothrum_runner::ProcessSpec,
+        on_line: isothrum_runner::OnLine<'a>,
+    ) -> isothrum_runner::BoxFuture<'a, std::result::Result<isothrum_runner::Exit, isothrum_runner::ProcessError>> {
+        let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+        let scripted = reply(&spec.program, &args, &spec.env);
+        let answer = match scripted {
+            Some(Scripted::Reply(Reply::Out(text))) => Ok((isothrum_runner::Stream::Stdout, text, 0)),
+            Some(Scripted::Reply(Reply::Fail(text))) => Ok((isothrum_runner::Stream::Stderr, text, 1)),
+            Some(Scripted::Reply(Reply::Hang)) => Err(true),
+            Some(Scripted::Missing) | None => Err(false),
+        };
+        let program = spec.program.clone();
+        Box::pin(async move {
+            match answer {
+                Ok((stream, text, code)) => {
+                    text.lines().for_each(|l| on_line(stream, l));
+                    Ok(isothrum_runner::Exit::new(Some(code)))
+                }
+                Err(true) => std::future::pending().await,
+                Err(false) => Err(isothrum_runner::ProcessError::Missing { program }),
+            }
+        })
+    }
 }
 
 impl Scripted {

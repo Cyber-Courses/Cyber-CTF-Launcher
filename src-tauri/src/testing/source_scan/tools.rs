@@ -12,7 +12,10 @@ const TOOLS: &str = r"docker|vagrant|terraform|tofu|VBoxManage|vboxmanage|prlctl
 
 /// The files allowed to start one of [`TOOLS`] until the migration step named removes them.
 const ALLOWED: &[(&str, &str)] = &[
-    ("cloud_cli.rs", "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI"),
+    (
+        "cloud_cli.rs",
+        "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
+    ),
     ("machine/selftest/docker.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
     ("machine/selftest/downloads.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
     ("machine/selftest/vm.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
@@ -27,9 +30,18 @@ const ALLOWED: &[(&str, &str)] = &[
     ("platform/exec/elevate.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
     ("platform/exec/vagrant.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
     ("runtime/docker/inspect/networks.rs", "I-4 follow-up: the runner says which address blocks the engine's networks hold (plan, docker: subnets_in_use)"),
-    ("runtime/server/azure_size.rs", "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI"),
-    ("runtime/server/cloud_checks.rs", "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI"),
-    ("runtime/server/gcp.rs", "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI"),
+    (
+        "runtime/server/azure_size.rs",
+        "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
+    ),
+    (
+        "runtime/server/cloud_checks.rs",
+        "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
+    ),
+    (
+        "runtime/server/gcp.rs",
+        "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",
+    ),
     (
         "runtime/server/kind.rs",
         "cloud-account probes (after L-14): isothrum-machine asks whether credentials reach a provider and what it offers; the launcher keeps the account UI",

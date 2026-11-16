@@ -29,17 +29,16 @@ fn machine() -> isothrum_machine::Context {
 }
 
 /// What the machine check reads with ([`crate::machine::system::system_check`]): [`machine`]'s,
-/// with this machine's package manager, and outside the tests the version probes that rarely
+/// with this machine's package manager (as the launcher's host finds it), and outside the tests
+/// the version probes that rarely
 /// change (`vagrant --version`...) kept a while ([`crate::platform::remembered::Remembering`]).
 pub(crate) fn machine_check() -> isothrum_machine::Context {
-    let cx = machine();
+    let mut cx = machine();
+    cx.host.packages = crate::platform::host::Host::here().packages.map(crate::platform::host::Packages::isothrum);
     #[cfg(not(test))]
-    let cx = {
-        let mut cx = cx;
+    {
         cx.runner = std::sync::Arc::new(crate::platform::remembered::Remembering::new(cx.runner));
-        cx.host.packages = crate::platform::host::Host::here().packages.map(crate::platform::host::Packages::isothrum);
-        cx
-    };
+    }
     cx
 }
 
@@ -221,7 +220,12 @@ pub(crate) mod testing {
             return super::this_machine();
         }
         let (runner, host) = set.unwrap_or_else(|| {
-            let nothing: Arc<dyn ProcessRunner> = Arc::new(FakeProcesses::model(|_| Reply::missing()));
+            // A test scripting the launcher's tools answers isothrum-machine's calls too.
+            let nothing: Arc<dyn ProcessRunner> = if crate::platform::exec::fake::scripted() {
+                Arc::new(crate::platform::exec::fake::AsRunner)
+            } else {
+                Arc::new(FakeProcesses::model(|_| Reply::missing()))
+            };
             (nothing, host(std::path::Path::new("/nonexistent/cyberctf-test-machine")))
         });
         isothrum_machine::Context::new(runner, host)
