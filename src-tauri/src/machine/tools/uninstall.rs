@@ -8,7 +8,6 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::install::Dependency;
-use super::steps::Step;
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::host::{Host, Os, Packages};
@@ -196,37 +195,19 @@ async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<
         ImageMissing::NotThere(dmg) => Error::Invalid(format!(
             "VirtualBox's installer image isn't there ({dmg}), so its uninstaller can't be run. Run `brew fetch --cask virtualbox`, then try again."
         )),
-        ImageMissing::Failed(failed) => super::steps::step_failed(failed),
+        ImageMissing::Failed(failed) => super::steps::step_failed(failed, true),
         _ => Error::Invalid("Homebrew didn't say where VirtualBox's installer image is, so its uninstaller can't be run.".into()),
     })
 }
 
 /// The removal on macOS: isothrum-machine's (Homebrew's packages, or the vendor's uninstaller).
 fn macos_plan(dep: Dependency, packages: Option<Packages>, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
-    let steps =
-        isothrum_machine::install::macos::uninstall(dep.machine(), packages.map(Packages::isothrum), virtualbox_dmg).map_err(super::install::refusal)?;
-    Ok(super::steps::Plan::Machine(steps))
+    isothrum_machine::install::macos::uninstall(dep.machine(), packages.map(Packages::isothrum), virtualbox_dmg).map_err(super::install::refusal)
 }
 
-/// How to remove `dep` on Windows: its winget package, VMware's utility by its product code, and
-/// the Windows features by the player in Windows Features.
-fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
-    if let Some(id) = dep.row().winget {
-        return Ok(vec![super::install::winget("uninstall", id, &[])]);
-    }
-    match dep {
-        Dependency::VmwareUtility => Ok(vec![super::vmware_utility::windows_uninstall()]),
-        Dependency::Wsl => Err(Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())),
-        Dependency::Hyperv => Err(Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into())),
-        Dependency::Utm | Dependency::Libvirt | Dependency::Qemu => Err(super::install::not_here(dep, Os::Windows)),
-        Dependency::Docker
-        | Dependency::Vagrant
-        | Dependency::Terraform
-        | Dependency::Virtualbox
-        | Dependency::Awscli
-        | Dependency::Azurecli
-        | Dependency::Gcloud => Err(Error::Invalid(format!("{} has no winget package to remove.", dep.name_on(Os::Windows)))),
-    }
+/// The removal on Windows: isothrum-machine's winget packages and VMware's utility's MSI.
+fn windows_plan(dep: Dependency) -> Result<super::steps::Plan> {
+    isothrum_machine::install::windows::uninstall(dep.machine()).map_err(super::install::refusal)
 }
 
 /// How to remove `dep` on Linux: its packages through the package manager that installed them
@@ -235,9 +216,7 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
 /// The removal on Linux: isothrum-machine's root script, through the package manager that
 /// installed the tool.
 fn linux_plan(dep: Dependency, packages: Option<Packages>) -> Result<super::steps::Plan> {
-    let steps = isothrum_machine::install::linux::uninstall(dep.machine(), packages.map(Packages::isothrum), &super::install::linux_root())
-        .map_err(super::install::refusal)?;
-    Ok(super::steps::Plan::Machine(steps))
+    isothrum_machine::install::linux::uninstall(dep.machine(), packages.map(Packages::isothrum), &super::install::linux_root()).map_err(super::install::refusal)
 }
 
 /// How to remove `dep` on `host`. On macOS, VirtualBox's step needs its installer image
@@ -248,7 +227,7 @@ pub(super) fn plan_on(dep: Dependency, host: Host, virtualbox_dmg: Option<&str>)
     }
     match host.os {
         Os::Macos => macos_plan(dep, host.packages, virtualbox_dmg),
-        Os::Windows => windows_plan(dep).map(super::steps::Plan::Own),
+        Os::Windows => windows_plan(dep),
         Os::Linux => linux_plan(dep, host.packages),
     }
 }

@@ -11,7 +11,7 @@
 
 use serde::Deserialize;
 
-use super::steps::{Plan, Step, command_line, run_plan, run_step, step};
+use super::steps::{Plan, run_plan, run_step};
 use super::uninstall;
 use crate::error::{Error, Result};
 use crate::platform::host::{Arch, Host, Os, Packages};
@@ -229,74 +229,13 @@ impl Dependency {
 /// The install on macOS: isothrum-machine's Homebrew formulae, vendors' installers and
 /// HashiCorp's signed package.
 fn macos_plan(dep: Dependency, host: Host) -> Result<Plan> {
-    let steps = isothrum_machine::install::macos::install(dep.machine(), host.packages.map(Packages::isothrum), host.arch.isothrum()).map_err(refusal)?;
-    Ok(Plan::Machine(steps))
+    isothrum_machine::install::macos::install(dep.machine(), host.packages.map(Packages::isothrum), host.arch.isothrum()).map_err(refusal)
 }
 
-/// `winget <verb> <id>`, from the `winget` source alone. Without `--source`, winget asks every
-/// source it has, the Microsoft Store's (`msstore`) too, and one that fails stops the command: on
-/// a clean Windows 11 the Store source's certificate pinning failed (0x8a15005e, "The server
-/// certificate did not match any of the expected values") and Docker Desktop's install with it.
-/// Every package the setup installs is in the `winget` source.
-pub(super) fn winget(verb: &str, id: &str, extra: &[&str]) -> Step {
-    let mut args = vec![verb, "-e", "--id", id, "--source", "winget"];
-    args.extend_from_slice(extra);
-    step("winget", &args)
+/// The install on Windows: isothrum-machine's winget packages and elevated installers.
+fn windows_plan(dep: Dependency, arch: Arch) -> Result<Plan> {
+    isothrum_machine::install::windows::install(dep.machine(), arch.isothrum()).map_err(refusal)
 }
-
-/// Why `dep` isn't installed on Windows on Arm, where the hypervisor it is or serves (VMware's
-/// utility serves VMware Workstation) isn't built for it ([`Provider::row`]).
-fn not_on_windows_on_arm(dep: Dependency, arch: Arch) -> Option<Error> {
-    let provider = match dep {
-        Dependency::VmwareUtility => Provider::VmwareDesktop,
-        other => other.hypervisor()?,
-    };
-    (arch == Arch::Aarch64 && !provider.on_windows_on_arm()).then(|| {
-        Error::Invalid(format!("{} doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.", provider.label_on(Os::Windows)))
-    })
-}
-
-/// The install step on Windows: a winget package, or WSL's, Hyper-V's and VMware's utility's
-/// own elevated installers.
-fn windows_plan(dep: Dependency, arch: Arch) -> Result<Vec<Step>> {
-    if let Some(refusal) = not_on_windows_on_arm(dep, arch) {
-        return Err(refusal);
-    }
-    if let Some(id) = dep.row().winget {
-        return Ok(vec![winget("install", id, &["--accept-source-agreements", "--accept-package-agreements"])]);
-    }
-    match dep {
-        // Turns on the WSL and Virtual Machine Platform features and installs the WSL 2 kernel.
-        // Elevated through Windows' own UAC prompt; the features need a restart to take effect.
-        // `-PassThru` surfaces wsl.exe's own exit code (without it PowerShell exits 0 whatever
-        // happened); a declined UAC prompt throws, reported as ERROR_CANCELLED.
-        Dependency::Wsl => Ok(vec![step(
-            "powershell",
-            &[
-                "-NoProfile",
-                "-Command",
-                "try { $p = Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { exit 1223 }",
-            ],
-        )]),
-        // Turns the Hyper-V feature on with Windows' own servicing tool, elevated through Windows'
-        // UAC prompt: DISM's 3010 is "done, restart to finish". Windows Home has no Hyper-V: said
-        // before anything runs.
-        Dependency::Hyperv => Ok(vec![step("powershell", &["-NoProfile", "-Command", HYPERV_ON])]),
-        Dependency::VmwareUtility => Ok(vec![super::vmware_utility::windows_install()]),
-        Dependency::Utm | Dependency::Libvirt | Dependency::Qemu => Err(not_here(dep, Os::Windows)),
-        Dependency::Docker
-        | Dependency::Vagrant
-        | Dependency::Terraform
-        | Dependency::Virtualbox
-        | Dependency::Awscli
-        | Dependency::Azurecli
-        | Dependency::Gcloud => Err(Error::Invalid(format!("{} has no winget package to install.", dep.name_on(Os::Windows)))),
-    }
-}
-
-/// Turns Hyper-V on (Windows): refused on Windows Home, which has no Hyper-V; else DISM, elevated,
-/// its "restart to finish" (3010) a success; a declined UAC prompt reported as `ERROR_CANCELLED`.
-const HYPERV_ON: &str = "if ((Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').EditionID -like 'Core*') { Write-Output 'This edition of Windows (Home) has no Hyper-V. Run VM labs with VirtualBox, on a server or in the cloud.'; exit 1 }; try { $p = Start-Process -FilePath dism.exe -ArgumentList '/Online','/Enable-Feature','/FeatureName:Microsoft-Hyper-V','/All','/NoRestart','/Quiet' -Verb RunAs -Wait -PassThru; if ($p.ExitCode -eq 3010) { exit 0 }; exit $p.ExitCode } catch { exit 1223 }";
 
 /// How root steps run on this Linux machine (isothrum-machine's [`linux::Root`]): through pkexec's
 /// prompt, or unattended (see `platform::elevation`) as root or through `sudo -n`; with this
@@ -322,6 +261,14 @@ pub(super) fn refusal(refused: Refusal) -> Error {
         Refusal::NoHomebrew => Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()),
         Refusal::HomebrewNeeded => Error::Invalid("Homebrew is needed to remove this tool.".into()),
         Refusal::NoVirtualboxImage => Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()),
+        Refusal::NotOnWindowsOnArm { provider, .. } => Error::Invalid(format!(
+            "{} doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.",
+            Provider::from(provider).label_on(Os::Windows)
+        )),
+        Refusal::WindowsFeature { dependency: isothrum_machine::install::Dependency::Wsl } => {
+            Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into())
+        }
+        Refusal::WindowsFeature { .. } => Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into()),
         other => Error::Io(std::io::Error::other(other.to_string())),
     }
 }
@@ -329,8 +276,7 @@ pub(super) fn refusal(refused: Refusal) -> Error {
 /// The install on Linux: isothrum-machine's root script, for the player `user` (Linux joins them
 /// to the groups a tool's devices need).
 fn linux_plan(dep: Dependency, packages: Option<Packages>, user: Option<&str>) -> Result<Plan> {
-    let steps = linux::install(dep.machine(), packages.map(Packages::isothrum), user, &linux_root()).map_err(refusal)?;
-    Ok(Plan::Machine(steps))
+    linux::install(dep.machine(), packages.map(Packages::isothrum), user, &linux_root()).map_err(refusal)
 }
 
 /// The ordered install steps for a dependency on `host`, for the player `user` (Linux joins
@@ -341,7 +287,7 @@ pub(super) fn plan_on(dep: Dependency, host: Host, user: Option<&str>) -> Result
     }
     match host.os {
         Os::Macos => macos_plan(dep, host),
-        Os::Windows => windows_plan(dep, host.arch).map(Plan::Own),
+        Os::Windows => windows_plan(dep, host.arch),
         Os::Linux => linux_plan(dep, host.packages, user),
     }
 }
@@ -403,8 +349,8 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
     if !valid_plugin(&plugin) {
         return Err(Error::Invalid(format!("invalid plugin name `{plugin}`")));
     }
-    let step = Step { program: "vagrant".into(), args: vec!["plugin".into(), "install".into(), plugin], note: None };
-    on_line(command_line(&step));
+    let step = isothrum_machine::install::step("vagrant", &["plugin", "install", &plugin]);
+    on_line(isothrum_machine::install::command_line(&step));
     run_step(&step, &mut on_line).await?;
     on_line("Done. Re-checking this machine…".into());
     Ok(())
