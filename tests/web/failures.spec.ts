@@ -27,12 +27,12 @@ test.describe("failure states", () => {
     await expect(app.main).toContainText("lab-invoice");
   });
 
-  test("a start that fails says so in the header, with Retry and the port hint", async ({ page, app }) => {
+  test("a start that fails says so in the header, with Retry and the port hint", async ({ page, app, labs }) => {
     await forceCommands(page, { lab_launch: { error: PORT_CLASH } });
     await page.addInitScript(() => localStorage.setItem("cyberctf.labs.ports", "default"));
     await openApp(page);
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Blind orders", exact: true }).click();
+    await labs.open("Blind orders").click();
     await expect(app.title).toHaveText("Blind orders");
     await page.getByRole("button", { name: "Start lab" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Start", exact: true }).click();
@@ -48,15 +48,15 @@ test.describe("failure states", () => {
     // The list says it too.
     await app.nav("Labs").click();
     // Its row: the title's cell reads "Failed to start" in place of the description.
-    await expect(app.main.getByRole("button", { name: "Open Blind orders", exact: true }).locator("xpath=..")).toContainText("Failed to start");
+    await expect(labs.titleCell("Blind orders")).toContainText("Failed to start");
   });
 
-  test("a failed Stop & remove keeps the panels and says so under the header", async ({ page, app }) => {
+  test("a failed Stop & remove keeps the panels and says so under the header", async ({ page, app, labs, lab }) => {
     await forceCommands(page, { lab_stop: { error: "Couldn't remove network lab-invoice_default: has active endpoints", held: true } });
     await openApp(page);
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
-    const diagram = app.main.locator(".react-flow");
+    await labs.open("Invoice portal API").click();
+    const diagram = lab.diagram;
     await expect(diagram).toBeVisible();
     const asked = answerConfirm(page, true);
     await page.getByRole("button", { name: "Stop & remove" }).click();
@@ -77,10 +77,10 @@ test.describe("failure states", () => {
     await expect(diagram).toBeVisible();
   });
 
-  test("a deploy with no log here shows the backend's step", async ({ page, app }) => {
+  test("a deploy with no log here shows the backend's step", async ({ page, app, labs }) => {
     await openApp(page);
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open GOAD Light", exact: true }).click();
+    await labs.open("GOAD Light").click();
     await expect(app.title).toHaveText("GOAD Light");
     await expect(app.main).toContainText("Configure SRV02 (ansible 41/88)");
     await expect(app.main).not.toContainText("Preparing…");

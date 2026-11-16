@@ -2,6 +2,8 @@ import { test as base, expect, type Locator, type Page } from "@playwright/test"
 import type { Holdable } from "../../src/lib/dev-mock/holds";
 import type { CommandError } from "../../src/lib/tauri/generated/CommandError";
 import { AppShell } from "./pages/app-shell";
+import { LabScreen } from "./pages/lab";
+import { LabsScreen } from "./pages/labs";
 
 /** The six languages the launcher ships (src/lib/i18n). */
 export const LOCALES = ["en", "fr", "es", "de", "pt-BR", "ja"] as const;
@@ -18,6 +20,10 @@ type Fixtures = {
   consoleErrors: string[];
   /** The main window's frame on the test's page: its sidebar, title bar and open screen. */
   app: AppShell;
+  /** The Labs screen on the test's page. */
+  labs: LabsScreen;
+  /** A lab's page on the test's page, and its "Where should the lab run?". */
+  lab: LabScreen;
 };
 
 export const test = base.extend<Fixtures>({
@@ -52,6 +58,12 @@ export const test = base.extend<Fixtures>({
   ],
   app: async ({ page }, provide) => {
     await provide(new AppShell(page));
+  },
+  labs: async ({ page }, provide) => {
+    await provide(new LabsScreen(page));
+  },
+  lab: async ({ page }, provide) => {
+    await provide(new LabScreen(page));
   },
 });
 
@@ -249,13 +261,4 @@ export async function answerConfirm(page: Page, accept: boolean): Promise<string
   await (accept ? dialog.getByRole("button").last() : dialog.getByRole("button", { name: "Cancel" })).click();
   await page.locator("#confirm-title", { hasText: title }).waitFor({ state: "detached" });
   return asked;
-}
-
-/** In "Where should the lab run?" on a cloud account: Start waits for the player to agree to the
- *  lab's own Terraform running with that account's credentials, then takes it. */
-export async function agreeToCloudTerraform(where: Locator) {
-  const start = where.getByRole("button", { name: "Start", exact: true });
-  await expect(start).toBeDisabled();
-  await where.getByRole("checkbox", { name: /^I agree that this lab runs its own Terraform code/ }).check();
-  await expect(start).toBeEnabled();
 }

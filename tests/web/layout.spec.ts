@@ -2,7 +2,7 @@ import { test, expect, openApp, horizontalOverflow } from "./fixtures";
 
 // At 1280x800 (the config's viewport), no main screen scrolls sideways.
 test.describe("layout", () => {
-  test("main screens fit the width", async ({ page, app }) => {
+  test("main screens fit the width", async ({ page, app, labs, lab }) => {
     expect(page.viewportSize()).toEqual({ width: 1280, height: 800 });
     await openApp(page);
     for (const [tab, heading] of [
@@ -19,15 +19,15 @@ test.describe("layout", () => {
 
     // A running lab's page, with its network diagram.
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
-    await expect(page.locator(".react-flow")).toBeVisible();
+    await labs.open("Invoice portal API").click();
+    await expect(lab.diagram).toBeVisible();
     expect(await horizontalOverflow(page), "lab page overflows").toEqual([]);
   });
 
   // A wide window: the shell spans it, the list screens stop at 90rem (centred), and a lab's
   // diagram leaves the main column for the page's width, drawing the mock's wide lab (three
   // networks, two pivots) whole, without scrolling sideways.
-  test("a wide window gives a lab's diagram the page's width", async ({ page, app }) => {
+  test("a wide window gives a lab's diagram the page's width", async ({ page, app, labs, lab }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await openApp(page);
     for (const [tab, heading] of [
@@ -44,9 +44,9 @@ test.describe("layout", () => {
     }
 
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
+    await labs.open("Invoice portal API").click();
     const shell = page.locator(".topology-shell");
-    await expect(page.locator(".react-flow__node").filter({ hasText: "10.42.2.21" })).toBeVisible();
+    await expect(lab.diagramNode("10.42.2.21")).toBeVisible();
     const [card, rail] = await Promise.all([page.locator(".hostcard").boundingBox(), page.locator("aside.h-fit").boundingBox()]);
     // Above the rail, as wide as the main column and the rail together.
     expect(card!.y + card!.height).toBeLessThan(rail!.y);

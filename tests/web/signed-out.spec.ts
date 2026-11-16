@@ -8,7 +8,7 @@ import { test, expect, openApp, release } from "./fixtures";
 // the app being said.
 
 test.describe("signed out", () => {
-  test("the list, a lab, the sidebar and Settings say so, and signing in from Settings brings them all back", async ({ page, app, context }) => {
+  test("the list, a lab, the sidebar and Settings say so, and signing in from Settings brings them all back", async ({ page, app, context, labs }) => {
     await openApp(page, "&auth=out");
     // The sidebar: Sign in in place of the account.
     await expect(app.sidebar.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
@@ -22,10 +22,10 @@ test.describe("signed out", () => {
     await expect(app.main).toContainText("Browse freely; signing in lets you start labs and keeps track of what you solve.");
     await expect(app.main).toContainText("6 in the catalogue · 1 running on this machine");
     await expect(app.main).not.toContainText("solved");
-    await expect(app.main.getByRole("button", { name: "Open Public backup", exact: true }).locator("xpath=..")).not.toContainText("Solved");
+    await expect(labs.titleCell("Public backup")).not.toContainText("Solved");
 
     // A lab's page: Sign in to start, in place of Start lab.
-    await app.main.getByRole("button", { name: "Open Blind orders", exact: true }).click();
+    await labs.open("Blind orders").click();
     await expect(app.title).toHaveText("Blind orders");
     await expect(app.button("Sign in to start")).toBeVisible();
     await expect(app.button("Start lab")).toHaveCount(0);
@@ -57,14 +57,14 @@ test.describe("signed out", () => {
     await expect(app.main).toContainText("6 in the catalogue · 1 running on this machine · 1 solved");
   });
 
-  test("signing in from the Labs list banner recovers the list and the lab", async ({ page, app }) => {
+  test("signing in from the Labs list banner recovers the list and the lab", async ({ page, app, labs }) => {
     await openApp(page, "&auth=out");
     await app.nav("Labs").click();
     const banner = app.main.getByText("Sign in to start labs").locator("xpath=ancestor::div[.//button][1]");
     await banner.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(app.main).not.toContainText("Sign in to start labs");
     await expect(app.sidebar).toContainText("Ada Lovelace");
-    await app.main.getByRole("button", { name: "Open Blind orders", exact: true }).click();
+    await labs.open("Blind orders").click();
     await expect(app.button("Start lab")).toBeEnabled();
   });
 
@@ -98,17 +98,16 @@ test.describe("signed out", () => {
     await expect(app.sidebar.locator("img")).toHaveAttribute("src", /^data:image\/svg\+xml/);
   });
 
-  test("signing in from a lab's header goes on into its start", async ({ page, app }) => {
+  test("signing in from a lab's header goes on into its start", async ({ page, app, labs, lab }) => {
     await openApp(page, "&auth=out");
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Blind orders", exact: true }).click();
+    await labs.open("Blind orders").click();
     await app.button("Sign in to start").click();
     // Signed in: the start the player asked for goes on, where to run asked first (there is a choice).
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where).toBeVisible();
+    const where = lab.whereToRun;
+    await expect(where.dialog).toBeVisible();
     await expect(app.sidebar).toContainText("Ada Lovelace");
-    await where.getByRole("button", { name: "Start", exact: true }).click();
-    await expect(where).toBeHidden();
+    await where.start();
     await expect(app.button("Stop & remove")).toBeEnabled();
     await expect(app.button("Sign in to start")).toHaveCount(0);
   });
