@@ -10,6 +10,7 @@
 //! module is applied ([`Tunnel`]), and the words the player reads.
 //! The runner keeps the Terraform state and the run's slot on the server.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use isothrum_runner::{RunOptions, SecretValue, Secrets};
@@ -21,6 +22,9 @@ use super::{errors, view};
 use crate::error::Result;
 use crate::runtime::docker::Check;
 use crate::runtime::{LabStatus, Place, Runtime, lab};
+
+/// The module's output saying where each published port is reached (`view`'s entry reads it).
+const PUBLISHED: &str = "published";
 
 /// The module's variables that are the server's secret: connection slots, never params.
 const SECRET_VARS: [&str; 2] = ["proxmox_password", "proxmox_api_token"];
@@ -95,6 +99,7 @@ impl ServerRun {
     /// (the connection is `place`'s, the one that works now).
     pub(crate) async fn down(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
         let (opts, _tunnel) = self.applying(place, &[]).await?;
+        Reach::close(self.name.as_str()).await;
         self.act(super::remote::Act::Down, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
@@ -137,13 +142,34 @@ impl ServerRun {
         }
         // The server's API is asked with `place`'s credentials, which the module's variables
         // carry: a status reads the run's tool as an operation does.
-        let status = self.read_with(&options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))?;
+        let mut status = self.read_with(&options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))?;
+        self.reached(place, &mut status).await?;
         let described = match self.target() {
             Some(_) => super::described::Described::of(&self.dir, super::described::Form::Vms)?,
             None => super::described::Described::default(),
         };
         let shown = view::lab_status(&described, &status, None);
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
+    }
+
+    /// `status` with the module's `published` entries where this computer reaches them
+    /// ([`Reach::published`]: through the node, a local forward to each while the lab runs), how
+    /// the lab is reached `place`'s, else as the run recorded it. A lab that doesn't run ends its
+    /// forwards.
+    async fn reached(&self, place: &ServerPlace, status: &mut isothrum_runner::Status) -> Result<()> {
+        let reach = match Reach::of_place(place) {
+            Reach::Direct => self.reach()?,
+            through @ Reach::ThroughNode { .. } => through,
+        };
+        if !view::runs(status) {
+            Reach::close(self.name.as_str()).await;
+            return Ok(());
+        }
+        let Some(output) = status.outputs.iter_mut().find(|o| o.name == PUBLISHED && !o.sensitive) else { return Ok(()) };
+        let Some(published) = output.value.as_deref().and_then(|v| serde_json::from_str::<BTreeMap<String, String>>(v).ok()) else { return Ok(()) };
+        let reached = reach.published(self.name.as_str(), &self.key(), published).await;
+        output.value = Some(serde_json::to_string(&reached).map_err(|e| crate::error::Error::Invalid(e.to_string()))?);
+        Ok(())
     }
 
     /// `machine`'s graphical console, Proxmox's own through its API, signed in with `place`'s
@@ -377,6 +403,67 @@ mod tests {
             assert!(tools.calls().is_empty(), "no ssh");
             assert!(f.fake.calls().iter().filter(|c| c.program == "terraform").all(|c| c.env("TF_VAR_ssh_proxy_host").is_none()));
             assert_eq!(run.reach().unwrap(), Reach::Direct);
+        }
+
+        /// A lab with a web port its module publishes at its router, `web/site` at
+        /// 192.0.2.10:8080, its run up on fake tools.
+        fn published_lab(home: &str) -> (Scripted<Api>, ServerRun) {
+            const WEB: &str = "version: 1\nname: t\nnetworks:\n  app: { cidr: 10.80.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { app: 10 }\n    ports: { site: { port: 80, protocol: http, publish: 8080 } }\n";
+            let f = Scripted::answered_by(Home::new(home, WEB, &[], lab::Target::Proxmox), |api, call| {
+                match (call.program.as_str(), call.args.first().map(String::as_str)) {
+                    ("terraform", Some("output")) => Reply::ok(r#"{"vm_id_web":{"value":104},"published":{"value":{"web/site":"192.0.2.10:8080"}}}"#),
+                    _ => answer(api, call),
+                }
+            });
+            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, home, Runtime::Vm, false).unwrap();
+            let state = f.home.runner().join("runs").join(format!("cyberctf-{home}"));
+            std::fs::create_dir_all(&state).unwrap();
+            std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"vm_id_web":{"value":104}},"resources":[{"instances":[{}]}]}"#).unwrap();
+            let record = serde_json::json!({
+                "version": 0, "name": format!("cyberctf-{home}"), "project": run.project, "format": "terraform",
+                "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
+                "env": { "ssh_jump": "root@node.lab" },
+            });
+            crate::testing::runner::save_run(&f.home.runner(), &record);
+            (f, run)
+        }
+
+        #[tokio::test]
+        async fn a_lab_only_its_node_reaches_is_linked_at_a_local_forward_through_the_node() {
+            let (_f, run) = published_lab("pve-link");
+            let kept: std::rc::Rc<std::cell::RefCell<Vec<std::net::TcpListener>>> = std::rc::Rc::default();
+            let held = std::rc::Rc::clone(&kept);
+            let tools = crate::platform::exec::fake::Tools::new(move |program, args| {
+                assert_eq!((program, &args[..2]), ("ssh", &["-N", "-L"][..]), "only the forward's ssh runs");
+                let port = args[2].split(':').nth(1).unwrap();
+                held.borrow_mut().push(std::net::TcpListener::bind(format!("127.0.0.1:{port}")).unwrap());
+                Some(crate::platform::exec::fake::Reply::Hang)
+            });
+            // How it is reached is the run's record's: the status's place names no jump.
+            let shown = run.status(&place()).await.unwrap();
+            let forwards = tools.made("ssh -N -L");
+            assert_eq!(forwards.len(), 1, "one forward, to the published address");
+            let port = forwards[0][2].split(':').nth(1).unwrap().to_owned();
+            assert_eq!(forwards[0][2], format!("127.0.0.1:{port}:192.0.2.10:8080"));
+            assert_eq!(forwards[0].last().map(String::as_str), Some("root@node.lab"));
+            assert_eq!(shown.url, Some(format!("http://127.0.0.1:{port}/")));
+            // Read again while it runs: the same forward, no new ssh.
+            let again = run.status(&place()).await.unwrap();
+            assert_eq!((again.url, tools.made("ssh -N -L").len()), (shown.url, 1));
+            Reach::close("cyberctf-pve-link").await;
+        }
+
+        #[tokio::test]
+        async fn a_lab_reached_directly_is_linked_where_its_module_publishes_it() {
+            let (f, run) = published_lab("pve-direct");
+            let record = serde_json::json!({
+                "version": 0, "name": "cyberctf-pve-direct", "project": run.project, "format": "terraform",
+                "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
+            });
+            crate::testing::runner::save_run(&f.home.runner(), &record);
+            let tools = crate::platform::exec::fake::Tools::script().build();
+            assert_eq!(run.status(&place()).await.unwrap().url.as_deref(), Some("http://192.0.2.10:8080/"));
+            assert!(tools.calls().is_empty(), "no forward");
         }
 
         #[tokio::test]

@@ -1,11 +1,14 @@
-//! The way into a Proxmox lab whose bridge is internal to its node (a NAT bridge only the node
-//! reaches): Terraform signs in to the lab's router to wait for each machine's set-up and to seal
-//! its networks, and the router's uplink address is out of this computer's reach. A SOCKS5 proxy
-//! through the node (`ssh -N -D`, with the runner's key, which the node lets in for the jump) is
-//! the module's way in: its `ssh_proxy_host` and `ssh_proxy_port` name it, and Terraform's SSH goes
-//! to the proxy first, then to the router.
+//! The ways through a Proxmox node to a lab whose bridge is internal to it (a NAT bridge only the
+//! node reaches), each an `ssh` through the node with the runner's key, which the node lets in for
+//! the jump, its host key checked against the ones the player confirmed for it
+//! ([`ssh::node_known_hosts`]):
 //!
-//! A [`Tunnel`] is open for one operation that applies the module, and ends when it drops.
+//! - [`Tunnel`]: a SOCKS5 proxy for Terraform, which signs in to the lab's router to wait for each
+//!   machine's set-up and to seal its networks. The module's `ssh_proxy_host` and
+//!   `ssh_proxy_port` name it, and Terraform's SSH goes to the proxy first, then to the router.
+//!   Open for one operation that applies the module, and ends when it drops.
+//! - [`Forward`]: a local port forwarded to one `host:port` the lab publishes (the router's uplink
+//!   and the published port): the lab's link while it runs ([`super::reach`] keeps them).
 
 use std::path::Path;
 use std::time::Duration;
@@ -14,13 +17,13 @@ use crate::error::{Error, Result};
 use crate::platform::exec::{Background, background};
 use crate::runtime::ssh;
 
-/// Where the proxy listens: this computer only.
-const LOOPBACK: &str = "127.0.0.1";
+/// Where the proxy and the forwards listen: this computer only.
+pub(crate) const LOOPBACK: &str = "127.0.0.1";
 
-/// How long the node may take to let the tunnel in (ssh's own connect timeout is 10s).
+/// How long the node may take to let an ssh in (ssh's own connect timeout is 10s).
 const READY_WITHIN: Duration = Duration::from_secs(30);
 
-/// How often the proxy's port is tried while it opens.
+/// How often the port of an ssh opening is tried.
 const POLL: Duration = Duration::from_millis(200);
 
 /// A SOCKS5 proxy on this computer through a node, until dropped (its ssh is then ended).
@@ -33,8 +36,7 @@ pub(crate) struct Tunnel {
 
 impl Tunnel {
     /// Opens the proxy through node login `jump` (`root@<node>`), signed in with `identity` (the
-    /// runner's key), the node's host key checked against the ones the player confirmed for it
-    /// ([`ssh::node_known_hosts`]); ready once its port takes connections.
+    /// runner's key); ready once its port takes connections.
     pub(crate) async fn open(jump: &str, identity: &Path) -> Result<Tunnel> {
         Tunnel::open_within(jump, identity, READY_WITHIN).await
     }
@@ -48,27 +50,76 @@ impl Tunnel {
     /// [`Tunnel::open_within`] on `port` of [`LOOPBACK`]: a test's, held until its ssh listens.
     async fn open_on(node: &ssh::Target, jump: &str, identity: &Path, port: u16, within: Duration) -> Result<Tunnel> {
         let args = node.socks_args(&ssh::node_known_hosts(identity), port)?;
-        let mut ssh = background("ssh", &args.iter().map(String::as_str).collect::<Vec<_>>())?;
-        let deadline = tokio::time::Instant::now() + within;
-        loop {
-            if tokio::net::TcpStream::connect((LOOPBACK, port)).await.is_ok() {
-                return Ok(Tunnel { port, _ssh: ssh });
-            }
-            if let Some(e) = ssh.stopped_within(POLL).await {
-                return Err(Error::Invalid(format!("Couldn't open the SSH tunnel through the Proxmox node {jump} to the lab's network: {e}")));
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Err(Error::Invalid(format!(
-                    "The SSH tunnel through the Proxmox node {jump} to the lab's network didn't open within {}s",
-                    within.as_secs()
-                )));
-            }
-        }
+        let what = format!("the SSH tunnel through the Proxmox node {jump} to the lab's network");
+        let ssh = listening(&args, port, within, &what).await?;
+        Ok(Tunnel { port, _ssh: ssh })
     }
 
     /// The module's variables that name the proxy.
     pub(crate) fn values(&self) -> [(String, String); 2] {
         [("ssh_proxy_host".to_owned(), LOOPBACK.to_owned()), ("ssh_proxy_port".to_owned(), self.port.to_string())]
+    }
+}
+
+/// A port on this computer forwarded through a node to one `host:port` behind it, until dropped
+/// (its ssh is then ended).
+pub(crate) struct Forward {
+    /// Its port on [`LOOPBACK`].
+    pub(crate) port: u16,
+    /// The ssh holding it open.
+    ssh: Background,
+}
+
+impl Forward {
+    /// Opens a forward through node login `jump`, signed in with `identity` (the runner's key), to
+    /// `to` (`host`, `port` as the node reaches it), on `port` when it is free (the one it had
+    /// before), else on a free one; ready once its port takes connections.
+    pub(crate) async fn open(jump: &str, identity: &Path, to: (&str, u16), port: Option<u16>) -> Result<Forward> {
+        let node = ssh::Target::login(jump, identity.to_path_buf())?;
+        Forward::open_on(&node, jump, identity, to, pick_port(port)?).await
+    }
+
+    /// [`Forward::open`] on `port` of [`LOOPBACK`]: a test's, held until its ssh listens.
+    async fn open_on(node: &ssh::Target, jump: &str, identity: &Path, (host, to): (&str, u16), port: u16) -> Result<Forward> {
+        let args = node.forward_args(&ssh::node_known_hosts(identity), port, (host, to))?;
+        let what = format!("the forward through the Proxmox node {jump} to the lab's {host}:{to}");
+        let ssh = listening(&args, port, READY_WITHIN, &what).await?;
+        Ok(Forward { port, ssh })
+    }
+
+    /// Whether its ssh still runs.
+    pub(crate) async fn runs(&mut self) -> bool {
+        self.ssh.stopped_within(Duration::ZERO).await.is_none()
+    }
+}
+
+/// Starts `ssh args`, and waits up to `within` for it to listen on `port`: `what` (lowercase) then
+/// fails, saying why, when ssh ends first or the port doesn't open in time.
+async fn listening(args: &[String], port: u16, within: Duration, what: &str) -> Result<Background> {
+    let mut ssh = background("ssh", &args.iter().map(String::as_str).collect::<Vec<_>>())?;
+    let deadline = tokio::time::Instant::now() + within;
+    loop {
+        if tokio::net::TcpStream::connect((LOOPBACK, port)).await.is_ok() {
+            return Ok(ssh);
+        }
+        if let Some(e) = ssh.stopped_within(POLL).await {
+            return Err(Error::Invalid(format!("Couldn't open {what}: {e}")));
+        }
+        if tokio::time::Instant::now() >= deadline {
+            let mut said = what.to_owned();
+            if let Some(first) = said.get_mut(..1) {
+                first.make_ascii_uppercase();
+            }
+            return Err(Error::Invalid(format!("{said} didn't open within {}s", within.as_secs())));
+        }
+    }
+}
+
+/// `wanted` when it is free now, else a free port of [`LOOPBACK`].
+fn pick_port(wanted: Option<u16>) -> Result<u16> {
+    match wanted.filter(|p| std::net::TcpListener::bind((LOOPBACK, *p)).is_ok()) {
+        Some(port) => Ok(port),
+        None => free_port(),
     }
 }
 
@@ -170,5 +221,45 @@ mod tests {
             assert!(Tunnel::open(bad, &key()).await.is_err(), "{bad}");
         }
         assert!(tools.calls().is_empty(), "no ssh ran: {:?}", tools.calls());
+    }
+
+    #[tokio::test]
+    async fn a_forward_goes_through_the_node_to_one_published_address() {
+        let (socket, held) = held_port();
+        let socket = RefCell::new(Some(socket));
+        let kept: RefCell<Vec<TcpListener>> = RefCell::default();
+        let tools = Tools::new(move |program, args| {
+            assert_eq!((program, &args[..2]), ("ssh", &["-N", "-L"][..]), "only the forward's ssh runs");
+            if let Some(socket) = socket.borrow_mut().take() {
+                kept.borrow_mut().push(socket.listen(8).unwrap());
+            }
+            Some(Reply::Hang)
+        });
+        let node = ssh::Target::login("root@node.lab", key()).unwrap();
+        let mut forward = Forward::open_on(&node, "root@node.lab", &key(), ("192.0.2.10", 8080), held).await.unwrap();
+        assert_eq!(forward.port, held);
+        assert!(forward.runs().await);
+        let made = tools.made("ssh -N -L");
+        assert_eq!(made[0][2], format!("127.0.0.1:{held}:192.0.2.10:8080"));
+        let line = made[0].join(" ");
+        assert!(line.contains("-i /data/ssh/id_ed25519") && line.contains("ExitOnForwardFailure=yes"), "{line}");
+        assert_eq!(made[0].last().map(String::as_str), Some("root@node.lab"));
+    }
+
+    #[test]
+    fn a_forward_keeps_its_port_when_free_else_takes_another() {
+        let (_socket, held) = held_port();
+        assert_ne!(pick_port(Some(held)).unwrap(), held, "taken: another");
+        let free = free_port().unwrap();
+        assert_eq!(pick_port(Some(free)).unwrap(), free);
+    }
+
+    #[tokio::test]
+    async fn a_forward_to_an_odd_address_is_refused_before_ssh_runs() {
+        let tools = Tools::script().build();
+        for bad in [("-oProxyCommand=x", 80), ("a b", 80), ("::1", 80)] {
+            assert!(Forward::open("root@node.lab", &key(), bad, None).await.is_err(), "{bad:?}");
+        }
+        assert_eq!(tools.calls().len(), 0, "no ssh ran");
     }
 }
