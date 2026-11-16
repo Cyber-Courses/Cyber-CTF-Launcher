@@ -133,20 +133,40 @@ pub(crate) async fn fetch(url: &str) -> std::result::Result<reqwest::StatusCode,
     client.get(url).send().await.map(|r| r.status()).map_err(|e| e.to_string())
 }
 
-/// The test's log for the lab `id`: each line printed, tagged with the id.
+/// When the test's process first logged or checked: what [`log`]'s and [`check`]'s times count
+/// from (a scenario runs alone in its process).
+static STARTED: std::sync::LazyLock<std::time::Instant> = std::sync::LazyLock::new(std::time::Instant::now);
+
+/// When the last check was made, for the time each step took.
+static LAST_CHECK: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// The test's log for the lab `id`: each line printed, tagged with the id and the seconds since
+/// the test began.
 pub(crate) fn log(id: &str) -> impl FnMut(String) + use<> {
     let tag = id.to_string();
-    move |l: String| println!("[{tag}] {l}")
+    std::sync::LazyLock::force(&STARTED);
+    move |l: String| println!("[{tag} {:.1}s] {l}", STARTED.elapsed().as_secs_f64())
 }
 
 /// One check: an `ok:` line when it holds, else a `FAILED:` line and `what` among the `failures`.
+/// Each line ends with when it was made ([`step_time`]), so a slow step shows in the log.
 pub(crate) fn check(ok: bool, what: String, failures: &mut Vec<String>) {
+    let at = step_time();
     if ok {
-        println!("ok: {what}");
+        println!("ok: {what} {at}");
     } else {
-        println!("FAILED: {what}");
+        println!("FAILED: {what} {at}");
         failures.push(what);
     }
+}
+
+/// `[at <s>s, +<s>s]`: the seconds since the test began, and since the check before (or since
+/// it began, for the first).
+fn step_time() -> String {
+    let now = std::time::Instant::now();
+    let started = *STARTED;
+    let before = LAST_CHECK.lock().map(|mut last| last.replace(now)).unwrap_or_default().unwrap_or(started);
+    format!("[at {:.1}s, +{:.1}s]", now.duration_since(started).as_secs_f64(), now.duration_since(before).as_secs_f64())
 }
 
 #[cfg(test)]
