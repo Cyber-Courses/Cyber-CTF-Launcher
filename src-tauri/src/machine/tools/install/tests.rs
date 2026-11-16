@@ -1,16 +1,6 @@
 use super::*;
 use crate::platform::host::LinuxPackages;
 
-/// Regression (a clean Windows 11): `winget install -e --id Docker.DockerDesktop` without a source
-/// failed with 0x8a15005e, the Microsoft Store source's certificate pinning failing, in both
-/// passes. winget is asked of its own source alone.
-#[test]
-fn winget_installs_and_removes_from_its_own_source_alone() {
-    let install = winget("install", "Docker.DockerDesktop", &["--accept-source-agreements", "--accept-package-agreements"]);
-    assert_eq!(command_line(&install), "$ winget install -e --id Docker.DockerDesktop --source winget --accept-source-agreements --accept-package-agreements");
-    assert_eq!(command_line(&winget("uninstall", "Hashicorp.Vagrant", &[])), "$ winget uninstall -e --id Hashicorp.Vagrant --source winget");
-}
-
 #[test]
 fn docker_is_named_as_the_setup_installs_it_on_each_os() {
     assert_eq!(Dependency::Docker.name_on(Os::Linux), "Docker Engine");
@@ -145,16 +135,8 @@ fn only_vagrant_plugin_names_are_installed() {
 
 /// The plan for every dependency on `host`: the ones that install there have steps, the
 /// others say why not.
-fn plans(host: Host) -> Vec<(Dependency, Result<Vec<Step>>)> {
-    Dependency::ALL.into_iter().map(|d| (d, plan_on(d, host, Some("ada")).map(own))).collect()
-}
-
-/// The launcher's own steps of `plan` (macOS's, Windows').
-fn own(plan: Plan) -> Vec<Step> {
-    match plan {
-        Plan::Own(steps) => steps,
-        Plan::Machine(_) => panic!("isothrum-machine's steps"),
-    }
+fn plans(host: Host) -> Vec<(Dependency, Result<Plan>)> {
+    Dependency::ALL.into_iter().map(|d| (d, plan_on(d, host, Some("ada")))).collect()
 }
 
 #[test]
@@ -203,13 +185,6 @@ fn a_distribution_without_apt_or_dnf_is_told_to_install_it_itself_before_anythin
 fn without_apt_or_dnf_the_install_says_the_distribution_isnt_supported_yet_and_what_to_install() {
     let err = plan_on(Dependency::Virtualbox, BARE_LINUX, None).err().unwrap().to_string();
     assert_eq!(err, "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install VirtualBox yourself, then re-check.");
-}
-
-#[test]
-fn hyper_v_is_turned_on_by_dism_elevated_and_refused_on_windows_home() {
-    // DISM's "done, restart to finish" (3010) is a success; Home has no Hyper-V to turn on.
-    assert!(HYPERV_ON.contains("/FeatureName:Microsoft-Hyper-V") && HYPERV_ON.contains("/NoRestart") && HYPERV_ON.contains("-Verb RunAs"));
-    assert!(HYPERV_ON.contains("-eq 3010) { exit 0 }") && HYPERV_ON.contains("EditionID -like 'Core*'"));
 }
 
 #[test]
@@ -262,10 +237,7 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
     let tools = terraform_tools(Rc::new(Cell::new(false)), true);
     let log = Sink::default();
     let steps = match plan(Dependency::Terraform) {
-        Ok(Plan::Own(steps)) => steps,
-        // Linux: isothrum-machine's root step, run and tested there; its failures' words are
-        // tested with the steps.
-        Ok(Plan::Machine(_)) => return,
+        Ok(steps) => steps,
         // A host with nothing to install through (macOS without Homebrew, Linux without apt or
         // dnf): the install is refused as its plan is, before anything runs.
         Err(refused) => {
@@ -277,7 +249,7 @@ async fn an_install_streams_its_steps_and_records_a_tool_it_added() {
     };
     install_dependency(t.dirs(), Dependency::Terraform, log.on_line()).await.unwrap();
     let lines = log.lines();
-    assert_eq!(lines.first(), Some(&command_line(&steps[0])), "{lines:?}");
+    assert_eq!(lines.first(), Some(&crate::platform::redact::redact(&isothrum_machine::install::command_line(&steps[0])).into_owned()), "{lines:?}");
     assert!(lines.contains(&"Setting up terraform (1.9.8-1) ...".to_string()), "{lines:?}");
     assert_eq!(lines.last().map(String::as_str), Some("Done. Re-checking this machine…"));
     assert!(tools.called(&format!("{} {}", steps[0].program, steps[0].args.join(" "))));
@@ -358,11 +330,11 @@ fn linux_installs_and_removals_are_isothrum_machines_said_in_the_players_words()
     for (dep, plan) in Dependency::ALL.into_iter().map(|d| (d, plan_on(d, APT, Some("ada")))) {
         match dep {
             Dependency::Utm | Dependency::Wsl | Dependency::Hyperv => assert!(plan.is_err(), "{dep:?}"),
-            _ => assert_eq!(plan.unwrap().commands()[0].0, "pkexec", "{dep:?}"),
+            _ => assert_eq!(plan.unwrap()[0].program, "pkexec", "{dep:?}"),
         }
     }
     let apt_only = plan_on(Dependency::Gcloud, DNF, None).err().unwrap().to_string();
     assert_eq!(apt_only, "The guided setup installs Google Cloud CLI through apt only for now: install it yourself, then re-check.");
-    let removal = uninstall::plan_on(Dependency::Vagrant, DNF, None).unwrap().commands();
-    assert!(removal[0].1.last().unwrap().ends_with("dnf remove -y vagrant"), "{removal:?}");
+    let removal = uninstall::plan_on(Dependency::Vagrant, DNF, None).unwrap();
+    assert!(removal[0].args.last().unwrap().ends_with("dnf remove -y vagrant"), "{removal:?}");
 }

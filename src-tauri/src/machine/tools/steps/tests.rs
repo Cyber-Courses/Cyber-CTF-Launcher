@@ -49,6 +49,10 @@ fn isothrum_machines_step_failures_read_as_the_launcher_said_them() {
     assert!(cancelled.starts_with("The installation was cancelled") && cancelled.ends_with("(`winget` exited with exit status: -1978335226)"), "{cancelled}");
     assert!(step_failed(exited(Some(Known::Cancelled)), true).to_string().starts_with("The removal was cancelled"));
     assert!(step_failed(exited(Some(Known::NoDiskSpace)), false).to_string().starts_with("There isn't enough disk space"));
+}
+
+#[test]
+fn a_step_done_although_it_exited_non_zero_reads_as_the_launcher_said_it() {
     assert_eq!(done_said(Done::AlreadyInstalled, false), "Already installed and up to date: nothing to do.");
     assert_eq!(done_said(Done::RestartToFinish, true), "Removed. Restart Windows to finish.");
     assert_eq!(done_said(Done::RestartToFinish, false), "Installed. Restart Windows to finish.");

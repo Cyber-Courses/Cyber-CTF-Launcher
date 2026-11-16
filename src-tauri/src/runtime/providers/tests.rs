@@ -94,7 +94,7 @@ fn servers_and_cloud_accounts_are_offered_everywhere_and_share_no_folder() {
     // and VMware not on Windows on Arm.
     assert!(!Provider::Qemu.runs_on(Os::Windows) && !Provider::Qemu.offered_on(on(Os::Windows, Arch::X86_64), true));
     let arm_pc = on(Os::Windows, Arch::Aarch64);
-    assert!(!Provider::Virtualbox.offered_on(arm_pc, true) && !Provider::VmwareDesktop.on_windows_on_arm());
+    assert!(!Provider::Virtualbox.offered_on(arm_pc, true) && !Provider::VmwareDesktop.offered_on(arm_pc, true));
     assert!(Provider::Hyperv.offered_on(arm_pc, false));
     assert!(Provider::Qemu.shares_folders_on(Os::Linux) && !Provider::Qemu.shares_folders_on(Os::Macos));
     for p in Provider::SERVERS.into_iter().chain(Provider::CLOUDS) {
@@ -105,7 +105,7 @@ fn servers_and_cloud_accounts_are_offered_everywhere_and_share_no_folder() {
             }
             assert!(!p.shares_folders_on(os), "{p:?}");
         }
-        assert!(p.on_windows_on_arm() && p.vendor().is_none(), "{p:?}");
+        assert!(p.offered_on(arm_pc, false) && p.vendor().is_none(), "{p:?}");
     }
 }
 

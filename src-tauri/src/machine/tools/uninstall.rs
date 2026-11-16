@@ -385,11 +385,11 @@ mod tests {
             Dependency::Gcloud,
         ] {
             let steps = plan(dep, Some("/x/VirtualBox.dmg")).unwrap();
-            assert_eq!(steps.commands()[0].0, "winget", "{dep:?}");
-            assert!(steps.commands()[0].1.windows(2).any(|w| w == ["--source", "winget"]), "{dep:?}: {:?}", steps.commands()[0].1);
+            assert_eq!(steps[0].program, "winget", "{dep:?}");
+            assert!(steps[0].args.windows(2).any(|w| w == ["--source", "winget"]), "{dep:?}: {:?}", steps[0].args);
         }
         // Not in winget: its MSI removed by its product code.
-        assert_eq!(plan(Dependency::VmwareUtility, None).unwrap().commands()[0].0, "powershell");
+        assert_eq!(plan(Dependency::VmwareUtility, None).unwrap()[0].program, "powershell");
         assert!(
             plan(Dependency::Wsl, Some("/x/VirtualBox.dmg")).is_err()
                 && plan(Dependency::Hyperv, None).is_err()
