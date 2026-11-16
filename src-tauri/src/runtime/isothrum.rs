@@ -35,6 +35,7 @@ mod retry;
 mod server;
 mod tunnel;
 mod view;
+mod web;
 
 pub(crate) use claim::CLAIM;
 use claim::with_claim;
@@ -499,6 +500,13 @@ impl LabRun {
     pub(crate) async fn retire(&self, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
         self.require_up()?;
         self.act_placed(remote::Act::Retire(machine), log).await
+    }
+
+    /// Where the lab is reachable on this computer while it runs ([`web::local_url`]): none before
+    /// its files exist, or while nothing of it is published.
+    pub(crate) async fn local_url(&self) -> Result<Option<String>> {
+        let Some(status) = self.run_status().await? else { return Ok(None) };
+        Ok(web::local_url(&self.described()?, &status))
     }
 
     /// The run's status as the runner reports it; None before the lab's files exist.

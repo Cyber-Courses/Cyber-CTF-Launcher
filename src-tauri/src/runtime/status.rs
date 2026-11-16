@@ -9,7 +9,7 @@ use crate::platform::AppDirs;
 use super::host::{self, Host};
 use super::paths::lab_dir;
 use super::recorded::Recorded;
-use super::{LabStatus, Login, Place, Runtime, attack_box, docker, isothrum, server};
+use super::{LabStatus, Login, Place, Runtime, attack_box, isothrum, server};
 use crate::error::Result;
 
 /// The status of lab `id`, installed in `dir` and declared `runtime`, wherever it runs and in the
@@ -213,12 +213,12 @@ pub fn lab_installed(dirs: &AppDirs, id: &str) -> bool {
     lab_dir(dirs, id).is_ok()
 }
 
-/// Where a running lab is reachable on this machine (its first published port). None for
-/// VM labs (their address is discovered differently) or when nothing is published.
+/// Where a running container lab is reachable on this machine, for the website to open after a
+/// launch: as the runner's status publishes the lab's ports ([`isothrum::LabRun::local_url`]).
+/// None for a lab run as VMs or elsewhere, or when nothing is published.
 pub async fn primary_url(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Option<String> {
-    let recorded = Recorded::of(dirs, id).ok()?;
-    match recorded.form(runtime) {
-        Runtime::Docker if recorded.host().is_none() && !recorded.helper_vm() => docker::primary_url(dir, id).await,
+    match host::locate(dirs, dir, id, runtime).ok()?? {
+        Host::Local(run) if run.target() == Some(super::lab::Target::Docker) => run.local_url().await.ok().flatten(),
         _ => None,
     }
 }

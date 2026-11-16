@@ -187,6 +187,8 @@ async fn the_lab_page_reads_the_runners_status() {
     assert!(s.running && s.parked.is_none());
     assert!(matches!(s.place, Some(Place::Container)));
     assert_eq!(s.url.as_deref(), Some("http://127.0.0.1:8080/"));
+    // Where the website opens it after a launch: the same port, from the runner's status.
+    assert_eq!(run.local_url().await.unwrap().as_deref(), Some("http://127.0.0.1:8080"));
     let web = s.machines.iter().find(|m| m.name == "web").unwrap();
     assert_eq!((web.state.as_str(), web.ip.as_str(), web.infra), ("running", "10.30.0.10", false));
     assert_eq!(web.ports.iter().map(|p| (p.target.get(), p.published.map(HostPort::get))).collect::<Vec<_>>(), [(80, Some(8080))]);

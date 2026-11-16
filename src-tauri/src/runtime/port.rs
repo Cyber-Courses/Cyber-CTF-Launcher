@@ -36,11 +36,6 @@ impl HostPort {
         HostPort(number)
     }
 
-    /// The host port an engine reports `number` as, where 0 means nothing published.
-    pub const fn published(number: u16) -> Option<HostPort> {
-        if number == 0 { None } else { Some(HostPort(number)) }
-    }
-
     /// Its number.
     pub const fn get(self) -> u16 {
         self.0
@@ -64,11 +59,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn each_kind_is_the_bare_number_on_the_wire_and_zero_is_not_published() {
+    fn each_kind_is_the_bare_number_on_the_wire() {
         assert_eq!(serde_json::to_string(&HostPort::new(8080)).unwrap(), "8080");
         assert_eq!(serde_json::to_string(&GuestPort::new(80)).unwrap(), "80");
-        assert_eq!(HostPort::published(0), None);
-        assert_eq!(HostPort::published(41873), Some(HostPort::new(41873)));
     }
 
     /// The lab page reads a port as `{published, target}`, `published` 0 when it isn't, with its

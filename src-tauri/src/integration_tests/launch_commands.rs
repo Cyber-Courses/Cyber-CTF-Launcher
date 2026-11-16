@@ -44,6 +44,9 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
                 return;
             }
             check(lines.get() > 0, format!("{id}: its import and start stream their log ({} lines)", lines.get()), f);
+            // Where the website opens it: a web port the lab declares, published here.
+            let url = started.as_ref().ok().cloned().flatten();
+            check(url.as_deref().is_some_and(|u| u.starts_with("http://127.0.0.1:")), format!("{id}: it says where it opens ({url:?})"), f);
             let s = lab_status(app.clone(), id.clone(), Runtime::Docker).await;
             check(
                 s.as_ref().is_ok_and(every_machine_runs),

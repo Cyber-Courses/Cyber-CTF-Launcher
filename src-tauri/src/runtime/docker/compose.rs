@@ -1,12 +1,5 @@
-//! Talking to the `docker compose` CLI for one lab, and parsing what it prints. Every
-//! compose call in the engine goes through here, so the project/file flags live in one place.
-
-use std::path::Path;
-
-use serde::Deserialize;
-
-use crate::error::Result;
-use crate::platform::exec::run_read;
+//! A lab's Compose project name (its run's too), and the names an older version's attack box
+//! carried beside it.
 
 /// What every lab's Compose project, and its run with the runner, is named after: `cyberctf-<id>`.
 const PROJECT_PREFIX: &str = "cyberctf-";
@@ -35,182 +28,14 @@ pub fn legacy_attack_box_names(project: &str) -> [String; 3] {
     LEGACY_ATTACK_BOX_SUFFIXES.map(|s| format!("{project}{s}"))
 }
 
-/// Upgrade only: the host ports an older version pinned at a container lab's first start, in the
-/// lab folder. Nothing writes it now (the runner pins ports in its own state); a lab an older
-/// version started may still have it, and its Compose project is read with it.
-pub(super) const PORTS_FILE: &str = ".cyberctf-ports.yml";
-
-/// `--context <name>` when the lab in `dir` was pinned to a Docker engine at launch, else nothing:
-/// the launcher's own docker/compose calls for the lab then go to that engine (the runner pins its
-/// calls through `EngineProcesses`). The flag takes precedence over the current context.
-pub(super) fn context_prefix(dir: &Path) -> Vec<String> {
-    match crate::runtime::paths::engine(dir) {
-        Some(ctx) => vec!["--context".to_string(), ctx],
-        None => Vec::new(),
-    }
-}
-
-/// A `docker compose -p <project> -f <the lab's Compose file> [-f .cyberctf-ports.yml] <rest...>`
-/// argv (the file Isoloom generated, under the lab's output folder, and the ports an older version
-/// pinned), after the lab's Docker context. Without that file (a lab upgraded or re-instanced
-/// while its containers run), the project alone: Compose finds its containers by their labels,
-/// so `ps`, `stop`, `start` and `down` still reach them, where a missing `-f` made every one of
-/// them fail.
-fn args(dir: &Path, project: &str, rest: &[&str]) -> Vec<String> {
-    let file = crate::runtime::lab::compose_file(dir);
-    let mut a = context_prefix(dir);
-    a.extend(["compose".to_string(), "-p".into(), project.into()]);
-    if file.is_file() {
-        a.extend(["-f".into(), file.display().to_string()]);
-        if dir.join(PORTS_FILE).is_file() {
-            a.extend(["-f".into(), PORTS_FILE.into()]);
-        }
-    }
-    a.extend(rest.iter().map(std::string::ToString::to_string));
-    a
-}
-
-/// Runs a compose subcommand and returns its stdout.
-pub(super) async fn output(dir: &Path, project: &str, rest: &[&str]) -> Result<String> {
-    let a = args(dir, project, rest);
-    let a: Vec<&str> = a.iter().map(String::as_str).collect();
-    run_read("docker", &a, Some(dir)).await
-}
-
-#[derive(Deserialize)]
-pub(super) struct PsEntry {
-    #[serde(rename = "Service")]
-    pub(super) service: String,
-    #[serde(rename = "State")]
-    pub(super) state: String,
-    #[serde(rename = "Image", default)]
-    pub(super) image: String,
-    #[serde(rename = "Name", default)]
-    pub(super) name: String,
-    /// `null` from some Compose versions for a container without ports: as none.
-    #[serde(rename = "Publishers", default, deserialize_with = "null_as_empty")]
-    pub(super) publishers: Vec<Publisher>,
-}
-
-/// A JSON `null` where a list is expected reads as an empty list.
-fn null_as_empty<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(d: D) -> std::result::Result<Vec<T>, D::Error> {
-    Ok(Option::<Vec<T>>::deserialize(d)?.unwrap_or_default())
-}
-
-/// One port `ps` lists for a container: the container's port, and the host port it is published
-/// on (`0` from Docker when it isn't).
-#[derive(Deserialize)]
-pub(super) struct Publisher {
-    #[serde(rename = "PublishedPort", default)]
-    published_port: u16,
-    #[serde(rename = "TargetPort", default)]
-    target_port: u16,
-    #[serde(rename = "Protocol", default)]
-    pub(super) protocol: String,
-}
-
-impl Publisher {
-    /// The host port the container's port is published on, if any: this computer's, the engine
-    /// being local.
-    pub(super) const fn published(&self) -> Option<crate::runtime::port::HostPort> {
-        crate::runtime::port::HostPort::published(self.published_port)
-    }
-
-    /// The container's own port.
-    pub(super) const fn target(&self) -> crate::runtime::port::GuestPort {
-        crate::runtime::port::GuestPort::new(self.target_port)
-    }
-}
-
-// `docker compose ps --format json` prints either a JSON array (older Compose)
-// or one JSON object per line (Compose >= 2.21).
-pub(super) fn parse_ps(out: &str) -> Vec<PsEntry> {
-    let trimmed = out.trim();
-    if trimmed.starts_with('[') {
-        return serde_json::from_str(trimmed).unwrap_or_default();
-    }
-    trimmed.lines().filter_map(|l| serde_json::from_str(l).ok()).collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{lab_of_project, legacy_attack_box_names, parse_ps, project};
-
-    #[test]
-    fn without_its_compose_file_a_lab_is_reached_by_project() {
-        use super::{PORTS_FILE, args};
-        let dir = std::env::temp_dir().join(format!("cyberctf-compose-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(PORTS_FILE), "services: {}\n").unwrap();
-        assert_eq!(args(&dir, "cyberctf-x", &["down"]), ["compose", "-p", "cyberctf-x", "down"]);
-        let file = crate::runtime::lab::compose_file(&dir);
-        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-        std::fs::write(&file, "services: {}\n").unwrap();
-        let a = args(&dir, "cyberctf-x", &["ps"]);
-        assert_eq!(a[3..], ["-f".to_string(), file.display().to_string(), "-f".into(), PORTS_FILE.into(), "ps".into()]);
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn a_lab_pinned_to_an_engine_runs_its_compose_on_that_context() {
-        use super::{args, context_prefix};
-        use crate::runtime::paths::ENGINE_MARKER;
-        let dir = std::env::temp_dir().join(format!("cyberctf-compose-ctx-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(&dir).unwrap();
-        // No engine recorded: no `--context`, today's behaviour (the current context).
-        assert_eq!(context_prefix(&dir), [] as [String; 0]);
-        assert_eq!(args(&dir, "cyberctf-x", &["down"]), ["compose", "-p", "cyberctf-x", "down"]);
-        // Pinned to an engine: every compose call carries `--context <ctx>` first, whatever the
-        // machine's current context is now (so stop reaches the engine it was started on).
-        std::fs::write(dir.join(ENGINE_MARKER), "orbstack\n").unwrap();
-        assert_eq!(context_prefix(&dir), ["--context", "orbstack"]);
-        assert_eq!(args(&dir, "cyberctf-x", &["down"]), ["--context", "orbstack", "compose", "-p", "cyberctf-x", "down"]);
-        std::fs::remove_dir_all(dir).unwrap();
-    }
+    use super::{lab_of_project, legacy_attack_box_names, project};
 
     #[test]
     fn project_name_is_namespaced_per_lab() {
         assert_eq!(project("sqli"), "cyberctf-sqli");
         assert_ne!(project("a"), project("b"));
-    }
-
-    #[test]
-    fn parses_both_compose_output_formats() {
-        let lines = "{\"Service\":\"web\",\"State\":\"running\"}\n{\"Service\":\"db\",\"State\":\"exited\"}\n";
-        let array = "[{\"Service\":\"web\",\"State\":\"running\"}]";
-        assert_eq!(parse_ps(lines).len(), 2);
-        assert_eq!(parse_ps(array)[0].service, "web");
-        assert!(parse_ps("").is_empty());
-    }
-
-    #[test]
-    fn parse_ps_ndjson_skips_blank_and_malformed_lines() {
-        // NDJSON with surrounding whitespace, a blank line, and one unparseable line.
-        let out = "  \n{\"Service\":\"web\",\"State\":\"running\",\"Health\":\"healthy\"}\n\n{bogus}\n{\"Service\":\"db\",\"State\":\"exited\"}\n";
-        let entries = parse_ps(out);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].service, "web");
-        assert_eq!(entries[1].state, "exited");
-    }
-
-    #[test]
-    fn parse_ps_array_with_leading_whitespace() {
-        let out = "\n   [{\"Service\":\"web\",\"State\":\"running\"}]  ";
-        assert_eq!(parse_ps(out).len(), 1);
-        // A broken array yields nothing rather than panicking.
-        assert!(parse_ps("[not valid").is_empty());
-    }
-
-    #[test]
-    fn parse_ps_reads_publishers_and_defaults_missing_fields() {
-        let out = r#"[{"Service":"web","State":"running","Publishers":[{"PublishedPort":8080,"TargetPort":80,"Protocol":"tcp"}]}]"#;
-        let e = parse_ps(out);
-        assert_eq!(e[0].publishers.len(), 1);
-        assert_eq!(e[0].publishers[0].published(), Some(crate::runtime::port::HostPort::new(8080)));
-        assert_eq!(e[0].publishers[0].target(), crate::runtime::port::GuestPort::new(80));
-        // Image/Name/Health default to empty when absent.
-        assert_eq!(e[0].image, "");
-        assert_eq!(e[0].name, "");
     }
 
     #[test]
