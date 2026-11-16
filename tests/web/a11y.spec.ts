@@ -1,7 +1,6 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { test, expect, openApp, animationsFinished, paletteKey, emitEvent } from "./fixtures";
-import { AppShell } from "./pages/app-shell";
 
 // Accessibility, checked by axe on the main screens in both themes: text contrast (WCAG AA,
 // 4.5:1 for the small mono and faint text the launcher uses a lot) and every rule axe rates
@@ -26,14 +25,6 @@ const SCREENS = [
   ["Servers", "Servers"],
   ["Cloud", "Cloud"],
 ] as const;
-
-/** Opens the app on the page of the lab called `name`. */
-async function openLab(page: Page, name: string) {
-  const app = new AppShell(page);
-  await openApp(page);
-  await app.nav("Labs").click();
-  await app.main.getByRole("button", { name: `Open ${name}`, exact: true }).click();
-}
 
 for (const theme of ["dark", "light"] as const) {
   test.describe(`accessibility, ${theme} theme`, () => {
@@ -86,17 +77,19 @@ for (const theme of ["dark", "light"] as const) {
       expect(await violations(page)).toEqual([]);
     });
 
-    test("a running lab's page, with its diagram, passes too", async ({ page }) => {
-      await openLab(page, "Invoice portal API");
+    test("a running lab's page, with its diagram, passes too", async ({ page, lab, labs }) => {
+      await openApp(page);
+      await labs.openLab("Invoice portal API");
       // The diagram fades in once laid out (it waits at opacity 0 till then, which no animation
       // shows): fully in, and the rest of the page settled.
-      await expect(page.locator(".react-flow")).toHaveCSS("opacity", "1");
+      await expect(lab.diagram).toHaveCSS("opacity", "1");
       await animationsFinished(page);
       expect(await violations(page)).toEqual([]);
     });
 
-    test("the run dialog, over a stopped lab, passes too", async ({ page }) => {
-      await openLab(page, "Blind orders");
+    test("the run dialog, over a stopped lab, passes too", async ({ page, labs }) => {
+      await openApp(page);
+      await labs.openLab("Blind orders");
       await page.getByRole("button", { name: /Start lab/ }).click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await animationsFinished(page);

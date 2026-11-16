@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { test, expect, openApp, horizontalOverflow, animationsFinished } from "./fixtures";
-import { AppShell } from "./pages/app-shell";
+import type { LabsScreen } from "./pages/labs";
+import type { LabScreen } from "./pages/lab";
 import deSettings from "../../src/messages/de/settings.json";
 
 // The windows at their smallest (src-tauri: Settings 560x480, server setup 560x560) and a lab
@@ -67,16 +68,14 @@ test.describe("the server setup window at its minimum size", () => {
 });
 
 test.describe("a lab wider than its card", () => {
-  const openWideLab = async (page: Page) => {
-    const app = new AppShell(page);
+  const openWideLab = async (page: Page, labs: LabsScreen, lab: LabScreen) => {
     await openApp(page);
-    await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
-    await expect(page.locator(".react-flow__node").filter({ hasText: "10.42.2.21" })).toBeAttached();
+    await labs.openLab("Invoice portal API");
+    await expect(lab.diagramNode("10.42.2.21")).toBeAttached();
   };
 
-  test("says there is more, and fits to the width on request, remembered", async ({ page, app }) => {
-    await openWideLab(page);
+  test("says there is more, and fits to the width on request, remembered", async ({ page, app, labs, lab }) => {
+    await openWideLab(page, labs, lab);
     const shell = page.locator(".topology-shell");
     const fit = page.getByRole("button", { name: "Fit to width" });
     await expect(shell).toHaveAttribute("data-more-right", "true");
@@ -90,17 +89,17 @@ test.describe("a lab wider than its card", () => {
     const [canvas, card] = await Promise.all([page.locator(".topology-canvas").boundingBox(), shell.boundingBox()]);
     expect(canvas!.width).toBeCloseTo(card!.width, 0);
     // The whole lab is in the card: its last machine too.
-    await expect(page.locator(".react-flow__node").filter({ hasText: "10.42.2.21" })).toBeInViewport();
+    await expect(lab.diagramNode("10.42.2.21")).toBeInViewport();
 
     await page.reload();
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
+    await labs.open("Invoice portal API").click();
     await expect(page.getByRole("button", { name: "Fit to width" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("offers nothing in a window the lab already fits", async ({ page }) => {
+  test("offers nothing in a window the lab already fits", async ({ page, labs, lab }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await openWideLab(page);
+    await openWideLab(page, labs, lab);
     await expect(page.locator(".topology-shell")).not.toHaveAttribute("data-more-right");
     await expect(page.getByRole("button", { name: "Fit to width" })).toHaveCount(0);
   });

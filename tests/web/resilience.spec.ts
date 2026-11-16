@@ -5,7 +5,7 @@ import { test, expect, openApp, horizontalOverflow, paletteKey, release } from "
 // keyboard alone.
 
 test.describe("a failed machine check", () => {
-  test("is said where the report is needed, and Try again recovers", async ({ page, app }) => {
+  test("is said where the report is needed, and Try again recovers", async ({ page, app, labs }) => {
     // Every check fails (`hold=check`, src/lib/dev-mock/holds.ts) until the machine comes back with
     // the Try again.
     await openApp(page, "&hold=check");
@@ -19,7 +19,7 @@ test.describe("a failed machine check", () => {
     await expect(page.getByText("Couldn’t check this machine")).toBeVisible();
 
     await release(page, "check", page.getByRole("button", { name: "Try again" }));
-    await expect(app.main.getByRole("button", { name: "Open Invoice portal API", exact: true })).toBeVisible();
+    await expect(labs.open("Invoice portal API")).toBeVisible();
     await expect(app.header).not.toContainText("machine check failed");
     await app.nav("Machine").click();
     await expect(app.main).toContainText("Ready for labs");
@@ -34,7 +34,7 @@ for (const size of [
   test.describe(`window at ${size.width}x${size.height}`, () => {
     test.use({ viewport: size });
 
-    test("every screen fits the width and keeps its primary action in view", async ({ page, app }) => {
+    test("every screen fits the width and keeps its primary action in view", async ({ page, app, lab }) => {
       await openApp(page);
       const main = app.main;
       const screens: [string, string | RegExp, (p: Page) => ReturnType<Page["getByRole"]>][] = [
@@ -59,15 +59,14 @@ for (const size of [
       await page.getByRole("button", { name: /All labs/ }).click();
       await main.getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
       await expect(page.getByRole("button", { name: "Start lab" })).toBeInViewport();
-      await page.getByRole("button", { name: "Start lab" }).click();
-      const where = page.getByRole("dialog", { name: "Where should the lab run?" });
+      const where = await lab.askWhere();
       // The dialog's actions stay pinned in view, however long its list.
-      await expect(where.getByRole("button", { name: "Start", exact: true })).toBeInViewport();
-      await expect(where.getByRole("button", { name: "Cancel" })).toBeInViewport();
-      await where.getByRole("button", { name: "Cancel" }).click();
+      await expect(where.startButton).toBeInViewport();
+      await expect(where.dialog.getByRole("button", { name: "Cancel" })).toBeInViewport();
+      await where.cancel();
       await page.getByRole("button", { name: /All labs/ }).click();
       await main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
-      await expect(page.locator(".react-flow")).toBeVisible();
+      await expect(lab.diagram).toBeVisible();
       await expect(page.getByRole("button", { name: "Stop & remove" })).toBeInViewport();
       expect(await horizontalOverflow(page), "running lab overflows").toEqual([]);
     });
@@ -137,16 +136,16 @@ test.describe("keyboard only", () => {
     await expect(app.title).toHaveText("Labs");
   });
 
-  test("/ jumps to the lab search from anywhere", async ({ page, app }) => {
+  test("/ jumps to the lab search from anywhere", async ({ page, app, labs }) => {
     await openApp(page);
     await app.nav("Servers").click();
     await app.title.click();
     await page.keyboard.press("/");
     await expect(app.title).toHaveText("Labs");
-    await expect(page.getByRole("textbox", { name: "Search labs and skills" })).toBeFocused();
+    await expect(labs.search).toBeFocused();
     // In a text field, "/" is typed.
     await page.keyboard.type("a/b");
-    await expect(page.getByRole("textbox", { name: "Search labs and skills" })).toHaveValue("a/b");
+    await expect(labs.search).toHaveValue("a/b");
   });
 
   test("the command palette runs the result picked with the arrow keys", async ({ page, app }) => {
@@ -165,21 +164,21 @@ test.describe("keyboard only", () => {
     await expect(app.title).toHaveText(second.replace(/^Go to /, "").replace("Overview", "") || /Ada/);
   });
 
-  test("the start dialog keeps the focus inside, and Cancel gives it back", async ({ page, app }) => {
+  test("the start dialog keeps the focus inside, and Cancel gives it back", async ({ page, app, labs, lab }) => {
     await openApp(page);
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
+    await labs.open("Exposed dashboard").click();
     await page.getByRole("button", { name: "Start lab" }).focus();
     await page.keyboard.press("Enter");
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where).toBeVisible();
+    const where = lab.whereToRun;
+    await expect(where.dialog).toBeVisible();
     for (let n = 0; n < 8; n++) {
       await page.keyboard.press("Tab");
       expect(await page.evaluate(() => !!document.activeElement?.closest("[role=dialog]")), `Tab ${n + 1} stays in the dialog`).toBe(true);
     }
     await tabTo(page, /^Cancel$/, 8);
     await page.keyboard.press("Enter");
-    await expect(where).toBeHidden();
+    await expect(where.dialog).toBeHidden();
     await expect(page.getByRole("button", { name: "Start lab" })).toBeFocused();
     await expect(app.title).toHaveText("Exposed dashboard");
   });
@@ -189,15 +188,15 @@ test.describe("keyboard only", () => {
   // event; the dialog is gone by the time the lab page's window listener (useEscapeBack) runs, so
   // that one sees no dialog and goes back. The confirm dialog and the port prompt already stop it.
   // Fix: `e.stopPropagation()` (and preventDefault) in RunOnDialog's Escape handler.
-  test("Escape closes the start dialog and stays on the lab page", async ({ page, app }) => {
+  test("Escape closes the start dialog and stays on the lab page", async ({ page, app, labs, lab }) => {
     await openApp(page);
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
+    await labs.open("Exposed dashboard").click();
     await page.getByRole("button", { name: "Start lab" }).click();
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where).toBeVisible();
+    const where = lab.whereToRun;
+    await expect(where.dialog).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(where).toBeHidden();
+    await expect(where.dialog).toBeHidden();
     await expect(app.title).toHaveText("Exposed dashboard");
   });
 
@@ -205,10 +204,10 @@ test.describe("keyboard only", () => {
   // that had it unmounts with the list, and the lab page focuses nothing. The next Tab starts over
   // from the top of the window (the sidebar). Fix: on opening a lab page, focus its heading (with
   // tabIndex={-1}) or the "All labs" back link; do the same when going back to the list.
-  test("opening a lab with Enter puts the focus on the lab page", async ({ page, app }) => {
+  test("opening a lab with Enter puts the focus on the lab page", async ({ page, app, labs }) => {
     await openApp(page);
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Blind orders", exact: true }).focus();
+    await labs.open("Blind orders").focus();
     await page.keyboard.press("Enter");
     await expect(app.title).toHaveText("Blind orders");
     expect(await page.evaluate(() => !!document.activeElement?.closest("main"))).toBe(true);

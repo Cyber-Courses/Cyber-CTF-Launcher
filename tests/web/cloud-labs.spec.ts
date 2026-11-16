@@ -1,35 +1,24 @@
-import type { Page } from "@playwright/test";
-import { test, expect, agreeToCloudTerraform as agree, openApp, answerConfirm } from "./fixtures";
-import { AppShell } from "./pages/app-shell";
+import { test, expect, openApp, answerConfirm } from "./fixtures";
 
 // Cloud labs (EC2 SSRF, cloud services in the player's AWS account) through the dev mock: a cloud
 // start streams a Terraform log and leaves outputs and an auto-stop. `cloud=none`: no cloud
 // account saved yet (see src/lib/dev-mock/scenario.ts).
 
-async function openLab(page: Page, search: string, title: string) {
-  const app = new AppShell(page);
-  await app.nav("Labs").click();
-  await page.getByRole("textbox", { name: "Search labs and skills" }).fill(search);
-  await app.main.getByRole("button", { name: `Open ${title}`, exact: true }).click();
-  await expect(app.title).toHaveText(title);
-}
-
 test.describe("cloud labs", () => {
-  test("with a saved AWS account: the cost first, then outputs and the auto-stop, then stop", async ({ page, app }) => {
+  test("with a saved AWS account: the cost first, then outputs and the auto-stop, then stop", async ({ page, app, lab, labs }) => {
     await openApp(page);
-    await openLab(page, "ssrf", "EC2 SSRF");
+    await labs.openLab("EC2 SSRF", { search: "ssrf" });
     await expect(app.main).toContainText("Start the lab to create its cloud services in your account.");
 
     // Where: only the cloud accounts, the saved one picked, what it costs said before the start.
-    await app.button("Start lab").click();
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where.getByRole("radio", { name: /^This machine/ })).toHaveCount(0);
-    await expect(where.getByRole("radio", { name: /AWS sandbox/ })).toHaveAttribute("aria-checked", "true");
-    await expect(where).toContainText("Billed to your cloud account.");
-    await expect(where).toContainText("about $0.02 an hour (about $0.08 until it auto-stops in 4 h)");
-    await expect(where).toContainText("It lets in your public IP only.");
-    await agree(where);
-    await where.getByRole("button", { name: "Start", exact: true }).click();
+    const where = await lab.askWhere();
+    await expect(where.option(/^This machine/)).toHaveCount(0);
+    await expect(where.option(/AWS sandbox/)).toHaveAttribute("aria-checked", "true");
+    await expect(where.dialog).toContainText("Billed to your cloud account.");
+    await expect(where.dialog).toContainText("about $0.02 an hour (about $0.08 until it auto-stops in 4 h)");
+    await expect(where.dialog).toContainText("It lets in your public IP only.");
+    await where.agreeToCloudTerraform();
+    await where.start();
 
     // Terraform's steps, then the lab's services in the account.
     const steps = app.main.getByRole("listitem");
@@ -62,9 +51,9 @@ test.describe("cloud labs", () => {
 
   // The lab page follows the accounts saved in the setup window (`server:changed`): once one is
   // connected, Start is there, without leaving the page or connecting a second one.
-  test("with no account: Connect opens the cloud setup, and once connected the lab can start", async ({ page, app, context }) => {
+  test("with no account: Connect opens the cloud setup, and once connected the lab can start", async ({ page, app, context, labs, lab }) => {
     await openApp(page, "&cloud=none");
-    await openLab(page, "ssrf", "EC2 SSRF");
+    await labs.openLab("EC2 SSRF", { search: "ssrf" });
     const [setup] = await Promise.all([context.waitForEvent("page"), app.button("Connect an account on AWS").click()]);
     await expect(setup).toHaveURL(/\/server-setup\?kind=cloud&mock&cloud=none$/);
     await expect(setup.getByRole("heading", { level: 1, name: "Set up cloud provider" })).toBeVisible();
@@ -74,16 +63,13 @@ test.describe("cloud labs", () => {
     await expect(setup.getByRole("heading", { level: 1, name: "Lab AWS connected" })).toBeVisible();
 
     await expect(app.button("Start lab")).toBeEnabled();
-    await app.button("Start lab").click();
-    await expect(page.getByRole("dialog", { name: "Where should the lab run?" }).getByRole("radio", { name: /Lab AWS/ })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    const where = await lab.askWhere();
+    await where.expectPicked(where.option(/Lab AWS/));
   });
 
-  test("with no account: the Connect flow saves one, and the lab can start on it after coming back to its page", async ({ page, app, context }) => {
+  test("with no account: the Connect flow saves one, and the lab can start on it after coming back to its page", async ({ page, app, context, lab, labs }) => {
     await openApp(page, "&cloud=none");
-    await openLab(page, "ssrf", "EC2 SSRF");
+    await labs.openLab("EC2 SSRF", { search: "ssrf" });
     await expect(app.button("Start lab")).toHaveCount(0);
     const [setup] = await Promise.all([context.waitForEvent("page"), app.button("Connect an account on AWS").click()]);
     await expect(setup).toHaveURL(/\/server-setup\?kind=cloud&mock&cloud=none$/);
@@ -97,12 +83,11 @@ test.describe("cloud labs", () => {
     // The Cloud screen lists it; the lab page, opened again, starts on it.
     await app.nav("Cloud").click();
     await expect(app.main.getByText("Lab AWS", { exact: true })).toBeVisible();
-    await openLab(page, "ssrf", "EC2 SSRF");
-    await app.button("Start lab").click();
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where.getByRole("radio", { name: /Lab AWS/ })).toHaveAttribute("aria-checked", "true");
-    await agree(where);
-    await where.getByRole("button", { name: "Start", exact: true }).click();
+    await labs.openLab("EC2 SSRF", { search: "ssrf" });
+    const where = await lab.askWhere();
+    await expect(where.option(/Lab AWS/)).toHaveAttribute("aria-checked", "true");
+    await where.agreeToCloudTerraform();
+    await where.start();
     await expect(app.main).toContainText("Running·on AWS · eu-west-3");
     await expect(app.main.getByText("Lab AWS", { exact: true })).toBeVisible();
     const asked = answerConfirm(page, true);

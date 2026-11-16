@@ -41,23 +41,20 @@ test.describe("settings persistence", () => {
     await expect(app.title).toHaveText(frShell.tabs.machine);
   });
 
-  test("the lab ports picked in Settings are what a start uses, without asking", async ({ page, app }) => {
+  test("the lab ports picked in Settings are what a start uses, without asking", async ({ page, app, labs, lab }) => {
     await page.goto("/?mock&window=settings");
     await sections(page).getByRole("button", { name: "Labs" }).click();
     await radio(page, "Lab ports", "Default").click();
 
     await openApp(page);
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
-    await page.getByRole("button", { name: "Start lab" }).click();
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
+    await labs.open("Exposed dashboard").click();
+    const where = await lab.askWhere();
     // Containers here: Settings has answered which host ports, so picking them asks nothing more.
-    const containers = where.getByRole("radiogroup", { name: "This machine" }).getByRole("radio", { name: /^Container/ });
-    await containers.click();
-    await expect(containers).toHaveAttribute("aria-checked", "true");
-    await expect(where.getByRole("radiogroup", { name: "Host ports" })).toHaveCount(0);
-    await where.getByRole("button", { name: "Start", exact: true }).click();
-    await expect(where).toBeHidden();
+    await where.containersHere.click();
+    await where.expectPicked(where.containersHere);
+    await expect(where.dialog.getByRole("radiogroup", { name: "Host ports" })).toHaveCount(0);
+    await where.start();
     // Its service is published on this machine on its own port, not a random one.
     await expect(page.getByRole("button", { name: "Stop & remove" })).toBeEnabled();
     await expect(app.main.getByRole("button", { name: ":8443", exact: true })).toBeVisible();

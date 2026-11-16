@@ -1,6 +1,7 @@
-import type { Page } from "@playwright/test";
 import { test, expect, openApp, release, answerConfirm } from "./fixtures";
-import { AppShell } from "./pages/app-shell";
+import type { LabsScreen } from "./pages/labs";
+import type { LabScreen } from "./pages/lab";
+import type { AppShell } from "./pages/app-shell";
 
 // A VM lab (GOAD Light, x86 only) through the dev mock's Vagrant: started on this machine's
 // VirtualBox (an Intel Mac) or on a saved ESXi server, paused, shut down, resumed, provisioned
@@ -10,43 +11,34 @@ import { AppShell } from "./pages/app-shell";
 // deploying at load, as it otherwise is in the mock; `hold=provision`: a re-run of provisioning
 // stays in flight until the test lets it end (see src/lib/dev-mock/scenario.ts).
 
-const diagramNode = (page: Page, ip: string) => page.locator(".react-flow .react-flow__node").filter({ hasText: ip });
 /** "Where should it run?"'s row for this machine: a VM lab's own VMs here, under "This machine". */
 const HERE = /^VM On your system/;
 
-async function openGoad(page: Page) {
-  const app = new AppShell(page);
-  await app.nav("Labs").click();
-  await page.getByRole("textbox", { name: "Search labs and skills" }).fill("goad");
-  await app.main.getByRole("button", { name: "Open GOAD Light", exact: true }).click();
-  await expect(app.title).toHaveText("GOAD Light");
+/** Opens GOAD Light, not started yet. */
+async function openGoad(app: AppShell, labs: LabsScreen) {
+  await labs.openLab("GOAD Light", { search: "goad" });
   await expect(app.main).toContainText("Not started");
 }
 
 /** Start lab, then Start on the picked place in "Where should it run?". */
-async function startOn(page: Page, place: RegExp) {
-  const app = new AppShell(page);
-  await app.button("Start lab").click();
-  const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-  await where.getByRole("radio", { name: place }).click();
-  await expect(where.getByRole("radio", { name: place })).toHaveAttribute("aria-checked", "true");
-  await where.getByRole("button", { name: "Start", exact: true }).click();
-  await expect(where).toBeHidden();
+async function startOn(lab: LabScreen, place: RegExp) {
+  const where = await lab.askWhere();
+  await where.pick(place);
+  await where.start();
 }
 
 test.describe("VM labs", () => {
-  test("on this machine: up, pause, resume, provision one machine again, stop", async ({ page, app }) => {
+  test("on this machine: up, pause, resume, provision one machine again, stop", async ({ page, app, lab, labs }) => {
     await openApp(page, "&deploying=none&os=macos&arch=x86_64&hold=provision");
-    await openGoad(page);
+    await openGoad(app, labs);
 
     // This machine is the default (VirtualBox is ready here); the ESXi server and the AWS account
     // (one cloud VM per machine) are offered too.
-    await app.button("Start lab").click();
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where.getByRole("radio", { name: HERE })).toHaveAttribute("aria-checked", "true");
-    await expect(where.getByRole("radio", { name: /^office-esxi/ })).toBeEnabled();
-    await expect(where.getByRole("radio", { name: /AWS sandbox/ })).toBeEnabled();
-    await where.getByRole("button", { name: "Start", exact: true }).click();
+    const where = await lab.askWhere();
+    await expect(where.option(HERE)).toHaveAttribute("aria-checked", "true");
+    await expect(where.option(/^office-esxi/)).toBeEnabled();
+    await expect(where.option(/AWS sandbox/)).toBeEnabled();
+    await where.start();
 
     // Vagrant's machines come up one step each.
     const steps = app.main.getByRole("listitem");
@@ -54,7 +46,7 @@ test.describe("VM labs", () => {
     await expect(steps.getByRole("button", { name: /^srv02/ })).toBeVisible();
     await expect(app.button("Pause")).toBeEnabled();
     await expect(app.main).toContainText("Running·on this machine · VirtualBox");
-    for (const ip of ["192.168.56.10", "192.168.56.22"]) await expect(diagramNode(page, ip)).toBeVisible();
+    for (const ip of ["192.168.56.10", "192.168.56.22"]) await expect(lab.diagramNode(ip)).toBeVisible();
     await expect(page.locator("aside").getByRole("button", { name: /GOAD Light/ })).toBeVisible();
 
     // Pause: the machines' state saved, Resume brings them back.
@@ -83,15 +75,15 @@ test.describe("VM labs", () => {
     expect(await removed).toContain("Remove GOAD Light?");
     await expect(app.button("Start lab")).toBeEnabled();
     await expect(app.main).toContainText("Not started");
-    await expect(page.locator(".react-flow")).toHaveCount(0);
+    await expect(lab.diagram).toHaveCount(0);
   });
 
   // A VM lab here is shut down as well as paused (the backend's controls offer both; only a
   // container lab in one VM can't be), and Stop & remove offers that instead.
-  test("on this machine: shut down powers the VMs off, Resume boots them again", async ({ page, app }) => {
+  test("on this machine: shut down powers the VMs off, Resume boots them again", async ({ page, app, labs, lab }) => {
     await openApp(page, "&deploying=none&os=macos&arch=x86_64");
-    await openGoad(page);
-    await startOn(page, HERE);
+    await openGoad(app, labs);
+    await startOn(lab, HERE);
     await expect(app.button("Shut down")).toBeEnabled();
 
     await app.button("Shut down").click();
@@ -107,9 +99,9 @@ test.describe("VM labs", () => {
     expect(await asked).toContain("To keep them, shut the lab down instead.");
   });
 
-  test("on Apple Silicon: an x86-only lab points at the default server, and this machine needs QEMU", async ({ page, app }) => {
+  test("on Apple Silicon: an x86-only lab points at the default server, and this machine needs QEMU", async ({ page, app, lab, labs }) => {
     await openApp(page, "&deploying=none");
-    await openGoad(page);
+    await openGoad(app, labs);
     // Before it starts: where it can run, and that this machine runs it emulated at best.
     await expect(app.main.getByText("Where it runs", { exact: true })).toBeVisible();
     await expect(app.main).toContainText(
@@ -119,33 +111,31 @@ test.describe("VM labs", () => {
 
     // No hypervisor here runs it, so Start points at the default server (Proxmox runs GOAD Light);
     // the ESXi server is offered too.
-    await app.button("Start lab").click();
-    const where = page.getByRole("dialog", { name: "Where should the lab run?" });
-    await expect(where.getByRole("radio", { name: /homelab-pve/ })).toHaveAttribute("aria-checked", "true");
-    await expect(where.getByRole("radio", { name: /office-esxi/ })).toBeEnabled();
+    const where = await lab.askWhere();
+    await expect(where.option(/homelab-pve/)).toHaveAttribute("aria-checked", "true");
+    await expect(where.option(/office-esxi/)).toBeEnabled();
     // Picked anyway, the backend refuses it before anything is downloaded, saying what it takes.
-    await where.getByRole("radio", { name: HERE }).click();
-    await where.getByRole("button", { name: "Start", exact: true }).click();
-    await expect(where).toBeHidden();
+    await where.option(HERE).click();
+    await where.start();
     await expect(app.main).toContainText("Failed to start");
     await expect(app.main.getByRole("alert").filter({ hasText: "Couldn’t start GOAD Light" })).toContainText(
       "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account.",
     );
-    await expect(page.locator(".react-flow")).toHaveCount(0);
+    await expect(lab.diagram).toHaveCount(0);
   });
 
-  test("on Apple Silicon: a VM lab built for arm64 runs on UTM, pauses, resumes and stops", async ({ page, app }) => {
+  test("on Apple Silicon: a VM lab built for arm64 runs on UTM, pauses, resumes and stops", async ({ page, app, labs, lab }) => {
     await openApp(page, "&deploying=none&catalogue=arm64vm");
     await app.nav("Labs").click();
-    await page.getByRole("textbox", { name: "Search labs and skills" }).fill("router");
-    await app.main.getByRole("button", { name: "Open Edge router", exact: true }).click();
+    await labs.search.fill("router");
+    await labs.open("Edge router").click();
     await expect(app.title).toHaveText("Edge router");
     await expect(app.main).toContainText("Not started");
     // Native here: no emulation note.
     await expect(app.main).not.toContainText("Built for another CPU");
 
     // This machine is the default (UTM is ready here).
-    await startOn(page, HERE);
+    await startOn(lab, HERE);
     const steps = app.main.getByRole("listitem");
     await expect(steps.getByRole("button", { name: /^dc01/ })).toBeVisible();
     await expect(app.button("Pause")).toBeEnabled();
@@ -174,10 +164,10 @@ test.describe("VM labs", () => {
     await expect(app.main).toContainText("Not started");
   });
 
-  test("on a saved ESXi server: runs there, provisioning again works, nothing to pause, then stop", async ({ page, app }) => {
+  test("on a saved ESXi server: runs there, provisioning again works, nothing to pause, then stop", async ({ page, app, labs, lab }) => {
     await openApp(page, "&deploying=none&os=macos&arch=x86_64");
-    await openGoad(page);
-    await startOn(page, /^office-esxi/);
+    await openGoad(app, labs);
+    await startOn(lab, /^office-esxi/);
 
     await expect(app.button("Stop & remove")).toBeEnabled();
     await expect(app.main).toContainText("Running·on office-esxi");

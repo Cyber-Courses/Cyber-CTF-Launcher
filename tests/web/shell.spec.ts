@@ -12,10 +12,10 @@ async function run(shell: Page, line: string) {
 }
 
 test.describe("attack box shell", () => {
-  test("type commands, see the answers, exit, reconnect, close", async ({ page, app, context }) => {
+  test("type commands, see the answers, exit, reconnect, close", async ({ page, app, context, labs }) => {
     await openApp(page);
     await app.nav("Labs").click();
-    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
+    await labs.open("Invoice portal API").click();
     await expect(app.title).toHaveText("Invoice portal API");
 
     const [shell] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Open attacker shell" }).click()]);
