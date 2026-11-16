@@ -42,7 +42,11 @@ impl Tunnel {
     /// [`Tunnel::open`], given up after `within`.
     async fn open_within(jump: &str, identity: &Path, within: Duration) -> Result<Tunnel> {
         let node = ssh::Target::login(jump, identity.to_path_buf())?;
-        let port = free_port()?;
+        Tunnel::open_on(&node, jump, identity, free_port()?, within).await
+    }
+
+    /// [`Tunnel::open_within`] on `port` of [`LOOPBACK`]: a test's, held until its ssh listens.
+    async fn open_on(node: &ssh::Target, jump: &str, identity: &Path, port: u16, within: Duration) -> Result<Tunnel> {
         let args = node.socks_args(&ssh::node_known_hosts(identity), port)?;
         let mut ssh = background("ssh", &args.iter().map(String::as_str).collect::<Vec<_>>())?;
         let deadline = tokio::time::Instant::now() + within;
@@ -77,9 +81,9 @@ fn free_port() -> Result<u16> {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
-    use std::net::TcpListener;
     use std::path::PathBuf;
-    use std::rc::Rc;
+
+    use tokio::net::{TcpListener, TcpSocket};
 
     use super::*;
     use crate::platform::exec::fake::{Reply, Tools};
@@ -89,15 +93,34 @@ mod tests {
         PathBuf::from("/data/ssh/id_ed25519")
     }
 
-    /// Scripted tools whose `ssh -N -D 127.0.0.1:<port>` answers `reply`, listening on that port
-    /// first when `listens` (as ssh does once the node let it in); the listeners are kept with
+    /// A port of [`LOOPBACK`] the test holds: bound, so nothing else on this computer can take it,
+    /// and not listening, so nothing connects until the scripted ssh listens on it. A port picked
+    /// free and let go (`free_port`) was taken by another test's listener in between, under load:
+    /// "address already in use", or a tunnel taken as open that no ssh opened.
+    fn held_port() -> (TcpSocket, u16) {
+        let socket = TcpSocket::new_v4().unwrap();
+        socket.bind((std::net::Ipv4Addr::LOCALHOST, 0).into()).unwrap();
+        let port = socket.local_addr().unwrap().port();
+        (socket, port)
+    }
+
+    /// The tunnel through `root@node.lab` on the test's `port`, given `within` to open.
+    async fn open(port: u16, within: Duration) -> Result<Tunnel> {
+        let node = ssh::Target::login("root@node.lab", key()).unwrap();
+        Tunnel::open_on(&node, "root@node.lab", &key(), port, within).await
+    }
+
+    /// Scripted tools whose `ssh -N -D 127.0.0.1:<port>` answers `reply`, first listening on the
+    /// held `socket` when given (as ssh does once the node let it in); the listener is kept with
     /// the tools.
-    fn ssh_answering(reply: Option<Reply>, listens: bool) -> Tools {
-        let kept: Rc<RefCell<Vec<TcpListener>>> = Rc::default();
+    fn ssh_answering(reply: Option<Reply>, socket: Option<(TcpSocket, u16)>) -> Tools {
+        let socket = RefCell::new(socket);
+        let kept: RefCell<Vec<TcpListener>> = RefCell::default();
         Tools::new(move |program, args| {
             assert_eq!((program, &args[..2]), ("ssh", &["-N", "-D"][..]), "only the tunnel's ssh runs");
-            if listens {
-                kept.borrow_mut().push(TcpListener::bind(args[2]).unwrap());
+            if let Some((socket, port)) = socket.borrow_mut().take() {
+                assert_eq!(args[2], format!("127.0.0.1:{port}"), "ssh listens on the port the tunnel was given");
+                kept.borrow_mut().push(socket.listen(8).unwrap());
             }
             reply.clone()
         })
@@ -105,10 +128,12 @@ mod tests {
 
     #[tokio::test]
     async fn the_tunnel_is_a_socks_proxy_through_the_node_with_the_runners_key_and_the_nodes_known_hosts() {
-        let tools = ssh_answering(Some(Reply::Hang), true);
-        let tunnel = Tunnel::open("root@node.lab", &key()).await.unwrap();
+        let (socket, held) = held_port();
+        let tools = ssh_answering(Some(Reply::Hang), Some((socket, held)));
+        let tunnel = open(held, READY_WITHIN).await.unwrap();
         let [(host_var, host), (port_var, port)] = tunnel.values();
         assert_eq!((host_var.as_str(), host.as_str(), port_var.as_str()), ("ssh_proxy_host", "127.0.0.1", "ssh_proxy_port"));
+        assert_eq!(port, held.to_string());
         let made = tools.made("ssh -N -D");
         assert_eq!(made.len(), 1);
         let args = &made[0];
@@ -124,15 +149,17 @@ mod tests {
 
     #[tokio::test]
     async fn a_node_that_refuses_the_tunnel_says_why() {
-        let _tools = ssh_answering(Some(Reply::Fail("root@node.lab: Permission denied (publickey).".into())), false);
-        let why = Tunnel::open("root@node.lab", &key()).await.err().unwrap().to_string();
+        let (_socket, port) = held_port();
+        let _tools = ssh_answering(Some(Reply::Fail("root@node.lab: Permission denied (publickey).".into())), None);
+        let why = open(port, READY_WITHIN).await.err().unwrap().to_string();
         assert!(why.contains("Permission denied (publickey)") && why.contains("root@node.lab"), "{why}");
     }
 
     #[tokio::test]
     async fn a_tunnel_that_never_opens_is_given_up_on() {
-        let _tools = ssh_answering(Some(Reply::Hang), false);
-        let why = Tunnel::open_within("root@node.lab", &key(), Duration::from_millis(500)).await.err().unwrap().to_string();
+        let (_socket, port) = held_port();
+        let _tools = ssh_answering(Some(Reply::Hang), None);
+        let why = open(port, Duration::from_millis(500)).await.err().unwrap().to_string();
         assert!(why.contains("didn't open"), "{why}");
     }
 
