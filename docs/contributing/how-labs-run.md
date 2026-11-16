@@ -183,6 +183,13 @@ confirmed in Servers (`ssh::node_known_hosts`):
   machine's address is the runner's, which takes it from the module's `machines` output where the
   state has none (a Proxmox VM without a guest agent).
 
+- The checks: the runner's `exec` into each machine the module's `checks` output names, its
+  runner script (from the module's `checks/` folder) handed over as `sh -c`
+  (`OpenedRun::module_check`, `isothrum/checks.rs`), along the route Isothrum reads from the
+  module's outputs (the router at its `ip`, the machines at their `machines` addresses) and through
+  the run's `ssh_jump` first. Their lines are Isoloom's check protocol, as everywhere else. A
+  server lab reached directly runs them the same way, without the node; a cloud's don't run yet.
+
 ## Servers and cloud accounts
 
 - Profiles (non-secret): `<app data>/server.json`. Secrets: the OS keychain (service

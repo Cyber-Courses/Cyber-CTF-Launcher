@@ -100,6 +100,11 @@ const SHELL_ALLOWED: &[(&str, &str, &str)] = &[
     ("machine/tools/install.rs", "\"-c\".into(),", "macOS: QEMU's brew update then install, Homebrew's own path single-quoted"),
     ("machine/selftest/vm.rs", "Step::new(&[\"ssh\", \"-c\", &uname_command()])", "vagrant ssh's -c: the self-test's fixed probe, run in the test VM"),
     ("platform.rs", "args([\"-n\", \"-c\", script])", "a test helper (cfg(test)): sh -n only parses the script"),
+    (
+        "runtime/isothrum/checks.rs",
+        "[\"sh\".to_owned(), \"-c\".to_owned(), self.runner_code(check)?]",
+        "a lab's check runner, whole as Isoloom generated it (or its command), run in the lab's VM",
+    ),
     ("runtime/terminal_launch.rs", "args([flag, \"sh\", \"-c\", &run])", "the attack shell's line, quoted word by word with shell_words"),
     ("screen/rdp.rs", "vec![\"-c\".into(), file]", "Remmina's -c is its connection file, not a shell"),
 ];
