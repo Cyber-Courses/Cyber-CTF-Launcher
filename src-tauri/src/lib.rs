@@ -26,6 +26,7 @@ mod platform;
 mod run_service;
 mod runtime;
 mod screen;
+mod settings;
 mod shared_folder;
 mod store;
 mod terminal;

@@ -20,14 +20,19 @@ pub const RUN_EVENT: &str = "run-event";
 /// label and why (`screen::TunnelClosed`).
 pub const SCREEN_TUNNEL_CLOSED: &str = "screen-tunnel-closed";
 
+/// The settings changed (`crate::settings`), in any window or from the import; its payload is
+/// the settings after the change.
+pub const SETTINGS_CHANGED: &str = "settings-changed";
+
 /// Every event, by the name the webview knows it by (camelCase) and its name on the wire.
 #[cfg(test)]
-pub const ALL: [(&str, &str); 5] = [
+pub const ALL: [(&str, &str); 6] = [
     ("quitBlocked", QUIT_BLOCKED),
     ("machineSetupStep", MACHINE_SETUP_STEP),
     ("launchConfirm", LAUNCH_CONFIRM),
     ("runEvent", RUN_EVENT),
     ("screenTunnelClosed", SCREEN_TUNNEL_CLOSED),
+    ("settingsChanged", SETTINGS_CHANGED),
 ];
 
 /// Emits `event` with `payload` from `to` (the app, or one window), logging one that can't be.

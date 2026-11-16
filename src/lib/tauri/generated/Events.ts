@@ -7,4 +7,5 @@ export const EVENTS = {
   launchConfirm: "launch-confirm",
   runEvent: "run-event",
   screenTunnelClosed: "screen-tunnel-closed",
+  settingsChanged: "settings-changed",
 } as const;
