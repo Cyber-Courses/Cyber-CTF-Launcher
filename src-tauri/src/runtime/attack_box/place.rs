@@ -133,7 +133,7 @@ impl Placed {
     /// The learner's shared folder for the box, when it is on and the lab runs where a machine
     /// can mount a folder of this computer ([`shares_folders`]); otherwise none, `log` saying why
     /// when it is on (or when the setting or the folder can't be used). Refused when the
-    /// hypervisor lacks what it shares the folder through (libvirt's virtiofsd,
+    /// hypervisor lacks what it shares the folder through (libvirt's or QEMU's virtiofsd on Linux,
     /// [`crate::runtime::providers::can_share`]): said before the box is added, not as the
     /// hypervisor's failure once its VM starts.
     fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<Option<PathBuf>> {

@@ -88,7 +88,8 @@ pub(crate) fn needs_mkisofs(provider: Provider, os: Os) -> bool {
 enum Part {
     /// `mkisofs`, for QEMU's VMs on Linux ([`needs_mkisofs`]).
     Mkisofs,
-    /// A virtiofsd libvirt finds, for libvirt's shared folders ([`needs_virtiofsd`]).
+    /// A virtiofsd the hypervisor finds, for libvirt's and QEMU's shared folders on Linux
+    /// ([`needs_virtiofsd`]).
     Virtiofsd,
 }
 
@@ -98,7 +99,7 @@ async fn missing_part(provider: Provider, os: Os) -> Option<Part> {
     if needs_mkisofs(provider, os) && !tool_present("mkisofs", &["-version"]).await {
         return Some(Part::Mkisofs);
     }
-    (needs_virtiofsd(provider, os) && !virtiofsd_found()).then_some(Part::Virtiofsd)
+    (needs_virtiofsd(provider, os) && !virtiofsd_found(provider)).then_some(Part::Virtiofsd)
 }
 
 async fn tool_present(program: &'static str, args: &[&str]) -> bool {
@@ -180,7 +181,8 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &Plugi
     }
 
     // The hypervisor layer (the VM software itself). QEMU on Linux without `mkisofs`, and libvirt
-    // without a virtiofsd, read as not installed, with their own reason: their install brings it.
+    // or QEMU on Linux without a virtiofsd, read as not installed, with their own reason: their
+    // install brings it.
     let found = provider.hypervisor_installed().await;
     if !provider.offered(found == Some(true)) {
         return None;
@@ -337,7 +339,7 @@ fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'
     } else if let Some(part) = part_missing {
         Some(match part {
             Part::Mkisofs => Unavailable::MkisofsMissing,
-            Part::Virtiofsd => Unavailable::VirtiofsdMissing,
+            Part::Virtiofsd => Unavailable::VirtiofsdMissing { hypervisor: provider.label().to_owned() },
         })
     } else if hypervisor == Some(false) {
         Some(Unavailable::NotInstalled { program: provider.probe().map(|probe| probe.program.to_owned()) })

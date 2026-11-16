@@ -132,34 +132,42 @@ fn libvirt_joined_since_logging_in_asks_for_a_new_login_after_the_rest() {
     assert_eq!(options(&r, false).hypervisors.iter().find(|h| h.provider == Provider::Libvirt).unwrap().get, []);
 }
 
+/// That `r`'s `provider` (installed as `dependency`) reads as not installed for `reason`, a program
+/// its VMs need beside it, and that the setup installs it again, which brings that program: it
+/// never passes `provider` over.
+fn installed_again(r: &SystemReport, provider: Provider, dependency: Dependency, reason: &Unavailable) {
+    assert_eq!(get_of(r, provider), [Action::Install { dependency }]);
+    let p = plan_of(r, &wanted(&[SetupPath::Vm], &[provider]));
+    assert_eq!(p.hypervisor, Some(provider));
+    assert_eq!(steps(&p), [format!("{0}: install {0}", provider.id())]);
+    let status = r.vm_providers.iter().find(|s| s.provider == provider).unwrap();
+    assert_eq!(status.reason.as_ref(), Some(reason));
+    assert!(!r.ready_hypervisors.contains(&provider));
+}
+
 #[test]
 fn qemu_without_mkisofs_is_installed_again_which_brings_it() {
     // Regression: QEMU read as set up without the mkisofs its VMs need on Linux, and every VM-form
-    // lab failed at its first VM. Its install (which adds genisoimage) is the way: the setup runs
-    // it, never passes QEMU over.
-    let r = shapes::debian_qemu_without_mkisofs();
-    assert_eq!(get_of(&r, Provider::Qemu), [Action::Install { dependency: Dependency::Qemu }]);
-    let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Qemu]));
-    assert_eq!(p.hypervisor, Some(Provider::Qemu));
-    assert_eq!(steps(&p), ["qemu: install qemu"]);
-    let qemu = r.vm_providers.iter().find(|s| s.provider == Provider::Qemu).unwrap();
-    assert_eq!(qemu.reason, Some(Unavailable::MkisofsMissing));
-    assert!(!r.ready_hypervisors.contains(&Provider::Qemu));
+    // lab failed at its first VM. Its install (which adds genisoimage) is the way.
+    installed_again(&shapes::debian_qemu_without_mkisofs(), Provider::Qemu, Dependency::Qemu, &Unavailable::MkisofsMissing);
 }
 
 #[test]
 fn libvirt_without_virtiofsd_is_installed_again_which_brings_it() {
     // Regression: libvirt read as set up without the virtiofsd its shared folders need, and a lab
     // with the attack box's shared folder failed to start ("Unable to find a satisfying
-    // virtiofsd"). Its install (which adds virtiofsd) is the way: the setup runs it.
-    let r = shapes::debian_libvirt_without_virtiofsd();
-    assert_eq!(get_of(&r, Provider::Libvirt), [Action::Install { dependency: Dependency::Libvirt }]);
-    let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Libvirt]));
-    assert_eq!(p.hypervisor, Some(Provider::Libvirt));
-    assert_eq!(steps(&p), ["libvirt: install libvirt"]);
-    let libvirt = r.vm_providers.iter().find(|s| s.provider == Provider::Libvirt).unwrap();
-    assert_eq!(libvirt.reason, Some(Unavailable::VirtiofsdMissing));
-    assert!(!r.ready_hypervisors.contains(&Provider::Libvirt));
+    // virtiofsd"). Its install (which adds virtiofsd) is the way.
+    let missing = Unavailable::VirtiofsdMissing { hypervisor: "libvirt".into() };
+    installed_again(&shapes::debian_libvirt_without_virtiofsd(), Provider::Libvirt, Dependency::Libvirt, &missing);
+}
+
+#[test]
+fn qemu_without_virtiofsd_is_installed_again_which_brings_it() {
+    // Regression: QEMU read as set up on Linux without the virtiofsd vagrant-qemu shares the
+    // attack box's folder through, and a lab with the shared folder failed to start ("virtiofsd
+    // was not found or is not executable"). Its install (which adds virtiofsd) is the way.
+    let missing = Unavailable::VirtiofsdMissing { hypervisor: "QEMU".into() };
+    installed_again(&shapes::debian_qemu_without_virtiofsd(), Provider::Qemu, Dependency::Qemu, &missing);
 }
 
 #[test]

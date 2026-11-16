@@ -206,9 +206,12 @@ pub enum Code {
     PickCloudAccount,
     /// A VM lab was started on this machine with no hypervisor here to run it on.
     NoHypervisor,
-    /// libvirt can't share a folder of this computer with a VM (the attack box's shared folder):
-    /// no virtiofsd it finds here (Linux), which libvirt's install brings.
-    VirtiofsdMissing,
+    /// `hypervisor` (libvirt, QEMU) can't share a folder of this computer with a VM (the attack
+    /// box's shared folder): no virtiofsd it finds here (Linux), which its install brings.
+    VirtiofsdMissing {
+        /// The hypervisor's name ("libvirt", "QEMU").
+        hypervisor: String,
+    },
     /// This computer's administrator turned the feature off: `setting` is the policy switch
     /// (`platform::policy::Key`) that did.
     TurnedOffByPolicy {

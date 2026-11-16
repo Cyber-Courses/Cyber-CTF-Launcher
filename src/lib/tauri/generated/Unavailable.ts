@@ -4,7 +4,11 @@
  * Why a provider can't run a lab's VMs here: the first layer missing (Vagrant, the hypervisor,
  * the account's rights, its plugin, the VMware utility), as `detect` found it.
  */
-export type Unavailable = { "code": "vagrantMissing" } | { "code": "virtualboxStuck" } | { "code": "hypervOff" } | { "code": "hypervNeedsAdmin" } | { "code": "mkisofsMissing" } | { "code": "virtiofsdMissing" } | { "code": "notInstalled", "args": { 
+export type Unavailable = { "code": "vagrantMissing" } | { "code": "virtualboxStuck" } | { "code": "hypervOff" } | { "code": "hypervNeedsAdmin" } | { "code": "mkisofsMissing" } | { "code": "virtiofsdMissing", "args": { 
+/**
+ * The hypervisor's name ("libvirt", "QEMU").
+ */
+hypervisor: string, } } | { "code": "notInstalled", "args": { 
 /**
  * The program looked for, which wasn't found; None for a hypervisor found otherwise.
  */

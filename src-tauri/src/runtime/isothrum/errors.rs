@@ -202,7 +202,7 @@ fn tool_failed(step: &str, reason: &str) -> Error {
     // The machine changed after its check (virtiofsd removed): libvirt's refusal as the check says
     // it, not vagrant-libvirt's stack trace.
     if crate::platform::tool_output::vagrant::libvirt_lacks_virtiofsd(reason) {
-        return Error::coded(Code::VirtiofsdMissing);
+        return Error::coded(Code::VirtiofsdMissing { hypervisor: "libvirt".into() });
     }
     super::super::docker::explain_pool_overlap(Error::CommandFailed { command: format!("lab step {step}"), stderr: reason.to_owned() })
 }
