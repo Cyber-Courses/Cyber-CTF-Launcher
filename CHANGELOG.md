@@ -33,6 +33,16 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
 
 ### Changed
 
+- **The launcher keeps its own state in one place.** The player's settings (the attack box's
+  image, auto-start and desktop, the hypervisor, the Docker engine, how labs take ports, a
+  dual-form lab's form, the last test results and each lab's last start) moved from the window's
+  storage into the launcher's store, `launcher.sqlite3`, beside the servers and the install id: the
+  command line and the background work read the same settings as the window, and every window
+  follows a change at once. The window's storage keeps only the theme, the language and the
+  onboarding. The first start after an update from 1.9 takes in what 1.9 kept (`server.json`,
+  `shared-folder.json`, `install-id` and the settings in the window's storage) once, then removes
+  those copies: nothing the player set is lost.
+
 - **A cloud-services lab is its own Terraform module and a lab file of the launcher's.** Isoloom
   3.0 produces no such lab: the lab's author writes the module (`cloud/*.tf`) and `cloud/lab.yml`
   beside it (the cloud, the hourly cost, the module's values, the variable this machine's IP goes

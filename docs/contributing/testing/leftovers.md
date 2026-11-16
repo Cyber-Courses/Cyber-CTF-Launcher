@@ -122,8 +122,8 @@ defaults, with no clean-up in either repository: a run on them is the first to s
 
 The launcher's data folder holds by design its labs (`labs/<id>/`), Isothrum's run records
 (`runs/cyberctf-<id>/record.json`, `events.jsonl`), the Terraform plugin cache
-(`terraform-plugins/`), its SSH key (`ssh/id_ed25519`), its settings (`server.json`,
-`storage.json`, `installed-tools.json`), the deploy logs and `~/CyberCTF/shared`; a desktop run
+(`terraform-plugins/`), its SSH key (`ssh/id_ed25519`), its store (`launcher.sqlite3`: the servers, the settings, the install id),
+`storage.json`, `installed-tools.json`, the deploy logs and `~/CyberCTF/shared`; a desktop run
 keeps them all in its own folder (`CYBERCTF_WDIO_ROOT`), removed at its end. On macOS the test
 runs' webviews share one WebKit data store, `cyberctf-e2e-run`, by design.
 
