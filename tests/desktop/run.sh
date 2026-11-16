@@ -36,7 +36,7 @@
 #   --list                print a JSON line per case (its id, spec, form, knobs, groups, needs) and exit
 #
 # Knobs (environment, or the knobs file; tests/README.md has each spec's):
-#   CYBERCTF_TEST_DESKTOP_APP     the app (default: the wdio `cargo build`, built here)
+#   CYBERCTF_TEST_DESKTOP_APP     the app (default: the wdio `cargo build`, built here, in cargo's target directory: CARGO_TARGET_DIR when set)
 #   CYBERCTF_TEST_LOCAL_LAB       the lab folder to import (default: a checkout of the Invoice Portal
 #                                 API lab under tests/desktop/.state/labs)
 #   CYBERCTF_TEST_ACCOUNT_SESSION a signed-in session (a dev-session.json), placed in the run's folder
@@ -121,7 +121,12 @@ if [ -n "$PACKAGE" ]; then
   esac
 fi
 # The app the specs drive (tests/desktop/lib/support.mjs reads it).
-export CYBERCTF_TEST_DESKTOP_APP=${CYBERCTF_TEST_DESKTOP_APP:-$HERE/src-tauri/target/debug/cyberctf-desktop}
+# The wdio build's app is in cargo's target directory, which CARGO_TARGET_DIR or a cargo config can
+# move out of src-tauri/target (lib/host.mjs `builtApp`).
+if [ -z "${CYBERCTF_TEST_DESKTOP_APP:-}" ]; then
+  CYBERCTF_TEST_DESKTOP_APP=$(node "$HERE/tests/desktop/lib/host.mjs" --built-app) || fail_now "couldn't tell where cargo builds the app"
+fi
+export CYBERCTF_TEST_DESKTOP_APP
 APP_BIN=$CYBERCTF_TEST_DESKTOP_APP
 if [ -z "$SKIP_BUILD" ]; then
   say "cargo build --features wdio"

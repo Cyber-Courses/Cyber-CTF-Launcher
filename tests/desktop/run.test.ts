@@ -125,6 +125,19 @@ describe("the desktop cases", () => {
     expect(selectCases(p.cases, { only: ["smoke", "stop"] }).map((c) => c.case)).toEqual(["smoke", "stop"]);
   });
 
+  it.runIf(unix)("drive the app cargo built into CARGO_TARGET_DIR, not one under src-tauri/target", () => {
+    const target = mkdtempSync(join(tmpdir(), "cyberctf-target-"));
+    dirs.push(target);
+    const sh = spawnSync("bash", [join(HERE, "run.sh"), "--skip-build"], {
+      encoding: "utf8",
+      env: { ...process.env, CARGO_TARGET_DIR: target },
+      timeout: 60000,
+    });
+    // Nothing built there yet: the runner stops on the app it looked for, in that folder.
+    expect(sh.status).toBe(2);
+    expect(sh.stderr).toContain(`app binary not found or not executable: ${join(target, "debug", "cyberctf-desktop")}`);
+  });
+
   it("are the cases run.sh and run.ps1 list through run.mjs, with their groups and needs", () => {
     const sh = spawnSync("bash", [join(HERE, "run.sh"), "--list"], { encoding: "utf8" });
     expect(sh.status, sh.stderr).toBe(0);
@@ -137,6 +150,9 @@ describe("the desktop cases", () => {
     expect(group.stdout.trim().split("\n").length).toBe(12);
     for (const runner of [readFileSync(join(HERE, "run.sh"), "utf8"), readFileSync(join(HERE, "run.ps1"), "utf8")]) {
       expect(runner).toMatch(/run\.mjs/);
+      // The built app is where cargo put it (lib/host.mjs builtApp), never a fixed path.
+      expect(runner).toMatch(/host\.mjs"?\)? --built-app/);
+      expect(runner).not.toMatch(/src-tauri[\\/]target[\\/]debug/);
       // Nothing of the user's: their data folder, their session file, a clean-up by name.
       expect(runner).not.toMatch(/Application Support|XDG_DATA_HOME|USERPROFILE|\$HOME\/\.cyberctf|--filter "name=/);
     }

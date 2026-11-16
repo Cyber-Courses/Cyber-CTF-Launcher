@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { dockerPluginDirs, engineSilence, portFree, portHolder, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "./lib/host.mjs";
+import { builtApp, dockerPluginDirs, engineSilence, portFree, portHolder, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "./lib/host.mjs";
 import { deadDockerEnv } from "./lib/support.mjs";
 
 // What the desktop end-to-end reads of the machine (lib/host.mjs): the app's WebDriver port, and
@@ -45,6 +45,29 @@ describe("the WebDriver port", () => {
     const s = servers.pop();
     await new Promise((done) => s?.close(done));
     expect(await waitPortFree(port, 2)).toBe(true);
+  });
+});
+
+describe("the app cargo builds", () => {
+  // No cargo on the PATH: the environment alone says where it builds.
+  const noCargo = { PATH: "" };
+
+  it("is in CARGO_TARGET_DIR when one is set, as cargo builds it there, not under src-tauri/target", () => {
+    const target = mkdtempSync(join(tmpdir(), "cyberctf-target-"));
+    try {
+      expect(builtApp({ ...noCargo, CARGO_TARGET_DIR: target }, "linux")).toBe(join(target, "debug", "cyberctf-desktop"));
+      expect(builtApp({ ...noCargo, CARGO_TARGET_DIR: target }, "win32")).toBe(join(target, "debug", "cyberctf-desktop.exe"));
+      // Cargo itself, when it is there, says the same.
+      if (spawnSync("cargo", ["--version"]).status === 0)
+        expect(builtApp({ ...process.env, CARGO_TARGET_DIR: target }, "linux")).toBe(join(target, "debug", "cyberctf-desktop"));
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("is under the checkout's src-tauri/target otherwise", () => {
+    const repo = join(import.meta.dirname, "..", "..");
+    expect(builtApp(noCargo, "linux")).toBe(join(repo, "src-tauri", "target", "debug", "cyberctf-desktop"));
   });
 });
 
