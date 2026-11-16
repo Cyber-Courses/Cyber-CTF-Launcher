@@ -171,6 +171,13 @@ confirmed in Servers (`ssh::node_known_hosts`):
 - Terraform's own SSH to the router, while an operation applies the module: a SOCKS proxy through
   the node (`isothrum/tunnel.rs`, the module's `ssh_proxy_host` and `ssh_proxy_port`), for that
   operation only.
+- The link: a local forward (`ssh -N -L 127.0.0.1:<port>:<host>:<port>`) through the node to each
+  `host:port` the module's `published` output names (`Reach::published`), opened when the lab's
+  status is read while it runs and kept while it runs in this process, the page reading its
+  address in place of the module's. One whose ssh ended is opened again at the next read, which
+  brings it back after the app restarts too, on the same port when it is free (each forward's own,
+  from the run and its address). A lab that stops ends its forwards; the app's exit ends them with
+  every tool it runs.
 - The shell: an SSH whose `ProxyCommand` is the router's, itself reached through the node's
   (`isothrum/opened.rs`), as the module's `ssh_user`, then `sudo -iu` the account asked for. The
   machine's address is the runner's, which takes it from the module's `machines` output where the

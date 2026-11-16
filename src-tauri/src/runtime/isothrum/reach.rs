@@ -15,9 +15,14 @@
 //! records it among its values (`ssh_jump`), so what only reads the run (its status, a shell, its
 //! checks) finds it there ([`Reach::of_record`]) without asking the server again.
 
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::sync::LazyLock;
+
 use isothrum_runner::RunRecord;
 
 use super::server::ServerPlace;
+use super::tunnel::{Forward, LOOPBACK};
 
 /// The run's value naming the node every SSH of the runner goes through first (Isothrum's).
 pub(crate) const JUMP_VALUE: &str = "ssh_jump";
@@ -65,6 +70,68 @@ impl Reach {
     /// first, and the run records it for what only reads it.
     pub(crate) fn values(&self) -> Vec<(String, String)> {
         self.node().map(|login| (JUMP_VALUE.to_owned(), login.to_owned())).into_iter().collect()
+    }
+}
+
+/// The forwards open in this process, by run, each by the `host:port` it goes to: a lab's links
+/// while it runs. Ended with the lab ([`Reach::close`]), or by the app's exit with every tool it
+/// runs.
+static FORWARDS: LazyLock<tokio::sync::Mutex<BTreeMap<String, BTreeMap<String, Forward>>>> = LazyLock::new(Default::default);
+
+/// The first port tried for a forward of run `run` to `to`: the same one every time (its link
+/// stays the same after the app restarts), out of the ports systems hand out on their own; a free
+/// one when it is taken.
+fn preferred_port(run: &str, to: &str) -> u16 {
+    // FNV-1a: stable across builds and platforms, unlike the standard hasher.
+    let hash = format!("{run}\0{to}").bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+    20_000 + u16::try_from(hash % 10_000).unwrap_or_default()
+}
+
+impl Reach {
+    /// The module's `published` entries of run `run` (`"<machine>/<port>"` to `"<host>:<port>"`),
+    /// where this computer reaches each one: as they are when the lab is reached directly; through
+    /// the node, at the local end of a forward to each, opened with `identity` (the runner's key)
+    /// when it isn't open yet or its ssh ended. A forward to what the lab no longer publishes ends.
+    /// An entry whose forward doesn't open is left out (no link rather than a broken one), saying
+    /// why in the log; one without its address yet stays as it is.
+    pub(crate) async fn published(&self, run: &str, identity: &Path, published: BTreeMap<String, String>) -> BTreeMap<String, String> {
+        let Reach::ThroughNode { login } = self else { return published };
+        let mut open = FORWARDS.lock().await;
+        let forwards = open.entry(run.to_owned()).or_default();
+        forwards.retain(|to, _| published.values().any(|v| v == to));
+        let mut reached = BTreeMap::new();
+        for (entry, to) in published {
+            let Some((host, port)) = to.rsplit_once(':').and_then(|(h, p)| Some((h, p.parse::<u16>().ok()?))).filter(|(h, _)| !h.is_empty()) else {
+                reached.insert(entry, to);
+                continue;
+            };
+            let open_now = match forwards.get_mut(&to) {
+                Some(forward) => forward.runs().await,
+                None => false,
+            };
+            if !open_now {
+                // The port it had before (its ssh ended), else the run's own for it.
+                let before = forwards.remove(&to).map_or_else(|| preferred_port(run, &to), |f| f.port);
+                match Forward::open(login, identity, (host, port), Some(before)).await {
+                    Ok(forward) => {
+                        forwards.insert(to.clone(), forward);
+                    }
+                    Err(e) => {
+                        log::warn!("the lab's {entry} isn't reachable from this computer: {e}");
+                        continue;
+                    }
+                }
+            }
+            if let Some(forward) = forwards.get(&to) {
+                reached.insert(entry, format!("{LOOPBACK}:{}", forward.port));
+            }
+        }
+        reached
+    }
+
+    /// Ends run `run`'s forwards: its lab stopped.
+    pub(crate) async fn close(run: &str) {
+        FORWARDS.lock().await.remove(run);
     }
 }
 
