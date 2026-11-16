@@ -183,8 +183,8 @@ impl Host {
         }
     }
 
-    /// Runs the lab's checks where it runs (a cloud's and a server's over SSH, an ESXi host's
-    /// from its controller); none to run beside cloud services ([`Host::has_machines`]).
+    /// Runs the lab's checks where it runs (a server's over SSH, an ESXi host's from its
+    /// controller; a cloud's none yet); none to run beside cloud services ([`Host::has_machines`]).
     pub(crate) async fn check(&self) -> Result<docker::Check> {
         #[cfg(feature = "cloud-services")]
         if let Host::Cloud { run, .. } = self
@@ -198,7 +198,7 @@ impl Host {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.check().await,
             Host::Cloud { run, place, .. } => Ok(run.check(place)),
-            Host::Server { run, .. } => Ok(run.check()),
+            Host::Server { run, .. } => run.check().await,
         }
     }
 }

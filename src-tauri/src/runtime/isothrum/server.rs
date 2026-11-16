@@ -183,11 +183,11 @@ impl ServerRun {
         self.native_console(machine, &options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
-    /// The lab's checks: not available on a server yet (the runner runs no command in a
-    /// Terraform module's VMs).
-    #[expect(clippy::unused_self, reason = "a run's checks are asked of the run, as on the other hosts; this one has none to run yet")]
-    pub(crate) fn check(&self) -> Check {
-        Check::default()
+    /// The lab's checks: each runner its module's `checks` output names, run in its machine by
+    /// the runner's `exec` over SSH, through the server's node first when only it reaches the lab
+    /// (the run's recorded `ssh_jump`) ([`OpenedRun::module_check`]).
+    pub(crate) async fn check(&self) -> Result<Check> {
+        self.module_check(&RunOptions::new()).await
     }
 }
 
@@ -334,6 +334,11 @@ mod tests {
         /// A Proxmox VM lab whose run is up (its record and Terraform state as an `up` leaves
         /// them), on fake tools.
         fn up() -> (Scripted<Api>, ServerRun) {
+            up_answered_by(answer)
+        }
+
+        /// [`up`], its tools answered by `answer`.
+        fn up_answered_by(answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, ServerRun) {
             let f = Scripted::answered_by(Home::new("-pve", SPEC, &[], lab::Target::Proxmox), answer);
             let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm, false).unwrap();
             let state = f.home.runner().join("runs").join("cyberctf-web");
@@ -419,13 +424,18 @@ mod tests {
             let state = f.home.runner().join("runs").join(format!("cyberctf-{home}"));
             std::fs::create_dir_all(&state).unwrap();
             std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"vm_id_web":{"value":104}},"resources":[{"instances":[{}]}]}"#).unwrap();
+            record_through_the_node(&f, &run, &format!("cyberctf-{home}"));
+            (f, run)
+        }
+
+        /// Records run `name` of `run` up, through the node `root@node.lab` (as its start keeps it).
+        fn record_through_the_node(f: &Scripted<Api>, run: &ServerRun, name: &str) {
             let record = serde_json::json!({
-                "version": 0, "name": format!("cyberctf-{home}"), "project": run.project, "format": "terraform",
+                "version": 0, "name": name, "project": run.project, "format": "terraform",
                 "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
                 "env": { "ssh_jump": "root@node.lab" },
             });
             crate::testing::runner::save_run(&f.home.runner(), &record);
-            (f, run)
         }
 
         #[tokio::test]
@@ -464,6 +474,51 @@ mod tests {
             let tools = crate::platform::exec::fake::Tools::script().build();
             assert_eq!(run.status(&place()).await.unwrap().url.as_deref(), Some("http://192.0.2.10:8080/"));
             assert!(tools.calls().is_empty(), "no forward");
+        }
+
+        /// The fake tools of a lab whose module names checks: its router at 192.0.2.10, `web` and
+        /// `db` behind it, a runner on each; `web`'s passes, `db`'s fails.
+        fn checked(api: &Mutex<Api>, call: &Call) -> Reply {
+            const OUTPUTS: &str = r#"{"ip":{"value":"192.0.2.10"},"ssh_user":{"value":"isoloom"},"machines":{"value":{"web":"10.32.0.10","db":"10.32.0.11"}},"checks":{"value":[{"position":"web","machine":"web","host":"10.32.0.10","user":"isoloom","script":".isoloom/proxmox/checks/web.sh"},{"position":"db","machine":"db","host":"10.32.0.11","user":"isoloom","script":".isoloom/proxmox/checks/db.sh"}]}}"#;
+            match (call.program.as_str(), call.args.first().map(String::as_str)) {
+                ("terraform", Some("output")) => Reply::ok(OUTPUTS),
+                ("ssh-keyscan", _) => Reply::ok("node.lab ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"),
+                ("ssh", _) if call.args.last().is_some_and(|c| c.contains("WEB-RUNNER")) => Reply::ok("isoloom-check: PASS web serves its page"),
+                ("ssh", _) => {
+                    let mut failed = Reply::ok("isoloom-check: FAIL db answers: nothing on 5432");
+                    failed.code = 1;
+                    failed
+                }
+                _ => answer(api, call),
+            }
+        }
+
+        #[tokio::test]
+        async fn a_server_labs_checks_run_in_its_machines_through_the_runner_through_the_node_first() {
+            let (f, run) = up_answered_by(checked);
+            record_through_the_node(&f, &run, "cyberctf-web");
+            let scripts = run.project.join("checks");
+            std::fs::create_dir_all(&scripts).unwrap();
+            std::fs::write(scripts.join("web.sh"), "echo WEB-RUNNER\n").unwrap();
+            std::fs::write(scripts.join("db.sh"), "echo DB-RUNNER\n").unwrap();
+            let check = run.check().await.unwrap();
+            assert!(check.available && !check.ok, "{check:?}");
+            let results: Vec<(&str, bool, &str)> = check.results.iter().map(|r| (r.name.as_str(), r.ok, r.from.as_str())).collect();
+            assert_eq!(results, [("web serves its page", true, "from web"), ("db answers", false, "from db")]);
+            let ssh: Vec<_> = f.fake.calls().into_iter().filter(|c| c.program == "ssh").collect();
+            assert_eq!(ssh.len(), 2, "one exec per runner");
+            let web = &ssh[0];
+            assert_eq!(web.args.last().map(String::as_str), Some("sh -c 'echo WEB-RUNNER\n'"), "its script, handed over");
+            assert_eq!(web.args[web.args.len() - 2], "isoloom@10.32.0.10");
+            let proxy = web.args.iter().find_map(|a| a.strip_prefix("ProxyCommand=")).expect("through the router");
+            assert!(proxy.ends_with("-W %h:%p isoloom@192.0.2.10") && proxy.contains("root@node.lab"), "the node first: {proxy}");
+        }
+
+        #[tokio::test]
+        async fn a_server_lab_whose_module_names_no_check_has_none_available() {
+            let (_f, run) = up();
+            let check = run.check().await.unwrap();
+            assert!(!check.available && check.results.is_empty(), "{check:?}");
         }
 
         #[tokio::test]

@@ -53,14 +53,19 @@ impl OpenedRun {
     /// `act` on the run with `opts`, its events as `log`'s lines: through the home's runner
     /// service, else in this process (none reachable, or a test's runner).
     pub(super) async fn act(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
+        self.run(act, opts, log).await.map(drop).map_err(remote::Failure::into_error)
+    }
+
+    /// [`Self::act`], saying whether it reached its goal (false: a command it ran failed).
+    pub(super) async fn run(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, remote::Failure> {
         if self.service
             && let Some(client) = remote::client(&self.home).await
         {
             let on = remote::Served { home: &self.home, client: &client, target: remote::target(&self.project, Format::Terraform, &self.name) };
-            return Box::pin(remote::operate(on, act, opts, log)).await.map(drop).map_err(remote::Failure::into_error);
+            return Box::pin(remote::operate(on, act, opts, log)).await;
         }
-        let lab = self.running()?;
-        Box::pin(remote::in_process(&lab, act, opts, log)).await.map(drop).map_err(remote::Failure::into_error)
+        let lab = self.running().map_err(remote::Failure::Launcher)?;
+        Box::pin(remote::in_process(&lab, act, opts, log)).await
     }
 
     /// The run's status, read by the home's runner service (else by the runner in this process).

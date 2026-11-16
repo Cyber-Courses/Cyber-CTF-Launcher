@@ -16,7 +16,8 @@
 //! A lab on Proxmox: the
 //! lab generated for `proxmox`, started with the server's profile variables (the node passed in,
 //! as the launcher discovers it), its status with its entry where the module publishes it, its
-//! checks said not available (3.0 runs none on a server), then stopped, nothing of it left in the
+//! checks passing (run in its machines over SSH, through the node first when only it reaches the
+//! lab), then stopped, nothing of it left in the
 //! runner's records. The same `isothrum::ServerRun` the lab page uses, without the app handle:
 //! with `CYBERCTF_TEST_PVE_JUMP`, Terraform's SSH to the router goes through the launcher's
 //! tunnel to the node, the node's host keys confirmed first as the player does in Servers.
@@ -200,11 +201,9 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
                 }
                 Err(e) => check(false, format!("its status reads: {e}"), f),
             }
-            // 3.0 runs no check on a server: Isothrum 3.0 runs no command in a Terraform module's
-            // VMs, so the lab page leaves its solvability note out. What 3.0 promises is that the
-            // check says so, never that it passed.
-            let c = run.check();
-            check(!c.available && !c.ok && c.results.is_empty(), format!("its checks say they aren't available on a server ({c:?})"), f);
+            // Its checks run in its machines through the runner, over SSH through the router
+            // (and through the node first when only it reaches the lab).
+            checks_pass(run.check().await, f);
         },
         async |f: &mut Vec<String>| {
             let down = run.down(&place, &mut log("pve")).await;
