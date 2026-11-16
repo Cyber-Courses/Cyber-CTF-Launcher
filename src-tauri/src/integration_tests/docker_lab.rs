@@ -99,7 +99,7 @@ async fn exercise(r: &Run, e: &Expect, f: &mut Vec<String>) {
 /// checks it runs and reaches the target.
 async fn attack_box_up(r: &Run, e: &Expect, f: &mut Vec<String>) -> Option<Placed> {
     let run = isothrum::Deployment::docker(&r.home, &r.dir, &r.id).ok()?;
-    let placed = Placed { host: Host::Local(run), dir: r.dir.clone(), target: crate::runtime::lab::Target::Docker, vm: false };
+    let placed = Placed { host: Host::here(run), dir: r.dir.clone(), target: crate::runtime::lab::Target::Docker, vm: false };
     let image = std::env::var("CYBERCTF_TEST_BOX_IMAGE").unwrap_or_else(|_| crate::runtime::attack_box::default_image().to_owned());
     add_box(&placed, &AppDirs::new(None, None), &image, &mut log(&r.id), f).await;
     box_reaches(&placed, e.target, "once up", f).await;
