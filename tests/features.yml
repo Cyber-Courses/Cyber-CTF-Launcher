@@ -940,8 +940,10 @@ areas:
             - launch-commands
             - corpus-docker
             - vm-lab
+            - per-machine
             - server-lab-proxmox
             - server-lab-esxi
+            - cli-lab-docker
         rig:
           - container
           - vm
@@ -949,7 +951,7 @@ areas:
           - server:esxi
         gaps:
           desktop: lab-actions/down waits for the down banner, not for the check's verdict
-          integration: no check for per-machine or cloud forms
+          integration: no check for the cloud forms
 
       - id: lab-run.deploy-progress
         what: Follow a start or operation as steps and its live log (deploy steps UI, sidebar busy marks), as the run events the runner service tells, replayed after a reload.
@@ -973,12 +975,13 @@ areas:
             - park-resume
           integration:
             - launch-commands
+            - cli-lab-docker
         rig:
           - container
           - desktop-e2e
         gaps:
           desktop: no spec reads the deploy steps or log on the page; busy_labs is only polled as a wait helper
-          integration: launch-commands streams the log but asserts only the outcome
+          integration: launch-commands and cli-lab-docker check that the log and the run service's events stream, not their steps or order
 
       - id: lab-run.image-download
         what: A container lab's images are pulled in a step of their own, shown as the lab page's Get images phase; a pull that stops making progress or fails says so (the minutes without progress and the network hint, or Docker's reason), not that Docker ran out of resources.

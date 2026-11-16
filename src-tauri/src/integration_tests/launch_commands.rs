@@ -32,11 +32,18 @@ async fn a_local_lab_launches_and_tears_down_through_the_commands() {
     scenario(
         &mut f,
         async |f: &mut Vec<String>| {
-            let started = run_local(&dirs, &id, &src, |l: String| println!("[{id}] {l}")).await;
+            // The worker's log, which the lab page's deploy log shows: counted as it streams.
+            let lines = std::cell::Cell::new(0_usize);
+            let started = run_local(&dirs, &id, &src, |l: String| {
+                lines.set(lines.get() + 1);
+                println!("[{id}] {l}");
+            })
+            .await;
             check(started.is_ok(), format!("{id}: it imports and starts ({:?})", started.as_ref().err()), f);
             if started.is_err() {
                 return;
             }
+            check(lines.get() > 0, format!("{id}: its import and start stream their log ({} lines)", lines.get()), f);
             let s = lab_status(app.clone(), id.clone(), Runtime::Docker).await;
             check(
                 s.as_ref().is_ok_and(every_machine_runs),

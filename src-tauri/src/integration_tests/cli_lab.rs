@@ -30,6 +30,8 @@ use crate::testing::test_app::TestApp;
 struct Said {
     exit: Exit,
     last: Value,
+    /// How many of the run service's events it printed before its answer (`"type":"event"`).
+    events: usize,
 }
 
 impl Said {
@@ -49,8 +51,9 @@ async fn cyberctf(dirs: &AppDirs, args: &[&str]) -> Said {
     for l in out.lines() {
         println!("[cyberctf {}] {l}", args.join(" "));
     }
+    let events = out.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).filter(|l| l["type"] == "event").count();
     let last = out.lines().last().and_then(|l| serde_json::from_str(l).ok()).unwrap_or_else(|| Value::String(String::from_utf8_lossy(&err).into_owned()));
-    Said { exit, last }
+    Said { exit, last, events }
 }
 
 /// `labs status --json`'s answer, as far as the scenario reads it.
@@ -101,11 +104,13 @@ async fn status(dirs: &AppDirs, id: &str) -> Result<StatusAnswer, String> {
     serde_json::from_value(data.clone()).map_err(|e| format!("an answer of another shape ({e}): {data}"))
 }
 
-/// `labs install <src>`: the lab imported and started, under the id the launcher gives the folder.
+/// `labs install <src>`: the lab imported and started, under the id the launcher gives the folder,
+/// the run service's events (its start, its log) streamed as JSON lines before the answer.
 async fn installs(dirs: &AppDirs, src: &Path, id: &str, f: &mut Vec<String>) -> bool {
     let said = cyberctf(dirs, &["labs", "install", &src.to_string_lossy()]).await;
     let lab = said.data().map(|d| d["lab"].clone());
     check(lab.as_ref().and_then(Value::as_str) == Some(id), format!("labs install imports and starts it as {id} ({:?}: {})", said.exit, said.last), f);
+    check(said.events > 0, format!("labs install streams the run's events before its answer ({} events)", said.events), f);
     lab.is_some()
 }
 
