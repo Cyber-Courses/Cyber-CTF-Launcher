@@ -288,26 +288,67 @@ async fn the_child_starts_the_lab_it_is_handed() {
     println!("child: the start ended before it was killed: {started:?}");
 }
 
-/// The processes still running a tool for run `name` (its name on their command line or in their
-/// environment: Compose's `--project-name`, Vagrant's `VAGRANT_DOTFILE_PATH`), but this one.
-pub(super) fn tools_of(name: &str) -> Vec<String> {
+/// A process, told from a later one given its id by when it started.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Proc {
+    pub(super) pid: u32,
+    /// Its start, in seconds since the epoch.
+    pub(super) started: u64,
+    /// Its command line, to say which it is.
+    pub(super) line: String,
+}
+
+/// The processes descended from `root` in `procs` (`(process, its parent)`), `root` not among
+/// them: what it started that still runs, however deep (Vagrant's shell script, its launcher,
+/// then Ruby).
+fn descended_from(root: u32, procs: &[(Proc, Option<u32>)]) -> Vec<Proc> {
+    let mut found = vec![root];
+    let mut at = 0;
+    while let Some(&parent) = found.get(at) {
+        for (child, _) in procs.iter().filter(|(_, p)| *p == Some(parent)) {
+            if !found.contains(&child.pid) {
+                found.push(child.pid);
+            }
+        }
+        at += 1;
+    }
+    procs.iter().filter(|(p, _)| p.pid != root && found.contains(&p.pid)).map(|(p, _)| p.clone()).collect()
+}
+
+/// Every process now, with its parent.
+fn processes() -> Vec<(Proc, Option<u32>)> {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
     let mut sys = System::new();
-    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always).with_environ(UpdateKind::Always));
-    let me = std::process::id();
-    let has = |s: &std::ffi::OsString| s.to_string_lossy().contains(name);
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always));
     sys.processes()
         .values()
-        .filter(|p| p.pid().as_u32() != me && (p.cmd().iter().any(has) || p.environ().iter().any(has)))
-        .map(|p| format!("{} {}", p.pid(), p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" ")))
+        .map(|p| {
+            let line = p.cmd().iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" ");
+            (Proc { pid: p.pid().as_u32(), started: p.start_time(), line }, p.parent().map(sysinfo::Pid::as_u32))
+        })
         .collect()
 }
 
+/// The processes `root` started that run now (read while it lives: one whose parent died is
+/// nobody's descendant any more).
+pub(super) fn started_by(root: u32) -> Vec<Proc> {
+    descended_from(root, &processes())
+}
+
+/// Those of `procs` still running: the same id, started at the same time.
+pub(super) fn still_running(procs: &[Proc]) -> Vec<Proc> {
+    let now = processes();
+    procs.iter().filter(|p| now.iter().any(|(n, _)| n.pid == p.pid && n.started == p.started)).cloned().collect()
+}
+
 /// A start of lab `l` in `form` on `provider` run in a child process, killed (SIGKILL; on
-/// Windows, terminated) once `begun` says it has made something; then what it leaves: the run
-/// read as failed (never ready), the tools it started let finish (said: a killed process can't
-/// stop them), and a start again in this process that brings the whole lab up.
-pub(super) async fn killed_start(l: &Run, form: &str, provider: &str, begun: impl AsyncFn() -> bool, f: &mut Vec<String>) {
+/// Windows, terminated) once `begun` says it has made something; then the run read as failed
+/// (never ready). The tools the child started, which it left running (each in a process group
+/// of its own, out of a killed process's reach), are returned: the start again must end those
+/// still running (the runner's ledger of a dead process's tools), see [`ended_by_the_start_again`].
+/// Only the child's own descendants count: a VM's hypervisor process names the run too (QEMU's
+/// `-name <run>_<machine>`), but is the lab's, not a tool of the start, and runs on.
+pub(super) async fn killed_start(l: &Run, form: &str, provider: &str, begun: impl AsyncFn() -> bool, f: &mut Vec<String>) -> Vec<Proc> {
     // Every line has a value: an empty last one would be dropped.
     let provider = if provider.is_empty() { "-" } else { provider };
     let handed = [form, &l.home.to_string_lossy(), &l.dir.to_string_lossy(), &l.id, provider].join("\n");
@@ -315,7 +356,10 @@ pub(super) async fn killed_start(l: &Run, form: &str, provider: &str, begun: imp
     let mut child =
         match std::process::Command::new(exe).args(["--ignored", "--exact", "--nocapture", "--test-threads=1", CHILD_TEST]).env(CHILD, handed).spawn() {
             Ok(c) => c,
-            Err(e) => return check(false, format!("the child start runs ({e})"), f),
+            Err(e) => {
+                check(false, format!("the child start runs ({e})"), f);
+                return Vec::new();
+            }
         };
     // Until its start has made something, or its process ended before it did (nothing to kill).
     let made = eventually("the child's start to make something", Wait::secs(1800, Duration::from_millis(250)), async || {
@@ -329,20 +373,13 @@ pub(super) async fn killed_start(l: &Run, form: &str, provider: &str, begun: imp
     })
     .await;
     check(made == Ok(true), "the child's start made something before it was killed".into(), f);
+    // Read before the kill: once it is dead, its tools are nobody's children.
+    let tools = started_by(child.id());
     let killed = child.kill();
     let _ = child.wait();
     check(killed.is_ok(), format!("the child is killed mid-start ({:?})", killed.err()), f);
-    // The tools it started are in process groups of their own: they outlive it, and finish.
-    let name = docker::project(&l.id);
-    let orphans = tools_of(&name);
-    println!("note: tools the killed start left running: {orphans:?}");
-    let wait = Wait::secs(if form == "vm" { 3600 } else { 600 }, Duration::from_secs(2));
-    let ended = eventually("the killed start's tools to end", wait, async || {
-        let left = tools_of(&name);
-        if left.is_empty() { Ok(()) } else { Err(left) }
-    })
-    .await;
-    check(ended.is_ok(), format!("the killed start's tools ended ({:?})", ended.err().unwrap_or_default()), f);
+    let left = still_running(&tools);
+    println!("note: tools the killed start left running: {:?}", left.iter().map(|p| format!("{} {}", p.pid, p.line)).collect::<Vec<_>>());
     // The runner: a run whose start never ended is failed, not ready.
     let run = if form == "vm" { isothrum::LabRun::vm(&l.home, &l.dir, &l.id) } else { isothrum::LabRun::docker(&l.home, &l.dir, &l.id) };
     let state = match run {
@@ -354,14 +391,30 @@ pub(super) async fn killed_start(l: &Run, form: &str, provider: &str, begun: imp
         format!("the killed start's run reads as failed, not ready ({state:?})"),
         f,
     );
+    left
+}
+
+/// After the start again: none of the tools the killed start `left` still runs. The runner ends
+/// those of a dead process as its next operation begins; one left running would hold what the
+/// start again needs (Vagrant's lock on the machine).
+pub(super) async fn ended_by_the_start_again(left: &[Proc], f: &mut Vec<String>) {
+    // A killed group's members are gone at once; their reaping, a moment later.
+    let ended = eventually("the killed start's tools to be gone", Wait::secs(10, Duration::from_millis(500)), async || {
+        let still = still_running(left);
+        if still.is_empty() { Ok(()) } else { Err(still) }
+    })
+    .await;
+    let still: Vec<String> = ended.err().unwrap_or_default().iter().map(|p| format!("{} {}", p.pid, p.line)).collect();
+    check(still.is_empty(), format!("the start again ended the tools the killed one left ({still:?})"), f);
 }
 
 #[tokio::test]
 #[ignore = "needs Docker and a container lab (CYBERCTF_TEST_RESILIENCE_LAB)"]
 async fn a_start_killed_midway_is_failed_and_a_start_again_works() {
     on_lab("killed start", async |l: &Run, f: &mut Vec<String>| {
-        killed_start(l, "docker", "", async || has_a_container(l).await, f).await;
+        let left = killed_start(l, "docker", "", async || has_a_container(l).await, f).await;
         starts_whole(l, f, "started again after the kill").await;
+        ended_by_the_start_again(&left, f).await;
     })
     .await;
 }
@@ -402,6 +455,53 @@ async fn docker_stopped_while_the_lab_starts_says_so_and_a_start_once_it_is_back
 
 #[cfg(test)]
 mod tests {
+    use super::{Proc, descended_from};
+
+    fn proc(pid: u32, line: &str) -> Proc {
+        Proc { pid, started: 100, line: line.into() }
+    }
+
+    #[test]
+    fn a_killed_starts_tools_are_its_descendants_not_the_vm_that_names_the_run() {
+        // The test binary (10) ran `vagrant up` (bash, its launcher, then Ruby); libvirt's daemon
+        // (1's child) runs the VM, whose QEMU names the run as well.
+        let procs = [
+            (proc(1, "init"), None),
+            (proc(10, "child test"), Some(1)),
+            (proc(11, "bash /usr/bin/vagrant up"), Some(10)),
+            (proc(12, "/opt/vagrant/bin/vagrant up"), Some(11)),
+            (proc(13, "ruby vagrant up"), Some(12)),
+            (proc(20, "libvirtd"), Some(1)),
+            (proc(21, "qemu-system-x86_64 -name guest=solo-web-abc123_web"), Some(20)),
+            (proc(30, "an unrelated sh"), Some(1)),
+        ];
+        let lines: Vec<String> = descended_from(10, &procs).into_iter().map(|p| p.line).collect();
+        assert_eq!(lines, ["bash /usr/bin/vagrant up", "/opt/vagrant/bin/vagrant up", "ruby vagrant up"]);
+        assert_eq!(descended_from(30, &procs), []);
+    }
+
+    #[test]
+    fn a_process_whose_parent_says_itself_is_read_once() {
+        let procs = [(proc(5, "root"), None), (proc(6, "looped"), Some(6)), (proc(7, "child"), Some(5))];
+        assert_eq!(descended_from(5, &procs), [proc(7, "child")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn what_this_process_started_runs_until_it_ends_and_a_later_one_with_its_id_is_not_it() {
+        use super::{started_by, still_running};
+        let mut sleep = std::process::Command::new("sleep").arg("30").spawn().expect("sleep starts");
+        let mine = started_by(std::process::id());
+        let it: Vec<Proc> = mine.into_iter().filter(|p| p.pid == sleep.id()).collect();
+        assert_eq!(it.len(), 1, "the sleep it started is among its descendants");
+        assert_eq!(still_running(&it), it);
+        let other = Proc { started: it[0].started + 3600, ..it[0].clone() };
+        assert_eq!(still_running(&[other]), [], "the same id started at another time is another process");
+        sleep.kill().expect("sleep is killed");
+        sleep.wait().expect("sleep is reaped");
+        assert_eq!(still_running(&it), []);
+    }
+
     #[test]
     fn the_childs_test_is_where_its_name_says() {
         assert_eq!(super::CHILD_TEST, concat!("integration_tests::resilience::", "the_child_starts_the_lab_it_is_handed"));
