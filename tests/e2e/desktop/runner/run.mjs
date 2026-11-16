@@ -61,7 +61,6 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NO_WINDOW_MANAGER, needsDisplay, startDisplay } from "./display.mjs";
-import { libvirtFixtureXml, scanFixture } from "./fixture.mjs";
 import { preflightHint } from "./preflight.mjs";
 import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "../support/host.mjs";
 import { dropComposeRecord, projectVolumes, projects, record as recordMachine, removeDangling, runFolders, runTool } from "../support/owned.mjs";
@@ -89,9 +88,6 @@ const WINDOWS = process.platform === "win32";
 const CAPS = { default: 300, machine: 480 };
 /** How long the embedded WebDriver server may take to answer, at the start and after a death. */
 const APP_UP_S = 60;
-const UTMCTL = "/Applications/UTM.app/Contents/MacOS/utmctl";
-/** virsh's connection to the domains the engine's libvirt labs run under. */
-const VIRSH = ["-c", "qemu:///system"];
 
 function die(why) {
   console.error(`run.mjs: ${why}`);
@@ -413,8 +409,6 @@ const state = needsState(plan.providers);
 let engineWhy = null;
 /** The hypervisors app.mjs can ask for their VMs, by their tool; another is taken as given. */
 const ASKABLE = { libvirt: "virsh", virtualbox: "VBoxManage", hyperv: "Get-VM", utm: "utmctl" };
-/** The scan's fixture VM while it exists (fixtureVm): its kind, its name, UTM's id for it. */
-let fixture = null;
 const CHECKS = {
   engine: () => {
     // Its version named, not an exit 0 alone: Docker 26 and older answer an empty line then.
@@ -442,7 +436,6 @@ const CHECKS = {
   },
   "own-frame": () => (process.platform === "linux" || WINDOWS ? null : "macOS keeps the system's window frame: the app draws no window controls there"),
   unix: () => (WINDOWS ? "kills the worker with SIGKILL: Unix only (Windows: taskkill /F, the rig's own case)" : null),
-  "fixture-vm": () => fixtureVm(),
 };
 /** Why runner-provided `need` isn't met, checked once; null when it is. */
 function runnerNeed(need) {
@@ -462,94 +455,12 @@ function blockedBy(c) {
   return null;
 }
 
-/**
- * The VM the running-labs scan looks for, named as the engine names the installed lab's VMs: its
- * VM-name prefix (its isoloom name, plus `-<instance>` when the lab holds an instance number,
- * `.cyberctf-instance`, 1 and up) and a machine, `<prefix> · dc01` under UTM on a Mac,
- * `<prefix>_dc01` under libvirt on Linux (runner/fixture.mjs). An empty VM is enough: it boots to
- * its firmware and shows as running. Made here, dropped after the scan and on any way out of the
- * run (dropFixtureVm); why it can't be, otherwise.
- */
-function fixtureVm() {
-  const installed = join(FOLDERS.labs, LAB_ID);
-  if (!LAB_ID || !existsSync(installed)) return `the lab is not installed under ${FOLDERS.labs} (the launch spec imports it)`;
-  let prefix = LAB_NAME;
-  const instance = existsSync(join(installed, ".cyberctf-instance")) ? readFileSync(join(installed, ".cyberctf-instance"), "utf8").trim() : "";
-  if (/^[1-9][0-9]*$/.test(instance)) prefix = `${LAB_NAME}-${instance}`;
-  const made = scanFixture(process.platform, prefix);
-  if ("skip" in made) return made.skip;
-  return made.kind === "utm" ? utmFixtureVm(made.vm) : libvirtFixtureVm(made.vm);
-}
-/** A UTM VM named `vm`, started; why not, on failure. */
-function utmFixtureVm(vm) {
-  if (!existsSync(UTMCTL)) return "UTM is not installed";
-  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
-  say(`UTM fixture VM: ${vm}`);
-  try {
-    const id = execFileSync(
-      "osascript",
-      [
-        "-e",
-        'tell application "UTM"',
-        "-e",
-        `set vm to make new virtual machine with properties {backend:qemu, configuration:{name:"${vm}", architecture:"${arch}", memory:256, cpu cores:1}}`,
-        "-e",
-        "start vm",
-        "-e",
-        "return id of vm",
-        "-e",
-        "end tell",
-      ],
-      { encoding: "utf8", timeout: 60000 },
-    ).trim();
-    fixture = { kind: "utm", vm, id };
-  } catch (e) {
-    return `could not create the UTM fixture VM (${failureTail(e.stderr ?? e.message, 1)})`;
-  }
-  for (let i = 0; i < 15 && !(runTool(UTMCTL, ["status", fixture.id]) ?? "").includes("started"); i++) sleepSync(2000);
-  return null;
-}
-/** A libvirt domain named `vm` on qemu:///system (runner/fixture.mjs: 256 MiB, no disk, no network),
- *  defined and started; why not, on failure, whatever of it was made dropped. */
-function libvirtFixtureVm(vm) {
-  // runTool: "" when there's no virsh at all, null when it fails.
-  if (!runTool("virsh", [...VIRSH, "version"])) return "virsh doesn't answer here (qemu:///system): libvirt isn't installed or isn't running";
-  const xml = join(RUN_ROOT, "fixture-vm.xml");
-  writeFileSync(xml, libvirtFixtureXml(vm, { arch: process.arch === "arm64" ? "aarch64" : "x86_64", kvm: existsSync("/dev/kvm") }));
-  say(`libvirt fixture VM: ${vm}`);
-  try {
-    execFileSync("virsh", [...VIRSH, "define", xml], { encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"] });
-    fixture = { kind: "libvirt", vm, id: vm };
-    execFileSync("virsh", [...VIRSH, "start", vm], { encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"] });
-  } catch (e) {
-    dropFixtureVm();
-    return `could not create the libvirt fixture VM (${failureTail(e.stderr ?? e.message, 1)})`;
-  }
-  for (let i = 0; i < 15 && (runTool("virsh", [...VIRSH, "domstate", vm]) ?? "").trim() !== "running"; i++) sleepSync(2000);
-  return null;
-}
-/** The scan's fixture VM stopped and removed, when there is one. */
-function dropFixtureVm() {
-  if (!fixture) return;
-  const { kind, id } = fixture;
-  fixture = null;
-  if (kind === "utm") {
-    runTool(UTMCTL, ["stop", "--kill", id]);
-    sleepSync(2000);
-    runTool(UTMCTL, ["delete", id]);
-  } else {
-    runTool("virsh", [...VIRSH, "destroy", id]);
-    runTool("virsh", [...VIRSH, "undefine", id]);
-  }
-}
-
 // --- Running a spec --------------------------------------------------------------------------
-/** The environment a case adds to its spec's: the lab form, the signed-out folder, the scan's lab. */
+/** The environment a case adds to its spec's: the lab form, the signed-out folder. */
 function caseEnv(c) {
   const env = { CYBERCTF_TEST_DESKTOP_TIMEOUT: String(capOf(c)) };
   if (c.form) env.CYBERCTF_TEST_LAB_FORM = c.form;
   if (c.case === "fail-signedout") env.CYBERCTF_WDIO_ROOT = join(RUN_ROOT, "signed-out");
-  if (c.case === "vm-scan") env.CYBERCTF_TEST_SCAN_LAB = LAB_ID;
   return env;
 }
 /** The running spec's process (its group's leader), 0 between specs. */
@@ -621,7 +532,6 @@ async function runCase(c) {
   const start = Date.now();
   const { code, text, log, cap } = await runSpec(c);
   stopRunApps();
-  if (c.case === "vm-scan") dropFixtureVm();
   const seconds = Math.round((Date.now() - start) / 1000);
   const checks = checkLines(text);
   for (const l of checks) console.log(`   ${{ ok: "ok", FAIL: "FAILED", skip: "skipped" }[l.status]}: ${l.id} (${l.seconds}s) ${l.text}`);
@@ -650,17 +560,13 @@ function stopped(signal) {
   console.log(`\nrun.mjs: stopped by ${signal}: ending the running spec and the run's apps`);
   endGroup(running);
   stopRunApps();
-  dropFixtureVm();
   cleanupLab(true);
   dropRunRoot();
   process.exit(signal === "SIGINT" ? 130 : 143);
 }
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => stopped(signal));
-// Any other way out (die()) ends the running spec's group too, and drops the scan's fixture VM.
-process.on("exit", () => {
-  endGroup(running);
-  dropFixtureVm();
-});
+// Any other way out (die()) ends the running spec's group too.
+process.on("exit", () => endGroup(running));
 
 say(`app: ${APP}`);
 say(`lab: ${LAB}${LAB_OK ? ` (${LAB_NAME}, id ${LAB_ID})` : " (not a lab folder)"}`);
@@ -696,7 +602,6 @@ for (let i = 0; i < queue.length; i++) {
 }
 
 stopRunApps();
-dropFixtureVm();
 cleanupLab(true);
 dropRunRoot();
 say(`desktop e2e, logs in ${LOGS}`);

@@ -86,9 +86,7 @@ need once:
   Docker engine answers, within a minute), `fixture-lab` (the lab folder), `session`
   (`CYBERCTF_TEST_ACCOUNT_SESSION`), `hypervisor` (`CYBERCTF_TEST_VM_PROVIDER`, and its tool answers
   where one can be asked), `server` (`CYBERCTF_TEST_SERVER_ENV`), `own-frame` (Linux, Windows),
-  `unix`, `fixture-vm` (the VM `vm-scan` looks for, made and deleted by the runner: a UTM VM on
-  macOS, a libvirt domain on Linux on `qemu:///system`, 256 MiB with no disk and no network;
-  elsewhere the spec can't run, Hyper-V's fixture being a later follow-up).
+  `unix`.
 - A spec provides the others by passing (`export const provides`): `launch` provides
   `running-lab:fixture` (the fixture lab starts here), `lab-form-container` provides
   `catalogue-lab` (a catalogue lab starts here, signed in), `lab-form-per-machine` provides `vm-start`
@@ -123,7 +121,7 @@ of what its specs need, so `launch` is in two:
 | Group        | Cases                                                                                                                                             | About                                           |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | `shell`      | smoke, title-bar, settings, onboarding, setup-screens, labs, deep-link, fail-offline, fail-badlab, fail-signedout, fail-docker, attack-on-stopped | no lab, but `labs`' import                      |
-| `lab`        | launch, restart, stop, launch-ui, attack-box, attack-shell, stop-with-box, vm-scan                                                                | the fixture lab's life                          |
+| `lab`        | launch, restart, stop, launch-ui, attack-box, attack-shell, stop-with-box                                                                         | the fixture lab's life                          |
 | `resilience` | launch, kill-mid-deploy, stop-during-start, double-start, close-mid-deploy, kill-worker, park-resume, reimport-running                            | what breaks a start                             |
 | `vm`         | machine, lab-form-container, lab-actions, offline-start, lab-form-per-machine, lab-form-vm, screens, server-lab, cleanup                          | signed in, a hypervisor, a server; cleanup last |
 
@@ -163,7 +161,6 @@ this layer: the integration tests' AWS tier covers them.
 | The title bar and window controls (Linux, Windows)                              | `title-bar`                                                                                         | Linux or Windows (macOS keeps the system's frame)                          |                                                                                          |
 | Deep links (`cyberctf://labs/<slug>`)                                           | `deep-link`                                                                                         | the catalogue reachable, or an imported lab                                | the system routing the scheme to the app (the packaging smoke)                           |
 | Failure states: offline, signed out, no Docker, a bad folder, a kill mid-deploy | `fail-offline`, `fail-signedout`, `fail-docker`, `fail-badlab`, `kill-mid-deploy`                   | Docker for the last                                                        |                                                                                          |
-| The running-labs scan finding a VM lab                                          | `vm-scan`                                                                                           | a Mac with UTM (the runner makes the VM); elsewhere by hand (below)        |                                                                                          |
 
 What the specs answer in place of the system, and why: the system's own dialogs (a destructive
 action's confirmation, the folder and file pickers) are windows WebDriver can't press, so
@@ -206,7 +203,6 @@ so in the check line.
 | `offline-start`     | a lab started online, then started with the backend cut (through the spec's relay), is offered an offline start, runs offline, and stops                                                                                                     |
 | `lab-form-*`        | `lab-form` with `CYBERCTF_TEST_LAB_FORM`: a catalogue lab started in that form through the "Where should it run?" dialog runs (asked of Docker or the hypervisor), its address answers, and Stop & remove leaves nothing                     |
 | `screens`           | a running VM lab's Screens panel; a VNC screen's window shows its framebuffer; an RDP one's window hands it to the system's client; a machine without a screen says why; with `CYBERCTF_TEST_BOX_DESKTOP=1`, the attack box's desktop Screen |
-| `vm-scan`           | on a Mac with UTM: a started VM named `<lab> · <machine>` is matched to the installed lab by the running-labs scan (the fixture VM is made and deleted by the runner; Docker is made unreachable so only the hypervisor probe can match)     |
 | `server-lab`        | Add server, the setup window filled from the settings file (tools installed from it when missing), Save and test passing, the VM test, the server listed and Online, a catalogue lab started, running and removed there, the server removed  |
 | `cleanup`           | Settings > Maintenance: Clean up answered Cancel removes nothing; answered Remove, when every download it lists is the run's, says what it freed (otherwise the others are named and all left); a named tool the run's app installed removed |
 
@@ -219,11 +215,6 @@ row in `cases.tsv` (its id, spec, form, knobs and groups) and a row above. A spe
 fixed time: it waits on what it expects (`waitUntil`, `waitAwake`, `eventually`, with a timeout and
 a message that says what was awaited), and what must not happen it watches for the whole time
 the app has to do it (`holdsFor`), not at one instant after a pause.
-
-On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` (or a Hyper-V VM
-`<lab>-<machine>` on Windows) yourself, `<lab>` being the installed lab's isoloom name plus
-`-<instance>` when `labs/<id>/.cyberctf-instance` holds a number, and run
-`tests/e2e/desktop/specs/vm-scan.mjs` with `CYBERCTF_TEST_SCAN_LAB=<lab id>`.
 
 ## On a test machine
 

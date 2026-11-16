@@ -23,7 +23,6 @@ launch-ui	launch-ui	-	CYBERCTF_TEST_LOCAL_LAB	lab
 attack-box	attack-box	-	CYBERCTF_TEST_LOCAL_LAB	lab
 attack-shell	attack-shell	-	CYBERCTF_TEST_LOCAL_LAB	lab
 stop-with-box	stop-with-box	-	CYBERCTF_TEST_LOCAL_LAB	lab
-vm-scan	vm-scan	-	CYBERCTF_TEST_SCAN_LAB	lab
 kill-mid-deploy	kill-mid-deploy	-	CYBERCTF_TEST_LOCAL_LAB	resilience
 stop-during-start	stop-during-start	-	CYBERCTF_TEST_LOCAL_LAB	resilience
 double-start	double-start	-	CYBERCTF_TEST_LOCAL_LAB	resilience

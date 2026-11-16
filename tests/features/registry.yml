@@ -1051,7 +1051,7 @@ areas:
           integration: the killed start's scenarios are resilience.killed-start's; none kills the app itself mid-deploy
 
       - id: lab-run.running-labs-scan
-        what: Labs already running here (started from the website, before a crash or restart) are found by asking Docker and each hypervisor, and listed as running.
+        what: Labs already running here (started from the website, before a crash or restart) are listed as running from the runner's records of its runs on this machine, whatever engine or hypervisor runs them.
         providers:
           - docker
           - libvirt
@@ -1072,12 +1072,11 @@ areas:
             - src/components/shell/use-sidebar-labs.test.tsx > lists a lab the core's scan sees
           desktop:
             - restart
-            - vm-scan
         rig:
           - desktop-e2e
         gaps:
-          desktop: vm-scan needs a VM set up by the caller (CYBERCTF_TEST_SCAN_LAB); run.sh does it for UTM only
-          integration: none; VirtualBox, VMware and Parallels probes only unit-tested on canned output
+          desktop: restart proves it on a container lab only; no VM lab's run is listed by a desktop spec
+          integration: none
 
       - id: lab-run.status
         what: The lab page and lists read each lab's state (running, parked, down machines, URL, place) wherever it runs, as the app's reconcile tells it when it changes (no polling).
@@ -1195,7 +1194,6 @@ areas:
         tests:
           desktop:
             - lab-form-vm
-            - vm-scan
           integration:
             - vm-lab
             - per-machine
@@ -1278,7 +1276,6 @@ areas:
             - src-tauri/src/platform/exec/vagrant.rs > hyperv_machines_are_recognised_by_their_folder
             - src-tauri/src/platform/exec/elevate.rs > only_hyperv_on_windows_goes_through_the_script_elevated_when_it_must
           desktop:
-            - vm-scan
             - lab-form-vm
           integration:
             - vm-lab
@@ -1294,7 +1291,6 @@ areas:
           - machine-setup@hyperv
         gaps:
           integration: tests/integration/run.sh is bash only; Windows rig cells (golden:hyperv) not run yet
-        note: vm-scan's header says it was proven green on Hyper-V by hand.
 
       - id: providers.utm
         what: VM-form labs on UTM (macOS).
@@ -1309,7 +1305,6 @@ areas:
           web:
             - "vm-labs.spec.ts > on Apple Silicon: a VM lab built for arm64 runs on UTM, pauses, resumes and stops"
           desktop:
-            - vm-scan
             - lab-form-vm
           integration:
             - vm-lab
