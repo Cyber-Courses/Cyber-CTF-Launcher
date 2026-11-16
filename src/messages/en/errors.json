@@ -50,6 +50,7 @@
     "reapNoHost": "No account is recorded for it, so the launcher can't destroy it. Remove its resources in your cloud console.",
     "pickCloudAccount": "This lab runs in your cloud account: pick one of your cloud accounts to start it on.",
     "noHypervisor": "No hypervisor ready on this machine runs this lab. Install one from the Machine page, or run the lab on a server or in your cloud account.",
+    "virtiofsdMissing": "libvirt can't share your shared folder with the attack box: virtiofsd isn't installed. Install libvirt again from the Machine page (that adds it), or run sudo apt-get install virtiofsd (sudo dnf install virtiofsd on Fedora), then try again.",
     "turnedOffByPolicy": "Your organization turned this off on this computer (policy setting {setting}). Ask your IT team if you need it.",
     "tlsUnconfirmed": "The certificate of {server} hasn't been confirmed yet (SHA-256 {presented}), so nothing was sent to it. To confirm it, open it in Servers, choose Edit, and compare the fingerprint with the one the server itself shows before you confirm it.",
     "tlsChanged": "The certificate of {server} changed (it was {pinned}, it is now {presented}), so nothing was sent to it: someone may be intercepting the connection. If you replaced the certificate yourself, open it in Servers, choose Edit, and compare the fingerprint with the one the server itself shows before you confirm it.",

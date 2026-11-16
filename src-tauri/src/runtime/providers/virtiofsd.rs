@@ -55,6 +55,21 @@ fn fs_binary(json: &str) -> Option<PathBuf> {
     binary.is_file().then_some(binary)
 }
 
+/// Whether this computer may share a folder with a VM on `provider`: refused up front for libvirt
+/// without a virtiofsd ([`found`]), whose start would otherwise fail deep in vagrant-libvirt.
+pub(crate) fn can_share(provider: Provider) -> crate::error::Result<()> {
+    share_on(provider, Os::HERE, found)
+}
+
+/// [`can_share`] on `os`, `found` telling whether libvirt finds a virtiofsd (asked only for
+/// libvirt).
+fn share_on(provider: Provider, os: Os, found: impl FnOnce() -> bool) -> crate::error::Result<()> {
+    if needs_virtiofsd(provider, os) && !found() {
+        return Err(crate::error::Error::coded(crate::error::Code::VirtiofsdMissing));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +109,17 @@ mod tests {
         std::fs::write(root.join("50-qemu-gpu.json"), descriptor("gpu", &binary)).unwrap();
         std::fs::write(root.join("README"), descriptor("fs", &binary)).unwrap();
         assert_eq!(found_in(&[&root]), None);
+    }
+
+    #[test]
+    fn a_shared_folder_on_libvirt_without_virtiofsd_is_refused_with_its_code_before_anything_starts() {
+        use crate::error::Code;
+        let refused = share_on(Provider::Libvirt, Os::Linux, || false).unwrap_err();
+        assert_eq!(refused.code(), Code::VirtiofsdMissing);
+        assert!(refused.to_string().contains("apt-get install virtiofsd"), "says what to install: {refused}");
+        assert!(share_on(Provider::Libvirt, Os::Linux, || true).is_ok());
+        // Another hypervisor never asks for virtiofsd.
+        assert!(share_on(Provider::Virtualbox, Os::Linux, || panic!("not asked")).is_ok());
     }
 
     #[test]

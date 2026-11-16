@@ -72,7 +72,7 @@ impl Placed {
     /// in the lab, so the learner's Stop retires whatever of it the run already has.
     pub(crate) async fn add(&self, dirs: &AppDirs, pick: Pick<'_>, network: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
         let kind = if self.vm { Kind::Vm { desktop: pick.desktop } } else { Kind::Container { image: pick.image } };
-        let shared = self.shared_folder(dirs, log);
+        let shared = self.shared_folder(dirs, log)?;
         let written = super::add(&self.dir, kind, self.cpu(), network, shared.as_deref()).and_then(|()| lab::prepare(&self.dir, self.target).map(drop));
         let failed = match written {
             Err(error) => Failed { error, run_changed: false },
@@ -132,13 +132,17 @@ impl Placed {
 
     /// The learner's shared folder for the box, when it is on and the lab runs where a machine
     /// can mount a folder of this computer ([`shares_folders`]); otherwise none, `log` saying why
-    /// when it is on (or when the setting or the folder can't be used).
-    fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Option<PathBuf> {
+    /// when it is on (or when the setting or the folder can't be used). Refused when the
+    /// hypervisor lacks what it shares the folder through (libvirt's virtiofsd,
+    /// [`crate::runtime::providers::can_share`]): said before the box is added, not as the
+    /// hypervisor's failure once its VM starts.
+    fn shared_folder(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<Option<PathBuf>> {
         let folder = match crate::shared_folder::current(dirs) {
-            Ok(folder) => folder?,
+            Ok(Some(folder)) => folder,
+            Ok(None) => return Ok(None),
             Err(e) => {
                 log(format!("The shared folder isn't mounted in the attack box: {e}."));
-                return None;
+                return Ok(None);
             }
         };
         // The run's record says its hypervisor: no status read (a `vagrant status`) for it.
@@ -153,7 +157,10 @@ impl Placed {
             Host::Esxi { .. } | Host::Cloud { .. } | Host::Server { .. } => None,
         };
         if shares_folders(self.local(), self.target, provider.as_deref(), Os::HERE) {
-            return Some(folder);
+            if let Some(p) = provider.as_deref().and_then(Provider::from_id) {
+                crate::runtime::providers::can_share(p)?;
+            }
+            return Ok(Some(folder));
         }
         let why = match provider.as_deref() {
             _ if !self.local() => "a lab on a server or in a cloud account can't reach a folder of this computer".to_owned(),
@@ -161,7 +168,7 @@ impl Placed {
             None => "the lab's hypervisor isn't known, so sharing a folder with its VM isn't assumed".to_owned(),
         };
         log(format!("The shared folder isn't mounted in the attack box here: {why}."));
-        None
+        Ok(None)
     }
 
     /// The box's CPU on this computer ([`box_cpu`]).

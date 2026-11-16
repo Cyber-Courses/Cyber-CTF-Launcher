@@ -1,0 +1,6 @@
+Bringing machine 'attack' up with 'libvirt' provider...
+==> attack: Creating domain with the following settings...
+==> attack: Starting domain.
+/usr/lib/ruby/vendor_ruby/fog/libvirt/requests/compute/vm_action.rb:7:in 'Libvirt::Domain#create': Call to virDomainCreate failed: operation failed: Unable to find a satisfying virtiofsd (Libvirt::Error)
+	from /usr/lib/ruby/vendor_ruby/fog/libvirt/requests/compute/vm_action.rb:7:in 'Fog::Libvirt::Compute::Shared#vm_action'
+	from /usr/lib/ruby/vendor_ruby/fog/libvirt/models/compute/server.rb:81:in 'Fog::Libvirt::Compute::Server#start'

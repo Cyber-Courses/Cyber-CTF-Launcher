@@ -97,6 +97,7 @@ describe("command errors", () => {
         "toolTooOld",
         "turnedOffByPolicy",
         "unreachable",
+        "virtiofsdMissing",
       ].sort(),
     );
   });
