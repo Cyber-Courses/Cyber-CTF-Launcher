@@ -377,8 +377,9 @@ fn a_missing_tool_is_named() {
 async fn lines_are_read_lossily_whatever_the_read_boundaries() {
     // A two-byte buffer makes every multi-byte character span reads: `read_until` gathers the
     // whole line first, so a character is never cut at a chunk boundary. CRLF is stripped, a
-    // lone CR inside a line is kept, an invalid byte is replaced, and the last line needs no
-    // newline.
+    // lone CR inside a line is kept, a line that isn't UTF-8 is decoded whole (in the system's
+    // code page on Windows, as its console tools print: 0xFF is `ÿ` in Windows-1252; replaced
+    // elsewhere), and the last line needs no newline.
     let mut input = "a\r\nb\rc\n\u{20ac}\u{20ac}\n".as_bytes().to_vec();
     input.extend_from_slice(&[0xff, b'd']);
     let mut reader = BufReader::with_capacity(2, &input[..]);
@@ -387,7 +388,8 @@ async fn lines_are_read_lossily_whatever_the_read_boundaries() {
     while reader.read_until(b'\n', &mut buf).await.unwrap() > 0 || !buf.is_empty() {
         lines.push(take_line(&mut buf));
     }
-    assert_eq!(lines, ["a", "b\rc", "\u{20ac}\u{20ac}", "\u{fffd}d"]);
+    let not_utf8 = if cfg!(windows) { crate::platform::tool_output::text::decode(&[0xff, b'd']) } else { "\u{fffd}d".to_owned() };
+    assert_eq!(lines, ["a", "b\rc", "\u{20ac}\u{20ac}", not_utf8.as_str()]);
     assert_eq!(reader.read_until(b'\n', &mut buf).await.unwrap(), 0, "still at the end");
 }
 
