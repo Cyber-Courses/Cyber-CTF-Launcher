@@ -6,15 +6,15 @@
 
 use serde::{Deserialize, Serialize};
 
+// The variables of the backend's evidence claim (a lab exchanges the token for its evidence).
+use crate::runtime::isothrum::CLAIM;
+
 /// One variable of a launch's `env`.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct EnvVar {
     pub(super) name: String,
     pub(super) value: String,
 }
-
-/// The variables of the backend's evidence claim (a lab exchanges the token for its evidence).
-const CLAIM: [&str; 2] = ["CTF_API_URL", "CTF_LAUNCH_TOKEN"];
 
 /// The prefix of an objective's per-player value: CyberBackend names it `CTF_FLAG_<KEY>`, the
 /// objective's key in upper snake case (`flagEnvName`: `main` is `CTF_FLAG_MAIN`, `ssrf-to-metadata`
