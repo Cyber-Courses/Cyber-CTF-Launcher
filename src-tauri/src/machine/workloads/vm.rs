@@ -7,8 +7,8 @@
 //! landing then was refused (`MachineActionLockedError`) and its start failed. A record whose
 //! folder is gone, the stale kind pruning dropped, is skipped instead. The effect is cosmetic only: the count and the per-lab Stop button are the
 //! harm, and that Stop merely runs `vagrant destroy -f` (a no-op on an already-down VM); nothing
-//! here drives automatic cleanup. The live, never-cached "which labs are up" answer is
-//! [`crate::runtime::discover`], asked of each hypervisor directly.
+//! here drives automatic cleanup. Which labs are up is the runner's answer
+//! ([`crate::runtime::recorded::running_here`]).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

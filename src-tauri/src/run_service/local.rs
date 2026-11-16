@@ -239,7 +239,7 @@ impl RunService for LocalRunService {
 
     fn reconcile_once(&self) -> BoxFuture<'_, ()> {
         Box::pin(async move {
-            let seen = crate::runtime::discover::running_lab_ids(&self.dirs).await.into_iter().collect::<std::collections::BTreeSet<_>>();
+            let seen = crate::runtime::recorded::running_here(&self.dirs).await.into_iter().collect::<std::collections::BTreeSet<_>>();
             let lab_ids: Vec<String> = seen.iter().cloned().collect();
             if self.watch.lock().unwrap_or_else(PoisonError::into_inner).scanned(seen) {
                 self.events.emit(RunEvent::Running { lab_ids });

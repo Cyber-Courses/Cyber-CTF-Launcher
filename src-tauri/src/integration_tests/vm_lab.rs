@@ -120,8 +120,26 @@ fn listing(provider: Provider) -> Option<(&'static str, &'static [&'static str],
     })
 }
 
+/// The stem the VMs of lab `id`, installed in `dir`, are named with when it runs on the runner
+/// whose home is `home`: `<name>[-<instance>]-<key>`, as Isoloom names a copy's VMs; none when
+/// its spec names none.
+fn vm_stem(dir: &Path, id: &str, home: &Path) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct Named {
+        name: Option<String>,
+    }
+    let spec = std::fs::read_to_string(dir.join("isoloom.yml")).ok()?;
+    let name = serde_yaml_ng::from_str::<Named>(&spec).ok()?.name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty())?;
+    let prefix = match crate::runtime::lab::instance(dir) {
+        Some(n) => format!("{name}-{n}"),
+        None => name,
+    };
+    let run = isothrum_runner::RunName::new(&crate::runtime::docker::project(id)).ok()?;
+    Some(format!("{prefix}-{}", isothrum_runner::copy_key(home, &run)))
+}
+
 /// Whether `line` of a listing is a VM of the lab whose VMs are named with `stem`
-/// (`<name>-<instance>-<key>`, [`crate::runtime::discover::vm_stem`]), installed in `folder`, shown
+/// (`<name>-<instance>-<key>`, [`vm_stem`]), installed in `folder`, shown
 /// as `shows`: `<stem> - <machine>` (VirtualBox, Parallels, UTM), `<stem>_<machine>` (libvirt),
 /// `<stem>-<machine>` (Hyper-V), or by a path in its folder.
 fn is_labs(line: &str, shows: Shows, stem: &str, folder: &str) -> bool {
@@ -168,7 +186,7 @@ async fn a_vm_lab_runs_end_to_end_through_the_runner() {
             };
             check(stopped.is_ok(), format!("it stops: {:?}", stopped.err()), f);
             // Read before anything goes: the stem is the spec's name and the run's key.
-            let left = match crate::runtime::discover::vm_stem(&lab.dir, &lab.id, &lab.home) {
+            let left = match vm_stem(&lab.dir, &lab.id, &lab.home) {
                 Some(stem) => left_on(provider, &stem, &lab.dir).await,
                 None => Err("the lab's VM names can't be told: its spec names none".to_owned()),
             };
