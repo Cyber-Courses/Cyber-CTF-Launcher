@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { choiceState } from "../lib/page.mjs";
-import { answerPickers, closeWindow, finish, goTo, invokeCmd, openApp, results, selectValue, sleep, switchToWindow } from "../lib/support.mjs";
+import { answerPickers, closeWindow, finish, goTo, invokeCmd, openApp, results, selectValue, switchToWindow } from "../lib/support.mjs";
 
 export const needs = [];
 const r = results();
@@ -19,8 +19,12 @@ const appearance = (b) => b.execute(() => ["light", "black"].find((c) => documen
 /** The Theme switch's option `name`. */
 const themeOption = (b, name) => b.$(`//*[@role="radiogroup"][@aria-label="Theme"]//*[@role="radio"][contains(normalize-space(), ${JSON.stringify(name)})]`);
 const section = async (b, name) => {
-  await (await b.$(`//nav[@aria-label="Settings sections"]//button[contains(normalize-space(), ${JSON.stringify(name)})]`)).click();
-  await sleep(500);
+  const tab = await b.$(`//nav[@aria-label="Settings sections"]//button[contains(normalize-space(), ${JSON.stringify(name)})]`);
+  await tab.click();
+  await b.waitUntil(async () => (await tab.getAttribute("aria-current")) === "page", {
+    timeout: 10000,
+    timeoutMsg: `Settings never showed its ${name} section`,
+  });
 };
 /** Waits until `read()` gives `want`, in window `label`; true when it did. */
 const followed = async (b, label, read, want) => {
@@ -92,7 +96,7 @@ try {
   await toggle.waitForExist({ timeout: 20000 });
   if ((await toggle.getAttribute("aria-checked")) !== "true") {
     await toggle.click();
-    await sleep(1500);
+    await b.waitUntil(async () => (await toggle.getAttribute("aria-checked")) === "true", { timeout: 15000, timeoutMsg: "the shared folder never turned on" });
   }
   await (await b.$('//button[contains(normalize-space(), "Change")]')).click();
   await r.step("shared-folder", "a folder picked in Settings is the shared folder", async () => {

@@ -8,7 +8,7 @@
 // Docker is made unreachable for the app (deadDockerEnv), so only the hypervisor probe can report the
 // lab: its containers may still be up from the scenarios before.
 // Proven green on libvirt, Hyper-V and a Mac with UTM.
-import { connect, deadDockerEnv, finish, launchApp, results, sleep } from "../lib/support.mjs";
+import { capMs, connect, deadDockerEnv, eventually, finish, invokeCmd, launchApp, results } from "../lib/support.mjs";
 
 const WANT = process.env.CYBERCTF_TEST_SCAN_LAB || "solo-web";
 
@@ -20,39 +20,19 @@ let b;
 try {
   proc = await launchApp({ env: deadDockerEnv() });
   b = await connect();
-  // The scan is debounced and each hypervisor probe waits out its own timeout, so poll a few times.
-  for (let attempt = 0; attempt < 8 && !found; attempt++) {
-    await b.execute(() => {
-      window.__scan = "pending";
-      const inv = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
-      if (!inv) {
-        window.__scan = "no-invoke";
-        return;
-      }
-      inv("running_labs").then(
-        (r) => {
-          window.__scan = JSON.stringify(r);
-        },
-        (e) => {
-          window.__scan = "ERR " + e;
-        },
-      );
-    });
-    let raw = "pending";
-    for (let i = 0; i < 20 && raw === "pending"; i++) {
-      await sleep(1000);
-      raw = await b.execute(() => window.__scan).catch(() => "pending");
-    }
-    console.log(`attempt ${attempt}: running_labs=${raw}`);
-    let list = [];
-    try {
-      list = JSON.parse(raw);
-    } catch {
-      /* not a list yet */
-    }
-    if (Array.isArray(list) && list.includes(WANT)) found = true;
-    else await sleep(3000);
-  }
+  // The scan is debounced and each hypervisor probe waits out its own timeout, so it is asked
+  // again until it lists the lab.
+  let attempt = 0;
+  found = await eventually(
+    async () => {
+      attempt += 1;
+      const list = await invokeCmd(b, "running_labs", {}, { timeoutMs: 20000 }).catch((e) => `ERR ${e.message}`);
+      console.log(`attempt ${attempt}: running_labs=${JSON.stringify(list)}`);
+      return Array.isArray(list) && list.includes(WANT);
+    },
+    capMs(0.6),
+    3000,
+  );
   r.check("vm-scan", found, found ? `the running-labs scan detected the VM lab ${WANT}` : `${WANT} not detected`);
 } catch (e) {
   r.fail("vm-scan", e.message);

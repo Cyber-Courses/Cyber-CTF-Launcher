@@ -8,6 +8,7 @@
 // buttons of its own.
 import {
   containersChanged,
+  eventually,
   finish,
   goTo,
   invokeWhenIdle,
@@ -17,7 +18,6 @@ import {
   mainText,
   openApp,
   results,
-  sleep,
   waitForLab,
   waitLaunchSettled,
 } from "../lib/support.mjs";
@@ -72,14 +72,14 @@ try {
   );
 
   await invokeWhenIdle(b, "lab_park", { id, runtime: "DOCKER", mode: "shutdown" });
-  await sleep(1500);
-  const parked = states(id);
+  let parked = states(id);
+  await eventually(() => runningCount((parked = states(id))) === 0, 15000, 1000);
   if (runningCount(parked) !== 0) throw new Error(`lab_park{shutdown} left container(s) running: ${JSON.stringify(parked)}`);
   console.log("shut down (nothing running); states:", JSON.stringify(parked));
 
   await invokeWhenIdle(b, "lab_resume", { id, runtime: "DOCKER" });
-  await sleep(1500);
-  const resumed = states(id);
+  let resumed = states(id);
+  await eventually(() => runningCount((resumed = states(id))) > 0, 15000, 1000);
   if (runningCount(resumed) === 0) throw new Error(`lab_resume did not bring the lab back: ${JSON.stringify(resumed)}`);
   r.pass("park-resume", `shut down (nothing running), then resumed; states: ${resumed.join(", ")}`);
 

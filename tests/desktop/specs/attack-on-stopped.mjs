@@ -2,7 +2,7 @@
 // gracefully — the panel renders a not-running / error state, never claims a box is up, and the
 // app stays usable. No lab is launched; a lab id that nothing is running under is handed to the
 // real panel (WdioAttack), exercising useAttackBox / attack_box_status on a dead lab.
-import { finish, forceVisible, goTo, openApp, results, sleep } from "../lib/support.mjs";
+import { finish, forceVisible, goTo, holdsFor, openApp, results } from "../lib/support.mjs";
 
 const DEAD_ID = "local-no-such-lab";
 const text = (b) =>
@@ -19,11 +19,15 @@ try {
   ({ proc, b } = await openApp({ storage: { __wdio_attack__: DEAD_ID } }));
   await b.$("[data-wdio-attack]").waitForExist({ timeout: 25000, timeoutMsg: "attack panel never mounted" });
   await forceVisible(b);
-  // Give the panel's status poll / auto-attach time to resolve against the dead lab.
-  await sleep(8000);
-  const t = await text(b);
-  if (/Stop attack box/.test(t)) throw new Error(`panel claims a box is running for a dead lab:\n${t.slice(0, 300)}`);
-  if (/\d{1,3}(?:\.\d{1,3}){3}/.test(t)) throw new Error(`panel shows a box address for a dead lab:\n${t.slice(0, 300)}`);
+  // Nothing says the panel's status poll and auto-attach have given up on the dead lab, so the
+  // panel is watched over the time they take to: at no look may it claim a box, by its Stop
+  // control (shown only for a running box) or an address.
+  let t = "";
+  const claimsNoBox = async () => {
+    t = await text(b);
+    return !/Stop attack box/.test(t) && !/\d{1,3}(?:\.\d{1,3}){3}/.test(t);
+  };
+  if (!(await holdsFor(claimsNoBox, 8000))) throw new Error(`the panel claims a box (its Stop control or an address) for a dead lab:\n${t.slice(0, 300)}`);
 
   // The shell is still usable after the panel settled on the error path.
   await goTo(b, "Machine");

@@ -428,6 +428,21 @@ export async function eventually(cond, timeoutMs, interval = 500) {
 }
 
 /**
+ * Whether `cond()` holds on every look for `ms` (polled every `interval` ms), false from the
+ * first look it fails. For what must not happen (a Cancel that must leave the lab up, a link that
+ * must change nothing): no event says the app had its chance to do it, so the check watches the
+ * whole window, where a wait-then-look saw one instant of it.
+ */
+export async function holdsFor(cond, ms, interval = 500) {
+  const deadline = Date.now() + ms;
+  do {
+    if (!(await cond())) return false;
+    await sleep(interval);
+  } while (Date.now() < deadline);
+  return cond();
+}
+
+/**
  * Invoke a streaming lab command, retrying while the per-lab lock is still held by another
  * operation (the "another operation … is already in progress" refusal): a launch holds the lock
  * briefly after the lab already shows running, and the real UI gates its buttons on that, so a
@@ -577,8 +592,6 @@ export async function finish(b, proc) {
   if (b) await b.deleteSession().catch(() => {});
   stopApp(proc);
 }
-
-export { sleep };
 
 // --- Results ---------------------------------------------------------------------------------
 // A spec's checks, one line each, as the integration tests print theirs (`ok:` / `FAILED:`, see

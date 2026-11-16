@@ -203,7 +203,10 @@ id is its spec's name, which its summary line and its log (`<id>.log`) carry; a 
 form adds the form: `lab-form` runs as `lab-form-container`, `lab-form-vm` and
 `lab-form-per-machine`. A new spec is a short `.mjs` there (its checks through `results()`, its
 skips through `skipAll`, its needs declared on its first lines, its waits under the cap) plus a
-row in `cases.tsv` (its id, spec, form, knobs and groups) and a row above.
+row in `cases.tsv` (its id, spec, form, knobs and groups) and a row above. A spec never sleeps a
+fixed time: it waits on what it expects (`waitUntil`, `waitAwake`, `eventually`, with a timeout and
+a message that says what was awaited), and what must not happen it watches for the whole time
+the app has to do it (`holdsFor`), not at one instant after a pause.
 
 On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` (or a Hyper-V VM
 `<lab>-<machine>` on Windows) yourself, `<lab>` being the installed lab's isoloom name plus

@@ -15,7 +15,19 @@
 //                              (as the list shows it, e.g. "Terraform"); none: that check skipped,
 //                              since removing a tool takes it from the machine
 import { ownedDownloads, readBefore, runRoot, runTool } from "../lib/owned.mjs";
-import { answerOf, closeWindow, confirmSystemDialogs, finish, goTo, openApp, recordAnswers, results, sleep, STOP_MS, switchToWindow } from "../lib/support.mjs";
+import {
+  answerOf,
+  closeWindow,
+  confirmSystemDialogs,
+  finish,
+  goTo,
+  holdsFor,
+  openApp,
+  recordAnswers,
+  results,
+  STOP_MS,
+  switchToWindow,
+} from "../lib/support.mjs";
 
 export const needs = [];
 const r = results();
@@ -66,8 +78,9 @@ try {
     const before = (await body(b)).match(/[^\n]*of lab downloads/)?.[0] ?? "";
     await confirmSystemDialogs(b, "cancel");
     await clean.click();
-    await sleep(3000);
-    r.check("downloads-cancel", !/Freed|Removing/.test(await body(b)), `Clean up answered Cancel removes nothing (${before})`);
+    // Removing nothing shows nothing: the panel is watched for a removal starting or done.
+    const keeps = await holdsFor(async () => !/Freed|Removing/.test(await body(b)), 3000);
+    r.check("downloads-cancel", keeps, `Clean up answered Cancel removes nothing (${before})`);
   }
   if (!(await clean.isExisting())) r.skip("downloads", "no lab downloads here to clean up");
   else if (theirs.length) {

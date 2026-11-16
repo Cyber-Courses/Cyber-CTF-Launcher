@@ -4,7 +4,7 @@
 // own bar and Close. Each button is checked by what the window then is (`is_maximized`,
 // `is_minimized`, the window gone, the app quit), not by the button's look. macOS keeps the
 // system's frame and traffic lights: skipped there.
-import { appEnds, clickThatMayQuit, closeWindow, finish, goTo, openApp, invokeCmd, ownFrame, results, sleep, switchToWindow } from "../lib/support.mjs";
+import { appEnds, clickThatMayQuit, closeWindow, finish, goTo, invokeCmd, openApp, ownFrame, results, switchToWindow } from "../lib/support.mjs";
 import { doubleClickPress, TITLE_BAR } from "../lib/page.mjs";
 
 export const needs = ["own-frame"];
@@ -77,7 +77,7 @@ try {
   // Window Rect restores a minimized window.
   await b.setWindowRect(null, null, 1280, 820).catch(() => {});
   if (!(await becomes(b, "minimized", false))) console.log("the window still reads minimized after Set Window Rect: Close is pressed on it as it is");
-  await sleep(1500);
+  await (await control(b, "Close")).waitForClickable({ timeout: 10000, timeoutMsg: "the window's Close never became clickable" });
 
   // Close on the main window quits the app when nothing is deploying (the quit guard holds it
   // otherwise: src-tauri/src/app/quit.rs). The app quits while the embedded server answers the

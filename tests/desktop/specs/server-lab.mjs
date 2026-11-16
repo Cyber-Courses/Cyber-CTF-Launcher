@@ -28,7 +28,6 @@ import {
   openLabFromList,
   results,
   signedIn,
-  sleep,
   startFromDialog,
   STOP_MS,
   stopAndRemoveOnPage,
@@ -72,12 +71,15 @@ async function fill(b, label, value) {
   const input = await field(b, label);
   if (value && (await input.isExisting())) await input.setValue(value);
 }
-/** Continue, once enabled. */
+/** The setup's "Step n of total", which every step shows. */
+const stepOf = async (b) => (await body(b)).match(/Step \d+ of \d+/)?.[0] ?? null;
+/** Continue, once enabled, then the next step on screen. */
 async function next(b) {
   const go = await button(b, "Continue");
   await go.waitForClickable({ timeout: 60000, timeoutMsg: `Continue stays disabled:\n${(await body(b)).slice(0, 800)}` });
+  const from = await stepOf(b);
   await go.click();
-  await sleep(1000);
+  await b.waitUntil(async () => (await stepOf(b)) !== from, { timeout: 30000, timeoutMsg: `Continue never left ${from}:\n${(await body(b)).slice(0, 800)}` });
 }
 
 /** The tools step: what's missing installed from the window (Terraform, Vagrant, the ESXi
@@ -93,7 +95,8 @@ async function tools(b) {
     await install.click();
     await b.waitUntil(async () => !/Installing/.test(await body(b)), { timeout: capMs(0.5), timeoutMsg: `${what} never finished` });
     await (await button(b, "Re-check")).click().catch(() => {});
-    await sleep(3000);
+    // The re-check under way (or already done), so the next round waits for its end, not the last one's.
+    await b.waitUntil(async () => /Checking this machine/.test(await body(b)) || (await go.isEnabled()), { timeout: 3000 }).catch(() => {});
   }
   if (await (await button(b, "Continue")).isEnabled()) return "tools installed from the window";
   throw new Error(`tools missing that the window can't install:\n${(await body(b)).slice(0, 800)}`);
