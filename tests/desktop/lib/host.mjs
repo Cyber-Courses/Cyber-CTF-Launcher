@@ -6,15 +6,15 @@
 // wait for it before each app instead, and stop with what holds it. And where the Docker CLI finds
 // its plugins (Compose), which a spec's Docker config of its own must keep. And a program run with
 // a bound, ended with what it started past it (`runBounded`), and whether `docker info` says an
-// engine answers. And whether this session can drive UTM (`utmUnreachable`). No dependency of its
-// own, so the runner loads it before webdriverio.
+// engine answers. And whether this session can drive UTM (`utmUnreachable`). And where cargo builds
+// the app (`builtApp`). No dependency of its own, so the runner loads it before webdriverio.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** The supervisor `runBounded` runs a program under (resolved when asked: a page's test loads this
  *  module in jsdom, where the module's URL isn't a file's). */
@@ -155,3 +155,44 @@ export function dockerPluginDirs(env = process.env, home = homedir()) {
   }
   return [...new Set([join(config, "cli-plugins"), ...extra])].filter((d) => existsSync(d));
 }
+
+/** The checkout this file is in (read when asked: in jsdom, where the unit tests load this file,
+ *  its URL isn't a file's). */
+const repo = () => fileURLToPath(new URL("../../../", import.meta.url));
+
+/**
+ * Where cargo builds the app: the target directory cargo itself reports (`cargo metadata`), which
+ * follows CARGO_TARGET_DIR and a config's `build.target-dir`; when cargo can't say, CARGO_TARGET_DIR
+ * (relative to the working directory, as cargo reads it), else src-tauri/target. A test machine
+ * builds into a target directory of its own: the app is never under src-tauri/target there.
+ */
+/** @param {Record<string, string | undefined>} [env] */
+export function cargoTargetDir(env = process.env) {
+  try {
+    const out = execFileSync("cargo", ["metadata", "--format-version", "1", "--no-deps", "--manifest-path", join(repo(), "src-tauri", "Cargo.toml")], {
+      encoding: "utf8",
+      env,
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 60000,
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
+    });
+    const dir = JSON.parse(out).target_directory;
+    if (typeof dir === "string" && dir) return dir;
+  } catch {
+    /* no cargo here, or it failed: the environment says */
+  }
+  return env.CARGO_TARGET_DIR ? resolve(env.CARGO_TARGET_DIR) : join(repo(), "src-tauri", "target");
+}
+
+/**
+ * The app `cargo build --features wdio` makes: `<target dir>/debug/cyberctf-desktop[.exe]`.
+ * @param {Record<string, string | undefined>} [env]
+ * @param {string} [platform]
+ */
+export function builtApp(env = process.env, platform = process.platform) {
+  return join(cargoTargetDir(env), "debug", `cyberctf-desktop${platform === "win32" ? ".exe" : ""}`);
+}
+
+// `node lib/host.mjs --built-app`: the path, for run.sh and run.ps1.
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url && process.argv[2] === "--built-app") console.log(builtApp());

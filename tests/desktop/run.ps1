@@ -101,7 +101,10 @@ if ($Package) {
 }
 if (-not $App -and $env:CYBERCTF_TEST_DESKTOP_APP) { $App = $env:CYBERCTF_TEST_DESKTOP_APP }
 if (-not $App) {
-  $App = Join-Path $Repo "src-tauri\target\debug\cyberctf-desktop.exe"
+  # In cargo's target directory, which CARGO_TARGET_DIR or a cargo config can move out of
+  # src-tauri\target (lib\host.mjs builtApp).
+  $App = (& node (Join-Path $Repo "tests\desktop\lib\host.mjs") --built-app | Select-Object -Last 1)
+  if ($LASTEXITCODE -ne 0 -or -not $App) { Stop-Runner "couldn't tell where cargo builds the app" }
   if (-not $SkipBuild) {
     Say "cargo build --features wdio"
     & cargo build --manifest-path src-tauri\Cargo.toml --features wdio

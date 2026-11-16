@@ -5,22 +5,18 @@
 import { remote } from "webdriverio";
 import { execFileSync, spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
 import { appExit, boxReport, fromRunEvents, startEnded, stuckLabReport } from "./diagnose.mjs";
-import { dockerPluginDirs, engineSilence, portStillHeld, runBounded, waitPortFree } from "./host.mjs";
+import { builtApp, dockerPluginDirs, engineSilence, portStillHeld, runBounded, waitPortFree } from "./host.mjs";
 
 export { runContainers } from "./owned.mjs";
 
-/** Path to the app binary: CYBERCTF_TEST_DESKTOP_APP, else the debug build. */
+/** Path to the app binary: CYBERCTF_TEST_DESKTOP_APP, else the debug build where cargo put it. */
 export function appBinary() {
-  const given = process.env.CYBERCTF_TEST_DESKTOP_APP;
-  if (given) return given;
-  const ext = process.platform === "win32" ? ".exe" : "";
-  return fileURLToPath(new URL(`../../../src-tauri/target/debug/cyberctf-desktop${ext}`, import.meta.url));
+  return process.env.CYBERCTF_TEST_DESKTOP_APP || builtApp();
 }
 
 /** The port the embedded WebDriver server listens on (override with TAURI_WEBDRIVER_PORT). */
