@@ -243,7 +243,9 @@ describe("LabDetail", () => {
     // The runner reads a frozen container as stopped, as it reads a suspended VM.
     const h = renderDetail({ status: status({ running: false, parked: "pause", url: null, machines: [machine("api", "stopped")] }) });
     await flush();
-    expect(screen.getByText(/The lab is paused with its state saved/)).toBeTruthy();
+    // Its header says Paused, as a paused VM lab's does, and its diagram stays.
+    expect(screen.getAllByText("Paused").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Shut down")).toBeNull();
     await user.click(
       must(
         screen.getAllByRole("button").find((b) => /resume/i.test(b.textContent)),
