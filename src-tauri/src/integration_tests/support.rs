@@ -58,6 +58,15 @@ pub(crate) fn knob(name: &str) -> Option<String> {
     value
 }
 
+/// The hypervisor a VM scenario runs on: `CYBERCTF_TEST_VM_PROVIDER` (a provider's id, such as
+/// `qemu` or `virtualbox`), else `default`. A value that names no provider ends the scenario,
+/// naming it.
+pub(crate) fn vm_provider(default: crate::runtime::providers::Provider) -> crate::runtime::providers::Provider {
+    var("CYBERCTF_TEST_VM_PROVIDER").map_or(default, |id| {
+        serde_json::from_value(serde_json::json!(id)).unwrap_or_else(|e| panic!("CYBERCTF_TEST_VM_PROVIDER: {id} is no hypervisor ({e})"))
+    })
+}
+
 /// What a scenario keeps its failed checks in: a list of them, or a state of its own holding one.
 pub(crate) trait Checks {
     fn failures(&mut self) -> &mut Vec<String>;

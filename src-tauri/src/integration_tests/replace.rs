@@ -43,8 +43,7 @@ fn refused_here<T>(result: &crate::error::Result<T>) -> bool {
 async fn a_running_lab_is_not_replaced_under_it() {
     let Some(src) = super::support::knob("CYBERCTF_TEST_REPLACE_LAB") else { return };
     let form = std::env::var("CYBERCTF_TEST_REPLACE_FORM").unwrap_or_else(|_| "docker".into());
-    let provider: Provider =
-        serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "virtualbox".into()))).unwrap();
+    let provider = super::support::vm_provider(Provider::Virtualbox);
     let (runtime, provider, env) = match form.as_str() {
         "docker" => (Runtime::Docker, None, Vec::new()),
         "vm" => (Runtime::Vm, Some(provider), vm_inputs()),

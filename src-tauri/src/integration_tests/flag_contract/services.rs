@@ -45,10 +45,10 @@ impl Backend {
             .spawn()
             .unwrap_or_else(|e| panic!("start CyberBackend's e2e server in {}: {e}", checkout.display()));
         let output = Arc::new(Mutex::new(String::new()));
-        let mut stdout = BufReader::new(child.stdout.take().unwrap());
+        let mut stdout = BufReader::new(child.stdout.take().expect("the server's stdout, piped"));
         let mut first = String::new();
-        stdout.read_line(&mut first).unwrap();
-        collect(child.stderr.take().unwrap(), &output);
+        stdout.read_line(&mut first).unwrap_or_else(|e| panic!("CyberBackend's e2e server's first line reads: {e}"));
+        collect(child.stderr.take().expect("the server's stderr, piped"), &output);
         let ready: Ready = serde_json::from_str(&first).unwrap_or_else(|e| {
             let _ = child.kill();
             panic!("CyberBackend's e2e server didn't start ({e}): {first}{}", read_all(&output))
@@ -129,7 +129,7 @@ pub(super) fn submit_from_the_lab_page(web: &Path, url: &str, token: &str, submi
         .current_dir(web)
         .env("CYBERCTF_E2E_BACKEND_URL", url)
         .env("CYBERCTF_E2E_TOKEN", token)
-        .env("CYBERCTF_E2E_SUBMISSIONS", serde_json::to_string(submissions).unwrap())
+        .env("CYBERCTF_E2E_SUBMISSIONS", serde_json::to_string(submissions).expect("the submissions serialize"))
         .stdin(Stdio::null())
         .output()
         .unwrap_or_else(|e| panic!("run cyberctf-web's e2e test in {}: {e}", web.display()));

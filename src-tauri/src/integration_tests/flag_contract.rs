@@ -201,13 +201,13 @@ fn install(kind: Kind, id: &str) -> PathBuf {
     match kind {
         Kind::Flags => {
             let src = std::env::temp_dir().join(format!("cyberctf-flag-lab-{id}"));
-            std::fs::create_dir_all(&src).unwrap();
-            std::fs::write(src.join("isoloom.yml"), FLAG_LAB).unwrap();
+            std::fs::create_dir_all(&src).unwrap_or_else(|e| panic!("making {}: {e}", src.display()));
+            std::fs::write(src.join("isoloom.yml"), FLAG_LAB).unwrap_or_else(|e| panic!("writing the flag lab in {}: {e}", src.display()));
             let dir = install_copy(&src, id);
             let _ = std::fs::remove_dir_all(src);
             dir
         }
-        Kind::Invoice => install_copy(Path::new(&std::env::var("CYBERCTF_TEST_INVOICE_LAB").unwrap()), id),
+        Kind::Invoice => install_copy(Path::new(&std::env::var("CYBERCTF_TEST_INVOICE_LAB").expect("CYBERCTF_TEST_INVOICE_LAB, which names this case")), id),
     }
 }
 
@@ -216,7 +216,9 @@ fn install(kind: Kind, id: &str) -> PathBuf {
 async fn play(backend: &Backend, player: &str, (lab, kind): (&str, Kind)) -> Played {
     let mut p = Played::default();
     let lab_id = backend.lab(lab).to_owned();
-    let env = crate::labs::launch_values_at(backend.url(), backend.token(player), &lab_id).await.unwrap();
+    let env = crate::labs::launch_values_at(backend.url(), backend.token(player), &lab_id)
+        .await
+        .unwrap_or_else(|e| panic!("the backend gives {player} the launch values of {lab}: {e}"));
     p.secrets.extend(env.iter().filter(|(k, _)| k != "CTF_API_URL").map(|(_, v)| v.clone()));
     let launch = Launch { lab_id, env };
     let id = format!("ci-flag-{lab}-{}", rand::random::<u16>());

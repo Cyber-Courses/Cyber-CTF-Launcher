@@ -32,7 +32,7 @@ impl Lab {
     /// Its run. Opened at every step, as the lab page opens it: once the start opened it, opening
     /// it again doesn't fail (and a panic would be the scenario's failed check, its teardown run).
     fn run(&self) -> isothrum::LabRun {
-        isothrum::LabRun::vm(&self.home, &self.dir, &self.id).unwrap()
+        isothrum::LabRun::vm(&self.home, &self.dir, &self.id).expect("the lab's run opens")
     }
 }
 
@@ -154,8 +154,7 @@ async fn left_on(provider: Provider, stem: &str, dir: &Path) -> Result<Vec<Strin
 #[ignore = "needs Vagrant, a hypervisor and a VM lab (CYBERCTF_TEST_VM_LAB)"]
 async fn a_vm_lab_runs_end_to_end_through_the_runner() {
     let Some(src) = super::support::knob("CYBERCTF_TEST_VM_LAB") else { return };
-    let provider: Provider =
-        serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "virtualbox".into()))).unwrap();
+    let provider = super::support::vm_provider(Provider::Virtualbox);
     let id = format!("vm-{}", rand::random::<u16>());
     let dir = install_copy(Path::new(&src), &id);
     if super::support::refused_by_launcher(&dir, crate::runtime::lab::Target::Vagrant, provider) {
