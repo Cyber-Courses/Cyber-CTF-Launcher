@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 // tests/integration/run.sh, the integration runner, run for real in bash with a `cargo` that answers
 // what each case needs: no lab is started.
@@ -14,6 +14,33 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
+/** The one program every stand-in (`cargo`, a `VBoxManage`, a `docker`) is: a link to it named
+ *  for the tool runs the script beside that name (`<name>.sh`). One program, run once before the
+ *  tests, rather than a script written and made executable per stand-in: macOS checks a program
+ *  new to it on its first run, and with a build starting new programs by the hundred that check
+ *  took 5 to 15 s, so a capped case's `cargo` was killed at its cap before it had made anything. */
+let STAND_IN = "";
+
+beforeAll(() => {
+  const dir = mkdtempSync(join(tmpdir(), "integration-stand-in-"));
+  STAND_IN = join(dir, "stand-in");
+  writeFileSync(STAND_IN, '#!/bin/sh\n. "$0.sh"\n');
+  chmodSync(STAND_IN, 0o755);
+  writeFileSync(`${STAND_IN}.sh`, "");
+  // Its first run, where that check is made: as long as the check takes on a loaded machine.
+  expect(spawnSync(STAND_IN).status).toBe(0);
+}, 120_000);
+
+afterAll(() => {
+  if (STAND_IN) rmSync(join(STAND_IN, ".."), { recursive: true, force: true });
+});
+
+/** A stand-in for a tool at `path` that runs `script` (sh). */
+function standIn(path: string, script: string) {
+  writeFileSync(`${path}.sh`, `${script}\n`);
+  symlinkSync(STAND_IN, path);
+}
+
 /** A fresh folder, removed after the test. */
 function folder(): string {
   const dir = mkdtempSync(join(tmpdir(), "integration-test-"));
@@ -21,13 +48,14 @@ function folder(): string {
   return dir;
 }
 
-/** The runner with `args` under `env`, a `cargo` on its PATH that runs `cargo` (a shell script). */
+/** The runner with `args` under `env`, a `cargo` on its PATH that runs `cargo` (a shell script,
+ *  given the stand-in program as STAND_IN, for the tools it stands in for in turn). */
 function runner(cargo: string, env: Record<string, string>, args: string[] = []) {
   const dir = folder();
-  writeFileSync(join(dir, "cargo"), `#!/bin/sh\n${cargo}\n`);
-  chmodSync(join(dir, "cargo"), 0o755);
+  standIn(join(dir, "cargo"), cargo);
   const clean = {
     ...process.env,
+    STAND_IN,
     ONLY: "",
     SKIP: "",
     STRICT: "",
@@ -46,7 +74,8 @@ function runner(cargo: string, env: Record<string, string>, args: string[] = [])
 /** The caps the cases run under: one a case meant to end on its own never reaches (30 s), and one
  *  a case meant to be capped (its stand-ins sleep a minute) reaches only after its stand-ins have
  *  started (6 s). 2 s raced the start on an x64 Mac, where a freshly written script took longer
- *  than that to run the first time: a passing case read FAIL, a capped one had made nothing yet. */
+ *  than that to run the first time: a passing case read FAIL, a capped one had made nothing yet.
+ *  No stand-in is such a script any more (STAND_IN), so its start no longer races the cap. */
 const ENDS = "30";
 const CAPPED = "6";
 
@@ -127,14 +156,13 @@ describe("an integration scenario's verdict", () => {
     const root = folder();
     const id = "3c32882b-cf96-4a01-a754-ca7386e37b49";
     const vbox = [
-      "#!/bin/sh",
       'echo "$*" >>"$CYBERCTF_TEST_INTEGRATION_LOGS/vbox.calls"',
       `case "$1 $2" in "showvminfo ${id}") echo 'name="solo-web - attackbox"' ;; showvminfo*) exit 1 ;; esac`,
     ].join("\n");
     const cargo = [
       'mkdir -p "$TOOL_ROOT/usr/local/bin"',
-      `printf '%s\\n' '${vbox.replaceAll("'", "'\\''")}' >"$TOOL_ROOT/usr/local/bin/VBoxManage"`,
-      'chmod +x "$TOOL_ROOT/usr/local/bin/VBoxManage"',
+      `printf '%s\\n' '${vbox.replaceAll("'", "'\\''")}' >"$TOOL_ROOT/usr/local/bin/VBoxManage.sh"`,
+      'ln -s "$STAND_IN" "$TOOL_ROOT/usr/local/bin/VBoxManage"',
       'mkdir -p "$TMPDIR/cyberctf-box-1/.vagrant/machines/attackbox/virtualbox" "$TMPDIR/cyberctf-box-1/.vagrant/machines/web/virtualbox"',
       `echo ${id} >"$TMPDIR/cyberctf-box-1/.vagrant/machines/attackbox/virtualbox/id"`,
       'echo 00000000-0000-0000-0000-000000000000 >"$TMPDIR/cyberctf-box-1/.vagrant/machines/web/virtualbox/id"',
@@ -174,11 +202,11 @@ describe("an integration scenario's verdict", () => {
       attackbox: "5e1b0c1a-0d4c-4a35-9b0e-1f4e2d6a7b02",
       "isoloom-controller": "5e1b0c1a-0d4c-4a35-9b0e-1f4e2d6a7b03",
     };
-    const utmctl = ["#!/bin/sh", 'echo "$*" >>"$CYBERCTF_TEST_INTEGRATION_LOGS/utm.calls"'].join("\n");
+    const utmctl = 'echo "$*" >>"$CYBERCTF_TEST_INTEGRATION_LOGS/utm.calls"';
     const cargo = [
       `mkdir -p "${app}"`,
-      `printf '%s\\n' '${utmctl.replaceAll("'", "'\\''")}' >"${app}/utmctl"`,
-      `chmod +x "${app}/utmctl"`,
+      `printf '%s\\n' '${utmctl.replaceAll("'", "'\\''")}' >"${app}/utmctl.sh"`,
+      `ln -s "$STAND_IN" "${app}/utmctl"`,
       ...Object.entries(ids).flatMap(([m, id]) => [
         `mkdir -p "$TMPDIR/cyberctf-box-1/.vagrant/machines/${m}/utm"`,
         `echo ${id} >"$TMPDIR/cyberctf-box-1/.vagrant/machines/${m}/utm/id"`,
@@ -210,15 +238,14 @@ describe("an integration scenario's verdict", () => {
     // and records what it's asked. A capped attack-box-docker left its project behind (2026-11-14).
     const machine = folder();
     const cargo = [
-      'cat >"$(dirname "$0")/docker" <<STUB',
-      "#!/bin/sh",
+      'cat >"$(dirname "$0")/docker.sh" <<STUB',
       'echo "\\$*" >>"\\$CYBERCTF_TEST_INTEGRATION_LOGS/docker.calls"',
       'case "\\$1" in',
       `  ps) printf 'cyberctf-box-13814\\t%s\\n' "$TMPDIR/cyberctf-box-1/runs/box/compose"; printf 'cyberctf-box-13814\\t%s\\n' "$TMPDIR/cyberctf-box-1/runs/box/compose"; printf 'players-own\\t/home/someone/lab\\n' ;;`,
       '  volume) [ "\\$2" = ls ] && echo cyberctf-box-13814_isoloom-probe ;;',
       "esac",
       "STUB",
-      'chmod +x "$(dirname "$0")/docker"',
+      'ln -s "$STAND_IN" "$(dirname "$0")/docker"',
       'case "$CASE" in hang) sleep 60 ;; pass) echo "test result: ok. 1 passed; 0 failed" ;; esac',
     ].join("\n");
     const capped = runner(cargo, { ONLY: "attack-box-docker", CASE: "hang", TMPDIR: machine, CYBERCTF_TEST_INTEGRATION_TIMEOUT: CAPPED });
@@ -244,15 +271,14 @@ describe("an integration scenario's verdict", () => {
     const machine = folder();
     const id = "3dba93af-6c1d-4f4e-9a59-0d1f0e6c2b17";
     const vbox = [
-      "#!/bin/sh",
       'echo "$*" >>"$CYBERCTF_TEST_INTEGRATION_LOGS/vbox.calls"',
       `case "$1 $2" in "showvminfo ${id}") echo 'name="supplier-portal-api - web"' ;; showvminfo*) exit 1 ;; esac`,
     ].join("\n");
     const cargo = [
       'echo "$TMPDIR" >"$CYBERCTF_TEST_INTEGRATION_LOGS/temp"',
       'echo "$CYBERCTF_TEST_APP_ROOT" >"$CYBERCTF_TEST_INTEGRATION_LOGS/root"',
-      `printf '%s\\n' '${vbox.replaceAll("'", "'\\''")}' >"$(dirname "$0")/VBoxManage"`,
-      'chmod +x "$(dirname "$0")/VBoxManage"',
+      `printf '%s\\n' '${vbox.replaceAll("'", "'\\''")}' >"$(dirname "$0")/VBoxManage.sh"`,
+      'ln -s "$STAND_IN" "$(dirname "$0")/VBoxManage"',
       'state="$CYBERCTF_TEST_APP_ROOT/com.cyberctf.unit-test.1-2/runs/pm-1/vagrant/machines/web/virtualbox"',
       `mkdir -p "$state" && echo ${id} >"$state/id"`,
       "sleep 60",
