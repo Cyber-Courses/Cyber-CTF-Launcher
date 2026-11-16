@@ -537,13 +537,10 @@ export async function waitLaunchSettled(b, id, { runtime = "DOCKER", timeoutMs =
   const deadline = Date.now() + timeoutMs;
   const left = () => Math.max(deadline - Date.now(), 1000);
   await waitSettled(b, id, left());
-  const auto = await b.execute(() => {
-    try {
-      return localStorage.getItem("cyberctf.attackbox.auto") !== "false";
-    } catch {
-      return true;
-    }
-  });
+  const auto = await invokeCmd(b, "settings_get").then(
+    (s) => s.attackAuto !== false,
+    () => true,
+  );
   if (auto) {
     let seen = null;
     const done = await eventually(

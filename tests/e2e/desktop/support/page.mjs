@@ -47,15 +47,15 @@ export function labRows() {
 /**
  * What the page showed of a choice when a step on it failed, on one line: whether the window had
  * the focus (`document.hasFocus()`) and was visible, each option of the radio group named `group`
- * with its `aria-checked`, the setting `key` as stored, the focused element and the page's text. A
+ * with its `aria-checked`, the setting as the core keeps it (`stored`, read by the caller), the focused element and the page's text. A
  * click the system gives a window without the focus can select nothing: the Settings window's
  * first click after the folder picker saved nothing once, under load (settings/attack-desktop,
- * #319). Run in the page (`b.execute(choiceState, group, key)`), so it names nothing outside itself.
+ * #319). Run in the page (`b.execute(choiceState, group, stored)`), so it names nothing outside itself.
  * @param {string} group
- * @param {string} key
+ * @param {unknown} stored
  * @returns {string}
  */
-export function choiceState(group, key) {
+export function choiceState(group, stored) {
   // An option's title (RadioRow's first line), else its text, on one line.
   const name = (el) => {
     const box = el.querySelector("div");
@@ -73,7 +73,7 @@ export function choiceState(group, key) {
       ? `${active.getAttribute("role") || active.tagName.toLowerCase()} "${active.getAttribute("aria-label") || name(active)}"`
       : "none";
   const text = (document.body.innerText || document.body.textContent || "").replace(/\s+/g, " ").trim().slice(0, 1000);
-  return `window focus: ${document.hasFocus()}, visibility: ${document.visibilityState}; ${group}: ${options}; stored ${key}: ${JSON.stringify(localStorage.getItem(key))}; focused: ${focused}; page: ${text}`;
+  return `window focus: ${document.hasFocus()}, visibility: ${document.visibilityState}; ${group}: ${options}; stored: ${JSON.stringify(stored)}; focused: ${focused}; page: ${text}`;
 }
 
 /**

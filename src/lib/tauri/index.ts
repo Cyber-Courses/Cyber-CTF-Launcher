@@ -7,3 +7,4 @@ export * from "@/lib/tauri/cloud";
 export * from "@/lib/tauri/labs";
 export * from "@/lib/tauri/machine";
 export * from "@/lib/tauri/servers";
+export * from "@/lib/tauri/settings";

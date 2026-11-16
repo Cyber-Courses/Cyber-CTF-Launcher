@@ -7,6 +7,7 @@ import { PortModePrompt } from "@/features/labs/port-mode-prompt";
 import { useLabActions } from "@/features/labs/use-lab-actions";
 import type { Lab } from "@/features/labs/use-labs";
 import { getDeploySnapshot } from "@/features/labs/runs/deploy-runs";
+import { getLastRun } from "@/features/labs/runs/last-run";
 import { SIGNED_OUT_EVENT } from "@/features/account/signed-out";
 import { setLocalePreference } from "@/lib/i18n";
 import type { CommandError } from "@/lib/errors";
@@ -113,7 +114,7 @@ describe("useLabActions: launch", () => {
     expect(logsOf("act-docker")).toEqual(["==> api: Creating", "✓ Lab ready", "✓ Lab is running"]);
     expect(refresh).toHaveBeenCalledWith(dockerLab, { fresh: true });
     expect(getDeploySnapshot().runs["act-docker"]?.busy).toBe(false);
-    expect(localStorage.getItem("cyberctf.lastrun.act-docker")).not.toBeNull();
+    expect(getLastRun("act-docker")).not.toBeNull();
   });
 
   it("uses the port mode remembered in Settings without asking", async () => {

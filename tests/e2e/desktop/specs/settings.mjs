@@ -117,15 +117,15 @@ try {
     .catch(() => console.log("(the Settings window didn't report the focus back: clicking anyway)"));
   const desktop = (name) =>
     b.$(`//*[@role="radiogroup"][@aria-label="Attack VM desktop"]//*[@role="radio"][contains(normalize-space(), ${JSON.stringify(name)})]`);
-  const stored = () => b.execute(() => localStorage.getItem("cyberctf.attackbox.desktop"));
+  const stored = async () => (await invokeCmd(b, "settings_get")).attackDesktop;
   // A failed step says what the window showed: whether it had the focus (its first click after the
   // folder picker saved nothing once, under load, #319), each option's state and the stored setting.
-  r.showing(() => b.execute(choiceState, "Attack VM desktop", "cyberctf.attackbox.desktop"));
+  r.showing(async () => b.execute(choiceState, "Attack VM desktop", await stored().catch((e) => `unreadable: ${e.message}`)));
   await r.step("attack-desktop", "Attack VM desktop: Desktop then Headless, each saved", async () => {
     await (await desktop("Desktop")).click();
-    await b.waitUntil(async () => (await stored()) === "true", { timeout: 10000, timeoutMsg: "Desktop wasn't saved" });
+    await b.waitUntil(async () => (await stored()) === true, { timeout: 10000, timeoutMsg: "Desktop wasn't saved" });
     await (await desktop("Headless")).click();
-    await b.waitUntil(async () => (await stored()) === "false", { timeout: 10000, timeoutMsg: "Headless wasn't saved" });
+    await b.waitUntil(async () => (await stored()) === false, { timeout: 10000, timeoutMsg: "Headless wasn't saved" });
   });
 
   // About: the version the app itself reports (Tauri's app plugin, as the row reads it) and this

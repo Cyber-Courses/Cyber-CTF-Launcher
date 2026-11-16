@@ -79,6 +79,8 @@ function scan(file: string): Scanned {
   const files: string[] = [];
   source.forEachChild((node) => {
     if (!(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) || !node.moduleSpecifier) return;
+    // A type-only import loads no code: nothing it names can invoke.
+    if (ts.isImportDeclaration(node) ? node.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword : node.isTypeOnly) return;
     const target = resolve(file, (node.moduleSpecifier as ts.StringLiteral).text);
     if (!target) return;
     if (isBinding(target)) importedNames(node, bindings).forEach((n) => bindings.get(n)?.forEach((c) => commands.add(c)));

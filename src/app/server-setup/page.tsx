@@ -14,6 +14,7 @@ import { warn } from "@/lib/failure";
 import { send } from "@/lib/event-channel";
 import { useT } from "@/lib/i18n";
 import { DevMockGate } from "@/components/dev-mock-gate";
+import { SettingsGate } from "@/components/settings-gate";
 
 /** The server setup window (opened by `server_open_setup`), closed when setup ends. */
 function Setup() {
@@ -100,9 +101,11 @@ function useInitialHost(id: string | null, empty: ServerHostInput) {
 export default function ServerSetupWindow() {
   return (
     <DevMockGate>
-      <Suspense>
-        <Setup />
-      </Suspense>
+      <SettingsGate>
+        <Suspense>
+          <Setup />
+        </Suspense>
+      </SettingsGate>
     </DevMockGate>
   );
 }

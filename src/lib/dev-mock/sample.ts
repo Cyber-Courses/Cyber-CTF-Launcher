@@ -8,6 +8,7 @@ import { apiQuery, labCommands } from "@/lib/dev-mock/labs";
 import type { Args, Handler, Handlers } from "@/lib/dev-mock/types";
 import { openWindow } from "@/lib/dev-mock/windows";
 import { withSetup } from "@/lib/dev-mock/setup-options";
+import { settingsCommands } from "@/lib/dev-mock/settings";
 
 export const report: SystemReport = withSetup({
   os: "macos",
@@ -239,7 +240,9 @@ const appCommands = {
 } satisfies Handlers;
 
 // A Map, not an object lookup: a command named like an Object.prototype member is unknown too.
-const HANDLERS = new Map<string, Handler>(Object.entries({ ...accountCommands, ...labCommands, ...machineCommands, ...serverCommands, ...appCommands }));
+const HANDLERS = new Map<string, Handler>(
+  Object.entries({ ...accountCommands, ...labCommands, ...machineCommands, ...serverCommands, ...appCommands, ...settingsCommands }),
+);
 
 /**
  * The mock's own answers that no command asks: `running_labs` is what the core's scan sees up,

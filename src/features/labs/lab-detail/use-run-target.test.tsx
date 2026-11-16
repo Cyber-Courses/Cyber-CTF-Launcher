@@ -65,7 +65,8 @@ describe("useRunTarget's steps", () => {
   });
 
   it("reads a remembered helper VM (a form no longer offered) as nothing remembered", async () => {
-    localStorage.setItem("cyberctf.labs.vmForm", "vm");
+    // A helper VM (`vm`) the webview once kept reads as nothing remembered: the core's import
+    // drops it (src-tauri/src/settings/tests.rs); a VM per machine is what can be remembered.
     expect(getLocalVmForm()).toBeNull();
     setLocalVmForm("vms");
     const run = await picker();
