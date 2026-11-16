@@ -11,7 +11,6 @@ pub(crate) mod attack_box;
 #[cfg(feature = "cloud-services")]
 pub(crate) mod cloud_services;
 pub(crate) mod deploy_log;
-pub(crate) mod discover;
 pub(crate) mod docker;
 #[cfg(test)]
 #[cfg(unix)]

@@ -255,6 +255,16 @@ pub(super) async fn cancel_under_way(home: &Path, name: &RunName) {
     }
 }
 
+/// Every run `home`'s service records, as it last saw each; none when no service runs.
+///
+/// # Errors
+///
+/// The service's runs can't be listed.
+pub(crate) async fn rows(home: &Path) -> Result<Option<Vec<isothrum_runner::store::RunRow>>, String> {
+    let Some(client) = running_service(home).await else { return Ok(None) };
+    client.list().await.map(Some).map_err(|e| e.to_string())
+}
+
 /// The runs of `home`'s service with an operation queued or running; none when no service runs.
 ///
 /// # Errors

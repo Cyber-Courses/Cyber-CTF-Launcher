@@ -178,7 +178,7 @@ pub(super) async fn list(ctx: &Context) -> Answer {
         .unwrap_or_default();
     ids.sort();
     let imported: Vec<String> = crate::labs::imported::list(&ctx.dirs).map(|l| l.into_iter().map(|l| l.id).collect()).unwrap_or_default();
-    let running = crate::runtime::discover::running_lab_ids(&ctx.dirs).await;
+    let running = crate::runtime::recorded::running_here(&ctx.dirs).await;
     let busy = crate::app::operations::busy_labs(ctx.dirs.clone()).await.unwrap_or_default();
     let mut labs = Vec::new();
     for id in ids {

@@ -1,6 +1,6 @@
 //! What the launcher's own run service watches, and how it reconciles it with what runs: each
-//! pass scans this machine (Docker, the hypervisors) and reads the status of the labs that may
-//! have changed, telling only what did. The webview reads the statuses from these events, never
+//! pass asks the runner which labs run here (`recorded::running_here`) and reads the status of
+//! the labs that may have changed, telling only what did. The webview reads the statuses from these events, never
 //! by polling; the runner's service does the same for its runs.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};

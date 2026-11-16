@@ -104,6 +104,12 @@ async fn status(dirs: &AppDirs, id: &str) -> Result<StatusAnswer, String> {
     serde_json::from_value(data.clone()).map_err(|e| format!("an answer of another shape ({e}): {data}"))
 }
 
+/// Whether `labs list` says lab `id` runs (none: not listed, or no answer).
+async fn listed_running(dirs: &AppDirs, id: &str) -> Option<bool> {
+    let said = cyberctf(dirs, &["labs", "list"]).await;
+    said.data()?.as_array()?.iter().find(|l| l["id"] == id).and_then(|l| l["running"].as_bool())
+}
+
 /// `labs install <src>`: the lab imported and started, under the id the launcher gives the folder,
 /// the run service's events (its start, its log) streamed as JSON lines before the answer.
 async fn installs(dirs: &AppDirs, src: &Path, id: &str, f: &mut Vec<String>) -> bool {
@@ -120,6 +126,8 @@ async fn reads_up_and_checked(dirs: &AppDirs, id: &str, f: &mut Vec<String>) {
     match status(dirs, id).await {
         Ok(a) => {
             check(a.status.up(), format!("labs status reads it up ({:?})", a.status.states()), f);
+            let listed = listed_running(dirs, id).await;
+            check(listed == Some(true), format!("labs list says it runs ({listed:?})"), f);
             let checked = a.check.as_ref().is_some_and(|c| c.available && c.ok && !c.results.is_empty());
             check(checked, format!("labs status runs its checks, and they pass ({:?})", a.check), f);
         }
@@ -135,6 +143,8 @@ async fn stops_clean(dirs: &AppDirs, id: &str, f: &mut Vec<String>) {
     check(left.is_empty(), format!("nothing of it is left on Docker ({left:?})"), f);
     let gone = status(dirs, id).await;
     check(gone.as_ref().is_ok_and(|a| !a.status.running), format!("labs status reads it stopped ({:?})", gone.map(|a| a.status.running)), f);
+    let listed = listed_running(dirs, id).await;
+    check(listed == Some(false), format!("labs list says it doesn't run ({listed:?})"), f);
 }
 
 #[tokio::test]

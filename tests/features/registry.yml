@@ -1065,9 +1065,8 @@ areas:
           - labs_watch
         tests:
           unit:
-            - src-tauri/src/runtime/discover/tests.rs > docker_projects_keep_only_cyberctf_labs_stripped_and_unique
-            - src-tauri/src/runtime/discover/tests.rs > running_vms_map_back_to_installed_labs_by_name
-            - src-tauri/src/runtime/discover/tests.rs > every_hypervisor_probe_says_a_failure_and_stays_quiet_when_not_installed
+            - src-tauri/src/runtime/recorded.rs > the_labs_running_here_are_those_the_runner_records_running_on_this_machine
+            - src-tauri/src/runtime/recorded.rs > a_run_runs_while_up_or_moving_and_a_failed_one_while_a_machine_was_seen_running
             - src-tauri/src/run_service/tests.rs > the_webview_says_what_it_watches_through_its_command
             - src/features/labs/lab-watch.test.tsx > gives the sidebar what the core's scan sees up
             - src/components/shell/use-sidebar-labs.test.tsx > lists a lab the core's scan sees
@@ -1196,8 +1195,6 @@ areas:
           - libvirt
         host: true
         tests:
-          unit:
-            - src-tauri/src/runtime/discover/tests.rs > libvirt_domains_name_their_lab_by_the_underscore_prefix
           desktop:
             - lab-form-vm
             - vm-scan
@@ -1253,7 +1250,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/discover/tests.rs > vbox_listings_skip_lines_that_are_not_a_quoted_name
             - src-tauri/src/runtime/isothrum/vm_tests.rs > a_vm_labs_hypervisor_is_read_from_its_record_without_vagrant
           desktop:
             - lab-form-vm
@@ -1281,7 +1277,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/discover/tests.rs > hyperv_vms_name_their_lab_by_the_dash_prefix_longest_first
             - src-tauri/src/platform/exec/vagrant.rs > hyperv_machines_are_recognised_by_their_folder
             - src-tauri/src/platform/exec/elevate.rs > only_hyperv_on_windows_goes_through_the_script_elevated_when_it_must
           desktop:
@@ -1312,7 +1307,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/discover/tests.rs > utm_started_vms_map_back_to_installed_labs
             - src-tauri/src/runtime/isothrum/errors/tests.rs > utms_passing_scripting_errors_are_tried_again_and_said_and_nothing_else_is
             - src-tauri/src/runtime/launch/tests.rs > a_utm_not_ready_for_commands_is_waited_for
           web:
@@ -1343,7 +1337,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/providers/tests.rs > vmwares_desktop_hypervisor_is_named_for_the_os_and_nothing_else_is
-            - src-tauri/src/runtime/discover/tests.rs > vmrun_paths_name_the_lab_by_its_folder
           setup:
             - plugin:vagrant-vmware-desktop
             - vmware-utility
@@ -1365,8 +1358,6 @@ areas:
           - parallels
         host: true
         tests:
-          unit:
-            - src-tauri/src/runtime/discover/tests.rs > running_vms_map_back_to_installed_labs_by_name
           setup:
             - plugin:vagrant-parallels
             - selftest:vm

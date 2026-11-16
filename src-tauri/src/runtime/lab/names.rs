@@ -81,7 +81,7 @@ pub fn terraform(dir: &Path, runtime: Runtime, tf: &str) -> (PathBuf, Target) {
 /// The variable Isoloom's Vagrantfiles read their copy's key from (unset, they make one from their
 /// folder's path): the launcher hands the runner's key for the run on under it, so two copies of
 /// one lab (the app's, a test's) never share a VM, network or libvirt domain name, and the
-/// running-labs scan finds this copy's VMs by it ([`crate::runtime::discover`]).
+/// integration tests find this copy's VMs by it.
 pub(crate) const ISOLOOM_KEY: &str = "ISOLOOM_KEY";
 
 /// The environment Isoloom's Vagrantfiles read to reach an ESXi host (the `vagrant-vmware-esxi`

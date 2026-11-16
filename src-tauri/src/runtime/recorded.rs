@@ -104,6 +104,43 @@ pub(crate) fn parked(record: &RunRecord) -> Option<Park> {
     })
 }
 
+/// The labs whose runs run on this machine, as the runner records them: any state but parked or
+/// absent, but a failed run only while a machine of it was last seen running. Read from the
+/// home's service when one runs (what it last saw of each run), else from the records. What
+/// changed outside the app shows once a status read has seen it.
+pub(crate) async fn running_here(dirs: &AppDirs) -> Vec<String> {
+    let Ok(home) = super::paths::runner_home(dirs) else { return Vec::new() };
+    let runs: Vec<(RunRecord, bool)> = match isothrum::rows(&home).await {
+        Ok(Some(rows)) => rows.into_iter().map(|r| (r.record, r.observed.is_some_and(|o| o.machines.iter().any(|m| runs(&m.state))))).collect(),
+        Ok(None) => isothrum::records(&home).map(|rs| rs.into_iter().map(|r| (r, false)).collect()).unwrap_or_default(),
+        Err(e) => {
+            log::warn!("the runner's runs can't be listed: {e}");
+            Vec::new()
+        }
+    };
+    let mut ids: Vec<String> = runs
+        .into_iter()
+        .filter(|(r, seen_running)| r.host_label.is_none() && up(r.state, *seen_running))
+        .filter_map(|(r, _)| super::docker::lab_of_project(r.name.as_str()).filter(|id| super::is_lab_id(id)).map(str::to_owned))
+        .collect();
+    ids.sort();
+    ids
+}
+
+/// Whether a run in `state` runs: up or moving, or failed with a machine `seen_running`.
+fn up(state: RunState, seen_running: bool) -> bool {
+    match state {
+        RunState::Parked | RunState::Absent => false,
+        RunState::Failed => seen_running,
+        _ => true,
+    }
+}
+
+/// Whether a machine in `state` runs (an unhealthy one runs too).
+fn runs(state: &isothrum_runner::MachineState) -> bool {
+    matches!(state, isothrum_runner::MachineState::Running | isothrum_runner::MachineState::Unhealthy)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,5 +165,36 @@ mod tests {
         assert!(Recorded::from(Some(record("docker-vm", "ready", None))).helper_vm());
         let gone = Recorded::from(Some(record("vagrant", "absent", Some("pause"))));
         assert!(gone.record().is_none() && gone.form(Runtime::Docker) == Runtime::Docker && gone.host().is_none());
+    }
+
+    #[test]
+    fn a_run_runs_while_up_or_moving_and_a_failed_one_while_a_machine_was_seen_running() {
+        use super::up;
+        for state in [RunState::Ready, RunState::Creating, RunState::Resuming, RunState::Updating, RunState::Parking, RunState::Destroying] {
+            assert!(up(state, false), "{state:?}");
+        }
+        for state in [RunState::Parked, RunState::Absent] {
+            assert!(!up(state, true), "{state:?}");
+        }
+        assert!(up(RunState::Failed, true) && !up(RunState::Failed, false));
+    }
+
+    #[tokio::test]
+    async fn the_labs_running_here_are_those_the_runner_records_running_on_this_machine() {
+        use crate::runtime::test_support::record_run;
+        let t = crate::testing::test_app::TestApp::new();
+        assert_eq!(super::running_here(&t.dirs()).await, [] as [String; 0]);
+        for (lab, host, state) in [
+            ("web", None, "ready"),
+            ("vms", None, "creating"),
+            ("parked", None, "parked"),
+            ("gone", None, "absent"),
+            ("failed", None, "failed"),
+            ("cloud", Some("aws1"), "ready"),
+        ] {
+            record_run(t.data(), lab, host, "docker", state);
+        }
+        // No service runs here: the records, a failed run not taken for running.
+        assert_eq!(super::running_here(&t.dirs()).await, ["vms", "web"]);
     }
 }

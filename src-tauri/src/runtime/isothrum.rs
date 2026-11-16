@@ -163,7 +163,7 @@ pub(crate) async fn follow_others(dirs: &crate::platform::AppDirs, on: &mut impl
     remote::follow_others(&client, on).await.map_err(Error::Invalid)
 }
 
-pub(crate) use remote::Others;
+pub(crate) use remote::{Others, rows};
 
 /// Every run the runner whose home is `home` records, each in the state its last operation left
 /// it in, as its store says.
