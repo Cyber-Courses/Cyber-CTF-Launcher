@@ -34,17 +34,18 @@ is the way in: what the launcher is, how to install it, and what it needs.
 
 ## Develop it (`contributing/`)
 
-| Page                                                       | What it covers                                                                                                              |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| [Contributing](../CONTRIBUTING.md)                         | set-up, the gates, the tests, commits and pull requests                                                                     |
-| [Architecture](contributing/architecture.md)               | where labs run and what runs them, the code's layout, what is done                                                          |
-| [How labs run](contributing/how-labs-run.md)               | Isoloom, the runner and the launcher; the files that say where a lab is; the attack box in a lab; screens; removal; servers |
-| [How sign-in works](contributing/sign-in.md)               | the OAuth flow, the tokens, and the client cyber-auth must have                                                             |
-| [Testing](../tests/README.md)                              | the test tiers, what each needs, where a new test goes, and the conventions                                                 |
-| [The release check](contributing/testing/release-check.md) | the gate before a release                                                                                                   |
-| [Desktop end-to-end](contributing/testing/desktop-e2e.md)  | the desktop end-to-end specs                                                                                                |
-| [Integration tests](contributing/testing/integration.md)   | the integration tests and what each scenario guards against                                                                 |
-| [Release process](contributing/release-process.md)         | making a release: version, tag, what the workflow signs and checks, its secrets                                             |
-| [Design system](contributing/design-system.md)             | the launcher's design system: tokens, type, surfaces, components, patterns                                                  |
-| [Scripts](../scripts/README.md)                            | the repository's runner scripts                                                                                             |
-| [Microsoft Store listing](../packaging/store/README.md)    | the Store listing that ships with each release                                                                              |
+| Page                                                                   | What it covers                                                                                                              |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| [Contributing](../CONTRIBUTING.md)                                     | set-up, the gates, the tests, commits and pull requests                                                                     |
+| [Architecture](contributing/architecture.md)                           | where labs run and what runs them, the code's layout, what is done                                                          |
+| [How labs run](contributing/how-labs-run.md)                           | Isoloom, the runner and the launcher; the files that say where a lab is; the attack box in a lab; screens; removal; servers |
+| [What the launcher is, and what it is not](contributing/boundaries.md) | the launcher as a thin CTF layer over Isoloom and Isothrum, and what stays out of it                                        |
+| [How sign-in works](contributing/sign-in.md)                           | the OAuth flow, the tokens, and the client cyber-auth must have                                                             |
+| [Testing](../tests/README.md)                                          | the test tiers, what each needs, where a new test goes, and the conventions                                                 |
+| [The release check](contributing/testing/release-check.md)             | the gate before a release                                                                                                   |
+| [Desktop end-to-end](contributing/testing/desktop-e2e.md)              | the desktop end-to-end specs                                                                                                |
+| [Integration tests](contributing/testing/integration.md)               | the integration tests and what each scenario guards against                                                                 |
+| [Release process](contributing/release-process.md)                     | making a release: version, tag, what the workflow signs and checks, its secrets                                             |
+| [Design system](contributing/design-system.md)                         | the launcher's design system: tokens, type, surfaces, components, patterns                                                  |
+| [Scripts](../scripts/README.md)                                        | the repository's runner scripts                                                                                             |
+| [Microsoft Store listing](../packaging/store/README.md)                | the Store listing that ships with each release                                                                              |
