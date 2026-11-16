@@ -236,7 +236,10 @@ fn applicability_follows_the_os() {
     assert_eq!(Provider::Parallels.applicable(), Os::HERE == Os::Macos);
     assert_eq!(Provider::Utm.applicable(), Os::HERE == Os::Macos);
     assert_eq!(Provider::Libvirt.applicable(), Os::HERE == Os::Linux);
-    for remote in [Provider::VmwareEsxi, Provider::Proxmox, Provider::Qemu, Provider::Aws] {
+    // Not on Windows (#314): vagrant-qemu builds a networked VM's seed there with the Windows
+    // ADK's oscdimg, and Isoloom's qemu provider takes Linux and macOS hosts only.
+    assert_eq!(Provider::Qemu.applicable(), Os::HERE != Os::Windows);
+    for remote in [Provider::VmwareEsxi, Provider::Proxmox, Provider::Aws] {
         assert!(remote.applicable(), "{remote:?}");
     }
 }
@@ -444,11 +447,17 @@ fn qemu_without_mkisofs_says_its_vms_need_it_vagrant_first() {
 async fn qemu_on_linux_reads_as_not_installed_without_mkisofs_which_its_install_brings() {
     // The check itself: on Linux, `qemu-system-*` alone is QEMU half installed, so the
     // Machine page and the guided setup offer its install (which adds genisoimage); elsewhere
-    // mkisofs is never asked for.
+    // mkisofs is never asked for. On Windows QEMU isn't offered at all (#314): no status, and
+    // no tool asked.
     use crate::platform::exec::fake::{Tools, ok};
     let tools = Tools::new(|program, _| if program == "mkisofs" { None } else { ok("QEMU emulator version 8.2.2\n") });
     let plugins = Ok(vec![installed("vagrant-qemu", Some("0.8.0"))]);
-    let qemu = detect_one(Provider::Qemu, true, &plugins).await.unwrap();
+    let detected = detect_one(Provider::Qemu, true, &plugins).await;
+    if cfg!(windows) {
+        assert!(detected.is_none() && tools.calls().is_empty(), "{:?}", tools.calls());
+        return;
+    }
+    let qemu = detected.expect("QEMU is offered off Windows");
     if cfg!(target_os = "linux") {
         assert_eq!((qemu.hypervisor, qemu.available, qemu.reason), (Some(false), false, Some(Unavailable::MkisofsMissing)));
     } else {
