@@ -415,13 +415,13 @@ impl Deployment {
         self.change(remote::Act::Provision(machine, None), log).await
     }
 
-    /// Parks the lab, keeping what it created: Docker only stops containers, so both of the
-    /// launcher's park modes are the runner's `Shutdown` there; VMs are suspended (`Pause`) or
-    /// powered off (`Shutdown`).
+    /// Parks the lab, keeping what it created, in the runner's mode of the same name: a Pause
+    /// suspends VMs and freezes containers (`compose pause`), a Shutdown powers VMs off and stops
+    /// containers.
     pub(crate) async fn park(&self, mode: crate::runtime::Park, log: &mut impl FnMut(String)) -> Result<()> {
         let mode = match mode {
-            crate::runtime::Park::Pause if self.suspends() => isothrum_runner::Park::Pause,
-            _ => isothrum_runner::Park::Shutdown,
+            crate::runtime::Park::Pause => isothrum_runner::Park::Pause,
+            crate::runtime::Park::Shutdown => isothrum_runner::Park::Shutdown,
         };
         self.change(remote::Act::Park(mode), log).await
     }

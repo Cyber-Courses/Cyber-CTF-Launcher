@@ -19,8 +19,11 @@ A container lab can also run as one VM per machine, here or in a cloud account, 
 that. When a lab can run in more than one place, **Start lab** asks where. Cloud labs are billed
 to your account and stop on their own after the account's auto-stop time.
 
-**Pause** and **Shut down** keep a lab's state for later; **Stop & remove** removes its machines,
-and the next start begins from scratch. Closing the launcher doesn't stop a lab.
+**Pause** and **Shut down** keep a lab for later, and **Resume** brings it back as it was. Pause
+holds the lab where it is, for a resume in seconds: a VM lab's machines save their state, a
+container lab's containers are frozen. Shut down powers the machines off (stops the containers),
+keeping them: Resume boots them again. **Stop & remove** removes the lab's machines, and the next
+start begins from scratch. Closing the launcher doesn't stop a lab.
 
 ## The attack box
 

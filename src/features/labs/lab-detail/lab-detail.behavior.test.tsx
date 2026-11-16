@@ -427,7 +427,7 @@ describe("LabDetail: starting", () => {
 });
 
 describe("LabDetail: a lab that is up", () => {
-  it("opens a running lab's URL, shuts it down, and asks before removing it", async () => {
+  it("opens a running lab's URL, pauses or shuts it down, and asks before removing it", async () => {
     let yes = false;
     const calls = installTauri({ ...quiet, "plugin:dialog|message": (a) => answersDialog(yes)(a) });
     const user = userEvent.setup();
@@ -436,8 +436,9 @@ describe("LabDetail: a lab that is up", () => {
     await user.click(screen.getByRole("button", { name: /Open in browser/ }));
     await flush();
     expect(calls.find((c) => c.cmd.includes("opener"))?.args).toMatchObject({ url: "http://127.0.0.1:8080" });
-    // A container lab here: Shut down, no Pause.
-    expect(screen.queryByRole("button", { name: /^\s*Pause$/ })).toBeNull();
+    // A container lab here pauses (its containers frozen) or shuts down, as a VM lab does.
+    await user.click(screen.getByRole("button", { name: /^\s*Pause$/ }));
+    expect(h.onPark).toHaveBeenCalledWith("pause");
     await user.click(screen.getByRole("button", { name: /Shut down/ }));
     expect(h.onPark).toHaveBeenCalledWith("shutdown");
     // Asked in the system dialog: cancelled, nothing is removed; confirmed, it is, once.

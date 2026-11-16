@@ -263,7 +263,7 @@ async fn exercise(r: &Run, kind: Kind, launch: &Launch, p: &mut Played) {
     }
     let leaked = leaks::places_holding(&p.secrets, &p.log, &[&r.dir, &r.home], &docker::project(&r.id)).await;
     check(leaked.is_empty(), format!("no value of the launch shows while the lab runs: {leaked:?}"), &mut p.failures);
-    let parked = r.park(&mut |l| p.log.push(l)).await;
+    let parked = r.park(crate::runtime::Park::Shutdown, &mut |l| p.log.push(l)).await;
     check(parked.is_ok(), format!("the lab parks ({:?})", parked.err()), &mut p.failures);
     let resumed = r.resume(&mut |l| p.log.push(l)).await;
     check(resumed.is_ok(), format!("the lab resumes ({:?})", resumed.err()), &mut p.failures);

@@ -1,6 +1,7 @@
 //! Docker labs through the Isothrum runner, end to end: generate and start the lab, read its
 //! status, run its checks, add the attack box as the lab page does (at the seat the lab declares
-//! for the player, else on its first network) and reach the target from a shell in it, park and resume the lab (the box following), take the box out, then stop the lab
+//! for the player, else on its first network) and reach the target from a shell in it, shut the lab down and resume it, then pause and
+//! resume it (the box following each time, its shell reaching the target again), take the box out, then stop the lab
 //! and assert nothing of it is left. Each lab runs from the run manifest Isoloom writes, through
 //! the runner — the one lab engine.
 //!
@@ -25,7 +26,7 @@ use crate::platform::AppDirs;
 use crate::platform::exec::run;
 use crate::runtime::attack_box::Placed;
 use crate::runtime::host::Host;
-use crate::runtime::{LabStatus, Place, docker, isothrum};
+use crate::runtime::{LabStatus, Park, Place, docker, isothrum};
 
 /// What one lab must show once it is up.
 struct Expect {
@@ -88,10 +89,16 @@ async fn exercise(r: &Run, e: &Expect, f: &mut Vec<String>) {
     }
     exercise_status(r, e, f).await;
     exercise_checks(r, f).await;
-    let Some(attack) = attack_box_up(r, e, f).await else { return exercise_park_and_resume(r, f).await };
-    exercise_park_and_resume(r, f).await;
-    box_reaches(&attack, e.target, "after the lab resumed", f).await;
-    remove_box(&attack, &AppDirs::new(None, None), &mut log, f).await;
+    let attack = attack_box_up(r, e, f).await;
+    for mode in [Park::Shutdown, Park::Pause] {
+        exercise_park_and_resume(r, mode, f).await;
+        if let Some(attack) = &attack {
+            box_reaches(attack, e.target, &format!("after the lab resumed from {mode:?}"), f).await;
+        }
+    }
+    if let Some(attack) = &attack {
+        remove_box(attack, &AppDirs::new(None, None), &mut log, f).await;
+    }
 }
 
 /// Adds the attack box as the lab page does (the machine the launcher adds to the lab, at the seat
@@ -106,18 +113,39 @@ async fn attack_box_up(r: &Run, e: &Expect, f: &mut Vec<String>) -> Option<Place
     Some(placed)
 }
 
-/// Parked, the lab stops and stays; resumed, it comes back as it was, at the same address. The
-/// attack box is a machine of the lab, so it parks and resumes with it.
-async fn exercise_park_and_resume(r: &Run, f: &mut Vec<String>) {
+/// Parked in `mode` (Shut down: its containers stopped; Pause: frozen), the lab stops and stays,
+/// read as parked that way, each container still there and none running; resumed, it comes back as
+/// it was: the same containers, at the same address. The attack box is a machine of the lab, so it
+/// parks and resumes with it.
+async fn exercise_park_and_resume(r: &Run, mode: Park, f: &mut Vec<String>) {
     let url = r.status().await.ok().and_then(|s| s.url);
-    let parked = r.park(&mut log(&r.id)).await;
-    check(parked.is_ok(), format!("the lab parks ({:?})", parked.err()), f);
+    let before = containers(&r.id).await;
+    let parked = r.park(mode, &mut log(&r.id)).await;
+    check(parked.is_ok(), format!("the lab parks ({mode:?}): {:?}", parked.err()), f);
     let s = r.status().await;
-    check(s.as_ref().is_ok_and(|s| !s.running && s.parked.is_some()), format!("parked, it reads as parked ({:?})", s.map(|s| (s.running, s.parked))), f);
+    check(
+        s.as_ref().is_ok_and(|s| !s.running && s.parked == Some(mode)),
+        format!("parked ({mode:?}), it reads as parked so ({:?})", s.map(|s| (s.running, s.parked))),
+        f,
+    );
+    let held = containers(&r.id).await;
+    let frozen = if mode == Park::Pause { "paused" } else { "exited" };
+    let kept = before.iter().all(|(id, state)| held.iter().any(|(i, now)| i == id && (state != "running" || now == frozen)));
+    check(kept && held.len() == before.len(), format!("parked ({mode:?}), each container is kept, {frozen} if it ran ({before:?} → {held:?})"), f);
     let resumed = r.resume(&mut log(&r.id)).await;
-    check(resumed.is_ok(), format!("the lab resumes ({:?})", resumed.err()), f);
+    check(resumed.is_ok(), format!("the lab resumes from {mode:?}: {:?}", resumed.err()), f);
     let s = r.status().await;
-    check(s.as_ref().is_ok_and(|s| s.running && s.url == url), format!("resumed, it runs at the same address ({url:?})"), f);
+    check(s.as_ref().is_ok_and(|s| s.running && s.url == url), format!("resumed from {mode:?}, it runs at the same address ({url:?})"), f);
+    let back = containers(&r.id).await;
+    let same = before.iter().all(|(id, state)| state != "running" || back.iter().any(|(i, now)| i == id && now == "running"));
+    check(same, format!("resumed from {mode:?}, the same containers run again ({before:?} → {back:?})"), f);
+}
+
+/// The lab's containers, by id, with Docker's state of each (`running`, `paused`, `exited`).
+async fn containers(id: &str) -> Vec<(String, String)> {
+    let label = format!("label=com.docker.compose.project={}", docker::project(id));
+    let out = run("docker", &["ps", "--all", "--filter", &label, "--format", "{{.ID}} {{.State}}"], None).await.unwrap_or_default();
+    out.lines().filter_map(|l| l.split_once(' ')).map(|(id, state)| (id.to_owned(), state.to_owned())).collect()
 }
 
 /// The lab's status, and its published port answering on this machine (as the Open button expects).

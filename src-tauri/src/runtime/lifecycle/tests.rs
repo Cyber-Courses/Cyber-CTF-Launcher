@@ -94,10 +94,11 @@ fn a_lab_is_parked_only_in_a_mode_its_page_is_offered() {
     for mode in [Park::Pause, Park::Shutdown] {
         assert_eq!(park_refusal(mode, None, Some("virtualbox")), Some(super::LEFT_IN_A_HELPER_VM));
     }
-    // Regression: a pause of containers on Docker was carried out as a shut down and
-    // announced as a pause, and a pause on QEMU went to a `vagrant suspend` it refuses.
-    assert!(park_refusal(Park::Pause, Some(Target::Docker), Some("docker")).unwrap().contains("shut it down instead"));
-    assert_eq!(park_refusal(Park::Shutdown, Some(Target::Docker), Some("docker")), None);
+    // Containers on Docker pause (frozen) as well as shut down. Regression: a pause on QEMU went
+    // to a `vagrant suspend` it refuses.
+    for mode in [Park::Pause, Park::Shutdown] {
+        assert_eq!(park_refusal(mode, Some(Target::Docker), Some("docker")), None);
+    }
     assert!(park_refusal(Park::Pause, Some(Target::Vagrant), Some("qemu")).unwrap().starts_with("QEMU can't pause"));
     assert_eq!(park_refusal(Park::Shutdown, Some(Target::Vagrant), Some("qemu")), None);
     assert_eq!(park_refusal(Park::Pause, Some(Target::Vagrant), Some("virtualbox")), None);
@@ -106,14 +107,15 @@ fn a_lab_is_parked_only_in_a_mode_its_page_is_offered() {
 }
 
 #[tokio::test]
-async fn a_pause_of_containers_on_docker_is_refused_before_anything_runs() {
+async fn a_pause_on_qemu_is_refused_before_anything_runs() {
     let t = TestApp::new();
     let spec =
         "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
     t.lab("t", &[("isoloom.yml", spec)]);
+    crate::runtime::test_support::record_vms_on(t.data(), "t", "qemu");
     let tools = Tools::strict_rules(&[]);
-    let err = park_lab(&t.dirs(), "t", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err();
-    assert!(matches!(err, crate::error::Error::Refused(_)) && err.to_string().contains("shut it down instead"), "{err}");
+    let err = park_lab(&t.dirs(), "t", Runtime::Vm, Park::Pause, |_| {}).await.unwrap_err();
+    assert!(matches!(err, crate::error::Error::Refused(_)) && err.to_string().starts_with("QEMU can't pause"), "{err}");
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
     assert_eq!(Recorded::of(&t.dirs(), "t").await.unwrap().parked(), None, "not recorded as paused");
 }
@@ -170,10 +172,10 @@ async fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
     let spec =
         "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
     let dir = t.lab("t", &[("isoloom.yml", spec)]);
-    // Containers here: shut down only (nothing to save), no provisioning; stopped containers
+    // Containers here: paused (frozen) or shut down, no provisioning; stopped containers
     // brought back as they are (regression, docs/contributing/testing/resilience.md M4: a Docker lab with a
     // container stopped outside the app was offered a reset only).
-    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("docker")).await, (false, true, false, true));
+    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("docker")).await, (true, true, false, true));
     // A VM lab here: both, provisioning and the repair; QEMU can't suspend.
     assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("virtualbox")).await, (true, true, true, true));
     assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("qemu")).await, (false, true, true, true));

@@ -30,6 +30,8 @@ enum Containers {
     None,
     Up,
     Stopped,
+    /// Frozen by `compose pause`: there, and listed without `--all`.
+    Paused,
 }
 
 /// An installed lab (`<labs>/web`) with its files generated, a runner home, and the fake engine.
@@ -96,6 +98,18 @@ fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
             }
             Reply::ok("")
         }
+        "pause" => {
+            if e.containers == Containers::Up {
+                e.containers = Containers::Paused;
+            }
+            Reply::ok("")
+        }
+        "unpause" => {
+            if e.containers == Containers::Paused {
+                e.containers = Containers::Up;
+            }
+            Reply::ok("")
+        }
         "down" => {
             e.containers = Containers::None;
             Reply::ok("")
@@ -136,6 +150,7 @@ fn ps(containers: Containers, all: bool, host_port: u16) -> String {
         Containers::Stopped if !all => return String::new(),
         Containers::Up => "running",
         Containers::Stopped => "exited",
+        Containers::Paused => "paused",
     };
     let publisher = format!(r#"{{"URL":"127.0.0.1","PublishedPort":{host_port},"TargetPort":80,"Protocol":"tcp"}}"#);
     [("web", publisher.as_str()), ("isoloom-probe", "")]
@@ -254,6 +269,25 @@ async fn a_lab_parks_and_resumes() {
     assert_eq!((parked.running, parked.parked), (false, Some(Park::Shutdown)), "as the runner recorded it");
     run.resume(&mut |_| {}).await.unwrap();
     assert!(run.status().await.unwrap().running);
+}
+
+/// Paused, a container lab's containers are frozen, not stopped, and the page reads it paused, as
+/// the runner recorded it; a resume unpauses them, as they were.
+#[tokio::test]
+async fn a_container_lab_pauses_and_resumes_as_it_was() {
+    let f = Fixture::new();
+    let _tools = Tools::strict_rules(&[]);
+    let run = f.up().await;
+    run.park(Park::Pause, &mut |_| {}).await.unwrap();
+    assert!(last_compose(&f, "pause", None).is_some(), "a Pause freezes the lab's containers");
+    assert!(last_compose(&f, "stop", None).is_none(), "and stops none");
+    let paused = run.status().await.unwrap();
+    assert_eq!((paused.running, paused.parked), (false, Some(Park::Pause)), "as the runner recorded it");
+    run.resume(&mut |_| {}).await.unwrap();
+    assert!(last_compose(&f, "unpause", None).is_some(), "a resume unpauses them");
+    let back = run.status().await.unwrap();
+    assert_eq!((back.running, back.parked), (true, None));
+    assert_eq!(back.url.as_deref(), Some("http://127.0.0.1:8080/"), "at the same address");
 }
 
 /// A resume has no launch values (they aren't kept), and it starts the containers as they are

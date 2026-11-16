@@ -159,6 +159,11 @@ pub(crate) mod test_support {
         save_record(home, lab, None, target, &serde_json::json!({ "state": "parked", "parked": mode }));
     }
 
+    /// [`record_run`] of a VM run on this machine, ready, on the hypervisor `provider` (`qemu`, …).
+    pub(crate) fn record_vms_on(home: &std::path::Path, lab: &str, provider: &str) {
+        save_record(home, lab, None, "vagrant", &serde_json::json!({ "state": "ready", "provider": provider }));
+    }
+
     /// [`record_run`] with the record's `state` (and `parked`) from `standing`.
     fn save_record(home: &std::path::Path, lab: &str, host: Option<&str>, target: &str, standing: &serde_json::Value) {
         let name = format!("cyberctf-{lab}");

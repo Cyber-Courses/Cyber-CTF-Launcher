@@ -174,12 +174,13 @@ pub enum Place {
     Cloud,
 }
 
-/// How a lab was parked: its machines kept on disk, to resume later without rebuilding them.
-/// `Pause` saves the VMs' state (instant resume); `Shutdown` powers them off cleanly.
+/// How a lab was parked: its machines kept, to resume later without rebuilding them. `Pause`
+/// saves the VMs' state or freezes the containers (instant resume); `Shutdown` powers them off
+/// cleanly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Park {
-    /// The VMs' state saved to disk: they resume where they were.
+    /// The VMs' state saved to disk, or the containers frozen: they resume where they were.
     Pause,
     /// The VMs powered off cleanly, kept.
     Shutdown,
@@ -241,7 +242,7 @@ pub struct LabStatus {
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "LabControl")]
 pub enum Control {
-    /// Pausing it (its machines' state saved).
+    /// Pausing it (its machines' state saved, its containers frozen).
     Pause,
     /// Shutting it down (its machines powered off, kept).
     Shutdown,
