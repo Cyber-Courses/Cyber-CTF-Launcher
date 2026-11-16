@@ -173,6 +173,16 @@ impl Packages {
         }
     }
 
+    /// The same package manager as isothrum-machine names it.
+    pub fn isothrum(self) -> isothrum_machine::Packages {
+        match self {
+            Packages::Homebrew(brew) => isothrum_machine::Packages::Homebrew(brew),
+            Packages::Winget => isothrum_machine::Packages::Winget,
+            Packages::Linux(LinuxPackages::Apt) => isothrum_machine::Packages::Linux(isothrum_machine::LinuxPackages::Apt),
+            Packages::Linux(LinuxPackages::Dnf) => isothrum_machine::Packages::Linux(isothrum_machine::LinuxPackages::Dnf),
+        }
+    }
+
     /// The Linux distribution's, when it is one.
     pub fn linux(self) -> Option<LinuxPackages> {
         match self {

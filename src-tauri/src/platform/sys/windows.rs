@@ -10,7 +10,9 @@ pub use elevation::{ElevatedProcess, in_hyperv_admins, is_elevated, launch_eleva
 #[cfg(test)]
 pub use job::terminate;
 pub use job::{Created, Job, create_in_job, exit_code, process_created, terminate_process};
-pub use registry::{Hive, delete_user_registry_value, registry_key_exists, registry_string, registry_value_exists, registry_values, set_user_registry_string};
+#[cfg(test)]
+pub use registry::registry_value_exists;
+pub use registry::{Hive, delete_user_registry_value, registry_string, registry_values, set_user_registry_string};
 
 /// Keeps this process's own standard input, output and error to itself. std starts a child with
 /// every inheritable handle of its parent, so each tool held whatever the app was started with:

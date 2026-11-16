@@ -5,7 +5,7 @@
 
 use crate::machine::system::docker::{Engine, EngineStatus};
 use crate::machine::system::wsl::{WslReport, WslState};
-use crate::machine::system::{CloudClis, PkgManager, SystemReport, Tool};
+use crate::machine::system::{CloudClis, PackageManager, SystemReport, Tool};
 use crate::platform::host::{Arch, Host, Os};
 use isothrum_machine::providers::{AccountLacks, needs};
 
@@ -69,7 +69,7 @@ pub(crate) fn bare(os: Os, arch: Arch) -> SystemReport {
         Os::Linux => "apt 2.9.8 (amd64)",
         Os::Macos => "Homebrew 4.6.3",
     };
-    let pkg_manager = PkgManager { name: os.usual_packages().into(), installed: true, version: Some(version.into()) };
+    let pkg_manager = PackageManager { name: os.usual_packages().into(), installed: true, version: Some(version.into()) };
     let wsl = (os == Os::Windows).then_some(WslReport { state: WslState::Missing, reopens_after_restart: true, virtualization_off: false });
     let mut r = SystemReport {
         os,

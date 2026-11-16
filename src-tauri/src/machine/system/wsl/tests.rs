@@ -14,221 +14,6 @@ use crate::platform::exec::fake::{Tools, fail, ok};
 use crate::testing::test_app::TestApp;
 use WslState::*;
 
-/// A machine where nothing could be read.
-fn blank() -> Probes {
-    Probes {
-        status: Run::Failed,
-        version: Run::Failed,
-        lxss_service: None,
-        wsl_service: None,
-        vm_platform: None,
-        wsl_feature: None,
-        hypervisor: None,
-        reboot_pending: None,
-        renames_pending: None,
-        installed_this_boot: false,
-        restarted_for_wsl: false,
-    }
-}
-
-/// Windows 11 without WSL: wsl.exe is there, and only offers to install.
-fn win11_without_wsl() -> Probes {
-    Probes {
-        lxss_service: Some(false),
-        wsl_service: Some(false),
-        vm_platform: Some(Feature::Disabled),
-        wsl_feature: Some(Feature::Disabled),
-        hypervisor: Some(false),
-        reboot_pending: Some(false),
-        renames_pending: Some(false),
-        ..blank()
-    }
-}
-
-/// Windows 11 with the Store WSL and no distribution, after the restart.
-fn win11_store_ready() -> Probes {
-    Probes { status: Run::Ok, version: Run::Ok, wsl_service: Some(true), vm_platform: Some(Feature::Enabled), hypervisor: Some(true), ..win11_without_wsl() }
-}
-
-/// Windows 10 21H2 with the WSL feature (no Store WSL: `--version` is unknown to it).
-fn win10_inbox_ready() -> Probes {
-    Probes {
-        status: Run::Ok,
-        version: Run::Failed,
-        lxss_service: Some(true),
-        wsl_service: Some(false),
-        vm_platform: Some(Feature::Enabled),
-        wsl_feature: Some(Feature::Enabled),
-        hypervisor: Some(true),
-        reboot_pending: Some(false),
-        renames_pending: Some(false),
-        installed_this_boot: false,
-        restarted_for_wsl: false,
-    }
-}
-
-/// The Store WSL turned on, virtualization off in the firmware: the platform reads as on,
-/// no hypervisor ever starts, and something re-adds file renames at every boot.
-fn firmware_off() -> Probes {
-    Probes { status: Run::Failed, hypervisor: Some(false), renames_pending: Some(true), ..win11_store_ready() }
-}
-
-#[test]
-fn a_machine_without_wsl_is_missing() {
-    assert_eq!(classify(&win11_without_wsl()), Missing);
-    // Windows 10, whose wsl.exe may not exist at all.
-    assert_eq!(classify(&Probes { status: Run::Missing, version: Run::Missing, ..win11_without_wsl() }), Missing);
-    // The features couldn't be read: the services and wsl.exe still agree.
-    assert_eq!(classify(&Probes { vm_platform: None, wsl_feature: None, hypervisor: None, ..win11_without_wsl() }), Missing);
-    // A restart for an update, or renames, are no sign of WSL.
-    assert_eq!(classify(&Probes { reboot_pending: Some(true), renames_pending: Some(true), ..win11_without_wsl() }), Missing);
-}
-
-#[test]
-fn wsl_on_and_running_is_ready() {
-    assert_eq!(classify(&win11_store_ready()), Ready);
-    assert_eq!(classify(&win10_inbox_ready()), Ready);
-    // Without a distribution `wsl --status` may fail: the platform running is enough.
-    assert_eq!(classify(&Probes { status: Run::Failed, ..win11_store_ready() }), Ready);
-    // A hung wsl.exe doesn't hide the rest.
-    assert_eq!(classify(&Probes { status: Run::TimedOut, version: Run::TimedOut, ..win11_store_ready() }), Ready);
-    // WMI unavailable: WSL answering, with nothing waiting for a restart, is enough.
-    assert_eq!(classify(&Probes { vm_platform: None, wsl_feature: None, hypervisor: None, ..win11_store_ready() }), Ready);
-    // An update waiting for a restart, while WSL answers.
-    assert_eq!(classify(&Probes { reboot_pending: Some(true), renames_pending: Some(true), ..win11_store_ready() }), Ready);
-    // Renames left by others never hold a working WSL back.
-    assert_eq!(classify(&Probes { renames_pending: Some(true), ..win10_inbox_ready() }), Ready);
-}
-
-#[test]
-fn a_pending_update_doesnt_hide_a_store_wsl_without_a_distribution() {
-    // The usual state after `wsl --install --no-distribution` and its restart: `--status`
-    // fails (no distribution), and Windows Update waits for a restart of its own.
-    let store = Probes { status: Run::Failed, reboot_pending: Some(true), ..win11_store_ready() };
-    assert_eq!(classify(&store), Ready);
-    // Known by its service alone (`--version` timed out).
-    assert_eq!(classify(&Probes { version: Run::TimedOut, ..store }), Ready);
-    // The WSL feature (no Store WSL) gives no such proof: the restart may be its own.
-    let inbox = Probes { status: Run::Failed, reboot_pending: Some(true), ..win10_inbox_ready() };
-    assert_eq!(classify(&inbox), NeedsReboot);
-}
-
-#[test]
-fn unreadable_servicing_is_no_proof_nothing_is_pending() {
-    let unread = Probes { vm_platform: None, wsl_feature: None, hypervisor: None, reboot_pending: None, ..win11_store_ready() };
-    assert_eq!(classify(&unread), Unknown);
-    assert_eq!(classify(&Probes { reboot_pending: Some(false), ..unread }), Ready);
-}
-
-#[test]
-fn turned_on_but_not_restarted_needs_a_reboot() {
-    // Right after Cyber CTF's install: the Store WSL is in, the platform reads as on, no
-    // hypervisor yet.
-    let after_install = Probes {
-        status: Run::Failed,
-        version: Run::Ok,
-        wsl_service: Some(true),
-        vm_platform: Some(Feature::Enabled),
-        hypervisor: Some(false),
-        reboot_pending: Some(true),
-        installed_this_boot: true,
-        ..win11_without_wsl()
-    };
-    assert_eq!(classify(&after_install), NeedsReboot);
-    // Hyper-V already ran a hypervisor, and WSL answers: still the restart first.
-    assert_eq!(classify(&Probes { hypervisor: Some(true), status: Run::Ok, ..after_install }), NeedsReboot);
-    // Servicing says nothing, but our install left renames.
-    assert_eq!(classify(&Probes { hypervisor: Some(true), reboot_pending: Some(false), renames_pending: Some(true), ..after_install }), NeedsReboot);
-    // The app was reopened before the restart, and WMI still reads the features as off.
-    let reopened =
-        Probes { vm_platform: Some(Feature::Disabled), wsl_feature: Some(Feature::Disabled), wsl_service: Some(false), version: Run::Failed, ..after_install };
-    assert_eq!(classify(&reopened), NeedsReboot);
-    // Our install ran this boot and the servicing state can't be read.
-    assert_eq!(classify(&Probes { reboot_pending: None, ..reopened }), NeedsReboot);
-    // Turned on by hand (`wsl --install` in PowerShell) on Windows 10: no mark of ours.
-    let by_hand = Probes {
-        status: Run::Failed,
-        vm_platform: Some(Feature::Enabled),
-        wsl_feature: Some(Feature::Enabled),
-        lxss_service: Some(false),
-        hypervisor: Some(false),
-        reboot_pending: Some(true),
-        ..win11_without_wsl()
-    };
-    assert_eq!(classify(&by_hand), NeedsReboot);
-}
-
-#[test]
-fn our_install_that_changed_nothing_is_judged_on_the_rest() {
-    // It ran this boot, yet no restart or rename is pending: WSL was ready already.
-    assert_eq!(classify(&Probes { installed_this_boot: true, ..win11_store_ready() }), Ready);
-}
-
-#[test]
-fn virtualization_off_in_the_firmware_never_loops_on_restarts() {
-    // Renames re-added at every boot are no reason to restart (again).
-    let off = firmware_off();
-    assert_eq!(classify(&off), Unknown);
-    assert!(virtualization_off(&off, classify(&off)));
-    // After Cyber CTF's restart, even with servicing waiting for another one: no second ask.
-    let after_ours = Probes { restarted_for_wsl: true, reboot_pending: Some(true), ..off };
-    assert_eq!(classify(&after_ours), Unknown);
-    assert!(virtualization_off(&after_ours, classify(&after_ours)));
-    // The same pending restart without one of ours yet: that one is worth trying, once.
-    let before_ours = Probes { reboot_pending: Some(true), ..off };
-    assert_eq!(classify(&before_ours), NeedsReboot);
-    assert!(!virtualization_off(&before_ours, NeedsReboot));
-    // A new install of ours starts over.
-    assert_eq!(classify(&Probes { installed_this_boot: true, ..after_ours }), NeedsReboot);
-    // A working machine is never told virtualization is off.
-    assert!(!virtualization_off(&win11_store_ready(), Ready));
-}
-
-#[test]
-fn what_the_signals_cant_settle_is_unknown() {
-    assert_eq!(classify(&blank()), Unknown);
-    // Everything timed out.
-    assert_eq!(classify(&Probes { status: Run::TimedOut, version: Run::TimedOut, ..blank() }), Unknown);
-    // A hung wsl.exe with no other sign of WSL: maybe it's there and stuck.
-    assert_eq!(classify(&Probes { status: Run::TimedOut, ..win11_without_wsl() }), Unknown);
-    // On but no hypervisor and nothing pending: perhaps virtualization is off in the firmware.
-    let no_hypervisor = Probes { hypervisor: Some(false), ..win10_inbox_ready() };
-    assert_eq!(classify(&no_hypervisor), Unknown);
-    assert!(virtualization_off(&no_hypervisor, Unknown));
-    // Only the platform on, nothing of WSL: neither ready nor plainly missing.
-    assert_eq!(classify(&Probes { vm_platform: Some(Feature::Enabled), ..win11_without_wsl() }), Unknown);
-}
-
-#[test]
-fn wsl_1_without_the_platform_is_missing_wsl_2() {
-    let wsl1 = Probes { vm_platform: Some(Feature::Disabled), hypervisor: Some(false), ..win10_inbox_ready() };
-    assert_eq!(classify(&wsl1), Missing);
-    // Unless the platform is being turned on.
-    assert_eq!(classify(&Probes { reboot_pending: Some(true), ..wsl1 }), NeedsReboot);
-}
-
-#[test]
-fn the_wmi_output_is_read_by_key() {
-    let out = "features=ok\r\nfeature:VirtualMachinePlatform=1\r\nfeature:Microsoft-Windows-Subsystem-Linux=2\r\nhypervisor=True\r\n";
-    assert_eq!(parse_cim(out), (Some(Feature::Enabled), Some(Feature::Disabled), Some(true)));
-    // An edition without the feature doesn't list it.
-    assert_eq!(parse_cim("features=ok\nfeature:VirtualMachinePlatform=3\nhypervisor=False\n"), (Some(Feature::Absent), Some(Feature::Absent), Some(false)));
-    // The feature query failed; the hypervisor one didn't.
-    assert_eq!(parse_cim("hypervisor=False\n"), (None, None, Some(false)));
-    // InstallState 4 (unknown), and nothing at all.
-    assert_eq!(parse_cim("features=ok\nfeature:VirtualMachinePlatform=4\nfeature:Microsoft-Windows-Subsystem-Linux=1"), (None, Some(Feature::Enabled), None));
-    assert_eq!(parse_cim(""), (None, None, None));
-}
-
-#[test]
-fn a_probe_reads_as_ok_failed_timed_out_or_missing() {
-    let failed = |stderr: &str| Err(Error::CommandFailed { command: "wsl --status".into(), stderr: stderr.into() });
-    assert_eq!(outcome(&Ok("features=ok".into())), (Run::Ok, "features=ok"));
-    assert_eq!(outcome(&failed("")).0, Run::Failed);
-    assert_eq!(outcome(&failed("timed out after 10s (the tool or its backend may be stuck)")).0, Run::TimedOut);
-    assert_eq!(outcome(&Err(Error::ToolMissing { tool: "wsl" })).0, Run::Missing);
-}
-
 #[test]
 fn the_state_reaches_the_ui_in_camel_case() {
     let report = WslReport { state: NeedsReboot, reopens_after_restart: true, virtualization_off: false };
@@ -273,10 +58,10 @@ fn a_restart_mark_counts_from_the_next_boot_until_wsl_is_ready_or_installed_agai
     assert!(!restarted_for_wsl(&t.dirs(), 1_000));
     assert!(restarted_for_wsl(&t.dirs(), 2_000));
     // Not ready: remembered.
-    assert_eq!(assess(&t.dirs(), &Probes { restarted_for_wsl: true, ..firmware_off() }), (Unknown, true));
+    remember(&t.dirs(), Unknown);
     assert!(restarted_for_wsl(&t.dirs(), 2_000));
     // Ready: forgotten.
-    assert_eq!(assess(&t.dirs(), &win11_store_ready()), (Ready, false));
+    remember(&t.dirs(), Ready);
     assert!(!restarted_for_wsl(&t.dirs(), 2_000));
     // A new install forgets it too.
     mark(&t.dirs(), RESTART_MARK, 1_000);
@@ -445,13 +230,12 @@ async fn a_failed_restart_leaves_a_runonce_it_didnt_write() {
 
 #[cfg(not(windows))]
 #[tokio::test]
-async fn restarting_is_refused_off_windows_and_the_check_has_no_wsl() {
+async fn restarting_is_refused_off_windows() {
     let t = TestApp::new();
     let tools = Tools::strict_rules(&[]);
     let err = machine_restart(t.dirs(), String::new(), WindowsFeature::Wsl).await.unwrap_err();
     assert_eq!(err.to_string(), "Restarting from Cyber CTF is only available on Windows.");
     assert_eq!(tools.calls(), [] as [&str; 0]);
-    assert!(report(&t.dirs()).await.is_none());
 }
 
 #[tokio::test]
@@ -479,17 +263,18 @@ async fn a_test_never_restarts_for_real() {
     assert!(machine_restart(t.dirs(), String::new(), WindowsFeature::Wsl).await.is_err());
 }
 
-/// The real probes on this Windows: they finish in time, read the registry, and give a state.
+/// isothrum-machine's real probes on this Windows: they finish in time, read the registry, and
+/// give a state.
 #[cfg(windows)]
 #[tokio::test]
 async fn the_probes_answer_on_this_machine() {
     let started = std::time::Instant::now();
-    let probes = windows::probe(false, false).await;
-    println!("{probes:?} -> {:?}", classify(&probes));
+    let cx = isothrum_machine::Context::new(std::sync::Arc::new(isothrum_runner::SystemProcesses::default()), crate::runtime::providers::testing::host(std::path::Path::new("/")));
+    let found = isothrum_machine::wsl::check(&cx, Marks::default()).await.unwrap();
+    println!("{:?} -> {:?}", found.probes, found.state);
     assert!(started.elapsed() < std::time::Duration::from_secs(45));
-    assert!(probes.reboot_pending.is_some() && probes.lxss_service.is_some() && probes.wsl_service.is_some(), "{probes:?}");
-    let t = TestApp::new();
-    assert!(report(&t.dirs()).await.is_some());
+    let p = found.probes;
+    assert!(p.reboot_pending.is_some() && p.lxss_service.is_some() && p.wsl_service.is_some(), "{p:?}");
 }
 
 /// Removes the test's `RunOnce` value however the test ends.

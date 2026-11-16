@@ -28,7 +28,7 @@ pub use background::{Background, background};
 #[cfg(test)]
 pub use docker::IMAGE_PATTERN;
 pub use docker::login_name;
-pub use docker::{DockerSaid, ImageRef, docker_denied, docker_denied_error, groups_pending, valid_image};
+pub use docker::{DockerSaid, ImageRef, docker_denied, docker_denied_error, valid_image};
 #[cfg(test)]
 pub(crate) use elevate::leftover_script;
 pub(crate) use elevate::ps_quote;

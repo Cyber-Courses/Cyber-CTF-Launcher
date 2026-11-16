@@ -20,8 +20,6 @@ const ALLOWED: &[(&str, &str)] = &[
     ("machine/selftest/vm/networks.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
     ("machine/storage.rs", "L-14: what the runner downloaded is recorded by it (I-17)"),
     ("machine/storage/owned.rs", "L-14: what the runner downloaded is recorded by it (I-17)"),
-    ("machine/system.rs", "L-14: the machine check moves to isothrum-machine (I-13)"),
-    ("machine/system/docker.rs", "L-14: the machine check moves to isothrum-machine (I-13)"),
     ("machine/system/metrics.rs", "L-14: the machine check moves to isothrum-machine (I-13)"),
     ("machine/tools/install.rs", "L-14: tool and hypervisor installs move to isothrum-machine (I-14)"),
     ("machine/workloads/docker.rs", "L-4: the Machine page lists runs through client.list(), status and Down"),

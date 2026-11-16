@@ -32,7 +32,7 @@ export type {
   OvftoolLocation,
   OvftoolPlaced,
   OvftoolRefusal,
-  PkgManager,
+  PackageManager,
   Provider,
   ProviderStatus,
   Unavailable,

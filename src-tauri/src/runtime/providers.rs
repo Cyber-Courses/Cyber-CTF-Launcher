@@ -28,6 +28,19 @@ fn machine() -> isothrum_machine::Context {
     }
 }
 
+/// What the machine check reads with ([`crate::machine::system::system_check`]): [`machine`]'s,
+/// with this machine's package manager, and outside the tests the version probes that rarely
+/// change (`vagrant --version`...) kept a while ([`crate::platform::remembered::Remembering`]).
+pub(crate) fn machine_check() -> isothrum_machine::Context {
+    let mut cx = machine();
+    #[cfg(not(test))]
+    {
+        cx.runner = std::sync::Arc::new(crate::platform::remembered::Remembering::new(cx.runner));
+        cx.host.packages = crate::platform::host::Host::here().packages.map(crate::platform::host::Packages::isothrum);
+    }
+    cx
+}
+
 /// This machine: its tools, run by the runner's processes, and its devices.
 fn this_machine() -> isothrum_machine::Context {
     let os = Os::HERE.isothrum();
