@@ -145,7 +145,6 @@ const PARSE_ALLOWED: &[(&str, &str, &str)] = &[
     ("english.rs", "serde_json::from_str(source)", "the webview's bundled English messages"),
     ("diagnostics/collect.rs", "serde_json::from_str::<Value>(body)", "an earlier version's deploy verdict file, left in the data folder"),
     ("diagnostics/collect.rs", "serde_json::from_slice::<Value>(&std::fs::read(dir.join(n))", "an earlier version's deploy job files, left in the data folder"),
-    ("runtime/providers/virtiofsd.rs", "serde_json::from_str(json)", "QEMU's vhost-user descriptors, the files libvirt finds virtiofsd by"),
 ];
 
 #[test]

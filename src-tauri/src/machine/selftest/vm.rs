@@ -43,11 +43,11 @@ fn none_ready(preferred: Option<Provider>, statuses: &[providers::ProviderStatus
     let blocked = statuses
         .iter()
         .filter(installed)
-        .find(|s| Some(s.provider) == preferred)
+        .find(|s| preferred.is_some_and(|p| s.provider == p))
         .or_else(|| statuses.iter().find(installed))
-        .and_then(|s| s.reason.as_ref().map(|why| (s.provider, why)));
+        .and_then(|s| s.reason.as_ref().map(|why| (Provider::from(s.provider), why)));
     match blocked {
-        Some((p, why)) => format!("{} can't run VMs here: {why}", p.label()),
+        Some((p, why)) => format!("{} can't run VMs here: {}", p.label(), providers::said(why)),
         None => "no local hypervisor with its Vagrant plugin is installed".to_owned(),
     }
 }

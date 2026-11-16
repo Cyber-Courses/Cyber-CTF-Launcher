@@ -273,7 +273,7 @@ fn not_on_windows_on_arm(dep: Dependency, arch: Arch) -> Option<Error> {
         Dependency::VmwareUtility => Provider::VmwareDesktop,
         other => other.hypervisor()?,
     };
-    (arch == Arch::Aarch64 && !provider.row().windows_on_arm).then(|| {
+    (arch == Arch::Aarch64 && !provider.on_windows_on_arm()).then(|| {
         Error::Invalid(format!("{} doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.", provider.label_on(Os::Windows)))
     })
 }

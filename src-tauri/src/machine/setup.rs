@@ -239,7 +239,7 @@ fn hypervisor_get(r: &SystemReport, p: &ProviderStatus, hyperv_restart: bool) ->
     if p.hypervisor == Some(true) {
         // The groups its install added the player to (libvirt's, /dev/kvm's) apply from the next
         // login: the setup asks for it, as it does for the docker group.
-        let groups = crate::runtime::providers::login_groups(p.provider, r.os);
+        let groups = crate::runtime::providers::login_groups(p.provider.into(), r.os);
         if r.groups_pending.iter().any(|g| groups.contains(g)) {
             return vec![Action::Relogin];
         }
@@ -251,9 +251,9 @@ fn hypervisor_get(r: &SystemReport, p: &ProviderStatus, hyperv_restart: bool) ->
     if p.provider == Provider::Hyperv && hyperv_restart {
         return vec![Action::Restart { feature: WindowsFeature::Hyperv }];
     }
-    vec![match installable(p.provider, r.os) {
+    vec![match installable(p.provider.into(), r.os) {
         Some(dependency) => install(r, dependency),
-        None => Action::Manual { reason: ManualReason::Vendor, dependency: None, url: p.provider.row().vendor.map(str::to_owned) },
+        None => Action::Manual { reason: ManualReason::Vendor, dependency: None, url: Provider::from(p.provider).vendor().map(str::to_owned) },
     }]
 }
 
@@ -292,7 +292,7 @@ pub fn options(r: &SystemReport, hyperv_restart: bool) -> Options {
     };
     let hypervisors: Vec<HypervisorOption> = local(r)
         .map(|p| HypervisorOption {
-            provider: p.provider,
+            provider: p.provider.into(),
             get: hypervisor_get(r, p, hyperv_restart),
             vagrant: vagrant_steps(r, p).into_iter().map(|(_, action)| action).collect(),
         })

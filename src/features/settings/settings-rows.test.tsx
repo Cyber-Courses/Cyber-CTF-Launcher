@@ -312,7 +312,7 @@ describe("HypervisorRow", () => {
   it("points to the Machine page when no hypervisor is installed", async () => {
     installTauri();
     const user = userEvent.setup();
-    render(<HypervisorRow report={withProviders([hv({ hypervisor: false, available: false }), hv({ provider: "proxmox", remote: true })])} {...props} />);
+    render(<HypervisorRow report={withProviders([hv({ hypervisor: false, available: false }), hv({ provider: "vmware_esxi", remote: true })])} {...props} />);
     expect(text()).toContain("No hypervisor is installed");
     await user.click(button(/set one up/i));
     expect(props.onNavigate).toHaveBeenCalledWith("machine");

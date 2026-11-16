@@ -102,6 +102,7 @@ export type * from "./Tool";
 export type * from "./Unavailable";
 export type * from "./UpdateChannel";
 export type * from "./UtilityState";
+export type * from "./VagrantProvider";
 export type * from "./WindowsFeature";
 export type * from "./Workload";
 export type * from "./WorkloadKind";

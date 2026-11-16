@@ -345,7 +345,7 @@ pub fn libvirt_script(user: Option<&str>) -> RootScript {
 /// boots VMs with KVM (`accel=kvm`, as every lab's Vagrantfile asks on Linux) without root; the
 /// group applies from the next login. With `genisoimage`, which has `mkisofs`: vagrant-qemu gives
 /// a VM on a lab network its settings in a cloud-init seed, an ISO Vagrant builds with `mkisofs`
-/// on Linux ([`crate::runtime::providers::needs_mkisofs`]). Every Debian and Ubuntu release has
+/// on Linux ([`isothrum_machine::providers::needs_mkisofs`]). Every Debian and Ubuntu release has
 /// the package; Debian's `xorriso` has no `mkisofs`, only `xorrisofs`. And `virtiofsd`, which
 /// vagrant-qemu starts to share a folder of this computer with a VM (the attack box's shared
 /// folder): its own package from Debian 12 and Ubuntu 23.10 on, QEMU's own

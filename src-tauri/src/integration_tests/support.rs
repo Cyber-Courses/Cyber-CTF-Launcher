@@ -189,25 +189,27 @@ mod tests {
     /// and not a failure in the lab.
     #[test]
     fn the_runner_knows_the_launchers_platform_refusals() {
-        use crate::runtime::providers::Unavailable;
+        use serde_json::json;
         let runner = include_str!("../../../tests/integration/run.sh");
         let pattern = runner.lines().find_map(|l| l.strip_prefix("PLATFORM_FAILURE=\"")).and_then(|l| l.strip_suffix('"')).expect("PLATFORM_FAILURE in run.sh");
         let re = regex::Regex::new(pattern).unwrap();
+        // The machine check's reasons, as the launcher says them.
+        let reason = |wire: serde_json::Value| crate::runtime::providers::said(&serde_json::from_value(wire).unwrap());
         let platform = [
-            Unavailable::VagrantMissing.message(),
-            Unavailable::VirtualboxStuck.message(),
-            Unavailable::HypervOff.message(),
-            Unavailable::HypervNeedsAdmin.message(),
-            Unavailable::NotInstalled { program: Some("VBoxManage".into()) }.message(),
-            Unavailable::NotInstalled { program: None }.message(),
-            Unavailable::NewLogin { group: "kvm".into() }.message(),
-            Unavailable::NoKvm.message(),
-            Unavailable::KvmDenied { group: "kvm".into() }.message(),
-            Unavailable::HypervisorTooOld { name: "VirtualBox".into(), version: "6.1".into(), min: "7.0".into() }.message(),
-            Unavailable::PluginTooOld { plugin: "vagrant-libvirt".into(), version: "0.1".into(), min: "0.12".into() }.message(),
-            Unavailable::PluginMissing { plugin: "vagrant-qemu".into() }.message(),
-            Unavailable::VmwareUtilityStopped.message(),
-            Unavailable::VmwareUtilityMissing.message(),
+            reason(json!({ "code": "vagrantMissing" })),
+            reason(json!({ "code": "virtualboxStuck" })),
+            reason(json!({ "code": "hypervOff" })),
+            reason(json!({ "code": "hypervNeedsAdmin" })),
+            reason(json!({ "code": "notInstalled", "args": { "program": "VBoxManage" } })),
+            reason(json!({ "code": "notInstalled", "args": { "program": null } })),
+            reason(json!({ "code": "newLogin", "args": { "group": "kvm" } })),
+            reason(json!({ "code": "noKvm" })),
+            reason(json!({ "code": "kvmDenied", "args": { "group": "kvm" } })),
+            reason(json!({ "code": "hypervisorTooOld", "args": { "name": "VirtualBox", "version": "6.1", "min": "7.0" } })),
+            reason(json!({ "code": "pluginTooOld", "args": { "plugin": "vagrant-libvirt", "version": "0.1", "min": "0.12" } })),
+            reason(json!({ "code": "pluginMissing", "args": { "plugin": "vagrant-qemu" } })),
+            reason(json!({ "code": "vmwareUtilityStopped" })),
+            reason(json!({ "code": "vmwareUtilityMissing" })),
             crate::error::Error::ToolMissing { tool: "qemu-system-x86_64" }.to_string(),
             crate::error::Error::coded(crate::error::Code::DockerNotRunning).to_string(),
             "This lab can't run on UTM yet: `web` is on a network. Run it on another hypervisor, a server or in your cloud account.".to_string(),

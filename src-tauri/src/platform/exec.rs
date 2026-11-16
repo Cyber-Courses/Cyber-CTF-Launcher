@@ -34,7 +34,7 @@ pub(crate) use elevate::leftover_script;
 pub(crate) use elevate::ps_quote;
 #[cfg(windows)]
 pub use elevate::set_owner_window;
-pub use elevate::{Leftover, join_hyperv_admins, may_manage_hyperv, remove_hyperv_leftover};
+pub use elevate::{Leftover, join_hyperv_admins, remove_hyperv_leftover};
 pub(crate) use group::GroupGuard;
 pub use group::kill_live_tools;
 pub use ledger::{DIR as TOOLS_DIR, end_orphans as end_orphaned_tools, record_tools_in};

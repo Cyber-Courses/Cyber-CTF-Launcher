@@ -464,7 +464,7 @@ describe("attack box step", () => {
 describe("VM step", () => {
   it("says no local hypervisor applies", () => {
     installTauri();
-    render(<Step step="vm" report={{ ...readyReport(), vmProviders: [hv({ provider: "proxmox", remote: true })] }} />);
+    render(<Step step="vm" report={{ ...readyReport(), vmProviders: [hv({ provider: "vmware_esxi", remote: true })] }} />);
     expect(text()).toContain("No local hypervisor applies to this machine.");
   });
 

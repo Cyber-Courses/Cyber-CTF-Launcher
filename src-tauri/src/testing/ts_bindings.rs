@@ -215,7 +215,7 @@ fn write_setup_tables(dir: &Path) {
     });
     let own =
         Dependency::ALL.iter().filter_map(|d| d.row().own_url.map(|url| format!("  {}: {},\n", quoted(&dependency_id(*d)), quoted(url)))).collect::<String>();
-    let vendor = Provider::ALL.iter().filter_map(|p| p.row().vendor.map(|url| format!("  {}: {},\n", p.id(), quoted(url)))).collect::<String>();
+    let vendor = Provider::ALL.iter().filter_map(|p| p.vendor().map(|url| format!("  {}: {},\n", p.id(), quoted(url)))).collect::<String>();
     let text = format!(
         "{HEADER}import type {{ Dependency }} from \"./Dependency\";\nimport type {{ DockerEngine }} from \"./DockerEngine\";\nimport type {{ Os }} from \"./Os\";\nimport type {{ Provider }} from \"./Provider\";\n\n\
          /** The engines the setup offers on each OS, in its order (Rust's `machine::setup::engines_on`). */\nexport const ENGINES_ON: Record<Os, readonly DockerEngine[]> = {{\n{engines}}};\n\n\

@@ -26,7 +26,7 @@ fn steps(p: &Plan) -> Vec<String> {
                 Action::Restart { feature } => format!("restart {feature:?}"),
                 Action::Relogin => "relogin".into(),
                 Action::Manual { reason, .. } => format!("manual {reason:?}"),
-                Action::Blocked { reason } => format!("blocked {reason}"),
+                Action::Blocked { reason } => format!("blocked {}", crate::runtime::providers::said(reason)),
             };
             format!("{}: {what}", s.item)
         })

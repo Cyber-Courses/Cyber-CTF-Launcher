@@ -1199,7 +1199,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/discover/tests.rs > libvirt_domains_name_their_lab_by_the_underscore_prefix
-            - src-tauri/src/runtime/providers/tests.rs > libvirt_joined_since_logging_in_waits_for_the_next_login
           desktop:
             - lab-form-vm
             - vm-scan
@@ -1255,7 +1254,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/providers/tests.rs > virtualbox_reads_as_not_responding_only_when_the_apps_timeout_cut_it_short
             - src-tauri/src/runtime/discover/tests.rs > vbox_listings_skip_lines_that_are_not_a_quoted_name
             - src-tauri/src/runtime/isothrum/vm_tests.rs > a_vm_labs_hypervisor_is_read_from_its_record_without_vagrant
           desktop:
@@ -1315,7 +1313,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/providers/tests.rs > an_old_utm_plugin_or_utm_reads_as_too_old_and_says_what_to_do
             - src-tauri/src/runtime/discover/tests.rs > utm_started_vms_map_back_to_installed_labs
             - src-tauri/src/runtime/isothrum/errors/tests.rs > utms_passing_scripting_errors_are_tried_again_and_said_and_nothing_else_is
             - src-tauri/src/runtime/launch/tests.rs > a_utm_not_ready_for_commands_is_waited_for
@@ -1346,7 +1343,6 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/providers/tests.rs > vmware_needs_the_utility_running_as_well_as_its_plugin
             - src-tauri/src/runtime/providers/tests.rs > vmwares_desktop_hypervisor_is_named_for_the_os_and_nothing_else_is
             - src-tauri/src/runtime/discover/tests.rs > vmrun_paths_name_the_lab_by_its_folder
           setup:
@@ -1372,7 +1368,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/discover/tests.rs > running_vms_map_back_to_installed_labs_by_name
-            - src-tauri/src/runtime/providers/tests.rs > applicability_follows_the_os
           setup:
             - plugin:vagrant-parallels
             - selftest:vm
@@ -1746,8 +1741,7 @@ areas:
             - src-tauri/src/shared_folder.rs > the_commands_save_and_show_the_setting_and_never_open_a_folder_while_off
             - src-tauri/src/runtime/attack_box/place.rs > the_shared_folder_reaches_the_box_wherever_the_lab_runs_on_this_computer_and_can_share_it
             - src-tauri/src/runtime/attack_box/place.rs > the_integration_tests_share_a_folder_on_the_same_hypervisors_as_the_launcher
-            - src-tauri/src/runtime/providers/virtiofsd.rs > a_shared_folder_on_libvirt_or_qemu_without_virtiofsd_is_refused_with_its_code_before_anything_starts
-            - src-tauri/src/runtime/providers/virtiofsd.rs > qemu_finds_the_virtiofsd_vagrant_qemu_starts_where_it_looks
+            - src-tauri/src/runtime/providers/tests.rs > a_shared_folder_on_libvirt_or_qemu_without_virtiofsd_is_refused_with_its_code_before_anything_starts
             - src/features/settings/settings-rows.test.tsx > turns sharing on, showing the folder and its mount point
           web:
             - settings.spec.ts > the shared-folder switch is there and toggles
@@ -2051,10 +2045,8 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/providers/tests.rs > the_first_missing_layer_is_the_reason
-            - src-tauri/src/runtime/providers/tests.rs > kvm_problems_are_explained
-            - src-tauri/src/runtime/providers/tests.rs > a_provider_is_ready_exactly_when_nothing_is_needed
-            - src-tauri/src/runtime/providers/tests.rs > applicability_follows_the_os
+            - src-tauri/src/runtime/providers/tests.rs > the_hypervisors_ready_are_the_vagrant_providers_detected_available_and_none_without_vagrant
+            - src-tauri/src/runtime/providers/tests.rs > every_language_says_every_reason
             - src/features/machine/machine-screen.test.tsx > tests each hypervisor on its own, keeps its result on its row, and makes it the default from the row
             - src/features/machine/machine-screen.test.tsx > explains a blocked hypervisor
           web:
@@ -2406,7 +2398,6 @@ areas:
           unit:
             - src-tauri/src/machine/tools/install/tests.rs > vagrant_comes_from_hashicorps_repository_not_the_distributions
             - src-tauri/src/machine/tools/install/tests.rs > only_vagrant_plugin_names_are_installed
-            - src-tauri/src/runtime/providers/tests.rs > parses_vagrant_plugin_list
             - src/features/machine/setup-steps/setup-steps.test.tsx > installs Vagrant, then the hypervisor
             - src/features/machine/setup-steps/setup-steps.test.tsx > shows a failed plugin install, on its row too
             - src/features/settings/settings-rows.test.tsx > installs a missing Vagrant add-on, streaming its log, then re-checks
@@ -2438,7 +2429,6 @@ areas:
             - src-tauri/src/machine/tools/vmware_utility.rs > the_mac_install_checks_hashicorps_file_and_signature_before_installing_as_root
             - src-tauri/src/machine/tools/vmware_utility.rs > the_windows_install_checks_hashicorps_file_and_signature_and_elevates_through_uac
             - src-tauri/src/machine/tools/vmware_utility.rs > a_download_that_isnt_hashicorps_file_fails_before_any_prompt
-            - src-tauri/src/runtime/providers/tests.rs > vmware_needs_the_utility_running_as_well_as_its_plugin
             - src/features/machine/setup-steps/setup-steps.test.tsx > a failed utility install reads as failed, not done, and the flow waits
             - src/features/machine/setup-steps/setup-steps.test.tsx > an installed utility whose service stopped is offered again
           setup:
@@ -2586,7 +2576,6 @@ areas:
           unit:
             - src-tauri/src/machine/setup/tests.rs > a_bare_windows_turns_wsl_on_installs_docker_desktop_virtualbox_and_vagrant_and_passes_over_the_others
             - src-tauri/src/machine/tools/scripts/tests.rs > every_vendor_repository_is_set_up_the_same_way
-            - src-tauri/src/runtime/providers/tests.rs > virtualbox_reads_as_not_responding_only_when_the_apps_timeout_cut_it_short
             - src-tauri/src/machine/selftest/vm/tests.rs > a_virtualbox_test_vm_carries_its_folder_so_a_leftover_is_known_as_the_tests
           integration:
             - setup
@@ -2667,8 +2656,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/setup/tests.rs > a_mac_with_docker_and_no_vagrant_sets_up_only_the_vm_path
-            - src-tauri/src/runtime/providers/tests.rs > an_old_utm_plugin_or_utm_reads_as_too_old_and_says_what_to_do
-            - src-tauri/src/runtime/providers/tests.rs > a_mac_is_offered_the_hypervisor_made_for_its_cpu_and_keeps_one_installed
             - src-tauri/src/machine/tools/scripts/tests.rs > a_failed_cask_fetch_updates_homebrew_and_retries_once
           web:
             - "machine-setup.spec.ts > a fresh Mac: the package manager is detected, then each install streams"
@@ -2693,7 +2680,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/setup/tests.rs > vmware_gets_its_plugin_and_hashicorps_utility_and_its_install_links_out
-            - src-tauri/src/runtime/providers/tests.rs > a_vmware_machine_without_the_plugin_or_the_utility_needs_both_and_is_ready_once_both_are_in
             - src-tauri/src/runtime/providers/tests.rs > vmwares_desktop_hypervisor_is_named_for_the_os_and_nothing_else_is
             - src/features/machine/setup-steps/setup-steps.test.tsx > installs both of VMware
             - src/features/machine/setup-steps/setup-steps.test.tsx > reads VMware as set up once the plugin is in and the utility runs

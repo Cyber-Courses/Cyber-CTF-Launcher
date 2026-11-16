@@ -94,7 +94,7 @@ fn every_tool_on_every_computer_installs_or_says_why_and_each_install_has_a_way_
 #[test]
 fn every_local_hypervisor_is_installed_by_the_setup_or_linked_to_its_vendor() {
     for p in Provider::ALL.into_iter().filter(|p| !p.is_remote()) {
-        assert!(Dependency::of_hypervisor(p).is_some() || p.row().vendor.is_some(), "{p:?}: neither installed nor linked");
+        assert!(Dependency::of_hypervisor(p).is_some() || p.vendor().is_some(), "{p:?}: neither installed nor linked");
     }
 }
 

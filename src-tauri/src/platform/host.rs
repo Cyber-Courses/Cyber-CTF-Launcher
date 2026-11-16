@@ -37,6 +37,15 @@ impl Os {
     #[cfg(target_os = "linux")]
     pub const HERE: Os = Os::Linux;
 
+    /// The same OS as Isothrum names it (the runner's and isothrum-machine's).
+    pub fn isothrum(self) -> isothrum_runner::HostOs {
+        match self {
+            Os::Macos => isothrum_runner::HostOs::Macos,
+            Os::Windows => isothrum_runner::HostOs::Windows,
+            Os::Linux => isothrum_runner::HostOs::Linux,
+        }
+    }
+
     /// Its id, `std::env::consts::OS`'s (`macos`), as the machine report and the webview write it.
     pub fn id(self) -> &'static str {
         match self {
@@ -89,6 +98,14 @@ impl Arch {
     /// Every CPU.
     #[cfg(test)]
     pub const ALL: [Arch; 2] = [Arch::X86_64, Arch::Aarch64];
+
+    /// The same CPU as Isothrum names it (the runner's and isothrum-machine's).
+    pub fn isothrum(self) -> isothrum_runner::Arch {
+        match self {
+            Arch::X86_64 => isothrum_runner::Arch::Amd64,
+            Arch::Aarch64 => isothrum_runner::Arch::Arm64,
+        }
+    }
 
     /// Its id, `std::env::consts::ARCH`'s (`aarch64`).
     pub fn id(self) -> &'static str {
@@ -189,11 +206,6 @@ impl Host {
             Os::Linux => None,
         };
         Host { os: Os::HERE, arch: Arch::HERE, packages }
-    }
-
-    /// Whether it is a PC with Windows on Arm.
-    pub fn is_windows_on_arm(self) -> bool {
-        self.os == Os::Windows && self.arch == Arch::Aarch64
     }
 }
 

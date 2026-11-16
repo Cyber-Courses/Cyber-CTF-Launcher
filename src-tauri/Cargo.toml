@@ -130,6 +130,9 @@ isoloom-targets = "3.0.0"
 # Terraform module), opened by its folder; every lab runs through it (`runtime/isothrum`). The 3.0
 # line.
 isothrum-runner = "3.0.0"
+# Which hypervisors this machine can run a lab's VMs on, and why not (`runtime/providers`): the
+# machine check's detection, its reasons the webview translates (`ts-rs`: their TypeScript types).
+isothrum-machine = { version = "3.0.0", features = ["ts-rs"] }
 # The launcher's own store (`store`): servers, tools, the storage record and the settings, one
 # SQLite file in WAL mode, every change a transaction. Bundled, so every platform runs the same
 # SQLite; the same version as the runner's store, which links the same library.
