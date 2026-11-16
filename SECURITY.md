@@ -67,6 +67,7 @@ files and keychain items, and the changes the launcher makes to a machine;
 [docs/contributing/architecture.md](docs/contributing/architecture.md) describes the design (a webview that only calls typed
 Rust commands, tools run without a shell, tokens kept in the OS keychain). Releases after 1.8.9
 are signed (Authenticode on Windows, Developer ID and notarization on macOS, minisign for in-app
-updates) and come with SHA256SUMS, SBOMs and build provenance attestations
+updates) and come with SHA256SUMS signed through Sigstore (cosign), SBOMs, and build provenance
+and SBOM attestations
 ([docs/contributing/release-process.md](docs/contributing/release-process.md)). Up to 1.8.9, the macOS app was signed and
 notarized but the Windows installers carried no Authenticode signature.

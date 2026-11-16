@@ -27,29 +27,33 @@ git push origin vX.Y.Z
 
 ## What the workflow does
 
-| Job           | What                                                                                                                                                                              |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `preflight`   | the Tauri JS/Rust versions agree; on a tag, says which signing secrets are missing (a warning: what they sign ships unsigned, the release goes on)                                |
-| `gate`        | the whole check but the native layer (`gate.yml`); red, the release stops here                                                                                                    |
-| `prepare`     | creates the draft GitHub release (through the `cyber-ctf-creator` GitHub App), once `preflight` and `gate` are green                                                              |
-| `third-party` | `pnpm notices` and `pnpm sbom` ([scripts/release/third-party.ts](../../scripts/release/third-party.ts)): THIRD_PARTY_NOTICES and the CycloneDX SBOMs, attached to the release     |
-| `release`     | builds on five runners (macOS universal, Linux x64 and arm64 on Ubuntu 22.04, Windows x64 and Arm64), signs, **verifies the signatures**, uploads to the draft; notarizes the DMG |
-| `attest`      | `SHA256SUMS` of every asset, and a build provenance attestation of each                                                                                                           |
-| `publish`     | takes the draft live (tags only), its notes naming any platform whose build failed; one platform's failure never holds the others back                                            |
-| `distribute`  | renders the Homebrew cask from `packaging/homebrew/cyberctf.rb` into `Cyber-Courses/homebrew-tap`, and starts `Cyber-Courses/apt`'s publish workflow                              |
-| `store`       | builds the MSIX bundle and submits it to the Microsoft Store (`msix.yml`); `STORE_AUTO_SUBMIT=false` leaves a draft in Partner Center                                             |
+| Job           | What                                                                                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `preflight`   | the Tauri JS/Rust versions agree; on a tag, says which signing secrets are missing (a warning: what they sign ships unsigned, the release goes on)                                      |
+| `gate`        | the whole check but the native layer (`gate.yml`); red, the release stops here                                                                                                          |
+| `prepare`     | creates the draft GitHub release (through the `cyber-ctf-creator` GitHub App), once `preflight` and `gate` are green                                                                    |
+| `third-party` | `pnpm notices` and `pnpm sbom` ([scripts/release/third-party.ts](../../scripts/release/third-party.ts)): THIRD_PARTY_NOTICES and the CycloneDX SBOMs, attached to the release           |
+| `release`     | builds on five runners (macOS universal, Linux x64 and arm64 on Ubuntu 22.04, Windows x64 and Arm64), signs, **verifies the signatures**, uploads to the draft; notarizes the DMG       |
+| `attest`      | `SHA256SUMS` of every asset, signed keylessly with cosign (`SHA256SUMS.sigstore.json`); a build provenance attestation of each asset, and an attestation of each SBOM of each installer |
+| `publish`     | takes the draft live (tags only), its notes naming any platform whose build failed; one platform's failure never holds the others back                                                  |
+| `distribute`  | renders the Homebrew cask from `packaging/homebrew/cyberctf.rb` into `Cyber-Courses/homebrew-tap`, and starts `Cyber-Courses/apt`'s publish workflow                                    |
+| `store`       | builds the MSIX bundle and submits it to the Microsoft Store (`msix.yml`); `STORE_AUTO_SUBMIT=false` leaves a draft in Partner Center                                                   |
 
 What each build signs:
 
-| Platform | Signature                                                                                                                | Verified in the build                                              |
-| -------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| Windows  | Authenticode through Azure Artifact Signing (`trusted-signing-cli`, pinned): the app, the NSIS installer, the MSI        | `Get-AuthenticodeSignature` is `Valid` on each                     |
-| macOS    | Developer ID Application certificate; the app notarized and stapled by tauri-action, the DMG notarized and stapled after | `codesign --verify --deep --strict`, `spctl -a` (app and DMG)      |
-| Updates  | minisign with the updater key (`TAURI_SIGNING_PRIVATE_KEY`): the `.sig` beside each update package, and `latest.json`    | by the installed apps, against the public key in `tauri.conf.json` |
-| Store    | Microsoft signs the MSIX                                                                                                 |                                                                    |
+| Platform          | Signature                                                                                                                 | Verified in the build                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Windows           | Authenticode through Azure Artifact Signing (`trusted-signing-cli`, pinned): the app, the NSIS installer, the MSI         | `Get-AuthenticodeSignature` is `Valid` on each                                                      |
+| macOS             | Developer ID Application certificate; the app notarized and stapled by tauri-action, the DMG notarized and stapled after  | `codesign --verify --deep --strict`, `spctl -a` (app and DMG)                                       |
+| Updates           | minisign with the updater key (`TAURI_SIGNING_PRIVATE_KEY`): the `.sig` beside each update package, and `latest.json`     | by the installed apps, against the public key in `tauri.conf.json`                                  |
+| Store             | Microsoft signs the MSIX                                                                                                  |                                                                                                     |
+| Checksums         | cosign keyless (Sigstore): `SHA256SUMS.sigstore.json`, its certificate naming `release.yml` at the tag, recorded in Rekor | `cosign verify-blob` against that identity, in the `attest` job                                     |
+| Provenance, SBOMs | GitHub artifact attestations (Sigstore): the build provenance of every asset, each SBOM of each installer                 | by users: `gh attestation verify` ([verify a download](../admins/admin-guide.md#verify-a-download)) |
 
-Up to 1.8.9 the Windows installers shipped unsigned; from the next release `release.yml` refuses
-a tag build without the Azure Artifact Signing secrets.
+Up to 1.8.9 the Windows installers shipped unsigned. A tag build without a signing secret goes on
+and ships what it signs unsigned: `preflight` names the missing secrets in a warning, before any
+build. The checksums' signature and the attestations need no secret: they sign with the workflow's
+own identity (OIDC, `id-token: write`).
 
 A manual run (`workflow_dispatch`) builds a draft for the version in `tauri.conf.json`, signs what
 it has secrets for, and publishes nothing.
@@ -70,9 +74,9 @@ The repository variable `STORE_AUTO_SUBMIT=false` keeps Store submissions as dra
 
 ## After the release
 
-- Check the release page: every installer, `latest.json`, `SHA256SUMS`, `THIRD_PARTY_NOTICES` and
-  the two `.cdx.json` SBOMs; `gh attestation verify <file> --repo Cyber-Courses/Cyber-CTF-Launcher`
-  on one of them.
+- Check the release page: every installer, `latest.json`, `SHA256SUMS`, `SHA256SUMS.sigstore.json`,
+  `THIRD_PARTY_NOTICES` and the two `.cdx.json` SBOMs; then check one installer as a user does
+  ([verify a download](../admins/admin-guide.md#verify-a-download)).
 - The Homebrew tap and the apt repository have the new version (`brew upgrade --cask cyberctf`,
   `apt-get update && apt-cache policy cyber-ctf`).
 - The Store submission went into certification (Partner Center). `msix.yml`'s `commit_pending` and
