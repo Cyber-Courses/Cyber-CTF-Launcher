@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The checks of the files around the app that CI's lint-infra.yml and
-# scripts/release/release-check.sh both run, written once here so the two can't drift:
+# The checks of the files around the app that scripts/release/release-check.sh runs (and CI
+# through it), written once here:
 #
 #   scripts/check/infra.sh pins         every action pinned to a full commit SHA, its version in a comment
 #   scripts/check/infra.sh shellcheck   shellcheck on the repository's shell scripts, warnings and errors

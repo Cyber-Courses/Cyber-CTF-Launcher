@@ -1,0 +1,36 @@
+name: Lint tools
+description: >-
+  actionlint and gitleaks for the check's actionlint and hooks steps, each from its pinned release
+  tarball, its sha256 checked before it runs (a moved or compromised release asset never runs).
+  Bump a version and its checksums together, from the release's checksums file. Linux runners only.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        ACTIONLINT_VERSION: "1.7.12"
+        ACTIONLINT_SHA256_AMD64: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        ACTIONLINT_SHA256_ARM64: "325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6"
+        GITLEAKS_VERSION: "8.30.0"
+        GITLEAKS_SHA256_X64: "79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e"
+      run: |
+        set -euo pipefail
+        bin="$RUNNER_TEMP/lint-tools"
+        mkdir -p "$bin"
+        case "$(uname -m)" in
+          x86_64) arch=amd64; sha=$ACTIONLINT_SHA256_AMD64 ;;
+          aarch64 | arm64) arch=arm64; sha=$ACTIONLINT_SHA256_ARM64 ;;
+          *) echo "::error::unsupported architecture $(uname -m)"; exit 1 ;;
+        esac
+        tarball="$RUNNER_TEMP/actionlint_${ACTIONLINT_VERSION}_linux_${arch}.tar.gz"
+        curl -fsSL -o "$tarball" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_${arch}.tar.gz"
+        echo "${sha}  ${tarball}" | sha256sum -c -
+        tar -xzf "$tarball" -C "$bin" actionlint
+        [ "$arch" = amd64 ] || { echo "::error::gitleaks is pinned for x64 only"; exit 1; }
+        tarball="$RUNNER_TEMP/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        curl -fsSL -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        echo "${GITLEAKS_SHA256_X64}  ${tarball}" | sha256sum -c -
+        tar -xzf "$tarball" -C "$bin" gitleaks
+        "$bin/actionlint" --version
+        "$bin/gitleaks" version
+        echo "$bin" >> "$GITHUB_PATH"

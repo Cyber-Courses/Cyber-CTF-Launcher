@@ -1,4 +1,4 @@
-# cargo-deny: the dependency policy for the Rust core, checked in CI (`cargo deny check`, ci.yml).
+# cargo-deny: the dependency policy for the Rust core, checked by the check's `deny` step (and CI's gate.yml through it).
 # Run it here with `cargo deny --manifest-path src-tauri/Cargo.toml check`.
 # https://embarkstudios.github.io/cargo-deny/
 

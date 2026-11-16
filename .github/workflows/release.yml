@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 jobs:
-  # The Tauri JS/Rust version guard. ci.yml runs it on push/PR, but tags don't trigger ci.yml, so
+  # The Tauri JS/Rust version guard. The gate runs it too, but this one is seconds long, so
   # a tag with JS↔Rust drift would otherwise only fail inside tauri-action after the 5-platform
   # build. Lockfile-only (reads pnpm-lock.yaml + Cargo.lock in seconds, no Rust toolchain); the
   # draft and the build matrix both wait on it.
@@ -76,17 +76,17 @@ jobs:
             echo "Not signed: ${missing[*]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # The web end-to-end suite (e2e.yml): tags don't trigger it, and main takes direct pushes, so a
-  # release is where a red suite is stopped. The draft, and every build after it, wait on it.
-  e2e:
-    uses: ./.github/workflows/e2e.yml
+  # The whole check (gate.yml): tags don't trigger it, so a release runs it itself and stops on
+  # a red step. The draft, and every build after it, wait on it.
+  gate:
+    uses: ./.github/workflows/gate.yml
 
   # The draft release, made once before the builds: each platform job only uploads to it.
   # Created with the org's cyber-ctf-creator app: on v0.3.8 GITHUB_TOKEN was refused creating it
   # ("Resource not accessible by integration") on every attempt, while uploading to an existing
   # draft and publishing it still worked.
   prepare:
-    needs: [preflight, e2e]
+    needs: [preflight, gate]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:

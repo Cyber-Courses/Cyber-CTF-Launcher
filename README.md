@@ -1,6 +1,6 @@
 # Cyber CTF
 
-[![CI](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/ci.yml?query=branch%3Amain)
+[![Gate](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/gate.yml/badge.svg?branch=main)](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/actions/workflows/gate.yml?query=branch%3Amain)
 
 The desktop launcher for [Cyber CTF](https://www.cyberctf.com) labs: hands-on, deliberately
 vulnerable environments for learning offensive and defensive security. It runs each lab, with an

@@ -86,7 +86,7 @@ lint() {
   step "$name-docs" "${cross[@]}" RUSTDOCFLAGS="$RUSTDOC_DENY" cargo doc --target "$triple" --no-deps --document-private-items --lib
 }
 
-# What rustdoc denies, as ci.yml's Docs step.
+# What rustdoc denies, as the check's docs-rust step.
 RUSTDOC_DENY="-D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags"
 lint linux x86_64-unknown-linux-gnu
 lint windows x86_64-pc-windows-msvc

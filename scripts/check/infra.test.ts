@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-// scripts/check/infra.sh, the pins check lint-infra.yml and the release check share, run for real.
+// scripts/check/infra.sh, the pins check the release check runs, run for real.
 
 const dirs: string[] = [];
 afterEach(() => {

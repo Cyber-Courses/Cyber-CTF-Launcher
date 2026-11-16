@@ -2,7 +2,7 @@ name: Rust toolchain
 description: >-
   Install the pinned stable Rust toolchain, restore the shared cargo cache and (by default) write
   a placeholder frontend the crate can embed at compile time. Shared by the Rust jobs
-  (ci, coverage, labs, package-smoke, release, msix). The pinned action SHAs live here.
+  (ci, gate, package-smoke, release, msix). The pinned action SHAs live here.
 inputs:
   targets:
     description: Comma-separated rustup targets to add (empty = none).

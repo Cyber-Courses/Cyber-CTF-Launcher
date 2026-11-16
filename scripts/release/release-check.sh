@@ -1,29 +1,32 @@
 #!/usr/bin/env bash
-# The gate before a release: every check CI runs on a pull request's code and workflows (ci.yml,
-# web-coverage.yml, coverage.yml, e2e.yml, lint-infra.yml), but the Terraform templates'
-# validation, which stays in CI: it needs Terraform and the providers' registry. Plus the layer CI
-# cannot run (the native GUI e2e, which needs a desktop session, a real Docker engine and a
-# hypervisor), in one command on a developer machine, with one line per step at the end. Steps
-# keep going after a failure so one run reports everything that is wrong. A runner run as a step
-# (other-platforms, e2e-native) that skipped some of its own steps is recorded `skip`, not `ok`.
+# The launcher's check: every check its code gets, in one command, with one line per step at the
+# end. CI runs nothing else (.github/workflows/ci.yml runs the short list, FAST=1, on pull requests
+# into dev; gate.yml runs every step before main and before a release, each job a few steps with
+# ONLY). Plus the layer CI cannot run, the native GUI e2e (a desktop session, a real Docker engine
+# and a hypervisor), which the workspace's rig machines run. Steps keep going after a failure so
+# one run reports everything that is wrong. A runner run as a step (other-platforms, e2e-native)
+# that skipped some of its own steps is recorded `skip`, not `ok`.
 # docs/contributing/testing/release-check.md says what each step proves.
 #
-#   scripts/release/release-check.sh                     the whole gate (pnpm release-check)
+#   scripts/release/release-check.sh                     every step (pnpm release-check)
+#   SKIP="e2e-native" scripts/release/release-check.sh   all but the native layer (pnpm check)
+#   FAST=1 scripts/release/release-check.sh              the short list (pnpm check:fast)
 #   ONLY="unit-web e2e-mock" scripts/release/release-check.sh
-#   SKIP="e2e-native" scripts/release/release-check.sh   what CI covers, without the native layer
 #
-# Steps, in order: prereqs, install, versions, docs, features, format, clippy (this machine's), types, lint, build, quality, unit-web
-# (with the coverage floors), unit-harness (the test runners' own tests), unit-rust (each unit step fails on what its tests leave in their temp
-# folder, scripts/check/temp-leaks.ts), bindings (the generated types the Rust tests rewrote are
-# committed), docs-rust (rustdoc's intra-doc links), other-platforms (clippy for Linux and Windows, scripts/check/other-platforms.sh;
-# needs rustup), coverage-rust (when cargo-llvm-cov is installed), deny (when cargo-deny is),
-# audit, shellcheck and actionlint (when installed, as lint-infra.yml runs them), pins (every
-# action pinned to a commit SHA), store-listings (the app's JSON and the Microsoft Store listing,
-# as lint-infra.yml checks them; needs python3), e2e-mock (Playwright against the dev mock), e2e-native
-# (tests/desktop/run.sh, which has its own knobs).
+# Steps, in order: prereqs, install, versions, docs, features, format, clippy (this machine's),
+# types, lint, build, quality, unit-web (with the coverage floors), unit-harness (the test runners'
+# own tests), unit-rust (each unit step fails on what its tests leave in their temp folder,
+# scripts/check/temp-leaks.ts), bindings (the generated types the Rust tests rewrote are
+# committed), docs-rust (rustdoc's intra-doc links), other-platforms (clippy and rustdoc for Linux
+# and Windows, scripts/check/other-platforms.sh; needs rustup), coverage-rust (when cargo-llvm-cov
+# is installed), deny (when cargo-deny is), audit, shellcheck and actionlint (when installed),
+# hooks (the git hooks' own test), pins (every action pinned to a commit SHA), store-listings (the
+# app's JSON and the Microsoft Store listing; needs python3), e2e-mock (Playwright against the dev
+# mock), e2e-native (tests/desktop/run.sh, which has its own knobs).
 #
 # Knobs:
-#   RUST_LINES_FLOOR    the Rust line coverage floor (default: coverage.yml's, read from there)
+#   FAST=1              the short list (FAST_STEPS below), unless ONLY names steps
+#   RUST_LINES_FLOOR    the Rust line coverage floor (default: RUST_LINES_FLOOR below)
 #   ONLY, SKIP, STRICT  as every suite runner (scripts/lib/suite.sh)
 set -uo pipefail
 
@@ -33,11 +36,17 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 suite_help "$0" "$@"
 cd "$ROOT" || exit 2
 use_nvmrc_node "$ROOT"
-# The line floor coverage.yml enforces, read from it: kept in one place.
-RUST_LINES_FLOOR=${RUST_LINES_FLOOR:-$(sed -n 's/^ *RUST_LINES_FLOOR: *"\{0,1\}\([0-9.]*\)"\{0,1\} *$/\1/p' .github/workflows/coverage.yml)}
-[ -n "$RUST_LINES_FLOOR" ] || { echo "no RUST_LINES_FLOOR in .github/workflows/coverage.yml" >&2; exit 2; }
-# The files the coverage leaves out (the opt-in integration tests), read from there too.
-RUST_COV_IGNORE=$(sed -n 's/^ *RUST_COV_IGNORE: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' .github/workflows/coverage.yml)
+# The Rust line coverage floor in percent: about a point under what dev measures, raised as it
+# rises (82.7 until the opt-in integration tests were left out of the measure; the app's own code
+# measured 87.30% on macOS, 2026-11-16).
+RUST_LINES_FLOOR=${RUST_LINES_FLOOR:-86.3}
+# The files the coverage leaves out: the opt-in integration tests, which run only against a real
+# Docker engine, hypervisor or server (test code, not the app's).
+RUST_COV_IGNORE="src/integration_tests/"
+# The short list while you work (pnpm check:fast, and ci.yml on pull requests into dev): what a
+# change most often breaks, in a few minutes.
+FAST_STEPS="prereqs install format clippy unit-rust other-platforms types lint unit-web"
+if [ -n "${FAST:-}" ] && [ -z "${ONLY:-}" ]; then ONLY=$FAST_STEPS; fi
 NODE_WANTED=$(tr -d '[:space:]' <.nvmrc)
 
 prereqs() {
@@ -48,13 +57,13 @@ prereqs() {
   # Docker only for the native layer (SKIP=e2e-native runs what CI runs, without it).
   if wanted e2e-native; then command -v docker >/dev/null || { echo "missing: docker (or SKIP=e2e-native)"; missing=1; }; fi
   node --version | grep -q "^v${NODE_WANTED}\." || { echo "node $(node --version) in use; .nvmrc asks for $NODE_WANTED (nvm install $NODE_WANTED)"; missing=1; }
-  cargo machete --version >/dev/null 2>&1 || { echo "missing: cargo-machete (cargo install cargo-machete); pnpm quality needs it"; missing=1; }
+  if wanted quality; then cargo machete --version >/dev/null 2>&1 || { echo "missing: cargo-machete (cargo install cargo-machete); pnpm quality needs it"; missing=1; }; fi
   if wanted e2e-native && ! docker info >/dev/null 2>&1; then echo "note: docker is not running; e2e-native skips the scenarios that run a lab"; fi
   [ "$missing" -eq 0 ]
 }
 # has <command...>: whether the tool answers --version (a cargo subcommand that isn't installed doesn't).
 has() { "$@" --version >/dev/null 2>&1; }
-# The command types the Rust tests rewrite (ts_bindings.rs) are the ones committed, as ci.yml checks.
+# The command types the Rust tests rewrite (ts_bindings.rs) are the ones committed.
 bindings_committed() {
   local changed
   changed=$(git status --porcelain -- src/lib/tauri/generated)
@@ -81,13 +90,13 @@ step types pnpm typecheck
 step lint pnpm lint
 step build pnpm build
 step quality pnpm quality
-# The coverage run applies vitest.config.mts's floors, as web-coverage.yml does.
+# The coverage run applies vitest.config.mts's floors.
 # The unit tests run with a temp folder of their own: what they leave there fails the step.
 step unit-web pnpm check:temp-leaks pnpm exec vitest run --coverage
 step unit-harness pnpm test:harness
 step unit-rust pnpm check:temp-leaks cargo test --manifest-path src-tauri/Cargo.toml
 step bindings bindings_committed
-# Every intra-doc link resolves on this machine's items, as ci.yml's Docs step (the other
+# Every intra-doc link resolves on this machine's items (the other
 # platforms' are other-platforms' -docs steps).
 step docs-rust env RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags" cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items --lib
 # CI's clippy matrix for the other platforms, from here: the code behind their `#[cfg]`.
@@ -99,9 +108,11 @@ else
   skip deny "cargo-deny not installed (cargo install cargo-deny)"
 fi
 step audit pnpm audit --prod
-# lint-infra.yml's checks of the files around the app.
+# The checks of the files around the app.
 if command -v shellcheck >/dev/null; then step shellcheck scripts/check/infra.sh shellcheck; else skip shellcheck "shellcheck not installed (https://www.shellcheck.net)"; fi
 if command -v actionlint >/dev/null; then step actionlint actionlint -color; else skip actionlint "actionlint not installed (https://github.com/rhysd/actionlint)"; fi
+# The git hooks, in a throwaway repository (.githooks/test.sh).
+if command -v gitleaks >/dev/null; then step hooks .githooks/test.sh; else skip hooks "gitleaks not installed (brew install gitleaks)"; fi
 step pins scripts/check/infra.sh pins
 if command -v python3 >/dev/null; then
   step store-listings python3 .github/scripts/check-store-listings.py

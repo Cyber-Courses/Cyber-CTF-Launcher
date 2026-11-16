@@ -142,6 +142,7 @@ LOCAL_BOX="$BOX::the_attack_box_is_a_machine_of_the_lab_on_every_local_form"
 AWS_BOX="$BOX::the_attack_box_is_a_machine_of_an_aws_lab"
 HELLO_STACK=integration_tests::docker_lab::hello_stack_runs_end_to_end
 SEGMENTED=integration_tests::docker_lab::segmented_runs_end_to_end
+INVOICE_PORTAL=integration_tests::docker_lab::supplier_portal_runs_end_to_end
 VM_LAB=integration_tests::vm_lab::a_vm_lab_runs_end_to_end_through_the_runner
 PER_MACHINE=integration_tests::per_machine::a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end
 LAUNCH_COMMANDS=integration_tests::launch_commands::a_local_lab_launches_and_tears_down_through_the_commands
@@ -172,6 +173,7 @@ reads() {
     "$AWS_BOX") echo CYBERCTF_TEST_BOX_LAB CYBERCTF_TEST_BOX_FORM CYBERCTF_TEST_BOX_TARGET CYBERCTF_TEST_AWS_REGION CYBERCTF_TEST_CLOUD_REAL_IP ;;
     "$HELLO_STACK") echo CYBERCTF_TEST_HELLO_LAB CYBERCTF_TEST_BOX_IMAGE ;;
     "$SEGMENTED") echo CYBERCTF_TEST_SEGMENTED_LAB CYBERCTF_TEST_BOX_IMAGE ;;
+    "$INVOICE_PORTAL") echo CYBERCTF_TEST_INVOICE_LAB CYBERCTF_TEST_BOX_IMAGE ;;
     "$VM_LAB") echo CYBERCTF_TEST_VM_LAB CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
     "$PER_MACHINE") echo CYBERCTF_TEST_PER_MACHINE_LAB CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
     "$LAUNCH_COMMANDS") echo CYBERCTF_TEST_LOCAL_LAB ;;
@@ -516,6 +518,8 @@ if in_tier local; then
   # A lab's whole life on each local form: up, status, park and resume, checks, down, nothing left.
   scenario docker-lab-hello-stack docker "" "$HELLO_STACK" CYBERCTF_TEST_HELLO_LAB="$EXAMPLES/hello-stack"
   scenario docker-lab-segmented docker "" "$SEGMENTED" CYBERCTF_TEST_SEGMENTED_LAB="$EXAMPLES/segmented"
+  # The catalogue's invoice-portal-api lab, from a checkout CYBERCTF_TEST_INVOICE_LAB names.
+  scenario docker-lab-invoice-portal docker "" "$INVOICE_PORTAL"
   scenario vm-lab vm "$VM_PROVIDER" "$VM_LAB" CYBERCTF_TEST_VM_LAB="$SOLO" CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
   scenario per-machine per-machine "$VM_PROVIDER" "$PER_MACHINE" \
     CYBERCTF_TEST_PER_MACHINE_LAB="$EXAMPLES/supplier-portal-api" CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER" \

@@ -365,8 +365,6 @@ function listed(env: Record<string, string> = {}): Listed[] {
 
 /** Knobs a scenario file reads that no listed case does, each with why. */
 const NOT_LISTED: Record<string, string> = {
-  // docker_lab::supplier_portal_runs_end_to_end, run by labs.yml, which checks the lab out.
-  CYBERCTF_TEST_INVOICE_LAB: "labs.yml",
   // The setup's report in its old format, while the test rig reads it.
   CYBERCTF_TEST_SETUP_REPORT: "the rig",
   // What a killed-start scenario hands the child process it kills, not a knob.

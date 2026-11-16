@@ -30,7 +30,7 @@ The same number is on the Git tag (`v1.8.9`), the installers, the Microsoft Stor
 ## Platforms
 
 A release supports the platforms its installers are built and tested on (`release.yml`,
-`ci.yml`):
+`gate.yml`):
 
 | Platform | Versions                                                                                     | Architectures        |
 | -------- | -------------------------------------------------------------------------------------------- | -------------------- |

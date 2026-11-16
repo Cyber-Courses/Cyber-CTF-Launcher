@@ -1,64 +1,37 @@
 name: CI
 
-# Every pull request and push to main: the frontend (build, types, lint, format, tests, npm
-# audit), the Rust dependency policy (cargo deny), and the Rust core (format, lint, tests) on Linux,
-# macOS and Windows, so platform-specific code is at least compiled and tested on its own platform.
-# The Linux Rust leg also runs the quality ratchet.
+# Pull requests into dev, and pushes to it: the check's short list (`pnpm check:fast`,
+# scripts/release/release-check.sh with FAST=1) on Linux, macOS and Windows, the command a
+# contributor runs. Everything else waits for main (gate.yml).
+#
+# A job here only installs what its steps need and runs the check: the two can't drift
+# (scripts/check/workflows.test.ts holds this file to it).
 
 on:
   pull_request:
+    branches: [dev]
   push:
-    branches: [main]
+    branches: [dev]
   workflow_dispatch:
 
 concurrency:
-  # A branch's newer push cancels its older run; on main every commit keeps a run of its own,
-  # so each one gets a verdict while several pushes land close together.
-  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  web:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-node-pnpm
-      # Tauri's JS packages and Rust crates must share a major/minor, or `tauri build` refuses. That
-      # check otherwise only runs at release time (release.yml, on a tag, after a long build), so run
-      # it here to catch drift on every push. Reads the resolved versions; a few milliseconds.
-      - run: pnpm check:tauri
-      # The static export; it also generates the route types tsc checks against.
-      - run: pnpm build
-      - run: pnpm exec tsc --noEmit
-      - run: pnpm lint
-      - run: pnpm format:check
-      # Every relative link and #anchor in the Markdown resolves.
-      - run: pnpm check:docs
-      # Every test tests/features.yml names exists, everything a user can reach belongs to a
-      # feature, and tests/FEATURES.md is what the registry makes.
-      - run: pnpm check:features
-      # The unit tests with a temp folder of their own: what they leave there fails the step.
-      - run: pnpm check:temp-leaks pnpm exec vitest run
-      # Known vulnerabilities in the npm packages the app ships (devDependencies are build tools).
-      - run: pnpm audit --prod
-
-  rust:
+  fast:
     strategy:
       fail-fast: false
       matrix:
-        # Every platform the launcher ships for, on the runners release.yml builds it on: Linux
-        # x64 and Arm on ubuntu-22.04 (the glibc floor the installers target), Windows x64 and Arm,
-        # and macOS on Apple Silicon and Intel (the universal app's two halves).
-        os: [ubuntu-22.04, ubuntu-22.04-arm, macos-latest, macos-15-intel, windows-latest, windows-11-arm]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    env:
-      # The quality ratchet's unused-dependency check, on the Linux legs.
-      CARGO_MACHETE_VERSION: "0.9.2"
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: startsWith(matrix.os, 'ubuntu')
@@ -66,76 +39,10 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           components: rustfmt, clippy
-      - name: Format
-        if: startsWith(matrix.os, 'ubuntu')
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      # Lints at "deny" (Cargo.toml) fail here. Warn-level lints are held to quality-baseline.json
-      # by the quality ratchet, the Quality step below.
-      - name: Lint
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
-      # Every intra-doc link resolves and no doc comment holds a stray HTML tag, with this
-      # platform's own items (pnpm release-check runs it for this machine, Linux and Windows).
-      - name: Docs
+          # other-platforms lints the core for the systems the runner isn't.
+          targets: x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc, aarch64-apple-darwin
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: scripts/release/release-check.sh
         env:
-          RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags
-        run: cargo doc --manifest-path src-tauri/Cargo.toml --no-deps --document-private-items --lib
-      # The quality ratchet (`pnpm quality`, also part of `pnpm check`): clippy as JSON, ESLint, the
-      # source scans, jscpd, knip and cargo machete, held to quality-baseline.json; a count above the
-      # baseline fails. It needs the clippy toolchain and the Node tooling together, so it runs on
-      # the Linux leg here, after Lint: its clippy run replays the diagnostics already cached above.
-      - if: startsWith(matrix.os, 'ubuntu')
-        uses: ./.github/actions/setup-node-pnpm
-      # cargo machete, pinned. On x64, its release's static (musl) build. Its Arm Linux build is
-      # linked against a newer glibc (2.39) than ubuntu-22.04 has, so on Arm it is built from
-      # source at the same version (--locked) into a folder of its own, cached by version.
-      - if: matrix.os == 'ubuntu-22.04'
-        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
-        with:
-          tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
-      - if: matrix.os == 'ubuntu-22.04-arm'
-        id: machete-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cargo-machete
-          key: cargo-machete-${{ env.CARGO_MACHETE_VERSION }}-${{ runner.os }}-${{ runner.arch }}
-      - if: matrix.os == 'ubuntu-22.04-arm' && steps.machete-cache.outputs.cache-hit != 'true'
-        run: cargo install --locked --root ~/.cargo-machete cargo-machete --version "$CARGO_MACHETE_VERSION"
-      - if: matrix.os == 'ubuntu-22.04-arm'
-        run: echo "$HOME/.cargo-machete/bin" >> "$GITHUB_PATH"
-      - name: Quality
-        if: startsWith(matrix.os, 'ubuntu')
-        run: pnpm quality
-      - name: Test
-        if: "!startsWith(matrix.os, 'ubuntu')"
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-      # On Linux, where Node is set up, with a temp folder of their own: what the tests leave there
-      # fails the step (scripts/check/temp-leaks.ts).
-      - name: Test, nothing left in the temp folder
-        if: startsWith(matrix.os, 'ubuntu')
-        run: pnpm check:temp-leaks cargo test --manifest-path src-tauri/Cargo.toml
-      # The tests rewrite the TypeScript command types from the Rust structs (ts_bindings.rs):
-      # a changed struct whose types weren't regenerated and committed fails here.
-      - name: Generated TypeScript types are committed
-        if: startsWith(matrix.os, 'ubuntu')
-        run: |
-          set -euo pipefail
-          if [ -n "$(git status --porcelain -- src/lib/tauri/generated)" ]; then
-            git status --short -- src/lib/tauri/generated
-            git diff -- src/lib/tauri/generated
-            echo "::error::src/lib/tauri/generated differs from the Rust structs: run .githooks/regenerate and commit the result"
-            exit 1
-          fi
-
-  # The Rust dependency policy (src-tauri/deny.toml): RustSec advisories (a vulnerable, yanked or
-  # unmaintained crate), licences (Apache-2.0 compatible only), bans and sources (crates.io only).
-  deny:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
-        with:
-          tool: cargo-deny@0.20.2
-      - run: cargo deny --manifest-path src-tauri/Cargo.toml check advisories bans licenses sources
+          FAST: "1"
+          STRICT: "1"

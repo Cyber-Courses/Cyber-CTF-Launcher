@@ -158,7 +158,8 @@ async fn exercise_checks(r: &Run, f: &mut Vec<String>) {
 }
 
 async fn real_lab(name: &str, e: Expect) {
-    let src = std::env::var(e.lab_var).unwrap_or_else(|_| panic!("set {} to the lab's checkout", e.lab_var));
+    // Skipped, naming the knob, without the lab's checkout.
+    let Some(src) = super::support::knob(e.lab_var) else { return };
     let id = format!("ci-{name}-{}", rand::random::<u16>());
     let r = Run { dir: install_copy(Path::new(&src), &id), home: std::env::temp_dir().join(format!("cyberctf-{id}-home")), id };
     let started = std::time::Instant::now();
