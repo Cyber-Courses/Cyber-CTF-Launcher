@@ -513,6 +513,7 @@ areas:
           integration:
             - docker-lab-hello-stack
             - docker-lab-segmented
+            - docker-lab-invoice-portal
             - launch-commands
             - corpus-docker
           setup:

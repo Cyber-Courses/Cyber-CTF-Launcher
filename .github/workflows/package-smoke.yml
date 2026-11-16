@@ -7,7 +7,9 @@ name: Package smoke test
 # when a launch fails.
 
 on:
+  # Before main: pull requests into dev run the short check only (ci.yml).
   pull_request:
+    branches: [main]
     paths:
       - "src-tauri/**"
       # The installer's own files: its NSIS hooks and the scripts they carry (the hook's path fix

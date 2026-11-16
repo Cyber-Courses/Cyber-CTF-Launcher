@@ -1,0 +1,150 @@
+name: Gate
+
+# Every step of the check (scripts/release/release-check.sh) but the native layer, which the
+# workspace's rig machines run: before main (pull requests into main, pushes to main), and from
+# release.yml (workflow_call), which builds nothing unless it passes. Pull requests into dev run
+# the short list (ci.yml).
+#
+# A job here only installs what its steps need and runs the check with ONLY, STRICT=1 (a step
+# whose tool is missing fails, it never passes for one that ran): the two can't drift
+# (scripts/check/workflows.test.ts holds this file to running every step).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  # On main every commit keeps a run of its own; a pull request's newer push cancels the older.
+  group: gate-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  STRICT: "1"
+
+jobs:
+  # What reads the sources and the files around them: the frontend's checks and build, the
+  # quality ratchet, the dependency policies, the workflows, the hooks and the listings.
+  checks:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/apt-deps
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: rustfmt, clippy
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-machete@0.9.2,cargo-deny@0.20.2
+      - uses: ./.github/actions/lint-tools
+      - run: scripts/release/release-check.sh
+        env:
+          ONLY: prereqs install versions docs features format types lint build quality deny audit shellcheck actionlint hooks pins store-listings
+
+  # The Rust core on every platform the launcher ships for, on the runners release.yml builds it
+  # on: Linux x64 and Arm (ubuntu-22.04, the installers' glibc floor), Windows x64 and Arm, macOS
+  # on Apple Silicon and Intel (the universal app's two halves).
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-22.04-arm, macos-latest, macos-15-intel, windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: startsWith(matrix.os, 'ubuntu')
+        uses: ./.github/actions/apt-deps
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: scripts/release/release-check.sh
+        env:
+          ONLY: prereqs install clippy unit-rust bindings docs-rust
+
+  # The code behind another system's `#[cfg]`, linted from one runner (the Rust job compiles each
+  # on its own system; this one is the check a contributor runs on theirs).
+  other-platforms:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/apt-deps
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: clippy
+          targets: x86_64-pc-windows-msvc, aarch64-apple-darwin
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: scripts/release/release-check.sh
+        env:
+          ONLY: prereqs install other-platforms
+
+  # The frontend's unit and component tests with their coverage floors, and the test runners'
+  # own tests.
+  web:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: scripts/release/release-check.sh
+        env:
+          ONLY: prereqs install unit-web unit-harness
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: web-coverage
+          path: coverage/coverage-summary.json
+          if-no-files-found: ignore
+
+  # The Rust core's line coverage, held to the check's floor.
+  coverage-rust:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/apt-deps
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: llvm-tools-preview
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-llvm-cov
+      - run: scripts/release/release-check.sh
+        env:
+          ONLY: prereqs install coverage-rust
+
+  # The real frontend in Chromium, every screen and locale, the commands answered by the dev mock.
+  e2e-mock:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-node-pnpm
+      # Chromium alone, from Playwright's CDN: the runner image has every library it needs.
+      - run: pnpm exec playwright install chromium
+      - run: scripts/release/release-check.sh
+        env:
+          ONLY: prereqs install e2e-mock
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14

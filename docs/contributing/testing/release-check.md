@@ -41,11 +41,12 @@ the end of this page have been done for what the release changes.
 | `bindings`        | `git status` of `src/lib/tauri/generated` | the TypeScript command types the Rust tests rewrote differ from those committed                                                                                     |
 | `docs-rust`       | `cargo doc --document-private-items`      | an intra-doc link that resolves to nothing, or a stray HTML tag in a doc comment, as `ci.yml` checks on each platform                                               |
 | `other-platforms` | `scripts/check/other-platforms.sh`        | clippy and rustdoc for Linux and Windows, CI's matrix: the code behind another OS's `#[cfg]`; skipped without `rustup`                                              |
-| `coverage-rust`   | `cargo llvm-cov`                          | the Rust line floor `coverage.yml` enforces (the opt-in integration tests left out); skipped without `cargo-llvm-cov`                                               |
+| `coverage-rust`   | `cargo llvm-cov`                          | the Rust line floor (`RUST_LINES_FLOOR` in the check; the opt-in integration tests left out); skipped without `cargo-llvm-cov`                                      |
 | `deny`            | `cargo deny check`                        | a Rust dependency with an advisory, a licence `src-tauri/deny.toml` doesn't allow, or another source; skipped when `cargo-deny` is not installed                    |
 | `audit`           | `pnpm audit --prod`                       | a known vulnerability in a shipped npm dependency                                                                                                                   |
-| `shellcheck`      | `scripts/check/infra.sh shellcheck`       | a warning in the repository's shell scripts, as `lint-infra.yml` runs it; skipped when not installed                                                                |
-| `actionlint`      | `actionlint`                              | a mistake in the workflows, as `lint-infra.yml` runs it; skipped when not installed                                                                                 |
+| `shellcheck`      | `scripts/check/infra.sh shellcheck`       | a warning in the repository's shell scripts; skipped when not installed                                                                                             |
+| `actionlint`      | `actionlint`                              | a mistake in the workflows; skipped when not installed                                                                                                              |
+| `hooks`           | `.githooks/test.sh`                       | the git hooks, in a throwaway repository: an attribution line, a large file or a secret refused; skipped without `gitleaks`                                         |
 | `pins`            | `scripts/check/infra.sh pins`             | an action not pinned to a full commit SHA (a tag can be moved to new code)                                                                                          |
 | `store-listings`  | `.github/scripts/check-store-listings.py` | a message catalogue or Store listing that doesn't parse, a listing over Partner Center's limits or naming a missing image; skipped without `python3`                |
 | `e2e-mock`        | `pnpm test:web`                           | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n     |
@@ -59,11 +60,11 @@ Playwright starts the browser preview (`pnpm dev:web`) on port 3210, or reuses o
 the preview builds into its own folder (`.next-web`), so it runs beside `pnpm tauri dev` and the
 native runner's dev server, which never serve the mock.
 
-Every step but the last is what CI runs on a pull request (`ci.yml`, `web-coverage.yml`,
-`coverage.yml`, `e2e.yml`, and `lint-infra.yml` when the pull request touches the files it checks),
-so on a green PR they mostly confirm the local checkout matches. The last one is the reason to run the gate. CI also validates the Terraform
-templates (`lint-infra.yml`), which needs Terraform and its providers' registry: the gate leaves it
-to CI.
+CI runs this check and nothing else: `ci.yml` the short list on pull requests into `dev`, and
+`gate.yml` every step but the last before `main` and before a release, each job a few steps with
+`ONLY` and `STRICT=1` (a missing tool fails the job). So a green CI run mostly confirms the local
+checkout matches; the last step, which needs a desktop session, Docker and a hypervisor, is the
+reason to run the whole check on a machine that has them.
 
 ## The native layer
 
@@ -87,10 +88,9 @@ Not in the gate, run when the release touches them:
   `real_docker_clean_up_keeps_the_players_image` (Docker), `prints_this_machines_report` (prints the machine report),
   `real_download_is_placed_and_runs` (a downloaded OVF Tool), `utm_is_opened_and_answers_before_a_vm_starts`
   (UTM) and `queries_the_api_anonymously` (the network).
-- `labs.yml` and `package-smoke.yml` run in CI, not in the gate: the three Docker labs end to end
-  (on each push to `main`, on pull requests that touch the backend, and nightly), and the built
-  bundle installed and launched on all three OSes (on pull requests that touch the app, or by
-  hand).
+- `package-smoke.yml` runs in CI, not in the check: the built bundle installed and launched on
+  all three OSes, on pull requests into `main` that touch the app, or by hand. The Docker labs end
+  to end (`docker_lab`, `pnpm test:integration`) run on the maintainers' test machines.
 - The in-app updater against a real release feed, and sign-in against the real backend.
 
 ## Adding coverage

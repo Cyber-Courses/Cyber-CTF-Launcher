@@ -24,8 +24,7 @@ Both are thin: they build or unpack the app and serve a debug build's frontend, 
 checks the needs, runs the specs and writes the results). Without `--app` or `--package` they build the app with `cargo build --features wdio` and
 serves the frontend such a build loads (`next dev` on 3206, `tauri.conf.json`'s `devUrl`; an app
 from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A package must be a
-`tauri build` with the hooks: `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`, as
-`native-e2e.yml` builds it
+`tauri build` with the hooks: `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`
 (the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). Before the specs, the runner
 starts the app once and stops with a clear message when no WebDriver server answers. It checks out
 the fixture lab (the Invoice Portal API lab, under `tests/desktop/.state/labs`) unless `CYBERCTF_TEST_LOCAL_LAB` names one.

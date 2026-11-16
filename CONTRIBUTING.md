@@ -76,8 +76,7 @@ share the setting). They are POSIX sh and quick:
   `.githooks/regenerate --check` fails, naming that command, when one was stale. To have every
   commit regenerate them first (opt-in, it builds the tests): `git config hooks.regenerate true`.
 
-`.githooks/test.sh` tests them in a throwaway repository; CI runs it (`lint-infra.yml`'s `hooks`
-job). `git commit --no-verify` skips a hook when you must; the push still checks the commits.
+`.githooks/test.sh` tests them in a throwaway repository; the check runs it (its `hooks` step). `git commit --no-verify` skips a hook when you must; the push still checks the commits.
 
 ## Run the tests
 
@@ -100,22 +99,38 @@ Every runner script takes `--help`.
 
 ## The gates
 
-A pull request must pass what CI runs. `pnpm check` runs all of it on your machine, one
-verdict per step ([docs/contributing/testing/release-check.md](docs/contributing/testing/release-check.md) lists them):
-versions, the docs' links, formatting, types, ESLint, the build, the quality ratchet, the unit
-tests with the coverage floors, the committed bindings, clippy for the other platforms, `cargo
-deny`, `pnpm audit`, shellcheck, actionlint, the actions' pins, the Store listings' JSON and
-Playwright against the dev mock. Of the checks CI runs on a pull request, only the Terraform
-templates' validation is left to CI; the Docker labs end to end (`labs.yml`) and the packaged
-app's smoke test (`package-smoke.yml`) run in CI too. A step whose tool isn't installed, or a
-runner step that skipped some of its own steps, reads `skip`, not `ok`. Before you push:
+A pull request must pass the check, one verdict per step
+([docs/contributing/testing/release-check.md](docs/contributing/testing/release-check.md) lists
+them): versions, the docs' links, formatting, clippy, types, ESLint, the build, the quality
+ratchet, the unit tests with the coverage floors, the committed bindings, clippy for the other
+platforms, `cargo deny`, `pnpm audit`, shellcheck, actionlint, the git hooks, the actions' pins,
+the Store listings' JSON and Playwright against the dev mock. A step whose tool isn't installed,
+or a runner step that skipped some of its own steps, reads `skip`, not `ok`. Before you push:
 
 ```bash
 pnpm format                            # Prettier (TypeScript, CSS, Markdown) and rustfmt
-pnpm check                             # what CI runs (pnpm release-check adds the native
+pnpm check:fast                        # the short list, in a few minutes
+pnpm check                             # every step (pnpm release-check adds the native
                                        # end-to-end, which needs a desktop session, Docker and a
                                        # hypervisor: run it when you can)
 ```
+
+### CI
+
+CI runs the check and nothing else, so a red job is a red step you can run here:
+
+| Workflow            | When                                                  | What                                                                |
+| ------------------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
+| `ci.yml`            | pull requests into `dev`, pushes to `dev`             | `pnpm check:fast` on Linux, macOS and Windows                       |
+| `gate.yml`          | pull requests into `main`, pushes to `main`, releases | every step but the native end-to-end, each job a few steps (`ONLY`) |
+| `package-smoke.yml` | pull requests into `main` that touch the app          | the real installers built, installed and launched on each platform  |
+| `release.yml`       | a version tag                                         | the gate, then the signed builds, the draft and its publication     |
+| `distribute.yml`    | a published release                                   | the Homebrew cask and the apt repository brought to it              |
+| `msix.yml`          | by hand                                               | the Microsoft Store package, and its submission                     |
+
+`scripts/check/workflows.test.ts` holds `ci.yml` and `gate.yml` to the check. The tests that need
+a real Docker engine, hypervisor or server (the Docker labs, the native end-to-end, the server
+labs) run on the maintainers' test machines, not on GitHub's runners.
 
 - **The quality ratchet** (`pnpm quality`, `quality-baseline.json`): a count of lint warnings,
   duplication or dead code may go down, never up.
@@ -129,7 +144,7 @@ pnpm check                             # what CI runs (pnpm release-check adds t
 - **Dependencies**: a new crate must be under a licence `src-tauri/deny.toml` allows (Apache-2.0
   compatible). Tauri's JS packages and Rust crates move together (`pnpm check:tauri`).
 - **Workflows**: every action is pinned to a full commit SHA with its version in a comment
-  (`uses: owner/repo@<sha> # vX.Y.Z`); `lint-infra.yml` runs actionlint and shellcheck.
+  (`uses: owner/repo@<sha> # vX.Y.Z`); the check runs actionlint and shellcheck.
 
 ## Commits and pull requests
 
