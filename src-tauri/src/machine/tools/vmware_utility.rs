@@ -134,9 +134,8 @@ mod tests {
 
     #[test]
     fn every_pinned_checksum_is_a_sha256() {
-        for sha in [WINDOWS_MSI.1] {
-            assert!(sha.len() == 64 && sha.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{sha}");
-        }
+        let sha = WINDOWS_MSI.1;
+        assert!(sha.len() == 64 && sha.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{sha}");
         assert!(WINDOWS_MSI.0.contains(VERSION));
     }
 }

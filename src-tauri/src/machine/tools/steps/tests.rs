@@ -16,25 +16,9 @@ async fn what_a_check_read_while_a_step_ran_is_forgotten_once_it_ends() {
     assert!(!is_kept(&key), "the list read mid-install still stands");
 }
 
-/// An exit status with `code`, as the OS reports it.
-#[cfg(unix)]
-fn exited(code: i32) -> std::process::ExitStatus {
-    std::os::unix::process::ExitStatusExt::from_raw(code << 8)
-}
-
 #[cfg(unix)]
 #[test]
 fn each_program_is_watched_for_what_its_own_output_says() {
-    // brew: the first broken-Homebrew cause, said when the step fails, not when it succeeds.
-    let brew = step("brew", &["install", "qemu"]);
-    let mut w = Watch::new(&brew);
-    w.error_line("/opt/homebrew/var/homebrew/locks/update: Permission denied");
-    w.error_line("Error: unknown or unsupported macOS version");
-    assert_eq!(w.brew_help, Some(BREW_LOCKED));
-    assert_eq!(w.end(&brew, exited(1)).unwrap_err().to_string(), BREW_LOCKED);
-    let mut w = Watch::new(&brew);
-    w.error_line("Error: unknown or unsupported macOS version");
-    assert_eq!(w.end(&brew, exited(0)).unwrap(), None);
     // winget: the installer's code from any line of its output; other programs' lines aren't read.
     let mut w = Watch::new(&step("winget", &["install", "-e", "--id", "Docker.DockerDesktop"]));
     w.line("Installer failed with exit code: 1602");
@@ -90,37 +74,6 @@ async fn a_step_whose_output_fails_takes_what_it_started_with_it() {
     assert!(crate::platform::exec::fake::gone(pid).await, "the step's child {pid} was left running");
 }
 
-#[test]
-fn brew_trouble_names_a_broken_homebrew_and_its_fix() {
-    assert_eq!(brew_trouble("/opt/homebrew/var/homebrew/locks/update: Permission denied"), Some(BREW_LOCKED));
-    assert_eq!(brew_trouble("Error: Another `brew update` process is already running."), Some(BREW_LOCKED));
-    assert_eq!(brew_trouble("Error: unknown or unsupported macOS version: :dunno"), Some(BREW_OUTDATED));
-    assert_eq!(brew_trouble("Error: Your Xcode (26.6) at /Applications/Xcode.app is too outdated."), Some(BREW_XCODE_OUTDATED));
-    assert_eq!(brew_trouble("Please update to Xcode 27.0 (or delete it)."), Some(BREW_XCODE_OUTDATED));
-    // Ordinary brew progress isn't a fault.
-    assert_eq!(brew_trouble("==> Fetching qemu"), None);
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_failing_brew_step_surfaces_the_homebrew_fix_not_the_exit_code() {
-    // A brew install (its command line mentions brew) that dies on an outdated Xcode reports
-    // the fix, not the bare exit code; the raw brew line is still streamed to the log.
-    let mut lines = Vec::new();
-    let s = step("sh", &["-c", "echo 'Error: Your Xcode (26.6) is too outdated.' >&2; exit 1  # brew install qemu"]);
-    let err = run_step(&s, &mut |l| lines.push(l)).await.unwrap_err();
-    assert_eq!(err.to_string(), BREW_XCODE_OUTDATED);
-    assert!(lines.iter().any(|l| l.contains("is too outdated")), "the raw brew output is still shown: {lines:?}");
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_non_brew_step_is_not_read_for_homebrew_trouble() {
-    // The same words from apt or a lab are not reinterpreted: only brew steps are read.
-    let err = run_step(&step("sh", &["-c", "echo 'is too outdated' >&2; exit 1"]), &mut |_| {}).await.unwrap_err();
-    assert_eq!(err.to_string(), "`sh` exited with exit status: 1");
-}
-
 #[tokio::test]
 async fn a_missing_program_says_so() {
     let err = run_step(&step("cyberctf-no-such-tool", &[]), &mut |_| {}).await.unwrap_err();
@@ -138,10 +91,25 @@ fn a_command_line_reads_as_typed() {
 #[test]
 fn isothrum_machines_step_failures_read_as_the_launcher_said_them() {
     use isothrum_machine::install::StepFailed;
+    use isothrum_machine::install::brew::Trouble;
     assert_eq!(step_failed(StepFailed::NoPkexec).to_string(), NO_PKEXEC);
     assert!(step_failed(StepFailed::PromptRefused).to_string().contains("cancelled"));
     assert!(step_failed(StepFailed::NoPolkitAgent).to_string().contains("polkit agent"));
     assert_eq!(step_failed(StepFailed::SudoRefused).to_string(), SUDO_REFUSED);
+    assert_eq!(step_failed(StepFailed::Homebrew(Trouble::Locked)).to_string(), BREW_LOCKED);
+    assert_eq!(step_failed(StepFailed::Homebrew(Trouble::Outdated)).to_string(), BREW_OUTDATED);
+    assert_eq!(step_failed(StepFailed::Homebrew(Trouble::XcodeTooOld)).to_string(), BREW_XCODE_OUTDATED);
     assert_eq!(step_failed(StepFailed::Missing { program: "vagrant".into() }).to_string(), "vagrant is not available on this machine.");
     assert_eq!(step_failed(StepFailed::Exited { program: "pkexec".into(), code: Some(100) }).to_string(), "`pkexec` exited with exit status: 100");
+}
+
+#[test]
+fn isothrum_machines_notes_read_as_the_launcher_said_them() {
+    use isothrum_machine::install::{Dependency as Machine, Note};
+    assert_eq!(said(Note::Downloading(Machine::Docker)), "Downloading Docker Desktop…");
+    assert_eq!(said(Note::Downloading(Machine::Utm)), "Downloading UTM…");
+    assert_eq!(said(Note::DownloadingVmwareUtility { version: "1.0.24" }), "Downloading HashiCorp's Vagrant VMware Utility 1.0.24…");
+    assert_eq!(said(Note::Removing(Machine::Vagrant)), "Removing Vagrant (macOS asks for your password)…");
+    assert_eq!(said(Note::Removing(Machine::Docker)), "Running Docker Desktop's own uninstaller…");
+    assert!(said(Note::QemuUpdatingHomebrewFirst).starts_with("Installing QEMU (updating Homebrew first"));
 }

@@ -154,7 +154,7 @@ pub(super) fn step_failed(failed: isothrum_machine::install::StepFailed) -> Erro
             match trouble {
                 isothrum_machine::install::brew::Trouble::Locked => BREW_LOCKED,
                 isothrum_machine::install::brew::Trouble::Outdated => BREW_OUTDATED,
-                _ => BREW_XCODE_OUTDATED,
+                isothrum_machine::install::brew::Trouble::XcodeTooOld => BREW_XCODE_OUTDATED,
             }
             .into(),
         ),

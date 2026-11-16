@@ -158,26 +158,18 @@ fn own(plan: Plan) -> Vec<Step> {
 }
 
 #[test]
-fn macos_installs_through_homebrew() {
+fn macos_installs_through_isothrum_machine_and_says_why_not_in_the_players_words() {
+    // isothrum-machine's Homebrew formulae and vendors' installers; every plan is tested there.
     let without = Host { packages: None, ..MAC };
-    assert!(plan_on(Dependency::Docker, without, None).err().unwrap().to_string().contains("Homebrew is required"));
+    assert_eq!(plan_on(Dependency::Docker, without, None).err().unwrap().to_string(), "Homebrew is required. Install it from https://brew.sh, then try again.");
     assert!(plan_on(Dependency::VmwareUtility, without, None).is_ok(), "HashiCorp's own package");
-    for (dep, p) in plans(MAC) {
+    for (dep, plan) in Dependency::ALL.into_iter().map(|d| (d, plan_on(d, MAC, None))) {
         match dep {
-            Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => assert!(p.is_err(), "{dep:?}"),
-            _ => assert!(!p.unwrap().is_empty(), "{dep:?}"),
+            Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => assert!(plan.is_err(), "{dep:?}"),
+            _ => assert!(!plan.unwrap().is_empty(), "{dep:?}"),
         }
     }
-    let azure = own(plan_on(Dependency::Azurecli, MAC, None).unwrap());
-    assert_eq!(azure.len(), 3);
-    assert!(azure[2].note.is_some() && azure[2].args.contains(&"azure-cli-preview".to_string()));
-    // QEMU is one shell step: a best-effort Homebrew update that never aborts the install
-    // (`|| …`), then the install itself. It must not be a second, fatal `brew update` step.
-    let qemu = own(plan_on(Dependency::Qemu, MAC, None).unwrap());
-    assert_eq!(qemu.len(), 1);
-    assert_eq!(qemu[0].program, "sh");
-    let script = qemu[0].args.join(" ");
-    assert!(script.contains("update ||") && script.contains("install qemu"), "{script}");
+    assert_eq!(uninstall::plan_on(Dependency::Terraform, without, None).err().unwrap().to_string(), "Homebrew is needed to remove this tool.");
 }
 
 #[test]

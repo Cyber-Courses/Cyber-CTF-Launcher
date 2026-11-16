@@ -8,7 +8,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::install::Dependency;
-use super::steps::{Step, run_steps, step};
+use super::steps::Step;
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::host::{Host, Os, Packages};
@@ -391,38 +391,6 @@ mod tests {
         // Re-opening an installer for a tool already ours keeps it ours.
         remember(&mut tools, Dependency::Docker, Outcome::Pending);
         assert!(confirmed(tools).iter().any(|t| t.dependency == Dependency::Docker));
-    }
-
-    #[test]
-    fn the_virtualbox_uninstaller_only_runs_from_the_downloaded_installer() {
-        // Any mounted /Volumes/VirtualBox* was trusted, and its tool run as admin; then the image
-        // was globbed under `~` from the admin script, which runs as root (another home), after
-        // Homebrew may have cleaned it up.
-        let dmg = "/Users/ada/Library/Caches/Homebrew/downloads/abc--VirtualBox-7.2.20.dmg";
-        let script = virtualbox_uninstall(dmg);
-        assert!(!script.contains("/Volumes/VirtualBox") && !script.contains("exec ") && !script.contains('~'), "{script}");
-        assert!(script.contains(&format!("'{dmg}'")) && script.contains("hdiutil detach"));
-        assert!(crate::platform::sh_parses(&script), "{script}");
-        // The path comes from Homebrew's answer, and only a quotable .dmg is accepted.
-        assert_eq!(virtualbox_dmg_from(&format!("{dmg}\n")).unwrap(), dmg);
-        for bad in ["", "/x/VirtualBox.pkg", "/x/it's.dmg", "/x/a\"b.dmg"] {
-            assert!(virtualbox_dmg_from(bad).is_err(), "{bad}");
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn an_installer_image_path_with_spaces_or_shell_characters_is_single_quoted_in_the_admin_script() {
-        // Homebrew's cache lives under the home folder, which can hold spaces; `$`, backticks and
-        // `;` in a folder name must stay literal in the script run as root.
-        let dmg = "/Users/a b/Library/Caches/Homebrew/$HOME`id`;x.dmg";
-        assert_eq!(virtualbox_dmg_from(&format!("  {dmg}  \n")).unwrap(), dmg);
-        let script = virtualbox_uninstall(dmg);
-        assert!(script.contains(&format!("'{dmg}'")), "{script}");
-        assert!(crate::platform::sh_parses(&script), "{script}");
-        // Two lines (a second path appended) or another extension: not the image.
-        assert!(virtualbox_dmg_from("/a.dmg\n/b.dmg").is_err());
-        assert!(virtualbox_dmg_from("/a.DMG").is_err());
     }
 
     #[test]

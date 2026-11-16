@@ -104,10 +104,6 @@ fn shipped_code_opens_no_path_inside_isothrums_home() {
 /// Where a script handed to `sh -c` may be built from parts. (Linux's root scripts are
 /// isothrum-machine's, built and checked there.)
 const SHELL_ALLOWED: &[(&str, &str, &str)] = &[
-    ("machine/tools/install.rs", "format!(\"'{brew}' trust azure/azure-cli", "macOS: Homebrew's own path, found by the app, single-quoted"),
-    ("machine/tools/scripts.rs", "args: vec![\"-c\".into(), script]", "macOS: the cask fetch; Homebrew's path and fixed cask names, single-quoted"),
-    ("machine/tools/vmware_utility.rs", "args: vec![\"-c\".into(), mac_script(", "macOS: the utility's install, a pinned file name and digest"),
-    ("machine/tools/install.rs", "\"-c\".into(),", "macOS: QEMU's brew update then install, Homebrew's own path single-quoted"),
     ("machine/selftest/vm.rs", "Step::new(&[\"ssh\", \"-c\", &uname_command()])", "vagrant ssh's -c: the self-test's fixed probe, run in the test VM"),
     ("platform.rs", "args([\"-n\", \"-c\", script])", "a test helper (cfg(test)): sh -n only parses the script"),
     (
