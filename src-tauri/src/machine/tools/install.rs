@@ -259,7 +259,6 @@ fn macos_plan(dep: Dependency, host: Host) -> Result<Vec<Step>> {
                 format!("'{brew}' update || echo 'Homebrew was not updated; continuing with the install.'\nHOMEBREW_NO_AUTO_UPDATE=1 '{brew}' install qemu"),
             ],
             note: Some("Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into()),
-            private: None,
         }],
         Dependency::Utm => vec![fetch_and_open(brew, "utm", "UTM")],
         Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(not_here(dep, Os::Macos)),
@@ -278,13 +277,11 @@ fn macos_plan(dep: Dependency, host: Host) -> Result<Vec<Step>> {
                 program: "sh".into(),
                 args: vec!["-c".into(), format!("'{brew}' trust azure/azure-cli 2>/dev/null || true")],
                 note: Some("Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into()),
-                private: None,
             },
             Step {
                 program: brew.to_string(),
                 args: vec!["install".into(), "--cask".into(), "azure-cli-preview".into()],
                 note: Some("Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into()),
-                private: None,
             },
         ],
         Dependency::Gcloud => vec![step(brew, &["install", "--cask", "google-cloud-sdk"])],
@@ -459,7 +456,7 @@ pub async fn install_vagrant_plugin(plugin: String, mut on_line: impl FnMut(Stri
     if !valid_plugin(&plugin) {
         return Err(Error::Invalid(format!("invalid plugin name `{plugin}`")));
     }
-    let step = Step { program: "vagrant".into(), args: vec!["plugin".into(), "install".into(), plugin], note: None, private: None };
+    let step = Step { program: "vagrant".into(), args: vec!["plugin".into(), "install".into(), plugin], note: None };
     on_line(command_line(&step));
     run_step(&step, &mut on_line).await?;
     on_line("Done. Re-checking this machine…".into());

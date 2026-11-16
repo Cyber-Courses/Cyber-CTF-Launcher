@@ -48,7 +48,7 @@ fn each_program_is_watched_for_what_its_own_output_says() {
 #[tokio::test]
 async fn steps_stream_both_outputs_and_report_a_failure() {
     let mut lines = Vec::new();
-    let ok = Step { program: "sh".into(), args: vec!["-c".into(), "echo out; echo err >&2".into()], note: Some("Note first".into()), private: None };
+    let ok = Step { program: "sh".into(), args: vec!["-c".into(), "echo out; echo err >&2".into()], note: Some("Note first".into()) };
     let fail = step("sh", &["-c", "exit 3"]);
     let err = run_steps(&[ok, fail], &mut |l| lines.push(l)).await.unwrap_err();
     assert_eq!(lines[0], "Note first");

@@ -9,9 +9,10 @@
 //!   variables that are set (`install::linux::proxy_assignments`), through an owner-only file it
 //!   reads, never its command line.
 
-/// The proxy variables, both cases: tools read one or the other (curl and apt the lowercase
-/// ones, Go's and Docker's either).
-pub const VARS: [&str; 6] = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"];
+// The proxy variables, both cases: tools read one or the other (curl and apt the lowercase ones,
+// Go's and Docker's either). isothrum-machine's list, which a Linux root step is handed.
+#[cfg(any(target_os = "macos", test))]
+use isothrum_machine::install::linux::PROXY_VARS as VARS;
 
 /// Whether a proxy variable is set (`var` reads one), to a value: an empty one is unset.
 #[cfg(any(target_os = "macos", test))]
@@ -155,7 +156,6 @@ mod tests {
         };
         assert_eq!(proxy_assignments(env), ["NO_PROXY=.corp,localhost", "https_proxy=http://proxy.corp:3128"]);
         assert_eq!(proxy_assignments(|_| None), [] as [String; 0]);
-        assert_eq!(isothrum_machine::install::linux::PROXY_VARS, VARS, "the same variables as this process's");
     }
 
     #[test]

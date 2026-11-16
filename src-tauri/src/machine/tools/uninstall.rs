@@ -190,7 +190,6 @@ fn mac_admin(script: &str, note: &str) -> Step {
         program: "osascript".into(),
         args: vec!["-e".into(), format!("do shell script \"{escaped}\" with administrator privileges")],
         note: Some(note.into()),
-        private: None,
     }
 }
 
@@ -260,7 +259,6 @@ fn macos_plan(dep: Dependency, packages: Option<Packages>, virtualbox_dmg: Optio
             program: "/Applications/Docker.app/Contents/MacOS/uninstall".into(),
             args: vec![],
             note: Some("Running Docker Desktop's own uninstaller…".into()),
-            private: None,
         }],
         Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
         Dependency::VmwareUtility => {

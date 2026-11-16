@@ -20,15 +20,11 @@ pub struct Step {
     pub args: Vec<String>,
     /// A note shown before the step (e.g. when we open a download instead of installing).
     pub note: Option<String>,
-    /// A private folder of files the step reads (a root step's proxy settings), removed with
-    /// the step.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code, reason = "only a Linux root step keeps a private folder"))]
-    pub private: Option<tempfile::TempDir>,
 }
 
 /// A step that runs `program` with `args`, with no note.
 pub fn step(program: impl Into<String>, args: &[&str]) -> Step {
-    Step { program: program.into(), args: args.iter().map(ToString::to_string).collect(), note: None, private: None }
+    Step { program: program.into(), args: args.iter().map(ToString::to_string).collect(), note: None }
 }
 
 /// Without pkexec there is no graphical password prompt (Debian ships it apart from polkit).

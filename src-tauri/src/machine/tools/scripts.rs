@@ -42,7 +42,7 @@ case "$f" in
     ;;
 esac"#
     );
-    Step { program: "sh".into(), args: vec!["-c".into(), script], note: Some(format!("Downloading {name}…")), private: None }
+    Step { program: "sh".into(), args: vec!["-c".into(), script], note: Some(format!("Downloading {name}…")) }
 }
 
 #[cfg(test)]
