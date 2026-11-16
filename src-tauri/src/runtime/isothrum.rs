@@ -20,12 +20,12 @@
 mod checks;
 mod claim;
 mod cloud_runs;
+mod deployment;
 mod described;
 pub(crate) mod errors;
 mod esxi;
 mod gone;
 mod old_engine;
-mod opened;
 #[cfg(feature = "cloud-services")]
 mod own_module;
 mod progress;
@@ -37,10 +37,10 @@ mod web;
 
 pub(crate) use claim::CLAIM;
 use claim::with_claim;
-pub(crate) use cloud_runs::{CloudPlace, CloudRun, destroy_expired, expired_clouds};
+pub(crate) use cloud_runs::{CloudPlace, destroy_expired, expired_clouds};
+pub(crate) use deployment::{Deployment, Module, Site, key_values};
 pub(crate) use esxi::EsxiPlace;
-pub(crate) use opened::Module;
-pub(crate) use server::{ServerPlace, ServerRun};
+pub(crate) use server::ServerPlace;
 
 /// A scripted Terraform `apply`, for the tests that run a module on scripted tools: it leaves its
 /// state where it is asked to.
@@ -139,7 +139,7 @@ pub(crate) async fn follow_others(dirs: &crate::platform::AppDirs, on: &mut impl
     remote::follow_others(&client, on).await.map_err(Error::Invalid)
 }
 
-pub(crate) use remote::{Others, records, rows};
+pub(crate) use remote::{Others, public_key, records, rows};
 #[cfg(test)]
 pub(crate) use remote::{stop_service, unreachable as service_unreachable};
 

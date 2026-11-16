@@ -88,7 +88,7 @@ const HOME_ALLOWED: &[(&str, &str, &str)] = &[
     ("runtime/ssh.rs", "dirs.data()?.join(\"ssh\")", "the launcher's own key folder, which is also the runner's (its home is the app data folder)"),
     ("runtime/ssh.rs", "ssh_dir(dirs)?.join(\"id_ed25519\")", "the launcher's own key, the same file as the runner's"),
     (
-        "runtime/isothrum/opened.rs",
+        "runtime/isothrum/deployment.rs",
         "home.join(\"ssh\").join(\"id_ed25519\")",
         "a Terraform run's key for its module's machines and its jump host: the runner gives none of its key's path (asked of Isothrum)",
     ),

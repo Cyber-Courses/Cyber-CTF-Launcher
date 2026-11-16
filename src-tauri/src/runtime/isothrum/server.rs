@@ -15,12 +15,11 @@ use std::path::Path;
 
 use isothrum_runner::{RunOptions, SecretValue, Secrets};
 
-use super::opened::{Module, OpenedRun};
+use super::deployment::Deployment;
 use super::tunnel::Tunnel;
-use super::{errors, view};
+use super::view;
 use crate::error::Result;
-use crate::runtime::docker::Check;
-use crate::runtime::{LabStatus, Place, Runtime, lab};
+use crate::runtime::{LabStatus, Place};
 
 /// The module's output saying where each published port is reached (`view`'s entry reads it).
 const PUBLISHED: &str = "published";
@@ -47,104 +46,43 @@ pub(crate) struct ServerPlace {
     pub(crate) jump: Option<String>,
 }
 
-/// One VM lab on a Proxmox server, run by the runner (or a container lab's helper VM an earlier
-/// version left there).
-pub(crate) struct ServerRun {
-    run: OpenedRun,
-}
-
-/// The run's attack box and its opening are [`OpenedRun`]'s, shared with the other remote place.
-impl std::ops::Deref for ServerRun {
-    type Target = OpenedRun;
-    fn deref(&self) -> &OpenedRun {
-        &self.run
+impl ServerPlace {
+    /// Server `conn`'s place for reading its run: its id, its name and its variables. A change
+    /// finds its node and its SSH jump first ([`crate::runtime::launch::server_place`]).
+    pub(crate) fn of(conn: &crate::runtime::server::Connection) -> ServerPlace {
+        ServerPlace { label: conn.id.clone(), name: conn.name.clone(), vars: conn.tf_vars.clone(), ..ServerPlace::default() }
     }
 }
 
-impl ServerRun {
-    /// [`ServerRun::new`] on a runner set up with `config`, which this test process serves (tests
-    /// script its tools).
-    #[cfg(test)]
-    fn with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
-        let home = config.home.clone();
-        crate::testing::service::serve_home(config);
-        ServerRun::new(&home, dir, id, runtime)
+/// What an operation that applies the module on `place` runs with: its [`options`], with the
+/// launch's values `env`, and, when the lab bridge is internal to the node (`place.jump`), the node
+/// as the run's jump host (`ssh_jump`, recorded with the run) and the tunnel through the node
+/// Terraform's SSH to the router goes through (signed in with `key`, the runner's), named in the
+/// module's values. The tunnel ends when the caller drops it, once the operation is over, however
+/// it ended.
+pub(super) async fn applying(place: &ServerPlace, env: &[(String, String)], key: &Path) -> Result<(RunOptions, Option<Tunnel>)> {
+    let mut opts = options(place, env);
+    let Some(jump) = &place.jump else { return Ok((opts, None)) };
+    // The jump host the run's own SSH (a console, a command, its endpoints' forwards) goes
+    // through first, recorded with the run for what only reads it.
+    opts = opts.with_env(JUMP_VALUE, jump.clone());
+    let tunnel = Tunnel::open(jump, key).await?;
+    for (k, v) in tunnel.values() {
+        opts = opts.with_env(k, v);
     }
+    Ok((opts, Some(tunnel)))
+}
 
-    /// Running `id`, installed in `dir`, on the runner whose home is `home` (the app data folder).
-    pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime) -> Result<ServerRun> {
-        // A VM lab runs Proxmox's own module, one VM per machine. A container lab never starts
-        // there: its run is the helper VM an earlier version left, read from where it ran.
-        let module = if runtime == Runtime::Docker {
-            (lab::docker_vm_dir(dir).join("proxmox"), Module::HelperVm)
-        } else {
-            let (out, target) = lab::terraform(dir, runtime, "proxmox");
-            (out, Module::Generated(target))
-        };
-        Ok(ServerRun { run: OpenedRun::new(home, dir, id, module)? })
-    }
-
-    /// The runner's SSH public key (the launcher's own), made when there is none: what the node
-    /// must let in for a jump.
-    pub(crate) async fn public_key(&self) -> Result<String> {
-        super::remote::public_key(&self.served.home).await
-    }
-
-    /// Brings the lab up on `place` from its generated files, and says where to start. `env` is
-    /// the launch's: the inputs the lab's slots take.
-    pub(crate) async fn up(&self, place: &ServerPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        let (opts, _tunnel) = self.applying(place, env).await?;
-        self.act(super::remote::Act::Up, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))?;
-        super::described::log_message(&self.dir, self.target(), log);
-        Ok(())
-    }
-
-    /// Removes everything the run created on the server, with the params it was applied with
-    /// (the connection is `place`'s, the one that works now).
-    pub(crate) async fn down(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        let (opts, _tunnel) = self.applying(place, &[]).await?;
-        self.act(super::remote::Act::Down, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))
-    }
-
-    /// Brings the running lab up to date with its regenerated files, on `place`.
-    pub(crate) async fn update(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> std::result::Result<(), crate::runtime::host::Failed> {
-        let (opts, _tunnel) = self.applying(place, &[]).await.map_err(crate::runtime::host::Failed::of_launcher)?;
-        self.update_with(&opts, |e| errors::on_server(e, &place.name), log).await
-    }
-
-    /// Takes `machine` out of the running lab on `place`, ahead of its removal from its files.
-    pub(crate) async fn retire(&self, place: &ServerPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        let (opts, _tunnel) = self.applying(place, &[]).await?;
-        self.retire_with(machine, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))
-    }
-
-    /// What an operation that applies the module on `place` runs with: its [`options`], and,
-    /// when the lab bridge is internal to the node (`place.jump`), the node as the run's jump host
-    /// (`ssh_jump`, recorded with the run) and the tunnel through the node Terraform's SSH to the
-    /// router goes through, named in the module's values. The tunnel ends
-    /// when the caller drops it, once the operation is over, however it ended.
-    async fn applying(&self, place: &ServerPlace, env: &[(String, String)]) -> Result<(RunOptions, Option<Tunnel>)> {
-        let mut opts = options(place, env);
-        let Some(jump) = &place.jump else { return Ok((opts, None)) };
-        // The jump host the run's own SSH (a console, a command, its endpoints' forwards) goes
-        // through first, recorded with the run for what only reads it.
-        opts = opts.with_env(JUMP_VALUE, jump.clone());
-        let tunnel = Tunnel::open(jump, &self.key()).await?;
-        for (k, v) in tunnel.values() {
-            opts = opts.with_env(k, v);
-        }
-        Ok((opts, Some(tunnel)))
-    }
-
+impl Deployment {
     /// The lab as its page shows it, on the server `place` names: its VMs as the server says they
     /// stand (the runner asks its API with `place`'s credentials), one removed there gone.
-    pub(crate) async fn status(&self, place: &ServerPlace) -> Result<LabStatus> {
+    pub(super) async fn server_status(&self, place: &ServerPlace) -> Result<LabStatus> {
         if !self.has_project() {
             return Ok(LabStatus { place: Some(Place::Server), ..LabStatus::default() });
         }
         // The server's API is asked with `place`'s credentials, which the module's variables
         // carry: a status reads the run's tool as an operation does.
-        let mut status = self.read_with(&options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))?;
+        let mut status = self.read_with(&options(place, &[])).await?;
         self.reached(place, &mut status).await?;
         let described = match self.target() {
             Some(_) => super::described::Described::of(&self.dir, super::described::Form::Vms)?,
@@ -155,9 +93,9 @@ impl ServerRun {
     }
 
     /// `status` with the module's `published` entries where this computer reaches them, as the
-    /// runner gives them ([`OpenedRun::endpoints`]: through the run's jump host, a local forward);
-    /// one it can't reach now is left out (no link rather than a broken one), saying why in the
-    /// log. Asked only while the lab runs.
+    /// runner gives them ([`Deployment::endpoints`]: through the run's jump host, a local
+    /// forward); one it can't reach now is left out (no link rather than a broken one), saying why
+    /// in the log. Asked only while the lab runs.
     async fn reached(&self, place: &ServerPlace, status: &mut isothrum_runner::Status) -> Result<()> {
         if !view::runs(status) {
             return Ok(());
@@ -175,31 +113,13 @@ impl ServerRun {
         output.value = Some(serde_json::to_string(&reached).map_err(|e| crate::error::Error::Invalid(e.to_string()))?);
         Ok(())
     }
-
-    /// `machine`'s graphical console, Proxmox's own through its API, signed in with `place`'s
-    /// credentials.
-    pub(crate) async fn screen(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_client::HeldConsole> {
-        self.graphical_console(machine, &options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))
-    }
-
-    /// What opens `machine` in the server's own web console, on `place`.
-    pub(crate) async fn native(&self, place: &ServerPlace, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        self.native_console(machine, &options(place, &[])).await.map_err(|e| errors::on_server(e, &place.name))
-    }
-
-    /// The lab's checks: each runner its module's `checks` output names, run in its machine by
-    /// the runner's `exec` over SSH, through the server's node first when only it reaches the lab
-    /// (the run's recorded `ssh_jump`) ([`OpenedRun::module_check`]).
-    pub(crate) async fn check(&self) -> Result<Check> {
-        self.module_check(&RunOptions::new()).await
-    }
 }
 
 /// The options of an operation on `place`: its variables as the module's values (its secret
 /// among the secrets), the discovered node when the profile names none, and the launch's values
 /// (`env`) for the lab's inputs. The jump isn't the runner's: an operation that applies the
-/// module opens its tunnel ([`ServerRun::applying`]).
-fn options(place: &ServerPlace, env: &[(String, String)]) -> RunOptions {
+/// module opens its tunnel ([`applying`]).
+pub(super) fn options(place: &ServerPlace, env: &[(String, String)]) -> RunOptions {
     let mut secrets = Secrets::new();
     let mut opts = RunOptions::new();
     for (k, v) in &place.vars {
@@ -277,8 +197,9 @@ mod tests {
     /// revoked token says to update it in Servers.
     mod on_the_server {
         use super::*;
+        use crate::runtime::isothrum::Site;
         use crate::runtime::isothrum::test_lab::prelude::*;
-        use crate::runtime::lab;
+        use crate::runtime::{Runtime, lab};
 
         const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.32.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n  db:\n    os: debian@12\n    networks: { lab: 11 }\n";
 
@@ -337,14 +258,14 @@ mod tests {
 
         /// A Proxmox VM lab whose run is up (its record and Terraform state as an `up` leaves
         /// them), on fake tools.
-        fn up() -> (Scripted<Api>, ServerRun) {
+        fn up() -> (Scripted<Api>, Deployment) {
             up_answered_by(answer)
         }
 
         /// [`up`], its tools answered by `answer`.
-        fn up_answered_by(answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, ServerRun) {
+        fn up_answered_by(answer: fn(&Mutex<Api>, &Call) -> Reply) -> (Scripted<Api>, Deployment) {
             let f = Scripted::answered_by(Home::new("-pve", SPEC, &[], lab::Target::Proxmox), answer);
-            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm).unwrap();
+            let run = Deployment::on_server_with(f.home.config(&f.fake, []), &f.home.dir, "web", Runtime::Vm, place()).unwrap();
             let state = f.home.runner().join("runs").join("cyberctf-web");
             std::fs::create_dir_all(&state).unwrap();
             std::fs::write(
@@ -390,7 +311,7 @@ mod tests {
             let (f, run) = up();
             let tools = tunnel_tools();
             let jumped = ServerPlace { jump: Some("root@node.lab".into()), ..place() };
-            let _ = run.update(&jumped, &mut |_| {}).await;
+            let _ = run.at(Site::Server(jumped)).update(&mut |_| {}).await;
             let tunnels = tools.made("ssh -N -D");
             assert_eq!(tunnels.len(), 1, "one tunnel for the operation");
             assert_eq!(tunnels[0].last().map(String::as_str), Some("root@node.lab"));
@@ -408,7 +329,7 @@ mod tests {
         async fn a_bridge_the_launcher_reaches_needs_no_tunnel() {
             let (f, run) = up();
             let tools = crate::platform::exec::fake::Tools::script().build();
-            let _ = run.update(&place(), &mut |_| {}).await;
+            let _ = run.update(&mut |_| {}).await;
             assert!(tools.calls().is_empty(), "no ssh");
             assert!(f.fake.calls().iter().filter(|c| c.program == "terraform").all(|c| c.env("TF_VAR_ssh_proxy_host").is_none()));
             assert_eq!(jump_recorded(&run), None);
@@ -416,7 +337,7 @@ mod tests {
 
         /// A lab with a web port its module publishes at its router, `web/site` at
         /// 192.0.2.10:8080, its run up on fake tools.
-        fn published_lab(home: &str) -> (Scripted<Api>, ServerRun) {
+        fn published_lab(home: &str) -> (Scripted<Api>, Deployment) {
             const WEB: &str = "version: 1\nname: t\nnetworks:\n  app: { cidr: 10.80.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { app: 10 }\n    ports: { site: { port: 80, protocol: http, publish: 8080 } }\n";
             let f = Scripted::answered_by(Home::new(home, WEB, &[], lab::Target::Proxmox), |api, call| {
                 match (call.program.as_str(), call.args.first().map(String::as_str)) {
@@ -424,7 +345,7 @@ mod tests {
                     _ => answer(api, call),
                 }
             });
-            let run = ServerRun::with(f.home.config(&f.fake, []), &f.home.dir, home, Runtime::Vm).unwrap();
+            let run = Deployment::on_server_with(f.home.config(&f.fake, []), &f.home.dir, home, Runtime::Vm, place()).unwrap();
             let state = f.home.runner().join("runs").join(format!("cyberctf-{home}"));
             std::fs::create_dir_all(&state).unwrap();
             std::fs::write(state.join("terraform.tfstate"), r#"{"outputs":{"vm_id_web":{"value":104}},"resources":[{"instances":[{}]}]}"#).unwrap();
@@ -433,7 +354,7 @@ mod tests {
         }
 
         /// Records run `name` of `run` up, through the node `root@node.lab` (as its start keeps it).
-        fn record_through_the_node(f: &Scripted<Api>, run: &ServerRun, name: &str) {
+        fn record_through_the_node(f: &Scripted<Api>, run: &Deployment, name: &str) {
             let record = serde_json::json!({
                 "version": 0, "name": name, "project": run.project, "format": "terraform",
                 "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
@@ -443,7 +364,7 @@ mod tests {
         }
 
         /// The jump host run `run` recorded, if any.
-        fn jump_recorded(run: &ServerRun) -> Option<String> {
+        fn jump_recorded(run: &Deployment) -> Option<String> {
             let record = crate::testing::runner::run_record(&run.served.home, run.served.name.as_str());
             record["env"][JUMP_VALUE].as_str().map(str::to_owned)
         }
@@ -457,7 +378,7 @@ mod tests {
             });
             crate::testing::runner::save_run(&f.home.runner(), &record);
             let tools = crate::platform::exec::fake::Tools::script().build();
-            assert_eq!(run.status(&place()).await.unwrap().url.as_deref(), Some("http://192.0.2.10:8080/"));
+            assert_eq!(run.status().await.unwrap().url.as_deref(), Some("http://192.0.2.10:8080/"));
             assert!(tools.calls().is_empty(), "no forward");
         }
 
@@ -509,14 +430,14 @@ mod tests {
         #[tokio::test]
         async fn a_vm_missing_from_the_listing_still_reads_and_a_revoked_token_says_to_update_it() {
             let (f, run) = up();
-            let shown = run.status(&place()).await.unwrap();
+            let shown = run.status().await.unwrap();
             assert_eq!((shown.running, web(&shown).as_str()), (true, "running"));
             // A VM missing from Proxmox's listing isn't read as removed (the runner's rule: a
             // listing can be partial); the status still reads.
             *f.model() = Api::Removed;
-            assert!(run.status(&place()).await.is_ok());
+            assert!(run.status().await.is_ok());
             *f.model() = Api::Refuses;
-            let refused = run.status(&place()).await.err().unwrap();
+            let refused = run.status().await.err().unwrap();
             assert_eq!(refused.code(), crate::error::Code::ServerAuthFailed { server: "Home lab".into() });
         }
     }

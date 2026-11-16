@@ -1,7 +1,7 @@
 //! The Proxmox self-test: a real throwaway lab on the server, through the exact path a lab takes.
 //!
 //! The test lab ([`lab_run::LAB`]: one small Debian VM on its own lab network, nothing to install)
-//! is generated for the `proxmox` target and run by the Isothrum runner ([`ServerRun`]) with this
+//! is generated for the `proxmox` target and run by the Isothrum runner ([`Deployment`]) with this
 //! server's profile and placement (node, datastores, uplink bridge, the jump when the lab bridge
 //! is internal), so it proves what a launch needs: the cloud image downloaded, the lab network
 //! (an SDN vnet) created, the VMs started, the lab's router given an address on the uplink (DHCP
@@ -15,7 +15,7 @@ use super::lab_run::{self, Course, SSH, Step, TestRun, run_id};
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::docker::Check;
-use crate::runtime::isothrum::{ServerPlace, ServerRun};
+use crate::runtime::isothrum::Deployment;
 use crate::runtime::launch::server_place;
 use crate::runtime::paths::runner_home;
 use crate::runtime::{Runtime, lab, server};
@@ -32,19 +32,20 @@ pub(super) const PLAN: [&str; 9] = [super::CONNECT, lab_run::PREPARE.0, IMAGE.0,
 
 /// The test lab's run on the server, where a launch would put it.
 pub(super) struct OnServer {
-    run: ServerRun,
-    place: ServerPlace,
+    run: Deployment,
+    /// The node it runs on, when the profile names none.
+    node: Option<String>,
 }
 
 impl TestRun for OnServer {
     async fn up(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()> {
-        self.run.up(&self.place, &[], &mut |l| log(l)).await
+        self.run.up(&[], &mut |l| log(l)).await
     }
     async fn check(&self) -> Result<Check> {
         self.run.check().await
     }
     async fn down(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()> {
-        self.run.down(&self.place, &mut |l| log(l)).await
+        self.run.down(&mut |l| log(l)).await
     }
 }
 
@@ -57,16 +58,16 @@ fn write_lab(work: &Path) -> Result<PathBuf> {
 /// The test lab's run on server `id`, from its folder `dir`: also how a lab a previous test kept
 /// is removed ([`lab_run::clear_kept`]).
 pub(super) async fn open(dirs: &AppDirs, id: &str, conn: &server::Connection, dir: PathBuf) -> Result<OnServer> {
-    let run = ServerRun::new(&runner_home(dirs)?, &dir, &run_id(id), Runtime::Vm)?;
-    let place = Box::pin(server_place(dirs, id, conn, &run)).await?;
-    Ok(OnServer { run, place })
+    let place = Box::pin(server_place(dirs, id, conn)).await?;
+    let node = place.node.clone();
+    Ok(OnServer { run: Deployment::on_server(&runner_home(dirs)?, &dir, &run_id(id), Runtime::Vm, place)?, node })
 }
 
 /// The test lab written into `work`, generated for Proxmox, and its run opened where a launch
 /// would put it, with the node it runs on.
 pub(super) async fn prepare(dirs: &AppDirs, id: &str, conn: &server::Connection, work: &Path) -> Result<(OnServer, Option<String>)> {
     let on = Box::pin(open(dirs, id, conn, write_lab(work)?)).await?;
-    let node = on.place.node.clone().map(|n| format!("on node {n}"));
+    let node = on.node.clone().map(|n| format!("on node {n}"));
     Ok((on, node))
 }
 

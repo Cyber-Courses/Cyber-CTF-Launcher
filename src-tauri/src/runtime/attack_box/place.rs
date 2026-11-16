@@ -295,10 +295,9 @@ mod tests {
         let fake = Arc::new(signing_out(Arc::clone(&expired)));
         let mut config = isothrum_runner::RunnerConfig::new(crate::runtime::paths::runner_home_in(&home));
         config.processes = Arc::clone(&fake) as Arc<dyn isothrum_runner::ProcessRunner>;
-        let run = isothrum::CloudRun::new_with(config, &dir, "t", Runtime::Docker, "aws").unwrap();
-        let place =
-            || isothrum::CloudPlace { region: Some("eu-west-3".into()), allowed_cidr: Some("203.0.113.7/32".into()), ..isothrum::CloudPlace::default() };
-        run.up(&place(), &[], &mut |_| {}).await.unwrap();
+        let place = isothrum::CloudPlace { region: Some("eu-west-3".into()), allowed_cidr: Some("203.0.113.7/32".into()), ..isothrum::CloudPlace::default() };
+        let run = isothrum::Deployment::in_cloud_with(config, &dir, "t", (Runtime::Docker, "aws"), place).unwrap();
+        run.up(&[], &mut |_| {}).await.unwrap();
         expired.store(true, Ordering::SeqCst);
         let before = module(&dir, "aws");
         let conn = crate::runtime::server::Connection {
@@ -311,7 +310,7 @@ mod tests {
             region: None,
             auto_stop_hours: None,
         };
-        let placed = Placed { host: Host::Cloud { run, place: place(), conn }, dir: dir.to_path_buf(), target, vm: false };
+        let placed = Placed { host: Host::Cloud { run, conn }, dir: dir.to_path_buf(), target, vm: false };
         let dirs = AppDirs::new(Some(home), None);
         let err = placed.add(&dirs, Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.unwrap_err();
         assert!(err.to_string().starts_with("Your sign-in to AWS has expired"), "{err}");

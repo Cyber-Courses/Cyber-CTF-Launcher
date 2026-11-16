@@ -44,7 +44,7 @@ async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate
     start_at(t, id, runtime, Destination { host: Some(host), ..Destination::default() }, &[]).await
 }
 
-// Cloud VM labs (cloud-vm, cloud-docker) now launch through the Isothrum runner (`CloudRun`),
+// Cloud VM labs (cloud-vm, cloud-docker) now launch through the Isothrum runner (`Deployment`),
 // whose Terraform runs on the runner's own process port — not the launcher's faked `exec` — so
 // their execution is covered by the runner crate and the opt-in `real_cloud_labs` harness, not
 // here. The launcher's own cloud policy is unit-tested where it lives: the AWS budget verdict

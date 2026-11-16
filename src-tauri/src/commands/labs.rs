@@ -536,7 +536,7 @@ mod tests {
         // place: cloud-docker (the default), a container among the lab's in its cloud VM.
         let placed = async |runtime| match crate::runtime::attack_box::locate(&t.dirs(), &dir, "srv", runtime).await.unwrap() {
             Some(b) => match &b.host {
-                crate::runtime::host::Host::Cloud { place, .. } => (place.label.clone(), b.target, b.vm),
+                crate::runtime::host::Host::Cloud { conn, .. } => (conn.id.clone(), b.target, b.vm),
                 _ => panic!("in the cloud account"),
             },
             None => panic!("a box"),
