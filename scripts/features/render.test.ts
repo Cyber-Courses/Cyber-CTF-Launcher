@@ -45,8 +45,8 @@ describe("render", () => {
   });
 
   it("is stable under Prettier, so the check compares like with like", async () => {
-    const once = await formatted(md, "tests/FEATURES.md");
-    expect(await formatted(once, "tests/FEATURES.md")).toBe(once);
+    const once = await formatted(md, "tests/features/FEATURES.md");
+    expect(await formatted(once, "tests/features/FEATURES.md")).toBe(once);
   });
 });
 

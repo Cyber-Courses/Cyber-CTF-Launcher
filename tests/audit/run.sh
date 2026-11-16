@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The leftover audit (tests/leftovers.md): what a run of the launcher's stack left on a machine.
+# The leftover audit (docs/contributing/testing/leftovers.md): what a run of the launcher's stack left on a machine.
 # The rig, a runner or a person takes a snapshot before and after, then diffs them:
 #
 #   tests/audit/run.sh snapshot [--out <file>] [--root <dir>]... [--sudo]   this machine (Linux, macOS)

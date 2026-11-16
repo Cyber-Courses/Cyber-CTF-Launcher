@@ -80,7 +80,7 @@ function featureProblems(f: Feature, facts: Facts, rig: RigSnapshot): string[] {
 
 /** Each of `all` no feature claims (through `claimed`), as a problem; and each claimed twice. */
 function unclaimed(all: readonly string[], claimed: Map<string, string[]>, what: string, once: boolean): string[] {
-  const out = all.filter((x) => !claimed.has(x)).map((x) => `${what} ${x} belongs to no feature: add it to one in tests/features.yml`);
+  const out = all.filter((x) => !claimed.has(x)).map((x) => `${what} ${x} belongs to no feature: add it to one in tests/features/registry.yml`);
   if (once) for (const [x, by] of claimed) if (by.length > 1) out.push(`${what} ${x} is the home of one feature, not ${by.join(", ")}`);
   return out;
 }

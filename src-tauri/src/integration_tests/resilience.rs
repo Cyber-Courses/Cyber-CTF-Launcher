@@ -5,7 +5,7 @@
 //! Each scenario does the disruption with the tool a player would use, then checks what the
 //! launcher says (the lab page's status, the failure's words), that a start again (or the lab
 //! page's resume, or its reset: stop then start) brings the whole lab back, and that its stop
-//! leaves nothing behind. tests/resilience.md is the catalogue these come from; the VM family is
+//! leaves nothing behind. docs/contributing/testing/resilience.md is the catalogue these come from; the VM family is
 //! `resilience_vm`.
 //!
 //! Every scenario acts only on what it made: its own lab copy (`cyberctf-resil-<n>`), its

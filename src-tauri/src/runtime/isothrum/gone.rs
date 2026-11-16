@@ -1,5 +1,5 @@
 //! A run whose surroundings changed under it: its generated files deleted while it runs, and
-//! the engine it runs on stopped while a step ran (tests/resilience.md, F1 and T1).
+//! the engine it runs on stopped while a step ran (docs/contributing/testing/resilience.md, F1 and T1).
 
 use super::{Error, Kind, LabRun, Result, errors, lab};
 

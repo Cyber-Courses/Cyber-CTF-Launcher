@@ -98,7 +98,7 @@ describe("deriveLabState", () => {
   });
 
   it("offers to resume the machines that went down only while every one is still there", () => {
-    // Regression (tests/resilience.md M4): a Docker lab with a container stopped outside the app
+    // Regression (docs/contributing/testing/resilience.md M4): a Docker lab with a container stopped outside the app
     // was offered a reset only; the backend now offers its repair, and the page the resume.
     const controls: LabControl[] = ["shutdown", "repair"];
     const stopped = [machine("web"), machine("db", "exited")];

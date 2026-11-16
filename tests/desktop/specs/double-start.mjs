@@ -1,4 +1,4 @@
-// Resilience (tests/resilience.md): Start pressed twice (a double click, or the catalogue's Start
+// Resilience (docs/contributing/testing/resilience.md): Start pressed twice (a double click, or the catalogue's Start
 // and the lab page's at once). Exactly one start runs, the other is refused as already in
 // progress, and the lab comes up once.
 import {

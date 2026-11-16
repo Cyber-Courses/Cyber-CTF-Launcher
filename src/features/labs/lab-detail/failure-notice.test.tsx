@@ -6,7 +6,7 @@ import { FailureNotice, StatusReadNotice, useOpenServer } from "@/features/labs/
 import { installTauri } from "@/test/tauri";
 import { flush } from "@/test/ui";
 
-// tests/resilience.md N4: a revoked Proxmox token or a changed ESXi password, said as the server
+// docs/contributing/testing/resilience.md N4: a revoked Proxmox token or a changed ESXi password, said as the server
 // refusing the saved credentials, with the way to its settings.
 
 const refused = "Cyber CTF can't sign in to Home lab: its token was revoked or its password changed. Update it in Servers.";

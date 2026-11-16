@@ -171,7 +171,7 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   libvirt and QEMU from the distribution's own, each repository's key pinned, as the setup does
   through apt on Debian and Ubuntu. The cloud CLIs and VMware's utility stay apt-only for now:
   the setup says to install them by hand. The AppImage needs FUSE 2 on Fedora.
-- **What a player does that breaks a lab, catalogued and tested.** [tests/resilience.md](tests/resilience.md)
+- **What a player does that breaks a lab, catalogued and tested.** [docs/contributing/testing/resilience.md](docs/contributing/testing/resilience.md)
   lists each disruption (a machine removed, stopped or powered off outside the app, the app or its
   deploy worker killed, Docker or the hypervisor stopped, files deleted, a double Start, Stop
   during Start, the network, the computer's sleep and clock), what the app must do and which test

@@ -536,7 +536,7 @@ if in_tier local; then
   scenario replace-docker docker "" "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$EXAMPLES/hello-stack" CYBERCTF_TEST_REPLACE_FORM=docker
   scenario replace-vm vm "$VM_PROVIDER" "$REPLACE" CYBERCTF_TEST_REPLACE_LAB="$SOLO" CYBERCTF_TEST_REPLACE_FORM=vm \
     CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER"
-  # What a player does that breaks a lab (tests/resilience.md): a container or VM removed, stopped
+  # What a player does that breaks a lab (docs/contributing/testing/resilience.md): a container or VM removed, stopped
   # or powered off outside the app while the lab runs or starts, the start's process killed, a
   # port the lab publishes taken. Each checks what the launcher says, the way back, and that
   # nothing is left. They act on their own lab alone, so they run anywhere.
