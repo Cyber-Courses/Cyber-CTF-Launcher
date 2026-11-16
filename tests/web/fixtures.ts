@@ -4,6 +4,7 @@ import type { CommandError } from "../../src/lib/tauri/generated/CommandError";
 import { AppShell } from "./pages/app-shell";
 import { LabScreen } from "./pages/lab";
 import { LabsScreen } from "./pages/labs";
+import { SettingsWindow } from "./pages/settings";
 
 /** The six languages the launcher ships (src/lib/i18n). */
 export const LOCALES = ["en", "fr", "es", "de", "pt-BR", "ja"] as const;
@@ -24,6 +25,8 @@ type Fixtures = {
   labs: LabsScreen;
   /** A lab's page on the test's page, and its "Where should the lab run?". */
   lab: LabScreen;
+  /** The Settings window, in the test's page (`settingsWindow.open(section)` loads it there). */
+  settingsWindow: SettingsWindow;
 };
 
 export const test = base.extend<Fixtures>({
@@ -64,6 +67,9 @@ export const test = base.extend<Fixtures>({
   },
   lab: async ({ page }, provide) => {
     await provide(new LabScreen(page));
+  },
+  settingsWindow: async ({ page }, provide) => {
+    await provide(new SettingsWindow(page));
   },
 });
 

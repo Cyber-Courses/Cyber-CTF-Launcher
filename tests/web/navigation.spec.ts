@@ -19,6 +19,15 @@ test.describe("navigation", () => {
     }
   });
 
+  test("the Events tab says Events is on the way", async ({ app }) => {
+    await app.nav("Events").click();
+    await expect(app.nav("Events")).toHaveAttribute("aria-current", "page");
+    await expect(app.breadcrumb).toHaveText("Events");
+    // The coming-soon screen's words are its whole content.
+    await expect(app.main.getByText("Events is on the way")).toBeVisible();
+    await expect(app.main).toContainText("Join live CTF events where labs are hosted by Cyber CTF");
+  });
+
   test("Settings opens in its own window", async ({ page, context }) => {
     const [settings] = await Promise.all([
       context.waitForEvent("page"),

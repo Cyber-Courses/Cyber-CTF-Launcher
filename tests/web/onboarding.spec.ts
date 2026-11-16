@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { test, expect, release } from "./fixtures";
+import { SettingsWindow } from "./pages/settings";
 
 // The first-run onboarding, on each machine the dev mock can report (`?mock&onboarding` plus the
 // scenario switches `os`, `arch` and `machine`, see src/lib/dev-mock/scenario.ts).
@@ -181,7 +182,7 @@ test.describe("onboarding", () => {
         .getByRole("button", { name: /^Settings/ })
         .click(),
     ]);
-    await settings.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: "About" }).click();
+    await new SettingsWindow(settings).show("About");
     await settings.getByRole("button", { name: "Replay" }).click();
 
     await expect(page.getByRole("heading", { level: 1, name: "Welcome to Cyber CTF" })).toBeVisible();
