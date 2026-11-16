@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedSettings } from "@/test/settings";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
@@ -263,7 +264,7 @@ describe("ServerScreen", () => {
   });
 
   it("shows the remembered result of an earlier VM test", async () => {
-    localStorage.setItem("cyberctf.server.vmtest", JSON.stringify({ esxi: { result: "fail", at: Date.now() - 120_000 } }));
+    seedSettings({ serverTests: { esxi: { result: "fail", at: Date.now() - 120_000, why: null } } });
     installTauri();
     await renderScreen();
     expect(screen.getByText("VM test failed")).toBeTruthy();

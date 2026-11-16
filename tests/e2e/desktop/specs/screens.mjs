@@ -16,6 +16,7 @@ import {
   closeWindow,
   finish,
   forceVisible,
+  invokeCmd,
   mainText,
   openApp,
   openLabFromList,
@@ -146,7 +147,7 @@ try {
   if (proc) console.log("app out tail:", proc.output().slice(-600));
 } finally {
   // Headless again, the setting's default, for the specs after this one.
-  if (DESKTOP && b) await b.execute(() => localStorage.setItem("cyberctf.attackbox.desktop", "false")).catch(() => {});
+  if (DESKTOP && b) await invokeCmd(b, "settings_change", { changes: [{ setting: "attackDesktop", value: false }] }).catch(() => {});
   await finish(b, proc);
 }
 r.exit();

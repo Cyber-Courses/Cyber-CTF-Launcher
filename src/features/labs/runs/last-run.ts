@@ -1,20 +1,14 @@
-import { readStored, writeStored } from "@/lib/local-store";
+import { changeSettings, settingsNow } from "@/lib/settings-store";
 
-/** Per-lab "last launched" timestamps, kept locally so rows can show recency. */
-
-const KEY = (id: string) => `cyberctf.lastrun.${id}`;
+/** Per-lab "last launched" times, kept by the core with the settings so rows can show recency. */
 
 export const setLastRun = (id: string) => {
-  writeStored(KEY(id), String(Date.now()));
+  changeSettings({ setting: "lastRun", value: { lab: id, at: Date.now() } });
 };
 
-export function getLastRun(id: string): number | null {
-  const v = readStored(KEY(id));
-  const n = v ? Number(v) : NaN;
-  return Number.isFinite(n) ? n : null;
-}
+export const getLastRun = (id: string): number | null => settingsNow().lastRuns[id] ?? null;
 
 /** Forgets a lab's "last launched" time: the lab was removed from this computer. */
 export const forgetLastRun = (id: string) => {
-  writeStored(KEY(id), null);
+  changeSettings({ setting: "lastRun", value: { lab: id, at: null } });
 };

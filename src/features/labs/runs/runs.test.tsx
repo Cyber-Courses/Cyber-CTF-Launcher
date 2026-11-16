@@ -12,7 +12,7 @@ import {
   subscribeDeploy,
   type DeployRun,
 } from "@/features/labs/runs/deploy-runs";
-import { getLastRun, setLastRun } from "@/features/labs/runs/last-run";
+import { forgetLastRun, getLastRun, setLastRun } from "@/features/labs/runs/last-run";
 import { deployingOf, keepsRunningPhase, operationLabel, operationStatus, useActiveOperations, useDeployingLabs } from "@/features/labs/runs/operations";
 import { useWorkerLog } from "@/features/labs/runs/worker-log";
 import { takeIn } from "@/lib/tauri/run-events";
@@ -304,21 +304,11 @@ describe("last run", () => {
     expect([getLastRun("a"), getLastRun("b")]).toEqual([5, 9]);
   });
 
-  it("reads an empty or non-numeric value as never run", () => {
-    localStorage.setItem("cyberctf.lastrun.a", "");
-    localStorage.setItem("cyberctf.lastrun.x", "garbage");
-    expect([getLastRun("a"), getLastRun("x")]).toEqual([null, null]);
-  });
-
-  it("reads and writes nothing without storage, and never throws", () => {
-    const refused = () => {
-      throw new Error("SecurityError");
-    };
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(refused);
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(refused);
-    expect(() => {
-      setLastRun("x");
-    }).not.toThrow();
+  it("forgets a removed lab's time, and keeps a time the core couldn't save for this window", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    setLastRun("x");
+    expect(getLastRun("x")).not.toBeNull();
+    forgetLastRun("x");
     expect(getLastRun("x")).toBeNull();
   });
 });

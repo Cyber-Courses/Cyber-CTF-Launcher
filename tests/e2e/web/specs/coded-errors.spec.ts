@@ -25,7 +25,7 @@ test.describe("coded errors", () => {
   test("a port in use: the port named, the hint, and Retry with random ports starts the lab", async ({ page, app, labs, lab }) => {
     await forceCommands(page, { lab_launch: { error: { code: "portInUse", args: { port: 8000 }, message: "port 8000 is in use" } } });
     // The lab's own ports, so a clash is what the player asked for.
-    await page.addInitScript(() => localStorage.setItem("cyberctf.labs.ports", "default"));
+    await page.addInitScript(() => localStorage.setItem("cyberctf.devMock.settings", JSON.stringify({ portMode: "default" })));
     await openApp(page);
     await labs.openLab("Blind orders");
     await startHere(lab);

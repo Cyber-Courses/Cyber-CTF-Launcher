@@ -29,7 +29,7 @@ test.describe("failure states", () => {
 
   test("a start that fails says so in the header, with Retry and the port hint", async ({ page, app, labs }) => {
     await forceCommands(page, { lab_launch: { error: PORT_CLASH } });
-    await page.addInitScript(() => localStorage.setItem("cyberctf.labs.ports", "default"));
+    await page.addInitScript(() => localStorage.setItem("cyberctf.devMock.settings", JSON.stringify({ portMode: "default" })));
     await openApp(page);
     await app.nav("Labs").click();
     await labs.open("Blind orders").click();

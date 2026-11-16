@@ -91,27 +91,11 @@ describe("settings", () => {
     expect(OLD_ATTACK_IMAGES).not.toContain(DEFAULT_ATTACK_IMAGE);
   });
 
-  it.each(["cyberctf/attack-box", "cyberctf/attack-box:latest"])("moves a saved old default (%s) to the pinned default", (old) => {
-    localStorage.setItem("cyberctf.attackbox.image", old);
-    expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
-    expect(localStorage.getItem("cyberctf.attackbox.image")).toBeNull();
-  });
-
   it("keeps a custom image, even another tag or digest of the Cyber CTF box", () => {
     for (const image of ["ghcr.io/me/box:1", "cyberctf/attack-box:2026-10-05", `cyberctf/attack-box@sha256:${"a".repeat(64)}`]) {
-      localStorage.setItem("cyberctf.attackbox.image", image);
+      setAttackImage(image);
       expect(getAttackImage()).toBe(image);
-      expect(localStorage.getItem("cyberctf.attackbox.image")).toBe(image);
     }
-  });
-
-  it("doesn't store the default, so a later pinned default applies", () => {
-    setAttackImage("ghcr.io/me/box");
-    setAttackImage(DEFAULT_ATTACK_IMAGE);
-    expect(localStorage.getItem("cyberctf.attackbox.image")).toBeNull();
-    expect(getAttackImage()).toBe(DEFAULT_ATTACK_IMAGE);
-    setAttackImage("cyberctf/attack-box:latest");
-    expect(localStorage.getItem("cyberctf.attackbox.image")).toBeNull();
   });
 
   it("saves trimmed images and falls back to the default when blank", () => {
@@ -136,8 +120,6 @@ describe("settings", () => {
     vi.restoreAllMocks();
     expect(getLastTest("docker")).toEqual({ result: "ok", at: 1234, why: null });
     expect(getLastTest("vm")).toBeNull();
-    localStorage.setItem("cyberctf.selftest.vm", "{not json");
-    expect(getLastTest("vm")).toBeNull();
   });
 
   it("starts the attack box automatically unless turned off", () => {
@@ -148,12 +130,10 @@ describe("settings", () => {
     expect(getAutoAttackBox()).toBe(true);
   });
 
-  it("reads only known port modes", () => {
+  it("keeps or clears the port mode", () => {
     expect(getPortMode()).toBeNull();
     setPortMode("default");
     expect(getPortMode()).toBe("default");
-    localStorage.setItem("cyberctf.labs.ports", "weird");
-    expect(getPortMode()).toBeNull();
     setPortMode("random");
     setPortMode(null);
     expect(getPortMode()).toBeNull();

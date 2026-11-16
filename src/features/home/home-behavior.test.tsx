@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedSettings } from "@/test/settings";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -131,7 +132,7 @@ describe("HomeScreen", () => {
   });
 
   it("resumes a parked lab from Jump back in", async () => {
-    localStorage.setItem("cyberctf.lastrun.lab-kube", String(Date.now() - 3_600_000));
+    seedSettings({ lastRuns: { "lab-kube": Date.now() - 3_600_000 } });
     const parked = {
       running: false,
       parked: "pause",

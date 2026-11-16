@@ -6,6 +6,7 @@ import { MachineSetup } from "@/features/machine/machine-setup";
 import { Toaster } from "@/components/ui/toaster";
 import { DialogPrompts } from "@/components/destructive-prompt";
 import { DevMockGate } from "@/components/dev-mock-gate";
+import { SettingsGate } from "@/components/settings-gate";
 import { warn } from "@/lib/failure";
 import { useMachineReport } from "@/features/machine/use-machine-report";
 import { useTauriEvent } from "@/lib/use-tauri-event";
@@ -16,7 +17,9 @@ import type { StartAt } from "@/features/machine/use-window-steps";
 export default function MachineSetupPage() {
   return (
     <DevMockGate>
-      <MachineSetupWindow />
+      <SettingsGate>
+        <MachineSetupWindow />
+      </SettingsGate>
     </DevMockGate>
   );
 }

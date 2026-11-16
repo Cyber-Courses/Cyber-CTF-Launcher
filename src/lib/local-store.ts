@@ -59,3 +59,23 @@ export function writeStored(key: string, value: string | null) {
     warn(`saving ${key}`)(e);
   }
 }
+
+/** Every item saved in localStorage, by key; none when storage can't be read. */
+export function storedItems(): Record<string, string> {
+  try {
+    const items: Record<string, string> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      const value = key === null ? null : localStorage.getItem(key);
+      if (key !== null && value !== null) items[key] = value;
+    }
+    return items;
+  } catch (e) {
+    return ignore("no storage here: nothing saved", () => ({}))(e);
+  }
+}
+
+/** Removes what is saved under `key` (a refusal is logged, as `writeStored`'s). */
+export const removeStored = (key: string) => {
+  writeStored(key, null);
+};

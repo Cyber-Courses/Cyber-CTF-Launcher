@@ -2,13 +2,15 @@
 import { act, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { closeIfSettings, showInMainWindow } from "@/lib/app-events";
 import { AppearanceSync, useAppearance } from "@/lib/appearance";
 import { LOCALES, getLocale, getLocalePreference, setLocalePreference, translate, useFormat, useLocale, useT, type Locale } from "@/lib/i18n";
 import { isMac } from "@/lib/platform";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { setVmProvider } from "@/lib/settings";
+import { loadSettings } from "@/lib/settings-store";
+import { SETTINGS_DEFAULTS } from "@/lib/tauri/generated/SettingsDefaults";
 import { useVmProvider } from "@/lib/use-vm-provider";
 import { usePoll } from "@/lib/use-poll";
 import { commands, installTauri } from "@/test/tauri";
@@ -286,28 +288,22 @@ describe("appearance", () => {
 });
 
 describe("the hypervisor choice", () => {
-  it("follows a change made in this window and one made in another (Settings, the setup window)", () => {
+  it("follows a change made in this window and one made in another (Settings, the setup window)", async () => {
+    installTauri({ settings_get: () => SETTINGS_DEFAULTS });
+    await loadSettings();
     const { result } = renderHook(() => useVmProvider());
     expect(result.current).toBeNull();
     act(() => {
       setVmProvider("qemu");
     });
     expect(result.current).toBe("qemu");
-    // Settings is another window: its write reaches this one as a storage event only.
-    localStorage.setItem("cyberctf.vm.provider", "virtualbox");
-    act(() => {
-      window.dispatchEvent(new StorageEvent("storage", { key: "cyberctf.vm.provider", newValue: "virtualbox" }));
-    });
+    await flush();
+    // Settings is another window: its change reaches this one as the core's event.
+    await act(() => emit("settings-changed", { ...SETTINGS_DEFAULTS, vmProvider: "virtualbox" }));
+    await flush();
     expect(result.current).toBe("virtualbox");
-    // Another key changes nothing; the storage cleared reads as automatic.
-    localStorage.removeItem("cyberctf.vm.provider");
-    act(() => {
-      window.dispatchEvent(new StorageEvent("storage", { key: "unrelated", newValue: "x" }));
-    });
-    expect(result.current).toBe("virtualbox");
-    act(() => {
-      window.dispatchEvent(new StorageEvent("storage", { key: null }));
-    });
+    await act(() => emit("settings-changed", SETTINGS_DEFAULTS));
+    await flush();
     expect(result.current).toBeNull();
   });
 });

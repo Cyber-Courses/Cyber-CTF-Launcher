@@ -75,7 +75,7 @@ test.describe("settings", () => {
     // A VM form remembered by "Where should the lab run?"'s "don't ask again".
     await page.addInitScript(() => {
       if (!sessionStorage.getItem("seeded")) {
-        localStorage.setItem("cyberctf.labs.vmForm", "vms");
+        localStorage.setItem("cyberctf.devMock.settings", JSON.stringify({ vmForm: "vms" }));
         sessionStorage.setItem("seeded", "1");
       }
     });
@@ -88,7 +88,9 @@ test.describe("settings", () => {
     await askAgain.click();
     await expect(page.getByText("The launch dialog asks each time.")).toBeVisible();
     await expect(askAgain).toBeDisabled();
-    expect(await page.evaluate(() => localStorage.getItem("cyberctf.labs.vmForm"))).toBeNull();
+    expect(
+      await page.evaluate(() => (JSON.parse(localStorage.getItem("cyberctf.devMock.settings") ?? "{}") as { vmForm?: string | null }).vmForm ?? null),
+    ).toBeNull();
     // Forgotten for good: a reload still asks.
     await page.reload();
     await settingsWindow.show("Labs");

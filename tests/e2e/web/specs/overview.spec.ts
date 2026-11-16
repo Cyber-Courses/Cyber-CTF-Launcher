@@ -2,7 +2,7 @@ import { test, expect, openApp } from "../fixtures";
 
 // The Overview's second column and Jump back in, through the dev mock: GOAD Light deploys on the
 // saved Proxmox server at load (its step: Configure SRV02), and a lab launched before (its
-// `cyberctf.lastrun.<id>` time, src/features/labs/runs/last-run.ts) is offered again.
+// last start, kept with the settings, src/features/labs/runs/last-run.ts) is offered again.
 
 test.describe("overview", () => {
   test("the deploy panel names the lab deploying, its step and machine, and View opens its page", async ({ page, app }) => {
@@ -18,7 +18,7 @@ test.describe("overview", () => {
 
   test("Jump back in lists a lab launched before, how long ago, and opens it", async ({ page, app }) => {
     await page.addInitScript(() => {
-      localStorage.setItem("cyberctf.lastrun.lab-kube", String(Date.now() - 2 * 3600_000));
+      localStorage.setItem("cyberctf.devMock.settings", JSON.stringify({ lastRuns: { "lab-kube": Date.now() - 2 * 3600_000 } }));
     });
     await openApp(page);
     const jumpBack = app.main.getByRole("heading", { name: "Jump back in" });

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { seedSettings } from "@/test/settings";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -183,7 +184,7 @@ describe("SelfTest", () => {
   });
 
   it("runs the VM test on the chosen hypervisor and records a failure with its detail", async () => {
-    localStorage.setItem("cyberctf.vm.provider", "qemu");
+    seedSettings({ vmProvider: "qemu" });
     const calls = installTauri({
       machine_selftest: (a) => {
         stream(a, ev("vagrant", "ok"), ev("provider", "fail", "vagrant-qemu is missing"));
