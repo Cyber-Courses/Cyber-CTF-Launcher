@@ -83,6 +83,41 @@ pub(crate) async fn scenario<S: Checks>(state: &mut S, body: impl AsyncFnOnce(&m
     }
 }
 
+/// How long [`eventually`] waits, and how often it looks.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Wait {
+    /// How long it waits at most.
+    pub(crate) within: std::time::Duration,
+    /// How long it lets pass between two looks.
+    pub(crate) every: std::time::Duration,
+}
+
+impl Wait {
+    /// At most `secs` seconds, looking every `every`.
+    pub(crate) const fn secs(secs: u64, every: std::time::Duration) -> Wait {
+        Wait { within: std::time::Duration::from_secs(secs), every }
+    }
+}
+
+/// Waits for `what` to happen: `look` is called until it answers `Ok` (what happened) or `wait`
+/// is over; the answer, or the last thing it saw (its `Err`) when it never answered. A scenario
+/// waits on what it can see, not for a time it guesses, and when nothing came the failure says
+/// what was seen last. `look` stops the wait early by answering `Ok` with what it saw (a process
+/// that ended before it made anything, say).
+pub(crate) async fn eventually<T, S>(what: &str, wait: Wait, mut look: impl AsyncFnMut() -> Result<T, S>) -> Result<T, S> {
+    let deadline = std::time::Instant::now() + wait.within;
+    loop {
+        let seen = look().await;
+        if seen.is_ok() || std::time::Instant::now() + wait.every > deadline {
+            if seen.is_err() {
+                println!("note: waited {:.0?} for {what}, in vain", wait.within);
+            }
+            return seen;
+        }
+        tokio::time::sleep(wait.every).await;
+    }
+}
+
 /// `url` fetched on this machine (15 s at most): its status, or why it couldn't be.
 pub(crate) async fn fetch(url: &str) -> std::result::Result<reqwest::StatusCode, String> {
     let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
@@ -189,6 +224,37 @@ mod tests {
         // Not a lab at all: not a refusal of the provider; the start says why, as a failure.
         let empty = t.lab("empty", &[]);
         assert!(!refused_by_launcher(&empty, Target::Vagrant, Provider::Utm));
+    }
+
+    #[tokio::test]
+    async fn a_wait_ends_on_what_it_waits_for_or_says_what_it_saw_last() {
+        let quick = Wait { within: std::time::Duration::from_secs(5), every: std::time::Duration::from_millis(1) };
+        // It looks until the thing happens, and answers it.
+        let mut looks = 0;
+        let third = eventually("the third look", quick, async || {
+            looks += 1;
+            if looks == 3 { Ok(looks) } else { Err(format!("look {looks}")) }
+        })
+        .await;
+        assert_eq!(third, Ok(3));
+        // Never: the last thing it saw, once the wait is over.
+        let short = Wait { within: std::time::Duration::from_millis(30), every: std::time::Duration::from_millis(5) };
+        let mut looks = 0;
+        let never = eventually("nothing", short, async || -> Result<(), String> {
+            looks += 1;
+            Err(format!("look {looks}"))
+        })
+        .await;
+        assert_eq!(never, Err(format!("look {looks}")));
+        assert!(looks > 1, "it looked again before giving up");
+        // A wait that can't be met any more ends at once, on the look's own answer.
+        let mut looks = 0;
+        let ended = eventually("a child that ended", quick, async || -> Result<bool, ()> {
+            looks += 1;
+            Ok(false)
+        })
+        .await;
+        assert_eq!((ended, looks), (Ok(false), 1));
     }
 
     #[tokio::test]

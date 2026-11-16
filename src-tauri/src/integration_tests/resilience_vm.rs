@@ -14,11 +14,11 @@
 //! ```
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::resilience::{copy_of, killed_start, shell, states, target, throwaway, tools_of, whole, whole_after};
 use super::support::lab::{Run, vm_inputs};
-use super::support::{check, knob, log, refused_by_launcher, scenario, var};
+use super::support::{Wait, check, eventually, knob, log, refused_by_launcher, scenario, var};
 use crate::platform::exec::run_env;
 use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Runtime, docker, isothrum, lab, launch, lifecycle};
@@ -161,16 +161,13 @@ async fn a_vm_killed_by_its_hypervisor_while_it_provisions_fails_the_start_and_a
         // As soon as Vagrant has made the first VM (it boots and provisions it next), its
         // hypervisor kills it.
         let kill_it = async {
-            let deadline = Instant::now() + Duration::from_secs(3600);
-            while Instant::now() < deadline {
-                if let Some((vm, id)) = has_a_vm(l, p) {
-                    tokio::time::sleep(Duration::from_secs(20)).await;
-                    println!("note: killing {vm} ({id}) by the hypervisor");
-                    return shell(&kill.replace("{id}", &id)).await.is_ok();
-                }
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-            false
+            let made = eventually("Vagrant's first VM", Wait::secs(3600, Duration::from_secs(1)), async || has_a_vm(l, p).ok_or(())).await;
+            let Ok((vm, id)) = made else { return false };
+            // A time, not a condition, on purpose: the kill must land while Vagrant boots and
+            // provisions the VM it just made, and nothing a scenario can see marks that moment.
+            tokio::time::sleep(Duration::from_secs(20)).await;
+            println!("note: killing {vm} ({id}) by the hypervisor");
+            shell(&kill.replace("{id}", &id)).await.is_ok()
         };
         let inputs = vm_inputs();
         let start = launch::VmStart { provider: p, inputs: launch::Inputs::values(&inputs) };
