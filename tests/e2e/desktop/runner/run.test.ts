@@ -350,7 +350,11 @@ function runRunner(
   { dockerUp = true, env = {}, docker }: { dockerUp?: boolean; env?: Record<string, string>; docker?: string } = {},
 ) {
   const { dir, clean, results } = runnerSetup({ dockerUp, env, docker });
-  const r = spawnSync(process.execPath, [RUNNER, "--plan", planDir, "--results", results, ...args], { env: clean, encoding: "utf8", timeout: 60000 });
+  const r = spawnSync(process.execPath, [RUNNER, "--plan", planDir, "--results", results, "--x-root", join(dir, "x"), ...args], {
+    env: clean,
+    encoding: "utf8",
+    timeout: 60000,
+  });
   return { status: r.status, out: r.stdout + r.stderr, records: readRecords(results), dir };
 }
 
@@ -375,8 +379,16 @@ function runnerSetup({ dockerUp = true, env = {}, docker }: { dockerUp?: boolean
   // that doesn't answer) and knows no Compose project; a vagrant with no boxes.
   writeFileSync(join(dir, "docker"), docker ?? `#!/bin/sh\ncase "$1" in info) echo ${dockerUp ? "29.0.0" : ""} ;; compose) echo '[]' ;; *) exit 0 ;; esac\n`);
   writeFileSync(join(dir, "vagrant"), "#!/bin/sh\nexit 0\n");
+  // An Xvfb (started on a Linux without a display, the X servers' files under x/: --x-root) that
+  // makes its display's lock and socket there, its pid in xvfb.pid, and removes them when stopped.
+  mkdirSync(join(dir, "x", ".X11-unix"), { recursive: true });
+  writeFileSync(
+    join(dir, "Xvfb"),
+    `#!/bin/sh\nn=\${1#:}; x="${join(dir, "x")}"\necho $$ > "${join(dir, "xvfb.pid")}"\necho "$1" > "${join(dir, "xvfb.display")}"\ntrap 'rm -f "$x/.X$n-lock" "$x/.X11-unix/X$n"; exit 0' TERM\ntouch "$x/.X$n-lock" "$x/.X11-unix/X$n"\nwhile :; do sleep 0.1; done\n`,
+  );
   chmodSync(join(dir, "docker"), 0o755);
   chmodSync(join(dir, "vagrant"), 0o755);
+  chmodSync(join(dir, "Xvfb"), 0o755);
   const results = join(dir, "out", "results.jsonl");
   const lab = join(dir, "lab");
   mkdirSync(lab);
@@ -542,6 +554,50 @@ describe.skipIf(!unix)("run.mjs on a fake plan", () => {
   });
 });
 
+describe.runIf(process.platform === "linux")("run.mjs on a Linux without a display", () => {
+  const headless = { DISPLAY: "", WAYLAND_DISPLAY: "" };
+  const xvfbPid = (dir: string) => Number(readFileSync(join(dir, "xvfb.pid"), "utf8"));
+  /** Whether process `pid` ends within 3 s (the fake Xvfb ends at its next tick once stopped). */
+  const ends = (pid: number) => {
+    for (let i = 0; i < 30 && alive(pid); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    return !alive(pid);
+  };
+  const shows = 'console.log("ok: display (0s) " + process.env.DISPLAY); process.exit(0);';
+
+  it("starts Xvfb for the run on a free number, its display the specs', and stops it at the end", () => {
+    const planDir = fakePlan({ a: { body: shows } });
+    const { dir, clean, results } = runnerSetup({ env: headless });
+    // :99's lock is there (a server whose socket went): passed over.
+    writeFileSync(join(dir, "x", ".X99-lock"), "");
+    const r = spawnSync(process.execPath, [RUNNER, "--plan", planDir, "--results", results, "--x-root", join(dir, "x"), "--all"], {
+      env: clean,
+      encoding: "utf8",
+      timeout: 60000,
+    });
+    const out = r.stdout + r.stderr;
+    expect(r.status, out).toBe(0);
+    expect(out).toContain("display: Xvfb on :100");
+    expect(out).toContain("ok: display (0s) :100");
+    expect(ends(xvfbPid(dir))).toBe(true);
+    expect(existsSync(join(dir, "x", ".X11-unix", "X100"))).toBe(false);
+  });
+
+  it("stops it too when the run ends early", () => {
+    const planDir = fakePlan({ a: { body: shows } });
+    const r = runRunner(planDir, ["--all"], { env: { ...headless, FAKE_APP_DEAD: "1" } });
+    expect(r.status).toBe(2);
+    expect(ends(xvfbPid(r.dir))).toBe(true);
+  });
+
+  it("starts none with a display there already", () => {
+    const planDir = fakePlan({ a: { body: shows } });
+    const r = runRunner(planDir, ["--all"], { env: { DISPLAY: ":5", WAYLAND_DISPLAY: "" } });
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toContain("ok: display (0s) :5");
+    expect(existsSync(join(r.dir, "xvfb.pid"))).toBe(false);
+  });
+});
+
 describe.skipIf(!unix)("run.mjs between two specs that start the fixture lab", () => {
   it("takes the lab down with its volumes and drops the app's record of it, so the next seed starts it again", () => {
     const state = mkdtempSync(join(tmpdir(), "desktop-docker-"));
@@ -646,8 +702,11 @@ describe.skipIf(!unix)("run.mjs and the apps a spec leaves", () => {
   it("ends the running spec's app when the run is stopped from outside", async () => {
     const app = stubbornApp();
     const planDir = fakePlan({ hangs: { body: `${launches()}\nsetTimeout(() => {}, 60000);` } });
-    const { clean, results } = runnerSetup({ env: { FAKE_APP: app.script, FAKE_PIDS: app.pids, CYBERCTF_TEST_DESKTOP_TIMEOUT: "30" } });
-    const runner = spawn(process.execPath, [RUNNER, "--plan", planDir, "--results", results, "--all"], { env: clean, stdio: "ignore" });
+    const { dir, clean, results } = runnerSetup({ env: { FAKE_APP: app.script, FAKE_PIDS: app.pids, CYBERCTF_TEST_DESKTOP_TIMEOUT: "30" } });
+    const runner = spawn(process.execPath, [RUNNER, "--plan", planDir, "--results", results, "--x-root", join(dir, "x"), "--all"], {
+      env: clean,
+      stdio: "ignore",
+    });
     const exited = new Promise<number | null>((res) => {
       runner.on("exit", (code) => {
         res(code);

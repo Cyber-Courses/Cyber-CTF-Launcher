@@ -39,7 +39,8 @@
 //   ONLY, SKIP, STRICT             as every suite runner (scripts/lib/suite.sh)
 // Exit status: 0 nothing failed (and no skip under STRICT), 1 a spec failed, 2 the runner itself
 // couldn't run. `--plan <dir>` reads another cases.tsv and specs/, `--port-wait <s>` waits that long
-// for the port instead of 10 s (the runner's own tests).
+// for the port instead of 10 s, `--x-root <dir>` looks for the X servers' locks and sockets there instead
+// of /tmp (the runner's own tests).
 import { execFileSync, spawn } from "node:child_process";
 import {
   appendFileSync,
@@ -48,6 +49,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -58,6 +60,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { needsDisplay, startDisplay } from "./display.mjs";
 import { libvirtFixtureXml, scanFixture } from "./fixture.mjs";
 import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "../support/host.mjs";
 import { dropComposeRecord, projectVolumes, projects, record as recordMachine, removeDangling, runFolders, runTool } from "../support/owned.mjs";
@@ -97,7 +100,7 @@ const say = (what) => console.log(`\n==== ${what}`);
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 // --- Arguments -----------------------------------------------------------------------------
-const args = { group: "", only: "", results: "", list: false, plan: DESKTOP, portWait: PORT_FREE_S };
+const args = { group: "", only: "", results: "", list: false, plan: DESKTOP, portWait: PORT_FREE_S, xRoot: "/tmp" };
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
   const next = () => process.argv[++i] ?? die(`${a} needs a value`);
@@ -108,6 +111,7 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (a === "--list") args.list = true;
   else if (a === "--plan") args.plan = next();
   else if (a === "--port-wait") args.portWait = Number(next());
+  else if (a === "--x-root") args.xRoot = next();
   else if (a === "--knobs") {
     const file = next();
     if (!existsSync(file)) die(`no knobs file: ${file}`);
@@ -146,6 +150,22 @@ const PORT = Number(process.env.TAURI_WEBDRIVER_PORT || 4445);
 process.env.TAURI_WEBDRIVER_PORT = String(PORT);
 const LOGS = process.env.CYBERCTF_TEST_DESKTOP_LOGS || join(DESKTOP, ".state", "logs");
 mkdirSync(LOGS, { recursive: true });
+// A Linux machine without a display (an SSH session, the test rig): a virtual one for the run
+// (runner/display.mjs), its DISPLAY the specs' and their apps', stopped on every way out (`exit`).
+const XVFB_LOG = join(LOGS, "xvfb.log");
+const display = await startDisplay({
+  spawn,
+  root: args.xRoot,
+  output: needsDisplay(process.platform, process.env) ? openSync(XVFB_LOG, "w") : "ignore",
+  log: XVFB_LOG,
+});
+if ("error" in display) die(display.error);
+const stopDisplay = display.display ? display.stop : () => {};
+process.on("exit", stopDisplay);
+if (display.display) {
+  process.env.DISPLAY = display.display;
+  console.log(`\n==== display: Xvfb on ${display.display} (no DISPLAY or WAYLAND_DISPLAY here; its output in ${XVFB_LOG})`);
+}
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || "";
 const KEEP = !!process.env.CYBERCTF_TEST_DESKTOP_KEEP;
 const capOf = (c) => Number(process.env.CYBERCTF_TEST_DESKTOP_TIMEOUT || CAPS[c.case] || CAPS.default);
