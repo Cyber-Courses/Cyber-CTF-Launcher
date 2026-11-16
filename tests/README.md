@@ -339,6 +339,24 @@ rig columns.
   checks say what they saw.
 - A test that starts something stops it, whatever happened, and checks nothing is left (no
   container, VM, cloud instance or network), so a failed run never costs a later one.
+- A test waits on a condition or an event (a channel, a child's exit, `findBy*`/`waitFor`, vi's
+  fake timers, Tokio's paused clock), never a wall-clock sleep; a poll has a generous deadline,
+  there only to stop a hang, never to time what it waits for. A sleep that is no wait (a stand-in
+  slow on purpose, the poll inside a bounded wait) is listed with its reason in
+  `src-tauri/src/testing/guardrails.rs` (the scenarios': `integration_tests::waits`), so a new one
+  fails `cargo test`.
+- A free port is held from the moment it is picked until it is used: bind to port 0 and hand the
+  listener (or its port, while the listener is held) to what uses it. A port read off a listener
+  and let go is anyone's, and a test beside it takes it first under load; the same guardrails
+  fail it.
+- A stand-in program (a fake tool, a fake app) is written once per run and linked or pointed to
+  by each test that runs it, not written fresh by every test: macOS checks every new program the
+  first time it runs, which takes seconds on a loaded machine and turns a test's timeout into a
+  flake.
+- Each test owns its temp folders and its environment: its folder from `testing::temp_dir` (a
+  TypeScript test's removed in `afterEach`), the variables it needs given to what it spawns
+  (`Command::env`, `vi.stubEnv` undone after), never this process's environment changed for
+  everyone (`std::env::set_var` is `unsafe` in Rust 2024).
 - Integration tests read their knobs (`CYBERCTF_TEST_<AREA>_<WHAT>`, [above](#knobs)) and return
   early without them; `cargo test` never runs them. The suite runners (`scripts/lib/suite.sh`)
   give one verdict per step, keep going after a failure, and take `ONLY`, `SKIP` and `STRICT`.
