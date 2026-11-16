@@ -5,40 +5,33 @@ use crate::error::Result;
 use crate::platform::AppDirs;
 use crate::platform::host::Os;
 
-/// A stable identifier for this installation, generated once and kept in the app data
-/// dir. It is the merge key for the agent, so reinstalling re-registers the same machine
-/// and two machines never collide even when they share a display name.
+/// A stable identifier for this installation, generated once and kept in the launcher's store
+/// (1.9 kept it in the `install-id` file, which the store takes in). It is the merge key for the
+/// agent, so reinstalling re-registers the same machine and two machines never collide even when
+/// they share a display name.
 pub(super) fn install_id(dirs: &AppDirs) -> Result<String> {
-    install_id_at(&dirs.data()?.join("install-id"))
+    install_id_in(&crate::store::open(dirs)?)
 }
 
-/// The install id kept at `path`, generated and written there the first time. The first time is
-/// decided under an OS lock on `<path>.lock`: the agent registering and the app's window asking
-/// for the agent's info (or two processes) each found no id, made one, and the last written won,
-/// so the machine was registered under an id it then forgot, and showed twice on the website.
-fn install_id_at(path: &std::path::Path) -> Result<String> {
-    if let Some(id) = kept_id(path) {
+/// The install id `store` keeps, made and kept there the first time. The first time is decided in
+/// one write transaction: the agent registering and the app's window asking for the agent's info
+/// (or two processes) each found no id, made one, and the last written won, so the machine was
+/// registered under an id it then forgot, and showed twice on the website.
+fn install_id_in(store: &crate::store::Store) -> Result<String> {
+    use crate::store::settings::{INSTALL_ID, get, set};
+    let kept = |conn: &rusqlite::Connection| -> Result<Option<String>> { Ok(get::<String>(conn, INSTALL_ID)?.filter(|id| !id.trim().is_empty())) };
+    if let Some(id) = store.read(kept)? {
         return Ok(id);
     }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(path.with_extension("lock"))?;
-    lock.lock()?;
-    // Made by another caller while this one waited.
-    if let Some(id) = kept_id(path) {
-        return Ok(id);
-    }
-    let id = random_hex();
-    crate::platform::atomic_file::write(path, &id)?;
-    Ok(id)
-}
-
-/// The install id at `path`, when one was written there.
-fn kept_id(path: &std::path::Path) -> Option<String> {
-    let existing = std::fs::read_to_string(path).ok()?;
-    let trimmed = existing.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
+    store.write(|tx| {
+        // Made by another caller while this one waited.
+        if let Some(id) = kept(tx)? {
+            return Ok(id);
+        }
+        let id = random_hex();
+        set(tx, INSTALL_ID, Some(&id))?;
+        Ok(id)
+    })
 }
 
 /// 16 random bytes as hex: install ids, co-location tokens and nonces.
@@ -111,37 +104,33 @@ mod tests {
     /// first start each made their own. Many threads released together all get one id.
     #[test]
     fn callers_at_once_on_a_first_start_all_get_one_id() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-install-{}", random_hex()));
-        let path = dir.join("data").join("install-id");
+        let t = crate::testing::test_app::TestApp::new();
         let start = std::sync::Arc::new(std::sync::Barrier::new(16));
         let callers: Vec<_> = (0..16)
             .map(|_| {
-                let (path, start) = (path.clone(), std::sync::Arc::clone(&start));
+                let (dirs, start) = (t.dirs(), std::sync::Arc::clone(&start));
                 std::thread::spawn(move || {
                     start.wait();
-                    install_id_at(&path).unwrap()
+                    install_id(&dirs).unwrap()
                 })
             })
             .collect();
         let ids: std::collections::BTreeSet<String> = callers.into_iter().map(|c| c.join().unwrap()).collect();
         assert_eq!(ids.len(), 1, "{ids:?}");
-        assert_eq!(ids.first(), Some(&install_id_at(&path).unwrap()), "the id kept is the one handed out");
-        std::fs::remove_dir_all(dir).ok();
+        assert_eq!(ids.first(), Some(&install_id(&t.dirs()).unwrap()), "the id kept is the one handed out");
     }
 
     #[test]
     fn the_install_id_is_made_once_and_kept() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-install-{}", random_hex()));
-        let path = dir.join("data").join("install-id");
-        let first = install_id_at(&path).unwrap();
+        let t = crate::testing::test_app::TestApp::new();
+        let first = install_id(&t.dirs()).unwrap();
         assert_eq!(first.len(), 32);
-        assert_eq!(install_id_at(&path).unwrap(), first);
-        std::fs::write(&path, "  kept-id \n").unwrap();
-        assert_eq!(install_id_at(&path).unwrap(), "kept-id");
-        std::fs::write(&path, "   ").unwrap();
-        let regenerated = install_id_at(&path).unwrap();
-        assert_eq!(regenerated.len(), 32);
-        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(install_id(&t.dirs()).unwrap(), first);
+        let store = crate::store::open(&t.dirs()).unwrap();
+        store.write(|tx| crate::store::settings::set(tx, crate::store::settings::INSTALL_ID, Some(&"   "))).unwrap();
+        let regenerated = install_id(&t.dirs()).unwrap();
+        assert_eq!(regenerated.len(), 32, "a blank id is none");
+        assert!(!t.data().join("install-id").exists(), "no file any more");
     }
 
     #[test]

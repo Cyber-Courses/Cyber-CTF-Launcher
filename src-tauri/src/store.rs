@@ -1,14 +1,16 @@
 //! The launcher's own state, one SQLite file in its data folder (`launcher.sqlite3`): the saved
 //! servers and cloud accounts (their secrets stay in the keychain), the tools the setup installed,
-//! what the app downloaded for itself, the shared folder setting and the auto-stop's failures. Runs
+//! what the app downloaded for itself, the player's settings (`crate::settings`, the shared folder
+//! among them), this installation's id and the auto-stop's failures. Runs
 //! are not here: the runner owns everything about a run, the values its start was given included.
 //!
 //! WAL mode, so the app and its helper processes read while one writes; every change is one
 //! transaction ([`Store::write`]), taken for writing from its start, so a read-modify-write never
 //! saves over a change made beside it. The schema moves forward by numbered migrations
 //! ([`schema`]), the store backed up beside its file before each run of them (the last two
-//! kept). A fresh data folder starts with an empty store: the JSON files earlier versions
-//! kept are not read.
+//! kept). The files the launcher kept its own state in before (1.9's `server.json`,
+//! `shared-folder.json` and `install-id`) are taken in once, the first time a process opens the
+//! store, then removed ([`legacy`]).
 
 pub(crate) mod schema;
 #[cfg(test)]
@@ -16,6 +18,7 @@ mod tests;
 
 pub(crate) mod autostop;
 pub(crate) mod hosts;
+mod legacy;
 pub(crate) mod settings;
 pub(crate) mod storage;
 pub(crate) mod tools;
@@ -65,8 +68,8 @@ pub(crate) fn open(dirs: &AppDirs) -> Result<Store> {
     open_in(dirs.data()?)
 }
 
-/// The store in data folder `data`: opened and migrated; the same store for the rest of the
-/// process's life.
+/// The store in data folder `data`: opened, migrated and given what the files of earlier versions
+/// held ([`legacy`]); the same store for the rest of the process's life.
 ///
 /// # Errors
 ///
@@ -77,6 +80,7 @@ pub(crate) fn open_in(data: &Path) -> Result<Store> {
         return Ok(store.clone());
     }
     let store = Store::open_file(data)?;
+    legacy::take_in(&store, data);
     stores.insert(data.to_path_buf(), store.clone());
     Ok(store)
 }
