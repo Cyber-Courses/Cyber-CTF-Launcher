@@ -19,7 +19,7 @@ the checks CI runs. Each runner takes `--help`, which prints its header (what it
 | `lib/suite.sh`             | (sourced)                                 | what every suite runner shares: `ONLY` / `SKIP` / `STRICT`, verdicts, logged steps, Node from `.nvmrc`                                |
 | `lib/cli.ts`               | (imported)                                | what the TypeScript runners share: `--help` prints the header comment, as `suite_help` does                                           |
 
-The test runners (`tests/integration/run.sh`, `tests/desktop/run.sh`) are suite runners too, kept
+The test runners (`tests/integration/run.sh`, `tests/e2e/desktop/runner/run.sh`) are suite runners too, kept
 with their tests: [`tests/README.md`](../tests/README.md) says what each tier proves and how to run it.
 
 ## Writing a runner

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared by the repo's suite runners (scripts/release/release-check.sh,
-# scripts/check/other-platforms.sh, tests/integration/run.sh, tests/desktop/run.sh): which steps
+# scripts/check/other-platforms.sh, tests/integration/run.sh, tests/e2e/desktop/runner/run.sh): which steps
 # run (ONLY / SKIP), one verdict line per step, a step run in the open or logged with a time limit,
 # Node from .nvmrc, --help from the runner's header, the summary that sets the exit status, and
 # for a caller that reads them, a JSON record per step (suite_results_to). Sourced, never run:
@@ -212,7 +212,7 @@ suite_json() {
 }
 # step_checks <step> <log> [form] [provider]: a summary line per check the step printed as
 # `ok|FAILED|skipped: <check> (<seconds>s) <what was seen>` (the desktop specs' lines,
-# tests/desktop/lib/support.mjs), named `<step>/<check>` and not counted again; each its JSON record
+# tests/e2e/desktop/support/app.mjs), named `<step>/<check>` and not counted again; each its JSON record
 # too. The `spec` check (a whole spec skipped) is the step's own line.
 step_checks() {
   local step=$1 log=$2 line status id secs note

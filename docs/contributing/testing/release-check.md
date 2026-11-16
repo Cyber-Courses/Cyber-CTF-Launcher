@@ -50,7 +50,7 @@ the end of this page have been done for what the release changes.
 | `pins`            | `scripts/check/infra.sh pins`             | an action not pinned to a full commit SHA (a tag can be moved to new code)                                                                                          |
 | `store-listings`  | `.github/scripts/check-store-listings.py` | a message catalogue or Store listing that doesn't parse, a listing over Partner Center's limits or naming a missing image; skipped without `python3`                |
 | `e2e-mock`        | `pnpm test:web`                           | the real frontend in Chromium, every screen and locale, with Tauri commands answered by the dev mock (`?mock`): flows, failure states, coded errors, a11y, i18n     |
-| `e2e-native`      | `tests/desktop/run.sh`                    | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                              |
+| `e2e-native`      | `tests/e2e/desktop/runner/run.sh`         | the real app binary, driven through its embedded WebDriver server, against a real Docker engine and hypervisor: what no mock can prove                              |
 
 `unit-web` and `unit-rust` run their tests with a temp folder of their own (`pnpm check:temp-leaks`):
 a test that leaves a file or folder there fails the step, so none piles up in the developer's temp
@@ -68,7 +68,7 @@ reason to run the whole check on a machine that has them.
 
 ## The native layer
 
-`tests/desktop/run.sh` drives the real app binary through its embedded WebDriver server;
+`tests/e2e/desktop/runner/run.sh` drives the real app binary through its embedded WebDriver server;
 [desktop-e2e.md](desktop-e2e.md) has its scenarios, knobs and why an app from `cargo build` needs the dev server.
 
 ## What stays manual

@@ -201,5 +201,5 @@ What the code says will be left, until a run says otherwise:
   test removes its folders itself only when it ends.
 - Clean-up of leftover VMs covers VirtualBox and Parallels only: a libvirt domain or network, a
   VMware VM or a Hyper-V switch left by an interrupted `vagrant destroy` stays.
-- `tests/desktop/lib/owned.mjs` looks for a run's Vagrant machines under `app/labs`, while the
+- `tests/e2e/desktop/support/owned.mjs` looks for a run's Vagrant machines under `app/labs`, while the
   runner keeps their state in `app/runs/cyberctf-<id>/vagrant`.

@@ -28,7 +28,7 @@
     "test:watch": "vitest",
     "test:harness": "vitest run --config vitest.harness.config.mts",
     "test:web": "playwright test",
-    "test:desktop": "tests/desktop/run.sh",
+    "test:desktop": "tests/e2e/desktop/runner/run.sh",
     "test:integration": "tests/integration/run.sh",
     "test:servers": "tests/integration/run.sh --tiers server",
     "leftovers": "node --experimental-strip-types --no-warnings=ExperimentalWarning tests/audit/main.ts",

@@ -16,7 +16,7 @@
 //! - nothing registered with the system (the `cyberctf://` scheme), no Store build's files moved.
 //!
 //! The app shell points Tauri's folders and the windows there (`app::test_root_config`); the rest
-//! of the app asks here. The desktop runner (`tests/desktop/run.sh`, `run.ps1`) makes the folder
+//! of the app asks here. The desktop runner (`tests/e2e/desktop/runner/run.sh`, `run.ps1`) makes the folder
 //! for each run and removes it afterwards.
 
 use std::ffi::OsString;

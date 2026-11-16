@@ -22,7 +22,7 @@
 # is installed), deny (when cargo-deny is), audit, shellcheck and actionlint (when installed),
 # hooks (the git hooks' own test), pins (every action pinned to a commit SHA), store-listings (the
 # app's JSON and the Microsoft Store listing; needs python3), e2e-mock (Playwright against the dev
-# mock), e2e-native (tests/desktop/run.sh, which has its own knobs).
+# mock), e2e-native (tests/e2e/desktop/runner/run.sh, which has its own knobs).
 #
 # Knobs:
 #   FAST=1              the short list (FAST_STEPS below), unless ONLY names steps
@@ -121,8 +121,8 @@ else
 fi
 step e2e-mock pnpm test:web
 case "$(uname -s)" in
-  Darwin | Linux) nested e2e-native tests/desktop/run.sh ;;
-  *) skip e2e-native "run tests/desktop/run.ps1 on Windows" ;;
+  Darwin | Linux) nested e2e-native tests/e2e/desktop/runner/run.sh ;;
+  *) skip e2e-native "run tests/e2e/desktop/runner/run.ps1 on Windows" ;;
 esac
 
 suite_end "release check"
