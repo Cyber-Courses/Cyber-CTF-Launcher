@@ -17,7 +17,10 @@ struct Home(tempfile::TempDir);
 
 impl Home {
     fn new() -> Home {
-        Home(tempfile::tempdir().unwrap())
+        match tempfile::tempdir() {
+            Ok(dir) => Home(dir),
+            Err(e) => panic!("no temporary folder: {e}"),
+        }
     }
 
     fn path(&self) -> &Path {
