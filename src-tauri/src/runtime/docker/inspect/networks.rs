@@ -1,6 +1,7 @@
 //! The subnets Docker's networks already use.
 
-use super::{compose, run_read};
+use super::compose;
+use crate::platform::exec::run_read;
 
 /// The IPv4 subnets of every Docker network on this machine, but those of `except` (a lab id's
 /// own networks, left from an earlier run): what a new lab's networks must not overlap. Empty
