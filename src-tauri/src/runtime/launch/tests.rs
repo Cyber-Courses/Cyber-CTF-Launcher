@@ -220,16 +220,16 @@ async fn one_vm_per_machine_is_refused_on_a_server() {
 }
 
 /// One VM per machine on UTM: Isoloom takes the lab there (Debian 12 has a UTM box), and the
-/// start opens UTM before Vagrant drives it; a Mac without UTM stops there, saying so.
+/// start opens UTM, hidden, before Vagrant drives it; a Mac without UTM stops there, saying so.
 #[tokio::test]
 async fn one_vm_per_machine_on_utm_opens_utm_first() {
     let t = TestApp::new();
     t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
-    let tools = Tools::strict_rules(&[("open -g -a UTM", None)]);
+    let tools = Tools::strict_rules(&[("open -g -j -a UTM", None)]);
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Utm), &[]).await;
     let err = r.unwrap_err();
     assert!(matches!(err, crate::error::Error::ToolMissing { tool: "UTM" }), "{err}");
-    assert!(tools.called("open -g -a UTM"), "{:?}", tools.calls());
+    assert!(tools.called("open -g -j -a UTM"), "{:?}", tools.calls());
 }
 
 #[test]
