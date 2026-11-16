@@ -42,6 +42,9 @@ jobs:
           # other-platforms lints the core for the systems the runner isn't.
           targets: x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc, aarch64-apple-darwin
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-nextest
       - run: scripts/release/release-check.sh
         env:
           FAST: "1"
