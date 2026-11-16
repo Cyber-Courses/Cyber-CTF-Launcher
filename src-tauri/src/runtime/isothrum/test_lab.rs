@@ -80,7 +80,7 @@ impl<S: Default + Send + 'static> Scripted<S> {
     pub(super) fn answered_by(home: Home, answer: fn(&Mutex<S>, &Call) -> Reply) -> Scripted<S> {
         let model = Arc::new(Mutex::new(S::default()));
         let script = Arc::clone(&model);
-        Scripted { home, model, fake: Arc::new(FakeProcesses::new(move |call| tool_version(call).unwrap_or_else(|| answer(&script, call)))) }
+        Scripted { home, model, fake: Arc::new(FakeProcesses::model(move |call| tool_version(call).unwrap_or_else(|| answer(&script, call)))) }
     }
 
     /// The model, to read or change between calls.
