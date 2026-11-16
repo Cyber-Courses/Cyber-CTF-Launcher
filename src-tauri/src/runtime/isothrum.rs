@@ -49,7 +49,7 @@ pub(crate) use server::{ServerPlace, ServerRun};
 /// module itself: nothing runs.
 #[cfg(feature = "cloud-services")]
 pub(crate) fn module_variables(dir: &Path) -> Result<Vec<isothrum_runner::InputVariable>> {
-    isothrum_runner::variables_of(dir).map_err(errors::from_runner)
+    isothrum_runner::variables_of(dir).map_err(|e| errors::coded(&e.report()))
 }
 
 /// The folder Isoloom generates a lab's files in, at its root (`.isoloom`, `.isoloom-<n>` for an
@@ -182,7 +182,7 @@ pub(crate) fn last_run_failed(dirs: &crate::platform::AppDirs, id: &str) -> bool
 /// The journal can't be read.
 pub(crate) async fn journal_of(dirs: &crate::platform::AppDirs, id: &str) -> Result<serde_json::Value> {
     let home = paths::runner_home(dirs)?;
-    let name = RunName::new(&super::docker::project(id)).map_err(errors::from_runner)?;
+    let name = RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))?;
     let rows = remote::journal(&home, &name).await.map_err(Error::Invalid)?;
     serde_json::to_value(rows).map_err(|e| Error::Invalid(e.to_string()))
 }
@@ -195,7 +195,7 @@ pub(crate) async fn journal_of(dirs: &crate::platform::AppDirs, id: &str) -> Res
 /// The service's stream can't be read.
 pub(crate) async fn follow_under_way(dirs: &crate::platform::AppDirs, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
     let home = paths::runner_home(dirs)?;
-    let name = RunName::new(&super::docker::project(id)).map_err(errors::from_runner)?;
+    let name = RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))?;
     remote::follow_under_way(&home, &name, log).await.map_err(Error::Invalid)
 }
 
@@ -216,7 +216,7 @@ pub(crate) use remote::Others;
 /// Every run the runner whose home is `home` records, each in the state its last operation left
 /// it in, as its store says.
 pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
-    Runner::new(host_config(home)).map_err(errors::from_runner)?.runs().map_err(errors::from_runner)
+    Runner::new(host_config(home)).map_err(|e| errors::coded(&e.report()))?.runs().map_err(|e| errors::coded(&e.report()))
 }
 
 /// Forgets lab `id`'s run in the runner's store, once the lab is removed: no run is left behind
@@ -226,8 +226,8 @@ pub(crate) fn records(home: &Path) -> Result<Vec<isothrum_runner::RunRecord>> {
 ///
 /// The runner's store can't be opened or written.
 pub(crate) fn forget_run(home: &Path, id: &str) -> Result<()> {
-    let name = RunName::new(&super::docker::project(id)).map_err(errors::from_runner)?;
-    isothrum_runner::store::Store::open(home).and_then(|store| store.write(|tx| tx.forget_run(&name))).map_err(errors::from_runner)
+    let name = RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))?;
+    isothrum_runner::store::Store::open(home).and_then(|store| store.write(|tx| tx.forget_run(&name))).map_err(|e| errors::coded(&e.report()))
 }
 
 /// Lab `id`'s run here, installed in `dir`, opened in the form its record says it was started in
@@ -342,9 +342,9 @@ impl LabRun {
     /// A run on a runner built from `config`, its operations in this process (tests script its
     /// tools).
     fn with(config: RunnerConfig, dir: &Path, id: &str, kind: Kind) -> Result<LabRun> {
-        let name = RunName::new(&super::docker::project(id)).map_err(errors::from_runner)?;
+        let name = RunName::new(&super::docker::project(id)).map_err(|e| errors::coded(&e.report()))?;
         let home = config.home.clone();
-        let runner = Runner::new(config).map_err(errors::from_runner)?;
+        let runner = Runner::new(config).map_err(|e| errors::coded(&e.report()))?;
         Ok(LabRun { runner, dir: dir.to_path_buf(), name, kind, esxi: None, engine: None, home, service: false })
     }
 
@@ -393,8 +393,8 @@ impl LabRun {
     fn lab(&self) -> Result<Running<'_>> {
         match self.runner.open_as(&self.project(), self.format(), Some(self.name.clone())) {
             Ok(lab) => Ok(lab),
-            Err(e) if self.kind == Kind::DockerVm => Err(self.helper_vm_gone(e)),
-            Err(e) => Err(errors::from_runner(e)),
+            Err(e) if self.kind == Kind::DockerVm => Err(self.helper_vm_gone(&e)),
+            Err(e) => Err(errors::coded(&e.report())),
         }
     }
 
@@ -412,7 +412,7 @@ impl LabRun {
     /// no longer runs that form, nothing here reaches the VM: the lab's helper-VM mark is cleared,
     /// so its page reads it as stopped and its next start is in its true form, and the error says
     /// what to remove by hand.
-    fn helper_vm_gone(&self, e: isothrum_runner::Error) -> Error {
+    fn helper_vm_gone(&self, e: &isothrum_runner::Error) -> Error {
         let unsupported = e.code() == isothrum_runner::ErrorCode::Unsupported;
         let said = errors::of_helper_vm(e, self.name.as_str());
         if unsupported {
@@ -517,7 +517,7 @@ impl LabRun {
                 let target = remote::target(&self.project(), self.format(), &self.name);
                 return remote::status(&self.home, &client, &self.name, target, &opts).await.map_err(|e| self.said(e.into_error()));
             }
-            self.lab()?.status_with(&opts).await.map_err(|e| self.said(errors::from_runner(e)))
+            self.lab()?.status_with(&opts).await.map_err(|e| self.said(errors::coded(&e.report())))
         })
         .await
     }
@@ -525,7 +525,7 @@ impl LabRun {
     /// The provider the run's record says it runs on, none before it ever ran: read from the
     /// runner's files only, no tool runs.
     pub(crate) fn recorded_provider(&self) -> Result<Option<String>> {
-        let runs = self.runner.runs().map_err(errors::from_runner)?;
+        let runs = self.runner.runs().map_err(|e| errors::coded(&e.report()))?;
         Ok(runs.into_iter().find(|r| r.name == self.name).and_then(|r| r.provider).map(|p| isothrum_runner::wire_name(&p)))
     }
 
@@ -553,18 +553,18 @@ impl LabRun {
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
     /// when given.
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
-        self.lab()?.console_command(machine, user).await.map_err(errors::from_runner)
+        self.lab()?.console_command(machine, user).await.map_err(|e| errors::coded(&e.report()))
     }
 
     /// `machine`'s graphical console (its screen), as the runner reaches it with the run's
     /// options (an ESXi host's settings and password).
     pub(crate) async fn graphical_console(&self, machine: &str) -> Result<isothrum_runner::Console> {
-        self.lab()?.graphical_console(machine, &self.placed(RunOptions::new())).await.map_err(errors::from_runner)
+        self.lab()?.graphical_console(machine, &self.placed(RunOptions::new())).await.map_err(|e| errors::coded(&e.report()))
     }
 
     /// What opens running VM `machine` in its hypervisor's own app, as the runner says.
     pub(crate) async fn native_console(&self, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        self.lab()?.native_console(machine, &self.placed(RunOptions::new())).await.map_err(errors::from_runner)
+        self.lab()?.native_console(machine, &self.placed(RunOptions::new())).await.map_err(|e| errors::coded(&e.report()))
     }
 }
 

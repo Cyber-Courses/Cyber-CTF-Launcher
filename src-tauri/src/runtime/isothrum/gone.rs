@@ -18,8 +18,12 @@ impl LabRun {
         if self.has_project() {
             return Ok(true);
         }
-        let recorded =
-            self.runner.runs().map_err(errors::from_runner)?.into_iter().any(|r| r.name == self.name && r.state != isothrum_runner::RunState::Absent);
+        let recorded = self
+            .runner
+            .runs()
+            .map_err(|e| errors::coded(&e.report()))?
+            .into_iter()
+            .any(|r| r.name == self.name && r.state != isothrum_runner::RunState::Absent);
         if !recorded {
             return Ok(false);
         }

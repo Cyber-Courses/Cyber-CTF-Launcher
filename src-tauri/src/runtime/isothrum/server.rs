@@ -85,7 +85,7 @@ impl ServerRun {
     /// The runner's SSH public key (the launcher's own), made when there is none: what the node
     /// must let in for a jump.
     pub(crate) async fn public_key(&self) -> Result<String> {
-        self.runner.ssh_public_key().await.map_err(errors::from_runner)
+        self.runner.ssh_public_key().await.map_err(|e| errors::coded(&e.report()))
     }
 
     /// Brings the lab up on `place` from its generated files, and says where to start. `env` is

@@ -76,12 +76,6 @@ pub(crate) fn coded(report: &ErrorReport) -> Error {
     }
 }
 
-/// The launcher's error for a runner's failure `e` ([`coded`], from its report).
-#[expect(clippy::needless_pass_by_value, reason = "`map_err` hands the error over")]
-pub(super) fn from_runner(e: RunnerError) -> Error {
-    coded(&e.report())
-}
-
 /// What the player knows a process listening on a port by: Docker's several process names (and
 /// `lsof`'s 9-character cut of them) as Docker.
 fn known_as(program: &str) -> &str {
@@ -106,11 +100,11 @@ pub(crate) const HELPER_VM_LEFT: &str = "This lab still runs Docker inside a VM,
 
 /// The runner's refusal to open the run of a helper VM an earlier version left, run `run`: when
 /// it no longer runs that form (`unsupported`), what is left and how to remove it; any other
-/// failure as [`from_runner`] says.
-pub(super) fn of_helper_vm(e: RunnerError, run: &str) -> Error {
+/// failure as [`coded`] says it.
+pub(super) fn of_helper_vm(e: &RunnerError, run: &str) -> Error {
     match e.code() {
         ErrorCode::Unsupported => Error::Invalid(format!("{HELPER_VM_LEFT} (its name starts with {run}).")),
-        _ => from_runner(e),
+        _ => coded(&e.report()),
     }
 }
 

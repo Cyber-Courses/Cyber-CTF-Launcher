@@ -318,8 +318,8 @@ where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
     L: Fn(&str) -> Option<G>,
 {
-    let runner = Runner::new(super::host_config(home)).map_err(errors::from_runner)?;
-    let expired = runner.expired(now).map_err(errors::from_runner)?;
+    let runner = Runner::new(super::host_config(home)).map_err(|e| errors::coded(&e.report()))?;
+    let expired = runner.expired(now).map_err(|e| errors::coded(&e.report()))?;
     let mut failed = Vec::new();
     for record in expired.into_iter().filter(|r| r.cloud.is_some()) {
         let name = record.name.to_string();
@@ -359,8 +359,8 @@ where
     if let Err(e) = lab_dir_in(home, id) {
         log::warn!("auto-stop: {name}'s lab isn't installed any more ({e}); destroying it with the module its run kept");
     }
-    let run = runner.open_as(&record.project, Format::Terraform, Some(record.name.clone())).map_err(errors::from_runner)?;
-    run.down(&destroy_options(&tf_env), &progress::silent()).await.map_err(errors::from_runner)
+    let run = runner.open_as(&record.project, Format::Terraform, Some(record.name.clone())).map_err(|e| errors::coded(&e.report()))?;
+    run.down(&destroy_options(&tf_env), &progress::silent()).await.map_err(|e| errors::coded(&e.report()))
 }
 
 #[cfg(test)]

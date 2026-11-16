@@ -105,7 +105,7 @@ impl Failure {
     /// The launcher's error for it.
     pub(super) fn into_error(self) -> Error {
         match self {
-            Failure::Runner(e) => errors::from_runner(e),
+            Failure::Runner(e) => errors::coded(&e.report()),
             Failure::Service(report) => errors::coded(&report),
             Failure::Launcher(e) => e,
         }
