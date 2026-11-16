@@ -8,7 +8,7 @@ fn said(e: RunnerError) -> (Code, String) {
 #[test]
 fn a_taken_port_and_a_missing_tool_keep_the_codes_the_ui_knows() {
     assert_eq!(
-        said(RunnerError::PortInUse { port: isothrum_runner::HostPort::new(8080), protocol: "tcp".into() }).0,
+        said(RunnerError::PortInUse { port: isothrum_runner::HostPort::new(8080), protocol: "tcp".into(), holder: None }).0,
         Code::PortInUse { port: HostPort::new(8080), holder: None }
     );
     assert_eq!(said(RunnerError::ToolMissing { step: "tools".into(), tool: "docker".into() }).0, Code::ToolMissing { tool: "docker".into() });
@@ -23,7 +23,7 @@ fn docker_not_answering_its_probe_reads_as_a_stopped_engine() {
     // The service's answer: the code and its tool, the runner's whole message.
     let served = |tool: &str| {
         let e = RunnerError::ToolUnanswered { step: "tools".into(), tool: tool.into(), reason: "Cannot connect to the Docker daemon".into() };
-        from_service(e.code(), &e.to_string(), Some("tools"), e.detail().as_ref()).code()
+        coded(&e.report()).code()
     };
     assert_eq!(served("docker"), Code::DockerNotRunning);
     // Another tool's silence isn't Docker's.
@@ -129,7 +129,12 @@ fn the_runners_failures_the_launcher_words_reach_the_webview_as_codes_it_transla
 fn a_download_that_stalled_or_failed_says_so_not_the_resources() {
     // Regression: an 11 GB attack box still downloading through a slow connection was
     // stopped with the start's `up`, and the player was told to check Docker's resources.
-    let stalled = RunnerError::DownloadStalled { step: "pull-up".into(), after_s: 900, last_line: Some("36b0bafd7f97 Downloading 1.283GB".into()) };
+    let stalled = RunnerError::DownloadStalled {
+        what: DownloadKind::Images,
+        step: "pull-up".into(),
+        after_s: 900,
+        last_line: Some("36b0bafd7f97 Downloading 1.283GB".into()),
+    };
     let (code, text) = said(stalled);
     assert_eq!(code, Code::DownloadStalled { minutes: 15 });
     assert_eq!(
@@ -137,6 +142,7 @@ fn a_download_that_stalled_or_failed_says_so_not_the_resources() {
         "Downloading the lab's images stopped making progress (nothing new for 15 minutes), so it was stopped. Check your internet connection, then try again: what was already downloaded is kept."
     );
     let failed = RunnerError::DownloadFailed {
+        what: DownloadKind::Images,
         step: "pull-up".into(),
         reason: "Error response from daemon: toomanyrequests: You have reached your pull rate limit\n".into(),
     };
@@ -146,7 +152,7 @@ fn a_download_that_stalled_or_failed_says_so_not_the_resources() {
         text,
         "Couldn't download the lab's images: Error response from daemon: toomanyrequests: You have reached your pull rate limit. Check your internet connection, then try again."
     );
-    for text in [said(RunnerError::DownloadStalled { step: "pull-up".into(), after_s: 900, last_line: None }).1, text] {
+    for text in [said(RunnerError::DownloadStalled { what: DownloadKind::Images, step: "pull-up".into(), after_s: 900, last_line: None }).1, text] {
         assert!(!text.contains("resources"), "{text}");
     }
     // A step that ran out of time still says to check the resources.
@@ -154,26 +160,25 @@ fn a_download_that_stalled_or_failed_says_so_not_the_resources() {
     assert!(said(RunnerError::Timeout { step: "up".into(), timed_out: up }).1.contains("the resources of Docker"));
 }
 
-/// Regression: a Vagrant box download that stalled or failed (the runner's `boxes-<step>`)
+/// Regression: a Vagrant box download that stalled or failed (the runner's `boxes` download)
 /// was told as "the lab's images", a container lab's words.
 #[test]
 fn a_vm_box_download_that_stalled_or_failed_is_said_as_the_box() {
-    let stalled = RunnerError::DownloadStalled { step: "boxes-up".into(), after_s: 900, last_line: Some("box: Progress: 41% (Rate: 0/s)".into()) };
+    let stalled =
+        RunnerError::DownloadStalled { what: DownloadKind::Boxes, step: "up".into(), after_s: 900, last_line: Some("box: Progress: 41% (Rate: 0/s)".into()) };
     let (code, text) = said(stalled);
     assert_eq!(code, Code::BoxDownloadStalled { minutes: 15 });
     assert_eq!(
         text,
         "Downloading the lab's VM box stopped making progress (nothing new for 15 minutes), so it was stopped. Check your internet connection, then try again."
     );
-    let failed = RunnerError::DownloadFailed { step: "boxes-up".into(), reason: "The box 'bento/debian-12' could not be found.\n".into() };
+    let failed = RunnerError::DownloadFailed { what: DownloadKind::Boxes, step: "up".into(), reason: "The box 'bento/debian-12' could not be found.\n".into() };
     let (code, text) = said(failed);
     assert_eq!(code, Code::BoxDownloadFailed { reason: "The box 'bento/debian-12' could not be found".into() });
     assert_eq!(text, "Couldn't download the lab's VM box: The box 'bento/debian-12' could not be found. Check your internet connection, then try again.");
-    // A lab's own download step, or the images' pull, is still the lab's images.
-    for step in ["pull-up", "pull-start", "boxes"] {
-        let (code, _) = said(RunnerError::DownloadStalled { step: step.into(), after_s: 60, last_line: None });
-        assert_eq!(code, Code::DownloadStalled { minutes: 1 }, "{step}");
-    }
+    // The images' pull is still the lab's images.
+    let (code, _) = said(RunnerError::DownloadStalled { what: DownloadKind::Images, step: "pull-up".into(), after_s: 60, last_line: None });
+    assert_eq!(code, Code::DownloadStalled { minutes: 1 });
 }
 
 /// Regression (docs/contributing/testing/resilience.md N4): a revoked Proxmox token or a changed ESXi password
@@ -320,7 +325,7 @@ fn libvirt_finding_no_virtiofsd_reads_as_its_code_not_vagrant_libvirts_stack_tra
     assert_eq!(code, Code::VirtiofsdMissing { hypervisor: "libvirt".into() });
     assert!(text.contains("virtiofsd") && !text.contains("Libvirt::Error"), "{text}");
     let e = RunnerError::ToolFailed { step: "up".into(), reason: trace.into() };
-    assert_eq!(from_service(e.code(), &e.to_string(), Some("up"), e.detail().as_ref()).code(), Code::VirtiofsdMissing { hypervisor: "libvirt".into() });
+    assert_eq!(coded(&e.report()).code(), Code::VirtiofsdMissing { hypervisor: "libvirt".into() });
 }
 
 #[test]
@@ -334,5 +339,17 @@ fn vagrant_qemu_finding_no_virtiofsd_reads_as_its_code() {
     assert_eq!(code, missing);
     assert!(text.starts_with("QEMU can't share") && text.contains("apt-get install virtiofsd"), "{text}");
     let e = RunnerError::ToolFailed { step: "up".into(), reason: out.into() };
-    assert_eq!(from_service(e.code(), &e.to_string(), Some("up"), e.detail().as_ref()).code(), missing);
+    assert_eq!(coded(&e.report()).code(), missing);
+}
+
+#[test]
+fn a_taken_port_names_its_holder_as_the_player_knows_it() {
+    let taken = |program: &str| RunnerError::PortInUse {
+        port: isothrum_runner::HostPort::new(8080),
+        protocol: "tcp".into(),
+        holder: Some(isothrum_runner::PortHolder::new(700, program)),
+    };
+    for (program, said) in [("nginx", "nginx (pid 700)"), ("com.docke", "Docker (pid 700)"), ("docker-pr", "Docker (pid 700)")] {
+        assert_eq!(from_runner(taken(program)).code(), Code::PortInUse { port: HostPort::new(8080), holder: Some(said.into()) }, "{program}");
+    }
 }

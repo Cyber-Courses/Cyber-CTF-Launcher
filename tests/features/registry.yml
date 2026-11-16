@@ -852,9 +852,8 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/launch/port_holder.rs > reads_the_first_listener_from_lsof
-            - src-tauri/src/runtime/launch/port_holder.rs > reads_name_and_pid_from_ss
             - src-tauri/src/runtime/isothrum/errors/tests.rs > a_taken_port_and_a_missing_tool_keep_the_codes_the_ui_knows
+            - src-tauri/src/runtime/isothrum/errors/tests.rs > a_taken_port_names_its_holder_as_the_player_knows_it
             - src/features/labs/use-lab-actions.test.tsx > asks for the ports, remembers them, and starts on the lab
             - src/features/failure-states.test.tsx > reads Failed to start, offers Retry and, for a port clash, Retry on random ports with a hint
             - src/features/failure-states.test.tsx > offers no random-ports retry when the clash was a VM here

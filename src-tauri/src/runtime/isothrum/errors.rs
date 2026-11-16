@@ -2,9 +2,8 @@
 //! with a stable code; the launcher's wording (and the codes its UI knows) is decided here, from
 //! that code, the same as the launcher's own Docker path says it.
 
-use isothrum_runner::{Detail, Error as RunnerError, ErrorCode, ErrorDetail, TimedOut};
+use isothrum_runner::{Detail, DownloadKind, Error as RunnerError, ErrorCode, ErrorReport, TimedOut};
 
-use super::runner_said;
 use crate::error::{Code, Error};
 use crate::platform::exec::DockerSaid;
 use crate::runtime::port::HostPort;
@@ -34,41 +33,61 @@ fn timed_out_step(step: &str, timed_out: &TimedOut) -> Error {
     })
 }
 
-/// The launcher's error for a runner's failure.
-pub(super) fn from_runner(e: RunnerError) -> Error {
-    match e {
-        // The holder is filled in later, on the launch path, where an async lookup can run.
-        RunnerError::PortInUse { port, .. } => Error::coded(Code::PortInUse { port: HostPort::new(port.get()), holder: None }),
-        RunnerError::ToolMissing { tool, .. } => Error::coded(Code::ToolMissing { tool }),
-        RunnerError::ToolFailed { step, reason } => tool_failed(&step, &reason),
-        RunnerError::ToolUnanswered { tool, reason, .. } if tool == "docker" => docker_unanswered(&reason),
-        RunnerError::Timeout { step, timed_out } => timed_out_step(&step, &timed_out),
-        // The lab's images, pulled before its containers start: a slow connection, not the
-        // resources of Docker, the hypervisor or the server.
-        // A Vagrant box, downloaded before its VMs boot, in a step of its own (`boxes-<step>`).
-        RunnerError::DownloadStalled { step, after_s, .. } if runner_said::is_box_download(&step) => {
-            Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) })
+/// The launcher's error for a runner's failure, read from its report (the code, its typed fields
+/// and its message): the one place a runner's failure becomes the launcher's, whichever way it
+/// came (the runner here, an `error` event, a refusal of the service).
+pub(crate) fn coded(report: &ErrorReport) -> Error {
+    let step = report.step.as_deref().unwrap_or_default();
+    let message = report.message.as_str();
+    match report.detail.as_ref().map(|d| &d.data) {
+        Some(Detail::PortInUse { port, holder, .. }) => {
+            Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: holder.as_ref().map(|h| format!("{} (pid {})", known_as(&h.program), h.pid)) })
         }
+        Some(Detail::ToolMissing { tool }) => Error::coded(Code::ToolMissing { tool: tool.clone() }),
+        Some(Detail::ToolUnanswered { tool }) if tool == "docker" => docker_unanswered(message),
+        Some(Detail::ToolTooOld { tool, found, required }) => {
+            Error::coded(Code::ToolTooOld { tool: tool_name(tool), found: found.clone(), required: required.clone() })
+        }
+        Some(Detail::ToolFailed { reason }) => tool_failed(step, reason),
+        Some(Detail::Timeout { timed_out }) => timed_out_step(step, timed_out),
+        // A Vagrant box, downloaded before its VMs boot.
+        Some(Detail::DownloadStalled { what: DownloadKind::Boxes, after_s }) => Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) }),
         // Vagrant ends its sentences with a period; the message adds its own.
-        RunnerError::DownloadFailed { step, reason } if runner_said::is_box_download(&step) => {
+        Some(Detail::DownloadFailed { what: DownloadKind::Boxes, reason }) => {
             Error::coded(Code::BoxDownloadFailed { reason: reason.trim().trim_end_matches('.').to_owned() })
         }
-        RunnerError::DownloadStalled { after_s, .. } => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
-        RunnerError::DownloadFailed { reason, .. } => Error::coded(Code::DownloadFailed { reason: reason.trim().to_owned() }),
+        // The lab's images, pulled before its containers start: a slow connection, not the
+        // resources of Docker, the hypervisor or the server.
+        Some(Detail::DownloadStalled { after_s, .. }) => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
+        Some(Detail::DownloadFailed { reason, .. }) => Error::coded(Code::DownloadFailed { reason: reason.trim().to_owned() }),
         // Named by the address the run's settings give until [`on_server`] names it as Servers does.
-        RunnerError::ServerAuthFailed { server, .. } => Error::coded(Code::ServerAuthFailed { server: server.unwrap_or_else(|| "the server".into()) }),
-        RunnerError::ToolTooOld { tool, found, required } => Error::coded(Code::ToolTooOld { tool: tool_name(&tool), found, required }),
+        Some(Detail::ServerAuthFailed { server }) => Error::coded(Code::ServerAuthFailed { server: server.clone().unwrap_or_else(|| "the server".into()) }),
         // The prompt declined or unanswered, or the elevated session ended (the reason says which).
-        RunnerError::Elevation { reason } => Error::coded(Code::ElevationFailed { reason }),
-        RunnerError::NotReady { detail, .. } => Error::coded(Code::LabNotReady { detail }),
-        RunnerError::PartlyGone { machines, .. } => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
-        RunnerError::SecretMissing { name } => {
+        Some(Detail::Elevation { reason }) => Error::coded(Code::ElevationFailed { reason: reason.clone() }),
+        Some(Detail::NotReady { detail, .. }) => Error::coded(Code::LabNotReady { detail: detail.clone() }),
+        Some(Detail::PartlyGone { machines }) => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
+        Some(Detail::SecretMissing { name }) => {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
         }
-        RunnerError::Input { name, reason } => {
+        Some(Detail::InputInvalid { name, reason }) => {
             Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: the one given {reason}. Start it from the catalogue again."))
         }
-        other => by_code(other.code(), &other),
+        _ => by_code(report.code, message),
+    }
+}
+
+/// The launcher's error for a runner's failure `e` ([`coded`], from its report).
+#[expect(clippy::needless_pass_by_value, reason = "`map_err` hands the error over")]
+pub(super) fn from_runner(e: RunnerError) -> Error {
+    coded(&e.report())
+}
+
+/// What the player knows a process listening on a port by: Docker's several process names (and
+/// `lsof`'s 9-character cut of them) as Docker.
+fn known_as(program: &str) -> &str {
+    match program.trim() {
+        "com.docke" | "Docker" | "docker" | "dockerd" | "docker-pr" | "docker-proxy" | "vpnkit" | "vpnkit-brid" => "Docker",
+        other => other,
     }
 }
 
@@ -92,39 +111,6 @@ pub(super) fn of_helper_vm(e: RunnerError, run: &str) -> Error {
     match e.code() {
         ErrorCode::Unsupported => Error::Invalid(format!("{HELPER_VM_LEFT} (its name starts with {run}).")),
         _ => from_runner(e),
-    }
-}
-
-/// The launcher's error for an operation that failed in the runner service: its code `code`, the
-/// runner's `message`, the `step` that failed and the failure's typed fields (`detail`), worded as
-/// [`from_runner`] words the same failure in this process; by its code alone, its message kept,
-/// where the service gives no fields this build reads.
-pub(crate) fn from_service(code: ErrorCode, message: &str, step: Option<&str>, detail: Option<&ErrorDetail>) -> Error {
-    let step = step.unwrap_or_default();
-    match detail.map(|d| &d.data) {
-        Some(Detail::PortInUse { port, .. }) => Error::coded(Code::PortInUse { port: HostPort::new(*port), holder: None }),
-        Some(Detail::ToolMissing { tool }) => Error::coded(Code::ToolMissing { tool: tool.clone() }),
-        Some(Detail::ToolUnanswered { tool }) if tool == "docker" => docker_unanswered(message),
-        Some(Detail::ToolTooOld { tool, found, required }) => {
-            Error::coded(Code::ToolTooOld { tool: tool_name(tool), found: found.clone(), required: required.clone() })
-        }
-        Some(Detail::Timeout { timed_out }) => timed_out_step(step, timed_out),
-        Some(Detail::DownloadStalled { after_s }) if runner_said::is_box_download(step) => {
-            Error::coded(Code::BoxDownloadStalled { minutes: after_s.div_ceil(60) })
-        }
-        Some(Detail::DownloadStalled { after_s }) => Error::coded(Code::DownloadStalled { minutes: after_s.div_ceil(60) }),
-        Some(Detail::ServerAuthFailed { server }) => Error::coded(Code::ServerAuthFailed { server: server.clone().unwrap_or_else(|| "the server".into()) }),
-        Some(Detail::PartlyGone { machines }) => Error::coded(Code::MachinesGone { machines: machines.join(", ") }),
-        Some(Detail::SecretMissing { name }) => {
-            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` that the launch didn't give. Start it from the catalogue again."))
-        }
-        Some(Detail::InputInvalid { name }) => {
-            Error::RefusedBeforeActing(format!("This lab needs a value for `{name}` it can use: {message}. Start it from the catalogue again."))
-        }
-        _ => match code {
-            ErrorCode::ToolFailed => tool_failed(step, message),
-            _ => by_code(code, message),
-        },
     }
 }
 
