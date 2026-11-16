@@ -242,22 +242,51 @@ mod tests {
     /// Regression: a viewer left running had its error output's pipe closed under it, so the
     /// first warning it printed after the launcher stopped waiting killed it (SIGPIPE): the VM's
     /// window closed by itself.
+    ///
+    /// Told by the test when to warn (`go`, once the launcher stopped waiting), the viewer either
+    /// says it lived (`alive`) or is gone without saying so: no clock decides, where a 3 s wait
+    /// for a viewer that slept 0.5 s ran out on a loaded machine.
     #[cfg(unix)]
     #[tokio::test]
     async fn a_viewer_left_running_survives_printing_warnings() {
         let dir = crate::testing::temp_dir("native-viewer");
-        let alive = dir.join("alive");
-        let script = format!("sleep 0.5; echo 'Gtk-WARNING: a late warning' >&2; echo yes > '{}'", alive.display());
+        let (pid, go, alive) = (dir.join("pid"), dir.join("go"), dir.join("alive"));
+        let script = format!(
+            "echo $$ > '{}'; while [ ! -e '{}' ]; do sleep 0.05; done; echo 'Gtk-WARNING: a late warning' >&2; echo yes > '{}'",
+            pid.display(),
+            go.display(),
+            alive.display()
+        );
         run_within(Path::new("/bin/sh"), &["-c".into(), script], Duration::from_millis(100)).await.unwrap();
-        let mut seen = false;
-        for _ in 0..60 {
+        // A bound only on a test that would otherwise hang, never reached by one that passes or fails.
+        let hung = tokio::time::Instant::now() + Duration::from_secs(120);
+        let pid = loop {
+            if let Some(pid) = std::fs::read_to_string(&pid).ok().and_then(|s| s.trim().parse::<u32>().ok()) {
+                break pid;
+            }
+            assert!(tokio::time::Instant::now() < hung, "the viewer never started");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        };
+        std::fs::write(&go, "").unwrap();
+        loop {
+            // Gone, then not alive: a viewer that ended after saying so lived.
+            let gone = !running(pid);
             if std::fs::read_to_string(&alive).is_ok_and(|s| s.trim() == "yes") {
-                seen = true;
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert!(!gone, "the viewer was killed by its first warning");
+            assert!(tokio::time::Instant::now() < hung, "the viewer neither warned nor ended");
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert!(seen, "the viewer was killed by its first warning");
+    }
+
+    /// Whether process `pid` still runs (a zombie, not yet reaped, has ended).
+    #[cfg(unix)]
+    fn running(pid: u32) -> bool {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
+        let mut sys = System::new();
+        sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[Pid::from_u32(pid)]), true, ProcessRefreshKind::nothing());
+        sys.process(Pid::from_u32(pid)).is_some_and(|p| !matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead))
     }
 
     #[cfg(unix)]
