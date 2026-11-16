@@ -61,7 +61,7 @@ describe("the workflows run the check", () => {
     // The check's commands belong to it: a workflow running one besides it would drift from it.
     for (const workflow of ["ci.yml", "gate.yml"]) {
       const text = read(`.github/workflows/${workflow}`);
-      for (const command of ["cargo test", "cargo clippy", "vitest run", "pnpm lint", "pnpm test:web", "cargo llvm-cov"]) {
+      for (const command of ["cargo test", "cargo nextest", "cargo clippy", "vitest run", "pnpm lint", "pnpm test:web", "cargo llvm-cov"]) {
         expect(text, `${workflow} runs \`${command}\` itself`).not.toContain(`run: ${command}`);
       }
     }

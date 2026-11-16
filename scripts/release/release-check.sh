@@ -15,8 +15,8 @@
 #
 # Steps, in order: prereqs, install, versions, docs, features, format, clippy (this machine's),
 # types, lint, build, quality, unit-web (with the coverage floors), unit-harness (the test runners'
-# own tests), unit-rust (each unit step fails on what its tests leave in their temp folder,
-# scripts/check/temp-leaks.ts), bindings (the generated types the Rust tests rewrote are
+# own tests), unit-rust (cargo-nextest, each test in its own process, then the doctests; each unit
+# step fails on what its tests leave in their temp folder, scripts/check/temp-leaks.ts), bindings (the generated types the Rust tests rewrote are
 # committed), docs-rust (rustdoc's intra-doc links), other-platforms (clippy and rustdoc for Linux
 # and Windows, scripts/check/other-platforms.sh; needs rustup), coverage-rust (when cargo-llvm-cov
 # is installed), deny (when cargo-deny is), audit, shellcheck and actionlint (when installed),
@@ -36,6 +36,10 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 suite_help "$0" "$@"
 cd "$ROOT" || exit 2
 use_nvmrc_node "$ROOT"
+# sccache as the Rust compiler's wrapper when it is installed (never required): a crate another
+# worktree or target folder compiled comes from its cache. A RUSTC_WRAPPER already set, empty
+# included, is left as it is.
+if [ -z "${RUSTC_WRAPPER+set}" ] && command -v sccache >/dev/null; then export RUSTC_WRAPPER=sccache; fi
 # The Rust line coverage floor in percent: about a point under what dev measures, raised as it
 # rises (82.7 until the opt-in integration tests were left out of the measure; the app's own code
 # measured 87.30% on macOS, 2026-11-16).
@@ -57,6 +61,7 @@ prereqs() {
   # Docker only for the native layer (SKIP=e2e-native runs what CI runs, without it).
   if wanted e2e-native; then command -v docker >/dev/null || { echo "missing: docker (or SKIP=e2e-native)"; missing=1; }; fi
   node --version | grep -q "^v${NODE_WANTED}\." || { echo "node $(node --version) in use; .nvmrc asks for $NODE_WANTED (nvm install $NODE_WANTED)"; missing=1; }
+  if wanted unit-rust || wanted coverage-rust; then cargo nextest --version >/dev/null 2>&1 || { echo "missing: cargo-nextest (cargo install --locked cargo-nextest)"; missing=1; }; fi
   if wanted quality; then cargo machete --version >/dev/null 2>&1 || { echo "missing: cargo-machete (cargo install cargo-machete); pnpm quality needs it"; missing=1; }; fi
   if wanted e2e-native && ! docker info >/dev/null 2>&1; then echo "note: docker is not running; e2e-native skips the scenarios that run a lab"; fi
   [ "$missing" -eq 0 ]
@@ -72,8 +77,17 @@ bindings_committed() {
 format_check() {
   pnpm format:check && cargo fmt --manifest-path src-tauri/Cargo.toml --check
 }
+# The Rust tests under cargo-nextest (src-tauri/.config/nextest.toml: each test in its own process,
+# nothing retried, a slow test reported), then the doctests, which nextest doesn't run. Both run,
+# so a failure in one doesn't hide the other.
+rust_tests() {
+  local status=0
+  cargo nextest run --manifest-path src-tauri/Cargo.toml || status=$?
+  cargo test --manifest-path src-tauri/Cargo.toml --doc || status=$?
+  return "$status"
+}
 rust_cov() {
-  cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml &&
+  cargo llvm-cov nextest --no-report --manifest-path src-tauri/Cargo.toml &&
     cargo llvm-cov report --manifest-path src-tauri/Cargo.toml --ignore-filename-regex "$RUST_COV_IGNORE" --summary-only --fail-under-lines "$RUST_LINES_FLOOR"
 }
 
@@ -94,7 +108,7 @@ step quality pnpm quality
 # The unit tests run with a temp folder of their own: what they leave there fails the step.
 step unit-web pnpm check:temp-leaks pnpm exec vitest run --coverage
 step unit-harness pnpm test:harness
-step unit-rust pnpm check:temp-leaks cargo test --manifest-path src-tauri/Cargo.toml
+step unit-rust pnpm check:temp-leaks bash -c "$(declare -f rust_tests); rust_tests"
 step bindings bindings_committed
 # Every intra-doc link resolves on this machine's items (the other
 # platforms' are other-platforms' -docs steps).

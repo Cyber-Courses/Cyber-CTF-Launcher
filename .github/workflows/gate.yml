@@ -71,6 +71,9 @@ jobs:
         with:
           components: clippy
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-nextest
       - run: scripts/release/release-check.sh
         env:
           ONLY: prereqs install clippy unit-rust bindings docs-rust
@@ -123,7 +126,7 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
-          tool: cargo-llvm-cov
+          tool: cargo-llvm-cov,cargo-nextest
       - run: scripts/release/release-check.sh
         env:
           ONLY: prereqs install coverage-rust
