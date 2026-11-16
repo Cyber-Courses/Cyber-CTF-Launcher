@@ -127,7 +127,7 @@ KNOB_UNSET="integration test skipped, not set:"
 # (integration_tests::support::REFUSED): skipped, the launcher's words the reason.
 REFUSED="integration test skipped, refused by the launcher:"
 # How a failed check or a panic says the platform itself failed the scenario, in the launcher's
-# own words (runtime/launch/local.rs's refusal, runtime/providers/unavailable.rs's reasons, a
+# own words (runtime/launch/local.rs's refusal, the machine check's reasons (runtime/providers.rs's said), a
 # missing tool, Docker down, an architecture a hypervisor doesn't run; a unit test in
 # integration_tests/support.rs holds this to them): once seen on a provider, its remaining
 # scenarios are skipped with that line as the reason.

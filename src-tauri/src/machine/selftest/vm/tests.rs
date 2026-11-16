@@ -54,22 +54,19 @@ fn the_qemu_test_vm_boots_with_the_acceleration_the_labs_ask_for() {
 
 #[test]
 fn no_hypervisor_ready_says_what_keeps_the_preferred_one_from_running_vms() {
-    use crate::runtime::providers::{ProviderStatus, Unavailable};
-    let status = |provider, reason: Option<Unavailable>| ProviderStatus {
-        provider,
-        remote: false,
-        available: reason.is_none(),
-        hypervisor: Some(true),
-        plugin: None,
-        plugin_installed: true,
-        utility: None,
-        needs: Vec::new(),
-        reason,
-        account_lacks: None,
+    use crate::runtime::providers::{ProviderStatus, Unavailable, said};
+    // An installed hypervisor, as the check sends it, kept from running VMs by `reason`.
+    let status = |provider: Provider, reason: serde_json::Value| -> ProviderStatus {
+        serde_json::from_value(serde_json::json!({
+            "provider": provider, "remote": false, "available": false, "hypervisor": true, "plugin": null,
+            "pluginInstalled": true, "utility": null, "needs": [], "reason": reason, "accountLacks": null,
+        }))
+        .unwrap()
     };
-    let kvm = Unavailable::KvmDenied { group: "kvm".into() };
-    let statuses = [status(Provider::Virtualbox, Some(Unavailable::VirtualboxStuck)), status(Provider::Qemu, Some(kvm.clone()))];
-    assert_eq!(none_ready(Some(Provider::Qemu), &statuses), format!("QEMU can't run VMs here: {kvm}"));
+    let kvm = serde_json::json!({ "code": "kvmDenied", "args": { "group": "kvm" } });
+    let statuses = [status(Provider::Virtualbox, serde_json::json!({ "code": "virtualboxStuck" })), status(Provider::Qemu, kvm.clone())];
+    let kvm: Unavailable = serde_json::from_value(kvm).unwrap();
+    assert_eq!(none_ready(Some(Provider::Qemu), &statuses), format!("QEMU can't run VMs here: {}", said(&kvm)));
     assert!(none_ready(None, &statuses).starts_with("VirtualBox can't run VMs here: "), "the first installed one");
     assert_eq!(none_ready(Some(Provider::Qemu), &[]), "no local hypervisor with its Vagrant plugin is installed");
 }

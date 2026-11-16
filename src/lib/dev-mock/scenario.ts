@@ -1,7 +1,7 @@
 // The browser preview's scenarios: the switches next to `?mock` in the URL, and the machine the
 // system check reports for them.
 import type { CommandError } from "@/lib/errors";
-import type { Arch, DockerEngine, Os, Provider, ProviderStatus, SystemReport } from "@/lib/tauri";
+import type { Arch, DockerEngine, Os, ProviderStatus, SystemReport, VagrantProvider } from "@/lib/tauri";
 import { type Holdable, isHoldable } from "@/lib/dev-mock/holds";
 import { report } from "@/lib/dev-mock/sample";
 
@@ -106,7 +106,7 @@ const notInstalled = { installed: false, version: null };
 /** The local hypervisors each OS reports (the remote ones are the same everywhere): none
  *  installed on a fresh machine. */
 function localProviders({ os, fresh }: Pick<Scenario, "os" | "fresh">) {
-  const p = (provider: Provider, plugin: string | null = null): ProviderStatus => ({
+  const p = (provider: VagrantProvider, plugin: string | null = null): ProviderStatus => ({
     provider,
     remote: false,
     available: !fresh && provider === "virtualbox",

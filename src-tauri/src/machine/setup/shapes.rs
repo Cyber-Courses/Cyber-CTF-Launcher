@@ -7,7 +7,9 @@ use crate::machine::system::docker::{Engine, EngineStatus};
 use crate::machine::system::wsl::{WslReport, WslState};
 use crate::machine::system::{CloudClis, PkgManager, SystemReport, Tool};
 use crate::platform::host::{Arch, Host, Os};
-use crate::runtime::providers::{Provider, ProviderStatus, Unavailable, UtilityState, needs};
+use isothrum_machine::providers::{AccountLacks, needs};
+
+use crate::runtime::providers::{Provider, ProviderStatus, Unavailable, UtilityState};
 
 fn missing() -> Tool {
     Tool { installed: false, version: None }
@@ -17,10 +19,11 @@ fn found(version: &str) -> Tool {
     Tool { installed: true, version: Some(version.to_owned()) }
 }
 
-/// The local hypervisors the check offers on `host` (none installed), then the servers (remote),
-/// in `Provider::ALL`'s order: the hypervisor table's ([`Provider::offered_on`]).
+/// The hypervisors the check offers on `host` (none installed), then ESXi (remote), in
+/// `Provider::ALL`'s order: the hypervisor table's ([`Provider::offered_on`]). The check detects
+/// Vagrant's providers only.
 fn offered(host: Host) -> Vec<Provider> {
-    Provider::ALL.into_iter().filter(|p| p.offered_on(host, false)).collect()
+    Provider::ALL.into_iter().filter(|p| p.vagrant().is_some() && p.offered_on(host, false)).collect()
 }
 
 /// `provider`'s status as the check reports it, from whether it (`installed`) and its plugin are
@@ -43,7 +46,20 @@ fn status(provider: Provider, vagrant: bool, installed: bool, plugin_installed: 
     } else {
         None
     };
-    ProviderStatus { provider, remote, available: reason.is_none(), hypervisor, plugin, plugin_installed, utility, needs, reason, account_lacks: None }
+    // Built as the check sends it: isothrum-machine's status is its own to make.
+    serde_json::from_value(serde_json::json!({
+        "provider": provider,
+        "remote": remote,
+        "available": reason.is_none(),
+        "hypervisor": hypervisor,
+        "plugin": plugin,
+        "pluginInstalled": plugin_installed,
+        "utility": utility,
+        "needs": needs,
+        "reason": reason,
+        "accountLacks": null,
+    }))
+    .expect("a provider status")
 }
 
 /// A machine with nothing but its OS and its package manager.
@@ -88,7 +104,7 @@ pub(crate) fn bare(os: Os, arch: Arch) -> SystemReport {
 fn with(mut r: SystemReport, hyperv_restart: bool, edit: impl FnOnce(&mut SystemReport)) -> SystemReport {
     edit(&mut r);
     let vagrant = r.vagrant.installed;
-    r.vm_providers = r.vm_providers.iter().map(|p| status(p.provider, vagrant, p.hypervisor == Some(true), p.plugin_installed, p.utility)).collect();
+    r.vm_providers = r.vm_providers.iter().map(|p| status(p.provider.into(), vagrant, p.hypervisor == Some(true), p.plugin_installed, p.utility)).collect();
     r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, vagrant);
     r.setup = super::options(&r, hyperv_restart);
     r
@@ -226,7 +242,7 @@ fn awaits_relogin(provider: Provider, plugin: bool, groups: &[&str], group: &str
     for p in r.vm_providers.iter_mut().filter(|p| p.provider == provider) {
         p.available = false;
         p.reason = Some(Unavailable::NewLogin { group: group.to_owned() });
-        p.account_lacks = Some(crate::runtime::providers::AccountLacks::NewLogin);
+        p.account_lacks = Some(AccountLacks::NewLogin);
     }
     r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
     r.setup = super::options(&r, false);

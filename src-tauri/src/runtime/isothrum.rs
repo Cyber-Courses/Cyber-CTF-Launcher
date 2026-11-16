@@ -125,30 +125,6 @@ where
     }
 }
 
-/// The Vagrant plugin `provider` needs, from the runner's table (`isothrum_runner::Provider::plugin`):
-/// none when Vagrant has it built in, and none for a provider Isoloom's Vagrantfiles don't drive
-/// (Proxmox, the clouds), which the caller knows.
-pub(crate) fn vagrant_plugin(provider: super::providers::Provider) -> Option<&'static str> {
-    vagrant_provider(provider)?.plugin()
-}
-
-/// `provider` as the runner names it, when Isoloom's Vagrantfiles drive it.
-fn vagrant_provider(provider: super::providers::Provider) -> Option<isothrum_runner::Provider> {
-    use super::providers::Provider as P;
-    use isothrum_runner::Provider as Isoloom;
-    Some(match provider {
-        P::Virtualbox => Isoloom::Virtualbox,
-        P::VmwareDesktop => Isoloom::VmwareDesktop,
-        P::Hyperv => Isoloom::Hyperv,
-        P::Parallels => Isoloom::Parallels,
-        P::Libvirt => Isoloom::Libvirt,
-        P::Qemu => Isoloom::Qemu,
-        P::Utm => Isoloom::Utm,
-        P::VmwareEsxi => Isoloom::VmwareEsxi,
-        P::Proxmox | P::Aws | P::Azure | P::Gcp | P::DigitalOcean | P::Linode | P::Oci => return None,
-    })
-}
-
 /// Cancels what the home's runner service runs or has queued on lab `id`'s run, before a stop of
 /// the lab.
 pub(crate) async fn end_operations(dirs: &crate::platform::AppDirs, id: &str) {

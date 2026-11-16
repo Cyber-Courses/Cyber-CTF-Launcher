@@ -1,135 +1,44 @@
-//! The hypervisors, servers and cloud accounts labs run on. The local hypervisors are Vagrant
-//! providers: only what is usable on this machine is detected, and the runner is given the
-//! provider. The servers and cloud accounts share the enum; labs run there through the Isothrum
-//! runner (Proxmox and the clouds' `cloud-docker`, `cloud-vm` and `cloud-services` through
-//! Terraform, ESXi through Vagrant), and they are never detected here.
+//! The hypervisors, servers and cloud accounts labs run on ([`Provider`]), and which local
+//! hypervisors this machine can run a lab's VMs on. Detection is isothrum-machine's
+//! ([`isothrum_machine::providers`]): what is installed, what Vagrant still needs, and why a
+//! hypervisor can't run VMs yet (an [`Unavailable`] code, which the webview says as
+//! `machine.unavailable.*`). The launcher keeps its places (Proxmox and the clouds beside the
+//! Vagrant providers), the player's preferred hypervisor ([`pick`]), and the player's words for a
+//! reason ([`said`]).
 
-mod kvm;
 mod provider;
-mod status;
-mod unavailable;
-mod vagrant_needs;
-mod vbox_driver;
-mod versions;
-mod virtiofsd;
 
-use crate::platform::exec::{run_read, timed_out};
-use crate::platform::host::{Arch, Os};
-use crate::platform::remembered::remembered;
-use crate::platform::tool_output::vagrant::{Plugin, plugins as parse_plugin_versions};
-
-pub(crate) use kvm::kvm_problem;
-#[cfg(test)]
-pub(crate) use kvm::{assume_devices_ready, kvm_group};
-use kvm::{holds_virtualization, new_login_group};
-pub use kvm::{login_groups, uses_kvm};
+pub use isothrum_machine::providers::{Need, ProviderStatus, Unavailable, UtilityState};
 pub use provider::Provider;
-pub use status::{AccountLacks, ProviderStatus};
-pub use unavailable::Unavailable;
-#[cfg(test)]
-use vagrant_needs::fake_utility;
-pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
-#[cfg(test)]
-use versions::version_at_least;
-use versions::{TooOld, hypervisor_too_old, plugin_too_old};
-pub(crate) use virtiofsd::{can_share, found as virtiofsd_found, needs_virtiofsd};
 
-/// How long VirtualBox's service gets to answer `VBoxManage list runningvms` before it reads as
-/// unresponsive (wedged), not just slow.
-const VBOX_SERVICE_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+use crate::platform::host::Os;
 
-/// UTM's app bundle where it is installed: /Applications, or the player's own ~/Applications (an
-/// install without an administrator's password); /Applications when it is in neither.
-pub(crate) fn utm_app() -> std::path::PathBuf {
-    utm_app_in(std::path::Path::new("/Applications"), crate::platform::home_dir().as_deref())
-}
-
-/// [`utm_app`] with the system's applications folder `system` and the player's home `home`.
-fn utm_app_in(system: &std::path::Path, home: Option<&std::path::Path>) -> std::path::PathBuf {
-    let in_system = system.join("UTM.app");
-    if in_system.exists() {
-        return in_system;
+/// What isothrum-machine detects with: this machine's tools, run by the runner's processes, and
+/// its devices. A test's own when it set one (`testing::Machine`), else every tool missing:
+/// a test never reads the machine running it.
+fn machine() -> isothrum_machine::Context {
+    #[cfg(test)]
+    {
+        testing::context()
     }
-    home.map(|h| h.join("Applications").join("UTM.app")).filter(|own| own.exists()).unwrap_or(in_system)
-}
-
-/// UTM's command line tool, which ships inside its app bundle ([`utm_app`]), on no PATH.
-pub(crate) fn utmctl() -> &'static str {
-    /// In the system's applications folder.
-    const IN_SYSTEM: &str = "/Applications/UTM.app/Contents/MacOS/utmctl";
-    /// In the player's own (the home doesn't change while the app runs).
-    static IN_HOME: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-        crate::platform::home_dir().map_or_else(String::new, |h| h.join("Applications/UTM.app/Contents/MacOS/utmctl").to_string_lossy().into_owned())
-    });
-    if utm_app().starts_with("/Applications") || IN_HOME.is_empty() { IN_SYSTEM } else { IN_HOME.as_str() }
-}
-
-/// Whether the Hyper-V feature is on: its Virtual Machine Management service is installed with it.
-fn hyperv_enabled() -> bool {
-    let root = std::env::var_os("SystemRoot").map_or_else(|| std::path::PathBuf::from("C:\\Windows"), std::path::PathBuf::from);
-    root.join("System32").join("vmms.exe").is_file()
-}
-
-fn qemu_binary() -> &'static str {
-    Arch::HERE.qemu_system()
-}
-
-/// Whether `provider`'s VMs need `mkisofs` on `os`: QEMU's on Linux. vagrant-qemu gives a VM on a
-/// lab network (every lab VM on QEMU, through its network's hub) its settings in a cloud-init
-/// seed, an ISO Vagrant's `create_iso` builds, with `mkisofs` on Linux (`hdiutil` on macOS,
-/// which every Mac has). Without it, `vagrant up` fails at the lab's first VM.
-pub(crate) fn needs_mkisofs(provider: Provider, os: Os) -> bool {
-    provider == Provider::Qemu && os == Os::Linux
-}
-
-/// A program `provider`'s VMs need on this machine beside the hypervisor, found missing
-/// ([`missing_part`]): the hypervisor then reads as not installed, as its install brings it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Part {
-    /// `mkisofs`, for QEMU's VMs on Linux ([`needs_mkisofs`]).
-    Mkisofs,
-    /// A virtiofsd the hypervisor finds, for libvirt's and QEMU's shared folders on Linux
-    /// ([`needs_virtiofsd`]).
-    Virtiofsd,
-}
-
-/// The first program `provider`'s VMs need on `os` beside its hypervisor (installed) that this
-/// machine hasn't; none when it has them all.
-async fn missing_part(provider: Provider, os: Os) -> Option<Part> {
-    if needs_mkisofs(provider, os) && !tool_present("mkisofs", &["-version"]).await {
-        return Some(Part::Mkisofs);
-    }
-    (needs_virtiofsd(provider, os) && !virtiofsd_found(provider)).then_some(Part::Virtiofsd)
-}
-
-async fn tool_present(program: &'static str, args: &[&str]) -> bool {
-    match run_read(program, args, None).await {
-        // vmrun without arguments prints usage and exits non-zero, but it exists.
-        Ok(_) | Err(crate::error::Error::CommandFailed { .. }) => true,
-        // A tool that ran out of the probe's time is there, and slow (a cold VBoxSVC): not
-        // absent, which would offer to install it again.
-        Err(e) if crate::platform::exec::timed_out(&e) => {
-            log::warn!("`{program}` took longer than the probe waits: read as installed");
-            true
-        }
-        Err(_) => false,
+    #[cfg(not(test))]
+    {
+        let os = Os::HERE.isothrum();
+        let host = isothrum_machine::Host {
+            os,
+            arch: crate::platform::host::Arch::HERE.isothrum(),
+            // Detection doesn't read it; the setup's own installs look it up.
+            packages: None,
+            devices: isothrum_machine::Devices::here(os),
+        };
+        isothrum_machine::Context::new(std::sync::Arc::new(isothrum_runner::SystemProcesses::default()), host)
     }
 }
-
-/// The Vagrant plugins installed, each with its version when it says one; why they can't be
-/// listed when `vagrant plugin list` fails (not "none": a plugin that is there would read as
-/// missing).
-async fn installed_plugins() -> Plugins {
-    remembered("vagrant plugin list", run_read("vagrant", &["plugin", "list"], None)).await.map(|o| parse_plugin_versions(&o)).map_err(|e| e.to_string())
-}
-
-/// What `detect` knows of the Vagrant plugins: the ones listed, or why they couldn't be.
-type Plugins = Result<Vec<Plugin>, String>;
 
 /// The local hypervisors ready for a lab's VMs on this machine: Vagrant, the hypervisor and its
 /// plugin (what the Machine page reports as ready), in [`Provider::ALL`]'s order.
 pub async fn ready_here() -> Vec<Provider> {
-    if run_read("vagrant", &["--version"], None).await.is_err() {
+    if crate::platform::exec::run_read("vagrant", &["--version"], None).await.is_err() {
         return Vec::new();
     }
     ready(&detect(true).await, true)
@@ -143,7 +52,7 @@ pub fn ready(statuses: &[ProviderStatus], vagrant_installed: bool) -> Vec<Provid
         return Vec::new();
     }
     // `available` holds only where the hypervisor is there: one that isn't has a reason.
-    statuses.iter().filter(|p| !p.remote && p.available).map(|p| p.provider).collect()
+    statuses.iter().filter(|p| !p.remote && p.available).map(|p| Provider::from(p.provider)).collect()
 }
 
 /// The hypervisor VM labs run on, of the `ready` ones ([`ready`]): `preferred` (the player's
@@ -153,213 +62,129 @@ pub fn pick(preferred: Option<Provider>, ready: &[Provider]) -> Option<Provider>
     preferred.filter(|p| ready.contains(p)).or_else(|| ready.first().copied())
 }
 
-/// What the machine check finds for each provider this machine can run (its OS and CPU), the
-/// Vagrant plugins read only when Vagrant is installed (`vagrant_installed`).
+/// What the machine check finds for each Vagrant provider this machine can run (its OS and CPU),
+/// the Vagrant plugins read only when Vagrant is installed (`vagrant_installed`).
 pub async fn detect(vagrant_installed: bool) -> Vec<ProviderStatus> {
-    let plugins = if vagrant_installed { installed_plugins().await } else { Ok(Vec::new()) };
-    let mut statuses = Vec::new();
-    for provider in Provider::ALL {
-        statuses.extend(detect_one(provider, vagrant_installed, &plugins).await);
-    }
-    statuses
+    isothrum_machine::providers::detect(&machine(), vagrant_installed).await
 }
 
 /// `provider`'s status as the machine report gives it ([`detect`]), checked alone: none when it
-/// isn't offered on this machine. What the server self-test reads before it runs a lab on ESXi.
+/// isn't offered on this machine, or isn't a Vagrant provider. What the server self-test reads
+/// before it runs a lab on ESXi.
 pub async fn status(provider: Provider) -> Option<ProviderStatus> {
-    let vagrant_installed = run_read("vagrant", &["--version"], None).await.is_ok();
-    let plugins = if vagrant_installed { installed_plugins().await } else { Ok(Vec::new()) };
-    detect_one(provider, vagrant_installed, &plugins).await
+    isothrum_machine::providers::status(&machine(), provider.vagrant()?).await
 }
 
-/// One provider's status, given whether Vagrant is installed and its `plugins`: none when it
-/// isn't offered on this machine.
-async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &Plugins) -> Option<ProviderStatus> {
-    // Only surface providers that can run on this machine, not the whole catalogue.
-    if !provider.applicable() {
-        return None;
-    }
-
-    // The hypervisor layer (the VM software itself). QEMU on Linux without `mkisofs`, and libvirt
-    // or QEMU on Linux without a virtiofsd, read as not installed, with their own reason: their
-    // install brings it.
-    let found = provider.hypervisor_installed().await;
-    if !provider.offered(found == Some(true)) {
-        return None;
-    }
-    let part_missing = if found == Some(true) { missing_part(provider, Os::HERE).await } else { None };
-    let hypervisor = if part_missing.is_some() { Some(false) } else { found };
-
-    let PluginLayer { plugin, version: plugin_version, installed: plugin_installed } = plugin_layer(provider, vagrant_installed, plugins);
-    // The hypervisor's own version, where its plugin is particular about it (UTM).
-    let hypervisor_version = if hypervisor == Some(true) { provider.hypervisor_version().await } else { None };
-
-    let unresponsive = provider == Provider::Virtualbox && hypervisor == Some(true) && virtualbox_stuck().await;
-
-    // Vagrant's Hyper-V provider refuses every command (status reads too) from an account
-    // that may not manage Hyper-V: said here, with the way out, not as a raw error mid-boot.
-    let needs_admin = provider == Provider::Hyperv && hypervisor == Some(true) && !crate::platform::exec::may_manage_hyperv();
-
-    // libvirt's socket and /dev/kvm are their groups': added to them since logging in (the
-    // libvirt and QEMU installs do it), the player can't use them before logging in again.
-    let joined = login_groups(provider, Os::HERE);
-    let relogin = !joined.is_empty() && hypervisor == Some(true) && crate::platform::exec::groups_pending().await.iter().any(|g| joined.contains(g));
-
-    // VMware's plugin drives VMware through HashiCorp's utility service, installed on its own.
-    let utility = if provider.needs_vmware_utility() { Some(vmware_utility().await) } else { None };
-
-    let detection = Detection {
-        unresponsive,
-        hypervisor,
-        part_missing,
-        hypervisor_version: hypervisor_version.as_deref(),
-        plugin: plugin.as_deref(),
-        plugin_installed,
-        plugin_version: plugin_version.as_deref(),
-        plugins_unknown: plugins.as_ref().err().map(String::as_str),
-        utility,
-        account: if needs_admin {
-            Some(AccountLacks::HypervAdmin)
-        } else if relogin {
-            Some(AccountLacks::NewLogin)
-        } else {
-            None
-        },
-    };
-    Some(status_of(provider, vagrant_installed, detection))
-}
-
-/// `provider`'s status from what was found of it (`detection`), given whether Vagrant is
-/// installed: what Vagrant still needs to drive it, and why it can't run labs yet, if it can't.
-fn status_of(provider: Provider, vagrant_installed: bool, detection: Detection<'_>) -> ProviderStatus {
-    let needs = needs(vagrant_installed, detection.plugin_installed, detection.utility);
-    // No VirtualBox VM starts while KVM holds the CPU's virtualization (Linux), installed or not:
-    // said first, as nothing the setup installs mends it. VBoxManage answers without VirtualBox's
-    // kernel driver, which every VM needs (Linux).
-    let reason = (provider == Provider::Virtualbox)
-        .then(holds_virtualization)
-        .flatten()
-        .or_else(|| unavailable_reason(provider, &needs, detection))
-        .or_else(|| (provider == Provider::Virtualbox && detection.hypervisor == Some(true)).then(vbox_driver::problem).flatten());
-    ProviderStatus {
-        provider,
-        remote: provider.is_remote(),
-        available: reason.is_none(),
-        hypervisor: detection.hypervisor,
-        plugin: detection.plugin.map(str::to_owned),
-        plugin_installed: detection.plugin_installed,
-        utility: detection.utility,
-        needs,
-        reason,
-        account_lacks: detection.account,
+/// `reason` in the player's words, as the English UI says it (the catalogue's
+/// `machine.unavailable.*`): for the log and the core's own messages; the webview says the code.
+pub fn said(reason: &Unavailable) -> String {
+    let section = &crate::english::MACHINE["unavailable"];
+    match reason {
+        Unavailable::NotInstalled { program: None } => crate::english::sentence(section, "notInstalledNoProgram", &serde_json::Value::Null),
+        _ => crate::english::coded(section, reason),
     }
 }
 
-/// The Vagrant layer of `provider` (the plugin that drives it): the plugin it needs, the version
-/// installed, and whether that is installed at a version the launcher drives labs with. A
-/// built-in provider (virtualbox, hyperv) has no plugin and reads installed; one whose plugins
-/// couldn't be listed reads not installed, and `detect` says why.
-fn plugin_layer(provider: Provider, vagrant_installed: bool, plugins: &Plugins) -> PluginLayer {
-    let plugin = provider.plugin().map(str::to_string);
-    let listed = plugins.as_deref().unwrap_or_default();
-    let found = plugin.as_deref().and_then(|p| listed.iter().find(|installed| installed.name == p));
-    let version = found.and_then(|installed| installed.version.clone());
-    let installed = match &plugin {
-        None => true,
-        Some(_) => vagrant_installed && found.is_some() && plugin_too_old(provider, version.as_deref()).is_none(),
-    };
-    PluginLayer { plugin, version, installed }
+/// The groups a player joins to use `provider` on `os`, which apply from their next login
+/// (libvirt's and `/dev/kvm`'s, as this machine names `/dev/kvm`'s): none for a provider that
+/// isn't a Vagrant one.
+pub fn login_groups(provider: Provider, os: Os) -> Vec<String> {
+    let Some(vagrant) = provider.vagrant() else { return Vec::new() };
+    let mut host = machine().host;
+    host.os = os.isothrum();
+    isothrum_machine::providers::login_groups(vagrant, &host)
 }
 
-/// The Vagrant layer of a provider ([`plugin_layer`]).
-struct PluginLayer {
-    /// The plugin it needs; none for a built-in provider.
-    plugin: Option<String>,
-    /// The plugin's version installed, when it says one.
-    version: Option<String>,
-    /// Whether it is installed at a version the launcher drives labs with (a built-in provider's
-    /// reads installed).
-    installed: bool,
+/// The group a player joins to open `/dev/kvm` on this machine: the one it belongs to, else
+/// `kvm` (the setup's shapes name it).
+#[cfg(test)]
+pub fn kvm_group() -> String {
+    isothrum_machine::providers::kvm_group(&machine().host)
 }
 
-/// Whether VirtualBox's service (`VBoxSVC`) is wedged. Installed is not the same as working:
-/// `VBoxManage --version` never talks to the service, which can wedge so that every real call
-/// hangs (a deploy then sits on "Bringing machine up" forever). Asks it something that needs the
-/// service, briefly: stuck only when the app's own timeout cut the answer short.
-async fn virtualbox_stuck() -> bool {
-    crate::platform::exec::run_env_timed("VBoxManage", &["list", "runningvms"], None, &[], VBOX_SERVICE_WAIT).await.is_err_and(|e| timed_out(&e))
+/// Where HashiCorp's Vagrant VMware Utility stands on this machine.
+pub async fn vmware_utility() -> UtilityState {
+    isothrum_machine::providers::vmware_utility(&machine().host).await
 }
 
-/// What `detect` found out about one provider: the per-provider facts `unavailable_reason` reads
-/// to name the first layer that is missing (the hypervisor, its plugin, an admin right). Grouped
-/// so the check reads one value rather than a handful of flags that always travel together;
-/// what is still to install (Vagrant, global, among it) is the check's other argument.
-#[derive(Clone, Copy)]
-struct Detection<'a> {
-    /// Whether the hypervisor's background service is wedged (a probe call timed out).
-    unresponsive: bool,
-    /// Whether the hypervisor is installed; `None` when there is nothing local to probe.
-    hypervisor: Option<bool>,
-    /// The hypervisor is there but not a program its VMs need ([`missing_part`]), so `hypervisor`
-    /// reads false.
-    part_missing: Option<Part>,
-    /// The hypervisor's version, when it is installed and held to one (UTM).
-    hypervisor_version: Option<&'a str>,
-    /// The Vagrant plugin this provider needs, if it is not built in.
-    plugin: Option<&'a str>,
-    /// Whether that plugin is installed, at a version the launcher drives.
-    plugin_installed: bool,
-    /// Why the plugins couldn't be listed, when `vagrant plugin list` failed: `plugin_installed`
-    /// then says nothing.
-    plugins_unknown: Option<&'a str>,
-    /// That plugin's installed version, when it is present and says one.
-    plugin_version: Option<&'a str>,
-    /// Where the Vagrant VMware Utility stands; `None` when the provider doesn't use it.
-    utility: Option<UtilityState>,
-    /// What this account lacks to use it, if anything.
-    account: Option<AccountLacks>,
+/// UTM's command line tool, which ships inside its app bundle, on no PATH: in the bundle the
+/// machine check finds (the app doesn't move while it runs).
+pub(crate) fn utmctl() -> &'static str {
+    static UTMCTL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        isothrum_machine::Devices::here(isothrum_runner::HostOs::Macos).utm_app.join("Contents/MacOS/utmctl").to_string_lossy().into_owned()
+    });
+    UTMCTL.as_str()
 }
 
-/// Why a provider can't be used here (None: it can), from what is still to install for it
-/// (`needs`, the [`needs`] its status carries too, computed once) and what `detect` found out
-/// about the provider: Vagrant missing first, then what is wrong with the
-/// hypervisor itself (nothing setup installs mends that), then the first of its [`needs`]. So it
-/// is `None` only when nothing is needed: readiness and the setup steps can't disagree.
-fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'_>) -> Option<Unavailable> {
-    let Detection { unresponsive, hypervisor, part_missing, hypervisor_version, plugin, plugin_version, plugins_unknown, utility, account, .. } = detection;
-    let plugin = || plugin.unwrap_or("?").to_owned();
-    if needs.contains(&Need::Vagrant) {
-        Some(Unavailable::VagrantMissing)
-    } else if unresponsive {
-        Some(Unavailable::VirtualboxStuck)
-    } else if hypervisor == Some(false) && provider == Provider::Hyperv {
-        Some(Unavailable::HypervOff)
-    } else if account == Some(AccountLacks::HypervAdmin) {
-        Some(Unavailable::HypervNeedsAdmin)
-    } else if let Some(part) = part_missing {
-        Some(match part {
-            Part::Mkisofs => Unavailable::MkisofsMissing,
-            Part::Virtiofsd => Unavailable::VirtiofsdMissing { hypervisor: provider.label().to_owned() },
-        })
-    } else if hypervisor == Some(false) {
-        Some(Unavailable::NotInstalled { program: provider.probe().map(|probe| probe.program.to_owned()) })
-    } else if account == Some(AccountLacks::NewLogin) {
-        Some(Unavailable::NewLogin { group: new_login_group(provider) })
-    } else if let Some(why) = uses_kvm(provider, Os::HERE).then(kvm_problem).flatten() {
-        Some(why)
-    } else if let Some(TooOld { name: Some(name), version, min }) = hypervisor_too_old(provider, hypervisor_version) {
-        Some(Unavailable::HypervisorTooOld { name: name.into(), version: version.into(), min: min.into() })
-    } else if let Some(TooOld { version, min, .. }) = plugin_too_old(provider, plugin_version) {
-        Some(Unavailable::PluginTooOld { plugin: plugin(), version: version.into(), min: min.into() })
-    } else if let (Some(_), Some(why)) = (detection.plugin, plugins_unknown) {
-        Some(Unavailable::PluginsUnknown { plugin: plugin(), reason: why.to_owned() })
-    } else {
-        needs.first().map(|need| match need {
-            Need::Vagrant => Unavailable::VagrantMissing,
-            Need::Plugin => Unavailable::PluginMissing { plugin: plugin() },
-            Need::VmwareUtility if utility == Some(UtilityState::Stopped) => Unavailable::VmwareUtilityStopped,
-            Need::VmwareUtility => Unavailable::VmwareUtilityMissing,
-        })
+/// Whether this computer may share a folder with a VM on `provider`: refused up front for libvirt
+/// or QEMU on Linux without the virtiofsd it shares the folder through (isothrum-machine's
+/// [`virtiofsd`](isothrum_machine::providers::virtiofsd)), whose start would otherwise fail in
+/// its Vagrant plugin.
+pub(crate) fn can_share(provider: Provider) -> crate::error::Result<()> {
+    let cx = machine();
+    share_on(provider, Os::HERE, |p| isothrum_machine::providers::virtiofsd(p, &cx.host.devices).is_some())
+}
+
+/// [`can_share`] on `os`, `found` telling whether the provider finds a virtiofsd (asked only of
+/// the providers that need one).
+fn share_on(provider: Provider, os: Os, found: impl FnOnce(isothrum_runner::Provider) -> bool) -> crate::error::Result<()> {
+    if let Some(vagrant) = provider.vagrant()
+        && isothrum_machine::providers::needs_virtiofsd(vagrant, os.isothrum())
+        && !found(vagrant)
+    {
+        return Err(crate::error::Error::coded(crate::error::Code::VirtiofsdMissing { hypervisor: provider.label().to_owned() }));
+    }
+    Ok(())
+}
+
+/// The machine a test's detection reads: its tools scripted (the runner's fake), its devices
+/// under a folder of the test's.
+#[cfg(test)]
+pub(crate) mod testing {
+    use std::cell::RefCell;
+    use std::sync::Arc;
+
+    use isothrum_runner::ProcessRunner;
+    use isothrum_runner::fake::{FakeProcesses, Reply};
+
+    thread_local! {
+        static MACHINE: RefCell<Option<(Arc<dyn ProcessRunner>, isothrum_machine::Host)>> = const { RefCell::new(None) };
+    }
+
+    /// The machine detection reads on this test's thread, until dropped.
+    pub(crate) struct Machine;
+
+    impl Machine {
+        /// `runner` runs the tools, `host` is the machine (its devices a test's own).
+        pub(crate) fn set(runner: Arc<dyn ProcessRunner>, host: isothrum_machine::Host) -> Machine {
+            MACHINE.with(|m| *m.borrow_mut() = Some((runner, host)));
+            Machine
+        }
+    }
+
+    impl Drop for Machine {
+        fn drop(&mut self) {
+            MACHINE.with(|m| *m.borrow_mut() = None);
+        }
+    }
+
+    /// This OS and CPU, its devices under `root` (none there until a test makes them).
+    pub(crate) fn host(root: &std::path::Path) -> isothrum_machine::Host {
+        isothrum_machine::Host {
+            os: crate::platform::host::Os::HERE.isothrum(),
+            arch: crate::platform::host::Arch::HERE.isothrum(),
+            packages: None,
+            devices: isothrum_machine::Devices::under(root),
+        }
+    }
+
+    /// The test's machine, else one where every tool is missing and no device is there.
+    pub(super) fn context() -> isothrum_machine::Context {
+        let (runner, host) = MACHINE.with(|m| m.borrow().clone()).unwrap_or_else(|| {
+            let nothing: Arc<dyn ProcessRunner> = Arc::new(FakeProcesses::model(|_| Reply::missing()));
+            (nothing, host(std::path::Path::new("/nonexistent/cyberctf-test-machine")))
+        });
+        isothrum_machine::Context::new(runner, host)
     }
 }
 

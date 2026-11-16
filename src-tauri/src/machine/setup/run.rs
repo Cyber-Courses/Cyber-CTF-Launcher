@@ -82,7 +82,7 @@ pub fn left_alone(action: &Action) -> Option<Outcome> {
             Outcome::Skipped(format!("this distribution isn't supported by the guided setup yet: install {what} yourself"))
         }
         Action::Manual { reason: ManualReason::Vendor, url, .. } => Outcome::Skipped(format!("links out: {}", url.as_deref().unwrap_or("its vendor's site"))),
-        Action::Blocked { reason } => Outcome::Failed(format!("can't run here: {reason}")),
+        Action::Blocked { reason } => Outcome::Failed(format!("can't run here: {}", crate::runtime::providers::said(reason))),
         _ => return None,
     })
 }
@@ -103,7 +103,7 @@ pub fn would(action: &Action) -> Option<String> {
             }
         ),
         Action::Relogin => "would sign out and back in".to_owned(),
-        Action::Blocked { reason } if action.ends_pass() => format!("would restart the computer: {reason}"),
+        Action::Blocked { reason } if action.ends_pass() => format!("would restart the computer: {}", crate::runtime::providers::said(reason)),
         Action::Manual { .. } | Action::Blocked { .. } => return None,
     })
 }

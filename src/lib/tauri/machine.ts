@@ -45,6 +45,7 @@ export type {
   SystemReport,
   Tool,
   UtilityState,
+  VagrantProvider,
   WindowsFeature,
   Workload,
   WslReport,

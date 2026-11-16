@@ -120,23 +120,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "code": "vagrantMissing"
         },
         "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -332,23 +315,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "available": false,
         "hypervisor": null,
         "plugin": "vagrant-vmware-esxi",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
         "pluginInstalled": false,
         "utility": null,
         "needs": [
@@ -564,23 +530,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "code": "vagrantMissing"
         },
         "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -771,23 +720,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "available": false,
         "hypervisor": null,
         "plugin": "vagrant-vmware-esxi",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
         "pluginInstalled": false,
         "utility": null,
         "needs": [
@@ -1011,23 +943,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "available": false,
         "hypervisor": null,
         "plugin": "vagrant-vmware-esxi",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
         "pluginInstalled": false,
         "utility": null,
         "needs": [
@@ -1304,23 +1219,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "code": "vagrantMissing"
         },
         "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -1584,25 +1482,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           }
         },
         "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "plugin"
-        ],
-        "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-proxmox"
-          }
-        },
-        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -1841,25 +1720,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "code": "pluginMissing",
           "args": {
             "plugin": "vagrant-vmware-esxi"
-          }
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "plugin"
-        ],
-        "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-proxmox"
           }
         },
         "accountLacks": null
@@ -2108,25 +1968,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "code": "pluginMissing",
           "args": {
             "plugin": "vagrant-vmware-esxi"
-          }
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "plugin"
-        ],
-        "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-proxmox"
           }
         },
         "accountLacks": null
@@ -2381,25 +2222,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           }
         },
         "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "plugin"
-        ],
-        "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-proxmox"
-          }
-        },
-        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -2639,25 +2461,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "code": "pluginMissing",
           "args": {
             "plugin": "vagrant-vmware-esxi"
-          }
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "plugin"
-        ],
-        "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-proxmox"
           }
         },
         "accountLacks": null
@@ -2905,25 +2708,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           }
         },
         "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "plugin"
-        ],
-        "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-proxmox"
-          }
-        },
-        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -3168,25 +2952,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           }
         },
         "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "plugin"
-        ],
-        "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-proxmox"
-          }
-        },
-        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -3414,23 +3179,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "available": false,
         "hypervisor": null,
         "plugin": "vagrant-vmware-esxi",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
         "pluginInstalled": false,
         "utility": null,
         "needs": [
@@ -3690,23 +3438,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "available": false,
         "hypervisor": null,
         "plugin": "vagrant-vmware-esxi",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
         "pluginInstalled": false,
         "utility": null,
         "needs": [
@@ -4004,23 +3735,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "code": "vagrantMissing"
         },
         "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -4288,23 +4002,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
         "available": false,
         "hypervisor": null,
         "plugin": "vagrant-vmware-esxi",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "vagrant",
-          "plugin"
-        ],
-        "reason": {
-          "code": "vagrantMissing"
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
         "pluginInstalled": false,
         "utility": null,
         "needs": [
@@ -4593,25 +4290,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           }
         },
         "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "plugin"
-        ],
-        "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-proxmox"
-          }
-        },
-        "accountLacks": null
       }
     ],
     "readyHypervisors": [],
@@ -4859,25 +4537,6 @@ export const SETUP_SHAPES: Record<"bareWindows" | "windowsWslWaitsForRestart" | 
           "code": "pluginMissing",
           "args": {
             "plugin": "vagrant-vmware-esxi"
-          }
-        },
-        "accountLacks": null
-      },
-      {
-        "provider": "proxmox",
-        "remote": true,
-        "available": false,
-        "hypervisor": null,
-        "plugin": "vagrant-proxmox",
-        "pluginInstalled": false,
-        "utility": null,
-        "needs": [
-          "plugin"
-        ],
-        "reason": {
-          "code": "pluginMissing",
-          "args": {
-            "plugin": "vagrant-proxmox"
           }
         },
         "accountLacks": null

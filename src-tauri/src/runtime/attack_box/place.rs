@@ -200,7 +200,7 @@ fn shares_folders(local: bool, target: Target, provider: Option<&str>, os: Os) -
     match target {
         _ if !local => false,
         Target::Docker => true,
-        Target::Vagrant => provider.and_then(Provider::from_id).is_some_and(|p| p.row().shares_folders.contains(&os)),
+        Target::Vagrant => provider.and_then(Provider::from_id).is_some_and(|p| p.shares_folders_on(os)),
         _ => false,
     }
 }

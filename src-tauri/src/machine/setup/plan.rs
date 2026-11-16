@@ -72,7 +72,7 @@ fn not_settable(option: &HypervisorOption) -> Option<String> {
             Some(format!("this distribution isn't supported by the guided setup yet: install {} yourself", option.provider.label()))
         }
         // A restart sets up one blocked until it (VirtualBox's driver, built for a newer kernel).
-        Action::Blocked { reason } if !action.ends_pass() => Some(format!("can't run here: {reason}")),
+        Action::Blocked { reason } if !action.ends_pass() => Some(format!("can't run here: {}", crate::runtime::providers::said(reason))),
         _ => None,
     })
 }
