@@ -27,11 +27,24 @@ impl Drop for LabFileLock {
         let Some(map) = held.as_mut() else { return };
         if let Some((_, n)) = map.get_mut(&self.0) {
             *n -= 1;
-            if *n == 0 {
-                // Closing the file releases the OS lock.
-                map.remove(&self.0);
+            if *n == 0
+                && let Some((file, _)) = map.remove(&self.0)
+            {
+                release(&file, &self.0);
             }
         }
+    }
+}
+
+/// Unlocks `file`, the lock at `path`, before it is closed. Closing alone doesn't free it on Unix:
+/// a process spawned while the file was open (by any operation or thread of this process) has a
+/// copy of the handle until it runs its program, and the copy keeps the lock. Freed by the close
+/// only, the lab stayed held for that moment after its operation ended, a long one on a loaded
+/// machine, and the next operation that doesn't wait (a removal, the reaper) found it busy.
+fn release(file: &File, path: &Path) {
+    if let Err(e) = file.unlock() {
+        // Closed next: the lock is freed once the copies spawned meanwhile are gone.
+        log::warn!("the lab lock {} wasn't unlocked; it is freed when closed: {e}", path.display());
     }
 }
 
@@ -101,9 +114,10 @@ pub fn held(path: &Path) -> bool {
 pub(crate) mod tests {
     use super::*;
 
-    /// Whether `f` holds within a second. A lock is released when its handle closes, but a
-    /// process another test starts meanwhile shares the handle for a moment (until it runs its
-    /// program), so a release can take that moment to show.
+    /// Whether `f` holds within a second. A lock another process's stand-in (a handle of its own)
+    /// holds is released when the handle closes, but a process another test starts meanwhile
+    /// shares the handle for a moment (until it runs its program), so that release can take the
+    /// moment to show. This process's own release is at once (`release`).
     pub(crate) fn eventually(mut f: impl FnMut() -> bool) -> bool {
         (0..40).any(|_| {
             f() || {
@@ -136,7 +150,7 @@ pub(crate) mod tests {
         let mine = tokio::time::timeout(Duration::from_secs(2), acquire(&path)).await.unwrap().unwrap();
         assert!(held(&path));
         drop(mine);
-        assert!(eventually(|| !held(&path)));
+        assert!(!held(&path));
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -152,7 +166,30 @@ pub(crate) mod tests {
         assert!(held(&path));
         assert!(matches!(other.try_lock(), Err(TryLockError::WouldBlock)));
         drop(job);
-        assert!(eventually(|| other.try_lock().is_ok()));
+        assert!(other.try_lock().is_ok());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// A copy of the handle of the lock this process holds at `path`, as a process spawned while
+    /// it is held has until it runs its program.
+    fn spawned_meanwhile(path: &Path) -> File {
+        let held = HELD.lock().unwrap();
+        held.as_ref().and_then(|m| m.get(path)).expect("held here").0.try_clone().unwrap()
+    }
+
+    #[test]
+    fn a_lab_released_is_free_at_once_while_a_process_spawned_meanwhile_still_has_its_handle() {
+        // Regression: the lock was freed by closing its file only, so it outlived the operation
+        // while a process another operation (another test) spawned meanwhile still had the
+        // handle: a removal right after, which doesn't wait, found the lab busy
+        // (`AlreadyInProgress`), a loaded machine's slow program start making that moment long.
+        let (path, dir) = lock_file("lock-spawned");
+        let op = try_acquire(&path).unwrap().unwrap();
+        let spawned = spawned_meanwhile(&path);
+        drop(op);
+        let next = try_acquire(&path).unwrap();
+        assert!(next.is_some(), "the lab is free once released");
+        drop((next, spawned));
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -184,7 +221,7 @@ pub(crate) mod tests {
         let other = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
         assert!(matches!(other.try_lock(), Err(TryLockError::WouldBlock)));
         drop(first);
-        assert!(eventually(|| other.try_lock().is_ok()));
+        assert!(other.try_lock().is_ok());
         std::fs::remove_dir_all(dir).ok();
     }
 

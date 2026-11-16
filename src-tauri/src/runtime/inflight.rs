@@ -169,7 +169,7 @@ mod tests {
         // Held here now: a worker can't take it.
         assert!(super::lock::held(&file));
         drop(held);
-        assert!(super::lock::tests::eventually(|| !super::lock::held(&file)));
+        assert!(!super::lock::held(&file), "free as soon as it is released");
         std::fs::remove_dir_all(dir).ok();
     }
 }
