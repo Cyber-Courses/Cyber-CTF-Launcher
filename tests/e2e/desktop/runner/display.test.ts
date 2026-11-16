@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { FIRST_DISPLAY, XVFB_PACKAGE, displayFiles, needsDisplay, onPath, startDisplay } from "./display.mjs";
+import { FIRST_DISPLAY, WINDOW_MANAGERS, XVFB_PACKAGE, displayFiles, needsDisplay, onPath, startDisplay } from "./display.mjs";
 
 // The run's display (runner/display.mjs): when the runner starts Xvfb, on which display, and that
 // it stops it, given a fake environment, fake X server files and a fake process spawner. No Xvfb is started.
@@ -18,7 +18,7 @@ class FakeXvfb extends EventEmitter {
   constructor(
     public command: string,
     public args: string[],
-    public options: { stdio: unknown[]; detached: boolean },
+    public options: { stdio: unknown[]; detached: boolean; env?: Record<string, string | undefined> },
   ) {
     super();
   }
@@ -37,10 +37,12 @@ class FakeXvfb extends EventEmitter {
 
 /** A fake machine: the X servers' files there (`files`), and a spawner that hands out FakeXvfbs,
  *  doing `then` with each once it is started (by default: its display comes up, its lock and
- *  socket made). */
-function machine(files: string[] = [], then?: (x: FakeXvfb, n: number, fs: Set<string>) => void) {
+ *  socket made), and fake window managers (in `wms`), doing `wmThen` with each (by default:
+ *  nothing, it keeps running). */
+function machine(files: string[] = [], then?: (x: FakeXvfb, n: number, fs: Set<string>) => void, wmThen?: (wm: FakeXvfb) => void) {
   const fs = new Set(files);
   const started: FakeXvfb[] = [];
+  const wms: FakeXvfb[] = [];
   const comesUp = (_x: FakeXvfb, n: number) => {
     const files = displayFiles(n);
     fs.add(files.lock);
@@ -48,6 +50,14 @@ function machine(files: string[] = [], then?: (x: FakeXvfb, n: number, fs: Set<s
   };
   const spawn = (command: string, args: string[], options: object) => {
     const x = new FakeXvfb(command, args, options as FakeXvfb["options"]);
+    if (command !== "Xvfb") {
+      wms.push(x);
+      if (wmThen)
+        setTimeout(() => {
+          wmThen(x);
+        }, 1);
+      return x as unknown as ChildProcess;
+    }
     started.push(x);
     const n = Number(args[0].slice(1));
     setTimeout(() => {
@@ -55,9 +65,10 @@ function machine(files: string[] = [], then?: (x: FakeXvfb, n: number, fs: Set<s
     }, 1);
     return x as unknown as ChildProcess;
   };
-  /** What startDisplay is given: the fake spawner and files, Xvfb installed, a short poll. */
-  const opts = { spawn, exists: (p: string) => fs.has(p), installed: () => true, pollMs: 2 };
-  return { opts, started };
+  /** What startDisplay is given: the fake spawner and files, Xvfb and every window manager
+   *  installed, a short poll and settle. */
+  const opts = { spawn, exists: (p: string) => fs.has(p), installed: () => true, pollMs: 2, settleMs: 10 };
+  return { opts, started, wms };
 }
 
 const headless = { platform: "linux", env: { PATH: "/usr/bin" } };
@@ -116,13 +127,14 @@ describe("the run's display", () => {
     expect(await startDisplay({ ...m.opts, ...headless })).toMatchObject({ display: ":100" });
   });
 
-  it("is stopped by its `stop`, once however often it is called", async () => {
+  it("is stopped by its `stop`, its window manager with it, once however often it is called", async () => {
     const m = machine();
     const d = await startDisplay({ ...m.opts, ...headless });
     if (!("stop" in d)) throw new Error("no display started");
     d.stop();
     d.stop();
     expect(m.started[0].kills).toEqual(["SIGTERM"]);
+    expect(m.wms[0].kills).toEqual(["SIGTERM"]);
   });
 
   it("isn't started when Xvfb isn't installed: why, naming the package", async () => {
@@ -158,6 +170,70 @@ describe("the run's display", () => {
     const m = machine(taken);
     expect(await startDisplay({ ...m.opts, ...headless })).toEqual({ error: "no free display number from :99 to :198" });
     expect(m.started).toEqual([]);
+  });
+});
+
+describe("the window manager on the runner's Xvfb", () => {
+  /** startDisplay with only `have` of the commands installed (Xvfb always). */
+  const only = (have: string[]) => (c: string) => c === "Xvfb" || have.includes(c);
+
+  it("is the first installed of xfwm4, openbox and fluxbox, started on Xvfb's display after it is up", async () => {
+    expect(WINDOW_MANAGERS.map((w) => w.command)).toEqual(["xfwm4", "openbox", "fluxbox"]);
+    for (const [have, want] of [
+      [["xfwm4", "openbox", "fluxbox"], "xfwm4"],
+      [["openbox", "fluxbox"], "openbox"],
+      [["fluxbox"], "fluxbox"],
+    ] as const) {
+      const m = machine();
+      const d = await startDisplay({ ...m.opts, ...headless, installed: only([...have]) });
+      expect(d).toMatchObject({ display: ":99", windowManager: { name: want } });
+      expect(m.wms.map((w) => w.command)).toEqual([want]);
+      const [wm] = m.wms;
+      expect(wm.options.env).toMatchObject({ DISPLAY: ":99", PATH: "/usr/bin" });
+      expect(wm.options.detached).toBe(true);
+    }
+  });
+
+  it("runs without a session manager or a compositor, which a bare Xvfb has neither of", async () => {
+    const m = machine();
+    await startDisplay({ ...m.opts, ...headless });
+    expect(m.wms[0].args).toEqual(["--compositor=off", "--sm-client-disable"]);
+  });
+
+  it("isn't there when none is installed: the display is, with why", async () => {
+    const m = machine();
+    const d = await startDisplay({ ...m.opts, ...headless, installed: only([]) });
+    expect(d).toMatchObject({ display: ":99", windowManager: { why: "none installed (xfwm4, openbox, fluxbox)" } });
+    expect(m.wms).toEqual([]);
+    if (!("stop" in d)) throw new Error("no display started");
+    d.stop();
+    expect(m.started[0].kills).toEqual(["SIGTERM"]);
+  });
+
+  it("isn't there when it ends as it starts: the display is, with why and its log named", async () => {
+    const m = machine([], undefined, (wm) => {
+      wm.exits(1);
+    });
+    const d = await startDisplay({ ...m.opts, ...headless, log: "/logs/xvfb.log" });
+    expect(d).toMatchObject({ display: ":99", windowManager: { why: "xfwm4 exited (code 1) as it started on :99 (its output: /logs/xvfb.log)" } });
+    if (!("stop" in d)) throw new Error("no display started");
+    d.stop();
+    expect(m.wms[0].kills).toEqual([]);
+    expect(m.started[0].kills).toEqual(["SIGTERM"]);
+  });
+
+  it("isn't there when it can't be spawned", async () => {
+    const m = machine([], undefined, (wm) => wm.emit("error", new Error("spawn xfwm4 EACCES")));
+    const d = await startDisplay({ ...m.opts, ...headless });
+    expect(d).toMatchObject({ windowManager: { why: "xfwm4 couldn't be started: spawn xfwm4 EACCES" } });
+  });
+
+  it("isn't started when Xvfb's display isn't up", async () => {
+    const m = machine([], (x) => {
+      x.exits(1);
+    });
+    await startDisplay({ ...m.opts, ...headless });
+    expect(m.wms).toEqual([]);
   });
 });
 

@@ -386,9 +386,16 @@ function runnerSetup({ dockerUp = true, env = {}, docker }: { dockerUp?: boolean
     join(dir, "Xvfb"),
     `#!/bin/sh\nn=\${1#:}; x="${join(dir, "x")}"\necho $$ > "${join(dir, "xvfb.pid")}"\necho "$1" > "${join(dir, "xvfb.display")}"\ntrap 'rm -f "$x/.X$n-lock" "$x/.X11-unix/X$n"; exit 0' TERM\ntouch "$x/.X$n-lock" "$x/.X11-unix/X$n"\nwhile :; do sleep 0.1; done\n`,
   );
+  // A window manager (the first the runner tries) that keeps running on its display, its pid in
+  // wm.pid and its DISPLAY in wm.display, until stopped.
+  writeFileSync(
+    join(dir, "xfwm4"),
+    `#!/bin/sh\necho $$ > "${join(dir, "wm.pid")}"\necho "$DISPLAY" > "${join(dir, "wm.display")}"\ntrap 'exit 0' TERM\nwhile :; do sleep 0.1; done\n`,
+  );
   chmodSync(join(dir, "docker"), 0o755);
   chmodSync(join(dir, "vagrant"), 0o755);
   chmodSync(join(dir, "Xvfb"), 0o755);
+  chmodSync(join(dir, "xfwm4"), 0o755);
   const results = join(dir, "out", "results.jsonl");
   const lab = join(dir, "lab");
   mkdirSync(lab);
@@ -560,14 +567,16 @@ describe.skipIf(!unix)("run.mjs on a fake plan", () => {
 describe.runIf(process.platform === "linux")("run.mjs on a Linux without a display", () => {
   const headless = { DISPLAY: "", WAYLAND_DISPLAY: "" };
   const xvfbPid = (dir: string) => Number(readFileSync(join(dir, "xvfb.pid"), "utf8"));
+  const wmPid = (dir: string) => Number(readFileSync(join(dir, "wm.pid"), "utf8"));
   /** Whether process `pid` ends within 3 s (the fake Xvfb ends at its next tick once stopped). */
   const ends = (pid: number) => {
     for (let i = 0; i < 30 && alive(pid); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
     return !alive(pid);
   };
-  const shows = 'console.log("ok: display (0s) " + process.env.DISPLAY); process.exit(0);';
+  const shows =
+    'console.log("ok: display (0s) " + process.env.DISPLAY + " " + (process.env.CYBERCTF_TEST_DESKTOP_NO_WINDOW_MANAGER ?? "managed")); process.exit(0);';
 
-  it("starts Xvfb for the run on a free number, its display the specs', and stops it at the end", () => {
+  it("starts Xvfb for the run on a free number with a window manager on it, its display the specs', and stops both at the end", () => {
     const planDir = fakePlan({ a: { body: shows } });
     const { dir, clean, results } = runnerSetup({ env: headless });
     // :99's lock is there (a server whose socket went): passed over.
@@ -579,16 +588,19 @@ describe.runIf(process.platform === "linux")("run.mjs on a Linux without a displ
     });
     const out = r.stdout + r.stderr;
     expect(r.status, out).toBe(0);
-    expect(out).toContain("display: Xvfb on :100");
-    expect(out).toContain("ok: display (0s) :100");
+    expect(out).toContain("display: Xvfb on :100, xfwm4 its window manager");
+    expect(out).toContain("ok: display (0s) :100 managed");
+    expect(readFileSync(join(dir, "wm.display"), "utf8").trim()).toBe(":100");
+    expect(ends(wmPid(dir))).toBe(true);
     expect(ends(xvfbPid(dir))).toBe(true);
     expect(existsSync(join(dir, "x", ".X11-unix", "X100"))).toBe(false);
   });
 
-  it("stops it too when the run ends early", () => {
+  it("stops both too when the run ends early", () => {
     const planDir = fakePlan({ a: { body: shows } });
     const r = runRunner(planDir, ["--all"], { env: { ...headless, FAKE_APP_DEAD: "1" } });
     expect(r.status).toBe(2);
+    expect(ends(wmPid(r.dir))).toBe(true);
     expect(ends(xvfbPid(r.dir))).toBe(true);
   });
 
@@ -596,8 +608,9 @@ describe.runIf(process.platform === "linux")("run.mjs on a Linux without a displ
     const planDir = fakePlan({ a: { body: shows } });
     const r = runRunner(planDir, ["--all"], { env: { DISPLAY: ":5", WAYLAND_DISPLAY: "" } });
     expect(r.status, r.out).toBe(0);
-    expect(r.out).toContain("ok: display (0s) :5");
+    expect(r.out).toContain("ok: display (0s) :5 managed");
     expect(existsSync(join(r.dir, "xvfb.pid"))).toBe(false);
+    expect(existsSync(join(r.dir, "wm.pid"))).toBe(false);
   });
 });
 
