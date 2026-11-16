@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
+import { test, expect, openApp } from "./fixtures";
 
 // The attack box shell window (`/shell`, xterm.js), opened from a running lab's page and answered
 // by the dev mock's stand-in shell: it echoes, answers `id`, `whoami`, `hostname` and `ip -br a`,
@@ -12,11 +12,11 @@ async function run(shell: Page, line: string) {
 }
 
 test.describe("attack box shell", () => {
-  test("type commands, see the answers, exit, reconnect, close", async ({ page, context }) => {
+  test("type commands, see the answers, exit, reconnect, close", async ({ page, app, context }) => {
     await openApp(page);
-    await navButton(page, "Labs").click();
-    await page.locator("main").getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
-    await expect(pageTitle(page)).toHaveText("Invoice portal API");
+    await app.nav("Labs").click();
+    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
+    await expect(app.title).toHaveText("Invoice portal API");
 
     const [shell] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Open attacker shell" }).click()]);
     await expect(shell).toHaveURL(/\/shell\?id=lab-invoice&runtime=DOCKER&mock$/);

@@ -1,11 +1,12 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, breadcrumb, paletteKey, answerConfirm } from "./fixtures";
+import { test, expect, openApp, paletteKey, answerConfirm } from "./fixtures";
+import { AppShell } from "./pages/app-shell";
 
 // The mock's catalogue (src/lib/dev-mock/labs.ts): Invoice portal API runs, Public backup is solved.
 const ALL = ["Invoice portal API", "GOAD Light", "Blind orders", "Exposed dashboard", "Public backup", "EC2 SSRF"];
 
 /** The lab rows the list shows, by title. */
-const row = (page: Page, title: string) => page.locator("main").getByRole("button", { name: `Open ${title}`, exact: true });
+const row = (page: Page, title: string) => new AppShell(page).main.getByRole("button", { name: `Open ${title}`, exact: true });
 
 async function expectListed(page: Page, shown: string[]) {
   for (const title of ALL) {
@@ -17,15 +18,15 @@ async function expectListed(page: Page, shown: string[]) {
 const filter = (page: Page, group: string, option: string) => page.getByRole("radiogroup", { name: group }).getByRole("radio", { name: option, exact: true });
 
 test.describe("labs", () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, app }) => {
     await openApp(page);
-    await navButton(page, "Labs").click();
-    await expect(pageTitle(page)).toHaveText("Labs");
+    await app.nav("Labs").click();
+    await expect(app.title).toHaveText("Labs");
   });
 
-  test("the list shows the catalogue", async ({ page }) => {
+  test("the list shows the catalogue", async ({ page, app }) => {
     await expectListed(page, ALL);
-    await expect(navButton(page, "Labs")).toContainText("6");
+    await expect(app.nav("Labs")).toContainText("6");
   });
 
   test("filters narrow the list", async ({ page }) => {
@@ -64,10 +65,10 @@ test.describe("labs", () => {
     await expectListed(page, ALL);
   });
 
-  test("a running lab shows its network with the machines and the attack box", async ({ page }) => {
+  test("a running lab shows its network with the machines and the attack box", async ({ page, app }) => {
     await row(page, "Invoice portal API").click();
-    await expect(pageTitle(page)).toHaveText("Invoice portal API");
-    await expect(breadcrumb(page)).toHaveText("Invoice portal API");
+    await expect(app.title).toHaveText("Invoice portal API");
+    await expect(app.breadcrumb).toHaveText("Invoice portal API");
 
     const diagram = page.locator(".react-flow");
     await expect(diagram).toBeVisible();
@@ -86,33 +87,33 @@ test.describe("labs", () => {
     await expect(attackBox).toContainText("10.42.0.9");
   });
 
-  test("Stop & remove asks first, and Cancel keeps the lab", async ({ page }) => {
+  test("Stop & remove asks first, and Cancel keeps the lab", async ({ page, app }) => {
     await row(page, "Invoice portal API").click();
-    await expect(pageTitle(page)).toHaveText("Invoice portal API");
+    await expect(app.title).toHaveText("Invoice portal API");
 
     const asked = answerConfirm(page, false);
     await page.getByRole("button", { name: "Stop & remove" }).click();
     expect(await asked).toContain("Remove Invoice portal API?");
-    await expect(pageTitle(page)).toHaveText("Invoice portal API");
+    await expect(app.title).toHaveText("Invoice portal API");
     await expect(page.locator(".react-flow")).toBeVisible();
   });
 
-  test("Escape on a lab page goes back to the list", async ({ page }) => {
+  test("Escape on a lab page goes back to the list", async ({ page, app }) => {
     await row(page, "Blind orders").click();
-    await expect(pageTitle(page)).toHaveText("Blind orders");
-    await page.locator("main h1").click();
+    await expect(app.title).toHaveText("Blind orders");
+    await app.title.click();
     await page.keyboard.press("Escape");
-    await expect(pageTitle(page)).toHaveText("Labs");
+    await expect(app.title).toHaveText("Labs");
   });
 
-  test("Escape closing the command palette stays on the lab page", async ({ page }) => {
+  test("Escape closing the command palette stays on the lab page", async ({ page, app }) => {
     await row(page, "Blind orders").click();
-    await expect(pageTitle(page)).toHaveText("Blind orders");
+    await expect(app.title).toHaveText("Blind orders");
     await page.keyboard.press(await paletteKey(page));
     const palette = page.getByRole("dialog", { name: "Command menu" });
     await expect(palette).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(palette).toBeHidden();
-    await expect(pageTitle(page)).toHaveText("Blind orders");
+    await expect(app.title).toHaveText("Blind orders");
   });
 });

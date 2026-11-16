@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, LOCALES, type Locale, openApp, navButton, pageTitle, rawKeys } from "./fixtures";
+import { test, expect, LOCALES, type Locale, openApp, rawKeys } from "./fixtures";
 import enShell from "../../src/messages/en/shell.json";
 import frShell from "../../src/messages/fr/shell.json";
 import esShell from "../../src/messages/es/shell.json";
@@ -66,37 +66,37 @@ for (const locale of LOCALES) {
     const machine = MACHINE[locale as Locale];
     const onboarding = ONBOARDING[locale as Locale];
 
-    test("the main window's screens and lab pages", async ({ page }) => {
+    test("the main window's screens and lab pages", async ({ page, app }) => {
       await openApp(page);
       await expect(page.locator("html")).toHaveAttribute("lang", locale);
       await expectTranslated(page, "Overview");
       for (const tab of [shell.tabs.labs, shell.tabs.machine, shell.tabs.server, shell.tabs.cloud]) {
-        await navButton(page, tab).click();
-        await expect(pageTitle(page)).toHaveText(tab);
+        await app.nav(tab).click();
+        await expect(app.title).toHaveText(tab);
         // The screens fill in from the mock's answers: let them settle.
         await expect(page.locator("main [aria-busy=true]")).toHaveCount(0);
         await expectTranslated(page, tab);
       }
 
       // Machine: the providers, and the way to add one.
-      await navButton(page, shell.tabs.machine).click();
-      await expect(page.locator("main")).toContainText(machine.screen.providers);
+      await app.nav(shell.tabs.machine).click();
+      await expect(app.main).toContainText(machine.screen.providers);
       await expect(page.getByRole("button", { name: machine.screen.addProvider })).toBeVisible();
       await expectTranslated(page, "Machine providers");
 
       // A running container lab, a deploying VM lab, a cloud lab, a stopped one.
-      await navButton(page, shell.tabs.labs).click();
+      await app.nav(shell.tabs.labs).click();
       for (const lab of ["Invoice portal API", "GOAD Light", "EC2 SSRF", "Exposed dashboard"]) {
-        await page.locator("main").getByRole("button", { name: lab }).first().click();
-        await expect(pageTitle(page)).toHaveText(lab);
+        await app.main.getByRole("button", { name: lab }).first().click();
+        await expect(app.title).toHaveText(lab);
         await expect(page.locator("main aside")).toBeVisible();
         await expectTranslated(page, lab);
         await page.keyboard.press("Escape");
-        await expect(pageTitle(page)).toHaveText(shell.tabs.labs);
+        await expect(app.title).toHaveText(shell.tabs.labs);
       }
     });
 
-    test("Settings, the setup windows and the onboarding", async ({ page }) => {
+    test("Settings, the setup windows and the onboarding", async ({ page, app }) => {
       await page.goto("/?mock&window=settings");
       const sections = page.getByRole("navigation", { name: settings.tabs.label });
       for (const section of ["account", "appearance", "labs", "maintenance", "about"] as const) {
@@ -107,7 +107,7 @@ for (const locale of LOCALES) {
 
       for (const url of ["/server-setup?mock", "/server-setup?mock&kind=cloud", "/server-setup?mock&id=pve", "/server-setup?mock&id=aws1"]) {
         await page.goto(url);
-        await expect(page.locator("main h1")).toBeVisible();
+        await expect(app.title).toBeVisible();
         await expect(page.getByText(/\d+.*\d+/).first()).toBeVisible();
         await expectTranslated(page, url);
       }

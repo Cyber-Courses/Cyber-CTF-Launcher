@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
+import { test, expect, openApp } from "./fixtures";
+import { AppShell } from "./pages/app-shell";
 
 // The server and cloud setup windows end to end. The dev mock saves what the setup saves (shared
 // with the main window, which lists it) and mirrors a few of the core's checks on a save
@@ -11,9 +12,9 @@ const button = (page: Page, name: string) => page.getByRole("button", { name, ex
 const field = (page: Page, label: string) => page.getByRole("textbox", { name: new RegExp(`^${label}`) });
 
 test.describe("server setup", () => {
-  test("Proxmox: Back keeps what was typed, a refused save says why, then it connects and the main window lists it", async ({ page, context }) => {
+  test("Proxmox: Back keeps what was typed, a refused save says why, then it connects and the main window lists it", async ({ page, app, context }) => {
     await openApp(page);
-    await navButton(page, "Servers").click();
+    await app.nav("Servers").click();
     const [setup] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Add server" }).click()]);
 
     await expect(stepOf(setup)).toHaveText("Step 1 of 6");
@@ -88,32 +89,32 @@ test.describe("server setup", () => {
     await expect(button(setup, "Done")).toBeVisible();
 
     // The main window heard about it and lists the new host.
-    await expect(page.locator("main").getByText("garage-pve", { exact: true })).toBeVisible();
-    await expect(page.locator("main")).toContainText("10.0.0.5");
+    await expect(app.main.getByText("garage-pve", { exact: true })).toBeVisible();
+    await expect(app.main).toContainText("10.0.0.5");
   });
 
-  test("ESXi: the tools step waits for VMware's OVF Tool", async ({ page }) => {
+  test("ESXi: the tools step waits for VMware's OVF Tool", async ({ page, app }) => {
     await page.goto("/server-setup?mock");
     await setup(page)
       .getByRole("radio", { name: /^VMware ESXi/ })
       .click();
-    await button(page, "Continue").click();
+    await app.button("Continue").click();
     await expect(stepOf(page)).toHaveText("Step 2 of 5");
-    await expect(page.locator("main")).toContainText("OVF Tool");
-    await expect(button(page, "Continue")).toBeDisabled();
-    await button(page, "Back").click();
+    await expect(app.main).toContainText("OVF Tool");
+    await expect(app.button("Continue")).toBeDisabled();
+    await app.button("Back").click();
     await expect(page.getByRole("radio", { name: /^VMware ESXi/ })).toHaveAttribute("aria-checked", "true");
   });
 });
 
 /** The setup window's page (its own document). */
-const setup = (page: Page) => page.locator("main");
+const setup = (page: Page) => new AppShell(page).main;
 
 test.describe("cloud setup", () => {
-  test("AWS with the CLI: Back keeps the region and the name, then it connects", async ({ page, context }) => {
+  test("AWS with the CLI: Back keeps the region and the name, then it connects", async ({ page, app, context }) => {
     await openApp(page);
-    await navButton(page, "Cloud").click();
-    await expect(pageTitle(page)).toHaveText("Cloud");
+    await app.nav("Cloud").click();
+    await expect(app.title).toHaveText("Cloud");
     const [setup] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: "Set up cloud provider" }).click()]);
 
     await expect(stepOf(setup)).toHaveText("Step 1 of 6");
@@ -141,33 +142,33 @@ test.describe("cloud setup", () => {
     await button(setup, "Save and test").click();
     await expect(stepOf(setup)).toHaveText("Step 6 of 6");
     await expect(setup.getByRole("heading", { level: 1, name: "Lab AWS connected" })).toBeVisible();
-    await expect(page.locator("main").getByText("Lab AWS", { exact: true })).toBeVisible();
-    await expect(page.locator("main")).toContainText("eu-central-1");
+    await expect(app.main.getByText("Lab AWS", { exact: true })).toBeVisible();
+    await expect(app.main).toContainText("eu-central-1");
   });
 
-  test("AWS with access keys: both are needed, and a wrong key id is refused with the reason", async ({ page }) => {
+  test("AWS with access keys: both are needed, and a wrong key id is refused with the reason", async ({ page, app }) => {
     await page.goto("/server-setup?mock&kind=cloud");
-    await button(page, "Continue").click();
-    await button(page, "Continue").click();
+    await app.button("Continue").click();
+    await app.button("Continue").click();
     await page.getByRole("radio", { name: /^Access keys/ }).click();
-    await button(page, "Continue").click();
+    await app.button("Continue").click();
 
     await expect(stepOf(page)).toHaveText("Step 4 of 6");
-    const next = button(page, "Continue");
+    const next = app.button("Continue");
     await expect(next).toBeDisabled();
     await field(page, "Access key ID").fill("abc123");
     await expect(next).toBeDisabled();
     await page.getByLabel(/^Secret access key/).fill("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
     await expect(next).toBeEnabled();
     await next.click();
-    await button(page, "Save and test").click();
+    await app.button("Save and test").click();
     await expect(page.getByText(/access key id looks wrong/)).toBeVisible();
 
-    await button(page, "Back").click();
+    await app.button("Back").click();
     await expect(field(page, "Access key ID")).toHaveValue("abc123");
     await field(page, "Access key ID").fill("AKIAIOSFODNN7EXAMPLE");
-    await button(page, "Continue").click();
-    await button(page, "Save and test").click();
+    await app.button("Continue").click();
+    await app.button("Save and test").click();
     await expect(page.getByRole("heading", { level: 1, name: /connected$/ })).toBeVisible();
   });
 
@@ -177,9 +178,9 @@ test.describe("cloud setup", () => {
   // works, but the menu reads as broken and an account saved with one shows the other as
   // unselected. Fix (credentials-cli.tsx, AwsCliCredentials): leave "default" out of
   // `s.profiles` when listing them (or drop the hard-coded option when the list has it).
-  test("the AWS CLI profile menu lists each profile once", async ({ page }) => {
+  test("the AWS CLI profile menu lists each profile once", async ({ page, app }) => {
     await page.goto("/server-setup?mock&kind=cloud");
-    for (let n = 0; n < 3; n++) await button(page, "Continue").click();
+    for (let n = 0; n < 3; n++) await app.button("Continue").click();
     const profile = page.getByRole("combobox", { name: "Profile" });
     await expect(profile).toBeVisible();
     const labels = await profile.locator("option").allTextContents();

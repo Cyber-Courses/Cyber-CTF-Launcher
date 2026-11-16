@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
+import { test, expect, openApp } from "./fixtures";
 import frSettings from "../../src/messages/fr/settings.json";
 import frShell from "../../src/messages/fr/shell.json";
 
@@ -10,7 +10,7 @@ const sections = (page: Page) => page.getByRole("navigation", { name: /^(Setting
 const radio = (page: Page, group: string, option: string | RegExp) => page.getByRole("radiogroup", { name: group }).getByRole("radio", { name: option });
 
 test.describe("settings persistence", () => {
-  test("theme, language, lab ports and attack box image survive a reload", async ({ page }) => {
+  test("theme, language, lab ports and attack box image survive a reload", async ({ page, app }) => {
     await page.goto("/?mock&window=settings");
     await sections(page).getByRole("button", { name: "Labs" }).click();
     await radio(page, "Lab ports", "Default").click();
@@ -36,19 +36,19 @@ test.describe("settings persistence", () => {
     await page.goto("/?mock");
     await expect(page.locator("html")).toHaveAttribute("lang", "fr");
     await expect(page.locator("html")).toHaveClass(/\blight\b/);
-    await expect(navButton(page, frShell.tabs.labs)).toBeVisible();
-    await navButton(page, frShell.tabs.machine).click();
-    await expect(pageTitle(page)).toHaveText(frShell.tabs.machine);
+    await expect(app.nav(frShell.tabs.labs)).toBeVisible();
+    await app.nav(frShell.tabs.machine).click();
+    await expect(app.title).toHaveText(frShell.tabs.machine);
   });
 
-  test("the lab ports picked in Settings are what a start uses, without asking", async ({ page }) => {
+  test("the lab ports picked in Settings are what a start uses, without asking", async ({ page, app }) => {
     await page.goto("/?mock&window=settings");
     await sections(page).getByRole("button", { name: "Labs" }).click();
     await radio(page, "Lab ports", "Default").click();
 
     await openApp(page);
-    await navButton(page, "Labs").click();
-    await page.locator("main").getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
+    await app.nav("Labs").click();
+    await app.main.getByRole("button", { name: "Open Exposed dashboard", exact: true }).click();
     await page.getByRole("button", { name: "Start lab" }).click();
     const where = page.getByRole("dialog", { name: "Where should the lab run?" });
     // Containers here: Settings has answered which host ports, so picking them asks nothing more.
@@ -60,7 +60,7 @@ test.describe("settings persistence", () => {
     await expect(where).toBeHidden();
     // Its service is published on this machine on its own port, not a random one.
     await expect(page.getByRole("button", { name: "Stop & remove" })).toBeEnabled();
-    await expect(page.locator("main").getByRole("button", { name: ":8443", exact: true })).toBeVisible();
+    await expect(app.main.getByRole("button", { name: ":8443", exact: true })).toBeVisible();
   });
 
   // BUG (accessibility): each Settings section keeps a "Saved" mark in the page at all times, only
@@ -81,11 +81,11 @@ test.describe("settings persistence", () => {
 });
 
 test.describe("machine page", () => {
-  test("a fresh Windows machine lists what to set up", async ({ page, context }) => {
+  test("a fresh Windows machine lists what to set up", async ({ page, app, context }) => {
     await openApp(page, "&machine=fresh&os=windows&arch=x86_64");
-    await navButton(page, "Machine").click();
-    await expect(page.locator("main")).toContainText("2 lab types need setup");
-    await expect(page.locator("main")).toContainText("Windows x86_64");
+    await app.nav("Machine").click();
+    await expect(app.main).toContainText("2 lab types need setup");
+    await expect(app.main).toContainText("Windows x86_64");
     const empty = page.getByRole("region", { name: "No provider installed" });
     await expect(empty).toContainText("Install a container engine or a hypervisor to run labs on this machine.");
     // Add a provider: what Windows can run, each one to install.

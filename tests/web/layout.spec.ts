@@ -1,8 +1,8 @@
-import { test, expect, openApp, navButton, pageTitle, horizontalOverflow } from "./fixtures";
+import { test, expect, openApp, horizontalOverflow } from "./fixtures";
 
 // At 1280x800 (the config's viewport), no main screen scrolls sideways.
 test.describe("layout", () => {
-  test("main screens fit the width", async ({ page }) => {
+  test("main screens fit the width", async ({ page, app }) => {
     expect(page.viewportSize()).toEqual({ width: 1280, height: 800 });
     await openApp(page);
     for (const [tab, heading] of [
@@ -12,14 +12,14 @@ test.describe("layout", () => {
       ["Servers", "Servers"],
       ["Cloud", "Cloud"],
     ] as const) {
-      await navButton(page, tab).click();
-      await expect(pageTitle(page)).toHaveText(heading);
+      await app.nav(tab).click();
+      await expect(app.title).toHaveText(heading);
       expect(await horizontalOverflow(page), `${tab} overflows`).toEqual([]);
     }
 
     // A running lab's page, with its network diagram.
-    await navButton(page, "Labs").click();
-    await page.locator("main").getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
+    await app.nav("Labs").click();
+    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
     await expect(page.locator(".react-flow")).toBeVisible();
     expect(await horizontalOverflow(page), "lab page overflows").toEqual([]);
   });
@@ -27,7 +27,7 @@ test.describe("layout", () => {
   // A wide window: the shell spans it, the list screens stop at 90rem (centred), and a lab's
   // diagram leaves the main column for the page's width, drawing the mock's wide lab (three
   // networks, two pivots) whole, without scrolling sideways.
-  test("a wide window gives a lab's diagram the page's width", async ({ page }) => {
+  test("a wide window gives a lab's diagram the page's width", async ({ page, app }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
     await openApp(page);
     for (const [tab, heading] of [
@@ -36,15 +36,15 @@ test.describe("layout", () => {
       ["Machine", "Machine"],
       ["Servers", "Servers"],
     ] as const) {
-      await navButton(page, tab).click();
-      await expect(pageTitle(page)).toHaveText(heading);
-      const width = await pageTitle(page).evaluate((h) => h.closest(".max-w-\\[90rem\\]")?.getBoundingClientRect().width);
+      await app.nav(tab).click();
+      await expect(app.title).toHaveText(heading);
+      const width = await app.title.evaluate((h) => h.closest(".max-w-\\[90rem\\]")?.getBoundingClientRect().width);
       expect(width, `${tab} width`).toBe(1440);
       expect(await horizontalOverflow(page), `${tab} overflows`).toEqual([]);
     }
 
-    await navButton(page, "Labs").click();
-    await page.locator("main").getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
+    await app.nav("Labs").click();
+    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
     const shell = page.locator(".topology-shell");
     await expect(page.locator(".react-flow__node").filter({ hasText: "10.42.2.21" })).toBeVisible();
     const [card, rail] = await Promise.all([page.locator(".hostcard").boundingBox(), page.locator("aside.h-fit").boundingBox()]);

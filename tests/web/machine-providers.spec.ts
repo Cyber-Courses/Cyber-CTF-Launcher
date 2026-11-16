@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle, animationsFinished, horizontalOverflow, type Locale } from "./fixtures";
+import { test, expect, openApp, animationsFinished, horizontalOverflow, type Locale } from "./fixtures";
+import { AppShell } from "./pages/app-shell";
 import en from "../../src/messages/en/machine.json";
 import de from "../../src/messages/de/machine.json";
 import fr from "../../src/messages/fr/machine.json";
@@ -13,7 +14,7 @@ import fr from "../../src/messages/fr/machine.json";
 type Box = { x: number; y: number; width: number; height: number };
 type Strings = typeof en;
 
-const providers = (page: Page) => page.locator("main").getByRole("list", { name: /./ }).first();
+const providers = (page: Page) => new AppShell(page).main.getByRole("list", { name: /./ }).first();
 // Its own rows only: an open self-test lists its steps inside one.
 const rows = (page: Page) => providers(page).locator(':scope > [role="listitem"]');
 const row = (page: Page, name: string) => rows(page).filter({ has: page.locator('[data-slot="name"]', { hasText: name }) });
@@ -41,9 +42,10 @@ const columnXs = (page: Page, name: string) =>
   rows(page).evaluateAll((items, n) => items.map((i) => Math.round(i.querySelector(`[data-slot="${n}"]`)?.getBoundingClientRect().x ?? -1)), name);
 
 async function openMachine(page: Page, s: Strings) {
+  const app = new AppShell(page);
   await openApp(page, "&machine=many&deploying=none");
-  await navButton(page, s.screen.title).click();
-  await expect(pageTitle(page)).toHaveText(s.screen.title);
+  await app.nav(s.screen.title).click();
+  await expect(app.title).toHaveText(s.screen.title);
   await expect(rows(page)).toHaveCount(6);
   await animationsFinished(page);
 }

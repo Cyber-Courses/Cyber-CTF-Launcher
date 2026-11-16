@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, navButton, pageTitle, release } from "./fixtures";
+import { test, expect, release } from "./fixtures";
 
 // The first-run onboarding, on each machine the dev mock can report (`?mock&onboarding` plus the
 // scenario switches `os`, `arch` and `machine`, see src/lib/dev-mock/scenario.ts).
@@ -32,7 +32,7 @@ const READY = [
 
 test.describe("onboarding", () => {
   for (const machine of READY) {
-    test(`a ready ${machine.name} machine goes from the welcome to "You're all set"`, async ({ page }) => {
+    test(`a ready ${machine.name} machine goes from the welcome to "You're all set"`, async ({ page, app }) => {
       const steps = ["Welcome", "Sign in", ...MACHINE_STEPS.slice(0, 1), ...(machine.wsl ? ["Virtualization"] : []), ...MACHINE_STEPS.slice(1), "Done"];
       const total = steps.length;
       await page.goto(`/?mock&onboarding${machine.query}`);
@@ -73,8 +73,8 @@ test.describe("onboarding", () => {
       await expect(page.getByRole("button", { name: "Skip setup" })).toHaveCount(0);
 
       await page.getByRole("button", { name: "Browse labs" }).click();
-      await expect(pageTitle(page)).toHaveText("Labs");
-      await expect(navButton(page, "Labs")).toHaveAttribute("aria-current", "page");
+      await expect(app.title).toHaveText("Labs");
+      await expect(app.nav("Labs")).toHaveAttribute("aria-current", "page");
       expect(await onboarded(page)).toBe("1");
     });
   }
@@ -100,7 +100,7 @@ test.describe("onboarding", () => {
     { os: "linux", query: "&os=linux&arch=x86_64", instructions: (page: Page) => page.getByText(/package manager \(apt\)/) },
   ];
   for (const machine of FRESH) {
-    test(`a fresh ${machine.os} machine waits on its package manager, and Skip setup lands on Labs`, async ({ page }) => {
+    test(`a fresh ${machine.os} machine waits on its package manager, and Skip setup lands on Labs`, async ({ page, app }) => {
       await page.goto(`/?mock&onboarding&machine=fresh${machine.query}`);
       await page.getByRole("button", { name: "Get started" }).click();
       await forward(page).click();
@@ -110,17 +110,17 @@ test.describe("onboarding", () => {
       await expect(forward(page)).toBeDisabled();
 
       await page.getByRole("button", { name: "Skip setup" }).click();
-      await expect(pageTitle(page)).toHaveText("Labs");
+      await expect(app.title).toHaveText("Labs");
       expect(await onboarded(page)).toBe("1");
 
       // The Machine page says what is left to do, and offers to add a provider.
-      await navButton(page, "Machine").click();
+      await app.nav("Machine").click();
       await expect(page.getByText("2 lab types need setup")).toBeVisible();
       await expect(page.getByRole("region", { name: "No provider installed" }).getByRole("button", { name: "Add a provider" })).toBeVisible();
     });
   }
 
-  test("signing in can be skipped for now: the summary and the app say so", async ({ page }) => {
+  test("signing in can be skipped for now: the summary and the app say so", async ({ page, app }) => {
     await page.goto("/?mock&onboarding&auth=out");
     await page.getByRole("button", { name: "Get started" }).click();
     await expect(page.getByText(/sign in later from Settings/)).toBeVisible();
@@ -134,17 +134,12 @@ test.describe("onboarding", () => {
     await expect(page.getByText("Not signed in (sign in later from Settings)")).toBeVisible();
     await page.getByRole("button", { name: "Browse labs" }).click();
     // The app opens signed out, the labs listed, with the way to sign in still there.
-    await expect(pageTitle(page)).toHaveText("Labs");
-    await expect(
-      page
-        .locator("main")
-        .getByRole("button", { name: /^Open / })
-        .first(),
-    ).toBeVisible();
+    await expect(app.title).toHaveText("Labs");
+    await expect(app.main.getByRole("button", { name: /^Open / }).first()).toBeVisible();
     expect(await onboarded(page)).toBe("1");
   });
 
-  test("signing in from the onboarding shows on the summary", async ({ page }) => {
+  test("signing in from the onboarding shows on the summary", async ({ page, app }) => {
     await page.goto("/?mock&onboarding&auth=out");
     await page.getByRole("button", { name: "Get started" }).click();
     await page.getByRole("button", { name: "Sign in with your browser" }).click();
@@ -159,7 +154,7 @@ test.describe("onboarding", () => {
     await expect(page.getByText("Signed in as Ada Lovelace").first()).toBeVisible();
     await page.getByRole("button", { name: "Browse labs" }).click();
     // The shell picked the sign-in up: the account shows in the sidebar, no "Sign in" prompt.
-    await expect(pageTitle(page)).toHaveText("Labs");
+    await expect(app.title).toHaveText("Labs");
     await expect(page.locator("aside")).toContainText("Ada");
   });
 
@@ -176,7 +171,7 @@ test.describe("onboarding", () => {
     await expect(forward(page)).toBeEnabled();
   });
 
-  test("Replay in Settings shows the onboarding again in the main window", async ({ page, context }) => {
+  test("Replay in Settings shows the onboarding again in the main window", async ({ page, app, context }) => {
     await page.goto("/?mock");
     await expect(page.locator("aside nav")).toBeVisible();
     const [settings] = await Promise.all([
@@ -195,7 +190,7 @@ test.describe("onboarding", () => {
 
     // Skipping it again brings the shell back, on Labs.
     await page.getByRole("button", { name: "Skip setup" }).click();
-    await expect(pageTitle(page)).toHaveText("Labs");
+    await expect(app.title).toHaveText("Labs");
     expect(await onboarded(page)).toBe("1");
   });
 });

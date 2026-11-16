@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, horizontalOverflow, animationsFinished } from "./fixtures";
+import { test, expect, openApp, horizontalOverflow, animationsFinished } from "./fixtures";
+import { AppShell } from "./pages/app-shell";
 import deSettings from "../../src/messages/de/settings.json";
 
 // The windows at their smallest (src-tauri: Settings 560x480, server setup 560x560) and a lab
@@ -67,13 +68,14 @@ test.describe("the server setup window at its minimum size", () => {
 
 test.describe("a lab wider than its card", () => {
   const openWideLab = async (page: Page) => {
+    const app = new AppShell(page);
     await openApp(page);
-    await navButton(page, "Labs").click();
-    await page.locator("main").getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
+    await app.nav("Labs").click();
+    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
     await expect(page.locator(".react-flow__node").filter({ hasText: "10.42.2.21" })).toBeAttached();
   };
 
-  test("says there is more, and fits to the width on request, remembered", async ({ page }) => {
+  test("says there is more, and fits to the width on request, remembered", async ({ page, app }) => {
     await openWideLab(page);
     const shell = page.locator(".topology-shell");
     const fit = page.getByRole("button", { name: "Fit to width" });
@@ -91,8 +93,8 @@ test.describe("a lab wider than its card", () => {
     await expect(page.locator(".react-flow__node").filter({ hasText: "10.42.2.21" })).toBeInViewport();
 
     await page.reload();
-    await navButton(page, "Labs").click();
-    await page.locator("main").getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
+    await app.nav("Labs").click();
+    await app.main.getByRole("button", { name: "Open Invoice portal API", exact: true }).click();
     await expect(page.getByRole("button", { name: "Fit to width" })).toHaveAttribute("aria-pressed", "true");
   });
 

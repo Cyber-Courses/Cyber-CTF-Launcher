@@ -1,4 +1,4 @@
-import { test, expect, openApp, navButton, pageTitle, emitEvent } from "./fixtures";
+import { test, expect, openApp, emitEvent } from "./fixtures";
 
 // What the Rust core tells the main window, through the dev mock's event delivery: a
 // `cyberctf://labs/<slug>` link (the deep-link plugin's `deep-link://new-url`, or the one the app
@@ -8,38 +8,38 @@ import { test, expect, openApp, navButton, pageTitle, emitEvent } from "./fixtur
 const DEEP_LINK = "deep-link://new-url";
 
 test.describe("deep links", () => {
-  test("a link opened while the app runs shows that lab, whatever screen is open; other links are ignored", async ({ page }) => {
+  test("a link opened while the app runs shows that lab, whatever screen is open; other links are ignored", async ({ page, app }) => {
     await openApp(page);
-    await navButton(page, "Machine").click();
-    await expect(pageTitle(page)).toHaveText("Machine");
+    await app.nav("Machine").click();
+    await expect(app.title).toHaveText("Machine");
 
     await emitEvent(page, DEEP_LINK, ["cyberctf://labs/goad-light"]);
-    await expect(pageTitle(page)).toHaveText("GOAD Light");
-    await expect(navButton(page, "Labs")).toHaveAttribute("aria-current", "page");
+    await expect(app.title).toHaveText("GOAD Light");
+    await expect(app.nav("Labs")).toHaveAttribute("aria-current", "page");
     // Shown, never started: a web page can't start containers without a click.
-    await expect(page.locator("main")).not.toContainText("Running·");
+    await expect(app.main).not.toContainText("Running·");
 
     // Not a lab link, or not one of ours: nothing happens.
-    await navButton(page, "Servers").click();
+    await app.nav("Servers").click();
     for (const url of ["https://cyberctf.com/labs/goad-light", "cyberctf://labs/Not_A_Slug!", "cyberctf://account/goad-light"]) {
       await emitEvent(page, DEEP_LINK, [url]);
     }
-    await expect(pageTitle(page)).toHaveText("Servers");
+    await expect(app.title).toHaveText("Servers");
     // A lab the catalogue doesn't have: the list.
     await emitEvent(page, DEEP_LINK, ["cyberctf://labs/no-such-lab"]);
-    await expect(pageTitle(page)).toHaveText("Labs");
+    await expect(app.title).toHaveText("Labs");
     // The first lab link of a batch wins.
     await emitEvent(page, DEEP_LINK, ["cyberctf://nope", "cyberctf://labs/s3-public-backup", "cyberctf://labs/goad-light"]);
-    await expect(pageTitle(page)).toHaveText("Public backup");
+    await expect(app.title).toHaveText("Public backup");
   });
 
-  test("the link the app was opened with shows its lab once", async ({ page }) => {
+  test("the link the app was opened with shows its lab once", async ({ page, app }) => {
     await openApp(page, `&link=${encodeURIComponent("cyberctf://labs/kube-dashboard-exposed")}`);
-    await expect(pageTitle(page)).toHaveText("Exposed dashboard");
-    await navButton(page, "Machine").click();
-    await expect(pageTitle(page)).toHaveText("Machine");
-    await navButton(page, "Labs").click();
-    await expect(pageTitle(page)).toHaveText("Labs");
+    await expect(app.title).toHaveText("Exposed dashboard");
+    await app.nav("Machine").click();
+    await expect(app.title).toHaveText("Machine");
+    await app.nav("Labs").click();
+    await expect(app.title).toHaveText("Labs");
   });
 });
 

@@ -1,9 +1,9 @@
-import { test, expect, openApp, navButton, pageTitle, breadcrumb, paletteKey } from "./fixtures";
+import { test, expect, openApp, paletteKey } from "./fixtures";
 
 test.describe("navigation", () => {
   test.beforeEach(async ({ page }) => openApp(page));
 
-  test("every sidebar screen opens with its heading", async ({ page }) => {
+  test("every sidebar screen opens with its heading", async ({ app }) => {
     for (const [tab, heading] of [
       ["Labs", "Labs"],
       ["Machine", "Machine"],
@@ -11,11 +11,11 @@ test.describe("navigation", () => {
       ["Cloud", "Cloud"],
       ["Overview", /Ada/],
     ] as const) {
-      await navButton(page, tab).click();
-      await expect(navButton(page, tab)).toHaveAttribute("aria-current", "page");
-      await expect(pageTitle(page)).toHaveText(heading);
+      await app.nav(tab).click();
+      await expect(app.nav(tab)).toHaveAttribute("aria-current", "page");
+      await expect(app.title).toHaveText(heading);
       // The breadcrumb ends with the screen's name.
-      await expect(breadcrumb(page)).toHaveText(tab);
+      await expect(app.breadcrumb).toHaveText(tab);
     }
   });
 
@@ -32,7 +32,7 @@ test.describe("navigation", () => {
     await expect(settings.getByRole("heading", { level: 2, name: "Account" })).toBeVisible();
   });
 
-  test("command palette opens and navigates", async ({ page }) => {
+  test("command palette opens and navigates", async ({ page, app }) => {
     await page.keyboard.press(await paletteKey(page));
     const palette = page.getByRole("dialog", { name: "Command menu" });
     await expect(palette).toBeVisible();
@@ -46,14 +46,14 @@ test.describe("navigation", () => {
     await expect(palette.getByRole("combobox")).toHaveAttribute("aria-activedescendant", (await option.getAttribute("id"))!);
     await page.keyboard.press("Enter");
     await expect(palette).toBeHidden();
-    await expect(pageTitle(page)).toHaveText("Servers");
+    await expect(app.title).toHaveText("Servers");
 
     // Escape closes it without doing anything.
     await page.keyboard.press(await paletteKey(page));
     await expect(palette).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(palette).toBeHidden();
-    await expect(pageTitle(page)).toHaveText("Servers");
+    await expect(app.title).toHaveText("Servers");
 
     // A lab, picked by name from the sidebar's Find button, opens its page.
     await page.getByRole("button", { name: /^Find/ }).click();
@@ -61,6 +61,6 @@ test.describe("navigation", () => {
     await page.keyboard.type("GOAD");
     await palette.getByRole("option", { name: /GOAD Light/ }).click();
     await expect(palette).toBeHidden();
-    await expect(pageTitle(page)).toHaveText("GOAD Light");
+    await expect(app.title).toHaveText("GOAD Light");
   });
 });

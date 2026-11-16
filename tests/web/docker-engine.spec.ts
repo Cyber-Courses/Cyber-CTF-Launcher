@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
+import { test, expect, openApp } from "./fixtures";
+import { AppShell } from "./pages/app-shell";
 
 // The container engine's states as the system check reports them (`docker=stopped`: installed but
 // not running; `docker=denied`: running but refusing this account, with the core's hint and its
@@ -8,29 +9,26 @@ import { test, expect, openApp, navButton, pageTitle } from "./fixtures";
 // run?". `deploying=none`: the Overview's second column is this machine's summary, not GOAD
 // Light's deploy.
 
-const main = (page: Page) => page.locator("main");
-const header = (page: Page) => page.locator("main > [data-tauri-drag-region]");
 /** The lab row's title cell, which reads what this machine is missing in place of the description. */
-const rowCell = (page: Page, title: string) =>
-  main(page)
-    .getByRole("button", { name: `Open ${title}`, exact: true })
-    .locator("xpath=..");
+const rowCell = (page: Page, title: string) => new AppShell(page).main.getByRole("button", { name: `Open ${title}`, exact: true }).locator("xpath=..");
 /** The Machine page's row of the engine container labs use (the first provider). */
-const containerRow = (page: Page) => main(page).getByRole("list", { name: "Providers" }).getByRole("listitem").first();
+const containerRow = (page: Page) => new AppShell(page).main.getByRole("list", { name: "Providers" }).getByRole("listitem").first();
 
 async function expectOverviewDown(page: Page) {
-  await expect(main(page)).toContainText("Set up Docker to start running labs.");
-  await expect(main(page).getByRole("button", { name: "Set up this machine" })).toBeVisible();
-  await expect(main(page)).not.toContainText("This machine is ready.");
+  const app = new AppShell(page);
+  await expect(app.main).toContainText("Set up Docker to start running labs.");
+  await expect(app.main.getByRole("button", { name: "Set up this machine" })).toBeVisible();
+  await expect(app.main).not.toContainText("This machine is ready.");
   // This machine's summary: the engine stopped.
-  const engine = main(page).getByText("Docker engine", { exact: true }).locator("xpath=..");
+  const engine = app.main.getByText("Docker engine", { exact: true }).locator("xpath=..");
   await expect(engine).toContainText("Stopped");
-  await expect(header(page)).toContainText("Docker not running");
+  await expect(app.header).toContainText("Docker not running");
 }
 
 async function expectLabsNeedEngine(page: Page, readiness: string) {
-  await navButton(page, "Labs").click();
-  await expect(pageTitle(page)).toHaveText("Labs");
+  const app = new AppShell(page);
+  await app.nav("Labs").click();
+  await expect(app.title).toHaveText("Labs");
   for (const title of ["Blind orders", "Exposed dashboard"]) {
     await expect(rowCell(page, title)).toContainText(readiness);
     await expect(rowCell(page, title).locator("xpath=..").getByRole("button", { name: "Set up", exact: true })).toBeVisible();
@@ -42,9 +40,10 @@ async function expectLabsNeedEngine(page: Page, readiness: string) {
 }
 
 async function expectEngineStoppedInDialog(page: Page) {
-  await main(page).getByRole("button", { name: "Open Blind orders", exact: true }).click();
-  await expect(pageTitle(page)).toHaveText("Blind orders");
-  await main(page).getByRole("button", { name: "Start lab", exact: true }).click();
+  const app = new AppShell(page);
+  await app.main.getByRole("button", { name: "Open Blind orders", exact: true }).click();
+  await expect(app.title).toHaveText("Blind orders");
+  await app.main.getByRole("button", { name: "Start lab", exact: true }).click();
   const where = page.getByRole("dialog", { name: "Where should the lab run?" });
   const here = where.getByRole("radio", { name: /On your system/ });
   await expect(here).toContainText("Engine stopped");
@@ -54,30 +53,30 @@ async function expectEngineStoppedInDialog(page: Page) {
 }
 
 test.describe("Docker engine states", () => {
-  test("engine stopped: the Overview, the header, the Machine page and the labs say to start it", async ({ page }) => {
+  test("engine stopped: the Overview, the header, the Machine page and the labs say to start it", async ({ page, app }) => {
     await openApp(page, "&docker=stopped&deploying=none");
     await expectOverviewDown(page);
 
-    await navButton(page, "Machine").click();
-    await expect(pageTitle(page)).toHaveText("Machine");
-    await expect(main(page)).toContainText("1 lab type needs setup");
+    await app.nav("Machine").click();
+    await expect(app.title).toHaveText("Machine");
+    await expect(app.main).toContainText("1 lab type needs setup");
     await expect(containerRow(page)).toContainText("Stopped");
     await expect(containerRow(page)).toContainText("A container engine is installed but not running. Start it to run labs.");
     await expect(containerRow(page).getByRole("button", { name: "Fix", exact: true })).toBeVisible();
     // VM labs are fine: UTM on this Apple Silicon Mac.
-    await expect(main(page)).toContainText("UTM");
+    await expect(app.main).toContainText("UTM");
 
     await expectLabsNeedEngine(page, "Start your container engine");
     await expectEngineStoppedInDialog(page);
   });
 
-  test("engine denied (Linux): the Overview and the header, then the Machine page's hint with the group, and the labs", async ({ page }) => {
+  test("engine denied (Linux): the Overview and the header, then the Machine page's hint with the group, and the labs", async ({ page, app }) => {
     await openApp(page, "&os=linux&docker=denied&deploying=none");
     await expectOverviewDown(page);
 
-    await navButton(page, "Machine").click();
-    await expect(pageTitle(page)).toHaveText("Machine");
-    await expect(main(page)).toContainText("1 lab type needs setup");
+    await app.nav("Machine").click();
+    await expect(app.title).toHaveText("Machine");
+    await expect(app.main).toContainText("1 lab type needs setup");
     await expect(containerRow(page)).toContainText("No permission");
     // The core's hint, by its code, in the player's language, with the account to add.
     await expect(containerRow(page)).toContainText(
@@ -90,10 +89,10 @@ test.describe("Docker engine states", () => {
     await expectEngineStoppedInDialog(page);
   });
 
-  test("engine denied (Windows): the hint names the docker-users group", async ({ page }) => {
+  test("engine denied (Windows): the hint names the docker-users group", async ({ page, app }) => {
     await openApp(page, "&os=windows&arch=x86_64&docker=denied&deploying=none");
-    await expect(header(page)).toContainText("Docker not running");
-    await navButton(page, "Machine").click();
+    await expect(app.header).toContainText("Docker not running");
+    await app.nav("Machine").click();
     await expect(containerRow(page)).toContainText("No permission");
     await expect(containerRow(page)).toContainText(
       'Docker is running, but your account can\'t use it yet. Add yourself to the docker-users group (in a terminal run as administrator: net localgroup docker-users "ada" /add), then sign out and back in.',
