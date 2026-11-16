@@ -85,8 +85,9 @@ areas:
             - src-tauri/src/account/auth/store.rs > a_session_is_forgotten_only_when_its_store_lets_it_go
             - src/features/settings/settings-rows.test.tsx > signs out
             - src/features/account/account.test.tsx > says a sign-out the keychain refused
+          web:
+            - signed-out.spec.ts > Sign out in Settings > Account forgets the session, and every window reads signed out
         gaps:
-          web: no spec presses Sign out (signed-out.spec starts signed out)
           integration: keychain removal never run on a real OS store
 
       - id: account.signed-out-states
@@ -387,8 +388,10 @@ areas:
             - src/features/home/home-behavior.test.tsx > resumes a parked lab from Jump back in
             - src/features/home/home-behavior.test.tsx > shows how long ago, and disables Resume while busy or not allowed
             - src/features/home/home-model.test.ts > lists the labs launched last, newest first, not running, at most three
-        gaps:
-          web: the mock deploys GOAD by default but no spec checks the deploy panel or Jump back in
+          web:
+            - overview.spec.ts > the deploy panel names the lab deploying, its step and machine, and View opens its page
+            - overview.spec.ts > Jump back in lists a lab launched before, how long ago, and opens it
+            - overview.spec.ts > Jump back in is not shown before any lab was launched here
 
       - id: catalogue.machine-summary
         what: The Overview's machine summary shows the engine state, containers, cores and usage, and warns a machine under 8 GB of RAM to use a server or the cloud.
@@ -921,6 +924,8 @@ areas:
             - src-tauri/src/runtime/lab/tests.rs > requirements_size_a_single_form_lab_as_one_value
             - src-tauri/src/runtime/launch/tests.rs > memory_is_a_warning_only_when_the_lab_needs_more_than_is_free
             - src/features/labs/lab-detail/where-it-runs.test.tsx > shows the lab
+          web:
+            - "lab-page.spec.ts > a lab's needs are said before it starts: a range over its forms, or one value"
 
       - id: lab-run.solvability-check
         what: Run a lab's own checks (is the intended exploit path still there?) wherever it runs, e.g. after a machine went down.
@@ -1497,6 +1502,8 @@ areas:
             - src-tauri/src/commands/labs.rs > the_observers_are_at_their_addresses_in_the_form_the_lab_was_started_in
             - src-tauri/src/runtime/lab/tests.rs > observers_come_with_their_addresses
             - src/features/labs/lab-detail/use-lab-tools.test.ts
+          web:
+            - lab-page.spec.ts > the observers a running lab puts beside itself are listed at their address
         gaps:
           unit: the observers panel itself (observers-panel.tsx) is not rendered by any test
           integration: no scenario lab declares tools
@@ -3482,6 +3489,8 @@ areas:
         tests:
           unit:
             - src/features/settings/settings-screen.test.tsx > presses every control of the
+          web:
+            - settings.spec.ts > Remembered launch choices says one is kept, and Ask again forgets it
         gaps:
           unit: only the click-every-control sweep; no test checks the remembered text or that Ask again clears the choices
 
@@ -3560,8 +3569,7 @@ areas:
             - src/features/settings/settings-screen.test.tsx > says why the version, the machine check and the agent couldn't be read
           web:
             - a11y.spec.ts > the Settings window passes too
-        gaps:
-          web: only rendered for axe; nothing checks the version shown
+            - settings.spec.ts > About shows the app's version, this system and the install id
 
       - id: settings.managed-by-organization
         what: An administrator's policy (registry, managed preferences, /etc JSON) can turn off the website agent, the updater, tool installs, cloud launches and privileged labs; Settings lists what is managed.
@@ -3799,8 +3807,9 @@ areas:
           unit:
             - src/components/shell-behavior.test.tsx > says Events is coming soon
             - src/components/shell/shell-model.test.ts > a coming-soon tab still is one
+          web:
+            - navigation.spec.ts > the Events tab says Events is on the way
         gaps:
-          web: not opened by navigation.spec, a11y or i18n-pages
           desktop: not opened
 
   - id: empty
@@ -4013,6 +4022,8 @@ areas:
             - src/features/settings/settings-rows.test.tsx > copies English diagnostics for a bug report
             - src/features/settings/settings-rows.test.tsx > copies what it knows on a machine without a report or sign-in
             - src/features/settings/settings-rows.test.tsx > stays quiet when the clipboard is unavailable
+          web:
+            - settings.spec.ts > Copy in About puts the diagnostics for a bug report on the clipboard, in English
         gaps:
           desktop: not covered (real clipboard)
 

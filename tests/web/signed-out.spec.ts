@@ -1,4 +1,5 @@
 import { test, expect, openApp, release } from "./fixtures";
+import { SettingsWindow } from "./pages/settings";
 
 // The app signed out, past the onboarding (`auth=out`, see src/lib/dev-mock/scenario.ts): what the
 // Labs list, a lab's page, the sidebar and Settings say, and how they all recover once the player
@@ -33,7 +34,7 @@ test.describe("signed out", () => {
 
     // Settings, in its own window: the account row.
     const [settings] = await Promise.all([context.waitForEvent("page"), app.sidebar.getByRole("button", { name: /^Settings/ }).click()]);
-    await settings.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: "Account" }).click();
+    await new SettingsWindow(settings).show("Account");
     await expect(settings.getByText("Not signed in")).toBeVisible();
     await expect(settings.getByText("Offline", { exact: true })).toBeVisible();
     await expect(settings.getByText("Sign in with your Cyber account to sync labs and run them from any device.")).toBeVisible();
@@ -132,7 +133,7 @@ test.describe("signed out", () => {
     await expect(app.sidebar).toContainText(why);
     await expect(app.sidebar.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
     const [settings] = await Promise.all([context.waitForEvent("page"), app.sidebar.getByRole("button", { name: /^Settings/ }).click()]);
-    await settings.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: "Account" }).click();
+    await new SettingsWindow(settings).show("Account");
     await expect(settings.getByText("Not signed in")).toBeVisible();
     await expect(settings.getByText(why)).toBeVisible();
     await settings.close();
@@ -140,5 +141,26 @@ test.describe("signed out", () => {
     await app.sidebar.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(app.sidebar).toContainText("Ada Lovelace");
     await expect(app.sidebar).not.toContainText(why);
+  });
+
+  test("Sign out in Settings > Account forgets the session, and every window reads signed out", async ({ page, app, context }) => {
+    await openApp(page);
+    await expect(app.sidebar).toContainText("Ada Lovelace");
+    const [settings] = await Promise.all([context.waitForEvent("page"), app.sidebar.getByRole("button", { name: /^Settings/ }).click()]);
+    await new SettingsWindow(settings).show("Account");
+    await expect(settings.getByText("Ada Lovelace", { exact: true })).toBeVisible();
+
+    await settings.getByRole("button", { name: "Sign out", exact: true }).click();
+    // The Settings window: no account, the sign-in offered again.
+    await expect(settings.getByText("Not signed in")).toBeVisible();
+    await expect(settings.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    await expect(settings.getByRole("button", { name: "Sign out" })).toHaveCount(0);
+    // The main window, without a reload: the sidebar offers the sign-in, and starting a lab asks for it.
+    await expect(app.sidebar).not.toContainText("Ada Lovelace");
+    await expect(app.sidebar.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    await settings.close();
+    await app.nav("Labs").click();
+    await app.button("Open Blind orders").click();
+    await expect(app.button("Sign in to start")).toBeVisible();
   });
 });
