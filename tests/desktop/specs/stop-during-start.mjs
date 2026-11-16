@@ -1,4 +1,4 @@
-// Resilience (tests/resilience.md): Stop pressed while the lab starts. The stop ends the start's
+// Resilience (docs/contributing/testing/resilience.md): Stop pressed while the lab starts. The stop ends the start's
 // worker (and what it was running), takes the lab down, and says it stopped; the start ends
 // without calling the lab running; nothing of the lab is left on Docker; and a start again then
 // brings it up, as the player would try next.

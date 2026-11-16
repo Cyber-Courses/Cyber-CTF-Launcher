@@ -1,7 +1,7 @@
 #!/bin/sh
 # The leftover audit's snapshot of a Proxmox VE node or an ESXi host (snapshot.sh: Linux and
 # macOS; snapshot.ps1: Windows): what the server holds of every kind of resource the stack makes
-# there (tests/leftovers.md, "Servers"), as one JSON document on standard output. POSIX sh, as
+# there (docs/contributing/testing/leftovers.md, "Servers"), as one JSON document on standard output. POSIX sh, as
 # ESXi's shell is BusyBox's: run on the server itself, as root, for example from the machine that
 # drives it:
 #

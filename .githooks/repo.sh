@@ -27,7 +27,7 @@ format_staged() {
 gate() {
   pnpm format:check || refuse "pnpm format:check fails: pnpm format, commit that, push again"
   cargo fmt --manifest-path src-tauri/Cargo.toml --check || refuse "cargo fmt --check fails: pnpm format, commit that, push again"
-  pnpm check:features || refuse "pnpm check:features fails: the feature registry names a test that isn't there (tests/features.yml), or tests/FEATURES.md is stale (pnpm features)"
+  pnpm check:features || refuse "pnpm check:features fails: the feature registry names a test that isn't there (tests/features/registry.yml), or tests/features/FEATURES.md is stale (pnpm features)"
   pnpm check:tauri || refuse "pnpm check:tauri fails: a Tauri JS plugin and its Rust crate drifted apart"
   pnpm check:docs || refuse "pnpm check:docs fails: a link in the Markdown resolves to nothing"
   if [ "${HOOKS_QUICK:-0}" = 1 ]; then

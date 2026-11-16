@@ -176,7 +176,7 @@ fn a_vm_box_download_that_stalled_or_failed_is_said_as_the_box() {
     }
 }
 
-/// Regression (tests/resilience.md N4): a revoked Proxmox token or a changed ESXi password
+/// Regression (docs/contributing/testing/resilience.md N4): a revoked Proxmox token or a changed ESXi password
 /// showed only as the step's raw failure.
 #[test]
 fn a_server_refusing_the_credentials_says_to_update_them_in_servers() {

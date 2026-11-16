@@ -1,4 +1,4 @@
-// The feature registry (`tests/features.yml`): what the launcher does for its user, area by area,
+// The feature registry (`tests/features/registry.yml`): what the launcher does for its user, area by area,
 // and the tests that check each feature, tier by tier. This module reads it and holds it to its
 // shape; whether what it names exists is `check.ts`'s, how well it is covered `coverage.ts`'s.
 import { parse } from "yaml";

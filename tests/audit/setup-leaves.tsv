@@ -1,5 +1,5 @@
 # What the guided setup leaves on a machine on purpose, by the item it installs, in the leftover
-# audit's own words (tests/leftovers.md, "What the guided setup leaves"): item (as the headless
+# audit's own words (docs/contributing/testing/leftovers.md, "What the guided setup leaves"): item (as the headless
 # setup entry's records name it, `*` and `?` allowed)<TAB>os (linux, macos, windows or any)<TAB>
 # kind (kinds.ts)<TAB>glob on the name the report shows (allowlist.tsv's)<TAB>why it stays. The
 # entry (integration_tests::setup) puts each `installed:` record's rows in its `leaves`, so a

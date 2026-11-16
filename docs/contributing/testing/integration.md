@@ -69,7 +69,7 @@ Docker, and Vagrant with QEMU (`CYBERCTF_TEST_VM_PROVIDER`). About 30 minutes, m
 | `resilience-vm-killed-start`         | the process running a VM lab's start killed while Vagrant provisions: failed, a start again ends its Vagrant and works                                                                                                                      |                                                                                                                                                                                                                                                                           |
 | `resilience-vm-killed-provisioning`  | a VM killed by its hypervisor's own tool while `vagrant up` provisions it (throwaway machines only, `CYBERCTF_TEST_RESILIENCE_VM_KILL`): the start fails or finishes whole, a start again works                                             |                                                                                                                                                                                                                                                                           |
 
-The `resilience-*` scenarios are the real-host part of [tests/resilience.md](../../../tests/resilience.md),
+The `resilience-*` scenarios are the real-host part of [resilience.md](resilience.md),
 the catalogue of what a player does that breaks a lab. A killed-start scenario runs the start in a
 child process, this test binary again running
 `integration_tests::resilience::the_child_starts_the_lab_it_is_handed` (never a scenario of its

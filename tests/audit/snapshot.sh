@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The leftover audit's snapshot on Linux and macOS (snapshot.ps1: Windows; snapshot-server.sh: a
 # Proxmox or ESXi server): what this machine holds of every kind of resource the launcher's stack
-# can make (tests/leftovers.md), as one JSON document. Read-only and quick: each tool is asked
+# can make (docs/contributing/testing/leftovers.md), as one JSON document. Read-only and quick: each tool is asked
 # once, with a time limit, and a tool that's missing, refuses or doesn't answer is recorded as
 # such (the diff makes it a `skip`), never an error.
 #
@@ -190,7 +190,7 @@ files_probes() {
   local dirs=() d
   while IFS= read -r d; do [ -d "$d" ] && dirs+=("$d"); done < <(data_dirs)
   : >"$WORK/files"
-  # The temp folders the stack names (tests/leftovers.md, "Files"), at the top of each temp folder.
+  # The temp folders the stack names (docs/contributing/testing/leftovers.md, "Files"), at the top of each temp folder.
   # -H: a temp folder that is a symlink is searched, not listed as itself (macOS's /tmp is one, to
   # /private/tmp, which find alone never looks into).
   for d in "${TMPDIR:-/tmp}" /tmp /var/tmp; do
@@ -212,7 +212,7 @@ files_probes() {
 
 # --- Processes and listening ports ---------------------------------------------------------
 
-# The processes the stack starts (tests/leftovers.md, "Processes"): the app, its deploy workers
+# The processes the stack starts (docs/contributing/testing/leftovers.md, "Processes"): the app, its deploy workers
 # and screen bridge, Isothrum, Vagrant, the hypervisors' VM processes, tunnels, Terraform. Only
 # those are recorded: the whole process table would carry other programs' arguments. Vagrant by its
 # program (the command's first word, or the `.../bin/vagrant` script its Ruby runs), never a word of

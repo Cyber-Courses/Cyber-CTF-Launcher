@@ -110,14 +110,14 @@ describe("problems", () => {
 
   it("names each command, page, scenario and desktop case no feature claims", () => {
     expect(problems(registryOf([feature()]), facts, rig)).toEqual([
-      "command lab_launch belongs to no feature: add it to one in tests/features.yml",
-      "command lab_stop belongs to no feature: add it to one in tests/features.yml",
-      "page tab:labs belongs to no feature: add it to one in tests/features.yml",
-      "page route:/shell belongs to no feature: add it to one in tests/features.yml",
-      "integration scenario vm-lab belongs to no feature: add it to one in tests/features.yml",
-      "integration scenario setup belongs to no feature: add it to one in tests/features.yml",
-      "desktop case lab-form-vm belongs to no feature: add it to one in tests/features.yml",
-      "desktop case smoke belongs to no feature: add it to one in tests/features.yml",
+      "command lab_launch belongs to no feature: add it to one in tests/features/registry.yml",
+      "command lab_stop belongs to no feature: add it to one in tests/features/registry.yml",
+      "page tab:labs belongs to no feature: add it to one in tests/features/registry.yml",
+      "page route:/shell belongs to no feature: add it to one in tests/features/registry.yml",
+      "integration scenario vm-lab belongs to no feature: add it to one in tests/features/registry.yml",
+      "integration scenario setup belongs to no feature: add it to one in tests/features/registry.yml",
+      "desktop case lab-form-vm belongs to no feature: add it to one in tests/features/registry.yml",
+      "desktop case smoke belongs to no feature: add it to one in tests/features/registry.yml",
     ]);
   });
 

@@ -1,4 +1,4 @@
-// The leftover audit's commands (tests/audit/run.sh runs them; tests/leftovers.md is the contract):
+// The leftover audit's commands (tests/audit/run.sh runs them; docs/contributing/testing/leftovers.md is the contract):
 //
 //   pnpm leftovers diff <before.json> <after.json> [options]   what the run left, kind by kind
 //   pnpm leftovers inventory <snapshot.json>                   a snapshot's items, one JSON line each

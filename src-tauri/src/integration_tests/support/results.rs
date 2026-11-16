@@ -45,7 +45,7 @@ pub(crate) struct Record {
 }
 
 /// One thing a check leaves on the machine on purpose, in the leftover audit's words
-/// (tests/leftovers.md): its kind, and a glob on the name the audit's report shows.
+/// (docs/contributing/testing/leftovers.md): its kind, and a glob on the name the audit's report shows.
 #[derive(Clone, PartialEq, Eq, Debug, serde::Serialize)]
 pub(crate) struct Leaves {
     pub(crate) kind: String,

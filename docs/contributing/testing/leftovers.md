@@ -43,7 +43,7 @@ run's" in the report and left alone.
 
 ## Results
 
-`--results <file>` appends one record a kind, as the other entry points ([README.md](README.md),
+`--results <file>` appends one record a kind, as the other entry points ([README.md](../../../tests/README.md),
 "Results"), suite `audit`, the kind its case:
 
 ```json
@@ -170,7 +170,7 @@ launcher's reaper destroys an expired run; the audit doesn't reach clouds.
 ## What the guided setup leaves
 
 A machine the guided setup readied keeps what it installed: that is the point, not a leftover.
-[`tests/audit/setup-leaves.tsv`](audit/setup-leaves.tsv) says what each item the setup installs
+[`tests/audit/setup-leaves.tsv`](../../../tests/audit/setup-leaves.tsv) says what each item the setup installs
 leaves, in the audit's own words (the item as the setup's records name it, the system, the kind,
 a glob on the name the report shows, why it stays): the launcher's package its desktop entry
 (`os-registration`), a Docker engine its bridge's route, its firewall chains and tables, libvirt

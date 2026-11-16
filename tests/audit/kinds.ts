@@ -1,5 +1,5 @@
 // The kinds of resource the leftover audit compares, for its `--list`: each with the systems whose
-// snapshot reads it, the tool it asks and what it is. tests/leftovers.md is the same list, with what
+// snapshot reads it, the tool it asks and what it is. docs/contributing/testing/leftovers.md is the same list, with what
 // of each the stack makes; kinds.test.ts holds the two, the parsers and the snapshot scripts to it.
 
 /** A kind: where it's read (`linux`, `macos`, `windows`, `proxmox`, `esxi`), by which tool, what. */

@@ -1,12 +1,12 @@
-// The feature registry's check and generator. tests/features.yml lists every feature the launcher
+// The feature registry's check and generator. tests/features/registry.yml lists every feature the launcher
 // offers its user and the tests that check it, tier by tier; this holds it to the repository and
-// writes tests/FEATURES.md from it (README.md in tests/, "The feature registry").
+// writes tests/features/FEATURES.md from it (README.md in tests/, "The feature registry").
 //
 //   pnpm check:features                  check: every test named exists, every command, screen,
 //                                        integration scenario and desktop case belongs to a feature,
 //                                        and FEATURES.md is what the registry makes
 //   pnpm features                        write FEATURES.md (after the same check)
-//   pnpm features --matrix <MATRIX.md>   first refresh tests/features-rig.json from the test rig's
+//   pnpm features --matrix <MATRIX.md>   first refresh tests/features/rig.json from the test rig's
 //                                        matrix (the workspace's rig/MATRIX.md), then write
 //   pnpm check:features --help           this text
 //
@@ -27,9 +27,9 @@ import { features, parseRegistry } from "./registry.ts";
 import { render } from "./render.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
-const REGISTRY = "tests/features.yml";
-const OUTPUT = "tests/FEATURES.md";
-const RIG = "tests/features-rig.json";
+const REGISTRY = "tests/features/registry.yml";
+const OUTPUT = "tests/features/FEATURES.md";
+const RIG = "tests/features/rig.json";
 
 type Args = { write: boolean; matrix: string | null };
 

@@ -19,12 +19,15 @@ tests/
   web/pages/             the page objects the specs find the app's parts through, one per screen: the window's frame
                          (app-shell.ts), the Labs screen (labs.ts), a lab's page and "Where should the lab run?" (lab.ts)
   audit/run.sh           the leftover audit: a snapshot of the machine before and after a run, their diff
-                         (snapshot.ps1: Windows; snapshot-server.sh: Proxmox, ESXi); leftovers.md is its contract
-  features.yml           the feature registry: every feature the user sees, and the tests that check it per tier
-  FEATURES.md            made from it (`pnpm features`): how well each feature is checked, the biggest gaps first
-  features-rig.json      a test harness's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
-  resilience.md          what a player does that breaks a lab, what the app must do, and which test holds it
+                         (snapshot.ps1: Windows; snapshot-server.sh: Proxmox, ESXi); its contract is
+                         docs/contributing/testing/leftovers.md
+  features/registry.yml  the feature registry: every feature the user sees, and the tests that check it per tier
+  features/FEATURES.md   made from it (`pnpm features`): how well each feature is checked, the biggest gaps first
+  features/rig.json      a test harness's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
 ```
+
+What a player does that breaks a lab, what the app must do and which test holds it is
+[resilience.md](../docs/contributing/testing/resilience.md), beside the other testing docs.
 
 ## The tiers
 
@@ -156,12 +159,12 @@ screen. Each entry point appends **one JSON line per check** to a file it is giv
 cases with the knobs each reads, so a renamed case or knob fails the caller's own check, not a
 night's run:
 
-| Entry point                                                   | Results                                                                              | Listing                                                    |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `tests/integration/run.sh`                                    | `--results <file>`, a line a scenario                                                | `--list`                                                   |
-| `tests/desktop/run.sh`, `run.ps1` (`run.mjs`)                 | `--results <file>` (`-Results`), a line a spec and a line a check (`<spec>/<check>`) | `--list` (`-List`), from `desktop/cases.tsv` and the specs |
-| the guided setup (`integration_tests::setup`, a `cargo test`) | `CYBERCTF_TEST_RESULTS=<file>`, a line an item                                       | in the integration runner's `--list` (tier `bare-machine`) |
-| the leftover audit (`tests/audit/run.sh diff`)                | `--results <file>`, a line a kind of resource ([leftovers.md](leftovers.md))         | `--list`                                                   |
+| Entry point                                                   | Results                                                                                                   | Listing                                                    |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `tests/integration/run.sh`                                    | `--results <file>`, a line a scenario                                                                     | `--list`                                                   |
+| `tests/desktop/run.sh`, `run.ps1` (`run.mjs`)                 | `--results <file>` (`-Results`), a line a spec and a line a check (`<spec>/<check>`)                      | `--list` (`-List`), from `desktop/cases.tsv` and the specs |
+| the guided setup (`integration_tests::setup`, a `cargo test`) | `CYBERCTF_TEST_RESULTS=<file>`, a line an item                                                            | in the integration runner's `--list` (tier `bare-machine`) |
+| the leftover audit (`tests/audit/run.sh diff`)                | `--results <file>`, a line a kind of resource ([leftovers.md](../docs/contributing/testing/leftovers.md)) | `--list`                                                   |
 
 ```json
 { "suite": "integration", "case": "vm-lab", "provider": "qemu", "form": "vm", "result": "pass", "reason": "", "seconds": 612, "log": "…/vm-lab.log" }
@@ -177,9 +180,9 @@ night's run:
   a pass that ends for a `reboot` or a `relogin`); `seconds`; `log`: its log.
 - `leaves`, on a setup item's `installed:` record only: what the install leaves on the machine on
   purpose, a list of `{"kind", "name"}` in the leftover audit's words (a kind of
-  [leftovers.md](leftovers.md), a glob on the name its report shows:
+  [leftovers.md](../docs/contributing/testing/leftovers.md), a glob on the name its report shows:
   `[{"kind":"route","name":"172.17.0.0/16 dev docker0"}, {"kind":"temp-folder","name":"/tmp/cyberctf-guided-setup"}]`),
-  for a caller's audit to allow ([leftovers.md](leftovers.md#what-the-guided-setup-leaves)).
+  for a caller's audit to allow ([leftovers.md](../docs/contributing/testing/leftovers.md#what-the-guided-setup-leaves)).
 
 The file is appended to, never truncated, so one file can gather a whole run. A listing line:
 
@@ -246,8 +249,8 @@ system's, where its folder lasts from pass to pass.
 
 ## The feature registry
 
-[`features.yml`](features.yml) lists what the launcher does for its user, area by area, and the
-tests that check each feature, tier by tier; [`FEATURES.md`](FEATURES.md) is made from it and says
+[`features/registry.yml`](features/registry.yml) lists what the launcher does for its user, area by area, and the
+tests that check each feature, tier by tier; [`features/FEATURES.md`](features/FEATURES.md) is made from it and says
 how well each feature is checked (Strong, Partial, Unchecked) and where the biggest gaps are.
 `pnpm check:features` (in `pnpm check` and CI) keeps it honest: every test it names exists, every
 command (`src-tauri/src/commands.rs`), screen, window and Settings section belongs to a feature, so

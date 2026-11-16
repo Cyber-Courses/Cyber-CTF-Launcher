@@ -1,4 +1,4 @@
-// Resilience (tests/resilience.md): the deploy worker killed mid-start (SIGKILL, a crash, the
+// Resilience (docs/contributing/testing/resilience.md): the deploy worker killed mid-start (SIGKILL, a crash, the
 // Activity Monitor), the app still open. The start says it stopped without a result; the lab
 // reads as failed, not running on whatever the start had brought up; the worker's job file (it
 // holds the launch token) is gone; a Stop clears what it left, and a start then brings it up.

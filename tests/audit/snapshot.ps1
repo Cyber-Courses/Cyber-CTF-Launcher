@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
 The leftover audit's snapshot on Windows (snapshot.sh: Linux and macOS): what this machine holds of
-every kind of resource the launcher's stack can make (tests/leftovers.md), as one JSON document.
+every kind of resource the launcher's stack can make (docs/contributing/testing/leftovers.md), as one JSON document.
 
 .DESCRIPTION
 Read-only and quick: each tool is asked once, with a time limit, and a tool that's missing, refuses
@@ -147,7 +147,7 @@ function Get-FileProbe {
 
 # --- Processes, listening ports, the network ------------------------------------------------------
 
-# The stack's processes (tests/leftovers.md, "Processes"): only those are recorded. Vagrant by its
+# The stack's processes (docs/contributing/testing/leftovers.md, "Processes"): only those are recorded. Vagrant by its
 # program (vagrant.exe, or the `...\bin\vagrant` script its Ruby runs), never a word of a path: on a
 # machine whose account is `vagrant` everything runs under C:\Users\vagrant\ (OneDrive, Docker
 # Desktop's --user-data-dir, the Store's pwsh), and a bare `vagrant` took all of it for the stack's.

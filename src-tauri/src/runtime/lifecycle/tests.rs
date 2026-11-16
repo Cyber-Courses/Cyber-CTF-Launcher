@@ -171,7 +171,7 @@ fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
         "version: 1\nname: t\nnetworks: { lab: { cidr: 10.70.0.0/24 } }\nmachines:\n  web: { app: { image: nginx }, os: debian@12, networks: { lab: 10 } }\n";
     let dir = t.lab("t", &[("isoloom.yml", spec)]);
     // Containers here: shut down only (nothing to save), no provisioning; stopped containers
-    // brought back as they are (regression, tests/resilience.md M4: a Docker lab with a
+    // brought back as they are (regression, docs/contributing/testing/resilience.md M4: a Docker lab with a
     // container stopped outside the app was offered a reset only).
     assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("docker")), (false, true, false, true));
     // A VM lab here: both, provisioning and the repair; QEMU can't suspend.

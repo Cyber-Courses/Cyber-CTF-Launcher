@@ -409,7 +409,7 @@ fn esxi_refusing(states: &Mutex<BTreeMap<String, String>>, call: &Call) -> Reply
     vagrant(&mut s, call)
 }
 
-/// Regression (tests/resilience.md N4): an ESXi host's password changed showed as Vagrant's raw
+/// Regression (docs/contributing/testing/resilience.md N4): an ESXi host's password changed showed as Vagrant's raw
 /// failure; the lab page now says to update it in Servers, naming the server as Servers does.
 #[tokio::test]
 async fn an_esxi_password_changed_says_to_update_it_in_servers() {

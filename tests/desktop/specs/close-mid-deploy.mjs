@@ -1,4 +1,4 @@
-// Resilience (tests/resilience.md): the window closed while a lab starts. The start goes on in its
+// Resilience (docs/contributing/testing/resilience.md): the window closed while a lab starts. The start goes on in its
 // deploy worker (closing the app never cuts a deploy short); the app reopened finds it, shows the
 // lab coming up and then running, and stops it cleanly.
 import {

@@ -8,7 +8,7 @@ import { KINDS } from "./kinds.ts";
 import { type Allowance, allowanceFor, globRegExp } from "./scope.ts";
 
 // The leftover audit's kinds, held together: its listing (kinds.ts), its parsers, the kinds the
-// three snapshot scripts record and the contract (tests/leftovers.md); then snapshot.sh run for
+// three snapshot scripts record and the contract (docs/contributing/testing/leftovers.md); then snapshot.sh run for
 // real, with a Docker of its own, on a home and temp folder of its own.
 
 const HERE = import.meta.dirname;
@@ -40,8 +40,8 @@ describe("the kinds", () => {
     for (const set of Object.values(scripts)) for (const kind of set) expect(listed).toContain(kind);
   });
 
-  it("are each in the contract, tests/leftovers.md, as a row of its inventory", () => {
-    const contract = readFileSync(join(HERE, "..", "leftovers.md"), "utf8");
+  it("are each in the contract, docs/contributing/testing/leftovers.md, as a row of its inventory", () => {
+    const contract = readFileSync(join(HERE, "..", "..", "docs", "contributing", "testing", "leftovers.md"), "utf8");
     for (const kind of listed) expect(contract, kind).toMatch(new RegExp(`^\\| \`${kind}\` +\\|`, "m"));
   });
 

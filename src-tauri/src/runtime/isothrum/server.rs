@@ -236,7 +236,7 @@ mod tests {
         assert_eq!(options(&p, &[]).env.get("node").map(String::as_str), Some("pve2"));
     }
 
-    /// tests/resilience.md M10 and N4: a Proxmox lab's page reads its VMs from the server's API,
+    /// docs/contributing/testing/resilience.md M10 and N4: a Proxmox lab's page reads its VMs from the server's API,
     /// signed in with the server's saved token; a VM removed in Proxmox's web UI shows gone, a
     /// revoked token says to update it in Servers.
     mod on_the_server {
