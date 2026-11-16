@@ -92,6 +92,7 @@ fn a_failed_libvirt_or_qemu_install_fails_its_step() {
 
 /// What [`join_kvm_group`] does on a system whose `stat` says `owner` owns the device (empty:
 /// no device) and whose groups are `groups`: the `usermod` it ran, if any, and what it said.
+#[cfg(unix)]
 fn joined(owner: &str, groups: &[&str]) -> (String, String) {
     let fakes = format!(
         "stat() {{ [ -n '{owner}' ] && echo '{owner}' || return 1; }}; getent() {{ for g in {}; do [ \"$g\" = \"$2\" ] && return 0; done; return 1; }}; usermod() {{ echo \"usermod $*\" >&2; }};",
@@ -102,6 +103,8 @@ fn joined(owner: &str, groups: &[&str]) -> (String, String) {
     (String::from_utf8_lossy(&out.stderr).trim().to_owned(), String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
+// Runs the step in `sh`, which Windows hasn't: the step is for Linux's installs only.
+#[cfg(unix)]
 #[test]
 fn the_kvm_group_joined_is_the_devices_on_every_distribution() {
     // Debian, Ubuntu, Kali, openSUSE: /dev/kvm root:kvm 0660.

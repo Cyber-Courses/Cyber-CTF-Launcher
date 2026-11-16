@@ -22,10 +22,12 @@ async fn the_test_vm_takes_an_address_nothing_answers_on_yet() {
     assert_eq!(free_ip().await, Some("192.168.56.249"));
     let v = vagrantfile(Provider::Virtualbox, "x", free_ip().await, Path::new("/t"));
     assert!(v.contains("ip: \"192.168.56.249\"") && !v.contains(".250"), "{v}");
-    let _all = Tools::strict_rules(&[("ping -c 1", ok("64 bytes from 192.168.56.250: icmp_seq=1 ttl=64 time=0.4 ms\n"))]);
+    // One ping, in this OS's flags (`-n 1` on Windows, `-c 1` elsewhere).
+    let one = format!("ping {}", ping_args("")[..2].join(" "));
+    let _all = Tools::strict_rules(&[(one.as_str(), ok("64 bytes from 192.168.56.250: icmp_seq=1 ttl=64 time=0.4 ms\n"))]);
     assert_eq!(free_ip().await, None, "every address answers");
     // Regression (#370): Windows' ping exits 0 when a router says the address is unreachable.
-    let _unreachable = Tools::strict_rules(&[("ping -c 1", ok("Reply from 192.168.56.1: Destination host unreachable.\r\n"))]);
+    let _unreachable = Tools::strict_rules(&[(one.as_str(), ok("Reply from 192.168.56.1: Destination host unreachable.\r\n"))]);
     assert_eq!(free_ip().await, Some("192.168.56.250"), "no reply from the address: it is free");
     assert!(!vagrantfile(Provider::Virtualbox, "x", None, Path::new("/t")).contains("private_network"));
 }
