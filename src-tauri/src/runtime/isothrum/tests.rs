@@ -106,10 +106,12 @@ fn answer(engine: &Mutex<Engine>, call: &Call) -> Reply {
 /// The Compose verb of `call` and its arguments, past the project's `-p`, `-f` and `--profile`
 /// options; none for a call that isn't `docker compose`.
 fn compose_verb(call: &Call) -> Option<(&str, &[String])> {
-    if call.program != "docker" || call.args.first().map(String::as_str) != Some("compose") {
+    // A run pinned to an engine names its context first (`docker --context <it> compose …`).
+    let start = if call.args.first().is_some_and(|a| a == "--context") { 2 } else { 0 };
+    if call.program != "docker" || call.args.get(start).map(String::as_str) != Some("compose") {
         return None;
     }
-    let mut i = 1;
+    let mut i = start + 1;
     while matches!(call.args.get(i).map(String::as_str), Some("-p" | "-f" | "--profile")) {
         i += 2;
     }
@@ -148,7 +150,7 @@ fn launch_env() -> Vec<(String, String)> {
 
 /// The launch's `values`, on the lab's own host ports (the player's choice).
 fn on_own_ports(values: &[(String, String)]) -> Inputs<'_> {
-    Inputs { values, default_ports: true }
+    Inputs { values, default_ports: true, docker_context: None }
 }
 
 /// A fixture whose lab is up and then parked with `Park::Shutdown`, the launcher tools scripted
@@ -176,6 +178,26 @@ async fn a_container_lab_goes_up_through_the_runner_as_cyberctf_lab_id() {
     assert_eq!(log.last().map(String::as_str), Some("Open http://localhost:8080/"), "the lab's message, its port filled");
     assert!(crate::testing::runner::is_recorded(&f.home.runner(), "cyberctf-web"), "the run is kept by the runner whose home is the app data folder");
     assert!(!f.home.dir.join(".cyberctf-ports.yml").exists(), "the runner pins ports in its own state, not the lab folder");
+}
+
+#[tokio::test]
+async fn a_container_lab_started_on_an_engine_stays_on_it_for_its_page_and_its_stop() {
+    // The player chose an engine other than the current one: the runner records it with the run,
+    // so the page's reads and the stop, which name none, go to it too (no marker in the lab).
+    let f = Fixture::new();
+    let _tools = Tools::strict_rules(&[]);
+    let run = f.run();
+    let env = launch_env();
+    let on_orbstack = Inputs { docker_context: Some("orbstack"), ..on_own_ports(&env) };
+    run.up(on_orbstack, None, &mut |_| {}).await.unwrap();
+    run.status().await.unwrap();
+    run.down(&mut |_| {}).await.unwrap();
+    let docker: Vec<_> = f.fake.calls().into_iter().filter(|c| c.program == "docker" && c.args.iter().any(|a| a == "compose")).collect();
+    assert!(docker.iter().any(|c| c.args.iter().any(|a| a == "down")), "it was taken down");
+    for call in &docker {
+        assert_eq!(call.args[..2], ["--context", "orbstack"], "{}", call.line());
+    }
+    assert!(!f.home.dir.join(".cyberctf-engine").exists(), "nothing of it in the lab's folder");
 }
 
 #[tokio::test]
@@ -372,7 +394,7 @@ fn a_start_gives_the_launch_values_as_secrets_and_the_ports_choice_as_a_value() 
     assert_eq!(opts.secrets.get("CTF_FLAG_MAIN").map(SecretValue::expose), Some("flag{x}"));
     assert_eq!(opts.secrets.iter().count(), 1, "the launch's values only");
     assert!(opts.env.is_empty(), "random ports: no fixed publish");
-    let fixed = start_options(Inputs { values: &[], default_ports: true }, None);
+    let fixed = start_options(Inputs { values: &[], default_ports: true, docker_context: None }, None);
     assert_eq!(fixed.env.get("ISOLOOM_PUBLISH_FIXED").map(String::as_str), Some("1"));
     assert_eq!(fixed.secrets.iter().count(), 0, "the ports choice is no lab input");
     assert_eq!(opts.provider, None);

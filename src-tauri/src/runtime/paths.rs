@@ -5,7 +5,6 @@
 use std::path::{Path, PathBuf};
 
 use crate::platform::AppDirs;
-use crate::platform::fs::remove_if_present;
 
 use crate::error::{Error, Result};
 
@@ -89,34 +88,6 @@ fn installed_in(base: &Path, id: &str) -> Option<PathBuf> {
     Some(labs_root_in(base).join(id)).filter(|dir| dir.is_dir())
 }
 
-/// Writes `value` to `dir/name`, or removes the file for `None` (already gone is fine). A marker
-/// that can't be cleared is an error: left behind, it would send every later status, stop and
-/// check to the wrong form.
-fn set_marker(dir: &Path, name: &str, value: Option<&str>) -> Result<()> {
-    match value {
-        Some(v) => std::fs::write(dir.join(name), v)?,
-        None => remove_if_present(&dir.join(name))?,
-    }
-    Ok(())
-}
-
-/// The Docker context a container lab here was started on (`orbstack`, `desktop-linux`, …), when
-/// the player chose an engine other than the current one. Every docker/compose call for the lab —
-/// the launcher's and the runner's — then goes to that context, so status, stop, park, checks, the
-/// attack box and the shell stay on the engine the lab runs on even if the current context later
-/// changes. Nothing written = the current context, as before. Kept until the runner records a run's
-/// engine itself.
-pub const ENGINE_MARKER: &str = ".cyberctf-engine";
-
-pub(super) fn mark_engine(dir: &Path, context: Option<&str>) -> Result<()> {
-    set_marker(dir, ENGINE_MARKER, context)
-}
-
-/// The Docker context a container lab here runs on, if one was recorded at launch.
-pub(crate) fn engine(dir: &Path) -> Option<String> {
-    std::fs::read_to_string(dir.join(ENGINE_MARKER)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
@@ -130,17 +101,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_marker_that_cannot_be_cleared_is_an_error_and_one_already_gone_is_not() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-marker-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(&dir).unwrap();
-        super::set_marker(&dir, "m", None).expect("nothing to clear");
-        // A directory where the marker would be: remove_file refuses it.
-        std::fs::create_dir(dir.join("m")).unwrap();
-        assert!(super::set_marker(&dir, "m", None).is_err());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
     use super::super::Runtime;
     use super::{lab_dir_in, validate_id};
 
@@ -148,25 +108,6 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("{prefix}-{}", rand::random::<u32>()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
-    }
-
-    #[test]
-    fn engine_marker_round_trips_and_reads_trimmed() {
-        use super::{ENGINE_MARKER, engine, mark_engine};
-        let dir = temp_dir("cyberctf-engine");
-        assert_eq!(engine(&dir), None);
-        mark_engine(&dir, Some("orbstack")).unwrap();
-        assert_eq!(engine(&dir).as_deref(), Some("orbstack"));
-        // A trailing newline changes nothing; blank is none.
-        std::fs::write(dir.join(ENGINE_MARKER), "desktop-linux\n").unwrap();
-        assert_eq!(engine(&dir).as_deref(), Some("desktop-linux"));
-        std::fs::write(dir.join(ENGINE_MARKER), "  \n").unwrap();
-        assert_eq!(engine(&dir), None);
-        mark_engine(&dir, Some("colima")).unwrap();
-        mark_engine(&dir, None).unwrap();
-        assert_eq!(engine(&dir), None);
-        assert!(!dir.join(ENGINE_MARKER).exists());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
