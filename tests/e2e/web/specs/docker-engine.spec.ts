@@ -1,7 +1,7 @@
-import { test, expect, openApp } from "./fixtures";
-import type { AppShell } from "./pages/app-shell";
-import type { LabScreen } from "./pages/lab";
-import type { LabsScreen } from "./pages/labs";
+import { test, expect, openApp } from "../fixtures";
+import type { AppShell } from "../pages/app-shell";
+import type { LabScreen } from "../pages/lab";
+import type { LabsScreen } from "../pages/labs";
 
 // The container engine's states as the system check reports them (`docker=stopped`: installed but
 // not running; `docker=denied`: running but refusing this account, with the core's hint and its

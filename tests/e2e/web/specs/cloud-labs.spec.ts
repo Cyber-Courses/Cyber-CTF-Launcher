@@ -1,4 +1,4 @@
-import { test, expect, openApp, answerConfirm } from "./fixtures";
+import { test, expect, openApp, answerConfirm } from "../fixtures";
 
 // Cloud labs (EC2 SSRF, cloud services in the player's AWS account) through the dev mock: a cloud
 // start streams a Terraform log and leaves outputs and an auto-stop. `cloud=none`: no cloud

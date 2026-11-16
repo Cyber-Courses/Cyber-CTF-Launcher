@@ -1,5 +1,5 @@
-import { test, expect, openApp, release } from "./fixtures";
-import { SettingsWindow } from "./pages/settings";
+import { test, expect, openApp, release } from "../fixtures";
+import { SettingsWindow } from "../pages/settings";
 
 // The app signed out, past the onboarding (`auth=out`, see src/lib/dev-mock/scenario.ts): what the
 // Labs list, a lab's page, the sidebar and Settings say, and how they all recover once the player

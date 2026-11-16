@@ -1,6 +1,6 @@
-import { test, expect, openApp, release, answerConfirm } from "./fixtures";
-import type { LabsScreen } from "./pages/labs";
-import type { LabScreen } from "./pages/lab";
+import { test, expect, openApp, release, answerConfirm } from "../fixtures";
+import type { LabsScreen } from "../pages/labs";
+import type { LabScreen } from "../pages/lab";
 
 // A lab from the catalogue to running and back, through the dev mock's lab operations: a start
 // streams a Docker Compose log and leaves the lab running, Stop & remove takes it down

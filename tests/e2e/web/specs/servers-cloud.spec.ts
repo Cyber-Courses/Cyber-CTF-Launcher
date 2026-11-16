@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "./fixtures";
+import { test, expect, openApp } from "../fixtures";
 
 test.describe("servers and cloud", () => {
   test.beforeEach(async ({ page }) => openApp(page));

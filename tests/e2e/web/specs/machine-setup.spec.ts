@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from "@playwright/test";
-import { test, expect, openApp, emitEvent, release } from "./fixtures";
-import { machineCheckInterval } from "../../src/features/machine/check-cadence";
+import { test, expect, openApp, emitEvent, release } from "../fixtures";
+import { machineCheckInterval } from "../../../../src/features/machine/check-cadence";
 
 // The guided machine-setup window (`/machine-setup`), opened as the app opens it: from the
 // Overview's "Set up this machine" or a lab's "Set up", or at a step from a provider's "Fix" on the

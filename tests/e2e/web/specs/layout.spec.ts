@@ -1,4 +1,4 @@
-import { test, expect, openApp, horizontalOverflow } from "./fixtures";
+import { test, expect, openApp, horizontalOverflow } from "../fixtures";
 
 // At 1280x800 (the config's viewport), no main screen scrolls sideways.
 test.describe("layout", () => {

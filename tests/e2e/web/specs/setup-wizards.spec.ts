@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp } from "./fixtures";
-import { AppShell } from "./pages/app-shell";
+import { test, expect, openApp } from "../fixtures";
+import { AppShell } from "../pages/app-shell";
 
 // The server and cloud setup windows end to end. The dev mock saves what the setup saves (shared
 // with the main window, which lists it) and mirrors a few of the core's checks on a save

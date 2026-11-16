@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
-import { test, expect, release } from "./fixtures";
-import { SettingsWindow } from "./pages/settings";
+import { test, expect, release } from "../fixtures";
+import { SettingsWindow } from "../pages/settings";
 
 // The first-run onboarding, on each machine the dev mock can report (`?mock&onboarding` plus the
 // scenario switches `os`, `arch` and `machine`, see src/lib/dev-mock/scenario.ts).

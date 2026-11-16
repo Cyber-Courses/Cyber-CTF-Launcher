@@ -1,6 +1,6 @@
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
-import type { Holdable } from "../../src/lib/dev-mock/holds";
-import type { CommandError } from "../../src/lib/tauri/generated/CommandError";
+import type { Holdable } from "../../../src/lib/dev-mock/holds";
+import type { CommandError } from "../../../src/lib/tauri/generated/CommandError";
 import { AppShell } from "./pages/app-shell";
 import { LabScreen } from "./pages/lab";
 import { LabsScreen } from "./pages/labs";

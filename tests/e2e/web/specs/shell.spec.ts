@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp } from "./fixtures";
+import { test, expect, openApp } from "../fixtures";
 
 // The attack box shell window (`/shell`, xterm.js), opened from a running lab's page and answered
 // by the dev mock's stand-in shell: it echoes, answers `id`, `whoami`, `hostname` and `ip -br a`,

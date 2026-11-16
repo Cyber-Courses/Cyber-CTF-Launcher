@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, paletteKey, answerConfirm } from "./fixtures";
-import type { LabsScreen } from "./pages/labs";
+import { test, expect, openApp, paletteKey, answerConfirm } from "../fixtures";
+import type { LabsScreen } from "../pages/labs";
 
 // The mock's catalogue (src/lib/dev-mock/labs.ts): Invoice portal API runs, Public backup is solved.
 const ALL = ["Invoice portal API", "GOAD Light", "Blind orders", "Exposed dashboard", "Public backup", "EC2 SSRF"];

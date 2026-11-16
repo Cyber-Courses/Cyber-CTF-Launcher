@@ -56,7 +56,7 @@ afterEach(() => {
   delete (window as { __CYBERCTF_MOCK__?: unknown }).__CYBERCTF_MOCK__;
 });
 
-/** What a web end-to-end's forced commands put in the page before it loads (tests/web/fixtures.ts):
+/** What a web end-to-end's forced commands put in the page before it loads (tests/e2e/web/fixtures.ts):
  *  Tauri's internals, marked as the mock's so the mock installs over them. */
 const mockStandIn = () => {
   Object.assign(window, { __TAURI_INTERNALS__: {}, __CYBERCTF_MOCK__: true });

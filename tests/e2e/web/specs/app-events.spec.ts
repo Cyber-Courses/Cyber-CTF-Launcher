@@ -1,4 +1,4 @@
-import { test, expect, openApp, emitEvent } from "./fixtures";
+import { test, expect, openApp, emitEvent } from "../fixtures";
 
 // What the Rust core tells the main window, through the dev mock's event delivery: a
 // `cyberctf://labs/<slug>` link (the deep-link plugin's `deep-link://new-url`, or the one the app

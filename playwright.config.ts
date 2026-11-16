@@ -8,7 +8,7 @@ const PORT = Number(process.env.CYBERCTF_TEST_WEB_PORT ?? 3210);
 const CI = !!process.env.CI;
 
 export default defineConfig({
-  testDir: "./tests/web",
+  testDir: "./tests/e2e/web/specs",
   fullyParallel: true,
   forbidOnly: CI,
   // On CI a test gets one retry, for the report's trace, but one that passes only on its retry

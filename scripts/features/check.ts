@@ -24,7 +24,7 @@ function holds(file: string, text: string, needle: string): boolean {
 /** Why a file reference doesn't resolve, or null. `kind` says what the file must be. */
 function fileProblem(ref: string, facts: Facts, kind: "unit" | "rust" | "web" | "any"): string | null {
   const { file, needle } = splitRef(ref);
-  const path = kind === "web" ? `tests/web/${file}` : file;
+  const path = kind === "web" ? `tests/e2e/web/specs/${file}` : file;
   const text = facts.read(path);
   if (text === null) return `no file ${path}`;
   if (kind === "unit" && !TS_TEST.test(file) && !(file.endsWith(".rs") && RUST_TEST.test(text))) return `${file} is not a unit test file`;

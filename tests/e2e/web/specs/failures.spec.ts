@@ -1,4 +1,4 @@
-import { test, expect, openApp, forceCommands, releaseForced, answerConfirm } from "./fixtures";
+import { test, expect, openApp, forceCommands, releaseForced, answerConfirm } from "../fixtures";
 
 // What the app shows when something fails: the catalogue API, a lab's start or removal, the
 // machine check. The dev mock answers everything else (Invoice portal API runs, GOAD Light
