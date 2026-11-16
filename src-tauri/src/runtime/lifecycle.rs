@@ -8,7 +8,7 @@ use crate::platform::AppDirs;
 use super::host::{self, Host};
 use super::inflight::lock_lab;
 use super::launch::policy_allows;
-use super::paths::{lab_dir, mark_engine};
+use super::paths::lab_dir;
 use super::providers::Provider;
 use super::recorded::Recorded;
 use super::{Control, LabRef, Park, Runtime, isothrum, lab};
@@ -211,12 +211,11 @@ pub(crate) async fn stop_run(run: isothrum::LabRun, dir: &Path, mut log: impl Fn
     forget_run(dir)
 }
 
-/// What a stopped lab leaves behind of its run in its folder: its engine's mark, and the attack
-/// box the launcher added to it (the next start is the lab as published). Where it ran, in what
-/// form and parked or not, the runner's record says (absent now).
+/// What a stopped lab leaves behind of its run in its folder: the attack box the launcher added
+/// to it (the next start is the lab as published). Where it ran, on which engine, in what form and
+/// parked or not, the runner's record says (absent now).
 fn forget_run(dir: &Path) -> Result<()> {
-    super::attack_box::remove(dir)?;
-    mark_engine(dir, None)
+    super::attack_box::remove(dir)
 }
 
 /// Takes down a parked lab before its folder is replaced by a newer version of the lab: its

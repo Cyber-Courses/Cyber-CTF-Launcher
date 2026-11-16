@@ -45,17 +45,6 @@ async fn the_policy_refuses_resuming_a_privileged_lab_before_anything_runs() {
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
 }
 
-#[test]
-fn a_stopped_labs_folder_keeps_nothing_of_its_run() {
-    // Where it ran, its form and whether it was parked are the runner's record's; the engine's
-    // mark and the attack box the launcher added are the folder's, and go with the stop.
-    let t = TestApp::new();
-    let dir = t.lab("web", &[]);
-    crate::runtime::paths::mark_engine(&dir, Some("orbstack")).unwrap();
-    super::forget_run(&dir).unwrap();
-    assert_eq!(crate::runtime::paths::engine(&dir), None);
-}
-
 #[tokio::test]
 async fn a_parked_lab_whose_files_cant_be_made_again_is_left_recorded_and_says_why() {
     // Parked by a park, its files and its spec gone: the runner can't be asked to take it down,

@@ -8,7 +8,7 @@ use crate::platform::AppDirs;
 #[cfg(feature = "cloud-services")]
 use super::cloud_services;
 pub(crate) use super::isothrum::Inputs;
-use super::paths::{mark_engine, runner_home};
+use super::paths::runner_home;
 use super::providers::Provider;
 use super::{LabRef, Runtime, docker, isothrum, lab, server};
 use crate::error::{Code, Error, Result};
@@ -100,7 +100,7 @@ pub(crate) async fn start_locked(dirs: &AppDirs, lab: LabRef<'_>, to: Destinatio
     let LabRef { dir, id, runtime } = lab;
     let place = destination(dirs, runtime, &to)?;
     let Destination { host, per_machine_vm, docker_context, default_ports, .. } = to;
-    let inputs = Inputs { values: env, default_ports };
+    let inputs = Inputs { values: env, default_ports, docker_context: None };
     privileged_allowed(|| Ok(lab::is_privileged(&lab::load(dir)?)))?;
     // A lab runs in one place: starting it here (or on another host) while its run is still up
     // elsewhere would drop the marker naming that place, and with it the way to stop it (a cloud
@@ -186,9 +186,9 @@ async fn start_here(
     // The run's record keeps the form it was started in (its project) and where (no host): every
     // later operation on it (status, stop, park) follows it, whatever the catalogue calls it.
     // The container engine the player chose for a plain container lab (a Docker context other than
-    // the current one), so every later docker/compose call for it — launcher and runner — goes to
-    // that engine. Only containers on Docker here (not a VM form); nothing recorded = current context.
-    mark_engine(dir, if matches!(run, LocalRun::Docker) { docker_context } else { None })?;
+    // the current one): the runner records it with the run, and every later docker call of the run
+    // goes there. Only containers on Docker here (not a VM form); none = the current context.
+    let inputs = Inputs { docker_context: docker_context.filter(|_| matches!(run, LocalRun::Docker)), ..inputs };
     // Every lab on this machine runs through the Isothrum runner. A parked run is resumed as it
     // was and leftovers are cleared first (the runner's `Occupied::ResumeParked`). What it
     // downloads is the caller's to record ([`downloads`]).

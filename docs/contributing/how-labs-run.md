@@ -41,23 +41,23 @@ actually started in from the runner's record of its run (`runtime::recorded`).
 A running lab is the runner's run `cyberctf-<lab id>`, kept in the runner's home
 (`<app data>/isothrum/`). Its record says:
 
-| Field        | Says                                                                                                                                                  |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host_label` | the saved server or cloud account it runs on, by id; none: this machine                                                                               |
-| `project`    | the folder Isoloom generated for its target: `vagrant` or `cloud-vm` for one VM per machine, `docker-vm` for the helper VM an earlier version started |
-| `state`      | where it stands; `parked` with `parked` (`pause`, `shutdown`) when a park put it there                                                                |
+| Field            | Says                                                                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host_label`     | the saved server or cloud account it runs on, by id; none: this machine                                                                               |
+| `project`        | the folder Isoloom generated for its target: `vagrant` or `cloud-vm` for one VM per machine, `docker-vm` for the helper VM an earlier version started |
+| `state`          | where it stands; `parked` with `parked` (`pause`, `shutdown`) when a park put it there                                                                |
+| `docker_context` | the Docker context a container lab was started on, when not the current one: every later docker call of the run goes there                            |
 
 A run taken down reads `absent`, and says nothing: the lab is then read as the catalogue declares
 it, on this machine. Beside the lab, in its folder:
 
 | File                    | Says                                                                                        |
 | ----------------------- | ------------------------------------------------------------------------------------------- |
-| `.cyberctf-engine`      | the Docker context it was started on, when not the current one                              |
 | `.cyberctf-overlay.yml` | the machines the launcher added to the lab (the attack box), merged into its spec when read |
 | `.cyberctf-instance`    | its instance number, given at install: its networks' blocks and its generated files' folder |
 
-A stop clears the first two once the run is gone (`lifecycle::forget_run`), so the next start is
-the lab as published. The instance number stays: it is the installed lab's, not the run's.
+A stop clears the first once the run is gone (`lifecycle::forget_run`), so the next start is the
+lab as published. The instance number stays: it is the installed lab's, not the run's.
 
 ## The attack box in a lab
 

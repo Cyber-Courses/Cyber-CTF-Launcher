@@ -191,6 +191,7 @@ fn wire(opts: &RunOptions) -> OpOptions {
     wired.secrets = opts.secrets.iter().map(|(k, v)| (k.to_owned(), v.expose().to_owned())).collect();
     wired.host_label.clone_from(&opts.host_label);
     wired.reveal = opts.reveal;
+    wired.docker_context.clone_from(&opts.docker_context);
     wired
 }
 

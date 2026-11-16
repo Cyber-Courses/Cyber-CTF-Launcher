@@ -83,11 +83,11 @@ pub(crate) fn main(serve: Serve) -> i32 {
     }
 }
 
-/// The runner the service of `home` runs, on this host's tools (`processes`): a lab's docker
-/// calls pinned to the engine its launch chose.
+/// The runner the service of `home` runs, on this host's tools (`processes`): a run's docker
+/// calls go to the Docker context its start recorded (the runner's own).
 pub(crate) fn runner_config(home: &std::path::Path, processes: &SystemProcesses) -> RunnerConfig {
     let mut config = RunnerConfig::new(home);
-    config.processes = Arc::new(crate::runtime::isothrum::EngineProcesses::new(processes.clone()));
+    config.processes = Arc::new(processes.clone());
     config
 }
 

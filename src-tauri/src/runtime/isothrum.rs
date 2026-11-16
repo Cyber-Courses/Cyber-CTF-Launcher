@@ -21,7 +21,6 @@ mod checks;
 mod claim;
 mod cloud_runs;
 mod described;
-mod engine;
 pub(crate) mod errors;
 mod esxi;
 mod gone;
@@ -38,7 +37,6 @@ mod web;
 pub(crate) use claim::CLAIM;
 use claim::with_claim;
 pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
-pub(crate) use engine::{ENGINE_VAR, EngineProcesses};
 pub(crate) use esxi::EsxiPlace;
 pub(crate) use opened::Module;
 pub(crate) use server::{ServerPlace, ServerRun};
@@ -201,16 +199,13 @@ pub(crate) struct LabRun {
     kind: Kind,
     /// The ESXi server a VM lab runs on, if not on this machine.
     esxi: Option<EsxiPlace>,
-    /// The Docker context a container lab's launch chose (its engine marker), if any.
-    engine: Option<String>,
 }
 
 impl LabRun {
     /// Container lab `id`, installed in `dir`, on the runner whose home is `home` (the app data
     /// folder), with this host's tools.
     pub(crate) fn docker(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
-        // The lab's docker calls go to the engine chosen at launch (its marker), if any.
-        Ok(LabRun { engine: paths::engine(dir), ..LabRun::served(home, dir, id, Kind::Docker)? })
+        LabRun::served(home, dir, id, Kind::Docker)
     }
 
     /// VM lab `id`, installed in `dir`, on the runner whose home is `home`, with this host's tools.
@@ -277,7 +272,7 @@ impl LabRun {
             Kind::Vm => (lab::vagrant_dir(dir, Runtime::Vm), Format::Vagrant),
         };
         let served = remote::Served { home: home.to_path_buf(), name: run_name(id)?, project, format };
-        Ok(LabRun { served, dir: dir.to_path_buf(), kind, esxi: None, engine: None })
+        Ok(LabRun { served, dir: dir.to_path_buf(), kind, esxi: None })
     }
 
     /// `act` on the run with `opts`, its events as `log`'s lines, through the home's runner
@@ -345,10 +340,6 @@ impl LabRun {
     fn placed(&self, opts: RunOptions) -> RunOptions {
         let opts = with_claim(opts);
         let opts = opts.with_env(super::lab::ISOLOOM_KEY, isothrum_runner::copy_key(&self.served.home, &self.served.name));
-        let opts = match &self.engine {
-            Some(context) => opts.with_env(ENGINE_VAR, context.clone()),
-            None => opts,
-        };
         match &self.esxi {
             Some(place) => place.onto(opts),
             None => opts,
@@ -514,6 +505,10 @@ pub(crate) struct Inputs<'a> {
     pub(crate) values: &'a [(String, String)],
     /// Whether its services keep their own host ports rather than free ones picked at random.
     pub(crate) default_ports: bool,
+    /// The Docker context a container lab runs on (`orbstack`, `desktop-linux`…), when the player
+    /// chose an engine other than the current one: the runner records it with the run, and every
+    /// later operation and read of the run goes there, whatever the current context becomes.
+    pub(crate) docker_context: Option<&'a str>,
 }
 
 /// The values' names only: a value can be a launch token or a flag.
@@ -522,6 +517,7 @@ impl std::fmt::Debug for Inputs<'_> {
         f.debug_struct("Inputs")
             .field("names", &self.values.iter().map(|(name, _)| name).collect::<Vec<_>>())
             .field("default_ports", &self.default_ports)
+            .field("docker_context", &self.docker_context)
             .finish()
     }
 }
@@ -530,7 +526,7 @@ impl std::fmt::Debug for Inputs<'_> {
 impl<'a> Inputs<'a> {
     /// The launch's `values`, on host ports picked at random.
     pub(crate) fn values(values: &'a [(String, String)]) -> Self {
-        Inputs { values, default_ports: false }
+        Inputs { values, ..Inputs::default() }
     }
 }
 
@@ -545,6 +541,9 @@ fn start_options(inputs: Inputs<'_>, provider: Option<isothrum_runner::Provider>
     let mut opts = RunOptions::new().with_secrets(secrets);
     if let Some(p) = provider {
         opts = opts.with_provider(p);
+    }
+    if let Some(context) = inputs.docker_context {
+        opts = opts.with_docker_context(context);
     }
     if inputs.default_ports { opts.with_env(PUBLISH_FIXED, "1") } else { opts }
 }
