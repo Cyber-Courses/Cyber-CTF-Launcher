@@ -443,10 +443,11 @@ async fn the_check_asks_the_found_copy_its_version() {
 
 /// A real run: the program found by name through the `PATH` given is the found file.
 ///
-/// The found file is a link to the system's `echo`, which answers `--version` with its argument,
-/// not a script written here: macOS checks a program new to it on its first run, and with a build
-/// starting new programs by the hundred that check queued past the probe's 25 s limit, so the
-/// script's answer never came (the probe read "not installed").
+/// The found file is a link to the system's `echo`, not a script written here: macOS checks a
+/// program new to it on its first run, and with a build starting new programs by the hundred that
+/// check queued past the probe's 25 s limit, so the script's answer never came (the probe read
+/// "not installed"). What `echo --version` prints differs by system (BSD's echoes its argument,
+/// GNU's prints its own version), so the answer expected is that same program's, asked directly.
 #[cfg(unix)]
 #[tokio::test]
 async fn the_found_copy_answers_for_real_through_the_path_it_is_given() {
@@ -454,8 +455,11 @@ async fn the_found_copy_answers_for_real_through_the_path_it_is_given() {
     let file = dir.join(EXE);
     let echo = ["/bin/echo", "/usr/bin/echo"].into_iter().map(Path::new).find(|p| p.is_file()).expect("an echo program");
     std::os::unix::fs::symlink(echo, &file).unwrap();
+    let direct = std::process::Command::new(echo).arg("--version").output().expect("echo runs");
+    let expected = crate::machine::system::first_line(&String::from_utf8_lossy(&direct.stdout));
+    assert!(expected.is_some(), "echo --version printed nothing");
     let tool = version_of(&file).await;
-    assert_eq!(tool.version.as_deref(), Some("--version"), "the found file answered");
+    assert_eq!(tool.version, expected, "the found file answered as the program it links to");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
