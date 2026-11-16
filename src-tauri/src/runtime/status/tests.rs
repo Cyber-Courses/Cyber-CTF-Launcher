@@ -1,8 +1,8 @@
 use super::{Place, fill_logins, on_server, primary_url, with_parked};
-use crate::runtime::port::{GuestPort, HostPort};
 use crate::runtime::providers::Provider;
 use crate::runtime::test_support::status_with;
 use crate::runtime::{Park, Runtime};
+use isothrum_runner::{GuestPort, HostPort};
 
 #[test]
 fn only_a_lab_that_is_down_reads_as_parked() {

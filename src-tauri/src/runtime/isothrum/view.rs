@@ -8,9 +8,9 @@ use std::collections::BTreeMap;
 use isothrum_runner::{MachineState, MachineStatus, Protocol, RunState, Status};
 
 use super::super::docker::{Check, CheckResult};
-use super::super::port::{GuestPort, HostPort};
 use super::super::{LabStatus, Machine, Park, Place, Port, Service};
 use super::described::{Declared, DeclaredPort, Described};
+use isothrum_runner::{GuestPort, HostPort};
 
 /// The run as the lab page shows it. Running while any of the lab's machines runs (a lab whose
 /// one-shot jobs finished is up); parked as the player chose (`marked`, the lab's mark), else
@@ -109,10 +109,7 @@ fn machine(declared: Option<&Declared>, m: &MachineStatus, native: Option<&str>)
 /// the machine's own number.
 pub(super) fn published(m: &MachineStatus, port: &DeclaredPort) -> Option<HostPort> {
     let tcp = port.tcp();
-    m.published
-        .iter()
-        .find(|p| p.port.get() == port.port && p.protocol.is_none_or(|proto| (proto == Protocol::Tcp) == tcp))
-        .map(|p| HostPort::new(p.host_port.get()))
+    m.published.iter().find(|p| p.port.get() == port.port && p.protocol.is_none_or(|proto| (proto == Protocol::Tcp) == tcp)).map(|p| p.host_port)
 }
 
 /// What a declared port serves: a web UI (`http`), else the port's own name (`mysql`, `ssh`).
