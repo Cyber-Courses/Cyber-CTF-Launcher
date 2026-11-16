@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use super::test_lab::prelude::*;
 use super::*;
+use crate::runtime::{Park, Place, lab};
 
 const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.31.0.0/24 }\ninputs: [CTF_FLAG_MAIN]\nmachines:\n  web:\n    os: debian@12\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8086 } }\n    files: [{ path: /srv/flag, input: CTF_FLAG_MAIN }]\n    app: { steps: [{ run: web.sh }] }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";
 
@@ -19,17 +20,17 @@ impl Fixture {
         Scripted::answered_by(Home::new("-vm", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), answer)
     }
 
-    fn run(&self) -> LabRun {
-        LabRun::with(self.home.config(&self.fake, []), &self.home.dir, "web", Kind::Vm).unwrap()
+    fn run(&self) -> Deployment {
+        Deployment::here_with(self.home.config(&self.fake, []), &self.home.dir, "web", Kind::Vm).unwrap()
     }
 
     /// The lab on an ESXi host, `place`, run from a Linux host (no relay: the runner's own tests
     /// cover macOS's).
-    fn esxi_run(&self, place: EsxiPlace) -> LabRun {
+    fn esxi_run(&self, place: EsxiPlace) -> Deployment {
         self.model().insert("on esxi".into(), String::new());
         let mut config = self.home.config(&self.fake, []);
         config.host = isothrum_runner::HostOs::Linux;
-        LabRun::with(config, &self.home.dir, "web", Kind::Vm).unwrap().on(place)
+        Deployment::on_esxi_with(config, &self.home.dir, "web", place).unwrap()
     }
 
     fn state(&self, vm: &str) -> String {
@@ -175,8 +176,8 @@ async fn the_lab_page_reads_a_vm_lab_while_its_start_provisions_it_in_another_pr
     // The deploy worker's runner, which starts the lab, and the app's, which the page reads it
     // through: the lab's status, and the attack box's (the run's status, the box one of its
     // machines).
-    let worker = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
-    let app = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    let worker = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    let app = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
     let page = async {
         tokio::time::sleep(std::time::Duration::from_secs(148)).await;
         tokio::join!(app.status(), app.run_status())
@@ -232,12 +233,12 @@ fn timed_reads(model: &Mutex<Reads>, call: &Call) -> Reply {
 #[tokio::test(start_paused = true)]
 async fn the_apps_reads_of_a_vm_lab_never_ask_vagrant_at_once() {
     let f: Scripted<Reads> = Scripted::answered_by(Home::new("-vm-reads", SPEC, &[("web.sh", "true\n")], lab::Target::Vagrant), timed_reads);
-    let worker = LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    let worker = Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
     worker.up(Inputs { values: &[], default_ports: true, docker_context: None }, Some("virtualbox"), &mut |_| {}).await.unwrap();
     f.model().most = 0;
     // The lab page's poll, its read after the start, the auto-start's read, and the attack box's:
     // each command opens the run on its own.
-    let opened = || LabRun::with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
+    let opened = || Deployment::here_with(f.home.config(&f.fake, []), &f.home.dir, "web", Kind::Vm).unwrap();
     let (poll, after, auto, boxed) = (opened(), opened(), opened(), opened());
     let (polled, read_after, auto_read, box_read) = tokio::join!(poll.status(), after.status(), auto.status(), boxed.run_status());
     assert!(polled.unwrap().running && read_after.unwrap().running && auto_read.unwrap().running);

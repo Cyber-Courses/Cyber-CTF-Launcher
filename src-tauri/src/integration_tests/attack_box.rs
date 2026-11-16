@@ -100,8 +100,8 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
     }
     // The lab's run on this machine, in the form under test.
     let run = || match form.as_str() {
-        "docker" => isothrum::LabRun::docker(&home, &dir, &id),
-        _ => isothrum::LabRun::vm(&home, &dir, &id),
+        "docker" => isothrum::Deployment::docker(&home, &dir, &id),
+        _ => isothrum::Deployment::vm(&home, &dir, &id),
     };
     let mut f = Vec::new();
     scenario(

@@ -52,7 +52,7 @@ use std::path::{Path, PathBuf};
 
 use super::support::{check, log, scenario};
 use crate::runtime::Runtime;
-use crate::runtime::isothrum::{Deployment, EsxiPlace, LabRun, ServerPlace};
+use crate::runtime::isothrum::{Deployment, EsxiPlace, ServerPlace};
 use crate::runtime::lab;
 use crate::runtime::server::{HostProfile, SshKeySignIn};
 
@@ -193,7 +193,7 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
     scenario(
         &mut f,
         async |f: &mut Vec<String>| {
-            started(run.up(&[], &mut log("pve")).await, f);
+            started(run.up(crate::runtime::isothrum::Inputs::default(), None, &mut log("pve")).await, f);
             match run.status().await {
                 Ok(s) => {
                     said(&s);
@@ -317,7 +317,7 @@ async fn a_vm_lab_runs_on_esxi_through_the_runner() {
     .unwrap_or_else(|e| panic!("the ESXi profile reads: {e}"));
     let env = lab::esxi_env(&profile, &var("CYBERCTF_TEST_ESXI_PASSWORD"));
     let home = std::env::temp_dir().join("cyberctf-esxi-runner-home");
-    let run = LabRun::on_esxi(&home, &dir, "esxi-runner-lab", Runtime::Vm, EsxiPlace::from_env(&profile.id, &profile.name, &env))
+    let run = Deployment::on_esxi(&home, &dir, "esxi-runner-lab", Runtime::Vm, EsxiPlace::from_env(&profile.id, &profile.name, &env))
         .unwrap_or_else(|e| panic!("the lab's run on ESXi opens: {e}"));
     let mut f = Vec::new();
     scenario(

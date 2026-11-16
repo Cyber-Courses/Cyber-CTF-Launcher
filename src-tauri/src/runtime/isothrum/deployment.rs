@@ -1,294 +1,479 @@
 //! A lab's deployment: its run on the runner, opened under its own name from the project the
-//! launcher generated for it, where it runs: a Terraform module on a Proxmox server or in a cloud
-//! account. One handle whatever the place: what differs between places is data on it ([`Site`]),
-//! read where an operation needs it: the options a change and a read take, the tunnel a change on
-//! a server goes through, the words of a failure, and how the lab page shows the run.
+//! launcher generated for it, where it runs: on this machine (Docker, or VMs through Vagrant), on
+//! an ESXi server (Vagrant there), on a Proxmox server or in a cloud account (a Terraform module).
+//! One handle whatever the place: what differs is data on it, read where an operation needs it:
+//! what its project is ([`Form`], with the runner's format of it), and where it runs ([`Site`]):
+//! the options a change, a read and a console take, the tunnel a change on a server goes
+//! through, the words of a failure, and how the lab page shows the run.
 
 use std::path::{Path, PathBuf};
 
-use isothrum_runner::{Format, RunName, RunOptions};
+use isothrum_runner::{Format, RunOptions};
 
 use super::cloud_runs::CloudPlace;
 use super::server::{self, ServerPlace};
 use super::tunnel::Tunnel;
-use super::{errors, remote};
+use super::{EsxiPlace, Inputs, errors, old_engine, remote, run_name, runner_provider, start_options, with_claim};
 use crate::error::{Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::host::Failed;
 use crate::runtime::{LabStatus, Runtime, lab};
 
-/// What a run's Terraform module is.
+/// What a run's project is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Module {
+pub(crate) enum Form {
     /// The one Isoloom generates for a target.
     Generated(lab::Target),
-    /// The lab's own, hand-written (a cloud-services lab's `cloud/`).
+    /// The lab's own, hand-written Terraform module (a cloud-services lab's `cloud/`).
     Own,
-    /// A helper VM's an earlier version left on a Proxmox server, whose files Isoloom no longer
-    /// generates: only read, stopped and removed.
+    /// The helper VM an earlier version ran a container lab in (Isoloom's former `docker-vm`),
+    /// here, on an ESXi server or on a Proxmox server, whose files Isoloom no longer generates:
+    /// only read, stopped and removed.
     HelperVm,
+}
+
+/// A run on this machine, as the constructors here name it: a container lab on Docker, a VM lab
+/// on a local hypervisor (a container lab's VM form included), or a container lab an earlier
+/// version ran inside one helper VM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Kind {
+    Docker,
+    DockerVm,
+    Vm,
 }
 
 /// Where a deployment runs, with what reaching it takes.
 #[derive(Debug, Clone)]
 pub(crate) enum Site {
-    /// On a Proxmox server: its variables, and, for a change, its node and the SSH jump through it
-    /// ([`super::super::launch::server_place`]).
+    /// On this machine, with the engine an earlier version noted beside a container lab
+    /// ([`old_engine`]) until an operation has the runner record it.
+    Here {
+        /// The noted engine's Docker context.
+        noted_engine: Option<String>,
+    },
+    /// On an ESXi server: its settings and password.
+    Esxi(EsxiPlace),
+    /// On a Proxmox server: its variables, and, for a change, its node and the SSH jump through
+    /// it ([`crate::runtime::launch::server_place`]).
     Server(ServerPlace),
     /// In a cloud account: its region and credentials.
     Cloud(CloudPlace),
 }
 
-/// A lab's run on the runner, opened by its name from its Terraform module, where it runs.
+/// What a start hands the run: the launch's values, and the hypervisor a VM lab runs on.
+#[derive(Clone, Copy)]
+struct Start<'a> {
+    inputs: Inputs<'a>,
+    provider: Option<isothrum_runner::Provider>,
+}
+
+/// A lab's run on the runner, opened by its name from its project, where it runs.
 pub(crate) struct Deployment {
-    /// The run, as the home's service knows it.
+    /// The run, as the home's service knows it (its project's folder and format).
     pub(super) served: remote::Served,
     /// The lab's folder.
     pub(super) dir: PathBuf,
-    /// What its module is.
-    module: Module,
-    /// The run's Terraform module.
-    pub(super) project: PathBuf,
+    /// What its project is.
+    form: Form,
     /// Where it runs.
     site: Site,
 }
 
 impl Deployment {
-    /// The run of lab `id` in `dir`, whose Terraform module `project` is `module`, at `site`, on
-    /// the runner whose home is `home`, through the home's runner service.
-    fn new(home: &Path, dir: &Path, id: &str, (project, module): (PathBuf, Module), site: Site) -> Result<Self> {
-        let name = RunName::new(&crate::runtime::docker::project(id)).map_err(|e| errors::coded(&e.report()))?;
-        let served = remote::Served { home: home.to_path_buf(), name, project: project.clone(), format: Format::Terraform };
-        Ok(Deployment { served, dir: dir.to_path_buf(), module, project, site })
+    /// The run of lab `id` in `dir`, whose project `project` (of `format`) is `form`, at `site`,
+    /// on the runner whose home is `home`, through the home's runner service.
+    fn new(home: &Path, dir: &Path, id: &str, (project, format, form): (PathBuf, Format, Form), site: Site) -> Result<Self> {
+        let served = remote::Served { home: home.to_path_buf(), name: run_name(id)?, project, format };
+        Ok(Deployment { served, dir: dir.to_path_buf(), form, site })
     }
 
-    /// Lab `id` of `runtime`, installed in `dir`, on the Proxmox server `place`, on the runner
-    /// whose home is `home` (the app data folder).
+    /// Lab `id`'s run of `kind`, installed in `dir`, at `site`.
+    fn local(home: &Path, dir: &Path, id: &str, kind: Kind, site: Site) -> Result<Self> {
+        let project = match kind {
+            Kind::Docker => (lab::docker_dir(dir), Format::Compose, Form::Generated(lab::Target::Docker)),
+            Kind::DockerVm => (lab::docker_vm_dir(dir), Format::Vagrant, Form::HelperVm),
+            Kind::Vm => (lab::vagrant_dir(dir, Runtime::Vm), Format::Vagrant, Form::Generated(lab::Target::Vagrant)),
+        };
+        Deployment::new(home, dir, id, project, site)
+    }
+
+    /// Lab `id`'s run of `kind` on this machine, installed in `dir`, on the runner whose home is
+    /// `home` (the app data folder), with this host's tools; a container lab with the engine an
+    /// earlier version noted beside it.
+    pub(super) fn here(home: &Path, dir: &Path, id: &str, kind: Kind) -> Result<Self> {
+        let noted_engine = if kind == Kind::Docker { old_engine::noted(dir) } else { None };
+        Deployment::local(home, dir, id, kind, Site::Here { noted_engine })
+    }
+
+    /// Container lab `id`, installed in `dir`, on this machine's Docker.
+    pub(crate) fn docker(home: &Path, dir: &Path, id: &str) -> Result<Self> {
+        Deployment::here(home, dir, id, Kind::Docker)
+    }
+
+    /// VM lab `id`, installed in `dir`, on this machine's hypervisor.
+    pub(crate) fn vm(home: &Path, dir: &Path, id: &str) -> Result<Self> {
+        Deployment::here(home, dir, id, Kind::Vm)
+    }
+
+    /// Container lab `id` left by an earlier version in one local helper VM (Docker Compose
+    /// inside a VM), installed in `dir`: to read, stop and remove that run.
+    pub(crate) fn docker_in_vm(home: &Path, dir: &Path, id: &str) -> Result<Self> {
+        Deployment::here(home, dir, id, Kind::DockerVm)
+    }
+
+    /// Lab `id`, installed in `dir` and declared `runtime`, as it runs on this machine, in the form
+    /// its run's record says it was started in (`recorded`): on Docker, as VMs (a container lab
+    /// started as one VM per machine included), or in the helper VM an earlier version left it in;
+    /// none for a cloud-services lab, which runs only in a cloud account.
+    pub(crate) fn local_of(home: &Path, dir: &Path, id: &str, runtime: Runtime, recorded: &crate::runtime::recorded::Recorded) -> Result<Option<Self>> {
+        Ok(Some(match recorded.form(runtime) {
+            Runtime::Docker if recorded.helper_vm() => Deployment::docker_in_vm(home, dir, id)?,
+            Runtime::Docker => Deployment::docker(home, dir, id)?,
+            Runtime::Vm => Deployment::vm(home, dir, id)?,
+            Runtime::Cloud => return Ok(None),
+        }))
+    }
+
+    /// VM lab `id`, installed in `dir`, on the ESXi server `place`; a container lab's run there is
+    /// the helper VM an earlier version left.
+    pub(crate) fn on_esxi(home: &Path, dir: &Path, id: &str, runtime: Runtime, place: EsxiPlace) -> Result<Self> {
+        let kind = if runtime == Runtime::Docker { Kind::DockerVm } else { Kind::Vm };
+        Deployment::local(home, dir, id, kind, Site::Esxi(place))
+    }
+
+    /// Lab `id` of `runtime`, installed in `dir`, on the Proxmox server `place`.
     pub(crate) fn on_server(home: &Path, dir: &Path, id: &str, runtime: Runtime, place: ServerPlace) -> Result<Self> {
         // A VM lab runs Proxmox's own module, one VM per machine. A container lab never starts
         // there: its run is the helper VM an earlier version left, read from where it ran.
-        let module = if runtime == Runtime::Docker {
-            (lab::docker_vm_dir(dir).join("proxmox"), Module::HelperVm)
+        let (project, form) = if runtime == Runtime::Docker {
+            (lab::docker_vm_dir(dir).join("proxmox"), Form::HelperVm)
         } else {
             let (out, target) = lab::terraform(dir, runtime, "proxmox");
-            (out, Module::Generated(target))
+            (out, Form::Generated(target))
         };
-        Deployment::new(home, dir, id, module, Site::Server(place))
+        Deployment::new(home, dir, id, (project, Format::Terraform, form), Site::Server(place))
     }
 
     /// Lab `id`, installed in `dir`, in the account `place`, its module the one generated for
-    /// `runtime` on `cloud` (a container lab is `cloud-docker`, a VM lab `cloud-vm`), on the
-    /// runner whose home is `home`.
+    /// `runtime` on `cloud` (a container lab is `cloud-docker`, a VM lab `cloud-vm`).
     pub(crate) fn in_cloud(home: &Path, dir: &Path, id: &str, (runtime, cloud): (Runtime, &str), place: CloudPlace) -> Result<Self> {
         let (out, target) = lab::terraform(dir, runtime, cloud);
-        Deployment::new(home, dir, id, (out, Module::Generated(target)), Site::Cloud(place))
+        Deployment::new(home, dir, id, (out, Format::Terraform, Form::Generated(target)), Site::Cloud(place))
     }
 
     /// Cloud-services lab `id`, installed in `dir`: its own module (`cloud/`), run as it is in the
-    /// account `place`, on the runner whose home is `home`.
+    /// account `place`.
     #[cfg(feature = "cloud-services")]
     pub(crate) fn own(home: &Path, dir: &Path, id: &str, place: CloudPlace) -> Result<Self> {
         let module = crate::runtime::cloud_services::lab_file::module_dir(dir);
-        Deployment::new(home, dir, id, (module, Module::Own), Site::Cloud(place))
-    }
-
-    /// [`Deployment::on_server`] on a runner set up with `config`, which this test process
-    /// serves (tests script its tools).
-    #[cfg(test)]
-    pub(crate) fn on_server_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime, place: ServerPlace) -> Result<Self> {
-        let home = config.home.clone();
-        crate::testing::service::serve_home(config);
-        Deployment::on_server(&home, dir, id, runtime, place)
-    }
-
-    /// [`Deployment::in_cloud`] on a runner set up with `config`, which this test process serves.
-    #[cfg(test)]
-    pub(crate) fn in_cloud_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, module: (Runtime, &str), place: CloudPlace) -> Result<Self> {
-        let home = config.home.clone();
-        crate::testing::service::serve_home(config);
-        Deployment::in_cloud(&home, dir, id, module, place)
-    }
-
-    /// [`Deployment::own`] on a runner set up with `config`, which this test process serves.
-    #[cfg(all(test, feature = "cloud-services"))]
-    pub(crate) fn own_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, place: CloudPlace) -> Result<Self> {
-        let home = config.home.clone();
-        crate::testing::service::serve_home(config);
-        Deployment::own(&home, dir, id, place)
+        Deployment::new(home, dir, id, (module, Format::Terraform, Form::Own), Site::Cloud(place))
     }
 
     /// The same run at `site`: a server's place as a change needs it (its node, its SSH jump),
     /// where reading the run takes its variables only.
     pub(crate) fn at(&self, site: Site) -> Self {
-        Deployment { served: self.served.clone(), dir: self.dir.clone(), module: self.module, project: self.project.clone(), site }
+        Deployment { served: self.served.clone(), dir: self.dir.clone(), form: self.form, site }
     }
 
     /// Where the run is.
-    #[cfg(any(test, feature = "cloud-services"))]
     pub(crate) fn site(&self) -> &Site {
         &self.site
     }
 
-    /// `act` on the run with `opts`, its events as `log`'s lines, through the home's runner
-    /// service.
-    pub(super) async fn act(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-        self.run(act, opts, log).await.map(drop).map_err(|e| self.said(e))
+    /// What the run's project is.
+    pub(crate) fn form(&self) -> Form {
+        self.form
     }
 
-    /// [`Self::act`], saying whether it reached its goal (false: a command it ran failed).
+    /// The run's project folder.
+    pub(super) fn project(&self) -> &Path {
+        &self.served.project
+    }
+
+    /// The Isoloom target the run's files are generated for; none for a module of the lab's own
+    /// and for a helper VM an earlier version left.
+    pub(crate) fn target(&self) -> Option<lab::Target> {
+        match self.form {
+            Form::Generated(target) => Some(target),
+            Form::Own | Form::HelperVm => None,
+        }
+    }
+
+    /// Whether the project's own files are there: `compose.yml`, the `Vagrantfile`, a module's
+    /// `.tf` files (a start that failed before generation made none).
+    pub(crate) fn has_project(&self) -> bool {
+        let project = self.project();
+        match self.served.format {
+            Format::Compose => project.join("compose.yml").is_file(),
+            Format::Vagrant => project.join("Vagrantfile").is_file(),
+            _ => std::fs::read_dir(project).is_ok_and(|mut entries| entries.any(|e| e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "tf")))),
+        }
+    }
+
+    /// Whether the run's machines are VMs that suspend (a Vagrant project's).
+    pub(super) fn suspends(&self) -> bool {
+        self.served.format == Format::Vagrant
+    }
+
+    /// `act` on the run with `opts`, its events as `log`'s lines, through the home's runner
+    /// service. Whether it reached its goal (false: a command it ran failed). Once an operation
+    /// went through, the engine an earlier version noted is the runner's record: the note goes.
     pub(super) async fn run(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, remote::Failure> {
-        Box::pin(self.served.operate(act, opts, log)).await
+        let done = Box::pin(self.served.operate(act, opts, log)).await?;
+        if let Site::Here { noted_engine: Some(_) } = &self.site {
+            old_engine::forget(&self.dir);
+        }
+        Ok(done)
+    }
+
+    /// [`Deployment::run`], its failure in the player's words ([`Deployment::said`]).
+    pub(super) async fn act(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
+        match self.run(act, opts, log).await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(self.said(e).await),
+        }
     }
 
     /// The service's failure `e` of the run in the player's words: for a helper VM an earlier
-    /// version left on a server, what to remove when the runner no longer opens it; on a server,
-    /// a refused sign-in names it ([`Deployment::on_site`]).
-    pub(super) fn said(&self, e: remote::Failure) -> Error {
-        let e = match (e, self.module) {
-            (remote::Failure::Service(report), Module::HelperVm) => errors::of_helper_vm(&report, self.served.name.as_str()),
-            (e, _) => e.into_error(),
+    /// version left, what to remove by hand once the runner no longer opens it
+    /// ([`Deployment::helper_vm_gone`]); on a server, a refused sign-in names it.
+    pub(super) async fn said(&self, e: remote::Failure) -> Error {
+        let e = match e {
+            remote::Failure::Service(report) if self.helper_vm_refused(&report) => self.helper_vm_gone(&report).await,
+            e => e.into_error(),
         };
         self.on_site(e)
     }
 
-    /// `e` as the player reads it where the run is: on a server, a refused sign-in names the
-    /// server as Servers does.
-    fn on_site(&self, e: Error) -> Error {
+    /// Whether `report` is the runner's refusal of the helper VM an earlier version left: any
+    /// failure of a server's (whose module still opens), the refusal of the form itself here
+    /// and on ESXi.
+    fn helper_vm_refused(&self, report: &isothrum_runner::ErrorReport) -> bool {
+        self.form == Form::HelperVm && (self.served.format == Format::Terraform || errors::form_unsupported(report))
+    }
+
+    /// The runner's refusal `report` to open the helper VM an earlier version left this lab in:
+    /// nothing here reaches the VM. On this machine the run's record of it is forgotten, so its
+    /// page reads it as stopped and its next start is in its true form; the error says what to
+    /// remove by hand.
+    async fn helper_vm_gone(&self, report: &isothrum_runner::ErrorReport) -> Error {
+        let said = errors::of_helper_vm(report, self.served.name.as_str());
+        log::warn!("{}: {said}", self.dir.display());
+        if let Site::Here { .. } = self.site
+            && let Err(e) = self.served.forget().await
+        {
+            log::warn!("{}: its helper-VM record couldn't be forgotten: {e}", self.dir.display());
+        }
+        said
+    }
+
+    /// `e` as the player reads it where the run is: on a server (ESXi, Proxmox), a refused sign-in
+    /// names the server as Servers does.
+    pub(super) fn on_site(&self, e: Error) -> Error {
         match &self.site {
-            Site::Server(place) => errors::on_server(e, &place.name),
-            Site::Cloud(_) => e,
+            Site::Esxi(EsxiPlace { name, .. }) | Site::Server(ServerPlace { name, .. }) => errors::on_server(e, name),
+            Site::Here { .. } | Site::Cloud(_) => e,
         }
     }
 
-    /// What a change of the run (its start, a stop, an update, a machine retired) runs with, the
-    /// launch's values `env` among them, and the tunnel it goes through, held until it ends: on a
+    /// `opts` for a run here or on ESXi: the run's key under the name Isoloom's Vagrantfiles read
+    /// it ([`super::super::lab::ISOLOOM_KEY`]), so the lab's VMs, networks and libvirt domains are
+    /// named for this copy and no other; the evidence claim's values every lab is given, empty
+    /// when `opts` has none ([`with_claim`]); on ESXi, its id, its settings (as the environment
+    /// Isoloom's Vagrantfiles read) and its password (a secret, beside the launch's); and the
+    /// engine an earlier version noted for a container lab, unless `opts` names one.
+    pub(super) fn placed(&self, opts: RunOptions) -> RunOptions {
+        let opts = with_claim(opts).with_env(super::super::lab::ISOLOOM_KEY, isothrum_runner::copy_key(&self.served.home, &self.served.name));
+        match &self.site {
+            Site::Here { noted_engine: Some(context) } if opts.docker_context.is_none() => opts.with_docker_context(context.clone()),
+            Site::Esxi(place) => place.onto(opts),
+            _ => opts,
+        }
+    }
+
+    /// What a change of the run runs with (its start's values `start` for a start), and the
+    /// tunnel it goes through, held until it ends: here and on ESXi, [`Deployment::placed`]; on a
     /// server, its place's ([`server::applying`]); in a cloud account, a start's are the account's
     /// values and credentials with the runner's key for the lab's instances, a later change's its
     /// credentials only (the runner replays what the start was given).
-    async fn changing(&self, act: &remote::Act<'_>, env: &[(String, String)]) -> Result<(RunOptions, Option<Tunnel>)> {
+    async fn changing(&self, start: Option<Start<'_>>) -> Result<(RunOptions, Option<Tunnel>)> {
+        let values = start.map_or(&[][..], |s| s.inputs.values);
         match &self.site {
-            Site::Server(place) => server::applying(place, env, &self.key()).await,
-            Site::Cloud(place) if matches!(act, remote::Act::Up) => {
+            Site::Here { .. } | Site::Esxi(_) => Ok((self.placed(start.map_or_else(RunOptions::new, |s| start_options(s.inputs, s.provider))), None)),
+            Site::Server(place) => server::applying(place, values, &self.key()).await,
+            Site::Cloud(place) if start.is_some() => {
                 // The key the lab's instances let in: a plain value the record keeps, so every
                 // later operation replays it.
                 let keys = self.key_values().await?;
-                Ok((keys.into_iter().fold(place.options(env), |o, (k, v)| o.with_env(k, v)), None))
+                Ok((keys.into_iter().fold(place.options(values), |o, (k, v)| o.with_env(k, v)), None))
             }
             Site::Cloud(place) => Ok((place.later_options(), None)),
         }
     }
 
-    /// What a console of the run (a screen, the hypervisor's own app) is reached with: the
-    /// place's credentials.
+    /// What a read of the run takes: here and on ESXi, [`Deployment::placed`] (an ESXi host's
+    /// password); a server's credentials (its API, asked for its VMs' states); nothing in a cloud
+    /// account.
+    fn reading(&self) -> RunOptions {
+        match &self.site {
+            Site::Here { .. } | Site::Esxi(_) => self.placed(RunOptions::new()),
+            Site::Server(place) => server::options(place, &[]),
+            Site::Cloud(_) => RunOptions::new(),
+        }
+    }
+
+    /// What a console of the run (a screen, the hypervisor's own app) is reached with: the place's
+    /// credentials.
     fn reaching(&self) -> RunOptions {
         match &self.site {
-            Site::Server(place) => server::options(place, &[]),
             Site::Cloud(place) => place.later_options(),
+            _ => self.reading(),
         }
     }
 
-    /// The run's status, read by the home's runner service.
+    /// The run's status, read by the home's runner service, which reads a run one read at a time.
     pub(super) async fn read(&self) -> Result<isothrum_runner::Status> {
-        self.read_with(&RunOptions::new()).await
+        self.read_with(&self.reading()).await
     }
 
-    /// [`Self::read`], its tools given `opts`' values and secrets (a Proxmox server's API token,
-    /// for its VMs' states on the server).
+    /// [`Self::read`], its tools given `opts`' values and secrets.
     pub(super) async fn read_with(&self, opts: &RunOptions) -> Result<isothrum_runner::Status> {
-        self.served.status(opts).await.map_err(|e| self.said(e))
-    }
-
-    /// Whether the module was generated (a start that failed before generation made none).
-    pub(crate) fn has_project(&self) -> bool {
-        std::fs::read_dir(&self.project).is_ok_and(|mut entries| entries.any(|e| e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "tf"))))
-    }
-
-    /// The Isoloom target the run's files are generated for; none for a module of the lab's own
-    /// and for a run an earlier version left in a helper VM.
-    pub(crate) fn target(&self) -> Option<lab::Target> {
-        match self.module {
-            Module::Generated(target) => Some(target),
-            Module::Own | Module::HelperVm => None,
+        match self.served.status(opts).await {
+            Ok(status) => Ok(status),
+            Err(e) => Err(self.said(e).await),
         }
     }
 
-    /// What the run's module is.
-    pub(crate) fn module(&self) -> Module {
-        self.module
+    /// The run's record, none before it ever ran: no tool runs.
+    pub(super) async fn recorded(&self) -> Result<Option<isothrum_runner::RunRecord>> {
+        self.served.record().await
     }
 
     /// The run's status as the runner reports it; None before the lab's files exist.
     pub(crate) async fn run_status(&self) -> Result<Option<isothrum_runner::Status>> {
-        if !self.has_project() {
+        if !self.files_back().await? {
             return Ok(None);
         }
         self.read().await.map(Some)
     }
 
-    /// Brings the lab up from its generated module, with the launch's values `env` (the inputs the
-    /// lab's slots take), and says where to start.
-    pub(crate) async fn up(&self, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        let act = remote::Act::Up;
-        let (opts, _tunnel) = self.changing(&act, env).await?;
-        self.act(act, &opts, log).await?;
+    /// Brings the lab up from its generated files (a parked run is resumed as it was), and says
+    /// where to start: the lab's message, its host ports filled in. `inputs` are the launch's; a
+    /// VM lab here or on ESXi runs on `provider`.
+    pub(crate) async fn up(&self, inputs: Inputs<'_>, provider: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+        let provider = provider.map(runner_provider).transpose()?;
+        let (opts, _tunnel) = self.changing(Some(Start { inputs, provider })).await?;
+        self.act(remote::Act::Up, &opts, log).await?;
         super::described::log_message(&self.dir, self.target(), log);
         Ok(())
     }
 
-    /// Removes everything the run created, with the parameters it was applied with (the
-    /// connection is the place's as it is now).
+    /// `act` on the run as a change does ([`Deployment::changing`]), its failure in the player's
+    /// words.
+    async fn change(&self, act: remote::Act<'_>, log: &mut impl FnMut(String)) -> Result<()> {
+        let (opts, _tunnel) = self.changing(None).await?;
+        self.act(act, &opts, log).await
+    }
+
+    /// Removes everything the run created (containers, networks, volumes, its pinned ports; its
+    /// VMs; what its module made), with the parameters it was applied with (the connection is
+    /// the place's as it is now).
     pub(crate) async fn down(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        // A run whose module was never generated created nothing: a clean no-op, as the other
-        // runner paths tolerate (without this, tearing down a lab that was never deployed errors
-        // on the missing module).
-        if !self.has_project() {
-            log("Nothing to remove: the run has no files.".to_owned());
+        // A run whose files were never written (a start that failed before generation) created
+        // nothing, so there is nothing to remove: a clean no-op. Without this, tearing down a
+        // failed launch errors on the missing project.
+        if !self.files_back().await? {
+            log("Nothing to remove: the run has no files.".into());
             return Ok(());
         }
-        let act = remote::Act::Down;
-        let (opts, _tunnel) = self.changing(&act, &[]).await?;
-        self.act(act, &opts, log).await
+        self.change(remote::Act::Down, log).await
     }
 
-    /// Brings the running lab up to date with its regenerated module (a machine added to the lab
-    /// or taken out); the machines that run keep what they were given.
+    /// Brings the running lab up to date with its regenerated files (a machine added to the lab
+    /// or taken out), with the parameters it was started with; a lab that isn't up is refused by
+    /// the runner before anything acts. Its failure says whether the run may have changed.
     pub(crate) async fn update(&self, log: &mut impl FnMut(String)) -> std::result::Result<(), Failed> {
-        let act = remote::Act::Update;
-        let (opts, _tunnel) = self.changing(&act, &[]).await.map_err(Failed::of_launcher)?;
-        self.run(act, &opts, log).await.map(drop).map_err(|f| f.failed(|e| self.on_site(e)))
+        let (opts, _tunnel) = self.changing(None).await.map_err(Failed::of_launcher)?;
+        match self.run(remote::Act::Update, &opts, log).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let run_changed = e.run_changed();
+                Err(Failed { error: self.said(e).await, run_changed })
+            }
+        }
     }
 
-    /// Takes `machine` out of the running lab ahead of its removal from the module.
+    /// Takes `machine` out of the running lab, ahead of its removal from the lab's files.
     pub(crate) async fn retire(&self, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        let act = remote::Act::Retire(machine);
-        let (opts, _tunnel) = self.changing(&act, &[]).await?;
-        self.act(act, &opts, log).await
+        self.change(remote::Act::Retire(machine), log).await
     }
 
-    /// The lab as its page shows it; not running before its module was ever generated.
+    /// Runs the lab's set-up again on its running machines (`machine`, or all): its provisioners,
+    /// and its controller's play. The launch's values aren't kept, so none reaches it: an input's
+    /// file keeps the value it was written with.
+    pub(crate) async fn provision(&self, machine: Option<&str>, log: &mut impl FnMut(String)) -> Result<()> {
+        self.change(remote::Act::Provision(machine, None), log).await
+    }
+
+    /// Parks the lab, keeping what it created: Docker only stops containers, so both of the
+    /// launcher's park modes are the runner's `Shutdown` there; VMs are suspended (`Pause`) or
+    /// powered off (`Shutdown`).
+    pub(crate) async fn park(&self, mode: crate::runtime::Park, log: &mut impl FnMut(String)) -> Result<()> {
+        let mode = match mode {
+            crate::runtime::Park::Pause if self.suspends() => isothrum_runner::Park::Pause,
+            _ => isothrum_runner::Park::Shutdown,
+        };
+        self.change(remote::Act::Park(mode), log).await
+    }
+
+    /// Starts the parked lab again. When nothing is left of it, the runner's record reads it
+    /// absent, so the lab page offers a fresh start instead of a resume that can't work.
+    pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
+        let (opts, _tunnel) = self.changing(None).await?;
+        match self.run(remote::Act::Resume, &opts, log).await {
+            Ok(_) => Ok(()),
+            Err(remote::Failure::Service(report)) if errors::nothing_to_resume(&report) => Err(errors::coded(&report)),
+            Err(e) => Err(self.said(e).await),
+        }
+    }
+
+    /// The lab as its page shows it; not running before its files were ever generated.
     pub(crate) async fn status(&self) -> Result<LabStatus> {
         match &self.site {
+            Site::Here { .. } | Site::Esxi(_) => self.local_status().await,
             Site::Server(place) => self.server_status(place).await,
             Site::Cloud(_) => self.cloud_status().await,
         }
     }
 
-    /// The lab's checks: on a server, each runner its module's `checks` output names, run in its
-    /// machine by the runner's `exec` over SSH, through the server's node first when only it
-    /// reaches the lab (the run's recorded `ssh_jump`) ([`Deployment::module_check`]); in a cloud
-    /// account, a cloud-services lab's pages, and none yet for a module Isoloom generates (the
-    /// runner runs no command in a Terraform module's VMs there).
+    /// What the lab says of itself (its machines, ports, networks, check runners), from its spec:
+    /// its containers or its VMs as its project runs them; nothing for a project Isoloom didn't
+    /// generate (a module of the lab's own, a helper VM an earlier version left).
+    pub(super) fn described(&self) -> Result<super::described::Described> {
+        use super::described::{Described, Form as Of};
+        match self.form {
+            Form::Generated(lab::Target::Docker | lab::Target::CloudDocker) => Described::of(&self.dir, Of::Containers),
+            Form::Generated(_) => Described::of(&self.dir, Of::Vms),
+            Form::Own | Form::HelperVm => Ok(Described::default()),
+        }
+    }
+
+    /// The lab's checks: here and on ESXi, the check runners its spec declares
+    /// ([`Deployment::lab_check`]); on a server, each runner its module's `checks` output names,
+    /// run in its machine by the runner's `exec` over SSH ([`Deployment::module_check`]); in a
+    /// cloud account, a cloud-services lab's pages, and none yet for a module Isoloom generates
+    /// (the runner runs no command in a Terraform module's VMs there).
     pub(crate) async fn check(&self) -> Result<Check> {
-        match (&self.site, self.module) {
+        match (&self.site, self.form) {
+            (Site::Here { .. } | Site::Esxi(_), _) => self.lab_check().await,
             (Site::Server(_), _) => self.module_check(&RunOptions::new()).await,
             #[cfg(feature = "cloud-services")]
-            (Site::Cloud(_), Module::Own) => self.own_check().await,
+            (Site::Cloud(_), Form::Own) => self.own_check().await,
             (Site::Cloud(_), _) => Ok(Check::default()),
         }
     }
 
-    /// The module's sign-in key for the machines it makes (Isoloom's Terraform modules ask for
-    /// it, with no default): the runner's ([`key_values`]).
+    /// The module's sign-in key for the machines it makes ([`key_values`]).
     pub(crate) async fn key_values(&self) -> Result<Vec<(String, String)>> {
         key_values(&self.served.home).await
     }
@@ -299,31 +484,85 @@ impl Deployment {
     }
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
-    /// when given: the runner's, an SSH along the route the module's outputs give (through its
-    /// router, and through the jump host the run recorded first, `ssh_jump`), as the module's
-    /// user, then a login shell as `user`.
+    /// when given: the runner's (for a module, an SSH along the route its outputs give: through
+    /// its router, and through the jump host the run recorded first, `ssh_jump`, as the module's
+    /// user, then a login shell as `user`).
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<isothrum_runner::ShellCommand> {
-        // Made when there is none: the key the module's machines let in.
-        remote::public_key(&self.served.home).await?;
-        self.served.console_command(machine, user).await.map_err(|e| self.said(e))
+        if self.served.format == Format::Terraform {
+            // Made when there is none: the key the module's machines let in.
+            remote::public_key(&self.served.home).await?;
+        }
+        match self.served.console_command(machine, user).await {
+            Ok(command) => Ok(command),
+            Err(e) => Err(self.said(e).await),
+        }
     }
 
     /// The service endpoints the module publishes, by name, where this computer reaches each
     /// one (the runner's: through the run's jump host, a local forward it keeps), with `opts`.
     pub(crate) async fn endpoints(&self, opts: &RunOptions) -> Result<Vec<isothrum_runner::ServiceEndpoint>> {
-        self.served.service_endpoints(opts).await.map_err(|e| self.said(e))
+        match self.served.service_endpoints(opts).await {
+            Ok(endpoints) => Ok(endpoints),
+            Err(e) => Err(self.said(e).await),
+        }
     }
 
     /// `machine`'s graphical console (its screen), as the runner reaches it with the place's
-    /// credentials (a Proxmox server's API, as the module's own values carry them).
+    /// credentials, held with its tunnel until dropped.
     pub(crate) async fn graphical_console(&self, machine: &str) -> Result<isothrum_client::HeldConsole> {
-        self.served.graphical_console(machine, &self.reaching()).await.map_err(|e| self.said(e))
+        match self.served.graphical_console(machine, &self.reaching()).await {
+            Ok(console) => Ok(console),
+            Err(e) => Err(self.said(e).await),
+        }
     }
 
     /// What opens running VM `machine` in its hypervisor's own app (a server's web console), as
     /// the runner says with the place's credentials.
     pub(crate) async fn native_console(&self, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        self.served.native_console(machine, &self.reaching()).await.map_err(|e| self.said(e))
+        match self.served.native_console(machine, &self.reaching()).await {
+            Ok(console) => Ok(console),
+            Err(e) => Err(self.said(e).await),
+        }
+    }
+}
+
+/// Runs on runners this test process serves (tests script their tools).
+#[cfg(test)]
+impl Deployment {
+    /// A run of `kind` here, on a runner built from `config`.
+    pub(super) fn here_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, kind: Kind) -> Result<Self> {
+        let home = config.home.clone();
+        crate::testing::service::serve_home(config);
+        Deployment::here(&home, dir, id, kind)
+    }
+
+    /// [`Deployment::on_esxi`] of a VM lab, on a runner built from `config`.
+    pub(super) fn on_esxi_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, place: EsxiPlace) -> Result<Self> {
+        let home = config.home.clone();
+        crate::testing::service::serve_home(config);
+        Deployment::on_esxi(&home, dir, id, Runtime::Vm, place)
+    }
+
+    /// [`Deployment::on_server`], on a runner built from `config`.
+    pub(crate) fn on_server_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime, place: ServerPlace) -> Result<Self> {
+        let home = config.home.clone();
+        crate::testing::service::serve_home(config);
+        Deployment::on_server(&home, dir, id, runtime, place)
+    }
+
+    /// [`Deployment::in_cloud`], on a runner built from `config`.
+    pub(crate) fn in_cloud_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, module: (Runtime, &str), place: CloudPlace) -> Result<Self> {
+        let home = config.home.clone();
+        crate::testing::service::serve_home(config);
+        Deployment::in_cloud(&home, dir, id, module, place)
+    }
+
+    /// [`Deployment::own`], on a runner built from `config`.
+    #[cfg(feature = "cloud-services")]
+    pub(crate) fn own_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, place: CloudPlace) -> Result<Self> {
+        let home = config.home.clone();
+        crate::testing::service::serve_home(config);
+        Deployment::own(&home, dir, id, place)
     }
 }
 

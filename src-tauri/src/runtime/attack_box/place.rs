@@ -297,7 +297,7 @@ mod tests {
         config.processes = Arc::clone(&fake) as Arc<dyn isothrum_runner::ProcessRunner>;
         let place = isothrum::CloudPlace { region: Some("eu-west-3".into()), allowed_cidr: Some("203.0.113.7/32".into()), ..isothrum::CloudPlace::default() };
         let run = isothrum::Deployment::in_cloud_with(config, &dir, "t", (Runtime::Docker, "aws"), place).unwrap();
-        run.up(&[], &mut |_| {}).await.unwrap();
+        run.up(isothrum::Inputs::default(), None, &mut |_| {}).await.unwrap();
         expired.store(true, Ordering::SeqCst);
         let before = module(&dir, "aws");
         let conn = crate::runtime::server::Connection {
@@ -326,7 +326,7 @@ mod tests {
 
     /// The shell the lab page opens into the box in lab `dir`, generated for `target`, run on
     /// this computer by `run`.
-    async fn box_shell(dir: &Path, target: Target, run: Result<isothrum::LabRun>, vm: bool) -> isothrum_runner::ShellCommand {
+    async fn box_shell(dir: &Path, target: Target, run: Result<isothrum::Deployment>, vm: bool) -> isothrum_runner::ShellCommand {
         lab::prepare(dir, target).unwrap();
         let placed = Placed { host: Host::Local(run.unwrap()), dir: dir.to_path_buf(), target, vm };
         placed.shell_command().await.unwrap()
@@ -345,7 +345,7 @@ mod tests {
         let dir = lab("app: { image: nginx }");
         super::super::add(&dir, Kind::Container { image: "kalilinux/kali-rolling" }, Cpu::Lab, None, None).unwrap();
         let home = dir.join("home");
-        let shell = box_shell(&dir, Target::Docker, isothrum::LabRun::docker(&home, &dir, "t"), false).await;
+        let shell = box_shell(&dir, Target::Docker, isothrum::Deployment::docker(&home, &dir, "t"), false).await;
         let line = shell.args.join(" ");
         assert!(line.contains(&format!(" exec --user {PLAYER} {NAME} sh -c ")), "a container: exec as the account: {line}");
         let compose = std::fs::read_dir(&shell.cwd).unwrap().map(|e| e.unwrap().path()).filter(|p| p.extension().is_some_and(|x| x == "yml"));
@@ -355,7 +355,7 @@ mod tests {
         let dir = lab("os: debian@12");
         super::super::add(&dir, Kind::Vm { desktop: false }, Cpu::Lab, None, None).unwrap();
         let home = dir.join("home");
-        let shell = box_shell(&dir, Target::Vagrant, isothrum::LabRun::vm(&home, &dir, "t"), true).await;
+        let shell = box_shell(&dir, Target::Vagrant, isothrum::Deployment::vm(&home, &dir, "t"), true).await;
         assert_eq!(shell.args[..3], ["ssh", NAME, "-c"], "{:?}", shell.args);
         assert!(shell.args[3].contains(&format!("exec sudo -iu {PLAYER}")), "a VM: a sudo login as the account: {:?}", shell.args);
     }

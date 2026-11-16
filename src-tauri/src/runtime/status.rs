@@ -72,12 +72,11 @@ async fn status_at(host: &Host) -> Result<LabStatus> {
     Ok(match host {
         // On this machine: a container lab on Docker or in one local VM, or a VM lab.
         Host::Local(run) => run.status().await?,
-        // ESXi (Vagrant on the host): Vagrant's states, each VM at its own address.
-        Host::Esxi { run, conn } => on_server(run.status().await?, conn),
-        // A cloud account (cloud-vm, cloud-docker, cloud-services): from the runner's record. A
-        // Proxmox server: from the runner's own record and state, each VM as the server's API
-        // says it stands, asked with the server's credentials (a VM removed in its web UI gone).
-        Host::Cloud { run, conn } | Host::Server { run, conn } => on_server(run.status().await?, conn),
+        // ESXi (Vagrant on the host): Vagrant's states, each VM at its own address. A cloud
+        // account (cloud-vm, cloud-docker, cloud-services): from the runner's record. A Proxmox
+        // server: from the runner's own record and state, each VM as the server's API says it
+        // stands, asked with the server's credentials (a VM removed in its web UI gone).
+        Host::Esxi { run, conn } | Host::Cloud { run, conn } | Host::Server { run, conn } => on_server(run.status().await?, conn),
     })
 }
 
@@ -153,7 +152,7 @@ pub(crate) async fn forget_gone(dirs: &AppDirs, id: &str, log: &mut impl FnMut(S
 
 /// [`forget_gone`], the run opened by `open` from the lab's folder ([`isothrum::recorded_here`]:
 /// none for a run that isn't this machine's to read).
-pub(crate) async fn forget_gone_with<F: Future<Output = Result<Option<isothrum::LabRun>>>>(
+pub(crate) async fn forget_gone_with<F: Future<Output = Result<Option<isothrum::Deployment>>>>(
     dirs: &AppDirs,
     id: &str,
     open: impl FnOnce(std::path::PathBuf) -> F,
@@ -210,7 +209,7 @@ pub fn lab_installed(dirs: &AppDirs, id: &str) -> bool {
 }
 
 /// Where a running container lab is reachable on this machine, for the website to open after a
-/// launch: as the runner's status publishes the lab's ports ([`isothrum::LabRun::local_url`]).
+/// launch: as the runner's status publishes the lab's ports ([`isothrum::Deployment::local_url`]).
 /// None for a lab run as VMs or elsewhere, or when nothing is published.
 pub async fn primary_url(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Option<String> {
     match host::locate(dirs, dir, id, runtime).await.ok()?? {

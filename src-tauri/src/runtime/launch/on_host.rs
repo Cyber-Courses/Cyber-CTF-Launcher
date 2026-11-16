@@ -45,7 +45,7 @@ pub(super) async fn start_on_server(
     if place.jump.is_some() {
         log("The lab bridge is internal to the node: reaching the lab's VMs through the node.".into());
     }
-    isothrum::Deployment::on_server(&runner_home(dirs)?, dir, id, runtime, place)?.up(inputs.values, log).await
+    isothrum::Deployment::on_server(&runner_home(dirs)?, dir, id, runtime, place)?.up(inputs, None, log).await
 }
 
 /// One VM per machine on a server host is Isoloom's cloud-vm, which every cloud account runs; on a
@@ -69,8 +69,8 @@ pub(super) fn containers_run_on(provider: Option<Provider>) -> Result<()> {
 
 /// The runner's run of VM lab `id` (in `dir`) on the ESXi server of connection `c`: its
 /// settings as params, its password as the run's connection.
-pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::LabRun> {
-    isothrum::LabRun::on_esxi(&runner_home(dirs)?, dir, id, runtime, isothrum::EsxiPlace::from_env(&c.id, &c.name, &c.env))
+pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime, c: &server::Connection) -> Result<isothrum::Deployment> {
+    isothrum::Deployment::on_esxi(&runner_home(dirs)?, dir, id, runtime, isothrum::EsxiPlace::from_env(&c.id, &c.name, &c.env))
 }
 
 /// Where a runner's run goes on server `host` (connection `conn`): its variables (with the
@@ -143,7 +143,8 @@ pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: 
     // The firewall opens the lab's SSH and published ports to this machine's public IP only.
     let allowed = public_ip().await?;
     let place = isothrum::CloudPlace::launch(&conn, Some(&allowed));
-    isothrum::Deployment::in_cloud(&runner_home(dirs)?, dir, id, (runtime, cloud), place)?.up(env, log).await
+    let inputs = isothrum::Inputs { values: env, ..isothrum::Inputs::default() };
+    isothrum::Deployment::in_cloud(&runner_home(dirs)?, dir, id, (runtime, cloud), place)?.up(inputs, None, log).await
 }
 
 /// The runtime that drives a `runtime` lab's Terraform module on a cloud account: for a container

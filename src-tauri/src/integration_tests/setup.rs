@@ -490,8 +490,8 @@ async fn example_lab(out: &mut Out, src: &Path, place: LabPlace) {
         async |f: &mut Vec<String>| {
             let on_line = |l: String| log.borrow_mut().write(&l);
             let run = match place {
-                LabPlace::Docker => isothrum::LabRun::docker(&home, &dir, &id),
-                LabPlace::Vm(_) => isothrum::LabRun::vm(&home, &dir, &id),
+                LabPlace::Docker => isothrum::Deployment::docker(&home, &dir, &id),
+                LabPlace::Vm(_) => isothrum::Deployment::vm(&home, &dir, &id),
             };
             let stopped = match run {
                 Ok(run) => lifecycle::stop_run(run, &dir, on_line).await,

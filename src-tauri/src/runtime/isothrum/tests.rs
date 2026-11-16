@@ -2,12 +2,13 @@
 //! runner's fake processes) and scripted launcher tools (the attack box's `docker` calls): no real
 //! tool runs. The lab's project is the one Isoloom generates from the spec.
 
-use isothrum_runner::{EventKind, StepState, WarningCode};
+use isothrum_runner::{EventKind, Format, Status, StepState, WarningCode};
 
 use super::test_lab::prelude::*;
 use super::*;
 use crate::error::Error;
 use crate::platform::exec::fake::Tools;
+use crate::runtime::{Park, Place, Runtime, lab};
 use isothrum_runner::HostPort;
 
 const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\ninputs: [CTF_LAUNCH_TOKEN]\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http, publish: 8080 } }\n    files: [{ path: /run/lab/token, input: CTF_LAUNCH_TOKEN }]\n    app: { image: nginx:1.27 }\nchecks:\n  - { http: \"http://web/\" }\nmessage: |\n  Open http://localhost:{{ machines.web.ports.web.published }}/\n";
@@ -40,12 +41,12 @@ impl Fixture {
     }
 
     /// The lab's run, on a runner whose home is the fixture's root.
-    fn run(&self) -> LabRun {
-        LabRun::with(self.home.config(&self.fake, [41873]), &self.home.dir, "web", Kind::Docker).unwrap()
+    fn run(&self) -> Deployment {
+        Deployment::here_with(self.home.config(&self.fake, [41873]), &self.home.dir, "web", Kind::Docker).unwrap()
     }
 
     /// The lab's run, started with [`launch_env`] (the attack box's tools scripted by the caller).
-    async fn up(&self) -> LabRun {
+    async fn up(&self) -> Deployment {
         let run = self.run();
         run.up(on_own_ports(&launch_env()), None, &mut |_| {}).await.unwrap();
         run
@@ -156,7 +157,7 @@ fn on_own_ports(values: &[(String, String)]) -> Inputs<'_> {
 /// A fixture whose lab is up and then parked with `Park::Shutdown`, the launcher tools scripted
 /// empty — the shared start of the park/resume tests. The caller keeps the `Fixture` and the
 /// `Tools` guard, which hold the lab's folder and the fake tools for the rest of the test.
-async fn up_then_parked() -> (Fixture, LabRun, Tools) {
+async fn up_then_parked() -> (Fixture, Deployment, Tools) {
     let f = Fixture::new();
     let tools = Tools::strict_rules(&[]);
     let run = f.up().await;
@@ -377,7 +378,7 @@ async fn a_lab_never_generated_reads_as_not_running() {
     let root = std::env::temp_dir().join(format!("cyberctf-isothrum-{}", rand::random::<u32>()));
     let dir = root.join("labs").join("web");
     std::fs::create_dir_all(&dir).unwrap();
-    let s = LabRun::with(isothrum_runner::RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap().status().await.unwrap();
+    let s = Deployment::here_with(isothrum_runner::RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap().status().await.unwrap();
     assert!(!s.running && s.machines.is_empty());
     let _ = std::fs::remove_dir_all(root);
 }
@@ -390,7 +391,7 @@ async fn tearing_down_a_lab_never_generated_is_a_clean_no_op() {
     let root = std::env::temp_dir().join(format!("cyberctf-isothrum-{}", rand::random::<u32>()));
     let dir = root.join("labs").join("web");
     std::fs::create_dir_all(&dir).unwrap();
-    let run = LabRun::with(isothrum_runner::RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap();
+    let run = Deployment::here_with(isothrum_runner::RunnerConfig::new(&root), &dir, "web", Kind::Docker).unwrap();
     let mut lines = Vec::new();
     run.down(&mut |l| lines.push(l)).await.unwrap();
     assert_eq!(lines, ["Nothing to remove: the run has no files."]);
@@ -538,22 +539,22 @@ fn a_lab_here_is_run_in_the_form_it_was_started_in() {
     std::fs::create_dir_all(&dir).unwrap();
     let home = dir.join("home");
     let recorded = std::cell::RefCell::new(crate::runtime::recorded::Recorded::default());
-    let form = |runtime| LabRun::local(&home, &dir, "t", runtime, &recorded.borrow()).unwrap().map(|r| (r.kind, r.target()));
+    let form = |runtime| Deployment::local_of(&home, &dir, "t", runtime, &recorded.borrow()).unwrap().map(|r| (r.served.format, r.target()));
     let record = |target: &str| {
         let json =
             serde_json::json!({ "version": 1, "name": "cyberctf-t", "project": dir.join(".isoloom").join(target), "format": "vagrant", "state": "ready" });
         *recorded.borrow_mut() = Some(serde_json::from_value::<isothrum_runner::RunRecord>(json).unwrap()).into();
     };
     // As declared: its containers on Docker, its VMs, and no run here for cloud services.
-    assert_eq!(form(Runtime::Docker), Some((Kind::Docker, Some(lab::Target::Docker))));
-    assert_eq!(form(Runtime::Vm), Some((Kind::Vm, Some(lab::Target::Vagrant))));
+    assert_eq!(form(Runtime::Docker), Some((Format::Compose, Some(lab::Target::Docker))));
+    assert_eq!(form(Runtime::Vm), Some((Format::Vagrant, Some(lab::Target::Vagrant))));
     assert_eq!(form(Runtime::Cloud), None);
     // A container lab an earlier version left in a helper VM: that run, read as it is (no target
     // to generate it again for); one started as one VM per machine, as VMs.
     record("docker-vm");
-    assert_eq!(form(Runtime::Docker), Some((Kind::DockerVm, None)));
+    assert_eq!(form(Runtime::Docker), Some((Format::Vagrant, None)));
     record("vagrant");
-    assert_eq!(form(Runtime::Docker), Some((Kind::Vm, Some(lab::Target::Vagrant))));
+    assert_eq!(form(Runtime::Docker), Some((Format::Vagrant, Some(lab::Target::Vagrant))));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

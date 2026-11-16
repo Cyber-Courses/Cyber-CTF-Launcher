@@ -20,7 +20,7 @@ use super::wait_tcp;
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::runtime::docker::Check;
-use crate::runtime::isothrum::LabRun;
+use crate::runtime::isothrum::Deployment;
 use crate::runtime::lab::esxi::{DATASTORE, HOSTNAME, HOSTPORT, VIRTUAL_NETWORK};
 use crate::runtime::launch::{Inputs, esxi_run};
 use crate::runtime::providers::{self, Provider};
@@ -110,7 +110,7 @@ fn setting(conn: &server::Connection, name: &str) -> Option<String> {
 }
 
 /// The test lab's run on the host, as a launch runs a lab there.
-pub(super) struct OnEsxi(LabRun);
+pub(super) struct OnEsxi(Deployment);
 
 impl TestRun for OnEsxi {
     async fn up(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()> {

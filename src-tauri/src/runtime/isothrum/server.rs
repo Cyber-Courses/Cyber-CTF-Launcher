@@ -84,11 +84,7 @@ impl Deployment {
         // carry: a status reads the run's tool as an operation does.
         let mut status = self.read_with(&options(place, &[])).await?;
         self.reached(place, &mut status).await?;
-        let described = match self.target() {
-            Some(_) => super::described::Described::of(&self.dir, super::described::Form::Vms)?,
-            None => super::described::Described::default(),
-        };
-        let shown = view::lab_status(&described, &status, None);
+        let shown = view::lab_status(&self.described()?, &status, None);
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
     }
 
@@ -274,7 +270,7 @@ mod tests {
             )
             .unwrap();
             let record = serde_json::json!({
-                "version": 0, "name": "cyberctf-web", "project": run.project, "format": "terraform",
+                "version": 0, "name": "cyberctf-web", "project": run.project(), "format": "terraform",
                 "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
             });
             crate::testing::runner::save_run(&f.home.runner(), &record);
@@ -356,7 +352,7 @@ mod tests {
         /// Records run `name` of `run` up, through the node `root@node.lab` (as its start keeps it).
         fn record_through_the_node(f: &Scripted<Api>, run: &Deployment, name: &str) {
             let record = serde_json::json!({
-                "version": 0, "name": name, "project": run.project, "format": "terraform",
+                "version": 0, "name": name, "project": run.project(), "format": "terraform",
                 "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
                 "env": { "ssh_jump": "root@node.lab" },
             });
@@ -373,7 +369,7 @@ mod tests {
         async fn a_lab_reached_directly_is_linked_where_its_module_publishes_it() {
             let (f, run) = published_lab("pve-direct");
             let record = serde_json::json!({
-                "version": 0, "name": "cyberctf-pve-direct", "project": run.project, "format": "terraform",
+                "version": 0, "name": "cyberctf-pve-direct", "project": run.project(), "format": "terraform",
                 "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
             });
             crate::testing::runner::save_run(&f.home.runner(), &record);
@@ -403,7 +399,7 @@ mod tests {
         async fn a_server_labs_checks_run_in_its_machines_through_the_runner_through_the_node_first() {
             let (f, run) = up_answered_by(checked);
             record_through_the_node(&f, &run, "cyberctf-web");
-            let scripts = run.project.join("checks");
+            let scripts = run.project().join("checks");
             std::fs::create_dir_all(&scripts).unwrap();
             std::fs::write(scripts.join("web.sh"), "echo WEB-RUNNER\n").unwrap();
             std::fs::write(scripts.join("db.sh"), "echo DB-RUNNER\n").unwrap();

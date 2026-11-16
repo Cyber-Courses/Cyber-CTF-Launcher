@@ -35,7 +35,7 @@ async fn park(dirs: &AppDirs, lab: LabRef<'_>, mode: Park, mut log: impl FnMut(S
 /// Lab `id`'s run on this machine ([`host::locate`]), for a lab parked or resumed here; refused
 /// with `elsewhere` for a lab on a server host or cloud account. A cloud-services lab, refused
 /// before, has none.
-async fn local_run(dirs: &AppDirs, lab: LabRef<'_>, elsewhere: &str) -> Result<isothrum::LabRun> {
+async fn local_run(dirs: &AppDirs, lab: LabRef<'_>, elsewhere: &str) -> Result<isothrum::Deployment> {
     let LabRef { dir, id, runtime } = lab;
     match host::locate(dirs, dir, id, runtime).await? {
         Some(Host::Local(run)) => Ok(run),
@@ -206,7 +206,7 @@ pub(crate) async fn stop_locked(dirs: &AppDirs, lab: LabRef<'_>, log: impl FnMut
 /// Destroys a lab's run on this machine (`run`, of the lab in `dir`) and, once it is gone, clears
 /// what marked it as running. Takes no app handle, so the integration tests run exactly this.
 #[cfg(test)]
-pub(crate) async fn stop_run(run: isothrum::LabRun, dir: &Path, mut log: impl FnMut(String)) -> Result<()> {
+pub(crate) async fn stop_run(run: isothrum::Deployment, dir: &Path, mut log: impl FnMut(String)) -> Result<()> {
     run.down(&mut log).await?;
     forget_run(dir)
 }

@@ -46,25 +46,25 @@ impl Run {
     }
 
     pub(crate) async fn status(&self) -> Result<LabStatus> {
-        isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.status().await
+        isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?.status().await
     }
 
     pub(crate) async fn check(&self) -> Result<docker::Check> {
-        isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.check().await
+        isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?.check().await
     }
 
     /// Parks the lab (its containers stopped, kept), as the lab page's Shut down does.
     pub(crate) async fn park(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.park(crate::runtime::Park::Shutdown, log).await
+        isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?.park(crate::runtime::Park::Shutdown, log).await
     }
 
     /// Starts the parked lab again, as it was.
     pub(crate) async fn resume(&self, log: &mut impl FnMut(String)) -> Result<()> {
-        isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.resume(log).await
+        isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?.resume(log).await
     }
 
     pub(crate) async fn stop(&self, log: impl FnMut(String)) -> Result<()> {
-        lifecycle::stop_run(isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?, &self.dir, log).await
+        lifecycle::stop_run(isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?, &self.dir, log).await
     }
 }
 
