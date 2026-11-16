@@ -1,5 +1,6 @@
 //! Property tests for reading a tool's output line by line: any bytes, arriving in any pieces,
-//! come out as the lines they hold, invalid UTF-8 replaced, nothing lost or merged.
+//! come out as the lines they hold, each decoded whole (UTF-8, else on Windows the system's code
+//! page, else with what isn't UTF-8 replaced), nothing lost or merged.
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -10,6 +11,7 @@ use tokio::io::{AsyncRead, BufReader, ReadBuf};
 // Only the Unix test below uses `forward_lines` (it runs a real `sh`).
 #[cfg(unix)]
 use super::*;
+use crate::platform::tool_output::text::decode;
 use crate::testing::proptest_support::config;
 
 /// A pipe that hands out its bytes in the given pieces, one per read, then ends.
@@ -44,13 +46,15 @@ fn pieces(bytes: &[u8], raw: &[prop::sample::Index]) -> Pieces {
 }
 
 /// The lines `bytes` holds: split at `\n`, one `\r` at a line's end dropped (a last line without
-/// `\n` too: a progress line ending in `\r`), a last line without `\n` kept.
+/// `\n` too: a progress line ending in `\r`), a last line without `\n` kept. Each is decoded as a
+/// whole line of a tool's output is ([`decode`]): on Windows a line that isn't UTF-8 is read in
+/// the system's code page (0x80 is `€` in Windows-1252), elsewhere with U+FFFD for what isn't.
 fn expected(bytes: &[u8]) -> Vec<String> {
     let mut lines: Vec<&[u8]> = bytes.split(|b| *b == b'\n').collect();
     if lines.last().is_some_and(|l| l.is_empty()) {
         lines.pop();
     }
-    lines.into_iter().map(|l| String::from_utf8_lossy(l.strip_suffix(b"\r").unwrap_or(l)).into_owned()).collect()
+    lines.into_iter().map(|l| decode(l.strip_suffix(b"\r").unwrap_or(l))).collect()
 }
 
 /// One line as `forward_lines` reads it: `read_until` into a buffer kept across calls (so a
