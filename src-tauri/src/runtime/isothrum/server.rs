@@ -16,7 +16,6 @@ use std::path::Path;
 use isothrum_runner::{RunOptions, SecretValue, Secrets};
 
 use super::opened::{Module, OpenedRun};
-use super::reach::Reach;
 use super::tunnel::Tunnel;
 use super::{errors, view};
 use crate::error::Result;
@@ -25,6 +24,9 @@ use crate::runtime::{LabStatus, Place, Runtime, lab};
 
 /// The module's output saying where each published port is reached (`view`'s entry reads it).
 const PUBLISHED: &str = "published";
+
+/// The run's value naming the jump host its own SSH goes through first (Isothrum's).
+const JUMP_VALUE: &str = "ssh_jump";
 
 /// The module's variables that are the server's secret: connection slots, never params.
 const SECRET_VARS: [&str; 2] = ["proxmox_password", "proxmox_api_token"];
@@ -99,7 +101,6 @@ impl ServerRun {
     /// (the connection is `place`'s, the one that works now).
     pub(crate) async fn down(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
         let (opts, _tunnel) = self.applying(place, &[]).await?;
-        Reach::close(self.name.as_str()).await;
         self.act(super::remote::Act::Down, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
@@ -115,18 +116,17 @@ impl ServerRun {
         self.retire_with(machine, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
-    /// What an operation that applies the module on `place` runs with: its [`options`] with how
-    /// the lab is reached ([`Reach`], which the run records), and, when the lab bridge is internal
-    /// to the node (`place.jump`), the tunnel through the node Terraform's SSH to the router goes
-    /// through, named in the module's values. The tunnel ends
+    /// What an operation that applies the module on `place` runs with: its [`options`], and,
+    /// when the lab bridge is internal to the node (`place.jump`), the node as the run's jump host
+    /// (`ssh_jump`, recorded with the run) and the tunnel through the node Terraform's SSH to the
+    /// router goes through, named in the module's values. The tunnel ends
     /// when the caller drops it, once the operation is over, however it ended.
     async fn applying(&self, place: &ServerPlace, env: &[(String, String)]) -> Result<(RunOptions, Option<Tunnel>)> {
         let mut opts = options(place, env);
-        // How the lab is reached, recorded with the run for what only reads it.
-        for (k, v) in Reach::of_place(place).values() {
-            opts = opts.with_env(k, v);
-        }
         let Some(jump) = &place.jump else { return Ok((opts, None)) };
+        // The jump host the run's own SSH (a console, a command, its endpoints' forwards) goes
+        // through first, recorded with the run for what only reads it.
+        opts = opts.with_env(JUMP_VALUE, jump.clone());
         let tunnel = Tunnel::open(jump, &self.key()).await?;
         for (k, v) in tunnel.values() {
             opts = opts.with_env(k, v);
@@ -152,22 +152,24 @@ impl ServerRun {
         Ok(LabStatus { place: Some(Place::Server), host: Some(place.name.clone()), provider: Some("proxmox".into()), ..shown })
     }
 
-    /// `status` with the module's `published` entries where this computer reaches them
-    /// ([`Reach::published`]: through the node, a local forward to each while the lab runs), how
-    /// the lab is reached `place`'s, else as the run recorded it. A lab that doesn't run ends its
-    /// forwards.
+    /// `status` with the module's `published` entries where this computer reaches them, as the
+    /// runner gives them ([`OpenedRun::endpoints`]: through the run's jump host, a local forward);
+    /// one it can't reach now is left out (no link rather than a broken one), saying why in the
+    /// log. Asked only while the lab runs.
     async fn reached(&self, place: &ServerPlace, status: &mut isothrum_runner::Status) -> Result<()> {
-        let reach = match Reach::of_place(place) {
-            Reach::Direct => self.reach()?,
-            through @ Reach::ThroughNode { .. } => through,
-        };
         if !view::runs(status) {
-            Reach::close(self.name.as_str()).await;
             return Ok(());
         }
         let Some(output) = status.outputs.iter_mut().find(|o| o.name == PUBLISHED && !o.sensitive) else { return Ok(()) };
-        let Some(published) = output.value.as_deref().and_then(|v| serde_json::from_str::<BTreeMap<String, String>>(v).ok()) else { return Ok(()) };
-        let reached = reach.published(self.name.as_str(), &self.key(), published).await;
+        let mut reached = BTreeMap::new();
+        for endpoint in self.endpoints(&options(place, &[])).await? {
+            match (endpoint.address, endpoint.why) {
+                (Some(at), _) => {
+                    reached.insert(endpoint.name, at);
+                }
+                (None, why) => log::warn!("the lab's {} isn't reachable from this computer: {}", endpoint.name, why.unwrap_or_default()),
+            }
+        }
         output.value = Some(serde_json::to_string(&reached).map_err(|e| crate::error::Error::Invalid(e.to_string()))?);
         Ok(())
     }
@@ -397,7 +399,7 @@ mod tests {
                 assert_eq!((call.env("TF_VAR_ssh_proxy_host"), call.env("TF_VAR_ssh_proxy_port")), (Some("127.0.0.1"), Some(port.as_str())), "{}", call.line());
             }
             // The run keeps how the lab is reached, for what only reads it (a shell, its checks).
-            assert_eq!(run.reach().unwrap(), Reach::ThroughNode { login: "root@node.lab".into() });
+            assert_eq!(jump_recorded(&run), Some("root@node.lab".to_owned()));
         }
 
         #[tokio::test]
@@ -407,7 +409,7 @@ mod tests {
             let _ = run.update(&place(), &mut |_| {}).await;
             assert!(tools.calls().is_empty(), "no ssh");
             assert!(f.fake.calls().iter().filter(|c| c.program == "terraform").all(|c| c.env("TF_VAR_ssh_proxy_host").is_none()));
-            assert_eq!(run.reach().unwrap(), Reach::Direct);
+            assert_eq!(jump_recorded(&run), None);
         }
 
         /// A lab with a web port its module publishes at its router, `web/site` at
@@ -438,29 +440,9 @@ mod tests {
             crate::testing::runner::save_run(&f.home.runner(), &record);
         }
 
-        #[tokio::test]
-        async fn a_lab_only_its_node_reaches_is_linked_at_a_local_forward_through_the_node() {
-            let (_f, run) = published_lab("pve-link");
-            let kept: std::rc::Rc<std::cell::RefCell<Vec<std::net::TcpListener>>> = std::rc::Rc::default();
-            let held = std::rc::Rc::clone(&kept);
-            let tools = crate::platform::exec::fake::Tools::new(move |program, args| {
-                assert_eq!((program, &args[..2]), ("ssh", &["-N", "-L"][..]), "only the forward's ssh runs");
-                let port = args[2].split(':').nth(1).unwrap();
-                held.borrow_mut().push(std::net::TcpListener::bind(format!("127.0.0.1:{port}")).unwrap());
-                Some(crate::platform::exec::fake::Reply::Hang)
-            });
-            // How it is reached is the run's record's: the status's place names no jump.
-            let shown = run.status(&place()).await.unwrap();
-            let forwards = tools.made("ssh -N -L");
-            assert_eq!(forwards.len(), 1, "one forward, to the published address");
-            let port = forwards[0][2].split(':').nth(1).unwrap().to_owned();
-            assert_eq!(forwards[0][2], format!("127.0.0.1:{port}:192.0.2.10:8080"));
-            assert_eq!(forwards[0].last().map(String::as_str), Some("root@node.lab"));
-            assert_eq!(shown.url, Some(format!("http://127.0.0.1:{port}/")));
-            // Read again while it runs: the same forward, no new ssh.
-            let again = run.status(&place()).await.unwrap();
-            assert_eq!((again.url, tools.made("ssh -N -L").len()), (shown.url, 1));
-            Reach::close("cyberctf-pve-link").await;
+        /// The jump host run `run` recorded, if any.
+        fn jump_recorded(run: &ServerRun) -> Option<String> {
+            run.runner.run_record(&run.name).unwrap().and_then(|r| r.env.get(JUMP_VALUE).cloned())
         }
 
         #[tokio::test]

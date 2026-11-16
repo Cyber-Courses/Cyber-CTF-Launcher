@@ -148,47 +148,33 @@ copy keeps no link out of itself, and a removal deletes a link, never what it po
 ## How the player reaches a lab
 
 A lab is reached from this computer three ways: its link (the page of its first published web
-port), a shell into a machine ("Open shell", the attack box's included), and its checks. Where the
-lab runs decides how, once, as one strategy every way in asks (`runtime/isothrum/reach.rs`,
-`Reach`) rather than an `if` of its own:
+port), a shell into a machine ("Open shell", the attack box's included), and its checks. On a
+server or in a cloud the runner does all three; the launcher only picks what the player sees.
 
-- **Direct**: the lab's addresses are routed here. A local lab, a server whose lab bridge is on
-  its network, a cloud's public addresses, an ESXi host's VMs.
-- **Through the node**: only a node of the server reaches them: a Proxmox server whose lab bridge
-  is internal to its node. Every way in goes through the node first.
+**Where it is decided.** When an operation applies a Proxmox lab's module, the server's profile
+says whether its lab bridge is internal to its node (`server::proxmox_jump_for_host`, which reads
+the node's interfaces and lets the runner's key in there). When it is, the launcher gives the run
+the node as its jump host: Isothrum's `ssh_jump` value (`root@<node>`), which the run records and
+gives again to every later operation and query. Everything else follows from the run's values
+and its module's outputs, in Isothrum (its `docs/reference/terraform.md`):
 
-**The choice.** Made where the lab's place is: the server's profile (its kind, and whether its lab
-bridge is internal, which `server::proxmox_jump_for_host` reads from the node's interfaces) gives
-the node's login (`root@<node>`), when an operation applies the module (`Reach::of_place`). The run
-records it among its values as `ssh_jump` (Isothrum's: the host every console and command of the
-run goes through first), so what only reads the run (its status, a shell, its checks) finds it
-there (`Reach::of_record`) without asking the server again.
-
-**Through the node.** Every hop signs in with the runner's key, which the node lets in for the jump
-(`server::proxmox_jump_for_host` authorizes it), and the node's host key is the one the player
-confirmed in Servers (`ssh::node_known_hosts`):
-
-- Terraform's own SSH to the router, while an operation applies the module: a SOCKS proxy through
-  the node (`isothrum/tunnel.rs`, the module's `ssh_proxy_host` and `ssh_proxy_port`), for that
-  operation only.
-- The link: a local forward (`ssh -N -L 127.0.0.1:<port>:<host>:<port>`) through the node to each
-  `host:port` the module's `published` output names (`Reach::published`), opened when the lab's
-  status is read while it runs and kept while it runs in this process, the page reading its
-  address in place of the module's. One whose ssh ended is opened again at the next read, which
-  brings it back after the app restarts too, on the same port when it is free (each forward's own,
-  from the run and its address). A lab that stops ends its forwards; the app's exit ends them with
-  every tool it runs.
-- The shell: an SSH whose `ProxyCommand` is the router's, itself reached through the node's
-  (`isothrum/opened.rs`), as the module's `ssh_user`, then `sudo -iu` the account asked for. The
-  machine's address is the runner's, which takes it from the module's `machines` output where the
-  state has none (a Proxmox VM without a guest agent).
-
-- The checks: the runner's `exec` into each machine the module's `checks` output names, its
+- **The link**: `Running::service_endpoints` gives each entry of the module's `published` output
+  where this computer reaches it: as the module gives it, or, through the jump host, at a local
+  forward the runner keeps while the lab publishes it (opened again when its ssh ended, after an
+  app restart too; a stop ends it). The lab page's entry is the endpoint of its first web port
+  (`ServerRun::status`); one that can't be reached gives no link, saying why in the log.
+- **The shell**: `Running::console_command`, an SSH along the module's route (through its router,
+  through the jump host first), as the module's user, then a login shell as the account asked
+  for (`sudo -iu`). The machine's address is the module's `machines` output where the state has
+  none (a Proxmox VM without a guest agent).
+- **The checks**: `Running::exec` into each machine the module's `checks` output names, the
   runner script (from the module's `checks/` folder) handed over as `sh -c`
-  (`OpenedRun::module_check`, `isothrum/checks.rs`), along the route Isothrum reads from the
-  module's outputs (the router at its `ip`, the machines at their `machines` addresses) and through
-  the run's `ssh_jump` first. Their lines are Isoloom's check protocol, as everywhere else. A
-  server lab reached directly runs them the same way, without the node; a cloud's don't run yet.
+  (`OpenedRun::module_check`); their lines are Isoloom's check protocol, as everywhere else. A
+  cloud's don't run yet.
+
+Terraform's own SSH to the router while it applies the module is the launcher's SOCKS proxy
+through the node (`isothrum/tunnel.rs`, the module's `ssh_proxy_host` and `ssh_proxy_port`), for
+that operation only.
 
 ## Servers and cloud accounts
 

@@ -75,12 +75,7 @@ const HOME_ALLOWED: &[(&str, &str, &str)] = &[
     (
         "runtime/isothrum/opened.rs",
         "home.join(\"ssh\").join(\"id_ed25519\")",
-        "a Terraform run's console: the runner gives none, nor its key's path (asked of Isothrum)",
-    ),
-    (
-        "runtime/isothrum/opened.rs",
-        "home.join(\"ssh\").join(\"lab_known_hosts\")",
-        "a Terraform run's console: the runner gives none, nor a known_hosts of the run's (asked of Isothrum)",
+        "a Terraform run's key for its module's machines and its jump host: the runner gives none of its key's path (asked of Isothrum)",
     ),
 ];
 
