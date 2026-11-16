@@ -6,7 +6,8 @@
 //! token as a secret), the node when the profile names none (the server's first, as the profile's
 //! Test connection picks it), the node login SSH goes through first when the lab bridge is
 //! internal to the node ([`crate::runtime::server::proxmox_jump_for_host`], with the runner's key, which is the
-//! launcher's own: both live in the app data folder), and the words the player reads.
+//! launcher's own: both live in the app data folder), the tunnel through that node while the
+//! module is applied ([`Tunnel`]), and the words the player reads.
 //! The runner keeps the Terraform state and the run's slot on the server.
 
 use std::path::Path;
@@ -14,6 +15,7 @@ use std::path::Path;
 use isothrum_runner::{RunOptions, SecretValue, Secrets};
 
 use super::opened::{Module, OpenedRun};
+use super::tunnel::Tunnel;
 use super::{errors, view};
 use crate::error::Result;
 use crate::runtime::docker::Check;
@@ -82,7 +84,8 @@ impl ServerRun {
     /// Brings the lab up on `place` from its generated files, and says where to start. `env` is
     /// the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &ServerPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        self.act(super::remote::Act::Up, &options(place, env), log).await.map_err(|e| errors::on_server(e, &place.name))?;
+        let (opts, _tunnel) = self.applying(place, env).await?;
+        self.act(super::remote::Act::Up, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))?;
         super::described::log_message(&self.dir, self.target(), log);
         Ok(())
     }
@@ -90,17 +93,34 @@ impl ServerRun {
     /// Removes everything the run created on the server, with the params it was applied with
     /// (the connection is `place`'s, the one that works now).
     pub(crate) async fn down(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        self.act(super::remote::Act::Down, &options(place, &[]), log).await.map_err(|e| errors::on_server(e, &place.name))
+        let (opts, _tunnel) = self.applying(place, &[]).await?;
+        self.act(super::remote::Act::Down, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
     /// Brings the running lab up to date with its regenerated files, on `place`.
     pub(crate) async fn update(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        self.update_with(&options(place, &[]), log).await.map_err(|e| errors::on_server(e, &place.name))
+        let (opts, _tunnel) = self.applying(place, &[]).await?;
+        self.update_with(&opts, log).await.map_err(|e| errors::on_server(e, &place.name))
     }
 
     /// Takes `machine` out of the running lab on `place`, ahead of its removal from its files.
     pub(crate) async fn retire(&self, place: &ServerPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        self.retire_with(machine, &options(place, &[]), log).await.map_err(|e| errors::on_server(e, &place.name))
+        let (opts, _tunnel) = self.applying(place, &[]).await?;
+        self.retire_with(machine, &opts, log).await.map_err(|e| errors::on_server(e, &place.name))
+    }
+
+    /// What an operation that applies the module on `place` runs with: its [`options`], and,
+    /// when the lab bridge is internal to the node (`place.jump`), the tunnel through the node
+    /// Terraform's SSH to the router goes through, named in the module's values. The tunnel ends
+    /// when the caller drops it, once the operation is over, however it ended.
+    async fn applying(&self, place: &ServerPlace, env: &[(String, String)]) -> Result<(RunOptions, Option<Tunnel>)> {
+        let mut opts = options(place, env);
+        let Some(jump) = &place.jump else { return Ok((opts, None)) };
+        let tunnel = Tunnel::open(jump, &self.key()).await?;
+        for (k, v) in tunnel.values() {
+            opts = opts.with_env(k, v);
+        }
+        Ok((opts, Some(tunnel)))
     }
 
     /// The lab as its page shows it, on the server `place` names: its VMs as the server says they
@@ -141,8 +161,8 @@ impl ServerRun {
 
 /// The options of an operation on `place`: its variables as the module's values (its secret
 /// among the secrets), the discovered node when the profile names none, and the launch's values
-/// (`env`) for the lab's inputs. The jump isn't the runner's any more: the node login is the
-/// module's own to use.
+/// (`env`) for the lab's inputs. The jump isn't the runner's: an operation that applies the
+/// module opens its tunnel ([`ServerRun::applying`]).
 fn options(place: &ServerPlace, env: &[(String, String)]) -> RunOptions {
     let mut secrets = Secrets::new();
     let mut opts = RunOptions::new();
@@ -311,6 +331,43 @@ mod tests {
 
         fn web(status: &LabStatus) -> String {
             status.machines.iter().find(|m| m.name == "web").map(|m| m.state.clone()).unwrap()
+        }
+
+        /// The launcher's tools answering only the tunnel's ssh, which listens on its port as ssh
+        /// does once the node let it in (the listeners kept with the tools).
+        fn tunnel_tools() -> crate::platform::exec::fake::Tools {
+            let kept: std::rc::Rc<std::cell::RefCell<Vec<std::net::TcpListener>>> = std::rc::Rc::default();
+            crate::platform::exec::fake::Tools::new(move |program, args| {
+                assert_eq!((program, &args[..2]), ("ssh", &["-N", "-D"][..]), "only the tunnel's ssh runs");
+                kept.borrow_mut().push(std::net::TcpListener::bind(args[2]).unwrap());
+                Some(crate::platform::exec::fake::Reply::Hang)
+            })
+        }
+
+        #[tokio::test]
+        async fn on_a_bridge_internal_to_the_node_terraform_goes_through_a_tunnel_to_it() {
+            let (f, run) = up();
+            let tools = tunnel_tools();
+            let jumped = ServerPlace { jump: Some("root@node.lab".into()), ..place() };
+            let _ = run.update(&jumped, &mut |_| {}).await;
+            let tunnels = tools.made("ssh -N -D");
+            assert_eq!(tunnels.len(), 1, "one tunnel for the operation");
+            assert_eq!(tunnels[0].last().map(String::as_str), Some("root@node.lab"));
+            let port = tunnels[0][2].trim_start_matches("127.0.0.1:").to_owned();
+            let terraform = f.fake.calls().into_iter().filter(|c| c.program == "terraform").collect::<Vec<_>>();
+            assert!(!terraform.is_empty(), "terraform ran");
+            for call in &terraform {
+                assert_eq!((call.env("TF_VAR_ssh_proxy_host"), call.env("TF_VAR_ssh_proxy_port")), (Some("127.0.0.1"), Some(port.as_str())), "{}", call.line());
+            }
+        }
+
+        #[tokio::test]
+        async fn a_bridge_the_launcher_reaches_needs_no_tunnel() {
+            let (f, run) = up();
+            let tools = crate::platform::exec::fake::Tools::script().build();
+            let _ = run.update(&place(), &mut |_| {}).await;
+            assert!(tools.calls().is_empty(), "no ssh");
+            assert!(f.fake.calls().iter().filter(|c| c.program == "terraform").all(|c| c.env("TF_VAR_ssh_proxy_host").is_none()));
         }
 
         #[tokio::test]

@@ -132,8 +132,12 @@ impl OpenedRun {
     /// `ssh_public_key`, and its private key's file as `ssh_private_key_file`.
     pub(crate) async fn key_values(&self) -> Result<Vec<(String, String)>> {
         let public = self.runner.ssh_public_key().await.map_err(errors::from_runner)?;
-        let private = self.home.join("ssh").join("id_ed25519");
-        Ok(vec![("ssh_public_key".to_owned(), public.trim().to_owned()), ("ssh_private_key_file".to_owned(), private.to_string_lossy().into_owned())])
+        Ok(vec![("ssh_public_key".to_owned(), public.trim().to_owned()), ("ssh_private_key_file".to_owned(), self.key().to_string_lossy().into_owned())])
+    }
+
+    /// The runner's private key (the launcher's own): what the machines and a jump node let in.
+    pub(crate) fn key(&self) -> PathBuf {
+        self.home.join("ssh").join("id_ed25519")
     }
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
