@@ -15,9 +15,8 @@ use isothrum_runner::{Format, RunOptions, RunRecord, SecretValue, Secrets};
 
 use super::opened::{Module, OpenedRun};
 use super::view;
-use crate::error::{Code, Error, Result};
+use crate::error::Result;
 use crate::runtime::docker::Check;
-use crate::runtime::paths::lab_dir_in;
 use crate::runtime::{LabStatus, Place, Runtime, lab};
 
 /// The account environment names the launcher passes to the module as plain values (not
@@ -284,62 +283,26 @@ fn destroy_options(tf_env: &[(String, String)]) -> RunOptions {
     RunOptions::new().with_secrets(secrets)
 }
 
-/// Destroys every cloud run the runner records as past its expiry (the auto-stop), through the
-/// home's runner service, with the account's credentials resolved by `account` (a recorded account
-/// id to its Terraform environment). Each destroy runs under the lab's per-lab lock (`lock`,
-/// `None` while another operation holds it): a user Stop or install of the same lab must not run
-/// a second Terraform operation over the same state, which could corrupt `terraform.tfstate`.
-/// Returns the runs it couldn't destroy, with why, so the caller can surface and retry them; a run
-/// whose account can't be resolved, or whose lab is busy, is left for a later sweep. `Err` when
-/// the runs can't even be listed: no sweep happened (not a failed run named for the runner, which
-/// a caller would report as a lab).
-pub(crate) async fn reap_expired<F, L, G>(home: &Path, account: F, lock: L) -> Result<Vec<(String, Error)>>
-where
-    F: Fn(&str) -> Option<Vec<(String, String)>>,
-    L: Fn(&str) -> Option<G>,
-{
-    let expired = super::remote::expired(home).await?;
-    let mut failed = Vec::new();
-    for record in expired.into_iter().filter(|r| r.cloud.is_some()) {
-        let name = record.name.to_string();
-        if let Err(e) = reap_one(home, &record, &account, &lock).await {
-            failed.push((name, e));
-        }
-    }
-    Ok(failed)
+/// The cloud runs the home's runner service lists as past their expiry (the auto-stop) and that
+/// may still hold something: the reaper's to destroy.
+///
+/// # Errors
+///
+/// No service can be reached, or it can't read its records.
+pub(crate) async fn expired_clouds(home: &Path) -> Result<Vec<RunRecord>> {
+    Ok(super::remote::expired(home).await?.into_iter().filter(|r| r.cloud.is_some()).collect())
 }
 
-/// Destroys the expired cloud run `record`. Ok when it is gone, and when it is left for a later
-/// sweep (its lab busy, its account unusable now); the error when its destroy failed.
-async fn reap_one<F, L, G>(home: &Path, record: &RunRecord, account: &F, lock: &L) -> Result<()>
-where
-    F: Fn(&str) -> Option<Vec<(String, String)>>,
-    L: Fn(&str) -> Option<G>,
-{
-    let name = record.name.to_string();
-    // Serialize with the launcher's own operations on this lab (`lock_lab`): busy means
-    // another operation holds it, so leave it for a later sweep rather than destroy over it
-    // (not a failure). Held across the destroy below.
-    let id = super::super::docker::lab_of_project(&name).unwrap_or(&name);
-    let Some(_held) = lock(id) else {
-        log::debug!("auto-stop: {name} is busy (an operation holds its lab lock); left for a later sweep");
-        return Ok(());
-    };
-    let Some(host) = record.host_label.as_deref() else {
-        return Err(Error::coded(Code::ReapNoHost));
-    };
-    // The account removed or unreadable: left for a later sweep rather than reported as a
-    // destroy failure (it may come back). Said in the log, so a lab billing on is not silent.
-    let Some(tf_env) = account(host) else {
-        log::warn!("auto-stop: {name} is past its stop time, but its account {host} can't be used now; left for a later sweep");
-        return Ok(());
-    };
-    // With its lab no longer installed, the destroy goes on with the module its run kept.
-    if let Err(e) = lab_dir_in(home, id) {
-        log::warn!("auto-stop: {name}'s lab isn't installed any more ({e}); destroying it with the module its run kept");
-    }
+/// Destroys the expired cloud run `record` through the home's runner service, with the account's
+/// credentials from its environment `tf_env` (the runner replays the plain values its start was
+/// given).
+///
+/// # Errors
+///
+/// The destroy failed, or no service can be reached.
+pub(crate) async fn destroy_expired(home: &Path, record: &RunRecord, tf_env: &[(String, String)]) -> Result<()> {
     let served = super::remote::Served { home: home.to_path_buf(), name: record.name.clone(), project: record.project.clone(), format: Format::Terraform };
-    served.operate(super::remote::Act::Down, &destroy_options(&tf_env), &mut |_| {}).await.map(drop).map_err(super::remote::Failure::into_error)
+    served.operate(super::remote::Act::Down, &destroy_options(tf_env), &mut |_| {}).await.map(drop).map_err(super::remote::Failure::into_error)
 }
 
 #[cfg(test)]
