@@ -9,7 +9,7 @@ import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, wr
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { leftoverIsTheRuns, runFolders, runRoot } from "./owned.mjs";
-import { appExit, boxReport, fromRunEvents, startEnded, stuckLabReport } from "./diagnose.mjs";
+import { appExit, boxReport, fromRunEvents, isOperationId, operationEnd, startEnded, stuckLabReport } from "./diagnose.mjs";
 import { builtApp, dockerPluginDirs, engineSilence, portStillHeld, runBounded, waitPortFree } from "./host.mjs";
 
 export { runContainers } from "./owned.mjs";
@@ -332,6 +332,9 @@ export async function confirmSystemDialogs(b, answer = "confirm") {
  * promise, which the classic wry WebDriver cannot await, so the call parks its outcome on a window
  * global that we poll. `streaming` adds the `logs: __CHANNEL__:<cb>` argument that the streaming
  * commands (lab_stop/park/resume/launch…) require; a plain command (lab_status) omits it.
+ * An operation command answers with the operation's id once it began, not once it ended: the call
+ * then waits for the operation's end (its run event, `operationEnd`) and fails with its error, as
+ * a button's caller sees it end. Within `timeoutMs` in all.
  */
 export async function invokeCmd(b, cmd, args = {}, { streaming = false, timeoutMs = STOP_MS } = {}) {
   await b.execute(
@@ -364,13 +367,37 @@ export async function invokeCmd(b, cmd, args = {}, { streaming = false, timeoutM
   }
   if (r === "pending") throw new Error(`${cmd}: timed out after ${timeoutMs}ms`);
   if (r && r.err) throw new Error(`${cmd}: ${r.err}`);
-  return r ? r.ok : null;
+  const answer = r ? r.ok : null;
+  if (isOperationId(answer)) {
+    const end = await waitOperationEnd(b, answer, deadline - Date.now());
+    if (!end) throw new Error(`${cmd}: its operation ${answer} was still running after ${timeoutMs}ms`);
+    if ("err" in end) throw new Error(`${cmd}: ${end.err}`);
+  }
+  return answer;
+}
+
+/**
+ * Wait for the end of operation `operation` (`operationEnd`), reading the app's run events
+ * (`run_events`) from where the last read stopped: `{ ok: true }`, `{ err }`, or null when it
+ * hadn't ended after `timeoutMs`. A read that fails is tried again.
+ */
+async function waitOperationEnd(b, operation, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let after = null;
+  for (;;) {
+    const frames = await invokeCmd(b, "run_events", { after }, { timeoutMs: 15000 }).catch(() => null);
+    const end = operationEnd(operation, frames);
+    if (end) return end;
+    if (Array.isArray(frames) && frames.length) after = frames.at(-1).cursor;
+    if (Date.now() >= deadline) return null;
+    await sleep(1000);
+  }
 }
 
 /**
  * Start streaming command `cmd` (`lab_launch_local`, `lab_stop`…) without waiting for it, as a
- * click does: its outcome is parked on `window.__bg[key]`, read by `outcomeOf`. Several can run
- * at once (a double click), each under its own key.
+ * click does: its answer is parked on `window.__bg[key]` (the operation's id, or its refusal), and
+ * `outcomeOf` reads how it ended. Several can run at once (a double click), each under its own key.
  */
 export async function invokeInBackground(b, key, cmd, args = {}) {
   await b.execute(
@@ -380,7 +407,7 @@ export async function invokeInBackground(b, key, cmd, args = {}) {
       const internals = window.__TAURI_INTERNALS__;
       const full = { ...a, logs: `__CHANNEL__:${internals.transformCallback(() => {})}` };
       internals.invoke(c, full).then(
-        () => (window.__bg[k] = { ok: true }),
+        (v) => (window.__bg[k] = { ok: v === undefined ? null : v }),
         (e) => (window.__bg[k] = { err: typeof e === "string" ? e : e && e.message ? e.message : JSON.stringify(e) }),
       );
     },
@@ -390,16 +417,26 @@ export async function invokeInBackground(b, key, cmd, args = {}) {
   );
 }
 
-/** The outcome of the command `invokeInBackground` started under `key` once it ended: `{ ok }`
- *  or `{ err }` (its message); null when it was still running after `timeoutMs`. */
+/** The outcome of the command `invokeInBackground` started under `key` once it ended (an
+ *  operation it began, once that ended): `{ ok }` or `{ err }` (its message); null when it was
+ *  still running after `timeoutMs`. */
 export async function outcomeOf(b, key, timeoutMs = LAB_START_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const r = await b.execute((k) => (window.__bg || {})[k], key).catch(() => "pending");
-    if (r && r !== "pending") return r;
+    if (r && r !== "pending") return isOperationId(r.ok) ? waitOperationEnd(b, r.ok, deadline - Date.now()) : r;
     await sleep(1000);
   }
   return null;
+}
+
+/** How the command `invokeInBackground` started under `key` stands now: "pending" while it, or
+ *  the operation it began, runs; else its outcome (`outcomeOf`). One look. */
+async function outcomeNow(b, key) {
+  const r = await b.execute((k) => (window.__bg || {})[k], key).catch(() => "pending");
+  if (!r || r === "pending" || !isOperationId(r.ok)) return r || "pending";
+  const frames = await invokeCmd(b, "run_events", { after: null }, { timeoutMs: 15000 }).catch(() => null);
+  return operationEnd(r.ok, frames) ?? "pending";
 }
 
 /** Whether the start `invokeInBackground` began under `start` made a container of lab `id`
@@ -408,8 +445,8 @@ export async function outcomeOf(b, key, timeoutMs = LAB_START_MS) {
 export async function startMade(b, id, key = "start") {
   return eventually(async () => {
     if (labContainers(id).length > 0) return true;
-    const ended = await b.execute((k) => (window.__bg || {})[k], key).catch(() => "pending");
-    if (ended && ended !== "pending") throw new Error(`the start ended before it made anything: ${JSON.stringify(ended)}`);
+    const ended = await outcomeNow(b, key);
+    if (ended !== "pending") throw new Error(`the start ended before it made anything: ${JSON.stringify(ended)}`);
     return false;
   }, LAB_START_MS);
 }
@@ -452,7 +489,7 @@ export async function invokeWhenIdle(b, cmd, args, timeoutMs = LAB_START_MS) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
-      return await invokeCmd(b, cmd, args, { streaming: true });
+      return await invokeCmd(b, cmd, args, { streaming: true, timeoutMs: Math.max(deadline - Date.now(), 1000) });
     } catch (e) {
       if (Date.now() < deadline && /already in progress/i.test(e.message)) {
         await sleep(2000);

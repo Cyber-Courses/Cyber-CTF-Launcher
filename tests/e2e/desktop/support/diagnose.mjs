@@ -46,6 +46,28 @@ export function fromRunEvents(id, frames) {
 }
 
 /**
+ * Whether `answer` is an operation's id, as an operation command (`lab_launch_local`, `lab_stop`,
+ * `lab_park`…) answers: the command only started the operation, whose end comes later as a run
+ * event (`operationEnd`).
+ * @param {unknown} answer @returns {answer is string}
+ */
+export const isOperationId = (answer) => typeof answer === "string" && /^op-[0-9a-f]{16}$/.test(answer);
+
+/**
+ * How operation `operation` ended, by run events `frames` (`run_events`: `{ cursor, event }`
+ * frames): `{ ok: true }`, `{ err }` with its error's message, or null while none of them is its
+ * end.
+ * @param {string} operation @param {{ event: Record<string, any> }[] | null | undefined} frames
+ * @returns {{ ok: true } | { err: string } | null}
+ */
+export function operationEnd(operation, frames) {
+  for (const { event: e } of Array.isArray(frames) ? frames : []) {
+    if (e && e.kind === "ended" && e.operation === operation) return e.error ? { err: String(e.error.message ?? JSON.stringify(e.error)) } : { ok: true };
+  }
+  return null;
+}
+
+/**
  * Lab `id`'s attack box as the app knows it, in one line for a failed check's reason: the box's
  * status (`attack_box_status`), then the runner's last operation on the lab, how it ended, and
  * the end of its log.
