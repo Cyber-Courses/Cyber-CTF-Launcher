@@ -37,25 +37,36 @@ fn piece_name(i: usize) -> String {
     format!("session.{i}")
 }
 
-/// The most a keychain entry holds here, in UTF-16 units: Windows' Credential Manager caps a
+/// The most a Windows keychain entry holds, in UTF-16 units: the Credential Manager caps a
 /// credential at 2560 bytes (1280 UTF-16 units). A session (a JWT access token, a refresh token,
-/// the profile) can be longer, and saving it failed, so it was never kept. A longer session is
-/// split across `session.1`, `session.2`… with `session` holding how many there are.
-const CHUNK_UNITS: usize = 1200;
+/// the profile) can be longer, and saving it failed, so it was never kept. On Windows a longer
+/// session is split across `session.1`, `session.2`… with `session` holding how many there are.
+const WINDOWS_CHUNK_UNITS: usize = 1200;
+/// The most a keychain entry holds on this system. Only Windows caps it: elsewhere the session is
+/// one entry, so reading it is one keychain access, and one unlock prompt where the keychain asks
+/// (macOS asks once per entry for a build it doesn't know, three times for a split session). A
+/// session split by an earlier version is still read, and saving it again keeps it whole.
+const CHUNK_UNITS: usize = if cfg!(windows) { WINDOWS_CHUNK_UNITS } else { usize::MAX };
 /// At most this many pieces (a session is a few KiB; some identity providers issue tokens of
 /// several KiB each). A longer one is refused at save, never half-saved and read as signed out.
 const MAX_CHUNKS: usize = 32;
 const CHUNKS_PREFIX: &str = "cyberctf-chunks:";
 
-/// What goes in the `session` entry and, for a long session, the pieces for `session.1`….
+/// What goes in the `session` entry and, for a session too long for one entry here, the pieces
+/// for `session.1`….
 fn split_chunks(raw: &str) -> Result<(String, Vec<String>)> {
-    if raw.encode_utf16().count() <= CHUNK_UNITS {
+    split_chunks_at(raw, CHUNK_UNITS)
+}
+
+/// [`split_chunks`] for entries of at most `max_units` UTF-16 units.
+fn split_chunks_at(raw: &str, max_units: usize) -> Result<(String, Vec<String>)> {
+    if raw.encode_utf16().count() <= max_units {
         return Ok((raw.to_string(), Vec::new()));
     }
     let mut parts = vec![String::new()];
     let mut units = 0;
     for c in raw.chars() {
-        if units + c.len_utf16() > CHUNK_UNITS {
+        if units + c.len_utf16() > max_units {
             parts.push(String::new());
             units = 0;
         }
@@ -283,29 +294,48 @@ mod chunk_tests {
     fn a_session_too_long_for_one_windows_credential_is_split_and_joined_back() {
         // Windows refuses a credential over 1280 UTF-16 units: a long session was never kept.
         let short = r#"{"access_token":"a"}"#;
-        assert_eq!(split_chunks(short).unwrap(), (short.to_string(), Vec::new()));
+        assert_eq!(split_chunks_at(short, WINDOWS_CHUNK_UNITS).unwrap(), (short.to_string(), Vec::new()));
         assert_eq!(join_chunks(short.into(), |_| None).as_deref(), Some(short));
 
-        let long = format!(r#"{{"access_token":"{}","name":"Zoë 🦀{}"}}"#, "x".repeat(3000), "é".repeat(700));
-        let (head, parts) = split_chunks(&long).unwrap();
+        let long = long_session();
+        let (head, parts) = split_chunks_at(&long, WINDOWS_CHUNK_UNITS).unwrap();
         assert_eq!(head, format!("cyberctf-chunks:{}", parts.len()));
         assert!(parts.len() >= 3);
-        assert!(parts.iter().all(|p| p.encode_utf16().count() <= CHUNK_UNITS));
-        assert!(head.encode_utf16().count() <= CHUNK_UNITS);
+        assert!(parts.iter().all(|p| p.encode_utf16().count() <= WINDOWS_CHUNK_UNITS));
+        assert!(head.encode_utf16().count() <= WINDOWS_CHUNK_UNITS);
         assert_eq!(join_chunks(head.clone(), |i| parts.get(i - 1).cloned()).as_deref(), Some(long.as_str()));
         // A missing piece reads as no session, never as a cut one.
         assert_eq!(join_chunks(head, |i| (i != 2).then(|| parts[i - 1].clone())), None);
         assert_eq!(join_chunks("cyberctf-chunks:999".into(), |_| Some(String::new())), None);
     }
 
+    fn long_session() -> String {
+        format!(r#"{{"access_token":"{}","name":"Zoë 🦀{}"}}"#, "x".repeat(3000), "é".repeat(700))
+    }
+
+    #[test]
+    fn only_windows_splits_a_long_session() {
+        // macOS asks once per keychain entry for a build it doesn't know: one entry, one prompt.
+        let long = long_session();
+        let (head, parts) = split_chunks(&long).unwrap();
+        if cfg!(windows) {
+            assert!(parts.len() >= 3);
+        } else {
+            assert_eq!((head.as_str(), parts.len()), (long.as_str(), 0));
+        }
+        // A session an earlier version split is still read, wherever it was split.
+        let (old_head, old_parts) = split_chunks_at(&long, WINDOWS_CHUNK_UNITS).unwrap();
+        assert_eq!(join_chunks(old_head, |i| old_parts.get(i - 1).cloned()).as_deref(), Some(long.as_str()));
+    }
+
     #[test]
     fn a_session_of_exactly_one_credential_is_kept_whole_and_one_unit_more_is_split() {
-        let exact = "a".repeat(CHUNK_UNITS);
-        assert_eq!(split_chunks(&exact).unwrap(), (exact.clone(), Vec::new()));
+        let exact = "a".repeat(WINDOWS_CHUNK_UNITS);
+        assert_eq!(split_chunks_at(&exact, WINDOWS_CHUNK_UNITS).unwrap(), (exact.clone(), Vec::new()));
         let over = format!("{exact}b");
-        let (head, parts) = split_chunks(&over).unwrap();
+        let (head, parts) = split_chunks_at(&over, WINDOWS_CHUNK_UNITS).unwrap();
         assert_eq!(head, "cyberctf-chunks:2");
-        assert_eq!((parts[0].len(), parts[1].as_str()), (CHUNK_UNITS, "b"));
+        assert_eq!((parts[0].len(), parts[1].as_str()), (WINDOWS_CHUNK_UNITS, "b"));
         assert_eq!(join_chunks(head, |i| parts.get(i - 1).cloned()).as_deref(), Some(over.as_str()));
         // Counts that aren't pieces: zero, text, and a bare prefix.
         for head in ["cyberctf-chunks:0", "cyberctf-chunks:two", "cyberctf-chunks:"] {
@@ -317,10 +347,10 @@ mod chunk_tests {
     fn a_two_unit_character_never_straddles_a_piece_boundary() {
         // 1199 units, then a character of two UTF-16 units: it moves whole to the next piece
         // (a credential holding half a surrogate pair would not be a valid string on Windows).
-        let raw = format!("{}\u{1f980}b", "a".repeat(CHUNK_UNITS - 1));
-        let (head, parts) = split_chunks(&raw).unwrap();
+        let raw = format!("{}\u{1f980}b", "a".repeat(WINDOWS_CHUNK_UNITS - 1));
+        let (head, parts) = split_chunks_at(&raw, WINDOWS_CHUNK_UNITS).unwrap();
         assert_eq!(parts.len(), 2);
-        assert_eq!(parts[0].encode_utf16().count(), CHUNK_UNITS - 1);
+        assert_eq!(parts[0].encode_utf16().count(), WINDOWS_CHUNK_UNITS - 1);
         assert!(parts[1].starts_with('\u{1f980}'));
         assert_eq!(join_chunks(head, |i| parts.get(i - 1).cloned()).as_deref(), Some(raw.as_str()));
     }
@@ -329,11 +359,11 @@ mod chunk_tests {
     fn a_session_with_more_pieces_than_the_read_accepts_is_refused_at_save() {
         // `save_blocking` wrote every piece and a head naming them all, `load_blocking` refused
         // the count and reported no session: signed out right after a sign-in that said it worked.
-        let raw = format!(r#"{{"access_token":"{}"}}"#, "x".repeat(CHUNK_UNITS * MAX_CHUNKS));
-        assert!(split_chunks(&raw).unwrap_err().to_string().contains("too large"));
+        let raw = format!(r#"{{"access_token":"{}"}}"#, "x".repeat(WINDOWS_CHUNK_UNITS * MAX_CHUNKS));
+        assert!(split_chunks_at(&raw, WINDOWS_CHUNK_UNITS).unwrap_err().to_string().contains("too large"));
         // The largest session that fits still round-trips.
-        let fits = "y".repeat(CHUNK_UNITS * MAX_CHUNKS);
-        let (head, parts) = split_chunks(&fits).unwrap();
+        let fits = "y".repeat(WINDOWS_CHUNK_UNITS * MAX_CHUNKS);
+        let (head, parts) = split_chunks_at(&fits, WINDOWS_CHUNK_UNITS).unwrap();
         assert_eq!(parts.len(), MAX_CHUNKS);
         assert_eq!(join_chunks(head, |i| parts.get(i - 1).cloned()).as_deref(), Some(fits.as_str()));
     }
@@ -403,7 +433,7 @@ mod tests {
         assert_eq!(read(decode("not json".into(), |_| Ok(None))), Ok(false));
         assert_eq!(read(decode(r#"{"access_token":42,"expires_at":1}"#.into(), |_| Ok(None))), Ok(false));
         let long = Session { access_token: "x".repeat(3000), refresh_token: Some("r".into()), expires_at: 42, name: None, email: None, picture: None };
-        let (head, parts) = split_chunks(&serde_json::to_string(&long).unwrap()).unwrap();
+        let (head, parts) = split_chunks_at(&serde_json::to_string(&long).unwrap(), WINDOWS_CHUNK_UNITS).unwrap();
         assert!(parts.len() >= 2);
         assert_eq!(read(decode(head.clone(), |i| Ok((i != 2).then(|| parts[i - 1].clone())))), Ok(false), "a missing piece");
         assert_eq!(read(decode(head.clone(), |i| Ok(parts.get(i - 1).map(|p| p.replace('x', "\""))))), Ok(false), "a garbled piece");
