@@ -532,6 +532,9 @@ describe.skipIf(!unix)("run.mjs on a fake plan", () => {
     const r = runRunner(planDir, ["--all"], { env: { FAKE_APP_DEAD: "1" } });
     expect(r.status).toBe(2);
     expect(r.out).toContain("the app exited (code 3) before its WebDriver server answered");
+    // An exit isn't a build without wdio (that one runs): the app's own message is pointed at.
+    expect(r.out).toContain("its own message above says why it stopped");
+    expect(r.out).not.toContain("the app must be built with --features wdio");
     expect(r.records).toEqual([]);
   });
 

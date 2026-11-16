@@ -62,6 +62,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { needsDisplay, startDisplay } from "./display.mjs";
 import { libvirtFixtureXml, scanFixture } from "./fixture.mjs";
+import { preflightHint } from "./preflight.mjs";
 import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "../support/host.mjs";
 import { dropComposeRecord, projectVolumes, projects, record as recordMachine, removeDangling, runFolders, runTool } from "../support/owned.mjs";
 import {
@@ -656,7 +657,9 @@ say(`lab: ${LAB}${LAB_OK ? ` (${LAB_NAME}, id ${LAB_ID})` : " (not a lab folder)
 const preflight = await appComesUp(join(LOGS, "preflight.log"));
 if (preflight !== null) {
   dropRunRoot();
-  die(`${preflight}\nthe app must be built with --features wdio`);
+  const log = join(LOGS, "preflight.log");
+  const hint = preflightHint(preflight, { log, output: existsSync(log) ? readFileSync(log, "utf8") : "" });
+  die(hint ? `${preflight}\n${hint}` : preflight);
 }
 
 let ended = null;
