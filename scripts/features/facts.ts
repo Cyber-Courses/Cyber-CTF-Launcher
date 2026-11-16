@@ -14,7 +14,7 @@ export type Facts = {
   pages: string[];
   /** The integration scenarios, as `tests/integration/run.sh --list` names them. */
   scenarios: string[];
-  /** The desktop cases (`tests/desktop/run.sh --list`), each with its spec. */
+  /** The desktop cases (`tests/e2e/desktop/runner/run.sh --list`), each with its spec. */
   desktopCases: Map<string, string>;
   /** Each desktop spec's check ids. */
   desktopChecks: Map<string, Set<string>>;
@@ -119,7 +119,7 @@ export function readFacts(root: string): Facts {
     if (t === null) throw new Error(`${file} is gone: scripts/features/facts.ts reads it`);
     return t;
   };
-  const desktop = listedCases(list(root, "tests/desktop/run.sh"));
+  const desktop = listedCases(list(root, "tests/e2e/desktop/runner/run.sh"));
   const specs = [...new Set(desktop.map((c) => c.spec ?? c.case))];
   return {
     commands: commandsOf(must("src-tauri/src/commands.rs")),
@@ -130,7 +130,7 @@ export function readFacts(root: string): Facts {
     ],
     scenarios: listedCases(list(root, "tests/integration/run.sh")).map((c) => c.case),
     desktopCases: new Map(desktop.map((c) => [c.case, c.spec ?? c.case])),
-    desktopChecks: new Map(specs.map((s) => [s, checkIdsOf(read(`tests/desktop/specs/${s}.mjs`) ?? "")])),
+    desktopChecks: new Map(specs.map((s) => [s, checkIdsOf(read(`tests/e2e/desktop/specs/${s}.mjs`) ?? "")])),
     setupItems: setupItemsOf(must("src-tauri/src/integration_tests/setup.rs")),
     read,
   };

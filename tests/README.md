@@ -8,13 +8,14 @@ outside: the integration runner, the desktop and the web end-to-end.
 ```text
 tests/
   integration/run.sh     the integration runner: the opt-in scenarios of src-tauri/src/integration_tests/, by tier
-  desktop/run.mjs        the desktop end-to-end's runner: the specs, their needs, caps and groups, the results
-  desktop/run.sh         its entry point on Linux and macOS (run.ps1: Windows): the app built or unpacked, then run.mjs
-  desktop/cases.tsv      the desktop cases, in the runner's order: id, spec, form, knobs, groups
-  desktop/specs/         one spec a file, `<spec>.mjs`, its needs declared on its first lines
-  desktop/lib/           what the specs share (support.mjs), what a run owns (owned.mjs), the plan (plan.mjs:
-                         the cases, the needs, the groups, the verdicts a need not met gives), the app's
-                         WebDriver port (host.mjs: free, held by whom, waited for)
+  e2e/desktop/cases.tsv          the desktop cases, in the runner's order: id, spec, form, knobs, groups
+  e2e/desktop/specs/             one spec a file, `<spec>.mjs`, its needs declared on its first lines
+  e2e/desktop/support/           what the specs share: the app launched and driven (app.mjs), its page (page.mjs),
+                                 what a run owns (owned.mjs), the app's WebDriver port (host.mjs: free, held by
+                                 whom, waited for), a stuck lab put into words (diagnose.mjs)
+  e2e/desktop/runner/run.mjs     the desktop end-to-end's runner: the specs, their needs, caps and groups, the results
+  e2e/desktop/runner/run.sh      its entry point on Linux and macOS (run.ps1: Windows): the app built or unpacked, then run.mjs
+  e2e/desktop/runner/plan.mjs    the plan: the cases, the needs, the groups, the verdicts a need not met gives
   e2e/web/specs/         the Playwright specs against the dev mock (`pnpm dev:web`), `<area>.spec.ts`
   e2e/web/fixtures.ts    what the specs share: the app opened on the mock, its commands forced or held
   e2e/web/pages/         the page objects the specs find the app's parts through, one per screen: the window's frame
@@ -36,7 +37,7 @@ What a player does that breaks a lab, what the app must do and which test holds 
 | ------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
 | Unit               | components, hooks and scripts; the backend, every external tool scripted (`platform/exec/fake.rs`)           | beside the code: `src/**/*.test.ts(x)`, `scripts/**/*.test.ts`, `tests/**/*.test.ts`, `#[cfg(test)]` | Node and Rust                                                       | `pnpm test`                                | `ci.yml`, `gate.yml`                     |
 | Web end-to-end     | the real frontend in Chromium, the commands answered by the dev mock (Playwright)                            | `tests/e2e/web/`                                                                                     | Playwright's Chromium (`pnpm exec playwright install chromium`)     | `pnpm test:web`                            | `gate.yml`; `release.yml` before a build |
-| Desktop end-to-end | the real app binary through its embedded WebDriver, every feature, on a real Docker, hypervisor and server   | `tests/desktop/` ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md))                     | a desktop session; Docker, a hypervisor and a server for some specs | `pnpm test:desktop` (`run.ps1` on Windows) | no: the test machines; a test harness    |
+| Desktop end-to-end | the real app binary through its embedded WebDriver, every feature, on a real Docker, hypervisor and server   | `tests/e2e/desktop/` ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md))                 | a desktop session; Docker, a hypervisor and a server for some specs | `pnpm test:desktop` (`run.ps1` on Windows) | no: the test machines; a test harness    |
 | Integration        | real labs through the launcher's Rust on real Docker, VMs, clouds and servers                                | `src-tauri/src/integration_tests/` (opt-in, `#[ignore]`), run by `tests/integration/run.sh`          | Docker, Vagrant and a hypervisor; an AWS account, a server by tier  | `pnpm test:integration`                    | no: the test machines                    |
 | Packaging          | the built bundle installed and launched (the MSI silently, then removed); the Windows installer's edge cases | `package-smoke.yml`; `packaging/windows/smoke-test.ps1`                                              | the platform's installer                                            | see each                                   | `package-smoke.yml`                      |
 
@@ -91,7 +92,7 @@ suite runners' selection (`scripts/lib/suite.sh`).
 | `CYBERCTF_TEST_SCREEN_VNC`                                                                      | the real VNC bridge test (`screen/bridge.rs`)                           | a VNC server with no password, `host:port` on loopback                                                                                                                                         | `CYBERCTF_TEST_VNC`                                                                                                                                                               |
 | `CYBERCTF_TEST_DESKTOP_APP`                                                                     | the desktop runner, the specs                                           | the app (`--app`; default: the wdio debug build, built by the runner)                                                                                                                          | `APP_BIN`                                                                                                                                                                         |
 | `CYBERCTF_TEST_DESKTOP_TIMEOUT`                                                                 | the desktop runner, the specs                                           | seconds a spec may take (300; `machine` 480), past which it is killed; the specs scale their waits to it ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md#needs-caps-and-groups)) | `CASE_TIMEOUT`                                                                                                                                                                    |
-| `CYBERCTF_TEST_DESKTOP_LOGS`                                                                    | the desktop runner                                                      | where each spec's log goes (default `tests/desktop/.state/logs`)                                                                                                                               | ; each app the specs launch writes its stdout and stderr to `app-output/<spec>-<pid>.txt` there, its exit code appended (a Rust abort or stack overflow says why on stderr alone) |
+| `CYBERCTF_TEST_DESKTOP_LOGS`                                                                    | the desktop runner                                                      | where each spec's log goes (default `tests/e2e/desktop/.state/logs`)                                                                                                                           | ; each app the specs launch writes its stdout and stderr to `app-output/<spec>-<pid>.txt` there, its exit code appended (a Rust abort or stack overflow says why on stderr alone) |
 | `CYBERCTF_TEST_TEMP_KEEP`                                                                       | `pnpm check:temp-leaks`                                                 | keep the unit tests' temp folder at the end, its path printed, to look into what they left                                                                                                     |                                                                                                                                                                                   |
 | `CYBERCTF_TEST_DESKTOP_KEEP`                                                                    | the desktop runner                                                      | leave the fixture lab running and the run's folder in place at the end                                                                                                                         | `KEEP`                                                                                                                                                                            |
 | `CYBERCTF_TEST_ACCOUNT_SESSION`                                                                 | the desktop runner                                                      | a signed-in session (a `dev-session.json`), placed in the run's folder, where its app reads it whatever the build                                                                              | `CYBERCTF_TEST_SESSION`                                                                                                                                                           |
@@ -130,7 +131,7 @@ never reads or changes their labs, settings, session or secrets, and it removes 
   `fail-signedout` gets a folder of its own (`signed-out/`, no session in it). The tools' own
   homes (Docker's contexts, Vagrant's boxes, SSH keys) stay the user's: the labs run on them.
 - **What it removes.** Every clean-up acts on what the run's records say it made
-  (`tests/desktop/lib/owned.mjs`, held by `tests/desktop/owned.test.ts`), never on a name: a
+  (`tests/e2e/desktop/support/owned.mjs`, held by `tests/e2e/desktop/support/owned.test.ts`), never on a name: a
   player's own copy of the fixture or catalogue lab has the same Compose project name
   (`cyberctf-<id>`). A Compose project is the run's when its lab is installed in the run's folder
   and every Compose file it was started from lies there; the runners take down only those, with
@@ -146,7 +147,7 @@ never reads or changes their labs, settings, session or secrets, and it removes 
   and their deploy workers, never another copy of the same binary.
 - **Afterwards.** The apps' logs (the app's own and its labs' deploy logs, every `*.log` under
   `app/`, the signed-out run's too; never `home/`, and a line naming a password, a token or a key
-  left out) are copied beside the specs' logs (`tests/desktop/.state/logs/app/`), whatever the
+  left out) are copied beside the specs' logs (`tests/e2e/desktop/.state/logs/app/`), whatever the
   verdicts. Then the folder is removed when the run ends, interrupted or not (the run's labs
   taken down first), unless `CYBERCTF_TEST_DESKTOP_KEEP` is set: then the fixture lab stays up
   and the folder stays, its path in the summary. On macOS the webviews' data store is the run's
@@ -163,7 +164,7 @@ night's run:
 | Entry point                                                   | Results                                                                                                   | Listing                                                    |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `tests/integration/run.sh`                                    | `--results <file>`, a line a scenario                                                                     | `--list`                                                   |
-| `tests/desktop/run.sh`, `run.ps1` (`run.mjs`)                 | `--results <file>` (`-Results`), a line a spec and a line a check (`<spec>/<check>`)                      | `--list` (`-List`), from `desktop/cases.tsv` and the specs |
+| `tests/e2e/desktop/runner/run.sh`, `run.ps1` (`run.mjs`)      | `--results <file>` (`-Results`), a line a spec and a line a check (`<spec>/<check>`)                      | `--list` (`-List`), from `desktop/cases.tsv` and the specs |
 | the guided setup (`integration_tests::setup`, a `cargo test`) | `CYBERCTF_TEST_RESULTS=<file>`, a line an item                                                            | in the integration runner's `--list` (tier `bare-machine`) |
 | the leftover audit (`tests/audit/run.sh diff`)                | `--results <file>`, a line a kind of resource ([leftovers.md](../docs/contributing/testing/leftovers.md)) | `--list`                                                   |
 
@@ -198,7 +199,7 @@ others ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md#needs-caps-
 for a need not met carries the need's failure as its `reason`.
 
 Unit tests hold both to the code: `tests/integration/run.test.ts` (each listed test exists, every
-knob a scenario reads is listed), `tests/desktop/run.test.ts` (`cases.tsv` against the specs, the
+knob a scenario reads is listed), `tests/e2e/desktop/runner/run.test.ts` (`cases.tsv` against the specs, the
 plan, and the runner on fake specs and a fake app), `scripts/lib/suite.test.ts` and
 `integration_tests/support/results.rs` (the records).
 
@@ -284,14 +285,14 @@ A feature:
 
 A reference names a test exactly, and the check finds it:
 
-| Tier          | A reference                                                                                            |
-| ------------- | ------------------------------------------------------------------------------------------------------ |
-| `unit`        | a test file (`src/…/x.test.tsx`, a Rust file with tests), or `<file> > <Rust fn or title words>`       |
-| `web`         | `<spec>.spec.ts > <words of the test's title>`                                                         |
-| `desktop`     | a case of `tests/desktop/run.sh --list`, or `<case>/<check>` (a spec's `r.check`/`r.step` id)          |
-| `integration` | a scenario of `tests/integration/run.sh --list`, or `<Rust file> > <fn>` for an opt-in test            |
-| `package`     | the packaging check's file (`.github/workflows/package-smoke.yml`, `packaging/windows/smoke-test.ps1`) |
-| `setup`       | an item of `integration_tests::setup` (`docker`, `selftest:vm`, `plugin:<name>`…)                      |
+| Tier          | A reference                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `unit`        | a test file (`src/…/x.test.tsx`, a Rust file with tests), or `<file> > <Rust fn or title words>`         |
+| `web`         | `<spec>.spec.ts > <words of the test's title>`                                                           |
+| `desktop`     | a case of `tests/e2e/desktop/runner/run.sh --list`, or `<case>/<check>` (a spec's `r.check`/`r.step` id) |
+| `integration` | a scenario of `tests/integration/run.sh --list`, or `<Rust file> > <fn>` for an opt-in test              |
+| `package`     | the packaging check's file (`.github/workflows/package-smoke.yml`, `packaging/windows/smoke-test.ps1`)   |
+| `setup`       | an item of `integration_tests::setup` (`docker`, `selftest:vm`, `plugin:<name>`…)                        |
 
 **Registering a new test.** Add it to the feature it checks, in its tier, then `pnpm features`
 and commit both files. A new integration scenario or desktop case fails the check until a feature
@@ -312,4 +313,4 @@ rig columns.
 - Integration tests read their knobs (`CYBERCTF_TEST_<AREA>_<WHAT>`, [above](#knobs)) and return
   early without them; `cargo test` never runs them. The suite runners (`scripts/lib/suite.sh`)
   give one verdict per step, keep going after a failure, and take `ONLY`, `SKIP` and `STRICT`.
-- Logs: `tests/integration/.state/logs/`, `tests/desktop/.state/logs/`, and Playwright's report.
+- Logs: `tests/integration/.state/logs/`, `tests/e2e/desktop/.state/logs/`, and Playwright's report.

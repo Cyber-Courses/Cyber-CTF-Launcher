@@ -7,9 +7,9 @@ import { configDefaults, defineConfig } from "vitest/config";
  * with the host's load. They are opt-in: `pnpm test:harness` (vitest.harness.config.mts).
  */
 export const HARNESS = [
-  "tests/desktop/run.test.ts",
-  "tests/desktop/owned.cli.test.ts",
-  "tests/desktop/host.test.ts",
+  "tests/e2e/desktop/runner/run.test.ts",
+  "tests/e2e/desktop/support/owned-cli.test.ts",
+  "tests/e2e/desktop/support/host.test.ts",
   "tests/integration/run.test.ts",
   "tests/audit/kinds.test.ts",
 ];

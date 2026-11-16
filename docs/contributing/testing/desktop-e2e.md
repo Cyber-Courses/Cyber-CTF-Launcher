@@ -5,29 +5,29 @@ built in with `--features wdio`, never in a release build): no external driver, 
 run on Linux, Windows and macOS. One entry point a system:
 
 ```sh
-tests/desktop/run.sh --all                                   # Linux, macOS
-tests/desktop/run.sh --group lab                             # one group of specs (below)
-tests/desktop/run.sh --specs "smoke settings" --knobs ~/e2e.env
-tests/desktop/run.sh --app path/to/cyberctf-desktop          # an app already built
-tests/desktop/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # .deb, .rpm or .AppImage, unpacked
+tests/e2e/desktop/runner/run.sh --all                                   # Linux, macOS
+tests/e2e/desktop/runner/run.sh --group lab                             # one group of specs (below)
+tests/e2e/desktop/runner/run.sh --specs "smoke settings" --knobs ~/e2e.env
+tests/e2e/desktop/runner/run.sh --app path/to/cyberctf-desktop          # an app already built
+tests/e2e/desktop/runner/run.sh --package path/to/Cyber.CTF_1.8.9_amd64.deb   # .deb, .rpm or .AppImage, unpacked
 ```
 
 ```powershell
-pwsh -File tests\desktop\run.ps1 -All                        # Windows, in the desktop session
-pwsh -File tests\desktop\run.ps1 -Group lab
-pwsh -File tests\desktop\run.ps1 -Specs "smoke settings" -Knobs $HOME\e2e.env
-pwsh -File tests\desktop\run.ps1 -Package path\to\Cyber.CTF_1.8.9_x64_en-US.msi   # or the NSIS setup .exe
+pwsh -File tests\e2e\desktop\runner\run.ps1 -All                        # Windows, in the desktop session
+pwsh -File tests\e2e\desktop\runner\run.ps1 -Group lab
+pwsh -File tests\e2e\desktop\runner\run.ps1 -Specs "smoke settings" -Knobs $HOME\e2e.env
+pwsh -File tests\e2e\desktop\runner\run.ps1 -Package path\to\Cyber.CTF_1.8.9_x64_en-US.msi   # or the NSIS setup .exe
 ```
 
 Both are thin: they build or unpack the app and serve a debug build's frontend, then start
-`tests/desktop/run.mjs`, the runner itself, the same on every system (it makes the run's folder,
+`tests/e2e/desktop/runner/run.mjs`, the runner itself, the same on every system (it makes the run's folder,
 checks the needs, runs the specs and writes the results). Without `--app` or `--package` they build the app with `cargo build --features wdio` and
 serves the frontend such a build loads (`next dev` on 3206, `tauri.conf.json`'s `devUrl`; an app
 from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A package must be a
 `tauri build` with the hooks: `NEXT_PUBLIC_WDIO=1 pnpm tauri build --features wdio`
 (the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). Before the specs, the runner
 starts the app once and stops with a clear message when no WebDriver server answers. It checks out
-the fixture lab (the Invoice Portal API lab, under `tests/desktop/.state/labs`) unless `CYBERCTF_TEST_LOCAL_LAB` names one.
+the fixture lab (the Invoice Portal API lab, under `tests/e2e/desktop/.state/labs`) unless `CYBERCTF_TEST_LOCAL_LAB` names one.
 
 It is safe on a machine someone uses: the app keeps all of its own (data, settings, logs, webview
 data, session, secrets) in a folder made for the run and removed after it, and every clean-up
@@ -51,7 +51,7 @@ as each spec ends and prints the summary of `scripts/lib/suite.sh`, a line per s
 check, named `<spec>/<check>` (counted once, under the spec):
 
 ```text
-   title-bar            ok        41s  tests/desktop/.state/logs/title-bar.log
+   title-bar            ok        41s  tests/e2e/desktop/.state/logs/title-bar.log
    title-bar/controls   ok         3s  the main window's header ends with Minimize, Maximize and Close
    lab-form-vm              skip       0s  no hypervisor named: set CYBERCTF_TEST_VM_PROVIDER (...)
 ```
@@ -60,14 +60,14 @@ With `--results <file>` (`-Results` on Windows) the runner also appends a JSON r
 per check there, and `--list` (`-List`) prints its cases, each with its knobs, groups and needs
 ([tests/README.md](../../../tests/README.md#results)).
 Its exit status: 0 nothing failed, 1 a spec failed, 2 the runner itself couldn't run; `STRICT=1`
-fails a skip. Logs: `tests/desktop/.state/logs/<spec>.log`, and the apps' own logs under
-`tests/desktop/.state/logs/app/` (copied from the run's folder before it goes, without the lines
+fails a skip. Logs: `tests/e2e/desktop/.state/logs/<spec>.log`, and the apps' own logs under
+`tests/e2e/desktop/.state/logs/app/` (copied from the run's folder before it goes, without the lines
 that may name a secret).
 
 ## Needs, caps and groups
 
 A failure costs seconds, not an hour. Each spec declares what it needs on its first lines
-(`export const needs = [...]`, read by `tests/desktop/lib/plan.mjs`), and the runner meets each
+(`export const needs = [...]`, read by `tests/e2e/desktop/runner/plan.mjs`), and the runner meets each
 need once:
 
 - The runner provides some itself, checked when the first spec needing it comes up: `engine` (a
@@ -89,7 +89,7 @@ own verdict, with the app log's last lines. So the twelve specs that start the f
 for one failed start, not twelve; the three VM forms and `screens` for one VM that can't start.
 
 Every spec is killed past its cap, 5 minutes (`CYBERCTF_TEST_DESKTOP_TIMEOUT`; `machine` gets 8),
-and keeps its own waits under it (`support.mjs`'s `LAB_START_MS`, 3 minutes for a lab to start,
+and keeps its own waits under it (`support/app.mjs`'s `LAB_START_MS`, 3 minutes for a lab to start,
 `VM_START_MS`, 4 for a VM lab, `STOP_MS`, 2 for a stop, each a fraction of the cap), so a wait
 that runs out fails with its own reason first. An app that dies under a spec (WebDriver
 `ECONNREFUSED`) is started again once, to see whether it comes up at all; a second death, or none,
@@ -99,7 +99,7 @@ One app at a time answers on the WebDriver port (`TAURI_WEBDRIVER_PORT`, 4445). 
 a process group of its own, ended with all it holds (its apps, whatever they started) when the spec
 exits, at its cap, or when the run itself is stopped (SIGINT, SIGTERM, SIGHUP; on Windows
 `taskkill /T`). Before each app, the runner's and each launch in a spec, the port is waited for,
-10 s at most (`lib/host.mjs`): an app that can't bind it runs on without its server, and the spec
+10 s at most (`support/host.mjs`): an app that can't bind it runs on without its server, and the spec
 would drive whatever still answers there, another copy of the app among them, without its own
 knobs. A port still held fails the case (`the previous app still holds port 4445 (pid …: …)`) and
 ends the run, the cases left skipped; held before the run starts, it refuses to run.
@@ -198,7 +198,7 @@ so in the check line.
 | `server-lab`        | Add server, the setup window filled from the settings file (tools installed from it when missing), Save and test passing, the VM test, the server listed and Online, a catalogue lab started, running and removed there, the server removed  |
 | `cleanup`           | Settings > Maintenance: Clean up answered Cancel removes nothing; answered Remove, when every download it lists is the run's, says what it freed (otherwise the others are named and all left); a named tool the run's app installed removed |
 
-The specs are `tests/desktop/specs/<name>.mjs` and share `tests/desktop/lib/support.mjs`. A case's
+The specs are `tests/e2e/desktop/specs/<name>.mjs` and share `tests/e2e/desktop/support/app.mjs`. A case's
 id is its spec's name, which its summary line and its log (`<id>.log`) carry; a spec run once per
 form adds the form: `lab-form` runs as `lab-form-container`, `lab-form-vm` and
 `lab-form-per-machine`. A new spec is a short `.mjs` there (its checks through `results()`, its
@@ -211,7 +211,7 @@ the app has to do it (`holdsFor`), not at one instant after a pause.
 On Linux the VM scan is skipped: start a libvirt domain named `<lab>_<machine>` (or a Hyper-V VM
 `<lab>-<machine>` on Windows) yourself, `<lab>` being the installed lab's isoloom name plus
 `-<instance>` when `labs/<id>/.cyberctf-instance` holds a number, and run
-`tests/desktop/specs/vm-scan.mjs` with `CYBERCTF_TEST_SCAN_LAB=<lab id>`.
+`tests/e2e/desktop/specs/vm-scan.mjs` with `CYBERCTF_TEST_SCAN_LAB=<lab id>`.
 
 ## On a test machine
 
@@ -230,11 +230,11 @@ CYBERCTF_TEST_SERVER_ENV=/path/to/server.env
 Then, from the launcher's checkout:
 
 ```sh
-xvfb-run -a dbus-run-session -- tests/desktop/run.sh --all --knobs ~/e2e.env
+xvfb-run -a dbus-run-session -- tests/e2e/desktop/runner/run.sh --all --knobs ~/e2e.env
 ```
 
 ```powershell
-pwsh -File tests\desktop\run.ps1 -All -Knobs $HOME\e2e.env
+pwsh -File tests\e2e\desktop\runner\run.ps1 -All -Knobs $HOME\e2e.env
 ```
 
 Such a caller reads the records `--results` writes ([tests/README.md](../../../tests/README.md#results)):
@@ -249,7 +249,7 @@ until `next dev` answers on port 3206.
 
 The specs force the page visible: the frontend pauses its polls while the document is hidden
 (`src/lib/visibility.ts`), and on macOS a window another one covers reports hidden, so a driven app
-never learned that its lab came up. `support.mjs` overrides `document.visibilityState` and
+never learned that its lab came up. `support/app.mjs` overrides `document.visibilityState` and
 re-applies it on every wait tick (a reload drops it).
 
 The `__wdio_*` hooks (`src/components/wdio-hooks.tsx`: start a lab folder, mount the attack box
@@ -258,5 +258,5 @@ panel) are in a development frontend only, the one a debug build loads, or a bui
 `stop-with-box`, `park-resume`, `reimport-running`, `attack-on-stopped`, `fail-badlab`) fail on a
 release app built without it.
 
-Docker is called without a shell (`support.mjs`'s `docker`), so its `{{.Names}}` templates and
+Docker is called without a shell (`support/app.mjs`'s `docker`), so its `{{.Names}}` templates and
 `^` filters reach it as written on Windows too.

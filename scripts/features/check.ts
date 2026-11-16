@@ -37,7 +37,7 @@ function fileProblem(ref: string, facts: Facts, kind: "unit" | "rust" | "web" | 
 function desktopProblem(ref: string, facts: Facts): string | null {
   const [id, check] = ref.split("/", 2) as [string, string | undefined];
   const spec = facts.desktopCases.get(id);
-  if (spec === undefined) return `no desktop case ${id} (tests/desktop/run.sh --list)`;
+  if (spec === undefined) return `no desktop case ${id} (tests/e2e/desktop/runner/run.sh --list)`;
   if (check !== undefined && !facts.desktopChecks.get(spec)?.has(check)) return `spec ${spec} has no check ${check}`;
   return null;
 }

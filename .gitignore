@@ -48,8 +48,8 @@ next-env.d.ts
 /blob-report/
 /playwright/.cache/
 
-# the test runners' logs and fixtures (tests/desktop/run.sh, tests/integration/run.sh)
-/tests/desktop/.state/
+# the test runners' logs and fixtures (tests/e2e/desktop/runner/run.sh, tests/integration/run.sh)
+/tests/e2e/desktop/.state/
 /tests/integration/.state/
 
 # release artifacts written by scripts/release/third-party.ts (pnpm notices / pnpm sbom)
