@@ -114,7 +114,7 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
             };
             check(started.is_ok(), format!("the lab starts ({:?})", started.as_ref().err()), f);
             let placed = match run() {
-                Ok(run) => Placed { host: Host::Local(run), dir: dir.clone(), target: target_kind, vm },
+                Ok(run) => Placed { host: Host::here(run), dir: dir.clone(), target: target_kind, vm },
                 Err(e) => return check(false, format!("the lab's run opens: {e}"), f),
             };
             if started.is_ok() {

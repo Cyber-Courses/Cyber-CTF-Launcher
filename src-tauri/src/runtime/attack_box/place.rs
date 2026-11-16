@@ -38,7 +38,8 @@ pub(crate) struct Placed {
 /// a container lab inside, whose files can't be generated again with the box.
 pub(crate) async fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<Option<Placed>> {
     Ok(match host::locate(dirs, dir, id, runtime).await? {
-        None | Some(Host::Esxi { .. }) => None,
+        None => None,
+        Some(host) if host.on_esxi() => None,
         Some(host) if !host.has_machines() => None,
         // Its machines are VMs wherever its target runs them (on Proxmox, whatever its catalogue form).
         Some(host) => host.target().map(|target| Placed { target, host, dir: dir.to_path_buf(), vm: !matches!(target, Target::Docker | Target::CloudDocker) }),
@@ -148,15 +149,16 @@ impl Placed {
             }
         };
         // The run's record says its hypervisor: no status read (a `vagrant status`) for it.
-        let provider = match &self.host {
-            Host::Local(run) => match run.recorded_provider().await {
+        let provider = if self.host.is_here() {
+            match self.host.run.recorded_provider().await {
                 Ok(provider) => provider,
                 Err(e) => {
                     log::warn!("couldn't read the lab's hypervisor for the shared folder: {e}");
                     None
                 }
-            },
-            Host::Esxi { .. } | Host::Cloud { .. } | Host::Server { .. } => None,
+            }
+        } else {
+            None
         };
         if shares_folders(self.local(), self.target, provider.as_deref(), Os::HERE) {
             if let Some(p) = provider.as_deref().and_then(Provider::from_id) {
@@ -180,7 +182,7 @@ impl Placed {
 
     /// Whether the box runs here, on this machine.
     fn local(&self) -> bool {
-        matches!(self.host, Host::Local(_))
+        self.host.is_here()
     }
 
     /// Whether adding the box pulls its image on this machine: a container box here. A Kali VM
@@ -310,7 +312,7 @@ mod tests {
             region: None,
             auto_stop_hours: None,
         };
-        let placed = Placed { host: Host::Cloud { run, conn }, dir: dir.to_path_buf(), target, vm: false };
+        let placed = Placed { host: Host { run, conn: Some(conn) }, dir: dir.to_path_buf(), target, vm: false };
         let dirs = AppDirs::new(Some(home), None);
         let err = placed.add(&dirs, Pick { image: "kalilinux/kali-rolling", desktop: false }, None, &mut |_| {}).await.unwrap_err();
         assert!(err.to_string().starts_with("Your sign-in to AWS has expired"), "{err}");
@@ -328,7 +330,7 @@ mod tests {
     /// this computer by `run`.
     async fn box_shell(dir: &Path, target: Target, run: Result<isothrum::Deployment>, vm: bool) -> isothrum_runner::ShellCommand {
         lab::prepare(dir, target).unwrap();
-        let placed = Placed { host: Host::Local(run.unwrap()), dir: dir.to_path_buf(), target, vm };
+        let placed = Placed { host: Host::here(run.unwrap()), dir: dir.to_path_buf(), target, vm };
         placed.shell_command().await.unwrap()
     }
 
