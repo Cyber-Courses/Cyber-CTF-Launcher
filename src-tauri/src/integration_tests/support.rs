@@ -82,8 +82,17 @@ impl Checks for Vec<String> {
 /// what it left checked) whatever happens in the body: a panic there is a failed check of its own,
 /// and the teardown still runs. A lab a scenario leaves behind fails the ones after it (a UTM VM
 /// still registered made every later VM import fail). A panic in the teardown is a failed
-/// check too. Each part's failures go to `state`.
+/// check too. Each part's failures go to `state`. The launcher's checks of this machine (its
+/// hypervisors, the virtiofsd a shared folder needs) read this machine, not a unit test's empty
+/// one ([`read_this_machine`](crate::runtime::providers::testing::read_this_machine)).
 pub(crate) async fn scenario<S: Checks>(state: &mut S, body: impl AsyncFnOnce(&mut S), teardown: impl AsyncFnOnce(&mut S)) {
+    crate::runtime::providers::testing::read_this_machine();
+    body_then_teardown(state, body, teardown).await;
+}
+
+/// [`scenario`]'s `body`, then its `teardown` whatever happened in the body, each one's panic a
+/// failed check of `state`'s.
+async fn body_then_teardown<S: Checks>(state: &mut S, body: impl AsyncFnOnce(&mut S), teardown: impl AsyncFnOnce(&mut S)) {
     if let Err(panic) = (CatchUnwind(Box::pin(body(state)))).await {
         check(false, format!("the scenario ran to its end (it panicked: {})", panic_message(&*panic)), state.failures());
     }
@@ -294,7 +303,8 @@ mod tests {
         // registered, and every VM scenario after it failed.
         let mut failures = Vec::new();
         let torn_down = std::cell::Cell::new(false);
-        scenario(
+        // Its parts alone: a unit test never reads this machine (`scenario` would).
+        body_then_teardown(
             &mut failures,
             async |f: &mut Vec<String>| {
                 check(true, "the lab starts".into(), f);
@@ -311,7 +321,7 @@ mod tests {
         assert_eq!(failures, ["the scenario ran to its end (it panicked: a console into the box: no such machine)", "nothing of it is left"]);
         // A body that ends, and a teardown that panics: said too.
         let mut failures = Vec::new();
-        scenario(&mut failures, async |_: &mut Vec<String>| {}, async |_: &mut Vec<String>| panic!("{}", String::from("stop failed"))).await;
+        body_then_teardown(&mut failures, async |_: &mut Vec<String>| {}, async |_: &mut Vec<String>| panic!("{}", String::from("stop failed"))).await;
         assert_eq!(failures, ["the teardown ran to its end (it panicked: stop failed)"]);
     }
 }

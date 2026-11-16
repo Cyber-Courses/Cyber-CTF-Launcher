@@ -535,6 +535,8 @@ fn report_hypervisors(out: &mut Out, first: &Plan, wanted: &Wanted) {
 #[ignore = "installs real tools on this machine, as an administrator: the test rig's bare guests only, or CYBERCTF_TEST_SETUP_CHECK_ONLY=1 (CYBERCTF_TEST_SETUP_*)"]
 async fn the_guided_setup_readies_this_machine() {
     let Some(knobs) = Knobs::from_env() else { return };
+    // The machine check reads this machine, not a unit test's empty one.
+    crate::runtime::providers::testing::read_this_machine();
     std::fs::create_dir_all(&knobs.logs).unwrap_or_else(|e| panic!("creating {}: {e}", knobs.logs.display()));
     let mut out = Out::new(&knobs);
     let dirs = dirs();
