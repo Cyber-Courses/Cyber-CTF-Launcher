@@ -74,11 +74,10 @@ async fn status_at(host: &Host) -> Result<LabStatus> {
         Host::Local(run) => run.status().await?,
         // ESXi (Vagrant on the host): Vagrant's states, each VM at its own address.
         Host::Esxi { run, conn } => on_server(run.status().await?, conn),
-        // A cloud account (cloud-vm, cloud-docker, cloud-services): from the runner's record.
-        Host::Cloud { run, conn } => on_server(run.status().await?, conn),
-        // A Proxmox server: from the runner's own record and state, each VM as the server's API
+        // A cloud account (cloud-vm, cloud-docker, cloud-services): from the runner's record. A
+        // Proxmox server: from the runner's own record and state, each VM as the server's API
         // says it stands, asked with the server's credentials (a VM removed in its web UI gone).
-        Host::Server { run, conn } => on_server(run.status().await?, conn),
+        Host::Cloud { run, conn } | Host::Server { run, conn } => on_server(run.status().await?, conn),
     })
 }
 

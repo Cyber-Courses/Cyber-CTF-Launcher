@@ -143,7 +143,7 @@ pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: 
     // The firewall opens the lab's SSH and published ports to this machine's public IP only.
     let allowed = public_ip().await?;
     let place = isothrum::CloudPlace::launch(&conn, Some(&allowed));
-    isothrum::Deployment::in_cloud(&runner_home(dirs)?, dir, id, runtime, cloud, place)?.up(env, log).await
+    isothrum::Deployment::in_cloud(&runner_home(dirs)?, dir, id, (runtime, cloud), place)?.up(env, log).await
 }
 
 /// The runtime that drives a `runtime` lab's Terraform module on a cloud account: for a container

@@ -296,7 +296,7 @@ mod tests {
         let mut config = isothrum_runner::RunnerConfig::new(crate::runtime::paths::runner_home_in(&home));
         config.processes = Arc::clone(&fake) as Arc<dyn isothrum_runner::ProcessRunner>;
         let place = isothrum::CloudPlace { region: Some("eu-west-3".into()), allowed_cidr: Some("203.0.113.7/32".into()), ..isothrum::CloudPlace::default() };
-        let run = isothrum::Deployment::in_cloud_with(config, &dir, "t", Runtime::Docker, "aws", place).unwrap();
+        let run = isothrum::Deployment::in_cloud_with(config, &dir, "t", (Runtime::Docker, "aws"), place).unwrap();
         run.up(&[], &mut |_| {}).await.unwrap();
         expired.store(true, Ordering::SeqCst);
         let before = module(&dir, "aws");

@@ -76,9 +76,10 @@ impl Deployment {
         Deployment::new(home, dir, id, module, Site::Server(place))
     }
 
-    /// Lab `id` of `runtime` (a container lab is `cloud-docker`, a VM lab `cloud-vm`) on `cloud`
-    /// in the account `place`, installed in `dir`, on the runner whose home is `home`.
-    pub(crate) fn in_cloud(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str, place: CloudPlace) -> Result<Self> {
+    /// Lab `id`, installed in `dir`, in the account `place`, its module the one generated for
+    /// `runtime` on `cloud` (a container lab is `cloud-docker`, a VM lab `cloud-vm`), on the
+    /// runner whose home is `home`.
+    pub(crate) fn in_cloud(home: &Path, dir: &Path, id: &str, (runtime, cloud): (Runtime, &str), place: CloudPlace) -> Result<Self> {
         let (out, target) = lab::terraform(dir, runtime, cloud);
         Deployment::new(home, dir, id, (out, Module::Generated(target)), Site::Cloud(place))
     }
@@ -102,10 +103,10 @@ impl Deployment {
 
     /// [`Deployment::in_cloud`] on a runner set up with `config`, which this test process serves.
     #[cfg(test)]
-    pub(crate) fn in_cloud_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime, cloud: &str, place: CloudPlace) -> Result<Self> {
+    pub(crate) fn in_cloud_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, module: (Runtime, &str), place: CloudPlace) -> Result<Self> {
         let home = config.home.clone();
         crate::testing::service::serve_home(config);
-        Deployment::in_cloud(&home, dir, id, runtime, cloud, place)
+        Deployment::in_cloud(&home, dir, id, module, place)
     }
 
     /// [`Deployment::own`] on a runner set up with `config`, which this test process serves.
@@ -123,6 +124,7 @@ impl Deployment {
     }
 
     /// Where the run is.
+    #[cfg(any(test, feature = "cloud-services"))]
     pub(crate) fn site(&self) -> &Site {
         &self.site
     }

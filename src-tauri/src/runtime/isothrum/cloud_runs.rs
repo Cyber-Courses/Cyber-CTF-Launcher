@@ -13,9 +13,9 @@ use std::time::Duration;
 
 use isothrum_runner::{Format, RunOptions, RunRecord, SecretValue, Secrets};
 
+use super::deployment::Deployment;
 #[cfg(feature = "cloud-services")]
-use super::deployment::Module;
-use super::deployment::{Deployment, Site};
+use super::deployment::{Module, Site};
 use super::view;
 use crate::error::Result;
 use crate::runtime::{LabStatus, Place, lab};

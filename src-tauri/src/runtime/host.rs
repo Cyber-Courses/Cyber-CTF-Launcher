@@ -67,10 +67,10 @@ pub(crate) async fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
             let run = if runtime == Runtime::Cloud {
                 isothrum::Deployment::own(&home, dir, id, place)?
             } else {
-                isothrum::Deployment::in_cloud(&home, dir, id, form, conn.terraform()?, place)?
+                isothrum::Deployment::in_cloud(&home, dir, id, (form, conn.terraform()?), place)?
             };
             #[cfg(not(feature = "cloud-services"))]
-            let run = isothrum::Deployment::in_cloud(&home, dir, id, form, conn.terraform()?, place)?;
+            let run = isothrum::Deployment::in_cloud(&home, dir, id, (form, conn.terraform()?), place)?;
             Host::Cloud { run, conn }
         }
         Some(conn) => Host::Server { run: isothrum::Deployment::on_server(&home, dir, id, form, isothrum::ServerPlace::of(&conn))?, conn },

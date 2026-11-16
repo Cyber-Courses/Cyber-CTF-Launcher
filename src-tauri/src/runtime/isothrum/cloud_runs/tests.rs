@@ -88,7 +88,7 @@ fn a_later_operation_gives_the_credentials_and_leaves_the_values_to_the_runners_
 #[tokio::test]
 async fn a_run_gives_its_module_the_runners_key() {
     let home = std::env::temp_dir().join(format!("cyberctf-keys-{}", rand::random::<u32>()));
-    let run = Deployment::in_cloud(&home, &home.join("lab"), "t", Runtime::Vm, "aws", CloudPlace::default()).unwrap();
+    let run = Deployment::in_cloud(&home, &home.join("lab"), "t", (Runtime::Vm, "aws"), CloudPlace::default()).unwrap();
     let values = run.key_values().await.unwrap();
     let value = |name: &str| values.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone()).unwrap_or_default();
     assert!(value("ssh_public_key").starts_with("ssh-ed25519 "), "{values:?}");
