@@ -2,8 +2,11 @@
 // WAYLAND_DISPLAY empty: an SSH session, the test rig), GTK can't start and the app panics before
 // its WebDriver server answers; the runner starts a virtual one for the run instead (Xvfb, on a
 // display number no other X server holds) with a light window manager on it when one is installed
-// (without one, nothing maximizes or minimizes a window), exports DISPLAY to the specs and their apps, and stops
-// both on every way out of the run. Kept apart from the runner, the environment, the files and the
+// (without one, nothing maximizes or minimizes a window) and a D-Bus session bus of its own (the
+// desktop session's bus belongs to another display: a desktop service there that never answers,
+// such as a broken xdg-desktop-portal, held every app start for D-Bus's 25 s timeouts and the page
+// never loaded in time), exports DISPLAY and DBUS_SESSION_BUS_ADDRESS to the specs and their apps,
+// and stops all three on every way out of the run. Kept apart from the runner, the environment, the files and the
 // process spawner given, so it can be tested without any of them.
 import { accessSync, constants, existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
@@ -29,6 +32,16 @@ export const WINDOW_MANAGERS = [
   { command: "openbox", args: ["--sm-disable"] },
   { command: "fluxbox", args: [] },
 ];
+/** The session bus started beside the runner's Xvfb: a bus of the run's own, which nothing of the
+ *  desktop session (its portal, its accessibility bus, its keyring) is on. No fork, so the runner
+ *  holds the process and stops it; listening on a socket of the display's, under `root`. */
+export const SESSION_BUS = "dbus-daemon";
+/** The session bus's socket for display `n` under `root` (the system's /tmp), with the runner's
+ *  `pid`: another run's bus is never this one.
+ *  @param {number} n
+ *  @param {number} pid
+ *  @param {string} [root] */
+export const busSocket = (n, pid, root = "/tmp") => `${root}/.cyberctf-e2e-bus-${n}-${pid}`;
 /** The variable the runner sets for the specs when its Xvfb runs without a window manager: why. */
 export const NO_WINDOW_MANAGER = "CYBERCTF_TEST_DESKTOP_NO_WINDOW_MANAGER";
 /** How long a window manager must keep running after its start to count as up: one that can't
@@ -73,10 +86,11 @@ export const displayFiles = (n, root = "/tmp") => ({ lock: `${root}/.X${n}-lock`
  * The run's display: none to start when there is one already (or not on Linux); otherwise Xvfb on
  * the first number from FIRST_DISPLAY whose lock and socket are both absent (never `-displayfd`:
  * Xvfb takes a number with it without checking the number's lock), up when its socket is there,
- * then the first of WINDOW_MANAGERS installed on it. `:<n>` returned with its window manager (or
- * why none: the run goes on without one) and `stop`, which stops both (idempotent, synchronous:
- * safe in an `exit` handler); why not, when Xvfb isn't installed, no number is free, or it exits
- * or doesn't come up within `timeoutMs`.
+ * then a session bus of its own (SESSION_BUS, when installed) and the first of WINDOW_MANAGERS
+ * installed on it, on that bus. `:<n>` returned with its bus's address (or why none: the run goes on
+ * with the session's bus), its window manager (or why none: the run goes on without one) and
+ * `stop`, which stops all three (idempotent, synchronous: safe in an `exit` handler); why not, when
+ * Xvfb isn't installed, no number is free, or it exits or doesn't come up within `timeoutMs`.
  * @param {{
  *   platform?: string,
  *   env?: Record<string, string | undefined>,
@@ -89,9 +103,10 @@ export const displayFiles = (n, root = "/tmp") => ({ lock: `${root}/.X${n}-lock`
  *   timeoutMs?: number,
  *   pollMs?: number,
  *   settleMs?: number,
+ *   pid?: number,
  * }} opts  `output` the fd Xvfb's and the window manager's own output goes to (`log` its file,
  *   named in a failure)
- * @returns {Promise<{ display: null } | { display: string, windowManager: WindowManager, stop: () => void } | { error: string }>}
+ * @returns {Promise<{ display: null } | { display: string, bus: SessionBus, windowManager: WindowManager, stop: () => void } | { error: string }>}
  */
 export async function startDisplay({
   platform = process.platform,
@@ -105,6 +120,7 @@ export async function startDisplay({
   timeoutMs = 15000,
   pollMs = 100,
   settleMs = WM_SETTLE_MS,
+  pid = process.pid,
 }) {
   if (!needsDisplay(platform, env)) return { display: null };
   if (!installed("Xvfb"))
@@ -120,13 +136,21 @@ export async function startDisplay({
     starts += 1;
     const up = await startOn(n, { spawn, exists, root, output, timeoutMs, pollMs });
     if ("stop" in up) {
-      const wm = await startWindowManager(up.display, { spawn, installed, env, output, settleMs, see });
-      // The window manager before the display it runs on.
+      const bus = await startSessionBus(up.display, busSocket(n, pid, root), { spawn, installed, exists, env, output, timeoutMs, pollMs, see });
+      const onBus = "address" in bus ? { ...env, DBUS_SESSION_BUS_ADDRESS: bus.address } : env;
+      const wm = await startWindowManager(up.display, { spawn, installed, env: onBus, output, settleMs, see });
+      // The window manager before the bus and the display it runs on.
       const stop = () => {
         if ("stop" in wm) wm.stop();
+        if ("stop" in bus) bus.stop();
         up.stop();
       };
-      return { display: up.display, windowManager: "name" in wm ? { name: wm.name } : { why: wm.why }, stop };
+      return {
+        display: up.display,
+        bus: "address" in bus ? { address: bus.address } : { why: bus.why },
+        windowManager: "name" in wm ? { name: wm.name } : { why: wm.why },
+        stop,
+      };
     }
     why = `${up.error}${see}`;
     // Taken between the look and the start: the next number. Anything else won't go better there.
@@ -158,6 +182,40 @@ async function startOn(n, { spawn, exists, root, output, timeoutMs, pollMs }) {
   }
   stop();
   return { error: `Xvfb's display :${n} didn't come up within ${Math.round(timeoutMs / 1000)} s`, taken: false };
+}
+
+/** @typedef {{ address: string } | { why: string }} SessionBus  the run's own session bus, or why
+ *  there is none */
+
+/** SESSION_BUS started for `display` on `socket`, up once its socket is there; its address and
+ *  `stop`, or why there is none (not installed, it ended, or its socket never came: `see` names
+ *  its output). The services it starts on demand get the run's display.
+ *  @param {string} display
+ *  @param {string} socket
+ *  @param {{ spawn: Function, installed: (command: string) => boolean, exists: (path: string) => boolean, env: Record<string, string | undefined>, output: number | "ignore", timeoutMs: number, pollMs: number, see: string }} opts
+ *  @returns {Promise<{ address: string, stop: () => void } | { why: string }>} */
+async function startSessionBus(display, socket, { spawn, installed, exists, env, output, timeoutMs, pollMs, see }) {
+  if (!installed(SESSION_BUS)) return { why: `${SESSION_BUS} isn't installed` };
+  const address = `unix:path=${socket}`;
+  // Detached as Xvfb: stopped by the runner, after the apps.
+  /** @type {import("node:child_process").ChildProcess} */
+  const proc = spawn(SESSION_BUS, ["--session", "--nofork", "--nopidfile", `--address=${address}`], {
+    stdio: ["ignore", output, output],
+    detached: true,
+    env: { ...env, DISPLAY: display },
+  });
+  const stop = stopper(proc);
+  /** @type {string | null} */
+  let failed = null;
+  proc.on("error", (e) => (failed = `${SESSION_BUS} couldn't be started: ${e.message}`));
+  proc.on("exit", (code, signal) => (failed = `${SESSION_BUS} exited (${signal ?? `code ${code}`}) as it started`));
+  for (let waited = 0; waited < timeoutMs; waited += pollMs) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    if (failed) return { why: `${failed}${see}` };
+    if (exists(socket)) return { address, stop };
+  }
+  stop();
+  return { why: `${SESSION_BUS}'s socket didn't come within ${Math.round(timeoutMs / 1000)} s${see}` };
 }
 
 /** The first of WINDOW_MANAGERS installed, started on `display` and still running `settleMs`
