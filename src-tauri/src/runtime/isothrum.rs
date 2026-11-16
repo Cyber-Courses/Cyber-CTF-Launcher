@@ -36,7 +36,7 @@ mod web;
 
 pub(crate) use claim::CLAIM;
 use claim::with_claim;
-pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
+pub(crate) use cloud_runs::{CloudPlace, CloudRun, destroy_expired, expired_clouds};
 pub(crate) use esxi::EsxiPlace;
 pub(crate) use opened::Module;
 pub(crate) use server::{ServerPlace, ServerRun};

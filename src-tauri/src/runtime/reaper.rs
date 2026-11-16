@@ -15,7 +15,9 @@ use std::collections::BTreeSet;
 
 use super::inflight::try_lock_lab;
 use super::{isothrum, server};
-use crate::error::Wire;
+use std::path::Path;
+
+use crate::error::{Code, Error, Result, Wire};
 use crate::platform::AppDirs;
 
 /// How the reaper tells the player a lab needs attention (a failed auto-stop). The app shell supplies a system notification; unit tests a no-op. This
@@ -43,10 +45,9 @@ async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
         }
     };
     // Each destroy under the lab's per-lab lock, like `hand_to_runner`: a user Stop or install of
-    // the lab can't race the reaper's Terraform destroy over the same state. A busy lab is left
-    // for a later sweep (inside `reap_expired`).
+    // the lab can't race the reaper's Terraform destroy over the same state.
     let lock = |id: &str| try_lock_lab(dirs, id).ok().flatten();
-    let failures = match isothrum::reap_expired_clouds(&home, account, lock).await {
+    let failures = match sweep(&home, account, lock).await {
         Ok(failures) => failures,
         Err(e) => {
             // No sweep happened: said once, as the runner's, not as a lab that couldn't be destroyed.
@@ -56,6 +57,51 @@ async fn reap_runner_clouds(dirs: &AppDirs, report: &Report) {
             return;
         }
     };
+    keep_failures(dirs, failures, report);
+}
+
+/// Destroys every cloud run the runner service lists as past its expiry, with the account's
+/// credentials resolved by `account` (a recorded account id to its Terraform environment), each
+/// under the lab's lock (`lock`, `None` while another operation holds it). Returns the runs it
+/// couldn't destroy, with why; a run whose account can't be resolved, or whose lab is busy, is
+/// left for a later sweep. `Err` when the runs can't even be listed: no sweep happened.
+async fn sweep<F, L, G>(home: &Path, account: F, lock: L) -> Result<Vec<(String, Error)>>
+where
+    F: Fn(&str) -> Option<Vec<(String, String)>>,
+    L: Fn(&str) -> Option<G>,
+{
+    let mut failed = Vec::new();
+    for record in isothrum::expired_clouds(home).await? {
+        let name = record.name.to_string();
+        let id = super::docker::lab_of_project(&name).unwrap_or(&name).to_owned();
+        // Busy: another operation holds the lab, so it is left for a later sweep rather than
+        // destroyed over it (not a failure). Held across the destroy.
+        let Some(_held) = lock(&id) else {
+            log::debug!("auto-stop: {name} is busy (an operation holds its lab lock); left for a later sweep");
+            continue;
+        };
+        let Some(host) = record.host_label.as_deref() else {
+            failed.push((name, Error::coded(Code::ReapNoHost)));
+            continue;
+        };
+        // The account removed or unreadable: left for a later sweep (it may come back), said.
+        let Some(tf_env) = account(host) else {
+            log::warn!("auto-stop: {name} is past its stop time, but its account {host} can't be used now; left for a later sweep");
+            continue;
+        };
+        if let Err(e) = super::paths::lab_dir_in(home, &id) {
+            log::warn!("auto-stop: {name}'s lab isn't installed any more ({e}); destroying it with the module its run kept");
+        }
+        if let Err(e) = isothrum::destroy_expired(home, &record, &tf_env).await {
+            failed.push((name, e));
+        }
+    }
+    Ok(failed)
+}
+
+/// Keeps `failures` (run, why) for the labs' pages, replacing the last sweep's, and notifies each
+/// lab that newly failed.
+fn keep_failures(dirs: &AppDirs, failures: Vec<(String, Error)>, report: &Report) {
     // The labs that failed last time, read before replacing them: a lab that fails again isn't
     // re-notified, and a lab destroyed this time (no new failure) has its record go.
     let store = match crate::store::open(dirs) {
