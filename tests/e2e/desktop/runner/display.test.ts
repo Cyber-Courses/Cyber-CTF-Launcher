@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { FIRST_DISPLAY, WINDOW_MANAGERS, XVFB_PACKAGE, displayFiles, needsDisplay, onPath, startDisplay } from "./display.mjs";
+import { FIRST_DISPLAY, SESSION_BUS, WINDOW_MANAGERS, XVFB_PACKAGE, busSocket, displayFiles, needsDisplay, onPath, startDisplay } from "./display.mjs";
 
 // The run's display (runner/display.mjs): when the runner starts Xvfb, on which display, and that
 // it stops it, given a fake environment, fake X server files and a fake process spawner. No Xvfb is started.
@@ -37,11 +37,18 @@ class FakeXvfb extends EventEmitter {
 
 /** A fake machine: the X servers' files there (`files`), and a spawner that hands out FakeXvfbs,
  *  doing `then` with each once it is started (by default: its display comes up, its lock and
+ *  socket made), fake session buses (in `buses`), doing `busThen` with each (by default: its
  *  socket made), and fake window managers (in `wms`), doing `wmThen` with each (by default:
  *  nothing, it keeps running). */
-function machine(files: string[] = [], then?: (x: FakeXvfb, n: number, fs: Set<string>) => void, wmThen?: (wm: FakeXvfb) => void) {
+function machine(
+  files: string[] = [],
+  then?: (x: FakeXvfb, n: number, fs: Set<string>) => void,
+  wmThen?: (wm: FakeXvfb) => void,
+  busThen?: (bus: FakeXvfb, socket: string, fs: Set<string>) => void,
+) {
   const fs = new Set(files);
   const started: FakeXvfb[] = [];
+  const buses: FakeXvfb[] = [];
   const wms: FakeXvfb[] = [];
   const comesUp = (_x: FakeXvfb, n: number) => {
     const files = displayFiles(n);
@@ -50,6 +57,14 @@ function machine(files: string[] = [], then?: (x: FakeXvfb, n: number, fs: Set<s
   };
   const spawn = (command: string, args: string[], options: object) => {
     const x = new FakeXvfb(command, args, options as FakeXvfb["options"]);
+    if (command === SESSION_BUS) {
+      buses.push(x);
+      const socket = (args.find((a) => a.startsWith("--address=unix:path=")) ?? "").slice("--address=unix:path=".length);
+      setTimeout(() => {
+        (busThen ?? ((_b, at, files) => files.add(at)))(x, socket, fs);
+      }, 1);
+      return x as unknown as ChildProcess;
+    }
     if (command !== "Xvfb") {
       wms.push(x);
       if (wmThen)
@@ -67,8 +82,8 @@ function machine(files: string[] = [], then?: (x: FakeXvfb, n: number, fs: Set<s
   };
   /** What startDisplay is given: the fake spawner and files, Xvfb and every window manager
    *  installed, a short poll and settle. */
-  const opts = { spawn, exists: (p: string) => fs.has(p), installed: () => true, pollMs: 2, settleMs: 10 };
-  return { opts, started, wms };
+  const opts = { spawn, exists: (p: string) => fs.has(p), installed: () => true, pollMs: 2, settleMs: 10, pid: 4242 };
+  return { opts, started, buses, wms };
 }
 
 const headless = { platform: "linux", env: { PATH: "/usr/bin" } };
@@ -234,6 +249,74 @@ describe("the window manager on the runner's Xvfb", () => {
     });
     await startDisplay({ ...m.opts, ...headless });
     expect(m.wms).toEqual([]);
+  });
+});
+
+describe("the session bus beside the runner's Xvfb", () => {
+  // The desktop session's bus belongs to another display: a desktop service there that never
+  // answers (a broken xdg-desktop-portal) held every app start for D-Bus's 25 s timeouts, and
+  // the specs' apps never loaded their page in time.
+  const socket = busSocket(FIRST_DISPLAY, 4242);
+
+  it("is a bus of the run's own, on a socket of the display's, its address given once the socket is there", async () => {
+    const m = machine();
+    const d = await startDisplay({ ...m.opts, ...headless, env: { PATH: "/usr/bin", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" } });
+    expect(d).toMatchObject({ display: ":99", bus: { address: `unix:path=${socket}` } });
+    const [bus] = m.buses;
+    expect(bus.command).toBe("dbus-daemon");
+    expect(bus.args).toEqual(["--session", "--nofork", "--nopidfile", `--address=unix:path=${socket}`]);
+    expect(bus.options.detached).toBe(true);
+    // What it starts on demand (the portal, the accessibility bus) draws on the run's display.
+    expect(bus.options.env).toMatchObject({ DISPLAY: ":99" });
+  });
+
+  it("is never another run's: the socket names the display and the runner", () => {
+    expect(busSocket(99, 4242)).toBe("/tmp/.cyberctf-e2e-bus-99-4242");
+    expect(busSocket(100, 7, "/x")).toBe("/x/.cyberctf-e2e-bus-100-7");
+  });
+
+  it("is the window manager's bus too", async () => {
+    const m = machine();
+    await startDisplay({ ...m.opts, ...headless, env: { PATH: "/usr/bin", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" } });
+    expect(m.wms[0].options.env).toMatchObject({ DISPLAY: ":99", DBUS_SESSION_BUS_ADDRESS: `unix:path=${socket}` });
+  });
+
+  it("is stopped by the display's `stop`, once, with the window manager and Xvfb", async () => {
+    const m = machine();
+    const d = await startDisplay({ ...m.opts, ...headless });
+    if (!("stop" in d)) throw new Error("no display started");
+    d.stop();
+    d.stop();
+    expect(m.buses[0].kills).toEqual(["SIGTERM"]);
+    expect(m.wms[0].kills).toEqual(["SIGTERM"]);
+    expect(m.started[0].kills).toEqual(["SIGTERM"]);
+  });
+
+  it("isn't there when dbus-daemon isn't installed: the display is, with why, and the window manager keeps the session's bus", async () => {
+    const m = machine();
+    const env = { PATH: "/usr/bin", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" };
+    const d = await startDisplay({ ...m.opts, ...headless, env, installed: (c: string) => c !== SESSION_BUS });
+    expect(d).toMatchObject({ display: ":99", bus: { why: "dbus-daemon isn't installed" } });
+    expect(m.buses).toEqual([]);
+    expect(m.wms[0].options.env).toMatchObject({ DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" });
+  });
+
+  it("isn't there when it ends as it starts: the display is, with why and its log named", async () => {
+    const m = machine([], undefined, undefined, (bus) => {
+      bus.exits(1);
+    });
+    const d = await startDisplay({ ...m.opts, ...headless, log: "/logs/xvfb.log" });
+    expect(d).toMatchObject({ display: ":99", bus: { why: "dbus-daemon exited (code 1) as it started (its output: /logs/xvfb.log)" } });
+    if (!("stop" in d)) throw new Error("no display started");
+    d.stop();
+    expect(m.buses[0].kills).toEqual([]);
+  });
+
+  it("isn't there when its socket never comes: stopped, with why", async () => {
+    const m = machine([], undefined, undefined, () => {});
+    const d = await startDisplay({ ...m.opts, ...headless, timeoutMs: 20 });
+    expect(d).toMatchObject({ display: ":99", bus: { why: expect.stringMatching(/^dbus-daemon's socket didn't come within/) as unknown } });
+    expect(m.buses[0].kills).toEqual(["SIGTERM"]);
   });
 });
 

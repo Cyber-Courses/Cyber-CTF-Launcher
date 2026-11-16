@@ -28,8 +28,12 @@ from `pnpm tauri build` embeds `out/`, a `cargo build --release` doesn't). A pac
 (the `NEXT_PUBLIC_WDIO=1` keeps the `__wdio_*` hooks a few specs use). On Linux without a display
 (`DISPLAY` and `WAYLAND_DISPLAY` empty: an SSH session, the test rig) the runner starts Xvfb for the
 run on a display number no other X server holds (`:99` and up), with a light window manager on it,
-the first installed of `xfwm4`, `openbox` and `fluxbox`, gives its `DISPLAY` to the specs and their
-apps, and stops both however the run ends (their output in `<logs>/xvfb.log`); without Xvfb
+the first installed of `xfwm4`, `openbox` and `fluxbox`, and a D-Bus session bus of the run's own
+(`dbus-daemon`), gives its `DISPLAY` and that bus's `DBUS_SESSION_BUS_ADDRESS` to the specs and
+their apps, and stops all three however the run ends (their output in `<logs>/xvfb.log`). The
+desktop session's bus belongs to another display: a service there that never answers (a broken
+`xdg-desktop-portal`) holds every GTK app's start for D-Bus's 25 s timeouts, long enough that the
+app's page never loads in time; without `dbus-daemon` the run keeps that bus and says so. Without Xvfb
 installed it stops at once and names the package (`xvfb`) rather than letting the app panic. A bare
 Xvfb has no window manager to act on a maximize or a minimize: without one installed, the run goes
 on and the `title-bar` case skips those checks, saying why.

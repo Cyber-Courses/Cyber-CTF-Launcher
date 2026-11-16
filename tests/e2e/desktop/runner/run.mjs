@@ -152,7 +152,8 @@ process.env.TAURI_WEBDRIVER_PORT = String(PORT);
 const LOGS = process.env.CYBERCTF_TEST_DESKTOP_LOGS || join(DESKTOP, ".state", "logs");
 mkdirSync(LOGS, { recursive: true });
 // A Linux machine without a display (an SSH session, the test rig): a virtual one for the run
-// (runner/display.mjs), its DISPLAY the specs' and their apps', stopped on every way out (`exit`).
+// (runner/display.mjs), its DISPLAY and its own session bus's address the specs' and their apps',
+// stopped on every way out (`exit`). Without a bus of its own, the session's is kept, said here.
 // Without a window manager on it, NO_WINDOW_MANAGER tells the specs why: what only a window
 // manager does (a maximize, a minimize) is skipped, not failed.
 const XVFB_LOG = join(LOGS, "xvfb.log");
@@ -168,10 +169,13 @@ const stopDisplay = display.display ? display.stop : () => {};
 process.on("exit", stopDisplay);
 if (display.display) {
   process.env.DISPLAY = display.display;
+  const { bus } = display;
+  if ("address" in bus) process.env.DBUS_SESSION_BUS_ADDRESS = bus.address;
   const wm = display.windowManager;
   if ("why" in wm) process.env[NO_WINDOW_MANAGER] = wm.why;
   const managed = "name" in wm ? `, ${wm.name} its window manager` : `, no window manager (${wm.why}): maximize and minimize checks are skipped`;
-  console.log(`\n==== display: Xvfb on ${display.display}${managed} (no DISPLAY or WAYLAND_DISPLAY here; its output in ${XVFB_LOG})`);
+  const bused = "address" in bus ? ", a session bus of its own" : `, the session's bus (no bus of its own: ${bus.why})`;
+  console.log(`\n==== display: Xvfb on ${display.display}${managed}${bused} (no DISPLAY or WAYLAND_DISPLAY here; its output in ${XVFB_LOG})`);
 }
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || "";
 const KEEP = !!process.env.CYBERCTF_TEST_DESKTOP_KEEP;
