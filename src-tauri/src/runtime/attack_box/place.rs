@@ -13,7 +13,6 @@ use crate::error::{Error, Result};
 use crate::platform::AppDirs;
 use crate::platform::host::{Arch, Os};
 use crate::runtime::host::{self, Failed, Host};
-use crate::runtime::paths::local_runtime;
 use crate::runtime::providers::Provider;
 use crate::runtime::{Runtime, lab};
 
@@ -41,7 +40,8 @@ pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> 
     Ok(match host::locate(dirs, dir, id, runtime)? {
         None | Some(Host::Esxi { .. }) => None,
         Some(host) if !host.has_machines() => None,
-        Some(host) => host.target().map(|target| Placed { target, host, dir: dir.to_path_buf(), vm: local_runtime(dir, runtime) == Runtime::Vm }),
+        // Its machines are VMs wherever its target runs them (on Proxmox, whatever its catalogue form).
+        Some(host) => host.target().map(|target| Placed { target, host, dir: dir.to_path_buf(), vm: !matches!(target, Target::Docker | Target::CloudDocker) }),
     })
 }
 

@@ -1,7 +1,6 @@
 //! A start and an update of a run, tried once more after UTM's passing scripting refusal
 //! ([`errors::try_again_after_utm`]), from where the failed try left the run.
 
-use super::super::paths;
 use super::{Error, Inputs, LabRun, Result, errors, remote, view};
 
 impl LabRun {
@@ -53,8 +52,14 @@ impl LabRun {
         match op {
             Op::Up { inputs, provider } => self.up(inputs, Some(provider), log).await,
             // An update carries no launch's values, and neither does the start that replaces it;
-            // a run whose status names no provider is on the one its lab folder records.
-            Op::Update => self.up(Inputs::default(), provider.or_else(|| paths::local_vm(&self.dir)).as_deref(), log).await,
+            // a run whose status names no provider is on the one its record names.
+            Op::Update => {
+                let provider = match provider {
+                    Some(p) => Some(p),
+                    None => self.recorded_provider()?,
+                };
+                self.up(Inputs::default(), provider.as_deref(), log).await
+            }
         }
     }
 

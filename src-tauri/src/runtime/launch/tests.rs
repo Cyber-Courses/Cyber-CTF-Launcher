@@ -1,14 +1,14 @@
 use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{
-    Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, containers_run_on, downloads, local_run, low_memory_warning, parse_ipv4,
-    per_machine_runs_on, record_cloud_form,
+    Destination, Downloads, LabRef, LocalRun, Provider, Runtime, budget_verdict, cloud_form, containers_run_on, downloads, local_run, low_memory_warning,
+    parse_ipv4, per_machine_runs_on,
 };
 use super::{server, warn_if_low_memory};
 use crate::platform::exec::fake::Tools;
 use crate::platform::host::Arch;
 use crate::runtime::lab::emulated_arches;
-use crate::runtime::paths::{mark_parked, parked};
-use crate::runtime::{Park, start};
+use crate::runtime::recorded::Recorded;
+use crate::runtime::start;
 use crate::testing::test_app::TestApp;
 
 async fn start_here(t: &TestApp, id: &str, runtime: Runtime, provider: Option<Provider>, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
@@ -181,57 +181,34 @@ const BOTH_FORMS: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0
 
 #[tokio::test]
 async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_follows() {
-    use crate::runtime::lab::{Target, vagrant_dir};
-    use crate::runtime::paths::{PER_MACHINE_MARKER, local_runtime, per_machine_vm};
+    use crate::runtime::lab::vagrant_dir;
+    use crate::runtime::test_support::record_run;
     let t = TestApp::new();
     let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
     // QEMU with no emulator for the other CPU: the start stops at the emulator check, after the
-    // VM form's files are generated and the form is recorded, before any VM is created.
+    // VM form's files are generated, before any VM is created.
     let _tools = Tools::strict_rules(&[("qemu-system", None)]);
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Qemu), &[]).await;
     let err = r.unwrap_err().to_string();
     assert!(err.contains("qemu-system"), "{err}");
-    // The vagrant target's files (one VM per machine), no helper VM's, and the form marked.
+    // The vagrant target's files (one VM per machine), no helper VM's; nothing ran, so nothing
+    // is recorded: the lab still reads as the container lab it is.
     assert!(vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target was generated");
     assert!(!crate::runtime::lab::docker_vm_dir(&dir).exists(), "no helper VM");
-    assert!(per_machine_vm(&dir) && dir.join(PER_MACHINE_MARKER).is_file());
-    assert_eq!(crate::runtime::paths::local_vm(&dir), None, "no helper-VM mark");
-    // The webview keeps calling the lab a container lab: here it is a VM lab.
-    assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Vm);
+    assert_eq!(Recorded::of(&t.dirs(), "both").unwrap().form(Runtime::Docker), Runtime::Docker);
+    // Once the runner records its run in the vagrant target's folder, the webview keeps calling
+    // the lab a container lab: here it is a VM lab.
+    record_run(t.data(), "both", None, "vagrant", "ready");
+    assert_eq!(Recorded::of(&t.dirs(), "both").unwrap().form(Runtime::Docker), Runtime::Vm);
     assert_eq!(crate::runtime::runtime_here(&t.dirs(), "both", false), Some(Runtime::Vm));
-    assert_eq!(crate::runtime::primary_url(&dir, "both", Runtime::Docker).await, None, "a VM lab has no loopback URL");
-    // Stopping it as a container lab goes to its VM run (the vagrant target's project) and
-    // forgets the form. The Vagrantfile is removed first, so the runner has nothing to destroy
-    // and no real `vagrant` runs here.
-    std::fs::remove_file(vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile")).unwrap();
-    let mut log = Vec::new();
-    crate::runtime::stop_lab(&t.dirs(), "both", Runtime::Docker, std::future::ready(()), |l| log.push(l)).await.unwrap();
-    assert_eq!(log, ["Nothing to remove: the run has no files."], "the VM run, not a Docker one");
-    assert!(!per_machine_vm(&dir));
-    assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Docker);
-    let _ = Target::Vagrant;
-}
-
-#[tokio::test]
-async fn a_plain_container_start_forgets_an_earlier_per_machine_form() {
-    use crate::runtime::paths::{mark_per_machine_vm, per_machine_vm};
-    let t = TestApp::new();
-    // The same dual-form lab, started as containers this time. Its `setup.sh` is missing, so the
-    // start stops at the spec check (the lab's files are looked at before anything is
-    // generated or run), after the form was decided: no container is ever started here.
-    let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS)]);
-    mark_per_machine_vm(&dir, true).unwrap();
-    let tools = Tools::strict_rules(&[("docker network ls", crate::platform::exec::fake::ok(""))]);
-    let (r, _) = start_here(&t, "both", Runtime::Docker, None, &[]).await;
-    let err = r.unwrap_err().to_string();
-    assert!(err.contains("isoloom.yml has mistakes") && err.contains("setup.sh"), "{err}");
-    assert!(!per_machine_vm(&dir), "started as containers: the lab is a container lab again");
-    assert!(!tools.calls().iter().any(|c| c.starts_with("docker compose")), "{:?}", tools.calls());
+    assert_eq!(crate::runtime::primary_url(&t.dirs(), &dir, "both", Runtime::Docker).await, None, "a VM lab has no loopback URL");
+    // Taken down, it is a container lab again.
+    record_run(t.data(), "both", None, "vagrant", "absent");
+    assert_eq!(Recorded::of(&t.dirs(), "both").unwrap().form(Runtime::Docker), Runtime::Docker);
 }
 
 #[tokio::test]
 async fn one_vm_per_machine_is_refused_on_a_server() {
-    use crate::runtime::paths::per_machine_vm;
     let t = TestApp::new();
     let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
     t.host("pve1", "proxmox", serde_json::json!({}));
@@ -239,7 +216,7 @@ async fn one_vm_per_machine_is_refused_on_a_server() {
     let to = Destination { host: Some("pve1"), per_machine_vm: true, ..Destination::default() };
     let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
     assert_eq!(err, super::PER_MACHINE_NOT_ON_SERVERS);
-    assert!(tools.calls().is_empty() && !per_machine_vm(&dir), "{:?}", tools.calls());
+    assert!(tools.calls().is_empty() && Recorded::of(&t.dirs(), "both").unwrap().record().is_none(), "{:?}", tools.calls());
 }
 
 /// One VM per machine on UTM: Isoloom takes the lab there (Debian 12 has a UTM box), and the
@@ -278,22 +255,14 @@ fn one_vm_per_machine_runs_on_every_cloud_and_on_no_server() {
 }
 
 #[test]
-fn the_cloud_form_sets_the_runtime_and_records_it() {
-    use crate::runtime::paths::per_machine_vm;
-    let t = TestApp::new();
-    let dir = t.lab("both", &[("isoloom.yml", BOTH_FORMS)]);
+fn the_cloud_form_sets_the_runtime() {
     // A container lab picked as one VM per machine on a cloud: cloud-vm (the runtime that drives
-    // the module), and the form recorded so every later cloud dispatch follows it.
-    assert_eq!(record_cloud_form(&dir, Runtime::Docker, true).unwrap(), Runtime::Vm);
-    assert!(per_machine_vm(&dir));
-    // Its containers on one cloud VM: cloud-docker, and the mark cleared (a re-launch as the other
-    // form must not keep the old one).
-    assert_eq!(record_cloud_form(&dir, Runtime::Docker, false).unwrap(), Runtime::Docker);
-    assert!(!per_machine_vm(&dir));
-    // A VM lab is cloud-vm whatever the pick says; the mark is for container labs only, so it stays
-    // clear (status, stop and the rest read the catalogue runtime for it).
-    assert_eq!(record_cloud_form(&dir, Runtime::Vm, true).unwrap(), Runtime::Vm);
-    assert!(!per_machine_vm(&dir));
+    // the module); its containers on one cloud VM: cloud-docker. A VM lab is cloud-vm whatever
+    // the pick says.
+    assert_eq!(cloud_form(Runtime::Docker, true), Runtime::Vm);
+    assert_eq!(cloud_form(Runtime::Docker, false), Runtime::Docker);
+    assert_eq!(cloud_form(Runtime::Vm, true), Runtime::Vm);
+    assert_eq!(cloud_form(Runtime::Vm, false), Runtime::Vm);
 }
 
 #[test]
@@ -343,28 +312,23 @@ async fn a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing() {
     // Regression: starting a lab here (or on another host) dropped the marker naming the host
     // its run was still up on, so Stop, the expiry reaper and removing that host all lost it,
     // and a cloud lab kept billing. Only the launcher's own Terraform states were asked, never
-    // the runner's record. Refused before anything ran: the host marker (the way to stop it
-    // there) and the parked mark stay, no tool is touched, and the error is a refusal, not a
-    // failed deploy.
+    // the runner's record. Refused before anything ran: the record (the way to stop it there)
+    // stays, no tool is touched, and the error is a refusal, not a failed deploy.
     let t = TestApp::new();
-    let dir = t.lab("web", &[("isoloom.yml", CONTAINERS)]);
+    t.lab("web", &[("isoloom.yml", CONTAINERS)]);
     t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
-    server::mark_lab(&dir, Some("aws1")).unwrap();
-    mark_parked(&dir, Some(Park::Pause)).unwrap();
     crate::runtime::test_support::record_run(t.data(), "web", Some("aws1"), "cloud-docker", "ready");
     let tools = Tools::strict_rules(&[]);
     let (r, log) = start_here(&t, "web", Runtime::Docker, None, &[]).await;
     let err = r.unwrap_err();
     assert!(err.is_refusal(), "{err}");
     assert_eq!(err.to_string(), "This lab is still running on Host aws1. Stop it there, then try again.");
-    assert_eq!(server::marked_host(&dir).as_deref(), Some("aws1"));
-    assert_eq!(parked(&dir), Some(Park::Pause));
+    assert_eq!(Recorded::of(&t.dirs(), "web").unwrap().host(), Some("aws1"));
     assert!(tools.calls().is_empty() && log.is_empty(), "{:?} {log:?}", tools.calls());
     // The same for another host; its own host again is not "elsewhere".
     let (r, _) = start_on(&t, "web", Runtime::Docker, "pve1").await;
     assert!(r.unwrap_err().is_refusal());
     // Up here (VMs the runner started on this machine): a start on a server is refused too.
-    server::mark_lab(&dir, None).unwrap();
     crate::runtime::test_support::record_run(t.data(), "web", None, "vagrant", "ready");
     let (r, _) = start_on(&t, "web", Runtime::Docker, "aws1").await;
     assert_eq!(r.unwrap_err().code(), crate::error::Code::LabRunningHere);

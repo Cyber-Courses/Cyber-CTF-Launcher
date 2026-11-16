@@ -65,11 +65,6 @@ pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<Removal> {
     if let Some(up) = runtime::status::still_up(dirs, id)? {
         return Err(runtime::status::still_running(&up));
     }
-    // Parked by the launcher with the runner's record already gone (an older version's): its
-    // machines are still there.
-    if paths::parked(&dir).is_some() {
-        return Err(Error::coded(Code::LabRunningHere));
-    }
     let (base, owned) = (dirs.data()?.to_path_buf(), id.to_owned());
     let mut removal = blocking(move || remove_files(&base, &owned, &[], rename_retrying, delete)).await?;
     // The runner's record of its run, through the runner's store: its files went above.

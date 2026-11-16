@@ -309,7 +309,7 @@ pub(crate) async fn run(dirs: &AppDirs, launch: Launch, to: runtime::Destination
     let lab = runtime::LabRef { dir: &dir, id: &launch.lab_id, runtime: launch.runtime };
     start_recorded(dirs, lab, to, &env, log).await?;
     // Where the lab's target is reachable on this machine, for the website to open.
-    Ok(runtime::primary_url(&dir, &launch.lab_id, launch.runtime).await)
+    Ok(runtime::primary_url(dirs, &dir, &launch.lab_id, launch.runtime).await)
 }
 
 /// Stops lab `id` wherever it runs ([`runtime::stop_lab`]), first ending the deploy still running
@@ -484,7 +484,7 @@ pub(crate) async fn run_local(dirs: &AppDirs, lab_id: &str, src: &Path, log: imp
     let dir = install_local(dirs, lab_id, src, &log).await?;
     let lab = runtime::LabRef { dir: &dir, id: lab_id, runtime: Runtime::Docker };
     start_recorded(dirs, lab, runtime::Destination::default(), &[], log).await?;
-    Ok(runtime::primary_url(&dir, lab_id, Runtime::Docker).await)
+    Ok(runtime::primary_url(dirs, &dir, lab_id, Runtime::Docker).await)
 }
 
 /// Starts an installed lab ([`runtime::start_locked`]), recording as the app's what the start
@@ -587,16 +587,11 @@ mod tests {
     }
 
     #[test]
-    fn staging_carries_the_lab_its_commit_and_its_instance_but_no_stale_place() {
+    fn staging_carries_the_lab_its_commit_and_its_instance() {
         let labs = crate::testing::temp_dir("stage");
         let dir = labs.join("invoice");
         let sha = "0123456789abcdef0123456789abcdef01234567";
         std::fs::create_dir_all(&dir).unwrap();
-        // Regression: where the old copy ran was carried over, though nothing of it is up by now
-        // (an install refuses a lab still up and takes a parked one down first), so a stale
-        // marker sent the new copy's status and stop to a host it never ran on.
-        std::fs::write(dir.join(runtime::server::HOST_MARKER), "pve1").unwrap();
-        std::fs::write(dir.join(runtime::LOCAL_VM_MARKER), "virtualbox").unwrap();
         std::fs::write(dir.join(runtime::lab::INSTANCE_MARKER), "3").unwrap();
         std::fs::write(dir.join("old.txt"), "old").unwrap();
         // Nothing is installed at that commit yet.
@@ -605,8 +600,6 @@ mod tests {
         let staging = stage(&labs, &dir, &tarball(&[("lab-abc/isoloom.yml", b"name: invoice")]), "invoice", sha).unwrap();
         assert_eq!(staging, labs.join(".invoice.staging"));
         assert_eq!(std::fs::read_to_string(staging.join("isoloom.yml")).unwrap(), "name: invoice");
-        assert!(!staging.join(runtime::server::HOST_MARKER).exists());
-        assert!(!staging.join(runtime::LOCAL_VM_MARKER).exists());
         assert_eq!(std::fs::read_to_string(staging.join(runtime::lab::INSTANCE_MARKER)).unwrap(), "3", "the installed lab's room stays");
 
         swap_in(&staging, &dir).unwrap();
@@ -722,7 +715,7 @@ mod tests {
         let gz = tarball(&[("lab-abc/isoloom.yml", SPEC.as_bytes())]);
         let _tools = crate::platform::exec::fake::Tools::rules(&[]);
         let dir = install_with(&t.dirs(), invoice("invoice", SHA), &|_| {}, async || Ok(gz.clone())).await.unwrap();
-        crate::runtime::paths::mark_parked(&dir, Some(runtime::Park::Shutdown)).unwrap();
+        crate::runtime::test_support::record_parked(t.data(), "invoice", "docker", "shutdown");
         let compose = runtime::lab::compose_file(&dir);
         std::fs::create_dir_all(compose.parent().unwrap()).unwrap();
         std::fs::write(&compose, "not a compose file").unwrap();

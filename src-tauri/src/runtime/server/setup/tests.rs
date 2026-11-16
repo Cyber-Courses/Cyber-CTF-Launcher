@@ -2,7 +2,6 @@
 use std::path::Path;
 
 use super::*;
-use crate::runtime::server::HOST_MARKER;
 use crate::runtime::server::hosts::tests::{host, store};
 
 /// A Proxmox form signing in with the SSH key at `key`. Its tests run over the dev secret store, a
@@ -141,8 +140,8 @@ fn an_account_with_labs_on_it_keeps_its_place_but_not_its_credentials() {
     // instance kept billing in eu-west-3.
     let t = crate::testing::test_app::TestApp::new();
     let saved = save(&t.dirs(), azure(None, "westeurope", SUBSCRIPTION, "Azure")).unwrap();
-    let lab = t.lab("placed", &[]);
-    std::fs::write(lab.join(HOST_MARKER), &saved.id).unwrap();
+    t.lab("placed", &[]);
+    crate::runtime::test_support::record_run(t.data(), "placed", Some(&saved.id), "cloud-docker/azure", "ready");
     let err = save(&t.dirs(), azure(Some(&saved.id), "eastus", SUBSCRIPTION, "Azure")).unwrap_err().to_string();
     assert_eq!(err, "1 lab is still on this account: stop it before changing its address or region.");
     let err = save(&t.dirs(), azure(Some(&saved.id), "westeurope", "11111111-0000-0000-0000-000000000000", "Azure")).unwrap_err().to_string();
@@ -151,7 +150,7 @@ fn an_account_with_labs_on_it_keeps_its_place_but_not_its_credentials() {
     // Its name (and credentials, size, auto-stop) can change.
     assert_eq!(save(&t.dirs(), azure(Some(&saved.id), "westeurope", SUBSCRIPTION, "Renamed")).unwrap().name, "Renamed");
     // Stopped: it can move.
-    std::fs::remove_file(lab.join(HOST_MARKER)).unwrap();
+    crate::runtime::test_support::record_run(t.data(), "placed", Some(&saved.id), "cloud-docker/azure", "absent");
     assert_eq!(save(&t.dirs(), azure(Some(&saved.id), "eastus", SUBSCRIPTION, "Renamed")).unwrap().host, "eastus");
 }
 
@@ -196,7 +195,7 @@ fn a_deployment_left_by_an_uninstalled_lab_keeps_its_host() {
     let err = remove(&t.dirs(), &host).unwrap_err().to_string();
     assert_eq!(err, "1 lab still running on this host. Stop it before removing the host.");
     assert_eq!(load(&t.dirs()).unwrap().hosts.len(), 1);
-    assert!(crate::runtime::server::hosts::running_by_host(&t.dirs()).is_empty(), "no installed lab is marked as running there");
+    assert!(crate::runtime::server::hosts::running_by_host(&t.dirs()).is_empty(), "no installed lab runs there");
     // Destroyed: free to remove.
     crate::runtime::test_support::record_run(t.data(), "web", Some("aws1"), "cloud-vm", "absent");
     remove(&t.dirs(), &host).unwrap();
@@ -209,9 +208,9 @@ fn removing_a_host_that_is_not_saved_changes_nothing() {
     t.host("az1", "azure", serde_json::json!({}));
     remove(&t.dirs(), "nope").unwrap();
     assert_eq!(load(&t.dirs()).unwrap().hosts.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(), ["az1"]);
-    // A marker of a lab on a host that was never saved blocks nothing else.
-    let lab = t.lab("web", &[]);
-    std::fs::write(lab.join(HOST_MARKER), "nope").unwrap();
+    // A lab's run on a host that was never saved blocks nothing else.
+    t.lab("web", &[]);
+    crate::runtime::test_support::record_run(t.data(), "web", Some("nope"), "proxmox", "ready");
     assert_eq!(crate::runtime::server::hosts::running_by_host(&t.dirs()).get("nope"), Some(&1));
     remove(&t.dirs(), "az1").unwrap();
     assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);

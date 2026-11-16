@@ -5,7 +5,6 @@ use std::path::Path;
 
 use crate::platform::AppDirs;
 
-use super::HOST_MARKER;
 use super::kind::kind;
 use super::profile::{DEFAULT_AUTO_STOP_HOURS, HostProfile};
 use super::secrets::{get_secret, host_secret};
@@ -195,21 +194,6 @@ fn default_of(store: Store) -> Option<(String, Provider)> {
     store.hosts.into_iter().find(|h| h.id == id && !h.provider.is_cloud()).map(|h| (id, h.provider))
 }
 
-// --- labs tied to a host ----------------------------------------------------
-
-/// Records (or clears) which server or cloud account a lab directory runs on, whatever its form
-/// (VMs, containers in a VM there, cloud services). A marker that can't be cleared is an error:
-/// left behind, it would send the lab's status and stop to that host, and keep the host from
-/// being removed.
-pub fn mark_lab(dir: &Path, host: Option<&str>) -> Result<()> {
-    crate::runtime::paths::set_marker(dir, HOST_MARKER, host)
-}
-
-/// The host id a lab directory is marked as running on.
-pub fn marked_host(dir: &Path) -> Option<String> {
-    std::fs::read_to_string(dir.join(HOST_MARKER)).ok().map(|id| id.trim().to_string())
-}
-
 /// The node login SSH goes through first to reach saved host `id`'s labs (a Proxmox node whose lab
 /// bridge is internal to it), the launcher's key (`identity`, `public`) authorized there first
 /// unless the host signs in with an API token. None for another kind of host, or a bridge the
@@ -241,11 +225,6 @@ pub async fn discovered_node(dirs: &AppDirs, id: &str) -> Result<Option<String>>
     let session = proxmox::sign_in(&host, &secret).await.map_err(|e| e.into_error("Couldn't sign in to the Proxmox server to find its node"))?;
     let node = session.node(&host).await.map_err(|e| crate::error::Error::Invalid(format!("Couldn't list the Proxmox server's nodes: {e}")))?;
     Ok(Some(node))
-}
-
-/// The connection a VM lab directory was started with, if it runs on a server host.
-pub fn lab_connection(dirs: &AppDirs, dir: &Path) -> Result<Option<Connection>> {
-    marked_host(dir).map(|id| connection(dirs, &id)).transpose()
 }
 
 #[cfg(test)]
@@ -325,30 +304,6 @@ mod tests {
     }
 
     #[test]
-    fn mark_lab_writes_and_clears_the_marker() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-mark-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(&dir).unwrap();
-        mark_lab(&dir, Some("pve1")).unwrap();
-        assert_eq!(marked_host(&dir).as_deref(), Some("pve1"));
-        mark_lab(&dir, None).unwrap();
-        assert_eq!(marked_host(&dir), None);
-        // Clearing an absent marker is fine.
-        mark_lab(&dir, None).unwrap();
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn a_host_marker_that_cannot_be_cleared_is_an_error() {
-        // Regression: the failed removal was dropped and the marker reported cleared, so a
-        // stopped lab's status and stop still went to the old host.
-        let dir = std::env::temp_dir().join(format!("cyberctf-mark-{}", rand::random::<u32>()));
-        // A directory where the marker would be: remove_file refuses it.
-        std::fs::create_dir_all(dir.join(HOST_MARKER)).unwrap();
-        assert!(mark_lab(&dir, None).is_err());
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
     fn esxi_env_contract() {
         let env = connection_env(&full_profile(Provider::VmwareEsxi), "s3cret");
         assert_eq!(get(&env, "CYBERCTF_REMOTE_PROVIDER"), Some("vmware_esxi"));
@@ -406,20 +361,6 @@ mod tests {
         let env = connection_env(&profile(Provider::Aws), "x");
         assert_eq!(env.len(), 2);
         assert_eq!(get(&env, "CYBERCTF_REMOTE_PROVIDER"), Some("aws"));
-    }
-
-    #[test]
-    fn marked_host_reads_the_trimmed_marker() {
-        let dir = std::env::temp_dir().join(format!("cyberctf-marker-{}", rand::random::<u32>()));
-        std::fs::create_dir_all(&dir).unwrap();
-        assert_eq!(marked_host(&dir), None);
-        mark_lab(&dir, Some("ab12")).unwrap();
-        assert_eq!(marked_host(&dir).as_deref(), Some("ab12"));
-        std::fs::write(dir.join(HOST_MARKER), "ab12\n").unwrap();
-        assert_eq!(marked_host(&dir).as_deref(), Some("ab12"));
-        mark_lab(&dir, None).unwrap();
-        assert_eq!(marked_host(&dir), None);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

@@ -188,7 +188,7 @@ pub(super) async fn list(ctx: &Context) -> Answer {
             "name": spec_name(&dir),
             "runtime": declared_runtime(&dir),
             "imported": imported.contains(&id),
-            "host": crate::runtime::server::marked_host(&dir).filter(|h| !h.is_empty()),
+            "host": crate::runtime::recorded::Recorded::of(&ctx.dirs, &id).ok().and_then(|r| r.host().map(str::to_owned)),
             "running": running.contains(&id),
             "busy": busy.contains(&id),
         }));

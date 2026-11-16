@@ -179,7 +179,6 @@ async fn the_attack_box_is_a_machine_of_an_aws_lab() {
     let dir = t.lab(&id, &[]);
     lab::copy_tree(Path::new(&src), &dir).unwrap_or_else(|e| panic!("copy {src} to {}: {e}", dir.display()));
     let name = lab::load(&dir).unwrap_or_else(|e| panic!("the lab at {src} reads: {e}")).name;
-    crate::runtime::server::mark_lab(&dir, Some(&host)).unwrap_or_else(|e| panic!("the lab is marked as the AWS account's: {e}"));
     let conn = crate::runtime::server::connection(&dirs, &host).unwrap_or_else(|e| panic!("the AWS account's connection reads: {e}"));
     let mut f = Vec::new();
     scenario(

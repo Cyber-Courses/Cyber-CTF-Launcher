@@ -292,8 +292,7 @@ async fn a_vm_lab_is_checked_parked_resumed_reprovisioned_and_stopped() {
     assert!(f.fake.calls().iter().any(booted), "the halted controller is booted for its checks");
     run.park(Park::Pause, &mut |_| {}).await.unwrap();
     assert_eq!(f.state("web"), "saved", "paused: its state saved");
-    paths::mark_parked(&f.home.dir, Some(Park::Pause)).unwrap();
-    assert_eq!(run.status().await.unwrap().parked, Some(Park::Pause));
+    assert_eq!(run.status().await.unwrap().parked, Some(Park::Pause), "as the runner recorded it");
     run.resume(&mut |_| {}).await.unwrap();
     assert_eq!(f.state("web"), "running");
     run.park(Park::Shutdown, &mut |_| {}).await.unwrap();

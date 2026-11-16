@@ -321,7 +321,7 @@ areas:
         tests:
           unit:
             - src-tauri/src/labs.rs > an_archive_download_is_limited_and_says_why_it_failed
-            - src-tauri/src/labs.rs > staging_carries_the_lab_its_commit_and_its_instance_but_no_stale_place
+            - src-tauri/src/labs.rs > staging_carries_the_lab_its_commit_and_its_instance
             - src-tauri/src/labs.rs > a_launch_waits_for_the_lab_lock_before_installing_anything
             - src-tauri/src/labs/archive/tests.rs
             - src-tauri/src/labs/archive/proptests.rs
@@ -581,11 +581,10 @@ areas:
           unit:
             - src-tauri/src/runtime/launch/tests.rs > a_container_lab_picked_as_one_vm_per_machine_runs_as_a_vm_lab
             - src-tauri/src/runtime/launch/tests.rs > a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_follows
-            - src-tauri/src/runtime/launch/tests.rs > a_plain_container_start_forgets_an_earlier_per_machine_form
             - src-tauri/src/runtime/launch/tests.rs > one_vm_per_machine_is_refused_on_a_server
             - src-tauri/src/runtime/launch/tests.rs > one_vm_per_machine_runs_on_every_cloud_and_on_no_server
             - src-tauri/src/runtime/launch/tests.rs > one_vm_per_machine_on_utm_opens_utm_first
-            - src-tauri/src/runtime/paths.rs > a_container_lab_started_as_vms_runs_as_a_vm_lab_here
+            - src-tauri/src/runtime/recorded.rs > the_form_and_park_mode_are_the_records_and_a_run_gone_says_nothing
             - src/features/labs/use-lab-actions.test.tsx > runs a container lab with VM recipes as one VM per machine on the chosen hypervisor
           desktop:
             - lab-form-per-machine
@@ -612,7 +611,7 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/launch/tests.rs > the_cloud_form_sets_the_runtime_and_records_it
+            - src-tauri/src/runtime/launch/tests.rs > the_cloud_form_sets_the_runtime
             - src-tauri/src/runtime/launch/tests.rs > the_public_ip_is_the_one_two_resolvers_agree_on
             - src-tauri/src/runtime/launch/tests.rs > an_aws_budget_blocks_only_when_it_is_known_to_be_over
             - src-tauri/src/runtime/isothrum/cloud_runs/tests.rs > a_change_on_aws_waits_for_a_signed_in_account
@@ -668,7 +667,7 @@ areas:
             - src-tauri/src/runtime/cloud_services/values.rs > a_value_the_module_doesnt_take_one_the_launch_lacks_or_one_it_needs_is_refused_by_name
             - src-tauri/src/runtime/cloud_services.rs > a_start_missing_a_value_or_on_another_clouds_account_is_refused_before_anything_runs
             - src-tauri/src/runtime/isothrum/own_module.rs > a_cloud_services_lab_runs_its_module_with_its_values_and_reads_its_outputs_back
-            - src-tauri/src/runtime/lifecycle/tests.rs > stopping_a_cloud_lab_that_runs_nowhere_clears_its_marks_without_running_anything
+            - src-tauri/src/runtime/lifecycle/tests.rs > stopping_a_cloud_lab_that_runs_nowhere_runs_nothing
             - src/features/labs/cloud-labs.test.ts
             - src/features/labs/lab-detail/lab-detail.cloud.test.tsx > shows what a running one exposes, its secrets masked until asked
           web:
@@ -812,7 +811,7 @@ areas:
             - src-tauri/src/labs.rs > a_new_lab_version_is_installed_unless_the_old_one_still_runs
             - src-tauri/src/labs.rs > re_importing_a_lab_that_is_up_here_or_elsewhere_is_refused
             - src-tauri/src/labs.rs > a_new_lab_version_is_refused_while_a_parked_copy_couldnt_be_taken_down
-            - src-tauri/src/runtime/lifecycle/tests.rs > a_parked_lab_is_taken_down_through_the_runner_before_its_folder_is_replaced
+            - src-tauri/src/runtime/lifecycle/tests.rs > a_parked_lab_whose_files_cant_be_made_again_is_left_recorded_and_says_why
             - src-tauri/src/runtime/launch/tests.rs > a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing
             - src/features/labs/imported-labs.test.tsx > offers to import the folder again, not a catalogue start, once it is stopped
           desktop:
@@ -2866,7 +2865,7 @@ areas:
           unit:
             - src-tauri/src/commands/server.rs > hosts_are_saved_listed_tested_and_removed_through_the_commands
             - src-tauri/src/runtime/server/store.rs > an_unreadable_store_is_an_error_never_no_such_host
-            - src-tauri/src/runtime/server/hosts/tests.rs > running_labs_count_per_host_and_skip_blank_markers
+            - src-tauri/src/runtime/server/hosts/tests.rs > what_is_left_on_a_host_keeps_it_from_being_removed
             - src/features/servers/servers-model.test.ts > summarises the hosts
             - src/features/servers/servers-screen.test.tsx > lists only the hypervisors, tests and probes each once
             - src/features/servers/use-server-list.test.tsx

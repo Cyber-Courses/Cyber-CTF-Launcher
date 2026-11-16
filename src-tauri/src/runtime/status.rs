@@ -7,7 +7,8 @@ use std::path::Path;
 use crate::platform::AppDirs;
 
 use super::host::{self, Host};
-use super::paths::{lab_dir, local_runtime, local_vm, parked, per_machine_vm};
+use super::paths::lab_dir;
+use super::recorded::Recorded;
 use super::{LabStatus, Login, Place, Runtime, attack_box, docker, isothrum, server};
 use crate::error::Result;
 
@@ -28,11 +29,12 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     let status = attack_box::set_apart(status, dir)?;
     // The sign-in each service ships with, as the lab's spec declares it beside the port.
     let status = with_logins(status, dir);
-    // Here, parked = the launcher parked it and it is still down.
-    let status = if here { with_parked(status, parked(dir)) } else { status };
+    // Here, parked = the run is recorded parked and it is still down.
+    let recorded = Recorded::of(dirs, id)?;
+    let status = if here { with_parked(status, recorded.parked()) } else { status };
     // Whether this container lab runs as one VM per machine (its VM recipes), locally or as
     // cloud-vm: the UI reads it to name the form.
-    let per_machine = runtime == Runtime::Docker && per_machine_vm(dir);
+    let per_machine = runtime == Runtime::Docker && recorded.per_machine();
     // A deployment the auto-stop couldn't destroy, wherever it is: said on the lab's page.
     let reap_error = super::reaper::last_failure(dirs, id);
     Ok(LabStatus { per_machine, reap_error, controls, ..status })
@@ -58,8 +60,8 @@ fn fill_logins(s: &mut LabStatus, spec: &super::lab::Spec) {
     }
 }
 
-/// Parked = the launcher parked it (`parked`) and it is still down; a lab someone started again
-/// by hand (or that is up for any reason) is simply running.
+/// Parked = its run is recorded parked (`parked`) and it is still down; a lab someone started
+/// again by hand (or that is up for any reason) is simply running.
 fn with_parked(s: LabStatus, parked: Option<super::Park>) -> LabStatus {
     LabStatus { parked: parked.filter(|_| !s.running), ..s }
 }
@@ -129,14 +131,14 @@ pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
 
 /// Refuses to replace lab `id`'s folder (`dir`), with a new version or a re-import, while
 /// something of it is up ([`still_up`]): the run's generated files and the files it bind-mounts or
-/// provisions from are in that folder. A parked copy is no reason: it is taken down before the
-/// swap (`clear_parked`).
+/// provisions from are in that folder. A copy parked by a park is no reason: it is taken down
+/// before the swap (`clear_parked`).
 pub(crate) fn refuse_replace(dirs: &AppDirs, dir: &Path, id: &str) -> Result<()> {
     if !dir.exists() {
         return Ok(());
     }
     match still_up(dirs, id)? {
-        Some(up) if up.parked && parked(dir).is_some() => Ok(()),
+        Some(up) if up.parked && Recorded::of(dirs, id)?.parked().is_some() => Ok(()),
         Some(up) => Err(still_running(&up)),
         None => Ok(()),
     }
@@ -189,21 +191,19 @@ pub(crate) fn still_running(up: &Up) -> crate::error::Error {
     })
 }
 
-/// Whether lab `id` is up somewhere before a start: parked here, or up where its run is
+/// Whether lab `id` is up somewhere before a start: up where its run is, parked included
 /// ([`still_up`]). What a failed start finds already up was not brought up by it, and must not
-/// be torn down with what it did bring up. When the runner's record can't be read, a lab marked
-/// as running on a host counts as up there. False when it isn't installed.
+/// be torn down with what it did bring up. When the runner's record can't be read, it counts as
+/// up: nothing is torn down on a guess. False when it isn't installed.
 pub fn lab_present(dirs: &AppDirs, id: &str) -> bool {
-    let Ok(dir) = lab_dir(dirs, id) else { return false };
-    if parked(&dir).is_some() {
-        return true;
+    if lab_dir(dirs, id).is_err() {
+        return false;
     }
     match still_up(dirs, id) {
         Ok(up) => up.is_some(),
         Err(e) => {
-            let marked = server::marked_host(&dir).filter(|h| !h.is_empty());
-            log::warn!("couldn't tell whether {id} is up ({e}); taken for {} by its host marker", if marked.is_some() { "up" } else { "down" });
-            marked.is_some()
+            log::warn!("couldn't tell whether {id} is up ({e}); taken for up");
+            true
         }
     }
 }
@@ -215,9 +215,10 @@ pub fn lab_installed(dirs: &AppDirs, id: &str) -> bool {
 
 /// Where a running lab is reachable on this machine (its first published port). None for
 /// VM labs (their address is discovered differently) or when nothing is published.
-pub async fn primary_url(dir: &Path, id: &str, runtime: Runtime) -> Option<String> {
-    match local_runtime(dir, runtime) {
-        Runtime::Docker if !dir.join(server::HOST_MARKER).exists() && local_vm(dir).is_none() => docker::primary_url(dir, id).await,
+pub async fn primary_url(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Option<String> {
+    let recorded = Recorded::of(dirs, id).ok()?;
+    match recorded.form(runtime) {
+        Runtime::Docker if recorded.host().is_none() && !recorded.helper_vm() => docker::primary_url(dir, id).await,
         _ => None,
     }
 }

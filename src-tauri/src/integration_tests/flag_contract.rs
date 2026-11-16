@@ -30,7 +30,7 @@ use sha2::{Digest, Sha256};
 use super::support::lab::{Run, install_copy, leftovers};
 use super::support::{Checks, check, scenario};
 use crate::platform::exec::run;
-use crate::runtime::{docker, paths};
+use crate::runtime::docker;
 use services::{Backend, Expect, Submission};
 
 /// A container lab taking three of the player's values as files: the flags of objectives `main`
@@ -266,7 +266,7 @@ async fn exercise(r: &Run, kind: Kind, launch: &Launch, p: &mut Played) {
     let parked = r.park(&mut |l| p.log.push(l)).await;
     check(parked.is_ok(), format!("the lab parks ({:?})", parked.err()), &mut p.failures);
     let resumed = r.resume(&mut |l| p.log.push(l)).await;
-    check(resumed.is_ok() && paths::parked(&r.dir).is_none(), format!("the lab resumes ({:?})", resumed.err()), &mut p.failures);
+    check(resumed.is_ok(), format!("the lab resumes ({:?})", resumed.err()), &mut p.failures);
     let after = found(r, kind).await;
     check(after == before, "after a park and resume, the lab holds the same values".into(), &mut p.failures);
 }

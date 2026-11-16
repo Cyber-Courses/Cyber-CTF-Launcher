@@ -28,6 +28,7 @@ pub(crate) mod port;
 pub mod providers;
 pub(crate) mod proxmox;
 mod reaper;
+pub(crate) mod recorded;
 pub mod selftest_report;
 pub mod server;
 pub mod server_selftest;
@@ -48,8 +49,6 @@ pub(crate) use launch::start;
 pub(crate) use launch::{Destination, Downloads, Placement, check_destination, downloads, policy_allows, start_locked};
 pub use lifecycle::{clear_parked, park_lab, provision_lab, resume_lab, runtime_here, stop_lab};
 pub use model::{Console, Control, Interface, LabStatus, Login, Machine, Network, Park, Place, Port, Preview, Service};
-#[cfg(test)]
-pub use paths::LOCAL_VM_MARKER;
 pub(crate) use paths::deploys_dir;
 pub(crate) use paths::is_lab_id;
 pub use paths::validate_id;
@@ -154,6 +153,16 @@ pub(crate) mod test_support {
     /// `cyberctf-<lab>`, of `target`, on the place labelled `host` (none: this machine), left in
     /// `state` (`ready`, `parked`, `failed`, `absent`, …) by its last operation.
     pub(crate) fn record_run(home: &std::path::Path, lab: &str, host: Option<&str>, target: &str, state: &str) {
+        save_record(home, lab, host, target, &serde_json::json!({ "state": state }));
+    }
+
+    /// [`record_run`] of a run on this machine parked by a park in `mode` (`pause`, `shutdown`).
+    pub(crate) fn record_parked(home: &std::path::Path, lab: &str, target: &str, mode: &str) {
+        save_record(home, lab, None, target, &serde_json::json!({ "state": "parked", "parked": mode }));
+    }
+
+    /// [`record_run`] with the record's `state` (and `parked`) from `standing`.
+    fn save_record(home: &std::path::Path, lab: &str, host: Option<&str>, target: &str, standing: &serde_json::Value) {
         let name = format!("cyberctf-{lab}");
         let driver = if target.starts_with("cloud") || target == "proxmox" {
             "terraform"
@@ -162,10 +171,13 @@ pub(crate) mod test_support {
         } else {
             "vagrant"
         };
-        let record = serde_json::json!({
+        let mut record = serde_json::json!({
             "version": 0, "name": name, "project": home.join("labs").join(lab).join(".isoloom").join(target),
-            "format": driver, "host_label": host, "state": state
+            "format": driver, "host_label": host
         });
+        if let (Some(record), Some(standing)) = (record.as_object_mut(), standing.as_object()) {
+            record.extend(standing.clone());
+        }
         crate::testing::runner::save_run(&crate::runtime::paths::runner_home_in(home), &record);
     }
 

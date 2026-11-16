@@ -20,7 +20,7 @@ use std::path::Path;
 use super::support::lab::{Run, leftovers};
 use super::support::{check, log, scenario};
 use crate::platform::exec::run;
-use crate::runtime::{Place, docker, paths};
+use crate::runtime::{Place, docker};
 
 /// The lab up: running, in containers here, every non-infra machine up.
 async fn ready(r: &Run, f: &mut Vec<String>) {
@@ -61,7 +61,7 @@ async fn park_and_resume(r: &Run, f: &mut Vec<String>) {
     let s = r.status().await;
     check(s.as_ref().is_ok_and(|s| !s.running && s.parked.is_some()), format!("{}: parked, it reads as parked", r.id), f);
     let resumed = r.resume(&mut log(&r.id)).await;
-    check(resumed.is_ok() && paths::parked(&r.dir).is_none(), format!("{}: it resumes ({:?})", r.id, resumed.err()), f);
+    check(resumed.is_ok(), format!("{}: it resumes ({:?})", r.id, resumed.err()), f);
     ready(r, f).await;
 }
 

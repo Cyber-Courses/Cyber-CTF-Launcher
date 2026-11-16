@@ -8,7 +8,7 @@ use crate::platform::AppDirs;
 #[cfg(feature = "cloud-services")]
 use super::cloud_services;
 pub(crate) use super::isothrum::Inputs;
-use super::paths::{mark_engine, mark_local_vm, mark_parked, mark_per_machine_vm, runner_home};
+use super::paths::{mark_engine, runner_home};
 use super::providers::Provider;
 use super::{LabRef, Runtime, docker, isothrum, lab, server};
 use crate::error::{Code, Error, Result};
@@ -30,7 +30,7 @@ pub(super) use on_host::server_place;
 #[cfg(test)]
 pub(crate) use on_host::{CloudStart, start_cloud_run};
 #[cfg(test)]
-use on_host::{agreed_ip, budget_verdict, is_public_ipv4, parse_ipv4, public_ip_from, record_cloud_form};
+use on_host::{agreed_ip, budget_verdict, cloud_form, is_public_ipv4, parse_ipv4, public_ip_from};
 use on_host::{containers_run_on, per_machine_runs_on, start_on_server};
 
 /// Where a lab is started: on this machine (with a local `provider`, and `per_machine_vm`
@@ -182,12 +182,9 @@ async fn start_here(
     inputs: Inputs<'_>,
     log: &mut impl FnMut(String),
 ) -> Result<()> {
-    let LabRef { dir, id, runtime } = lab;
-    server::mark_lab(dir, None)?;
-    // The form is remembered with the lab before anything runs: every later operation on it
-    // (status, stop, park) follows the form it was started in, whatever the catalogue calls it.
-    // A container lab started as one VM per machine is the one case where the two differ.
-    mark_per_machine_vm(dir, runtime == Runtime::Docker && matches!(run, LocalRun::Vm(_)))?;
+    let LabRef { dir, id, .. } = lab;
+    // The run's record keeps the form it was started in (its project) and where (no host): every
+    // later operation on it (status, stop, park) follows it, whatever the catalogue calls it.
     // The container engine the player chose for a plain container lab (a Docker context other than
     // the current one), so every later docker/compose call for it — launcher and runner — goes to
     // that engine. Only containers on Docker here (not a VM form); nothing recorded = current context.
@@ -208,10 +205,7 @@ async fn start_here(
 pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, inputs: Inputs<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     recheck_instance(dir, id, log).await?;
     lab::prepare(dir, lab::Target::Docker)?;
-    // A helper VM an earlier version ran the lab in was stopped with it: its mark goes too.
-    mark_local_vm(dir, None)?;
-    isothrum::LabRun::docker(home, dir, id)?.up(inputs, None, log).await?;
-    mark_parked(dir, None)
+    isothrum::LabRun::docker(home, dir, id)?.up(inputs, None, log).await
 }
 
 /// What a VM lab on this machine starts with: its hypervisor, and the launch's values.
@@ -232,8 +226,6 @@ pub(crate) struct VmStart<'a> {
 pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmStart<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     let VmStart { provider, inputs } = start;
     let prepared = lab::prepare(dir, lab::Target::Vagrant)?;
-    // A container lab's VM form leaves no helper-VM mark behind (an earlier version's).
-    mark_local_vm(dir, None)?;
     check_provider(&prepared.lab, lab::Target::Vagrant, provider)?;
     warn_if_low_memory(&prepared.spec, log);
     if provider == Provider::Qemu {
@@ -242,8 +234,7 @@ pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     if provider == Provider::Utm {
         check_utm(log).await?;
     }
-    isothrum::LabRun::vm(home, dir, id)?.start(inputs, provider.id(), log).await?;
-    mark_parked(dir, None)
+    isothrum::LabRun::vm(home, dir, id)?.start(inputs, provider.id(), log).await
 }
 
 /// Why the launcher refuses to start the lab installed in `dir` as `target` (Isoloom's `vagrant`)

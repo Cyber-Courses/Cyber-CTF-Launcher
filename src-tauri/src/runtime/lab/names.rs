@@ -51,6 +51,16 @@ pub fn docker_vm_dir(dir: &Path) -> PathBuf {
 /// The folder name of [`docker_vm_dir`], by which a run's project is known as one in a helper VM.
 pub const DOCKER_VM_FOLDER: &str = "docker-vm";
 
+/// The folder of Isoloom's target `project` is generated in (`docker`, `vagrant`, `docker-vm`,
+/// `proxmox`, `cloud-vm`, …): the one right under the lab's `.isoloom[-<n>]` folder. None for a
+/// folder outside one.
+pub fn target_folder(project: &Path) -> Option<&str> {
+    let mut parts = project.iter().filter_map(|c| c.to_str());
+    let out = crate::runtime::isothrum::OUTPUT_DIR;
+    parts.by_ref().find(|c| c.strip_prefix(out).is_some_and(|n| n.is_empty() || n.starts_with('-')))?;
+    parts.next()
+}
+
 /// The Terraform module and its Isoloom target for a server or cloud (`tf` is the launcher's
 /// Terraform target: `proxmox`, `aws`, `azure`, `gcp`, `digitalocean`, `linode`, `oci`). On
 /// Proxmox, a lab runs as one VM per machine whatever its catalogue form: a container lab left in

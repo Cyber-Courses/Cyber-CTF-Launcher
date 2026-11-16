@@ -42,10 +42,7 @@ pub(crate) mod tls_pin;
 // What the rest of the app uses, at the paths it always had. The globs carry each command's
 // generated `__cmd__*` macros along with it (lib.rs registers the commands by this path).
 pub use budget::*;
-pub use contract::{
-    Connection, connection, default_server, discovered_node, host_name, host_provider, lab_connection, launch_targets, mark_lab, marked_host,
-    proxmox_jump_for_host,
-};
+pub use contract::{Connection, connection, default_server, discovered_node, host_name, host_provider, launch_targets, proxmox_jump_for_host};
 /// The test profiles, for the tests of what is built from them elsewhere (`lab::vars`).
 #[cfg(test)]
 pub(crate) use profile::tests as profile_tests;
@@ -58,7 +55,3 @@ pub fn size_var(provider: crate::runtime::providers::Provider) -> Option<&'stati
 /// For the generated TypeScript types (`ts_bindings`).
 #[cfg(test)]
 pub(crate) use {checks::TestResult, input::HostInput};
-
-/// Written into a VM lab's directory when it runs on a server host, so stop/status
-/// (which re-evaluate the Vagrantfile) get the same connection.
-pub const HOST_MARKER: &str = ".cyberctf-host";

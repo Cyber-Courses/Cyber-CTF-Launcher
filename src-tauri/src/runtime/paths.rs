@@ -1,14 +1,12 @@
-//! Where a lab's files live (its folder, its Terraform state) and the small marker files the
-//! launcher leaves next to them to remember how and where the lab was started.
+//! Where a lab's files live (its folder, the runner's home), and the one marker file the launcher
+//! still leaves beside them: the Docker engine a container lab was started on. Where and in what
+//! form a lab runs, and whether it is parked, the runner's record of its run says (`recorded`).
 
 use std::path::{Path, PathBuf};
 
 use crate::platform::AppDirs;
 use crate::platform::fs::remove_if_present;
 
-use super::Runtime;
-use super::model::Park;
-use super::providers::Provider;
 use crate::error::{Error, Result};
 
 /// Whether `id` is a lab id: non-empty, at most 64 characters, and only the characters an id is
@@ -94,7 +92,7 @@ fn installed_in(base: &Path, id: &str) -> Option<PathBuf> {
 /// Writes `value` to `dir/name`, or removes the file for `None` (already gone is fine). A marker
 /// that can't be cleared is an error: left behind, it would send every later status, stop and
 /// check to the wrong form.
-pub(in crate::runtime) fn set_marker(dir: &Path, name: &str, value: Option<&str>) -> Result<()> {
+fn set_marker(dir: &Path, name: &str, value: Option<&str>) -> Result<()> {
     match value {
         Some(v) => std::fs::write(dir.join(name), v)?,
         None => remove_if_present(&dir.join(name))?,
@@ -102,50 +100,12 @@ pub(in crate::runtime) fn set_marker(dir: &Path, name: &str, value: Option<&str>
     Ok(())
 }
 
-/// Marks a container lab an earlier version runs inside one helper VM on this machine (Isoloom's
-/// former docker-vm, no longer generated), so its status and stop go to that VM instead of local
-/// Docker until it is stopped. Only cleared now.
-pub const LOCAL_VM_MARKER: &str = ".cyberctf-local-vm";
-
-/// Marks the lab in `dir` as a container lab run in one helper VM here, on hypervisor `provider`
-/// (what an earlier version wrote); none removes the mark.
-pub(crate) fn mark_local_vm(dir: &Path, provider: Option<Provider>) -> Result<()> {
-    set_marker(dir, LOCAL_VM_MARKER, provider.map(super::providers::Provider::id))
-}
-
-/// The hypervisor a container lab runs on in a local VM, if it does.
-pub(crate) fn local_vm(dir: &Path) -> Option<String> {
-    std::fs::read_to_string(dir.join(LOCAL_VM_MARKER)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-}
-
-/// Marks a container lab as started as one VM per machine on this machine (Isoloom's vagrant
-/// target, the form of a VM lab): the player's pick in "Where should it run?" for a lab whose
-/// spec has VM recipes too. Status, stop, park, provisioning and the attack box then follow the
-/// VM form (see [`local_runtime`]), whatever the catalogue calls the lab.
-pub const PER_MACHINE_MARKER: &str = ".cyberctf-per-machine-vm";
-
-/// Marks the lab in `dir` as started as one VM per machine (`on`), or removes the mark.
-pub(crate) fn mark_per_machine_vm(dir: &Path, on: bool) -> Result<()> {
-    set_marker(dir, PER_MACHINE_MARKER, on.then_some("vm"))
-}
-
-/// Whether a container lab runs (or ran last) as one VM per machine on this machine.
-pub(crate) fn per_machine_vm(dir: &Path) -> bool {
-    dir.join(PER_MACHINE_MARKER).is_file()
-}
-
-/// The form lab `dir` runs in on this machine: `VM` for a container lab started as one VM per
-/// machine ([`PER_MACHINE_MARKER`]), else its own `runtime`. Every operation on a lab here goes
-/// through this, so the webview can keep naming the lab by its catalogue runtime.
-pub(crate) fn local_runtime(dir: &Path, runtime: Runtime) -> Runtime {
-    if runtime == Runtime::Docker && per_machine_vm(dir) { Runtime::Vm } else { runtime }
-}
-
 /// The Docker context a container lab here was started on (`orbstack`, `desktop-linux`, …), when
 /// the player chose an engine other than the current one. Every docker/compose call for the lab —
 /// the launcher's and the runner's — then goes to that context, so status, stop, park, checks, the
 /// attack box and the shell stay on the engine the lab runs on even if the current context later
-/// changes. Nothing written = the current context, as before.
+/// changes. Nothing written = the current context, as before. Kept until the runner records a run's
+/// engine itself.
 pub const ENGINE_MARKER: &str = ".cyberctf-engine";
 
 pub(super) fn mark_engine(dir: &Path, context: Option<&str>) -> Result<()> {
@@ -155,21 +115,6 @@ pub(super) fn mark_engine(dir: &Path, context: Option<&str>) -> Result<()> {
 /// The Docker context a container lab here runs on, if one was recorded at launch.
 pub(crate) fn engine(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(ENGINE_MARKER)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-}
-
-/// Written when the launcher parks a lab (paused or shut down), so a later start resumes its
-/// machines instead of clearing them as leftovers; removed on resume and on stop.
-const PARKED_MARKER: &str = ".cyberctf-parked";
-
-/// Marks the lab in `dir` as parked in `mode`; none removes the mark.
-pub(crate) fn mark_parked(dir: &Path, mode: Option<Park>) -> Result<()> {
-    set_marker(dir, PARKED_MARKER, mode.map(super::model::Park::id))
-}
-
-/// How the lab in `dir` was parked, when the launcher parked it and it hasn't resumed or stopped
-/// since.
-pub(crate) fn parked(dir: &Path) -> Option<Park> {
-    std::fs::read_to_string(dir.join(PARKED_MARKER)).ok().and_then(|s| Park::from_id(&s))
 }
 
 #[cfg(test)]
@@ -196,44 +141,13 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    use super::{PARKED_MARKER, Park, Provider, Runtime, lab_dir_in, local_vm, mark_local_vm, mark_parked, parked, validate_id};
+    use super::super::Runtime;
+    use super::{lab_dir_in, validate_id};
 
     fn temp_dir(prefix: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("{prefix}-{}", rand::random::<u32>()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
-    }
-
-    #[test]
-    fn local_vm_marker_round_trips() {
-        let dir = temp_dir("cyberctf-localvm");
-        assert_eq!(local_vm(&dir), None);
-        mark_local_vm(&dir, Some(Provider::Virtualbox)).unwrap();
-        assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"));
-        mark_local_vm(&dir, None).unwrap();
-        assert_eq!(local_vm(&dir), None);
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn a_container_lab_started_as_vms_runs_as_a_vm_lab_here() {
-        use super::{local_runtime, mark_per_machine_vm, per_machine_vm};
-        let dir = temp_dir("cyberctf-permachine");
-        assert!(!per_machine_vm(&dir));
-        // Without the mark, every runtime is its own.
-        for rt in [Runtime::Docker, Runtime::Vm, Runtime::Cloud] {
-            assert_eq!(local_runtime(&dir, rt), rt);
-        }
-        mark_per_machine_vm(&dir, true).unwrap();
-        assert!(per_machine_vm(&dir));
-        // A container lab follows the VM form; a VM lab already does, a cloud lab never.
-        assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Vm);
-        assert_eq!(local_runtime(&dir, Runtime::Vm), Runtime::Vm);
-        assert_eq!(local_runtime(&dir, Runtime::Cloud), Runtime::Cloud);
-        mark_per_machine_vm(&dir, false).unwrap();
-        assert!(!per_machine_vm(&dir));
-        assert_eq!(local_runtime(&dir, Runtime::Docker), Runtime::Docker);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -252,39 +166,6 @@ mod tests {
         mark_engine(&dir, None).unwrap();
         assert_eq!(engine(&dir), None);
         assert!(!dir.join(ENGINE_MARKER).exists());
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn parked_marker_round_trips_and_ignores_garbage() {
-        let dir = temp_dir("cyberctf-parked");
-        assert_eq!(parked(&dir), None);
-        mark_parked(&dir, Some(Park::Pause)).unwrap();
-        assert_eq!(parked(&dir), Some(Park::Pause));
-        mark_parked(&dir, Some(Park::Shutdown)).unwrap();
-        assert_eq!(parked(&dir), Some(Park::Shutdown));
-        // A marker nothing wrote (or a corrupt one) never counts as parked: start then cleans up.
-        std::fs::write(dir.join(PARKED_MARKER), "halted?").unwrap();
-        assert_eq!(parked(&dir), None);
-        mark_parked(&dir, None).unwrap();
-        assert_eq!(parked(&dir), None);
-        assert!(!dir.join(PARKED_MARKER).exists());
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn markers_are_read_trimmed_and_unknown_values_fall_back() {
-        use super::LOCAL_VM_MARKER;
-        let dir = temp_dir("cyberctf-markers");
-        // A trailing newline (a hand edit, a tool that adds one) changes nothing; blank is none.
-        std::fs::write(dir.join(LOCAL_VM_MARKER), "virtualbox\n").unwrap();
-        assert_eq!(local_vm(&dir).as_deref(), Some("virtualbox"));
-        std::fs::write(dir.join(LOCAL_VM_MARKER), "  \n").unwrap();
-        assert_eq!(local_vm(&dir), None);
-        std::fs::write(dir.join(PARKED_MARKER), "pause\n").unwrap();
-        assert_eq!(parked(&dir), Some(Park::Pause));
-        std::fs::write(dir.join(PARKED_MARKER), "PAUSE").unwrap();
-        assert_eq!(parked(&dir), None, "exact ids only");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

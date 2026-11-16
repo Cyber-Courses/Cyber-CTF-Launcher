@@ -185,25 +185,6 @@ pub enum Park {
     Shutdown,
 }
 
-impl Park {
-    /// Its id, as the parked marker and the webview spell it.
-    pub fn id(self) -> &'static str {
-        match self {
-            Park::Pause => "pause",
-            Park::Shutdown => "shutdown",
-        }
-    }
-
-    /// The mode whose id is `id` (surrounding whitespace ignored), if there is one.
-    pub fn from_id(id: &str) -> Option<Park> {
-        match id.trim() {
-            "pause" => Some(Park::Pause),
-            "shutdown" => Some(Park::Shutdown),
-            _ => None,
-        }
-    }
-}
-
 /// A lab as the UI shows it right now: whether it runs, its machines and networks, where it
 /// runs and what can be done to it there.
 #[derive(Serialize, Debug, PartialEq, Clone, Default, TS)]
@@ -297,7 +278,7 @@ pub struct Output {
 
 #[cfg(test)]
 mod tests {
-    use super::{LabStatus, Park};
+    use super::LabStatus;
 
     #[test]
     fn a_failed_launch_reads_as_not_running_even_with_machines_up() {
@@ -307,18 +288,6 @@ mod tests {
         assert!(up().unless_launch_failed(false).running, "nothing failed: running");
         assert!(!up().unless_launch_failed(true).running);
         assert!(!LabStatus::default().unless_launch_failed(false).running);
-    }
-
-    #[test]
-    fn park_ids_round_trip_and_read_with_surrounding_whitespace_only() {
-        for p in [Park::Pause, Park::Shutdown] {
-            assert_eq!(Park::from_id(p.id()), Some(p));
-            assert_eq!(Park::from_id(&format!(" {}\r\n", p.id())), Some(p), "a marker file's trailing newline");
-        }
-        // Case and extra words are not tolerated: a marker reads as "not parked" rather than guessed.
-        for bad in ["Pause", "SHUTDOWN", "pause now", "", "halt", "suspend"] {
-            assert_eq!(Park::from_id(bad), None, "{bad:?}");
-        }
     }
 }
 

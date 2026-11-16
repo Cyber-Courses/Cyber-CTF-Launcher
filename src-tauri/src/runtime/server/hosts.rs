@@ -1,11 +1,8 @@
 //! The rules of the saved hosts: which one is the default, what a host may change while labs are
-//! on it, and how many labs are on each (marked as running there, or something of theirs left
-//! there).
+//! on it, and how many labs are on each (as the runner records their runs there).
 
 use std::collections::HashMap;
-use std::path::Path;
 
-use super::contract::marked_host;
 use super::profile::HostProfile;
 use super::store::{Store, find};
 use crate::error::{Code, Error, Result};
@@ -78,54 +75,37 @@ pub(crate) fn no_labs_running(running: usize) -> Result<()> {
     Ok(())
 }
 
-/// How many labs still have something on host `id`: marked as running there, or left there by a
-/// lab no longer marked for it ([`leftovers_on`]).
+/// How many labs still have something on host `id`, as the runner records their runs (any state
+/// but gone, on that host): installed or not (moved elsewhere since, uninstalled), only that
+/// host's credentials can take them down. A record that can't be read is an error.
 pub(crate) fn labs_on(dirs: &AppDirs, id: &str) -> Result<usize> {
-    let marked = lab_markers(dirs).iter().filter(|m| *m == id).count();
-    Ok(marked + leftovers_on(dirs, id)?)
+    Ok(runs_on_hosts(dirs)?.filter(|(host, _)| host == id).count())
 }
 
-/// How many installed labs are marked as running on each host, by host id (blank markers aren't
-/// counted).
+/// How many installed labs run on each host, by host id, as the runner records their runs; none
+/// counted when the records can't be read.
 pub(crate) fn running_by_host(dirs: &AppDirs) -> HashMap<String, u32> {
-    count_by_host(&lab_markers(dirs))
-}
-
-/// Runs still up on host `id` of labs no longer marked as running there (moved elsewhere,
-/// uninstalled): only that host's credentials can take them down. As the runner records them
-/// (any state but gone, on that host). A record that can't be read is an error.
-pub(crate) fn leftovers_on(dirs: &AppDirs, id: &str) -> Result<usize> {
-    let base = dirs.data()?;
-    let elsewhere = |lab: &str| marked_host(&crate::runtime::paths::labs_root_in(base).join(lab)).as_deref() != Some(id);
-    let runs = crate::runtime::isothrum::records(&crate::runtime::paths::runner_home(dirs)?)?
-        .into_iter()
-        .filter(|r| r.host_label.as_deref() == Some(id) && r.state != isothrum_runner::RunState::Absent)
-        .filter_map(|r| crate::runtime::lab_of_project(r.name.as_str()).map(str::to_owned))
-        .filter(|lab| elsewhere(lab))
-        .count();
-    Ok(runs)
-}
-
-/// The host id of each installed lab's marker (trimmed; empty when the marker is). A lab leaves
-/// a `.cyberctf-host` marker in its directory while it runs on a host (written on start,
-/// cleared on stop), so this is filesystem-only: no host calls, no credentials.
-fn lab_markers(dirs: &AppDirs) -> Vec<String> {
-    crate::runtime::paths::labs_root(dirs).map(|d| markers_in(&d)).unwrap_or_default()
-}
-
-/// `lab_markers` for the labs folder `labs`.
-fn markers_in(labs: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(labs) else { return Vec::new() };
-    entries.flatten().filter_map(|e| marked_host(&e.path())).collect()
-}
-
-/// Lab counts per host id (markers with no id aren't counted).
-fn count_by_host(markers: &[String]) -> HashMap<String, u32> {
+    let runs = match runs_on_hosts(dirs) {
+        Ok(runs) => runs,
+        Err(e) => {
+            log::warn!("couldn't count the labs on each host: {e}");
+            return HashMap::new();
+        }
+    };
     let mut counts: HashMap<String, u32> = HashMap::new();
-    for id in markers.iter().filter(|id| !id.is_empty()) {
-        *counts.entry(id.clone()).or_default() += 1;
+    for (host, _) in runs.filter(|(_, lab)| crate::runtime::lab_installed(dirs, lab)) {
+        *counts.entry(host).or_default() += 1;
     }
     counts
+}
+
+/// Each run the runner records on a host (any state but gone): its host's id and its lab's id.
+fn runs_on_hosts(dirs: &AppDirs) -> Result<impl Iterator<Item = (String, String)>> {
+    let runs = crate::runtime::isothrum::records(&crate::runtime::paths::runner_home(dirs)?)?;
+    Ok(runs.into_iter().filter(|r| r.state != isothrum_runner::RunState::Absent).filter_map(|r| {
+        let lab = crate::runtime::lab_of_project(r.name.as_str())?.to_owned();
+        Some((r.host_label?, lab))
+    }))
 }
 
 #[cfg(test)]

@@ -202,9 +202,7 @@ async fn a_lab_parks_and_resumes() {
     let (f, run, _tools) = up_then_parked().await;
     assert!(last_compose(&f, "stop", None).is_some(), "a park stops the lab's containers");
     let parked = run.status().await.unwrap();
-    assert_eq!((parked.running, parked.parked), (false, Some(Park::Shutdown)));
-    paths::mark_parked(&f.home.dir, Some(Park::Pause)).unwrap();
-    assert_eq!(run.status().await.unwrap().parked, Some(Park::Pause), "as the player chose it");
+    assert_eq!((parked.running, parked.parked), (false, Some(Park::Shutdown)), "as the runner recorded it");
     run.resume(&mut |_| {}).await.unwrap();
     assert!(run.status().await.unwrap().running);
 }
@@ -259,11 +257,10 @@ async fn a_container_stopped_outside_the_app_is_resumed_as_it_is() {
 #[tokio::test]
 async fn a_parked_lab_whose_containers_are_gone_offers_a_fresh_start() {
     let (f, run, _tools) = up_then_parked().await;
-    paths::mark_parked(&f.home.dir, Some(Park::Shutdown)).unwrap();
     f.set(Containers::None);
     let err = run.resume(&mut |_| {}).await.unwrap_err().to_string();
     assert!(err.starts_with("Nothing is left of this lab to resume"), "{err}");
-    assert_eq!(paths::parked(&f.home.dir), None, "the parked mark goes");
+    assert_eq!(run.status().await.unwrap().parked, None, "no longer read as parked");
 }
 
 /// Regression: a lab whose containers were removed outside the app (`docker compose down` by hand,
@@ -492,16 +489,22 @@ fn a_lab_here_is_run_in_the_form_it_was_started_in() {
     let dir = std::env::temp_dir().join(format!("cyberctf-local-form-{}", rand::random::<u32>()));
     std::fs::create_dir_all(&dir).unwrap();
     let home = dir.join("home");
-    let form = |runtime| LabRun::local(&home, &dir, "t", runtime).unwrap().map(|r| (r.kind, r.target()));
+    let recorded = std::cell::RefCell::new(crate::runtime::recorded::Recorded::default());
+    let form = |runtime| LabRun::local(&home, &dir, "t", runtime, &recorded.borrow()).unwrap().map(|r| (r.kind, r.target()));
+    let record = |target: &str| {
+        let json =
+            serde_json::json!({ "version": 1, "name": "cyberctf-t", "project": dir.join(".isoloom").join(target), "format": "vagrant", "state": "ready" });
+        *recorded.borrow_mut() = Some(serde_json::from_value::<isothrum_runner::RunRecord>(json).unwrap()).into();
+    };
     // As declared: its containers on Docker, its VMs, and no run here for cloud services.
     assert_eq!(form(Runtime::Docker), Some((Kind::Docker, Some(lab::Target::Docker))));
     assert_eq!(form(Runtime::Vm), Some((Kind::Vm, Some(lab::Target::Vagrant))));
     assert_eq!(form(Runtime::Cloud), None);
     // A container lab an earlier version left in a helper VM: that run, read as it is (no target
-    // to generate it again for), then as one VM per machine (which wins).
-    paths::mark_local_vm(&dir, Some(crate::runtime::providers::Provider::Qemu)).unwrap();
+    // to generate it again for); one started as one VM per machine, as VMs.
+    record("docker-vm");
     assert_eq!(form(Runtime::Docker), Some((Kind::DockerVm, None)));
-    paths::mark_per_machine_vm(&dir, true).unwrap();
+    record("vagrant");
     assert_eq!(form(Runtime::Docker), Some((Kind::Vm, Some(lab::Target::Vagrant))));
     std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -34,26 +34,30 @@ Machine page lists it).
 
 The catalogue names a lab by its own runtime (containers or VMs); every operation on a started
 lab finds its run through `runtime::host::locate`, which reads where it runs and the form it was
-actually started in (`paths::local_runtime`).
+actually started in from the runner's record of its run (`runtime::recorded`).
 
 ## What says where a lab is
 
-A running lab is the runner's run `cyberctf-<lab id>`, its state under
-`<app data>/runs/<run>/` (`record.json`, `events.jsonl`, the Terraform state for a server or a
-cloud). Beside the lab, in its folder:
+A running lab is the runner's run `cyberctf-<lab id>`, kept in the runner's home
+(`<app data>/isothrum/`). Its record says:
 
-| File                       | Says                                                                                         |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| `.cyberctf-host`           | the server or cloud account it runs on (`server::mark_lab`)                                  |
-| `.cyberctf-local-vm`       | a container lab here runs in a helper VM an earlier version started, and on which hypervisor |
-| `.cyberctf-per-machine-vm` | a container lab started as one VM per machine                                                |
-| `.cyberctf-engine`         | the Docker context it was started on, when not the current one                               |
-| `.cyberctf-parked`         | parked (paused or shut down): the next start resumes it                                      |
-| `.cyberctf-overlay.yml`    | the machines the launcher added to the lab (the attack box), merged into its spec when read  |
-| `.cyberctf-instance`       | its instance number, given at install: its networks' blocks and its generated files' folder  |
+| Field        | Says                                                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host_label` | the saved server or cloud account it runs on, by id; none: this machine                                                                               |
+| `project`    | the folder Isoloom generated for its target: `vagrant` or `cloud-vm` for one VM per machine, `docker-vm` for the helper VM an earlier version started |
+| `state`      | where it stands; `parked` with `parked` (`pause`, `shutdown`) when a park put it there                                                                |
 
-A stop clears them once the run is gone (`lifecycle::forget_run`), so the next start is the lab
-as published. The instance number stays: it is the installed lab's, not the run's.
+A run taken down reads `absent`, and says nothing: the lab is then read as the catalogue declares
+it, on this machine. Beside the lab, in its folder:
+
+| File                    | Says                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------- |
+| `.cyberctf-engine`      | the Docker context it was started on, when not the current one                              |
+| `.cyberctf-overlay.yml` | the machines the launcher added to the lab (the attack box), merged into its spec when read |
+| `.cyberctf-instance`    | its instance number, given at install: its networks' blocks and its generated files' folder |
+
+A stop clears the first two once the run is gone (`lifecycle::forget_run`), so the next start is
+the lab as published. The instance number stays: it is the installed lab's, not the run's.
 
 ## The attack box in a lab
 
