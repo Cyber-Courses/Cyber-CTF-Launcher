@@ -19,10 +19,10 @@
 //! ```
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::support::lab::{Run, install_copy, leftovers};
-use super::support::{check, fetch, knob, log, scenario, var};
+use super::support::{Wait, check, eventually, fetch, knob, log, scenario, var};
 use crate::platform::exec::run;
 use crate::runtime::{LabStatus, docker, isothrum};
 
@@ -57,6 +57,15 @@ async fn container_of(id: &str, service: &str) -> Option<String> {
     let service = format!("label=com.docker.compose.service={service}");
     let out = run("docker", &["ps", "-aq", "--filter", &project, "--filter", &service], None).await.ok()?;
     out.lines().map(str::trim).find(|l| !l.is_empty()).map(str::to_owned)
+}
+
+/// How a scenario waits for the first sign of a start it races (a container made): a few times a
+/// second, for as long as a start takes.
+const SOON: Wait = Wait::secs(600, Duration::from_millis(200));
+
+/// Whether the start of lab `l` has made a container yet.
+async fn has_a_container(l: &Run) -> bool {
+    leftovers(&l.id).await.iter().any(|c| c.starts_with("container "))
 }
 
 /// The lab's own machines in `s`, each with its state.
@@ -181,14 +190,11 @@ async fn a_container_removed_while_the_start_waits_fails_it_or_shows_it_and_a_st
         let machine = target();
         // The removal races the start: as soon as the machine's container exists, it goes.
         let remove = async {
-            let deadline = Instant::now() + Duration::from_secs(600);
-            while Instant::now() < deadline {
-                if let Some(c) = container_of(&l.id, &machine).await {
-                    return run("docker", &["rm", "-f", &c], None).await.is_ok();
-                }
-                tokio::time::sleep(Duration::from_millis(200)).await;
+            let made = eventually(&format!("{machine}'s container"), SOON, async || container_of(&l.id, &machine).await.ok_or("none yet")).await;
+            match made {
+                Ok(c) => run("docker", &["rm", "-f", &c], None).await.is_ok(),
+                Err(_) => false,
             }
-            false
         };
         let mut said = log(&l.id);
         let (started, removed) = tokio::join!(l.start(&[], &mut said), remove);
@@ -304,16 +310,18 @@ pub(super) async fn killed_start(l: &Run, form: &str, provider: &str, begun: imp
             Ok(c) => c,
             Err(e) => return check(false, format!("the child start runs ({e})"), f),
         };
-    let deadline = Instant::now() + Duration::from_secs(1800);
-    let mut made = false;
-    while Instant::now() < deadline && child.try_wait().ok().flatten().is_none() {
-        if begun().await {
-            made = true;
-            break;
+    // Until its start has made something, or its process ended before it did (nothing to kill).
+    let made = eventually("the child's start to make something", Wait::secs(1800, Duration::from_millis(250)), async || {
+        if child.try_wait().ok().flatten().is_some() {
+            Ok(false)
+        } else if begun().await {
+            Ok(true)
+        } else {
+            Err(())
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
-    check(made, "the child's start made something before it was killed".into(), f);
+    })
+    .await;
+    check(made == Ok(true), "the child's start made something before it was killed".into(), f);
     let killed = child.kill();
     let _ = child.wait();
     check(killed.is_ok(), format!("the child is killed mid-start ({:?})", killed.err()), f);
@@ -321,11 +329,13 @@ pub(super) async fn killed_start(l: &Run, form: &str, provider: &str, begun: imp
     let name = docker::project(&l.id);
     let orphans = tools_of(&name);
     println!("note: tools the killed start left running: {orphans:?}");
-    let wait = Instant::now() + Duration::from_secs(if form == "vm" { 3600 } else { 600 });
-    while Instant::now() < wait && !tools_of(&name).is_empty() {
-        tokio::time::sleep(Duration::from_secs(2)).await;
-    }
-    check(tools_of(&name).is_empty(), format!("the killed start's tools ended ({:?})", tools_of(&name)), f);
+    let wait = Wait::secs(if form == "vm" { 3600 } else { 600 }, Duration::from_secs(2));
+    let ended = eventually("the killed start's tools to end", wait, async || {
+        let left = tools_of(&name);
+        if left.is_empty() { Ok(()) } else { Err(left) }
+    })
+    .await;
+    check(ended.is_ok(), format!("the killed start's tools ended ({:?})", ended.err().unwrap_or_default()), f);
     // The runner: a run whose start never ended is failed, not ready.
     let run = if form == "vm" { isothrum::LabRun::vm(&l.home, &l.dir, &l.id) } else { isothrum::LabRun::docker(&l.home, &l.dir, &l.id) };
     let state = match run {
@@ -343,8 +353,7 @@ pub(super) async fn killed_start(l: &Run, form: &str, provider: &str, begun: imp
 #[ignore = "needs Docker and a container lab (CYBERCTF_TEST_RESILIENCE_LAB)"]
 async fn a_start_killed_midway_is_failed_and_a_start_again_works() {
     on_lab("killed start", async |l: &Run, f: &mut Vec<String>| {
-        let begun = async || leftovers(&l.id).await.iter().any(|c| c.starts_with("container "));
-        killed_start(l, "docker", "", begun, f).await;
+        killed_start(l, "docker", "", async || has_a_container(l).await, f).await;
         starts_whole(l, f, "started again after the kill").await;
     })
     .await;
@@ -360,14 +369,8 @@ async fn docker_stopped_while_the_lab_starts_says_so_and_a_start_once_it_is_back
     on_lab("Docker stopped", async |l: &Run, f: &mut Vec<String>| {
         // Docker goes as soon as the lab's first container exists.
         let stop_it = async {
-            let deadline = Instant::now() + Duration::from_secs(600);
-            while Instant::now() < deadline {
-                if leftovers(&l.id).await.iter().any(|c| c.starts_with("container ")) {
-                    return shell(&stop).await.is_ok();
-                }
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-            false
+            let made = eventually("the lab's first container", SOON, async || if has_a_container(l).await { Ok(()) } else { Err(()) }).await;
+            made.is_ok() && shell(&stop).await.is_ok()
         };
         let mut said = log(&l.id);
         let (started, stopped) = tokio::join!(l.start(&[], &mut said), stop_it);
@@ -380,10 +383,11 @@ async fn docker_stopped_while_the_lab_starts_says_so_and_a_start_once_it_is_back
         );
         let back = shell(&start).await;
         check(back.is_ok(), format!("Docker is started again ({:?})", back.err()), f);
-        let deadline = Instant::now() + Duration::from_secs(300);
-        while Instant::now() < deadline && run("docker", &["info"], None).await.is_err() {
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
+        let answers = eventually("Docker to answer again", Wait::secs(300, Duration::from_secs(2)), async || {
+            run("docker", &["info"], None).await.map(drop).map_err(|e| e.to_string())
+        })
+        .await;
+        check(answers.is_ok(), format!("Docker answers again ({:?})", answers.err()), f);
         starts_whole(l, f, "once Docker is back").await;
     })
     .await;

@@ -107,6 +107,32 @@ mod start_path {
     }
 }
 
+/// A scenario waits for what it can see (`support::eventually`), not for a time it guesses: a
+/// guessed time is too short on a slow machine and wasted on a fast one, and when it runs out the
+/// failure says nothing of what was seen.
+#[cfg(test)]
+mod waits {
+    /// The sleeps a scenario keeps, by file: how many, and why each is a time and not a condition.
+    const SLEEPS: &[(&str, usize, &str)] = &[
+        ("support.rs", 1, "eventually's own pause between two looks"),
+        ("resilience_vm.rs", 1, "the kill must land while Vagrant provisions the VM it made, a moment nothing marks"),
+    ];
+
+    #[test]
+    fn a_scenario_waits_for_what_it_sees_not_for_a_time() {
+        let mut found = Vec::new();
+        for (name, code) in super::scenario_sources(&[]) {
+            let sleeps = code.matches("sleep(").count();
+            let kept = SLEEPS.iter().find(|(file, ..)| *file == name).map_or(0, |(_, n, _)| *n);
+            if sleeps != kept {
+                found.push(format!("{name}: {sleeps} sleeps, {kept} kept"));
+            }
+        }
+        assert!(found.is_empty(), "wait with support::eventually, or name the sleep and why here:\n{}", found.join("\n"));
+        assert!(SLEEPS.iter().all(|(_, n, why)| *n > 0 && !why.is_empty()));
+    }
+}
+
 /// Each file of scenarios under `integration_tests/`: its module name and its code.
 #[cfg(test)]
 fn scenario_files() -> Vec<(String, String)> {
