@@ -13,11 +13,12 @@ use std::time::Duration;
 
 use isothrum_runner::{Format, RunOptions, RunRecord, SecretValue, Secrets};
 
-use super::opened::{Module, OpenedRun};
+#[cfg(feature = "cloud-services")]
+use super::deployment::Module;
+use super::deployment::{Deployment, Site};
 use super::view;
 use crate::error::Result;
-use crate::runtime::docker::Check;
-use crate::runtime::{LabStatus, Place, Runtime, lab};
+use crate::runtime::{LabStatus, Place, lab};
 
 /// The account environment names the launcher passes to the module as plain values (not
 /// secrets): a chosen AWS CLI profile and the region. Everything else in the account's Terraform
@@ -133,63 +134,12 @@ impl CloudPlace {
     }
 }
 
-/// One cloud lab (`cloud-vm` or `cloud-docker`), run by the runner.
-pub(crate) struct CloudRun {
-    run: OpenedRun,
-}
-
-/// The opened run and what reads it (its status, console, update and retire) are
-/// [`OpenedRun`]'s, shared with the other remote place (`ServerRun`).
-impl std::ops::Deref for CloudRun {
-    type Target = OpenedRun;
-    fn deref(&self) -> &OpenedRun {
-        &self.run
-    }
-}
-
-impl CloudRun {
-    /// Lab `id` of `runtime` (a container lab is `cloud-docker`, a VM lab `cloud-vm`) on `cloud`,
-    /// installed in `dir`, on the runner whose home is `home` (the app data folder).
-    pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
-        let (out, target) = lab::terraform(dir, runtime, cloud);
-        Ok(CloudRun { run: OpenedRun::new(home, dir, id, (out, Module::Generated(target)))? })
-    }
-
-    /// [`CloudRun::new`] on a runner set up with `config`, which this test process serves (a
-    /// test's scripted tools).
-    #[cfg(test)]
-    pub(crate) fn new_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
-        let home = config.home.clone();
-        crate::testing::service::serve_home(config);
-        CloudRun::new(&home, dir, id, runtime, cloud)
-    }
-
-    /// Cloud-services lab `id`, installed in `dir`: its own module (`cloud/`), run as
-    /// it is, on the runner whose home is `home`.
+impl Deployment {
+    /// Brings the cloud-services lab up in its account from its own module, with `values` (its
+    /// lab file's, checked against the module), and says where to start.
     #[cfg(feature = "cloud-services")]
-    pub(crate) fn own(home: &Path, dir: &Path, id: &str) -> Result<CloudRun> {
-        let module = crate::runtime::cloud_services::lab_file::module_dir(dir);
-        Ok(CloudRun { run: OpenedRun::new(home, dir, id, (module, Module::Own))? })
-    }
-
-    /// [`CloudRun::own`] on a runner set up with `config`, which this test process serves (a
-    /// test's scripted tools).
-    #[cfg(all(test, feature = "cloud-services"))]
-    pub(crate) fn own_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str) -> Result<CloudRun> {
-        let home = config.home.clone();
-        crate::testing::service::serve_home(config);
-        CloudRun::own(&home, dir, id)
-    }
-
-    /// Brings the cloud-services lab up in the account `place` from its own module, with
-    /// `values` (its lab file's, checked against the module), and says where to start.
-    #[cfg(feature = "cloud-services")]
-    pub(crate) async fn up_own(
-        &self,
-        place: &CloudPlace,
-        values: &crate::runtime::cloud_services::values::ModuleValues,
-        log: &mut impl FnMut(String),
-    ) -> Result<()> {
+    pub(crate) async fn up_own(&self, values: &crate::runtime::cloud_services::values::ModuleValues, log: &mut impl FnMut(String)) -> Result<()> {
+        let Site::Cloud(place) = self.site() else { return Err(crate::error::Error::Invalid("a lab's own module runs in a cloud account".into())) };
         let opts = values.plain.iter().fold(place.options(&[]), |o, (k, v)| o.with_env(k.clone(), v.clone()));
         let opts = values.secret.iter().fold(opts, |mut o, (k, v)| {
             o.secrets.insert(k.clone(), SecretValue::new(v.clone()));
@@ -202,56 +152,10 @@ impl CloudRun {
         Ok(())
     }
 
-    /// Brings the lab up in the account `place` from its generated module, and says where to
-    /// start. `env` is the launch's: the inputs the lab's slots take.
-    pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        // The key the lab's instances let in: a plain value the record keeps, so every later
-        // operation replays it.
-        let opts = self.key_values().await?.into_iter().fold(place.options(env), |o, (k, v)| o.with_env(k, v));
-        self.act(super::remote::Act::Up, &opts, log).await?;
-        super::described::log_message(&self.dir, self.target(), log);
-        Ok(())
-    }
-
-    /// Brings the running lab up to date with its regenerated module (a machine added to the lab
-    /// or taken out), with the account's credentials (`place`'s); the machines that run keep what
-    /// they were given.
-    pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> std::result::Result<(), crate::runtime::host::Failed> {
-        self.update_with(&place.later_options(), |e| e, log).await
-    }
-
-    /// Takes `machine` out of the running lab ahead of its removal from the module, with the
-    /// account's credentials (`place`'s).
-    pub(crate) async fn retire(&self, place: &CloudPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        self.act(super::remote::Act::Retire(machine), &place.later_options(), log).await
-    }
-
-    /// Removes everything the run created in the account, with the parameters it was applied with
-    /// (the connection is `place`'s, the account's as it is now).
-    pub(crate) async fn down(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        // A run whose module was never generated created nothing in the account: a clean no-op,
-        // as the other runner paths tolerate (without this, tearing down a lab that was never
-        // deployed errors on the missing module).
-        if !self.has_project() {
-            log("Nothing to remove: the run has no files.".to_owned());
-            return Ok(());
-        }
-        self.act(super::remote::Act::Down, &place.later_options(), log).await
-    }
-
-    /// `machine`'s graphical console, as the runner reaches it in the account `place`.
-    pub(crate) async fn screen(&self, place: &CloudPlace, machine: &str) -> Result<isothrum_client::HeldConsole> {
-        self.graphical_console(machine, &place.later_options()).await
-    }
-
-    /// What opens `machine` in its cloud's own console, in the account `place`.
-    pub(crate) async fn native(&self, place: &CloudPlace, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        self.native_console(machine, &place.later_options()).await
-    }
-
-    /// The lab as its page shows it (place `Cloud`); not running before its module was ever
-    /// generated. The caller fills the account's name and the cloud's id (`status::on_server`).
-    pub(crate) async fn status(&self) -> Result<LabStatus> {
+    /// The lab as its page shows it in a cloud account (place `Cloud`); not running before its
+    /// module was ever generated. The caller fills the account's name and the cloud's id
+    /// (`status::on_server`).
+    pub(super) async fn cloud_status(&self) -> Result<LabStatus> {
         if !self.has_project() {
             return Ok(LabStatus { place: Some(Place::Cloud), ..LabStatus::default() });
         }
@@ -263,13 +167,6 @@ impl CloudRun {
         let form = if self.target() == Some(lab::Target::CloudDocker) { super::described::Form::Containers } else { super::described::Form::Vms };
         let described = super::described::Described::of(&self.dir, form)?;
         Ok(LabStatus { place: Some(Place::Cloud), ..view::lab_status(&described, &status, None) })
-    }
-
-    /// The lab's checks: not available in a cloud account yet (the runner runs no command in a
-    /// Terraform module's VMs).
-    #[expect(clippy::unused_self, reason = "a run's checks are asked of the run, as on the other hosts; this one has none to run yet")]
-    pub(crate) fn check(&self, _place: &CloudPlace) -> Check {
-        Check::default()
     }
 }
 

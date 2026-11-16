@@ -41,12 +41,11 @@ pub(super) async fn start_on_server(
         return esxi_run(dirs, dir, id, runtime, &conn)?.up(inputs, Some(Provider::VmwareEsxi.id()), log).await;
     }
     lab::prepare(dir, lab::terraform(dir, runtime, "proxmox").1)?;
-    let run = isothrum::ServerRun::new(&runner_home(dirs)?, dir, id, runtime)?;
-    let place = server_place(dirs, host, &conn, &run).await?;
+    let place = server_place(dirs, host, &conn).await?;
     if place.jump.is_some() {
         log("The lab bridge is internal to the node: reaching the lab's VMs through the node.".into());
     }
-    run.up(&place, inputs.values, log).await
+    isothrum::Deployment::on_server(&runner_home(dirs)?, dir, id, runtime, place)?.up(inputs.values, log).await
 }
 
 /// One VM per machine on a server host is Isoloom's cloud-vm, which every cloud account runs; on a
@@ -78,20 +77,16 @@ pub(in crate::runtime) fn esxi_run(dirs: &AppDirs, dir: &Path, id: &str, runtime
 /// runner's key for the lab's VMs), the node when
 /// its profile names none, and the node login SSH goes through first when the lab bridge is
 /// internal (the runner's key, the launcher's own, let in on the node).
-pub(in crate::runtime) async fn server_place(
-    dirs: &AppDirs,
-    host: &str,
-    conn: &server::Connection,
-    run: &isothrum::ServerRun,
-) -> Result<isothrum::ServerPlace> {
-    let public = run.public_key().await?;
+pub(in crate::runtime) async fn server_place(dirs: &AppDirs, host: &str, conn: &server::Connection) -> Result<isothrum::ServerPlace> {
+    let home = runner_home(dirs)?;
+    let public = isothrum::public_key(&home).await?;
     // The launcher's own key: SSH signs in with the node's password, and the runner's public key
     // is the one let in.
     let (key, _) = crate::runtime::ssh::ensure_key(dirs).await?;
     Ok(isothrum::ServerPlace {
         label: host.to_owned(),
         name: conn.name.clone(),
-        vars: place_vars(conn, &key, run.key_values().await?),
+        vars: place_vars(conn, &key, isothrum::key_values(&home).await?),
         node: server::discovered_node(dirs, host).await?,
         jump: server::proxmox_jump_for_host(dirs, host, &key, &public).await?,
     })
@@ -148,8 +143,7 @@ pub(crate) async fn start_cloud_run(dirs: &AppDirs, start: CloudStart<'_>, log: 
     // The firewall opens the lab's SSH and published ports to this machine's public IP only.
     let allowed = public_ip().await?;
     let place = isothrum::CloudPlace::launch(&conn, Some(&allowed));
-    let run = isothrum::CloudRun::new(&runner_home(dirs)?, dir, id, runtime, cloud)?;
-    run.up(&place, env, log).await
+    isothrum::Deployment::in_cloud(&runner_home(dirs)?, dir, id, runtime, cloud, place)?.up(env, log).await
 }
 
 /// The runtime that drives a `runtime` lab's Terraform module on a cloud account: for a container

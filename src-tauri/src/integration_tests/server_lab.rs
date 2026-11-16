@@ -19,7 +19,7 @@
 //! link answering from this computer (a local forward through the node when only it reaches the
 //! lab), a command run through its shell, its checks passing (run in its machines over SSH,
 //! through the node first), then stopped, nothing of it left in the
-//! runner's records. The same `isothrum::ServerRun` the lab page uses, without the app handle:
+//! runner's records. The same `isothrum::Deployment` the lab page uses, without the app handle:
 //! with `CYBERCTF_TEST_PVE_JUMP`, Terraform's SSH to the router goes through the launcher's
 //! tunnel to the node, the node's host keys confirmed first as the player does in Servers.
 //!
@@ -52,7 +52,7 @@ use std::path::{Path, PathBuf};
 
 use super::support::{check, log, scenario};
 use crate::runtime::Runtime;
-use crate::runtime::isothrum::{EsxiPlace, LabRun, ServerPlace, ServerRun};
+use crate::runtime::isothrum::{Deployment, EsxiPlace, LabRun, ServerPlace};
 use crate::runtime::lab;
 use crate::runtime::server::{HostProfile, SshKeySignIn};
 
@@ -173,9 +173,8 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
     };
     let vars = lab::host_vars(&profile, &var("CYBERCTF_TEST_PVE_TOKEN_SECRET"));
     let home = PathBuf::from(var("CYBERCTF_TEST_PVE_RUNNER_HOME"));
-    let run = ServerRun::new(&home, &dir, "pve-runner-lab", Runtime::Vm).unwrap_or_else(|e| panic!("the lab's run on the server opens: {e}"));
     // The key the lab's VMs let in, as a launch gives it (`launch::server_place`).
-    let keys = run.key_values().await.unwrap_or_else(|e| panic!("the run's key for the lab's VMs reads: {e}"));
+    let keys = crate::runtime::isothrum::key_values(&home).await.unwrap_or_else(|e| panic!("the run's key for the lab's VMs reads: {e}"));
     let jump = std::env::var("CYBERCTF_TEST_PVE_JUMP").ok().filter(|j| !j.is_empty());
     if let Some((_, node)) = jump.as_deref().and_then(|j| j.split_once('@')) {
         // The tunnel checks the node's host key against the ones confirmed beside the key.
@@ -189,13 +188,14 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
         node: Some(var("CYBERCTF_TEST_PVE_NODE")),
         jump,
     };
+    let run = Deployment::on_server(&home, &dir, "pve-runner-lab", Runtime::Vm, place).unwrap_or_else(|e| panic!("the lab's run on the server opens: {e}"));
     let mut f = Vec::new();
     scenario(
         &mut f,
         async |f: &mut Vec<String>| {
-            let up = run.up(&place, &[], &mut log("pve")).await;
+            let up = run.up(&[], &mut log("pve")).await;
             check(up.is_ok(), format!("it starts ({:?})", up.err()), f);
-            match run.status(&place).await {
+            match run.status().await {
                 Ok(s) => {
                     println!("status: running={} url={:?} machines={:?}", s.running, s.url, s.machines.iter().map(|m| (&m.name, &m.state)).collect::<Vec<_>>());
                     check(s.running && s.url.is_some(), format!("it runs, with its entry (running={} url={:?})", s.running, s.url), f);
@@ -208,9 +208,9 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
             checks_pass(run.check().await, f);
         },
         async |f: &mut Vec<String>| {
-            let down = run.down(&place, &mut log("pve")).await;
+            let down = run.down(&mut log("pve")).await;
             check(down.is_ok(), format!("it stops ({:?})", down.err()), f);
-            check(run.status(&place).await.is_ok_and(|s| !s.running), "its status reads as gone".into(), f);
+            check(run.status().await.is_ok_and(|s| !s.running), "its status reads as gone".into(), f);
         },
     )
     .await;
@@ -231,7 +231,7 @@ fn checks_pass(checked: crate::error::Result<crate::runtime::docker::Check>, f: 
 /// The lab of status `s` is reached from this computer: its link answers (at a local forward
 /// through the node when only the node reaches the lab), and its shell reaches its machine
 /// (through the node and the router).
-async fn reached(run: &ServerRun, s: &crate::runtime::LabStatus, f: &mut Vec<String>) {
+async fn reached(run: &Deployment, s: &crate::runtime::LabStatus, f: &mut Vec<String>) {
     // Where the runner says each published endpoint is reached, and why not when it isn't.
     match run.endpoints(&isothrum_runner::RunOptions::new()).await {
         Ok(endpoints) => {
@@ -253,7 +253,7 @@ async fn reached(run: &ServerRun, s: &crate::runtime::LabStatus, f: &mut Vec<Str
 }
 
 /// A command runs in `machine` through its shell's command ("Open shell"'s, without a terminal).
-async fn shell_runs(run: &ServerRun, machine: &str, f: &mut Vec<String>) {
+async fn shell_runs(run: &Deployment, machine: &str, f: &mut Vec<String>) {
     let shell = match run.console_command(machine, None).await {
         Ok(shell) => shell,
         Err(e) => return check(false, format!("{machine}'s shell opens: {e}"), f),

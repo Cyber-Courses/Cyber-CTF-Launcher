@@ -9,7 +9,7 @@ use isothrum_runner::RunOptions;
 
 use super::super::docker::Check;
 use super::super::lab;
-use super::opened::OpenedRun;
+use super::deployment::Deployment;
 use super::{Kind, LabRun, Result, described, remote, view};
 use crate::error::Error;
 
@@ -69,7 +69,7 @@ struct ModuleCheck {
     command: Option<String>,
 }
 
-impl OpenedRun {
+impl Deployment {
     /// Runs the lab's checks: each runner the module's `checks` output names, in its machine, by
     /// the runner (`exec`, an SSH along the module's route: through its router, and through the
     /// server's node first when only it reaches the lab), with `opts`. Not available when the

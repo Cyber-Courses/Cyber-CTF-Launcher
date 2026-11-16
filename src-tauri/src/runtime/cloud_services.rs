@@ -2,7 +2,7 @@
 //! buckets, instances...) from a Terraform module of the lab's own, hand-written (`cloud/*.tf`),
 //! applied into the player's cloud account. Isoloom produces nothing for them: the launcher reads
 //! what it needs of the lab from its own lab file beside the module ([`lab_file`]), and Isothrum
-//! runs the module as any Terraform folder ([`isothrum::CloudRun::own`]): it applies it with the
+//! runs the module as any Terraform folder ([`isothrum::Deployment::own`]): it applies it with the
 //! values the launcher gives ([`values`]), keeps its state and expiry, reads its outputs, and
 //! destroys it on a stop or the auto-stop.
 //!
@@ -66,7 +66,7 @@ pub(super) async fn start(dirs: &AppDirs, lab: LabRef<'_>, host: Option<&str>, e
     let values = values::module_values(&file, &declared, env, ip.as_deref())?;
     log("Creating the lab's cloud services…".to_owned());
     let place = isothrum::CloudPlace::launch(&conn, None);
-    isothrum::CloudRun::own(&super::paths::runner_home(dirs)?, dir, id)?.up_own(&place, &values, log).await
+    isothrum::Deployment::own(&super::paths::runner_home(dirs)?, dir, id, place)?.up_own(&values, log).await
 }
 
 /// Refuses an account of another cloud than the lab's.

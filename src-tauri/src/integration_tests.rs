@@ -56,8 +56,8 @@ mod start_path {
     /// the host's connection from their knobs, with no saved host for the launcher's start to read.
     const OPENS_ITS_OWN_RUN: &[(&str, &str)] = &[("server_lab.rs", "a server's connection from its knobs, not a saved host")];
 
-    /// The runs a scenario opens itself: `LabRun::…`, `ServerRun::…`, `CloudRun::…`.
-    const RUNS: [&str; 3] = ["LabRun::", "ServerRun::", "CloudRun::"];
+    /// The runs a scenario opens itself: `LabRun::…`, `Deployment::…`.
+    const RUNS: [&str; 2] = ["LabRun::", "Deployment::"];
 
     /// What starts or stops a run.
     const CHANGES: [&str; 2] = [".up(", ".down("];
@@ -93,7 +93,7 @@ mod start_path {
         let by_hand = "let up = async {\n lab::prepare(&dir, t)?;\n isothrum::LabRun::vm(&home, &dir, &id)?.up(&[], Some(p), &mut log(&id)).await\n}";
         assert_eq!(direct_changes(by_hand).len(), 1);
         // A run bound to a variable, then brought up or down.
-        assert_eq!(direct_changes("let run = ServerRun::new(&home, &dir, id).unwrap();\nlet up = run.up(&place, &[], &mut log).await;\nlet down = run.down(&place, &mut log).await;").len(), 2);
+        assert_eq!(direct_changes("let run = Deployment::on_server(&home, &dir, id, Runtime::Vm, place).unwrap();\nlet up = run.up(&[], &mut log).await;\nlet down = run.down(&mut log).await;").len(), 2);
         // Read, checked, or handed to the launcher's stop: fine.
         for fine in [
             "isothrum::LabRun::vm(&home, &dir, &id).unwrap().status().await;",

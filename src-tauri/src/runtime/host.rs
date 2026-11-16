@@ -27,20 +27,18 @@ pub(crate) enum Host {
         conn: server::Connection,
     },
     /// In a cloud account (its VMs, its containers on a VM, or its cloud services), with the
-    /// account's credentials (`place`).
+    /// account's credentials (its run's place).
     Cloud {
         /// The lab's run in the account.
-        run: isothrum::CloudRun,
-        /// Where in the account it runs, as resolved from it: its region, the address let in.
-        place: isothrum::CloudPlace,
+        run: isothrum::Deployment,
         /// The account's connection: its settings and credentials.
         conn: server::Connection,
     },
     /// On a Proxmox server, through `conn`: its place is found when the run is changed (its node,
     /// its SSH jump), not to read its status.
     Server {
-        /// The lab's run on the server.
-        run: isothrum::ServerRun,
+        /// The lab's run on the server, placed for reading it.
+        run: isothrum::Deployment,
         /// The server's connection: its settings and secret.
         conn: server::Connection,
     },
@@ -64,17 +62,18 @@ pub(crate) async fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
         None => return Ok(isothrum::LabRun::local(&home, dir, id, runtime, &recorded)?.map(Host::Local)),
         Some(conn) if conn.provider == Provider::VmwareEsxi => Host::Esxi { run: super::launch::esxi_run(dirs, dir, id, form, &conn)?, conn },
         Some(conn) if conn.provider.is_cloud() => {
+            let place = isothrum::CloudPlace::of(&conn);
             #[cfg(feature = "cloud-services")]
             let run = if runtime == Runtime::Cloud {
-                isothrum::CloudRun::own(&home, dir, id)?
+                isothrum::Deployment::own(&home, dir, id, place)?
             } else {
-                isothrum::CloudRun::new(&home, dir, id, form, conn.terraform()?)?
+                isothrum::Deployment::in_cloud(&home, dir, id, form, conn.terraform()?, place)?
             };
             #[cfg(not(feature = "cloud-services"))]
-            let run = isothrum::CloudRun::new(&home, dir, id, form, conn.terraform()?)?;
-            Host::Cloud { run, place: isothrum::CloudPlace::of(&conn), conn }
+            let run = isothrum::Deployment::in_cloud(&home, dir, id, form, conn.terraform()?, place)?;
+            Host::Cloud { run, conn }
         }
-        Some(conn) => Host::Server { run: isothrum::ServerRun::new(&home, dir, id, form)?, conn },
+        Some(conn) => Host::Server { run: isothrum::Deployment::on_server(&home, dir, id, form, isothrum::ServerPlace::of(&conn))?, conn },
     }))
 }
 
@@ -103,8 +102,7 @@ impl Host {
     pub(crate) fn target(&self) -> Option<lab::Target> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.target(),
-            Host::Cloud { run, .. } => run.target(),
-            Host::Server { run, .. } => run.target(),
+            Host::Cloud { run, .. } | Host::Server { run, .. } => run.target(),
         }
     }
 
@@ -114,20 +112,19 @@ impl Host {
         !matches!(self, Host::Cloud { run, .. } if run.module() == isothrum::Module::Own)
     }
 
-    /// The Proxmox server's place for a change of its run (its node, its SSH jump).
-    async fn server_place(dirs: &AppDirs, run: &isothrum::ServerRun, conn: &server::Connection) -> Result<isothrum::ServerPlace> {
-        super::launch::server_place(dirs, &conn.id, conn, run).await
+    /// The Proxmox server's run `run`, placed as a change or a console takes it (its node, its SSH
+    /// jump).
+    async fn placed(dirs: &AppDirs, run: &isothrum::Deployment, conn: &server::Connection) -> Result<isothrum::Deployment> {
+        let place = super::launch::server_place(dirs, &conn.id, conn).await?;
+        Ok(run.at(isothrum::Site::Server(place)))
     }
 
     /// Brings the run up to date with the lab's regenerated files (a machine added or taken out).
     pub(crate) async fn update(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> std::result::Result<(), Failed> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.update(log).await,
-            Host::Cloud { run, place, .. } => run.update(place, log).await,
-            Host::Server { run, conn } => {
-                let place = Self::server_place(dirs, run, conn).await.map_err(|error| Failed { error, run_changed: false })?;
-                run.update(&place, log).await
-            }
+            Host::Cloud { run, .. } => run.update(log).await,
+            Host::Server { run, conn } => Self::placed(dirs, run, conn).await.map_err(|error| Failed { error, run_changed: false })?.update(log).await,
         }
     }
 
@@ -135,8 +132,8 @@ impl Host {
     pub(crate) async fn retire(&self, dirs: &AppDirs, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.retire(machine, log).await,
-            Host::Cloud { run, place, .. } => run.retire(place, machine, log).await,
-            Host::Server { run, conn } => run.retire(&Self::server_place(dirs, run, conn).await?, machine, log).await,
+            Host::Cloud { run, .. } => run.retire(machine, log).await,
+            Host::Server { run, conn } => Self::placed(dirs, run, conn).await?.retire(machine, log).await,
         }
     }
 
@@ -144,8 +141,8 @@ impl Host {
     pub(crate) async fn down(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<()> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.down(log).await,
-            Host::Cloud { run, place, .. } => run.down(place, log).await,
-            Host::Server { run, conn } => run.down(&Self::server_place(dirs, run, conn).await?, log).await,
+            Host::Cloud { run, .. } => run.down(log).await,
+            Host::Server { run, conn } => Self::placed(dirs, run, conn).await?.down(log).await,
         }
     }
 
@@ -153,8 +150,7 @@ impl Host {
     pub(crate) async fn run_status(&self) -> Result<Option<Status>> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.run_status().await,
-            Host::Cloud { run, .. } => run.run_status().await,
-            Host::Server { run, .. } => run.run_status().await,
+            Host::Cloud { run, .. } | Host::Server { run, .. } => run.run_status().await,
         }
     }
 
@@ -162,8 +158,7 @@ impl Host {
     pub(crate) async fn console(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.console_command(machine, user).await,
-            Host::Cloud { run, .. } => run.console_command(machine, user).await,
-            Host::Server { run, .. } => run.console_command(machine, user).await,
+            Host::Cloud { run, .. } | Host::Server { run, .. } => run.console_command(machine, user).await,
         }
     }
 
@@ -171,8 +166,8 @@ impl Host {
     pub(crate) async fn graphical_console(&self, dirs: &AppDirs, machine: &str) -> Result<isothrum_client::HeldConsole> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.graphical_console(machine).await,
-            Host::Cloud { run, place, .. } => run.screen(place, machine).await,
-            Host::Server { run, conn } => run.screen(&Self::server_place(dirs, run, conn).await?, machine).await,
+            Host::Cloud { run, .. } => run.graphical_console(machine).await,
+            Host::Server { run, conn } => Self::placed(dirs, run, conn).await?.graphical_console(machine).await,
         }
     }
 
@@ -181,27 +176,17 @@ impl Host {
     pub(crate) async fn native_console(&self, dirs: &AppDirs, machine: &str) -> Result<isothrum_runner::NativeConsole> {
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.native_console(machine).await,
-            Host::Cloud { run, place, .. } => run.native(place, machine).await,
-            Host::Server { run, conn } => run.native(&Self::server_place(dirs, run, conn).await?, machine).await,
+            Host::Cloud { run, .. } => run.native_console(machine).await,
+            Host::Server { run, conn } => Self::placed(dirs, run, conn).await?.native_console(machine).await,
         }
     }
 
     /// Runs the lab's checks where it runs (a server's over SSH, an ESXi host's from its
-    /// controller; a cloud's none yet); none to run beside cloud services ([`Host::has_machines`]).
+    /// controller, a cloud-services lab's pages; a cloud's generated module none yet).
     pub(crate) async fn check(&self) -> Result<docker::Check> {
-        #[cfg(feature = "cloud-services")]
-        if let Host::Cloud { run, .. } = self
-            && run.module() == isothrum::Module::Own
-        {
-            return run.own_check().await;
-        }
-        if !self.has_machines() {
-            return Ok(docker::Check::default());
-        }
         match self {
             Host::Local(run) | Host::Esxi { run, .. } => run.check().await,
-            Host::Cloud { run, place, .. } => Ok(run.check(place)),
-            Host::Server { run, .. } => run.check().await,
+            Host::Cloud { run, .. } | Host::Server { run, .. } => run.check().await,
         }
     }
 }
@@ -222,7 +207,8 @@ mod tests {
             let kind = match &h {
                 Host::Local(_) => "local",
                 Host::Esxi { .. } => "esxi",
-                Host::Cloud { place, .. } => {
+                Host::Cloud { run, .. } => {
+                    let isothrum::Site::Cloud(place) = run.site() else { panic!("a cloud run in a cloud account") };
                     assert_eq!(place.label, "acct", "the account's own id, from its connection");
                     "cloud"
                 }

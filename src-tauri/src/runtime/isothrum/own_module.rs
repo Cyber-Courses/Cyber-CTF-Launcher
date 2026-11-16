@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use isothrum_runner::{OutputValue, RunState, Status};
 
-use super::cloud_runs::CloudRun;
+use super::deployment::Deployment;
 use crate::error::Result;
 use crate::runtime::cloud_services::lab_file::{self, LabFile};
 use crate::runtime::docker::{Check, CheckResult};
@@ -16,7 +16,7 @@ use crate::runtime::{LabStatus, Place};
 /// How long a check's page may take to answer.
 const CHECK_WAIT: Duration = Duration::from_secs(10);
 
-impl CloudRun {
+impl Deployment {
     /// The cloud-services lab as its page shows it: running once its run is ready, what it
     /// exposes and its words, from its lab file.
     pub(crate) async fn own_status(&self) -> Result<LabStatus> {
@@ -140,14 +140,14 @@ mod tests {
         }));
         let mut config = isothrum_runner::RunnerConfig::new(crate::runtime::paths::runner_home_in(&root));
         config.processes = Arc::clone(&fake) as Arc<dyn isothrum_runner::ProcessRunner>;
-        let run = CloudRun::own_with(config, &dir, "bucket").unwrap();
+        let place = super::super::CloudPlace { label: "acct".into(), ..super::super::CloudPlace::default() };
+        let run = Deployment::own_with(config, &dir, "bucket", place).unwrap();
         let declared = crate::runtime::isothrum::module_variables(&module).unwrap();
         let file = LabFile::read(&dir).unwrap();
         let launch = [("CTF_LAUNCH_TOKEN".to_owned(), "t0k".to_owned())];
         let values = crate::runtime::cloud_services::values::module_values(&file, &declared, &launch, Some("203.0.113.7")).unwrap();
-        let place = super::super::CloudPlace { label: "acct".into(), ..super::super::CloudPlace::default() };
         let mut log = Vec::new();
-        run.up_own(&place, &values, &mut |l| log.push(l)).await.unwrap();
+        run.up_own(&values, &mut |l| log.push(l)).await.unwrap();
         let apply = fake.calls().into_iter().find(|c| c.program == "terraform" && c.args.first().is_some_and(|a| a == "apply")).expect("an apply");
         assert_eq!(apply.env("TF_VAR_allowed_cidr"), Some("203.0.113.7/32"), "this machine's IP in the lab's allow-list variable");
         assert_eq!(apply.env("TF_VAR_launch_token"), Some("t0k"), "the launch's value in its variable");
