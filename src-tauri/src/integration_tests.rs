@@ -4,6 +4,7 @@
 //! runs them by tier; docs/contributing/testing/integration.md says what each one guards against.
 
 mod attack_box;
+mod cli_lab;
 mod corpus_docker;
 mod docker_lab;
 mod flag_contract;

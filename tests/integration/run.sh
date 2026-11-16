@@ -146,6 +146,7 @@ INVOICE_PORTAL=integration_tests::docker_lab::supplier_portal_runs_end_to_end
 VM_LAB=integration_tests::vm_lab::a_vm_lab_runs_end_to_end_through_the_runner
 PER_MACHINE=integration_tests::per_machine::a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end
 LAUNCH_COMMANDS=integration_tests::launch_commands::a_local_lab_launches_and_tears_down_through_the_commands
+CLI_LAB=integration_tests::cli_lab::a_docker_lab_runs_end_to_end_through_the_command_line
 CORPUS=integration_tests::corpus_docker::corpus_docker_labs_run_end_to_end_on_the_runner
 REPLACE=integration_tests::replace::a_running_lab_is_not_replaced_under_it
 PROXMOX_CONNECTION=integration_tests::server_lab::a_proxmox_host_passes_the_connection_test
@@ -177,6 +178,7 @@ reads() {
     "$VM_LAB") echo CYBERCTF_TEST_VM_LAB CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
     "$PER_MACHINE") echo CYBERCTF_TEST_PER_MACHINE_LAB CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
     "$LAUNCH_COMMANDS") echo CYBERCTF_TEST_LOCAL_LAB ;;
+    "$CLI_LAB") echo CYBERCTF_TEST_LOCAL_LAB ;;
     "$CORPUS") echo CYBERCTF_TEST_CORPUS_LABS ;;
     "$REPLACE") echo CYBERCTF_TEST_REPLACE_LAB CYBERCTF_TEST_REPLACE_FORM CYBERCTF_TEST_VM_PROVIDER CYBERCTF_TEST_VM_INPUTS ;;
     "$PROXMOX_CONNECTION") echo CYBERCTF_TEST_PVE_HOST CYBERCTF_TEST_PVE_PASSWORD CYBERCTF_TEST_PVE_TOKEN_ID CYBERCTF_TEST_PVE_TOKEN_SECRET CYBERCTF_TEST_PVE_SSH_KEY CYBERCTF_TEST_PVE_FINGERPRINT CYBERCTF_TEST_PVE_STORAGE CYBERCTF_TEST_PVE_BRIDGE CYBERCTF_TEST_PVE_NODE ;;
@@ -525,6 +527,8 @@ if in_tier local; then
     CYBERCTF_TEST_PER_MACHINE_LAB="$EXAMPLES/supplier-portal-api" CYBERCTF_TEST_VM_PROVIDER="$VM_PROVIDER" \
     CYBERCTF_TEST_VM_INPUTS=API_URL=http://localhost:3206,LAUNCH_TOKEN=test-token
   scenario launch-commands docker "" "$LAUNCH_COMMANDS" CYBERCTF_TEST_LOCAL_LAB="$EXAMPLES/hello-stack"
+  # The command line (`cyberctf labs install`, `status`, `stop`) on a real Docker lab.
+  scenario cli-lab-docker docker "" "$CLI_LAB" CYBERCTF_TEST_LOCAL_LAB="$EXAMPLES/hello-stack"
   # Representative CTF labs of one's own (private, so named by folder only), each up to down.
   scenario corpus-docker docker "" "$CORPUS"
   # A running lab's folder is never replaced under it: an update and a re-import are refused

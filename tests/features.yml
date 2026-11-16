@@ -3659,6 +3659,27 @@ areas:
           web: only checked under a catalogue outage
           desktop: not asserted (specs wait on the lab page or Overview instead)
 
+      - id: app.command-line
+        what: The command line, cyberctf - install a lab from a folder, read its status and checks, stop it, and the launcher's other commands, without the window, answering scripts in JSON lines with exit codes.
+        providers:
+          - docker
+        host: true
+        tests:
+          unit:
+            - src-tauri/src/cli/tests.rs > the_version_is_a_versioned_json_result
+            - src-tauri/src/cli/tests.rs > a_wrong_command_line_is_a_usage_error_said_in_json_too
+            - src-tauri/src/cli/tests.rs > the_installed_labs_are_listed_with_how_each_runs
+            - src-tauri/src/cli/tests.rs > an_operation_on_a_lab_that_isnt_installed_is_not_ready_and_a_bad_id_is_a_usage_error
+            - src-tauri/src/cli/tests.rs > an_installed_lab_that_never_ran_reads_as_not_running
+          integration:
+            - cli-lab-docker
+        rig:
+          - container
+        gaps:
+          web: the command line has no page
+          desktop: the command line has no window
+          integration: Docker only, through install, status and stop; no park, resume, attack box, VM form or catalogue start through the command line
+
       - id: app.command-palette
         what: The command palette (Ctrl/Cmd+K or Find) searches screens, actions and labs, runs the picked one with the keyboard and closes with Escape.
         host: false
