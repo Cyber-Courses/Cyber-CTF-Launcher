@@ -76,7 +76,7 @@ fn a_plugin_listing_that_failed_says_so_rather_than_plugin_missing() {
     let detection = |plugins_unknown| Detection {
         unresponsive: false,
         hypervisor: Some(true),
-        mkisofs_missing: false,
+        part_missing: None,
         hypervisor_version: None,
         plugin: Some("vagrant-libvirt"),
         plugin_installed: false,
@@ -99,7 +99,7 @@ fn an_old_utm_plugin_or_utm_reads_as_too_old_and_says_what_to_do() {
         unresponsive: false,
         plugins_unknown: None,
         hypervisor: Some(true),
-        mkisofs_missing: false,
+        part_missing: None,
         hypervisor_version,
         plugin: Some("vagrant_utm"),
         plugin_installed,
@@ -323,7 +323,7 @@ fn the_first_missing_layer_is_the_reason() {
                 unresponsive: stuck,
                 plugins_unknown: None,
                 hypervisor: hv,
-                mkisofs_missing: false,
+                part_missing: None,
                 hypervisor_version: None,
                 plugin,
                 plugin_installed: installed,
@@ -337,7 +337,7 @@ fn the_first_missing_layer_is_the_reason() {
         unresponsive: false,
         plugins_unknown: None,
         hypervisor: Some(true),
-        mkisofs_missing: false,
+        part_missing: None,
         hypervisor_version: None,
         plugin: None,
         plugin_installed: true,
@@ -370,7 +370,7 @@ fn libvirt_joined_since_logging_in_waits_for_the_next_login() {
         unresponsive: false,
         plugins_unknown: None,
         hypervisor: Some(true),
-        mkisofs_missing: false,
+        part_missing: None,
         hypervisor_version: None,
         plugin: Some("vagrant-libvirt"),
         plugin_installed: true,
@@ -394,7 +394,7 @@ fn qemu_on_linux_needs_the_kvm_device_the_labs_boot_with() {
         unresponsive: false,
         plugins_unknown: None,
         hypervisor: Some(true),
-        mkisofs_missing: false,
+        part_missing: None,
         hypervisor_version: None,
         plugin: Some("vagrant-qemu"),
         plugin_installed: true,
@@ -429,7 +429,7 @@ fn qemu_without_mkisofs_says_its_vms_need_it_vagrant_first() {
         unresponsive: false,
         plugins_unknown: None,
         hypervisor: Some(false),
-        mkisofs_missing: true,
+        part_missing: Some(Part::Mkisofs),
         hypervisor_version: None,
         plugin: Some("vagrant-qemu"),
         plugin_installed: true,
@@ -441,6 +441,29 @@ fn qemu_without_mkisofs_says_its_vms_need_it_vagrant_first() {
     assert_eq!(reason_of(Provider::Qemu, false, qemu), Some(Unavailable::VagrantMissing));
     let said = Unavailable::MkisofsMissing.message();
     assert!(said.starts_with("QEMU VMs need mkisofs") && said.contains("genisoimage"), "{said}");
+}
+
+#[test]
+fn libvirt_without_virtiofsd_says_its_shared_folders_need_it_and_how_to_install_it() {
+    // Regression: libvirt and vagrant-libvirt read as ready without virtiofsd, and a lab with the
+    // attack box's shared folder failed to start with vagrant-libvirt's stack trace ("Call to
+    // virDomainCreate failed: operation failed: Unable to find a satisfying virtiofsd").
+    let libvirt = Detection {
+        unresponsive: false,
+        plugins_unknown: None,
+        hypervisor: Some(false),
+        part_missing: Some(Part::Virtiofsd),
+        hypervisor_version: None,
+        plugin: Some("vagrant-libvirt"),
+        plugin_installed: true,
+        plugin_version: None,
+        utility: None,
+        account: None,
+    };
+    assert_eq!(reason_of(Provider::Libvirt, true, libvirt), Some(Unavailable::VirtiofsdMissing));
+    assert_eq!(reason_of(Provider::Libvirt, false, libvirt), Some(Unavailable::VagrantMissing), "Vagrant first");
+    let said = Unavailable::VirtiofsdMissing.message();
+    assert!(said.starts_with("libvirt needs virtiofsd") && said.contains("apt-get install virtiofsd") && said.contains("dnf install virtiofsd"), "{said}");
 }
 
 #[tokio::test]
@@ -472,7 +495,7 @@ fn vmware(plugin_installed: bool, utility: UtilityState) -> Detection<'static> {
         unresponsive: false,
         plugins_unknown: None,
         hypervisor: Some(true),
-        mkisofs_missing: false,
+        part_missing: None,
         hypervisor_version: None,
         plugin: Some("vagrant-vmware-desktop"),
         plugin_installed,

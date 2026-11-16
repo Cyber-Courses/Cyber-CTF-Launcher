@@ -148,6 +148,21 @@ fn qemu_without_mkisofs_is_installed_again_which_brings_it() {
 }
 
 #[test]
+fn libvirt_without_virtiofsd_is_installed_again_which_brings_it() {
+    // Regression: libvirt read as set up without the virtiofsd its shared folders need, and a lab
+    // with the attack box's shared folder failed to start ("Unable to find a satisfying
+    // virtiofsd"). Its install (which adds virtiofsd) is the way: the setup runs it.
+    let r = shapes::debian_libvirt_without_virtiofsd();
+    assert_eq!(get_of(&r, Provider::Libvirt), [Action::Install { dependency: Dependency::Libvirt }]);
+    let p = plan_of(&r, &wanted(&[SetupPath::Vm], &[Provider::Libvirt]));
+    assert_eq!(p.hypervisor, Some(Provider::Libvirt));
+    assert_eq!(steps(&p), ["libvirt: install libvirt"]);
+    let libvirt = r.vm_providers.iter().find(|s| s.provider == Provider::Libvirt).unwrap();
+    assert_eq!(libvirt.reason, Some(Unavailable::VirtiofsdMissing));
+    assert!(!r.ready_hypervisors.contains(&Provider::Libvirt));
+}
+
+#[test]
 fn virtualboxs_driver_waiting_for_the_newer_kernel_ends_the_pass_with_a_restart() {
     // Regression: the install couldn't build VirtualBox's driver for the running kernel, whose
     // headers the archive no longer had; VirtualBox read as ready and the self-test's VM found no

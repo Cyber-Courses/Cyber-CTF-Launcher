@@ -11,6 +11,7 @@ mod unavailable;
 mod vagrant_needs;
 mod vbox_driver;
 mod versions;
+mod virtiofsd;
 
 use crate::platform::exec::{run_read, timed_out};
 use crate::platform::host::{Arch, Os};
@@ -31,6 +32,7 @@ pub use vagrant_needs::{Need, UtilityState, needs, vmware_utility};
 #[cfg(test)]
 use versions::version_at_least;
 use versions::{TooOld, hypervisor_too_old, plugin_too_old};
+pub(crate) use virtiofsd::{found as virtiofsd_found, needs_virtiofsd};
 
 /// How long VirtualBox's service gets to answer `VBoxManage list runningvms` before it reads as
 /// unresponsive (wedged), not just slow.
@@ -78,6 +80,25 @@ fn qemu_binary() -> &'static str {
 /// which every Mac has). Without it, `vagrant up` fails at the lab's first VM.
 pub(crate) fn needs_mkisofs(provider: Provider, os: Os) -> bool {
     provider == Provider::Qemu && os == Os::Linux
+}
+
+/// A program `provider`'s VMs need on this machine beside the hypervisor, found missing
+/// ([`missing_part`]): the hypervisor then reads as not installed, as its install brings it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Part {
+    /// `mkisofs`, for QEMU's VMs on Linux ([`needs_mkisofs`]).
+    Mkisofs,
+    /// A virtiofsd libvirt finds, for libvirt's shared folders ([`needs_virtiofsd`]).
+    Virtiofsd,
+}
+
+/// The first program `provider`'s VMs need on `os` beside its hypervisor (installed) that this
+/// machine hasn't; none when it has them all.
+async fn missing_part(provider: Provider, os: Os) -> Option<Part> {
+    if needs_mkisofs(provider, os) && !tool_present("mkisofs", &["-version"]).await {
+        return Some(Part::Mkisofs);
+    }
+    (needs_virtiofsd(provider, os) && !virtiofsd_found()).then_some(Part::Virtiofsd)
 }
 
 async fn tool_present(program: &'static str, args: &[&str]) -> bool {
@@ -158,14 +179,14 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &Plugi
         return None;
     }
 
-    // The hypervisor layer (the VM software itself). QEMU on Linux without `mkisofs` reads as not
-    // installed, with its own reason: its install brings it.
+    // The hypervisor layer (the VM software itself). QEMU on Linux without `mkisofs`, and libvirt
+    // without a virtiofsd, read as not installed, with their own reason: their install brings it.
     let found = provider.hypervisor_installed().await;
     if !provider.offered(found == Some(true)) {
         return None;
     }
-    let mkisofs_missing = found == Some(true) && needs_mkisofs(provider, Os::HERE) && !tool_present("mkisofs", &["-version"]).await;
-    let hypervisor = if mkisofs_missing { Some(false) } else { found };
+    let part_missing = if found == Some(true) { missing_part(provider, Os::HERE).await } else { None };
+    let hypervisor = if part_missing.is_some() { Some(false) } else { found };
 
     let PluginLayer { plugin, version: plugin_version, installed: plugin_installed } = plugin_layer(provider, vagrant_installed, plugins);
     // The hypervisor's own version, where its plugin is particular about it (UTM).
@@ -188,7 +209,7 @@ async fn detect_one(provider: Provider, vagrant_installed: bool, plugins: &Plugi
     let detection = Detection {
         unresponsive,
         hypervisor,
-        mkisofs_missing,
+        part_missing,
         hypervisor_version: hypervisor_version.as_deref(),
         plugin: plugin.as_deref(),
         plugin_installed,
@@ -277,9 +298,9 @@ struct Detection<'a> {
     unresponsive: bool,
     /// Whether the hypervisor is installed; `None` when there is nothing local to probe.
     hypervisor: Option<bool>,
-    /// QEMU is there but not the `mkisofs` its VMs need ([`needs_mkisofs`]), so `hypervisor`
+    /// The hypervisor is there but not a program its VMs need ([`missing_part`]), so `hypervisor`
     /// reads false.
-    mkisofs_missing: bool,
+    part_missing: Option<Part>,
     /// The hypervisor's version, when it is installed and held to one (UTM).
     hypervisor_version: Option<&'a str>,
     /// The Vagrant plugin this provider needs, if it is not built in.
@@ -303,7 +324,7 @@ struct Detection<'a> {
 /// hypervisor itself (nothing setup installs mends that), then the first of its [`needs`]. So it
 /// is `None` only when nothing is needed: readiness and the setup steps can't disagree.
 fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'_>) -> Option<Unavailable> {
-    let Detection { unresponsive, hypervisor, mkisofs_missing, hypervisor_version, plugin, plugin_version, plugins_unknown, utility, account, .. } = detection;
+    let Detection { unresponsive, hypervisor, part_missing, hypervisor_version, plugin, plugin_version, plugins_unknown, utility, account, .. } = detection;
     let plugin = || plugin.unwrap_or("?").to_owned();
     if needs.contains(&Need::Vagrant) {
         Some(Unavailable::VagrantMissing)
@@ -313,8 +334,11 @@ fn unavailable_reason(provider: Provider, needs: &[Need], detection: Detection<'
         Some(Unavailable::HypervOff)
     } else if account == Some(AccountLacks::HypervAdmin) {
         Some(Unavailable::HypervNeedsAdmin)
-    } else if mkisofs_missing {
-        Some(Unavailable::MkisofsMissing)
+    } else if let Some(part) = part_missing {
+        Some(match part {
+            Part::Mkisofs => Unavailable::MkisofsMissing,
+            Part::Virtiofsd => Unavailable::VirtiofsdMissing,
+        })
     } else if hypervisor == Some(false) {
         Some(Unavailable::NotInstalled { program: provider.probe().map(|probe| probe.program.to_owned()) })
     } else if account == Some(AccountLacks::NewLogin) {
