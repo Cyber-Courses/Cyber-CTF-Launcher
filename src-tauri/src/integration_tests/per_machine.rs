@@ -54,6 +54,19 @@ async fn up_as_vms(t: &TestApp, dir: &Path, id: &str, f: &mut Vec<String>) {
     }
 }
 
+/// The lab's own checks, run as the lab page runs them (by its catalogue runtime, the run found
+/// by the form recorded with the lab): they run in the VMs, and pass.
+async fn checks_pass(t: &TestApp, id: &str, f: &mut Vec<String>) {
+    match crate::commands::labs::check_in(&t.dirs(), id, Runtime::Docker).await {
+        Ok(c) => check(
+            c.available && c.ok && !c.results.is_empty(),
+            format!("its checks pass in the VMs ({:?}: {})", c.results.iter().map(|r| (&r.name, r.ok)).collect::<Vec<_>>(), c.output.trim()),
+            f,
+        ),
+        Err(e) => check(false, format!("its checks run: {e}"), f),
+    }
+}
+
 #[tokio::test]
 #[ignore = "needs Vagrant, a hypervisor and a dual-form lab (CYBERCTF_TEST_PER_MACHINE_LAB)"]
 async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
@@ -85,6 +98,7 @@ async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
                     check(lab::vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target's files were generated".into(), f);
                     check(!lab::docker_vm_dir(&dir).exists(), "no helper VM's".into(), f);
                     up_as_vms(&t, &dir, &id, f).await;
+                    checks_pass(&t, &id, f).await;
                 }
                 Err(e) => check(false, format!("it starts: {e}"), f),
             }
