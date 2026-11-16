@@ -189,14 +189,41 @@ fn isoloom_versions(lock: &str) -> Vec<(String, String)> {
 
 /// On Windows, tauri-build embeds the app manifest (Common Controls v6) in the app binary only,
 /// so the unit-test executable ran without it and failed to load (`STATUS_ENTRYPOINT_NOT_FOUND`:
-/// comctl32's `TaskDialogIndirect` needs v6). Embed the same manifest in every linked target.
+/// comctl32's `TaskDialogIndirect` needs v6). Embed the same manifest in every linked target, by
+/// the target's toolchain: the MSVC linker's own flags, or, on a GNU target (MinGW, llvm-mingw),
+/// a resource object its `windres` compiles.
 fn with_windows_manifest(attributes: tauri_build::Attributes) -> Result<tauri_build::Attributes, Box<dyn std::error::Error>> {
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") || std::env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc") {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return Ok(attributes);
     }
     let manifest = manifest_dir()?.join("windows-app-manifest.xml");
+    match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
+        Ok("msvc") => {
+            println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+            println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+        }
+        Ok("gnu") => println!("cargo:rustc-link-arg={}", gnu_manifest_object(&manifest)?.display()),
+        _ => return Ok(attributes),
+    }
     println!("cargo:rerun-if-changed={}", manifest.display());
-    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
-    println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
     Ok(attributes.windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest()))
+}
+
+/// `manifest` as a COFF resource object (`RT_MANIFEST`, id 1) in the script's output folder,
+/// compiled by the GNU toolchain's `windres`: `$WINDRES` when set, else `<arch>-w64-mingw32-windres`.
+fn gnu_manifest_object(manifest: &std::path::Path) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").ok_or("cargo didn't set OUT_DIR")?);
+    let rc = out.join("app-manifest.rc");
+    // windres reads `\` in a string as an escape: the path with forward slashes, which it takes.
+    std::fs::write(&rc, format!("1 24 \"{}\"\n", manifest.display().to_string().replace('\\', "/")))?;
+    let object = out.join("app-manifest.o");
+    println!("cargo:rerun-if-env-changed=WINDRES");
+    let windres = std::env::var("WINDRES").unwrap_or_else(|_| format!("{}-w64-mingw32-windres", std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default()));
+    #[expect(clippy::disallowed_methods, reason = "a build script, which has no platform::exec: it runs the toolchain's resource compiler")]
+    let status = std::process::Command::new(&windres).arg("--input").arg(&rc).arg("--output").arg(&object).arg("--output-format=coff").status();
+    match status {
+        Ok(s) if s.success() => Ok(object),
+        Ok(s) => Err(format!("{windres} failed compiling the app manifest ({s})").into()),
+        Err(e) => Err(format!("{windres} (the GNU toolchain's resource compiler; set WINDRES to another) couldn't run: {e}").into()),
+    }
 }
