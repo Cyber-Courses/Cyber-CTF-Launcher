@@ -131,7 +131,7 @@ fn form(code: &Code) -> usize {
         Code::TlsUnconfirmed { .. } => 44,
         Code::TlsChanged { .. } => 45,
         Code::SshHostKeyRefused { .. } => 46,
-        Code::VirtiofsdMissing => 47,
+        Code::VirtiofsdMissing { .. } => 47,
     }
 }
 
@@ -181,7 +181,7 @@ fn sample_codes() -> Vec<Code> {
         Code::TurnedOffByPolicy { setting: "DisableCloudLaunches".into() },
         Code::PickCloudAccount,
         Code::NoHypervisor,
-        Code::VirtiofsdMissing,
+        Code::VirtiofsdMissing { hypervisor: "QEMU".into() },
         Code::ToolTooOld { tool: "Vagrant".into(), found: "2.3.4".into(), required: "2.4.0".into() },
         Code::ElevationFailed { reason: "the permission prompt was declined".into() },
         Code::LabNotReady { detail: "http://web:80 answered 502".into() },

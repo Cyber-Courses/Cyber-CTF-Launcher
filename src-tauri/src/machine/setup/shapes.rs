@@ -187,22 +187,29 @@ pub(crate) fn debian_qemu_awaits_relogin() -> SystemReport {
 /// need on Linux (QEMU installed before the setup brought genisoimage with it): QEMU reads as not
 /// installed, saying why.
 pub(crate) fn debian_qemu_without_mkisofs() -> SystemReport {
-    let mut r = with(bare_debian(), false, |r| hypervisor(r, Provider::Qemu, true));
-    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Qemu) {
-        (p.hypervisor, p.available, p.reason) = (Some(false), false, Some(Unavailable::MkisofsMissing));
-    }
-    r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
-    r.setup = super::options(&r, false);
-    r
+    part_missing(Provider::Qemu, &Unavailable::MkisofsMissing)
 }
 
 /// Debian with Vagrant, vagrant-libvirt and libvirt but no virtiofsd, which libvirt shares the
 /// attack box's folder with a VM through (libvirt installed before the setup brought virtiofsd
 /// with it): libvirt reads as not installed, saying why.
 pub(crate) fn debian_libvirt_without_virtiofsd() -> SystemReport {
-    let mut r = with(bare_debian(), false, |r| hypervisor(r, Provider::Libvirt, true));
-    for p in r.vm_providers.iter_mut().filter(|p| p.provider == Provider::Libvirt) {
-        (p.hypervisor, p.available, p.reason) = (Some(false), false, Some(Unavailable::VirtiofsdMissing));
+    part_missing(Provider::Libvirt, &Unavailable::VirtiofsdMissing { hypervisor: "libvirt".into() })
+}
+
+/// Debian with Vagrant, vagrant-qemu and QEMU (with `mkisofs`) but no virtiofsd, which
+/// vagrant-qemu starts to share the attack box's folder with a VM (QEMU installed before the setup
+/// brought virtiofsd with it): QEMU reads as not installed, saying why.
+pub(crate) fn debian_qemu_without_virtiofsd() -> SystemReport {
+    part_missing(Provider::Qemu, &Unavailable::VirtiofsdMissing { hypervisor: "QEMU".into() })
+}
+
+/// Debian with Vagrant, `provider` and its plugin, but not a program its VMs need beside it
+/// (`reason`), which its install brings: `provider` reads as not installed, saying why.
+fn part_missing(provider: Provider, reason: &Unavailable) -> SystemReport {
+    let mut r = with(bare_debian(), false, |r| hypervisor(r, provider, true));
+    for p in r.vm_providers.iter_mut().filter(|p| p.provider == provider) {
+        (p.hypervisor, p.available, p.reason) = (Some(false), false, Some(reason.clone()));
     }
     r.ready_hypervisors = crate::runtime::providers::ready(&r.vm_providers, true);
     r.setup = super::options(&r, false);
@@ -296,6 +303,7 @@ pub(crate) fn all() -> Vec<(&'static str, SystemReport)> {
         ("debianQemuAwaitsRelogin", debian_qemu_awaits_relogin()),
         ("debianQemuWithoutMkisofs", debian_qemu_without_mkisofs()),
         ("debianLibvirtWithoutVirtiofsd", debian_libvirt_without_virtiofsd()),
+        ("debianQemuWithoutVirtiofsd", debian_qemu_without_virtiofsd()),
         ("bareFedora", bare_fedora()),
         ("bareArch", bare_arch()),
         ("macDockerWithoutVagrant", mac_docker_without_vagrant()),

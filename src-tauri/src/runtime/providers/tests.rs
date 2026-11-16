@@ -460,10 +460,35 @@ fn libvirt_without_virtiofsd_says_its_shared_folders_need_it_and_how_to_install_
         utility: None,
         account: None,
     };
-    assert_eq!(reason_of(Provider::Libvirt, true, libvirt), Some(Unavailable::VirtiofsdMissing));
+    let missing = |name: &str| Some(Unavailable::VirtiofsdMissing { hypervisor: name.into() });
+    assert_eq!(reason_of(Provider::Libvirt, true, libvirt), missing("libvirt"));
     assert_eq!(reason_of(Provider::Libvirt, false, libvirt), Some(Unavailable::VagrantMissing), "Vagrant first");
-    let said = Unavailable::VirtiofsdMissing.message();
+    let said = missing("libvirt").unwrap().message();
     assert!(said.starts_with("libvirt needs virtiofsd") && said.contains("apt-get install virtiofsd") && said.contains("dnf install virtiofsd"), "{said}");
+}
+
+#[test]
+fn qemu_without_virtiofsd_says_its_shared_folders_need_it_and_how_to_install_it() {
+    // Regression: QEMU and vagrant-qemu read as ready on Linux without virtiofsd, and a lab with
+    // the attack box's shared folder failed to start with vagrant-qemu's error ("virtiofsd was
+    // not found or is not executable").
+    let qemu = |part| Detection {
+        unresponsive: false,
+        plugins_unknown: None,
+        hypervisor: Some(false),
+        part_missing: Some(part),
+        hypervisor_version: None,
+        plugin: Some("vagrant-qemu"),
+        plugin_installed: true,
+        plugin_version: None,
+        utility: None,
+        account: None,
+    };
+    let missing = Unavailable::VirtiofsdMissing { hypervisor: "QEMU".into() };
+    assert_eq!(reason_of(Provider::Qemu, true, qemu(Part::Virtiofsd)), Some(missing.clone()));
+    assert_eq!(reason_of(Provider::Qemu, false, qemu(Part::Virtiofsd)), Some(Unavailable::VagrantMissing), "Vagrant first");
+    let said = missing.message();
+    assert!(said.starts_with("QEMU needs virtiofsd") && said.contains("Install QEMU again") && said.contains("apt-get install virtiofsd"), "{said}");
 }
 
 #[tokio::test]

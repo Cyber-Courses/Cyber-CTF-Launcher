@@ -317,8 +317,8 @@ fn libvirt_finding_no_virtiofsd_reads_as_its_code_not_vagrant_libvirts_stack_tra
     // the same code from the runner's failure, here and through the service.
     let trace = include_str!("../../../platform/tool_output/fixtures/vagrant/libvirt-no-virtiofsd.txt");
     let (code, text) = said(RunnerError::ToolFailed { step: "up".into(), reason: trace.into() });
-    assert_eq!(code, Code::VirtiofsdMissing);
+    assert_eq!(code, Code::VirtiofsdMissing { hypervisor: "libvirt".into() });
     assert!(text.contains("virtiofsd") && !text.contains("Libvirt::Error"), "{text}");
     let e = RunnerError::ToolFailed { step: "up".into(), reason: trace.into() };
-    assert_eq!(from_service(e.code(), &e.to_string(), Some("up"), e.detail().as_ref()).code(), Code::VirtiofsdMissing);
+    assert_eq!(from_service(e.code(), &e.to_string(), Some("up"), e.detail().as_ref()).code(), Code::VirtiofsdMissing { hypervisor: "libvirt".into() });
 }

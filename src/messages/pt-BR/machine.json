@@ -371,7 +371,7 @@
     "hypervOff": "O Hyper-V não está ativado (Recursos do Windows > Hyper-V), ou esta edição do Windows não tem.",
     "hypervNeedsAdmin": "O Vagrant só controla o Hyper-V para um administrador ou um membro de Administradores do Hyper-V: escolha Permitir minha conta (depois saia do Windows e entre de novo), ou execute o Cyber CTF como administrador.",
     "mkisofsMissing": "As VMs do QEMU precisam do mkisofs, que não está instalado: o Vagrant o usa para criar o disco que dá a cada VM sua rede do lab. Instale o QEMU de novo (isso o adiciona), ou execute sudo apt-get install genisoimage, depois verifique de novo.",
-    "virtiofsdMissing": "O libvirt precisa do virtiofsd, que não está instalado, para compartilhar uma pasta deste computador com uma VM (a pasta compartilhada da attack box). Instale o libvirt de novo (isso o adiciona), ou execute sudo apt-get install virtiofsd (sudo dnf install virtiofsd no Fedora), depois verifique de novo.",
+    "virtiofsdMissing": "O {hypervisor} precisa do virtiofsd, que não está instalado, para compartilhar uma pasta deste computador com uma VM (a pasta compartilhada da attack box). Instale o {hypervisor} de novo (isso o adiciona), ou execute sudo apt-get install virtiofsd (sudo dnf install virtiofsd no Fedora), depois verifique de novo.",
     "notInstalled": "`{program}` não foi encontrado.",
     "notInstalledNoProgram": "Não instalado.",
     "newLogin": "Você foi adicionado ao grupo {group} depois de entrar: saia e entre de novo (ou reinicie) para que valha.",

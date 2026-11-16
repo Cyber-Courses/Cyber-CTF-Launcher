@@ -49,10 +49,11 @@ and the proxy. A lab you already installed and started before can still start: t
   else an external one, else the first), unless the variable names one.
 - **Apple silicon**: a lab whose VMs exist only for x86 (pfSense, for instance) runs under QEMU
   emulation, several times slower. Run such labs on an x86 server (Proxmox, ESXi) instead.
-- **libvirt** (Linux) needs `virtiofsd` to share `~/CyberCTF/shared` with the attack box. Since
-  Debian 12, Ubuntu 23.10 and Fedora 36 it is a package of its own that libvirt doesn't pull in:
-  the Machine page says when it is missing, and installing libvirt there adds it (or
-  `sudo apt-get install virtiofsd`, `sudo dnf install virtiofsd`).
+- **libvirt and QEMU** (Linux) need `virtiofsd` to share `~/CyberCTF/shared` with the attack box.
+  Since Debian 12, Ubuntu 23.10 and Fedora 36 it is a package of its own that neither pulls in:
+  the Machine page says when it is missing, and installing libvirt or QEMU there adds it (or
+  `sudo apt-get install virtiofsd`, `sudo dnf install virtiofsd`). QEMU looks for it on the `PATH`,
+  then at `/usr/libexec/virtiofsd` and `/usr/lib/qemu/virtiofsd`.
 - **VirtualBox on Windows on Arm** doesn't exist: use Hyper-V, a server or a cloud account.
 - **A start was interrupted**: the lab page offers **Stop & clean up**; then start it again.
 
