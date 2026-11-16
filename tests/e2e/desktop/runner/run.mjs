@@ -60,7 +60,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { needsDisplay, startDisplay } from "./display.mjs";
+import { NO_WINDOW_MANAGER, needsDisplay, startDisplay } from "./display.mjs";
 import { libvirtFixtureXml, scanFixture } from "./fixture.mjs";
 import { preflightHint } from "./preflight.mjs";
 import { engineSilence, PORT_FREE_S, portStillHeld, runBounded, utmUnreachable, waitPortFree } from "../support/host.mjs";
@@ -153,7 +153,10 @@ const LOGS = process.env.CYBERCTF_TEST_DESKTOP_LOGS || join(DESKTOP, ".state", "
 mkdirSync(LOGS, { recursive: true });
 // A Linux machine without a display (an SSH session, the test rig): a virtual one for the run
 // (runner/display.mjs), its DISPLAY the specs' and their apps', stopped on every way out (`exit`).
+// Without a window manager on it, NO_WINDOW_MANAGER tells the specs why: what only a window
+// manager does (a maximize, a minimize) is skipped, not failed.
 const XVFB_LOG = join(LOGS, "xvfb.log");
+delete process.env[NO_WINDOW_MANAGER];
 const display = await startDisplay({
   spawn,
   root: args.xRoot,
@@ -165,7 +168,10 @@ const stopDisplay = display.display ? display.stop : () => {};
 process.on("exit", stopDisplay);
 if (display.display) {
   process.env.DISPLAY = display.display;
-  console.log(`\n==== display: Xvfb on ${display.display} (no DISPLAY or WAYLAND_DISPLAY here; its output in ${XVFB_LOG})`);
+  const wm = display.windowManager;
+  if ("why" in wm) process.env[NO_WINDOW_MANAGER] = wm.why;
+  const managed = "name" in wm ? `, ${wm.name} its window manager` : `, no window manager (${wm.why}): maximize and minimize checks are skipped`;
+  console.log(`\n==== display: Xvfb on ${display.display}${managed} (no DISPLAY or WAYLAND_DISPLAY here; its output in ${XVFB_LOG})`);
 }
 const PROVIDER = process.env.CYBERCTF_TEST_VM_PROVIDER || "";
 const KEEP = !!process.env.CYBERCTF_TEST_DESKTOP_KEEP;
