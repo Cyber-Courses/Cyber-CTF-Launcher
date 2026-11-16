@@ -34,13 +34,16 @@ function run(path: string, env: Record<string, string> = {}, args: string[] = []
 const verdict = (out: string, step: string) => new RegExp(`^ {3}${step} +(ok|FAIL|skip) `, "m").exec(out)?.[1];
 
 describe("a runner run as a step of another", () => {
+  // Each inner runner is a script written just now, so the outer one runs it through bash, as
+  // `run` does the outer: macOS checks a program new to it on its first run, and with a build
+  // starting new programs by the hundred that check took seconds per script, past the test's 20 s.
   const inner = (body: string) => runner("inner.sh", `${body}\nsuite_end "inner"`);
 
   it("is recorded skip when it skipped any of its own steps, ok when it ran them all, FAIL when one failed", () => {
     const skipped = inner(`step a true\nskip b "no tool"`);
     const passed = inner("step a true");
     const failed = inner(`step a true\nstep b false\nskip c "no tool"`);
-    const outer = runner("outer.sh", `nested skipped "${skipped}"\nnested passed "${passed}"\nnested failed "${failed}"\nsuite_end "outer"`);
+    const outer = runner("outer.sh", `nested skipped bash "${skipped}"\nnested passed bash "${passed}"\nnested failed bash "${failed}"\nsuite_end "outer"`);
     const { status, out } = run(outer);
     expect(verdict(out, "skipped")).toBe("skip");
     expect(verdict(out, "passed")).toBe("ok");
@@ -56,7 +59,7 @@ describe("a runner run as a step of another", () => {
 
   it("runs all of its steps whatever ONLY and SKIP the outer runner was given", () => {
     const both = inner("step a true\nstep b true");
-    const outer = runner("outer.sh", `nested inner "${both}"\nstep other true\nsuite_end "outer"`);
+    const outer = runner("outer.sh", `nested inner bash "${both}"\nstep other true\nsuite_end "outer"`);
     const { out } = run(outer, { ONLY: "inner" });
     expect(out).toContain("==== a: true");
     expect(out).toContain("==== b: true");
