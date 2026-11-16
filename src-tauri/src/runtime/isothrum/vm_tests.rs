@@ -250,10 +250,10 @@ async fn the_apps_reads_of_a_vm_lab_never_ask_vagrant_at_once() {
 async fn a_vm_labs_hypervisor_is_read_from_its_record_without_vagrant() {
     let f = Fixture::new();
     let run = f.run();
-    assert_eq!(run.recorded_provider().unwrap(), None, "never started");
+    assert_eq!(run.recorded_provider().await.unwrap(), None, "never started");
     run.up(Inputs { values: &[], default_ports: true }, Some("virtualbox"), &mut |_| {}).await.unwrap();
     let before = f.fake.calls().len();
-    assert_eq!(run.recorded_provider().unwrap().as_deref(), Some("virtualbox"));
+    assert_eq!(run.recorded_provider().await.unwrap().as_deref(), Some("virtualbox"));
     assert_eq!(f.fake.calls().len(), before, "no tool ran");
 }
 

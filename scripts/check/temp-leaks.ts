@@ -8,7 +8,8 @@
 //
 // The folder is `/tmp/cyberctf-tests-XXXXXX` on macOS and Linux (a short path: a test's Unix
 // socket must fit in 104 bytes), under the system's temp folder on Windows; TMPDIR, TMP and TEMP
-// name it. A tool's own cache there (Node's compile cache) isn't a leftover.
+// name it. A tool's own cache there (Node's compile cache) isn't a leftover, nor the folder the
+// runner service keeps its socket in for a home on a long path (`isothrum-<uid>`).
 //
 // Knobs:
 //   CYBERCTF_TEST_TEMP_KEEP   keep the folder at the end, its path printed, to look into what was left
@@ -41,10 +42,16 @@ export function withTemp<E extends Readonly<Record<string, string | undefined>>>
   return { ...env, TMPDIR: dir, TMP: dir, TEMP: dir };
 }
 
-/** What is left at the top of `dir`, sorted, the tools' caches aside. */
+/**
+ * The folder of the runner services' sockets for homes on paths too long for one
+ * (`isothrum-<uid>`, Isothrum's): kept on purpose, across runs, like a tool's cache.
+ */
+export const SOCKET_FOLDER = /^isothrum-\d+$/;
+
+/** What is left at the top of `dir`, sorted, the tools' caches and the runner's socket folder aside. */
 export function leftovers(dir: string): string[] {
   return readdirSync(dir)
-    .filter((name) => !TOOL_CACHES.has(name))
+    .filter((name) => !TOOL_CACHES.has(name) && !SOCKET_FOLDER.test(name))
     .sort();
 }
 

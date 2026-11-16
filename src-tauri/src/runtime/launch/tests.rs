@@ -195,16 +195,16 @@ async fn a_container_lab_started_as_vms_takes_the_vm_path_and_every_operation_fo
     // is recorded: the lab still reads as the container lab it is.
     assert!(vagrant_dir(&dir, Runtime::Vm).join("Vagrantfile").is_file(), "the vagrant target was generated");
     assert!(!crate::runtime::lab::docker_vm_dir(&dir).exists(), "no helper VM");
-    assert_eq!(Recorded::of(&t.dirs(), "both").unwrap().form(Runtime::Docker), Runtime::Docker);
+    assert_eq!(Recorded::of(&t.dirs(), "both").await.unwrap().form(Runtime::Docker), Runtime::Docker);
     // Once the runner records its run in the vagrant target's folder, the webview keeps calling
     // the lab a container lab: here it is a VM lab.
     record_run(t.data(), "both", None, "vagrant", "ready");
-    assert_eq!(Recorded::of(&t.dirs(), "both").unwrap().form(Runtime::Docker), Runtime::Vm);
-    assert_eq!(crate::runtime::runtime_here(&t.dirs(), "both", false), Some(Runtime::Vm));
+    assert_eq!(Recorded::of(&t.dirs(), "both").await.unwrap().form(Runtime::Docker), Runtime::Vm);
+    assert_eq!(crate::runtime::runtime_here(&t.dirs(), "both", false).await, Some(Runtime::Vm));
     assert_eq!(crate::runtime::primary_url(&t.dirs(), &dir, "both", Runtime::Docker).await, None, "a VM lab has no loopback URL");
     // Taken down, it is a container lab again.
     record_run(t.data(), "both", None, "vagrant", "absent");
-    assert_eq!(Recorded::of(&t.dirs(), "both").unwrap().form(Runtime::Docker), Runtime::Docker);
+    assert_eq!(Recorded::of(&t.dirs(), "both").await.unwrap().form(Runtime::Docker), Runtime::Docker);
 }
 
 #[tokio::test]
@@ -216,20 +216,20 @@ async fn one_vm_per_machine_is_refused_on_a_server() {
     let to = Destination { host: Some("pve1"), per_machine_vm: true, ..Destination::default() };
     let err = start(&t.dirs(), LabRef { dir: &dir, id: "both", runtime: Runtime::Docker }, to, &[], |_| {}).await.unwrap_err().to_string();
     assert_eq!(err, super::PER_MACHINE_NOT_ON_SERVERS);
-    assert!(tools.calls().is_empty() && Recorded::of(&t.dirs(), "both").unwrap().record().is_none(), "{:?}", tools.calls());
+    assert!(tools.calls().is_empty() && Recorded::of(&t.dirs(), "both").await.unwrap().record().is_none(), "{:?}", tools.calls());
 }
 
 /// One VM per machine on UTM: Isoloom takes the lab there (Debian 12 has a UTM box), and the
-/// start opens UTM, hidden, before Vagrant drives it; a Mac without UTM stops there, saying so.
+/// start opens UTM before Vagrant drives it; a Mac without UTM stops there, saying so.
 #[tokio::test]
 async fn one_vm_per_machine_on_utm_opens_utm_first() {
     let t = TestApp::new();
     t.lab("both", &[("isoloom.yml", BOTH_FORMS), ("setup.sh", "true\n")]);
-    let tools = Tools::strict_rules(&[("open -g -j -a UTM", None)]);
+    let tools = Tools::strict_rules(&[("open -g -a UTM", None)]);
     let (r, _) = start_at(&t, "both", Runtime::Docker, per_machine_on(Provider::Utm), &[]).await;
     let err = r.unwrap_err();
     assert!(matches!(err, crate::error::Error::ToolMissing { tool: "UTM" }), "{err}");
-    assert!(tools.called("open -g -j -a UTM"), "{:?}", tools.calls());
+    assert!(tools.called("open -g -a UTM"), "{:?}", tools.calls());
 }
 
 #[test]
@@ -323,7 +323,7 @@ async fn a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing() {
     let err = r.unwrap_err();
     assert!(err.is_refusal(), "{err}");
     assert_eq!(err.to_string(), "This lab is still running on Host aws1. Stop it there, then try again.");
-    assert_eq!(Recorded::of(&t.dirs(), "web").unwrap().host(), Some("aws1"));
+    assert_eq!(Recorded::of(&t.dirs(), "web").await.unwrap().host(), Some("aws1"));
     assert!(tools.calls().is_empty() && log.is_empty(), "{:?} {log:?}", tools.calls());
     // The same for another host; its own host again is not "elsewhere".
     let (r, _) = start_on(&t, "web", Runtime::Docker, "pve1").await;

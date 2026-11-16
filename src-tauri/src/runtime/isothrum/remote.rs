@@ -1,46 +1,60 @@
-//! A run's operations through its home's runner service (`isothrum-client`): the one process that
+//! The one door to the runner: its home's runner service (`isothrum-client`), the one process that
 //! runs a home's operations, queued per run, so they outlive the window (and the app) that asked
-//! for them. The launcher hosts the service itself (`run_service::host`), started on first use by
-//! [`Client::connect_exact`] as this executable, of this release. An operation is a command on the
-//! wire (the run's folder, format and name, its values and secrets), its events read back as the
-//! deploy log's lines. When no service can be reached the operation runs in this process instead,
-//! said in the log: the runner's own per-run lock keeps that safe beside a service.
+//! for them, and that alone opens the home's store. The launcher hosts the service itself
+//! (`run_service::host`), started on first use by [`Client::connect_exact`] as this executable, of
+//! this release. An operation is a command on the wire (the run's folder, format and name, its
+//! values and secrets), its events read back as the deploy log's lines; a run's record, its
+//! consoles and the runner's key are asked of it the same way. A service that can't be reached is
+//! [`Code::RunnerUnreachable`]: nothing runs in this process instead.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
 use isothrum_client::proto::{Command, OpOptions, Target};
-use isothrum_client::{Client, ClientError};
-use isothrum_runner::{ErrorCode, ErrorReport, EventKind, Format, RunName, RunOptions, Running, Status};
+use isothrum_client::{Client, ClientError, HeldConsole};
+use isothrum_runner::{ErrorReport, EventKind, Format, NativeConsole, RunName, RunOptions, RunRecord, ServiceEndpoint, ShellCommand, Status};
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::{errors, progress, when_unlocked};
-use crate::error::Error;
+use super::{errors, progress};
+use crate::error::{Code, Error, Result};
 
 /// The connected services, by home: one connection per home in this process.
 static CLIENTS: LazyLock<AsyncMutex<HashMap<PathBuf, Arc<Client>>>> = LazyLock::new(|| AsyncMutex::new(HashMap::new()));
 
 /// The runner service of `home`, connected (started first when none runs: this executable, as
-/// `serve --home <home> --detach`); none when it can't be, said in the app's log, for the caller
-/// to run the operation in this process.
-pub(super) async fn client(home: &Path) -> Option<Arc<Client>> {
+/// `serve --home <home> --detach`).
+///
+/// # Errors
+///
+/// [`Code::RunnerUnreachable`] when none answers and none could be started.
+pub(crate) async fn client(home: &Path) -> Result<Arc<Client>> {
     let mut clients = CLIENTS.lock().await;
     if let Some(client) = clients.get(home) {
-        return Some(client.clone());
+        return Ok(client.clone());
     }
-    let exe = std::env::current_exe().ok();
-    match Client::connect_exact(home, exe.as_deref()).await {
-        Ok(client) => {
-            let client = Arc::new(client);
-            clients.insert(home.to_path_buf(), client.clone());
-            Some(client)
-        }
-        Err(e) => {
-            log::warn!("the runner service of {} can't be reached ({e}): the operation runs in this process", home.display());
-            None
-        }
+    let client = connect(home).await?;
+    clients.insert(home.to_path_buf(), client.clone());
+    Ok(client)
+}
+
+/// A new connection to `home`'s service, started when none runs: this executable's (a test
+/// serves the home in its own process instead, `testing::service`).
+async fn connect(home: &Path) -> Result<Arc<Client>> {
+    #[cfg(test)]
+    return crate::testing::service::client(home).await;
+    #[cfg(not(test))]
+    {
+        let exe = std::env::current_exe().ok();
+        Client::connect_exact(home, exe.as_deref()).await.map(Arc::new).map_err(|e| unreachable(home, &e))
     }
+}
+
+/// The error of `home`'s service that can't be reached (`e`): the app hosts it, so restarting
+/// the app starts it again.
+pub(crate) fn unreachable(home: &Path, e: &ClientError) -> Error {
+    log::warn!("the runner service of {} can't be reached: {e}", home.display());
+    Error::coded(Code::RunnerUnreachable { detail: e.to_string() })
 }
 
 /// The service operations this process queued (its own, told by its run service already), by id.
@@ -51,12 +65,63 @@ fn ours(id: isothrum_client::v1::OperationId) -> bool {
     OURS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).contains(&id.0)
 }
 
-/// Forgets `home`'s connection, broken: the next operation connects again.
+/// Forgets `home`'s connection, broken: the next request connects again.
 async fn forget(home: &Path) {
     CLIENTS.lock().await.remove(home);
 }
 
-/// An operation on a run, as either side runs it.
+/// Stops `home`'s service and forgets its connection, for a test that changes the home under it
+/// (a store damaged): the next call starts a service again.
+#[cfg(test)]
+pub(crate) async fn stop_service(home: &Path) {
+    forget(home).await;
+    if let Ok(running) = Client::connect_running(home).await {
+        drop(running.shutdown().await);
+    }
+    while Client::connect_running(home).await.is_ok() {
+        tokio::task::yield_now().await;
+    }
+}
+
+/// Whether `e` says the connection is gone (the service was killed or restarted, the connection
+/// broke), rather than an answer of the service's.
+fn broken(e: &ClientError) -> bool {
+    matches!(e, ClientError::Io(_) | ClientError::Protocol(_) | ClientError::Unavailable(_))
+}
+
+/// `ask` of `home`'s service. A connection found dead (a service killed or restarted since it
+/// was made: a broken pipe) is dropped and made again, the service started again when none
+/// runs, and `ask` tried once more on it: only a second failure is the caller's.
+///
+/// # Errors
+///
+/// No service can be reached; the service refused or failed; the connection broke twice.
+async fn call<T, F>(home: &Path, ask: impl Fn(Arc<Client>) -> F) -> std::result::Result<T, Failure>
+where
+    F: Future<Output = std::result::Result<T, ClientError>>,
+{
+    let first = client(home).await.map_err(Failure::Launcher)?;
+    match ask(first).await {
+        Err(e) if broken(&e) => {
+            log::info!("the runner service's connection of {} broke ({e}): connecting again", home.display());
+            forget(home).await;
+            let again = client(home).await.map_err(Failure::Launcher)?;
+            ask(again).await.map_err(|e| failed_again(home, e))
+        }
+        done => done.map_err(Failure::of_client),
+    }
+}
+
+/// `e`, a call's failure on its second connection: a broken one forgotten, for the next call.
+fn failed_again(home: &Path, e: ClientError) -> Failure {
+    if broken(&e) {
+        let home = home.to_path_buf();
+        tokio::spawn(async move { forget(&home).await });
+    }
+    Failure::of_client(e)
+}
+
+/// An operation on a run.
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Act<'a> {
     /// Start it (a parked run is resumed).
@@ -80,12 +145,10 @@ pub(super) enum Act<'a> {
     Exec(&'a str, &'a [String]),
 }
 
-/// Why an operation failed: the runner's error (in this process), the service's (its code and
-/// words), or the launcher's own (the run couldn't be opened).
+/// Why an operation failed: the service's report (its code and words), or the launcher's own
+/// (no service, a broken connection).
 #[derive(Debug)]
 pub(super) enum Failure {
-    /// The runner, in this process.
-    Runner(isothrum_runner::Error),
     /// The runner service: the runner's report (boxed: it is large, and rare).
     Service(Box<ErrorReport>),
     /// The launcher's.
@@ -93,19 +156,9 @@ pub(super) enum Failure {
 }
 
 impl Failure {
-    /// Its code, when the runner gave one.
-    pub(super) fn code(&self) -> Option<ErrorCode> {
-        match self {
-            Failure::Runner(e) => Some(e.code()),
-            Failure::Service(report) => Some(report.code),
-            Failure::Launcher(_) => None,
-        }
-    }
-
     /// The launcher's error for it.
     pub(super) fn into_error(self) -> Error {
         match self {
-            Failure::Runner(e) => errors::coded(&e.report()),
             Failure::Service(report) => errors::coded(&report),
             Failure::Launcher(e) => e,
         }
@@ -116,7 +169,6 @@ impl Failure {
     /// own (the run not opened, the service unreachable) is taken as one that may have.
     pub(super) fn failed(self, say: impl FnOnce(Error) -> Error) -> crate::runtime::host::Failed {
         let run_changed = match &self {
-            Failure::Runner(e) => e.report().changed,
             Failure::Service(report) => report.changed,
             Failure::Launcher(_) => true,
         };
@@ -132,17 +184,13 @@ impl Failure {
     }
 }
 
-/// The run `name` of the project in folder `project`, of `format`, as the wire names it.
-pub(super) fn target(project: &Path, format: Format, name: &RunName) -> Target {
-    Target::new(project, Some(name.clone())).with_format(format)
-}
-
 /// `opts` on the wire (secrets travel only over the owner-only endpoint).
 fn wire(opts: &RunOptions) -> OpOptions {
     let mut wired = OpOptions { provider: opts.provider, ..OpOptions::default() };
     wired.env.clone_from(&opts.env);
     wired.secrets = opts.secrets.iter().map(|(k, v)| (k.to_owned(), v.expose().to_owned())).collect();
     wired.host_label.clone_from(&opts.host_label);
+    wired.reveal = opts.reveal;
     wired
 }
 
@@ -162,82 +210,137 @@ fn command(act: Act<'_>, target: Target, opts: &RunOptions) -> Command {
     }
 }
 
-/// A run as its home's runner service is asked about it: the home (whose connection a broken one
-/// forgets), the service's client and the run.
-pub(super) struct Served<'a> {
+/// A run as its home's service knows it: the home, and the run's project (its folder and format)
+/// under its name.
+#[derive(Debug, Clone)]
+pub(super) struct Served {
     /// The runner's home.
-    pub(super) home: &'a Path,
-    /// Its service, connected.
-    pub(super) client: &'a Client,
-    /// The run.
-    pub(super) target: Target,
+    pub(super) home: PathBuf,
+    /// The run's name.
+    pub(super) name: RunName,
+    /// Its project's folder.
+    pub(super) project: PathBuf,
+    /// Its project's format.
+    pub(super) format: Format,
 }
 
-/// Runs `act` with `opts` on the run `on` names through its service, its events as `log`'s
-/// lines: whether it reached its goal (false: a check failed).
-pub(super) async fn operate(on: Served<'_>, act: Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<bool, Failure> {
-    let Served { home, client, target } = on;
-    let mut followed = match client.follow(command(act, target, opts)).await {
-        Ok(followed) => {
-            OURS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(followed.accepted.operation.0);
-            followed
-        }
-        Err(e) => {
-            if matches!(e, ClientError::Io(_) | ClientError::Protocol(_)) {
-                forget(home).await;
-            }
-            return Err(Failure::of_client(e));
-        }
-    };
-    let mut outcome = None;
-    while let Some(event) = followed.next().await {
-        let event = event.map_err(Failure::of_client)?;
-        if let Some(line) = progress::line(&event.kind) {
-            log(line);
-        }
-        match event.kind {
-            EventKind::Result { ok, .. } => outcome = Some(Ok(ok)),
-            EventKind::Error(report) => outcome = Some(Err(Failure::Service(Box::new(report)))),
-            _ => {}
-        }
+impl Served {
+    /// The run as the wire names it.
+    fn target(&self) -> Target {
+        Target::new(&self.project, Some(self.name.clone())).with_format(self.format)
     }
-    let cancelled = || Failure::Service(Box::new(ErrorReport::new(ErrorCode::Cancelled, "the operation was cancelled before it began")));
-    outcome.unwrap_or_else(|| Err(cancelled()))
-}
 
-/// Runs `act` on `lab` in this process with `opts`, its events as `log`'s lines, waiting out
-/// another operation's hold on the run: whether it reached its goal (false: a check failed).
-pub(super) async fn in_process(lab: &Running<'_>, act: Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<bool, Failure> {
-    let done = |r: std::result::Result<(), isothrum_runner::Error>| r.map(|()| true);
-    let ran = match act {
-        Act::Up => when_unlocked(log, move |sink| async move { lab.up(opts, &sink).await.map(drop) }).await.map(|()| true),
-        Act::Down => done(when_unlocked(log, move |sink| async move { lab.down(opts, &sink).await }).await),
-        Act::Park(mode) => done(when_unlocked(log, move |sink| async move { lab.park(mode, opts, &sink).await }).await),
-        Act::Resume => done(when_unlocked(log, move |sink| async move { lab.resume(opts, &sink).await }).await),
-        Act::Update => done(when_unlocked(log, move |sink| async move { lab.update(opts, &sink).await }).await),
-        Act::Retire(machine) => done(when_unlocked(log, move |sink| async move { lab.retire(machine, opts, &sink).await }).await),
-        Act::Attach(machine) => done(when_unlocked(log, move |sink| async move { lab.attach(machine, opts, &sink).await }).await),
-        Act::Provision(machine, with) => done(when_unlocked(log, move |sink| async move { lab.provision(machine, with, opts, &sink).await }).await),
-        Act::Exec(machine, argv) => {
-            // What it printed reached `log` as the run's events, as through the service.
-            let report = when_unlocked(log, move |sink| async move { lab.exec(machine, argv, opts, &sink).await }).await;
-            report.map(|report| report.exit == 0)
-        }
-    };
-    ran.map_err(Failure::Runner)
-}
-
-/// The status of run `name` (`target`) as `home`'s service `client` reads it.
-pub(super) async fn status(home: &Path, client: &Client, name: &RunName, target: Target, opts: &RunOptions) -> Result<Status, Failure> {
-    match client.status_with(name, Some(target), wire(opts)).await {
-        Ok(status) => Ok(status),
-        Err(e) => {
-            if matches!(e, ClientError::Io(_) | ClientError::Protocol(_)) {
-                forget(home).await;
+    /// Runs `act` with `opts` on the run, its events as `log`'s lines: whether it reached its
+    /// goal (false: a check failed).
+    pub(super) async fn operate(&self, act: Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, Failure> {
+        // Queued on a connection that answers: one found dead first is made again.
+        let mut followed = call(&self.home, |client| async move { client.follow(command(act, self.target(), opts)).await }).await?;
+        OURS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(followed.accepted.operation.0);
+        let mut outcome = None;
+        while let Some(event) = followed.next().await {
+            let event = event.map_err(Failure::of_client)?;
+            if let Some(line) = progress::line(&event.kind) {
+                log(line);
             }
-            Err(Failure::of_client(e))
+            match event.kind {
+                EventKind::Result { ok, .. } => outcome = Some(Ok(ok)),
+                EventKind::Error(report) => outcome = Some(Err(Failure::Service(Box::new(report)))),
+                _ => {}
+            }
         }
+        outcome.unwrap_or_else(|| Err(Failure::Service(Box::new(errors::cancelled_before_it_began()))))
     }
+
+    /// The run's status, its tools given `opts`' values and secrets.
+    pub(super) async fn status(&self, opts: &RunOptions) -> std::result::Result<Status, Failure> {
+        call(&self.home, |client| async move { client.status_with(&self.name, Some(self.target()), wire(opts)).await }).await
+    }
+
+    /// The run's record, none before it ever ran.
+    pub(super) async fn record(&self) -> Result<Option<RunRecord>> {
+        record(&self.home, &self.name).await
+    }
+
+    /// The command that opens a console into `machine`, as account `user` when given.
+    pub(super) async fn console_command(&self, machine: &str, user: Option<&str>) -> std::result::Result<ShellCommand, Failure> {
+        call(&self.home, |client| async move { client.console_command(&self.name, Some(self.target()), machine, user).await }).await
+    }
+
+    /// `machine`'s graphical console, its hypervisor asked with `opts`, held (with its tunnel)
+    /// until dropped.
+    pub(super) async fn graphical_console(&self, machine: &str, opts: &RunOptions) -> std::result::Result<HeldConsole, Failure> {
+        call(&self.home, |client| async move { client.graphical_console(&self.name, Some(self.target()), wire(opts), machine).await }).await
+    }
+
+    /// What opens running VM `machine` in its hypervisor's own app, asked with `opts`.
+    pub(super) async fn native_console(&self, machine: &str, opts: &RunOptions) -> std::result::Result<NativeConsole, Failure> {
+        call(&self.home, |client| async move { client.native_console(&self.name, Some(self.target()), wire(opts), machine).await }).await
+    }
+
+    /// The service endpoints the run publishes, each where this computer reaches it (a forward
+    /// the service keeps open), its outputs read with `opts`.
+    pub(super) async fn service_endpoints(&self, opts: &RunOptions) -> std::result::Result<Vec<ServiceEndpoint>, Failure> {
+        call(&self.home, |client| async move { client.service_endpoints(&self.name, Some(self.target()), wire(opts)).await }).await
+    }
+
+    /// Forgets the run's record: no run is left behind for a lab that isn't there.
+    pub(super) async fn forget(&self) -> Result<()> {
+        forget_run(&self.home, &self.name).await
+    }
+}
+
+/// Every run `home`'s service records, each in the state its last operation left it in.
+///
+/// # Errors
+///
+/// No service can be reached, or it can't read its records.
+pub(crate) async fn records(home: &Path) -> Result<Vec<RunRecord>> {
+    Ok(rows(home).await?.into_iter().map(|r| r.record).collect())
+}
+
+/// Every run `home`'s service records, as it last saw each.
+///
+/// # Errors
+///
+/// No service can be reached, or it can't read its records.
+pub(crate) async fn rows(home: &Path) -> Result<Vec<isothrum_runner::store::RunRow>> {
+    call(home, |client| async move { client.list().await }).await.map_err(Failure::into_error)
+}
+
+/// Run `name`'s record in `home`'s service, none for a run never recorded.
+///
+/// # Errors
+///
+/// No service can be reached, or it can't read the record.
+pub(crate) async fn record(home: &Path, name: &RunName) -> Result<Option<RunRecord>> {
+    Ok(call(home, |client| async move { client.record(name).await }).await.map_err(Failure::into_error)?.map(|r| r.record))
+}
+
+/// Forgets run `name` in `home`'s service.
+///
+/// # Errors
+///
+/// No service can be reached; an operation of the run is under way; the store can't be written.
+pub(crate) async fn forget_run(home: &Path, name: &RunName) -> Result<()> {
+    call(home, |client| async move { client.forget(name).await }).await.map_err(Failure::into_error)
+}
+
+/// The public half of the runner's SSH key (the launcher's own), made when there is none.
+///
+/// # Errors
+///
+/// No service can be reached; the key can't be made.
+pub(crate) async fn public_key(home: &Path) -> Result<String> {
+    call(home, |client| async move { client.public_key().await }).await.map_err(Failure::into_error)
+}
+
+/// The recorded runs of `home`'s service past their lifetime that may still hold something.
+///
+/// # Errors
+///
+/// No service can be reached, or it can't read its records.
+pub(crate) async fn expired(home: &Path) -> Result<Vec<RunRecord>> {
+    Ok(call(home, |client| async move { client.expired().await }).await.map_err(Failure::into_error)?.into_iter().map(|r| r.record).collect())
 }
 
 /// `home`'s runner service when one runs (none is started to answer a question about it).
@@ -267,22 +370,12 @@ pub(super) async fn cancel_under_way(home: &Path, name: &RunName) {
     }
 }
 
-/// Every run `home`'s service records, as it last saw each; none when no service runs.
-///
-/// # Errors
-///
-/// The service's runs can't be listed.
-pub(crate) async fn rows(home: &Path) -> Result<Option<Vec<isothrum_runner::store::RunRow>>, String> {
-    let Some(client) = running_service(home).await else { return Ok(None) };
-    client.list().await.map(Some).map_err(|e| e.to_string())
-}
-
 /// The runs of `home`'s service with an operation queued or running; none when no service runs.
 ///
 /// # Errors
 ///
 /// The service's runs can't be listed.
-pub(super) async fn busy_runs(home: &Path) -> Result<Vec<RunName>, String> {
+pub(super) async fn busy_runs(home: &Path) -> std::result::Result<Vec<RunName>, String> {
     let Some(client) = running_service(home).await else { return Ok(Vec::new()) };
     let runs = client.list().await.map_err(|e| e.to_string())?;
     let mut busy = Vec::new();
@@ -300,7 +393,7 @@ pub(super) async fn busy_runs(home: &Path) -> Result<Vec<RunName>, String> {
 /// # Errors
 ///
 /// The journal can't be read.
-pub(super) async fn journal(home: &Path, name: &RunName) -> Result<Vec<isothrum_client::v1::OperationRow>, String> {
+pub(super) async fn journal(home: &Path, name: &RunName) -> std::result::Result<Vec<isothrum_client::v1::OperationRow>, String> {
     let Some(client) = running_service(home).await else { return Ok(Vec::new()) };
     client.operations(name, 20).await.map_err(|e| e.to_string())
 }
@@ -311,7 +404,7 @@ pub(super) async fn journal(home: &Path, name: &RunName) -> Result<Vec<isothrum_
 /// # Errors
 ///
 /// The service's stream can't be read.
-pub(super) async fn follow_under_way(home: &Path, name: &RunName, log: &mut impl FnMut(String)) -> Result<(), String> {
+pub(super) async fn follow_under_way(home: &Path, name: &RunName, log: &mut impl FnMut(String)) -> std::result::Result<(), String> {
     let Some(client) = running_service(home).await else { return Ok(()) };
     let mut left = under_way(&client, name).await;
     if left.is_empty() {
@@ -374,7 +467,7 @@ pub(crate) enum Others {
 /// # Errors
 ///
 /// The service's stream can't be read, or ended.
-pub(crate) async fn follow_others(client: &Client, on: &mut impl FnMut(Others)) -> Result<(), String> {
+pub(crate) async fn follow_others(client: &Client, on: &mut impl FnMut(Others)) -> std::result::Result<(), String> {
     let mut under = std::collections::HashSet::new();
     for run in client.list().await.map_err(|e| e.to_string())? {
         under.extend(under_way(client, &run.name).await.into_iter().map(|o| o.0));

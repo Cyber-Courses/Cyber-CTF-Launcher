@@ -45,11 +45,6 @@ fn pin_docker(spec: &ProcessSpec) -> Option<ProcessSpec> {
     Some(pinned)
 }
 
-/// The tools every run of this process starts, shared: a tool cut short (its operation dropped,
-/// a cancel) is asked to stop on Unix and given a grace before it is ended, and this process waits
-/// for those still stopping before it exits (`end_tools_at_exit`).
-pub(super) static PROCESSES: std::sync::LazyLock<SystemProcesses> = std::sync::LazyLock::new(SystemProcesses::default);
-
 #[cfg(test)]
 mod engine_tests {
     use super::{ENGINE_VAR, ProcessSpec, pin_docker};

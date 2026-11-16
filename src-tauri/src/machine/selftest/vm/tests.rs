@@ -186,7 +186,7 @@ fn probes_and_boxes_per_provider() {
     assert_eq!(responds(Provider::VmwareDesktop).map(|r| r.0), Some("vmrun"));
     assert_eq!(responds(Provider::Parallels).map(|r| r.0), Some("prlctl"));
     assert_eq!(responds(Provider::Libvirt).map(|r| r.0), Some("virsh"));
-    assert!(responds(Provider::Utm).is_none(), "UTM is probed as a lab's start probes it, opened hidden");
+    assert!(responds(Provider::Utm).is_some_and(|r| r.0.ends_with("utmctl")));
     assert!(responds(Provider::Qemu).is_none());
     assert_eq!(candidate_boxes(Provider::Virtualbox, Arch::X86_64), ["generic/alpine319", "bento/debian-12"]);
     assert_eq!(candidate_boxes(Provider::Parallels, Arch::Aarch64), ["bento/debian-12"]);

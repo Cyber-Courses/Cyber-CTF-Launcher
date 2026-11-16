@@ -242,6 +242,12 @@ pub enum Code {
         /// The node's address.
         host: String,
     },
+    /// The runner service, which the app hosts and every lab operation goes through, can't be
+    /// reached: restarting the app starts it again. `detail` is the technical why.
+    RunnerUnreachable {
+        /// Why it can't be reached.
+        detail: String,
+    },
 }
 
 impl Code {

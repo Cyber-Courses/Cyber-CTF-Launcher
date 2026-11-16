@@ -98,8 +98,10 @@ pub async fn machine_workload_stop(app: AppHandle, kind: workloads::WorkloadKind
 
 /// The runtime's labs, for the Machine page.
 impl workloads::LabRuntime for AppHandle {
-    fn runtime_here(&self, id: &str, in_vm: bool) -> Option<Runtime> {
-        crate::runtime::runtime_here(&AppDirs::from(self), id, in_vm)
+    fn runtime_here(&self, id: &str, in_vm: bool) -> impl Future<Output = Option<Runtime>> + Send {
+        let dirs = AppDirs::from(self);
+        let id = id.to_owned();
+        async move { crate::runtime::runtime_here(&dirs, &id, in_vm).await }
     }
 
     fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send {

@@ -188,7 +188,7 @@ pub(super) async fn list(ctx: &Context) -> Answer {
             "name": spec_name(&dir),
             "runtime": declared_runtime(&dir),
             "imported": imported.contains(&id),
-            "host": crate::runtime::recorded::Recorded::of(&ctx.dirs, &id).ok().and_then(|r| r.host().map(str::to_owned)),
+            "host": crate::runtime::recorded::Recorded::of(&ctx.dirs, &id).await.ok().and_then(|r| r.host().map(str::to_owned)),
             "running": running.contains(&id),
             "busy": busy.contains(&id),
         }));
@@ -237,9 +237,9 @@ async fn show(ctx: &Context, lab: &LabArg, show_secrets: bool) -> Answer {
     for output in status.outputs.iter_mut().filter(|o| o.sensitive) {
         output.value = masked(&output.value, show_secrets);
     }
-    let tools = tools_in(&ctx.dirs, &lab.id, runtime)?;
+    let tools = tools_in(&ctx.dirs, &lab.id, runtime).await?;
     let sign_in = sign_in_in(&ctx.dirs, &lab.id)?.map(|s| json!({ "user": s.user, "password": masked(&s.password, show_secrets) }));
-    let failed = crate::runtime::isothrum::last_run_failed(&ctx.dirs, &lab.id);
+    let failed = crate::runtime::isothrum::last_run_failed(&ctx.dirs, &lab.id).await;
     Ok(json!({ "id": lab.id, "runtime": runtime, "status": to_json(&status)?, "tools": to_json(&tools)?, "attackBox": sign_in, "lastLaunchFailed": failed }))
 }
 

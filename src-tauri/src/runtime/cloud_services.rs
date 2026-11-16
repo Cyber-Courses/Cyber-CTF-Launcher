@@ -233,7 +233,7 @@ mod tests {
         let err = start(azure, vec![("CTF_LAUNCH_TOKEN".into(), "t0k".into())]).await;
         assert!(err.starts_with("This lab runs on AWS, and Host az is a Azure account. Pick a AWS account."), "{err}");
         assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-        assert!(crate::runtime::recorded::Recorded::of(&t.dirs(), "bucket").unwrap().record().is_none(), "not recorded: nothing was created");
+        assert!(crate::runtime::recorded::Recorded::of(&t.dirs(), "bucket").await.unwrap().record().is_none(), "not recorded: nothing was created");
     }
 
     #[tokio::test]

@@ -98,15 +98,15 @@ fn only_a_saved_server_can_be_the_default() {
     assert_eq!(s.default, None);
 }
 
-#[test]
-fn what_is_left_on_a_host_keeps_it_from_being_removed() {
+#[tokio::test]
+async fn what_is_left_on_a_host_keeps_it_from_being_removed() {
     // Regression: only the launcher's own Terraform states under deployments/ were counted, so a
     // lab the runner still ran on a host (moved elsewhere since, or uninstalled) didn't keep it:
     // removed, nothing could stop that lab any more.
     use crate::runtime::test_support::record_run;
     let t = crate::testing::test_app::TestApp::new();
     let dirs = t.dirs();
-    assert_eq!(labs_on(&dirs, "aws1").unwrap(), 0);
+    assert_eq!(labs_on(&dirs, "aws1").await.unwrap(), 0);
     // Runs the runner records on aws1: one installed, one uninstalled, one failed with its
     // machines left, one taken down, one on another host.
     t.lab("web-1", &[]);
@@ -115,13 +115,15 @@ fn what_is_left_on_a_host_keeps_it_from_being_removed() {
     record_run(t.data(), "gone-1", Some("aws1"), "cloud-docker", "parked");
     record_run(t.data(), "down-1", Some("aws1"), "cloud-docker", "absent");
     record_run(t.data(), "api-1", Some("aws2"), "cloud-docker", "ready");
-    assert_eq!(labs_on(&dirs, "aws1").unwrap(), 3);
-    assert_eq!(labs_on(&dirs, "aws2").unwrap(), 1);
+    assert_eq!(labs_on(&dirs, "aws1").await.unwrap(), 3);
+    assert_eq!(labs_on(&dirs, "aws2").await.unwrap(), 1);
     // The Servers page counts the installed labs on each.
-    let running = running_by_host(&dirs);
+    let running = running_by_host(&dirs).await;
     assert_eq!((running.get("aws1"), running.get("aws2")), (Some(&1), None));
     // A store that can't be read is an error, not "nothing left".
-    crate::testing::runner::damage_store(&crate::runtime::paths::runner_home_in(t.data()));
-    assert!(labs_on(&dirs, "aws1").is_err());
-    assert!(running_by_host(&dirs).is_empty());
+    let home = crate::runtime::paths::runner_home_in(t.data());
+    crate::runtime::isothrum::stop_service(&home).await;
+    crate::testing::runner::damage_store(&home);
+    assert!(labs_on(&dirs, "aws1").await.is_err());
+    assert!(running_by_host(&dirs).await.is_empty());
 }

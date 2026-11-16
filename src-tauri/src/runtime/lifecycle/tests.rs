@@ -26,7 +26,7 @@ async fn a_lab_on_a_cloud_account_is_neither_parked_nor_provisioned_there() {
     stop_lab(&t.dirs(), "web", Runtime::Docker, std::future::ready(()), |_| {}).await.unwrap();
     let dir = t.data().join("labs/web");
     assert!(!crate::runtime::status::status(&t.dirs(), &dir, "web", Runtime::Docker).await.unwrap().running);
-    assert_eq!(Recorded::of(&t.dirs(), "web").unwrap().host(), Some("az1"));
+    assert_eq!(Recorded::of(&t.dirs(), "web").await.unwrap().host(), Some("az1"));
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
 }
 
@@ -41,7 +41,7 @@ async fn the_policy_refuses_resuming_a_privileged_lab_before_anything_runs() {
     let _policy = Override::with(&[Key::RefusePrivilegedLabs]);
     let err = resume_lab(&t.dirs(), "priv", Runtime::Docker, |_| {}).await.unwrap_err();
     assert_eq!(err.code(), Code::TurnedOffByPolicy { setting: "RefusePrivilegedLabs".into() }, "{err}");
-    assert_eq!(Recorded::of(&t.dirs(), "priv").unwrap().parked(), Some(Park::Pause));
+    assert_eq!(Recorded::of(&t.dirs(), "priv").await.unwrap().parked(), Some(Park::Pause));
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
 }
 
@@ -69,7 +69,7 @@ async fn a_parked_lab_whose_files_cant_be_made_again_is_left_recorded_and_says_w
     let err = clear_parked(&t.dirs(), lab, &mut |l| lines.push(l)).await.unwrap_err().to_string();
     assert!(err.starts_with("This lab's files are gone"), "{err}");
     assert!(lines[0].starts_with("A parked copy of an older version"), "{lines:?}");
-    assert_eq!(Recorded::of(&t.dirs(), "web").unwrap().parked(), Some(Park::Shutdown));
+    assert_eq!(Recorded::of(&t.dirs(), "web").await.unwrap().parked(), Some(Park::Shutdown));
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
 }
 
@@ -85,7 +85,7 @@ async fn a_parked_lab_that_couldnt_be_taken_down_stays_parked_and_says_why() {
     let _tools = Tools::strict_rules(&[]);
     let lab = LabRef { dir: &dir, id: "web", runtime: Runtime::Docker };
     assert!(clear_parked(&t.dirs(), lab, &mut |_| {}).await.is_err());
-    assert!(Recorded::of(&t.dirs(), "web").unwrap().record().is_some(), "still recorded: its machines may still be there");
+    assert!(Recorded::of(&t.dirs(), "web").await.unwrap().record().is_some(), "still recorded: its machines may still be there");
 }
 
 #[test]
@@ -126,7 +126,7 @@ async fn a_pause_of_containers_on_docker_is_refused_before_anything_runs() {
     let err = park_lab(&t.dirs(), "t", Runtime::Docker, Park::Pause, |_| {}).await.unwrap_err();
     assert!(matches!(err, crate::error::Error::Refused(_)) && err.to_string().contains("shut it down instead"), "{err}");
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-    assert_eq!(Recorded::of(&t.dirs(), "t").unwrap().parked(), None, "not recorded as paused");
+    assert_eq!(Recorded::of(&t.dirs(), "t").await.unwrap().parked(), None, "not recorded as paused");
 }
 
 #[test]
@@ -166,16 +166,16 @@ async fn clearing_a_lab_that_is_not_parked_does_nothing() {
 
 /// What the page may do on lab `t`, declared `runtime`, where it is located now, on `provider`:
 /// whether it pauses, shuts down, provisions and repairs.
-fn controls_of(t: &TestApp, dir: &std::path::Path, runtime: Runtime, provider: Option<&str>) -> (bool, bool, bool, bool) {
+async fn controls_of(t: &TestApp, dir: &std::path::Path, runtime: Runtime, provider: Option<&str>) -> (bool, bool, bool, bool) {
     use crate::runtime::Control;
-    let host = crate::runtime::host::locate(&t.dirs(), dir, "t", runtime).unwrap();
+    let host = crate::runtime::host::locate(&t.dirs(), dir, "t", runtime).await.unwrap();
     let c = super::controls(host.as_ref(), provider);
     let has = |x| c.contains(&x);
     (has(Control::Pause), has(Control::Shutdown), has(Control::Provision), has(Control::Repair))
 }
 
-#[test]
-fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
+#[tokio::test]
+async fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
     let t = TestApp::new();
     let _tools = Tools::strict_rules(&[]);
     let spec =
@@ -184,31 +184,31 @@ fn the_page_is_offered_what_the_lifecycle_accepts_where_the_lab_runs() {
     // Containers here: shut down only (nothing to save), no provisioning; stopped containers
     // brought back as they are (regression, docs/contributing/testing/resilience.md M4: a Docker lab with a
     // container stopped outside the app was offered a reset only).
-    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("docker")), (false, true, false, true));
+    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("docker")).await, (false, true, false, true));
     // A VM lab here: both, provisioning and the repair; QEMU can't suspend.
-    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("virtualbox")), (true, true, true, true));
-    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("qemu")), (false, true, true, true));
+    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("virtualbox")).await, (true, true, true, true));
+    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("qemu")).await, (false, true, true, true));
     // A container lab run as one VM per machine is a VM lab here, repaired as one too.
     record_run(t.data(), "t", None, "vagrant", "ready");
-    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")), (true, true, true, true));
+    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")).await, (true, true, true, true));
     // Containers an earlier version runs inside a helper VM here: only stopped.
     record_run(t.data(), "t", None, "docker-vm", "ready");
-    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")), (false, false, false, false));
+    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("virtualbox")).await, (false, false, false, false));
     record_run(t.data(), "t", None, "docker", "absent");
     // A cloud-services lab on no account: nothing runs.
-    assert_eq!(controls_of(&t, &dir, Runtime::Cloud, None), (false, false, false, false));
+    assert_eq!(controls_of(&t, &dir, Runtime::Cloud, None).await, (false, false, false, false));
     // In a cloud account, or on Proxmox: nothing parked or provisioned there.
     record_run(t.data(), "t", Some(&t.host("acct", "aws", serde_json::json!({ "useCliCreds": true }))), "cloud-vm", "ready");
-    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("aws")), (false, false, false, false));
+    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("aws")).await, (false, false, false, false));
     crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
     for host in ["pve", "esx"] {
         crate::runtime::server::secrets::set_secret(host, "pw").unwrap();
     }
     record_run(t.data(), "t", Some(&t.host("pve", "proxmox", serde_json::json!({}))), "proxmox", "ready");
-    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("proxmox")), (false, false, false, false));
+    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("proxmox")).await, (false, false, false, false));
     // On ESXi: provisioning a VM lab, through Vagrant there; never its containers' VM.
     record_run(t.data(), "t", Some(&t.host("esx", "vmware_esxi", serde_json::json!({}))), "vagrant", "ready");
-    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("vmware_esxi")), (false, false, true, false));
+    assert_eq!(controls_of(&t, &dir, Runtime::Vm, Some("vmware_esxi")).await, (false, false, true, false));
     record_run(t.data(), "t", Some("esx"), "docker-vm", "ready");
-    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("vmware_esxi")), (false, false, false, false));
+    assert_eq!(controls_of(&t, &dir, Runtime::Docker, Some("vmware_esxi")).await, (false, false, false, false));
 }

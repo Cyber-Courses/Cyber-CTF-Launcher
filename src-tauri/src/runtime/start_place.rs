@@ -63,7 +63,7 @@ where
     if runtime == Runtime::Cloud {
         return Ok(StartPlace::default());
     }
-    let last = isothrum::record_of(dirs, lab_id)?;
+    let last = isothrum::record_of(dirs, lab_id).await?;
     // A container lab that never ran starts on Docker here: its spec needn't be read.
     if last.is_none() && runtime != Runtime::Vm {
         return Ok(StartPlace::default());

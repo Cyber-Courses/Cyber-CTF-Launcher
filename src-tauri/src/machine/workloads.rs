@@ -18,7 +18,7 @@ use crate::runtime::Runtime;
 /// here (in a VM or not), and the lab's own stop.
 pub trait LabRuntime {
     /// How lab `id` runs here, when it is installed and running on this machine.
-    fn runtime_here(&self, id: &str, in_vm: bool) -> Option<Runtime>;
+    fn runtime_here(&self, id: &str, in_vm: bool) -> impl Future<Output = Option<Runtime>> + Send;
 
     /// Stops lab `id`, running on `runtime`, as its page would.
     fn stop_lab(&self, id: &str, runtime: Runtime) -> impl Future<Output = Result<()>> + Send;
@@ -67,7 +67,7 @@ pub async fn machine_workload_stop(labs: &impl LabRuntime, dirs: AppDirs, kind: 
         return Err(Error::Invalid(format!("invalid id `{id}`")));
     }
     let in_vm = kind == WorkloadKind::Vm;
-    if let Some(runtime) = labs.runtime_here(&id, in_vm) {
+    if let Some(runtime) = labs.runtime_here(&id, in_vm).await {
         return labs.stop_lab(&id, runtime).await;
     }
     if in_vm { vm::stop(&dirs, &id).await } else { docker::stop(&id).await }
@@ -90,8 +90,8 @@ mod tests {
         stopped: std::sync::Mutex<Vec<(String, super::Runtime)>>,
     }
     impl super::LabRuntime for FakeLabs {
-        fn runtime_here(&self, id: &str, in_vm: bool) -> Option<super::Runtime> {
-            self.installed.iter().find(|(n, r)| *n == id && matches!(r, super::Runtime::Vm) == in_vm).map(|(_, r)| *r)
+        fn runtime_here(&self, id: &str, in_vm: bool) -> impl Future<Output = Option<super::Runtime>> + Send {
+            std::future::ready(self.installed.iter().find(|(n, r)| *n == id && matches!(r, super::Runtime::Vm) == in_vm).map(|(_, r)| *r))
         }
         fn stop_lab(&self, id: &str, runtime: super::Runtime) -> impl std::future::Future<Output = crate::error::Result<()>> + Send {
             self.stopped.lock().unwrap().push((id.to_string(), runtime));

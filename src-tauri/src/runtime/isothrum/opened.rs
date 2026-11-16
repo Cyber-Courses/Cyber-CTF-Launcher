@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use isothrum_runner::{Format, RunName, RunOptions, Runner, RunnerConfig, Running};
+use isothrum_runner::{Format, RunName, RunOptions};
 
 use super::{errors, remote};
 use crate::error::Result;
@@ -24,50 +24,46 @@ pub(crate) enum Module {
 
 /// A lab's run on the runner, opened by its name from its Terraform module.
 pub(crate) struct OpenedRun {
-    pub(super) runner: Runner,
-    /// The runner's home: where its SSH key is (`ssh/id_ed25519`), the launcher's own.
-    home: PathBuf,
+    /// The run, as the home's service knows it.
+    pub(super) served: remote::Served,
     /// The lab's folder.
     pub(super) dir: PathBuf,
     /// What its module is.
     module: Module,
     /// The run's Terraform module.
     pub(super) project: PathBuf,
-    pub(super) name: RunName,
-    /// Whether its operations go to the home's runner service (a test's scripted runner runs them
-    /// in this process).
-    service: bool,
 }
 
 impl OpenedRun {
-    /// The run of lab `id` in `dir`, whose Terraform module `project` is `module`, on a runner
-    /// set up with `config`, its operations through the home's runner service when `service` (in
-    /// this process for a test's).
-    pub(super) fn new(config: RunnerConfig, dir: &Path, id: &str, (project, module): (PathBuf, Module), service: bool) -> Result<Self> {
+    /// The run of lab `id` in `dir`, whose Terraform module `project` is `module`, on the runner
+    /// whose home is `home`, through the home's runner service.
+    pub(super) fn new(home: &Path, dir: &Path, id: &str, (project, module): (PathBuf, Module)) -> Result<Self> {
         let name = RunName::new(&crate::runtime::docker::project(id)).map_err(|e| errors::coded(&e.report()))?;
-        let home = config.home.clone();
-        Ok(OpenedRun { runner: Runner::new(config).map_err(|e| errors::coded(&e.report()))?, home, dir: dir.to_path_buf(), module, project, name, service })
+        let served = remote::Served { home: home.to_path_buf(), name, project: project.clone(), format: Format::Terraform };
+        Ok(OpenedRun { served, dir: dir.to_path_buf(), module, project })
     }
 
-    /// `act` on the run with `opts`, its events as `log`'s lines: through the home's runner
-    /// service, else in this process (none reachable, or a test's runner).
+    /// `act` on the run with `opts`, its events as `log`'s lines, through the home's runner
+    /// service.
     pub(super) async fn act(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-        self.run(act, opts, log).await.map(drop).map_err(remote::Failure::into_error)
+        self.run(act, opts, log).await.map(drop).map_err(|e| self.said(e))
     }
 
     /// [`Self::act`], saying whether it reached its goal (false: a command it ran failed).
     pub(super) async fn run(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, remote::Failure> {
-        if self.service
-            && let Some(client) = remote::client(&self.home).await
-        {
-            let on = remote::Served { home: &self.home, client: &client, target: remote::target(&self.project, Format::Terraform, &self.name) };
-            return Box::pin(remote::operate(on, act, opts, log)).await;
-        }
-        let lab = self.running().map_err(remote::Failure::Launcher)?;
-        Box::pin(remote::in_process(&lab, act, opts, log)).await
+        Box::pin(self.served.operate(act, opts, log)).await
     }
 
-    /// The run's status, read by the home's runner service (else by the runner in this process).
+    /// The service's failure `e` of the run in the player's words: for a helper VM an earlier
+    /// version left on a server, what to remove when the runner no longer opens it.
+    pub(super) fn said(&self, e: remote::Failure) -> crate::error::Error {
+        match (e, self.module) {
+            (remote::Failure::Service(report), Module::HelperVm) => errors::of_helper_vm(&report, self.served.name.as_str()),
+            (e, _) => e.into_error(),
+        }
+    }
+
+    /// The run's status, read by the home's runner service.
     pub(super) async fn read(&self) -> Result<isothrum_runner::Status> {
         self.read_with(&RunOptions::new()).await
     }
@@ -75,13 +71,7 @@ impl OpenedRun {
     /// [`Self::read`], its tools given `opts`' values and secrets (a Proxmox server's API token,
     /// for its VMs' states on the server).
     pub(super) async fn read_with(&self, opts: &RunOptions) -> Result<isothrum_runner::Status> {
-        if self.service
-            && let Some(client) = remote::client(&self.home).await
-        {
-            let target = remote::target(&self.project, Format::Terraform, &self.name);
-            return remote::status(&self.home, &client, &self.name, target, opts).await.map_err(remote::Failure::into_error);
-        }
-        self.running()?.status_with(opts).await.map_err(|e| errors::coded(&e.report()))
+        self.served.status(opts).await.map_err(|e| self.said(e))
     }
 
     /// Whether the module was generated (a start that failed before generation made none).
@@ -101,15 +91,6 @@ impl OpenedRun {
     /// What the run's module is.
     pub(crate) fn module(&self) -> Module {
         self.module
-    }
-
-    /// The lab's module, opened under the run's name.
-    pub(super) fn running(&self) -> Result<Running<'_>> {
-        self.runner.open_as(&self.project, Format::Terraform, Some(self.name.clone())).map_err(|e| match self.module {
-            Module::Generated(_) | Module::Own => errors::coded(&e.report()),
-            // A helper VM an earlier version left on a server: said what to remove if not opened.
-            Module::HelperVm => errors::of_helper_vm(&e, self.name.as_str()),
-        })
     }
 
     /// The run's status as the runner reports it; None before the lab's files exist.
@@ -141,13 +122,13 @@ impl OpenedRun {
     /// it, with no default): the runner's public key, made when there is none, as
     /// `ssh_public_key`, and its private key's file as `ssh_private_key_file`.
     pub(crate) async fn key_values(&self) -> Result<Vec<(String, String)>> {
-        let public = self.runner.ssh_public_key().await.map_err(|e| errors::coded(&e.report()))?;
+        let public = remote::public_key(&self.served.home).await?;
         Ok(vec![("ssh_public_key".to_owned(), public.trim().to_owned()), ("ssh_private_key_file".to_owned(), self.key().to_string_lossy().into_owned())])
     }
 
     /// The runner's private key (the launcher's own): what the machines and a jump node let in.
     pub(crate) fn key(&self) -> PathBuf {
-        self.home.join("ssh").join("id_ed25519")
+        self.served.home.join("ssh").join("id_ed25519")
     }
 
     /// The command that opens a console into `machine`, any machine of the lab, as account `user`
@@ -156,25 +137,25 @@ impl OpenedRun {
     /// user, then a login shell as `user`.
     pub(crate) async fn console_command(&self, machine: &str, user: Option<&str>) -> Result<isothrum_runner::ShellCommand> {
         // Made when there is none: the key the module's machines let in.
-        self.runner.ssh_public_key().await.map_err(|e| errors::coded(&e.report()))?;
-        self.running()?.console_command(machine, user).await.map_err(|e| errors::coded(&e.report()))
+        remote::public_key(&self.served.home).await?;
+        self.served.console_command(machine, user).await.map_err(|e| self.said(e))
     }
 
     /// The service endpoints the module publishes, by name, where this computer reaches each
     /// one (the runner's: through the run's jump host, a local forward it keeps), with `opts`.
     pub(crate) async fn endpoints(&self, opts: &RunOptions) -> Result<Vec<isothrum_runner::ServiceEndpoint>> {
-        self.running()?.service_endpoints(opts).await.map_err(|e| errors::coded(&e.report()))
+        self.served.service_endpoints(opts).await.map_err(|e| self.said(e))
     }
 
     /// `machine`'s graphical console (its screen), as the runner reaches it with `opts` (the
     /// place's credentials: a Proxmox server's API, as the module's own values carry them).
-    pub(crate) async fn graphical_console(&self, machine: &str, opts: &RunOptions) -> Result<isothrum_runner::Console> {
-        self.running()?.graphical_console(machine, opts).await.map_err(|e| errors::coded(&e.report()))
+    pub(crate) async fn graphical_console(&self, machine: &str, opts: &RunOptions) -> Result<isothrum_client::HeldConsole> {
+        self.served.graphical_console(machine, opts).await.map_err(|e| self.said(e))
     }
 
     /// What opens running VM `machine` in its hypervisor's own app (a server's web console), as
     /// the runner says with `opts`.
     pub(crate) async fn native_console(&self, machine: &str, opts: &RunOptions) -> Result<isothrum_runner::NativeConsole> {
-        self.running()?.native_console(machine, opts).await.map_err(|e| errors::coded(&e.report()))
+        self.served.native_console(machine, opts).await.map_err(|e| self.said(e))
     }
 }

@@ -9,12 +9,12 @@
 //! run's record and its expiry.
 
 use std::path::Path;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
-use isothrum_runner::{Format, RunOptions, RunRecord, Runner, SecretValue, Secrets};
+use isothrum_runner::{Format, RunOptions, RunRecord, SecretValue, Secrets};
 
 use super::opened::{Module, OpenedRun};
-use super::{errors, progress, view};
+use super::view;
 use crate::error::{Code, Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::paths::lab_dir_in;
@@ -152,17 +152,17 @@ impl CloudRun {
     /// Lab `id` of `runtime` (a container lab is `cloud-docker`, a VM lab `cloud-vm`) on `cloud`,
     /// installed in `dir`, on the runner whose home is `home` (the app data folder).
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
-        let config = super::host_config(home);
         let (out, target) = lab::terraform(dir, runtime, cloud);
-        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (out, Module::Generated(target)), true)? })
+        Ok(CloudRun { run: OpenedRun::new(home, dir, id, (out, Module::Generated(target)))? })
     }
 
-    /// [`CloudRun::new`] on a runner set up with `config`, its operations in this process (a
+    /// [`CloudRun::new`] on a runner set up with `config`, which this test process serves (a
     /// test's scripted tools).
     #[cfg(test)]
     pub(crate) fn new_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
-        let (out, target) = lab::terraform(dir, runtime, cloud);
-        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (out, Module::Generated(target)), false)? })
+        let home = config.home.clone();
+        crate::testing::service::serve_home(config);
+        CloudRun::new(&home, dir, id, runtime, cloud)
     }
 
     /// Cloud-services lab `id`, installed in `dir`: its own module (`cloud/`), run as
@@ -170,15 +170,16 @@ impl CloudRun {
     #[cfg(feature = "cloud-services")]
     pub(crate) fn own(home: &Path, dir: &Path, id: &str) -> Result<CloudRun> {
         let module = crate::runtime::cloud_services::lab_file::module_dir(dir);
-        Ok(CloudRun { run: OpenedRun::new(super::host_config(home), dir, id, (module, Module::Own), true)? })
+        Ok(CloudRun { run: OpenedRun::new(home, dir, id, (module, Module::Own))? })
     }
 
-    /// [`CloudRun::own`] on a runner set up with `config`, its operations in this process (a
+    /// [`CloudRun::own`] on a runner set up with `config`, which this test process serves (a
     /// test's scripted tools).
     #[cfg(all(test, feature = "cloud-services"))]
     pub(crate) fn own_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str) -> Result<CloudRun> {
-        let module = crate::runtime::cloud_services::lab_file::module_dir(dir);
-        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (module, Module::Own), false)? })
+        let home = config.home.clone();
+        crate::testing::service::serve_home(config);
+        CloudRun::own(&home, dir, id)
     }
 
     /// Brings the cloud-services lab up in the account `place` from its own module, with
@@ -240,7 +241,7 @@ impl CloudRun {
     }
 
     /// `machine`'s graphical console, as the runner reaches it in the account `place`.
-    pub(crate) async fn screen(&self, place: &CloudPlace, machine: &str) -> Result<isothrum_runner::Console> {
+    pub(crate) async fn screen(&self, place: &CloudPlace, machine: &str) -> Result<isothrum_client::HeldConsole> {
         self.graphical_console(machine, &place.later_options()).await
     }
 
@@ -283,26 +284,25 @@ fn destroy_options(tf_env: &[(String, String)]) -> RunOptions {
     RunOptions::new().with_secrets(secrets)
 }
 
-/// Destroys every cloud run the runner records as past its expiry (the auto-stop), with the
-/// account's credentials resolved by `account` (a recorded account id to its Terraform
-/// environment). Each destroy runs
-/// under the lab's per-lab lock (`lock`, `None` while another operation holds it): a user Stop or
-/// install of the same lab must not run a second Terraform operation over the same state, which
-/// could corrupt `terraform.tfstate`. Returns the runs it couldn't destroy, with why, so the
-/// caller can surface and retry them; a run whose account can't be resolved, or whose lab is
-/// busy, is left for a later sweep. `Err` when the runs can't even be listed: no sweep happened
-/// (not a failed run named for the runner, which a caller would report as a lab).
-pub(crate) async fn reap_expired<F, L, G>(home: &Path, now: SystemTime, account: F, lock: L) -> Result<Vec<(String, Error)>>
+/// Destroys every cloud run the runner records as past its expiry (the auto-stop), through the
+/// home's runner service, with the account's credentials resolved by `account` (a recorded account
+/// id to its Terraform environment). Each destroy runs under the lab's per-lab lock (`lock`,
+/// `None` while another operation holds it): a user Stop or install of the same lab must not run
+/// a second Terraform operation over the same state, which could corrupt `terraform.tfstate`.
+/// Returns the runs it couldn't destroy, with why, so the caller can surface and retry them; a run
+/// whose account can't be resolved, or whose lab is busy, is left for a later sweep. `Err` when
+/// the runs can't even be listed: no sweep happened (not a failed run named for the runner, which
+/// a caller would report as a lab).
+pub(crate) async fn reap_expired<F, L, G>(home: &Path, account: F, lock: L) -> Result<Vec<(String, Error)>>
 where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
     L: Fn(&str) -> Option<G>,
 {
-    let runner = Runner::new(super::host_config(home)).map_err(|e| errors::coded(&e.report()))?;
-    let expired = runner.expired(now).map_err(|e| errors::coded(&e.report()))?;
+    let expired = super::remote::expired(home).await?;
     let mut failed = Vec::new();
     for record in expired.into_iter().filter(|r| r.cloud.is_some()) {
         let name = record.name.to_string();
-        if let Err(e) = reap_one(&runner, home, &record, &account, &lock).await {
+        if let Err(e) = reap_one(home, &record, &account, &lock).await {
             failed.push((name, e));
         }
     }
@@ -311,7 +311,7 @@ where
 
 /// Destroys the expired cloud run `record`. Ok when it is gone, and when it is left for a later
 /// sweep (its lab busy, its account unusable now); the error when its destroy failed.
-async fn reap_one<F, L, G>(runner: &Runner, home: &Path, record: &RunRecord, account: &F, lock: &L) -> Result<()>
+async fn reap_one<F, L, G>(home: &Path, record: &RunRecord, account: &F, lock: &L) -> Result<()>
 where
     F: Fn(&str) -> Option<Vec<(String, String)>>,
     L: Fn(&str) -> Option<G>,
@@ -338,8 +338,8 @@ where
     if let Err(e) = lab_dir_in(home, id) {
         log::warn!("auto-stop: {name}'s lab isn't installed any more ({e}); destroying it with the module its run kept");
     }
-    let run = runner.open_as(&record.project, Format::Terraform, Some(record.name.clone())).map_err(|e| errors::coded(&e.report()))?;
-    run.down(&destroy_options(&tf_env), &progress::silent()).await.map_err(|e| errors::coded(&e.report()))
+    let served = super::remote::Served { home: home.to_path_buf(), name: record.name.clone(), project: record.project.clone(), format: Format::Terraform };
+    served.operate(super::remote::Act::Down, &destroy_options(&tf_env), &mut |_| {}).await.map(drop).map_err(super::remote::Failure::into_error)
 }
 
 #[cfg(test)]

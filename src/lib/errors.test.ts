@@ -98,6 +98,7 @@ describe("command errors", () => {
         "turnedOffByPolicy",
         "unreachable",
         "virtiofsdMissing",
+        "runnerUnreachable",
       ].sort(),
     );
   });

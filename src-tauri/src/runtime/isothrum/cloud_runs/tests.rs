@@ -33,7 +33,7 @@ async fn an_expired_run_whose_account_is_gone_is_skipped_and_the_others_still_sw
         (host == "aws1").then(|| vec![("AWS_ACCESS_KEY_ID".to_string(), "AKIA".to_string())])
     };
     crate::testing::logs::take_warnings();
-    let failed = reap_expired(&home, SystemTime::now(), account, |_| Some(())).await.unwrap();
+    let failed = reap_expired(&home, account, |_| Some(())).await.unwrap();
     // Its lab isn't installed any more: it is destroyed with the module its run kept, which is said.
     let warned = crate::testing::logs::take_warnings();
     assert!(
@@ -62,7 +62,7 @@ async fn a_run_whose_lab_is_busy_is_left_for_a_later_sweep() {
     };
     // "busy"'s lock can't be taken (another operation holds it); "web"'s can.
     let lock = |id: &str| (id != "busy").then_some(());
-    let failed = reap_expired(&home, SystemTime::now(), account, lock).await.unwrap();
+    let failed = reap_expired(&home, account, lock).await.unwrap();
     assert_eq!(asked.into_inner().unwrap(), ["aws1"], "only the free lab's account is used, never the busy one's");
     let names: Vec<&str> = failed.iter().map(|(name, _)| name.as_str()).collect();
     assert_eq!(names, ["cyberctf-web"], "the free lab is swept (its files are gone, so its destroy fails); the busy one is not touched: {failed:?}");
@@ -78,7 +78,7 @@ async fn an_expired_run_with_no_account_is_reported_as_such() {
     let mut record = crate::testing::runner::run_record(&home, "cyberctf-web");
     record.as_object_mut().unwrap().remove("host_label");
     crate::testing::runner::save_run(&home, &record);
-    let failed = reap_expired(&home, SystemTime::now(), |_: &str| None, |_| Some(())).await.unwrap();
+    let failed = reap_expired(&home, |_: &str| None, |_| Some(())).await.unwrap();
     let codes: Vec<(&str, Code)> = failed.iter().map(|(name, e)| (name.as_str(), e.code())).collect();
     assert_eq!(codes, [("cyberctf-web", Code::ReapNoHost)]);
     std::fs::remove_dir_all(home.parent().unwrap()).unwrap();

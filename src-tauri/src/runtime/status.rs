@@ -17,7 +17,7 @@ use crate::error::Result;
 pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Result<LabStatus> {
     // Where it runs, in the form it was started in (a container lab run as one VM per machine
     // reads as a VM lab): the runner's view. A cloud-services lab on no account runs nowhere.
-    let host = host::locate(dirs, dir, id, runtime)?;
+    let host = host::locate(dirs, dir, id, runtime).await?;
     let status = match &host {
         Some(host) => status_at(host).await?,
         None => LabStatus::default(),
@@ -30,7 +30,7 @@ pub(crate) async fn status(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     // The sign-in each service ships with, as the lab's spec declares it beside the port.
     let status = with_logins(status, dir);
     // Here, parked = the run is recorded parked and it is still down.
-    let recorded = Recorded::of(dirs, id)?;
+    let recorded = Recorded::of(dirs, id).await?;
     let status = if here { with_parked(status, recorded.parked()) } else { status };
     // Whether this container lab runs as one VM per machine (its VM recipes), locally or as
     // cloud-vm: the UI reads it to name the form.
@@ -116,7 +116,7 @@ pub(crate) struct Up {
 /// never in the lab folder, so the lab folder says nothing of it. The record is read from files
 /// only: no tool runs and no host is reached. A record that can't be read is an error, never
 /// "nothing up".
-pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
+pub(crate) async fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
     // Named as the player reads it: by its id when it is no longer saved.
     let up = |host: Option<String>, parked: bool| -> Result<Up> {
         let host_name = match &host {
@@ -125,7 +125,7 @@ pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
         };
         Ok(Up { host, host_name, parked })
     };
-    let run = isothrum::record_of(dirs, id)?;
+    let run = isothrum::record_of(dirs, id).await?;
     run.filter(|r| r.state != isothrum_runner::RunState::Absent).map(|r| up(r.host_label, r.state == isothrum_runner::RunState::Parked)).transpose()
 }
 
@@ -133,12 +133,12 @@ pub(crate) fn still_up(dirs: &AppDirs, id: &str) -> Result<Option<Up>> {
 /// something of it is up ([`still_up`]): the run's generated files and the files it bind-mounts or
 /// provisions from are in that folder. A copy parked by a park is no reason: it is taken down
 /// before the swap (`clear_parked`).
-pub(crate) fn refuse_replace(dirs: &AppDirs, dir: &Path, id: &str) -> Result<()> {
+pub(crate) async fn refuse_replace(dirs: &AppDirs, dir: &Path, id: &str) -> Result<()> {
     if !dir.exists() {
         return Ok(());
     }
-    match still_up(dirs, id)? {
-        Some(up) if up.parked && Recorded::of(dirs, id)?.parked().is_some() => Ok(()),
+    match still_up(dirs, id).await? {
+        Some(up) if up.parked && Recorded::of(dirs, id).await?.parked().is_some() => Ok(()),
         Some(up) => Err(still_running(&up)),
         None => Ok(()),
     }
@@ -152,23 +152,23 @@ pub(crate) fn refuse_replace(dirs: &AppDirs, dir: &Path, id: &str) -> Result<()>
 /// (read from files only, as [`still_up`] is), a parked one, one with anything left, or one that
 /// can't be read now (Docker stopped): the refusal stands. The caller holds the lab lock.
 pub(crate) async fn forget_gone(dirs: &AppDirs, id: &str, log: &mut impl FnMut(String)) -> Result<()> {
-    forget_gone_with(dirs, id, |dir| isothrum::recorded_here(dirs, dir, id), log).await
+    forget_gone_with(dirs, id, |dir| async move { isothrum::recorded_here(dirs, &dir, id).await }, log).await
 }
 
 /// [`forget_gone`], the run opened by `open` from the lab's folder ([`isothrum::recorded_here`]:
 /// none for a run that isn't this machine's to read).
-pub(crate) async fn forget_gone_with(
+pub(crate) async fn forget_gone_with<F: Future<Output = Result<Option<isothrum::LabRun>>>>(
     dirs: &AppDirs,
     id: &str,
-    open: impl FnOnce(&Path) -> Result<Option<isothrum::LabRun>>,
+    open: impl FnOnce(std::path::PathBuf) -> F,
     log: &mut impl FnMut(String),
 ) -> Result<()> {
-    let Some(up) = still_up(dirs, id)? else { return Ok(()) };
+    let Some(up) = still_up(dirs, id).await? else { return Ok(()) };
     if up.host.is_some() || up.parked {
         return Ok(());
     }
     let Ok(dir) = lab_dir(dirs, id) else { return Ok(()) };
-    let Some(run) = open(&dir)? else { return Ok(()) };
+    let Some(run) = open(dir).await? else { return Ok(()) };
     match run.is_gone().await {
         Ok(true) => {
             log("Nothing of this lab is left where it ran (removed outside Cyber CTF): clearing its record.".into());
@@ -195,11 +195,11 @@ pub(crate) fn still_running(up: &Up) -> crate::error::Error {
 /// ([`still_up`]). What a failed start finds already up was not brought up by it, and must not
 /// be torn down with what it did bring up. When the runner's record can't be read, it counts as
 /// up: nothing is torn down on a guess. False when it isn't installed.
-pub fn lab_present(dirs: &AppDirs, id: &str) -> bool {
+pub async fn lab_present(dirs: &AppDirs, id: &str) -> bool {
     if lab_dir(dirs, id).is_err() {
         return false;
     }
-    match still_up(dirs, id) {
+    match still_up(dirs, id).await {
         Ok(up) => up.is_some(),
         Err(e) => {
             log::warn!("couldn't tell whether {id} is up ({e}); taken for up");
@@ -217,7 +217,7 @@ pub fn lab_installed(dirs: &AppDirs, id: &str) -> bool {
 /// launch: as the runner's status publishes the lab's ports ([`isothrum::LabRun::local_url`]).
 /// None for a lab run as VMs or elsewhere, or when nothing is published.
 pub async fn primary_url(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> Option<String> {
-    match host::locate(dirs, dir, id, runtime).ok()?? {
+    match host::locate(dirs, dir, id, runtime).await.ok()?? {
         Host::Local(run) if run.target() == Some(super::lab::Target::Docker) => run.local_url().await.ok().flatten(),
         _ => None,
     }

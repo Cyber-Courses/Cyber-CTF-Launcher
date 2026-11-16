@@ -113,7 +113,7 @@ impl Seeded {
     fn bundle(&self) -> BTreeMap<String, String> {
         let report = json!({ "os": "linux", "docker": { "installed": true, "version": "27.1" }, "ovftoolLocation": { "path": self.home.join("bin").join("ovftool").display().to_string() }, "hint": self.secret_line() });
         let out = self.home.join("diagnostics.tar.gz");
-        write(&self.sources(), &report, &out).unwrap();
+        write(&self.sources(), &report, Ok(Vec::new()), &out).unwrap();
         unpack(&out)
     }
 }
@@ -191,7 +191,7 @@ fn an_empty_data_folder_still_makes_a_bundle() {
     let root = tempfile::tempdir().unwrap();
     let sources = Sources { dirs: AppDirs::new(Some(root.path().join("data")), None), log_dir: None, home: None, settings: BTreeMap::new() };
     let out = root.path().join("d.tar.gz");
-    write(&sources, &json!({}), &out).unwrap();
+    write(&sources, &json!({}), Ok(Vec::new()), &out).unwrap();
     let files = unpack(&out);
     assert_eq!(files.keys().map(String::as_str).collect::<Vec<_>>(), ["README.txt", "host-report.json", "summary.json"]);
     let summary: Value = serde_json::from_str(&files["summary.json"]).unwrap();

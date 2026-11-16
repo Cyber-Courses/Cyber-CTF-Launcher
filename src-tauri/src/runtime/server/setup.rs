@@ -22,12 +22,12 @@ use crate::runtime::ssh::known_hosts;
 /// are still deployed on keeps its place (see `hosts::keeps_placement`). A password or token save
 /// keeps no SSH key sign-in (see [`save_with_ssh_key`]), but a re-save of an SSH-key setup whose
 /// token is already made, with the same key, keeps it.
-pub(crate) fn save(dirs: &AppDirs, mut input: HostInput) -> Result<HostProfile> {
+pub(crate) async fn save(dirs: &AppDirs, mut input: HostInput) -> Result<HostProfile> {
     let saved = input.id.as_deref().and_then(|id| load(dirs).ok()?.hosts.into_iter().find(|h| h.id == id));
     if !saved.is_some_and(|h| input.same_ssh_key(&h)) {
         input.without_ssh_key();
     }
-    put(dirs, input)
+    put(dirs, input).await
 }
 
 /// Saves a Proxmox host set up with the player's SSH key: signs in to the node with it, makes the
@@ -43,7 +43,7 @@ pub(crate) async fn save_with_ssh_key(dirs: &AppDirs, mut input: HostInput) -> R
     let known_hosts = crate::runtime::ssh::node_known_hosts(&launcher);
     let made = ssh_key::bootstrap(&checked.host, &key, &known_hosts, &public).await.map_err(|f| Error::Invalid(f.to_string()))?;
     input.sign_in_as(made.token_id.clone(), Some(made.secret));
-    let profile = put(dirs, input)?;
+    let profile = put(dirs, input).await?;
     let added = if made.key_added { "added to" } else { "already in" };
     let note = format!("Made the API token {} on the node with your key; the launcher's key was {added} {}'s authorized_keys.", made.token_id, key.user);
     MADE_WITH_KEY.lock().unwrap_or_else(PoisonError::into_inner).insert(profile.id.clone(), note);
@@ -124,8 +124,8 @@ pub(crate) async fn trust_ssh_keys(dirs: &AppDirs, input: &HostInput, fingerprin
 /// Removes host `id`, unless labs still run on it: this host holds the credentials and state
 /// needed to stop and destroy them. Removing it mid-run would leave them unstoppable from the app,
 /// and a cloud lab would keep billing with no way left to tear it down.
-pub(crate) fn remove(dirs: &AppDirs, id: &str) -> Result<()> {
-    no_labs_running(labs_on(dirs, id)?)?;
+pub(crate) async fn remove(dirs: &AppDirs, id: &str) -> Result<()> {
+    no_labs_running(labs_on(dirs, id).await?)?;
     // Its secret first: a keychain that refuses to let it go leaves the host as it was, rather
     // than a removed host whose password stays behind.
     delete_secret(id).map_err(|e| Error::Invalid(format!("couldn't remove this host's secret, so the host stays: {e}")))?;
@@ -133,10 +133,10 @@ pub(crate) fn remove(dirs: &AppDirs, id: &str) -> Result<()> {
 }
 
 /// Saves a checked form: under its id, its secret in the keychain.
-fn put(dirs: &AppDirs, mut input: HostInput) -> Result<HostProfile> {
+async fn put(dirs: &AppDirs, mut input: HostInput) -> Result<HostProfile> {
     let checked = input.check()?;
     let deployed = match input.id.as_deref() {
-        Some(id) => labs_on(dirs, id)?,
+        Some(id) => labs_on(dirs, id).await?,
         None => 0,
     };
     update(dirs, |store| {

@@ -350,7 +350,7 @@ async fn attach_box(dirs: &AppDirs, id: &str, runtime: Runtime, pick: AttachPick
     // Held for the whole attach, like every lab operation: a pause or a stop from another window
     // or the agent waits, rather than halting the VMs the attach is working in.
     let _lock = crate::runtime::lock_lab(dirs, id).await?;
-    let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime)?;
+    let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime).await?;
     let mut line = move |l: String| log(l);
     let image = image.unwrap_or_else(|| attack_box::default_image().to_owned());
     let attach = run.add(dirs, attack_box::Pick { image: &image, desktop }, network.as_deref(), &mut line);
@@ -366,7 +366,7 @@ async fn attach_box(dirs: &AppDirs, id: &str, runtime: Runtime, pick: AttachPick
 async fn detach_box(dirs: &AppDirs, id: &str, runtime: Runtime, log: Log) -> Result<()> {
     let dir = lab_dir(dirs, id)?;
     let _lock = crate::runtime::lock_lab(dirs, id).await?;
-    let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime)?;
+    let run = crate::runtime::attack_box::reachable(dirs, &dir, id, runtime).await?;
     let mut line = move |l: String| log(l);
     Box::pin(run.remove(dirs, &mut line)).await
 }

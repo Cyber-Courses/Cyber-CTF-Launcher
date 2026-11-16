@@ -36,13 +36,13 @@ fn proxmox(id: Option<&str>, password: Option<&str>) -> HostInput {
 
 const SUBSCRIPTION: &str = "00000000-0000-0000-0000-000000000000";
 
-#[test]
-fn a_form_saves_a_new_host_then_edits_it_and_an_unknown_one_is_refused() {
+#[tokio::test]
+async fn a_form_saves_a_new_host_then_edits_it_and_an_unknown_one_is_refused() {
     let t = crate::testing::test_app::TestApp::new();
-    let saved = save(&t.dirs(), azure(None, "westeurope", SUBSCRIPTION, "Azure")).unwrap();
-    assert_eq!(save(&t.dirs(), azure(Some(&saved.id), "westeurope", SUBSCRIPTION, "Renamed")).unwrap().id, saved.id);
+    let saved = save(&t.dirs(), azure(None, "westeurope", SUBSCRIPTION, "Azure")).await.unwrap();
+    assert_eq!(save(&t.dirs(), azure(Some(&saved.id), "westeurope", SUBSCRIPTION, "Renamed")).await.unwrap().id, saved.id);
     assert_eq!(load(&t.dirs()).unwrap().hosts.len(), 1);
-    assert_eq!(save(&t.dirs(), azure(Some("ffffffffffffffff"), "westeurope", SUBSCRIPTION, "Azure")).unwrap_err().to_string(), "unknown server host");
+    assert_eq!(save(&t.dirs(), azure(Some("ffffffffffffffff"), "westeurope", SUBSCRIPTION, "Azure")).await.unwrap_err().to_string(), "unknown server host");
 }
 
 #[tokio::test]
@@ -101,7 +101,7 @@ async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
         "sshKey": { "path": mine.display().to_string(), "user": "root", "port": 22 }, "imageStorage": "local", "snippetStorage": "local"
     }))
     .unwrap();
-    let kept = save(&t.dirs(), again).unwrap();
+    let kept = save(&t.dirs(), again).await.unwrap();
     assert_eq!(kept.ssh_key, saved.ssh_key);
     assert_eq!((kept.network.as_deref(), kept.image_storage.as_deref()), (Some("vmbr1"), Some("local")));
     assert_eq!(get_secret(&saved.id).unwrap(), "6f1d2c3b-aaaa-bbbb-cccc-0123456789ab", "the token's secret is kept");
@@ -112,46 +112,46 @@ async fn an_ssh_key_setup_saves_the_token_it_made_like_a_token_setup() {
         "sshKey": { "path": mine.display().to_string(), "user": "root", "port": 22 }
     }))
     .unwrap();
-    let resaved = save(&t.dirs(), password).unwrap();
+    let resaved = save(&t.dirs(), password).await.unwrap();
     assert_eq!((resaved.ssh_key, resaved.username.as_str()), (None, "root@pam"));
     assert_eq!(get_secret(&saved.id).unwrap(), "pw");
 }
 
 #[cfg(debug_assertions)]
-#[test]
-fn a_blank_password_keeps_the_stored_one_asks_for_a_missing_one_and_says_why_one_cant_be_read() {
+#[tokio::test]
+async fn a_blank_password_keeps_the_stored_one_asks_for_a_missing_one_and_says_why_one_cant_be_read() {
     let t = crate::testing::test_app::TestApp::new();
     let file = t.data().join("secrets.json");
     crate::runtime::server::secrets::use_test_file(file.clone());
-    assert_eq!(save(&t.dirs(), proxmox(None, None)).unwrap_err().to_string(), "enter the host's password");
-    let saved = save(&t.dirs(), proxmox(None, Some("pw"))).unwrap();
-    save(&t.dirs(), proxmox(Some(&saved.id), None)).unwrap();
+    assert_eq!(save(&t.dirs(), proxmox(None, None)).await.unwrap_err().to_string(), "enter the host's password");
+    let saved = save(&t.dirs(), proxmox(None, Some("pw"))).await.unwrap();
+    save(&t.dirs(), proxmox(Some(&saved.id), None)).await.unwrap();
     assert_eq!(get_secret(&saved.id).unwrap(), "pw", "kept");
     // Regression: a store that couldn't be read asked for the password again, as if none was kept.
     std::fs::write(&file, "not json").unwrap();
-    let err = save(&t.dirs(), proxmox(Some(&saved.id), None)).unwrap_err().to_string();
+    let err = save(&t.dirs(), proxmox(Some(&saved.id), None)).await.unwrap_err().to_string();
     assert!(err.starts_with("the secrets file") && err.contains("isn't readable"), "{err}");
 }
 
-#[test]
-fn an_account_with_labs_on_it_keeps_its_place_but_not_its_credentials() {
+#[tokio::test]
+async fn an_account_with_labs_on_it_keeps_its_place_but_not_its_credentials() {
     // Regression: the player moved an AWS account with a lab running in eu-west-3 to
     // us-east-1 for their next lab; Stop then destroyed in us-east-1, found nothing, and the
     // instance kept billing in eu-west-3.
     let t = crate::testing::test_app::TestApp::new();
-    let saved = save(&t.dirs(), azure(None, "westeurope", SUBSCRIPTION, "Azure")).unwrap();
+    let saved = save(&t.dirs(), azure(None, "westeurope", SUBSCRIPTION, "Azure")).await.unwrap();
     t.lab("placed", &[]);
     crate::runtime::test_support::record_run(t.data(), "placed", Some(&saved.id), "cloud-docker/azure", "ready");
-    let err = save(&t.dirs(), azure(Some(&saved.id), "eastus", SUBSCRIPTION, "Azure")).unwrap_err().to_string();
+    let err = save(&t.dirs(), azure(Some(&saved.id), "eastus", SUBSCRIPTION, "Azure")).await.unwrap_err().to_string();
     assert_eq!(err, "1 lab is still on this account: stop it before changing its address or region.");
-    let err = save(&t.dirs(), azure(Some(&saved.id), "westeurope", "11111111-0000-0000-0000-000000000000", "Azure")).unwrap_err().to_string();
+    let err = save(&t.dirs(), azure(Some(&saved.id), "westeurope", "11111111-0000-0000-0000-000000000000", "Azure")).await.unwrap_err().to_string();
     assert!(err.ends_with("changing its account."), "{err}");
     assert_eq!(load(&t.dirs()).unwrap().hosts[0].host, "westeurope", "nothing saved");
     // Its name (and credentials, size, auto-stop) can change.
-    assert_eq!(save(&t.dirs(), azure(Some(&saved.id), "westeurope", SUBSCRIPTION, "Renamed")).unwrap().name, "Renamed");
+    assert_eq!(save(&t.dirs(), azure(Some(&saved.id), "westeurope", SUBSCRIPTION, "Renamed")).await.unwrap().name, "Renamed");
     // Stopped: it can move.
     crate::runtime::test_support::record_run(t.data(), "placed", Some(&saved.id), "cloud-docker/azure", "absent");
-    assert_eq!(save(&t.dirs(), azure(Some(&saved.id), "eastus", SUBSCRIPTION, "Renamed")).unwrap().host, "eastus");
+    assert_eq!(save(&t.dirs(), azure(Some(&saved.id), "eastus", SUBSCRIPTION, "Renamed")).await.unwrap().host, "eastus");
 }
 
 #[test]
@@ -185,40 +185,40 @@ fn passwords_are_kept_when_blank_and_bounded_when_given() {
     assert!(new_password(Some("x".repeat(1024))).is_ok());
 }
 
-#[test]
-fn a_deployment_left_by_an_uninstalled_lab_keeps_its_host() {
+#[tokio::test]
+async fn a_deployment_left_by_an_uninstalled_lab_keeps_its_host() {
     // The lab's folder is gone (uninstalled) but its run is still up on the account: only this
     // host's credentials can destroy it, so it stays.
     let t = crate::testing::test_app::TestApp::new();
     let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true }));
     crate::runtime::test_support::record_run(t.data(), "web", Some("aws1"), "cloud-vm", "ready");
-    let err = remove(&t.dirs(), &host).unwrap_err().to_string();
+    let err = remove(&t.dirs(), &host).await.unwrap_err().to_string();
     assert_eq!(err, "1 lab still running on this host. Stop it before removing the host.");
     assert_eq!(load(&t.dirs()).unwrap().hosts.len(), 1);
-    assert!(crate::runtime::server::hosts::running_by_host(&t.dirs()).is_empty(), "no installed lab runs there");
+    assert!(crate::runtime::server::hosts::running_by_host(&t.dirs()).await.is_empty(), "no installed lab runs there");
     // Destroyed: free to remove.
     crate::runtime::test_support::record_run(t.data(), "web", Some("aws1"), "cloud-vm", "absent");
-    remove(&t.dirs(), &host).unwrap();
+    remove(&t.dirs(), &host).await.unwrap();
     assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);
 }
 
-#[test]
-fn removing_a_host_that_is_not_saved_changes_nothing() {
+#[tokio::test]
+async fn removing_a_host_that_is_not_saved_changes_nothing() {
     let t = crate::testing::test_app::TestApp::new();
     t.host("az1", "azure", serde_json::json!({}));
-    remove(&t.dirs(), "nope").unwrap();
+    remove(&t.dirs(), "nope").await.unwrap();
     assert_eq!(load(&t.dirs()).unwrap().hosts.iter().map(|h| h.id.as_str()).collect::<Vec<_>>(), ["az1"]);
     // A lab's run on a host that was never saved blocks nothing else.
     t.lab("web", &[]);
     crate::runtime::test_support::record_run(t.data(), "web", Some("nope"), "proxmox", "ready");
-    assert_eq!(crate::runtime::server::hosts::running_by_host(&t.dirs()).get("nope"), Some(&1));
-    remove(&t.dirs(), "az1").unwrap();
+    assert_eq!(crate::runtime::server::hosts::running_by_host(&t.dirs()).await.get("nope"), Some(&1));
+    remove(&t.dirs(), "az1").await.unwrap();
     assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);
 }
 
 #[cfg(debug_assertions)]
-#[test]
-fn a_host_whose_secret_cant_be_removed_stays_and_says_why() {
+#[tokio::test]
+async fn a_host_whose_secret_cant_be_removed_stays_and_says_why() {
     // Regression: the secret's removal failed unseen, the host went, and its password stayed.
     let t = crate::testing::test_app::TestApp::new();
     let file = t.data().join("secrets.json");
@@ -226,12 +226,12 @@ fn a_host_whose_secret_cant_be_removed_stays_and_says_why() {
     let host = t.host("pve1", "proxmox", serde_json::json!({}));
     // A folder where the secrets file should be: it can't be read, let alone changed.
     std::fs::create_dir_all(file.join("x")).unwrap();
-    let err = remove(&t.dirs(), &host).unwrap_err().to_string();
+    let err = remove(&t.dirs(), &host).await.unwrap_err().to_string();
     assert!(err.starts_with("couldn't remove this host's secret, so the host stays"), "{err}");
     assert_eq!(load(&t.dirs()).unwrap().hosts.len(), 1);
     std::fs::remove_dir_all(&file).unwrap();
     set_secret(&host, "pw").unwrap();
-    remove(&t.dirs(), &host).unwrap();
+    remove(&t.dirs(), &host).await.unwrap();
     assert_eq!(load(&t.dirs()).unwrap().hosts, [] as [HostProfile; 0]);
     assert_eq!(get_secret(&host).unwrap_err().code(), Code::NoPasswordStored, "its secret went with it");
 }

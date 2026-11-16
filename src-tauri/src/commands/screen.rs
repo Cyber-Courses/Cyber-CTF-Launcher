@@ -27,7 +27,7 @@ pub async fn screen_connect(window: WebviewWindow) -> Result<screen::Connection>
         let which = screen::which(&label)?;
         let dirs = AppDirs::from(window.app_handle());
         let dir = paths::lab_dir(&dirs, &which.id)?;
-        let located = host::locate(&dirs, &dir, &which.id, which.runtime)?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
+        let located = host::locate(&dirs, &dir, &which.id, which.runtime).await?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
         let trust = match &located {
             host::Host::Server { conn, .. } => crate::runtime::server::store::load_host(&dirs, &conn.id)?.tls_trust(),
             _ => crate::runtime::server::tls_pin::Trust::System,
@@ -50,7 +50,7 @@ pub async fn screen_open_native(app: AppHandle, id: String, runtime: Runtime, ma
     Box::pin(async move {
         let dirs = AppDirs::from(&app);
         let dir = paths::lab_dir(&dirs, &id)?;
-        let located = host::locate(&dirs, &dir, &id, runtime)?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
+        let located = host::locate(&dirs, &dir, &id, runtime).await?.ok_or_else(|| Error::Invalid("this lab doesn't run anywhere".into()))?;
         let console = located.native_console(&dirs, &machine).await?;
         let home = crate::platform::home_dir();
         let launch = native::pick(&console.ways, Os::HERE, home.as_deref(), std::path::Path::exists, native::on_path)
@@ -69,7 +69,7 @@ pub async fn screen_open_native(app: AppHandle, id: String, runtime: Runtime, ma
 /// Watches the console's SSH `tunnel` of window `label`, owning it: when its `ssh` ends on its own,
 /// the window is told why. The guard it gives ends the watch, and the tunnel with it, once
 /// dropped.
-fn watch_tunnel(app: AppHandle, label: String, mut tunnel: isothrum_runner::Tunnel) -> Box<dyn Send> {
+fn watch_tunnel(app: AppHandle, label: String, mut tunnel: isothrum_client::HeldConsole) -> Box<dyn Send> {
     let task = tauri::async_runtime::spawn(async move {
         let reason = tunnel.closed().await;
         log::info!("{label}: the console's tunnel closed: {reason}");

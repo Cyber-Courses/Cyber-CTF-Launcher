@@ -69,39 +69,39 @@ pub(crate) struct TunnelClosed {
 }
 
 impl Reached {
-    /// The runner's `console`, kept for the window's life, and its SSH tunnel when one carries
-    /// it: the caller keeps that alive too ([`Reached::hold`]), and watches it end. `trust`: how
-    /// the server's certificate is trusted, when its console is reached through its API (a
+    /// The runner's console `held` (its service holds a tunnel that carries it for as long as
+    /// `held` lives), kept for the window's life, or handed back when a tunnel carries it: the
+    /// caller keeps that alive too ([`Reached::hold`]), and watches it end. `trust`: how the
+    /// server's certificate is trusted, when its console is reached through its API (a
     /// self-signed one by the fingerprint the learner confirmed for it).
     pub(crate) fn of(
-        mut console: isothrum_runner::Console,
+        held: isothrum_client::HeldConsole,
         trust: crate::runtime::server::tls_pin::Trust,
-    ) -> Result<(Reached, Option<isothrum_runner::Tunnel>)> {
-        let tunnel = console.tunnel.take();
+    ) -> Result<(Reached, Option<isothrum_client::HeldConsole>)> {
+        use isothrum_client::proto::ConsoleEndpoint;
+        let console = &held.console;
         let protocol = match crate::runtime::isothrum::protocol_word(console.protocol) {
             "vnc" => Protocol::Vnc,
             "rdp" => Protocol::Rdp,
             _ => return Err(Error::Invalid(format!("{} has no screen", console.machine))),
         };
         let at = match &console.endpoint {
-            isothrum_runner::Endpoint::Loopback(at) => bridge::Target::Tcp(*at),
-            isothrum_runner::Endpoint::ProxmoxVnc(vnc) => bridge::Target::WebSocket {
-                url: vnc.websocket.expose().to_owned(),
-                header: (vnc.authorization.0.clone(), vnc.authorization.1.expose().to_owned()),
-                trust: if vnc.insecure { trust } else { crate::runtime::server::tls_pin::Trust::System },
+            ConsoleEndpoint::Loopback { address } => bridge::Target::Tcp(*address),
+            ConsoleEndpoint::ProxmoxVnc { websocket, header, authorization, insecure, .. } => bridge::Target::WebSocket {
+                url: websocket.clone(),
+                header: (header.clone(), authorization.clone()),
+                trust: if *insecure { trust } else { crate::runtime::server::tls_pin::Trust::System },
             },
             _ => return Err(Error::Invalid("the runner reached the screen where this launcher can't show it".into())),
         };
-        let reached = Reached {
-            protocol,
-            at,
-            user: console.user.clone(),
-            password: console.password.as_ref().map(|p| p.expose().to_owned()),
-            note: console.note.clone(),
-            tunnelled: tunnel.is_some(),
-            keep: Some(Box::new(console)),
-        };
-        Ok((reached, tunnel))
+        let tunnelled = console.tunnelled;
+        let mut reached =
+            Reached { protocol, at, user: console.user.clone(), password: console.password.clone(), note: console.note.clone(), tunnelled, keep: None };
+        if tunnelled {
+            return Ok((reached, Some(held)));
+        }
+        reached.keep = Some(Box::new(held));
+        Ok((reached, None))
     }
 
     /// Keeps `guard` (what owns the console's tunnel) for as long as the console is kept: the

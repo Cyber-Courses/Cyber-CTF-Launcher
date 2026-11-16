@@ -10,13 +10,7 @@
 const CONVERTER: &str = "runtime/isothrum/errors.rs";
 
 /// The files allowed to match Isothrum's errors until the migration step named removes them.
-const ALLOWED: &[(&str, &str)] = &[
-    (
-        "runtime/isothrum.rs",
-        "L-7: the in-process runner's lock wait, the helper VM's refusal and the resume of nothing read a code; the one Deployment handle over the client takes them",
-    ),
-    ("runtime/isothrum/remote.rs", "L-7: the cancelled operation's report and the other client errors, with remote::in_process gone"),
-];
+const ALLOWED: &[(&str, &str)] = &[];
 
 /// Each line of `code` that matches one of Isothrum's errors, 1-based; `use` lines and comments
 /// aside.

@@ -51,6 +51,7 @@
     "pickCloudAccount": "Este lab se ejecuta en tu cuenta en la nube: elige una de tus cuentas en la nube para iniciarlo.",
     "noHypervisor": "Ningún hipervisor listo en esta máquina ejecuta este lab. Instala uno desde la página Máquina, o ejecuta el lab en un servidor o en tu cuenta en la nube.",
     "virtiofsdMissing": "{hypervisor} no puede compartir tu carpeta compartida con la máquina de ataque: virtiofsd no está instalado. Instala {hypervisor} de nuevo desde la página Máquina (eso lo añade), o ejecuta sudo apt-get install virtiofsd (sudo dnf install virtiofsd en Fedora), y vuelve a intentarlo.",
+    "runnerUnreachable": "No se puede conectar con el servicio que ejecuta tus labs ({detail}). Reinicia Cyber CTF y vuelve a intentarlo.",
     "turnedOffByPolicy": "Tu organización desactivó esta función en este equipo (ajuste de directiva {setting}). Pide ayuda a tu equipo de TI si la necesitas.",
     "tlsUnconfirmed": "El certificado de {server} aún no se ha confirmado (SHA-256 {presented}), así que no se le ha enviado nada. Para confirmarlo, ábrelo en Servidores, elige Editar y compara la huella con la que muestra el propio servidor antes de confirmarla.",
     "tlsChanged": "El certificado de {server} ha cambiado (era {pinned}, ahora es {presented}), así que no se le ha enviado nada: alguien podría estar interceptando la conexión. Si cambiaste el certificado tú mismo, ábrelo en Servidores, elige Editar y compara la huella con la que muestra el propio servidor antes de confirmarla.",
