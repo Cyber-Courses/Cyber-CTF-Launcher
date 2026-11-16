@@ -1166,9 +1166,8 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/runtime/isothrum/engine.rs > a_chosen_engine_pins_the_labs_docker_calls_through_its_context
+            - src-tauri/src/runtime/isothrum/tests.rs > a_container_lab_started_on_an_engine_stays_on_it_for_its_page_and_its_stop
             - src-tauri/src/labs.rs > a_chosen_engine_with_no_context_here_fails_the_launch_rather_than_use_another
-            - src-tauri/src/runtime/paths.rs > engine_marker_round_trips_and_reads_trimmed
             - src/features/labs/lab-detail/lab-detail.behavior.test.tsx > picks a container engine when several answer, remembers it, and starts on it
           desktop:
             - lab-form-container/engine
@@ -1458,8 +1457,8 @@ areas:
         tests:
           unit:
             - src-tauri/src/runtime/reaper/tests.rs > a_recorded_reap_failure_is_read_back_for_the_lab_page
-            - src-tauri/src/runtime/isothrum/cloud_runs/tests.rs > an_expired_run_whose_account_is_gone_is_skipped_and_the_others_still_swept
-            - src-tauri/src/runtime/isothrum/cloud_runs/tests.rs > a_run_whose_lab_is_busy_is_left_for_a_later_sweep
+            - src-tauri/src/runtime/reaper/tests.rs > an_expired_cloud_run_is_destroyed_through_the_service_with_its_accounts_credentials
+            - src-tauri/src/runtime/reaper/tests.rs > a_sweep_skips_a_gone_account_and_a_busy_lab_and_reports_a_run_with_no_account
             - src/features/labs/lab-detail/lab-detail.cloud.test.tsx > says why the auto-stop failed in the player
             - src/features/failure-states.test.tsx > counts from when the operation was first seen
           web:
