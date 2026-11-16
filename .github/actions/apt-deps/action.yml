@@ -1,7 +1,7 @@
 name: Linux build dependencies
 description: >-
   Install the WebKitGTK/Tauri build dependencies the launcher needs on Linux. Shared by every
-  Linux job so the package list lives in one place (ci, coverage, labs, package-smoke, release).
+  Linux job so the package list lives in one place (ci, gate, package-smoke, release).
 inputs:
   extra-packages:
     description: >-
