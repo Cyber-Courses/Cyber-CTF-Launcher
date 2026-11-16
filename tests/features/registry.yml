@@ -3442,6 +3442,18 @@ areas:
           web: the dev mock's import takes nothing (the preview never ran 1.9); the import itself is the unit tier's
           desktop: the screens spec seeds its setting in 1.9's shape, so the app's import runs, but no spec checks a 1.9 data folder whole
 
+      - id: settings.update-from-1-9
+        what: Updating from 1.9 keeps what the launcher saved in its own files (the servers and cloud accounts with the default one, the shared folder, the install id the website knows this machine by), taken into its store once, the old files then removed; a file that can't be read is left for the next start.
+        host: false
+        tests:
+          unit:
+            - src-tauri/src/store/tests.rs > the_files_1_9_kept_its_state_in_are_taken_in_once_then_removed
+            - src-tauri/src/store/tests.rs > a_file_taken_in_again_adds_only_what_the_store_lacks_and_never_writes_over_it
+            - src-tauri/src/store/tests.rs > a_file_that_cant_be_read_is_left_for_the_next_start_and_the_others_are_taken
+        gaps:
+          web: the dev mock has no data folder
+          desktop: no spec starts the app on a 1.9 data folder
+
       - id: settings.theme
         what: Pick the theme (light, dark, black) in Settings > Appearance; it applies at once to every window, new windows open in it, and it survives a restart.
         host: false

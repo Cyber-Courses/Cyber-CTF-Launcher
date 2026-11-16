@@ -8,6 +8,8 @@ use crate::error::Result;
 pub(crate) const DEFAULT_HOST: &str = "default_host";
 /// The folder shared with the attack box (`shared_folder::SharedFolder`).
 pub(crate) const SHARED_FOLDER: &str = "shared_folder";
+/// This installation's id, the website agent's merge key (`account::agent::identity`).
+pub(crate) const INSTALL_ID: &str = "install_id";
 
 /// Setting `key`, when set.
 ///
