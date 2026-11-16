@@ -107,7 +107,7 @@ fn machine(declared: Option<&Declared>, m: &MachineStatus, native: Option<&str>)
 
 /// The host port `port` is published on (none when it isn't), as the runner reports it: never
 /// the machine's own number.
-fn published(m: &MachineStatus, port: &DeclaredPort) -> Option<HostPort> {
+pub(super) fn published(m: &MachineStatus, port: &DeclaredPort) -> Option<HostPort> {
     let tcp = port.tcp();
     m.published
         .iter()
