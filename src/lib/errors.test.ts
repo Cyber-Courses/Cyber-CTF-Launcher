@@ -99,6 +99,7 @@ describe("command errors", () => {
         "unreachable",
         "virtiofsdMissing",
         "runnerUnreachable",
+        "hypervisorNotPermitted",
       ].sort(),
     );
   });

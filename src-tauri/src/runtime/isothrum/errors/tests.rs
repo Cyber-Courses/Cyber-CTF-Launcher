@@ -74,6 +74,12 @@ fn a_tools_failure_reaches_the_webview_as_the_code_it_translates() {
             None,
         ),
         (report("provider_refused", None, Some(json!({ "kind": "provider_refused", "provider": "utm" }))), Code::Other, Some("m")),
+        // UTM answering the VM's start with the system's "Operation not permitted": a permission.
+        (
+            report("provider_refused", step, Some(json!({ "kind": "provider_refused", "provider": "utm", "need": "permission" }))),
+            Code::HypervisorNotPermitted { hypervisor: "UTM".into() },
+            None,
+        ),
     ]);
 }
 

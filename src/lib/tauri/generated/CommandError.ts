@@ -156,6 +156,10 @@ server: string, } } | { "code": "pickCloudAccount" } | { "code": "noHypervisor" 
 /**
  * The hypervisor's name ("libvirt", "QEMU").
  */
+hypervisor: string, } } | { "code": "hypervisorNotPermitted", "args": { 
+/**
+ * The hypervisor's name ("UTM").
+ */
 hypervisor: string, } } | { "code": "turnedOffByPolicy", "args": { 
 /**
  * The policy setting's name.

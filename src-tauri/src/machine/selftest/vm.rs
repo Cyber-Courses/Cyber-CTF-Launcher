@@ -159,6 +159,19 @@ fn vagrantfile(p: Provider, bx: &str, ip: Option<&str>, dir: &Path) -> String {
     v
 }
 
+/// `e`, the test VM's failed start, as the system's refusal of the hypervisor's app when it is one
+/// (UTM's start answered "Operation not permitted"): coded, with the way out, as a lab's start
+/// says it; else as it was.
+fn refused(provider: Provider, e: Error) -> Error {
+    use crate::platform::tool_output::apple_events::refused_by_the_system;
+    match &e {
+        Error::CommandFailed { stderr, .. } if provider == Provider::Utm && refused_by_the_system(stderr) => {
+            Error::coded(crate::error::Code::HypervisorNotPermitted { hypervisor: provider.label().to_owned() })
+        }
+        _ => e,
+    }
+}
+
 /// `s` as a Ruby single-quoted string (a Windows path's backslashes kept as they are).
 fn ruby_quote(s: &str) -> String {
     format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
@@ -327,7 +340,7 @@ async fn boot_and_exec(dir: &Path, provider: Provider, bx: &str, ip: Option<&'st
         });
         let mut outcomes = within("vagrant up / vagrant ssh", BOOT_LIMIT, batch).await?;
         inside = outcomes.pop().flatten();
-        outcomes.pop().flatten().unwrap_or_else(|| Err(Error::Invalid("the test VM was not started".into())))?;
+        outcomes.pop().flatten().unwrap_or_else(|| Err(Error::Invalid("the test VM was not started".into()))).map_err(|e| refused(provider, e))?;
         Ok(((), Some(format!("{bx} on {}", provider.id()))))
     })
     .await?;

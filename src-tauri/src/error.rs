@@ -212,6 +212,13 @@ pub enum Code {
         /// The hypervisor's name ("libvirt", "QEMU").
         hypervisor: String,
     },
+    /// macOS refused `hypervisor` (UTM) an action the lab's start asked of it: its app answered
+    /// the VM's start with the system's "Operation not permitted", or this app may not drive it
+    /// (Automation). No wait fixes it: a permission in System Settings, or the app's install.
+    HypervisorNotPermitted {
+        /// The hypervisor's name ("UTM").
+        hypervisor: String,
+    },
     /// This computer's administrator turned the feature off: `setting` is the policy switch
     /// (`platform::policy::Key`) that did.
     TurnedOffByPolicy {
