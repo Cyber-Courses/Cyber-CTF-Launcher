@@ -126,7 +126,7 @@ mod tests {
             "variable \"launch_token\" {\n  type      = string\n  sensitive = true\n}\nvariable \"allowed_cidr\" { type = string }\n",
         )
         .unwrap();
-        let fake = Arc::new(FakeProcesses::new(|call| match call.args.first().map(String::as_str) {
+        let fake = Arc::new(FakeProcesses::model(|call| match call.args.first().map(String::as_str) {
             Some("version") => Reply::ok(r#"{"terraform_version":"1.10.5"}"#),
             Some("show") => Reply::ok(
                 r#"{"values":{"root_module":{"resources":[{"address":"aws_s3_bucket.site","mode":"managed","type":"aws_s3_bucket","values":{"id":"bucket-1"}}]}}}"#,
