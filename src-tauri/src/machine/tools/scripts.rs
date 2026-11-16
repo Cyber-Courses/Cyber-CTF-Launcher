@@ -346,9 +346,17 @@ pub fn libvirt_script(user: Option<&str>) -> RootScript {
 /// group applies from the next login. With `genisoimage`, which has `mkisofs`: vagrant-qemu gives
 /// a VM on a lab network its settings in a cloud-init seed, an ISO Vagrant builds with `mkisofs`
 /// on Linux ([`crate::runtime::providers::needs_mkisofs`]). Every Debian and Ubuntu release has
-/// the package; Debian's `xorriso` has no `mkisofs`, only `xorrisofs`.
+/// the package; Debian's `xorriso` has no `mkisofs`, only `xorrisofs`. And `virtiofsd`, which
+/// vagrant-qemu starts to share a folder of this computer with a VM (the attack box's shared
+/// folder): its own package from Debian 12 and Ubuntu 23.10 on, QEMU's own
+/// (`/usr/lib/qemu/virtiofsd`) before, so a release without the package skips it.
 pub fn qemu_script(user: Option<&str>) -> RootScript {
-    then_kvm_group("apt-get update; apt-get install -y qemu-system qemu-utils genisoimage", user)
+    // Separate statements: a failure inside an `&&` chain doesn't stop a script that runs `set -e`.
+    then_kvm_group(
+        "apt-get update; apt-get install -y qemu-system qemu-utils genisoimage; \
+         if apt-cache show virtiofsd >/dev/null 2>&1; then apt-get install -y virtiofsd; fi",
+        user,
+    )
 }
 
 /// The KVM device.
@@ -502,10 +510,11 @@ pub fn libvirt_dnf_script(user: Option<&str>) -> RootScript {
     )
 }
 
-/// QEMU and its disk tools on Fedora, with `genisoimage` for vagrant-qemu's cloud-init seeds,
-/// then the player into the KVM device's group.
+/// QEMU and its disk tools on Fedora, with `genisoimage` for vagrant-qemu's cloud-init seeds and
+/// `virtiofsd` for its shared folders (its own package from Fedora 36 on), then the player into
+/// the KVM device's group.
 pub fn qemu_dnf_script(user: Option<&str>) -> RootScript {
-    then_kvm_group("dnf install -y qemu-kvm qemu-img genisoimage", user)
+    then_kvm_group("dnf install -y qemu-kvm qemu-img genisoimage virtiofsd", user)
 }
 
 #[cfg(test)]
