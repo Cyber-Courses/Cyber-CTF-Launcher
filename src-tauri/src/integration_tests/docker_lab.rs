@@ -222,6 +222,6 @@ fn invoice_portal(env: &'static [(&'static str, &'static str)]) -> Expect {
 #[tokio::test]
 #[ignore = "needs Docker, the invoice-portal-api lab (in Isoloom's current syntax) and the attack-box image"]
 async fn supplier_portal_runs_end_to_end() {
-    // Launched without its inputs: the runner delivers each slot's manifest default.
+    // Launched without its inputs: the evidence claim's values are given empty (no launch token).
     real_lab("invoice", invoice_portal(&[])).await;
 }

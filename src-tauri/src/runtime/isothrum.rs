@@ -17,6 +17,7 @@
 //! it to its end whatever becomes of the app.
 
 mod checks;
+mod claim;
 mod cloud_runs;
 mod described;
 mod engine;
@@ -37,6 +38,8 @@ mod server;
 mod tunnel;
 mod view;
 
+pub(crate) use claim::CLAIM;
+use claim::with_claim;
 pub(crate) use cloud_runs::{CloudPlace, CloudRun, reap_expired as reap_expired_clouds};
 use engine::PROCESSES;
 pub(crate) use engine::{ENGINE_VAR, EngineProcesses};
@@ -426,8 +429,10 @@ impl LabRun {
     /// `opts` for this run's place: on an ESXi server, its id, its settings (as the environment
     /// Isoloom's Vagrantfiles read) and its password (a secret, beside the launch's); everywhere,
     /// the run's key under the name Isoloom's Vagrantfiles read it ([`super::lab::ISOLOOM_KEY`]),
-    /// so the lab's VMs, networks and libvirt domains are named for this copy and no other.
+    /// so the lab's VMs, networks and libvirt domains are named for this copy and no other; and
+    /// the evidence claim's values every lab is given, empty when `opts` has none ([`with_claim`]).
     fn placed(&self, opts: RunOptions) -> RunOptions {
+        let opts = with_claim(opts);
         let opts = opts.with_env(super::lab::ISOLOOM_KEY, self.runner.copy_key(&self.name));
         let opts = match &self.engine {
             Some(context) => opts.with_env(ENGINE_VAR, context.clone()),
