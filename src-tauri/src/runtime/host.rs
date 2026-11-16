@@ -43,7 +43,7 @@ pub(crate) async fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
         None => return Ok(isothrum::Deployment::local_of(&home, dir, id, runtime, &recorded)?.map(Host::here)),
         Some(conn) if conn.provider == Provider::VmwareEsxi => super::launch::esxi_run(dirs, dir, id, form, conn)?,
         Some(conn) if conn.provider.is_cloud() => {
-            let place = isothrum::CloudPlace::of(&conn);
+            let place = isothrum::CloudPlace::of(conn);
             #[cfg(feature = "cloud-services")]
             let run = if runtime == Runtime::Cloud {
                 isothrum::Deployment::own(&home, dir, id, place)?
@@ -182,7 +182,7 @@ mod tests {
                     assert_eq!(conn.id, "pve", "the server's own id, from its connection");
                     "server"
                 }
-                (site, conn) => panic!("{site:?} with {conn:?}"),
+                (site, conn) => panic!("{site:?} on {:?}", conn.as_ref().map(|c| &c.id)),
             };
             (kind, h.target())
         })
