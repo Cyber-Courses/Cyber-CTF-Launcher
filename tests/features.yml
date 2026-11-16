@@ -3570,6 +3570,10 @@ areas:
           web:
             - a11y.spec.ts > the Settings window passes too
             - settings.spec.ts > About shows the app's version, this system and the install id
+          desktop:
+            - settings/about
+        rig:
+          - desktop-e2e
 
       - id: settings.managed-by-organization
         what: An administrator's policy (registry, managed preferences, /etc JSON) can turn off the website agent, the updater, tool installs, cloud launches and privileged labs; Settings lists what is managed.
@@ -3809,8 +3813,10 @@ areas:
             - src/components/shell/shell-model.test.ts > a coming-soon tab still is one
           web:
             - navigation.spec.ts > the Events tab says Events is on the way
-        gaps:
-          desktop: not opened
+          desktop:
+            - smoke/events
+        rig:
+          - desktop-e2e
 
   - id: empty
     title: Empty states
