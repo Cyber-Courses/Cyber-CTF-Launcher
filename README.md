@@ -17,7 +17,7 @@ deployment need.
 ## Install
 
 Every release is on [GitHub Releases](https://github.com/Cyber-Courses/Cyber-CTF-Launcher/releases),
-with `SHA256SUMS` and a build provenance attestation for each file
+with `SHA256SUMS` signed through Sigstore, and a build provenance attestation for each file
 ([verify a download](docs/admins/admin-guide.md#verify-a-download)).
 
 ### macOS (Apple silicon and Intel)
@@ -109,12 +109,11 @@ missing.
 ## Signed releases
 
 - **macOS**: the app is signed with a Developer ID and notarized by Apple.
-- **Windows**: the installers and the app are Authenticode-signed from the release after 1.8.9;
-  the release workflow refuses to publish a build it couldn't sign. Up to 1.8.9 they were not
-  signed. The Microsoft Store package is signed by Microsoft.
+- **Windows**: the installers and the app are Authenticode-signed from the release after 1.8.9,
+  and the release workflow checks each signature it makes. Up to 1.8.9 they were not signed. The Microsoft Store package is signed by Microsoft.
 - **Updates**: the in-app updater installs only packages signed with the launcher's own key.
-- **Linux**: the apt repository is signed; each release has `SHA256SUMS`, build provenance
-  attestations and SBOMs.
+- **Linux**: the apt repository is signed; each release has `SHA256SUMS` signed through
+  Sigstore, build provenance and SBOM attestations, and SBOMs.
 
 ## Support and security
 

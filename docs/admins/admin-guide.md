@@ -123,21 +123,71 @@ Versions follow semantic versioning, and only the latest release gets security f
 
 Each release carries, beside the installers:
 
-- `SHA256SUMS`: the SHA-256 of every file of the release.
-  `sha256sum --ignore-missing -c SHA256SUMS` (Linux), `shasum -a 256 --ignore-missing -c SHA256SUMS`
-  (macOS), `Get-FileHash <file>` (Windows).
-- A build provenance attestation of every file, signed through Sigstore and kept by GitHub: it
-  proves the file was built by this repository's release workflow from a given commit.
-  `gh attestation verify <file> --repo Cyber-Courses/Cyber-CTF-Launcher`.
-- `cyberctf-rust.cdx.json` and `cyberctf-npm.cdx.json`: CycloneDX SBOMs of the Rust crates and the
-  npm packages.
-- `THIRD_PARTY_NOTICES`: the licences of the third-party software in the app (also inside the
-  installed app).
+| File                                              | What it is                                                                                   |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `SHA256SUMS`                                      | the SHA-256 of every file of the release                                                     |
+| `SHA256SUMS.sigstore.json`                        | a keyless Sigstore signature of `SHA256SUMS` (a cosign bundle), from the release after 1.9.0 |
+| `cyberctf-rust.cdx.json`, `cyberctf-npm.cdx.json` | CycloneDX SBOMs of the Rust crates and the npm packages the app is built from                |
+| `THIRD_PARTY_NOTICES`                             | the licences of the third-party software in the app (also inside the installed app)          |
+| `*.sig`, `latest.json`                            | the in-app updater's signatures (minisign) and manifest                                      |
 
-Signatures: the macOS app and DMG are signed and notarized (`spctl -a -vvv "/Applications/Cyber CTF.app"`).
-Windows installers are Authenticode-signed from the release after 1.8.9
-(`Get-AuthenticodeSignature <file>`); up to 1.8.9 they were not. The `.sig` files are the in-app
-updater's signatures.
+GitHub also keeps, for every file, a build provenance attestation (it was built by this
+repository's release workflow from a given commit) and, for every installer, an attestation of
+each SBOM, all signed through Sigstore. The checks below need [cosign](https://docs.sigstore.dev/cosign/system_config/installation/)
+(version 2.4 or later) for step 1 and the [GitHub CLI](https://cli.github.com/) for steps 3 and 4.
+
+```sh
+VERSION=X.Y.Z                       # the release you downloaded
+BASE="https://github.com/Cyber-Courses/Cyber-CTF-Launcher/releases/download/v${VERSION}"
+curl -fsSLO "${BASE}/SHA256SUMS"
+curl -fsSLO "${BASE}/SHA256SUMS.sigstore.json"
+```
+
+**1. The checksums are the release workflow's.**
+
+```sh
+cosign verify-blob SHA256SUMS \
+  --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "https://github.com/Cyber-Courses/Cyber-CTF-Launcher/.github/workflows/release.yml@refs/tags/v${VERSION}" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+`Verified OK` means `SHA256SUMS` was signed by the release workflow of this repository, running for
+that tag, and the signature is in Sigstore's public transparency log.
+
+**2. Your download is in them.**
+
+```sh
+sha256sum --ignore-missing -c SHA256SUMS          # Linux
+shasum -a 256 --ignore-missing -c SHA256SUMS      # macOS
+```
+
+On Windows (PowerShell), compare the hash with the file's line in `SHA256SUMS`:
+
+```powershell
+(Get-FileHash .\<installer>).Hash.ToLower()
+Select-String "<installer>" .\SHA256SUMS
+```
+
+**3. It was built by the release workflow.**
+
+```sh
+gh attestation verify <installer> --repo Cyber-Courses/Cyber-CTF-Launcher \
+  --signer-workflow Cyber-Courses/Cyber-CTF-Launcher/.github/workflows/release.yml
+```
+
+**4. What it is built from** (optional): the SBOMs attested of the installer.
+
+```sh
+gh attestation verify <installer> --repo Cyber-Courses/Cyber-CTF-Launcher \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+**The operating system's own signatures.** The macOS app and DMG are signed with a Developer ID
+and notarized (`spctl -a -vvv "/Applications/Cyber CTF.app"`). Windows installers are
+Authenticode-signed from the release after 1.8.9 (`Get-AuthenticodeSignature <file>`); up to 1.8.9
+they were not. Linux packages from the apt repository are checked by apt against its signing key;
+a `.deb`, `.rpm` or AppImage downloaded from the release page is checked with steps 1 to 3.
 
 ## Network
 
