@@ -3,16 +3,11 @@
 //! Homebrew's core taps in a form fit for Apple silicon, so it is installed from HashiCorp's own
 //! signed package, pinned here with its checksum:
 //!
-//! - macOS: the disk image downloaded as the player, then, with macOS's administrator prompt,
-//!   copied into a folder only root can write, its SHA-256 checked, its package checked as signed
-//!   by HashiCorp's Developer ID and accepted by Gatekeeper (notarized), and installed with
-//!   `installer`. The package's own script generates the certificates and starts the service.
+//! - macOS and Linux: isothrum-machine's (`install::macos`, `install::linux`).
 //! - Windows: the MSI downloaded and its SHA-256 checked as the player, then, through Windows'
 //!   UAC prompt, copied into a folder only administrators can write, checked again (SHA-256 and
 //!   Authenticode signature by HashiCorp) and installed with `msiexec`. An install that is there
 //!   already only has its service started again.
-//! - Linux: HashiCorp's apt repository, its key checked against its pinned fingerprint
-//!   (`scripts::vmware_utility_script`), as root through pkexec.
 //!
 //! Every path ends in a real result: a declined prompt, a checksum or a signature that doesn't
 //! match, or an installer error fails the step, and the machine check then says whether the
@@ -20,7 +15,6 @@
 
 use super::steps::Step;
 use crate::platform::exec::ps_quote;
-use crate::platform::host::Arch;
 
 /// The release installed. Its files and checksums are HashiCorp's published ones
 /// (`releases.hashicorp.com/vagrant-vmware-utility/<version>/…_SHA256SUMS`, signed with HashiCorp's
@@ -32,77 +26,11 @@ fn url(file: &str) -> String {
     format!("https://releases.hashicorp.com/vagrant-vmware-utility/{VERSION}/{file}")
 }
 
-/// The macOS disk image for CPU `arch`, with its SHA-256. HashiCorp
-/// publishes one universal image under both names.
-fn mac_image(arch: Arch) -> (String, &'static str) {
-    let arch = arch.docker_name();
-    (format!("vagrant-vmware-utility_{VERSION}_darwin_{arch}.dmg"), "5f42cb017dd07270409eaee7c3b4a164ffa7c0f21d85c65840c4f81aab21d457")
-}
-
-/// The team of HashiCorp's Apple Developer ID, which signs the package (and is notarized).
-const HASHICORP_TEAM: &str = "D38WU7D763";
-
 /// The Windows installer, with its SHA-256.
 const WINDOWS_MSI: (&str, &str) = ("vagrant-vmware-utility_1.0.24_windows_amd64.msi", "8ee7bea062d7552a484b7d9ade369744e5cd9ab1b55eed8b7bd35a1b006666d6");
 
 /// That MSI's product code, which `msiexec /x` removes it by.
 const WINDOWS_PRODUCT_CODE: &str = "{DE47C4D6-3BD9-4286-A93D-1DCA1CBADDA7}";
-
-/// The root half of the macOS install, run by `/bin/sh -c` with the downloaded image as `$1`:
-/// copied where only root writes (so nothing can swap it between the check and the install),
-/// checked, mounted there, its package checked as HashiCorp's and installed.
-fn mac_root_script(sha256: &str) -> String {
-    format!(
-        r#"set -e
-d="$(mktemp -d /private/tmp/cyberctf-vmware-utility.XXXXXX)"
-m=""
-trap '[ -z "$m" ] || hdiutil detach -quiet "$m"; rm -rf "$d"' EXIT
-cp "$1" "$d/utility.dmg"
-[ "$(shasum -a 256 "$d/utility.dmg" | awk '{{print $1}}')" = "{sha256}" ] || {{ echo "The download isn't HashiCorp's Vagrant VMware Utility {VERSION} (its SHA-256 doesn't match). Nothing was installed." >&2; exit 1; }}
-m="$(hdiutil attach -nobrowse -noautoopen -readonly -mountrandom "$d" "$d/utility.dmg" | awk -F'\t' '$NF ~ /^\// {{print $NF; exit}}')"
-p="$m/VagrantVMwareUtility.pkg"
-pkgutil --check-signature "$p" | grep -qF "Developer ID Installer: Hashicorp, Inc. ({HASHICORP_TEAM})" || {{ echo "The package isn't signed by HashiCorp. Nothing was installed." >&2; exit 1; }}
-spctl --assess --type install "$p" || {{ echo "macOS doesn't accept the package (not notarized). Nothing was installed." >&2; exit 1; }}
-installer -pkg "$p" -target /"#
-    )
-}
-
-/// The player's half, run by `sh -c` with the root half as `$1`: the download into a private
-/// folder, its checksum (a broken download stops before any prompt), then the root half through
-/// macOS's administrator prompt, the image's path handed over as an argument (never spliced into
-/// the script).
-fn mac_script(file: &str, sha256: &str) -> String {
-    let url = url(file);
-    format!(
-        r#"set -e
-d="$(mktemp -d)"
-trap 'rm -rf "$d"' EXIT
-curl -fsSL --proto '=https' --tlsv1.2 "{url}" -o "$d/utility.dmg"
-[ "$(shasum -a 256 "$d/utility.dmg" | awk '{{print $1}}')" = "{sha256}" ] || {{ echo "The download isn't HashiCorp's Vagrant VMware Utility {VERSION} (its SHA-256 doesn't match). Nothing was installed." >&2; exit 1; }}
-echo "Downloaded and checked. Installing it: macOS asks for your password."
-if ! out="$(osascript -e 'on run argv' -e 'do shell script "/bin/sh -c " & quoted form of (item 1 of argv) & " sh " & quoted form of (item 2 of argv) with administrator privileges' -e 'end run' "$1" "$d/utility.dmg" 2>&1)"; then
-  case "$out" in
-    *-128*) echo "The password prompt was cancelled, so nothing was installed. Try again and enter your password." >&2 ;;
-    *) echo "$out" >&2 ;;
-  esac
-  exit 1
-fi
-echo "$out""#
-    )
-}
-
-/// The macOS install: one step, as the player, raising macOS's administrator prompt itself.
-pub fn mac_install(arch: Arch) -> Step {
-    let (file, sha256) = mac_image(arch);
-    Step {
-        program: "sh".into(),
-        args: vec!["-c".into(), mac_script(&file, sha256), "sh".into(), mac_root_script(sha256)],
-        note: Some(format!("Downloading HashiCorp's Vagrant VMware Utility {VERSION}…")),
-    }
-}
-
-/// The macOS removal, as the package's own `uninstall.tool` does it: the service, then its folder.
-pub const MAC_UNINSTALL: &str = "/opt/vagrant-vmware-desktop/bin/vagrant-vmware-utility service uninstall; rm -rf /opt/vagrant-vmware-desktop && (pkgutil --forget com.vagrant.vagrant-vmware-utility || true)";
 
 /// The elevated half of the Windows install, with the downloaded MSI's path in `$msi` (set by
 /// the player's half, before this): an install already there only has its service started
@@ -187,68 +115,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_mac_install_checks_hashicorps_file_and_signature_before_installing_as_root() {
-        let step = mac_install(Arch::Aarch64);
-        assert_eq!(step.program, "sh");
-        let [c, user, zero, root] = step.args.as_slice() else { panic!("{:?}", step.args) };
-        assert_eq!((c.as_str(), zero.as_str()), ("-c", "sh"));
-        assert!(crate::platform::sh_parses(user), "not valid sh: {user}");
-        assert!(crate::platform::sh_parses(root), "not valid sh: {root}");
-        assert!(user.contains("https://releases.hashicorp.com/vagrant-vmware-utility/1.0.24/vagrant-vmware-utility_1.0.24_darwin_arm64.dmg"), "{user}");
-        assert!(user.contains("with administrator privileges") && user.contains("quoted form of (item 2 of argv)"), "{user}");
-        // As root, in this order: a copy root owns, its checksum, the signature, Gatekeeper, the install.
-        let at = |needle: &str| root.find(needle).unwrap_or_else(|| panic!("{needle} missing: {root}"));
-        assert!(at("cp \"$1\"") < at("shasum -a 256") && at("shasum -a 256") < at("pkgutil --check-signature"));
-        assert!(at("pkgutil --check-signature") < at("spctl --assess --type install") && at("spctl --assess") < at("installer -pkg"));
-        assert!(root.contains("Hashicorp, Inc. (D38WU7D763)") && root.contains("mktemp -d /private/tmp/"), "{root}");
-        // The image is the same file whatever the Mac's CPU: one checksum for both names.
-        assert_eq!(mac_image(Arch::Aarch64).1, mac_image(Arch::X86_64).1);
-        assert!(mac_image(Arch::X86_64).0.ends_with("_darwin_amd64.dmg"));
-    }
-
-    /// Runs `script` with `sh -c`, `args` after it, with `bin` (stand-ins for the system's tools)
-    /// first on PATH: its exit code and its error output.
-    #[cfg(target_os = "macos")]
-    fn run_sh(script: &str, args: &[&str], bin: &std::path::Path) -> (i32, String) {
-        let path = format!("{}:/usr/bin:/bin", bin.display());
-        let out = std::process::Command::new("sh").arg("-c").arg(script).arg("sh").args(args).env("PATH", path).output().unwrap();
-        (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stderr).into_owned())
-    }
-
-    /// A stand-in for the tool `name`: a shell script `body`.
-    #[cfg(target_os = "macos")]
-    fn stand_in(bin: &std::path::Path, name: &str, body: &str) {
-        let file = bin.join(name);
-        crate::testing::write_executable(&file, format!("#!/bin/sh\n{body}\n"));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn a_download_that_isnt_hashicorps_file_fails_before_any_prompt() {
-        let app = crate::testing::test_app::TestApp::new();
-        let bin = app.data();
-        stand_in(bin, "curl", r#"while [ $# -gt 0 ]; do [ "$1" = -o ] && echo tampered > "$2"; shift; done"#);
-        stand_in(bin, "osascript", "echo prompted >&2; exit 0");
-        let (file, sha256) = mac_image(Arch::Aarch64);
-        let (code, stderr) = run_sh(&mac_script(&file, sha256), &["true"], bin);
-        assert_eq!(code, 1, "{stderr}");
-        assert!(stderr.contains("SHA-256 doesn't match") && !stderr.contains("prompted"), "{stderr}");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn a_declined_password_prompt_fails_the_step_and_says_so() {
-        let app = crate::testing::test_app::TestApp::new();
-        let bin = app.data();
-        let empty_sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-        stand_in(bin, "curl", r#"while [ $# -gt 0 ]; do [ "$1" = -o ] && : > "$2"; shift; done"#);
-        stand_in(bin, "osascript", "echo '0:0: execution error: User canceled. (-128)' >&2; exit 1");
-        let (code, stderr) = run_sh(&mac_script("x.dmg", empty_sha), &["true"], bin);
-        assert_eq!(code, 1, "{stderr}");
-        assert!(stderr.contains("password prompt was cancelled"), "{stderr}");
-    }
-
-    #[test]
     fn the_windows_install_checks_hashicorps_file_and_signature_and_elevates_through_uac() {
         let step = windows_install();
         assert_eq!(step.program, "powershell");
@@ -268,7 +134,7 @@ mod tests {
 
     #[test]
     fn every_pinned_checksum_is_a_sha256() {
-        for sha in [mac_image(Arch::Aarch64).1, WINDOWS_MSI.1] {
+        for sha in [WINDOWS_MSI.1] {
             assert!(sha.len() == 64 && sha.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{sha}");
         }
         assert!(WINDOWS_MSI.0.contains(VERSION));

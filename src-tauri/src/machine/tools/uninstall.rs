@@ -183,89 +183,29 @@ pub async fn installed_tools(dirs: AppDirs) -> Vec<Installed> {
     confirmed(load_or_logged(&dirs)).into_iter().map(|t| Installed { dependency: t.dependency, name: t.dependency.name(), at: t.at }).collect()
 }
 
-/// Runs a shell script with the OS admin prompt on macOS (the same dialog an installer shows).
-fn mac_admin(script: &str, note: &str) -> Step {
-    let escaped = script.replace('\\', "\\\\").replace('"', "\\\"");
-    Step {
-        program: "osascript".into(),
-        args: vec!["-e".into(), format!("do shell script \"{escaped}\" with administrator privileges")],
-        note: Some(note.into()),
-    }
-}
-
-/// VirtualBox's own uninstaller, run as admin, only ever from the installer disk image Homebrew
-/// downloaded (`dmg`, attached here, then detached). Never from whatever volume happens to be
-/// mounted as `/Volumes/VirtualBox*`: anyone can mount a disk image with that name and a
-/// `VirtualBox_Uninstall.tool` of their own, which would then run as root. The image is found
-/// before elevating: as root, `~` isn't the player's home.
-fn virtualbox_uninstall(dmg: &str) -> String {
-    format!(
-        "m=$(hdiutil attach -nobrowse -noautoopen '{dmg}' | awk -F'\\t' '/\\/Volumes\\//{{print $NF; exit}}'); [ -n \"$m\" ] || exit 3; \
-         \"$m/VirtualBox_Uninstall.tool\" --unattended; s=$?; hdiutil detach -quiet \"$m\"; exit $s"
-    )
-}
-
-/// The VirtualBox installer image, from `brew --cache --cask virtualbox`'s output: a `.dmg` path
-/// the admin script can quote.
-fn virtualbox_dmg_from(out: &str) -> Result<String> {
-    let path = out.trim();
-    // Homebrew names it `….dmg`, in lower case: anything else isn't its installer image.
-    let is_dmg = std::path::Path::new(path).extension().is_some_and(|e| e == "dmg");
-    if path.is_empty() || !is_dmg || path.contains(['\'', '"', '\n']) {
-        return Err(Error::Invalid("Homebrew didn't say where VirtualBox's installer image is, so its uninstaller can't be run.".into()));
-    }
-    Ok(path.to_string())
-}
-
-/// The VirtualBox installer image Homebrew has (fetched again first: Homebrew drops the download
-/// once the cask moves on, which it does often), as the player, before the admin step.
-async fn virtualbox_dmg(brew: &'static str, on_line: &mut impl FnMut(String)) -> Result<String> {
-    run_steps(&[step(brew, &["fetch", "--cask", "virtualbox"])], on_line).await?;
-    let out = crate::platform::exec::run_cli(brew, &["--cache", "--cask", "virtualbox"]).await?;
-    let dmg = virtualbox_dmg_from(&out)?;
-    if !std::path::Path::new(&dmg).is_file() {
-        return Err(Error::Invalid(format!(
+/// The VirtualBox installer image Homebrew (`brew`) keeps, which its uninstaller runs from
+/// (isothrum-machine's [`virtualbox_image`](isothrum_machine::install::macos::virtualbox_image)),
+/// fetched again first as the player.
+async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<String> {
+    use isothrum_machine::install::macos::{ImageMissing, virtualbox_image};
+    let cx = crate::runtime::providers::machine_check();
+    let mut lines = Vec::new();
+    let found = virtualbox_image(&cx, brew, &mut |line: &str| lines.push(line.to_owned())).await;
+    lines.into_iter().for_each(&mut *on_line);
+    found.map_err(|missing| match missing {
+        ImageMissing::NotThere(dmg) => Error::Invalid(format!(
             "VirtualBox's installer image isn't there ({dmg}), so its uninstaller can't be run. Run `brew fetch --cask virtualbox`, then try again."
-        )));
-    }
-    Ok(dmg)
+        )),
+        ImageMissing::Failed(failed) => super::steps::step_failed(failed),
+        _ => Error::Invalid("Homebrew didn't say where VirtualBox's installer image is, so its uninstaller can't be run.".into()),
+    })
 }
 
-/// How to remove `dep` on macOS: Homebrew's own packages, or the vendor's uninstaller. Only
-/// Homebrew's packages (and VirtualBox's installer image, which Homebrew keeps) need Homebrew: a
-/// tool installed from its vendor's package is removed without it.
-fn macos_plan(dep: Dependency, packages: Option<Packages>, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
-    let brew = || match packages {
-        Some(Packages::Homebrew(brew)) => Ok(brew),
-        _ => Err(Error::Invalid("Homebrew is needed to remove this tool.".into())),
-    };
-    Ok(match dep {
-        Dependency::Terraform => vec![step(brew()?, &["uninstall", "hashicorp/tap/terraform"])],
-        Dependency::Qemu => vec![step(brew()?, &["uninstall", "qemu"])],
-        Dependency::Awscli => vec![step(brew()?, &["uninstall", "awscli"])],
-        Dependency::Gcloud => vec![step(brew()?, &["uninstall", "--cask", "google-cloud-sdk"])],
-        Dependency::Azurecli => vec![step(brew()?, &["uninstall", "--cask", "azure-cli-preview"])],
-        // Installed from the vendors' own packages: removed the way their uninstallers do.
-        Dependency::Vagrant => vec![mac_admin(
-            "rm -rf /opt/vagrant /usr/local/bin/vagrant && pkgutil --forget com.vagrant.vagrant || true",
-            "Removing Vagrant (macOS asks for your password)…",
-        )],
-        Dependency::Virtualbox => {
-            brew()?;
-            let dmg = virtualbox_dmg.ok_or_else(|| Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()))?;
-            vec![mac_admin(&virtualbox_uninstall(dmg), "Running VirtualBox's own uninstaller (macOS asks for your password)…")]
-        }
-        Dependency::Docker => vec![Step {
-            program: "/Applications/Docker.app/Contents/MacOS/uninstall".into(),
-            args: vec![],
-            note: Some("Running Docker Desktop's own uninstaller…".into()),
-        }],
-        Dependency::Utm => vec![step("osascript", &["-e", "tell application \"Finder\" to delete POSIX file \"/Applications/UTM.app\""])],
-        Dependency::VmwareUtility => {
-            vec![mac_admin(super::vmware_utility::MAC_UNINSTALL, "Removing the Vagrant VMware Utility (macOS asks for your password)…")]
-        }
-        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(super::install::not_here(dep, Os::Macos)),
-    })
+/// The removal on macOS: isothrum-machine's (Homebrew's packages, or the vendor's uninstaller).
+fn macos_plan(dep: Dependency, packages: Option<Packages>, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
+    let steps =
+        isothrum_machine::install::macos::uninstall(dep.machine(), packages.map(Packages::isothrum), virtualbox_dmg).map_err(super::install::refusal)?;
+    Ok(super::steps::Plan::Machine(steps))
 }
 
 /// How to remove `dep` on Windows: its winget package, VMware's utility by its product code, and
@@ -307,7 +247,7 @@ pub(super) fn plan_on(dep: Dependency, host: Host, virtualbox_dmg: Option<&str>)
         return Err(super::install::not_here(dep, host.os));
     }
     match host.os {
-        Os::Macos => macos_plan(dep, host.packages, virtualbox_dmg).map(super::steps::Plan::Own),
+        Os::Macos => macos_plan(dep, host.packages, virtualbox_dmg),
         Os::Windows => windows_plan(dep).map(super::steps::Plan::Own),
         Os::Linux => linux_plan(dep, host.packages),
     }

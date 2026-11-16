@@ -11,7 +11,6 @@
 
 use serde::Deserialize;
 
-use super::scripts::fetch_and_open;
 use super::steps::{Plan, Step, command_line, run_plan, run_step, step};
 use super::uninstall;
 use crate::error::{Error, Result};
@@ -227,66 +226,11 @@ impl Dependency {
     }
 }
 
-/// The install steps on macOS: Homebrew formulae, or a cask whose installer the user finishes.
-fn macos_plan(dep: Dependency, host: Host) -> Result<Vec<Step>> {
-    // HashiCorp's own package, not Homebrew's: needs no Homebrew.
-    if dep == Dependency::VmwareUtility {
-        return Ok(vec![super::vmware_utility::mac_install(host.arch)]);
-    }
-    let Some(Packages::Homebrew(brew)) = host.packages else {
-        return Err(Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()));
-    };
-    Ok(match dep {
-        // Docker Desktop: download the app with brew, then open its installer; the user
-        // finishes in Docker's own flow (includes the docker CLI + compose).
-        Dependency::Docker => vec![fetch_and_open(brew, "docker-desktop", "Docker Desktop")],
-        // Admin-requiring: download with brew, then open the tool's native installer.
-        Dependency::Vagrant => vec![fetch_and_open(brew, "vagrant", "Vagrant")],
-        // Terraform is a brew formula (no admin); full tap name since core dropped it.
-        Dependency::Terraform => vec![step(brew, &["install", "hashicorp/tap/terraform"])],
-        Dependency::Virtualbox => vec![fetch_and_open(brew, "virtualbox", "VirtualBox")],
-        // QEMU is a brew formula (no admin); UTM is a cask with its own installer.
-        // Update Homebrew first so an outdated one learns this macOS (it otherwise refuses every
-        // install with "unknown or unsupported macOS version: :dunno"), but never let that update
-        // block the install: it runs best-effort, then the install runs with auto-update off. A
-        // Mac whose Homebrew is already current installs even when its update lock is stuck, and a
-        // real problem (an outdated Homebrew or Xcode, a root-owned lock) surfaces from the install
-        // with a readable fix rather than a raw brew error (see steps::brew_trouble).
-        Dependency::Qemu => vec![Step {
-            program: "sh".into(),
-            args: vec![
-                "-c".into(),
-                format!("'{brew}' update || echo 'Homebrew was not updated; continuing with the install.'\nHOMEBREW_NO_AUTO_UPDATE=1 '{brew}' install qemu"),
-            ],
-            note: Some("Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into()),
-        }],
-        Dependency::Utm => vec![fetch_and_open(brew, "utm", "UTM")],
-        Dependency::Libvirt | Dependency::Wsl | Dependency::Hyperv => return Err(not_here(dep, Os::Macos)),
-        // Cloud CLIs (brew formulae; gcloud is a cask).
-        Dependency::Awscli => vec![step(brew, &["install", "awscli"])],
-        // Microsoft's prebuilt cask instead of the `azure-cli` formula: on recent macOS the
-        // formula has no bottle and builds its whole tree (llvm, rust) from source, which takes
-        // ~an hour. The cask is a signed download. `trust` is needed because the tap is third-party.
-        // https://learn.microsoft.com/cli/azure/install-azure-cli-macos
-        Dependency::Azurecli => vec![
-            step(brew, &["tap", "azure/azure-cli"]),
-            // `brew trust` exists from Homebrew 7 only; an older Homebrew needs no trust and
-            // must not fail here ("Unknown command"). On 7, an untrusted tap still fails at
-            // the install step with Homebrew's own message.
-            Step {
-                program: "sh".into(),
-                args: vec!["-c".into(), format!("'{brew}' trust azure/azure-cli 2>/dev/null || true")],
-                note: Some("Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into()),
-            },
-            Step {
-                program: brew.to_string(),
-                args: vec!["install".into(), "--cask".into(), "azure-cli-preview".into()],
-                note: Some("Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into()),
-            },
-        ],
-        Dependency::Gcloud => vec![step(brew, &["install", "--cask", "google-cloud-sdk"])],
-        Dependency::VmwareUtility => vec![super::vmware_utility::mac_install(host.arch)],
-    })
+/// The install on macOS: isothrum-machine's Homebrew formulae, vendors' installers and
+/// HashiCorp's signed package.
+fn macos_plan(dep: Dependency, host: Host) -> Result<Plan> {
+    let steps = isothrum_machine::install::macos::install(dep.machine(), host.packages.map(Packages::isothrum), host.arch.isothrum()).map_err(refusal)?;
+    Ok(Plan::Machine(steps))
 }
 
 /// `winget <verb> <id>`, from the `winget` source alone. Without `--source`, winget asks every
@@ -375,6 +319,9 @@ pub(super) fn refusal(refused: Refusal) -> Error {
             "The guided setup installs {} through apt only for now: install it yourself, then re-check.",
             Dependency::of_machine(dependency).name_on(Os::Linux)
         )),
+        Refusal::NoHomebrew => Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()),
+        Refusal::HomebrewNeeded => Error::Invalid("Homebrew is needed to remove this tool.".into()),
+        Refusal::NoVirtualboxImage => Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()),
         other => Error::Io(std::io::Error::other(other.to_string())),
     }
 }
@@ -393,7 +340,7 @@ pub(super) fn plan_on(dep: Dependency, host: Host, user: Option<&str>) -> Result
         return Err(not_here(dep, host.os));
     }
     match host.os {
-        Os::Macos => macos_plan(dep, host).map(Plan::Own),
+        Os::Macos => macos_plan(dep, host),
         Os::Windows => windows_plan(dep, host.arch).map(Plan::Own),
         Os::Linux => linux_plan(dep, host.packages, user),
     }

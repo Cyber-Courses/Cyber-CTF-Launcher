@@ -10,7 +10,6 @@ use tokio::process::Command;
 
 use super::exit_codes::{self, Verb};
 use crate::error::{Error, Result};
-use crate::platform::tool_output::brew::Trouble;
 
 /// One command of an install or removal.
 pub struct Step {
@@ -42,21 +41,6 @@ const BREW_OUTDATED: &str =
     "Homebrew is out of date for this version of macOS, so it can't install this. Open the Terminal app and run: brew update. Then try the install again here.";
 /// A source build Homebrew refuses because the installed Xcode is older than it needs.
 const BREW_XCODE_OUTDATED: &str = "Homebrew needs a newer Xcode than the one installed to build this. Update Xcode from the App Store (or delete /Applications/Xcode.app to use the lighter Command Line Tools). Then try the install again here.";
-
-/// How the player fixes the broken Homebrew `line` says ([`Trouble`]), if it says one.
-fn brew_trouble(line: &str) -> Option<&'static str> {
-    Trouble::of_line(line).map(|t| match t {
-        Trouble::Locked => BREW_LOCKED,
-        Trouble::Outdated => BREW_OUTDATED,
-        Trouble::XcodeTooOld => BREW_XCODE_OUTDATED,
-    })
-}
-
-/// Whether this step drives Homebrew (directly, or through a shell line that calls it), so its
-/// output is worth reading for a broken-Homebrew cause. apt, winget and pkexec never are.
-fn is_brew_step(step: &Step) -> bool {
-    step.program.contains("brew") || step.args.iter().any(|a| a.contains("brew"))
-}
 
 /// An install's or a removal's steps: the launcher's own (macOS, Windows), or isothrum-machine's
 /// (Linux).
@@ -99,7 +83,10 @@ pub async fn run_plan(plan: &Plan, on_line: &mut impl FnMut(String)) -> Result<(
         Plan::Own(steps) => run_steps(steps, on_line).await,
         Plan::Machine(steps) => {
             for step in steps {
-                on_line(crate::platform::redact::redact(&isothrum_machine::install::command_line(step)).into_owned());
+                on_line(match step.note {
+                    Some(note) => said(note),
+                    None => crate::platform::redact::redact(&isothrum_machine::install::command_line(step)).into_owned(),
+                });
                 run_machine_step(step, on_line).await?;
             }
             Ok(())
@@ -131,8 +118,27 @@ async fn run_machine_step(step: &isothrum_machine::install::Step, on_line: &mut 
     ran.map_err(step_failed)
 }
 
+/// What one of isothrum-machine's steps is, in the player's words, said before it instead of its
+/// command line.
+fn said(note: isothrum_machine::install::Note) -> String {
+    use isothrum_machine::install::{Dependency as Machine, Note};
+    let name = |dep| super::install::Dependency::of_machine(dep).name_on(crate::platform::host::Os::Macos);
+    match note {
+        Note::Downloading(dep) => format!("Downloading {}…", name(dep)),
+        Note::QemuUpdatingHomebrewFirst => "Installing QEMU (updating Homebrew first if it is out of date for this macOS).".into(),
+        Note::TrustingAzureTap => "Trusting the azure/azure-cli tap (Homebrew 7 asks for it; older versions don't).".into(),
+        Note::AzureCliCask => "Installing the prebuilt Azure CLI cask (avoids a long source build on this macOS).".into(),
+        Note::DownloadingVmwareUtility { version } => format!("Downloading HashiCorp's Vagrant VMware Utility {version}…"),
+        Note::Removing(Machine::Docker) => "Running Docker Desktop's own uninstaller…".into(),
+        Note::Removing(Machine::Virtualbox) => "Running VirtualBox's own uninstaller (macOS asks for your password)…".into(),
+        Note::Removing(Machine::VmwareUtility) => "Removing the Vagrant VMware Utility (macOS asks for your password)…".into(),
+        Note::Removing(dep) => format!("Removing {} (macOS asks for your password)…", name(dep)),
+        _ => String::new(),
+    }
+}
+
 /// Why one of isothrum-machine's steps failed, in the player's words.
-fn step_failed(failed: isothrum_machine::install::StepFailed) -> Error {
+pub(super) fn step_failed(failed: isothrum_machine::install::StepFailed) -> Error {
     use isothrum_machine::install::StepFailed;
     match failed {
         StepFailed::NoPkexec => Error::Invalid(NO_PKEXEC.into()),
@@ -144,6 +150,14 @@ fn step_failed(failed: isothrum_machine::install::StepFailed) -> Error {
             Error::Invalid("No password prompt could be shown (no polkit agent is running). Run the command above in a terminal instead.".into())
         }
         StepFailed::SudoRefused => Error::Refused(SUDO_REFUSED.into()),
+        StepFailed::Homebrew(trouble) => Error::Invalid(
+            match trouble {
+                isothrum_machine::install::brew::Trouble::Locked => BREW_LOCKED,
+                isothrum_machine::install::brew::Trouble::Outdated => BREW_OUTDATED,
+                _ => BREW_XCODE_OUTDATED,
+            }
+            .into(),
+        ),
         StepFailed::Exited { program, code: Some(code) } => Error::Invalid(format!("`{program}` exited with exit status: {code}")),
         StepFailed::Exited { program, code: None } => Error::Invalid(format!("`{program}` was ended by a signal")),
         other => Error::Io(std::io::Error::other(other.to_string())),
@@ -192,7 +206,7 @@ async fn run_step_once(step: &Step, on_line: &mut impl FnMut(String)) -> Result<
     // Installers that need a console of their own (winget, an .msi) still get none here: their
     // output streams into the app's setup log instead of a window flashing on screen.
     crate::platform::exec::headless(&mut cmd);
-    // pkexec's and Homebrew's own lines are read (`Refusal`, `Trouble`): in the C locale's words.
+    // winget's own lines are read (the installer's exit code): in the C locale's words.
     crate::platform::exec::in_c_locale(&mut cmd);
     // In a group of its own, like every tool: a step whose output fails mid-way is ended with
     // what it started, not left installing unattended (#220).
@@ -212,7 +226,7 @@ async fn run_step_once(step: &Step, on_line: &mut impl FnMut(String)) -> Result<
             watched().line(&line);
             on_line(line);
         },
-        |line| watched().error_line(line),
+        |_: &str| {},
     )
     .await;
     if forwarded.is_ok() {
@@ -226,21 +240,16 @@ async fn run_step_once(step: &Step, on_line: &mut impl FnMut(String)) -> Result<
 }
 
 /// What a step's output says beyond its exit status, watched line by line for the program it
-/// runs: the exit code of the installer winget ran (whether the player cancelled it), and a
-/// broken-Homebrew cause in brew's
-/// output (the first one seen: an update's lock error comes before the install error it leads
-/// to, so it wins; shown only if the step fails).
+/// runs: the exit code of the installer winget ran (whether the player cancelled it).
 struct Watch {
     /// The program the step runs, as far as its output is read.
     program: Program,
-    brew: bool,
     installer_code: Option<u32>,
-    brew_help: Option<&'static str>,
 }
 
 impl Watch {
     fn new(step: &Step) -> Watch {
-        Watch { program: Program::of(step), brew: is_brew_step(step), installer_code: None, brew_help: None }
+        Watch { program: Program::of(step), installer_code: None }
     }
 
     /// A line of the step's output, either stream.
@@ -250,27 +259,16 @@ impl Watch {
         }
     }
 
-    /// A line of the step's error output.
-    fn error_line(&mut self, line: &str) {
-        if self.brew && self.brew_help.is_none() {
-            self.brew_help = brew_trouble(line);
-        }
-    }
-
     /// How the step ended, once it exited with `status`: done, with a note for the log (winget's
     /// "already installed", "restart to finish"), or why it failed.
     fn end(self, step: &Step, status: std::process::ExitStatus) -> Result<Option<&'static str>> {
         let verb = if step.args.first().is_some_and(|a| a == "uninstall") { Verb::Remove } else { Verb::Install };
         match end_of(&step.program, verb, status.code(), self.installer_code) {
             End::Done(note) => Ok(note),
-            // A recognised broken-Homebrew cause reads as the fix for it; the raw brew lines stay
-            // in the log. Otherwise a known code reads as what happened, with the raw codes after.
-            End::Failed(why) => Err(Error::Invalid(match self.brew_help {
-                Some(help) => help.to_string(),
-                None => match why {
-                    Some(why) => format!("{why} (`{}` exited with {status})", step.program),
-                    None => format!("`{}` exited with {status}", step.program),
-                },
+            // A known code reads as what happened, with the raw codes after.
+            End::Failed(why) => Err(Error::Invalid(match why {
+                Some(why) => format!("{why} (`{}` exited with {status})", step.program),
+                None => format!("`{}` exited with {status}", step.program),
             })),
         }
     }
