@@ -105,9 +105,9 @@ impl ServerRun {
     }
 
     /// Brings the running lab up to date with its regenerated files, on `place`.
-    pub(crate) async fn update(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        let (opts, _tunnel) = self.applying(place, &[]).await?;
-        self.update_with(&opts, log).await.map_err(|e| errors::on_server(e, &place.name))
+    pub(crate) async fn update(&self, place: &ServerPlace, log: &mut impl FnMut(String)) -> std::result::Result<(), crate::runtime::host::Failed> {
+        let (opts, _tunnel) = self.applying(place, &[]).await.map_err(crate::runtime::host::Failed::of_launcher)?;
+        self.update_with(&opts, |e| errors::on_server(e, &place.name), log).await
     }
 
     /// Takes `machine` out of the running lab on `place`, ahead of its removal from its files.

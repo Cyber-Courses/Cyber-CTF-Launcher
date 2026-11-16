@@ -10,11 +10,9 @@
 
 pub mod apple_events;
 pub mod brew;
-pub mod cloud_sign_in;
 pub mod gcloud;
 pub mod ping;
 pub mod pkexec;
 pub mod text;
-pub mod vagrant;
 pub mod vboxmanage;
 pub mod win32;

@@ -1,40 +1,4 @@
 use super::*;
-use crate::platform::exec::fake::{Tools, fail, ok};
-
-/// An AWS sign-in that ran out stops a change before anything runs, said as signing in again;
-/// a valid one, or another cloud, lets it go on.
-#[tokio::test]
-async fn a_change_on_aws_waits_for_a_signed_in_account() {
-    let home = std::env::temp_dir().join(format!("cyberctf-signin-{}", rand::random::<u32>()));
-    let place = CloudPlace { region: Some("eu-west-3".into()), tf_env: vec![("AWS_PROFILE".into(), "labs".into())], ..CloudPlace::default() };
-    let aws = CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, "aws").unwrap();
-    let tools = Tools::strict_rules(&[("sts get-caller-identity", fail("Error: login session has expired, please reauthenticate"))]);
-    let err = aws.down(&place, &mut |_| ()).await;
-    assert!(err.is_ok(), "no files: nothing to remove, nothing asked");
-    let err = aws.update(&place, &mut |_| ()).await.unwrap_err().to_string();
-    assert!(err.starts_with("Your sign-in to AWS has expired") && err.contains("`aws login`"), "{err}");
-    assert_eq!(tools.calls().len(), 1, "only the question ran: {:?}", tools.calls());
-    drop(tools);
-    let signed = Tools::strict_rules(&[("sts get-caller-identity", ok("arn:aws:iam::1:user/me\n"))]);
-    assert!(aws.signed_in(&place).await.is_ok());
-    drop(signed);
-    // Every cloud whose sign-in runs out is asked its own question; a token cloud, none.
-    for (cloud, question, said) in [
-        ("azure", "account get-access-token", "ERROR: AADSTS700082: The refresh token has expired. Please run 'az login'"),
-        ("gcp", "application-default print-access-token", "Reauthentication failed. cannot prompt during non-interactive execution."),
-        ("oci", "iam region list", "ServiceError: NotAuthenticated"),
-    ] {
-        let run = CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, cloud).unwrap();
-        let tools = Tools::strict_rules(&[(question, fail(said))]);
-        let err = run.update(&place, &mut |_| ()).await.unwrap_err().to_string();
-        assert!(err.starts_with("Your sign-in to") && tools.calls().len() == 1, "{cloud}: {err} {:?}", tools.calls());
-    }
-    let linode = CloudRun::new(&home, &home.join("lab"), "t", Runtime::Docker, "linode").unwrap();
-    let none = Tools::strict_rules(&[]);
-    assert!(linode.signed_in(&place).await.is_ok());
-    assert!(none.calls().is_empty(), "no question for a token cloud");
-    let _ = std::fs::remove_dir_all(&home);
-}
 
 /// A cloud run the runner lists as expired, as it records one: `cyberctf-<lab>`, started on
 /// account `host`, its stop time long past. Its module is not there (the lab's files gone).

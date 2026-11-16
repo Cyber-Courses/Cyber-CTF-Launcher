@@ -134,18 +134,12 @@ mod tests {
             Some("output") => Reply::ok(
                 r#"{"website_url":{"value":"http://bucket.example","type":"string","sensitive":false},"access_key":{"value":"AKIA","type":"string","sensitive":true}}"#,
             ),
-            // The apply leaves its state where it is asked to.
-            Some("apply") => {
-                if let Some(state) = call.args.iter().find_map(|a| a.strip_prefix("-state=")) {
-                    std::fs::write(state, "{}").unwrap();
-                }
-                Reply::ok("")
-            }
+            Some("apply") => crate::runtime::isothrum::scripted_apply(call),
             _ => Reply::ok(""),
         }));
         let mut config = isothrum_runner::RunnerConfig::new(crate::runtime::paths::runner_home_in(&root));
         config.processes = Arc::clone(&fake) as Arc<dyn isothrum_runner::ProcessRunner>;
-        let run = CloudRun::own_with(config, &dir, "bucket", "aws").unwrap();
+        let run = CloudRun::own_with(config, &dir, "bucket").unwrap();
         let declared = crate::runtime::isothrum::module_variables(&module).unwrap();
         let file = LabFile::read(&dir).unwrap();
         let launch = [("CTF_LAUNCH_TOKEN".to_owned(), "t0k".to_owned())];

@@ -66,7 +66,7 @@ pub(super) async fn start(dirs: &AppDirs, lab: LabRef<'_>, host: Option<&str>, e
     let values = values::module_values(&file, &declared, env, ip.as_deref())?;
     log("Creating the lab's cloud services…".to_owned());
     let place = isothrum::CloudPlace::launch(&conn, None);
-    isothrum::CloudRun::own(&super::paths::runner_home(dirs)?, dir, id, conn.terraform()?)?.up_own(&place, &values, log).await
+    isothrum::CloudRun::own(&super::paths::runner_home(dirs)?, dir, id)?.up_own(&place, &values, log).await
 }
 
 /// Refuses an account of another cloud than the lab's.

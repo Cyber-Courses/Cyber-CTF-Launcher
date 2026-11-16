@@ -70,15 +70,13 @@ pub struct Shape {
     pub message: &'static str,
 }
 
-/// A cloud whose sign-in is its own CLI's: how a launch, the account's Test and the setup tell it
-/// still holds, and what a refusal tells the player to run when it doesn't.
+/// A cloud whose sign-in is its own CLI's: how the account's Test and the setup tell it still
+/// holds, and what a refusal tells the player to run when it doesn't.
 pub struct CliSignIn {
     /// The CLI and the question asked of it ([`super::sign_in::sign_in_question`]).
     pub question: (&'static str, &'static [&'static str]),
     /// How the sign-in is made again, as a refusal says it.
     pub again: &'static str,
-    /// Its Terraform provider's name, as a failure's message gives it (`hashicorp/aws`).
-    pub terraform_provider: &'static str,
 }
 
 /// One kind of host.
@@ -152,7 +150,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("instance_type"),
         secret: Secret::AccessKey,
         terraform_env: aws_env,
-        cli_sign_in: Some(CliSignIn { question: ("aws", &AWS_WHO_AM_I), again: "`aws login`, or `aws sso login`", terraform_provider: "hashicorp/aws" }),
+        cli_sign_in: Some(CliSignIn { question: ("aws", &AWS_WHO_AM_I), again: "`aws login`, or `aws sso login`" }),
     },
     Kind {
         provider: Provider::Azure,
@@ -165,11 +163,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("size"),
         secret: Secret::None,
         terraform_env: azure_env,
-        cli_sign_in: Some(CliSignIn {
-            question: ("az", &["account", "get-access-token", "--output", "none"]),
-            again: "`az login`",
-            terraform_provider: "hashicorp/azurerm",
-        }),
+        cli_sign_in: Some(CliSignIn { question: ("az", &["account", "get-access-token", "--output", "none"]), again: "`az login`" }),
     },
     Kind {
         provider: Provider::Gcp,
@@ -186,7 +180,6 @@ pub const KINDS: [Kind; 8] = [
         cli_sign_in: Some(CliSignIn {
             question: ("gcloud", &["auth", "application-default", "print-access-token"]),
             again: "`gcloud auth application-default login`",
-            terraform_provider: "hashicorp/google",
         }),
     },
     Kind {
@@ -229,7 +222,6 @@ pub const KINDS: [Kind; 8] = [
         cli_sign_in: Some(CliSignIn {
             question: ("oci", &["iam", "region", "list", "--output", "json"]),
             again: "`oci session authenticate`, or check `~/.oci/config`",
-            terraform_provider: "oracle/oci",
         }),
     },
 ];

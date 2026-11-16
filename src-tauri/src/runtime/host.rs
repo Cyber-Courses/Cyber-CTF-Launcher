@@ -66,7 +66,7 @@ pub(crate) fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtime) -> 
         Some(conn) if conn.provider.is_cloud() => {
             #[cfg(feature = "cloud-services")]
             let run = if runtime == Runtime::Cloud {
-                isothrum::CloudRun::own(&home, dir, id, conn.terraform()?)?
+                isothrum::CloudRun::own(&home, dir, id)?
             } else {
                 isothrum::CloudRun::new(&home, dir, id, form, conn.terraform()?)?
             };
@@ -83,15 +83,16 @@ pub(crate) struct Failed {
     /// What went wrong.
     pub(crate) error: Error,
     /// False only when the run certainly didn't change: its place couldn't be reached, or the
-    /// change was refused before acting ([`isothrum::errors::refused_before_acting`]: a cloud
-    /// sign-in that ran out included).
+    /// runner refused the change before anything acted (its report's `changed`: a cloud sign-in
+    /// that ran out included).
     pub(crate) run_changed: bool,
 }
 
 impl Failed {
-    fn of_runner(error: Error) -> Self {
-        let run_changed = !isothrum::errors::refused_before_acting(&error);
-        Failed { error, run_changed }
+    /// A failure of the launcher's own (a place's options not made), which may have changed the
+    /// run.
+    pub(crate) fn of_launcher(error: Error) -> Self {
+        Failed { error, run_changed: true }
     }
 }
 
@@ -121,11 +122,11 @@ impl Host {
     /// Brings the run up to date with the lab's regenerated files (a machine added or taken out).
     pub(crate) async fn update(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> std::result::Result<(), Failed> {
         match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.update(log).await.map_err(Failed::of_runner),
-            Host::Cloud { run, place, .. } => run.update(place, log).await.map_err(Failed::of_runner),
+            Host::Local(run) | Host::Esxi { run, .. } => run.update(log).await,
+            Host::Cloud { run, place, .. } => run.update(place, log).await,
             Host::Server { run, conn } => {
                 let place = Self::server_place(dirs, run, conn).await.map_err(|error| Failed { error, run_changed: false })?;
-                run.update(&place, log).await.map_err(Failed::of_runner)
+                run.update(&place, log).await
             }
         }
     }

@@ -122,8 +122,13 @@ impl OpenedRun {
 
     /// Brings the running lab up to date with its regenerated files, with `opts` (what changing
     /// the run needs: the place's connection and credentials).
-    pub(crate) async fn update_with(&self, opts: &RunOptions, log: &mut impl FnMut(String)) -> Result<()> {
-        self.act(remote::Act::Update, opts, log).await
+    pub(crate) async fn update_with(
+        &self,
+        opts: &RunOptions,
+        say: impl FnOnce(crate::error::Error) -> crate::error::Error,
+        log: &mut impl FnMut(String),
+    ) -> std::result::Result<(), crate::runtime::host::Failed> {
+        self.run(remote::Act::Update, opts, log).await.map(drop).map_err(|f| f.failed(say))
     }
 
     /// Takes `machine` out of the running lab ahead of its removal from the lab's files, with

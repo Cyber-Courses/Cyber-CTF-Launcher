@@ -112,12 +112,6 @@ impl DockerSaid {
         }
     }
 
-    /// Whether `text`, what a tool said of Docker (lower case), says some access was refused:
-    /// unix's `permission denied`, Windows' `Access is denied`.
-    pub fn is_refusal(text: &str) -> bool {
-        refusal(text)
-    }
-
     /// What `err` says, when it is a `docker` call that failed; none for another error.
     pub fn of_error(err: &Error) -> Option<DockerSaid> {
         match err {

@@ -18,7 +18,6 @@ use super::{errors, progress, view};
 use crate::error::{Code, Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::paths::lab_dir_in;
-use crate::runtime::server::sign_in::sign_in_question;
 use crate::runtime::{LabStatus, Place, Runtime, lab};
 
 /// The account environment names the launcher passes to the module as plain values (not
@@ -135,14 +134,9 @@ impl CloudPlace {
     }
 }
 
-/// How long the sign-in question may take.
-const SIGN_IN_WAIT: Duration = Duration::from_secs(30);
-
 /// One cloud lab (`cloud-vm` or `cloud-docker`), run by the runner.
 pub(crate) struct CloudRun {
     run: OpenedRun,
-    /// The launcher's Terraform target for the cloud (`aws`, `azure`, …).
-    cloud: String,
 }
 
 /// The opened run and what reads it (its status, console, update and retire) are
@@ -160,23 +154,31 @@ impl CloudRun {
     pub(crate) fn new(home: &Path, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
         let config = super::host_config(home);
         let (out, target) = lab::terraform(dir, runtime, cloud);
-        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (out, Module::Generated(target)), true)?, cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (out, Module::Generated(target)), true)? })
     }
 
-    /// Cloud-services lab `id`, installed in `dir`, on `cloud`: its own module (`cloud/`), run as
+    /// [`CloudRun::new`] on a runner set up with `config`, its operations in this process (a
+    /// test's scripted tools).
+    #[cfg(test)]
+    pub(crate) fn new_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, runtime: Runtime, cloud: &str) -> Result<CloudRun> {
+        let (out, target) = lab::terraform(dir, runtime, cloud);
+        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (out, Module::Generated(target)), false)? })
+    }
+
+    /// Cloud-services lab `id`, installed in `dir`: its own module (`cloud/`), run as
     /// it is, on the runner whose home is `home`.
     #[cfg(feature = "cloud-services")]
-    pub(crate) fn own(home: &Path, dir: &Path, id: &str, cloud: &str) -> Result<CloudRun> {
+    pub(crate) fn own(home: &Path, dir: &Path, id: &str) -> Result<CloudRun> {
         let module = crate::runtime::cloud_services::lab_file::module_dir(dir);
-        Ok(CloudRun { run: OpenedRun::new(super::host_config(home), dir, id, (module, Module::Own), true)?, cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(super::host_config(home), dir, id, (module, Module::Own), true)? })
     }
 
     /// [`CloudRun::own`] on a runner set up with `config`, its operations in this process (a
     /// test's scripted tools).
     #[cfg(all(test, feature = "cloud-services"))]
-    pub(crate) fn own_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str, cloud: &str) -> Result<CloudRun> {
+    pub(crate) fn own_with(config: isothrum_runner::RunnerConfig, dir: &Path, id: &str) -> Result<CloudRun> {
         let module = crate::runtime::cloud_services::lab_file::module_dir(dir);
-        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (module, Module::Own), false)?, cloud: cloud.to_owned() })
+        Ok(CloudRun { run: OpenedRun::new(config, dir, id, (module, Module::Own), false)? })
     }
 
     /// Brings the cloud-services lab up in the account `place` from its own module, with
@@ -188,7 +190,6 @@ impl CloudRun {
         values: &crate::runtime::cloud_services::values::ModuleValues,
         log: &mut impl FnMut(String),
     ) -> Result<()> {
-        self.signed_in(place).await?;
         let opts = values.plain.iter().fold(place.options(&[]), |o, (k, v)| o.with_env(k.clone(), v.clone()));
         let opts = values.secret.iter().fold(opts, |mut o, (k, v)| {
             o.secrets.insert(k.clone(), SecretValue::new(v.clone()));
@@ -201,28 +202,9 @@ impl CloudRun {
         Ok(())
     }
 
-    /// Refuses a change while the account's sign-in has run out, before anything runs: the
-    /// cloud's CLI asked for what its Terraform provider signs in with ([`sign_in_question`], as
-    /// the account's Test and the setup ask it), with the account's environment. Any other
-    /// failure of the question (no such CLI here, the network) is left to the change itself,
-    /// which says what is wrong.
-    pub(crate) async fn signed_in(&self, place: &CloudPlace) -> Result<()> {
-        let Some(cloud) = crate::runtime::server::terraform_provider(&self.cloud) else { return Ok(()) };
-        let Some((program, args)) = sign_in_question(cloud) else { return Ok(()) };
-        let mut env = place.tf_env.clone();
-        if let Some(region) = place.region.as_ref().filter(|_| cloud == crate::runtime::providers::Provider::Aws) {
-            env.push(("AWS_REGION".to_owned(), region.clone()));
-        }
-        match crate::platform::exec::run_env_timed(program, args, None, &env, SIGN_IN_WAIT).await {
-            Err(Error::CommandFailed { stderr, .. }) => errors::expired_sign_in(&stderr, Some(cloud)).map_or(Ok(()), Err),
-            _ => Ok(()),
-        }
-    }
-
     /// Brings the lab up in the account `place` from its generated module, and says where to
     /// start. `env` is the launch's: the inputs the lab's slots take.
     pub(crate) async fn up(&self, place: &CloudPlace, env: &[(String, String)], log: &mut impl FnMut(String)) -> Result<()> {
-        self.signed_in(place).await?;
         // The key the lab's instances let in: a plain value the record keeps, so every later
         // operation replays it.
         let opts = self.key_values().await?.into_iter().fold(place.options(env), |o, (k, v)| o.with_env(k, v));
@@ -234,15 +216,13 @@ impl CloudRun {
     /// Brings the running lab up to date with its regenerated module (a machine added to the lab
     /// or taken out), with the account's credentials (`place`'s); the machines that run keep what
     /// they were given.
-    pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> Result<()> {
-        self.signed_in(place).await?;
-        self.act(super::remote::Act::Update, &place.later_options(), log).await
+    pub(crate) async fn update(&self, place: &CloudPlace, log: &mut impl FnMut(String)) -> std::result::Result<(), crate::runtime::host::Failed> {
+        self.update_with(&place.later_options(), |e| e, log).await
     }
 
     /// Takes `machine` out of the running lab ahead of its removal from the module, with the
     /// account's credentials (`place`'s).
     pub(crate) async fn retire(&self, place: &CloudPlace, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        self.signed_in(place).await?;
         self.act(super::remote::Act::Retire(machine), &place.later_options(), log).await
     }
 
@@ -256,7 +236,6 @@ impl CloudRun {
             log("Nothing to remove: the run has no files.".to_owned());
             return Ok(());
         }
-        self.signed_in(place).await?;
         self.act(super::remote::Act::Down, &place.later_options(), log).await
     }
 
