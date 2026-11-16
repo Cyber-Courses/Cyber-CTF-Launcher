@@ -219,15 +219,19 @@ mod tests {
 
     #[test]
     fn a_modules_machine_is_reached_through_its_router_with_the_runners_key() {
-        let cmd = ssh_through(Path::new("/data/isothrum"), "192.0.2.10", "isoloom", "10.40.0.11", Some("player"));
+        let home = Path::new("/data/isothrum");
+        let cmd = ssh_through(home, "192.0.2.10", "isoloom", "10.40.0.11", Some("player"));
         assert_eq!(cmd.program, "ssh");
+        // The key and known hosts are the home's files, in this OS's separators.
+        let key = home.join("ssh").join("id_ed25519").display().to_string();
+        let known = home.join("ssh").join("lab_known_hosts").display().to_string();
         let line = cmd.args.join(" ");
-        assert!(line.contains("-i /data/isothrum/ssh/id_ed25519"), "{line}");
-        assert!(line.contains("ProxyCommand=ssh -i /data/isothrum/ssh/id_ed25519") && line.contains("-W %h:%p isoloom@192.0.2.10"), "{line}");
+        assert!(line.contains(&format!("-i {key}")) && line.contains(&format!("UserKnownHostsFile={known}")), "{line}");
+        assert!(line.contains(&format!("ProxyCommand=ssh -i {key}")) && line.contains("-W %h:%p isoloom@192.0.2.10"), "{line}");
         assert!(line.ends_with("-t isoloom@10.40.0.11 sudo -iu player"), "{line}");
         assert!(checked_user("-oProxyCommand=x").is_err());
         // The machine at the router's address itself: reached straight, no jump to itself.
-        let direct = ssh_through(Path::new("/data/isothrum"), "192.0.2.10", "isoloom", "192.0.2.10", None).args.join(" ");
+        let direct = ssh_through(home, "192.0.2.10", "isoloom", "192.0.2.10", None).args.join(" ");
         assert!(!direct.contains("ProxyCommand") && direct.ends_with("isoloom@192.0.2.10"), "{direct}");
     }
 }

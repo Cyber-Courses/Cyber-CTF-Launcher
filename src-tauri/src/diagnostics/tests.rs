@@ -98,7 +98,7 @@ impl Seeded {
         let settings = BTreeMap::from([
             ("attackImage".to_owned(), "cyberctf/attack-box".to_owned()),
             ("vmProvider".to_owned(), "qemu".to_owned()),
-            ("sharedFolder".to_owned(), self.home.join("CyberCTF/shared").display().to_string()),
+            ("sharedFolder".to_owned(), self.home.join("CyberCTF").join("shared").display().to_string()),
             ("note".to_owned(), self.secret_line()),
         ]);
         Sources {
@@ -111,11 +111,17 @@ impl Seeded {
 
     /// The bundle written, as its files' paths and texts.
     fn bundle(&self) -> BTreeMap<String, String> {
-        let report = json!({ "os": "linux", "docker": { "installed": true, "version": "27.1" }, "ovftoolLocation": { "path": self.home.join("bin/ovftool").display().to_string() }, "hint": self.secret_line() });
+        let report = json!({ "os": "linux", "docker": { "installed": true, "version": "27.1" }, "ovftoolLocation": { "path": self.home.join("bin").join("ovftool").display().to_string() }, "hint": self.secret_line() });
         let out = self.home.join("diagnostics.tar.gz");
         write(&self.sources(), &report, &out).unwrap();
         unpack(&out)
     }
+}
+
+/// The path under the home folder made of `parts`, as the bundle writes it: the home as `~`, the
+/// rest in this OS's separators (`~\notes.txt` on Windows), as the seeded paths were.
+fn tilde(parts: &[&str]) -> String {
+    parts.iter().fold(PathBuf::from("~"), |path, part| path.join(part)).display().to_string()
 }
 
 /// The files of the bundle at `path`, by their path inside its folder.
@@ -144,8 +150,9 @@ fn no_seeded_secret_and_no_home_path_is_in_the_bundle() {
         assert!(!text.contains(&home), "the home folder is in {name}:\n{text}");
     }
     let log = &files["logs/cyberctf.log"];
-    assert!(log.contains("~/notes.txt") && log.contains("[redacted]"), "the line is kept, its secrets replaced: {log}");
-    assert!(files["host-report.json"].contains("~/bin/ovftool"), "{}", files["host-report.json"]);
+    assert!(log.contains(&tilde(&["notes.txt"])) && log.contains("[redacted]"), "the line is kept, its secrets replaced: {log}");
+    let report: Value = serde_json::from_str(&files["host-report.json"]).unwrap();
+    assert_eq!(report["ovftoolLocation"]["path"], tilde(&["bin", "ovftool"]), "{report}");
 }
 
 #[test]
@@ -163,7 +170,7 @@ fn the_bundle_holds_the_summary_the_report_and_the_logs() {
     assert_eq!(summary["system"]["os"], std::env::consts::OS);
     assert_eq!(summary["system"]["arch"], std::env::consts::ARCH);
     assert_eq!(summary["settings"]["window"]["vmProvider"], "qemu");
-    assert_eq!(summary["settings"]["window"]["sharedFolder"], "~/CyberCTF/shared");
+    assert_eq!(summary["settings"]["window"]["sharedFolder"], tilde(&["CyberCTF", "shared"]));
     assert_eq!(summary["settings"]["servers"], json!([{ "provider": "proxmox", "default": true }]), "a server's kind only");
     assert_eq!(
         summary["labs"],
