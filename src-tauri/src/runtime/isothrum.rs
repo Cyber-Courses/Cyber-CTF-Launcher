@@ -209,7 +209,7 @@ impl LabRun {
     /// Container lab `id`, installed in `dir`, on the runner whose home is `home` (the app data
     /// folder), with this host's tools.
     pub(crate) fn docker(home: &Path, dir: &Path, id: &str) -> Result<LabRun> {
-        Ok(LabRun { old_engine: old_engine::noted(dir), ..LabRun::served(home, dir, id, Kind::Docker)? })
+        LabRun::served(home, dir, id, Kind::Docker)
     }
 
     /// VM lab `id`, installed in `dir`, on the runner whose home is `home`, with this host's tools.
@@ -276,7 +276,8 @@ impl LabRun {
             Kind::Vm => (lab::vagrant_dir(dir, Runtime::Vm), Format::Vagrant),
         };
         let served = remote::Served { home: home.to_path_buf(), name: run_name(id)?, project, format };
-        Ok(LabRun { served, dir: dir.to_path_buf(), kind, esxi: None, old_engine: None })
+        let old_engine = if kind == Kind::Docker { old_engine::noted(dir) } else { None };
+        Ok(LabRun { served, dir: dir.to_path_buf(), kind, esxi: None, old_engine })
     }
 
     /// `act` on the run with `opts`, its events as `log`'s lines, through the home's runner

@@ -218,7 +218,7 @@ async fn a_lab_an_earlier_version_started_on_an_engine_keeps_it_and_the_runner_r
     assert_eq!(record["docker_context"], "orbstack", "{record}");
     f.run().resume(&mut |_| {}).await.unwrap();
     let docker: Vec<_> = f.fake.calls().into_iter().skip(before).filter(|c| c.program == "docker" && c.args.iter().any(|a| a == "compose")).collect();
-    assert!(!docker.is_empty());
+    assert_ne!(docker.len(), 0, "compose ran");
     for call in &docker {
         assert_eq!(call.args[..2], ["--context", "orbstack"], "{}", call.line());
     }
