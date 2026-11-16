@@ -1,5 +1,5 @@
-import { test, expect, openApp } from "./fixtures";
-import type { LabScreen } from "./pages/lab";
+import { test, expect, openApp } from "../fixtures";
+import type { LabScreen } from "../pages/lab";
 
 // A VM lab's and a cloud lab's start failing in the dev mock (`launch=fail`: the first start of
 // the page load fails, after a few lines of its log; see src/lib/dev-mock/lab-ops.ts), then Retry

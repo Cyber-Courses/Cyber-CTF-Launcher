@@ -13,7 +13,7 @@ const FILES = {
   "src-tauri/src/plain.rs": "fn not_a_test() {}\n",
   "src/features/labs/lab-store.test.ts": `it("keeps the last run", () => {});`,
   "src/features/labs/lab-store.ts": "export {};",
-  "tests/web/labs.spec.ts": `test("filters narrow the list", async () => {});`,
+  "tests/e2e/web/specs/labs.spec.ts": `test("filters narrow the list", async () => {});`,
 };
 const facts = factsOf(FILES, {
   commands: ["lab_launch", "lab_stop"],
@@ -50,10 +50,10 @@ describe("refProblem", () => {
     expect(refProblem("unit", "src/gone.test.ts", facts)).toBe("no file src/gone.test.ts");
   });
 
-  it("resolves a web test in tests/web by its title's words", () => {
+  it("resolves a web test in tests/e2e/web/specs by its title's words", () => {
     expect(refProblem("web", "labs.spec.ts > filters narrow", facts)).toBeNull();
     expect(refProblem("web", "labs.spec.ts > sorts", facts)).toBe('labs.spec.ts has no "sorts"');
-    expect(refProblem("web", "shell.spec.ts", facts)).toBe("no file tests/web/shell.spec.ts");
+    expect(refProblem("web", "shell.spec.ts", facts)).toBe("no file tests/e2e/web/specs/shell.spec.ts");
   });
 
   it("resolves a desktop case, and a check of its spec", () => {
@@ -71,7 +71,7 @@ describe("refProblem", () => {
   });
 
   it("resolves a package check by its file", () => {
-    expect(refProblem("package", "tests/web/labs.spec.ts", facts)).toBeNull();
+    expect(refProblem("package", "tests/e2e/web/specs/labs.spec.ts", facts)).toBeNull();
     expect(refProblem("package", ".github/workflows/package-smoke.yml", facts)).toBe("no file .github/workflows/package-smoke.yml");
   });
 

@@ -1,6 +1,6 @@
-import { test, expect, openApp, answerConfirm } from "./fixtures";
-import type { LabsScreen } from "./pages/labs";
-import type { AppShell } from "./pages/app-shell";
+import { test, expect, openApp, answerConfirm } from "../fixtures";
+import type { LabsScreen } from "../pages/labs";
+import type { AppShell } from "../pages/app-shell";
 
 // Remove lab, on a lab's page, through the dev mock: an imported lab (`imported` installs one)
 // goes once asked, the player lands back on the list, told; a lab that runs can't be removed

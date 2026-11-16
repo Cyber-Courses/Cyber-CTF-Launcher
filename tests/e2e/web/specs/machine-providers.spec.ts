@@ -1,9 +1,9 @@
 import type { Locator, Page } from "@playwright/test";
-import { test, expect, openApp, animationsFinished, horizontalOverflow, type Locale } from "./fixtures";
-import { AppShell } from "./pages/app-shell";
-import en from "../../src/messages/en/machine.json";
-import de from "../../src/messages/de/machine.json";
-import fr from "../../src/messages/fr/machine.json";
+import { test, expect, openApp, animationsFinished, horizontalOverflow, type Locale } from "../fixtures";
+import { AppShell } from "../pages/app-shell";
+import en from "../../../../src/messages/en/machine.json";
+import de from "../../../../src/messages/de/machine.json";
+import fr from "../../../../src/messages/fr/machine.json";
 
 // The Machine page's providers as a table: every row's status, default slot and action sit in
 // the same columns, and making another provider the default (or opening a row's test) moves no

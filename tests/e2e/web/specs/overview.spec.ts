@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "./fixtures";
+import { test, expect, openApp } from "../fixtures";
 
 // The Overview's second column and Jump back in, through the dev mock: GOAD Light deploys on the
 // saved Proxmox server at load (its step: Configure SRV02), and a lab launched before (its

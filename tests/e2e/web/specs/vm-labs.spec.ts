@@ -1,7 +1,7 @@
-import { test, expect, openApp, release, answerConfirm } from "./fixtures";
-import type { LabsScreen } from "./pages/labs";
-import type { LabScreen } from "./pages/lab";
-import type { AppShell } from "./pages/app-shell";
+import { test, expect, openApp, release, answerConfirm } from "../fixtures";
+import type { LabsScreen } from "../pages/labs";
+import type { LabScreen } from "../pages/lab";
+import type { AppShell } from "../pages/app-shell";
 
 // A VM lab (GOAD Light, x86 only) through the dev mock's Vagrant: started on this machine's
 // VirtualBox (an Intel Mac) or on a saved ESXi server, paused, shut down, resumed, provisioned

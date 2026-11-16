@@ -1,5 +1,5 @@
-import { test, expect, openApp, forceCommands, reforce } from "./fixtures";
-import type { LabScreen } from "./pages/lab";
+import { test, expect, openApp, forceCommands, reforce } from "../fixtures";
+import type { LabScreen } from "../pages/lab";
 
 // The Rust core's coded errors (src/lib/tauri/generated/CommandError.ts), each driven through the
 // real screens: a lab start forced to reject with the code (`forceCommands`), the dev mock

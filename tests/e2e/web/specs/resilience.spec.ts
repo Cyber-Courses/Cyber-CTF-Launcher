@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, horizontalOverflow, paletteKey, release } from "./fixtures";
+import { test, expect, openApp, horizontalOverflow, paletteKey, release } from "../fixtures";
 
 // A machine check that fails, the window at its minimum size and larger, and the main flows by
 // keyboard alone.

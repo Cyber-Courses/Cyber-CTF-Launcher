@@ -1,6 +1,6 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { test, expect, openApp, animationsFinished, paletteKey, emitEvent } from "./fixtures";
+import { test, expect, openApp, animationsFinished, paletteKey, emitEvent } from "../fixtures";
 
 // Accessibility, checked by axe on the main screens in both themes: text contrast (WCAG AA,
 // 4.5:1 for the small mono and faint text the launcher uses a lot) and every rule axe rates

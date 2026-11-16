@@ -1,4 +1,4 @@
-import { test, expect, openApp, paletteKey } from "./fixtures";
+import { test, expect, openApp, paletteKey } from "../fixtures";
 
 test.describe("navigation", () => {
   test.beforeEach(async ({ page }) => openApp(page));

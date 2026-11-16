@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "./fixtures";
+import { test, expect, openApp } from "../fixtures";
 
 // What a lab's page says beside its start and its network, through the dev mock's catalogue
 // (src/lib/dev-mock/labs.ts): what the lab needs of a machine (`lab_requirements`) and the
