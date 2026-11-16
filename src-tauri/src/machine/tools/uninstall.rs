@@ -294,59 +294,23 @@ fn windows_plan(dep: Dependency) -> Result<Vec<Step>> {
 /// How to remove `dep` on Linux: its packages through the package manager that installed them
 /// (apt or dnf, as root through pkexec), or its folder. Regression: a tool the setup had
 /// installed through dnf on Fedora was removed with `apt-get remove`, which pkexec ran to
-/// `apt-get: not found`, the record kept.
-fn linux_plan(dep: Dependency, packages: Option<Packages>) -> Result<Vec<Step>> {
-    let root = |script: &str| super::install::root(crate::platform::root_script::RootScript::new(script));
-    // AWS CLI is a folder on every distribution.
-    if dep == Dependency::Awscli {
-        return Ok(vec![root("rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer")?]);
-    }
-    let Some(packages) = packages.and_then(Packages::linux) else {
-        return Err(super::install::without_packages(dep));
-    };
-    let script = match (dep, packages) {
-        (Dependency::Utm | Dependency::Wsl | Dependency::Hyperv, _) => return Err(super::install::not_here(dep, Os::Linux)),
-        (Dependency::Awscli, _) => "rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer",
-        // Fedora: what the dnf install brought from the vendors' repositories and RPM Fusion; the
-        // compiler, Ruby's headers and the shared tools (genisoimage) stay.
-        (Dependency::Docker, LinuxPackages::Dnf) => "dnf remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
-        (Dependency::Docker, LinuxPackages::Apt) => "apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
-        (Dependency::Vagrant, LinuxPackages::Dnf) => "dnf remove -y vagrant",
-        (Dependency::Vagrant, LinuxPackages::Apt) => "apt-get remove -y vagrant",
-        (Dependency::Terraform, LinuxPackages::Dnf) => "dnf remove -y terraform",
-        (Dependency::Terraform, LinuxPackages::Apt) => "apt-get remove -y terraform",
-        (Dependency::Virtualbox, LinuxPackages::Dnf) => "dnf remove -y VirtualBox akmod-VirtualBox 'kmod-VirtualBox*'",
-        (Dependency::Virtualbox, LinuxPackages::Apt) => "apt-get remove -y 'virtualbox*'",
-        // The install's metapackages (qemu-system, libvirt-daemon-system) leave the packages
-        // they pulled in behind, with the binaries the Machine page looks for
-        // (qemu-system-x86_64, virsh): those go too, or the tool still reads as installed.
-        (Dependency::Qemu, LinuxPackages::Dnf) => "dnf remove -y qemu-kvm qemu-img",
-        (Dependency::Qemu, LinuxPackages::Apt) => "apt-get remove -y 'qemu-system*' qemu-utils",
-        (Dependency::Libvirt, LinuxPackages::Dnf) => "dnf remove -y libvirt libvirt-daemon-kvm virt-install virt-manager libvirt-devel",
-        (Dependency::Libvirt, LinuxPackages::Apt) => "apt-get remove -y 'libvirt-daemon*' libvirt-clients virt-manager",
-        (Dependency::Azurecli, LinuxPackages::Apt) => "apt-get remove -y azure-cli",
-        (Dependency::Gcloud, LinuxPackages::Apt) => "apt-get remove -y google-cloud-cli",
-        (Dependency::VmwareUtility, LinuxPackages::Apt) => "apt-get remove -y vagrant-vmware-utility",
-        // The cloud CLIs and VMware's utility install through apt only: nothing of ours to remove.
-        (Dependency::Azurecli | Dependency::Gcloud | Dependency::VmwareUtility, LinuxPackages::Dnf) => return Err(super::install::apt_only(dep)),
-    };
-    let mut steps = vec![root(script)?];
-    // Google's apt package, and the per-user SDK earlier versions installed in its place.
-    if dep == Dependency::Gcloud {
-        steps.push(step("sh", &["-c", "rm -rf \"$HOME/google-cloud-sdk\""]));
-    }
-    Ok(steps)
+/// The removal on Linux: isothrum-machine's root script, through the package manager that
+/// installed the tool.
+fn linux_plan(dep: Dependency, packages: Option<Packages>) -> Result<super::steps::Plan> {
+    let steps = isothrum_machine::install::linux::uninstall(dep.machine(), packages.map(Packages::isothrum), &super::install::linux_root())
+        .map_err(super::install::refusal)?;
+    Ok(super::steps::Plan::Machine(steps))
 }
 
 /// How to remove `dep` on `host`. On macOS, VirtualBox's step needs its installer image
 /// (`virtualbox_dmg`).
-pub(super) fn plan_on(dep: Dependency, host: Host, virtualbox_dmg: Option<&str>) -> Result<Vec<Step>> {
+pub(super) fn plan_on(dep: Dependency, host: Host, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
     if !dep.runs_on(host.os) {
         return Err(super::install::not_here(dep, host.os));
     }
     match host.os {
-        Os::Macos => macos_plan(dep, host.packages, virtualbox_dmg),
-        Os::Windows => windows_plan(dep),
+        Os::Macos => macos_plan(dep, host.packages, virtualbox_dmg).map(super::steps::Plan::Own),
+        Os::Windows => windows_plan(dep).map(super::steps::Plan::Own),
         Os::Linux => linux_plan(dep, host.packages),
     }
 }

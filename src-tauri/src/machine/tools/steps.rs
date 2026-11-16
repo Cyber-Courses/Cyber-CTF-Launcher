@@ -1,5 +1,6 @@
-//! Running install and removal steps: one program each, its output streamed to the setup log,
-//! pkexec's own refusals told apart from the script's failures.
+//! Running install and removal steps: one program each, its output streamed to the setup log.
+//! Linux's are isothrum-machine's ([`isothrum_machine::install`]), their failures said here in the
+//! player's words; macOS's and Windows' run here until they move too.
 
 #![allow(clippy::disallowed_methods, reason = "the install and removal steps' runner: each step streams to the setup log through its own process")]
 
@@ -10,7 +11,6 @@ use tokio::process::Command;
 use super::exit_codes::{self, Verb};
 use crate::error::{Error, Result};
 use crate::platform::tool_output::brew::Trouble;
-use crate::platform::tool_output::pkexec::Refusal;
 
 /// One command of an install or removal.
 pub struct Step {
@@ -35,22 +35,8 @@ pub fn step(program: impl Into<String>, args: &[&str]) -> Step {
 pub const NO_PKEXEC: &str =
     "pkexec isn't installed, so Cyber CTF can't ask for your password. Install it once in a terminal (sudo apt install pkexec), then try again.";
 
-/// Whether `line` is pkexec's own refusal ([`Refusal`]), not the command's output.
-fn is_pkexec_error(line: &str) -> bool {
-    Refusal::of_line(line).is_some()
-}
-
 /// An unattended root step sudo refused to run without a password: nothing was changed.
 pub const SUDO_REFUSED: &str = "sudo needs a password to act as an administrator here, and none can be asked for unattended, so nothing was changed. Run it as root, or on a terminal without --yes.";
-
-/// What to tell the player when pkexec itself refused to run the command (`line`, its own).
-fn pkexec_refusal(line: &str) -> &'static str {
-    if Refusal::of_line(line) == Some(Refusal::NoAgent) {
-        "No password prompt could be shown (no polkit agent is running). Run the command above in a terminal instead."
-    } else {
-        "The password prompt was cancelled or the password was refused, so nothing was changed. Try again and enter your password."
-    }
-}
 
 /// A Homebrew that can't update because a lock file is owned by another user (usually left by a
 /// `sudo brew`), or a stale lock it thinks another update holds.
@@ -74,6 +60,78 @@ fn brew_trouble(line: &str) -> Option<&'static str> {
 /// output is worth reading for a broken-Homebrew cause. apt, winget and pkexec never are.
 fn is_brew_step(step: &Step) -> bool {
     step.program.contains("brew") || step.args.iter().any(|a| a.contains("brew"))
+}
+
+/// An install's or a removal's steps: the launcher's own (macOS, Windows), or isothrum-machine's
+/// (Linux).
+pub enum Plan {
+    /// The launcher's.
+    Own(Vec<Step>),
+    /// isothrum-machine's.
+    Machine(Vec<isothrum_machine::install::Step>),
+}
+
+impl Plan {
+    /// How many steps it has.
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        match self {
+            Plan::Own(steps) => steps.len(),
+            Plan::Machine(steps) => steps.len(),
+        }
+    }
+
+    /// Each step as `(program, args)`.
+    #[cfg(test)]
+    pub fn commands(&self) -> Vec<(String, Vec<String>)> {
+        match self {
+            Plan::Own(steps) => steps.iter().map(|s| (s.program.clone(), s.args.clone())).collect(),
+            Plan::Machine(steps) => steps.iter().map(|s| (s.program.clone(), s.args.clone())).collect(),
+        }
+    }
+}
+
+/// Runs `plan`'s steps in order, each announced as `$ program args` unless it has its own note.
+pub async fn run_plan(plan: &Plan, on_line: &mut impl FnMut(String)) -> Result<()> {
+    match plan {
+        Plan::Own(steps) => run_steps(steps, on_line).await,
+        Plan::Machine(steps) => {
+            for step in steps {
+                on_line(crate::platform::redact::redact(&isothrum_machine::install::command_line(step)).into_owned());
+                run_machine_step(step, on_line).await?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Runs one of isothrum-machine's steps through the app's runner, the tools' kept answers
+/// forgotten before and after it (see [`run_step`]), its failure said in the player's words.
+async fn run_machine_step(step: &isothrum_machine::install::Step, on_line: &mut impl FnMut(String)) -> Result<()> {
+    crate::platform::remembered::forget_all();
+    let cx = crate::runtime::providers::machine_check();
+    let ran = isothrum_machine::install::run_step(&cx, step, &mut |line: &str| on_line(line.to_owned())).await;
+    crate::platform::remembered::forget_all();
+    ran.map_err(step_failed)
+}
+
+/// Why one of isothrum-machine's steps failed, in the player's words.
+fn step_failed(failed: isothrum_machine::install::StepFailed) -> Error {
+    use isothrum_machine::install::StepFailed;
+    match failed {
+        StepFailed::NoPkexec => Error::Invalid(NO_PKEXEC.into()),
+        StepFailed::Missing { program } => Error::Invalid(format!("{program} is not available on this machine.")),
+        StepFailed::PromptRefused => {
+            Error::Invalid("The password prompt was cancelled or the password was refused, so nothing was changed. Try again and enter your password.".into())
+        }
+        StepFailed::NoPolkitAgent => {
+            Error::Invalid("No password prompt could be shown (no polkit agent is running). Run the command above in a terminal instead.".into())
+        }
+        StepFailed::SudoRefused => Error::Refused(SUDO_REFUSED.into()),
+        StepFailed::Exited { program, code: Some(code) } => Error::Invalid(format!("`{program}` exited with exit status: {code}")),
+        StepFailed::Exited { program, code: None } => Error::Invalid(format!("`{program}` was ended by a signal")),
+        other => Error::Io(std::io::Error::other(other.to_string())),
+    }
 }
 
 /// Runs `steps` in order, each announced as `$ program args` unless it has its own note.
@@ -152,8 +210,8 @@ async fn run_step_once(step: &Step, on_line: &mut impl FnMut(String)) -> Result<
 }
 
 /// What a step's output says beyond its exit status, watched line by line for the program it
-/// runs: the exit code of the installer winget ran (whether the player cancelled it), pkexec's
-/// own refusal (told apart from the script's exit code), and a broken-Homebrew cause in brew's
+/// runs: the exit code of the installer winget ran (whether the player cancelled it), and a
+/// broken-Homebrew cause in brew's
 /// output (the first one seen: an update's lock error comes before the install error it leads
 /// to, so it wins; shown only if the step fails).
 struct Watch {
@@ -161,15 +219,12 @@ struct Watch {
     program: Program,
     brew: bool,
     installer_code: Option<u32>,
-    pkexec_error: Option<String>,
-    /// sudo's refusal to run without a password, when it said so.
-    sudo_refused: bool,
     brew_help: Option<&'static str>,
 }
 
 impl Watch {
     fn new(step: &Step) -> Watch {
-        Watch { program: Program::of(step), brew: is_brew_step(step), installer_code: None, pkexec_error: None, sudo_refused: false, brew_help: None }
+        Watch { program: Program::of(step), brew: is_brew_step(step), installer_code: None, brew_help: None }
     }
 
     /// A line of the step's output, either stream.
@@ -181,12 +236,6 @@ impl Watch {
 
     /// A line of the step's error output.
     fn error_line(&mut self, line: &str) {
-        if self.program == Program::Pkexec && is_pkexec_error(line) {
-            self.pkexec_error = Some(line.to_string());
-        }
-        if self.program == Program::UnattendedSudo && line.starts_with("sudo: ") && line.contains("password") {
-            self.sudo_refused = true;
-        }
         if self.brew && self.brew_help.is_none() {
             self.brew_help = brew_trouble(line);
         }
@@ -195,15 +244,6 @@ impl Watch {
     /// How the step ended, once it exited with `status`: done, with a note for the log (winget's
     /// "already installed", "restart to finish"), or why it failed.
     fn end(self, step: &Step, status: std::process::ExitStatus) -> Result<Option<&'static str>> {
-        // pkexec exits 126 when the password prompt was dismissed or refused and 127 when no
-        // polkit agent could show one, but the script's own 126/127 (a command missing or not
-        // executable) come through as is: only pkexec's own message says which it was.
-        if let Some(why) = self.pkexec_error.filter(|_| matches!(status.code(), Some(126 | 127))) {
-            return Err(Error::Invalid(pkexec_refusal(&why).into()));
-        }
-        if self.sudo_refused && !status.success() {
-            return Err(Error::Refused(SUDO_REFUSED.into()));
-        }
         let verb = if step.args.first().is_some_and(|a| a == "uninstall") { Verb::Remove } else { Verb::Install };
         match end_of(&step.program, verb, status.code(), self.installer_code) {
             End::Done(note) => Ok(note),
@@ -225,10 +265,6 @@ impl Watch {
 enum Program {
     /// winget: the installer it ran exits with a code of its own.
     Winget,
-    /// pkexec: its own refusals, told apart from the script's.
-    Pkexec,
-    /// `sudo -n` (an unattended root step): its refusal to run without a password.
-    UnattendedSudo,
     /// Any other.
     Other,
 }
@@ -238,8 +274,6 @@ impl Program {
     fn of(step: &Step) -> Program {
         match step.program.as_str() {
             "winget" => Program::Winget,
-            "pkexec" => Program::Pkexec,
-            "sudo" if step.args.first().is_some_and(|a| a == "-n") => Program::UnattendedSudo,
             _ => Program::Other,
         }
     }

@@ -46,6 +46,15 @@ impl Os {
         }
     }
 
+    /// The OS Isothrum names `os`.
+    pub fn of_isothrum(os: isothrum_runner::HostOs) -> Os {
+        match os {
+            isothrum_runner::HostOs::Macos => Os::Macos,
+            isothrum_runner::HostOs::Windows => Os::Windows,
+            isothrum_runner::HostOs::Linux => Os::Linux,
+        }
+    }
+
     /// Its id, `std::env::consts::OS`'s (`macos`), as the machine report and the webview write it.
     pub fn id(self) -> &'static str {
         match self {

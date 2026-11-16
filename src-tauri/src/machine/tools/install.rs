@@ -11,17 +11,14 @@
 
 use serde::Deserialize;
 
-use super::scripts::{
-    awscli_script, azurecli_script, docker_dnf_script, docker_script, fetch_and_open, gcloud_script, libvirt_dnf_script, libvirt_script, qemu_dnf_script,
-    qemu_script, terraform_dnf_script, terraform_script, vagrant_dnf_script, vagrant_script, virtualbox_dnf_script, virtualbox_script, vmware_utility_script,
-};
-use super::steps::{Step, command_line, run_step, run_steps, step};
+use super::scripts::fetch_and_open;
+use super::steps::{Plan, Step, command_line, run_plan, run_step, step};
 use super::uninstall;
 use crate::error::{Error, Result};
-use crate::platform::host::{Arch, Host, LinuxPackages, Os, Packages};
+use crate::platform::host::{Arch, Host, Os, Packages};
 use crate::platform::policy::{self, Key};
-use crate::platform::root_script::RootScript;
 use crate::runtime::providers::Provider;
+use isothrum_machine::install::{Elevation, Refusal, linux};
 
 /// A tool the guided setup installs, as the webview names it.
 #[derive(Deserialize, serde::Serialize, Clone, Copy, PartialEq, Eq, Debug, ts_rs::TS)]
@@ -148,6 +145,46 @@ impl Dependency {
             Dependency::Wsl => row("WSL 2", Runs::On(&[Os::Windows]), None, None, None),
             Dependency::VmwareUtility => row("Vagrant VMware Utility", ANY, None, None, Some("https://developer.hashicorp.com/vagrant/install/vmware")),
             Dependency::Hyperv => row(Provider::Hyperv.label(), Runs::As(Provider::Hyperv), None, None, None),
+        }
+    }
+
+    /// The same tool as isothrum-machine names it.
+    pub(crate) fn machine(self) -> isothrum_machine::install::Dependency {
+        use isothrum_machine::install::Dependency as Machine;
+        match self {
+            Dependency::Docker => Machine::Docker,
+            Dependency::Vagrant => Machine::Vagrant,
+            Dependency::Terraform => Machine::Terraform,
+            Dependency::Virtualbox => Machine::Virtualbox,
+            Dependency::Qemu => Machine::Qemu,
+            Dependency::Utm => Machine::Utm,
+            Dependency::Libvirt => Machine::Libvirt,
+            Dependency::Awscli => Machine::Awscli,
+            Dependency::Azurecli => Machine::Azurecli,
+            Dependency::Gcloud => Machine::Gcloud,
+            Dependency::Wsl => Machine::Wsl,
+            Dependency::VmwareUtility => Machine::VmwareUtility,
+            Dependency::Hyperv => Machine::Hyperv,
+        }
+    }
+
+    /// The tool isothrum-machine names `machine`.
+    pub(crate) fn of_machine(machine: isothrum_machine::install::Dependency) -> Dependency {
+        use isothrum_machine::install::Dependency as Machine;
+        match machine {
+            Machine::Docker => Dependency::Docker,
+            Machine::Vagrant => Dependency::Vagrant,
+            Machine::Terraform => Dependency::Terraform,
+            Machine::Virtualbox => Dependency::Virtualbox,
+            Machine::Qemu => Dependency::Qemu,
+            Machine::Utm => Dependency::Utm,
+            Machine::Libvirt => Dependency::Libvirt,
+            Machine::Awscli => Dependency::Awscli,
+            Machine::Azurecli => Dependency::Azurecli,
+            Machine::Gcloud => Dependency::Gcloud,
+            Machine::Wsl => Dependency::Wsl,
+            Machine::VmwareUtility => Dependency::VmwareUtility,
+            Machine::Hyperv => Dependency::Hyperv,
         }
     }
 
@@ -320,118 +357,53 @@ fn windows_plan(dep: Dependency, arch: Arch) -> Result<Vec<Step>> {
 /// its "restart to finish" (3010) a success; a declined UAC prompt reported as `ERROR_CANCELLED`.
 const HYPERV_ON: &str = "if ((Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion').EditionID -like 'Core*') { Write-Output 'This edition of Windows (Home) has no Hyper-V. Run VM labs with VirtualBox, on a server or in the cloud.'; exit 1 }; try { $p = Start-Process -FilePath dism.exe -ArgumentList '/Online','/Enable-Feature','/FeatureName:Microsoft-Hyper-V','/All','/NoRestart','/Quiet' -Verb RunAs -Wait -PassThru; if ($p.ExitCode -eq 3010) { exit 0 }; exit $p.ExitCode } catch { exit 1223 }";
 
-/// `script` run as root through pkexec, which raises a graphical password prompt (polkit). pkexec
-/// clears the environment, so the proxy variables set here (`proxy`, `NAME=value`) are handed to
-/// the script: behind a corporate proxy apt and curl need them. Not on pkexec's command line,
-/// which every local user can read (`ps`, `/proc/<pid>/cmdline`) while the prompt is up, a
-/// proxy's password with it: in an owner-only file in a private folder of the player's, kept as
-/// long as the step, which the script reads right after its prelude ([`read_proxy`]).
-fn as_root(script: RootScript, proxy: &[String]) -> Result<Step> {
-    // Through pkexec, or unattended through sudo (see `platform::elevation`).
-    let root = |script: String| {
-        let (program, args) = crate::platform::elevation::as_root("env", &["sh".into(), "-c".into(), script]);
-        Step { program, args, note: None, private: None }
-    };
-    // A value over two lines can't be one line of the file; no proxy has one.
-    let proxy: Vec<&str> = proxy.iter().map(String::as_str).filter(|a| !a.contains(['\n', '\r'])).collect();
-    if proxy.is_empty() {
-        return Ok(root(script.into_string()));
+/// How root steps run on this Linux machine (isothrum-machine's [`linux::Root`]): through pkexec's
+/// prompt, or unattended (see `platform::elevation`) as root or through `sudo -n`; with this
+/// process's proxy, which a root step reads from a private file.
+pub(super) fn linux_root() -> linux::Root {
+    let elevation =
+        if crate::platform::elevation::unattended() { Elevation::Unattended { root: crate::platform::elevation::is_root() } } else { Elevation::Prompt };
+    linux::Root { elevation, proxy: linux::proxy_assignments(|name| std::env::var(name).ok()) }
+}
+
+/// Why isothrum-machine can't make a plan here, in the player's words.
+pub(super) fn refusal(refused: Refusal) -> Error {
+    match refused {
+        Refusal::NotHere { dependency, os } => not_here(Dependency::of_machine(dependency), Os::of_isothrum(os)),
+        Refusal::WithoutPackages { dependency } => Error::Invalid(format!(
+            "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install {} yourself, then re-check.",
+            Dependency::of_machine(dependency).name_on(Os::Linux)
+        )),
+        Refusal::AptOnly { dependency } => Error::Invalid(format!(
+            "The guided setup installs {} through apt only for now: install it yourself, then re-check.",
+            Dependency::of_machine(dependency).name_on(Os::Linux)
+        )),
+        other => Error::Io(std::io::Error::other(other.to_string())),
     }
-    // Owner-only from its creation, under a name no one can take first.
-    let mut private = tempfile::Builder::new();
-    private.prefix("cyberctf-root-");
-    #[cfg(unix)]
-    private.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
-    let dir = private.tempdir()?;
-    let file = dir.path().join("proxy");
-    let mut lines = proxy.join("\n");
-    lines.push('\n');
-    crate::platform::private_fs::write(&file, lines)?;
-    let mut step = root(script.with_after_prelude(&read_proxy(&file)));
-    step.private = Some(dir);
-    Ok(step)
 }
 
-/// The shell that exports the proxy variables `file` lists (`NAME=value`, one a line), read as
-/// data: a line naming anything but a proxy variable is skipped, and nothing in a value is run.
-fn read_proxy(file: &std::path::Path) -> String {
-    let names = crate::platform::proxy::VARS.map(|name| format!("{name}=*")).join("|");
-    format!(r#"while IFS= read -r v; do case "$v" in {names}) export "$v" ;; esac; done < {}"#, crate::runtime::ssh::sh_quote(&file.to_string_lossy()))
-}
-
-/// `script` run as root through pkexec ([`as_root`]), with this process's proxy: every install
-/// and removal step on Linux.
-pub(super) fn root(script: RootScript) -> Result<Step> {
-    as_root(script, &crate::platform::proxy::assignments(|name| std::env::var(name).ok()))
-}
-
-/// The install step on Linux, as root through pkexec, for the player `user`: apt and the vendors'
-/// apt repositories, or dnf and the vendors' rpm repositories.
-fn linux_plan(dep: Dependency, packages: Option<Packages>, user: Option<&str>) -> Result<Vec<Step>> {
-    let Some(packages) = packages.and_then(Packages::linux) else {
-        return Err(without_packages(dep));
-    };
-    let script = match (dep, packages) {
-        (Dependency::Wsl | Dependency::Hyperv | Dependency::Utm, _) => return Err(not_here(dep, Os::Linux)),
-        // From HashiCorp's apt repository, not the distribution's (older than labs need).
-        (Dependency::Vagrant, LinuxPackages::Apt) => vagrant_script(),
-        (Dependency::Vagrant, LinuxPackages::Dnf) => vagrant_dnf_script(),
-        (Dependency::Docker, LinuxPackages::Apt) => docker_script(user),
-        (Dependency::Docker, LinuxPackages::Dnf) => docker_dnf_script(user),
-        (Dependency::Terraform, LinuxPackages::Apt) => terraform_script(),
-        (Dependency::Terraform, LinuxPackages::Dnf) => terraform_dnf_script(),
-        // Fedora: RPM Fusion's VirtualBox, the distribution's libvirt and QEMU.
-        (Dependency::Virtualbox, LinuxPackages::Apt) => virtualbox_script(),
-        (Dependency::Virtualbox, LinuxPackages::Dnf) => virtualbox_dnf_script(user),
-        // The player joins /dev/kvm's group: the labs' VMs boot with KVM.
-        (Dependency::Qemu, LinuxPackages::Apt) => qemu_script(user),
-        (Dependency::Qemu, LinuxPackages::Dnf) => qemu_dnf_script(user),
-        (Dependency::Libvirt, LinuxPackages::Apt) => libvirt_script(user),
-        (Dependency::Libvirt, LinuxPackages::Dnf) => libvirt_dnf_script(user),
-        // AWS CLI v2 from Amazon's signed bundle, in a private temporary directory: no package
-        // manager's.
-        (Dependency::Awscli, LinuxPackages::Apt | LinuxPackages::Dnf) => awscli_script(),
-        // Azure CLI and gcloud from Microsoft's and Google's apt repositories, their keys pinned;
-        // through apt only for now, as VMware's utility.
-        (Dependency::Azurecli, LinuxPackages::Apt) => azurecli_script(),
-        (Dependency::Gcloud, LinuxPackages::Apt) => gcloud_script(),
-        (Dependency::VmwareUtility, LinuxPackages::Apt) => vmware_utility_script(),
-        (Dependency::Azurecli | Dependency::Gcloud | Dependency::VmwareUtility, LinuxPackages::Dnf) => return Err(apt_only(dep)),
-    };
-    Ok(vec![root(script)?])
-}
-
-/// What an install of `dep` says on a Linux distribution with neither apt nor dnf: the guided
-/// setup doesn't install there yet, so the player installs it themselves; instead of a command
-/// that fails.
-pub(crate) fn without_packages(dep: Dependency) -> Error {
-    Error::Invalid(format!(
-        "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install {} yourself, then re-check.",
-        dep.name_on(Os::Linux)
-    ))
-}
-
-/// What an install of `dep` says on a dnf distribution for a tool the guided setup installs
-/// through apt only for now (the cloud CLIs, VMware's utility).
-pub(crate) fn apt_only(dep: Dependency) -> Error {
-    Error::Invalid(format!("The guided setup installs {} through apt only for now: install it yourself, then re-check.", dep.name_on(Os::Linux)))
+/// The install on Linux: isothrum-machine's root script, for the player `user` (Linux joins them
+/// to the groups a tool's devices need).
+fn linux_plan(dep: Dependency, packages: Option<Packages>, user: Option<&str>) -> Result<Plan> {
+    let steps = linux::install(dep.machine(), packages.map(Packages::isothrum), user, &linux_root()).map_err(refusal)?;
+    Ok(Plan::Machine(steps))
 }
 
 /// The ordered install steps for a dependency on `host`, for the player `user` (Linux joins
 /// them to the groups a tool's devices need).
-pub(super) fn plan_on(dep: Dependency, host: Host, user: Option<&str>) -> Result<Vec<Step>> {
+pub(super) fn plan_on(dep: Dependency, host: Host, user: Option<&str>) -> Result<Plan> {
     if !dep.runs_on(host.os) {
         return Err(not_here(dep, host.os));
     }
     match host.os {
-        Os::Macos => macos_plan(dep, host),
-        Os::Windows => windows_plan(dep, host.arch),
+        Os::Macos => macos_plan(dep, host).map(Plan::Own),
+        Os::Windows => windows_plan(dep, host.arch).map(Plan::Own),
         Os::Linux => linux_plan(dep, host.packages, user),
     }
 }
 
 /// The ordered install steps for a dependency on this computer.
-fn plan(dep: Dependency) -> Result<Vec<Step>> {
+fn plan(dep: Dependency) -> Result<Plan> {
     plan_on(dep, Host::here(), crate::platform::exec::login_name().as_deref())
 }
 
@@ -451,7 +423,7 @@ pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Depe
     installs_allowed(&mut on_line)?;
     let steps = plan(dependency).inspect_err(|e| on_line(e.to_string()))?;
     let before = uninstall::present(dependency).await;
-    run_steps(&steps, &mut on_line).await?;
+    run_plan(&steps, &mut on_line).await?;
     // Windows: the installer wrote its folder to the registry PATH; pick it up before looking.
     crate::platform::env_path::refresh();
     // Remembered so Cleanup can offer to remove what Cyber CTF installed, and only that: a tool

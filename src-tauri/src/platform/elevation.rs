@@ -38,22 +38,6 @@ pub fn unattended() -> bool {
     return UNATTENDED.with(std::cell::Cell::get);
 }
 
-/// `program` with `args` run as root on Linux: through pkexec (its password prompt); unattended,
-/// as is when this process is root already, else through `sudo -n`.
-pub fn as_root(program: &str, args: &[String]) -> (String, Vec<String>) {
-    as_root_with(program, args, unattended(), is_root())
-}
-
-/// [`as_root`], for an unattended process or not, root or not.
-fn as_root_with(program: &str, args: &[String], unattended: bool, root: bool) -> (String, Vec<String>) {
-    let all = |prefix: &[&str]| prefix.iter().map(ToString::to_string).chain(std::iter::once(program.to_owned())).chain(args.iter().cloned()).collect();
-    match (unattended, root) {
-        (false, _) => ("pkexec".into(), all(&[])),
-        (true, true) => (program.to_owned(), args.to_vec()),
-        (true, false) => ("sudo".into(), all(&["-n"])),
-    }
-}
-
 /// Whether this process runs as root (an administrator, on Windows: elevated).
 pub fn is_root() -> bool {
     #[cfg(unix)]
@@ -85,19 +69,4 @@ pub async fn check_unattended() -> Result<()> {
     }
     let how = if cfg!(windows) { "Run it from an elevated (administrator) terminal" } else { "Run it as root (sudo)" };
     Err(Error::Refused(format!("{CANT_ELEVATE} {how}, or on a terminal without --yes to be asked.")))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::as_root_with;
-
-    #[test]
-    fn a_root_step_prompts_unless_unattended_where_sudo_never_asks() {
-        let args = ["sh".to_owned(), "-c".to_owned(), "apt-get install -y x".to_owned()];
-        let words = |(p, a): (String, Vec<String>)| std::iter::once(p).chain(a).collect::<Vec<_>>().join(" ");
-        assert_eq!(words(as_root_with("env", &args, false, false)), "pkexec env sh -c apt-get install -y x");
-        assert_eq!(words(as_root_with("env", &args, false, true)), "pkexec env sh -c apt-get install -y x", "the app prompts whoever runs it");
-        assert_eq!(words(as_root_with("env", &args, true, false)), "sudo -n env sh -c apt-get install -y x");
-        assert_eq!(words(as_root_with("env", &args, true, true)), "env sh -c apt-get install -y x");
-    }
 }

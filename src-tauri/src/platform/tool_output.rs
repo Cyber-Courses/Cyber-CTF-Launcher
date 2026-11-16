@@ -12,7 +12,6 @@ pub mod apple_events;
 pub mod brew;
 pub mod gcloud;
 pub mod ping;
-pub mod pkexec;
 pub mod text;
 pub mod vboxmanage;
 pub mod win32;
