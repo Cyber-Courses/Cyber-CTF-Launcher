@@ -3,6 +3,8 @@
 //! is the lab's or Isoloom's plumbing) comes from the lab's spec (`described`); what the runner
 //! adds is what its tool sees: each machine's state and the host ports it got.
 
+use std::collections::BTreeMap;
+
 use isothrum_runner::{MachineState, MachineStatus, Protocol, RunState, Status};
 
 use super::super::docker::{Check, CheckResult};
@@ -52,21 +54,35 @@ fn runs_in(lab: &Described, status: &Status) -> bool {
     status.machines.iter().any(|m| lab.machine(&m.name).is_some() && matches!(m.state, MachineState::Running | MachineState::Unhealthy))
 }
 
-/// The page the lab starts at: its first web port published on the host, at the host's loopback, else
-/// at its machine's own address.
+/// The page the lab starts at: its first web port published on the host, at the host's loopback,
+/// else where the lab's module publishes it, else at its machine's own address.
 fn entry(lab: &Described, status: &Status) -> Option<String> {
+    let forwarded = module_published(status);
     lab.machines.iter().find_map(|d| {
         let seen = status.machines.iter().find(|m| m.name == d.name)?;
         d.ports.iter().filter(|p| p.web()).find_map(|p| {
-            // Published on this computer, else at the machine's own address (a VM nothing forwards
-            // to: on an ESXi host, on libvirt's network).
-            let at = match published(seen, p) {
-                Some(host) => format!("127.0.0.1:{}", host.get()),
-                None => format!("{}:{}", seen.address.as_deref()?, p.port),
+            // Published on this computer; else where the module forwards it (a server's router, a
+            // cloud VM's public address and the published port its firewall opens); else at the
+            // machine's own address (a VM nothing forwards to: on an ESXi host, on libvirt's
+            // network).
+            let at = match (published(seen, p), forwarded.get(&format!("{}/{}", d.name, p.name))) {
+                (Some(host), _) => format!("127.0.0.1:{}", host.get()),
+                (None, Some(at)) => at.clone(),
+                (None, None) => format!("{}:{}", seen.address.as_deref()?, p.port),
             };
             Some(format!("{}://{at}/", if p.protocol == "https" { "https" } else { "http" }))
         })
     })
+}
+
+/// Where a server's or a cloud's Terraform module publishes the lab's ports: its `published`
+/// output, `{"<machine>/<port>": "<address>:<published port>"}` (the address is the router's uplink
+/// on a server, the VM's public one in a cloud). None without the output (a Compose project, a
+/// Vagrantfile), and none of an entry whose address isn't known yet (the router's still empty).
+fn module_published(status: &Status) -> BTreeMap<String, String> {
+    let Some(value) = status.outputs.iter().find(|o| o.name == "published").and_then(|o| o.revealed()) else { return BTreeMap::new() };
+    let all: BTreeMap<String, String> = serde_json::from_str(value).unwrap_or_default();
+    all.into_iter().filter(|(_, at)| at.split_once(':').is_some_and(|(host, port)| !host.is_empty() && !port.is_empty())).collect()
 }
 
 /// One machine: its state as Docker words it, its addresses, its TCP ports with the host port

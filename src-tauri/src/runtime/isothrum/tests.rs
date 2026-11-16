@@ -621,6 +621,41 @@ fn a_one_vm_labs_vm_destroyed_outside_the_app_is_shown_gone() {
     assert_eq!(view::lab_status(&manifest, &status("absent"), None).machines, [] as [crate::runtime::Machine; 0]);
 }
 
+#[test]
+fn a_server_labs_entry_is_where_its_module_publishes_it() {
+    // Regression (a real Proxmox run): the lab ran with no link. A server's module forwards a
+    // published port at its router's uplink (its `published` output); the runner reports no host
+    // port for a Terraform module's VM, and no address for one without a guest agent.
+    let home = Home::new(
+        "pve-entry",
+        "version: 1\nname: t\nnetworks:\n  app: { cidr: 10.80.0.0/24 }\nmachines:\n  web:\n    os: debian@12\n    networks: { app: 10 }\n    ports: { site: { port: 80, protocol: http, publish: 8080 } }\n",
+        &[],
+        lab::Target::Proxmox,
+    );
+    let manifest = described::Described::of(&home.dir, described::Form::Vms).unwrap();
+    let status = |published: Option<&str>, address: Option<&str>| -> Status {
+        let outputs = published.map(|p| serde_json::json!([{ "name": "published", "sensitive": false, "value": p }])).unwrap_or(serde_json::json!([]));
+        serde_json::from_value(serde_json::json!({
+            "state": "ready", "provider": null, "outputs": outputs,
+            "machines": [
+                { "name": "isoloom_router", "state": "running", "published": [], "address": "192.0.2.10" },
+                { "name": "web", "state": "running", "published": [], "address": address },
+            ],
+        }))
+        .unwrap()
+    };
+    let url = |published, address| view::lab_status(&manifest, &status(published, address), None).url;
+    assert_eq!(url(Some(r#"{"web/site":"192.0.2.10:8080"}"#), None).as_deref(), Some("http://192.0.2.10:8080/"));
+    // The module's forward wins over the VM's own address (a cloud VM's public one, whose
+    // firewall opens the published port only).
+    assert_eq!(url(Some(r#"{"web/site":"203.0.113.7:8080"}"#), Some("203.0.113.7")).as_deref(), Some("http://203.0.113.7:8080/"));
+    // The router's address not known yet: no link rather than a broken one.
+    assert_eq!(url(Some(r#"{"web/site":":8080"}"#), None), None);
+    // No such output: the machine's own address, as before.
+    assert_eq!(url(None, Some("172.16.1.53")).as_deref(), Some("http://172.16.1.53:80/"));
+    assert_eq!(url(None, None), None);
+}
+
 #[tokio::test]
 async fn a_running_labs_files_deleted_are_made_again_so_its_page_and_its_stop_still_reach_it() {
     // Regression: the player deleted the lab's generated folder while it ran. Its page read it as
