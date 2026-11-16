@@ -16,7 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::resilience::{killed_start, refused_as_gone, shell, states, target, throwaway, tools_of, whole_after};
+use super::resilience::{ended_by_the_start_again, killed_start, refused_as_gone, shell, started_by, states, target, throwaway, whole_after};
 use super::support::lab::{Run, every_machine_runs, vm_inputs};
 use super::support::{Wait, check, eventually, knob, log, refused_by_launcher, scenario};
 use crate::platform::exec::run_env;
@@ -141,8 +141,9 @@ async fn a_vm_start_killed_while_it_provisions_is_failed_and_a_start_again_works
     on_lab("VM start killed", async |l: &Run, f: &mut Vec<String>| {
         let p = provider();
         let begun = async || has_a_vm(l, p).is_some();
-        killed_start(l, "vm", p.id(), begun, f).await;
+        let left = killed_start(l, "vm", p.id(), begun, f).await;
         starts_whole(l, f, "started again after the kill").await;
+        ended_by_the_start_again(&left, f).await;
     })
     .await;
 }
@@ -181,7 +182,9 @@ async fn a_vm_killed_by_its_hypervisor_while_it_provisions_fails_the_start_and_a
             println!("note: the start went through all the same");
             check(s.as_ref().is_ok_and(every_machine_runs), format!("a start that went through is whole ({:?})", s.as_ref().map(states)), f);
         }
-        let left = tools_of(&docker::project(&l.id));
+        // What this process started that still runs once the start returned (not the VMs: their
+        // hypervisor's processes, which name the run too, are nobody's here).
+        let left: Vec<String> = started_by(std::process::id()).into_iter().map(|p| p.line).collect();
         check(left.is_empty(), format!("no tool of the start is left running ({left:?})"), f);
         if started.is_err() {
             starts_whole(l, f, "started again").await;
