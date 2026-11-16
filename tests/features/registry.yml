@@ -2853,9 +2853,9 @@ areas:
         host: true
         tests:
           unit:
-            - tests/audit/inventory.test.ts
-            - tests/audit/diff.test.ts
-            - tests/audit/kinds.test.ts
+            - tests/audit/src/inventory.test.ts
+            - tests/audit/src/diff.test.ts
+            - tests/audit/src/kinds.test.ts
         gaps:
           unit: the leftover audit's own logic (its parsers on recorded outputs, the diff, the allowlist, a run's scope on a shared machine); the audit itself is an entry point the rig runs around every suite (docs/contributing/testing/leftovers.md), whose cells the rig's matrix has no column for yet
 

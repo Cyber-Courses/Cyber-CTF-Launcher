@@ -9,7 +9,7 @@ or doesn't answer is recorded as such (the diff makes it a skip), never an error
 the one snapshot.sh writes: {"audit": 1, "os": "windows", "host", "user", "taken", "roots",
 "probes": [{"kind", "tool", "status", "note", "output"}]}. A kind with a common tool (Docker,
 Vagrant, VirtualBox, the hosts file) records that tool's output as snapshot.sh does; Windows' own
-kinds record one JSON object a line, which tests/audit/inventory.ts reads.
+kinds record one JSON object a line, which tests/audit/src/inventory.ts reads.
 
 .PARAMETER Out
 Where the snapshot goes (default: standard output).

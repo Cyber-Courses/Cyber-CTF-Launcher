@@ -2,34 +2,63 @@
 
 Each kind of test lives where its tool expects it, and proves what the one below cannot. A change
 is tested at the lowest level that can show it; the higher ones run before a release. The unit
-tests sit beside the code they test; this folder holds the tiers that drive the launcher from
-outside: the integration runner, the desktop and the web end-to-end.
+tests sit beside the code they test; this folder holds the suites that drive the launcher from
+outside, and the feature registry that says which test checks what.
 
 ```text
 tests/
-  integration/run.sh     the integration runner: the opt-in scenarios of src-tauri/src/integration_tests/, by tier
-  e2e/desktop/cases.tsv          the desktop cases, in the runner's order: id, spec, form, knobs, groups
-  e2e/desktop/specs/             one spec a file, `<spec>.mjs`, its needs declared on its first lines
-  e2e/desktop/support/           what the specs share: the app launched and driven (app.mjs), its page (page.mjs),
-                                 what a run owns (owned.mjs), the app's WebDriver port (host.mjs: free, held by
-                                 whom, waited for), a stuck lab put into words (diagnose.mjs)
-  e2e/desktop/runner/run.mjs     the desktop end-to-end's runner: the specs, their needs, caps and groups, the results
-  e2e/desktop/runner/run.sh      its entry point on Linux and macOS (run.ps1: Windows): the app built or unpacked, then run.mjs
-  e2e/desktop/runner/plan.mjs    the plan: the cases, the needs, the groups, the verdicts a need not met gives
-  e2e/web/specs/         the Playwright specs against the dev mock (`pnpm dev:web`), `<area>.spec.ts`
-  e2e/web/fixtures.ts    what the specs share: the app opened on the mock, its commands forced or held
-  e2e/web/pages/         the page objects the specs find the app's parts through, one per screen: the window's frame
-                         (app-shell.ts), the Labs screen (labs.ts), a lab's page and "Where should the lab run?" (lab.ts)
-  audit/run.sh           the leftover audit: a snapshot of the machine before and after a run, their diff
-                         (snapshot.ps1: Windows; snapshot-server.sh: Proxmox, ESXi); its contract is
-                         docs/contributing/testing/leftovers.md
-  features/registry.yml  the feature registry: every feature the user sees, and the tests that check it per tier
-  features/FEATURES.md   made from it (`pnpm features`): how well each feature is checked, the biggest gaps first
-  features/rig.json      a test harness's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
+  README.md                       this map: every suite, where it lives, what it needs, how to run it, its knobs
+  features/
+    registry.yml                  the feature registry: every feature the user sees, and the tests that check it per tier
+    FEATURES.md                   made from it (`pnpm features`): how well each feature is checked, the biggest gaps first
+    rig.json                      a test harness's matrix as FEATURES.md reads it (`pnpm features --matrix …`)
+  e2e/
+    web/                          Playwright against the dev mock (`pnpm test:web`)
+      specs/                      one spec an area, `<area>.spec.ts`
+      pages/                      the page objects the specs find the app's parts through, one per screen: the
+                                  window's frame (app-shell.ts), the Labs screen (labs.ts), a lab's page and
+                                  "Where should the lab run?" (lab.ts), the Settings window (settings.ts)
+      fixtures.ts                 what the specs share: the app opened on the mock, its commands forced or held
+    desktop/                      WebdriverIO against the real app (`pnpm test:desktop`)
+      cases.tsv                   the cases, in the runner's order: id, spec, form, knobs, groups
+      specs/                      one spec a file, `<spec>.mjs`, its needs declared on its first lines
+      support/                    what the specs share: the app launched and driven (app.mjs), its page
+                                  (page.mjs), what a run owns (owned.mjs), the machine (host.mjs: the WebDriver
+                                  port, where cargo builds the app; bounded.mjs), a stuck lab put into words
+                                  (diagnose.mjs); each with its tests
+      runner/                     run.mjs (the specs, their needs, caps and groups, the results), its entry points
+                                  run.sh (Linux, macOS) and run.ps1 (Windows), the plan (plan.mjs), the VM the
+                                  scan looks for (fixture.mjs); each with its tests
+  integration/                    the integration runner (`pnpm test:integration`): run.sh runs the opt-in
+                                  scenarios by tier, run.test.ts holds its listing to them
+  audit/                          the leftover audit (`pnpm leftovers`): what a run left on a machine
+    run.sh                        snapshot, diff, inventory, --list (Linux, macOS)
+    snapshot.sh, snapshot.ps1,    a machine's snapshot: Linux and macOS, Windows, a Proxmox or ESXi server
+    snapshot-server.sh
+    allowlist.tsv                 what a run may leave, each with why
+    setup-leaves.tsv              what the guided setup leaves on purpose
+    src/                          the diff and its parsers (main.ts, inventory.ts, diff.ts…), each with its tests
+    fixtures/                     the tools' own outputs, recorded, that the parsers are held to
 ```
 
-What a player does that breaks a lab, what the app must do and which test holds it is
-[resilience.md](../docs/contributing/testing/resilience.md), beside the other testing docs.
+Elsewhere, where their tool or their code needs them:
+
+- `src-tauri/src/integration_tests/`: the integration scenarios themselves. They drive the
+  launcher's own Rust (the crate's internals, `TestApp`, the runner's records), so they are part of
+  the crate, opt-in (`#[ignore = "needs …"]`); `tests/integration/run.sh` runs them.
+- `src-tauri/tests/`: the backend's public entry points as a user starts them: the command line
+  (`cli.rs`) and the runner service's host (`service_host.rs`).
+- `src/test/`: the frontend unit tests' helpers (the Tauri commands faked, fixtures, the setup).
+- The testing docs, in `docs/contributing/testing/`: the desktop end-to-end
+  ([desktop-e2e.md](../docs/contributing/testing/desktop-e2e.md)), the integration scenarios
+  ([integration.md](../docs/contributing/testing/integration.md)), `pnpm check`'s steps
+  ([release-check.md](../docs/contributing/testing/release-check.md)), what a player does that
+  breaks a lab and which test holds it ([resilience.md](../docs/contributing/testing/resilience.md)),
+  and what a run may leave on a machine ([leftovers.md](../docs/contributing/testing/leftovers.md)).
+
+The names: `*.test.ts` a unit or harness test (vitest), beside the module it tests and named
+after it; `*.spec.ts` a Playwright spec, `specs/<name>.mjs` a desktop spec; folders and files in
+kebab-case.
 
 ## The tiers
 
@@ -161,12 +190,12 @@ screen. Each entry point appends **one JSON line per check** to a file it is giv
 cases with the knobs each reads, so a renamed case or knob fails the caller's own check, not a
 night's run:
 
-| Entry point                                                   | Results                                                                                                   | Listing                                                    |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `tests/integration/run.sh`                                    | `--results <file>`, a line a scenario                                                                     | `--list`                                                   |
-| `tests/e2e/desktop/runner/run.sh`, `run.ps1` (`run.mjs`)      | `--results <file>` (`-Results`), a line a spec and a line a check (`<spec>/<check>`)                      | `--list` (`-List`), from `desktop/cases.tsv` and the specs |
-| the guided setup (`integration_tests::setup`, a `cargo test`) | `CYBERCTF_TEST_RESULTS=<file>`, a line an item                                                            | in the integration runner's `--list` (tier `bare-machine`) |
-| the leftover audit (`tests/audit/run.sh diff`)                | `--results <file>`, a line a kind of resource ([leftovers.md](../docs/contributing/testing/leftovers.md)) | `--list`                                                   |
+| Entry point                                                   | Results                                                                                                   | Listing                                                        |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `tests/integration/run.sh`                                    | `--results <file>`, a line a scenario                                                                     | `--list`                                                       |
+| `tests/e2e/desktop/runner/run.sh`, `run.ps1` (`run.mjs`)      | `--results <file>` (`-Results`), a line a spec and a line a check (`<spec>/<check>`)                      | `--list` (`-List`), from `e2e/desktop/cases.tsv` and the specs |
+| the guided setup (`integration_tests::setup`, a `cargo test`) | `CYBERCTF_TEST_RESULTS=<file>`, a line an item                                                            | in the integration runner's `--list` (tier `bare-machine`)     |
+| the leftover audit (`tests/audit/run.sh diff`)                | `--results <file>`, a line a kind of resource ([leftovers.md](../docs/contributing/testing/leftovers.md)) | `--list`                                                       |
 
 ```json
 { "suite": "integration", "case": "vm-lab", "provider": "qemu", "form": "vm", "result": "pass", "reason": "", "seconds": 612, "log": "…/vm-lab.log" }

@@ -17,7 +17,7 @@ tests/audit/run.sh --list                                                   # th
 A snapshot is read-only and takes a few seconds: each tool is asked once, within a time limit,
 and a tool that is missing, refuses (`--sudo`: what needs root, through `sudo -n`) or doesn't
 answer makes that kind a `skip` saying which, never an error. It records each tool's own output;
-`tests/audit/inventory.ts` reads them (`inventory.test.ts` holds each parser to a recorded output
+`tests/audit/src/inventory.ts` reads them (`inventory.test.ts` holds each parser to a recorded output
 in `tests/audit/fixtures/`).
 
 ## Whose a new thing is

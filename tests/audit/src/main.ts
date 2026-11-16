@@ -21,14 +21,14 @@
 import { appendFileSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { helpAsked } from "../../scripts/lib/cli.ts";
+import { helpAsked } from "../../../scripts/lib/cli.ts";
 import { diff, report, toRecord } from "./diff.ts";
 import { parseProbe, readSnapshot } from "./inventory.ts";
 import { KINDS } from "./kinds.ts";
 import { type Mode, type Scope, type Window, parseWindow, readAllowlist, readLogs } from "./scope.ts";
 
 /** The allowlist that comes with the audit. */
-export const ALLOWLIST = join(dirname(fileURLToPath(import.meta.url)), "allowlist.tsv");
+export const ALLOWLIST = join(dirname(fileURLToPath(import.meta.url)), "..", "allowlist.tsv");
 
 type DiffArgs = { before: string; after: string; scope: Scope; allow: string[]; results?: string; reportFile?: string };
 

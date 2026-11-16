@@ -9,7 +9,7 @@ import { blocks, epoch, table } from "./parse-util.ts";
 // (Docker Desktop, lsof, netstat, VirtualBox 7, UTM), a Linux machine (ss, ip, iptables-save,
 // virsh), Windows (snapshot.ps1's JSON lines, netsh), Proxmox VE 9 and ESXi 8.
 
-const fixture = (name: string) => readFileSync(join(import.meta.dirname, "fixtures", name), "utf8");
+const fixture = (name: string) => readFileSync(join(import.meta.dirname, "..", "fixtures", name), "utf8");
 const parse = (kind: string, file: string, taken = 1_794_312_000): Item[] =>
   parseProbe({ kind, tool: "", status: "ok", note: "", output: fixture(file) }, taken);
 const names = (items: Item[]) => items.map((i) => i.name);
