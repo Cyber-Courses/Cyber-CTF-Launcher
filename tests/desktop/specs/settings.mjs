@@ -127,6 +127,24 @@ try {
     await (await desktop("Headless")).click();
     await b.waitUntil(async () => (await stored()) === "false", { timeout: 10000, timeoutMsg: "Headless wasn't saved" });
   });
+
+  // About: the version the app itself reports (Tauri's app plugin, as the row reads it) and this
+  // system, each beside its label.
+  await b.switchToWindow("settings");
+  await section(b, "About");
+  await r.step("about", "About shows the app's version and this system", async () => {
+    const version = await invokeCmd(b, "plugin:app|version");
+    if (!/^\d+\.\d+\.\d+/.test(String(version))) throw new Error(`the app reports no version: ${JSON.stringify(version)}`);
+    const row = (label) => b.$(`//*[normalize-space()=${JSON.stringify(label)}]/..`);
+    await b.waitUntil(async () => (await (await row("Version")).getText()).includes(`v${version}`), {
+      timeout: 15000,
+      timeoutMsg: `About never showed v${version}`,
+    });
+    const os = { darwin: "macos", linux: "linux", win32: "windows" }[process.platform];
+    const system = await (await row("System")).getText();
+    if (!system.includes(os)) throw new Error(`System reads ${JSON.stringify(system)}, not this ${os}`);
+    return `v${version}; ${system.replace(/\s+/g, " ")}`;
+  });
 } catch (e) {
   r.fail("error", e.message);
   if (proc) console.log("app out tail:", proc.output().slice(-600));
