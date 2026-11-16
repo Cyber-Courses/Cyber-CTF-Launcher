@@ -16,16 +16,16 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::resilience::{copy_of, killed_start, shell, states, target, throwaway, tools_of, whole, whole_after};
+use super::resilience::{copy_of, killed_start, refused_as_gone, shell, states, target, throwaway, tools_of, whole, whole_after};
 use super::support::lab::{Run, vm_inputs};
-use super::support::{Wait, check, eventually, knob, log, refused_by_launcher, scenario, var};
+use super::support::{Wait, check, eventually, knob, log, refused_by_launcher, scenario};
 use crate::platform::exec::run_env;
 use crate::runtime::providers::Provider;
 use crate::runtime::{LabStatus, Runtime, docker, isothrum, lab, launch, lifecycle};
 
 /// The hypervisor under test (`CYBERCTF_TEST_VM_PROVIDER`, default QEMU, as the runner's).
 fn provider() -> Provider {
-    serde_json::from_value(serde_json::json!(var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|| "qemu".into()))).expect("a hypervisor")
+    super::support::vm_provider(Provider::Qemu)
 }
 
 /// The run's Vagrant record (`VAGRANT_DOTFILE_PATH`), in the runner's home.
@@ -98,8 +98,7 @@ async fn a_vm_destroyed_while_the_lab_runs_shows_gone_and_a_start_again_rebuilds
         check(state.as_deref() == Some("absent"), format!("{machine} is shown gone ({state:?})"), f);
         // A resume never makes it again from its box, unprovisioned: refused, naming it.
         let resumed = isothrum::LabRun::vm(&l.home, &l.dir, &l.id).expect("its run").resume(&mut log(&l.id)).await;
-        let said = resumed.as_ref().err().map(ToString::to_string).unwrap_or_default();
-        check(said.contains("machines are gone") && said.contains(&machine), format!("a resume is refused, naming {machine} ({said:?})"), f);
+        check(refused_as_gone(&resumed, &machine), format!("a resume is refused, naming {machine} ({:?})", resumed.err().map(|e| e.to_string())), f);
         let again = shown(l, &machine).await;
         check(again.as_deref() == Some("absent") || again.is_none(), format!("{machine} wasn't made again ({again:?})"), f);
         // A start again clears what is left and builds the lab afresh.

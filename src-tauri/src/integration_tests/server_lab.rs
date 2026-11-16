@@ -48,7 +48,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::support::{check, scenario};
+use super::support::{check, log, scenario};
 use crate::runtime::Runtime;
 use crate::runtime::isothrum::{EsxiPlace, LabRun, ServerPlace, ServerRun};
 use crate::runtime::lab;
@@ -60,13 +60,14 @@ fn var(k: &str) -> String {
 }
 
 /// A fresh copy of the lab the knob `knob` names, as `name` in the temp folder, without its
-/// generated files.
-fn copy_lab(knob: &str, name: &str) -> PathBuf {
+/// generated files, generated for `target`.
+fn copy_lab(knob: &str, name: &str, target: lab::Target) -> PathBuf {
     let src = PathBuf::from(var(knob));
     let dir = std::env::temp_dir().join(name);
     let _ = std::fs::remove_dir_all(&dir);
-    assert!(std::process::Command::new("cp").arg("-R").arg(&src).arg(&dir).status().unwrap().success());
+    lab::copy_tree(&src, &dir).unwrap_or_else(|e| panic!("copy {} to {}: {e}", src.display(), dir.display()));
     let _ = std::fs::remove_dir_all(dir.join(".isoloom"));
+    lab::prepare(&dir, target).unwrap_or_else(|e| panic!("the lab in {} generated for {target:?}: {e}", dir.display()));
     dir
 }
 
@@ -75,9 +76,9 @@ fn copy_lab(knob: &str, name: &str) -> PathBuf {
 async fn trust_on_first_use(address: &str, identities: &[&Path]) {
     use crate::runtime::ssh::{known_hosts, node_known_hosts};
     let files: Vec<PathBuf> = identities.iter().map(|k| node_known_hosts(k)).collect();
-    let offered = known_hosts::offered(address, 22, &files[0]).await.unwrap();
+    let offered = known_hosts::offered(address, 22, &files[0]).await.unwrap_or_else(|e| panic!("{address} offers its SSH host keys: {e}"));
     let shown: Vec<String> = offered.keys.into_iter().map(|k| k.fingerprint).collect();
-    known_hosts::confirm(address, 22, &shown, &files).await.unwrap();
+    known_hosts::confirm(address, 22, &shown, &files).await.unwrap_or_else(|e| panic!("{address}'s SSH host keys are confirmed: {e}"));
 }
 
 /// The test server as Servers saves a Proxmox profile: at `address`:`port`, signed in as
@@ -120,7 +121,7 @@ async fn a_proxmox_host_passes_the_connection_test() {
     let bridge = opt("CYBERCTF_TEST_PVE_BRIDGE").unwrap_or_else(|| "vmbr1".into());
     // The launcher's key in the scenario's app folder: a password setup keeps its askpass beside it.
     let app = crate::testing::test_app::TestApp::scenario();
-    let (key, _) = crate::runtime::ssh::ensure_key(&app.dirs()).await.unwrap();
+    let (key, _) = crate::runtime::ssh::ensure_key(&app.dirs()).await.unwrap_or_else(|e| panic!("the launcher's SSH key is made: {e}"));
     let ssh_key = opt("CYBERCTF_TEST_PVE_SSH_KEY").map(PathBuf::from);
     // The node's SSH host keys, confirmed as the player confirms them on first use, beside each
     // key the test signs in with.
@@ -133,6 +134,8 @@ async fn a_proxmox_host_passes_the_connection_test() {
     let r = test(&profile("root@pam", &bridge), "wrong", &key).await;
     check(r.authenticated == Some(false), format!("a wrong password is refused ({})", r.message), &mut f);
     let r = test(&profile("root@pam", "vmbr-nope"), &password, &key).await;
+    // The message is the contract here: it is what the Servers page's Test shows the player, and
+    // the result has no field of its own for the bridge.
     check(!r.ok && r.message.contains("vmbr-nope"), format!("a bridge that isn't there is named ({})", r.message), &mut f);
 
     if let (Some(token), Some(secret), Some(ssh_key)) = (opt("CYBERCTF_TEST_PVE_TOKEN_ID"), opt("CYBERCTF_TEST_PVE_TOKEN_SECRET"), ssh_key) {
@@ -149,24 +152,28 @@ async fn a_proxmox_host_passes_the_connection_test() {
 #[tokio::test]
 #[ignore = "needs a Proxmox server; see the module docs"]
 async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
-    let dir = copy_lab("CYBERCTF_TEST_PVE_LAB", "cyberctf-pve-runner-lab");
-    lab::prepare(&dir, lab::Target::Proxmox).unwrap();
+    let dir = copy_lab("CYBERCTF_TEST_PVE_LAB", "cyberctf-pve-runner-lab", lab::Target::Proxmox);
     // The server's profile as a token setup with the node's key saves it, and its variables as a
     // launch makes them (`lab::host_vars`).
     let endpoint = var("CYBERCTF_TEST_PVE_ENDPOINT");
-    let (address, port) = endpoint.trim_start_matches("https://").trim_end_matches('/').split_once(':').unwrap();
+    let (address, port) = endpoint
+        .trim_start_matches("https://")
+        .trim_end_matches('/')
+        .split_once(':')
+        .and_then(|(address, port)| Some((address, port.parse::<u16>().ok()?)))
+        .unwrap_or_else(|| panic!("CYBERCTF_TEST_PVE_ENDPOINT: {endpoint} is no https://<address>:<port>/"));
     let storage = super::support::var("CYBERCTF_TEST_PVE_STORAGE");
     let profile = HostProfile {
         ssh_key: Some(SshKeySignIn { path: var("CYBERCTF_TEST_PVE_SSH_KEY"), user: "root".into(), port: 22 }),
         image_storage: storage.clone(),
         snippet_storage: storage,
-        ..proxmox_profile(address, port.parse().unwrap(), &var("CYBERCTF_TEST_PVE_TOKEN_ID"), &var("CYBERCTF_TEST_PVE_BRIDGE"))
+        ..proxmox_profile(address, port, &var("CYBERCTF_TEST_PVE_TOKEN_ID"), &var("CYBERCTF_TEST_PVE_BRIDGE"))
     };
     let vars = lab::host_vars(&profile, &var("CYBERCTF_TEST_PVE_TOKEN_SECRET"));
     let home = PathBuf::from(var("CYBERCTF_TEST_PVE_RUNNER_HOME"));
-    let run = ServerRun::new(&home, &dir, "pve-runner-lab", Runtime::Vm).unwrap();
+    let run = ServerRun::new(&home, &dir, "pve-runner-lab", Runtime::Vm).unwrap_or_else(|e| panic!("the lab's run on the server opens: {e}"));
     // The key the lab's VMs let in, as a launch gives it (`launch::server_place`).
-    let keys = run.key_values().await.unwrap();
+    let keys = run.key_values().await.unwrap_or_else(|e| panic!("the run's key for the lab's VMs reads: {e}"));
     let jump = std::env::var("CYBERCTF_TEST_PVE_JUMP").ok().filter(|j| !j.is_empty());
     if let Some((_, node)) = jump.as_deref().and_then(|j| j.split_once('@')) {
         // The tunnel checks the node's host key against the ones confirmed beside the key.
@@ -205,11 +212,6 @@ async fn a_vm_lab_runs_on_proxmox_through_the_runner() {
     assert!(f.is_empty(), "{f:#?}");
 }
 
-/// The test's log line, tagged with the server's kind.
-fn log(tag: &'static str) -> impl FnMut(String) {
-    move |l| println!("[{tag}] {l}")
-}
-
 /// The lab's checks, read through the runner, all pass.
 fn checks_pass(checked: crate::error::Result<crate::runtime::docker::Check>, f: &mut Vec<String>) {
     match checked {
@@ -233,8 +235,7 @@ fn curl(url: &str) -> std::result::Result<String, String> {
 #[tokio::test]
 #[ignore = "needs an ESXi host; see the module docs"]
 async fn a_vm_lab_runs_on_esxi_through_the_runner() {
-    let dir = copy_lab("CYBERCTF_TEST_ESXI_LAB", "cyberctf-esxi-runner-lab");
-    lab::prepare(&dir, lab::Target::Vagrant).unwrap();
+    let dir = copy_lab("CYBERCTF_TEST_ESXI_LAB", "cyberctf-esxi-runner-lab", lab::Target::Vagrant);
     let profile: HostProfile = serde_json::from_value(serde_json::json!({
         "id": "esxi-lab",
         "name": "ESXi test server",
@@ -245,10 +246,11 @@ async fn a_vm_lab_runs_on_esxi_through_the_runner() {
         "datastore": std::env::var("CYBERCTF_TEST_ESXI_DATASTORE").ok(),
         "network": std::env::var("CYBERCTF_TEST_ESXI_NETWORK").ok(),
     }))
-    .unwrap();
+    .unwrap_or_else(|e| panic!("the ESXi profile reads: {e}"));
     let env = lab::esxi_env(&profile, &var("CYBERCTF_TEST_ESXI_PASSWORD"));
     let home = std::env::temp_dir().join("cyberctf-esxi-runner-home");
-    let run = LabRun::on_esxi(&home, &dir, "esxi-runner-lab", Runtime::Vm, EsxiPlace::from_env(&profile.id, &profile.name, &env)).unwrap();
+    let run = LabRun::on_esxi(&home, &dir, "esxi-runner-lab", Runtime::Vm, EsxiPlace::from_env(&profile.id, &profile.name, &env))
+        .unwrap_or_else(|e| panic!("the lab's run on ESXi opens: {e}"));
     let mut f = Vec::new();
     scenario(
         &mut f,

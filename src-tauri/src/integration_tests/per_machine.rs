@@ -58,8 +58,7 @@ async fn up_as_vms(t: &TestApp, dir: &Path, id: &str, f: &mut Vec<String>) {
 #[ignore = "needs Vagrant, a hypervisor and a dual-form lab (CYBERCTF_TEST_PER_MACHINE_LAB)"]
 async fn a_dual_form_lab_runs_as_one_vm_per_machine_end_to_end() {
     let Some(src) = super::support::knob("CYBERCTF_TEST_PER_MACHINE_LAB") else { return };
-    let provider: Provider =
-        serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "virtualbox".into()))).unwrap();
+    let provider = super::support::vm_provider(Provider::Virtualbox);
     let t = TestApp::scenario();
     let id = format!("pm-{}", rand::random::<u16>());
     // Installed as the launcher installs a lab: under the app data folder, nothing generated.

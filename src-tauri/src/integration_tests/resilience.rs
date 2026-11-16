@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use super::support::lab::{Run, install_copy, leftovers};
 use super::support::{Wait, check, eventually, fetch, knob, log, scenario, var};
+use crate::error::Code;
 use crate::platform::exec::run;
 use crate::runtime::{LabStatus, docker, isothrum};
 
@@ -66,6 +67,18 @@ const SOON: Wait = Wait::secs(600, Duration::from_millis(200));
 /// Whether the start of lab `l` has made a container yet.
 async fn has_a_container(l: &Run) -> bool {
     leftovers(&l.id).await.iter().any(|c| c.starts_with("container "))
+}
+
+/// Whether `resumed` is the refusal of a resume because some of the lab's machines are gone,
+/// `machine` among those it names ([`Code::MachinesGone`]). The sentence the player reads for it
+/// is the error's own unit test's (`runtime/isothrum/errors`).
+pub(super) fn refused_as_gone<T>(resumed: &crate::error::Result<T>, machine: &str) -> bool {
+    matches!(resumed.as_ref().map_err(crate::error::Error::code), Err(Code::MachinesGone { machines }) if machines.split(", ").any(|m| m == machine))
+}
+
+/// `machine`'s state in the lab's status `s`, as the lab page shows it.
+fn state_of(s: &crate::error::Result<LabStatus>, machine: &str) -> Option<String> {
+    s.as_ref().ok()?.machines.iter().find(|m| m.name == machine).map(|m| m.state.clone())
 }
 
 /// The lab's own machines in `s`, each with its state.
@@ -152,13 +165,12 @@ async fn a_container_removed_while_the_lab_runs_shows_down_and_a_reset_brings_it
         let Some(machine) = started_then(l, &["rm", "-f"], f).await else { return };
         // The lab page: still running, the machine shown down (gone), not left out.
         let s = l.status().await;
-        let shown = s.as_ref().ok().and_then(|s| s.machines.iter().find(|m| m.name == machine).map(|m| m.state.clone()));
+        let shown = state_of(&s, &machine);
         check(s.as_ref().is_ok_and(|s| s.running), format!("the lab still reads as running ({:?})", s.as_ref().map(states)), f);
         check(shown.as_deref() == Some("absent"), format!("{machine} is shown gone ({shown:?})"), f);
         // A resume can't bring back what is gone: refused, naming it.
         let resumed = l.resume(&mut log(&l.id)).await;
-        let said = resumed.as_ref().err().map(ToString::to_string).unwrap_or_default();
-        check(said.contains("machines are gone") && said.contains(&machine), format!("a resume is refused, naming {machine} ({said:?})"), f);
+        check(refused_as_gone(&resumed, &machine), format!("a resume is refused, naming {machine} ({:?})", resumed.err().map(|e| e.to_string())), f);
         // The way back: the lab page's reset, a stop then a start.
         let stopped = l.stop(log(&l.id)).await;
         check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), f);
@@ -172,8 +184,7 @@ async fn a_container_removed_while_the_lab_runs_shows_down_and_a_reset_brings_it
 async fn a_container_stopped_while_the_lab_runs_shows_down_and_a_resume_brings_it_back() {
     on_lab("stopped while running", async |l: &Run, f: &mut Vec<String>| {
         let Some(machine) = started_then(l, &["stop"], f).await else { return };
-        let s = l.status().await;
-        let shown = s.as_ref().ok().and_then(|s| s.machines.iter().find(|m| m.name == machine).map(|m| m.state.clone()));
+        let shown = state_of(&l.status().await, &machine);
         check(shown.as_deref().is_some_and(|st| st != "running"), format!("{machine} is shown down ({shown:?})"), f);
         let resumed = l.resume(&mut log(&l.id)).await;
         check(resumed.is_ok(), format!("a resume brings it back ({:?})", resumed.err()), f);
@@ -203,11 +214,13 @@ async fn a_container_removed_while_the_start_waits_fails_it_or_shows_it_and_a_st
         if let Err(e) = &started {
             // The start saw it go: it failed, saying so, and the lab isn't read as whole.
             println!("note: the start failed: {e}");
+            // Docker's own words, the only thing that says the container went: no code of the
+            // launcher's names it (the runner passes the failed step's output on as it is).
             check(e.to_string().contains("No such container"), "the failure says the container went (Docker's words)".into(), f);
             check(!s.as_ref().is_ok_and(whole), format!("the lab isn't read as whole ({:?})", s.as_ref().map(states)), f);
         } else {
             // It went after the start's wait: the page shows it gone.
-            let shown = s.as_ref().ok().and_then(|s| s.machines.iter().find(|m| m.name == machine).map(|m| m.state.clone()));
+            let shown = state_of(&s, &machine);
             check(shown.as_deref() == Some("absent"), format!("{machine} is shown gone ({shown:?})"), f);
             let stopped = l.stop(log(&l.id)).await;
             check(stopped.is_ok(), format!("it stops ({:?})", stopped.err()), f);

@@ -85,7 +85,7 @@ async fn the_attack_box_is_a_machine_of_the_lab_on_every_local_form() {
     let Some(src) = super::support::knob("CYBERCTF_TEST_BOX_LAB") else { return };
     let form = std::env::var("CYBERCTF_TEST_BOX_FORM").unwrap_or_else(|_| "docker".into());
     let target = std::env::var("CYBERCTF_TEST_BOX_TARGET").unwrap_or_else(|_| "web".into());
-    let provider: Provider = serde_json::from_value(serde_json::json!(std::env::var("CYBERCTF_TEST_VM_PROVIDER").unwrap_or_else(|_| "qemu".into()))).unwrap();
+    let provider = super::support::vm_provider(Provider::Qemu);
     let id = format!("box-{}", rand::random::<u16>());
     let dir = install_copy(Path::new(&src), &id);
     let home = std::env::temp_dir().join(format!("cyberctf-{id}-home"));
@@ -179,10 +179,10 @@ async fn the_attack_box_is_a_machine_of_an_aws_lab() {
     let host = t.host("aws1", "aws", serde_json::json!({ "useCliCreds": true, "host": region }));
     let id = format!("box-{}", rand::random::<u16>());
     let dir = t.lab(&id, &[]);
-    lab::copy_tree(Path::new(&src), &dir).unwrap();
-    let name = lab::load(&dir).unwrap().name;
-    crate::runtime::server::mark_lab(&dir, Some(&host)).unwrap();
-    let conn = crate::runtime::server::connection(&dirs, &host).unwrap();
+    lab::copy_tree(Path::new(&src), &dir).unwrap_or_else(|e| panic!("copy {src} to {}: {e}", dir.display()));
+    let name = lab::load(&dir).unwrap_or_else(|e| panic!("the lab at {src} reads: {e}")).name;
+    crate::runtime::server::mark_lab(&dir, Some(&host)).unwrap_or_else(|e| panic!("the lab is marked as the AWS account's: {e}"));
+    let conn = crate::runtime::server::connection(&dirs, &host).unwrap_or_else(|e| panic!("the AWS account's connection reads: {e}"));
     let mut f = Vec::new();
     scenario(
         &mut f,
