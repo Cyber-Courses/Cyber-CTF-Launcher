@@ -188,4 +188,8 @@ presented: string, } } | { "code": "sshHostKeyRefused", "args": {
 /**
  * The node's address.
  */
-host: string, } });
+host: string, } } | { "code": "runnerUnreachable", "args": { 
+/**
+ * Why it can't be reached.
+ */
+detail: string, } });
