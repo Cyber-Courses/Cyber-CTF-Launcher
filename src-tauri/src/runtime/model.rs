@@ -12,10 +12,10 @@ use ts_rs::TS;
 pub struct Port {
     /// Where it is reachable on 127.0.0.1 (0: not published).
     #[ts(type = "number")]
-    pub published: Option<super::port::HostPort>,
+    pub published: Option<isothrum_runner::HostPort>,
     /// The port inside the container.
     #[ts(type = "number")]
-    pub target: super::port::GuestPort,
+    pub target: isothrum_runner::GuestPort,
     /// The account the service on it ships with, as the lab declares it: shown beside the port.
     #[ts(optional)]
     pub login: Option<Login>,
@@ -27,7 +27,7 @@ impl Serialize for Port {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct as _;
         let mut port = s.serialize_struct("Port", 2 + usize::from(self.login.is_some()))?;
-        port.serialize_field("published", &self.published.map_or(0, super::port::HostPort::get))?;
+        port.serialize_field("published", &self.published.map_or(0, isothrum_runner::HostPort::get))?;
         port.serialize_field("target", &self.target)?;
         if let Some(login) = &self.login {
             port.serialize_field("login", login)?;
@@ -278,7 +278,24 @@ pub struct Output {
 
 #[cfg(test)]
 mod tests {
-    use super::LabStatus;
+    use isothrum_runner::{GuestPort, HostPort};
+
+    use super::{LabStatus, Login, Port};
+
+    /// The lab page reads a port as `{published, target}`, each the bare number, `published` 0
+    /// when it isn't, with its `login` only when the lab declares one.
+    #[test]
+    fn a_lab_port_reads_as_the_ui_expects() {
+        let port = |published, target| Port { published, target: GuestPort::new(target), login: None };
+        assert_eq!(serde_json::to_value(port(Some(HostPort::new(8080)), 80)).unwrap(), serde_json::json!({"published": 8080, "target": 80}));
+        assert_eq!(serde_json::to_value(port(None, 22)).unwrap(), serde_json::json!({"published": 0, "target": 22}));
+        let login = Login { user: "admin".into(), password: "admin".into() };
+        let with_login = Port { login: Some(login), ..port(Some(HostPort::new(8080)), 80) };
+        assert_eq!(
+            serde_json::to_value(with_login).unwrap(),
+            serde_json::json!({"published": 8080, "target": 80, "login": {"user": "admin", "password": "admin"}})
+        );
+    }
 
     #[test]
     fn a_failed_launch_reads_as_not_running_even_with_machines_up() {

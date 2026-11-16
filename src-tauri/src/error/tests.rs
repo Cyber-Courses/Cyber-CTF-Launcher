@@ -23,13 +23,13 @@ fn errors_reach_the_webview_with_their_code_and_message() {
         (Error::from(std::io::Error::new(std::io::ErrorKind::NotFound, "no such file")), json!({ "code": "other", "message": "no such file" })),
         (Error::coded(Code::SignedOut), json!({ "code": "signedOut", "message": "You're signed out. Sign in again to continue." })),
         (
-            Error::coded(Code::PortInUse { port: crate::runtime::port::HostPort::new(8080), holder: None }),
-            json!({ "code": "portInUse", "args": { "port": 8080 }, "message": Code::PortInUse { port: crate::runtime::port::HostPort::new(8080), holder: None }.message() }),
+            Error::coded(Code::PortInUse { port: isothrum_runner::HostPort::new(8080), holder: None }),
+            json!({ "code": "portInUse", "args": { "port": 8080 }, "message": Code::PortInUse { port: isothrum_runner::HostPort::new(8080), holder: None }.message() }),
         ),
         (
             // With the holder found, it travels in the args (for the player-facing notice) and
             // in the English message.
-            Error::coded(Code::PortInUse { port: crate::runtime::port::HostPort::new(8080), holder: Some("nginx (pid 4123)".into()) }),
+            Error::coded(Code::PortInUse { port: isothrum_runner::HostPort::new(8080), holder: Some("nginx (pid 4123)".into()) }),
             json!({
                 "code": "portInUse",
                 "args": { "port": 8080, "holder": "nginx (pid 4123)" },
@@ -73,7 +73,7 @@ fn every_code_says_its_english_catalogue_sentence() {
     assert_eq!(Code::HostHasLabs { count: 1 }.message(), "1 lab still running on this host. Stop it before removing the host.");
     assert_eq!(Code::HostHasLabs { count: 3 }.message(), "3 labs still running on this host. Stop them before removing the host.");
     assert_eq!(
-        Code::PortInUse { port: crate::runtime::port::HostPort::new(8000), holder: Some("nginx (pid 4123)".into()) }.message(),
+        Code::PortInUse { port: isothrum_runner::HostPort::new(8000), holder: Some("nginx (pid 4123)".into()) }.message(),
         "Host port 8000 is already in use on this machine (another lab or app holds it). Stop whatever is using it, then start the lab again. \
              Held by nginx (pid 4123). Stop it, then start the lab again."
     );
@@ -159,8 +159,8 @@ fn sample_codes() -> Vec<Code> {
         Code::OfflineReady { detail: "API unreachable: timed out".into() },
         Code::AlreadyInProgress,
         Code::NoPasswordStored,
-        Code::PortInUse { port: crate::runtime::port::HostPort::new(443), holder: None },
-        Code::PortInUse { port: crate::runtime::port::HostPort::new(8000), holder: Some("nginx (pid 4123)".into()) },
+        Code::PortInUse { port: isothrum_runner::HostPort::new(443), holder: None },
+        Code::PortInUse { port: isothrum_runner::HostPort::new(8000), holder: Some("nginx (pid 4123)".into()) },
         Code::DockerNotRunning,
         Code::DockerDenied { user: "player".into() },
         Code::DockerDeniedWindows { user: "Ada Lovelace".into() },

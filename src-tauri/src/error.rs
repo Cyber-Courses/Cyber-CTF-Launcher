@@ -38,7 +38,7 @@ pub enum Code {
     PortInUse {
         /// The host port that is taken.
         #[ts(type = "number")]
-        port: crate::runtime::port::HostPort,
+        port: isothrum_runner::HostPort,
         /// What holds the port, when it could be found.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         holder: Option<String>,
