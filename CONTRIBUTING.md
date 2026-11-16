@@ -17,7 +17,7 @@ You need:
   check use (`pnpm release-check` stops on another major), and the major `@types/node` stays on
   (Dependabot ignores later ones in `.github/dependabot.yml`: move both with `.nvmrc`); and pnpm
   (the version in `packageManager`; `corepack enable` installs it);
-- Rust stable (the crate's floor is `rust-version` in `src-tauri/Cargo.toml`);
+- Rust through rustup, which installs the toolchain `rust-toolchain.toml` pins on first use (the crate's floor is `rust-version` in `src-tauri/Cargo.toml`);
 - the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS. On Windows that is
   **Visual Studio 2022 Build Tools** with the _Desktop development with C++_ workload; without it
   the build stops at `linker 'link.exe' not found`. On Linux, the WebKitGTK packages
