@@ -24,6 +24,7 @@ mod described;
 pub(crate) mod errors;
 mod esxi;
 mod gone;
+mod old_engine;
 mod opened;
 #[cfg(feature = "cloud-services")]
 mod own_module;
@@ -199,6 +200,9 @@ pub(crate) struct LabRun {
     kind: Kind,
     /// The ESXi server a VM lab runs on, if not on this machine.
     esxi: Option<EsxiPlace>,
+    /// The Docker context an earlier version noted for this container lab ([`old_engine`]),
+    /// until an operation has the runner record it.
+    old_engine: Option<String>,
 }
 
 impl LabRun {
@@ -272,7 +276,8 @@ impl LabRun {
             Kind::Vm => (lab::vagrant_dir(dir, Runtime::Vm), Format::Vagrant),
         };
         let served = remote::Served { home: home.to_path_buf(), name: run_name(id)?, project, format };
-        Ok(LabRun { served, dir: dir.to_path_buf(), kind, esxi: None })
+        let old_engine = if kind == Kind::Docker { old_engine::noted(dir) } else { None };
+        Ok(LabRun { served, dir: dir.to_path_buf(), kind, esxi: None, old_engine })
     }
 
     /// `act` on the run with `opts`, its events as `log`'s lines, through the home's runner
@@ -280,7 +285,13 @@ impl LabRun {
     async fn act(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, remote::Failure> {
         match Box::pin(self.served.operate(act, opts, log)).await {
             Err(e) => Err(self.refused(e).await),
-            done => done,
+            done => {
+                // The runner recorded the engine an earlier version noted: the note goes.
+                if self.old_engine.is_some() {
+                    old_engine::forget(&self.dir);
+                }
+                done
+            }
         }
     }
 
@@ -336,10 +347,15 @@ impl LabRun {
     /// Isoloom's Vagrantfiles read) and its password (a secret, beside the launch's); everywhere,
     /// the run's key under the name Isoloom's Vagrantfiles read it ([`super::lab::ISOLOOM_KEY`]),
     /// so the lab's VMs, networks and libvirt domains are named for this copy and no other; and
-    /// the evidence claim's values every lab is given, empty when `opts` has none ([`with_claim`]).
+    /// the evidence claim's values every lab is given, empty when `opts` has none ([`with_claim`]);
+    /// and the engine an earlier version noted for a container lab, unless `opts` names one.
     fn placed(&self, opts: RunOptions) -> RunOptions {
         let opts = with_claim(opts);
         let opts = opts.with_env(super::lab::ISOLOOM_KEY, isothrum_runner::copy_key(&self.served.home, &self.served.name));
+        let opts = match (&self.old_engine, &opts.docker_context) {
+            (Some(context), None) => opts.with_docker_context(context.clone()),
+            _ => opts,
+        };
         match &self.esxi {
             Some(place) => place.onto(opts),
             None => opts,
