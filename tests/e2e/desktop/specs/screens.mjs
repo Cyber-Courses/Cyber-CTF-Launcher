@@ -96,7 +96,9 @@ const described = (seen) => (seen.frame ? `${seen.frame.width}x${seen.frame.heig
 let proc;
 let b;
 try {
-  ({ proc, b } = await openApp({ storage: DESKTOP ? { "cyberctf.attackbox.desktop": "true" } : {} }));
+  ({ proc, b } = await openApp());
+  // Kali's desktop for the attack box, set in the launcher's store as Settings sets it.
+  if (DESKTOP) await invokeCmd(b, "settings_change", { changes: [{ setting: "attackDesktop", value: true }] });
   if (!(await signedIn(b))) r.skipAll("the app isn't signed in: a catalogue lab starts only signed in (give CYBERCTF_TEST_ACCOUNT_SESSION to the runner)");
   if (!(await openLabFromList(b, LAB))) r.skipAll(`the catalogue doesn't list "${LAB}"`);
   await stopLeftover(b, r);
