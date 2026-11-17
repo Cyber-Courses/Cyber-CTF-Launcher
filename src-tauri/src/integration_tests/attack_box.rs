@@ -157,7 +157,9 @@ async fn left_in_aws(region: &str, name: &str) -> String {
     for query in queries {
         let mut args = query.to_vec();
         args.extend(["--region", region, "--output", "text"]);
-        left.push_str(crate::platform::exec::run_cli("aws", &args).await.unwrap_or_else(|e| format!("({e})")).trim());
+        left.push_str(
+            crate::platform::exec::run_env_timed("aws", &args, None, &[], std::time::Duration::from_secs(60)).await.unwrap_or_else(|e| format!("({e})")).trim(),
+        );
     }
     left
 }

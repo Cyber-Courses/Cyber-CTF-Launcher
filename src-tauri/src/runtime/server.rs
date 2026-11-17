@@ -35,7 +35,6 @@ pub(crate) mod profile;
 mod reachability;
 pub(crate) mod secrets;
 pub(crate) mod setup;
-pub(crate) mod sign_in;
 pub(crate) mod store;
 pub(crate) mod tls_pin;
 

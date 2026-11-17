@@ -13,10 +13,12 @@ use std::time::{Duration, Instant};
 
 use crate::testing::test_app::TestApp;
 
-/// A folder of stand-in tools, put first on PATH while it lives.
+/// A folder of stand-in tools, put first on PATH while it lives, which the cloud CLIs are run
+/// from: isothrum-machine asks them through the runner's real processes on this test's thread.
 struct FakeBin {
     dir: PathBuf,
     path: std::ffi::OsString,
+    _machine: crate::runtime::providers::testing::Machine,
 }
 
 impl FakeBin {
@@ -28,7 +30,11 @@ impl FakeBin {
         // SAFETY: these tests run alone (`--test-threads=1`, see the module): nothing else reads
         // the environment meanwhile.
         unsafe { std::env::set_var("PATH", joined) };
-        FakeBin { dir, path }
+        let machine = crate::runtime::providers::testing::Machine::set(
+            std::sync::Arc::new(isothrum_runner::SystemProcesses::default()),
+            crate::runtime::providers::testing::host(&dir),
+        );
+        FakeBin { dir, path, _machine: machine }
     }
 
     /// A tool `name` running the shell `script` (written by a child process: see
@@ -76,7 +82,7 @@ async fn fake_clis_a_hung_cloud_cli_ends_the_test_in_its_time_limit() {
     let id = t.host("az1", "azure", serde_json::json!({ "username": "00000000-0000-0000-0000-000000000000" }));
     let started = Instant::now();
     let result = serde_json::to_value(crate::runtime::server::connection_test::test_connection(&t.dirs(), &id).await.unwrap()).unwrap();
-    assert!(started.elapsed() < crate::platform::exec::CLI_TIMEOUT + Duration::from_secs(15), "{:?}", started.elapsed());
+    assert!(started.elapsed() < isothrum_machine::cloud::CLI_TIMEOUT + Duration::from_secs(15), "{:?}", started.elapsed());
     assert_eq!(result["ok"], false);
     assert!(result["checks"].to_string().contains("timed out after 60s"), "{result}");
 }

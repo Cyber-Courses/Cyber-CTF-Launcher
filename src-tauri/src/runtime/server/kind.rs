@@ -12,7 +12,6 @@ use super::input::{
     valid_region, valid_subscription,
 };
 use super::profile::HostProfile;
-use super::sign_in::AWS_WHO_AM_I;
 use crate::runtime::providers::Provider;
 
 /// What a profile's `host` field holds.
@@ -70,11 +69,9 @@ pub struct Shape {
     pub message: &'static str,
 }
 
-/// A cloud whose sign-in is its own CLI's: how the account's Test and the setup tell it still
-/// holds, and what a refusal tells the player to run when it doesn't.
+/// A cloud whose sign-in is its own CLI's (isothrum-machine asks it whether it holds,
+/// [`isothrum_machine::cloud`]): what a refusal tells the player to run when it doesn't hold.
 pub struct CliSignIn {
-    /// The CLI and the question asked of it ([`super::sign_in::sign_in_question`]).
-    pub question: (&'static str, &'static [&'static str]),
     /// How the sign-in is made again, as a refusal says it.
     pub again: &'static str,
 }
@@ -150,7 +147,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("instance_type"),
         secret: Secret::AccessKey,
         terraform_env: aws_env,
-        cli_sign_in: Some(CliSignIn { question: ("aws", &AWS_WHO_AM_I), again: "`aws login`, or `aws sso login`" }),
+        cli_sign_in: Some(CliSignIn { again: "`aws login`, or `aws sso login`" }),
     },
     Kind {
         provider: Provider::Azure,
@@ -163,7 +160,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("size"),
         secret: Secret::None,
         terraform_env: azure_env,
-        cli_sign_in: Some(CliSignIn { question: ("az", &["account", "get-access-token", "--output", "none"]), again: "`az login`" }),
+        cli_sign_in: Some(CliSignIn { again: "`az login`" }),
     },
     Kind {
         provider: Provider::Gcp,
@@ -177,10 +174,7 @@ pub const KINDS: [Kind; 8] = [
         secret: Secret::None,
         // The google provider uses gcloud's ADC; the project comes as a variable (see `gcp`).
         terraform_env: no_env,
-        cli_sign_in: Some(CliSignIn {
-            question: ("gcloud", &["auth", "application-default", "print-access-token"]),
-            again: "`gcloud auth application-default login`",
-        }),
+        cli_sign_in: Some(CliSignIn { again: "`gcloud auth application-default login`" }),
     },
     Kind {
         provider: Provider::DigitalOcean,
@@ -219,10 +213,7 @@ pub const KINDS: [Kind; 8] = [
         size_var: Some("instance_type"),
         secret: Secret::None,
         terraform_env: no_env,
-        cli_sign_in: Some(CliSignIn {
-            question: ("oci", &["iam", "region", "list", "--output", "json"]),
-            again: "`oci session authenticate`, or check `~/.oci/config`",
-        }),
+        cli_sign_in: Some(CliSignIn { again: "`oci session authenticate`, or check `~/.oci/config`" }),
     },
 ];
 
@@ -245,7 +236,8 @@ impl Kind {
     /// and GCP's. None for a server, a token cloud, and OCI, whose config file signs in.
     #[cfg(test)]
     pub fn cli(&self) -> Option<&'static str> {
-        matches!(self.sign_in(), "accessKeys" | "cliSignIn").then(|| self.cli_sign_in.as_ref().map(|s| s.question.0)).flatten()
+        let cloud = isothrum_runner::from_wire_name::<isothrum_machine::cloud::Cloud>(self.provider.id());
+        (matches!(self.sign_in(), "accessKeys" | "cliSignIn") && self.cli_sign_in.is_some()).then(|| cloud.and_then(isothrum_machine::cloud::cli)).flatten()
     }
 }
 

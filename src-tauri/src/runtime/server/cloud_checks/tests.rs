@@ -4,12 +4,19 @@ use crate::runtime::providers::Provider;
 use crate::runtime::server::checks::CheckState;
 use crate::runtime::server::profile::tests::profile;
 
-fn failed(stderr: &str) -> Error {
-    Error::CommandFailed { command: "cli".into(), stderr: stderr.into() }
+/// `program` refusing, saying `said`, its refusal read by `read` (the CLI's reader in
+/// isothrum-machine).
+fn refused(program: &str, read: fn(&str) -> Refusal, said: &str) -> Failure {
+    let last = said.lines().rev().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default();
+    Failure::Refused { program: program.into(), refusal: read(said), said: last.into() }
 }
 
-fn missing() -> Error {
-    Error::ToolMissing { tool: "cli" }
+fn aws_failed(said: &str) -> Failure {
+    refused("aws", aws::refusal, said)
+}
+
+fn missing() -> Failure {
+    Failure::Missing { program: "terraform".into() }
 }
 
 /// The check of a first step, and which way it went: "pass", "refused" or "unreachable".
@@ -23,22 +30,29 @@ fn first<T>(f: First<T>) -> (&'static str, Check) {
 
 #[test]
 fn refusal_names_the_fix_or_quotes_the_cli() {
-    let markers = ["az login", "AADSTS"];
-    assert_eq!(refusal("ERROR: Please run 'az login' to setup account.", &markers, "Sign in.", "Azure"), "Sign in.");
-    assert_eq!(refusal("WARNING: x\nERROR: quota exceeded", &markers, "Sign in.", "Azure"), "Azure check failed: ERROR: quota exceeded");
-    assert_eq!(refusal("", &markers, "Sign in.", "OCI"), "OCI check failed: ");
+    let refusals = [Refusal::CredentialsExpired];
+    assert_eq!(refusal(Some(Refusal::CredentialsExpired), "ERROR: Please run 'az login' to setup account.", &refusals, "Sign in.", "Azure"), "Sign in.");
+    assert_eq!(refusal(Some(Refusal::Other), "ERROR: quota exceeded", &refusals, "Sign in.", "Azure"), "Azure check failed: ERROR: quota exceeded");
+    assert_eq!(refusal(None, "", &refusals, "Sign in.", "OCI"), "OCI check failed: ");
 }
 
 #[test]
 fn aws_runs_on_the_host_cli_or_in_the_cli_container() {
-    let cli = HostProfile { use_cli_creds: true, ..profile(Provider::Aws) };
-    assert_eq!(aws_invocation(&cli, &["sts", "get-caller-identity"]), ("aws", vec!["sts", "get-caller-identity"]));
-    let (program, args) = aws_invocation(&profile(Provider::Aws), &["sts", "get-caller-identity"]);
+    let cli = HostProfile { use_cli_creds: true, aws_profile: Some("labs".into()), ..profile(Provider::Aws) };
+    let (program, _, env) = aws_account(&cli, "").invocation(&["sts", "get-caller-identity"]);
+    assert_eq!(program, "aws");
+    assert!(env.contains(&("AWS_PROFILE".to_owned(), "labs".to_owned())));
+    let (program, args, env) = aws_account(&profile(Provider::Aws), "s3cret").invocation(&["sts", "get-caller-identity"]);
     assert_eq!(program, "docker");
-    assert_eq!(args[..2], ["run", "--rm"]);
-    assert!(args.contains(&"AWS_SECRET_ACCESS_KEY"));
     assert!(args.iter().any(|a| a.starts_with("amazon/aws-cli:")));
-    assert_eq!(args[args.len() - 2..], ["sts", "get-caller-identity"]);
+    assert!(env.contains(&("AWS_SECRET_ACCESS_KEY".to_owned(), "s3cret".to_owned())));
+}
+
+#[test]
+fn a_cli_that_ran_out_of_time_is_quoted_as_a_timed_tool_and_one_missing_cant_be_reached() {
+    let stuck = Failure::TimedOut { program: "az".into(), limit: std::time::Duration::from_secs(60) };
+    assert!(matches!(asked(&stuck), Asked::Refused(None, said) if said.starts_with("timed out after 60s")));
+    assert!(matches!(asked(&missing()), Asked::Unreachable(Error::ToolMissing { tool: "terraform" })));
 }
 
 #[test]
@@ -53,23 +67,23 @@ fn terraform_is_ok_missing_or_unknown() {
     let c = terraform_outcome(Err(missing()));
     assert_eq!(c.state, CheckState::Fail);
     assert!(c.detail.starts_with("Not installed."), "{}", c.detail);
-    let c = terraform_outcome(Err(failed("line one\nbroken plugin cache")));
+    let c = terraform_outcome(Err(refused("terraform", |_| Refusal::Other, "line one\nbroken plugin cache")));
     assert_eq!(c.state, CheckState::Warn);
     assert_eq!(c.detail, "Couldn't check Terraform (broken plugin cache).");
 }
 
 #[test]
 fn aws_credentials_pass_with_the_arn() {
-    match aws_credentials(Ok("arn:aws:iam::123:user/alex\n".into())) {
+    match aws_credentials(Ok("arn:aws:iam::123:user/alex".into())) {
         First::Pass(c, arn) => {
             assert_eq!(arn, "arn:aws:iam::123:user/alex");
             assert_eq!(c.detail, "Signed in as arn:aws:iam::123:user/alex.");
         }
         _ => panic!("should pass"),
     }
-    let (way, c) = first(aws_credentials(Err(failed("An error occurred (InvalidClientTokenId)"))));
+    let (way, c) = first(aws_credentials(Err(aws_failed("An error occurred (InvalidClientTokenId)"))));
     assert_eq!((way, c.detail.as_str()), ("refused", "AWS rejected these credentials, or the profile isn't signed in."));
-    let (way, c) = first(aws_credentials(Err(failed("throttled\nRate exceeded"))));
+    let (way, c) = first(aws_credentials(Err(aws_failed("throttled\nRate exceeded"))));
     assert_eq!((way, c.detail.as_str()), ("refused", "AWS check failed: Rate exceeded"));
     let (way, c) = first(aws_credentials(Err(missing())));
     assert_eq!(way, "unreachable");
@@ -77,71 +91,22 @@ fn aws_credentials_pass_with_the_arn() {
 }
 
 #[test]
-fn only_an_unauthorized_dry_run_denies_launching() {
-    let denied = Err(failed("An error occurred (UnauthorizedOperation) when calling the RunInstances operation: You are not authorized"));
-    let c = launch_permission(&denied, "arn:x");
-    assert_eq!(c.state, CheckState::Fail);
-    assert!(c.detail.starts_with("arn:x can't launch EC2"), "{}", c.detail);
-    // DryRunOperation is how AWS says "would have succeeded".
-    let c =
-        launch_permission(&Err(failed("An error occurred (DryRunOperation) when calling the RunInstances operation: Request would have succeeded")), "arn:x");
+fn each_answer_of_the_dry_run_says_what_it_says_of_the_permission() {
+    let c = launch_permission(&aws::LaunchPermission::Denied, "arn:x");
+    assert_eq!((c.state, c.detail.as_str()), (CheckState::Fail, "arn:x can't launch EC2 (ec2:RunInstances is denied). Add EC2 permissions to it."));
+    let c = launch_permission(&aws::LaunchPermission::Allowed, "arn:x");
     assert_eq!((c.state, c.detail.as_str()), (CheckState::Ok, "Able to launch EC2 instances."));
-}
-
-#[test]
-fn an_error_aws_raises_after_authorizing_the_dry_run_passes_the_permission_check() {
-    // Regression: the probe used a made-up image id, which AWS refuses as malformed before it
-    // looks at the permission, so every signed-in account read "Needs attention". The unknown
-    // well-formed image (NotFound) and anything else past authorization mean the permission
-    // itself passed.
-    for stderr in [
-        "An error occurred (InvalidAMIID.NotFound) when calling the RunInstances operation: The image id '[ami-12345678]' does not exist",
-        "An error occurred (VPCIdNotSpecified) when calling the RunInstances operation: No default VPC for this user",
-        "An error occurred (InstanceLimitExceeded) when calling the RunInstances operation: You have requested more vCPU capacity than your current limit",
-    ] {
-        let c = launch_permission(&Err(failed(stderr)), "arn:x");
-        assert_eq!(c.state, CheckState::Ok, "{stderr}");
-        assert!(c.detail.starts_with("Able to launch EC2 instances (ec2:RunInstances is allowed; the dry run then stopped at "), "{}", c.detail);
-    }
-    let c = launch_permission(&Err(failed("x\nAn error occurred (VPCIdNotSpecified) when calling the RunInstances operation: No default VPC")), "arn:x");
-    assert!(c.detail.contains("stopped at VPCIdNotSpecified,"), "{}", c.detail);
-}
-
-#[test]
-fn a_dry_run_that_failed_before_authorization_is_a_warning_with_its_reason_not_a_pass() {
-    // Throttling, an expired token, a malformed id, AWS itself: none says whether the
-    // permission is there.
-    for stderr in [
-        "An error occurred (RequestLimitExceeded) when calling the RunInstances operation",
-        "An error occurred (ExpiredToken) when calling the RunInstances operation: The security token included in the request is expired",
-        "An error occurred (InvalidAMIID.Malformed) when calling the RunInstances operation: Invalid id: \"ami-00000000000000000\" (expecting \"ami-...\")",
-        "An error occurred (InvalidParameterValue) when calling the RunInstances operation: Value (t3.micro) for parameter instanceType is invalid",
-        "An error occurred (InternalError) when calling the RunInstances operation: An internal error has occurred",
-    ] {
-        let c = launch_permission(&Err(failed(stderr)), "arn:x");
-        assert_eq!(c.state, CheckState::Warn, "{stderr}");
-        assert_eq!(c.detail, format!("Couldn't confirm EC2 launches are allowed: {stderr}"));
-    }
-    // No AWS error code at all: the CLI or the network, quoted.
-    let c = launch_permission(&Err(failed("Could not connect to the endpoint URL: \"https://ec2.eu-west-3.amazonaws.com/\"")), "arn:x");
-    assert_eq!(c.state, CheckState::Warn);
-    assert!(c.detail.ends_with("Could not connect to the endpoint URL: \"https://ec2.eu-west-3.amazonaws.com/\""), "{}", c.detail);
-    let timed_out = launch_permission(&Err(missing()), "arn:x");
-    assert_eq!(timed_out.state, CheckState::Warn);
-    assert_eq!(launch_permission(&Ok(String::new()), "arn:x").state, CheckState::Warn);
-}
-
-#[test]
-fn the_probe_image_is_the_one_ssm_printed_else_the_unknown_well_formed_one() {
-    assert_eq!(probe_image(Ok("ami-07dcdf1066ae9dad3\n".into())), "ami-07dcdf1066ae9dad3");
-    assert_eq!(probe_image(Ok(String::new())), UNKNOWN_IMAGE);
-    assert_eq!(probe_image(Ok("None\n".into())), UNKNOWN_IMAGE);
-    assert_eq!(probe_image(Ok("ami-1 ami-2".into())), UNKNOWN_IMAGE);
-    assert_eq!(probe_image(Err(failed("An error occurred (AccessDeniedException) when calling the GetParameter operation"))), UNKNOWN_IMAGE);
-    assert_eq!(probe_image(Err(missing())), UNKNOWN_IMAGE);
-    assert_eq!(aws_error_code("x\nAn error occurred (InvalidAMIID.NotFound) when calling"), Some("InvalidAMIID.NotFound"));
-    assert_eq!(aws_error_code("An error occurred (broken"), None);
-    assert_eq!(aws_error_code("timed out"), None);
+    let c = launch_permission(&aws::LaunchPermission::AllowedThen { code: "VPCIdNotSpecified".into() }, "arn:x");
+    assert_eq!(c.state, CheckState::Ok);
+    assert_eq!(
+        c.detail,
+        "Able to launch EC2 instances (ec2:RunInstances is allowed; the dry run then stopped at VPCIdNotSpecified, about its probe image, not a lab's)."
+    );
+    let throttled = "An error occurred (RequestLimitExceeded) when calling the RunInstances operation";
+    let c = launch_permission(&aws::LaunchPermission::Unconfirmed(aws_failed(throttled)), "arn:x");
+    assert_eq!((c.state, c.detail), (CheckState::Warn, format!("Couldn't confirm EC2 launches are allowed: {throttled}")));
+    assert_eq!(launch_permission(&aws::LaunchPermission::Unconfirmed(missing()), "arn:x").state, CheckState::Warn);
+    assert_eq!(launch_permission(&aws::LaunchPermission::NoAnswer, "arn:x").state, CheckState::Warn);
 }
 
 /// The AWS checklist on scripted tools: `dry` answers the dry run, `latest` the SSM lookup.
@@ -189,7 +154,7 @@ async fn the_launch_probe_dry_runs_the_latest_amazon_linux_image_of_the_region()
     let (tools, result) = aws_checklist(ok("ami-07dcdf1066ae9dad3\n"), dry).await;
     assert!(result.ok, "{:?}", result.checks);
     assert_eq!((launch_check(&result).state, launch_check(&result).detail.as_str()), (CheckState::Ok, "Able to launch EC2 instances."));
-    assert!(tools.called(&format!("ssm get-parameter --name {LATEST_AMAZON_LINUX} --query Parameter.Value --output text")), "{:?}", tools.calls());
+    assert!(tools.called(&format!("ssm get-parameter --name {} --query Parameter.Value --output text", aws::LATEST_AMAZON_LINUX)), "{:?}", tools.calls());
     assert!(tools.called("ec2 run-instances --dry-run --instance-type t3.micro --image-id ami-07dcdf1066ae9dad3 --output text"), "{:?}", tools.calls());
     // The probe runs with the account's own keys and region, like every other call.
     assert_eq!(tools.env_of("ec2 run-instances", "AWS_REGION").as_deref(), Some("10.0.0.5"));
@@ -205,7 +170,7 @@ async fn the_launch_probe_falls_back_to_an_unknown_image_when_the_parameter_cant
     let (tools, result) = aws_checklist(denied, not_found).await;
     assert!(result.ok, "{:?}", result.checks);
     assert_eq!(launch_check(&result).state, CheckState::Ok);
-    assert!(tools.called(&format!("--image-id {UNKNOWN_IMAGE} ")), "{:?}", tools.calls());
+    assert!(tools.called(&format!("--image-id {} ", aws::UNKNOWN_IMAGE)), "{:?}", tools.calls());
 }
 
 #[tokio::test]
@@ -233,16 +198,16 @@ fn the_budget_line_compares_spend_with_the_limit() {
     let c = budget_outcome(50.0, Ok(50.0));
     assert_eq!(c.state, CheckState::Fail);
     assert_eq!(c.detail, "Over budget: $50.00 of $50 this month. New labs here are blocked.");
-    let c = budget_outcome(50.0, Err(Error::Invalid("Unable to locate credentials".into())));
+    let c = budget_outcome(50.0, Err(aws_failed("Unable to locate credentials")));
     assert_eq!(c.state, CheckState::Warn);
     assert!(c.detail.ends_with("the AWS session has expired or isn't signed in."), "{}", c.detail);
 }
 
 #[test]
 fn azure_sign_in_outcomes() {
-    let (way, c) = first(azure_subscription(Ok("Pay-As-You-Go\n".into())));
+    let (way, c) = first(azure_subscription(Ok("Pay-As-You-Go".into())));
     assert_eq!((way, c.detail.as_str()), ("pass", "Signed in to subscription \"Pay-As-You-Go\"."));
-    let (way, c) = first(azure_subscription(Err(failed("ERROR: Please run 'az login' to setup account."))));
+    let (way, c) = first(azure_subscription(Err(refused("az", azure::refusal, "ERROR: Please run 'az login' to setup account."))));
     assert_eq!(way, "refused");
     assert!(c.detail.starts_with("Not signed in to Azure"), "{}", c.detail);
     let (way, c) = first(azure_subscription(Err(missing())));
@@ -275,9 +240,9 @@ async fn the_gcp_test_asks_for_the_sign_in_a_launch_needs_first() {
 
 #[test]
 fn gcp_sign_in_outcomes() {
-    let (way, c) = first(gcp_billing(Ok("My billing\n".into())));
+    let (way, c) = first(gcp_billing(Ok("My billing".into())));
     assert_eq!((way, c.detail.as_str()), ("pass", "Signed in; billing account \"My billing\"."));
-    let (way, c) = first(gcp_billing(Err(failed("ERROR: (gcloud) PERMISSION_DENIED"))));
+    let (way, c) = first(gcp_billing(Err(refused("gcloud", gcp::refusal, "ERROR: (gcloud) PERMISSION_DENIED"))));
     assert_eq!(way, "refused");
     assert!(c.detail.starts_with("Not signed in to Google Cloud"), "{}", c.detail);
     let (way, c) = first(gcp_billing(Err(missing())));
@@ -298,15 +263,15 @@ fn token_api_outcomes() {
 
 #[test]
 fn oci_outcomes_and_a_missing_cli_only_warns() {
-    let (way, c) = first(oci_compartment(Ok("root\n".into())));
+    let (way, c) = first(oci_compartment(Ok("root".into())));
     assert_eq!((way, c.state), ("pass", CheckState::Ok));
     assert_eq!(c.detail, "Reached compartment \"root\". Labs run in your tenancy.");
     let (way, c) = first(oci_compartment(Err(missing())));
     assert_eq!((way, c.state), ("pass", CheckState::Warn));
-    let (way, c) = first(oci_compartment(Err(failed("ServiceError: NotAuthenticated"))));
+    let (way, c) = first(oci_compartment(Err(refused("oci", oci::refusal, "ServiceError: NotAuthenticated"))));
     assert_eq!(way, "refused");
     assert!(c.detail.starts_with("OCI rejected the request."), "{}", c.detail);
-    let (way, _) = first(oci_compartment(Err(Error::Invalid("boom".into()))));
+    let (way, _) = first(oci_compartment(Err(Failure::NotStarted { program: "oci".into(), reason: "boom".into() })));
     assert_eq!(way, "unreachable");
 }
 

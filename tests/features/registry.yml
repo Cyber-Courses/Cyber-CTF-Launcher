@@ -3172,7 +3172,7 @@ areas:
           unit:
             - src-tauri/src/cloud_cli/tests.rs > each_cloud_signs_in_with_its_own_cli
             - src-tauri/src/cloud_cli/tests.rs > a_sign_in_can_be_cancelled_and_never_waits_forever
-            - src-tauri/src/runtime/server/sign_in.rs > each_cloud_that_signs_in_through_its_cli_has_one_question
+            - src-tauri/src/runtime/server/kind.rs > each_kind_says_how_it_signs_in_and_which_cli_it_needs
             - src/features/servers/host-setup/cloud-setup.test.tsx > cancelled, hides its log and says it was cancelled
             - src/features/servers/host-setup/cloud-setup.test.tsx > failed, keeps its log and says why
         gaps:
