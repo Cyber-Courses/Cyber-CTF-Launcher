@@ -33,8 +33,8 @@ fn unreachable(e: &Unreachable) -> TestResult {
 }
 
 /// A connection's time, as the row shows it.
-fn ms(latency: std::time::Duration) -> Option<u64> {
-    Some(u64::try_from(latency.as_millis()).unwrap_or(u64::MAX))
+fn ms(latency: std::time::Duration) -> u64 {
+    u64::try_from(latency.as_millis()).unwrap_or(u64::MAX)
 }
 
 /// A server host: it must accept a TCP connection on its port (isothrum-machine's
@@ -46,18 +46,18 @@ async fn test_server(dirs: &AppDirs, h: &HostProfile, password: &str) -> TestRes
             Ok(esxi::Ssh::Answers { latency, .. }) => TestResult::reached(
                 true,
                 None,
-                ms(latency),
+                Some(ms(latency)),
                 "SSH is up. Make sure SSH is enabled on the ESXi host; the password is checked on first lab start.",
             ),
             Ok(esxi::Ssh::NotSsh { latency }) => {
-                TestResult::reached(false, None, ms(latency), format!("Port {} is open but doesn't answer as SSH. Enable SSH on the ESXi host.", h.port))
+                TestResult::reached(false, None, Some(ms(latency)), format!("Port {} is open but doesn't answer as SSH. Enable SSH on the ESXi host.", h.port))
             }
             Ok(other) => TestResult::reached(false, None, None, format!("Port {} answered unexpectedly: {other:?}", h.port)),
             Err(e) => unreachable(&e),
         };
     }
     let latency_ms = match place::reach(&h.host, h.port, REACH_TIMEOUT).await {
-        Ok(latency) => ms(latency),
+        Ok(latency) => Some(ms(latency)),
         Err(e) => return unreachable(&e),
     };
     match h.provider {
