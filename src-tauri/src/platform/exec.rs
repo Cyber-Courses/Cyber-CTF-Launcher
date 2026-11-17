@@ -4,13 +4,11 @@
 //! cancellation). In a unit test the tools are the test's machine's (`testing::tools::runner`):
 //! scripted, never the real ones.
 
-mod background;
 mod docker;
 
 use std::path::Path;
 use std::time::Duration;
 
-pub use background::{Background, background};
 /// The image pattern, for the bindings the tests write (`testing::ts_bindings`).
 #[cfg(test)]
 pub use docker::IMAGE_PATTERN;

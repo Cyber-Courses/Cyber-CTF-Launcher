@@ -30,7 +30,6 @@ mod own_module;
 mod progress;
 mod remote;
 mod server;
-mod tunnel;
 mod view;
 mod web;
 

@@ -12,13 +12,11 @@ use std::rc::Rc;
 
 use crate::error::{Error, Result};
 
-/// A scripted tool's answer: its stdout (each line streamed, for `stream`), its failure, or a
-/// hang (never returns), so a `within(...)` timeout wrapper around a tool can be tested.
+/// A scripted tool's answer: its stdout (each line streamed, for `stream`), or its failure.
 #[derive(Clone)]
 pub enum Reply {
     Out(String),
     Fail(String),
-    Hang,
 }
 
 /// A script's answer for a tool that printed `stdout`.
@@ -110,7 +108,7 @@ impl Script {
     }
 
     /// `call` (`program arg…`, its leading arguments; `*` is any one) is made at least once, and
-    /// answered `reply` (`ok(..)`, `fail(..)`, `Some(Reply::Hang)`, or `None`: missing).
+    /// answered `reply` (`ok(..)`, `fail(..)`, or `None`: missing).
     pub fn expect(self, call: &str, reply: Option<Reply>) -> Script {
         self.with(call, reply, Times::AtLeastOnce)
     }
@@ -360,20 +358,18 @@ impl isothrum_runner::ProcessRunner for AsRunner {
         let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
         let scripted = reply(&spec.program, &args, &spec.env);
         let answer = match scripted {
-            Some(Scripted::Reply(Reply::Out(text))) => Ok((isothrum_runner::Stream::Stdout, text, 0)),
-            Some(Scripted::Reply(Reply::Fail(text))) => Ok((isothrum_runner::Stream::Stderr, text, 1)),
-            Some(Scripted::Reply(Reply::Hang)) => Err(true),
-            Some(Scripted::Missing) | None => Err(false),
+            Some(Scripted::Reply(Reply::Out(text))) => Some((isothrum_runner::Stream::Stdout, text, 0)),
+            Some(Scripted::Reply(Reply::Fail(text))) => Some((isothrum_runner::Stream::Stderr, text, 1)),
+            Some(Scripted::Missing) | None => None,
         };
         let program = spec.program.clone();
         Box::pin(async move {
             match answer {
-                Ok((stream, text, code)) => {
+                Some((stream, text, code)) => {
                     text.lines().for_each(|l| on_line(stream, l));
                     Ok(isothrum_runner::Exit::new(Some(code)))
                 }
-                Err(true) => std::future::pending().await,
-                Err(false) => Err(isothrum_runner::ProcessError::Missing { program }),
+                None => Err(isothrum_runner::ProcessError::Missing { program }),
             }
         })
     }
@@ -392,9 +388,6 @@ impl Scripted {
                 text.lines().for_each(|l| on_line(l.to_string()));
                 Err(failed(text))
             }
-            // A hang is intercepted before this point by `answer`; a step script
-            // (which streams through here) never uses one, so treat it as a plain failure.
-            Scripted::Reply(Reply::Hang) => Err(failed(String::new())),
             Scripted::Missing => Err(missing()),
         }
     }

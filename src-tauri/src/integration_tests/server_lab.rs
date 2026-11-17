@@ -353,6 +353,8 @@ async fn the_vm_test_passes_on_proxmox() {
 /// discovers it) and the jump through the node when only it reaches the lab; with the runner's
 /// home.
 async fn proxmox_place() -> (ServerPlace, PathBuf) {
+    // This machine's real tools (ssh-keyscan, the node's SSH), not a unit test's empty runner.
+    crate::runtime::providers::testing::read_this_machine();
     // The server's profile as a token setup with the node's key saves it, and its variables as a
     // launch makes them (`lab::host_vars`).
     let endpoint = var("CYBERCTF_TEST_PVE_ENDPOINT");
