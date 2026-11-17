@@ -76,6 +76,10 @@ pub(crate) fn open(dirs: &AppDirs) -> Result<Store> {
 /// The folder can't be made, or the store can't be opened or migrated.
 pub(crate) fn open_in(data: &Path) -> Result<Store> {
     let mut stores = opened().lock().unwrap_or_else(PoisonError::into_inner);
+    // A test's data folder goes with its temporary folder: its store would stay open for the
+    // rest of the run.
+    #[cfg(test)]
+    stores.retain(|data, _| data.exists());
     if let Some(store) = stores.get(data) {
         return Ok(store.clone());
     }

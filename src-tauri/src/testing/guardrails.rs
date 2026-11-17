@@ -223,6 +223,11 @@ const SLEEP_ALLOWED: &[(&str, &str, &str)] = &[
         "tokio::time::sleep(Duration::from_millis(10)).await;",
         "polls bounded to 6000 looks: a test's runner service answering, a stopping one letting its home go",
     ),
+    (
+        "testing/service.rs",
+        "tokio::time::sleep(GONE_EVERY).await;",
+        "a service on the services' runtime looking for its home's folder to go, the test's end, for as long as it serves",
+    ),
     ("screen/native.rs", "tokio::time::sleep(Duration::from_millis(20)).await;", "polls to a 120 s deadline for the viewer to start, then to warn"),
 ];
 

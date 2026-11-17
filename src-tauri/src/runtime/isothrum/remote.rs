@@ -30,6 +30,10 @@ static CLIENTS: LazyLock<AsyncMutex<HashMap<PathBuf, Arc<Client>>>> = LazyLock::
 /// [`Code::RunnerUnreachable`] when none answers and none could be started.
 pub(crate) async fn client(home: &Path) -> Result<Arc<Client>> {
     let mut clients = CLIENTS.lock().await;
+    // A test's home goes with its temporary folder: its connection would hold its socket, and
+    // the test's ended runtime, open for the rest of the run.
+    #[cfg(test)]
+    clients.retain(|home, _| crate::testing::service::kept(home));
     if let Some(client) = clients.get(home) {
         return Ok(client.clone());
     }
