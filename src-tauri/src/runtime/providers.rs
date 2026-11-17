@@ -47,6 +47,11 @@ pub(crate) fn machine_selftest() -> isothrum_machine::Context {
     machine()
 }
 
+/// What the cloud CLIs are asked with ([`isothrum_machine::cloud`]): [`machine`]'s.
+pub(crate) fn machine_cloud() -> isothrum_machine::Context {
+    machine()
+}
+
 /// This machine: its tools, run by the runner's processes, and its devices.
 fn this_machine() -> isothrum_machine::Context {
     let os = Os::HERE.isothrum();
