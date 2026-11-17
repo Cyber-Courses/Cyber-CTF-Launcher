@@ -1,150 +1,84 @@
-//! The container self-test: a throwaway two-container lab.
+//! The container self-test, run by isothrum-machine (`selftest::engine`): a throwaway
+//! two-container deployment through a runner of its own. Each step is said here, in the app's
+//! words.
 
 use std::path::Path;
-use std::time::Duration;
+
+use isothrum_machine::selftest::Progress;
+use isothrum_machine::selftest::engine::{self, Failure, Found, Step, StepProgress};
 
 use super::Reporter;
-use super::downloads::ensure_image;
 use crate::error::{Error, Result};
-use crate::machine::system::docker::daemon_info;
-use crate::platform::exec::run_env_timed;
+use crate::runtime::selftest_report::StepState;
 
-const PROJECT: &str = "cyberctf-selftest";
-pub(crate) const IMAGE: &str = "busybox:1.36";
-/// What the test web server serves, so a reply is known to come from it.
-const MARKER: &str = "cyberctf-selftest-ok";
-/// Tries (500 ms apart) for the lab's web server to answer: httpd needs a moment.
-const ANSWER_TRIES: u32 = 10;
-const RETRY: Duration = Duration::from_millis(500);
+/// The test's image.
+pub(crate) const IMAGE: &str = engine::IMAGE;
 
-fn compose_file() -> String {
-    format!(
-        r#"services:
-  web:
-    image: {IMAGE}
-    command: ["sh", "-c", "mkdir -p /www && echo {MARKER} > /www/index.html && httpd -f -p 80 -h /www"]
-    ports: ["127.0.0.1::80"]
-  probe:
-    image: {IMAGE}
-    command: ["sleep", "300"]
-"#
-    )
+/// A step's id and label, as the page shows it.
+fn named(step: Step) -> (&'static str, &'static str) {
+    match step {
+        Step::Engine => ("engine", "Container engine answers"),
+        Step::Pull => ("pull", "Download a test image"),
+        Step::Start => ("start", "Start a two-container test lab"),
+        Step::Network => ("network", "Containers reach each other"),
+        _ => ("port", "Lab port reachable from this machine"),
+    }
 }
 
-/// How long the test lab gets to start (its image is local by then), and each probe and the
-/// clean-up to answer: a wedged engine fails the step instead of hanging the test before its
-/// clean-up.
-const START_LIMIT: Duration = Duration::from_secs(180);
-const PROBE_LIMIT: Duration = Duration::from_secs(20);
-const DOWN_LIMIT: Duration = Duration::from_secs(60);
-
-/// The environment every Docker call of the test gets: `DOCKER_CONTEXT` when the test is of one
-/// engine among several (the Machine page's rows), else nothing, for the CLI's current one.
-pub(super) fn env_for(context: Option<&str>) -> Vec<(String, String)> {
-    context.map(|c| vec![("DOCKER_CONTEXT".to_string(), c.to_string())]).unwrap_or_default()
+/// What a passed step found, as its detail line.
+fn detail(found: Found) -> Option<String> {
+    match found {
+        Found::Version(v) => Some(format!("Docker {v}")),
+        Found::Image { held: true } => Some(format!("{IMAGE} (ready)")),
+        Found::Image { held: false } => Some(IMAGE.to_owned()),
+        Found::Reached => Some("probe → web on the lab network".to_owned()),
+        Found::Address(address) => Some(address),
+        _ => None,
+    }
 }
 
-async fn compose(dir: &Path, env: &[(String, String)], rest: &[&str], limit: Duration) -> Result<String> {
-    let mut args = vec!["compose", "-p", PROJECT, "-f", "docker-compose.yml"];
-    args.extend_from_slice(rest);
-    run_env_timed("docker", &args, Some(dir), env, limit).await
+/// Why a step failed, as the app's error: the engine's silence as the machine check says it.
+fn error(failure: Failure) -> Error {
+    match failure {
+        Failure::Engine(why) => crate::machine::system::docker::no_answer(why),
+        other => Error::Invalid(other.to_string()),
+    }
 }
 
-/// The test, on the engine behind `context` (the CLI's current one when none is named).
-pub(super) async fn run_test(dir: &Path, context: Option<&str>, r: &Reporter) -> Result<()> {
-    std::fs::write(dir.join("docker-compose.yml"), compose_file())?;
-    let env = env_for(context);
-    let res = steps(dir, &env, r).await;
-    // Always tear the test lab down, even after a failed step.
-    let down = compose(dir, &env, &["down", "-v", "--remove-orphans", "-t", "0"], DOWN_LIMIT).await;
-    r.cleanup("Clean up", &res, down, None);
-    res
-}
-
-async fn steps(dir: &Path, env: &[(String, String)], r: &Reporter) -> Result<()> {
-    r.step("engine", "Container engine answers", async {
-        let v = daemon_info("{{.ServerVersion}}", env).await?;
-        Ok(((), Some(format!("Docker {}", v.trim()))))
-    })
-    .await?;
-
-    r.step("pull", "Download a test image", async {
-        let had = ensure_image(env).await?;
-        Ok(((), Some(if had { format!("{IMAGE} (ready)") } else { IMAGE.to_string() })))
-    })
-    .await?;
-
-    r.step("start", "Start a two-container test lab", async {
-        compose(dir, env, &["up", "-d", "--quiet-pull"], START_LIMIT).await?;
-        Ok(((), None))
-    })
-    .await?;
-
-    r.step("network", "Containers reach each other", async {
-        let mut last = String::new();
-        for _ in 0..ANSWER_TRIES {
-            match compose(dir, env, &["exec", "-T", "probe", "wget", "-qO-", "-T", "2", "http://web"], PROBE_LIMIT).await {
-                Ok(out) if out.contains(MARKER) => return Ok(((), Some("probe → web on the lab network".into()))),
-                Ok(out) => last = out,
-                Err(e) => last = e.to_string(),
-            }
-            tokio::time::sleep(RETRY).await;
+/// Says one step's progress through `r`.
+fn say(r: &Reporter, progress: StepProgress) {
+    match progress {
+        Progress::Running(step) => {
+            let (id, label) = named(step);
+            r.send(id, label, StepState::Running, None);
         }
-        Err(Error::Invalid(format!("probe could not reach web: {last}")))
-    })
-    .await?;
-
-    r.step("port", "Lab port reachable from this machine", async {
-        let addr = compose(dir, env, &["port", "web", "80"], PROBE_LIMIT).await?;
-        let url = format!("http://{}", addr.trim());
-        let client = crate::platform::http::probe_client(Duration::from_secs(3), false)?;
-        let mut last = String::new();
-        for _ in 0..ANSWER_TRIES {
-            match client.get(&url).send().await {
-                Ok(res) => match res.text().await {
-                    Ok(body) if body.contains(MARKER) => return Ok(((), Some(addr.trim().to_string()))),
-                    Ok(body) => last = body,
-                    Err(e) => last = e.to_string(),
-                },
-                Err(e) => last = e.to_string(),
-            }
-            tokio::time::sleep(RETRY).await;
+        Progress::Passed(step, found) => {
+            let (id, label) = named(step);
+            r.send(id, label, StepState::Ok, detail(found));
         }
-        Err(Error::Invalid(format!("{url} did not answer: {last}")))
-    })
-    .await?;
+        Progress::Failed(step, why) => {
+            let (id, label) = named(step);
+            r.failed(id, label, &error(why).to_string());
+        }
+        _ => {}
+    }
+}
 
+/// The test, on the engine behind `context` (the CLI's current one when none is named), its
+/// deployment in `dir`. What it pulled goes to the app's runner record (Storage cleans it).
+pub(super) async fn run_test(dirs: &crate::platform::AppDirs, dir: &Path, context: Option<&str>, r: &Reporter) -> Result<()> {
+    let cx = crate::runtime::providers::machine_selftest();
+    let ran = engine::run(&cx, dir, context, &|p| say(r, p)).await;
+    super::keep(dirs, ran.pulled).await;
+    let passed = ran.passed.map_err(error);
+    r.cleanup("Clean up", &passed, ran.cleaned_up.map_err(Error::Invalid), None);
+    passed
+}
+
+/// Pulls the test image ahead of the test, unless it is here.
+pub(super) async fn prefetch(dirs: &crate::platform::AppDirs) -> Result<()> {
+    let cx = crate::runtime::providers::machine_selftest();
+    let (_, pulled) = engine::pull(&cx, None).await.map_err(Error::Invalid)?;
+    super::keep(dirs, pulled).await;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn the_test_lab_serves_its_marker_on_a_loopback_port() {
-        let f = super::compose_file();
-        assert!(f.contains("image: busybox:1.36") && f.contains("echo cyberctf-selftest-ok") && f.contains("127.0.0.1::80"), "{f}");
-    }
-
-    #[test]
-    fn the_compose_file_is_yaml_whose_shell_command_carries_the_marker_whole() {
-        // The web command is a `sh -c` script inside a YAML flow sequence inside a double-quoted
-        // scalar: it must parse as three list items, with the redirect intact in the third, and
-        // the ports entry must stay a string (YAML would read `127.0.0.1::80` oddly unquoted).
-        let f = super::compose_file();
-        assert!(!f.contains('\t'), "YAML forbids tabs in indentation");
-        let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&f).unwrap();
-        let web = &doc["services"]["web"];
-        let command: Vec<&str> = web["command"].as_sequence().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
-        assert_eq!(command.len(), 3);
-        assert_eq!(&command[..2], ["sh", "-c"]);
-        assert!(command[2].contains(&format!("echo {} > /www/index.html", super::MARKER)) && command[2].ends_with("httpd -f -p 80 -h /www"), "{}", command[2]);
-        assert_eq!(web["ports"][0].as_str(), Some("127.0.0.1::80"));
-        assert_eq!(doc["services"]["probe"]["command"][0].as_str(), Some("sleep"));
-    }
-
-    #[test]
-    fn a_named_context_becomes_the_docker_cli_environment_and_none_leaves_it_alone() {
-        assert_eq!(super::env_for(Some("orbstack")), [("DOCKER_CONTEXT".to_string(), "orbstack".to_string())]);
-        assert_eq!(super::env_for(None), [] as [(String, String); 0]);
-    }
 }

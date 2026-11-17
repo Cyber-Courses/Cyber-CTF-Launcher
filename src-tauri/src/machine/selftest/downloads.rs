@@ -1,7 +1,7 @@
-//! Background downloads of the test image and box.
+//! Background downloads of the test box (the test image is isothrum-machine's: `selftest::engine::pull`).
 //!
 //! Setup starts the test downloads as soon as it opens (`machine_selftest_prefetch`), so by
-//! the time a test runs its image/box is usually there. A download in flight is marked busy;
+//! the time a test runs its box is usually there. A download in flight is marked busy;
 //! a test that needs it waits for it instead of starting a second one.
 
 use std::path::Path;
@@ -9,42 +9,20 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use super::docker::IMAGE;
 use super::vm::{box_provider, pick_box};
 use crate::error::Result;
-use crate::platform::exec::{run_env, run_env_timed, stream, within};
+use crate::platform::exec::{stream, within};
 use crate::platform::host::Arch;
 use crate::platform::sync::Busy;
 use crate::runtime::providers::Provider;
 
-static DOCKER_IMAGE_PULLING: AtomicBool = AtomicBool::new(false);
 static VM_BOX_DOWNLOADING: AtomicBool = AtomicBool::new(false);
-/// The test image is 2 MB: past this the engine is stuck, not the network slow.
-const PULL_LIMIT: Duration = Duration::from_secs(300);
 /// A test box is hundreds of MB (far larger than the image), so a generous bound: past it the
 /// download is stalled, not just a slow link. Without it a wedged `vagrant box add` spins for
 /// good, and a test waiting on the `VM_BOX_DOWNLOADING` busy flag polls it forever.
 const BOX_LIMIT: Duration = Duration::from_secs(1800);
 /// Last line of the VM box download, so a test waiting on it can show progress.
 static VM_BOX_PROGRESS: Mutex<String> = Mutex::new(String::new());
-
-/// Makes sure the test image is local on the engine `env` points Docker at (`DOCKER_CONTEXT`,
-/// or none for the CLI's current one). Returns whether it already was (or a background download
-/// finished it) rather than being pulled now.
-pub(super) async fn ensure_image(env: &[(String, String)]) -> Result<bool> {
-    let mut waited = false;
-    loop {
-        if run_env("docker", &["image", "inspect", IMAGE], None, env).await.is_ok() {
-            return Ok(true);
-        }
-        if let Some(_busy) = Busy::try_take(&DOCKER_IMAGE_PULLING) {
-            run_env_timed("docker", &["pull", "-q", IMAGE], None, env, PULL_LIMIT).await?;
-            return Ok(waited);
-        }
-        waited = true;
-        tokio::time::sleep(Duration::from_millis(400)).await;
-    }
-}
 
 /// Makes sure the test box is local. `on_line` sees download progress, including from a
 /// background download this call is waiting on. Returns whether it was already there.
@@ -95,28 +73,6 @@ mod tests {
         assert!(Busy::try_take(&FLAG).is_none());
         drop(first);
         assert!(Busy::try_take(&FLAG).is_some());
-    }
-
-    #[tokio::test]
-    async fn ensure_image_pulls_only_when_the_test_image_is_missing() {
-        use crate::platform::exec::fake::{Tools, fail, ok};
-        // Already local: `image inspect` answers, so nothing is pulled and it reports "was there".
-        let present = Tools::strict_rules(&[("image inspect", ok("sha256:abc"))]);
-        assert!(ensure_image(&[]).await.unwrap(), "already local");
-        assert!(!present.called("pull"), "nothing pulled: {:?}", present.calls());
-        drop(present);
-        // Missing: `image inspect` fails, the image is pulled quietly, and this call did the pull.
-        let pulled = Tools::strict_rules(&[("image inspect", fail("Error: No such image")), ("pull", ok(""))]);
-        let ctx = [("DOCKER_CONTEXT".to_string(), "orbstack".to_string())];
-        assert!(!ensure_image(&ctx).await.unwrap(), "pulled now, not already there");
-        assert!(pulled.called("pull -q"), "{:?}", pulled.calls());
-        // On the engine asked for: the context rides along on the inspect and the pull.
-        assert_eq!(pulled.env_of("image inspect", "DOCKER_CONTEXT").as_deref(), Some("orbstack"));
-        assert_eq!(pulled.env_of("pull -q", "DOCKER_CONTEXT").as_deref(), Some("orbstack"));
-        drop(pulled);
-        // The pull itself fails (a wedged engine): surfaced as an error, not a false "ready".
-        let _failed = Tools::strict_rules(&[("image inspect", fail("Error: No such image")), ("pull", fail("timed out"))]);
-        assert!(ensure_image(&[]).await.is_err());
     }
 
     #[tokio::test]

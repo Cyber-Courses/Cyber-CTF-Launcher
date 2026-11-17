@@ -42,6 +42,11 @@ pub(crate) fn machine_check() -> isothrum_machine::Context {
     cx
 }
 
+/// What the self-tests run with: [`machine`]'s.
+pub(crate) fn machine_selftest() -> isothrum_machine::Context {
+    machine()
+}
+
 /// This machine: its tools, run by the runner's processes, and its devices.
 fn this_machine() -> isothrum_machine::Context {
     let os = Os::HERE.isothrum();
