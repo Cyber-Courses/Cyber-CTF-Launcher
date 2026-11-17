@@ -883,7 +883,7 @@ areas:
             - src-tauri/src/commands/labs.rs > a_lab_is_placed_by_its_spec_the_choice_and_the_saved_preference_never_on_the_default_server_for_containers
             - src-tauri/src/cli/labs.rs > the_flags_pick_what_they_say_and_leave_the_rest_to_the_saved_preference
             - src/features/labs/use-lab-actions.test.tsx > runs a VM lab picked here where the backend's rule places it, sending that placement as it is
-            - src/features/labs/use-lab-actions.test.tsx > goes back where it was last started: that placement sent as the player's choice
+            - "src/features/labs/use-lab-actions.test.tsx > goes back where it was last started: that placement sent as the player's choice"
             - src/features/labs/use-lab-actions.test.tsx > keeps a container lab's form, engine and ports, without asking the ports again
             - src/features/labs/use-lab-actions.test.tsx > is refused, launching nothing, when the rule says it can't run there now
             - src/features/home/home-behavior.test.tsx > starts a stopped lab again from Jump back in where it was last started
