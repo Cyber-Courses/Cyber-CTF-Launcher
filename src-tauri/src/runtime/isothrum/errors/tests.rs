@@ -74,10 +74,16 @@ fn a_tools_failure_reaches_the_webview_as_the_code_it_translates() {
             None,
         ),
         (report("provider_refused", None, Some(json!({ "kind": "provider_refused", "provider": "utm" }))), Code::Other, Some("m")),
-        // UTM answering the VM's start with the system's "Operation not permitted": a permission.
+        // macOS refusing the Apple events that drive UTM: the Automation permission.
         (
-            report("provider_refused", step, Some(json!({ "kind": "provider_refused", "provider": "utm", "need": "permission" }))),
+            report("provider_refused", step, Some(json!({ "kind": "provider_refused", "provider": "utm", "need": "automation" }))),
             Code::HypervisorNotPermitted { hypervisor: "UTM".into() },
+            None,
+        ),
+        // UTM answering the VM's start with the system's "Operation not permitted": never approved.
+        (
+            report("provider_refused", step, Some(json!({ "kind": "provider_refused", "provider": "utm", "need": "app_approval" }))),
+            Code::HypervisorNotApproved { hypervisor: "UTM".into() },
             None,
         ),
     ]);

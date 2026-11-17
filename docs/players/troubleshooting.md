@@ -54,10 +54,11 @@ and the proxy. A lab you already installed and started before can still start: t
   the Machine page says when it is missing, and installing libvirt or QEMU there adds it (or
   `sudo apt-get install virtiofsd`, `sudo dnf install virtiofsd`). QEMU looks for it on the `PATH`,
   then at `/usr/libexec/virtiofsd` and `/usr/lib/qemu/virtiofsd`.
-- **UTM** (macOS) is opened hidden when a lab or the VM test needs it. When macOS doesn't let it
-  start the VM ("Operation not permitted"), the launcher says so: in System Settings > Privacy &
-  Security, allow Cyber CTF under Automation > UTM, and UTM under Full Disk Access. If a VM doesn't
-  start from UTM itself either, update or reinstall UTM.
+- **UTM** (macOS) is opened hidden when a lab or the VM test needs it. When macOS doesn't let
+  Cyber CTF control it, the launcher says so: in System Settings > Privacy & Security, allow Cyber
+  CTF under Automation > UTM. When macOS blocks UTM's own VM launcher ("Operation not
+  permitted"), UTM was downloaded but never approved: quit UTM, open it once from Finder (or
+  reinstall it), then start the lab again.
 - **VirtualBox on Windows on Arm** doesn't exist: use Hyper-V, a server or a cloud account.
 - **A start was interrupted**: the lab page offers **Stop & clean up**; then start it again.
 

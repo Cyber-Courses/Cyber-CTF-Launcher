@@ -136,11 +136,12 @@ fn form(code: &Code) -> usize {
         Code::VirtiofsdMissing { .. } => 47,
         Code::RunnerUnreachable { .. } => 48,
         Code::HypervisorNotPermitted { .. } => 49,
+        Code::HypervisorNotApproved { .. } => 52,
     }
 }
 
 /// How many forms [`form`] tells apart.
-const FORMS: usize = 52;
+const FORMS: usize = 53;
 
 #[test]
 fn every_form_has_a_sample() {
@@ -190,6 +191,7 @@ fn sample_codes() -> Vec<Code> {
         Code::VirtiofsdMissing { hypervisor: "QEMU".into() },
         Code::RunnerUnreachable { detail: "the service at /tmp/isothrum/service.sock doesn't answer".into() },
         Code::HypervisorNotPermitted { hypervisor: "UTM".into() },
+        Code::HypervisorNotApproved { hypervisor: "UTM".into() },
         Code::ToolTooOld { tool: "Vagrant".into(), found: "2.3.4".into(), required: "2.4.0".into() },
         Code::ElevationFailed { reason: "the permission prompt was declined".into() },
         Code::LabNotReady { detail: "http://web:80 answered 502".into() },
