@@ -10,9 +10,9 @@ async fn what_a_check_read_while_a_step_ran_is_forgotten_once_it_ends() {
     use crate::platform::remembered::{is_kept, keep};
     let key = format!("vagrant plugin list {}", rand::random::<u32>());
     let during = key.clone();
-    let _tools = crate::platform::exec::fake::Tools::new(move |_, _| {
+    let _tools = crate::testing::tools::Tools::new(move |_, _| {
         keep(&during, "vagrant-qemu (0.8.0, global)");
-        crate::platform::exec::fake::ok("Installed the plugin 'vagrant-vmware-desktop (3.0.5)'!")
+        crate::testing::tools::ok("Installed the plugin 'vagrant-vmware-desktop (3.0.5)'!")
     });
     run_step(&step("vagrant", &["plugin", "install", "vagrant-vmware-desktop"]), &mut |_| {}).await.unwrap();
     assert!(!is_kept(&key), "what the check read during the step is forgotten");
@@ -20,9 +20,9 @@ async fn what_a_check_read_while_a_step_ran_is_forgotten_once_it_ends() {
 
 #[tokio::test]
 async fn a_plan_streams_its_lines_says_its_notes_and_stops_at_its_first_failure() {
-    let _tools = crate::platform::exec::fake::Tools::new(|program, _| match program {
-        "first" => crate::platform::exec::fake::ok("out-1\nout-2"),
-        _ => crate::platform::exec::fake::fail("broken"),
+    let _tools = crate::testing::tools::Tools::new(|program, _| match program {
+        "first" => crate::testing::tools::ok("out-1\nout-2"),
+        _ => crate::testing::tools::fail("broken"),
     });
     let mut noted = step("first", &["a"]);
     noted.note = Some(Note::QemuUpdatingHomebrewFirst);

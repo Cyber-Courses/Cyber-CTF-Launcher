@@ -386,10 +386,10 @@ mod tests {
         lab_installed, lab_launch, lab_launch_local, lab_park, lab_provision, lab_remove, lab_resume, lab_run_options, lab_status, lab_stop, lab_tools,
     };
     use crate::commands::lines;
-    use crate::platform::exec::fake::Tools;
     use crate::run_service::tests::finished;
     use crate::runtime::{Park, Runtime, providers::Provider};
     use crate::testing::test_app::TestApp;
+    use crate::testing::tools::Tools;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
     const SPEC: &str = "version: 1\nname: t\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n";

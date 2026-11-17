@@ -119,7 +119,7 @@ fn windows_on_arm_is_refused_the_hypervisors_not_built_for_it_by_the_hypervisor_
 #[tokio::test]
 async fn the_policy_refuses_every_one_click_install_before_anything_runs() {
     let _policy = policy::Override::with(&[Key::DisableToolInstalls]);
-    let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
+    let tools = crate::testing::tools::Tools::strict_rules(&[]);
     let t = crate::testing::test_app::TestApp::new();
     let mut lines = Vec::new();
     let err = install_dependency(t.dirs(), Dependency::Docker, |l| lines.push(l)).await.unwrap_err();
@@ -197,8 +197,8 @@ fn dependencies_use_lowercase_names() {
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::platform::exec::fake::{Tools, fail, ok};
 use crate::testing::test_app::{Sink, TestApp};
+use crate::testing::tools::{Tools, fail, ok};
 
 /// A dependency this OS doesn't install (on macOS without Homebrew, none does).
 fn not_here() -> Dependency {

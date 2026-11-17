@@ -48,7 +48,7 @@ impl Tunnel {
     /// [`Tunnel::open_within`] on `port` of [`LOOPBACK`]: a test's, held until its ssh listens.
     async fn open_on(node: &ssh::Target, jump: &str, identity: &Path, port: u16, within: Duration) -> Result<Tunnel> {
         let args = node.socks_args(&ssh::node_known_hosts(identity), port)?;
-        let mut ssh = background("ssh", &args.iter().map(String::as_str).collect::<Vec<_>>())?;
+        let mut ssh = background("ssh", &args.iter().map(String::as_str).collect::<Vec<_>>());
         let deadline = tokio::time::Instant::now() + within;
         loop {
             if tokio::net::TcpStream::connect((LOOPBACK, port)).await.is_ok() {
@@ -86,7 +86,7 @@ mod tests {
     use tokio::net::{TcpListener, TcpSocket};
 
     use super::*;
-    use crate::platform::exec::fake::{Reply, Tools};
+    use crate::testing::tools::{Reply, Tools};
 
     /// The runner's key, as the app data folder holds it.
     fn key() -> PathBuf {

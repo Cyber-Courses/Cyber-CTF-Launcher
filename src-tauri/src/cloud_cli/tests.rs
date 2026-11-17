@@ -1,5 +1,5 @@
 use super::*;
-use crate::platform::exec::fake::{Tools, fail, ok};
+use crate::testing::tools::{Tools, fail, ok};
 
 fn sink() -> (impl FnMut(String), std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));

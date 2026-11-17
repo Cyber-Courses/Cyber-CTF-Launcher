@@ -316,12 +316,12 @@ mod tests {
 
         /// The launcher's tools answering only the tunnel's ssh, which listens on its port as ssh
         /// does once the node let it in (the listeners kept with the tools).
-        fn tunnel_tools() -> crate::platform::exec::fake::Tools {
+        fn tunnel_tools() -> crate::testing::tools::Tools {
             let kept: std::rc::Rc<std::cell::RefCell<Vec<std::net::TcpListener>>> = std::rc::Rc::default();
-            crate::platform::exec::fake::Tools::new(move |program, args| {
+            crate::testing::tools::Tools::new(move |program, args| {
                 assert_eq!((program, &args[..2]), ("ssh", &["-N", "-D"][..]), "only the tunnel's ssh runs");
                 kept.borrow_mut().push(std::net::TcpListener::bind(args[2]).unwrap());
-                Some(crate::platform::exec::fake::Reply::Hang)
+                Some(crate::testing::tools::Reply::Hang)
             })
         }
 
@@ -348,7 +348,7 @@ mod tests {
         #[tokio::test]
         async fn a_bridge_the_launcher_reaches_needs_no_tunnel() {
             let (f, run) = up();
-            let tools = crate::platform::exec::fake::Tools::script().build();
+            let tools = crate::testing::tools::Tools::script().build();
             let _ = run.update(&mut |_| {}).await;
             assert!(tools.calls().is_empty(), "no ssh");
             assert!(f.fake.calls().iter().filter(|c| c.program == "terraform").all(|c| c.env("TF_VAR_ssh_proxy_host").is_none()));
@@ -395,7 +395,7 @@ mod tests {
                 "state": "ready", "started_at": "2026-11-11T10:00:00Z", "host_label": "pve-1",
             });
             crate::testing::runner::save_run(&f.home.runner(), &record);
-            let tools = crate::platform::exec::fake::Tools::script().build();
+            let tools = crate::testing::tools::Tools::script().build();
             assert_eq!(run.status().await.unwrap().url.as_deref(), Some("http://192.0.2.10:8080/"));
             assert!(tools.calls().is_empty(), "no forward");
         }

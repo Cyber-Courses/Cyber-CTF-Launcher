@@ -149,8 +149,8 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::platform::exec::fake::{Tools, fail, ok};
     use crate::testing::test_app::TestApp;
+    use crate::testing::tools::{Tools, fail, ok};
 
     /// A GCP account `gcp1` whose labs project is `project`, if any.
     fn account(t: &TestApp, project: Option<&str>) -> String {
@@ -234,7 +234,7 @@ mod tests {
     }
 
     /// What `project_state` makes of a `describe` answering `describe`.
-    async fn state_of(describe: Option<crate::platform::exec::fake::Reply>) -> Result<ProjectState> {
+    async fn state_of(describe: Option<crate::testing::tools::Reply>) -> Result<ProjectState> {
         let _tools = Tools::strict_rules(&[("projects describe", describe)]);
         project_state("p").await
     }

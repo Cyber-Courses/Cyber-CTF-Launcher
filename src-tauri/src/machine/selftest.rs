@@ -266,7 +266,7 @@ mod tests {
     async fn a_second_test_of_a_kind_waits_for_the_first() {
         // Regression: the Machine window's and the onboarding's runs shared the test project and
         // tore each other's test lab down.
-        use crate::platform::exec::fake::Tools;
+        use crate::testing::tools::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let tools = Tools::strict_rules(&[]);
         let first = one_at_a_time(Kind::Docker).lock().await;

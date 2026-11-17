@@ -100,7 +100,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_metrics_describe_this_machine_and_its_running_containers() {
-        let tools = crate::platform::exec::fake::Tools::expect(&[("docker info", crate::platform::exec::fake::ok("2\n"))]);
+        let tools = crate::testing::tools::Tools::expect(&[("docker info", crate::testing::tools::ok("2\n"))]);
         let m = machine_metrics().await;
         assert!(m.cores > 0 && m.mem_total > 0 && m.mem_used <= m.mem_total, "{} {} {}", m.cores, m.mem_used, m.mem_total);
         assert!(m.disk_used <= m.disk_total);
@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(m.containers, 2);
         drop(tools);
         // The engine down: none.
-        let _tools = crate::platform::exec::fake::Tools::expect(&[("docker info", crate::platform::exec::fake::fail(DOCKER_DOWN))]);
+        let _tools = crate::testing::tools::Tools::expect(&[("docker info", crate::testing::tools::fail(DOCKER_DOWN))]);
         assert_eq!(machine_metrics().await.containers, 0);
     }
 

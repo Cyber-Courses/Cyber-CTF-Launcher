@@ -126,7 +126,7 @@ async fn the_commands_refuse_what_they_can_check_before_asking_the_service() {
 #[tokio::test]
 async fn the_launchers_own_service_tells_an_operation_and_its_failure_by_its_id() {
     let t = TestApp::new();
-    let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+    let _tools = crate::testing::tools::Tools::rules(&[]);
     // A resume of a lab that isn't installed fails in the app, before any worker.
     let id = crate::app::runs::of(t.handle()).start(Request::Resume { lab_id: "local-x".into(), runtime: Runtime::Docker }).unwrap();
     let (outcome, _lines) = finished(t.handle(), &id).await;
@@ -204,7 +204,7 @@ fn buggy_step() -> crate::error::Result<()> {
 #[tokio::test]
 async fn a_watched_lab_has_its_status_told_at_once_then_only_when_it_changes() {
     let t = TestApp::new();
-    let _tools = crate::platform::exec::fake::Tools::rules(&[]);
+    let _tools = crate::testing::tools::Tools::rules(&[]);
     let service = super::LocalRunService::new(t.dirs());
     // Not installed: not running, read without touching any engine.
     service.watch(vec![("web".into(), Runtime::Docker)], Vec::new());

@@ -1,14 +1,14 @@
 //! The command line driven in-process, on the app's own test app and scripted tools
-//! (`platform::exec::fake`): every command's JSON shape and exit code, the confirmations, and the
+//! (`testing::tools`): every command's JSON shape and exit code, the confirmations, and the
 //! guided setup run for real through its steps (installs answered by the fakes, none run).
 
 use serde_json::{Value, json};
 
 use super::Exit;
-use crate::platform::exec::fake::Tools;
-#[cfg(target_os = "linux")]
-use crate::platform::exec::fake::{Reply, fail, ok};
 use crate::testing::test_app::TestApp;
+use crate::testing::tools::Tools;
+#[cfg(target_os = "linux")]
+use crate::testing::tools::{Reply, fail, ok};
 
 /// A container lab's spec.
 const SPEC: &str = "version: 1\nname: web\nnetworks:\n  lab: { cidr: 10.30.0.0/24 }\nmachines:\n  web:\n    networks: { lab: 10 }\n    ports: { web: { port: 80, protocol: http } }\n    app: { image: nginx:1.27 }\n";
@@ -216,7 +216,7 @@ async fn a_saved_server_is_removed_with_yes_the_default_cleared_and_the_launcher
 
 #[tokio::test]
 async fn what_is_stored_is_shown_and_a_clean_frees_nothing_when_nothing_is_stored() {
-    use crate::platform::exec::fake::ok;
+    use crate::testing::tools::ok;
     let t = TestApp::new();
     let _tools = Tools::strict_rules(&[("docker image ls -q --no-trunc", ok("")), ("vagrant box list", ok(""))]);
     let shown = cyberctf(&t, &["storage", "show", "--json"]).await;

@@ -4,11 +4,11 @@ use super::{
     per_machine_runs_on,
 };
 use super::{server, warn_if_low_memory};
-use crate::platform::exec::fake::Tools;
 use crate::runtime::lab::emulated_arches;
 use crate::runtime::recorded::Recorded;
 use crate::runtime::start;
 use crate::testing::test_app::TestApp;
+use crate::testing::tools::Tools;
 use isothrum_machine::Arch;
 
 async fn start_here(t: &TestApp, id: &str, runtime: Runtime, provider: Option<Provider>, env: &[(String, String)]) -> (crate::error::Result<()>, Vec<String>) {
@@ -344,7 +344,7 @@ fn an_automation_refusal_is_told_apart_from_a_utm_still_opening() {
 /// answering its name) is waited for like one still opening: the start goes on once it is.
 #[tokio::test]
 async fn a_utm_not_ready_for_commands_is_waited_for() {
-    use crate::platform::exec::fake::{Tools, fail, ok};
+    use crate::testing::tools::{Tools, fail, ok};
     let mut probes = 0;
     let tools = Tools::new(move |program, args| match (program, args) {
         ("osascript", [_, probe]) if probe.contains("every virtual machine") => {

@@ -1,7 +1,7 @@
 use super::{LabRef, Park, clear_parked, park_lab, park_refusal, parked_message, provision_lab, provision_target, refuse_cloud_park, resume_lab, stop_lab};
-use crate::platform::exec::fake::Tools;
 use crate::runtime::recorded::Recorded;
 use crate::runtime::test_support::{record_parked, record_run};
+use crate::testing::tools::Tools;
 
 use crate::runtime::Runtime;
 use crate::runtime::test_support::status_with;

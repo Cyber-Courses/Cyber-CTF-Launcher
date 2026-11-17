@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::platform::exec::fake::{Reply, Tools, fail, ok};
 use crate::testing::test_app::TestApp;
+use crate::testing::tools::{Reply, Tools, fail, ok};
 
 /// A Mach-O header: a thin 64-bit file for `cpu`.
 fn thin(cpu: u32) -> Vec<u8> {
@@ -458,6 +458,8 @@ async fn the_found_copy_answers_for_real_through_the_path_it_is_given() {
     let direct = std::process::Command::new(echo).arg("--version").output().expect("echo runs");
     let expected = isothrum_machine::tools::first_line(&String::from_utf8_lossy(&direct.stdout));
     assert!(expected.is_some(), "echo --version printed nothing");
+    // The app's own runner: this test runs the program for real.
+    let _machine = crate::runtime::providers::testing::Machine::set(crate::platform::processes::system(), crate::runtime::providers::testing::host(&dir));
     let tool = version_of(&file).await;
     assert_eq!(tool.version, expected, "the found file answered as the program it links to");
     let _ = std::fs::remove_dir_all(&dir);

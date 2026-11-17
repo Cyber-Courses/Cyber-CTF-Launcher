@@ -12,9 +12,6 @@ pub(crate) mod attack_box;
 pub(crate) mod cloud_services;
 pub(crate) mod deploy_log;
 pub(crate) mod docker;
-#[cfg(test)]
-#[cfg(unix)]
-mod fake_clis;
 pub(crate) mod host;
 mod inflight;
 pub(crate) mod isothrum;

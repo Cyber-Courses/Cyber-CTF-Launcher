@@ -157,7 +157,7 @@ mod tests {
         // Regression: the Cloud screen read the spend of an account added with stored keys through
         // the host CLI's default profile: another account's spend, or nothing, while the launch
         // budget gate read the stored keys.
-        use crate::platform::exec::fake::{Tools, ok};
+        use crate::testing::tools::{Tools, ok};
         let t = crate::testing::test_app::TestApp::new();
         let cli = t.host("aws-cli", "aws", serde_json::json!({ "useCliCreds": true, "awsProfile": "labs", "monthlyLimit": 10.0 }));
         let tools = Tools::expect(&[("aws ce get-cost-and-usage", ok("7.25\n"))]);
@@ -213,7 +213,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_spend_cost_explorer_answers_in_words_is_unverifiable_never_under_budget() {
-        use crate::platform::exec::fake::{Tools, ok};
+        use crate::testing::tools::{Tools, ok};
         for answer in ["None", "NaN", "12,5"] {
             let _tools = Tools::expect(&[("aws ce get-cost-and-usage", ok(answer))]);
             assert!(matches!(verdict(40.0, cli_month_to_date_cost(None).await), BudgetCheck::Unverifiable(_)), "{answer}");

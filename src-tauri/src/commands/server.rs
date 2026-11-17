@@ -174,8 +174,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_proxmox_servers_identity_is_read_then_its_node_keys_confirmed_through_the_commands() {
-        use crate::platform::exec::fake::{Tools, ok};
         use crate::runtime::server::tls_pin::tests::{FINGERPRINT_A, server_a};
+        use crate::testing::tools::{Tools, ok};
         let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         // The launcher's own key, already made: nothing runs ssh-keygen.
@@ -209,7 +209,7 @@ mod tests {
 
     #[tokio::test]
     async fn hosts_are_saved_listed_tested_and_removed_through_the_commands() {
-        use crate::platform::exec::fake::Tools;
+        use crate::testing::tools::Tools;
         let t = crate::testing::test_app::TestApp::new();
         let app = || t.handle().clone();
         let input = |id: Option<&str>| -> HostInput {
@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(server_set_default(app(), Some(saved.id.clone())).unwrap_err().to_string(), "a cloud account can't be the default host");
         server_set_default(app(), None).unwrap();
         // Testing it asks the Azure CLI (no network here).
-        let tools = Tools::strict_rules(&crate::platform::exec::fake::azure_signed_in());
+        let tools = Tools::strict_rules(&crate::testing::tools::azure_signed_in());
         let result = server_test(app(), saved.id.clone()).await.unwrap();
         assert!(tools.called("az account show --subscription 00000000-0000-0000-0000-000000000000"));
         assert!(!result.checks.is_empty());
@@ -279,7 +279,7 @@ mod tests {
     #[tokio::test]
     async fn the_vm_test_runs_on_proxmox_and_esxi_hosts_only() {
         let t = crate::testing::test_app::TestApp::new();
-        let tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
+        let tools = crate::testing::tools::Tools::strict_rules(&[]);
         let app = || t.handle().clone();
         let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
 
@@ -310,7 +310,7 @@ mod tests {
     async fn the_esxi_vm_test_stops_at_its_first_step_without_vagrants_esxi_plugin() {
         let t = crate::testing::test_app::TestApp::new();
         // No Vagrant on this computer: no ESXi plugin either.
-        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[("ovftool --version", crate::platform::exec::fake::ok("")), ("vagrant", None)]);
+        let _tools = crate::testing::tools::Tools::strict_rules(&[("ovftool --version", crate::testing::tools::ok("")), ("vagrant", None)]);
         crate::runtime::server::secrets::use_test_file(t.data().join("secrets.json"));
         t.host("esx", "vmware_esxi", serde_json::json!({ "host": "192.0.2.1", "port": 22, "username": "root" }));
         crate::runtime::server::secrets::set_secret("esx", "pw").unwrap();

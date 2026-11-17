@@ -1,15 +1,11 @@
-//! Win32: the console's Ctrl+C, the environment, the registry, job objects and elevation (UAC).
+//! Win32: the console's Ctrl+C, the environment, the registry and elevation (UAC).
 
 mod elevation;
-mod job;
 mod registry;
 
 use std::ffi::OsStr;
 
 pub use elevation::{ElevatedProcess, is_elevated, launch_elevated};
-#[cfg(test)]
-pub use job::terminate;
-pub use job::{Created, Job, create_in_job, exit_code, process_created, terminate_process};
 #[cfg(test)]
 pub use registry::registry_value_exists;
 pub use registry::{Hive, delete_user_registry_value, registry_string, registry_values, set_user_registry_string};
@@ -68,20 +64,4 @@ pub fn send_ctrl_c(pid: u32) -> bool {
 fn wide(s: &OsStr) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     s.encode_wide().chain(std::iter::once(0)).collect()
-}
-
-/// `bytes` decoded from the ANSI code page, else the OEM one; none when neither reads them.
-pub fn decode_code_page(bytes: &[u8]) -> Option<String> {
-    use windows_sys::Win32::Globalization::{CP_ACP, CP_OEMCP, MB_ERR_INVALID_CHARS, MultiByteToWideChar};
-    let len = i32::try_from(bytes.len()).ok()?;
-    [CP_ACP, CP_OEMCP].into_iter().find_map(|page| {
-        // SAFETY: `bytes` is valid for `len` bytes; the first call asks for the length only (no
-        // output buffer), the second writes at most `wide.len()` units into `wide`.
-        let units = unsafe { MultiByteToWideChar(page, MB_ERR_INVALID_CHARS, bytes.as_ptr(), len, std::ptr::null_mut(), 0) };
-        let mut wide = vec![0u16; usize::try_from(units).ok().filter(|n| *n > 0)?];
-        // SAFETY: as above, `wide` holds `units` units.
-        let written = unsafe { MultiByteToWideChar(page, MB_ERR_INVALID_CHARS, bytes.as_ptr(), len, wide.as_mut_ptr(), units) };
-        wide.truncate(usize::try_from(written).ok()?);
-        String::from_utf16(&wide).ok()
-    })
 }

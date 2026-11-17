@@ -683,7 +683,7 @@ mod tests {
             check_only: true,
         };
         // Every tool, installer and command runner answers from here, and says it was called.
-        let tools = crate::platform::exec::fake::Tools::new(|_, _| None);
+        let tools = crate::testing::tools::Tools::new(|_, _| None);
         let mut out = Out::new(&knobs);
         let first = plan(report, &report.setup, &knobs.wanted);
         report_hypervisors(&mut out, &first, &knobs.wanted);

@@ -177,7 +177,7 @@ mod tests {
     /// only what they hold (an unscripted call fails the test).
     #[tokio::test]
     async fn nothing_downloaded_is_listed_nor_removed_through_the_commands() {
-        use crate::platform::exec::fake::{Tools, ok};
+        use crate::testing::tools::{Tools, ok};
         let t = TestApp::new();
         let tools = Tools::strict_rules(&[("docker image ls -q --no-trunc", ok("")), ("vagrant box list", ok(""))]);
         let stored = machine_storage(t.handle().clone(), Vec::new()).await.unwrap();
