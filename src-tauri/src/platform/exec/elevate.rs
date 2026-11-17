@@ -1,101 +1,27 @@
-//! The VM self-test's Vagrant on Hyper-V, on Windows: run by a generated PowerShell script,
-//! elevated when needed (issue #185). A lab's Vagrant runs inside the Isothrum runner, which
-//! elevates on its own; this is the launcher's own Vagrantfile's.
-//!
-//! Hyper-V management needs an administrator (or a member of "Hyper-V Administrators"), and
-//! Vagrant's Hyper-V provider refuses to run otherwise. A launcher that is neither asks Windows
-//! for elevation (UAC, `ShellExecuteEx` with the `runas` verb) once per batch of Vagrant
-//! commands, never for status reads.
-//!
-//! An elevated process can't inherit pipes (or the environment) from a non-elevated parent, so a
-//! batch on Hyper-V runs as a Windows PowerShell script (passed with `-EncodedCommand`: no script
-//! file, no execution policy), elevated or not:
-//! - it reads the environment the commands need from a file in the batch's own folder (under the
-//!   user's temp folder) and deletes it, so values (tokens) never sit on a command line;
-//! - it picks the Hyper-V virtual switch the VMs' first adapter goes on, unless the user named
-//!   one ([`super::vagrant::HYPERV_SWITCH_ENV`], read by the lab's Isoloom Vagrantfile and the
-//!   launcher's own), so Vagrant doesn't stop to ask;
-//! - it runs each step, appending its stdout and stderr lines to a log file (UTF-8), framed by
-//!   marker lines carrying a random token (`start i`, `end i <exit code>`, `skip i`);
-//! - a watcher (a runspace of the script's own process) ends the whole process tree when the
-//!   batch folder gets a `cancel` file (the caller gave up, or Vagrant asked a question nobody can
-//!   answer), when the launcher process is gone, or after `script::DEADLINE`, and says why in a `reason`
-//!   file.
-//!
-//! The launcher follows that log as it grows (`collect::follow_batch`), turns it back into the same events
-//! a batch run step by step reports, and waits for the process. Declining the UAC prompt
-//! (`ERROR_CANCELLED`) gives a plain-language error (`launch_error`).
+//! Joining "Hyper-V Administrators" through one UAC prompt (#185), and the window a UAC prompt is
+//! raised for. Hyper-V management needs an administrator (or a member of that group); a lab's
+//! Vagrant and the VM self-test run inside the Isothrum runner, which elevates on its own.
 
-#[cfg(any(windows, test))]
-mod collect;
-#[cfg(any(windows, test))]
-mod script;
-
-#[cfg(any(windows, test))]
-use std::path::Path;
-
-#[cfg(any(windows, test))]
-use self::collect::{WorkDir, follow_batch};
-#[cfg(any(windows, test))]
-use self::script::{Plan, env_json, forwarded_env, own_env, powershell_args, script};
-#[cfg(any(windows, test))]
-use super::vagrant::{Event, Outcome, Step};
 use crate::error::{Error, Result};
 
-/// How Vagrant runs for a batch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Mode {
-    /// As any other tool, one process per step.
-    Direct,
-    /// Through the PowerShell script; `runas`: elevated through a UAC prompt.
-    Script { runas: bool },
-}
+/// The longest command line Windows accepts, in UTF-16 units.
+#[cfg(any(windows, test))]
+const MAX_COMMAND_LINE: usize = 32_000;
 
-/// How Vagrant runs for machines on Hyper-V (`hyperv`) or not.
-pub(super) fn mode(hyperv: bool) -> Mode {
-    // Scripted tools answer Vagrant itself, and must never raise a prompt.
-    decide(cfg!(windows) && super::tools_in_use().are_the_machines(), hyperv, may_manage_hyperv)
-}
-
-/// The decision itself: only Hyper-V on Windows goes through the script, elevated only when this
-/// process may not manage Hyper-V already (`may_manage`: elevated, or a Hyper-V administrator,
-/// which Vagrant accepts too).
-fn decide(windows: bool, hyperv: bool, may_manage: impl FnOnce() -> bool) -> Mode {
-    if !(windows && hyperv) {
-        return Mode::Direct;
+/// The arguments of `powershell.exe` that run `script`.
+#[cfg(any(windows, test))]
+fn powershell_args(script: &str) -> Result<Vec<String>> {
+    use base64::Engine;
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let args: Vec<String> = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-EncodedCommand"]
+        .into_iter()
+        .map(String::from)
+        .chain([base64::engine::general_purpose::STANDARD.encode(utf16)])
+        .collect();
+    if args.iter().map(|a| a.len() + 1).sum::<usize>() > MAX_COMMAND_LINE {
+        return Err(Error::Invalid("the script is too long for a Windows command line".into()));
     }
-    Mode::Script { runas: !may_manage() }
-}
-
-/// Whether this process runs with an administrator (elevated) token.
-#[cfg(windows)]
-fn is_elevated() -> bool {
-    static ELEVATED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ELEVATED.get_or_init(crate::platform::sys::is_elevated)
-}
-
-#[cfg(not(windows))]
-fn is_elevated() -> bool {
-    false
-}
-
-/// Whether this user is in "Hyper-V Administrators" (S-1-5-32-578).
-#[cfg(windows)]
-fn in_hyperv_admins() -> bool {
-    static MEMBER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *MEMBER.get_or_init(crate::platform::sys::in_hyperv_admins)
-}
-
-#[cfg(not(windows))]
-fn in_hyperv_admins() -> bool {
-    false
-}
-
-/// Whether this process may manage Hyper-V itself, as Vagrant's Hyper-V provider requires for
-/// every command on its machines (`vagrant status` included): elevated, or a member of "Hyper-V
-/// Administrators". Never off Windows.
-pub fn may_manage_hyperv() -> bool {
-    cfg!(windows) && (is_elevated() || in_hyperv_admins())
+    Ok(args)
 }
 
 /// The well-known SID of BUILTIN\Hyper-V Administrators (its name is translated).
@@ -160,94 +86,6 @@ pub async fn join_hyperv_admins() -> Result<()> {
     Err(Error::Invalid("Hyper-V is only on Windows.".into()))
 }
 
-/// What [`remove_hyperv_leftover`] found of a VM by its name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Leftover {
-    /// No VM has the name.
-    None,
-    /// Every VM of the name had all its disks under the folder: each was turned off and removed.
-    Removed,
-    /// A VM of the name has a disk elsewhere (or none): not one of ours, left alone.
-    Foreign,
-}
-
-/// The exit codes of [`leftover_script`]: what it found and did.
-#[cfg(any(windows, test))]
-const LEFTOVER_REMOVED: i32 = 10;
-#[cfg(any(windows, test))]
-const LEFTOVER_FOREIGN: i32 = 20;
-
-/// The PowerShell script that turns off and removes every Hyper-V VM named `name` whose disks
-/// are all under the folder `under` (a PowerShell expression of its path, ending in a separator
-/// so a sibling folder of the same prefix isn't under it), and nothing if any VM of that name has
-/// a disk elsewhere (or none): it exits 0 (none), [`LEFTOVER_REMOVED`] or [`LEFTOVER_FOREIGN`], so
-/// an elevated run (whose output can't be read) says what it did too. The app runs it for its
-/// self-test's folder, and the Windows uninstaller for the same folder in the app's cache
-/// (`packaging/windows/remove-test-vm.ps1`, written from it).
-#[cfg(any(windows, test))]
-pub(crate) fn leftover_script(name: &str, under: &str) -> String {
-    format!(
-        "$ErrorActionPreference = 'Stop'\n\
-         $vms = @(Get-VM -Name {name} -ErrorAction SilentlyContinue | Where-Object {{ $_.Name -ceq {name} }})\n\
-         if ($vms.Count -eq 0) {{ exit 0 }}\n\
-         foreach ($vm in $vms) {{\n\
-         \x20 $disks = @(Get-VMHardDiskDrive -VM $vm | ForEach-Object {{ $_.Path }})\n\
-         \x20 $outside = @($disks | Where-Object {{ -not $_.StartsWith({under}, [System.StringComparison]::OrdinalIgnoreCase) }})\n\
-         \x20 if ($disks.Count -eq 0 -or $outside.Count -gt 0) {{ exit {LEFTOVER_FOREIGN} }}\n\
-         }}\n\
-         foreach ($vm in $vms) {{ Stop-VM -VM $vm -TurnOff -Force; Remove-VM -VM $vm -Force }}\n\
-         exit {LEFTOVER_REMOVED}\n",
-        name = ps_quote(name),
-    )
-}
-
-/// `folder` as the `under` of [`leftover_script`]: quoted, with one separator at its end.
-#[cfg(any(windows, test))]
-fn folder_expr(folder: &Path) -> String {
-    ps_quote(&format!("{}\\", folder.display().to_string().trim_end_matches(['\\', '/'])))
-}
-
-/// What the leftover script's exit `code` says.
-#[cfg(any(windows, test))]
-fn leftover_outcome(code: i32) -> Result<Leftover> {
-    match code {
-        0 => Ok(Leftover::None),
-        LEFTOVER_REMOVED => Ok(Leftover::Removed),
-        LEFTOVER_FOREIGN => Ok(Leftover::Foreign),
-        other => Err(Error::Invalid(format!("removing the leftover Hyper-V VM failed (PowerShell exited with {other})"))),
-    }
-}
-
-/// Turns off and removes the Hyper-V VMs named `name` whose disks are all under `folder` (a VM
-/// an earlier run left, which Vagrant no longer knows); a VM of that name with a disk elsewhere
-/// is left alone ([`Leftover::Foreign`]). Through one UAC prompt when this process may not
-/// manage Hyper-V itself.
-#[cfg(windows)]
-pub async fn remove_hyperv_leftover(name: &str, folder: &Path) -> Result<Leftover> {
-    let script = leftover_script(name, &folder_expr(folder));
-    let code = if may_manage_hyperv() {
-        let args = powershell_args(&script)?;
-        let mut cmd = tokio::process::Command::new(powershell());
-        cmd.args(&args);
-        super::headless(&mut cmd).status().await?.code().unwrap_or(-1)
-    } else {
-        let code = elevated_powershell(&script).await?.map_err(|code| {
-            Error::Invalid(format!(
-                "Windows didn't remove the VM an earlier test left, which needs administrator rights ({}).",
-                std::io::Error::from_raw_os_error(code)
-            ))
-        })?;
-        i32::try_from(code).unwrap_or(-1)
-    };
-    leftover_outcome(code)
-}
-
-/// No Hyper-V off Windows: nothing is left there.
-#[cfg(not(windows))]
-pub fn remove_hyperv_leftover(_name: &str, _folder: &std::path::Path) -> impl std::future::Future<Output = Result<Leftover>> {
-    std::future::ready(Ok(Leftover::None))
-}
-
 /// The environment variable a deploy worker gets the app's main window in (see
 /// [`set_owner_window`]).
 #[cfg(any(windows, test))]
@@ -274,102 +112,17 @@ pub fn owner_window() -> Option<isize> {
     std::env::var(OWNER_WINDOW_ENV).ok().and_then(|v| v.parse().ok()).filter(|h| *h != 0)
 }
 
-/// What Windows' answer to the elevation request means, as an error.
-#[cfg(any(windows, test))]
-fn launch_error(code: i32) -> Error {
-    const ERROR_FILE_NOT_FOUND: i32 = 2;
-    const ERROR_CANCELLED: i32 = 1223;
-    match code {
-        ERROR_CANCELLED => Error::Invalid(DECLINED.into()),
-        ERROR_FILE_NOT_FOUND => Error::ToolMissing { tool: "powershell" },
-        _ => Error::Invalid(format!(
-            "Windows could not start Vagrant with administrator rights for Hyper-V ({}). Start Cyber CTF as administrator and try again.",
-            std::io::Error::from_raw_os_error(code)
-        )),
-    }
-}
-
-/// The error when the user answers No to the UAC prompt.
-#[cfg(any(windows, test))]
-const DECLINED: &str = "Hyper-V needs administrator rights, and the Windows permission prompt was declined, so Vagrant did not run. \
-Try again and choose Yes, or start Cyber CTF as administrator.";
-
-/// What a batch runs: `program` (Vagrant) in `dir`, with `env` added, step by step.
-#[cfg(any(windows, test))]
-struct Batch<'a> {
-    program: &'a str,
-    dir: &'a Path,
-    env: &'a [(String, String)],
-    steps: &'a [Step],
-}
-
-/// Runs `batch` through `launch`, which starts PowerShell with the given arguments and resolves
-/// to its exit code once it ended.
-#[cfg(any(windows, test))]
-async fn run_script<L, F>(batch: &Batch<'_>, launch: L, on_event: impl FnMut(Event)) -> Result<Vec<Outcome>>
-where
-    L: FnOnce(Vec<String>) -> F,
-    F: std::future::Future<Output = Result<u32>>,
-{
-    let mut work = WorkDir::new()?;
-    std::fs::File::create(work.log())?;
-    std::fs::write(work.env(), env_json(&forwarded_env(own_env(), batch.env)))?;
-    let marker = format!("##cyberctf-{:016x}##", rand::random::<u64>());
-    let plan = Plan { batch, work: &work, marker: &marker, launcher: std::process::id() };
-    let args = powershell_args(&script(&plan)?)?;
-    follow_batch(&mut work, &marker, batch.steps, launch(args), on_event).await
-}
-
-/// Starts PowerShell (`exe`) with `args` as a plain child; its exit code once it ended.
-#[cfg(any(windows, test))]
-async fn launch_plain(exe: &std::ffi::OsStr, args: Vec<String>) -> Result<u32> {
-    let mut cmd = tokio::process::Command::new(exe);
-    // `-WindowStyle` is Windows only (PowerShell 7 elsewhere refuses it).
-    let windows_only = |a: &&String| cfg!(windows) || (*a != "-WindowStyle" && *a != "Hidden");
-    cmd.args(args.iter().filter(windows_only)).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-    super::headless(&mut cmd);
-    let status = cmd.status().await.map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => Error::ToolMissing { tool: "powershell" },
-        _ => Error::Io(e),
-    })?;
-    Ok(status.code().map_or(1, i32::cast_unsigned))
-}
-
-/// Runs `steps` with Vagrant in `dir` through the script: elevated (`runas`, one UAC prompt for
-/// the whole batch) or not.
-#[cfg(windows)]
-pub(super) async fn batch(dir: &Path, env: &[(String, String)], steps: &[Step], runas: bool, on_event: impl FnMut(Event)) -> Result<Vec<Outcome>> {
-    let program = script::resolve("vagrant.exe", std::env::var_os("PATH").as_deref()).map_or_else(|| "vagrant".into(), |p| p.display().to_string());
-    let batch = Batch { program: &program, dir, env, steps };
-    let exe = powershell();
-    if !runas {
-        return run_script(&batch, move |args| async move { launch_plain(exe.as_os_str(), args).await }, on_event).await;
-    }
-    let directory = dir.to_path_buf();
-    let owner = owner_window().unwrap_or(0);
-    let launch = move |args: Vec<String>| async move {
-        // The prompt blocks until it is answered; waiting blocks until the commands end. A
-        // process given up on is closed when dropped (its watcher ends it).
-        let process = tokio::task::spawn_blocking(move || crate::platform::sys::launch_elevated(&exe, &args.join(" "), &directory, owner))
-            .await
-            .map_err(|e| Error::Invalid(e.to_string()))?
-            .map_err(launch_error)?;
-        tokio::task::spawn_blocking(move || process.wait()).await.map_err(|e| Error::Invalid(e.to_string()))
-    };
-    run_script(&batch, launch, on_event).await
-}
-
 /// Windows PowerShell, by its full path.
 #[cfg(windows)]
 fn powershell() -> std::path::PathBuf {
     let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
-    Path::new(&root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
+    std::path::Path::new(&root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
 }
 
 /// `s` as a PowerShell single-quoted string. PowerShell also takes the typographic single quotes
 /// as quote characters, so every one of them is doubled too.
-#[cfg_attr(not(windows), allow(dead_code, reason = "the elevated broker's scripts, built on Windows (and in its tests)"))]
-pub(crate) fn ps_quote(s: &str) -> String {
+#[cfg(any(windows, test))]
+fn ps_quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('\'');
     for c in s.chars() {
@@ -387,16 +140,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_hyperv_on_windows_goes_through_the_script_elevated_when_it_must() {
-        assert_eq!(decide(true, true, || false), Mode::Script { runas: true });
-        assert_eq!(decide(true, true, || true), Mode::Script { runas: false }, "an admin (or Hyper-V admin) runs it without a prompt");
-        assert_eq!(decide(true, false, || false), Mode::Direct, "other providers never need it");
-        assert_eq!(decide(false, true, || false), Mode::Direct, "never off Windows");
-        let _tools = crate::platform::exec::fake::Tools::strict_rules(&[]);
-        assert_eq!(mode(true), Mode::Direct, "never with scripted tools");
-    }
-
-    #[test]
     fn joining_hyperv_administrators_adds_this_account_by_the_groups_sid() {
         // #185: the group's name is translated (Administrateurs Hyper-V), its SID isn't.
         let script = join_hyperv_admins_script(r"PC\Jo O'Brien");
@@ -404,31 +147,6 @@ mod tests {
         assert!(script.contains("MemberExistsException") && script.starts_with("$ErrorActionPreference = 'Stop'"), "{script}");
         assert!(join_error(1223).to_string().contains("declined"));
         assert!(join_error(5).to_string().contains("Hyper-V Administrators"));
-        assert!(!may_manage_hyperv() || cfg!(windows), "never off Windows");
-    }
-
-    #[test]
-    fn a_leftover_hyperv_vm_is_removed_only_by_its_exact_name_with_its_disks_in_the_folder() {
-        let script = leftover_script("CyberCTF test VM", &folder_expr(Path::new(r"C:\Users\jo\AppData\Local\org.cyberctf.desktop\selftest\vm\")));
-        assert!(script.contains("Get-VM -Name 'CyberCTF test VM'") && script.contains("$_.Name -ceq 'CyberCTF test VM'"), "{script}");
-        // The folder with one separator: a sibling folder (`vm2`) doesn't count as under it.
-        assert!(script.contains(r"StartsWith('C:\Users\jo\AppData\Local\org.cyberctf.desktop\selftest\vm\', "), "{script}");
-        assert!(script.contains("if ($disks.Count -eq 0 -or $outside.Count -gt 0) { exit 20 }"), "{script}");
-        let removal = script.find("Remove-VM").unwrap();
-        assert!(script.find("exit 20").unwrap() < removal, "every VM is checked before any is removed");
-        assert!(script.contains("Stop-VM -VM $vm -TurnOff -Force; Remove-VM -VM $vm -Force"));
-        assert_eq!(leftover_outcome(0).unwrap(), Leftover::None);
-        assert_eq!(leftover_outcome(10).unwrap(), Leftover::Removed);
-        assert_eq!(leftover_outcome(20).unwrap(), Leftover::Foreign);
-        assert!(leftover_outcome(1).is_err());
-    }
-
-    #[test]
-    fn a_declined_prompt_says_so_in_plain_words() {
-        let e = launch_error(1223).to_string();
-        assert!(e.contains("declined") && e.contains("administrator") && !e.contains("1223"), "{e}");
-        assert!(matches!(launch_error(2), Error::ToolMissing { tool: "powershell" }));
-        assert!(launch_error(5).to_string().contains("administrator rights"));
     }
 
     #[test]
@@ -440,53 +158,9 @@ mod tests {
         set_owner_window(0);
     }
 
-    /// The PowerShell that runs the scripts here: Windows PowerShell on Windows; elsewhere
-    /// PowerShell 7 when `CYBERCTF_PWSH` names it (the script is the same).
-    fn powershell() -> Option<std::ffi::OsString> {
-        if cfg!(windows) { Some("powershell".into()) } else { std::env::var_os("CYBERCTF_PWSH") }
-    }
-
-    /// Runs `steps` with `program` through a real PowerShell (not elevated); its lines too.
-    async fn real(ps: std::ffi::OsString, program: &str, dir: &Path, steps: &[Step]) -> (Vec<String>, Result<Vec<Outcome>>) {
-        let mut lines = Vec::new();
-        let env = [("CYBERCTF_X".to_string(), "it's".to_string())];
-        let batch = Batch { program, dir, env: &env, steps };
-        let result = run_script(
-            &batch,
-            move |args| async move { launch_plain(&ps, args).await },
-            |e| {
-                if let Event::Line(i, l) = e {
-                    lines.push(format!("{i} {}", l.trim()));
-                }
-            },
-        )
-        .await;
-        (lines, result)
-    }
-
-    #[tokio::test]
-    async fn a_real_powershell_stops_on_a_missing_folder() {
-        let Some(ps) = powershell() else { return };
-        let program = if cfg!(windows) { "cmd.exe" } else { "sh" };
-        let missing = std::env::temp_dir().join(format!("cyberctf-missing-{}", rand::random::<u32>()));
-        let (_, result) = real(ps, program, &missing, &[Step::new(&["-c", "echo ran"])]).await;
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("the Vagrant batch failed") && err.contains("cyberctf-missing-"), "{err}");
-    }
-
-    #[tokio::test]
-    async fn a_real_powershell_watcher_ends_the_whole_batch_stuck_on_a_question() {
-        // The generated watcher, run by a real PowerShell, ends the run's whole tree once asked
-        // (the step would wait a minute). How soon it is asked is proven on a fake clock
-        // (`collect::tests`); this proves it acts, so it asserts no time.
-        let Some(ps) = powershell() else { return };
-        let (program, step) = if cfg!(windows) {
-            ("cmd.exe", Step::new(&["/c", "echo Please choose a switch to attach to your Hyper-V instance.& ping -n 60 127.0.0.1 >nul"]))
-        } else {
-            ("sh", Step::new(&["-c", "echo 'Please choose a switch to attach to your Hyper-V instance.'; sleep 60"]))
-        };
-        let (_, result) = real(ps, program, &std::env::temp_dir(), &[step]).await;
-        let err = result.expect_err("the watcher ended the step before it finished").to_string();
-        assert!(err.contains("which Hyper-V virtual switch"), "{err}");
+    #[test]
+    fn a_script_too_long_for_a_command_line_is_refused() {
+        assert!(powershell_args("Write-Output 'x'").unwrap().contains(&"-EncodedCommand".to_owned()));
+        assert!(powershell_args(&"x".repeat(MAX_COMMAND_LINE)).is_err());
     }
 }

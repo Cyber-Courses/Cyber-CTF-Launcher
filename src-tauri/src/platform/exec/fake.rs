@@ -343,15 +343,7 @@ pub(super) fn answer(program: &'static str, args: &[&str], env: &[(String, Strin
     })
 }
 
-/// [`answer`] for a streamed tool: its output lines (stderr too, on a failure) go to `on_line`.
-pub(super) fn answer_stream(program: &'static str, args: &[&str], env: &[(String, String)], mut on_line: impl FnMut(String)) -> Option<FakeOutcome<()>> {
-    Some(match reply(program, args, env)? {
-        Scripted::Reply(Reply::Hang) => FakeOutcome::Hang,
-        scripted => FakeOutcome::Done(scripted.streamed(&mut on_line, |stderr| super::failed(program, args, stderr), || Error::ToolMissing { tool: program })),
-    })
-}
-
-/// [`answer_stream`] for an install or removal step (`platform::steps`), whose program is any
+/// [`answer`] for an install or removal step, its lines to `on_line` (`platform::steps`), whose program is any
 /// path: a missing tool and a failure say what `run_step` says for them.
 pub fn answer_step(program: &str, args: &[String], on_line: &mut impl FnMut(String)) -> Option<Result<()>> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -410,7 +402,7 @@ impl Scripted {
                 text.lines().for_each(|l| on_line(l.to_string()));
                 Err(failed(text))
             }
-            // A hang is intercepted before this point by `answer`/`answer_stream`; a step script
+            // A hang is intercepted before this point by `answer`; a step script
             // (which streams through here) never uses one, so treat it as a plain failure.
             Scripted::Reply(Reply::Hang) => Err(failed(String::new())),
             Scripted::Missing => Err(missing()),

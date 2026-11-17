@@ -160,7 +160,7 @@ fn read_modify_writes_from_threads_and_processes_each_keep_the_others_change() {
                     store
                         .write(|tx| {
                             let mut owned = storage::load(tx)?;
-                            owned.images.insert(crate::machine::storage::owned::OwnedImage { reference: format!("r{n}-{i}"), id: "x".into() });
+                            owned.images.insert(crate::machine::storage::record::OwnedImage { reference: format!("r{n}-{i}"), id: "x".into() });
                             storage::replace(tx, &owned)
                         })
                         .unwrap();

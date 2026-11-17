@@ -11,16 +11,7 @@
 const TOOLS: &str = r"docker|vagrant|terraform|tofu|VBoxManage|vboxmanage|prlctl|vmrun|utmctl|virsh|qemu-[a-z0-9_.-]+|aws|az|gcloud|doctl|linode-cli|oci";
 
 /// The files allowed to start one of [`TOOLS`] until the migration step named removes them.
-const ALLOWED: &[(&str, &str)] = &[
-    ("machine/selftest/downloads.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
-    ("machine/selftest/vm.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
-    ("machine/selftest/vm/leftover.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
-    ("machine/selftest/vm/networks.rs", "L-14: the self-tests move to isothrum-machine (I-15)"),
-    ("machine/storage/owned.rs", "L-14: what a self-test downloaded, until the self-tests run through the runner (I-15)"),
-    ("machine/tools/install.rs", "L-14: tool and hypervisor installs move to isothrum-machine (I-14)"),
-    ("platform/exec/elevate.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
-    ("platform/exec/vagrant.rs", "L-14: the launcher's own process layer goes once nothing above runs a tool"),
-];
+const ALLOWED: &[(&str, &str)] = &[("machine/tools/install.rs", "L-14: tool and hypervisor installs move to isothrum-machine (I-14)")];
 
 /// A tool started in `code`: the first argument of a call that starts or finds a program, the
 /// head of a (program, args) pair, or a `&str` constant.

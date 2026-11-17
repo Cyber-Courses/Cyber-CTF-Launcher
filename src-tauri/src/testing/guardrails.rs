@@ -104,7 +104,6 @@ fn shipped_code_opens_no_path_inside_isothrums_home() {
 /// Where a script handed to `sh -c` may be built from parts. (Linux's root scripts are
 /// isothrum-machine's, built and checked there.)
 const SHELL_ALLOWED: &[(&str, &str, &str)] = &[
-    ("machine/selftest/vm.rs", "Step::new(&[\"ssh\", \"-c\", &uname_command()])", "vagrant ssh's -c: the self-test's fixed probe, run in the test VM"),
     ("platform.rs", "args([\"-n\", \"-c\", script])", "a test helper (cfg(test)): sh -n only parses the script"),
     (
         "runtime/isothrum/checks.rs",
@@ -206,13 +205,6 @@ const SLEEP_ALLOWED: &[(&str, &str, &str)] = &[
     ("app/quit.rs", "std::thread::sleep(Duration::from_millis(2500));", "wall clock: an absence (the relaunched app doesn't exit) takes time to see"),
     ("account/auth/tests.rs", "tokio::time::sleep(std::time::Duration::from_millis(10)).await;", "a poll under a 5 s timeout for the refresh to be saved"),
     ("cloud_cli/tests.rs", "tokio::time::sleep(Duration::from_millis(100)).await;", "wall clock: the sign-in under way before it is cancelled"),
-    ("platform/exec/elevate/collect.rs", "tokio::time::sleep(WATCH_EVERY).await;", "a stand-in script stuck on a question until it is cancelled"),
-    (
-        "platform/exec/elevate/collect.rs",
-        "tokio::time::sleep(Duration::from_millis(450)).await;",
-        "a stand-in writing its output in two parts, the gap the subject",
-    ),
-    ("platform/exec/elevate/collect.rs", "std::thread::sleep(Duration::from_millis(100));", "a poll bounded to 50 looks for the folder to go"),
     ("platform/exec/tests.rs", "tokio::time::sleep(Duration::from_millis(50)).await;", "a poll bounded to 300 looks for a child's pid"),
     ("platform/exec/fake.rs", "tokio::time::sleep(std::time::Duration::from_millis(100)).await;", "`gone`'s poll, bounded to 60 looks, for a process to end"),
     ("platform/identity.rs", "std::thread::sleep(std::time::Duration::from_millis(100));", "a poll to a 10 s deadline for a process's identity to go"),

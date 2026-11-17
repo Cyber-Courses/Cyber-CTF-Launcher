@@ -7,7 +7,7 @@
 //! a container, or boxes used by a VM, are left alone (Docker and Vagrant refuse).
 
 mod legacy;
-pub(crate) mod owned;
+pub(crate) mod record;
 
 use std::collections::BTreeMap;
 use std::path::Path;

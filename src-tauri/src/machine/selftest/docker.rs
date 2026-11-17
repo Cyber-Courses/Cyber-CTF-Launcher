@@ -4,12 +4,10 @@
 
 use std::path::Path;
 
-use isothrum_machine::selftest::Progress;
 use isothrum_machine::selftest::engine::{self, Failure, Found, Step, StepProgress};
 
 use super::Reporter;
 use crate::error::{Error, Result};
-use crate::runtime::selftest_report::StepState;
 
 /// The test's image.
 pub(crate) const IMAGE: &str = engine::IMAGE;
@@ -47,21 +45,7 @@ fn error(failure: Failure) -> Error {
 
 /// Says one step's progress through `r`.
 fn say(r: &Reporter, progress: StepProgress) {
-    match progress {
-        Progress::Running(step) => {
-            let (id, label) = named(step);
-            r.send(id, label, StepState::Running, None);
-        }
-        Progress::Passed(step, found) => {
-            let (id, label) = named(step);
-            r.send(id, label, StepState::Ok, detail(found));
-        }
-        Progress::Failed(step, why) => {
-            let (id, label) = named(step);
-            r.failed(id, label, &error(why).to_string());
-        }
-        _ => {}
-    }
+    super::say(r, progress, named, detail, error);
 }
 
 /// The test, on the engine behind `context` (the CLI's current one when none is named), its

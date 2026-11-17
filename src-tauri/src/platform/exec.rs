@@ -12,15 +12,14 @@ mod group;
 mod ledger;
 pub(crate) mod shim;
 mod tool;
-mod vagrant;
 #[cfg(any(windows, test))]
 mod win_command;
 
 use std::path::Path;
-use std::process::{ExitStatus, Stdio};
+use std::process::Stdio;
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 pub use background::{Background, background};
@@ -29,16 +28,13 @@ pub use background::{Background, background};
 pub use docker::IMAGE_PATTERN;
 pub use docker::login_name;
 pub use docker::{ImageRef, docker_denied, docker_denied_error, valid_image};
-#[cfg(test)]
-pub(crate) use elevate::leftover_script;
+pub use elevate::join_hyperv_admins;
 #[cfg(windows)]
 pub use elevate::set_owner_window;
-pub use elevate::{Leftover, join_hyperv_admins, remove_hyperv_leftover};
 pub(crate) use group::GroupGuard;
 pub use group::kill_live_tools;
 pub use ledger::{DIR as TOOLS_DIR, end_orphans as end_orphaned_tools, record_tools_in};
 pub(crate) use tool::Tool;
-pub use vagrant::{Event, Step, Vagrant, hyperv_switch_line};
 
 use crate::error::{Error, Result};
 use crate::platform::tool_output::text::{decode, locale};
@@ -51,7 +47,8 @@ pub struct ToolSet(u64);
 
 impl ToolSet {
     /// Whether these are the machine's own tools, not a test's scripted ones: only they may
-    /// reach the machine beyond a tool's answer (a UAC prompt, a restart's `RunOnce`).
+    /// reach the machine beyond a tool's answer (a restart's `RunOnce`).
+    #[cfg(windows)]
     pub fn are_the_machines(self) -> bool {
         self == ToolSet(0)
     }
@@ -182,12 +179,6 @@ fn timed_out_after(limit: Duration) -> String {
     format!("timed out after {}s (the tool or its backend may be stuck)", limit.as_secs())
 }
 
-/// `run`, a tool run (or several) described as `what`, given up after `limit` like a timed tool:
-/// dropping it kills what it started (`kill_on_drop`, and its process group).
-pub async fn within<T>(what: &str, limit: Duration, run: impl std::future::Future<Output = Result<T>>) -> Result<T> {
-    tokio::time::timeout(limit, run).await.unwrap_or_else(|_| Err(Error::CommandFailed { command: what.to_string(), stderr: timed_out_after(limit) }))
-}
-
 /// The error of a tool that ran and exited with `code`: missing when cmd.exe, which runs it on
 /// Windows, said it found no such command; else its failure.
 fn exit_error(program: &'static str, args: &[&str], code: Option<i32>, stderr: String) -> Error {
@@ -244,12 +235,6 @@ fn create_in_job(cmd: &std::process::Command, job: &crate::platform::sys::Job) -
 #[cfg(test)]
 pub fn timed_out(e: &Error) -> bool {
     matches!(e, Error::CommandFailed { stderr, .. } if stderr.starts_with("timed out after"))
-}
-
-/// What a streamed tool's failure says: its last stderr lines, else just its exit status.
-fn stream_failure(stderr_tail: &[String], status: impl std::fmt::Display) -> String {
-    let cause = stderr_tail.join("\n");
-    if cause.trim().is_empty() { format!("exited with {status}") } else { format!("{} (exited with {status})", cause.trim()) }
 }
 
 /// Runs a program without a shell (arguments are never interpolated) and returns stdout.
@@ -354,149 +339,5 @@ async fn wait_output_drained(mut child: Tool) -> std::io::Result<std::process::O
     Ok(std::process::Output { status, stdout, stderr })
 }
 
-/// Like `run`, but adds `env` to the process environment and forwards every
-/// stdout/stderr line to `on_line` as it arrives.
-pub async fn stream(program: &'static str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)], on_line: impl FnMut(String)) -> Result<()> {
-    stream_from(program, args, cwd, env, on_line).await
-}
-
-async fn stream_from(program: &'static str, args: &[&str], cwd: Option<&Path>, env: &[(String, String)], on_line: impl FnMut(String)) -> Result<()> {
-    shim::check_args(program, args)?;
-    #[cfg(test)]
-    let mut on_line = on_line;
-    #[cfg(test)]
-    if let Some(answer) = fake::answer_stream(program, args, env, &mut on_line) {
-        return match answer {
-            fake::FakeOutcome::Done(result) => result,
-            fake::FakeOutcome::Hang => std::future::pending::<Result<()>>().await,
-        };
-    }
-    let mut cmd = piped_command(program, args, cwd, env, Stdio::null());
-    // A cancellation ends the whole tree: `vagrant` is a wrapper whose `ruby` outlived the
-    // wrapper killed alone, and kept Vagrant's lock.
-    let (mut child, group) = spawn_group(&mut cmd, true).map_err(spawn_error(program))?;
-    // Keep the last few stderr lines so a failure's error carries the actual cause, not just the
-    // exit status (callers that surface the returned error, not the log channel, rely on this).
-    let forwarded = forward_lines(&mut child, STREAM_ERROR_LINES, on_line, |_| {}).await;
-    if forwarded.is_ok() {
-        group.disarm();
-    }
-    let (status, tail) = forwarded?;
-    if !status.success() {
-        return Err(exit_error(program, args, status.code(), stream_failure(&tail, status)));
-    }
-    Ok(())
-}
-
-/// Forwards a piped child's stdout and stderr lines to `on_line` as they arrive, until both
-/// close, or until [`DRAIN_AFTER_EXIT`] after the child itself exited (something it left running
-/// may keep them open). `on_stderr` sees each stderr line first. Returns its exit status and its
-/// last `keep` stderr lines.
-///
-/// Lines are read as bytes and decoded lossily: tools print in the console's codepage
-/// (`VBoxManage` and Vagrant on a French Windows, WinRM output, a compose build's), and a line
-/// that isn't UTF-8 once failed the stream, which dropped (and so killed) a `terraform apply`
-/// mid-run.
-pub(crate) async fn forward_lines(
-    child: &mut Tool,
-    keep: usize,
-    mut on_line: impl FnMut(String),
-    mut on_stderr: impl FnMut(&str),
-) -> Result<(ExitStatus, Vec<String>)> {
-    let mut stdout = BufReader::new(piped(child.stdout.take(), "output")?);
-    let mut stderr = BufReader::new(piped(child.stderr.take(), "error output")?);
-    // Kept across the loop: `read_until` is cancel safe only because a partial line stays here.
-    let (mut out_buf, mut err_buf) = (Vec::new(), Vec::new());
-    let (mut out_done, mut err_done) = (false, false);
-    let mut tail = StderrTail::new(keep);
-    let mut exited: Option<ExitStatus> = None;
-    // Armed once the child has exited; never polled before.
-    let drain = tokio::time::sleep(DRAIN_AFTER_EXIT);
-    tokio::pin!(drain);
-    while !(out_done && err_done) {
-        tokio::select! {
-            // At the end, a last line with no `\n` may already be in the buffer: read by a call
-            // the other stream's line cut short.
-            read = stdout.read_until(b'\n', &mut out_buf), if !out_done => match read? {
-                0 if out_buf.is_empty() => out_done = true,
-                _ => on_line(take_line(&mut out_buf)),
-            },
-            read = stderr.read_until(b'\n', &mut err_buf), if !err_done => match read? {
-                0 if err_buf.is_empty() => err_done = true,
-                _ => tail.forward(take_line(&mut err_buf), &mut on_line, &mut on_stderr),
-            },
-            status = child.wait(), if exited.is_none() => {
-                exited = Some(status?);
-                drain.as_mut().reset(tokio::time::Instant::now() + DRAIN_AFTER_EXIT);
-            },
-            () = &mut drain, if exited.is_some() => break,
-        }
-    }
-    // Cut off by the drain: what was half read is still a line.
-    if !out_buf.is_empty() {
-        on_line(take_line(&mut out_buf));
-    }
-    tail.flush(&mut err_buf, &mut on_line, &mut on_stderr);
-    let status = match exited {
-        Some(status) => status,
-        None => child.wait().await?,
-    };
-    Ok((status, tail.lines.into()))
-}
-
-/// A child's stream, which the caller piped: an error, not a panic, if it didn't.
-fn piped<T>(stream: Option<T>, what: &str) -> Result<T> {
-    stream.ok_or_else(|| Error::Invalid(format!("the tool's {what} wasn't piped")))
-}
-
-/// A streamed tool's last stderr lines, kept for its error.
-struct StderrTail {
-    keep: usize,
-    lines: std::collections::VecDeque<String>,
-}
-
-impl StderrTail {
-    fn new(keep: usize) -> StderrTail {
-        StderrTail { keep, lines: std::collections::VecDeque::new() }
-    }
-
-    /// Hands a stderr line to `on_stderr` then `on_line`, keeping it among the last `keep`.
-    fn forward(&mut self, line: String, on_line: &mut impl FnMut(String), on_stderr: &mut impl FnMut(&str)) {
-        on_stderr(&line);
-        if self.keep > 0 {
-            if self.lines.len() == self.keep {
-                self.lines.pop_front();
-            }
-            self.lines.push_back(line.clone());
-        }
-        on_line(line);
-    }
-
-    /// Forwards the stderr line half read into `buf`, if any: cut off, it is still a line.
-    fn flush(&mut self, buf: &mut Vec<u8>, on_line: &mut impl FnMut(String), on_stderr: &mut impl FnMut(&str)) {
-        if !buf.is_empty() {
-            self.forward(take_line(buf), on_line, on_stderr);
-        }
-    }
-}
-
-/// The line read into `buf` (its `\n` or `\r\n` cut off, bytes that aren't UTF-8 replaced),
-/// leaving `buf` empty for the next one.
-fn take_line(buf: &mut Vec<u8>) -> String {
-    let mut end = buf.len();
-    if buf[..end].ends_with(b"\n") {
-        end -= 1;
-    }
-    if buf[..end].ends_with(b"\r") {
-        end -= 1;
-    }
-    let line = decode(&buf[..end]);
-    buf.clear();
-    line
-}
-
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod proptests;

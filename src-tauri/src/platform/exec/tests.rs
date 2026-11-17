@@ -1,13 +1,5 @@
 use super::*;
 
-#[tokio::test]
-async fn a_run_given_up_on_reads_as_timed_out() {
-    let err = within("docker compose exec", Duration::from_millis(10), std::future::pending::<Result<()>>()).await.unwrap_err();
-    assert!(timed_out(&err), "{err}");
-    assert!(err.to_string().starts_with("`docker compose exec` failed: timed out after"), "{err}");
-    assert_eq!(within("x", Duration::from_secs(1), async { Ok(7) }).await.unwrap(), 7);
-}
-
 #[cfg(unix)]
 #[tokio::test]
 async fn timed_reads_capture_the_tools_output() {
@@ -284,75 +276,6 @@ fn a_tool_left_running_doesnt_hold_the_apps_output() {
     assert!(closed, "the app's output stayed open after it exited: the tool it left running held it");
 }
 
-#[cfg(unix)]
-#[tokio::test]
-async fn output_that_isnt_utf8_is_read_lossily_and_the_tool_runs_on() {
-    // Regression: the first byte that wasn't UTF-8 (VBoxManage in a French Windows' codepage)
-    // failed the stream, which dropped the child and killed it: a `terraform apply` cut off
-    // mid-run. The line comes through with a replacement character, and the tool finishes.
-    let mut lines = Vec::new();
-    let script = r"printf 'Cr\351ation\r\n'; printf 'err \377\n' >&2; sleep 0.2; printf 'done'";
-    stream("sh", &["-c", script], None, &[], |l| lines.push(l)).await.expect("the tool ran to its end");
-    // stdout and stderr are separate pipes: their lines interleave in no set order.
-    let at = |l: &str| lines.iter().position(|x| x == l);
-    assert_eq!(lines.len(), 3, "{lines:?}");
-    assert!(at("err \u{fffd}").is_some(), "{lines:?}");
-    assert!(at("Cr\u{fffd}ation") < at("done") && at("Cr\u{fffd}ation").is_some(), "{lines:?}");
-}
-
-#[test]
-fn a_line_loses_its_ending_only() {
-    let mut buf = b"a\r\r\n".to_vec();
-    assert_eq!(take_line(&mut buf), "a\r");
-    assert_eq!(buf, b"");
-    assert_eq!(take_line(&mut b"last".to_vec()), "last");
-    assert_eq!(take_line(&mut b"\n".to_vec()), "");
-}
-
-#[tokio::test]
-async fn a_cancelled_stream_takes_what_it_started_with_it() {
-    // A streamed `vagrant` is a wrapper around `ruby`: cancelled, the wrapper alone was
-    // killed, and its ruby ran on holding Vagrant's lock. The tool's tree ends with it now.
-    // The child is waited for before the stream is cancelled (dropped), so a loaded runner
-    // can't read the pid file before the tool wrote it.
-    let file = std::env::temp_dir().join(format!("cyberctf-stream-tree-{}", rand::random::<u32>()));
-    let (program, args) = parent_of_a_child(&file);
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    assert_cancel_takes_the_tree(&file, stream(program, &args, None, &[], |_| {})).await;
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_tool_that_exited_is_not_waited_for_past_what_it_left_holding_its_output() {
-    // Regression: the stream read until both pipes closed, and a process the tool left behind
-    // (an ssh ControlMaster, a provider plugin) held them open: a finished `terraform destroy`
-    // then hung the auto-stop sweep, and the lab's lock, for good.
-    let started = std::time::Instant::now();
-    let mut lines = Vec::new();
-    let run = stream("sh", &["-c", "sleep 20 & printf 'done'"], None, &[], |l| lines.push(l));
-    tokio::time::timeout(Duration::from_secs(10), run).await.expect("not held up by the leftover").unwrap();
-    assert_eq!(lines, ["done"]);
-    assert!(started.elapsed() < Duration::from_secs(10));
-    // And a failure is still read as one, with its last line.
-    let err = stream("sh", &["-c", "sleep 20 & echo gone >&2; exit 4"], None, &[], |_| {}).await.unwrap_err();
-    assert!(matches!(err, Error::CommandFailed { ref stderr, .. } if stderr.starts_with("gone (exited with")), "{err:?}");
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_failed_stream_keeps_its_last_stderr_lines() {
-    let err = stream("sh", &["-c", "for i in $(seq 1 12); do echo e$i >&2; done; exit 2"], None, &[], |_| {}).await.unwrap_err();
-    let Error::CommandFailed { stderr, .. } = err else { panic!("{err:?}") };
-    assert!(stderr.starts_with("e3\n") && stderr.contains("e12 (exited with"), "{stderr}");
-}
-
-#[test]
-fn a_silent_failure_reports_its_exit_status() {
-    assert_eq!(stream_failure(&[], "exit status: 1"), "exited with exit status: 1");
-    assert_eq!(stream_failure(&[" ".into()], "exit status: 1"), "exited with exit status: 1");
-    assert_eq!(stream_failure(&["no space left".into()], "exit status: 1"), "no space left (exited with exit status: 1)");
-}
-
 /// A tool that exits non-zero and prints nothing (a `docker` whose daemon just went away)
 /// must still leave the player something to read: the command it ran, with its (empty)
 /// stderr after it, in the same shape as a failure that explained itself.
@@ -371,34 +294,4 @@ fn a_missing_tool_is_named() {
     let err = spawn_error("vagrant")(std::io::Error::from(std::io::ErrorKind::NotFound));
     assert!(matches!(err, Error::ToolMissing { tool: "vagrant" }));
     assert!(matches!(spawn_error("vagrant")(std::io::Error::from(std::io::ErrorKind::PermissionDenied)), Error::Io(_)));
-}
-
-#[tokio::test]
-async fn lines_are_read_lossily_whatever_the_read_boundaries() {
-    // A two-byte buffer makes every multi-byte character span reads: `read_until` gathers the
-    // whole line first, so a character is never cut at a chunk boundary. CRLF is stripped, a
-    // lone CR inside a line is kept, a line that isn't UTF-8 is decoded whole (in the system's
-    // code page on Windows, as its console tools print: 0xFF is `ÿ` in Windows-1252; replaced
-    // elsewhere), and the last line needs no newline.
-    let mut input = "a\r\nb\rc\n\u{20ac}\u{20ac}\n".as_bytes().to_vec();
-    input.extend_from_slice(&[0xff, b'd']);
-    let mut reader = BufReader::with_capacity(2, &input[..]);
-    let mut buf = Vec::new();
-    let mut lines = Vec::new();
-    while reader.read_until(b'\n', &mut buf).await.unwrap() > 0 || !buf.is_empty() {
-        lines.push(take_line(&mut buf));
-    }
-    let not_utf8 = if cfg!(windows) { crate::platform::tool_output::text::decode(&[0xff, b'd']) } else { "\u{fffd}d".to_owned() };
-    assert_eq!(lines, ["a", "b\rc", "\u{20ac}\u{20ac}", not_utf8.as_str()]);
-    assert_eq!(reader.read_until(b'\n', &mut buf).await.unwrap(), 0, "still at the end");
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_streamed_tool_printing_invalid_utf8_is_forwarded_not_cut() {
-    // A provisioning script echoing Latin-1 (0xE9 alone) used to end the stream with an
-    // error and kill the tool; now the byte is replaced and the run goes on to its end.
-    let mut lines = Vec::new();
-    stream("sh", &["-c", "printf 'caf\\351 ok\\n'; printf 'done\\n'"], None, &[], |l| lines.push(l)).await.unwrap();
-    assert_eq!(lines, ["caf\u{fffd} ok", "done"]);
 }

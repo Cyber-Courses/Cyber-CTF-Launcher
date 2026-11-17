@@ -1,8 +1,0 @@
-name="cyberctf-selftest"
-groups="/"
-ostype="Ubuntu (64-bit)"
-UUID="6f2c1d8e-4b3a-4c5d-9e8f-0a1b2c3d4e5f"
-CfgFile="C:\\Users\\ada\\VirtualBox VMs\\cyberctf-selftest\\cyberctf-selftest.vbox"
-description="cyberctf-selftest:C:\\Users\\ada\\AppData\\Local\\cyberctf\\selftest\\vm"
-memory=1024
-VMState="running"

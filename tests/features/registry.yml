@@ -1276,9 +1276,6 @@ areas:
           - hyperv
         host: true
         tests:
-          unit:
-            - src-tauri/src/platform/exec/vagrant.rs > hyperv_machines_are_recognised_by_their_folder
-            - src-tauri/src/platform/exec/elevate.rs > only_hyperv_on_windows_goes_through_the_script_elevated_when_it_must
           desktop:
             - lab-form-vm
           integration:
@@ -2136,7 +2133,6 @@ areas:
           unit:
             - src-tauri/src/machine/storage/tests.rs > storage_lists_and_cleans_only_the_apps_downloads_taken_in_from_what_earlier_launchers_recorded
             - src-tauri/src/machine/storage/tests.rs > only_the_attack_boxs_own_repository_is_the_apps_by_name
-            - src-tauri/src/machine/storage/owned/record.rs > box_listings_read_as_name_provider_and_version
             - src/features/machine/machine-interaction.test.tsx > says the read failed and why, never that nothing was downloaded
           desktop:
             - cleanup/section
@@ -2190,11 +2186,9 @@ areas:
         host: true
         tests:
           unit:
-            - src-tauri/src/machine/selftest.rs > the_vm_test_boots_pings_and_deletes_a_vm
+            - src-tauri/src/machine/selftest.rs > the_vm_test_says_each_step_in_the_apps_words_boots_pings_and_deletes_a_vm
             - src-tauri/src/machine/selftest.rs > kvm_failure_gets_a_hint_and_keeps_the_details
-            - src-tauri/src/machine/selftest/vm/tests.rs > every_provider_gets_its_own_vm_settings
-            - src-tauri/src/machine/selftest/vm/tests.rs > an_earlier_tests_vm_is_removed_before_the_test_and_a_foreign_one_stops_it
-            - src-tauri/src/machine/selftest/downloads.rs > adding_a_box_that_stalls_is_given_up_on_instead_of_spinning
+            - src-tauri/src/machine/selftest/vm/tests.rs > each_step_is_said_in_the_apps_words
             - src/features/machine/machine-screen.test.tsx > runs the VM test on the chosen hypervisor and records a failure with its detail
           desktop:
             - machine/vm-test
@@ -2512,7 +2506,6 @@ areas:
           unit:
             - src-tauri/src/machine/setup/tests.rs > hyper_v_is_turned_on_by_the_setup_then_waits_for_a_restart
             - src-tauri/src/machine/system/wsl/tests.rs > hyper_v_turned_on_asks_for_a_restart_in_that_boot_only
-            - src-tauri/src/platform/exec/elevate.rs > only_hyperv_on_windows_goes_through_the_script_elevated_when_it_must
             - src/features/machine/setup-steps/follows-the-plan.test.tsx > turns Hyper-V on, which the plan offers instead of a link
             - src/features/machine/setup-steps/follows-the-plan.test.tsx > restarts for Hyper-V only on the system dialog
           integration:
@@ -2534,7 +2527,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/setup/tests.rs > a_bare_windows_turns_wsl_on_installs_docker_desktop_virtualbox_and_vagrant_and_passes_over_the_others
-            - src-tauri/src/machine/selftest/vm/tests.rs > a_virtualbox_test_vm_carries_its_folder_so_a_leftover_is_known_as_the_tests
           integration:
             - setup
           setup:
@@ -2583,7 +2575,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/setup/tests.rs > a_mac_with_docker_and_no_vagrant_sets_up_only_the_vm_path
-            - src-tauri/src/machine/selftest/vm/tests.rs > the_qemu_test_vm_boots_with_the_acceleration_the_labs_ask_for
             - src-tauri/src/machine/setup/tests.rs > qemu_joined_to_the_kvm_group_asks_for_a_new_login_before_its_self_test
             - src-tauri/src/machine/setup/tests.rs > qemu_without_virtiofsd_is_installed_again_which_brings_it
           integration:
@@ -2740,7 +2731,6 @@ areas:
         tests:
           unit:
             - src-tauri/src/machine/storage/tests.rs > storage_lists_and_cleans_only_the_apps_downloads_taken_in_from_what_earlier_launchers_recorded
-            - src-tauri/src/machine/storage/owned.rs > only_what_appeared_during_the_self_test_is_adopted
             - src/features/machine/machine-interaction.test.tsx > asks once and removes once however often Clean up is pressed
             - src/features/machine/machine-screen.test.tsx > lists the downloads and frees space once the system dialog confirms it
           desktop:
