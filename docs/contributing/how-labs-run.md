@@ -182,8 +182,7 @@ that operation only.
 
 ## Servers and cloud accounts
 
-- Profiles (non-secret): the launcher's store, `<app data>/launcher.sqlite3` (`src-tauri/src/store/hosts.rs`;
-  1.9's `server.json` is taken in once, `store/legacy.rs`). Secrets: the OS keychain (service
+- Profiles (non-secret): the launcher's store, `<app data>/launcher.sqlite3` (`src-tauri/src/store/hosts.rs`). Secrets: the OS keychain (service
   `org.cyberctf.desktop`, account `server:<host id>`); debug builds keep them in
   `~/.cyberctf/dev-server-secrets.json` (0600).
 - Before any change to a lab in a cloud account, the launcher asks that cloud's CLI whether its

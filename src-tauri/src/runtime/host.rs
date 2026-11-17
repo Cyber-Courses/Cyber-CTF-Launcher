@@ -172,7 +172,7 @@ mod tests {
     async fn located(t: &TestApp, dir: &Path, runtime: Runtime) -> Option<(&'static str, Option<lab::Target>)> {
         locate(&t.dirs(), dir, "t", runtime).await.unwrap().map(|h| {
             let kind = match (h.run.site(), &h.conn) {
-                (isothrum::Site::Here { .. }, None) => "local",
+                (isothrum::Site::Here, None) => "local",
                 (isothrum::Site::Esxi(_), Some(_)) => "esxi",
                 (isothrum::Site::Cloud(place), Some(_)) => {
                     assert_eq!(place.label, "acct", "the account's own id, from its connection");

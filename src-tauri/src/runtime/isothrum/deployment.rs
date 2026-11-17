@@ -13,7 +13,7 @@ use isothrum_runner::{Format, RunOptions};
 use super::cloud_runs::CloudPlace;
 use super::server::{self, ServerPlace};
 use super::tunnel::Tunnel;
-use super::{EsxiPlace, Inputs, errors, old_engine, remote, run_name, runner_provider, start_options};
+use super::{EsxiPlace, Inputs, errors, remote, run_name, runner_provider, start_options};
 use crate::error::{Error, Result};
 use crate::runtime::docker::Check;
 use crate::runtime::host::Failed;
@@ -45,12 +45,8 @@ pub(super) enum Kind {
 /// Where a deployment runs, with what reaching it takes.
 #[derive(Debug, Clone)]
 pub(crate) enum Site {
-    /// On this machine, with the engine an earlier version noted beside a container lab
-    /// ([`old_engine`]) until an operation has the runner record it.
-    Here {
-        /// The noted engine's Docker context.
-        noted_engine: Option<String>,
-    },
+    /// On this machine.
+    Here,
     /// On an ESXi server: its settings and password.
     Esxi(EsxiPlace),
     /// On a Proxmox server: its variables, and, for a change, its node and the SSH jump through
@@ -98,11 +94,9 @@ impl Deployment {
     }
 
     /// Lab `id`'s run of `kind` on this machine, installed in `dir`, on the runner whose home is
-    /// `home` (the app data folder), with this host's tools; a container lab with the engine an
-    /// earlier version noted beside it.
+    /// `home` (the app data folder), with this host's tools.
     pub(super) fn here(home: &Path, dir: &Path, id: &str, kind: Kind) -> Result<Self> {
-        let noted_engine = if kind == Kind::Docker { old_engine::noted(dir) } else { None };
-        Deployment::local(home, dir, id, kind, Site::Here { noted_engine })
+        Deployment::local(home, dir, id, kind, Site::Here)
     }
 
     /// Container lab `id`, installed in `dir`, on this machine's Docker.
@@ -216,14 +210,9 @@ impl Deployment {
     }
 
     /// `act` on the run with `opts`, its events as `log`'s lines, through the home's runner
-    /// service. Whether it reached its goal (false: a command it ran failed). Once an operation
-    /// went through, the engine an earlier version noted is the runner's record: the note goes.
+    /// service. Whether it reached its goal (false: a command it ran failed).
     pub(super) async fn run(&self, act: remote::Act<'_>, opts: &RunOptions, log: &mut impl FnMut(String)) -> std::result::Result<bool, remote::Failure> {
-        let done = Box::pin(self.served.operate(act, opts, log)).await?;
-        if let Site::Here { noted_engine: Some(_) } = &self.site {
-            old_engine::forget(&self.dir);
-        }
-        Ok(done)
+        Box::pin(self.served.operate(act, opts, log)).await
     }
 
     /// [`Deployment::run`], its failure in the player's words ([`Deployment::said`]).
@@ -259,7 +248,7 @@ impl Deployment {
     async fn helper_vm_gone(&self, report: &isothrum_runner::ErrorReport) -> Error {
         let said = errors::of_helper_vm(report, self.served.name.as_str());
         log::warn!("{}: {said}", self.dir.display());
-        if let Site::Here { .. } = self.site
+        if matches!(self.site, Site::Here)
             && let Err(e) = self.served.forget().await
         {
             log::warn!("{}: its helper-VM record couldn't be forgotten: {e}", self.dir.display());
@@ -272,24 +261,19 @@ impl Deployment {
     pub(super) fn on_site(&self, e: Error) -> Error {
         match &self.site {
             Site::Esxi(EsxiPlace { name, .. }) | Site::Server(ServerPlace { name, .. }) => errors::on_server(e, name),
-            Site::Here { .. } | Site::Cloud(_) => e,
+            Site::Here | Site::Cloud(_) => e,
         }
     }
 
     /// `opts` for a run here or on ESXi: the run's key under the name Isoloom's Vagrantfiles read
     /// it ([`super::super::lab::ISOLOOM_KEY`]), so the lab's VMs, networks and libvirt domains are
     /// named for this copy and no other; on ESXi, its id, its settings (as the environment
-    /// Isoloom's Vagrantfiles read) and its password (a secret, beside the launch's); and the
-    /// engine an earlier version noted for a container lab, unless `opts` names one. The lab gets
+    /// Isoloom's Vagrantfiles read) and its password (a secret, beside the launch's). The lab gets
     /// the values its launch gave and nothing else: an input given none is its spec's default
     /// (Isoloom's `inputs.*.default`), which is how a lab starts without a launch.
     pub(super) fn placed(&self, opts: RunOptions) -> RunOptions {
         let opts = opts.with_env(super::super::lab::ISOLOOM_KEY, isothrum_runner::copy_key(&self.served.home, &self.served.name));
-        match &self.site {
-            Site::Here { noted_engine: Some(context) } if opts.docker_context.is_none() => opts.with_docker_context(context.clone()),
-            Site::Esxi(place) => place.onto(opts),
-            _ => opts,
-        }
+        if let Site::Esxi(place) = &self.site { place.onto(opts) } else { opts }
     }
 
     /// What a change of the run runs with (its start's values `start` for a start), and the
@@ -300,7 +284,7 @@ impl Deployment {
     async fn changing(&self, start: Option<Start<'_>>) -> Result<(RunOptions, Option<Tunnel>)> {
         let values = start.map_or(&[][..], |s| s.inputs.values);
         match &self.site {
-            Site::Here { .. } | Site::Esxi(_) => Ok((self.placed(start.map_or_else(RunOptions::new, |s| start_options(s.inputs, s.provider))), None)),
+            Site::Here | Site::Esxi(_) => Ok((self.placed(start.map_or_else(RunOptions::new, |s| start_options(s.inputs, s.provider))), None)),
             Site::Server(place) => server::applying(place, values, &self.key()).await,
             Site::Cloud(place) if start.is_some() => {
                 // The key the lab's instances let in: a plain value the record keeps, so every
@@ -317,7 +301,7 @@ impl Deployment {
     /// account.
     fn reading(&self) -> RunOptions {
         match &self.site {
-            Site::Here { .. } | Site::Esxi(_) => self.placed(RunOptions::new()),
+            Site::Here | Site::Esxi(_) => self.placed(RunOptions::new()),
             Site::Server(place) => server::options(place, &[]),
             Site::Cloud(_) => RunOptions::new(),
         }
@@ -441,7 +425,7 @@ impl Deployment {
     /// The lab as its page shows it; not running before its files were ever generated.
     pub(crate) async fn status(&self) -> Result<LabStatus> {
         match &self.site {
-            Site::Here { .. } | Site::Esxi(_) => self.local_status().await,
+            Site::Here | Site::Esxi(_) => self.local_status().await,
             Site::Server(place) => self.server_status(place).await,
             Site::Cloud(_) => self.cloud_status().await,
         }
@@ -466,7 +450,7 @@ impl Deployment {
     /// (the runner runs no command in a Terraform module's VMs there).
     pub(crate) async fn check(&self) -> Result<Check> {
         match (&self.site, self.form) {
-            (Site::Here { .. } | Site::Esxi(_), _) => self.lab_check().await,
+            (Site::Here | Site::Esxi(_), _) => self.lab_check().await,
             (Site::Server(_), _) => self.module_check(&RunOptions::new()).await,
             #[cfg(feature = "cloud-services")]
             (Site::Cloud(_), Form::Own) => self.own_check().await,
