@@ -1,7 +1,6 @@
 use super::local::{UTM_NOT_ALLOWED, check_utm, utm_not_allowed};
 use super::{
-    Destination, LabRef, LocalRun, Provider, Runtime, budget_verdict, cloud_form, containers_run_on, local_run, low_memory_warning, parse_ipv4,
-    per_machine_runs_on,
+    Destination, LabRef, LocalRun, Provider, Runtime, budget_verdict, cloud_form, containers_run_on, local_run, low_memory_warning, per_machine_runs_on,
 };
 use super::{server, warn_if_low_memory};
 use crate::runtime::lab::emulated_arches;
@@ -48,78 +47,19 @@ async fn start_on(t: &TestApp, id: &str, runtime: Runtime, host: &str) -> (crate
 // whose Terraform runs on the runner's own process port — not the launcher's faked `exec` — so
 // their execution is covered by the runner crate and the opt-in `real_cloud_labs` harness, not
 // here. The launcher's own cloud policy is unit-tested where it lives: the AWS budget verdict
-// (`on_host::budget_verdict`), this machine's public IP (`on_host::agreed_ip`), and the
+// (`on_host::budget_verdict`), this machine's public IP said (`on_host::ip_unsure`), and the
 // account-to-options mapping (`isothrum::cloud_runs` tests).
 
-/// A fake IP-lookup service answering `body` once.
-async fn resolver(body: &str) -> String {
-    crate::platform::http::tests::serve_once(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).into_bytes()).await
-}
-
+/// The resolvers' failures in the player's words; tests never reach the internet.
 #[tokio::test]
-async fn the_public_ip_is_the_one_two_resolvers_agree_on() {
-    let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
-    let closed = format!("http://{closed}/");
-    let (garbage, a, b) = (resolver("blocked").await, resolver("93.184.216.34\n").await, resolver(" 93.184.216.34").await);
-    // One down, one answering a page: the two that answer agree.
-    assert_eq!(super::public_ip_from(&[closed.as_str(), garbage.as_str(), a.as_str(), b.as_str()]).await.unwrap(), "93.184.216.34");
-    // A single answer isn't enough to open the firewall to it.
-    let (one, garbage) = (resolver("93.184.216.34").await, resolver("blocked").await);
-    let err = super::public_ip_from(&[closed.as_str(), one.as_str(), garbage.as_str()]).await.unwrap_err().to_string();
-    assert!(err.starts_with("Couldn't confirm your public IP"), "{err}");
-    assert!(err.contains("an unexpected answer"), "{err}");
-    // Two that disagree: refused, naming both.
-    let (a, b, c) = (resolver("93.184.216.34").await, resolver("93.184.216.34").await, resolver("8.8.4.4").await);
-    let err = super::public_ip_from(&[a.as_str(), b.as_str(), c.as_str()]).await.unwrap_err().to_string();
-    assert!(err.starts_with("The services that tell Cyber CTF your public IP disagree"), "{err}");
-    assert!(err.contains("93.184.216.34") && err.contains("8.8.4.4"), "{err}");
-    // A private address (a proxy's own) counts as no answer.
-    let (lan, a) = (resolver("192.168.1.20").await, resolver("93.184.216.34").await);
-    let err = super::public_ip_from(&[lan.as_str(), a.as_str()]).await.unwrap_err().to_string();
-    assert!(err.contains("192.168.1.20, not a public address"), "{err}");
+async fn an_unsure_public_ip_is_said_as_the_launch_stops() {
+    use isothrum_machine::net::PublicIpFailed;
+    let ip = std::net::Ipv4Addr::new(93, 184, 216, 34);
+    let err = super::ip_unsure(PublicIpFailed::Disagree(vec![("https://a".into(), ip), ("https://c".into(), std::net::Ipv4Addr::new(8, 8, 4, 4))])).to_string();
+    assert!(err.starts_with("The services that tell Cyber CTF your public IP disagree (https://a: 93.184.216.34, https://c: 8.8.4.4)"), "{err}");
+    let err = super::ip_unsure(PublicIpFailed::Unconfirmed(vec![("https://b".into(), "an unexpected answer".into())])).to_string();
+    assert!(err.starts_with("Couldn't confirm your public IP") && err.ends_with("(https://b: an unexpected answer)"), "{err}");
     assert_eq!(super::public_ip().await.unwrap(), "203.0.113.7", "tests never reach the internet");
-}
-
-#[test]
-fn the_verdict_needs_two_matching_public_answers() {
-    use std::net::Ipv4Addr;
-    let urls = ["https://a", "https://b", "https://c"];
-    let ip = Ipv4Addr::new(93, 184, 216, 34);
-    assert_eq!(super::agreed_ip(&urls, &[Ok(ip), Err("timeout".into()), Ok(ip)]).unwrap(), "93.184.216.34");
-    assert!(super::agreed_ip(&urls, &[Ok(ip), Err("timeout".into()), Err("refused".into())]).is_err());
-    assert!(super::agreed_ip(&urls, &[]).is_err());
-    let err = super::agreed_ip(&urls, &[Ok(ip), Ok(ip), Ok(Ipv4Addr::new(1, 1, 1, 1))]).unwrap_err().to_string();
-    assert!(err.contains("https://c: 1.1.1.1"), "{err}");
-}
-
-#[test]
-fn only_internet_addresses_are_public() {
-    use super::is_public_ipv4;
-    for ip in ["93.184.216.34", "8.8.8.8", "1.1.1.1", "100.63.255.255", "100.128.0.1", "198.20.0.1", "223.255.255.254"] {
-        assert!(is_public_ipv4(ip.parse().unwrap()), "{ip}");
-    }
-    for ip in [
-        "10.1.2.3",
-        "172.16.0.1",
-        "192.168.1.1",
-        "127.0.0.1",
-        "169.254.1.1",
-        "100.64.0.1",
-        "100.127.255.255",
-        "0.0.0.0",
-        "0.1.2.3",
-        "192.0.0.8",
-        "192.0.2.1",
-        "198.51.100.4",
-        "203.0.113.7",
-        "198.18.0.1",
-        "198.19.255.255",
-        "224.0.0.1",
-        "240.0.0.1",
-        "255.255.255.255",
-    ] {
-        assert!(!is_public_ipv4(ip.parse().unwrap()), "{ip}");
-    }
 }
 
 fn lab(spec: &str) -> crate::testing::TempDir {
@@ -319,15 +259,6 @@ async fn a_start_refused_for_a_lab_still_up_elsewhere_changes_nothing() {
     let (r, _) = start_on(&t, "web", Runtime::Docker, "aws1").await;
     assert_eq!(r.unwrap_err().code(), crate::error::Code::LabRunningHere);
     assert!(tools.calls().is_empty(), "{:?}", tools.calls());
-}
-
-#[test]
-fn resolver_answers_must_be_one_ipv4() {
-    assert_eq!(parse_ipv4("203.0.113.7\n").as_deref(), Some("203.0.113.7"));
-    assert_eq!(parse_ipv4("  198.51.100.1 ").as_deref(), Some("198.51.100.1"));
-    assert_eq!(parse_ipv4("2001:db8::1"), None);
-    assert_eq!(parse_ipv4("<html>blocked</html>"), None);
-    assert_eq!(parse_ipv4(""), None);
 }
 
 #[test]

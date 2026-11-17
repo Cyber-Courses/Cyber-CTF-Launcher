@@ -7,7 +7,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use isothrum_runner::fake::{FakeProcesses, Reply};
 
 use super::*;
+use crate::platform::exec::docker_denied;
 use crate::runtime::providers::testing::{Machine, host};
+
+/// `docker info`'s operating system line, as the launcher's error when the daemon gives none.
+async fn daemon_os() -> Result<String> {
+    isothrum_machine::docker::daemon_os(&machine()).await.map_err(no_answer)
+}
 
 const DENIED: &str = "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock";
 const DOWN: &str = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?";
@@ -58,53 +64,62 @@ async fn the_cli_is_pointed_at_the_context_of_the_engine_asked_for() {
     assert_eq!(docker_use_engine("podman".into()).await.unwrap_err().to_string(), "no Docker context for podman");
 }
 
-/// Docker with colima installed: `colima start` (the launcher's) brings its daemon up, which then
-/// answers `info` as `daemon` does, and its context shows up.
-fn colima(daemon: Reply) -> (Machine, Arc<AtomicBool>) {
+/// Docker with colima installed: `colima start` brings its daemon up, which then answers `info` as
+/// `daemon` does, and its context shows up.
+fn colima(daemon: Reply) -> (Machine, Arc<FakeProcesses>, Arc<AtomicBool>) {
     let up = Arc::new(AtomicBool::new(false));
     let running = Arc::clone(&up);
-    let machine = docker(FakeProcesses::model(move |call| {
-        if call.program == "colima" && call.args.first().map(String::as_str) == Some("start") {
-            running.store(true, Ordering::SeqCst);
-            return Reply::ok("");
-        }
+    let (machine, tools) = docker(FakeProcesses::model(move |call| {
         let up = running.load(Ordering::SeqCst);
-        match call.args.first().map(String::as_str) {
-            Some("info") if !up => Reply::fail(1, DOWN),
-            Some("info") => daemon.clone(),
-            Some("context") if call.args.get(1).map(String::as_str) == Some("ls") => Reply::ok(if up { "default *\ncolima\n" } else { "default *\n" }),
+        match (call.program.as_str(), call.args.first().map(String::as_str)) {
+            ("colima", Some("start")) => {
+                running.store(true, Ordering::SeqCst);
+                Reply::ok("")
+            }
+            (_, Some("info")) if !up => Reply::fail(1, DOWN),
+            (_, Some("info")) => daemon.clone(),
+            (_, Some("context")) if call.args.get(1).map(String::as_str) == Some("ls") => Reply::ok(if up { "default *\ncolima\n" } else { "default *\n" }),
             _ => Reply::ok(""),
         }
     }));
-    (machine.0, up)
+    (machine, tools, up)
+}
+
+/// Whether `tools` ran `colima start`.
+fn started(tools: &FakeProcesses) -> bool {
+    tools.calls().iter().any(|c| c.program == "colima" && c.args.first().map(String::as_str) == Some("start"))
 }
 
 #[tokio::test]
 async fn an_engine_is_started_docker_pointed_at_it_and_its_daemon_waited_for() {
-    let (_machine, up) = colima(Reply::ok("Ubuntu 24.04 LTS"));
+    let (_machine, tools, up) = colima(Reply::ok("Ubuntu 24.04 LTS"));
     docker_start_engine("colima".into()).await.unwrap();
-    assert!(up.load(Ordering::SeqCst));
+    assert!(up.load(Ordering::SeqCst) && started(&tools));
 }
 
 #[tokio::test]
 async fn a_daemon_this_account_cannot_use_is_reported_without_waiting() {
-    // Running already, for another account: not started again (the strict script has no `colima`).
-    let machine = docker(FakeProcesses::script().expect("docker info", Reply::fail(1, DENIED)).build());
+    // Running already, for another account: not started again.
+    let (_machine, tools) = docker(FakeProcesses::model(|call| match call.args.first().map(String::as_str) {
+        Some("info") => Reply::fail(1, DENIED),
+        _ => Reply::ok(""),
+    }));
     let err = docker_start_engine("colima".into()).await.unwrap_err();
     assert!(matches!(err.code(), crate::error::Code::DockerDenied { .. } | crate::error::Code::DockerDeniedWindows { .. }), "{err}");
-    drop(machine);
+    assert!(!started(&tools));
     // Up once started, but denied: said at once, not after 3 minutes.
-    let (_machine, up) = colima(Reply::fail(1, DENIED));
+    let (_machine, tools, up) = colima(Reply::fail(1, DENIED));
     let err = docker_start_engine("colima".into()).await.unwrap_err();
-    assert!(up.load(Ordering::SeqCst));
+    assert!(up.load(Ordering::SeqCst) && started(&tools));
     assert!(matches!(err.code(), crate::error::Code::DockerDenied { .. } | crate::error::Code::DockerDeniedWindows { .. }), "{err}");
 }
 
 #[tokio::test]
 async fn an_engine_that_cannot_be_started_here_is_refused() {
-    // The strict script has nothing but `docker info`: no engine is started.
-    let _machine = docker(FakeProcesses::script().expect("docker info", Reply::fail(1, DOWN)).build());
-    let err = docker_start_engine("some-engine".into()).await.unwrap_err();
-    assert!(err.to_string().contains("can't start some-engine here"), "{err}");
-    assert!(launch("some-engine").await.unwrap_err().to_string().contains("can't start some-engine here"));
+    let (_machine, tools) = docker(FakeProcesses::model(|_| Reply::fail(1, DOWN)));
+    for engine in ["some-engine", "podman"] {
+        let err = docker_start_engine(engine.into()).await.unwrap_err();
+        assert!(err.to_string().contains(&format!("can't start {engine} here")), "{err}");
+    }
+    assert_eq!(tools.calls().len(), 0, "nothing run");
 }

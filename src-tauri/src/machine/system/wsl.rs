@@ -176,27 +176,13 @@ trait Reopen {
     fn unregister(&self);
 }
 
-/// `shutdown.exe` refusing because one is already scheduled (`ERROR_SHUTDOWN_IS_SCHEDULED`: its
-/// message ends with the code in every language).
-fn already_scheduled(e: &Error) -> bool {
-    matches!(e, Error::CommandFailed { stderr, .. } if win32_error(stderr) == Some(ERROR_SHUTDOWN_IS_SCHEDULED))
-}
+/// How long Windows counts down to the restart.
+const RESTART_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// `shutdown.exe`'s refusal because a shutdown is already scheduled.
-const ERROR_SHUTDOWN_IS_SCHEDULED: u32 = 1190;
-
-/// The Win32 error `text` ends with (its last `(<number>)`), if it ends with one: Windows' own
-/// tools end their message with it in every display language (`A system shutdown has already
-/// been scheduled.(1190)`), so the number, not the words, says which error it was.
-fn win32_error(text: &str) -> Option<u32> {
-    let text = text.trim_end().trim_end_matches('.');
-    let (_, number) = text.strip_suffix(')')?.rsplit_once('(')?;
-    number.trim().parse().ok()
-}
-
-/// Asks Windows to restart in a few seconds, once per run of the app: a second ask while it
-/// counts down (another window, a remounted step) is the same restart. `RunOnce` is removed
-/// again only if this call wrote it and the restart couldn't be scheduled.
+/// Asks Windows to restart in a few seconds ([`isothrum_machine::setup::schedule_restart`]), once
+/// per run of the app: a second ask while it counts down (another window, a remounted step, or a
+/// restart Windows has scheduled already) is the same restart. `RunOnce` is removed again only if
+/// this call wrote it and the restart couldn't be scheduled.
 async fn schedule_restart(dirs: &AppDirs, state: &AtomicU8, reason: &str, reopen: &(dyn Reopen + Sync), feature: WindowsFeature) -> Result<()> {
     if state.compare_exchange(IDLE, ASKING, Ordering::SeqCst, Ordering::SeqCst).is_err() {
         return Ok(());
@@ -208,13 +194,8 @@ async fn schedule_restart(dirs: &AppDirs, state: &AtomicU8, reason: &str, reopen
     if for_wsl {
         mark(dirs, RESTART_MARK, sysinfo::System::boot_time());
     }
-    match crate::platform::exec::run("shutdown", &["/r", "/t", "5", "/c", reason], None).await {
+    match isothrum_machine::setup::schedule_restart(&crate::runtime::providers::machine(), RESTART_AFTER, reason).await {
         Ok(_) => {
-            state.store(SCHEDULED, Ordering::SeqCst);
-            Ok(())
-        }
-        // Another restart is on its way (from outside the app): this one is it.
-        Err(e) if already_scheduled(&e) => {
             state.store(SCHEDULED, Ordering::SeqCst);
             Ok(())
         }
@@ -226,7 +207,7 @@ async fn schedule_restart(dirs: &AppDirs, state: &AtomicU8, reason: &str, reopen
                 unmark(dirs, RESTART_MARK);
             }
             state.store(IDLE, Ordering::SeqCst);
-            Err(e)
+            Err(Error::Invalid(e.to_string()))
         }
     }
 }
@@ -238,11 +219,8 @@ pub async fn machine_restart(dirs: AppDirs, reason: String, feature: WindowsFeat
     let reason = self::reason(&reason)?;
     #[cfg(windows)]
     {
-        // A unit test must never restart the machine it runs on: only scripted tools here.
-        #[cfg(test)]
-        if !crate::testing::tools::scripted() {
-            return Err(Error::Invalid("a test restarted without scripting shutdown".into()));
-        }
+        // A unit test never restarts the machine it runs on: its isothrum-machine tools are the
+        // test's own, or missing (`runtime::providers::machine`).
         let machines = crate::platform::exec::tools_in_use().are_the_machines();
         let reopen = windows::UserRunOnce(if machines { windows::reopen_command() } else { None });
         schedule_restart(&dirs, &RESTART, &reason, &reopen, feature).await

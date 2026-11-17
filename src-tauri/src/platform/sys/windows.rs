@@ -5,7 +5,7 @@ mod registry;
 
 use std::ffi::OsStr;
 
-pub use elevation::{ElevatedProcess, is_elevated, launch_elevated};
+pub use elevation::is_elevated;
 #[cfg(test)]
 pub use registry::registry_value_exists;
 pub use registry::{Hive, delete_user_registry_value, registry_string, registry_values, set_user_registry_string};

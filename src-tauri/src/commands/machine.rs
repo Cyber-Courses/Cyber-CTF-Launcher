@@ -7,7 +7,7 @@ use tauri::ipc::Channel;
 
 use crate::AppHandle;
 use crate::app::setup_window;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::machine::images;
 use crate::machine::selftest::{self, Kind};
 use crate::machine::setup::WindowsFeature;
@@ -160,10 +160,21 @@ pub async fn ovftool_place(app: AppHandle, folder: String) -> Result<ovftool::Ou
 }
 
 /// Adds this Windows account to "Hyper-V Administrators" (one administrator prompt), so Vagrant
-/// can drive Hyper-V for it from the next sign-in on (#185).
+/// can drive Hyper-V for it from the next sign-in on (#185): isothrum-machine's
+/// [`join_hyperv_admins`](isothrum_machine::setup::join_hyperv_admins). Refused off Windows.
 #[tauri::command]
 pub async fn hyperv_join_admins() -> Result<()> {
-    crate::platform::exec::join_hyperv_admins().await
+    use isothrum_machine::install::{StepFailed, exit_codes::Known};
+    let cx = crate::runtime::providers::machine();
+    if cx.host.os != isothrum_machine::HostOs::Windows {
+        return Err(Error::Invalid("Hyper-V is only on Windows.".into()));
+    }
+    isothrum_machine::setup::join_hyperv_admins(&cx, &mut |_| {}).await.map_err(|failed| match failed {
+        StepFailed::Exited { known: Some(Known::Cancelled), .. } => {
+            Error::Invalid("The Windows permission prompt was declined, so nothing was changed. Try again and choose Yes.".into())
+        }
+        failed => Error::Invalid(format!("Windows couldn't add your account to Hyper-V Administrators ({failed}).")),
+    })
 }
 
 #[cfg(test)]

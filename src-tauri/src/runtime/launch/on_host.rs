@@ -178,91 +178,42 @@ pub(super) fn budget_verdict(check: server::BudgetCheck, log: &mut impl FnMut(St
     }
 }
 
-/// This machine's public IPv4, for cloud firewall rules.
+/// This machine's public IPv4, for cloud firewall rules: the one independent services, run by
+/// different companies, agree on ([`isothrum_machine::net::public_ipv4`]), so one that is down
+/// or blocked doesn't fail the launch, and one that answers wrong (compromised, or a captive
+/// portal's page) doesn't open the lab to someone else.
 pub(in crate::runtime) async fn public_ip() -> Result<String> {
-    // Independent services, run by different companies: two of them must see the same address
-    // (see `public_ip_from`), so one that is down or blocked doesn't fail the launch, and one that
-    // answers wrong (compromised, or a captive portal's page) doesn't open the lab to someone else.
-    const RESOLVERS: [&str; 4] = ["https://checkip.amazonaws.com", "https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"];
+    use isothrum_machine::net;
     // Unit tests never reach the internet: a documentation address stands in. An integration test
     // (a lab in a real account, its firewall opened to this machine) asks for the real one.
     if cfg!(test) && std::env::var_os("CYBERCTF_TEST_CLOUD_REAL_IP").is_none() {
         return Ok("203.0.113.7".into());
     }
-    public_ip_from(&RESOLVERS).await
+    let cx = crate::runtime::providers::machine();
+    net::public_ipv4(&cx, &net::RESOLVERS).await.map(|ip| ip.to_string()).map_err(ip_unsure)
 }
 
-/// The public IPv4 `resolvers` agree on, all asked at once (each with its own short timeout, so
-/// a hanging one doesn't stall the launch). At least two must give it, and none another one:
-/// the lab's firewall opens to this address, so a single service's word isn't enough, and when
-/// they disagree (a VPN or a second internet connection, or a service lying) the launch stops
-/// rather than guess.
-pub(super) async fn public_ip_from(resolvers: &[&str]) -> Result<String> {
-    let client = crate::platform::http::probe_client(std::time::Duration::from_secs(8), false)?;
-    let mut asked = tokio::task::JoinSet::new();
-    for (i, url) in resolvers.iter().enumerate() {
-        let (client, url) = (client.clone(), url.to_string());
-        asked.spawn(async move { (i, ask_ip(&client, &url).await) });
+/// Why no public address was agreed on, in the player's words: the lab's firewall opens to this
+/// address, so when the services disagree (a VPN or a second internet connection, or a service
+/// lying) or fewer than two answer, the launch stops rather than guess.
+pub(super) fn ip_unsure(failed: isothrum_machine::net::PublicIpFailed) -> Error {
+    use isothrum_machine::net::PublicIpFailed;
+    match failed {
+        PublicIpFailed::Disagree(seen) => {
+            let said = seen.iter().map(|(url, ip)| format!("{url}: {ip}")).collect::<Vec<_>>().join(", ");
+            Error::Invalid(format!(
+                "The services that tell Cyber CTF your public IP disagree ({said}), so it won't open the lab's firewall to an address it isn't sure of. \
+                 This happens behind a VPN that changes address or with two internet connections: disconnect the VPN or use one connection, then try again."
+            ))
+        }
+        PublicIpFailed::Unconfirmed(failed) => {
+            let failed = failed.iter().map(|(url, why)| format!("{url}: {why}")).collect::<Vec<_>>().join("; ");
+            Error::Invalid(format!(
+                "Couldn't confirm your public IP, needed to allow only your machine through the lab's firewall: fewer than two services answered with it. Check your internet connection and try again. ({failed})"
+            ))
+        }
+        other => Error::Invalid(other.to_string()),
     }
-    let mut answers: Vec<(usize, std::result::Result<std::net::Ipv4Addr, String>)> = asked.join_all().await;
-    answers.sort_by_key(|(i, _)| *i);
-    agreed_ip(resolvers, &answers.into_iter().map(|(_, a)| a).collect::<Vec<_>>())
-}
-
-/// One resolver's answer: a public IPv4 address, or what went wrong.
-async fn ask_ip(client: &reqwest::Client, url: &str) -> std::result::Result<std::net::Ipv4Addr, String> {
-    let resp = client.get(url).send().await.and_then(reqwest::Response::error_for_status).map_err(|e| e.to_string())?;
-    // An address is a few bytes: a page (a captive portal) is no answer.
-    let body = crate::platform::http::body_limited(resp, 256).await.map_err(|e| e.to_string())?;
-    let ip = parse_ipv4(&String::from_utf8_lossy(&body)).ok_or("an unexpected answer")?;
-    let ip: std::net::Ipv4Addr = ip.parse().map_err(|_| "an unexpected answer")?;
-    if is_public_ipv4(ip) { Ok(ip) } else { Err(format!("{ip}, not a public address")) }
-}
-
-/// The verdict on the resolvers' answers (in the order of `resolvers`).
-pub(super) fn agreed_ip(resolvers: &[&str], answers: &[std::result::Result<std::net::Ipv4Addr, String>]) -> Result<String> {
-    let seen: Vec<(&str, std::net::Ipv4Addr)> = resolvers.iter().zip(answers).filter_map(|(url, a)| a.as_ref().ok().map(|ip| (*url, *ip))).collect();
-    if let Some(&(_, first)) = seen.first()
-        && seen.iter().any(|&(_, ip)| ip != first)
-    {
-        let said = seen.iter().map(|(url, ip)| format!("{url}: {ip}")).collect::<Vec<_>>().join(", ");
-        return Err(Error::Invalid(format!(
-            "The services that tell Cyber CTF your public IP disagree ({said}), so it won't open the lab's firewall to an address it isn't sure of. \
-             This happens behind a VPN that changes address or with two internet connections: disconnect the VPN or use one connection, then try again."
-        )));
-    }
-    if seen.len() >= 2 {
-        return Ok(seen[0].1.to_string());
-    }
-    let failed = resolvers.iter().zip(answers).filter_map(|(url, a)| a.as_ref().err().map(|e| format!("{url}: {e}"))).collect::<Vec<_>>().join("; ");
-    Err(Error::Invalid(format!(
-        "Couldn't confirm your public IP, needed to allow only your machine through the lab's firewall: fewer than two services answered with it. Check your internet connection and try again. ({failed})"
-    )))
-}
-
-/// A resolver's answer as an IPv4 address, surrounding whitespace ignored.
-pub(super) fn parse_ipv4(body: &str) -> Option<String> {
-    let ip = body.trim();
-    ip.parse::<std::net::Ipv4Addr>().is_ok().then(|| ip.to_string())
-}
-
-/// Whether `ip` is an address on the internet: not private, loopback, link-local, shared
-/// (carrier-grade NAT), documentation, benchmarking, multicast, reserved or broadcast. Anything
-/// else can't be where this machine's traffic comes from, as a cloud firewall sees it.
-pub(super) fn is_public_ipv4(ip: std::net::Ipv4Addr) -> bool {
-    let [a, b, c, _] = ip.octets();
-    let special = ip.is_private()
-        || ip.is_loopback()
-        || ip.is_link_local()
-        || ip.is_broadcast()
-        || ip.is_documentation()
-        || ip.is_multicast()
-        || a == 0
-        || (a == 100 && (64..128).contains(&b))
-        || (a == 192 && b == 0 && c == 0)
-        || (a == 198 && (b == 18 || b == 19))
-        || a >= 240;
-    !special
 }
 
 #[cfg(test)]

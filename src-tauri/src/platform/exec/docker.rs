@@ -50,6 +50,7 @@ impl<'a> ImageRef<'a> {
 /// the `docker` group, or not since its last login) rather than a daemon that isn't running, as
 /// isothrum-machine reads the CLI ([`says_denied`](isothrum_machine::docker::says_denied)). Told
 /// apart, the app says which: offering to start an engine that already runs only spun.
+#[cfg(test)]
 pub fn docker_denied(err: &Error) -> bool {
     matches!(err, Error::CommandFailed { stderr, .. } if isothrum_machine::docker::says_denied(stderr))
 }

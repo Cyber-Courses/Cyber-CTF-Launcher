@@ -17,8 +17,7 @@ pub use unix::{is_root, login_name};
 pub use windows::registry_value_exists;
 #[cfg(windows)]
 pub use windows::{
-    ElevatedProcess, Hive, delete_user_registry_value, is_elevated, keep_std_handles, launch_elevated, registry_string, registry_values, send_ctrl_c, set_path,
-    set_user_registry_string,
+    Hive, delete_user_registry_value, is_elevated, keep_std_handles, registry_string, registry_values, send_ctrl_c, set_path, set_user_registry_string,
 };
 
 /// A registry value as the launcher reads it: a `REG_DWORD`'s number, or the type of any other.

@@ -31,7 +31,7 @@ pub(super) use on_host::server_place;
 #[cfg(test)]
 pub(crate) use on_host::{CloudStart, start_cloud_run};
 #[cfg(test)]
-use on_host::{agreed_ip, budget_verdict, cloud_form, is_public_ipv4, parse_ipv4, public_ip_from};
+use on_host::{budget_verdict, cloud_form, ip_unsure};
 use on_host::{containers_run_on, per_machine_runs_on, start_on_server};
 
 /// Where a lab is started: on this machine (with a local `provider`, and `per_machine_vm`

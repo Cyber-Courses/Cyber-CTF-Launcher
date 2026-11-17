@@ -6,7 +6,6 @@
 
 mod background;
 mod docker;
-mod elevate;
 
 use std::path::Path;
 use std::time::Duration;
@@ -15,11 +14,10 @@ pub use background::{Background, background};
 /// The image pattern, for the bindings the tests write (`testing::ts_bindings`).
 #[cfg(test)]
 pub use docker::IMAGE_PATTERN;
+#[cfg(test)]
+pub use docker::docker_denied;
 pub use docker::login_name;
-pub use docker::{ImageRef, docker_denied, docker_denied_error, valid_image};
-pub use elevate::join_hyperv_admins;
-#[cfg(windows)]
-pub use elevate::set_owner_window;
+pub use docker::{ImageRef, docker_denied_error, valid_image};
 
 use crate::error::{Error, Result};
 

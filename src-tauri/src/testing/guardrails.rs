@@ -313,7 +313,6 @@ fn lets_a_port_go(t: &TestLine) -> bool {
 /// held but never accepting, or port 0 itself (which no connection reaches).
 const PORT_ALLOWED: &[(&str, &str, &str)] = &[
     ("labs.rs", "let closed = tokio::net::TcpListener::bind(\"127.0.0.1:0\")", "a port nothing listens on, let go (to replace)"),
-    ("runtime/launch/tests.rs", "let closed = tokio::net::TcpListener::bind(\"127.0.0.1:0\")", "a resolver that is down: a port let go (to replace)"),
     ("screen/bridge/tests.rs", "let free = TcpListener::bind(\"127.0.0.1:0\")", "a screen that doesn't answer: a port let go (to replace)"),
     ("account/api.rs", "let closed = tokio::net::TcpListener::bind(\"127.0.0.1:0\")", "the API unreachable: a port let go (to replace)"),
     ("account/auth/tokens.rs", "let closed = tokio::net::TcpListener::bind(\"127.0.0.1:0\")", "the sign-in server unreachable: a port let go (to replace)"),

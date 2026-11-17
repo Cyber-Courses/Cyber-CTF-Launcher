@@ -7,11 +7,14 @@ fn a_wsl_check_is_logged_at_info_only_when_its_outcome_changes() {
     assert!(log_if_changed(&a));
 }
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32};
 
 use super::*;
+use isothrum_runner::fake::{FakeProcesses, Reply};
+
+use crate::runtime::providers::testing::{Machine, host};
 use crate::testing::test_app::TestApp;
-use crate::testing::tools::{Tools, fail, ok};
 use WslState::*;
 
 #[test]
@@ -137,13 +140,25 @@ impl Reopen for FakeReopen {
 
 const SHUTDOWN: &str = "shutdown /r /t 5 /c Cyber CTF: finishing WSL 2";
 
+/// isothrum-machine's tools on this test's thread, until the guard drops, each answered `reply`:
+/// the guard, and the tools to read what was run.
+fn shutdown(reply: Reply) -> (Machine, Arc<FakeProcesses>) {
+    let tools = Arc::new(FakeProcesses::model(move |_| reply.clone()));
+    (Machine::set(Arc::<FakeProcesses>::clone(&tools), host(std::path::Path::new("/nonexistent/cyberctf-test-machine"))), tools)
+}
+
+/// What `tools` ran, each as its command line.
+fn lines(tools: &FakeProcesses) -> Vec<String> {
+    tools.calls().iter().map(|c| std::iter::once(c.program.as_str()).chain(c.args.iter().map(String::as_str)).collect::<Vec<_>>().join(" ")).collect()
+}
+
 #[tokio::test]
 async fn a_restart_is_scheduled_once_whoever_asks() {
     let t = TestApp::new();
-    let tools = Tools::strict_rules(&[("shutdown", ok(""))]);
+    let (_machine, tools) = shutdown(Reply::ok(""));
     let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
     schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen, WindowsFeature::Wsl).await.unwrap();
-    assert_eq!(tools.calls(), [SHUTDOWN]);
+    assert_eq!(lines(&tools), [SHUTDOWN]);
     assert!(reopen.written());
     // This boot's, as the check reads it (`same_boot`): Windows works the boot time out from
     // the uptime, a second apart from one call to the next now and then.
@@ -152,7 +167,7 @@ async fn a_restart_is_scheduled_once_whoever_asks() {
     // The other window, or the remounted step, asks again during the countdown: the same
     // restart, no second shutdown, RunOnce left as it is.
     schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen, WindowsFeature::Wsl).await.unwrap();
-    assert_eq!(tools.calls().len(), 1);
+    assert_eq!(lines(&tools).len(), 1);
     assert_eq!(reopen.writes.load(Ordering::SeqCst), 1);
     assert!(reopen.written());
 }
@@ -160,10 +175,10 @@ async fn a_restart_is_scheduled_once_whoever_asks() {
 #[tokio::test]
 async fn a_restart_for_hyper_v_leaves_wsls_restart_mark_alone() {
     let t = TestApp::new();
-    let tools = Tools::strict_rules(&[("shutdown", ok(""))]);
+    let (_machine, tools) = shutdown(Reply::ok(""));
     let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
     schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen, WindowsFeature::Hyperv).await.unwrap();
-    assert_eq!(tools.calls(), [SHUTDOWN]);
+    assert_eq!(lines(&tools), [SHUTDOWN]);
     assert!(reopen.written());
     // WSL never reads it as a restart made for it.
     assert_eq!(marked_boot(&t.dirs(), RESTART_MARK), None);
@@ -183,7 +198,7 @@ fn the_restart_can_run_as_a_tauri_command() {
 #[tokio::test]
 async fn a_restart_already_scheduled_by_windows_counts_as_this_one() {
     let t = TestApp::new();
-    let _tools = Tools::strict_rules(&[("shutdown", fail("A system shutdown has already been scheduled.(1190)"))]);
+    let (_machine, _tools) = shutdown(Reply::fail(1, "A system shutdown has already been scheduled.(1190)"));
     let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
     schedule_restart(&t.dirs(), &state, "x", &reopen, WindowsFeature::Wsl).await.unwrap();
     assert!(reopen.written(), "the app still reopens after that restart");
@@ -194,16 +209,16 @@ async fn a_restart_already_scheduled_by_windows_counts_as_this_one() {
 #[tokio::test]
 async fn a_failed_restart_takes_back_what_it_wrote_and_can_be_tried_again() {
     let t = TestApp::new();
-    let tools = Tools::strict_rules(&[("shutdown", fail("Access is denied.(5)"))]);
+    let (_machine, tools) = shutdown(Reply::fail(1, "Access is denied.(5)"));
     let (state, reopen) = (AtomicU8::new(IDLE), FakeReopen::default());
     let err = schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen, WindowsFeature::Wsl).await.unwrap_err();
     assert!(err.to_string().contains("Access is denied"), "{err}");
     assert!(!reopen.written(), "RunOnce removed");
     assert!(marked_boot(&t.dirs(), RESTART_MARK).is_none());
     drop(tools);
-    let tools = Tools::strict_rules(&[("shutdown", ok(""))]);
+    let (_machine, tools) = shutdown(Reply::ok(""));
     schedule_restart(&t.dirs(), &state, "Cyber CTF: finishing WSL 2", &reopen, WindowsFeature::Wsl).await.unwrap();
-    assert_eq!(tools.calls(), [SHUTDOWN]);
+    assert_eq!(lines(&tools), [SHUTDOWN]);
     assert!(reopen.written());
 }
 
@@ -220,10 +235,10 @@ async fn a_failed_restart_leaves_a_runonce_it_didnt_write() {
         }
     }
     let t = TestApp::new();
-    let _tools = Tools::strict_rules(&[("shutdown", fail("Access is denied.(5)"))]);
+    let (_machine, _tools) = shutdown(Reply::fail(1, "Access is denied.(5)"));
     assert!(schedule_restart(&t.dirs(), &AtomicU8::new(IDLE), "x", &Untouchable, WindowsFeature::Wsl).await.is_err());
     let refused = FakeReopen { refuses: true, ..FakeReopen::default() };
-    let _tools = Tools::strict_rules(&[("shutdown", ok(""))]);
+    let (_machine, _tools) = shutdown(Reply::ok(""));
     schedule_restart(&t.dirs(), &AtomicU8::new(IDLE), "x", &refused, WindowsFeature::Wsl).await.unwrap();
     assert!(!refused.written());
 }
@@ -232,10 +247,10 @@ async fn a_failed_restart_leaves_a_runonce_it_didnt_write() {
 #[tokio::test]
 async fn restarting_is_refused_off_windows() {
     let t = TestApp::new();
-    let tools = Tools::strict_rules(&[]);
+    let (_machine, tools) = shutdown(Reply::ok(""));
     let err = machine_restart(t.dirs(), String::new(), WindowsFeature::Wsl).await.unwrap_err();
     assert_eq!(err.to_string(), "Restarting from Cyber CTF is only available on Windows.");
-    assert_eq!(tools.calls(), [] as [&str; 0]);
+    assert_eq!(lines(&tools), [] as [String; 0]);
 }
 
 #[tokio::test]
@@ -249,9 +264,9 @@ async fn a_bad_restart_note_is_refused_whatever_the_os() {
 #[tokio::test]
 async fn the_restart_command_runs_shutdown_with_the_note() {
     let t = TestApp::new();
-    let tools = Tools::strict_rules(&[("shutdown", ok(""))]);
+    let (_machine, tools) = shutdown(Reply::ok(""));
     machine_restart(t.dirs(), "Cyber CTF: finishing WSL 2".into(), WindowsFeature::Wsl).await.unwrap();
-    assert_eq!(tools.calls(), [SHUTDOWN]);
+    assert_eq!(lines(&tools), [SHUTDOWN]);
     // The process-wide state: later asks in this test process are the same restart.
     RESTART.store(IDLE, Ordering::SeqCst);
 }
@@ -303,13 +318,4 @@ fn run_once_is_written_and_removed() {
     assert!(windows::reopen_command().is_some());
     // Nothing to write: nothing written.
     assert!(!Reopen::register(&windows::UserRunOnce(None)));
-}
-
-#[test]
-fn the_win32_error_is_read_whatever_the_language() {
-    assert_eq!(super::win32_error("A system shutdown has already been scheduled.(1190)\r\n"), Some(super::ERROR_SHUTDOWN_IS_SCHEDULED));
-    assert_eq!(super::win32_error("Un arrêt du système a déjà été planifié.(1190)"), Some(1190));
-    assert_eq!(super::win32_error("Access is denied.(5)"), Some(5));
-    assert_eq!(super::win32_error("listening on port 1190"), None, "a number that isn't the error's");
-    assert_eq!(super::win32_error(""), None);
 }
