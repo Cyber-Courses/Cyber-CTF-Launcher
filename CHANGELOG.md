@@ -40,8 +40,8 @@ All notable changes to Cyber CTF Desktop are recorded here. The format follows
   command line and the background work read the same settings as the window, and every window
   follows a change at once. The window's storage keeps only the theme, the language and the
   onboarding. The first start after an update from 1.9 takes in what 1.9 kept (`server.json`,
-  `shared-folder.json`, `install-id` and the settings in the window's storage) once, then removes
-  those copies: nothing the player set is lost.
+  `shared-folder.json`, `install-id`) once, then removes those copies. The settings 1.9 kept in the
+  window's storage are not carried over: set them again in Settings.
 
 - **A cloud-services lab is its own Terraform module and a lab file of the launcher's.** Isoloom
   3.0 produces no such lab: the lab's author writes the module (`cloud/*.tf`) and `cloud/lab.yml`

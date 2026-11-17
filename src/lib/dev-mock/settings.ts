@@ -3,7 +3,7 @@
 // webview, not handed over), so the preview's tabs share them as the app's windows do. A test
 // starts the preview with settings by writing that key first (`MOCK_SETTINGS_KEY`).
 import { applyChange } from "@/lib/settings-store";
-import type { Change, Imported, Settings } from "@/lib/tauri";
+import type { Change, Settings } from "@/lib/tauri";
 import { SETTINGS_DEFAULTS } from "@/lib/tauri/generated/SettingsDefaults";
 import type { Args, Handler } from "@/lib/dev-mock/types";
 
@@ -29,10 +29,8 @@ function keep(settings: Settings): Settings {
 }
 
 /** The settings commands, as the core answers them (without its rules on earlier default images
- *  and remote hypervisors, which its own tests hold). The import takes nothing: the preview never
- *  ran an earlier version. */
+ *  and remote hypervisors, which its own tests hold). */
 export const settingsCommands: Record<string, Handler> = {
   settings_get: (): Settings => kept(),
   settings_change: (args: Args): Settings => keep(((args?.changes as Change[] | undefined) ?? []).reduce(applyChange, kept())),
-  settings_import_webview: (): Imported => ({ taken: [], settings: kept() }),
 };

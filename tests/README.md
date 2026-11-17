@@ -137,9 +137,7 @@ once none does. `TAURI_WEBDRIVER_PORT` (the embedded WebDriver's port, 4445), `C
 [below](#a-desktop-runs-own-folder)) and `CYBERCTF_WDIO_STORAGE` (a JSON object of strings the
 `wdio` build writes into the webview's localStorage before the page's scripts run, once per launch:
 the specs' `onboarded`, `locale` and `__wdio_` hooks, so a spec opens the app set up without
-reloading the page, which ended the app on Windows; a setting given under the key 1.9 kept it in,
-such as `cyberctf.attackbox.desktop`, is handed to the core by the app's start, as after an update
-from 1.9) are the app's own settings, which the desktop
+reloading the page, which ended the app on Windows) are the app's own settings, which the desktop
 runner and specs pass on.
 
 ## A desktop run's own folder

@@ -100,7 +100,6 @@ fn generate(dir: &Path) {
 /// themselves (`crate::settings`).
 fn export_settings(cfg: &Config) {
     crate::settings::Change::export_all(cfg).unwrap();
-    crate::settings::Imported::export_all(cfg).unwrap();
 }
 
 /// Writes the files of values (not types) the webview reads from the core's own tables.

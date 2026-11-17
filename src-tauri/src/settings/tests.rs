@@ -1,19 +1,14 @@
-//! The settings: their defaults, each change, what can't be saved, and the webview's import from
-//! the storage shapes earlier versions wrote.
+//! The settings: their defaults, each change, and what can't be saved.
 
 use std::collections::BTreeMap;
 
-use super::{Change, PortMode, Settings, TestRecord, TestResult, VmForm, settings_change, settings_get, settings_import_webview};
+use super::{Change, PortMode, Settings, TestRecord, TestResult, VmForm, settings_change, settings_get};
 use crate::machine::system::docker::Engine;
 use crate::runtime::providers::Provider;
 use crate::testing::test_app::TestApp;
 
 fn record(result: TestResult, at: u64, why: Option<&str>) -> TestRecord {
     TestRecord { result, at, why: why.map(str::to_owned) }
-}
-
-fn items(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-    pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect()
 }
 
 #[test]
@@ -119,98 +114,6 @@ fn a_kept_value_this_version_cant_read_reads_as_the_default_and_is_said() {
     assert_eq!((s.docker_engine, s.attack_auto, s.vm_provider), (None, true, None));
     let warned = crate::testing::logs::take_warnings();
     assert!(warned.iter().any(|w| w.contains("labs.docker_engine")) && warned.iter().any(|w| w.contains("attack_box.auto")), "{warned:?}");
-}
-
-/// The webview's storage as the last version before the store left it: every setting, in the
-/// shapes `src/lib/settings.ts`, `last-run.ts` and `vm-tests.ts` wrote, beside the preferences the
-/// webview keeps and keys of no setting.
-const WEBVIEW_1_9: &[(&str, &str)] = &[
-    ("cyberctf.appearance", "light"),
-    ("cyberctf.locale", "fr"),
-    ("cyberctf.onboarded", "1"),
-    ("cyberctf.diagram.fitWidth", "true"),
-    ("cyberctf.attackbox.image", "parrotsec/security"),
-    ("cyberctf.attackbox.auto", "false"),
-    ("cyberctf.attackbox.desktop", "true"),
-    ("cyberctf.vm.provider", "vmware_desktop"),
-    ("cyberctf.docker.engine", "colima"),
-    ("cyberctf.labs.ports", "default"),
-    ("cyberctf.labs.vmForm", "vms"),
-    ("cyberctf.selftest.docker", r#"{"result":"ok","at":1763300000000,"why":null}"#),
-    ("cyberctf.selftest.vm", r#"{"result":"fail","at":1763300001000,"why":"VT-x is off"}"#),
-    ("cyberctf.selftest.vm.vmware_desktop", r#"{"result":"fail","at":1763300001000,"why":"VT-x is off"}"#),
-    ("cyberctf.server.vmtest", r#"{"pve1":{"result":"ok","at":1763300002000},"esx":{"result":"maybe"}}"#),
-    ("cyberctf.lastrun.kube-dashboard-exposed", "1763300003000"),
-    ("cyberctf.lastrun.local-goad", "1763300004000"),
-    ("__wdio_attack__", "web"),
-];
-
-#[test]
-fn the_webviews_settings_from_1_9_are_taken_whole_and_its_own_preferences_left() {
-    let t = TestApp::new();
-    let dirs = t.dirs();
-    let imported = settings_import_webview(&dirs, &items(WEBVIEW_1_9)).unwrap();
-    let left: Vec<&str> = WEBVIEW_1_9.iter().map(|(k, _)| *k).filter(|k| !imported.taken.iter().any(|t| t == k)).collect();
-    assert_eq!(left, ["cyberctf.appearance", "cyberctf.locale", "cyberctf.onboarded", "cyberctf.diagram.fitWidth", "__wdio_attack__"]);
-    let s = settings_get(&dirs).unwrap();
-    assert_eq!(imported.settings, s);
-    assert_eq!(s.attack_image.as_deref(), Some("parrotsec/security"));
-    assert!(!s.attack_auto && s.attack_desktop);
-    assert_eq!(
-        (s.vm_provider, s.docker_engine, s.port_mode, s.vm_form),
-        (Some(Provider::VmwareDesktop), Some(Engine::Colima), Some(PortMode::Default), Some(VmForm::Vms))
-    );
-    assert_eq!(s.self_tests.get("docker"), Some(&record(TestResult::Ok, 1_763_300_000_000, None)));
-    assert_eq!(s.self_tests.get("vm.vmware_desktop"), Some(&record(TestResult::Fail, 1_763_300_001_000, Some("VT-x is off"))));
-    assert_eq!(s.server_tests.keys().collect::<Vec<_>>(), ["pve1"], "the entry that wasn't a test is left out, as the webview left it out");
-    assert_eq!(s.last_runs.get("kube-dashboard-exposed"), Some(&1_763_300_003_000));
-    assert_eq!(s.last_runs.get("local-goad"), Some(&1_763_300_004_000));
-}
-
-#[test]
-fn values_the_webview_read_as_unset_are_taken_and_leave_the_defaults() {
-    // Each read as "none" in the webview (`readStoredOneOf`, a record of another shape): taken so
-    // the webview drops them, the setting at its default, as the player saw it.
-    let t = TestApp::new();
-    let dirs = t.dirs();
-    let odd = items(&[
-        ("cyberctf.attackbox.image", "cyberctf/attack-box:latest"),
-        ("cyberctf.attackbox.auto", "true"),
-        ("cyberctf.vm.provider", "proxmox"),
-        ("cyberctf.docker.engine", "lima"),
-        ("cyberctf.labs.ports", "ask"),
-        ("cyberctf.labs.vmForm", "vm"),
-        ("cyberctf.selftest.docker", "not json"),
-        ("cyberctf.server.vmtest", "[]"),
-        ("cyberctf.lastrun.a", ""),
-        ("cyberctf.lastrun.x", "garbage"),
-    ]);
-    let imported = settings_import_webview(&dirs, &odd).unwrap();
-    assert_eq!(imported.taken.len(), odd.len(), "{:?}", imported.taken);
-    assert_eq!(imported.settings, Settings::default());
-}
-
-#[test]
-fn importing_again_gives_the_same_settings_and_the_webviews_values_win() {
-    // The webview takes its keys out only once the import answered: a window that closed between
-    // the two hands the same items over at its next start.
-    let t = TestApp::new();
-    let dirs = t.dirs();
-    settings_change(&dirs, &[Change::PortMode(Some(PortMode::Random)), Change::LastRun { lab: "web".into(), at: Some(5) }]).unwrap();
-    let first = settings_import_webview(&dirs, &items(WEBVIEW_1_9)).unwrap();
-    let again = settings_import_webview(&dirs, &items(WEBVIEW_1_9)).unwrap();
-    assert_eq!(first, again);
-    assert_eq!(again.settings.port_mode, Some(PortMode::Default), "the webview's value, which the player saw last");
-    assert_eq!(again.settings.last_runs.get("web"), Some(&5), "a lab the webview didn't name keeps its time");
-}
-
-#[test]
-fn a_webview_with_nothing_to_hand_over_changes_nothing() {
-    let t = TestApp::new();
-    let dirs = t.dirs();
-    let imported = settings_import_webview(&dirs, &items(&[("cyberctf.appearance", "dark"), ("cyberctf.locale", "en")])).unwrap();
-    assert_eq!(imported.taken, Vec::<String>::new());
-    assert_eq!(imported.settings, Settings::default());
 }
 
 #[test]

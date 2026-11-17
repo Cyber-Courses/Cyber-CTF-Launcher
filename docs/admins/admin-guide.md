@@ -336,8 +336,9 @@ use, how labs take ports, the last test results and when each lab last started) 
 `launcher.sqlite3`, so the app, its command line and its background work read the same ones. The
 web view's own data keeps only how the app looks: the theme, the language and whether the
 onboarding was seen. On the first start after an update from 1.9, the launcher moves what 1.9
-kept elsewhere into the store (`server.json`, `shared-folder.json`, `install-id`, and the settings
-1.9 kept in the web view's storage), then removes those copies.
+kept elsewhere into the store (`server.json`, `shared-folder.json`, `install-id`), then removes
+those copies. The settings 1.9 kept in the web view's storage are not carried over: they are set
+again in Settings.
 
 **Terraform state is the record of what a server or cloud lab created.** While such a lab runs,
 deleting `runs/` (or the whole app data folder) leaves its machines running, and billing in a cloud

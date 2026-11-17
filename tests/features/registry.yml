@@ -3367,20 +3367,17 @@ areas:
           - desktop-e2e
 
       - id: settings.kept-by-the-app
-        what: The player's settings and what the launcher remembers for them (attack box options, hypervisor, Docker engine, ports, VM form, test results, last starts) are kept by the app, not a window, so every window, the command line and the background work read the same ones; those an earlier version kept in the window are moved over once, none lost.
+        what: The player's settings and what the launcher remembers for them (attack box options, hypervisor, Docker engine, ports, VM form, test results, last starts) are kept by the app, not a window, so every window, the command line and the background work read the same ones.
         host: false
         commands:
           - settings_get
           - settings_change
-          - settings_import_webview
         tests:
           unit:
             - src-tauri/src/settings/tests.rs > a_player_who_chose_nothing_gets_the_defaults
             - src-tauri/src/settings/tests.rs > each_setting_is_kept_and_none_puts_it_back_to_its_default
             - src-tauri/src/settings/tests.rs > a_server_or_a_cloud_is_no_hypervisor_of_this_machine_and_a_refused_batch_changes_nothing
-            - src-tauri/src/settings/tests.rs > the_webviews_settings_from_1_9_are_taken_whole_and_its_own_preferences_left
-            - src-tauri/src/settings/tests.rs > importing_again_gives_the_same_settings_and_the_webviews_values_win
-            - src/lib/settings-store.test.ts > hands over the settings 1.9 kept in localStorage, removes what the core took and keeps the window's own
+            - src/lib/settings-store.test.ts > reads the settings from the core, once
             - src/lib/settings-store.test.ts > follows a change another window made, and tells its readers
             - src/lib/lib-behavior.test.tsx > follows a change made in this window and one made in another
           web:
@@ -3389,9 +3386,6 @@ areas:
             - settings/attack-desktop
         rig:
           - desktop-e2e
-        gaps:
-          web: the dev mock's import takes nothing (the preview never ran 1.9); the import itself is the unit tier's
-          desktop: the screens spec seeds its setting in 1.9's shape, so the app's import runs, but no spec checks a 1.9 data folder whole
 
       - id: settings.theme
         what: Pick the theme (light, dark, black) in Settings > Appearance; it applies at once to every window, new windows open in it, and it survives a restart.
