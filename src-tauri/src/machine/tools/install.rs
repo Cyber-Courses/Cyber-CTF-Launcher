@@ -114,8 +114,13 @@ pub(super) fn plan_on(dep: Dependency, host: &Host, user: Option<&str>) -> Resul
     }
 }
 
-/// The ordered install steps for a dependency on this computer.
+/// The ordered install steps for a dependency on this computer. One that doesn't run here is
+/// refused before the package manager is looked up.
 async fn plan(dep: Dependency) -> Result<Plan> {
+    let os = isothrum_runner::this_host();
+    if !runs_on(dep, os) {
+        return Err(not_here(dep, os));
+    }
     plan_on(dep, &crate::runtime::providers::host().await, crate::platform::exec::login_name().as_deref())
 }
 

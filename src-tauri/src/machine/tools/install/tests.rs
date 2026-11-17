@@ -206,9 +206,13 @@ fn not_here() -> Dependency {
 }
 
 /// Scripted tools for an install of Terraform: `terraform version` answers once `installed`
-/// is set, and the install step (whichever package manager runs it) sets it when `works`.
+/// is set, and the install step (whichever package manager runs it) sets it when `works`. The
+/// package manager's own `--version` (Linux's lookup of apt or dnf) only answers.
 fn terraform_tools(installed: Rc<Cell<bool>>, works: bool) -> Tools {
-    Tools::new(move |program, _| {
+    Tools::new(move |program, args| {
+        if matches!(program, "apt-get" | "dnf") && args == ["--version"] {
+            return ok("apt 2.9.8 (amd64)");
+        }
         if program == "terraform" {
             return if installed.get() { ok("Terraform v1.9.8") } else { fail("terraform: not found") };
         }
