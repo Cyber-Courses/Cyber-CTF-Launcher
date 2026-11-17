@@ -3,7 +3,7 @@
 
 use crate::error::Result;
 use crate::platform::AppDirs;
-use crate::platform::host::Os;
+use isothrum_machine::HostOs;
 
 /// A stable identifier for this installation, generated once and kept in the launcher's store
 /// (1.9 kept it in the `install-id` file, which the store takes in). It is the merge key for the
@@ -42,11 +42,11 @@ pub(super) fn random_hex() -> String {
 /// A human label for this machine (editable server-side later). Not an identifier.
 pub(super) fn machine_name() -> String {
     let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).ok();
-    machine_name_from(std::env::var("CYBERCTF_AGENT_NAME").ok(), user, Os::HERE)
+    machine_name_from(std::env::var("CYBERCTF_AGENT_NAME").ok(), user, isothrum_runner::this_host())
 }
 
 /// The machine label from an explicit name, else the user and the OS.
-fn machine_name_from(explicit: Option<String>, user: Option<String>, os: Os) -> String {
+fn machine_name_from(explicit: Option<String>, user: Option<String>, os: HostOs) -> String {
     if let Some(n) = explicit
         && !n.trim().is_empty()
     {
@@ -54,9 +54,9 @@ fn machine_name_from(explicit: Option<String>, user: Option<String>, os: Os) -> 
     }
     let user = user.filter(|s| !s.trim().is_empty());
     let os = match os {
-        Os::Macos => "Mac",
-        Os::Windows => "PC",
-        Os::Linux => "Linux",
+        HostOs::Macos => "Mac",
+        HostOs::Windows => "PC",
+        HostOs::Linux => "Linux",
     };
     match user {
         Some(u) => format!("{u}'s {os}"),
@@ -65,7 +65,7 @@ fn machine_name_from(explicit: Option<String>, user: Option<String>, os: Os) -> 
 }
 
 pub(super) fn arch() -> &'static str {
-    crate::platform::host::Arch::HERE.id()
+    std::env::consts::ARCH
 }
 
 /// The launcher app's own version (semver), reported so the website can tell which build each
@@ -78,7 +78,7 @@ pub(super) fn app_version() -> &'static str {
 /// This machine's OS as the website shows it: `"macos 15.1"`, `"windows 11"`, `"linux 24.04"`, or
 /// the family alone when the version can't be read.
 pub(super) fn os_label() -> String {
-    os_label_from(Os::HERE.id(), sysinfo::System::os_version().as_deref())
+    os_label_from(std::env::consts::OS, sysinfo::System::os_version().as_deref())
 }
 
 /// The OS label from its family and the version the OS reports, lowercased; only the version's
@@ -135,11 +135,11 @@ mod tests {
 
     #[test]
     fn the_machine_name_prefers_the_explicit_name_then_the_user() {
-        assert_eq!(machine_name_from(Some("  Lab box ".into()), Some("ada".into()), Os::Linux), "Lab box");
-        assert_eq!(machine_name_from(Some("  ".into()), Some("ada".into()), Os::Macos), "ada's Mac");
-        assert_eq!(machine_name_from(None, Some("bob".into()), Os::Windows), "bob's PC");
-        assert_eq!(machine_name_from(None, Some(" ".into()), Os::Linux), "Cyber CTF Linux");
-        assert_eq!(machine_name_from(None, None, Os::Macos), "Cyber CTF Mac");
+        assert_eq!(machine_name_from(Some("  Lab box ".into()), Some("ada".into()), HostOs::Linux), "Lab box");
+        assert_eq!(machine_name_from(Some("  ".into()), Some("ada".into()), HostOs::Macos), "ada's Mac");
+        assert_eq!(machine_name_from(None, Some("bob".into()), HostOs::Windows), "bob's PC");
+        assert_eq!(machine_name_from(None, Some(" ".into()), HostOs::Linux), "Cyber CTF Linux");
+        assert_eq!(machine_name_from(None, None, HostOs::Macos), "Cyber CTF Mac");
         assert_ne!(machine_name(), "");
         assert_eq!(capabilities(), vec!["docker".to_string()]);
         assert_eq!(arch(), std::env::consts::ARCH);

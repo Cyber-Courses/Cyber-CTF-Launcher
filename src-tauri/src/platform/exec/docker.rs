@@ -1,8 +1,7 @@
-//! The Docker CLI's quirks: which engine it talks to, and telling a refused socket from a
-//! daemon that isn't running.
+//! The Docker CLI's quirks: which engine it talks to, and a refused socket in the player's words.
 
 use crate::error::{Code, Error};
-use crate::platform::host::Os;
+use isothrum_machine::HostOs;
 
 /// Environment variables that would redirect the Docker CLI to a different engine than the one
 /// the user configured as current (`docker context use`, which Docker Desktop's UI reflects).
@@ -80,74 +79,24 @@ impl<'a> ImageRef<'a> {
     }
 }
 
-/// What a failed `docker` call said, read here only: every wording of the Docker CLI the app
-/// acts on, so a new wording is one change with its fixture below.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DockerSaid {
-    /// This account can't reach the daemon's socket (unix) or named pipe (Windows).
-    Denied,
-    /// The engine doesn't answer: stopped, or quit while a call ran (on Windows, its pipe gone).
-    EngineDown,
-    /// Anything else.
-    Other,
-}
-
-/// What Docker's CLI says when its engine doesn't answer (lower case, as compared).
-const ENGINE_DOWN: [&str; 3] = ["cannot connect to the docker daemon", "is the docker daemon running", "error during connect"];
-
-impl DockerSaid {
-    /// What `stderr`, a failed `docker` call's, says.
-    pub fn of(stderr: &str) -> DockerSaid {
-        let s = stderr.to_lowercase();
-        if denied_text(&s) {
-            DockerSaid::Denied
-        } else if ENGINE_DOWN.iter().any(|m| s.contains(m)) && !refusal(&s) {
-            DockerSaid::EngineDown
-        } else {
-            DockerSaid::Other
-        }
-    }
-
-    /// What `err` says, when it is a `docker` call that failed; none for another error.
-    pub fn of_error(err: &Error) -> Option<DockerSaid> {
-        match err {
-            Error::CommandFailed { stderr, .. } => Some(DockerSaid::of(stderr)),
-            _ => None,
-        }
-    }
-}
-
 /// Whether a failed `docker` call means this account can't reach the daemon's socket (not in
-/// the `docker` group, or not since its last login) rather than a daemon that isn't running.
-/// Told apart, the app says which: offering to start an engine that already runs only spun.
+/// the `docker` group, or not since its last login) rather than a daemon that isn't running, as
+/// isothrum-machine reads the CLI ([`says_denied`](isothrum_machine::docker::says_denied)). Told
+/// apart, the app says which: offering to start an engine that already runs only spun.
 pub fn docker_denied(err: &Error) -> bool {
-    DockerSaid::of_error(err) == Some(DockerSaid::Denied)
-}
-
-/// Whether `text` (lower case) says some access was refused: unix's `permission denied`,
-/// Windows' `Access is denied`.
-fn refusal(text: &str) -> bool {
-    text.contains("permission denied") || text.contains("access is denied")
-}
-
-/// The socket refusal on unix (`permission denied … docker.sock`), or the named pipe's on Windows
-/// (`open //./pipe/dockerDesktopLinuxEngine: Access is denied.`), in `s` (lower case).
-fn denied_text(s: &str) -> bool {
-    let socket = s.contains("permission denied") && (s.contains("docker.sock") || s.contains("docker api") || s.contains("docker daemon"));
-    let pipe = s.contains("access is denied") && s.contains("pipe");
-    socket || pipe
+    matches!(err, Error::CommandFailed { stderr, .. } if isothrum_machine::docker::says_denied(stderr))
 }
 
 /// The error of a player whose account can't use the running Docker daemon.
 pub fn docker_denied_error() -> Error {
-    Error::coded(denied_code(Os::HERE, login_name().as_deref()))
+    Error::coded(denied_code(isothrum_runner::this_host(), login_name().as_deref()))
 }
 
 /// [`docker_denied_error`]'s code on `os`, for the account `user`. Windows grants the engine's
 /// pipe to the `docker-users` group (which Docker Desktop's installer fills only with the account
 /// that installed it); elsewhere the socket belongs to the `docker` group.
-fn denied_code(os: Os, user: Option<&str>) -> Code {
-    if os == Os::Windows {
+fn denied_code(os: HostOs, user: Option<&str>) -> Code {
+    if os == HostOs::Windows {
         Code::DockerDeniedWindows { user: user.unwrap_or("%USERNAME%").into() }
     } else {
         Code::DockerDenied { user: user.unwrap_or("$USER").into() }
@@ -207,28 +156,6 @@ mod tests {
     }
 
     #[test]
-    fn each_wording_of_the_docker_cli_reads_as_what_it_says() {
-        // As Docker 24 to 28 print them, on Linux and on Windows (Docker Desktop).
-        let cases = [
-            ("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?", DockerSaid::EngineDown),
-            (
-                "error during connect: Get \"http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.47/containers/json\": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.",
-                DockerSaid::EngineDown,
-            ),
-            ("permission denied while trying to connect to the docker API at unix:///var/run/docker.sock", DockerSaid::Denied),
-            ("error during connect: open //./pipe/docker_engine: Access is denied.", DockerSaid::Denied),
-            ("Error response from daemon: No such container: cyberctf-sqli-attacker", DockerSaid::Other),
-            ("Error response from daemon: pull access denied for x, repository does not exist", DockerSaid::Other),
-            ("", DockerSaid::Other),
-        ];
-        for (stderr, said) in cases {
-            assert_eq!(DockerSaid::of(stderr), said, "{stderr}");
-        }
-        assert_eq!(DockerSaid::of_error(&Error::ToolMissing { tool: "docker" }), None);
-        assert!(refusal("access is denied.") && refusal("permission denied") && !refusal("denied"));
-    }
-
-    #[test]
     fn only_docker_drops_inherited_engine_overrides() {
         // Regression: an inherited DOCKER_HOST pointed the app at OrbStack while the user worked
         // in Docker Desktop, so labs were deployed to and looked for in the wrong engine.
@@ -261,11 +188,11 @@ mod tests {
     #[test]
     fn the_denied_message_names_the_command_to_run() {
         let message = |os, user| Error::coded(denied_code(os, user)).to_string();
-        assert!(message(Os::Linux, Some("ada")).contains("sudo usermod -aG docker ada"));
-        assert!(message(Os::Linux, None).contains("usermod -aG docker $USER"));
+        assert!(message(HostOs::Linux, Some("ada")).contains("sudo usermod -aG docker ada"));
+        assert!(message(HostOs::Linux, None).contains("usermod -aG docker $USER"));
         // Windows (#218): the docker-users group, not a Linux command.
-        assert_eq!(denied_code(Os::Windows, Some("Ada Lovelace")), Code::DockerDeniedWindows { user: "Ada Lovelace".into() });
-        let windows = message(Os::Windows, Some("Ada Lovelace"));
+        assert_eq!(denied_code(HostOs::Windows, Some("Ada Lovelace")), Code::DockerDeniedWindows { user: "Ada Lovelace".into() });
+        let windows = message(HostOs::Windows, Some("Ada Lovelace"));
         assert!(windows.contains("net localgroup docker-users \"Ada Lovelace\" /add") && windows.contains("sign out"), "{windows}");
         assert!(!windows.contains("usermod"));
         assert!(docker_denied_error().to_string().contains(if cfg!(windows) { "docker-users" } else { "usermod -aG docker" }));

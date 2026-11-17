@@ -6,7 +6,7 @@ use std::sync::Arc;
 use isothrum_runner::fake::{FakeProcesses, Reply};
 
 use super::*;
-use crate::platform::host::{Arch, Host};
+use isothrum_machine::Arch;
 
 #[test]
 fn the_preferred_hypervisor_is_picked_when_ready_else_the_first_ready_one() {
@@ -19,11 +19,11 @@ fn the_preferred_hypervisor_is_picked_when_ready_else_the_first_ready_one() {
 
 #[test]
 fn vmwares_desktop_hypervisor_is_named_for_the_os_and_nothing_else_is() {
-    assert_eq!(Provider::VmwareDesktop.label_on(Os::Macos), "VMware Fusion");
-    assert_eq!(Provider::VmwareDesktop.label_on(Os::Windows), "VMware Workstation");
-    assert_eq!(Provider::VmwareDesktop.label_on(Os::Linux), "VMware Workstation");
+    assert_eq!(Provider::VmwareDesktop.label_on(HostOs::Macos), "VMware Fusion");
+    assert_eq!(Provider::VmwareDesktop.label_on(HostOs::Windows), "VMware Workstation");
+    assert_eq!(Provider::VmwareDesktop.label_on(HostOs::Linux), "VMware Workstation");
     for p in Provider::ALL.iter().chain(&Provider::CLOUDS).filter(|p| **p != Provider::VmwareDesktop) {
-        for os in Os::ALL {
+        for os in isothrum_machine::host::ALL_OSES {
             assert_eq!(p.label_on(os), p.label(), "{p:?} on {os:?}");
         }
     }
@@ -89,23 +89,23 @@ fn ids_are_unique_and_round_trip_through_serde() {
 
 #[test]
 fn servers_and_cloud_accounts_are_offered_everywhere_and_share_no_folder() {
-    let on = |os, arch| Host { os, arch, packages: None };
+    let on = |os, arch| crate::runtime::providers::testing::host_on(os, arch, None);
     // The hypervisors follow isothrum-machine's table: QEMU never on Windows (#314), VirtualBox
     // and VMware not on Windows on Arm.
-    assert!(!Provider::Qemu.runs_on(Os::Windows) && !Provider::Qemu.offered_on(on(Os::Windows, Arch::X86_64), true));
-    let arm_pc = on(Os::Windows, Arch::Aarch64);
-    assert!(!Provider::Virtualbox.offered_on(arm_pc, true) && !Provider::VmwareDesktop.offered_on(arm_pc, true));
-    assert!(Provider::Hyperv.offered_on(arm_pc, false));
-    assert!(Provider::Qemu.shares_folders_on(Os::Linux) && !Provider::Qemu.shares_folders_on(Os::Macos));
+    assert!(!Provider::Qemu.runs_on(HostOs::Windows) && !Provider::Qemu.offered_on(&on(HostOs::Windows, Arch::Amd64), true));
+    let arm_pc = on(HostOs::Windows, Arch::Arm64);
+    assert!(!Provider::Virtualbox.offered_on(&arm_pc, true) && !Provider::VmwareDesktop.offered_on(&arm_pc, true));
+    assert!(Provider::Hyperv.offered_on(&arm_pc, false));
+    assert!(Provider::Qemu.shares_folders_on(HostOs::Linux) && !Provider::Qemu.shares_folders_on(HostOs::Macos));
     for p in Provider::SERVERS.into_iter().chain(Provider::CLOUDS) {
-        for os in Os::ALL {
+        for os in isothrum_machine::host::ALL_OSES {
             assert!(p.runs_on(os), "{p:?} on {os:?}");
-            for arch in Arch::ALL {
-                assert!(p.offered_on(on(os, arch), false), "{p:?} on {os:?} {arch:?}");
+            for arch in isothrum_machine::host::ALL_ARCHES {
+                assert!(p.offered_on(&on(os, arch), false), "{p:?} on {os:?} {arch:?}");
             }
             assert!(!p.shares_folders_on(os), "{p:?}");
         }
-        assert!(p.offered_on(arm_pc, false) && p.vendor().is_none(), "{p:?}");
+        assert!(p.offered_on(&arm_pc, false) && p.vendor().is_none(), "{p:?}");
     }
 }
 
@@ -113,7 +113,7 @@ fn servers_and_cloud_accounts_are_offered_everywhere_and_share_no_folder() {
 fn a_shared_folder_on_libvirt_or_qemu_without_virtiofsd_is_refused_with_its_code_before_anything_starts() {
     use crate::error::Code;
     for (provider, name) in [(Provider::Libvirt, "libvirt"), (Provider::Qemu, "QEMU")] {
-        let refused = share_on(provider, Os::Linux, |p| {
+        let refused = share_on(provider, HostOs::Linux, |p| {
             assert_eq!(Provider::from(p), provider, "asked of the lab's own hypervisor");
             false
         })
@@ -121,12 +121,12 @@ fn a_shared_folder_on_libvirt_or_qemu_without_virtiofsd_is_refused_with_its_code
         assert_eq!(refused.code(), Code::VirtiofsdMissing { hypervisor: name.into() });
         let said = refused.to_string();
         assert!(said.starts_with(&format!("{name} can't share")) && said.contains("apt-get install virtiofsd"), "says what to install: {said}");
-        assert!(share_on(provider, Os::Linux, |_| true).is_ok());
+        assert!(share_on(provider, HostOs::Linux, |_| true).is_ok());
     }
     // Another hypervisor, QEMU on macOS, or a place that isn't a Vagrant provider, never asks.
-    assert!(share_on(Provider::Virtualbox, Os::Linux, |_| panic!("not asked")).is_ok());
-    assert!(share_on(Provider::Qemu, Os::Macos, |_| panic!("not asked")).is_ok());
-    assert!(share_on(Provider::Proxmox, Os::Linux, |_| panic!("not asked")).is_ok());
+    assert!(share_on(Provider::Virtualbox, HostOs::Linux, |_| panic!("not asked")).is_ok());
+    assert!(share_on(Provider::Qemu, HostOs::Macos, |_| panic!("not asked")).is_ok());
+    assert!(share_on(Provider::Proxmox, HostOs::Linux, |_| panic!("not asked")).is_ok());
 }
 
 /// Every reason isothrum-machine gives, with sample values: what the webview's catalogue

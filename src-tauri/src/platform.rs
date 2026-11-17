@@ -16,7 +16,6 @@ pub mod elevation;
 pub mod env_path;
 pub mod exec;
 pub mod fs;
-pub mod host;
 pub mod http;
 pub mod identity;
 pub mod keychain;
@@ -103,6 +102,15 @@ pub fn hex(bytes: &[u8]) -> String {
     })
 }
 
+/// `arch` by Rust's name for it (`std::env::consts::ARCH`'s: `x86_64`, `aarch64`), as the machine
+/// report and the player's messages name a CPU.
+pub fn cpu_name(arch: isothrum_machine::Arch) -> &'static str {
+    match arch {
+        isothrum_machine::Arch::Amd64 => "x86_64",
+        isothrum_machine::Arch::Arm64 => "aarch64",
+    }
+}
+
 /// `n` random bytes as lowercase hex: ids, tokens, nonces.
 pub fn random_hex(n: usize) -> String {
     hex(&(0..n).map(|_| rand::random::<u8>()).collect::<Vec<_>>())
@@ -120,12 +128,6 @@ pub(crate) fn sh_parses(script: &str) -> bool {
         }
         Err(e) => panic!("sh: {e}"),
     }
-}
-
-/// Whether a program of that name is on this process's PATH (a file there; Windows' extensions
-/// aren't tried: the callers name Linux programs).
-pub fn on_path(program: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
 }
 
 /// `f`, a call that blocks (the keychain, a file tree, a generator), run on the async runtime's

@@ -13,7 +13,7 @@ pub use isothrum_machine::providers::UtilityState;
 pub use isothrum_machine::providers::{ProviderStatus, Unavailable};
 pub use provider::Provider;
 
-use crate::platform::host::Os;
+use isothrum_machine::HostOs;
 
 /// What isothrum-machine detects with: this machine's ([`this_machine`]). In a test, the test's
 /// own when it set one (`testing::Machine`), this machine's in a real-lab scenario
@@ -31,17 +31,31 @@ pub(crate) fn machine() -> isothrum_machine::Context {
 }
 
 /// What the machine check reads with ([`crate::machine::system::system_check`]): [`machine`]'s,
-/// with this machine's package manager (as the launcher's host finds it), and outside the tests
-/// the version probes that rarely
-/// change (`vagrant --version`...) kept a while ([`crate::platform::remembered::Remembering`]).
+/// and outside the tests the version probes that rarely change (`vagrant --version`...) kept a
+/// while ([`crate::platform::remembered::Remembering`]). Its host has no package manager:
+/// [`machine_setup`]'s has.
 pub(crate) fn machine_check() -> isothrum_machine::Context {
+    #[cfg_attr(test, allow(unused_mut))]
     let mut cx = machine();
-    cx.host.packages = crate::platform::host::Host::here().packages.map(crate::platform::host::Packages::isothrum);
     #[cfg(not(test))]
     {
         cx.runner = std::sync::Arc::new(crate::platform::remembered::Remembering::new(cx.runner));
     }
     cx
+}
+
+/// [`machine_check`]'s, with this machine's package manager, looked up through its runner
+/// (isothrum-machine's [`Host::here`](isothrum_machine::Host::here)): what the machine check
+/// reports and the guided setup installs through.
+pub(crate) async fn machine_setup() -> isothrum_machine::Context {
+    let mut cx = machine_check();
+    cx.host.packages = isothrum_machine::Host::here(cx.runner.as_ref()).await.packages;
+    cx
+}
+
+/// This machine as the guided setup reads it: [`machine_setup`]'s host.
+pub(crate) async fn host() -> isothrum_machine::Host {
+    machine_setup().await.host
 }
 
 /// What the self-tests run with: [`machine`]'s.
@@ -56,10 +70,10 @@ pub(crate) fn machine_cloud() -> isothrum_machine::Context {
 
 /// This machine: its tools, run by the runner's processes, and its devices.
 fn this_machine() -> isothrum_machine::Context {
-    let os = Os::HERE.isothrum();
+    let os = isothrum_runner::this_host();
     let host = isothrum_machine::Host {
         os,
-        arch: crate::platform::host::Arch::HERE.isothrum(),
+        arch: isothrum_runner::this_arch(),
         // Detection doesn't read it; the setup's own installs look it up.
         packages: None,
         devices: isothrum_machine::Devices::here(os),
@@ -81,11 +95,7 @@ pub async fn ready_here() -> Vec<Provider> {
 /// Vagrant (`vagrant_installed`). The machine report carries them, so the webview never works
 /// this out again.
 pub fn ready(statuses: &[ProviderStatus], vagrant_installed: bool) -> Vec<Provider> {
-    if !vagrant_installed {
-        return Vec::new();
-    }
-    // `available` holds only where the hypervisor is there: one that isn't has a reason.
-    statuses.iter().filter(|p| !p.remote && p.available).map(|p| Provider::from(p.provider)).collect()
+    isothrum_machine::check::ready(statuses, vagrant_installed).into_iter().map(Provider::from).collect()
 }
 
 /// The hypervisor VM labs run on, of the `ready` ones ([`ready`]): `preferred` (the player's
@@ -142,14 +152,14 @@ pub(crate) fn utmctl() -> &'static str {
 /// its Vagrant plugin.
 pub(crate) fn can_share(provider: Provider) -> crate::error::Result<()> {
     let cx = machine();
-    share_on(provider, Os::HERE, |p| isothrum_machine::providers::virtiofsd(p, &cx.host.devices).is_some())
+    share_on(provider, isothrum_runner::this_host(), |p| isothrum_machine::providers::virtiofsd(p, &cx.host.devices).is_some())
 }
 
 /// [`can_share`] on `os`, `found` telling whether the provider finds a virtiofsd (asked only of
 /// the providers that need one).
-fn share_on(provider: Provider, os: Os, found: impl FnOnce(isothrum_runner::Provider) -> bool) -> crate::error::Result<()> {
+fn share_on(provider: Provider, os: HostOs, found: impl FnOnce(isothrum_runner::Provider) -> bool) -> crate::error::Result<()> {
     if let Some(vagrant) = provider.vagrant()
-        && isothrum_machine::providers::needs_virtiofsd(vagrant, os.isothrum())
+        && isothrum_machine::providers::needs_virtiofsd(vagrant, os)
         && !found(vagrant)
     {
         return Err(crate::error::Error::coded(crate::error::Code::VirtiofsdMissing { hypervisor: provider.label().to_owned() }));
@@ -204,11 +214,17 @@ pub(crate) mod testing {
     /// This OS and CPU, its devices under `root` (none there until a test makes them).
     pub(crate) fn host(root: &std::path::Path) -> isothrum_machine::Host {
         isothrum_machine::Host {
-            os: crate::platform::host::Os::HERE.isothrum(),
-            arch: crate::platform::host::Arch::HERE.isothrum(),
+            os: isothrum_runner::this_host(),
+            arch: isothrum_runner::this_arch(),
             packages: None,
             devices: isothrum_machine::Devices::under(root),
         }
+    }
+
+    /// A computer on `os` and `arch` going through `packages`, its devices nowhere: a rule's
+    /// test host.
+    pub(crate) fn host_on(os: isothrum_machine::HostOs, arch: isothrum_machine::Arch, packages: Option<isothrum_machine::Packages>) -> isothrum_machine::Host {
+        isothrum_machine::Host { os, arch, packages, devices: isothrum_machine::Devices::under(std::path::Path::new("/nonexistent/cyberctf-test-machine")) }
     }
 
     /// The test's machine, else this one in a real-lab scenario ([`read_this_machine`]), else one

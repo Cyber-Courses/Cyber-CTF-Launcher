@@ -5,12 +5,13 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use isothrum_machine::install::record::{self, InstalledTool, Outcome, confirmed};
+use isothrum_machine::{Host, HostOs, Packages};
+use serde::Serialize;
 
 use super::install::Dependency;
 use crate::error::{Error, Result};
 use crate::platform::AppDirs;
-use crate::platform::host::{Host, Os, Packages};
 
 /// A tool Cyber CTF installed, as Settings lists it: the record, and its name here.
 #[derive(Serialize, Clone, Debug, ts_rs::TS)]
@@ -25,65 +26,18 @@ pub struct Installed {
     pub at: u64,
 }
 
-/// A tool Cyber CTF installed, on record so Cleanup removes only what it installed.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct InstalledTool {
-    /// The tool.
-    pub dependency: Dependency,
-    /// When Cyber CTF installed it, in seconds since the Unix epoch.
-    pub at: u64,
-    /// The install only opened the vendor's own installer (macOS casks) or the tool isn't found
-    /// yet: it counts as installed by Cyber CTF once a later check finds it. Never shown.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub pending: bool,
-}
-
-/// How long an opened installer may take to be finished before the record is dropped: a tool that
-/// shows up later than that was most likely installed some other way.
-const PENDING_FOR_SECS: u64 = 24 * 3600;
-
-/// What an install leaves on record, from whether the tool was there before and after it.
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Outcome {
-    /// Already there before: someone else installed it, so Cleanup must never remove it.
-    NotOurs,
-    /// Missing before, found now: Cyber CTF installed it.
-    Installed,
-    /// Missing before and still not found (an installer left open, PATH not refreshed yet):
-    /// confirmed by a later check.
-    Pending,
-}
-
-/// What an install leaves on record, from whether the tool was there before it (`present_before`)
-/// and after it (`present_after`).
-pub fn outcome(present_before: bool, present_after: bool) -> Outcome {
-    match (present_before, present_after) {
-        (true, _) => Outcome::NotOurs,
-        (false, true) => Outcome::Installed,
-        (false, false) => Outcome::Pending,
-    }
-}
-
 /// Whether `dep` is installed on this machine; None when that can't be told (WSL): as
 /// isothrum-machine finds it.
 pub async fn present(dep: Dependency) -> Option<bool> {
     isothrum_machine::install::present(&crate::runtime::providers::machine(), dep).await
 }
 
-/// Records the outcome of an install of `dependency`.
+/// Records the outcome of an install of `dependency` (isothrum-machine's
+/// [`remember`](record::remember)).
 pub fn record_outcome(dirs: &AppDirs, dependency: Dependency, outcome: Outcome) {
     if outcome != Outcome::NotOurs {
-        update(dirs, |tools| remember(tools, dependency, outcome));
+        update(dirs, |tools| record::remember(tools, dependency, outcome, crate::platform::clock::unix_secs()));
     }
-}
-
-/// Promotes the pending records whose tool is now found, and drops those pending for too long.
-fn settle(tools: &mut Vec<InstalledTool>, found: &[Dependency], now: u64) {
-    for t in tools.iter_mut().filter(|t| t.pending && found.contains(&t.dependency)) {
-        t.pending = false;
-    }
-    tools.retain(|t| !t.pending || now.saturating_sub(t.at) < PENDING_FOR_SECS);
 }
 
 /// Re-checks the installs that only opened an installer: run when the tools are listed.
@@ -100,7 +54,7 @@ async fn confirm_pending(dirs: &AppDirs) {
     }
     let now = crate::platform::clock::unix_secs();
     update(dirs, |tools| {
-        settle(tools, &found, now);
+        record::settle(tools, &found, now);
     });
 }
 
@@ -144,25 +98,6 @@ fn update_at(data: &Path, change: impl FnOnce(&mut Vec<InstalledTool>)) -> Resul
     })
 }
 
-/// `tools` with `dependency` recorded once as the install's `outcome` says: installed now, or
-/// waiting for its installer (one not ours is not recorded). A tool already confirmed as ours
-/// stays confirmed.
-fn remember(tools: &mut Vec<InstalledTool>, dependency: Dependency, outcome: Outcome) {
-    let waiting = match outcome {
-        Outcome::NotOurs => return,
-        Outcome::Installed => false,
-        Outcome::Pending => true,
-    };
-    let pending = waiting && !tools.iter().any(|t| t.dependency == dependency && !t.pending);
-    tools.retain(|t| t.dependency != dependency);
-    tools.push(InstalledTool { dependency, at: crate::platform::clock::unix_secs(), pending });
-}
-
-/// The confirmed records only.
-fn confirmed(tools: Vec<InstalledTool>) -> Vec<InstalledTool> {
-    tools.into_iter().filter(|t| !t.pending).collect()
-}
-
 /// The tools Cyber CTF installed on this machine (and hasn't removed since). Installs that only
 /// opened the vendor's installer count once the tool is found.
 pub async fn installed_tools(dirs: AppDirs) -> Vec<Installed> {
@@ -175,7 +110,7 @@ pub async fn installed_tools(dirs: AppDirs) -> Vec<Installed> {
 /// fetched again first as the player.
 async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<String> {
     use isothrum_machine::install::macos::{ImageMissing, virtualbox_image};
-    let cx = crate::runtime::providers::machine_check();
+    let cx = crate::runtime::providers::machine_setup().await;
     let mut lines = Vec::new();
     let found = virtualbox_image(&cx, brew, &mut |line: &str| lines.push(line.to_owned())).await;
     lines.into_iter().for_each(&mut *on_line);
@@ -190,7 +125,7 @@ async fn virtualbox_dmg(brew: &str, on_line: &mut impl FnMut(String)) -> Result<
 
 /// The removal on macOS: isothrum-machine's (Homebrew's packages, or the vendor's uninstaller).
 fn macos_plan(dep: Dependency, packages: Option<Packages>, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
-    isothrum_machine::install::macos::uninstall(dep, packages.map(Packages::isothrum), virtualbox_dmg).map_err(super::install::refusal)
+    isothrum_machine::install::macos::uninstall(dep, packages, virtualbox_dmg).map_err(super::install::refusal)
 }
 
 /// The removal on Windows: isothrum-machine's winget packages and VMware's utility's MSI.
@@ -204,19 +139,19 @@ fn windows_plan(dep: Dependency) -> Result<super::steps::Plan> {
 /// The removal on Linux: isothrum-machine's root script, through the package manager that
 /// installed the tool.
 fn linux_plan(dep: Dependency, packages: Option<Packages>) -> Result<super::steps::Plan> {
-    isothrum_machine::install::linux::uninstall(dep, packages.map(Packages::isothrum), &super::install::linux_root()).map_err(super::install::refusal)
+    isothrum_machine::install::linux::uninstall(dep, packages, &super::install::linux_root()).map_err(super::install::refusal)
 }
 
 /// How to remove `dep` on `host`. On macOS, VirtualBox's step needs its installer image
 /// (`virtualbox_dmg`).
-pub(super) fn plan_on(dep: Dependency, host: Host, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
+pub(super) fn plan_on(dep: Dependency, host: &Host, virtualbox_dmg: Option<&str>) -> Result<super::steps::Plan> {
     if !super::install::runs_on(dep, host.os) {
         return Err(super::install::not_here(dep, host.os));
     }
     match host.os {
-        Os::Macos => macos_plan(dep, host.packages, virtualbox_dmg),
-        Os::Windows => windows_plan(dep),
-        Os::Linux => linux_plan(dep, host.packages),
+        HostOs::Macos => macos_plan(dep, host.packages, virtualbox_dmg),
+        HostOs::Windows => windows_plan(dep),
+        HostOs::Linux => linux_plan(dep, host.packages),
     }
 }
 
@@ -227,12 +162,12 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
     if !confirmed(recorded).iter().any(|t| t.dependency == dependency) {
         return Err(Error::Invalid("Cyber CTF didn't install this tool, so it won't remove it.".into()));
     }
-    let host = Host::here();
+    let host = crate::runtime::providers::host().await;
     let dmg = match (host.os, host.packages, dependency) {
-        (Os::Macos, Some(Packages::Homebrew(brew)), Dependency::Virtualbox) => Some(virtualbox_dmg(brew, &mut on_line).await?),
+        (HostOs::Macos, Some(Packages::Homebrew(brew)), Dependency::Virtualbox) => Some(virtualbox_dmg(brew, &mut on_line).await?),
         _ => None,
     };
-    super::steps::run_plan(&plan_on(dependency, host, dmg.as_deref())?, &mut on_line).await?;
+    super::steps::run_plan(&plan_on(dependency, &host, dmg.as_deref())?, &mut on_line).await?;
     update(&dirs, |tools| tools.retain(|t| t.dependency != dependency));
     on_line("Removed.".into());
     Ok(())
@@ -240,11 +175,14 @@ pub async fn uninstall_dependency(dirs: AppDirs, dependency: Dependency, mut on_
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use super::*;
+    use crate::runtime::providers::testing::host_on;
 
     const BREW: &str = "/opt/homebrew/bin/brew";
-    const MAC: Host = Host { os: Os::Macos, arch: crate::platform::host::Arch::Aarch64, packages: Some(Packages::Homebrew(BREW)) };
-    const WINDOWS: Host = Host { os: Os::Windows, arch: crate::platform::host::Arch::X86_64, packages: Some(Packages::Winget) };
+    static MAC: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Macos, isothrum_machine::Arch::Arm64, Some(Packages::Homebrew(BREW))));
+    static WINDOWS: LazyLock<Host> = LazyLock::new(|| host_on(HostOs::Windows, isothrum_machine::Arch::Amd64, Some(Packages::Winget)));
 
     #[tokio::test]
     async fn the_policy_refuses_a_removal_before_anything_runs() {
@@ -295,13 +233,13 @@ mod tests {
     fn records_round_trip_through_their_file_and_keep_one_entry_per_tool() {
         let dir = crate::testing::temp_dir("tools");
         let f = dir.join("data");
-        assert!(load_at(&f).unwrap().is_empty());
+        assert_eq!(load_at(&f).unwrap(), []);
         update_at(&f, |tools| {
-            remember(tools, Dependency::Vagrant, Outcome::Installed);
-            remember(tools, Dependency::Docker, Outcome::Installed);
+            record::remember(tools, Dependency::Vagrant, Outcome::Installed, 1);
+            record::remember(tools, Dependency::Docker, Outcome::Installed, 1);
         })
         .unwrap();
-        update_at(&f, |tools| remember(tools, Dependency::Vagrant, Outcome::Installed)).unwrap();
+        update_at(&f, |tools| record::remember(tools, Dependency::Vagrant, Outcome::Installed, 1)).unwrap();
         let back = load_at(&f).unwrap();
         assert_eq!(back.iter().map(|t| t.dependency).collect::<Vec<_>>(), [Dependency::Docker, Dependency::Vagrant]);
         assert!(back.iter().all(|t| t.at > 0));
@@ -318,7 +256,7 @@ mod tests {
         std::thread::scope(|s| {
             for dep in deps {
                 let f = &f;
-                s.spawn(move || update_at(f, |tools| remember(tools, dep, Outcome::Installed)).unwrap());
+                s.spawn(move || update_at(f, |tools| record::remember(tools, dep, Outcome::Installed, 1)).unwrap());
             }
         });
         assert_eq!(load_at(&f).unwrap().len(), deps.len());
@@ -326,41 +264,8 @@ mod tests {
     }
 
     #[test]
-    fn only_a_tool_missing_before_and_found_after_counts_as_ours() {
-        // A tool the player already had must never be offered for removal, and an installer
-        // that was only opened (macOS casks) is not an install yet.
-        assert_eq!(outcome(true, true), Outcome::NotOurs);
-        assert_eq!(outcome(true, false), Outcome::NotOurs);
-        assert_eq!(outcome(false, true), Outcome::Installed);
-        assert_eq!(outcome(false, false), Outcome::Pending);
-        // WSL can't be told apart from its stub: never recorded.
-    }
-
-    #[test]
-    fn pending_installs_count_once_found_and_expire_otherwise() {
-        let mut tools = Vec::new();
-        remember(&mut tools, Dependency::Docker, Outcome::Pending);
-        remember(&mut tools, Dependency::Vagrant, Outcome::Pending);
-        remember(&mut tools, Dependency::Terraform, Outcome::Installed);
-        assert_eq!(confirmed(tools.clone()).iter().map(|t| t.dependency).collect::<Vec<_>>(), [Dependency::Terraform]);
-        // The JSON the UI reads is unchanged for a confirmed record.
-        assert!(serde_json::to_value(&tools[2]).unwrap().get("pending").is_none());
-        // Docker's installer was finished: it counts now. Vagrant's is still open.
-        let now = tools[0].at;
-        settle(&mut tools, &[Dependency::Docker], now + 60);
-        assert_eq!(confirmed(tools.clone()).len(), 2);
-        assert!(tools.iter().any(|t| t.dependency == Dependency::Vagrant && t.pending));
-        // A day later, the still-pending one is dropped.
-        settle(&mut tools, &[], now + PENDING_FOR_SECS);
-        assert_eq!(tools.iter().map(|t| t.dependency).collect::<Vec<_>>(), [Dependency::Docker, Dependency::Terraform]);
-        // Re-opening an installer for a tool already ours keeps it ours.
-        remember(&mut tools, Dependency::Docker, Outcome::Pending);
-        assert!(confirmed(tools).iter().any(|t| t.dependency == Dependency::Docker));
-    }
-
-    #[test]
     fn every_windows_tool_is_removed_through_winget() {
-        let plan = |dep, dmg| plan_on(dep, WINDOWS, dmg);
+        let plan = |dep, dmg| plan_on(dep, &WINDOWS, dmg);
         for dep in [
             Dependency::Docker,
             Dependency::Vagrant,
@@ -387,13 +292,13 @@ mod tests {
 
     #[test]
     fn every_macos_tool_has_a_way_out() {
-        let plan = |dep, dmg| plan_on(dep, MAC, dmg);
+        let plan = |dep, dmg| plan_on(dep, &MAC, dmg);
         // Regression: VMware's utility, installed from HashiCorp's package without Homebrew, could
         // only be removed with Homebrew; so could every other tool from its vendor's package.
-        let without = Host { packages: None, ..MAC };
-        assert!(plan_on(Dependency::Terraform, without, None).err().is_some_and(|e| e.to_string().contains("Homebrew is needed")));
+        let without = Host { packages: None, ..MAC.clone() };
+        assert!(plan_on(Dependency::Terraform, &without, None).err().is_some_and(|e| e.to_string().contains("Homebrew is needed")));
         for dep in [Dependency::VmwareUtility, Dependency::Vagrant, Dependency::Docker, Dependency::Utm] {
-            assert!(plan_on(dep, without, None).is_ok(), "{dep:?}");
+            assert!(plan_on(dep, &without, None).is_ok(), "{dep:?}");
         }
         for dep in Dependency::ALL.into_iter().filter(|d| !matches!(d, Dependency::Wsl | Dependency::Libvirt | Dependency::Hyperv)) {
             assert!(!plan(dep, Some("/x/VirtualBox.dmg")).unwrap().is_empty(), "{dep:?}");

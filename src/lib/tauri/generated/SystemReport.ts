@@ -23,7 +23,7 @@ export type SystemReport = {
  */
 os: Os, 
 /**
- * The CPU architecture.
+ * The CPU architecture, by Rust's name for it (`x86_64`, `aarch64`).
  */
 arch: Arch, 
 /**

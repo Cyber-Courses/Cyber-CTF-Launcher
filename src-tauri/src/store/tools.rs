@@ -4,7 +4,7 @@ use rusqlite::Connection;
 
 use crate::error::Result;
 use crate::machine::tools::install::Dependency;
-use crate::machine::tools::uninstall::InstalledTool;
+use isothrum_machine::install::record::InstalledTool;
 
 /// `dependency`'s key, as the webview names it.
 fn key(dependency: Dependency) -> Result<String> {

@@ -7,10 +7,10 @@
 use isoloom_spec::model::Target;
 use isoloom_targets::Lab;
 
-use crate::platform::host::Arch;
 use crate::platform::policy::{self, Key, Policy};
 use crate::runtime::providers::Provider;
 use crate::runtime::{Runtime, lab};
+use isothrum_machine::Arch;
 
 /// One way to start the lab: the provider or cloud it runs on (none: this machine's Docker), and
 /// the Isoloom launch path it takes there.
@@ -104,7 +104,7 @@ pub struct RunOptions {
 /// Every way lab `lab`, declared `runtime`, can start ([`RunOptions`]), as Isoloom generates it
 /// and this computer's policy allows.
 pub fn run_options(lab: &Lab, runtime: Runtime) -> RunOptions {
-    run_options_on(lab, runtime, Arch::HERE)
+    run_options_on(lab, runtime, isothrum_runner::this_arch())
 }
 
 /// [`run_options`] on a `host` CPU.
@@ -236,8 +236,8 @@ pub fn emulated_arches(spec: &lab::Spec, host: Arch) -> Vec<Arch> {
         .values()
         .filter(|m| m.vm.is_some())
         .map(|m| match m.arch {
-            lab::Arch::Amd64 => Arch::X86_64,
-            lab::Arch::Arm64 => Arch::Aarch64,
+            lab::Arch::Amd64 => Arch::Amd64,
+            lab::Arch::Arm64 => Arch::Arm64,
         })
         .filter(|a| *a != host)
         .collect();

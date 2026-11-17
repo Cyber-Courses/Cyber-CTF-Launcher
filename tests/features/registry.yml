@@ -2751,7 +2751,6 @@ areas:
           - uninstall_dependency
         tests:
           unit:
-            - src-tauri/src/machine/tools/uninstall.rs > only_a_tool_missing_before_and_found_after_counts_as_ours
             - src-tauri/src/machine/tools/uninstall.rs > every_windows_tool_is_removed_through_winget
             - src-tauri/src/machine/tools/uninstall.rs > every_macos_tool_has_a_way_out
             - src/features/settings/settings-rows.test.tsx > removes a tool only once the system dialog confirms it, then re-reads the list

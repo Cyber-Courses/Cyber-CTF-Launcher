@@ -11,10 +11,10 @@
 use super::steps::{Plan, run_plan, run_step};
 use super::uninstall;
 use crate::error::{Error, Result};
-use crate::platform::host::{Arch, Host, Os, Packages};
 use crate::platform::policy::{self, Key};
 use crate::runtime::providers::Provider;
 use isothrum_machine::install::{Elevation, Refusal, linux};
+use isothrum_machine::{Arch, Host, HostOs, Packages};
 
 /// A tool the guided setup installs, as the webview names it: isothrum-machine's, whose rows say
 /// where each runs and what proves it installed.
@@ -24,13 +24,13 @@ pub use isothrum_machine::install::Dependency;
 /// repository or the distribution's `docker.io`; Docker Desktop elsewhere): what a message and
 /// Settings' list of installed tools call it.
 pub fn name(dep: Dependency) -> &'static str {
-    name_on(dep, Os::HERE)
+    name_on(dep, isothrum_runner::this_host())
 }
 
 /// [`name`] on `os`.
-pub(crate) fn name_on(dep: Dependency, os: Os) -> &'static str {
+pub(crate) fn name_on(dep: Dependency, os: HostOs) -> &'static str {
     match dep {
-        Dependency::Docker if os == Os::Linux => "Docker Engine",
+        Dependency::Docker if os == HostOs::Linux => "Docker Engine",
         Dependency::Docker => "Docker Desktop",
         Dependency::Vagrant => "Vagrant",
         Dependency::Terraform => "Terraform",
@@ -46,19 +46,19 @@ pub(crate) fn name_on(dep: Dependency, os: Os) -> &'static str {
 }
 
 /// Whether `dep` exists on `os`. An install or a removal elsewhere is refused ([`not_here`]).
-pub fn runs_on(dep: Dependency, os: Os) -> bool {
-    dep.runs_on(os.isothrum())
+pub fn runs_on(dep: Dependency, os: HostOs) -> bool {
+    dep.runs_on(os)
 }
 
 /// The install on macOS: isothrum-machine's Homebrew formulae, vendors' installers and
 /// HashiCorp's signed package.
-fn macos_plan(dep: Dependency, host: Host) -> Result<Plan> {
-    isothrum_machine::install::macos::install(dep, host.packages.map(Packages::isothrum), host.arch.isothrum()).map_err(refusal)
+fn macos_plan(dep: Dependency, host: &Host) -> Result<Plan> {
+    isothrum_machine::install::macos::install(dep, host.packages, host.arch).map_err(refusal)
 }
 
 /// The install on Windows: isothrum-machine's winget packages and elevated installers.
 fn windows_plan(dep: Dependency, arch: Arch) -> Result<Plan> {
-    isothrum_machine::install::windows::install(dep, arch.isothrum()).map_err(refusal)
+    isothrum_machine::install::windows::install(dep, arch).map_err(refusal)
 }
 
 /// How root steps run on this Linux machine (isothrum-machine's [`linux::Root`]): through pkexec's
@@ -73,21 +73,21 @@ pub(super) fn linux_root() -> linux::Root {
 /// Why isothrum-machine can't make a plan here, in the player's words.
 pub(super) fn refusal(refused: Refusal) -> Error {
     match refused {
-        Refusal::NotHere { dependency, os } => not_here(dependency, Os::of_isothrum(os)),
+        Refusal::NotHere { dependency, os } => not_here(dependency, os),
         Refusal::WithoutPackages { dependency } => Error::Invalid(format!(
             "This distribution isn't supported by the guided setup yet (it has neither apt nor dnf): install {} yourself, then re-check.",
-            name_on(dependency, Os::Linux)
+            name_on(dependency, HostOs::Linux)
         )),
         Refusal::AptOnly { dependency } => Error::Invalid(format!(
             "The guided setup installs {} through apt only for now: install it yourself, then re-check.",
-            name_on(dependency, Os::Linux)
+            name_on(dependency, HostOs::Linux)
         )),
         Refusal::NoHomebrew => Error::Invalid("Homebrew is required. Install it from https://brew.sh, then try again.".into()),
         Refusal::HomebrewNeeded => Error::Invalid("Homebrew is needed to remove this tool.".into()),
         Refusal::NoVirtualboxImage => Error::Invalid("VirtualBox's installer image is needed to run its uninstaller.".into()),
         Refusal::NotOnWindowsOnArm { provider, .. } => Error::Invalid(format!(
             "{} doesn't run on Windows on Arm. Run VM labs with Hyper-V, on a server or in the cloud.",
-            Provider::from(provider).label_on(Os::Windows)
+            Provider::from(provider).label_on(HostOs::Windows)
         )),
         Refusal::WindowsFeature { dependency: Dependency::Wsl } => Error::Invalid("Turn WSL off in Windows Features if you no longer need it.".into()),
         Refusal::WindowsFeature { .. } => Error::Invalid("Turn Hyper-V off in Windows Features if you no longer need it.".into()),
@@ -98,30 +98,35 @@ pub(super) fn refusal(refused: Refusal) -> Error {
 /// The install on Linux: isothrum-machine's root script, for the player `user` (Linux joins them
 /// to the groups a tool's devices need).
 fn linux_plan(dep: Dependency, packages: Option<Packages>, user: Option<&str>) -> Result<Plan> {
-    linux::install(dep, packages.map(Packages::isothrum), user, &linux_root()).map_err(refusal)
+    linux::install(dep, packages, user, &linux_root()).map_err(refusal)
 }
 
 /// The ordered install steps for a dependency on `host`, for the player `user` (Linux joins
 /// them to the groups a tool's devices need).
-pub(super) fn plan_on(dep: Dependency, host: Host, user: Option<&str>) -> Result<Plan> {
+pub(super) fn plan_on(dep: Dependency, host: &Host, user: Option<&str>) -> Result<Plan> {
     if !runs_on(dep, host.os) {
         return Err(not_here(dep, host.os));
     }
     match host.os {
-        Os::Macos => macos_plan(dep, host),
-        Os::Windows => windows_plan(dep, host.arch),
-        Os::Linux => linux_plan(dep, host.packages, user),
+        HostOs::Macos => macos_plan(dep, host),
+        HostOs::Windows => windows_plan(dep, host.arch),
+        HostOs::Linux => linux_plan(dep, host.packages, user),
     }
 }
 
-/// The ordered install steps for a dependency on this computer.
-fn plan(dep: Dependency) -> Result<Plan> {
-    plan_on(dep, Host::here(), crate::platform::exec::login_name().as_deref())
+/// The ordered install steps for a dependency on this computer. One that doesn't run here is
+/// refused before the package manager is looked up.
+async fn plan(dep: Dependency) -> Result<Plan> {
+    let os = isothrum_runner::this_host();
+    if !runs_on(dep, os) {
+        return Err(not_here(dep, os));
+    }
+    plan_on(dep, &crate::runtime::providers::host().await, crate::platform::exec::login_name().as_deref())
 }
 
 /// Why `dep` can't be installed or removed on `os`: it doesn't run there ([`Dependency::runs_on`]).
-pub(super) fn not_here(dep: Dependency, os: Os) -> Error {
-    Error::Invalid(format!("{} doesn't run on {}: there is nothing of it to install or remove here.", name_on(dep, os), os.name()))
+pub(super) fn not_here(dep: Dependency, os: HostOs) -> Error {
+    Error::Invalid(format!("{} doesn't run on {}: there is nothing of it to install or remove here.", name_on(dep, os), isothrum_machine::host::os_name(os)))
 }
 
 /// Refused when this computer's policy turns one-click installs off (`DisableToolInstalls`): the
@@ -133,7 +138,7 @@ pub(super) fn installs_allowed(on_line: &mut impl FnMut(String)) -> Result<()> {
 /// Installs a dependency, streaming each command and its output to the UI.
 pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Dependency, mut on_line: impl FnMut(String)) -> Result<()> {
     installs_allowed(&mut on_line)?;
-    let steps = plan(dependency).inspect_err(|e| on_line(e.to_string()))?;
+    let steps = plan(dependency).await.inspect_err(|e| on_line(e.to_string()))?;
     let before = uninstall::present(dependency).await;
     run_plan(&steps, &mut on_line).await?;
     // Windows: the installer wrote its folder to the registry PATH; pick it up before looking.
@@ -143,7 +148,7 @@ pub async fn install_dependency(dirs: crate::platform::AppDirs, dependency: Depe
     // casks) or isn't found yet counts once a later check finds it.
     if let Some(before) = before {
         let after = uninstall::present(dependency).await.unwrap_or(false);
-        uninstall::record_outcome(&dirs, dependency, uninstall::outcome(before, after));
+        uninstall::record_outcome(&dirs, dependency, isothrum_machine::install::record::outcome(before, after));
     }
     // Its features start at the next restart: the check asks for one until then, even if the
     // app is reopened first.
