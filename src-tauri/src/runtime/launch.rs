@@ -205,7 +205,7 @@ async fn start_here(
 pub(crate) async fn start_docker_run(home: &Path, dir: &Path, id: &str, inputs: Inputs<'_>, log: &mut impl FnMut(String)) -> Result<()> {
     recheck_instance(dir, id, log).await?;
     lab::prepare(dir, lab::Target::Docker)?;
-    isothrum::LabRun::docker(home, dir, id)?.up(inputs, None, log).await
+    isothrum::Deployment::docker(home, dir, id)?.up(inputs, None, log).await
 }
 
 /// What a VM lab on this machine starts with: its hypervisor, and the launch's values.
@@ -234,7 +234,7 @@ pub(crate) async fn start_vm_run(home: &Path, dir: &Path, id: &str, start: VmSta
     if provider == Provider::Utm {
         check_utm(log).await?;
     }
-    isothrum::LabRun::vm(home, dir, id)?.up(inputs, Some(provider.id()), log).await
+    isothrum::Deployment::vm(home, dir, id)?.up(inputs, Some(provider.id()), log).await
 }
 
 /// Why the launcher refuses to start the lab installed in `dir` as `target` (Isoloom's `vagrant`)

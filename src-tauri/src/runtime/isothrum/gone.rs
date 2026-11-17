@@ -1,9 +1,11 @@
 //! A run whose surroundings changed under it: its generated files deleted while it runs, and
 //! the engine it runs on stopped while a step ran (docs/contributing/testing/resilience.md, F1 and T1).
 
-use super::{Error, LabRun, Result, errors, lab};
+use super::deployment::{Deployment, Site};
+use super::{Error, Result};
+use crate::runtime::lab;
 
-impl LabRun {
+impl Deployment {
     /// Whether the run has its generated files, made again when they are gone while the runner
     /// records something of the run (the player deleted the lab's `.isoloom-<n>/` folder, or a
     /// file of it, while the lab ran): without them a stop said "nothing to remove" and left the
@@ -17,6 +19,10 @@ impl LabRun {
     pub(super) async fn files_back(&self) -> Result<bool> {
         if self.has_project() {
             return Ok(true);
+        }
+        // A module on a server or in a cloud account isn't made again here.
+        if matches!(self.site(), Site::Server(_) | Site::Cloud(_)) {
+            return Ok(false);
         }
         let recorded = self.recorded().await?.is_some_and(|r| r.state != isothrum_runner::RunState::Absent);
         if !recorded {
@@ -37,7 +43,7 @@ impl LabRun {
     /// finds every machine absent (its containers removed with `docker compose down` by hand or a
     /// clean-up tool, its VMs deleted in the hypervisor's app). False when anything of it is
     /// left, even stopped, when an operation holds the run (the read isn't live), or when the run's
-    /// files are gone too (nothing is made again here: [`LabRun::files_back`] is a stop's).
+    /// files are gone too (nothing is made again here: [`Deployment::files_back`] is a stop's).
     ///
     /// # Errors
     ///
@@ -49,14 +55,5 @@ impl LabRun {
         let status = self.read().await?;
         // A live read lists what it found: none, or only machines absent, is nothing left.
         Ok(status.live && status.machines.iter().all(|m| m.state == isothrum_runner::MachineState::Absent))
-    }
-
-    /// `e`, an operation's failure on this run, as the player reads it: on an ESXi server, a
-    /// refused sign-in names the server as Servers does.
-    pub(super) fn said(&self, e: Error) -> Error {
-        match &self.esxi {
-            Some(place) => errors::on_server(e, &place.name),
-            None => e,
-        }
     }
 }

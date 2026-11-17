@@ -16,13 +16,13 @@ use crate::platform::AppDirs;
 
 /// A lab's run, where it runs.
 pub(crate) enum Host {
-    /// On this machine: on Docker, or as VMs ([`isothrum::LabRun::local`]), or in the helper VM
-    /// an earlier version ran a container lab inside.
-    Local(isothrum::LabRun),
+    /// On this machine: on Docker, or as VMs ([`isothrum::Deployment::local_of`]), or in the
+    /// helper VM an earlier version ran a container lab inside.
+    Local(isothrum::Deployment),
     /// VMs on an ESXi server (Vagrant there), through its connection.
     Esxi {
         /// The lab's run on the host.
-        run: isothrum::LabRun,
+        run: isothrum::Deployment,
         /// The host's connection: its settings and secret.
         conn: server::Connection,
     },
@@ -59,7 +59,7 @@ pub(crate) async fn locate(dirs: &AppDirs, dir: &Path, id: &str, runtime: Runtim
     let home = runner_home(dirs)?;
     let form = recorded.form(runtime);
     Ok(Some(match connection {
-        None => return Ok(isothrum::LabRun::local(&home, dir, id, runtime, &recorded)?.map(Host::Local)),
+        None => return Ok(isothrum::Deployment::local_of(&home, dir, id, runtime, &recorded)?.map(Host::Local)),
         Some(conn) if conn.provider == Provider::VmwareEsxi => Host::Esxi { run: super::launch::esxi_run(dirs, dir, id, form, &conn)?, conn },
         Some(conn) if conn.provider.is_cloud() => {
             let place = isothrum::CloudPlace::of(&conn);
@@ -96,98 +96,75 @@ impl Failed {
 }
 
 impl Host {
+    /// The lab's run, wherever it runs.
+    pub(crate) fn run(&self) -> &isothrum::Deployment {
+        match self {
+            Host::Local(run) | Host::Esxi { run, .. } | Host::Cloud { run, .. } | Host::Server { run, .. } => run,
+        }
+    }
+
     /// The Isoloom target the run's files are generated for; none for a container lab an earlier
     /// version runs inside a helper VM (here, on ESXi or on Proxmox), whose files Isoloom no
     /// longer generates: that run is only read, stopped and removed.
     pub(crate) fn target(&self) -> Option<lab::Target> {
-        match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.target(),
-            Host::Cloud { run, .. } | Host::Server { run, .. } => run.target(),
-        }
+        self.run().target()
     }
 
     /// Whether the run has machines of the lab's own: every run but a cloud-services lab's,
     /// whose services are no machines to check or to put an attack box beside.
     pub(crate) fn has_machines(&self) -> bool {
-        !matches!(self, Host::Cloud { run, .. } if run.module() == isothrum::Module::Own)
+        self.run().form() != isothrum::Form::Own
     }
 
-    /// The Proxmox server's run `run`, placed as a change or a console takes it (its node, its SSH
-    /// jump).
-    async fn placed(dirs: &AppDirs, run: &isothrum::Deployment, conn: &server::Connection) -> Result<isothrum::Deployment> {
+    /// The run placed as a change or a console takes it, where that differs from how it is read:
+    /// on a Proxmox server, its node and its SSH jump, found first.
+    async fn placed(&self, dirs: &AppDirs) -> Result<Option<isothrum::Deployment>> {
+        let Host::Server { run, conn } = self else { return Ok(None) };
         let place = super::launch::server_place(dirs, &conn.id, conn).await?;
-        Ok(run.at(isothrum::Site::Server(place)))
+        Ok(Some(run.at(isothrum::Site::Server(place))))
     }
 
     /// Brings the run up to date with the lab's regenerated files (a machine added or taken out).
     pub(crate) async fn update(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> std::result::Result<(), Failed> {
-        match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.update(log).await,
-            Host::Cloud { run, .. } => run.update(log).await,
-            Host::Server { run, conn } => Self::placed(dirs, run, conn).await.map_err(|error| Failed { error, run_changed: false })?.update(log).await,
-        }
+        let placed = self.placed(dirs).await.map_err(|error| Failed { error, run_changed: false })?;
+        placed.as_ref().unwrap_or(self.run()).update(log).await
     }
 
     /// Takes `machine` out of the run ahead of its removal from the lab's files.
     pub(crate) async fn retire(&self, dirs: &AppDirs, machine: &str, log: &mut impl FnMut(String)) -> Result<()> {
-        match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.retire(machine, log).await,
-            Host::Cloud { run, .. } => run.retire(machine, log).await,
-            Host::Server { run, conn } => Self::placed(dirs, run, conn).await?.retire(machine, log).await,
-        }
+        self.placed(dirs).await?.as_ref().unwrap_or(self.run()).retire(machine, log).await
     }
 
     /// Removes everything the run created, wherever it runs.
     pub(crate) async fn down(&self, dirs: &AppDirs, log: &mut impl FnMut(String)) -> Result<()> {
-        match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.down(log).await,
-            Host::Cloud { run, .. } => run.down(log).await,
-            Host::Server { run, conn } => Self::placed(dirs, run, conn).await?.down(log).await,
-        }
+        self.placed(dirs).await?.as_ref().unwrap_or(self.run()).down(log).await
     }
 
     /// The run's status as the runner reports it; None before the lab's files exist.
     pub(crate) async fn run_status(&self) -> Result<Option<Status>> {
-        match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.run_status().await,
-            Host::Cloud { run, .. } | Host::Server { run, .. } => run.run_status().await,
-        }
+        self.run().run_status().await
     }
 
     /// The command that opens a shell into `machine`, as account `user` when given.
     pub(crate) async fn console(&self, machine: &str, user: Option<&str>) -> Result<ShellCommand> {
-        match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.console_command(machine, user).await,
-            Host::Cloud { run, .. } | Host::Server { run, .. } => run.console_command(machine, user).await,
-        }
+        self.run().console_command(machine, user).await
     }
 
     /// `machine`'s graphical console (its screen), wherever the lab runs.
     pub(crate) async fn graphical_console(&self, dirs: &AppDirs, machine: &str) -> Result<isothrum_client::HeldConsole> {
-        match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.graphical_console(machine).await,
-            Host::Cloud { run, .. } => run.graphical_console(machine).await,
-            Host::Server { run, conn } => Self::placed(dirs, run, conn).await?.graphical_console(machine).await,
-        }
+        self.placed(dirs).await?.as_ref().unwrap_or(self.run()).graphical_console(machine).await
     }
 
     /// What opens running VM `machine` in its hypervisor's own app, wherever the lab runs (a
     /// cloud's VMs have none).
     pub(crate) async fn native_console(&self, dirs: &AppDirs, machine: &str) -> Result<isothrum_runner::NativeConsole> {
-        match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.native_console(machine).await,
-            Host::Cloud { run, .. } => run.native_console(machine).await,
-            Host::Server { run, conn } => Self::placed(dirs, run, conn).await?.native_console(machine).await,
-        }
+        self.placed(dirs).await?.as_ref().unwrap_or(self.run()).native_console(machine).await
     }
 
     /// Runs the lab's checks where it runs (a server's over SSH, an ESXi host's from its
     /// controller, a cloud-services lab's pages; a cloud's generated module none yet).
     pub(crate) async fn check(&self) -> Result<docker::Check> {
-        match self {
-            Host::Local(run) | Host::Esxi { run, .. } => run.check().await,
-            Host::Cloud { run, .. } | Host::Server { run, .. } => run.check().await,
-        }
+        self.run().check().await
     }
 }
 

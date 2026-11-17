@@ -31,8 +31,8 @@ struct Lab {
 impl Lab {
     /// Its run. Opened at every step, as the lab page opens it: once the start opened it, opening
     /// it again doesn't fail (and a panic would be the scenario's failed check, its teardown run).
-    fn run(&self) -> isothrum::LabRun {
-        isothrum::LabRun::vm(&self.home, &self.dir, &self.id).expect("the lab's run opens")
+    fn run(&self) -> isothrum::Deployment {
+        isothrum::Deployment::vm(&self.home, &self.dir, &self.id).expect("the lab's run opens")
     }
 }
 
@@ -180,7 +180,7 @@ async fn a_vm_lab_runs_end_to_end_through_the_runner() {
         &mut failures,
         async |f: &mut Vec<String>| exercise(&lab, f).await,
         async |f: &mut Vec<String>| {
-            let stopped = match isothrum::LabRun::vm(&lab.home, &lab.dir, &lab.id) {
+            let stopped = match isothrum::Deployment::vm(&lab.home, &lab.dir, &lab.id) {
                 Ok(run) => lifecycle::stop_run(run, &lab.dir, log(&lab.id)).await,
                 Err(e) => Err(e),
             };

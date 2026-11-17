@@ -381,7 +381,7 @@ pub(super) async fn killed_start(l: &Run, form: &str, provider: &str, begun: imp
     let left = still_running(&tools);
     println!("note: tools the killed start left running: {:?}", left.iter().map(|p| format!("{} {}", p.pid, p.line)).collect::<Vec<_>>());
     // The runner: a run whose start never ended is failed, not ready.
-    let run = if form == "vm" { isothrum::LabRun::vm(&l.home, &l.dir, &l.id) } else { isothrum::LabRun::docker(&l.home, &l.dir, &l.id) };
+    let run = if form == "vm" { isothrum::Deployment::vm(&l.home, &l.dir, &l.id) } else { isothrum::Deployment::docker(&l.home, &l.dir, &l.id) };
     let state = match run {
         Ok(run) => run.run_status().await.map(|s| s.map(|s| s.state)),
         Err(e) => Err(e),

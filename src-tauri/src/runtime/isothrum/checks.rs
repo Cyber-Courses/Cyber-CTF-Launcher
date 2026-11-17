@@ -10,19 +10,20 @@ use isothrum_runner::RunOptions;
 use super::super::docker::Check;
 use super::super::lab;
 use super::deployment::Deployment;
-use super::{Kind, LabRun, Result, described, remote, view};
+use super::{Result, described, remote, view};
 use crate::error::Error;
 
-impl LabRun {
-    /// Runs the lab's checks; not available when it declares none (nothing runs then).
-    pub(crate) async fn check(&self) -> Result<Check> {
+impl Deployment {
+    /// Runs the lab's checks here or on ESXi: each check runner its spec declares; not available
+    /// when it declares none (nothing runs then).
+    pub(super) async fn lab_check(&self) -> Result<Check> {
         let runners = self.described()?.check_runners;
         if runners.is_empty() {
             return Ok(Check::default());
         }
         let (mut lines, mut all_ok) = (Vec::new(), true);
         for runner in &runners {
-            let (said, ok) = if self.kind == Kind::Docker { self.service_checks(runner).await? } else { self.vm_checks(runner).await? };
+            let (said, ok) = if self.target() == Some(lab::Target::Docker) { self.service_checks(runner).await? } else { self.vm_checks(runner).await? };
             lines.extend(said.into_iter().map(|l| (runner.clone(), l)));
             all_ok &= ok;
         }
@@ -33,7 +34,7 @@ impl LabRun {
     /// what it printed, and whether it passed.
     async fn service_checks(&self, runner: &str) -> Result<(Vec<String>, bool)> {
         let mut said = Vec::new();
-        let ok = self.act(remote::Act::Exec(runner, &[]), &self.placed(RunOptions::new()), &mut |l| said.push(l)).await.map_err(remote::Failure::into_error)?;
+        let ok = self.run(remote::Act::Exec(runner, &[]), &self.placed(RunOptions::new()), &mut |l| said.push(l)).await.map_err(remote::Failure::into_error)?;
         Ok((said, ok))
     }
 
@@ -45,10 +46,10 @@ impl LabRun {
         let mut said = Vec::new();
         if vm == lab::CONTROLLER {
             // Halted once it set the lab up: booted (not set up again) for its checks.
-            self.act(remote::Act::Attach(vm), &self.placed(RunOptions::new()), &mut |l| said.push(l)).await.map_err(remote::Failure::into_error)?;
+            self.run(remote::Act::Attach(vm), &self.placed(RunOptions::new()), &mut |l| said.push(l)).await.map_err(remote::Failure::into_error)?;
         }
         let act = remote::Act::Provision(Some(vm), Some(described::VAGRANT_CHECKS));
-        match self.act(act, &self.placed(RunOptions::new()), &mut |l| said.push(l)).await {
+        match self.run(act, &self.placed(RunOptions::new()), &mut |l| said.push(l)).await {
             Ok(ok) => Ok((said, ok)),
             Err(_) if said.iter().any(|l| described::check_line(l).is_some()) => Ok((said, false)),
             Err(e) => Err(e.into_error()),
@@ -102,7 +103,7 @@ impl Deployment {
     fn runner_code(&self, check: &ModuleCheck) -> Result<String> {
         if let Some(script) = &check.script {
             let name = Path::new(script).file_name().ok_or_else(|| Error::Invalid(format!("the lab's check runner {script} names no file")))?;
-            let path = self.project.join("checks").join(name);
+            let path = self.project().join("checks").join(name);
             return std::fs::read_to_string(&path).map_err(|e| Error::Invalid(format!("the lab's check runner {} couldn't be read: {e}", path.display())));
         }
         check.command.clone().ok_or_else(|| Error::Invalid(format!("the lab's check runner at {} says nothing to run", check.position)))

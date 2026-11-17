@@ -35,7 +35,7 @@ fn dotfile(l: &Run) -> PathBuf {
 
 /// The lab's status, as its page reads it.
 async fn status(l: &Run) -> crate::error::Result<LabStatus> {
-    isothrum::LabRun::vm(&l.home, &l.dir, &l.id)?.status().await
+    isothrum::Deployment::vm(&l.home, &l.dir, &l.id)?.status().await
 }
 
 /// `machine`'s state as the lab page shows it.
@@ -59,7 +59,7 @@ async fn starts_whole(l: &Run, f: &mut Vec<String>, when: &str) -> bool {
 
 /// The lab stopped (the lab page's Stop), and no VM of it left.
 async fn stops_clean(l: &Run, f: &mut Vec<String>) {
-    let stopped = match isothrum::LabRun::vm(&l.home, &l.dir, &l.id) {
+    let stopped = match isothrum::Deployment::vm(&l.home, &l.dir, &l.id) {
         Ok(run) => lifecycle::stop_run(run, &l.dir, log(&l.id)).await,
         Err(e) => Err(e),
     };
@@ -96,7 +96,7 @@ async fn a_vm_destroyed_while_the_lab_runs_shows_gone_and_a_start_again_rebuilds
         let state = shown(l, &machine).await;
         check(state.as_deref() == Some("absent"), format!("{machine} is shown gone ({state:?})"), f);
         // A resume never makes it again from its box, unprovisioned: refused, naming it.
-        let resumed = isothrum::LabRun::vm(&l.home, &l.dir, &l.id).expect("its run").resume(&mut log(&l.id)).await;
+        let resumed = isothrum::Deployment::vm(&l.home, &l.dir, &l.id).expect("its run").resume(&mut log(&l.id)).await;
         check(refused_as_gone(&resumed, &machine), format!("a resume is refused, naming {machine} ({:?})", resumed.err().map(|e| e.to_string())), f);
         let again = shown(l, &machine).await;
         check(again.as_deref() == Some("absent") || again.is_none(), format!("{machine} wasn't made again ({again:?})"), f);
@@ -118,7 +118,7 @@ async fn a_vm_powered_off_while_the_lab_runs_shows_off_and_a_resume_brings_it_ba
         check(off.is_ok(), format!("vagrant halt --force {machine} ({:?})", off.err()), f);
         let state = shown(l, &machine).await;
         check(state.as_deref().is_some_and(|s| s != "running" && s != "absent"), format!("{machine} is shown off ({state:?})"), f);
-        let resumed = isothrum::LabRun::vm(&l.home, &l.dir, &l.id).expect("its run").resume(&mut log(&l.id)).await;
+        let resumed = isothrum::Deployment::vm(&l.home, &l.dir, &l.id).expect("its run").resume(&mut log(&l.id)).await;
         check(resumed.is_ok(), format!("a resume brings it back ({:?})", resumed.err()), f);
         let s = status(l).await;
         check(s.as_ref().is_ok_and(every_machine_runs), format!("every machine runs again ({:?})", s.as_ref().map(states)), f);

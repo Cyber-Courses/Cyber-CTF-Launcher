@@ -56,15 +56,15 @@ mod start_path {
     /// the host's connection from their knobs, with no saved host for the launcher's start to read.
     const OPENS_ITS_OWN_RUN: &[(&str, &str)] = &[("server_lab.rs", "a server's connection from its knobs, not a saved host")];
 
-    /// The runs a scenario opens itself: `LabRun::…`, `Deployment::…`.
-    const RUNS: [&str; 2] = ["LabRun::", "Deployment::"];
+    /// The runs a scenario opens itself: `Deployment::…`.
+    const RUNS: [&str; 1] = ["Deployment::"];
 
     /// What starts or stops a run.
     const CHANGES: [&str; 2] = [".up(", ".down("];
 
     /// Where `code` starts or stops a run it opened itself: a statement that opens one and calls
     /// `up` or `down` on it, or `up` or `down` on a variable bound to one. Reading it (`status`,
-    /// `check`) and handing it to the launcher (`lifecycle::stop_run(LabRun::…)`) are fine.
+    /// `check`) and handing it to the launcher (`lifecycle::stop_run(Deployment::…)`) are fine.
     fn direct_changes(code: &str) -> Vec<String> {
         let statements: Vec<&str> = code.split(';').collect();
         let opened = |s: &str| RUNS.iter().any(|r| s.contains(r));
@@ -90,15 +90,15 @@ mod start_path {
     #[test]
     fn a_run_started_by_hand_is_told_from_one_read_or_handed_over() {
         // A scenario that once did: the run opened and brought up in one expression.
-        let by_hand = "let up = async {\n lab::prepare(&dir, t)?;\n isothrum::LabRun::vm(&home, &dir, &id)?.up(&[], Some(p), &mut log(&id)).await\n}";
+        let by_hand = "let up = async {\n lab::prepare(&dir, t)?;\n isothrum::Deployment::vm(&home, &dir, &id)?.up(&[], Some(p), &mut log(&id)).await\n}";
         assert_eq!(direct_changes(by_hand).len(), 1);
         // A run bound to a variable, then brought up or down.
-        assert_eq!(direct_changes("let run = Deployment::on_server(&home, &dir, id, Runtime::Vm, place).unwrap();\nlet up = run.up(&[], &mut log).await;\nlet down = run.down(&mut log).await;").len(), 2);
+        assert_eq!(direct_changes("let run = Deployment::on_server(&home, &dir, id, Runtime::Vm, place).unwrap();\nlet up = run.up(Inputs::default(), None, &mut log).await;\nlet down = run.down(&mut log).await;").len(), 2);
         // Read, checked, or handed to the launcher's stop: fine.
         for fine in [
-            "isothrum::LabRun::vm(&home, &dir, &id).unwrap().status().await;",
-            "isothrum::LabRun::docker(&self.home, &self.dir, &self.id)?.check().await;",
-            "let stopped = lifecycle::stop_run(isothrum::LabRun::vm(&home, &dir, &id).unwrap(), &dir, log(&id)).await;",
+            "isothrum::Deployment::vm(&home, &dir, &id).unwrap().status().await;",
+            "isothrum::Deployment::docker(&self.home, &self.dir, &self.id)?.check().await;",
+            "let stopped = lifecycle::stop_run(isothrum::Deployment::vm(&home, &dir, &id).unwrap(), &dir, log(&id)).await;",
             "let started = launch::start_vm_run(&home, &dir, &id, launch::VmStart { provider, inputs: launch::Inputs::default() }, &mut log(&id)).await;",
         ] {
             assert!(direct_changes(fine).is_empty(), "{fine}");

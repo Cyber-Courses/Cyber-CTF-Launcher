@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use isothrum_runner::fake::{Call, FakeProcesses, Reply};
 use isothrum_runner::{FakePorts, ProcessRunner, RunnerConfig};
 
-use super::lab;
+use crate::runtime::lab;
 
 /// What each runner test module imports: the fixture, the fake processes' calls and replies, and
 /// the model's lock.

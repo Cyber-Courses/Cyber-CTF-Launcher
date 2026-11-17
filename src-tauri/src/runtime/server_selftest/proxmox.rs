@@ -39,7 +39,7 @@ pub(super) struct OnServer {
 
 impl TestRun for OnServer {
     async fn up(&self, log: &mut (dyn FnMut(String) + Send)) -> Result<()> {
-        self.run.up(&[], &mut |l| log(l)).await
+        self.run.up(crate::runtime::isothrum::Inputs::default(), None, &mut |l| log(l)).await
     }
     async fn check(&self) -> Result<Check> {
         self.run.check().await

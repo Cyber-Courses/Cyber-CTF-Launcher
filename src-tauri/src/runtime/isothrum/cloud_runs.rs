@@ -15,10 +15,10 @@ use isothrum_runner::{Format, RunOptions, RunRecord, SecretValue, Secrets};
 
 use super::deployment::Deployment;
 #[cfg(feature = "cloud-services")]
-use super::deployment::{Module, Site};
+use super::deployment::{Form, Site};
 use super::view;
 use crate::error::Result;
-use crate::runtime::{LabStatus, Place, lab};
+use crate::runtime::{LabStatus, Place};
 
 /// The account environment names the launcher passes to the module as plain values (not
 /// secrets): a chosen AWS CLI profile and the region. Everything else in the account's Terraform
@@ -160,13 +160,11 @@ impl Deployment {
             return Ok(LabStatus { place: Some(Place::Cloud), ..LabStatus::default() });
         }
         #[cfg(feature = "cloud-services")]
-        if self.module() == Module::Own {
+        if self.form() == Form::Own {
             return self.own_status().await;
         }
         let status = self.read().await?;
-        let form = if self.target() == Some(lab::Target::CloudDocker) { super::described::Form::Containers } else { super::described::Form::Vms };
-        let described = super::described::Described::of(&self.dir, form)?;
-        Ok(LabStatus { place: Some(Place::Cloud), ..view::lab_status(&described, &status, None) })
+        Ok(LabStatus { place: Some(Place::Cloud), ..view::lab_status(&self.described()?, &status, None) })
     }
 }
 
