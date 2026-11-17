@@ -123,6 +123,8 @@ function Serves([string]$port) {
 $NextDev = $null
 if ($Debug -and -not (Serves $DevPort)) {
   Say "frontend: next dev on port $DevPort (a debug build loads devUrl)"
+  # A dev cache of its own (run.sh's start_next_dev, scripts/lib/suite.sh, says why).
+  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $Repo ".next\dev")
   $NextDev = Start-Process -PassThru -WindowStyle Hidden -FilePath "cmd.exe" -ArgumentList @("/c", "pnpm exec next dev --hostname 127.0.0.1 --port $DevPort > `"$Logs\next-dev.log`" 2>&1")
   for ($i = 0; $i -lt 90 -and -not (Serves $DevPort); $i++) { Start-Sleep -Seconds 2 }
   if (-not (Serves $DevPort)) { Stop-Runner "next dev never answered on $DevPort" }
